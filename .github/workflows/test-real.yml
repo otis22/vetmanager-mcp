@@ -1,0 +1,32 @@
+name: Real API Tests (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_domain:
+        description: 'Vetmanager test domain (e.g. devtr6)'
+        required: true
+        default: 'devtr6'
+
+jobs:
+  test-real:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp .
+
+      - name: Run real API e2e tests
+        env:
+          TEST_DOMAIN: ${{ inputs.test_domain }}
+          TEST_API_KEY: ${{ secrets.VETMANAGER_TEST_API_KEY }}
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/app" \
+            -u 1001:1001 \
+            -e TEST_DOMAIN \
+            -e TEST_API_KEY \
+            vetmanager-mcp \
+            python -m pytest tests/test_e2e_real.py -v
