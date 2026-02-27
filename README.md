@@ -1,8 +1,8 @@
 # vetmanager-mcp
 
-MCP-сервер для интеграции [Vetmanager REST API](https://help.vetmanager.cloud/article/3029) с любым клиентом, поддерживающим [Model Context Protocol](https://modelcontextprotocol.io/). Позволяет управлять операциями ветеринарной клиники (клиенты, питомцы, приёмы, медкарты, счета, товары/услуги) через диалоговых AI-агентов на естественном языке.
+MCP-сервер для интеграции [Vetmanager REST API](https://help.vetmanager.cloud/article/3029) с любым клиентом, поддерживающим [Model Context Protocol](https://modelcontextprotocol.io/). Позволяет управлять операциями ветеринарной клиники через диалоговых AI-агентов на естественном языке.
 
-Сервер берёт на себя аутентификацию, динамическое определение URL API (через `billing-api.vetmanager.cloud`) и форматирование данных, предоставляя набор MCP-инструментов с полной поддержкой CRUD-операций.
+Сервер берёт на себя аутентификацию, динамическое определение URL API (через `billing-api.vetmanager.cloud`) и форматирование данных. Поддерживает **мультитенантность** — `domain` и `api_key` передаются в каждом запросе, один экземпляр сервера обслуживает любое количество клиник без перезапуска.
 
 ## Требования
 
@@ -24,8 +24,8 @@ docker compose up -d          # запустить MCP-сервер
 # unit + mock (без реального API)
 docker compose run --rm test
 
-# с реальным API (devtr6)
-docker compose run --rm -e TEST_DOMAIN=devtr6 -e TEST_API_KEY=<key> test
+# с реальным API
+docker compose run --rm -e TEST_DOMAIN=<домен> -e TEST_API_KEY=<ключ> test
 ```
 
 ## Деплой на сервер
@@ -49,24 +49,53 @@ docker compose run --rm -e TEST_DOMAIN=devtr6 -e TEST_API_KEY=<key> test
 
 ## MCP-инструменты
 
-Каждый инструмент принимает `domain` и `api_key` как параметры запроса — сервер поддерживает несколько клиник одновременно без перезапуска.
+Каждый инструмент принимает `domain` и `api_key` как обязательные параметры.
+Параметры `limit` (1–100) и `offset` (0–10 000) защищены от случайных массовых выборок.
 
-| Сущность | Инструменты |
-|----------|-------------|
+**75 инструментов** по 12 группам сущностей:
+
+| Группа | Инструменты |
+|--------|-------------|
 | Client | `get_clients`, `get_client_by_id`, `create_client`, `update_client` |
-| Pet | `get_pets`, `get_pet_by_id`, `create_pet` |
-| Admission | `get_admissions`, `get_admission_by_id`, `create_admission` |
-| MedicalCard | `get_medical_cards`, `get_medical_card_by_id`, `create_medical_card` |
+| Pet | `get_pets`, `get_pet_by_id`, `create_pet`, `update_pet` |
+| Admission | `get_admissions`, `get_admission_by_id`, `create_admission`, `update_admission` |
+| MedicalCard | `get_medical_cards`, `get_medical_card_by_id`, `create_medical_card`, `update_medical_card` |
 | Invoice | `get_invoices`, `get_invoice_by_id`, `create_invoice` |
-| Good | `get_goods`, `get_good_by_id` |
-| User | `get_users`, `get_user_by_id` |
+| InvoiceDocument | `get_invoice_documents`, `get_invoice_document_by_id`, `add_invoice_document` |
+| Good | `get_goods`, `get_good_by_id`, `get_good_groups`, `get_good_group_by_id`, `get_good_sale_params`, `get_good_sale_param_by_id` |
+| User | `get_users`, `get_user_by_id`, `get_roles`, `get_role_by_id`, `get_user_positions`, `get_user_position_by_id` |
+| Finance | `get_payments`, `get_payment_by_id`, `create_payment`, `get_cassas`, `get_cassa_by_id`, `get_cassa_closes`, `get_cassa_close_by_id`, `get_closing_of_invoices`, `get_closing_of_invoice_by_id` |
+| Warehouse | `get_party_accounts`, `get_party_account_by_id`, `get_party_account_docs`, `get_party_account_doc_by_id`, `get_store_documents`, `get_store_document_by_id`, `get_suppliers`, `get_supplier_by_id` |
+| Clinical | `get_hospitalizations`, `get_hospitalization_by_id`, `create_hospitalization`, `get_hospital_blocks`, `get_hospital_block_by_id`, `get_diagnoses` |
+| Reference | `get_breeds`, `get_breed_by_id`, `get_pet_types`, `get_pet_type_by_id`, `get_cities`, `get_city_by_id`, `get_city_types`, `get_streets`, `get_street_by_id`, `get_units`, `get_unit_by_id`, `get_combo_manual_names`, `get_combo_manual_name_by_id`, `get_combo_manual_items`, `get_combo_manual_item_by_id` |
+| Operations | `get_clinics`, `get_clinic_by_id`, `get_timesheets`, `get_timesheet_by_id`, `get_properties`, `get_anonymous_clients` |
+
+## MCP Prompts
+
+**20 готовых шаблонов** для типовых сценариев — LLM использует их для составления цепочек вызовов инструментов:
+
+| Категория | Промпты |
+|-----------|---------|
+| Администратор | `daily_schedule`, `find_client`, `client_balance`, `book_appointment`, `create_invoice_prompt`, `doctor_workload`, `unconfirmed_appointments` |
+| Врач | `pet_history`, `last_vaccinations`, `add_medical_note`, `current_inpatients`, `pet_invoices`, `pet_full_profile` |
+| Финансы | `daily_revenue`, `unpaid_invoices`, `popular_services` |
+| Склад и клиентская база | `search_good`, `low_stock`, `new_clients`, `client_no_visit` |
+
+## CI/CD
+
+| Воркфлоу | Триггер | Что тестирует |
+|----------|---------|---------------|
+| `test.yml` | push / pull request → main | unit + mock e2e (без реального API) |
+| `test-real.yml` | вручную (`workflow_dispatch`) | real API e2e (требует секрет `VETMANAGER_TEST_API_KEY`) |
+
+Добавить API-ключ для реальных тестов: **Settings → Secrets and variables → Actions → New repository secret**, имя: `VETMANAGER_TEST_API_KEY`.
 
 ## Артефакты
 
 | Путь | Назначение |
 |------|------------|
-| `artifacts/prd-vetmanager-mcp-ru.md` | Требования к продукту (PRD): видение, цели, пользовательские персоны, функциональные и нефункциональные требования |
-| `artifacts/technical-requirements-vetmanager-mcp-ru.md` | Технические требования: архитектура, стек, структура проекта, детали реализации |
-| `artifacts/api_entity_reference-ru.md` | Справочник по сущностям Vetmanager API (Client, Pet, Admission, MedicalCard, Invoice, Good, User и др.) |
+| `artifacts/prd-vetmanager-mcp-ru.md` | Требования к продукту: видение, цели, персоны, функциональные и нефункциональные требования |
+| `artifacts/technical-requirements-vetmanager-mcp-ru.md` | Технические требования: архитектура, стек, структура проекта |
+| `artifacts/api_entity_reference-ru.md` | Справочник по сущностям Vetmanager API (35 сущностей) |
 | `artifacts/vetmanager_openapi_v6.json` | Спецификация OpenAPI v6 для Vetmanager REST API |
-| `artifacts/vetmanager_postman_collection.json` | Коллекция Postman для ручного тестирования Vetmanager API |
+| `artifacts/vetmanager_postman_collection.json` | Коллекция Postman для ручного тестирования |
