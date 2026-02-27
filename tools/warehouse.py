@@ -2,6 +2,7 @@
 PartyAccountDoc, StoreDocument, Suppliers."""
 
 from fastmcp import FastMCP
+from validators import validate_list_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -17,6 +18,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/GoodGroup", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -41,6 +43,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         vc = VetmanagerClient(domain, api_key)
         return await vc.get("/rest/api/goodSaleParam", params={"goodId": good_id, "limit": limit, "offset": offset})
 
@@ -65,6 +68,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/PartyAccount", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -88,6 +92,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/PartyAccountDoc", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -111,6 +116,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/StoreDocument", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -134,6 +140,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/Suppliers", params={"limit": limit, "offset": offset})
 
     @mcp.tool

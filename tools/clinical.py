@@ -1,6 +1,7 @@
 """Clinical entity tools: Hospital, HospitalBlock, Diagnoses."""
 
 from fastmcp import FastMCP
+from validators import validate_list_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -18,6 +19,7 @@ def register(mcp: FastMCP) -> None:
             pet_id: Filter by pet ID (0 = no filter).
         """
         vc = VetmanagerClient(domain, api_key)
+        validate_list_params(limit, offset)
         params: dict = {"limit": limit, "offset": offset}
         if pet_id:
             params["petId"] = pet_id
@@ -65,6 +67,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/HospitalBlock", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -88,4 +91,5 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/MedicalCards/AllDiagnoses", params={"limit": limit, "offset": offset})

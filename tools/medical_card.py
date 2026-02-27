@@ -1,5 +1,6 @@
 from fastmcp import FastMCP
 
+from validators import validate_list_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -19,9 +20,10 @@ def register(mcp: FastMCP) -> None:
             domain: Clinic subdomain.
             api_key: REST API key.
             pet_id: ID of the pet whose records to retrieve.
-            limit: Max records to return.
-            offset: Pagination offset.
+            limit: Max records to return (1–100, default 20).
+            offset: Pagination offset (0–10000).
         """
+        validate_list_params(limit, offset)
         vc = VetmanagerClient(domain, api_key)
         params: dict = {"pet_id": pet_id, "limit": limit, "offset": offset}
         return await vc.get("/rest/api/medicalcard", params=params)

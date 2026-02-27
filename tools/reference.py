@@ -2,6 +2,7 @@
 Role, UserPosition, ComboManualName, ComboManualItem."""
 
 from fastmcp import FastMCP
+from validators import validate_list_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -19,6 +20,7 @@ def register(mcp: FastMCP) -> None:
             pet_type_id: Filter by animal type ID (0 = no filter).
         """
         vc = VetmanagerClient(domain, api_key)
+        validate_list_params(limit, offset)
         params: dict = {"limit": limit, "offset": offset}
         if pet_type_id:
             params["petTypeId"] = pet_type_id
@@ -45,6 +47,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/petType", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -70,6 +73,7 @@ def register(mcp: FastMCP) -> None:
             title: Filter by city name (partial match, optional).
         """
         vc = VetmanagerClient(domain, api_key)
+        validate_list_params(limit, offset)
         params: dict = {"limit": limit, "offset": offset}
         if title:
             params["title"] = title
@@ -96,6 +100,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/cityType", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -110,6 +115,7 @@ def register(mcp: FastMCP) -> None:
             city_id: Filter by city ID (0 = no filter).
         """
         vc = VetmanagerClient(domain, api_key)
+        validate_list_params(limit, offset)
         params: dict = {"limit": limit, "offset": offset}
         if city_id:
             params["cityId"] = city_id
@@ -136,6 +142,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/unit", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -159,6 +166,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/role", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -182,6 +190,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/userPosition", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -205,6 +214,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/ComboManualName", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -229,6 +239,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         vc = VetmanagerClient(domain, api_key)
         return await vc.get("/rest/api/ComboManualItem", params={"comboManualNameId": combo_manual_name_id, "limit": limit, "offset": offset})
 

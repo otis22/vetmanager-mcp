@@ -1,6 +1,7 @@
 """Operational entity tools: Clinics, Timesheet, Properties, AnonymousClient."""
 
 from fastmcp import FastMCP
+from validators import validate_list_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -16,6 +17,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/clinics", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -42,6 +44,7 @@ def register(mcp: FastMCP) -> None:
             date: Filter by date in YYYY-MM-DD format (optional).
         """
         vc = VetmanagerClient(domain, api_key)
+        validate_list_params(limit, offset)
         params: dict = {"limit": limit, "offset": offset}
         if user_id:
             params["userId"] = user_id
@@ -70,6 +73,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/properties", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -82,4 +86,5 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/user/anonymousList", params={"limit": limit, "offset": offset})

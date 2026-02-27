@@ -1,6 +1,7 @@
 """Financial entity tools: Payment, ClosingOfInvoices, InvoiceDocument, Cassa, CassaClose."""
 
 from fastmcp import FastMCP
+from validators import validate_amount, validate_list_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -18,6 +19,7 @@ def register(mcp: FastMCP) -> None:
             client_id: Filter by client ID (0 = no filter).
         """
         vc = VetmanagerClient(domain, api_key)
+        validate_list_params(limit, offset)
         params: dict = {"limit": limit, "offset": offset}
         if client_id:
             params["clientId"] = client_id
@@ -47,6 +49,7 @@ def register(mcp: FastMCP) -> None:
             description: Optional payment description or note.
         """
         vc = VetmanagerClient(domain, api_key)
+        validate_amount(amount)
         payload: dict = {"clientId": client_id, "amount": amount, "cassaId": cassa_id}
         if description:
             payload["description"] = description
@@ -62,6 +65,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/closingOfInvoices", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -86,6 +90,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         vc = VetmanagerClient(domain, api_key)
         return await vc.get("/rest/api/invoiceDocument", params={"invoiceId": invoice_id, "limit": limit, "offset": offset})
 
@@ -125,6 +130,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/cassa", params={"limit": limit, "offset": offset})
 
     @mcp.tool
@@ -148,6 +154,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        validate_list_params(limit, offset)
         return await VetmanagerClient(domain, api_key).get("/rest/api/cassaclose", params={"limit": limit, "offset": offset})
 
     @mcp.tool

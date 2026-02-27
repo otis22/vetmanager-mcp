@@ -135,3 +135,209 @@ async def test_real_nonexistent_client_raises():
         pass  # expected
     except AuthError as e:
         pytest.skip(f"Auth error: {e}")
+
+
+# ── Reference entities ────────────────────────────────────────────────────────
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_breeds():
+    result = await call(vc().get("/rest/api/breed", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_pet_types():
+    result = await call(vc().get("/rest/api/petType", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_cities():
+    result = await call(vc().get("/rest/api/city", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_city_types():
+    result = await call(vc().get("/rest/api/cityType", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_streets():
+    result = await call(vc().get("/rest/api/street", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_units():
+    result = await call(vc().get("/rest/api/unit", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_roles():
+    result = await call(vc().get("/rest/api/role", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_user_positions():
+    result = await call(vc().get("/rest/api/userPosition", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_combo_manual_names():
+    result = await call(vc().get("/rest/api/ComboManualName", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_combo_manual_items():
+    result = await call(vc().get("/rest/api/ComboManualItem", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+# ── Finance entities ──────────────────────────────────────────────────────────
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_payments():
+    result = await call(vc().get("/rest/api/payment", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_closing_of_invoices():
+    result = await call(vc().get("/rest/api/closingOfInvoices", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_invoice_documents():
+    result = await call(vc().get("/rest/api/invoiceDocument", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_cassas():
+    result = await call(vc().get("/rest/api/cassa", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_cassa_closes():
+    result = await call(vc().get("/rest/api/cassaclose", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+# ── Warehouse entities ────────────────────────────────────────────────────────
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_good_groups():
+    result = await call(vc().get("/rest/api/GoodGroup", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_good_sale_params():
+    result = await call(vc().get("/rest/api/goodSaleParam", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_party_accounts():
+    result = await call(vc().get("/rest/api/PartyAccount", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_party_account_docs():
+    result = await call(vc().get("/rest/api/PartyAccountDoc", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_store_documents():
+    result = await call(vc().get("/rest/api/StoreDocument", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_suppliers():
+    result = await call(vc().get("/rest/api/Suppliers", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+# ── Clinical entities ─────────────────────────────────────────────────────────
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_hospitalizations():
+    result = await call(vc().get("/rest/api/hospital", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_hospital_blocks():
+    result = await call(vc().get("/rest/api/HospitalBlock", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_diagnoses():
+    result = await call(vc().get("/rest/api/MedicalCards/AllDiagnoses", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+# ── Operational entities ──────────────────────────────────────────────────────
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_clinics():
+    result = await call(vc().get("/rest/api/clinics", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_timesheets():
+    result = await call(vc().get("/rest/api/timesheet", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_properties():
+    result = await call(vc().get("/rest/api/properties", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_anonymous_clients():
+    result = await call(vc().get("/rest/api/user/anonymousList", params={"limit": 5, "offset": 0}))
+    assert "data" in result
