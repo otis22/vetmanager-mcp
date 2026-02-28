@@ -8,8 +8,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_pets(
-        domain: str,
-        api_key: str,
         limit: int = 20,
         offset: int = 0,
         client_id: int = 0,
@@ -24,7 +22,7 @@ def register(mcp: FastMCP) -> None:
             client_id: Filter pets by owner's client ID (0 = no filter).
         """
         validate_list_params(limit, offset)
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         params: dict = {"limit": limit, "offset": offset}
         if client_id:
             params["client_id"] = client_id
@@ -32,8 +30,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_pet_by_id(
-        domain: str,
-        api_key: str,
         pet_id: int,
     ) -> dict:
         """Get a pet by its unique ID.
@@ -43,13 +39,11 @@ def register(mcp: FastMCP) -> None:
             api_key: REST API key.
             pet_id: Unique numeric ID of the pet.
         """
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         return await vc.get(f"/rest/api/pet/{pet_id}")
 
     @mcp.tool
     async def create_pet(
-        domain: str,
-        api_key: str,
         alias: str,
         client_id: int,
         type_id: int = 0,
@@ -69,7 +63,7 @@ def register(mcp: FastMCP) -> None:
             birthday: Date of birth in YYYY-MM-DD format (optional).
             note: Additional notes about the pet.
         """
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         payload: dict = {"alias": alias, "client_id": client_id}
         if type_id:
             payload["type_id"] = type_id
@@ -83,8 +77,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def update_pet(
-        domain: str,
-        api_key: str,
         pet_id: int,
         alias: str = "",
         type_id: int = 0,
@@ -104,7 +96,7 @@ def register(mcp: FastMCP) -> None:
             birthday: Date of birth in YYYY-MM-DD format (optional).
             note: Updated notes about the pet.
         """
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         payload: dict = {}
         if alias:
             payload["alias"] = alias

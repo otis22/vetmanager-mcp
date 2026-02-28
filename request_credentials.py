@@ -1,14 +1,4 @@
-"""Extract Vetmanager credentials from the current HTTP request headers.
-
-Variant A: credentials come from the client's mcp.json `headers`:
-  X-VM-Domain  — clinic subdomain
-  X-VM-Api-Key — REST API key
-
-Tools call `resolve_credentials(domain, api_key)` to merge explicit arguments
-with request-level defaults from headers.
-"""
-
-import contextlib
+"""Extract Vetmanager credentials from current HTTP request headers."""
 
 
 def _get_request_headers() -> dict[str, str]:
@@ -21,17 +11,12 @@ def _get_request_headers() -> dict[str, str]:
         return {}
 
 
-def resolve_credentials(domain: str, api_key: str) -> tuple[str, str]:
-    """Merge explicit tool arguments with request-header defaults.
+def get_request_credentials() -> tuple[str, str]:
+    """Return (domain, api_key) from X-VM-* headers.
 
-    Priority (highest first):
-      1. Explicit tool argument (non-empty string).
-      2. X-VM-Domain / X-VM-Api-Key HTTP header from mcp.json.
-
-    Returns (domain, api_key) — may still be empty strings if neither source
-    provided the value; VetmanagerClient will raise an appropriate error.
+    Values are stripped and lower-case header names are supported by Starlette.
     """
     headers = _get_request_headers()
-    resolved_domain = (domain or "").strip() or headers.get("x-vm-domain", "").strip()
-    resolved_api_key = (api_key or "").strip() or headers.get("x-vm-api-key", "").strip()
-    return resolved_domain, resolved_api_key
+    domain = headers.get("x-vm-domain", "").strip()
+    api_key = headers.get("x-vm-api-key", "").strip()
+    return domain, api_key

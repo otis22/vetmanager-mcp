@@ -8,8 +8,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_users(
-        domain: str,
-        api_key: str,
         limit: int = 20,
         offset: int = 0,
     ) -> dict:
@@ -22,13 +20,11 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset (0–10000).
         """
         validate_list_params(limit, offset)
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         return await vc.get("/rest/api/user", params={"limit": limit, "offset": offset})
 
     @mcp.tool
     async def get_user_by_id(
-        domain: str,
-        api_key: str,
         user_id: int,
     ) -> dict:
         """Get a clinic user (staff member) by their unique ID.
@@ -38,5 +34,5 @@ def register(mcp: FastMCP) -> None:
             api_key: REST API key.
             user_id: Unique numeric ID of the user.
         """
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         return await vc.get(f"/rest/api/user/{user_id}")

@@ -3,7 +3,9 @@
 import pytest
 import respx
 import httpx
+from unittest.mock import patch
 
+import request_credentials
 from vetmanager_client import VetmanagerClient
 
 DOMAIN = "testclinic"
@@ -18,7 +20,9 @@ def billing_mock():
 
 
 def client(domain=DOMAIN, api_key=API_KEY):
-    return VetmanagerClient(domain, api_key)
+    headers = {"x-vm-domain": domain, "x-vm-api-key": api_key}
+    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
+        return VetmanagerClient()
 
 
 # ── Client tools ─────────────────────────────────────────────────────────────

@@ -8,8 +8,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_clients(
-        domain: str,
-        api_key: str,
         limit: int = 20,
         offset: int = 0,
         name: str = "",
@@ -24,7 +22,7 @@ def register(mcp: FastMCP) -> None:
             name: Filter by client name (partial match).
         """
         validate_list_params(limit, offset)
-        client = VetmanagerClient(domain, api_key)
+        client = VetmanagerClient()
         params: dict = {"limit": limit, "offset": offset}
         if name:
             params["name"] = name
@@ -32,8 +30,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_client_by_id(
-        domain: str,
-        api_key: str,
         client_id: int,
     ) -> dict:
         """Get a clinic client by their unique ID.
@@ -43,13 +39,11 @@ def register(mcp: FastMCP) -> None:
             api_key: REST API key.
             client_id: Unique numeric ID of the client.
         """
-        client = VetmanagerClient(domain, api_key)
+        client = VetmanagerClient()
         return await client.get(f"/rest/api/client/{client_id}")
 
     @mcp.tool
     async def create_client(
-        domain: str,
-        api_key: str,
         first_name: str,
         last_name: str,
         phone: str = "",
@@ -65,7 +59,7 @@ def register(mcp: FastMCP) -> None:
             phone: Contact phone number.
             email: Contact email address.
         """
-        client = VetmanagerClient(domain, api_key)
+        client = VetmanagerClient()
         payload: dict = {"firstName": first_name, "lastName": last_name}
         if phone:
             payload["phone"] = phone
@@ -75,8 +69,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def update_client(
-        domain: str,
-        api_key: str,
         client_id: int,
         first_name: str = "",
         last_name: str = "",
@@ -94,7 +86,7 @@ def register(mcp: FastMCP) -> None:
             phone: New phone number.
             email: New email address.
         """
-        client = VetmanagerClient(domain, api_key)
+        client = VetmanagerClient()
         payload: dict = {}
         if first_name:
             payload["firstName"] = first_name

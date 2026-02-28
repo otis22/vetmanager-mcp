@@ -8,8 +8,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_admissions(
-        domain: str,
-        api_key: str,
         limit: int = 20,
         offset: int = 0,
         date: str = "",
@@ -24,7 +22,7 @@ def register(mcp: FastMCP) -> None:
             date: Filter by date in YYYY-MM-DD format (optional).
         """
         validate_list_params(limit, offset)
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         params: dict = {"limit": limit, "offset": offset}
         if date:
             params["date"] = date
@@ -32,8 +30,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_admission_by_id(
-        domain: str,
-        api_key: str,
         admission_id: int,
     ) -> dict:
         """Get an admission (visit/appointment) by its unique ID.
@@ -43,13 +39,11 @@ def register(mcp: FastMCP) -> None:
             api_key: REST API key.
             admission_id: Unique numeric ID of the admission.
         """
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         return await vc.get(f"/rest/api/admission/{admission_id}")
 
     @mcp.tool
     async def create_admission(
-        domain: str,
-        api_key: str,
         pet_id: int,
         client_id: int,
         doctor_id: int,
@@ -67,7 +61,7 @@ def register(mcp: FastMCP) -> None:
             date: Appointment date/time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS).
             reason: Reason for the visit (optional).
         """
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         payload: dict = {
             "pet_id": pet_id,
             "client_id": client_id,
@@ -80,8 +74,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def update_admission(
-        domain: str,
-        api_key: str,
         admission_id: int,
         date: str = "",
         doctor_id: int = 0,
@@ -99,7 +91,7 @@ def register(mcp: FastMCP) -> None:
             reason: Updated reason for the visit.
             status: New status value (e.g. 'assigned', 'accepted', 'booked', 'canceled').
         """
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         payload: dict = {}
         if date:
             payload["date"] = date

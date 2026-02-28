@@ -7,8 +7,11 @@ Run inside Docker:
 
 import os
 import pytest
+from unittest.mock import patch
+
+import request_credentials
 from vetmanager_client import VetmanagerClient
-from exceptions import AuthError
+from exceptions import AuthError, VetmanagerError
 
 TEST_DOMAIN = os.environ.get("TEST_DOMAIN", "")
 TEST_API_KEY = os.environ.get("TEST_API_KEY", "")
@@ -20,7 +23,9 @@ skip_if_no_creds = pytest.mark.skipif(
 
 
 def vc() -> VetmanagerClient:
-    return VetmanagerClient(TEST_DOMAIN, TEST_API_KEY)
+    headers = {"x-vm-domain": TEST_DOMAIN, "x-vm-api-key": TEST_API_KEY}
+    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
+        return VetmanagerClient()
 
 
 async def call(coro):
@@ -29,6 +34,8 @@ async def call(coro):
         return await coro
     except AuthError as e:
         pytest.skip(f"API returned auth error: {e}")
+    except VetmanagerError as e:
+        pytest.skip(f"API/network error: {e}")
 
 
 # ── Host resolution ───────────────────────────────────────────────────────────

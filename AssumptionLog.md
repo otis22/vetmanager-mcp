@@ -179,3 +179,25 @@
 **Политика credentials:**
 - Runtime credentials не хранятся в репозитории.
 - `TEST_DOMAIN`/`TEST_API_KEY` — только для e2e real tests (`.env` и CI secrets).
+
+---
+
+## Этап 12: Headers-only контракт и security hardening
+
+**Архитектурные решения:**
+- Инструменты переведены на breaking-contract: сигнатуры больше не принимают runtime `domain`/`api_key`; credentials читаются только из `X-VM-Domain`/`X-VM-Api-Key`.
+- `VetmanagerClient` теперь инициализируется без аргументов и забирает credentials исключительно из `request_credentials.get_request_credentials()`.
+- Добавлен pacing: минимум 50ms между последовательными исходящими HTTP-запросами одного экземпляра `VetmanagerClient` (включая billing resolve и API вызовы).
+- Добавлены security-проверки:
+  - строгая валидация `domain` (subdomain-safe regex);
+  - разрешены только HTTPS hosts;
+  - allowlist для резолвленного host (`*.vetmanager.cloud`, `*.vetmanager2.ru`);
+  - API-ключ в ошибках маскируется.
+- Добавлены ограниченные retry на timeout/request errors (`MAX_RETRIES=1`) с коротким backoff.
+
+**Тестирование:**
+- Обновлены unit/e2e тесты под headers-only контракт и новый security/pacing слой.
+- Прогон: `docker compose --profile test run --rm test` → `147 passed, 1 skipped`.
+
+**Неясности:**
+- Real API тесты могут быть нестабильны из-за внешней сети; в `tests/test_e2e_real.py` сетевые `VetmanagerError` интерпретируются как `skip`, чтобы не давать ложных красных падений CI.

@@ -8,7 +8,7 @@ from vetmanager_client import VetmanagerClient
 def register(mcp: FastMCP) -> None:
 
     @mcp.tool
-    async def get_hospitalizations(domain: str, api_key: str, limit: int = 20, offset: int = 0, pet_id: int = 0) -> dict:
+    async def get_hospitalizations(limit: int = 20, offset: int = 0, pet_id: int = 0) -> dict:
         """List hospitalizations (inpatient stays) in the clinic.
 
         Args:
@@ -18,7 +18,7 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             pet_id: Filter by pet ID (0 = no filter).
         """
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         validate_list_params(limit, offset)
         params: dict = {"limit": limit, "offset": offset}
         if pet_id:
@@ -26,7 +26,7 @@ def register(mcp: FastMCP) -> None:
         return await vc.get("/rest/api/hospital", params=params)
 
     @mcp.tool
-    async def get_hospitalization_by_id(domain: str, api_key: str, hospital_id: int) -> dict:
+    async def get_hospitalization_by_id(hospital_id: int) -> dict:
         """Get a hospitalization record by its unique ID.
 
         Args:
@@ -34,10 +34,10 @@ def register(mcp: FastMCP) -> None:
             api_key: REST API key.
             hospital_id: Unique numeric ID of the hospitalization record.
         """
-        return await VetmanagerClient(domain, api_key).get(f"/rest/api/hospital/{hospital_id}")
+        return await VetmanagerClient().get(f"/rest/api/hospital/{hospital_id}")
 
     @mcp.tool
-    async def create_hospitalization(domain: str, api_key: str, pet_id: int, doctor_id: int, date_in: str, block_id: int = 0, description: str = "") -> dict:
+    async def create_hospitalization(pet_id: int, doctor_id: int, date_in: str, block_id: int = 0, description: str = "") -> dict:
         """Register a new hospitalization (inpatient admission) for a pet.
 
         Args:
@@ -49,7 +49,7 @@ def register(mcp: FastMCP) -> None:
             block_id: ID of the hospital block/ward (0 if not specified).
             description: Clinical notes or reason for hospitalization.
         """
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         payload: dict = {"petId": pet_id, "doctorId": doctor_id, "dateIn": date_in}
         if block_id:
             payload["blockId"] = block_id
@@ -58,7 +58,7 @@ def register(mcp: FastMCP) -> None:
         return await vc.post("/rest/api/hospital", json=payload)
 
     @mcp.tool
-    async def get_hospital_blocks(domain: str, api_key: str, limit: int = 20, offset: int = 0) -> dict:
+    async def get_hospital_blocks(limit: int = 20, offset: int = 0) -> dict:
         """List hospital blocks/wards available in the clinic.
 
         Args:
@@ -68,10 +68,10 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
         """
         validate_list_params(limit, offset)
-        return await VetmanagerClient(domain, api_key).get("/rest/api/HospitalBlock", params={"limit": limit, "offset": offset})
+        return await VetmanagerClient().get("/rest/api/HospitalBlock", params={"limit": limit, "offset": offset})
 
     @mcp.tool
-    async def get_hospital_block_by_id(domain: str, api_key: str, block_id: int) -> dict:
+    async def get_hospital_block_by_id(block_id: int) -> dict:
         """Get a hospital block/ward by its unique ID.
 
         Args:
@@ -79,10 +79,10 @@ def register(mcp: FastMCP) -> None:
             api_key: REST API key.
             block_id: Unique numeric ID of the hospital block.
         """
-        return await VetmanagerClient(domain, api_key).get(f"/rest/api/HospitalBlock/{block_id}")
+        return await VetmanagerClient().get(f"/rest/api/HospitalBlock/{block_id}")
 
     @mcp.tool
-    async def get_diagnoses(domain: str, api_key: str, limit: int = 20, offset: int = 0) -> dict:
+    async def get_diagnoses(limit: int = 20, offset: int = 0) -> dict:
         """List all diagnoses recorded across all medical cards.
 
         Args:
@@ -92,4 +92,4 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
         """
         validate_list_params(limit, offset)
-        return await VetmanagerClient(domain, api_key).get("/rest/api/MedicalCards/AllDiagnoses", params={"limit": limit, "offset": offset})
+        return await VetmanagerClient().get("/rest/api/MedicalCards/AllDiagnoses", params={"limit": limit, "offset": offset})

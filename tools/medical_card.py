@@ -8,8 +8,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_medical_cards(
-        domain: str,
-        api_key: str,
         pet_id: int,
         limit: int = 20,
         offset: int = 0,
@@ -24,14 +22,12 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset (0–10000).
         """
         validate_list_params(limit, offset)
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         params: dict = {"pet_id": pet_id, "limit": limit, "offset": offset}
         return await vc.get("/rest/api/medicalcard", params=params)
 
     @mcp.tool
     async def get_medical_card_by_id(
-        domain: str,
-        api_key: str,
         card_id: int,
     ) -> dict:
         """Get a medical card record by its unique ID.
@@ -41,13 +37,11 @@ def register(mcp: FastMCP) -> None:
             api_key: REST API key.
             card_id: Unique numeric ID of the medical card record.
         """
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         return await vc.get(f"/rest/api/medicalcard/{card_id}")
 
     @mcp.tool
     async def create_medical_card(
-        domain: str,
-        api_key: str,
         pet_id: int,
         doctor_id: int,
         date: str,
@@ -67,7 +61,7 @@ def register(mcp: FastMCP) -> None:
             diagnosis: Diagnosis text (optional).
             treatment: Prescribed treatment (optional).
         """
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         payload: dict = {
             "pet_id": pet_id,
             "doctor_id": doctor_id,
@@ -82,8 +76,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def update_medical_card(
-        domain: str,
-        api_key: str,
         card_id: int,
         description: str = "",
         diagnosis: str = "",
@@ -99,7 +91,7 @@ def register(mcp: FastMCP) -> None:
             diagnosis: Updated diagnosis text.
             treatment: Updated treatment notes.
         """
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         payload: dict = {}
         if description:
             payload["description"] = description

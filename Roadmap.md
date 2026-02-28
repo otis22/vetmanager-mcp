@@ -227,3 +227,16 @@
 - 11.7 Обновить `README.md`: пример `mcp.json` с headers, правила тестового контура — `done`
 - 11.8 Зафиксировать решение в `AssumptionLog.md` — `done`
 
+---
+
+## Этап 12. Headers-only и security hardening (после Этапа 11) — `done`
+
+Цель: перейти на строгий runtime-контракт только через HTTP headers, удалить `domain`/`api_key` из сигнатур инструментов, усилить безопасность и добавить pacing исходящих HTTP-запросов к Vetmanager API.
+
+- 12.1 Обновить Workplan/PRD-артефакты под headers-only контракт (включая `artifacts/prd-vetmanager-mcp-ru.md`) — `done`
+- 12.2 Перевести инструменты на сигнатуры без `domain`/`api_key` (breaking change для старых клиентов) — `done`
+- 12.3 Обновить `VetmanagerClient`: credentials только из headers, 50ms wait между HTTP-запросами, сетевой retry/timeout hardening — `done`
+- 12.4 Внедрить security-ограничения: строгая валидация `domain`, HTTPS + allowlist для резолвленного host, маскирование секретов в ошибках/логах — `done`
+- 12.5 Обновить/починить тесты (unit + e2e mock + e2e real) под новый контракт — `done`
+- 12.6 Обновить README и зафиксировать решения в `AssumptionLog.md` — `done`
+

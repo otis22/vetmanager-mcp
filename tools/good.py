@@ -8,8 +8,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_goods(
-        domain: str,
-        api_key: str,
         limit: int = 20,
         offset: int = 0,
         name: str = "",
@@ -24,7 +22,7 @@ def register(mcp: FastMCP) -> None:
             name: Filter by good name (partial match, optional).
         """
         validate_list_params(limit, offset)
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         params: dict = {"limit": limit, "offset": offset}
         if name:
             params["name"] = name
@@ -32,8 +30,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_good_by_id(
-        domain: str,
-        api_key: str,
         good_id: int,
     ) -> dict:
         """Get a good (product or service) by its unique ID.
@@ -43,5 +39,5 @@ def register(mcp: FastMCP) -> None:
             api_key: REST API key.
             good_id: Unique numeric ID of the good.
         """
-        vc = VetmanagerClient(domain, api_key)
+        vc = VetmanagerClient()
         return await vc.get(f"/rest/api/good/{good_id}")
