@@ -134,3 +134,48 @@
 - DELETE не реализован ни для одной сущности — API Vetmanager редко допускает удаление данных через REST; при необходимости добавляется тем же паттерном через `vc.delete(...)`.
 - PUT (update) для Invoice, Good, User — не реализован; эти сущности обычно управляются через специализированные workflow (InvoiceDocument, GoodSaleParam).
 - CityType, Diagnoses, Properties, AnonymousClient — только GET list (нет GET by id в публичном API согласно `api_entity_reference-ru.md`).
+
+---
+
+## Этап 9: Локальный prod-like MCP через localhost
+
+**Архитектурные решения:**
+- `server.py` переведён на HTTP transport (`streamable-http`) с конфигурацией через env: `MCP_TRANSPORT`, `MCP_HOST`, `MCP_PATH`, `PORT`.
+- `docker-compose.yml` публикует порт `${PORT}` и пробрасывает env для host-based MCP.
+- Добавлен fallback credentials в `VetmanagerClient`: если `domain`/`api_key` пустые, используются `VETMANAGER_DOMAIN`/`VETMANAGER_API_KEY`.
+- Cursor переключён на host-based конфиг: `http://localhost:8000/mcp`.
+
+**Проверка подключения:**
+- MCP по `localhost` успешно отвечает, клиент FastMCP получает список инструментов (`tools: 78`).
+
+**Проверка сценария «топ-5 должников»:**
+- Для домена `devttr6` billing API вернул ошибку резолва хоста (`500`) — вероятно, домен не существует/опечатка.
+- Для домена `devtr6` с ключом `e2a41b0770304ea873f69d362688a309` API вернул `Invalid or missing API key`.
+
+**Итог:**
+- Технически локальное host-based подключение Cursor/MCP готово.
+- Для получения реального списка должников нужен валидный `domain` и активный API-ключ.
+
+---
+
+## Этап 11: Реализация Variant A — credentials через HTTP headers
+
+**Архитектурные решения:**
+- `VetmanagerClient.__init__` больше не читает `VETMANAGER_DOMAIN`/`VETMANAGER_API_KEY` из `os.environ`.
+- Создан модуль `request_credentials.py` с `resolve_credentials(domain, api_key)`:
+  - Читает HTTP-заголовки `X-VM-Domain` / `X-VM-Api-Key` через `fastmcp.server.dependencies.get_http_request()`.
+  - При пустых env и пустых headers клиент бросает ошибку сразу.
+- Приоритет credentials: явный аргумент инструмента → HTTP header → ошибка.
+- `docker-compose.yml` больше не передаёт runtime credentials в контейнер.
+- `~/.cursor/mcp.json` обновлён: `url` + `headers` с `X-VM-Domain`/`X-VM-Api-Key`.
+
+**Тесты:**
+- Добавлены 5 unit-тестов в `test_client_multitenancy.py` для Variant A поведения.
+- Все 107 тестов проходят.
+
+**Допущение:**
+- `get_http_request()` возвращает `RuntimeError` вне HTTP-контекста (stdio, тесты); `resolve_credentials` перехватывает это и возвращает пустые строки — VetmanagerClient тогда бросает ошибку с понятным сообщением.
+
+**Политика credentials:**
+- Runtime credentials не хранятся в репозитории.
+- `TEST_DOMAIN`/`TEST_API_KEY` — только для e2e real tests (`.env` и CI secrets).

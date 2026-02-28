@@ -166,3 +166,64 @@
 - 7.4 Убедиться, что все инструменты покрыты тестами (unit + e2e) — `done` (37 passed)
 - 7.5 Зафиксировать итоговую матрицу покрытия (сущность × операция) в `AssumptionLog.md` — `done`
 
+---
+
+## Этап 9. Локальный prod-like MCP через localhost (после Этапа 8) — `done`
+
+Цель: подключать Cursor к MCP как к отдельному хосту (`localhost`), как в будущей публичной схеме.
+
+- 9.1 Перевести сервер на HTTP transport для локального host-based подключения (`localhost`) — `done`
+- 9.2 Настроить `docker-compose` с портом и переменными окружения для дефолтных credentials — `done`
+- 9.3 Добавить fallback credentials (`VETMANAGER_DOMAIN`/`VETMANAGER_API_KEY`) при пустых параметрах инструмента — `done`
+- 9.4 Обновить Cursor MCP config на host-based подключение (`http://localhost:8000/mcp`) — `done`
+- 9.5 Проверить сценарий «топ-5 должников» через MCP и зафиксировать результат — `done`
+
+---
+
+## Этап 10. Variant A: конфигурация credentials через `mcp.json` headers (документация и задачи) — `done`
+
+Цель: зафиксировать целевую схему, где `domain`/`api_key` приходят из клиентского `mcp.json` (`url` + `headers`), а в проекте хранятся только тестовые credentials для e2e.
+
+- 10.1 Зафиксировать в Roadmap целевой формат `~/.cursor/mcp.json` (Variant A: `url` + `headers`) — `done`
+- 10.2 Зафиксировать правило: runtime credentials не хранятся в репозитории и не задаются проектным `.env` для рабочего контура — `done`
+- 10.3 Зафиксировать правило: `TEST_DOMAIN`/`TEST_API_KEY` используются только в e2e real tests — `done`
+- 10.4 Создать PRD-задачу этапа 10 с декомпозицией (без кодовых работ в этом проходе) — `done`
+- 10.5 Добавить отдельную задачу на обновление `README.md` под Variant A (пример `mcp.json`, границы тестового контура) — `done`
+- 10.6 Проверить согласованность формулировок между `Roadmap.md`, `artifacts/prd-vetmanager-mcp-ru.md` и PRD-задачами этапа 10 — `done`
+
+### Зафиксированные правила Variant A
+
+Целевой формат `~/.cursor/mcp.json` для подключения к серверу:
+
+```json
+{
+  "mcpServers": {
+    "vetmanager": {
+      "url": "http://<host>:8000/mcp",
+      "headers": {
+        "X-VM-Domain": "<clinic-subdomain>",
+        "X-VM-Api-Key": "<rest-api-key>"
+      }
+    }
+  }
+}
+```
+
+Правила:
+- Runtime credentials (`domain`/`api_key`) **не хранятся** в репозитории и не задаются в проектном `.env` в рабочем контуре.
+- Каждый пользователь приносит свои credentials через `headers` в `mcp.json`.
+- `TEST_DOMAIN`/`TEST_API_KEY` используются **только** в e2e real tests и задаются через локальный `.env` или CI secrets.
+
+## Этап 11. Реализация Variant A: код, тесты, README — `done`
+
+Цель: реализовать поддержку credentials через HTTP headers в MCP-сервере (Variant A).
+
+- 11.1 Убрать env-fallback для runtime credentials из `VetmanagerClient` — `done`
+- 11.2 Добавить чтение `X-VM-Domain` и `X-VM-Api-Key` из HTTP headers (`request_credentials.py`) — `done`
+- 11.3 Убрать `VETMANAGER_DOMAIN`/`VETMANAGER_API_KEY` из runtime-окружения `docker-compose.yml` и `.env.example` — `done`
+- 11.4 Обновить `vetmanager_client.py`: без env-fallback; при пустых credentials — явная ошибка — `done`
+- 11.5 Обновить инструкции и description в `server.py` под Variant A — `done`
+- 11.6 Написать/обновить тесты: без credentials → ошибка; с credentials в args → OK; `TEST_*` только в real e2e — `done` (107 passed)
+- 11.7 Обновить `README.md`: пример `mcp.json` с headers, правила тестового контура — `done`
+- 11.8 Зафиксировать решение в `AssumptionLog.md` — `done`
+

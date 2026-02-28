@@ -28,6 +28,51 @@ docker compose run --rm test
 docker compose run --rm -e TEST_DOMAIN=<домен> -e TEST_API_KEY=<ключ> test
 ```
 
+## Подключение Cursor (Variant A: credentials via headers)
+
+Сервер не хранит runtime credentials. Каждый пользователь указывает свои `domain` и `api_key` в `~/.cursor/mcp.json` через блок `headers`.
+
+### Шаг 1 — запустить сервер
+
+```bash
+cp .env.example .env          # задайте UID/GID и LOG_LEVEL при необходимости
+docker compose up -d mcp
+```
+
+### Шаг 2 — настроить `~/.cursor/mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "vetmanager": {
+      "url": "http://localhost:8000/mcp",
+      "headers": {
+        "X-VM-Domain": "myclinic",
+        "X-VM-Api-Key": "your-rest-api-key"
+      }
+    }
+  }
+}
+```
+
+- `X-VM-Domain` — субдомен клиники (e.g. `myclinic` → `myclinic.vetmanager2.ru`).
+- `X-VM-Api-Key` — REST API ключ из **Vetmanager → Настройки → Интеграция → Rest API**.
+
+### Политика credentials
+
+| Контекст | Где берутся credentials |
+|----------|------------------------|
+| Cursor / Claude | `~/.cursor/mcp.json` → `headers` |
+| Явный аргумент инструмента | параметры `domain` / `api_key` (приоритет над headers) |
+| e2e real tests | `TEST_DOMAIN` / `TEST_API_KEY` в `.env` или CI secrets |
+| Проектный `.env` (runtime) | **не используется** — runtime credentials в репозитории не хранятся |
+
+### Тест подключения
+
+После запуска сервера и настройки `mcp.json` в чате Cursor попросите:
+
+> «Покажи список клиентов клиники» — инструмент `get_clients` вызовется с credentials из headers.
+
 ## Деплой на сервер
 
 Предусловие: `ssh-copy-id user@host` выполнен.
@@ -49,7 +94,8 @@ docker compose run --rm -e TEST_DOMAIN=<домен> -e TEST_API_KEY=<ключ> t
 
 ## MCP-инструменты
 
-Каждый инструмент принимает `domain` и `api_key` как обязательные параметры.
+Каждый инструмент принимает опциональные параметры `domain` и `api_key` (для override per-call).
+По умолчанию credentials берутся из HTTP-заголовков `X-VM-Domain` / `X-VM-Api-Key` (mcp.json).
 Параметры `limit` (1–100) и `offset` (0–10 000) защищены от случайных массовых выборок.
 
 **75 инструментов** по 12 группам сущностей:

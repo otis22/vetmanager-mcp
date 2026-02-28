@@ -8,12 +8,12 @@ services:
     image: vetmanager-mcp
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    stdin_open: true
-    tty: true
-    # MCP runs over stdio — no ports needed for local use.
-    # For HTTP transport, uncomment:
-    # ports:
-    #   - "8000:8000"
+      MCP_TRANSPORT: ${MCP_TRANSPORT:-streamable-http}
+      MCP_HOST: ${MCP_HOST:-0.0.0.0}
+      MCP_PATH: ${MCP_PATH:-/mcp}
+      PORT: ${PORT:-8000}
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
     volumes:
       - .:/app
     user: "${UID:-1000}:${GID:-1000}"

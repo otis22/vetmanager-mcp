@@ -10,6 +10,7 @@ from exceptions import (
     VetmanagerError,
     VetmanagerTimeoutError,
 )
+from request_credentials import resolve_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +23,26 @@ class VetmanagerClient:
 
     Each instance is bound to a specific (domain, api_key) pair,
     enabling multi-tenant usage: create a new instance per request.
+
+    Credentials priority:
+      1. Explicit constructor arguments (non-empty).
+      2. X-VM-Domain / X-VM-Api-Key HTTP headers from the current MCP request
+         (set via mcp.json `headers` block — Variant A).
     """
 
     def __init__(self, domain: str, api_key: str) -> None:
-        self._domain = domain
-        self._api_key = api_key
+        self._domain, self._api_key = resolve_credentials(domain, api_key)
+        if not self._domain:
+            raise VetmanagerError(
+                "Missing Vetmanager domain. Pass 'domain' tool argument "
+                "or set X-VM-Domain header in your mcp.json."
+            )
+        if not self._api_key:
+            raise AuthError(
+                "Missing Vetmanager API key. Pass 'api_key' tool argument "
+                "or set X-VM-Api-Key header in your mcp.json.",
+                status_code=401,
+            )
         self._base_url: str | None = None
 
     async def _resolve_host(self) -> str:

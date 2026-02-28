@@ -12,9 +12,11 @@ logging.basicConfig(
 mcp = FastMCP(
     name="vetmanager",
     instructions=(
-        "Vetmanager MCP Server. Each tool requires 'domain' and 'api_key' parameters "
-        "so the server can connect to the correct clinic instance. "
-        "domain — subdomain of the clinic (e.g. 'myclinic'), "
+        "Vetmanager MCP Server. "
+        "Credentials are provided via X-VM-Domain and X-VM-Api-Key HTTP headers "
+        "configured in your mcp.json (Variant A). "
+        "Tools also accept optional 'domain' and 'api_key' arguments to override headers per call. "
+        "domain — clinic subdomain (e.g. 'myclinic'), "
         "api_key — REST API key from Vetmanager Settings → Integration → Rest API."
     ),
 )
@@ -26,4 +28,8 @@ register_all(mcp)
 register_prompts(mcp)
 
 if __name__ == "__main__":
-    mcp.run()
+    transport = os.environ.get("MCP_TRANSPORT", "streamable-http")
+    host = os.environ.get("MCP_HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "8000"))
+    path = os.environ.get("MCP_PATH", "/mcp")
+    mcp.run(transport=transport, host=host, port=port, path=path)

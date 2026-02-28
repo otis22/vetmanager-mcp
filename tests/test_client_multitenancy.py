@@ -1,11 +1,13 @@
-"""Unit tests: VetmanagerClient multi-tenancy and independence."""
+"""Unit tests: VetmanagerClient multi-tenancy and Variant A credentials."""
 
 import pytest
 import respx
 import httpx
+from unittest.mock import patch
 
 from vetmanager_client import VetmanagerClient
-from exceptions import AuthError, NotFoundError, VetmanagerTimeoutError
+from exceptions import AuthError, NotFoundError, VetmanagerError, VetmanagerTimeoutError
+import request_credentials
 
 
 def make_host_response(url: str) -> dict:
@@ -139,3 +141,45 @@ async def test_api_key_sent_in_header():
 
     assert captured_request is not None
     assert captured_request.headers["X-REST-API-KEY"] == "my-secret-key"
+
+
+# ── Variant A: credentials from headers ───────────────────────────────────────
+
+def test_empty_domain_raises_error():
+    """VetmanagerClient must raise VetmanagerError immediately when domain is empty."""
+    with patch.object(request_credentials, "_get_request_headers", return_value={}):
+        with pytest.raises(VetmanagerError, match="domain"):
+            VetmanagerClient("", "some-key")
+
+
+def test_empty_api_key_raises_error():
+    """VetmanagerClient must raise AuthError immediately when api_key is empty."""
+    with patch.object(request_credentials, "_get_request_headers", return_value={}):
+        with pytest.raises(AuthError, match="API key"):
+            VetmanagerClient("somedomain", "")
+
+
+def test_credentials_from_headers():
+    """VetmanagerClient must use X-VM-Domain / X-VM-Api-Key headers when args are empty."""
+    fake_headers = {"x-vm-domain": "header-clinic", "x-vm-api-key": "header-key"}
+    with patch.object(request_credentials, "_get_request_headers", return_value=fake_headers):
+        vc = VetmanagerClient("", "")
+        assert vc._domain == "header-clinic"
+        assert vc._api_key == "header-key"
+
+
+def test_explicit_args_override_headers():
+    """Explicit tool args must override HTTP headers."""
+    fake_headers = {"x-vm-domain": "header-clinic", "x-vm-api-key": "header-key"}
+    with patch.object(request_credentials, "_get_request_headers", return_value=fake_headers):
+        vc = VetmanagerClient("explicit-clinic", "explicit-key")
+        assert vc._domain == "explicit-clinic"
+        assert vc._api_key == "explicit-key"
+
+
+def test_resolve_credentials_no_headers_no_args():
+    """resolve_credentials returns empty strings when no source provides credentials."""
+    with patch.object(request_credentials, "_get_request_headers", return_value={}):
+        domain, api_key = request_credentials.resolve_credentials("", "")
+        assert domain == ""
+        assert api_key == ""
