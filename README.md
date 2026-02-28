@@ -96,6 +96,31 @@ docker compose up -d mcp
 
 Инструменты работают по headers-only контракту: runtime credentials берутся только из HTTP-заголовков `X-VM-Domain` / `X-VM-Api-Key` (mcp.json). Параметры `limit` (1–100) и `offset` (0–10 000) защищены от случайных массовых выборок.
 
+### Универсальные sort/filter для list GET
+
+Во всех list `get_*` инструментах поддерживаются дополнительные параметры:
+
+- `sort`: массив объектов `{"property":"<field>","direction":"ASC|DESC"}`
+- `filter`: массив объектов `{"property":"<field>","value":<value>,"operator":"<op>"}`
+
+Поддерживаемые операторы фильтра:
+
+- `=`, `!=`, `<>`
+- `<`, `<=`, `>`, `>=`
+- `in`, `not in` (`value` должен быть массивом)
+- `like`
+
+Пример:
+
+```json
+{
+  "limit": 20,
+  "offset": 0,
+  "sort": [{"property": "id", "direction": "DESC"}],
+  "filter": [{"property": "id", "value": 10, "operator": ">="}]
+}
+```
+
 ### Кеширование GET-запросов
 
 - Все успешные GET-запросы к Vetmanager API кешируются in-memory на **15 минут**.

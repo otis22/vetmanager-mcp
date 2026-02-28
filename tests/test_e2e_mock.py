@@ -925,3 +925,23 @@ async def test_500_raises_vetmanager_error():
     respx.get(f"{BASE}/rest/api/client").mock(return_value=httpx.Response(500, text="Server error"))
     with pytest.raises(VetmanagerError):
         await client().get("/rest/api/client")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_clients_with_sort_and_filter_params():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/client").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": 1, "firstName": "Anna"}]})
+    )
+    params = {
+        "limit": 10,
+        "offset": 0,
+        "sort": '[{"property":"title","direction":"ASC"}]',
+        "filter": '[{"property":"title","value":"some value","operator":"like"}]',
+    }
+    result = await client().get("/rest/api/client", params=params)
+    assert result["data"][0]["id"] == 1
+    request = route.calls.last.request
+    assert request.url.params.get("sort") == params["sort"]
+    assert request.url.params.get("filter") == params["filter"]

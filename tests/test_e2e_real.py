@@ -132,6 +132,20 @@ async def test_real_get_clients_pagination():
 
 @skip_if_no_creds
 @pytest.mark.asyncio
+async def test_real_get_clients_with_sort_filter():
+    """Smoke test for sort/filter support on list GET."""
+    params = {
+        "limit": 3,
+        "offset": 0,
+        "sort": '[{"property":"id","direction":"DESC"}]',
+        "filter": '[{"property":"id","value":1,"operator":">="}]',
+    }
+    result = await call(vc().get("/rest/api/client", params=params))
+    assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
 async def test_real_nonexistent_client_raises():
     """Requesting a non-existent client must raise NotFoundError."""
     from exceptions import NotFoundError

@@ -1,6 +1,6 @@
 from fastmcp import FastMCP
 
-from validators import validate_list_params
+from validators import build_list_query_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -11,6 +11,8 @@ def register(mcp: FastMCP) -> None:
         limit: int = 20,
         offset: int = 0,
         name: str = "",
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
     ) -> dict:
         """List goods (products/services) in the clinic catalog.
 
@@ -21,11 +23,14 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset (0–10000).
             name: Filter by good name (partial match, optional).
         """
-        validate_list_params(limit, offset)
         vc = VetmanagerClient()
-        params: dict = {"limit": limit, "offset": offset}
-        if name:
-            params["name"] = name
+        params = build_list_query_params(
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=filter,
+            extra={"name": name},
+        )
         return await vc.get("/rest/api/good", params=params)
 
     @mcp.tool

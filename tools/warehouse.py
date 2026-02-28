@@ -2,14 +2,19 @@
 PartyAccountDoc, StoreDocument, Suppliers."""
 
 from fastmcp import FastMCP
-from validators import validate_list_params
+from validators import build_list_query_params
 from vetmanager_client import VetmanagerClient
 
 
 def register(mcp: FastMCP) -> None:
 
     @mcp.tool
-    async def get_good_groups(limit: int = 20, offset: int = 0) -> dict:
+    async def get_good_groups(
+        limit: int = 20,
+        offset: int = 0,
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
+    ) -> dict:
         """List product/service groups in the clinic catalog.
 
         Args:
@@ -18,8 +23,8 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        validate_list_params(limit, offset)
-        return await VetmanagerClient().get("/rest/api/GoodGroup", params={"limit": limit, "offset": offset})
+        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
+        return await VetmanagerClient().get("/rest/api/GoodGroup", params=params)
 
     @mcp.tool
     async def get_good_group_by_id(group_id: int) -> dict:
@@ -33,7 +38,13 @@ def register(mcp: FastMCP) -> None:
         return await VetmanagerClient().get(f"/rest/api/GoodGroup/{group_id}")
 
     @mcp.tool
-    async def get_good_sale_params(good_id: int, limit: int = 20, offset: int = 0) -> dict:
+    async def get_good_sale_params(
+        good_id: int,
+        limit: int = 20,
+        offset: int = 0,
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
+    ) -> dict:
         """List sale parameters (pricing, units) for a specific good/service.
 
         Args:
@@ -43,9 +54,15 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        validate_list_params(limit, offset)
         vc = VetmanagerClient()
-        return await vc.get("/rest/api/goodSaleParam", params={"goodId": good_id, "limit": limit, "offset": offset})
+        params = build_list_query_params(
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=filter,
+            extra={"goodId": good_id},
+        )
+        return await vc.get("/rest/api/goodSaleParam", params=params)
 
     @mcp.tool
     async def get_good_sale_param_by_id(param_id: int) -> dict:
@@ -59,7 +76,12 @@ def register(mcp: FastMCP) -> None:
         return await VetmanagerClient().get(f"/rest/api/goodSaleParam/{param_id}")
 
     @mcp.tool
-    async def get_party_accounts(limit: int = 20, offset: int = 0) -> dict:
+    async def get_party_accounts(
+        limit: int = 20,
+        offset: int = 0,
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
+    ) -> dict:
         """List inventory batch (party) accounts.
 
         Args:
@@ -68,8 +90,8 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        validate_list_params(limit, offset)
-        return await VetmanagerClient().get("/rest/api/PartyAccount", params={"limit": limit, "offset": offset})
+        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
+        return await VetmanagerClient().get("/rest/api/PartyAccount", params=params)
 
     @mcp.tool
     async def get_party_account_by_id(party_id: int) -> dict:
@@ -83,7 +105,12 @@ def register(mcp: FastMCP) -> None:
         return await VetmanagerClient().get(f"/rest/api/PartyAccount/{party_id}")
 
     @mcp.tool
-    async def get_party_account_docs(limit: int = 20, offset: int = 0) -> dict:
+    async def get_party_account_docs(
+        limit: int = 20,
+        offset: int = 0,
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
+    ) -> dict:
         """List documents associated with inventory batch accounts.
 
         Args:
@@ -92,8 +119,8 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        validate_list_params(limit, offset)
-        return await VetmanagerClient().get("/rest/api/PartyAccountDoc", params={"limit": limit, "offset": offset})
+        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
+        return await VetmanagerClient().get("/rest/api/PartyAccountDoc", params=params)
 
     @mcp.tool
     async def get_party_account_doc_by_id(doc_id: int) -> dict:
@@ -107,7 +134,12 @@ def register(mcp: FastMCP) -> None:
         return await VetmanagerClient().get(f"/rest/api/PartyAccountDoc/{doc_id}")
 
     @mcp.tool
-    async def get_store_documents(limit: int = 20, offset: int = 0) -> dict:
+    async def get_store_documents(
+        limit: int = 20,
+        offset: int = 0,
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
+    ) -> dict:
         """List warehouse/store documents (receipts, write-offs, transfers).
 
         Args:
@@ -116,8 +148,8 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        validate_list_params(limit, offset)
-        return await VetmanagerClient().get("/rest/api/StoreDocument", params={"limit": limit, "offset": offset})
+        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
+        return await VetmanagerClient().get("/rest/api/StoreDocument", params=params)
 
     @mcp.tool
     async def get_store_document_by_id(doc_id: int) -> dict:
@@ -131,7 +163,12 @@ def register(mcp: FastMCP) -> None:
         return await VetmanagerClient().get(f"/rest/api/StoreDocument/{doc_id}")
 
     @mcp.tool
-    async def get_suppliers(limit: int = 20, offset: int = 0) -> dict:
+    async def get_suppliers(
+        limit: int = 20,
+        offset: int = 0,
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
+    ) -> dict:
         """List suppliers/counterparties in the clinic system.
 
         Args:
@@ -140,8 +177,8 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        validate_list_params(limit, offset)
-        return await VetmanagerClient().get("/rest/api/Suppliers", params={"limit": limit, "offset": offset})
+        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
+        return await VetmanagerClient().get("/rest/api/Suppliers", params=params)
 
     @mcp.tool
     async def get_supplier_by_id(supplier_id: int) -> dict:

@@ -1,14 +1,19 @@
 """Operational entity tools: Clinics, Timesheet, Properties, AnonymousClient."""
 
 from fastmcp import FastMCP
-from validators import validate_list_params
+from validators import build_list_query_params
 from vetmanager_client import VetmanagerClient
 
 
 def register(mcp: FastMCP) -> None:
 
     @mcp.tool
-    async def get_clinics(limit: int = 20, offset: int = 0) -> dict:
+    async def get_clinics(
+        limit: int = 20,
+        offset: int = 0,
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
+    ) -> dict:
         """List clinic branches in the system.
 
         Args:
@@ -17,8 +22,13 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        validate_list_params(limit, offset)
-        return await VetmanagerClient().get("/rest/api/clinics", params={"limit": limit, "offset": offset})
+        params = build_list_query_params(
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=filter,
+        )
+        return await VetmanagerClient().get("/rest/api/clinics", params=params)
 
     @mcp.tool
     async def get_clinic_by_id(clinic_id: int) -> dict:
@@ -32,7 +42,14 @@ def register(mcp: FastMCP) -> None:
         return await VetmanagerClient().get(f"/rest/api/clinics/{clinic_id}")
 
     @mcp.tool
-    async def get_timesheets(limit: int = 20, offset: int = 0, user_id: int = 0, date: str = "") -> dict:
+    async def get_timesheets(
+        limit: int = 20,
+        offset: int = 0,
+        user_id: int = 0,
+        date: str = "",
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
+    ) -> dict:
         """List staff work schedule entries (timesheets).
 
         Args:
@@ -44,12 +61,13 @@ def register(mcp: FastMCP) -> None:
             date: Filter by date in YYYY-MM-DD format (optional).
         """
         vc = VetmanagerClient()
-        validate_list_params(limit, offset)
-        params: dict = {"limit": limit, "offset": offset}
-        if user_id:
-            params["userId"] = user_id
-        if date:
-            params["date"] = date
+        params = build_list_query_params(
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=filter,
+            extra={"userId": user_id, "date": date},
+        )
         return await vc.get("/rest/api/timesheet", params=params)
 
     @mcp.tool
@@ -64,7 +82,12 @@ def register(mcp: FastMCP) -> None:
         return await VetmanagerClient().get(f"/rest/api/timesheet/{timesheet_id}")
 
     @mcp.tool
-    async def get_properties(limit: int = 50, offset: int = 0) -> dict:
+    async def get_properties(
+        limit: int = 50,
+        offset: int = 0,
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
+    ) -> dict:
         """List system configuration properties of the clinic.
 
         Args:
@@ -73,11 +96,21 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        validate_list_params(limit, offset)
-        return await VetmanagerClient().get("/rest/api/properties", params={"limit": limit, "offset": offset})
+        params = build_list_query_params(
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=filter,
+        )
+        return await VetmanagerClient().get("/rest/api/properties", params=params)
 
     @mcp.tool
-    async def get_anonymous_clients(limit: int = 20, offset: int = 0) -> dict:
+    async def get_anonymous_clients(
+        limit: int = 20,
+        offset: int = 0,
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
+    ) -> dict:
         """List anonymous (walk-in) client records in the system.
 
         Args:
@@ -86,5 +119,10 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        validate_list_params(limit, offset)
-        return await VetmanagerClient().get("/rest/api/user/anonymousList", params={"limit": limit, "offset": offset})
+        params = build_list_query_params(
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=filter,
+        )
+        return await VetmanagerClient().get("/rest/api/user/anonymousList", params=params)

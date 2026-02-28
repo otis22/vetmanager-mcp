@@ -1,6 +1,6 @@
 from fastmcp import FastMCP
 
-from validators import validate_list_params
+from validators import build_list_query_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -10,6 +10,8 @@ def register(mcp: FastMCP) -> None:
     async def get_users(
         limit: int = 20,
         offset: int = 0,
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
     ) -> dict:
         """List users (staff) of the clinic.
 
@@ -19,9 +21,14 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
         """
-        validate_list_params(limit, offset)
         vc = VetmanagerClient()
-        return await vc.get("/rest/api/user", params={"limit": limit, "offset": offset})
+        params = build_list_query_params(
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=filter,
+        )
+        return await vc.get("/rest/api/user", params=params)
 
     @mcp.tool
     async def get_user_by_id(

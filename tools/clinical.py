@@ -1,14 +1,20 @@
 """Clinical entity tools: Hospital, HospitalBlock, Diagnoses."""
 
 from fastmcp import FastMCP
-from validators import validate_list_params
+from validators import build_list_query_params
 from vetmanager_client import VetmanagerClient
 
 
 def register(mcp: FastMCP) -> None:
 
     @mcp.tool
-    async def get_hospitalizations(limit: int = 20, offset: int = 0, pet_id: int = 0) -> dict:
+    async def get_hospitalizations(
+        limit: int = 20,
+        offset: int = 0,
+        pet_id: int = 0,
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
+    ) -> dict:
         """List hospitalizations (inpatient stays) in the clinic.
 
         Args:
@@ -19,10 +25,13 @@ def register(mcp: FastMCP) -> None:
             pet_id: Filter by pet ID (0 = no filter).
         """
         vc = VetmanagerClient()
-        validate_list_params(limit, offset)
-        params: dict = {"limit": limit, "offset": offset}
-        if pet_id:
-            params["petId"] = pet_id
+        params = build_list_query_params(
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=filter,
+            extra={"petId": pet_id},
+        )
         return await vc.get("/rest/api/hospital", params=params)
 
     @mcp.tool
@@ -58,7 +67,12 @@ def register(mcp: FastMCP) -> None:
         return await vc.post("/rest/api/hospital", json=payload)
 
     @mcp.tool
-    async def get_hospital_blocks(limit: int = 20, offset: int = 0) -> dict:
+    async def get_hospital_blocks(
+        limit: int = 20,
+        offset: int = 0,
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
+    ) -> dict:
         """List hospital blocks/wards available in the clinic.
 
         Args:
@@ -67,8 +81,13 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        validate_list_params(limit, offset)
-        return await VetmanagerClient().get("/rest/api/HospitalBlock", params={"limit": limit, "offset": offset})
+        params = build_list_query_params(
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=filter,
+        )
+        return await VetmanagerClient().get("/rest/api/HospitalBlock", params=params)
 
     @mcp.tool
     async def get_hospital_block_by_id(block_id: int) -> dict:
@@ -82,7 +101,12 @@ def register(mcp: FastMCP) -> None:
         return await VetmanagerClient().get(f"/rest/api/HospitalBlock/{block_id}")
 
     @mcp.tool
-    async def get_diagnoses(limit: int = 20, offset: int = 0) -> dict:
+    async def get_diagnoses(
+        limit: int = 20,
+        offset: int = 0,
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
+    ) -> dict:
         """List all diagnoses recorded across all medical cards.
 
         Args:
@@ -91,5 +115,10 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        validate_list_params(limit, offset)
-        return await VetmanagerClient().get("/rest/api/MedicalCards/AllDiagnoses", params={"limit": limit, "offset": offset})
+        params = build_list_query_params(
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=filter,
+        )
+        return await VetmanagerClient().get("/rest/api/MedicalCards/AllDiagnoses", params=params)

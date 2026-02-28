@@ -1,6 +1,6 @@
 from fastmcp import FastMCP
 
-from validators import validate_list_params
+from validators import build_list_query_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -11,6 +11,8 @@ def register(mcp: FastMCP) -> None:
         limit: int = 20,
         offset: int = 0,
         date: str = "",
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
     ) -> dict:
         """List clinic admissions (appointments/visits).
 
@@ -21,11 +23,14 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset (0–10000).
             date: Filter by date in YYYY-MM-DD format (optional).
         """
-        validate_list_params(limit, offset)
         vc = VetmanagerClient()
-        params: dict = {"limit": limit, "offset": offset}
-        if date:
-            params["date"] = date
+        params = build_list_query_params(
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=filter,
+            extra={"date": date},
+        )
         return await vc.get("/rest/api/admission", params=params)
 
     @mcp.tool

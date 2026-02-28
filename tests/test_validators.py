@@ -1,7 +1,7 @@
 """Unit tests for input validation guards (Roadmap Stage 8)."""
 
 import pytest
-from validators import validate_amount, validate_list_params
+from validators import build_list_query_params, validate_amount, validate_list_params
 
 
 class TestValidateListParams:
@@ -82,3 +82,39 @@ class TestValidateAmount:
     def test_error_message_mentions_kopecks(self):
         with pytest.raises(ValueError, match="kopecks"):
             validate_amount(1_500_000)
+
+
+class TestBuildListQueryParams:
+    def test_builds_minimal_params(self):
+        params = build_list_query_params(limit=20, offset=0)
+        assert params == {"limit": 20, "offset": 0}
+
+    def test_serializes_sort_and_filter_to_json(self):
+        params = build_list_query_params(
+            limit=20,
+            offset=0,
+            sort=[{"property": "title", "direction": "ASC"}],
+            filters=[{"property": "state", "value": ["save", "deleted"], "operator": "in"}],
+        )
+        assert params["sort"] == '[{"property":"title","direction":"ASC"}]'
+        assert params["filter"] == '[{"property":"state","value":["save","deleted"],"operator":"in"}]'
+
+    def test_includes_manual_extra_filters(self):
+        params = build_list_query_params(
+            limit=10,
+            offset=5,
+            extra={"name": "Bob", "client_id": 16},
+        )
+        assert params["name"] == "Bob"
+        assert params["client_id"] == 16
+
+    def test_skips_empty_extra_values(self):
+        params = build_list_query_params(
+            limit=10,
+            offset=0,
+            extra={"name": "", "client_id": 0, "date": None, "active": False},
+        )
+        assert "name" not in params
+        assert "client_id" not in params
+        assert "date" not in params
+        assert params["active"] is False

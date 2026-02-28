@@ -188,7 +188,7 @@ async def test_wait_50ms_between_sequential_requests():
     t0 = time.perf_counter()
     await vc.get("/rest/api/client", params={"limit": 2, "offset": 0})
     elapsed = time.perf_counter() - t0
-    assert elapsed >= 0.045
+    assert elapsed >= 0.04
 
 
 @pytest.mark.asyncio

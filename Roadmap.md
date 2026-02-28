@@ -252,3 +252,16 @@
 - 13.4 Интегрировать кеш в `VetmanagerClient`: GET read/write, POST/PUT/DELETE invalidation по тегу `domain:entity` — `done`
 - 13.5 Обновить README и зафиксировать решения в `AssumptionLog.md` — `done`
 
+---
+
+## Этап 14. Универсальная фильтрация и сортировка в GET (после Этапа 13) — `done`
+
+Цель: добавить унифицированную поддержку `sort`/`filter` во всех list `get_*` инструментах и покрыть новые возможности unit/e2e тестами.
+
+- 14.1 Обновить Workplan/PRD-артефакты под контракт `sort`/`filter` (включая `artifacts/prd-vetmanager-mcp-ru.md`) — `done`
+- 14.2 Добавить unit-тесты сериализации/валидации параметров `sort`/`filter` — `done`
+- 14.3 Обновить e2e mock/real тесты для новых сценариев `sort`/`filter` — `done`
+- 14.4 Реализовать общий helper построения list-параметров и применить ко всем list `get_*` — `done`
+- 14.5 Проверить новые возможности вручную через MCP как внешний агент — `done`
+- 14.6 Обновить README/AssumptionLog, закрыть этап 14, выполнить commit+push — `done`
+
