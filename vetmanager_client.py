@@ -1,9 +1,10 @@
 import logging
 import asyncio
+import hashlib
 import re
 import time
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import httpx
 
@@ -14,6 +15,7 @@ from exceptions import (
     VetmanagerError,
     VetmanagerTimeoutError,
 )
+from request_cache import REQUEST_CACHE
 from request_credentials import get_request_credentials
 
 logger = logging.getLogger(__name__)
@@ -24,6 +26,7 @@ REQUEST_GAP_SECONDS = 0.05
 MAX_RETRIES = 1
 DOMAIN_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 ALLOWED_HOST_SUFFIXES = ("vetmanager.cloud", "vetmanager2.ru")
+CACHE_TTL_SECONDS = 900.0
 
 
 def _masked_secret(value: str) -> str:
@@ -63,6 +66,36 @@ class VetmanagerClient:
         self._base_url: str | None = None
         self._last_request_started_at = 0.0
         self._pace_lock = asyncio.Lock()
+
+    def _api_key_fingerprint(self) -> str:
+        return hashlib.sha256(self._api_key.encode("utf-8")).hexdigest()[:16]
+
+    def _canonical_url(self, base_url: str, params: dict | None) -> str:
+        if not params:
+            return base_url
+        pairs: list[tuple[str, str]] = []
+        for key, value in params.items():
+            if isinstance(value, (list, tuple)):
+                for item in value:
+                    pairs.append((str(key), str(item)))
+            else:
+                pairs.append((str(key), str(value)))
+        pairs.sort(key=lambda item: (item[0], item[1]))
+        query = urlencode(pairs, doseq=True)
+        return f"{base_url}?{query}"
+
+    def _cache_key(self, method: str, full_url: str) -> str:
+        return f"{method.upper()}|{full_url}|{self._api_key_fingerprint()}"
+
+    def _entity_from_path(self, path: str) -> str:
+        normalized = path.split("?", 1)[0].strip("/")
+        parts = normalized.split("/")
+        if len(parts) >= 3 and parts[0].lower() == "rest" and parts[1].lower() == "api":
+            return parts[2].lower()
+        return "unknown"
+
+    def _entity_tag(self, path: str) -> str:
+        return f"{self._domain}:{self._entity_from_path(path)}"
 
     async def _pace_requests(self) -> None:
         """Enforce minimal wait between sequential HTTP requests for one client."""
@@ -137,6 +170,16 @@ class VetmanagerClient:
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         base = await self._resolve_host()
         url = f"{base}{path}"
+        params = kwargs.get("params")
+        cache_key = ""
+        entity_tag = self._entity_tag(path)
+        if method.upper() == "GET":
+            full_url = self._canonical_url(url, params if isinstance(params, dict) else None)
+            cache_key = self._cache_key(method, full_url)
+            cached = await REQUEST_CACHE.get(cache_key)
+            if cached is not None:
+                return cached
+
         for attempt in range(MAX_RETRIES + 1):
             try:
                 await self._pace_requests()
@@ -144,7 +187,18 @@ class VetmanagerClient:
                 async with httpx.AsyncClient(timeout=timeout) as http:
                     response = await http.request(method, url, headers=self._headers(), **kwargs)
                     self._raise_for_status(response)
-                    return response.json()
+                    payload = response.json()
+                    upper_method = method.upper()
+                    if upper_method == "GET":
+                        await REQUEST_CACHE.set(
+                            key=cache_key,
+                            value=payload,
+                            ttl_seconds=CACHE_TTL_SECONDS,
+                            tags=(entity_tag,),
+                        )
+                    elif upper_method in {"POST", "PUT", "DELETE"}:
+                        await REQUEST_CACHE.invalidate_tag(entity_tag)
+                    return payload
             except httpx.TimeoutException as exc:
                 if attempt < MAX_RETRIES:
                     await asyncio.sleep(0.1 * (attempt + 1))

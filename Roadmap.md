@@ -240,3 +240,15 @@
 - 12.5 Обновить/починить тесты (unit + e2e mock + e2e real) под новый контракт — `done`
 - 12.6 Обновить README и зафиксировать решения в `AssumptionLog.md` — `done`
 
+---
+
+## Этап 13. In-memory тегированный кеш GET (после Этапа 12) — `done`
+
+Цель: добавить кеширование GET-запросов к Vetmanager API с TTL 15 минут, ключом `method + full_url_with_query + api_key_hash` и теговой инвалидацией на мутациях.
+
+- 13.1 Обновить Workplan/PRD-артефакты под кеш-контракт (включая `artifacts/prd-vetmanager-mcp-ru.md`) — `done`
+- 13.2 Добавить/обновить unit-тесты кеша (cache hit, TTL expiry, key isolation по `api_key_hash`, теговая инвалидация) — `done`
+- 13.3 Реализовать in-memory хранилище кеша (`dict` + индекс тегов) с TTL 900s и `asyncio.Lock` — `done`
+- 13.4 Интегрировать кеш в `VetmanagerClient`: GET read/write, POST/PUT/DELETE invalidation по тегу `domain:entity` — `done`
+- 13.5 Обновить README и зафиксировать решения в `AssumptionLog.md` — `done`
+

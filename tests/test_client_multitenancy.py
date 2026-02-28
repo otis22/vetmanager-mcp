@@ -1,6 +1,7 @@
 """Unit tests: VetmanagerClient multi-tenancy, headers-only auth and security."""
 
 import time
+import asyncio
 from unittest.mock import patch
 
 import httpx
@@ -8,6 +9,7 @@ import pytest
 import respx
 
 import request_credentials
+import vetmanager_client
 from exceptions import AuthError, HostResolutionError, NotFoundError, VetmanagerError
 from vetmanager_client import VetmanagerClient
 
@@ -175,16 +177,16 @@ async def test_non_allowlisted_or_non_https_host_rejected():
 @pytest.mark.asyncio
 @respx.mock
 async def test_wait_50ms_between_sequential_requests():
-    """Second sequential request should be paced by at least ~50ms."""
+    """Second sequential network request should be paced by at least ~50ms."""
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-p").mock(
         return_value=httpx.Response(200, json=make_host_response("https://p.vetmanager.cloud"))
     )
     respx.get("https://p.vetmanager.cloud/rest/api/client").mock(return_value=httpx.Response(200, json={"data": []}))
 
     vc = make_client("clinic-p", "key-p")
-    await vc.get("/rest/api/client")
+    await vc.get("/rest/api/client", params={"limit": 1, "offset": 0})
     t0 = time.perf_counter()
-    await vc.get("/rest/api/client")
+    await vc.get("/rest/api/client", params={"limit": 2, "offset": 0})
     elapsed = time.perf_counter() - t0
     assert elapsed >= 0.045
 
@@ -202,4 +204,107 @@ async def test_retry_on_timeout_then_success():
     vc = make_client("clinic-r", "key-r")
     result = await vc.get("/rest/api/client")
     assert result["data"] == []
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_response_is_cached_by_key():
+    """Second identical GET should be served from cache."""
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-cache").mock(
+        return_value=httpx.Response(200, json=make_host_response("https://cache.vetmanager.cloud"))
+    )
+    route = respx.get("https://cache.vetmanager.cloud/rest/api/client").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": 77}]})
+    )
+
+    vc = make_client("clinic-cache", "cache-key")
+    first = await vc.get("/rest/api/client", params={"limit": 5, "offset": 0})
+    second = await vc.get("/rest/api/client", params={"limit": 5, "offset": 0})
+
+    assert first == second
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_cache_is_shared_between_instances_with_same_api_key():
+    """Cache key should allow reuse between instances in one process."""
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-shared").mock(
+        return_value=httpx.Response(200, json=make_host_response("https://shared.vetmanager.cloud"))
+    )
+    route = respx.get("https://shared.vetmanager.cloud/rest/api/user").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": 1}]})
+    )
+
+    c1 = make_client("clinic-shared", "same-key")
+    c2 = make_client("clinic-shared", "same-key")
+
+    await c1.get("/rest/api/user", params={"limit": 5, "offset": 0})
+    await c2.get("/rest/api/user", params={"limit": 5, "offset": 0})
+
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_cache_isolated_by_api_key_hash():
+    """Different API keys must not share cache for the same URL."""
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-isolated").mock(
+        return_value=httpx.Response(200, json=make_host_response("https://isolated.vetmanager.cloud"))
+    )
+    route = respx.get("https://isolated.vetmanager.cloud/rest/api/user").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": 2}]})
+    )
+
+    c1 = make_client("clinic-isolated", "key-one")
+    c2 = make_client("clinic-isolated", "key-two")
+
+    await c1.get("/rest/api/user", params={"limit": 5, "offset": 0})
+    await c2.get("/rest/api/user", params={"limit": 5, "offset": 0})
+
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_post_invalidates_domain_entity_tag_cache():
+    """Mutation should invalidate cached GET for same domain/entity tag."""
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-invalidate").mock(
+        return_value=httpx.Response(200, json=make_host_response("https://inv.vetmanager.cloud"))
+    )
+    get_route = respx.get("https://inv.vetmanager.cloud/rest/api/client").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": 9}]})
+    )
+    post_route = respx.post("https://inv.vetmanager.cloud/rest/api/client").mock(
+        return_value=httpx.Response(201, json={"data": {"id": 10}})
+    )
+
+    vc = make_client("clinic-invalidate", "inv-key")
+    await vc.get("/rest/api/client", params={"limit": 5, "offset": 0})
+    await vc.get("/rest/api/client", params={"limit": 5, "offset": 0})
+    await vc.post("/rest/api/client", json={"firstName": "A", "lastName": "B"})
+    await vc.get("/rest/api/client", params={"limit": 5, "offset": 0})
+
+    assert post_route.call_count == 1
+    assert get_route.call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_cache_entry_expires_after_ttl(monkeypatch: pytest.MonkeyPatch):
+    """Cached GET should expire after configured TTL."""
+    monkeypatch.setattr(vetmanager_client, "CACHE_TTL_SECONDS", 0.01)
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-ttl").mock(
+        return_value=httpx.Response(200, json=make_host_response("https://ttl.vetmanager.cloud"))
+    )
+    route = respx.get("https://ttl.vetmanager.cloud/rest/api/client").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": 101}]})
+    )
+
+    vc = make_client("clinic-ttl", "ttl-key")
+    await vc.get("/rest/api/client", params={"limit": 1, "offset": 0})
+    await asyncio.sleep(0.02)
+    await vc.get("/rest/api/client", params={"limit": 1, "offset": 0})
+
     assert route.call_count == 2
