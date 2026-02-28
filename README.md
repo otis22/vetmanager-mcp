@@ -77,6 +77,8 @@ docker compose up -d mcp
 
 Предусловие: `ssh-copy-id user@host` выполнен.
 
+Прод-хост проекта: `342915.simplecloud.ru`.
+
 ```bash
 # Первичная настройка (один раз)
 ./scripts/init_server.sh user@host
@@ -91,6 +93,75 @@ docker compose up -d mcp
 ./scripts/init_server.sh user@host /srv/vetmanager-mcp
 ./scripts/deploy_server.sh user@host /srv/vetmanager-mcp
 ```
+
+### Режим для приватного репозитория: rsync + deploy
+
+Если сервер не может делать `git clone/pull` (приватный repo), используйте синхронизацию кода по SSH:
+
+```bash
+./scripts/sync_and_deploy_server.sh root@212.193.59.219 /opt/vetmanager-mcp
+```
+
+Скрипт:
+- синхронизирует проект через `rsync` (без `.git`, `.env`, служебных директорий);
+- запускает `deploy_server.sh` с `SKIP_GIT_PULL=1`;
+- выполняет те же smoke-check и TLS-check, что обычный deploy.
+
+### Полностью автоматический деплой после push в main
+
+Добавлен workflow: `.github/workflows/deploy-prod.yml`.
+
+Он срабатывает после успешного workflow `Tests` для ветки `main` и делает:
+- `rsync` кода на прод-сервер;
+- запуск `deploy_server.sh` в режиме `SKIP_GIT_PULL=1`.
+
+Нужные GitHub Secrets:
+- `PROD_SSH_TARGET` (пример: `root@212.193.59.219`)
+- `PROD_SSH_PRIVATE_KEY` (приватный ключ для SSH)
+- `PROD_REMOTE_DIR` (опционально, по умолчанию `/opt/vetmanager-mcp`)
+- `PROD_SSL_DOMAIN` (опционально, по умолчанию `342915.simplecloud.ru`)
+- `PROD_CERTBOT_EMAIL` (опционально, email для certbot)
+
+### TLS (Let's Encrypt) и автообновление
+
+`init_server.sh` настраивает `nginx` reverse proxy, а `deploy_server.sh` автоматически вызывает проверку сертификата:
+- если сертификата нет — будет первичный выпуск;
+- если до истечения осталось меньше 30 дней — будет выполнено продление;
+- после обновления сертификата `nginx` перезагружается автоматически.
+
+По умолчанию используется домен `342915.simplecloud.ru`. При необходимости можно переопределить:
+
+```bash
+SSL_DOMAIN=342915.simplecloud.ru CERTBOT_EMAIL=ops@example.com \
+./scripts/init_server.sh root@212.193.59.219
+
+SSL_DOMAIN=342915.simplecloud.ru CERTBOT_EMAIL=ops@example.com \
+./scripts/deploy_server.sh root@212.193.59.219
+```
+
+Обязательные внешние условия:
+- DNS A-record `342915.simplecloud.ru` должен указывать на IP сервера;
+- на сервере/в облачном firewall должны быть открыты порты `80/tcp` и `443/tcp`.
+
+### Прод-конфиг Cursor MCP (локально, не в репозиторий)
+
+Добавьте отдельный сервер в локальный `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "vetmanager-prod": {
+      "url": "https://342915.simplecloud.ru/mcp",
+      "headers": {
+        "X-VM-Domain": "myclinic",
+        "X-VM-Api-Key": "your-rest-api-key"
+      }
+    }
+  }
+}
+```
+
+`X-VM-Domain`/`X-VM-Api-Key` должны храниться только в локальном `mcp.json` пользователя или в секретах CI, но не в репозитории.
 
 ## MCP-инструменты
 

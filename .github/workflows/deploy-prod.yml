@@ -1,0 +1,69 @@
+name: Deploy Prod
+
+on:
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        env:
+          PROD_SSH_TARGET: ${{ secrets.PROD_SSH_TARGET }}
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "${PROD_SSH_TARGET}" ]; then
+            echo "Missing required secret: PROD_SSH_TARGET"
+            exit 1
+          fi
+          if [ -z "${PROD_SSH_PRIVATE_KEY}" ]; then
+            echo "Missing required secret: PROD_SSH_PRIVATE_KEY"
+            exit 1
+          fi
+
+      - name: Configure SSH
+        env:
+          PROD_SSH_TARGET: ${{ secrets.PROD_SSH_TARGET }}
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+        run: |
+          HOST="${PROD_SSH_TARGET#*@}"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${PROD_SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${HOST}" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Sync code to server (rsync)
+        env:
+          PROD_SSH_TARGET: ${{ secrets.PROD_SSH_TARGET }}
+          PROD_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR }}
+        run: |
+          REMOTE_DIR="${PROD_REMOTE_DIR:-/opt/vetmanager-mcp}"
+          ssh "${PROD_SSH_TARGET}" "mkdir -p '${REMOTE_DIR}'"
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude '.venv/' \
+            --exclude '.cursor/' \
+            --exclude '__pycache__/' \
+            --exclude '.pytest_cache/' \
+            --exclude '.env' \
+            ./ "${PROD_SSH_TARGET}:${REMOTE_DIR}/"
+
+      - name: Run remote deploy
+        env:
+          PROD_SSH_TARGET: ${{ secrets.PROD_SSH_TARGET }}
+          PROD_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR }}
+          PROD_SSL_DOMAIN: ${{ secrets.PROD_SSL_DOMAIN }}
+          PROD_CERTBOT_EMAIL: ${{ secrets.PROD_CERTBOT_EMAIL }}
+        run: |
+          REMOTE_DIR="${PROD_REMOTE_DIR:-/opt/vetmanager-mcp}"
+          SSL_DOMAIN="${PROD_SSL_DOMAIN:-342915.simplecloud.ru}"
+          SKIP_GIT_PULL=1 SSL_DOMAIN="${SSL_DOMAIN}" CERTBOT_EMAIL="${PROD_CERTBOT_EMAIL}" \
+            ./scripts/deploy_server.sh "${PROD_SSH_TARGET}" "${REMOTE_DIR}"
