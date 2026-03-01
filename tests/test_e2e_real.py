@@ -445,3 +445,32 @@ async def test_real_get_pet_profile_66():
 
     next_date = (last_vacc.get("date_nexttime") or "").strip()
     assert next_date != "", "Expected next vaccination date to be set for pet 66"
+
+
+# ── Warehouse: get_good_stock_balance ─────────────────────────────────────────
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_good_stock_balance_with_stock():
+    """good_id=470 has stock in devtr6 (quantity=100)."""
+    result = await call(vc().get(
+        "/rest/api/stores/RestOfGoodInWarehouse/",
+        params={"good_id": 470, "clinic_id": 1},
+    ))
+    assert result is not None
+    qty_str = result.get("data", {}).get("rest_good_in_warehouse", {}).get("quantity", "")
+    assert qty_str != "", "Expected quantity field in response"
+    assert float(qty_str) >= 0
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_good_stock_balance_zero():
+    """good_id=192 (Анальгин) has no receipts in devtr6 — quantity=0."""
+    result = await call(vc().get(
+        "/rest/api/stores/RestOfGoodInWarehouse/",
+        params={"good_id": 192, "clinic_id": 1},
+    ))
+    assert result is not None
+    qty_str = result.get("data", {}).get("rest_good_in_warehouse", {}).get("quantity", "")
+    assert float(qty_str) == 0.0

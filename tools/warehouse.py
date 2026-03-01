@@ -190,3 +190,35 @@ def register(mcp: FastMCP) -> None:
             supplier_id: Unique numeric ID of the supplier.
         """
         return await VetmanagerClient().get(f"/rest/api/Suppliers/{supplier_id}")
+
+    @mcp.tool
+    async def get_good_stock_balance(
+        good_id: int,
+        clinic_id: int = 1,
+    ) -> dict:
+        """Get the current stock balance (remaining quantity) for a specific good in the warehouse.
+
+        Uses the dedicated RestOfGoodInWarehouse endpoint which returns the actual
+        remaining quantity accounting for all receipts and write-offs.
+        Both good_id and clinic_id are required by the API.
+
+        Args:
+            good_id: ID of the good/product to check stock for.
+            clinic_id: Clinic/branch ID (default 1 — main clinic).
+        """
+        result = await VetmanagerClient().get(
+            "/rest/api/stores/RestOfGoodInWarehouse/",
+            params={"good_id": good_id, "clinic_id": clinic_id},
+        )
+        quantity_str = (
+            result.get("data", {})
+            .get("rest_good_in_warehouse", {})
+            .get("quantity", "0")
+        )
+        return {
+            "good_id": good_id,
+            "clinic_id": clinic_id,
+            "quantity": float(quantity_str),
+            "quantity_str": quantity_str,
+            "raw": result,
+        }

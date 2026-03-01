@@ -1197,3 +1197,50 @@ async def test_get_pet_profile_no_vaccinations():
     assert result["last_vaccination_date"] is None
     assert result["next_vaccination_date"] is None
     assert result["vaccinations"] == []
+
+
+# ── Warehouse: get_good_stock_balance ─────────────────────────────────────────
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_good_stock_balance_returns_quantity():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/stores/RestOfGoodInWarehouse/").mock(
+        return_value=httpx.Response(200, json={
+            "success": True,
+            "message": "Records Retrieved Successfully",
+            "data": {
+                "totalCount": 1,
+                "rest_good_in_warehouse": {"quantity": "100.000"},
+            },
+        })
+    )
+    result = await client().get(
+        "/rest/api/stores/RestOfGoodInWarehouse/",
+        params={"good_id": 470, "clinic_id": 1},
+    )
+    qty = float(result["data"]["rest_good_in_warehouse"]["quantity"])
+    assert qty == 100.0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_good_stock_balance_zero_for_service():
+    """Услуги (is_warehouse_account=0) всегда возвращают quantity=0."""
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/stores/RestOfGoodInWarehouse/").mock(
+        return_value=httpx.Response(200, json={
+            "success": True,
+            "message": "Records Retrieved Successfully",
+            "data": {
+                "totalCount": 1,
+                "rest_good_in_warehouse": {"quantity": "0.000"},
+            },
+        })
+    )
+    result = await client().get(
+        "/rest/api/stores/RestOfGoodInWarehouse/",
+        params={"good_id": 108, "clinic_id": 1},
+    )
+    qty = float(result["data"]["rest_good_in_warehouse"]["quantity"])
+    assert qty == 0.0
