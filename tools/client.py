@@ -102,3 +102,82 @@ def register(mcp: FastMCP) -> None:
         if email:
             payload["email"] = email
         return await client.put(f"/rest/api/client/{client_id}", json=payload)
+
+    @mcp.tool
+    async def get_client_profile(
+        client_id: int,
+    ) -> dict:
+        """Get a comprehensive profile for a client in one call.
+
+        Aggregates:
+        - Full client record
+        - Last 5 invoices with line items (invoiceDocuments) and payment status
+        - Last 5 admissions (visits)
+        - Next scheduled admission (status=active, earliest date)
+
+        Args:
+            client_id: Unique numeric ID of the client.
+        """
+        import json as _json
+
+        vc = VetmanagerClient()
+
+        client_data_resp = await vc.get(f"/rest/api/client/{client_id}")
+        client_data = client_data_resp.get("data", {}).get("client", {})
+
+        invoice_filter = _json.dumps(
+            [{"property": "client_id", "value": str(client_id)}],
+            separators=(",", ":"),
+        )
+        invoice_sort = _json.dumps(
+            [{"property": "id", "direction": "DESC"}],
+            separators=(",", ":"),
+        )
+        invoices_resp = await vc.get(
+            "/rest/api/invoice",
+            params={"filter": invoice_filter, "sort": invoice_sort, "limit": 5},
+        )
+        invoices = invoices_resp.get("data", {}).get("invoice", [])
+
+        admission_filter = _json.dumps(
+            [{"property": "client_id", "value": str(client_id)}],
+            separators=(",", ":"),
+        )
+        admission_sort = _json.dumps(
+            [{"property": "admission_date", "direction": "DESC"}],
+            separators=(",", ":"),
+        )
+        admissions_resp = await vc.get(
+            "/rest/api/admission",
+            params={"filter": admission_filter, "sort": admission_sort, "limit": 5},
+        )
+        admissions = admissions_resp.get("data", {}).get("admission", [])
+
+        next_admission_filter = _json.dumps(
+            [
+                {"property": "client_id", "value": str(client_id)},
+                {"property": "status", "value": "active"},
+            ],
+            separators=(",", ":"),
+        )
+        next_admission_sort = _json.dumps(
+            [{"property": "admission_date", "direction": "ASC"}],
+            separators=(",", ":"),
+        )
+        next_admission_resp = await vc.get(
+            "/rest/api/admission",
+            params={
+                "filter": next_admission_filter,
+                "sort": next_admission_sort,
+                "limit": 1,
+            },
+        )
+        next_admissions = next_admission_resp.get("data", {}).get("admission", [])
+        next_admission = next_admissions[0] if next_admissions else None
+
+        return {
+            "client": client_data,
+            "last_invoices": invoices,
+            "last_admissions": admissions,
+            "next_admission": next_admission,
+        }

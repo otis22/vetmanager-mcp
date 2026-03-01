@@ -265,3 +265,32 @@
 - 14.5 Проверить новые возможности вручную через MCP как внешний агент — `done`
 - 14.6 Обновить README/AssumptionLog, закрыть этап 14, выполнить commit+push — `done`
 
+---
+
+## Этап 15. Профили клиента и питомца (после Этапа 14) — `in_progress`
+
+Цель: добавить два агрегирующих MCP-инструмента, которые за один вызов возвращают полный профиль клиента или питомца.
+
+### 15.1 get_client_profile
+
+- 15.1.1 Реализовать `get_client_profile(client_id)` в `tools/client.py` — `todo`
+  - Данные клиента (`get_client_by_id`)
+  - Последние 5 счетов с `invoiceDocuments` и `payment_status` (filter by `client_id`, sort DESC by `id`)
+  - Последние 5 приёмов (filter by `client_id`, sort DESC by `admission_date`)
+  - Следующий назначенный приём (filter `status=active`, sort ASC by `admission_date`, limit 1)
+
+### 15.2 get_pet_profile
+
+- 15.2.1 Реализовать `get_vaccinations(pet_id)` в `tools/medical_card.py` — `todo`
+  - Эндпоинт: `GET /rest/api/MedicalCards/Vaccinations?pet_id={id}`
+  - Возвращает все записи о вакцинациях питомца с полями `date`, `date_nexttime`, `name`
+- 15.2.2 Реализовать `get_pet_profile(pet_id)` в `tools/pet.py` — `todo`
+  - Данные питомца (`get_pet_by_id`)
+  - Последние 5 медицинских карт с диагнозами (filter by `pet_id`, sort DESC)
+  - Вакцинации: дата последней и дата следующей ревакцинации (через `get_vaccinations`)
+
+### 15.3 Тесты и документация
+
+- 15.3.1 Добавить unit/mock тесты для `get_vaccinations`, `get_client_profile`, `get_pet_profile` — `todo`
+- 15.3.2 Зафиксировать решения в `AssumptionLog.md`, commit+push — `todo`
+

@@ -145,7 +145,9 @@ SSL_DOMAIN=342915.simplecloud.ru CERTBOT_EMAIL=ops@example.com \
 
 ### Прод-конфиг Cursor MCP (локально, не в репозиторий)
 
-Добавьте отдельный сервер в локальный `~/.cursor/mcp.json`:
+Добавьте отдельный сервер в локальный `~/.cursor/mcp.json`.
+
+**Только прод:**
 
 ```json
 {
@@ -160,6 +162,31 @@ SSL_DOMAIN=342915.simplecloud.ru CERTBOT_EMAIL=ops@example.com \
   }
 }
 ```
+
+**Оба сервера (локальный + прод) одновременно:**
+
+```json
+{
+  "mcpServers": {
+    "vetmanager-local": {
+      "url": "http://localhost:8000/mcp",
+      "headers": {
+        "X-VM-Domain": "myclinic",
+        "X-VM-Api-Key": "your-rest-api-key"
+      }
+    },
+    "vetmanager-prod": {
+      "url": "https://342915.simplecloud.ru/mcp",
+      "headers": {
+        "X-VM-Domain": "myclinic",
+        "X-VM-Api-Key": "your-rest-api-key"
+      }
+    }
+  }
+}
+```
+
+Можно подключить разные клиники к разным серверам или использовать разные `X-VM-Domain` и `X-VM-Api-Key` для разных записей в `mcpServers`.
 
 `X-VM-Domain`/`X-VM-Api-Key` должны храниться только в локальном `mcp.json` пользователя или в секретах CI, но не в репозитории.
 

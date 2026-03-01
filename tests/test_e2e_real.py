@@ -362,3 +362,86 @@ async def test_real_get_properties():
 async def test_real_get_anonymous_clients():
     result = await call(vc().get("/rest/api/user/anonymousList", params={"limit": 5, "offset": 0}))
     assert "data" in result
+
+
+# ── Profile tools ─────────────────────────────────────────────────────────────
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_vaccinations_pet_66():
+    """Pet 66 has at least one vaccination record in devtr6."""
+    result = await call(vc().get("/rest/api/MedicalCards/Vaccinations", params={"pet_id": 66, "limit": 50}))
+    assert result is not None
+    records = result.get("data", {}).get("medicalcards", [])
+    assert len(records) >= 1, "Expected at least 1 vaccination record for pet 66"
+    first = records[0]
+    assert "date" in first
+    assert "date_nexttime" in first
+    assert "name" in first
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_vaccinations_empty_pet():
+    """Endpoint must return empty list for a pet without vaccinations (no crash)."""
+    result = await call(vc().get("/rest/api/MedicalCards/Vaccinations", params={"pet_id": 1, "limit": 50}))
+    assert result is not None
+    records = result.get("data", {}).get("medicalcards", [])
+    assert isinstance(records, list)
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_client_profile_422():
+    """Aggregate client profile for client_id=422 (owner of pet 66)."""
+    import json as _json
+    c = vc()
+
+    client_resp = await call(c.get("/rest/api/client/422"))
+    assert client_resp is not None
+    client_data = client_resp.get("data", {}).get("client", {})
+    assert client_data.get("id") == 422
+
+    invoice_filter = _json.dumps([{"property": "client_id", "value": "422"}], separators=(",", ":"))
+    invoice_sort = _json.dumps([{"property": "id", "direction": "DESC"}], separators=(",", ":"))
+    invoices_resp = await call(c.get("/rest/api/invoice", params={"filter": invoice_filter, "sort": invoice_sort, "limit": 5}))
+    invoices = invoices_resp.get("data", {}).get("invoice", []) if invoices_resp else []
+    assert isinstance(invoices, list)
+
+    admission_filter = _json.dumps([{"property": "client_id", "value": "422"}], separators=(",", ":"))
+    admission_sort = _json.dumps([{"property": "admission_date", "direction": "DESC"}], separators=(",", ":"))
+    admissions_resp = await call(c.get("/rest/api/admission", params={"filter": admission_filter, "sort": admission_sort, "limit": 5}))
+    admissions = admissions_resp.get("data", {}).get("admission", []) if admissions_resp else []
+    assert isinstance(admissions, list)
+    assert len(admissions) >= 1
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_pet_profile_66():
+    """Aggregate pet profile for pet_id=66 with vaccinations."""
+    import json as _json
+    c = vc()
+
+    pet_resp = await call(c.get("/rest/api/pet/66"))
+    assert pet_resp is not None
+    pet_data = pet_resp.get("data", {}).get("pet", {})
+    assert pet_data.get("id") == 66
+
+    mc_filter = _json.dumps([{"property": "patient_id", "value": "66"}], separators=(",", ":"))
+    mc_sort = _json.dumps([{"property": "id", "direction": "DESC"}], separators=(",", ":"))
+    mc_resp = await call(c.get("/rest/api/medicalcard", params={"filter": mc_filter, "sort": mc_sort, "limit": 5}))
+    medical_cards = mc_resp.get("data", {}).get("medicalcard", []) if mc_resp else []
+    assert isinstance(medical_cards, list)
+
+    vacc_resp = await call(c.get("/rest/api/MedicalCards/Vaccinations", params={"pet_id": 66, "limit": 100}))
+    vaccinations = vacc_resp.get("data", {}).get("medicalcards", []) if vacc_resp else []
+    assert len(vaccinations) >= 1
+
+    sorted_vacc = sorted(vaccinations, key=lambda r: r.get("date") or "", reverse=True)
+    last_vacc = sorted_vacc[0]
+    last_date = (last_vacc.get("date") or "").split(" ")[0]
+    assert last_date >= "2026-01-01", f"Expected recent vaccination, got: {last_date}"
+
+    next_date = (last_vacc.get("date_nexttime") or "").strip()
+    assert next_date != "", "Expected next vaccination date to be set for pet 66"

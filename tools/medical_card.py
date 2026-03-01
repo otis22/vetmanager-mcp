@@ -107,3 +107,40 @@ def register(mcp: FastMCP) -> None:
         if treatment:
             payload["treatment"] = treatment
         return await vc.put(f"/rest/api/MedicalCards/{card_id}", json=payload)
+
+    @mcp.tool
+    async def get_vaccinations(
+        pet_id: int,
+        limit: int = 50,
+    ) -> dict:
+        """Get all vaccination records for a pet.
+
+        Returns a list of vaccinations including vaccine name, date administered,
+        and the scheduled next vaccination date.
+
+        Args:
+            pet_id: Unique numeric ID of the pet.
+            limit: Max number of records to return (1–100, default 50).
+        """
+        vc = VetmanagerClient()
+        params: dict = {"pet_id": pet_id, "limit": limit}
+        result = await vc.get("/rest/api/MedicalCards/Vaccinations", params=params)
+        records = result.get("data", {}).get("medicalcards", [])
+        return {
+            "pet_id": pet_id,
+            "total": len(records),
+            "vaccinations": [
+                {
+                    "id": r.get("id"),
+                    "name": r.get("name"),
+                    "date": r.get("date"),
+                    "date_nexttime": r.get("date_nexttime"),
+                    "vaccine_id": r.get("vaccine_id"),
+                    "medcard_id": r.get("medcard_id"),
+                    "doza_value": r.get("doza_value"),
+                    "next_admission_id": r.get("next_admission_id"),
+                    "pet_age_at_time_vaccination": r.get("pet_age_at_time_vaccination"),
+                }
+                for r in records
+            ],
+        }

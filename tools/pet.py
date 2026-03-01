@@ -114,3 +114,77 @@ def register(mcp: FastMCP) -> None:
         if note:
             payload["note"] = note
         return await vc.put(f"/rest/api/pet/{pet_id}", json=payload)
+
+    @mcp.tool
+    async def get_pet_profile(
+        pet_id: int,
+    ) -> dict:
+        """Get a comprehensive profile for a pet in one call.
+
+        Aggregates:
+        - Full pet record (with breed and type data)
+        - Last 5 medical card records
+        - All vaccination records (date, next vaccination date, vaccine name)
+        - Computed last_vaccination_date and next_vaccination_date
+
+        Args:
+            pet_id: Unique numeric ID of the pet.
+        """
+        import json as _json
+
+        vc = VetmanagerClient()
+
+        pet_resp = await vc.get(f"/rest/api/pet/{pet_id}")
+        pet_data = pet_resp.get("data", {}).get("pet", {})
+
+        mc_filter = _json.dumps(
+            [{"property": "patient_id", "value": str(pet_id)}],
+            separators=(",", ":"),
+        )
+        mc_sort = _json.dumps(
+            [{"property": "id", "direction": "DESC"}],
+            separators=(",", ":"),
+        )
+        mc_resp = await vc.get(
+            "/rest/api/medicalcard",
+            params={"filter": mc_filter, "sort": mc_sort, "limit": 5},
+        )
+        medical_cards = mc_resp.get("data", {}).get("medicalcard", [])
+
+        vacc_resp = await vc.get(
+            "/rest/api/MedicalCards/Vaccinations",
+            params={"pet_id": pet_id, "limit": 100},
+        )
+        vaccinations_raw = vacc_resp.get("data", {}).get("medicalcards", [])
+        vaccinations = [
+            {
+                "id": r.get("id"),
+                "name": r.get("name"),
+                "date": r.get("date"),
+                "date_nexttime": r.get("date_nexttime"),
+                "vaccine_id": r.get("vaccine_id"),
+                "medcard_id": r.get("medcard_id"),
+            }
+            for r in vaccinations_raw
+        ]
+
+        sorted_vacc = sorted(
+            vaccinations,
+            key=lambda r: r.get("date") or "",
+            reverse=True,
+        )
+        last_vaccination_date: str | None = None
+        next_vaccination_date: str | None = None
+        if sorted_vacc:
+            last_vacc = sorted_vacc[0]
+            last_vaccination_date = (last_vacc.get("date") or "").split(" ")[0] or None
+            next_raw = last_vacc.get("date_nexttime") or ""
+            next_vaccination_date = next_raw.strip() or None
+
+        return {
+            "pet": pet_data,
+            "last_medical_cards": medical_cards,
+            "vaccinations": vaccinations,
+            "last_vaccination_date": last_vaccination_date,
+            "next_vaccination_date": next_vaccination_date,
+        }
