@@ -267,13 +267,13 @@
 
 ---
 
-## Этап 15. Профили клиента и питомца (после Этапа 14) — `in_progress`
+## Этап 15. Профили клиента и питомца (после Этапа 14) — `done`
 
 Цель: добавить два агрегирующих MCP-инструмента, которые за один вызов возвращают полный профиль клиента или питомца.
 
 ### 15.1 get_client_profile
 
-- 15.1.1 Реализовать `get_client_profile(client_id)` в `tools/client.py` — `todo`
+- 15.1.1 Реализовать `get_client_profile(client_id)` в `tools/client.py` — `done`
   - Данные клиента (`get_client_by_id`)
   - Последние 5 счетов с `invoiceDocuments` и `payment_status` (filter by `client_id`, sort DESC by `id`)
   - Последние 5 приёмов (filter by `client_id`, sort DESC by `admission_date`)
@@ -281,16 +281,27 @@
 
 ### 15.2 get_pet_profile
 
-- 15.2.1 Реализовать `get_vaccinations(pet_id)` в `tools/medical_card.py` — `todo`
+- 15.2.1 Реализовать `get_vaccinations(pet_id)` в `tools/medical_card.py` — `done`
   - Эндпоинт: `GET /rest/api/MedicalCards/Vaccinations?pet_id={id}`
   - Возвращает все записи о вакцинациях питомца с полями `date`, `date_nexttime`, `name`
-- 15.2.2 Реализовать `get_pet_profile(pet_id)` в `tools/pet.py` — `todo`
+- 15.2.2 Реализовать `get_pet_profile(pet_id)` в `tools/pet.py` — `done`
   - Данные питомца (`get_pet_by_id`)
   - Последние 5 медицинских карт с диагнозами (filter by `pet_id`, sort DESC)
   - Вакцинации: дата последней и дата следующей ревакцинации (через `get_vaccinations`)
 
 ### 15.3 Тесты и документация
 
-- 15.3.1 Добавить unit/mock тесты для `get_vaccinations`, `get_client_profile`, `get_pet_profile` — `todo`
-- 15.3.2 Зафиксировать решения в `AssumptionLog.md`, commit+push — `todo`
+- 15.3.1 Добавить unit/mock тесты для `get_vaccinations`, `get_client_profile`, `get_pet_profile` — `done`
+- 15.3.2 Зафиксировать решения в `AssumptionLog.md`, commit+push — `done`
+
+---
+
+## Этап 16. tools/list: полный ответ по спецификации MCP — `todo`
+
+Цель: чтобы клиенты (в т.ч. vetmanager-ai-assistant) могли получать от сервера полный список возможностей с описаниями и схемами параметров, без хардкода на своей стороне.
+
+- 16.1 Проверить, что ответ `tools/list` содержит для каждого инструмента поля по спецификации MCP: `name`, `description`, `inputSchema` (и при необходимости `title`) — `todo`
+- 16.2 При необходимости доработать FastMCP/регистрацию инструментов так, чтобы в ответе были осмысленные `description` (из docstring) и `inputSchema` (типы и описание аргументов) — `todo`
+- 16.3 Добавить тест или e2e-проверку: вызов `tools/list` возвращает не только имена, но и непустые `description` и `inputSchema` хотя бы для одного инструмента — `todo`
+- 16.4 Зафиксировать контракт в README (раздел MCP-инструменты или отдельный подраздел про tools/list) — `todo`
 
