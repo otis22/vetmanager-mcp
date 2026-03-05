@@ -1,7 +1,7 @@
 """Clinical entity tools: Hospital, HospitalBlock, Diagnoses."""
 
 from fastmcp import FastMCP
-from validators import build_list_query_params
+from validators import LimitParam, build_list_query_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -9,7 +9,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_hospitalizations(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         pet_id: int = 0,
         sort: list[dict] | None = None,
@@ -68,7 +68,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_hospital_blocks(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -102,7 +102,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_diagnoses(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,

@@ -1,7 +1,7 @@
 """Operational entity tools: Clinics, Timesheet, Properties, AnonymousClient."""
 
 from fastmcp import FastMCP
-from validators import build_list_query_params
+from validators import LimitParam, build_list_query_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -9,7 +9,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_clinics(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -43,7 +43,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_timesheets(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         user_id: int = 0,
         date: str = "",
@@ -83,7 +83,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_properties(
-        limit: int = 50,
+        limit: LimitParam = 50,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -106,7 +106,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_anonymous_clients(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,

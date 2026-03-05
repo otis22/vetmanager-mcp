@@ -2,7 +2,7 @@
 Role, UserPosition, ComboManualName, ComboManualItem."""
 
 from fastmcp import FastMCP
-from validators import build_list_query_params
+from validators import LimitParam, build_list_query_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -10,7 +10,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_breeds(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         pet_type_id: int = 0,
         sort: list[dict] | None = None,
@@ -48,7 +48,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_pet_types(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -77,7 +77,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_cities(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         title: str = "",
         sort: list[dict] | None = None,
@@ -115,7 +115,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_city_types(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -133,7 +133,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_streets(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         city_id: int = 0,
         sort: list[dict] | None = None,
@@ -171,7 +171,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_units(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -200,7 +200,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_roles(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -229,7 +229,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_user_positions(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -258,7 +258,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_combo_manual_names(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -288,7 +288,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool
     async def get_combo_manual_items(
         combo_manual_name_id: int,
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,

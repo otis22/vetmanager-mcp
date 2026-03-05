@@ -4,11 +4,20 @@ Guards against accidental bulk operations caused by malformed prompts.
 """
 
 import json
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import Field
 
 _LIMIT_MAX = 100
 _OFFSET_MAX = 10_000
 _AMOUNT_MAX = 1_000_000
+
+VETMANAGER_MAX_LIMIT = _LIMIT_MAX
+
+LimitParam = Annotated[
+    int,
+    Field(ge=1, le=_LIMIT_MAX, description="Max records to return (1–100)."),
+]
 
 
 def validate_list_params(limit: int, offset: int) -> None:

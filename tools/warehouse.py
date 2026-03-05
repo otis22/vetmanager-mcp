@@ -2,7 +2,7 @@
 PartyAccountDoc, StoreDocument, Suppliers."""
 
 from fastmcp import FastMCP
-from validators import build_list_query_params
+from validators import LimitParam, build_list_query_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -10,7 +10,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_good_groups(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -40,7 +40,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool
     async def get_good_sale_params(
         good_id: int,
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -77,7 +77,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_party_accounts(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -106,7 +106,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_party_account_docs(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -135,7 +135,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_store_documents(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -164,7 +164,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_suppliers(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,

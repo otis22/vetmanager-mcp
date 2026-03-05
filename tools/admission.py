@@ -1,6 +1,6 @@
 from fastmcp import FastMCP
 
-from validators import build_list_query_params
+from validators import LimitParam, build_list_query_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -8,7 +8,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_admissions(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         date: str = "",
         sort: list[dict] | None = None,

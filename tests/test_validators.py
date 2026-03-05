@@ -1,7 +1,13 @@
-"""Unit tests for input validation guards (Roadmap Stage 8)."""
+"""Unit tests for input validation guards (Roadmap Stage 8) and limit schema (Stage 17)."""
 
 import pytest
-from validators import build_list_query_params, validate_amount, validate_list_params
+from validators import (
+    LimitParam,
+    VETMANAGER_MAX_LIMIT,
+    build_list_query_params,
+    validate_amount,
+    validate_list_params,
+)
 
 
 class TestValidateListParams:
@@ -118,3 +124,23 @@ class TestBuildListQueryParams:
         assert "client_id" not in params
         assert "date" not in params
         assert params["active"] is False
+
+
+class TestLimitParamSchema:
+    """Stage 17: limit parameter must expose minimum/maximum in MCP inputSchema."""
+
+    def test_limit_param_constant(self):
+        assert VETMANAGER_MAX_LIMIT == 100
+
+    def test_limit_schema_has_min_max(self):
+        """LimitParam used in tool params should produce schema with minimum=1, maximum=100."""
+        from pydantic import create_model
+
+        # Model with one field typed as LimitParam — same as tool params
+        M = create_model("ToolParams", limit=(LimitParam, 20))
+        schema = M.model_json_schema()
+        limit_schema = schema["properties"]["limit"]
+        assert limit_schema.get("minimum") == 1
+        assert limit_schema.get("maximum") == VETMANAGER_MAX_LIMIT
+        assert "description" in limit_schema
+        assert "1" in str(limit_schema["description"]) and "100" in str(limit_schema["description"])

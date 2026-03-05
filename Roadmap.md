@@ -305,3 +305,14 @@
 - 16.3 Добавить тест или e2e-проверку: вызов `tools/list` возвращает не только имена, но и непустые `description` и `inputSchema` хотя бы для одного инструмента — `todo`
 - 16.4 Зафиксировать контракт в README (раздел MCP-инструменты или отдельный подраздел про tools/list) — `todo`
 
+---
+
+## Этап 17. Лимиты в inputSchema (limit 1–100) — `done`
+
+Цель: в ответе `tools/list` у всех инструментов с параметром `limit` в inputSchema были minimum=1, maximum=100 и описание, чтобы клиенты MCP и LLM не передавали невалидные значения.
+
+- 17.1 Константы и тип `LimitParam` в validators, экспорт в schema — `done`
+- 17.2 Заменить `limit: int = ...` на `limit: LimitParam = ...` во всех get_* в tools/*.py — `done`
+- 17.3 Тест/проверка: tools/list возвращает у limit minimum=1, maximum=100 — `done`
+- 17.4 AssumptionLog, README при необходимости — `done`
+

@@ -1,7 +1,7 @@
 """Financial entity tools: Payment, ClosingOfInvoices, InvoiceDocument, Cassa, CassaClose."""
 
 from fastmcp import FastMCP
-from validators import build_list_query_params, validate_amount
+from validators import LimitParam, build_list_query_params, validate_amount
 from vetmanager_client import VetmanagerClient
 
 
@@ -9,7 +9,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_payments(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         client_id: int = 0,
         sort: list[dict] | None = None,
@@ -66,7 +66,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_closing_of_invoices(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -101,7 +101,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool
     async def get_invoice_documents(
         invoice_id: int,
-        limit: int = 50,
+        limit: LimitParam = 50,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -153,7 +153,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_cassas(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -187,7 +187,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_cassa_closes(
-        limit: int = 20,
+        limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
