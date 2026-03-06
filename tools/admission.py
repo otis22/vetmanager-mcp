@@ -1,3 +1,4 @@
+import json
 from fastmcp import FastMCP
 
 from validators import LimitParam, build_list_query_params
@@ -11,25 +12,51 @@ def register(mcp: FastMCP) -> None:
         limit: LimitParam = 20,
         offset: int = 0,
         date: str = "",
+        status: str = "",
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
     ) -> dict:
         """List clinic admissions (appointments/visits).
+
+        To get today's admissions pass date="YYYY-MM-DD" (e.g. "2026-03-06").
+        The date filter is applied via the Vetmanager API filter parameter so only
+        matching records are returned — no client-side filtering needed.
 
         Args:
             domain: Clinic subdomain.
             api_key: REST API key.
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
-            date: Filter by date in YYYY-MM-DD format (optional).
+            date: Filter by exact date in YYYY-MM-DD format (optional).
+                  When provided, only admissions whose admission_date starts with
+                  this date are returned.
+            status: Filter by admission status, e.g. 'assigned', 'accepted',
+                    'booked', 'canceled' (optional).
+            sort: Sort specification, e.g. [{"property": "admission_date", "direction": "ASC"}].
+            filter: Additional filter conditions (merged with date/status filters).
         """
         vc = VetmanagerClient()
+
+        # Build filter list: merge explicit filters with date and status shortcuts.
+        combined_filters: list[dict] = list(filter or [])
+        if date:
+            combined_filters.append(
+                {"property": "admission_date", "value": date, "operator": "like"}
+            )
+        if status:
+            combined_filters.append(
+                {"property": "status", "value": status, "operator": "="}
+            )
+
+        # Default sort by admission_date ASC so today's records appear in time order.
+        if sort is None and date:
+            sort = [{"property": "admission_date", "direction": "ASC"}]
+
         params = build_list_query_params(
             limit=limit,
             offset=offset,
             sort=sort,
-            filters=filter,
-            extra={"date": date},
+            filters=combined_filters if combined_filters else None,
         )
         return await vc.get("/rest/api/admission", params=params)
 
@@ -54,6 +81,7 @@ def register(mcp: FastMCP) -> None:
         doctor_id: int,
         date: str,
         reason: str = "",
+        status: str = "assigned",
     ) -> dict:
         """Schedule a new admission (appointment) for a pet.
 
@@ -65,6 +93,7 @@ def register(mcp: FastMCP) -> None:
             doctor_id: ID of the attending veterinarian.
             date: Appointment date/time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS).
             reason: Reason for the visit (optional).
+            status: Admission status: 'assigned' (default), 'booked', 'accepted'.
         """
         vc = VetmanagerClient()
         payload: dict = {
@@ -72,6 +101,7 @@ def register(mcp: FastMCP) -> None:
             "client_id": client_id,
             "doctor_id": doctor_id,
             "date": date,
+            "status": status,
         }
         if reason:
             payload["reason"] = reason

@@ -295,6 +295,7 @@ async def test_post_invalidates_domain_entity_tag_cache():
 async def test_cache_entry_expires_after_ttl(monkeypatch: pytest.MonkeyPatch):
     """Cached GET should expire after configured TTL."""
     monkeypatch.setattr(vetmanager_client, "CACHE_TTL_SECONDS", 0.01)
+    monkeypatch.setattr(vetmanager_client, "CACHE_TTL_SHORT_SECONDS", 0.01)
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-ttl").mock(
         return_value=httpx.Response(200, json=make_host_response("https://ttl.vetmanager.cloud"))
     )

@@ -26,7 +26,21 @@ REQUEST_GAP_SECONDS = 0.05
 MAX_RETRIES = 1
 DOMAIN_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 ALLOWED_HOST_SUFFIXES = ("vetmanager.cloud", "vetmanager2.ru")
+# Default cache TTL for stable reference data (breeds, cities, goods, etc.).
 CACHE_TTL_SECONDS = 900.0
+# Short TTL for frequently-updated entities: admissions, medical cards, invoices, clients.
+# Keeps data fresh while still reducing redundant API calls within a single session.
+CACHE_TTL_SHORT_SECONDS = 60.0
+
+# Entities that change often and should use the short TTL.
+_SHORT_TTL_ENTITIES = frozenset({
+    "admission",
+    "medicalcard",
+    "invoice",
+    "client",
+    "pet",
+    "payment",
+})
 
 
 def _masked_secret(value: str) -> str:
@@ -190,10 +204,16 @@ class VetmanagerClient:
                     payload = response.json()
                     upper_method = method.upper()
                     if upper_method == "GET":
+                        entity_name = self._entity_from_path(path)
+                        ttl = (
+                            CACHE_TTL_SHORT_SECONDS
+                            if entity_name in _SHORT_TTL_ENTITIES
+                            else CACHE_TTL_SECONDS
+                        )
                         await REQUEST_CACHE.set(
                             key=cache_key,
                             value=payload,
-                            ttl_seconds=CACHE_TTL_SECONDS,
+                            ttl_seconds=ttl,
                             tags=(entity_tag,),
                         )
                     elif upper_method in {"POST", "PUT", "DELETE"}:
