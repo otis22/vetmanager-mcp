@@ -4,6 +4,12 @@ from fastmcp import FastMCP
 from validators import LimitParam, build_list_query_params
 from vetmanager_client import VetmanagerClient
 
+# The correct Vetmanager REST endpoint for medical cards is /rest/api/MedicalCards
+# (capital M and C, plural). The response key is "medicalCards" (camelCase).
+# The old lowercase /rest/api/medicalcard returns 404 on all known installations.
+_MC_ENDPOINT = "/rest/api/MedicalCards"
+_MC_KEY = "medicalCards"
+
 
 def register(mcp: FastMCP) -> None:
 
@@ -25,14 +31,34 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset (0–10000).
         """
         vc = VetmanagerClient()
+        # patient_id filter is required — pet_id param alone is ignored by the API
+        patient_filter = json.dumps(
+            [{"property": "patient_id", "value": str(pet_id), "operator": "="}],
+            separators=(",", ":"),
+        )
+        # Merge caller-supplied filters with the mandatory patient_id filter
+        extra_filters: list[dict] = []
+        if filter:
+            extra_filters = filter if isinstance(filter, list) else []
+        combined_filter = json.dumps(
+            [{"property": "patient_id", "value": str(pet_id), "operator": "="}]
+            + extra_filters,
+            separators=(",", ":"),
+        )
         params = build_list_query_params(
             limit=limit,
             offset=offset,
             sort=sort,
-            filters=filter,
-            extra={"pet_id": pet_id},
+            filters=None,  # handled manually above
         )
-        return await vc.get("/rest/api/medicalcard", params=params)
+        params["filter"] = combined_filter
+        result = await vc.get(_MC_ENDPOINT, params=params)
+        # Normalise response: expose records under both "medicalCards" and "medicalcards"
+        # so that existing assistant code that checks either key keeps working.
+        data = result.get("data", {})
+        if isinstance(data, dict) and _MC_KEY in data and "medicalcards" not in data:
+            data["medicalcards"] = data[_MC_KEY]
+        return result
 
     @mcp.tool
     async def get_medical_cards_by_client_id(
@@ -75,22 +101,33 @@ def register(mcp: FastMCP) -> None:
                 "message": "No pets found for this client.",
             }
 
-        # Step 2: for each pet get medical cards.
+        # Step 2: for each pet get medical cards via patient_id filter.
         all_cards: list[dict] = []
         for pet in pets:
             pet_id = pet.get("id")
             if not pet_id:
                 continue
+            mc_filter = json.dumps(
+                [{"property": "patient_id", "value": str(pet_id), "operator": "="}],
+                separators=(",", ":"),
+            )
             params = build_list_query_params(
                 limit=limit,
                 offset=offset,
                 sort=sort,
                 filters=None,
-                extra={"pet_id": pet_id},
             )
-            cards_resp = await vc.get("/rest/api/medicalcard", params=params)
+            params["filter"] = mc_filter
+            cards_resp = await vc.get(_MC_ENDPOINT, params=params)
             cards_data = cards_resp.get("data", {})
-            cards = cards_data.get("medicalcards", []) if isinstance(cards_data, dict) else []
+            if isinstance(cards_data, dict):
+                cards = (
+                    cards_data.get(_MC_KEY)
+                    or cards_data.get("medicalcards")
+                    or []
+                )
+            else:
+                cards = []
             for card in cards:
                 card["_pet_alias"] = pet.get("alias") or pet.get("name") or str(pet_id)
                 card["_pet_id"] = pet_id
@@ -116,7 +153,9 @@ def register(mcp: FastMCP) -> None:
             card_id: Unique numeric ID of the medical card record.
         """
         vc = VetmanagerClient()
-        return await vc.get(f"/rest/api/medicalcard/{card_id}")
+        # The endpoint accepts ?filter=[{"property":"id","value":"800","operator":"="}]
+        # or simply /{id} — both work with the capital-letter endpoint.
+        return await vc.get(f"{_MC_ENDPOINT}/{card_id}")
 
     @mcp.tool
     async def create_medical_card(
@@ -164,7 +203,7 @@ def register(mcp: FastMCP) -> None:
         if description:
             payload["description"] = description
         if diagnosis:
-            payload["diagnosis"] = diagnosis
+            payload["diagnos"] = diagnosis  # API field name is "diagnos"
         if treatment:
             payload["treatment"] = treatment
         if recomendation:
@@ -179,7 +218,7 @@ def register(mcp: FastMCP) -> None:
             payload["weight"] = weight
         if temperature:
             payload["temperature"] = temperature
-        return await vc.post("/rest/api/medicalcard", json=payload)
+        return await vc.post(_MC_ENDPOINT, json=payload)
 
     @mcp.tool
     async def update_medical_card(
@@ -209,7 +248,7 @@ def register(mcp: FastMCP) -> None:
         if description:
             payload["description"] = description
         if diagnosis:
-            payload["diagnosis"] = diagnosis
+            payload["diagnos"] = diagnosis  # API field name is "diagnos"
         if treatment:
             payload["treatment"] = treatment
         if recomendation:
@@ -218,7 +257,7 @@ def register(mcp: FastMCP) -> None:
             payload["weight"] = weight
         if temperature:
             payload["temperature"] = temperature
-        return await vc.put(f"/rest/api/medicalcard/{card_id}", json=payload)
+        return await vc.put(f"{_MC_ENDPOINT}/{card_id}", json=payload)
 
     @mcp.tool
     async def get_vaccinations(

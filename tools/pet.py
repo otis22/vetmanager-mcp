@@ -138,7 +138,7 @@ def register(mcp: FastMCP) -> None:
         pet_data = pet_resp.get("data", {}).get("pet", {})
 
         mc_filter = _json.dumps(
-            [{"property": "patient_id", "value": str(pet_id)}],
+            [{"property": "patient_id", "value": str(pet_id), "operator": "="}],
             separators=(",", ":"),
         )
         mc_sort = _json.dumps(
@@ -146,10 +146,15 @@ def register(mcp: FastMCP) -> None:
             separators=(",", ":"),
         )
         mc_resp = await vc.get(
-            "/rest/api/medicalcard",
+            "/rest/api/MedicalCards",
             params={"filter": mc_filter, "sort": mc_sort, "limit": 5},
         )
-        medical_cards = mc_resp.get("data", {}).get("medicalcard", [])
+        mc_data = mc_resp.get("data", {})
+        medical_cards = (
+            mc_data.get("medicalCards")
+            or mc_data.get("medicalcards")
+            or []
+        ) if isinstance(mc_data, dict) else []
 
         vacc_resp = await vc.get(
             "/rest/api/MedicalCards/Vaccinations",

@@ -179,23 +179,32 @@ async def test_get_admissions_with_date_filter():
 @respx.mock
 async def test_get_medical_cards():
     billing_mock()
-    respx.get(f"{BASE}/rest/api/medicalcard").mock(
-        return_value=httpx.Response(200, json={"data": [{"id": 3, "pet_id": 5}]})
+    import json as _json
+    mc_filter = _json.dumps(
+        [{"property": "patient_id", "value": "5", "operator": "="}],
+        separators=(",", ":"),
     )
-    result = await client().get("/rest/api/medicalcard", params={"pet_id": 5, "limit": 20, "offset": 0})
-    assert result["data"][0]["pet_id"] == 5
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(
+            200,
+            json={"success": True, "data": {"totalCount": 1, "medicalCards": [{"id": 3, "patient_id": 5}]}},
+        )
+    )
+    result = await client().get("/rest/api/MedicalCards", params={"filter": mc_filter, "limit": 20, "offset": 0})
+    cards = result["data"].get("medicalCards") or result["data"].get("medicalcards") or []
+    assert cards[0]["patient_id"] == 5
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_create_medical_card():
     billing_mock()
-    respx.post(f"{BASE}/rest/api/medicalcard").mock(
+    respx.post(f"{BASE}/rest/api/MedicalCards").mock(
         return_value=httpx.Response(201, json={"data": {"id": 30, "description": "Checkup"}})
     )
     result = await client().post(
-        "/rest/api/medicalcard",
-        json={"pet_id": 5, "doctor_id": 3, "date": "2026-03-01", "description": "Checkup"},
+        "/rest/api/MedicalCards",
+        json={"patient_id": 5, "doctor_id": 3, "date_create": "2026-03-01", "description": "Checkup"},
     )
     assert result["data"]["description"] == "Checkup"
 
@@ -217,11 +226,16 @@ async def test_get_medical_cards_by_client_id():
             json={"data": {"pet": [{"id": 7, "alias": "Barney"}]}},
         )
     )
-    # Mock medical cards endpoint for pet 7
-    respx.get(f"{BASE}/rest/api/medicalcard").mock(
+    # Mock medical cards endpoint for pet 7 (correct endpoint: /rest/api/MedicalCards)
+    import json as _json2
+    mc_filter = _json2.dumps(
+        [{"property": "patient_id", "value": "7", "operator": "="}],
+        separators=(",", ":"),
+    )
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(
         return_value=httpx.Response(
             200,
-            json={"data": {"medicalcards": [{"id": 100, "pet_id": 7, "description": "OK"}]}},
+            json={"success": True, "data": {"totalCount": 1, "medicalCards": [{"id": 100, "patient_id": 7, "description": "OK"}]}},
         )
     )
     # Call via VetmanagerClient directly (simulates the tool logic)
@@ -229,8 +243,8 @@ async def test_get_medical_cards_by_client_id():
     pets = pets_resp.get("data", {}).get("pet", [])
     assert len(pets) == 1
     assert pets[0]["alias"] == "Barney"
-    cards_resp = await client().get("/rest/api/medicalcard", params={"pet_id": 7, "limit": 20, "offset": 0})
-    cards = cards_resp.get("data", {}).get("medicalcards", [])
+    cards_resp = await client().get("/rest/api/MedicalCards", params={"filter": mc_filter, "limit": 20, "offset": 0})
+    cards = cards_resp.get("data", {}).get("medicalCards") or cards_resp.get("data", {}).get("medicalcards") or []
     assert len(cards) == 1
     assert cards[0]["description"] == "OK"
 
@@ -1205,9 +1219,10 @@ async def test_get_pet_profile_computes_vaccination_dates():
             "data": {"pet": {"id": 66, "alias": "Айва", "owner_id": 422}}
         })
     )
-    respx.get(f"{BASE}/rest/api/medicalcard").mock(
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(
         return_value=httpx.Response(200, json={
-            "data": {"medicalcard": [{"id": 800, "date": "2026-03-01", "description": "checkup"}]}
+            "success": True,
+            "data": {"totalCount": 1, "medicalCards": [{"id": 800, "patient_id": 66, "date_create": "2026-03-01", "description": "checkup"}]}
         })
     )
     respx.get(f"{BASE}/rest/api/MedicalCards/Vaccinations").mock(
@@ -1236,10 +1251,11 @@ async def test_get_pet_profile_computes_vaccination_dates():
         pet_resp = await vc.get(f"/rest/api/pet/{pet_id}")
         pet_data = pet_resp.get("data", {}).get("pet", {})
 
-        mc_filter = _json.dumps([{"property": "patient_id", "value": str(pet_id)}], separators=(",", ":"))
+        mc_filter = _json.dumps([{"property": "patient_id", "value": str(pet_id), "operator": "="}], separators=(",", ":"))
         mc_sort = _json.dumps([{"property": "id", "direction": "DESC"}], separators=(",", ":"))
-        mc_resp = await vc.get("/rest/api/medicalcard", params={"filter": mc_filter, "sort": mc_sort, "limit": 5})
-        medical_cards = mc_resp.get("data", {}).get("medicalcard", [])
+        mc_resp = await vc.get("/rest/api/MedicalCards", params={"filter": mc_filter, "sort": mc_sort, "limit": 5})
+        mc_data = mc_resp.get("data", {})
+        medical_cards = (mc_data.get("medicalCards") or mc_data.get("medicalcards") or []) if isinstance(mc_data, dict) else []
 
         vacc_resp = await vc.get("/rest/api/MedicalCards/Vaccinations", params={"pet_id": pet_id, "limit": 100})
         vaccinations_raw = vacc_resp.get("data", {}).get("medicalcards", [])
@@ -1281,8 +1297,8 @@ async def test_get_pet_profile_no_vaccinations():
             "data": {"pet": {"id": 999, "alias": "Тестовый"}}
         })
     )
-    respx.get(f"{BASE}/rest/api/medicalcard").mock(
-        return_value=httpx.Response(200, json={"data": {"medicalcard": []}})
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {"totalCount": 0, "medicalCards": []}})
     )
     respx.get(f"{BASE}/rest/api/MedicalCards/Vaccinations").mock(
         return_value=httpx.Response(200, json={"data": {"medicalcards": []}, "success": True})
@@ -1294,10 +1310,11 @@ async def test_get_pet_profile_no_vaccinations():
         vc = client()
         pet_resp = await vc.get(f"/rest/api/pet/{pet_id}")
         pet_data = pet_resp.get("data", {}).get("pet", {})
-        mc_filter = _json.dumps([{"property": "patient_id", "value": str(pet_id)}], separators=(",", ":"))
+        mc_filter = _json.dumps([{"property": "patient_id", "value": str(pet_id), "operator": "="}], separators=(",", ":"))
         mc_sort = _json.dumps([{"property": "id", "direction": "DESC"}], separators=(",", ":"))
-        mc_resp = await vc.get("/rest/api/medicalcard", params={"filter": mc_filter, "sort": mc_sort, "limit": 5})
-        medical_cards = mc_resp.get("data", {}).get("medicalcard", [])
+        mc_resp = await vc.get("/rest/api/MedicalCards", params={"filter": mc_filter, "sort": mc_sort, "limit": 5})
+        mc_data = mc_resp.get("data", {})
+        medical_cards = (mc_data.get("medicalCards") or mc_data.get("medicalcards") or []) if isinstance(mc_data, dict) else []
         vacc_resp = await vc.get("/rest/api/MedicalCards/Vaccinations", params={"pet_id": pet_id, "limit": 100})
         vaccinations_raw = vacc_resp.get("data", {}).get("medicalcards", [])
         sorted_vacc = sorted(vaccinations_raw, key=lambda r: r.get("date") or "", reverse=True)
