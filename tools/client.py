@@ -1,3 +1,4 @@
+import json
 from fastmcp import FastMCP
 
 from validators import LimitParam, build_list_query_params
@@ -11,10 +12,14 @@ def register(mcp: FastMCP) -> None:
         limit: LimitParam = 20,
         offset: int = 0,
         name: str = "",
+        status: str = "ACTIVE",
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
     ) -> dict:
         """List clients of the clinic.
+
+        By default only ACTIVE clients are returned.  Pass status="" to include
+        all statuses (ACTIVE, DELETED, INACTIVE).
 
         Args:
             domain: Clinic subdomain (e.g. 'myclinic').
@@ -22,16 +27,99 @@ def register(mcp: FastMCP) -> None:
             limit: Max number of records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
             name: Filter by client name (partial match).
+            status: Filter by client status: 'ACTIVE' (default), 'DELETED',
+                    'INACTIVE', or '' for all.
         """
         client = VetmanagerClient()
+
+        combined_filters: list[dict] = list(filter or [])
+        if status:
+            combined_filters.append(
+                {"property": "status", "value": status, "operator": "="}
+            )
+
         params = build_list_query_params(
             limit=limit,
             offset=offset,
             sort=sort,
-            filters=filter,
+            filters=combined_filters if combined_filters else None,
             extra={"name": name},
         )
         return await client.get("/rest/api/client", params=params)
+
+    @mcp.tool
+    async def get_debtors(
+        limit: LimitParam = 100,
+        offset: int = 0,
+    ) -> dict:
+        """List all ACTIVE clients who have a negative balance (debtors).
+
+        Iterates through all active clients using pagination and returns only
+        those whose balance field is negative.  The result includes client name,
+        phone, and balance amount.
+
+        Args:
+            domain: Clinic subdomain.
+            api_key: REST API key.
+            limit: Max clients to fetch per page (1–100, default 100).
+            offset: Pagination offset (0–10000).
+        """
+        vc = VetmanagerClient()
+        active_filter = json.dumps(
+            [{"property": "status", "value": "ACTIVE", "operator": "="}],
+            separators=(",", ":"),
+        )
+        debtors: list[dict] = []
+        current_offset = offset
+        total_fetched = 0
+
+        while True:
+            params: dict = {
+                "filter": active_filter,
+                "limit": limit,
+                "offset": current_offset,
+            }
+            resp = await vc.get("/rest/api/client", params=params)
+            data = resp.get("data", {})
+            total_count = int(data.get("totalCount", 0)) if isinstance(data, dict) else 0
+            clients = data.get("client", []) if isinstance(data, dict) else []
+
+            if not clients:
+                break
+
+            for c in clients:
+                balance_raw = c.get("balance")
+                try:
+                    balance = float(balance_raw) if balance_raw is not None else None
+                except (TypeError, ValueError):
+                    balance = None
+                if balance is not None and balance < 0:
+                    debtors.append(
+                        {
+                            "id": c.get("id"),
+                            "last_name": c.get("last_name", ""),
+                            "first_name": c.get("first_name", ""),
+                            "middle_name": c.get("middle_name", ""),
+                            "cell_phone": c.get("cell_phone", ""),
+                            "home_phone": c.get("home_phone", ""),
+                            "balance": balance,
+                            "status": c.get("status", ""),
+                        }
+                    )
+
+            total_fetched += len(clients)
+            current_offset += len(clients)
+
+            # Stop when we've fetched all records.
+            if total_fetched >= total_count or len(clients) < limit:
+                break
+
+        return {
+            "success": True,
+            "debtors_count": len(debtors),
+            "total_active_clients_checked": total_fetched,
+            "debtors": debtors,
+        }
 
     @mcp.tool
     async def get_client_by_id(
