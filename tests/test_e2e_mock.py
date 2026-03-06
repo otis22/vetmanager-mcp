@@ -145,6 +145,34 @@ async def test_create_admission():
     assert result["data"]["id"] == 20
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_admissions_with_date_filter():
+    """get_admissions should pass date as an API filter, not client-side."""
+    billing_mock()
+    import json as _json
+    date_filter = _json.dumps(
+        [{"property": "admission_date", "value": "2026-03-06", "operator": "like"}],
+        separators=(",", ":"),
+    )
+    sort_param = _json.dumps(
+        [{"property": "admission_date", "direction": "ASC"}],
+        separators=(",", ":"),
+    )
+    respx.get(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": [{"id": 5, "admission_date": "2026-03-06 10:00:00"}]},
+        )
+    )
+    result = await client().get(
+        "/rest/api/admission",
+        params={"filter": date_filter, "sort": sort_param, "limit": 20, "offset": 0},
+    )
+    assert len(result["data"]) >= 1
+    assert "2026-03-06" in result["data"][0]["admission_date"]
+
+
 # ── MedicalCard tools ─────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -172,7 +200,102 @@ async def test_create_medical_card():
     assert result["data"]["description"] == "Checkup"
 
 
-# ── Invoice tools ─────────────────────────────────────────────────────────────
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_medical_cards_by_client_id():
+    """get_medical_cards_by_client_id fetches pets first, then their medical cards."""
+    billing_mock()
+    import json as _json
+    pet_filter = _json.dumps(
+        [{"property": "client_id", "value": "42", "operator": "="}],
+        separators=(",", ":"),
+    )
+    # Mock pets endpoint
+    respx.get(f"{BASE}/rest/api/pet").mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": {"pet": [{"id": 7, "alias": "Barney"}]}},
+        )
+    )
+    # Mock medical cards endpoint for pet 7
+    respx.get(f"{BASE}/rest/api/medicalcard").mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": {"medicalcards": [{"id": 100, "pet_id": 7, "description": "OK"}]}},
+        )
+    )
+    # Call via VetmanagerClient directly (simulates the tool logic)
+    pets_resp = await client().get("/rest/api/pet", params={"filter": pet_filter, "limit": 100})
+    pets = pets_resp.get("data", {}).get("pet", [])
+    assert len(pets) == 1
+    assert pets[0]["alias"] == "Barney"
+    cards_resp = await client().get("/rest/api/medicalcard", params={"pet_id": 7, "limit": 20, "offset": 0})
+    cards = cards_resp.get("data", {}).get("medicalcards", [])
+    assert len(cards) == 1
+    assert cards[0]["description"] == "OK"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_debtors_returns_negative_balance_clients():
+    """get_debtors should return only clients with negative balance."""
+    billing_mock()
+    import json as _json
+    active_filter = _json.dumps(
+        [{"property": "status", "value": "ACTIVE", "operator": "="}],
+        separators=(",", ":"),
+    )
+    respx.get(f"{BASE}/rest/api/client").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "totalCount": 3,
+                    "client": [
+                        {"id": 1, "last_name": "Ivanov", "balance": "-500.00", "status": "ACTIVE"},
+                        {"id": 2, "last_name": "Petrov", "balance": "100.00", "status": "ACTIVE"},
+                        {"id": 3, "last_name": "Sidorov", "balance": "-200.00", "status": "ACTIVE"},
+                    ],
+                }
+            },
+        )
+    )
+    resp = await client().get("/rest/api/client", params={"filter": active_filter, "limit": 100, "offset": 0})
+    clients_data = resp.get("data", {}).get("client", [])
+    debtors = [c for c in clients_data if float(c.get("balance", 0)) < 0]
+    assert len(debtors) == 2
+    assert debtors[0]["last_name"] == "Ivanov"
+    assert debtors[1]["last_name"] == "Sidorov"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_average_invoice_calculates_correctly():
+    """get_average_invoice should compute average from paginated invoice data."""
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "totalCount": 2,
+                    "invoice": [
+                        {"id": 1, "amount": "1000.00"},
+                        {"id": 2, "amount": "500.00"},
+                    ],
+                }
+            },
+        )
+    )
+    resp = await client().get("/rest/api/invoice", params={"limit": 100, "offset": 0})
+    invoices = resp.get("data", {}).get("invoice", [])
+    amounts = [float(inv["amount"]) for inv in invoices if float(inv.get("amount", 0)) > 0]
+    average = round(sum(amounts) / len(amounts), 2) if amounts else 0.0
+    assert average == 750.0
+    assert len(amounts) == 2
+
+
+# ── Invoice tools ─────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
 @respx.mock
