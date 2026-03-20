@@ -194,6 +194,19 @@ SSL_DOMAIN=342915.simplecloud.ru CERTBOT_EMAIL=ops@example.com \
 
 Инструменты работают по headers-only контракту: runtime credentials берутся только из HTTP-заголовков `X-VM-Domain` / `X-VM-Api-Key` (mcp.json). Параметры `limit` (1–100) и `offset` (0–10 000) защищены от случайных массовых выборок.
 
+### Контракт `tools/list`
+
+MCP-клиенты могут использовать `tools/list` как источник истины по возможностям сервера.
+Для каждого зарегистрированного инструмента сервер публикует:
+
+- `name`
+- `description`
+- `inputSchema`
+
+`description` формируется из актуальных docstrings инструментов и не должен
+содержать runtime credentials. `inputSchema` отражает реальные типы аргументов
+и ограничения вроде `limit: 1..100`.
+
 ### Универсальные sort/filter для list GET
 
 Во всех list `get_*` инструментах поддерживаются дополнительные параметры:

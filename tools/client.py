@@ -22,8 +22,6 @@ def register(mcp: FastMCP) -> None:
         all statuses (ACTIVE, DELETED, INACTIVE).
 
         Args:
-            domain: Clinic subdomain (e.g. 'myclinic').
-            api_key: REST API key from Vetmanager Settings → Integration → Rest API.
             limit: Max number of records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
             name: Filter by client name (partial match).
@@ -59,8 +57,6 @@ def register(mcp: FastMCP) -> None:
         phone, and balance amount.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max clients to fetch per page (1–100, default 100).
             offset: Pagination offset (0–10000).
         """
@@ -128,8 +124,6 @@ def register(mcp: FastMCP) -> None:
         """Get a clinic client by their unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             client_id: Unique numeric ID of the client.
         """
         client = VetmanagerClient()
@@ -145,8 +139,6 @@ def register(mcp: FastMCP) -> None:
         """Create a new client in the clinic.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             first_name: Client's first name.
             last_name: Client's last name.
             phone: Contact phone number.
@@ -171,8 +163,6 @@ def register(mcp: FastMCP) -> None:
         """Update an existing client's information.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             client_id: ID of the client to update.
             first_name: New first name (leave empty to keep current).
             last_name: New last name (leave empty to keep current).

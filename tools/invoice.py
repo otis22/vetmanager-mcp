@@ -20,8 +20,6 @@ def register(mcp: FastMCP) -> None:
         """List invoices in the clinic.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
             client_id: Filter by client ID (0 = no filter).
@@ -61,8 +59,6 @@ def register(mcp: FastMCP) -> None:
         last 365 days are used.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             date_from: Start date in YYYY-MM-DD format (optional, default: 1 year ago).
             date_to: End date in YYYY-MM-DD format (optional, default: today).
         """
@@ -133,8 +129,6 @@ def register(mcp: FastMCP) -> None:
         """Get a specific invoice by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             invoice_id: Unique numeric ID of the invoice.
         """
         vc = VetmanagerClient()
@@ -149,8 +143,6 @@ def register(mcp: FastMCP) -> None:
         """Create a new invoice for a client/pet.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             client_id: ID of the client being invoiced.
             pet_id: ID of the pet the invoice is for.
             description: Optional description for the invoice.

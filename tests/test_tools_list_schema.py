@@ -1,7 +1,7 @@
-"""Integration tests: MCP tools/list schema exposes minimum/maximum for all limit params.
+"""Integration tests for MCP tools/list export contract.
 
-Stage 17 requirement: every list tool must have limit with explicit minimum=1 and maximum=100
-in its MCP inputSchema so that LLM clients cannot send out-of-range values.
+Stage 16: every tool must expose meaningful description and inputSchema.
+Stage 17: every list tool must expose minimum=1 and maximum=100 for limit.
 """
 import asyncio
 import pytest
@@ -15,12 +15,16 @@ if str(ROOT) not in sys.path:
 from server import mcp  # noqa: E402
 
 
-def _get_all_tool_schemas() -> list[dict]:
-    """Return list of {name, inputSchema} for all registered MCP tools."""
+def _get_all_tool_exports() -> list[dict]:
+    """Return list of exported MCP tool metadata for all registered tools."""
     async def _fetch():
         tools = await mcp.list_tools()
         return [
-            {"name": t.name, "schema": t.to_mcp_tool().inputSchema or {}}
+            {
+                "name": t.name,
+                "description": t.to_mcp_tool().description or "",
+                "schema": t.to_mcp_tool().inputSchema or {},
+            }
             for t in tools
         ]
     return asyncio.run(_fetch())
@@ -29,15 +33,15 @@ def _get_all_tool_schemas() -> list[dict]:
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 @pytest.fixture(scope="module")
-def all_tool_schemas():
-    return _get_all_tool_schemas()
+def all_tool_exports():
+    return _get_all_tool_exports()
 
 
 @pytest.fixture(scope="module")
-def list_tools_with_limit(all_tool_schemas):
+def list_tools_with_limit(all_tool_exports):
     """All tools that have a 'limit' property in their inputSchema."""
     return [
-        t for t in all_tool_schemas
+        t for t in all_tool_exports
         if "limit" in t["schema"].get("properties", {})
     ]
 
@@ -45,7 +49,26 @@ def list_tools_with_limit(all_tool_schemas):
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 class TestToolsListSchema:
-    """Stage 17: all list tools must expose limit bounds in MCP inputSchema."""
+    """Stages 16-17: tools/list must export useful descriptions and schemas."""
+
+    def test_every_tool_has_nonempty_description(self, all_tool_exports):
+        missing = [t["name"] for t in all_tool_exports if not t["description"].strip()]
+        assert not missing, f"Tools with empty description: {missing}"
+
+    def test_every_tool_has_nonempty_input_schema(self, all_tool_exports):
+        missing = [t["name"] for t in all_tool_exports if not t["schema"]]
+        assert not missing, f"Tools with empty inputSchema: {missing}"
+
+    def test_tool_descriptions_do_not_contain_legacy_credentials(self, all_tool_exports):
+        offenders = [
+            t["name"]
+            for t in all_tool_exports
+            if "domain:" in t["description"] or "api_key:" in t["description"]
+        ]
+        assert not offenders, (
+            "Tools with legacy credential hints in description: "
+            f"{offenders}"
+        )
 
     def test_at_least_one_list_tool_exists(self, list_tools_with_limit):
         """Sanity check: there must be at least one tool with a limit parameter."""
@@ -61,7 +84,7 @@ class TestToolsListSchema:
             "Some tools may be missing LimitParam annotation."
         )
 
-    @pytest.mark.parametrize("tool_info", _get_all_tool_schemas())
+    @pytest.mark.parametrize("tool_info", _get_all_tool_exports())
     def test_limit_has_minimum_when_present(self, tool_info):
         """Every tool with a 'limit' param must declare minimum in its schema."""
         schema = tool_info["schema"]
@@ -74,7 +97,7 @@ class TestToolsListSchema:
             f"Got: {limit_schema}"
         )
 
-    @pytest.mark.parametrize("tool_info", _get_all_tool_schemas())
+    @pytest.mark.parametrize("tool_info", _get_all_tool_exports())
     def test_limit_has_maximum_when_present(self, tool_info):
         """Every tool with a 'limit' param must declare maximum in its schema."""
         schema = tool_info["schema"]
@@ -87,7 +110,7 @@ class TestToolsListSchema:
             f"Got: {limit_schema}"
         )
 
-    @pytest.mark.parametrize("tool_info", _get_all_tool_schemas())
+    @pytest.mark.parametrize("tool_info", _get_all_tool_exports())
     def test_limit_minimum_is_1(self, tool_info):
         """Limit minimum must be 1 (not 0 or negative)."""
         schema = tool_info["schema"]
@@ -101,7 +124,7 @@ class TestToolsListSchema:
             f"Tool '{tool_info['name']}': expected minimum=1, got {limit_schema['minimum']}"
         )
 
-    @pytest.mark.parametrize("tool_info", _get_all_tool_schemas())
+    @pytest.mark.parametrize("tool_info", _get_all_tool_exports())
     def test_limit_maximum_is_100(self, tool_info):
         """Limit maximum must be 100 (VETMANAGER_MAX_LIMIT)."""
         schema = tool_info["schema"]
@@ -115,7 +138,7 @@ class TestToolsListSchema:
             f"Tool '{tool_info['name']}': expected maximum=100, got {limit_schema['maximum']}"
         )
 
-    @pytest.mark.parametrize("tool_info", _get_all_tool_schemas())
+    @pytest.mark.parametrize("tool_info", _get_all_tool_exports())
     def test_limit_default_is_reasonable(self, tool_info):
         """Limit default must be between 1 and 100 (not 0 or 200)."""
         schema = tool_info["schema"]
@@ -130,7 +153,7 @@ class TestToolsListSchema:
             f"Tool '{tool_info['name']}': limit default={default} is out of range [1, 100]"
         )
 
-    @pytest.mark.parametrize("tool_info", _get_all_tool_schemas())
+    @pytest.mark.parametrize("tool_info", _get_all_tool_exports())
     def test_limit_has_description(self, tool_info):
         """Limit must have a description so LLM understands the constraint."""
         schema = tool_info["schema"]

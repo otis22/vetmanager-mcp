@@ -18,8 +18,6 @@ def register(mcp: FastMCP) -> None:
         """List product/service groups in the clinic catalog.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -31,8 +29,6 @@ def register(mcp: FastMCP) -> None:
         """Get a product/service group by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             group_id: Unique numeric ID of the group.
         """
         return await VetmanagerClient().get(f"/rest/api/GoodGroup/{group_id}")
@@ -48,8 +44,6 @@ def register(mcp: FastMCP) -> None:
         """List sale parameters (pricing, units) for a specific good/service.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             good_id: ID of the good/service.
             limit: Max records to return.
             offset: Pagination offset.
@@ -69,8 +63,6 @@ def register(mcp: FastMCP) -> None:
         """Get a good sale parameter record by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             param_id: Unique numeric ID of the sale parameter.
         """
         return await VetmanagerClient().get(f"/rest/api/goodSaleParam/{param_id}")
@@ -85,8 +77,6 @@ def register(mcp: FastMCP) -> None:
         """List inventory batch (party) accounts.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -98,8 +88,6 @@ def register(mcp: FastMCP) -> None:
         """Get an inventory batch account by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             party_id: Unique numeric ID of the party account.
         """
         return await VetmanagerClient().get(f"/rest/api/PartyAccount/{party_id}")
@@ -114,8 +102,6 @@ def register(mcp: FastMCP) -> None:
         """List documents associated with inventory batch accounts.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -127,8 +113,6 @@ def register(mcp: FastMCP) -> None:
         """Get a batch account document by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             doc_id: Unique numeric ID of the document.
         """
         return await VetmanagerClient().get(f"/rest/api/PartyAccountDoc/{doc_id}")
@@ -143,8 +127,6 @@ def register(mcp: FastMCP) -> None:
         """List warehouse/store documents (receipts, write-offs, transfers).
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -156,8 +138,6 @@ def register(mcp: FastMCP) -> None:
         """Get a store document by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             doc_id: Unique numeric ID of the store document.
         """
         return await VetmanagerClient().get(f"/rest/api/StoreDocument/{doc_id}")
@@ -172,8 +152,6 @@ def register(mcp: FastMCP) -> None:
         """List suppliers/counterparties in the clinic system.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -185,8 +163,6 @@ def register(mcp: FastMCP) -> None:
         """Get a supplier by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             supplier_id: Unique numeric ID of the supplier.
         """
         return await VetmanagerClient().get(f"/rest/api/Suppliers/{supplier_id}")

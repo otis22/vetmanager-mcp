@@ -19,8 +19,6 @@ def register(mcp: FastMCP) -> None:
         """List animal breeds in the clinic catalog.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
             pet_type_id: Filter by animal type ID (0 = no filter).
@@ -40,8 +38,6 @@ def register(mcp: FastMCP) -> None:
         """Get an animal breed by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             breed_id: Unique numeric ID of the breed.
         """
         return await VetmanagerClient().get(f"/rest/api/breed/{breed_id}")
@@ -56,8 +52,6 @@ def register(mcp: FastMCP) -> None:
         """List animal types (species) available in the clinic.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -69,8 +63,6 @@ def register(mcp: FastMCP) -> None:
         """Get an animal type (species) by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             pet_type_id: Unique numeric ID of the animal type.
         """
         return await VetmanagerClient().get(f"/rest/api/petType/{pet_type_id}")
@@ -86,8 +78,6 @@ def register(mcp: FastMCP) -> None:
         """List cities in the system.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
             title: Filter by city name (partial match, optional).
@@ -107,8 +97,6 @@ def register(mcp: FastMCP) -> None:
         """Get a city by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             city_id: Unique numeric ID of the city.
         """
         return await VetmanagerClient().get(f"/rest/api/city/{city_id}")
@@ -123,8 +111,6 @@ def register(mcp: FastMCP) -> None:
         """List city/settlement types (e.g. город, посёлок).
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -142,8 +128,6 @@ def register(mcp: FastMCP) -> None:
         """List streets, optionally filtered by city.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
             city_id: Filter by city ID (0 = no filter).
@@ -163,8 +147,6 @@ def register(mcp: FastMCP) -> None:
         """Get a street by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             street_id: Unique numeric ID of the street.
         """
         return await VetmanagerClient().get(f"/rest/api/street/{street_id}")
@@ -179,8 +161,6 @@ def register(mcp: FastMCP) -> None:
         """List units of measurement used in the clinic.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -192,8 +172,6 @@ def register(mcp: FastMCP) -> None:
         """Get a unit of measurement by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             unit_id: Unique numeric ID of the unit.
         """
         return await VetmanagerClient().get(f"/rest/api/unit/{unit_id}")
@@ -208,8 +186,6 @@ def register(mcp: FastMCP) -> None:
         """List user roles defined in the clinic system.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -221,8 +197,6 @@ def register(mcp: FastMCP) -> None:
         """Get a user role by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             role_id: Unique numeric ID of the role.
         """
         return await VetmanagerClient().get(f"/rest/api/role/{role_id}")
@@ -237,8 +211,6 @@ def register(mcp: FastMCP) -> None:
         """List staff positions (job titles) in the clinic.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -250,8 +222,6 @@ def register(mcp: FastMCP) -> None:
         """Get a staff position by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             position_id: Unique numeric ID of the position.
         """
         return await VetmanagerClient().get(f"/rest/api/userPosition/{position_id}")
@@ -266,8 +236,6 @@ def register(mcp: FastMCP) -> None:
         """List custom dropdown (combo) catalog names defined in the clinic.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -279,8 +247,6 @@ def register(mcp: FastMCP) -> None:
         """Get a combo manual catalog name by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             name_id: Unique numeric ID of the catalog name.
         """
         return await VetmanagerClient().get(f"/rest/api/ComboManualName/{name_id}")
@@ -296,8 +262,6 @@ def register(mcp: FastMCP) -> None:
         """List items of a specific custom dropdown catalog.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             combo_manual_name_id: ID of the parent catalog (ComboManualName).
             limit: Max records to return.
             offset: Pagination offset.
@@ -317,8 +281,6 @@ def register(mcp: FastMCP) -> None:
         """Get a combo manual catalog item by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             item_id: Unique numeric ID of the catalog item.
         """
         return await VetmanagerClient().get(f"/rest/api/ComboManualItem/{item_id}")

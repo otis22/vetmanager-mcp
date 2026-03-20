@@ -24,8 +24,6 @@ def register(mcp: FastMCP) -> None:
         """List medical card records for a specific pet.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             pet_id: ID of the pet whose records to retrieve.
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
@@ -75,8 +73,6 @@ def register(mcp: FastMCP) -> None:
         single aggregated response.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             client_id: Unique numeric ID of the client (owner).
             limit: Max records per pet to return (1–100, default 20).
             offset: Pagination offset (0–10000).
@@ -148,8 +144,6 @@ def register(mcp: FastMCP) -> None:
         """Get a medical card record by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             card_id: Unique numeric ID of the medical card record.
         """
         vc = VetmanagerClient()
@@ -178,8 +172,6 @@ def register(mcp: FastMCP) -> None:
         optional but should be filled in when provided by the user.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             patient_id: ID of the pet (patient).  Also accepted as pet_id.
             doctor_id: ID of the veterinarian creating the record.
             date_create: Record date in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format.
@@ -233,8 +225,6 @@ def register(mcp: FastMCP) -> None:
         """Update an existing medical card record.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             card_id: ID of the medical card record to update.
             description: Updated clinical description/anamnesis.
             diagnosis: Updated diagnosis text.

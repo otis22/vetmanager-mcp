@@ -16,8 +16,6 @@ def register(mcp: FastMCP) -> None:
         """List users (staff) of the clinic.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
         """
@@ -37,8 +35,6 @@ def register(mcp: FastMCP) -> None:
         """Get a clinic user (staff member) by their unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             user_id: Unique numeric ID of the user.
         """
         vc = VetmanagerClient()

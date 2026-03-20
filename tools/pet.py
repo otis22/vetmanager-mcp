@@ -17,8 +17,6 @@ def register(mcp: FastMCP) -> None:
         """List pets in the clinic, optionally filtered by owner.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
             client_id: Filter pets by owner's client ID (0 = no filter).
@@ -40,8 +38,6 @@ def register(mcp: FastMCP) -> None:
         """Get a pet by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             pet_id: Unique numeric ID of the pet.
         """
         vc = VetmanagerClient()
@@ -59,8 +55,6 @@ def register(mcp: FastMCP) -> None:
         """Register a new pet for a client.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             alias: Pet's name/alias.
             client_id: ID of the owner (client).
             type_id: Animal type ID (species). Use 0 if unknown.
@@ -92,8 +86,6 @@ def register(mcp: FastMCP) -> None:
         """Update an existing pet's details.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             pet_id: ID of the pet to update.
             alias: New pet name/alias (leave empty to keep current).
             type_id: New animal type ID (0 = no change).

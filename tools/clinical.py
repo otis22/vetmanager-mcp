@@ -18,8 +18,6 @@ def register(mcp: FastMCP) -> None:
         """List hospitalizations (inpatient stays) in the clinic.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
             pet_id: Filter by pet ID (0 = no filter).
@@ -39,8 +37,6 @@ def register(mcp: FastMCP) -> None:
         """Get a hospitalization record by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             hospital_id: Unique numeric ID of the hospitalization record.
         """
         return await VetmanagerClient().get(f"/rest/api/hospital/{hospital_id}")
@@ -50,8 +46,6 @@ def register(mcp: FastMCP) -> None:
         """Register a new hospitalization (inpatient admission) for a pet.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             pet_id: ID of the pet being hospitalized.
             doctor_id: ID of the responsible veterinarian.
             date_in: Admission date/time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS).
@@ -76,8 +70,6 @@ def register(mcp: FastMCP) -> None:
         """List hospital blocks/wards available in the clinic.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -94,8 +86,6 @@ def register(mcp: FastMCP) -> None:
         """Get a hospital block/ward by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             block_id: Unique numeric ID of the hospital block.
         """
         return await VetmanagerClient().get(f"/rest/api/HospitalBlock/{block_id}")
@@ -110,8 +100,6 @@ def register(mcp: FastMCP) -> None:
         """List all diagnoses recorded across all medical cards.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """

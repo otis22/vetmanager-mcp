@@ -18,8 +18,6 @@ def register(mcp: FastMCP) -> None:
         """List client payments in the clinic.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
             client_id: Filter by client ID (0 = no filter).
@@ -39,8 +37,6 @@ def register(mcp: FastMCP) -> None:
         """Get a payment record by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             payment_id: Unique numeric ID of the payment.
         """
         return await VetmanagerClient().get(f"/rest/api/payment/{payment_id}")
@@ -50,8 +46,6 @@ def register(mcp: FastMCP) -> None:
         """Register a new payment from a client.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             client_id: ID of the paying client.
             amount: Payment amount.
             cassa_id: ID of the cash register (cassa) receiving payment.
@@ -74,8 +68,6 @@ def register(mcp: FastMCP) -> None:
         """List invoice closing records (payments applied to invoices).
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -92,8 +84,6 @@ def register(mcp: FastMCP) -> None:
         """Get an invoice closing record by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             closing_id: Unique numeric ID of the closing record.
         """
         return await VetmanagerClient().get(f"/rest/api/closingOfInvoices/{closing_id}")
@@ -109,8 +99,6 @@ def register(mcp: FastMCP) -> None:
         """List line items (goods/services) within a specific invoice.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             invoice_id: ID of the parent invoice.
             limit: Max records to return.
             offset: Pagination offset.
@@ -130,8 +118,6 @@ def register(mcp: FastMCP) -> None:
         """Get a single invoice line item by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             doc_id: Unique numeric ID of the invoice document.
         """
         return await VetmanagerClient().get(f"/rest/api/invoiceDocument/{doc_id}")
@@ -141,8 +127,6 @@ def register(mcp: FastMCP) -> None:
         """Add a line item (good or service) to an existing invoice.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             invoice_id: ID of the invoice to add the item to.
             good_id: ID of the good or service.
             quantity: Quantity of the item.
@@ -161,8 +145,6 @@ def register(mcp: FastMCP) -> None:
         """List cash registers (cassas) in the clinic.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -179,8 +161,6 @@ def register(mcp: FastMCP) -> None:
         """Get a cash register by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             cassa_id: Unique numeric ID of the cash register.
         """
         return await VetmanagerClient().get(f"/rest/api/cassa/{cassa_id}")
@@ -195,8 +175,6 @@ def register(mcp: FastMCP) -> None:
         """List cash register closing records.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -213,8 +191,6 @@ def register(mcp: FastMCP) -> None:
         """Get a cash register closing record by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             close_id: Unique numeric ID of the closing record.
         """
         return await VetmanagerClient().get(f"/rest/api/cassaclose/{close_id}")

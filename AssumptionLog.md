@@ -296,3 +296,51 @@
 
 **Ограничения:**
 - Проверка prompts сделана статической (через AST и source scan), а не через runtime FastMCP introspection, чтобы тест работал независимо от наличия Python-зависимостей на хосте и не нарушал docker-only workflow проекта.
+
+---
+
+## Этап 15.5: Синхронизация technical requirements с текущей архитектурой
+
+**Архитектурные решения:**
+- `artifacts/technical-requirements-vetmanager-mcp-ru.md` обновлён как описание фактической текущей реализации, а не исторического дизайна первой версии.
+- Из артефакта удалены устаревшие допущения про:
+  - runtime credentials через `VETMANAGER_DOMAIN` / `VETMANAGER_API_KEY`;
+  - transport `stdio` как основной режим;
+  - структуру проекта с `.venv`, `config.py`, `requirements.txt`, `uv`.
+- В документе зафиксированы текущие инварианты проекта:
+  - headers-only credentials через `X-VM-Domain` / `X-VM-Api-Key`;
+  - HTTP MCP transport (`streamable-http`);
+  - docker-only workflow;
+  - process-local tagged cache;
+  - pacing, retry/timeout и security hardening в `VetmanagerClient`;
+  - статическая реализация tools/prompts с опорой на docstrings и type hints.
+
+**Согласованность артефактов:**
+- Содержание `technical-requirements` синхронизировано с:
+  - `README.md` по transport, headers-only runtime-контракту и docker compose workflow;
+  - `Roadmap.md` по уже завершённым этапам security/cache/sort-filter/prompts;
+  - `artifacts/prd-vetmanager-mcp-ru.md` по целевой продуктовой модели мультитенантного headers-only MCP-сервера.
+
+**Ограничения:**
+- Артефакт остаётся архитектурным описанием текущего состояния и не заменяет OpenAPI как источник истины по конкретным Vetmanager endpoints и схемам.
+
+---
+
+## Этап 16: tools/list по спецификации MCP
+
+**Архитектурные решения:**
+- В качестве источника описаний для `tools/list` остаются docstrings инструментов `tools/*.py`; отдельный слой хардкода для descriptions не добавлялся.
+- Из docstrings инструментов удалены legacy строки про `domain` / `api_key`, чтобы экспортируемые `description` соответствовали текущему headers-only контракту.
+- `inputSchema` продолжает генерироваться через FastMCP/Pydantic из сигнатур функций и type hints; отдельная ручная генерация схем не потребовалась.
+
+**Тестирование:**
+- `tests/test_tools_list_schema.py` расширен проверками Stage 16:
+  - у каждого инструмента есть непустой `description`;
+  - у каждого инструмента есть непустой `inputSchema`;
+  - в `description` отсутствуют legacy credential hints.
+- Ручная проверка внутри контейнера показала:
+  - `tool_count = 85`
+  - `legacy_count = 0`
+
+**Ограничения:**
+- `title` в `inputSchema` не является обязательным полем для текущего контракта; сервер гарантирует `name`, `description` и `inputSchema`.

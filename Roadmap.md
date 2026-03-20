@@ -308,24 +308,24 @@
 
 ---
 
-## Этап 15.5. Синхронизация технических артефактов с текущей архитектурой — `todo`
+## Этап 15.5. Синхронизация технических артефактов с текущей архитектурой — `done`
 
 Цель: устранить рассинхрон между кодом и справочными артефактами, чтобы дальнейшее планирование и реализация опирались на актуальную архитектуру проекта.
 
-- 15.5.1 Обновить `artifacts/technical-requirements-vetmanager-mcp-ru.md` под текущую схему: headers-only credentials, HTTP transport, актуальная структура проекта и docker-only workflow — `todo`
-- 15.5.2 Проверить согласованность `artifacts/technical-requirements-vetmanager-mcp-ru.md` с `README.md`, `Roadmap.md` и `artifacts/prd-vetmanager-mcp-ru.md` — `todo`
-- 15.5.3 Зафиксировать обновлённые архитектурные решения в `AssumptionLog.md` — `todo`
+- 15.5.1 Обновить `artifacts/technical-requirements-vetmanager-mcp-ru.md` под текущую схему: headers-only credentials, HTTP transport, актуальная структура проекта и docker-only workflow — `done`
+- 15.5.2 Проверить согласованность `artifacts/technical-requirements-vetmanager-mcp-ru.md` с `README.md`, `Roadmap.md` и `artifacts/prd-vetmanager-mcp-ru.md` — `done`
+- 15.5.3 Зафиксировать обновлённые архитектурные решения в `AssumptionLog.md` — `done`
 
 ---
 
-## Этап 16. tools/list: полный ответ по спецификации MCP — `todo`
+## Этап 16. tools/list: полный ответ по спецификации MCP — `done`
 
 Цель: чтобы клиенты (в т.ч. vetmanager-ai-assistant) могли получать от сервера полный список возможностей с описаниями и схемами параметров, без хардкода на своей стороне.
 
-- 16.1 Проверить, что ответ `tools/list` содержит для каждого инструмента поля по спецификации MCP: `name`, `description`, `inputSchema` (и при необходимости `title`) — `todo`
-- 16.2 При необходимости доработать FastMCP/регистрацию инструментов так, чтобы в ответе были осмысленные `description` (из docstring) и `inputSchema` (типы и описание аргументов) — `todo`
-- 16.3 Добавить тест или e2e-проверку: вызов `tools/list` возвращает не только имена, но и непустые `description` и `inputSchema` хотя бы для одного инструмента — `todo`
-- 16.4 Зафиксировать контракт в README (раздел MCP-инструменты или отдельный подраздел про tools/list) — `todo`
+- 16.1 Проверить, что ответ `tools/list` содержит для каждого инструмента поля по спецификации MCP: `name`, `description`, `inputSchema` (и при необходимости `title`) — `done`
+- 16.2 При необходимости доработать FastMCP/регистрацию инструментов так, чтобы в ответе были осмысленные `description` (из docstring) и `inputSchema` (типы и описание аргументов) — `done`
+- 16.3 Добавить тест или e2e-проверку: вызов `tools/list` возвращает не только имена, но и непустые `description` и `inputSchema` хотя бы для одного инструмента — `done`
+- 16.4 Зафиксировать контракт в README (раздел MCP-инструменты или отдельный подраздел про tools/list) — `done`
 
 ---
 

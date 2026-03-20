@@ -23,8 +23,6 @@ def register(mcp: FastMCP) -> None:
         matching records are returned — no client-side filtering needed.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
             date: Filter by exact date in YYYY-MM-DD format (optional).
@@ -67,8 +65,6 @@ def register(mcp: FastMCP) -> None:
         """Get an admission (visit/appointment) by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             admission_id: Unique numeric ID of the admission.
         """
         vc = VetmanagerClient()
@@ -86,8 +82,6 @@ def register(mcp: FastMCP) -> None:
         """Schedule a new admission (appointment) for a pet.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             pet_id: ID of the pet being admitted.
             client_id: ID of the pet's owner.
             doctor_id: ID of the attending veterinarian.
@@ -118,8 +112,6 @@ def register(mcp: FastMCP) -> None:
         """Update an existing admission (appointment) record.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             admission_id: ID of the admission to update.
             date: New date/time in ISO 8601 format (leave empty to keep current).
             doctor_id: New doctor ID (0 = no change).

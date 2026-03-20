@@ -17,8 +17,6 @@ def register(mcp: FastMCP) -> None:
         """List clinic branches in the system.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -35,8 +33,6 @@ def register(mcp: FastMCP) -> None:
         """Get a clinic branch by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             clinic_id: Unique numeric ID of the clinic.
         """
         return await VetmanagerClient().get(f"/rest/api/clinics/{clinic_id}")
@@ -53,8 +49,6 @@ def register(mcp: FastMCP) -> None:
         """List staff work schedule entries (timesheets).
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
             user_id: Filter by staff user ID (0 = no filter).
@@ -75,8 +69,6 @@ def register(mcp: FastMCP) -> None:
         """Get a timesheet entry by its unique ID.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             timesheet_id: Unique numeric ID of the timesheet entry.
         """
         return await VetmanagerClient().get(f"/rest/api/timesheet/{timesheet_id}")
@@ -91,8 +83,6 @@ def register(mcp: FastMCP) -> None:
         """List system configuration properties of the clinic.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
@@ -114,8 +104,6 @@ def register(mcp: FastMCP) -> None:
         """List anonymous (walk-in) client records in the system.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             limit: Max records to return.
             offset: Pagination offset.
         """
