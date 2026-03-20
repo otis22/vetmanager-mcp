@@ -296,6 +296,28 @@
 
 ---
 
+## Этап 15.4. MCP Prompts: переход на headers-only контракт — `done`
+
+Цель: привести MCP prompts в соответствие с текущим runtime-контрактом проекта, где credentials передаются только через HTTP headers, а не как аргументы prompt-функций.
+
+- 15.4.1 Убрать `domain`/`api_key` из сигнатур всех prompt-функций в `prompts.py` — `done`
+- 15.4.2 Убрать из текстов prompts инструкции вида `Use domain=...` / `api_key=...` и заменить их на headers-only формулировки — `done`
+- 15.4.3 Обновить docstrings prompts под текущий контракт и фактические tool names/параметры — `done`
+- 15.4.4 Добавить тест/проверку: prompts не требуют runtime credentials в аргументах и не подсказывают передавать их в tool calls — `done`
+- 15.4.5 Обновить `README.md` и зафиксировать решение в `AssumptionLog.md` — `done`
+
+---
+
+## Этап 15.5. Синхронизация технических артефактов с текущей архитектурой — `todo`
+
+Цель: устранить рассинхрон между кодом и справочными артефактами, чтобы дальнейшее планирование и реализация опирались на актуальную архитектуру проекта.
+
+- 15.5.1 Обновить `artifacts/technical-requirements-vetmanager-mcp-ru.md` под текущую схему: headers-only credentials, HTTP transport, актуальная структура проекта и docker-only workflow — `todo`
+- 15.5.2 Проверить согласованность `artifacts/technical-requirements-vetmanager-mcp-ru.md` с `README.md`, `Roadmap.md` и `artifacts/prd-vetmanager-mcp-ru.md` — `todo`
+- 15.5.3 Зафиксировать обновлённые архитектурные решения в `AssumptionLog.md` — `todo`
+
+---
+
 ## Этап 16. tools/list: полный ответ по спецификации MCP — `todo`
 
 Цель: чтобы клиенты (в т.ч. vetmanager-ai-assistant) могли получать от сервера полный список возможностей с описаниями и схемами параметров, без хардкода на своей стороне.
@@ -316,3 +338,70 @@
 - 17.3 Тест/проверка: tools/list возвращает у limit minimum=1, maximum=100 — `done`
 - 17.4 AssumptionLog, README при необходимости — `done`
 
+## Этап 18. Применить Справочник сущностей Vetmanager API — Доменные имена и синонимы(Архив скачан)
+
+
+## Этап 19. Добавить эти методы
+
+curl --location 'https://devtr6.vetmanager2.ru/rest/api/messages/all' \
+--header 'X-REST-API-KEY: 600e562402f47b4f24ebca4f02331783' \
+--data '{
+    "message": "Rest post",
+    "campaign": "All1"
+}'
+
+Response: 
+
+{
+    "success": true,
+    "message": "Messages successfully sent to 21 users"
+}
+
+
+curl --location 'https://devtr6.vetmanager2.ru/rest/api/messages/users' \
+--header 'X-REST-API-KEY: 600e562402f47b4f24ebca4f02331783' \
+--data '{
+    "message": "Rest post",
+    "campaign": "Concrete1",
+    "user_ids":[1]
+}'
+
+Response: 
+
+{
+    "success": true,
+    "message": "Messages successfully sent to 21 users"
+}
+
+
+curl --location '/rest/api/messages/reports?campaign=All%20users' \
+--header 'X-REST-API-KEY: {{API Key}}'
+
+Ответ: 
+
+{
+    "success": true,
+    "data": {
+        "campaign": "All users",
+        "total": 0,
+        "sent": 0,
+        "pending": 0
+    }
+}
+
+
+curl --location 'https://devtr6.vetmanager2.ru/rest/api/messages/roles' \
+--header 'X-REST-API-KEY: 600e562402f47b4f24ebca4f02331783' \
+--header 'Content-Type: text/plain' \
+--data '{
+    "message": "Rest post",
+    "campaign": "Concrete1",
+    "roles": ["Врач"]
+}'
+
+Ответ: 
+
+{
+    "success": true,
+    "message": "Messages successfully sent to 2 users with the specified roles"
+}

@@ -250,6 +250,10 @@ SSL_DOMAIN=342915.simplecloud.ru CERTBOT_EMAIL=ops@example.com \
 
 **20 готовых шаблонов** для типовых сценариев — LLM использует их для составления цепочек вызовов инструментов:
 
+Prompts работают по тому же headers-only контракту, что и tools:
+они принимают только бизнес-параметры сценария. Runtime credentials не
+передаются в prompt arguments и не должны прокидываться в tool calls.
+
 | Категория | Промпты |
 |-----------|---------|
 | Администратор | `daily_schedule`, `find_client`, `client_balance`, `book_appointment`, `create_invoice_prompt`, `doctor_workload`, `unconfirmed_appointments` |

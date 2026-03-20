@@ -4,368 +4,345 @@ from fastmcp import FastMCP
 from fastmcp.prompts import Message
 
 
+def _headers_only_prefix() -> str:
+    return (
+        "Credentials are already available from the MCP request headers. "
+        "Do not ask for a clinic domain or API key and do not pass them as tool arguments. "
+    )
+
+
 def register_prompts(mcp: FastMCP) -> None:
 
-    # ── Administrator prompts ─────────────────────────────────────────────────
-
     @mcp.prompt
-    def daily_schedule(domain: str, api_key: str, date: str, doctor_id: int = 0) -> list[Message]:
-        """Show the admission schedule for a given day, optionally filtered by doctor.
+    def daily_schedule(date: str, doctor_id: int = 0) -> list[Message]:
+        """Show the admission schedule for a given day.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             date: Date in YYYY-MM-DD format.
-            doctor_id: Vet doctor ID to filter by (0 = all doctors).
+            doctor_id: Vet doctor ID to focus on (0 = all doctors).
         """
-        filter_note = f" for doctor ID {doctor_id}" if doctor_id else " for all doctors"
+        doctor_note = (
+            f"After fetching admissions, focus on doctor ID {doctor_id}. "
+            if doctor_id
+            else ""
+        )
         return [Message(
-            f"Show the clinic admission schedule for {date}{filter_note}. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Call get_admissions with the date parameter. "
-            "Format the result as a readable timetable grouped by doctor."
+            _headers_only_prefix()
+            + f"Show the clinic admission schedule for {date}. "
+            + "Call get_admissions(date=date, limit=100). "
+            + doctor_note
+            + "Format the result as a readable timetable grouped by doctor."
         )]
 
     @mcp.prompt
-    def find_client(domain: str, api_key: str, query: str) -> list[Message]:
+    def find_client(query: str) -> list[Message]:
         """Find a client by name, phone number or partial match.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
-            query: Search query — client name or phone number.
+            query: Search query for the client.
         """
         return [Message(
-            f"Find the clinic client matching '{query}'. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Call get_clients with the name parameter. "
-            "Display full name, phone, email and client ID."
+            _headers_only_prefix()
+            + f"Find the clinic client matching '{query}'. "
+            + "Call get_clients(name=query, limit=20). "
+            + "Display full name, phone, email and client ID."
         )]
 
     @mcp.prompt
-    def client_balance(domain: str, api_key: str, client_id: int) -> list[Message]:
-        """Show the financial balance for a client — unpaid invoices and recent payments.
+    def client_balance(client_id: int) -> list[Message]:
+        """Show the financial balance for a client.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             client_id: ID of the client.
         """
         return [Message(
-            f"Show the financial summary for client ID {client_id}. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "1. Call get_invoices filtered by client_id to find open invoices. "
-            "2. Call get_payments filtered by client_id to find recent payments. "
-            "Summarise: total debt, last payment date and amount."
+            _headers_only_prefix()
+            + f"Show the financial summary for client ID {client_id}. "
+            + "1. Call get_invoices(client_id=client_id, limit=100, sort=[{'property':'create_date','direction':'DESC'}]). "
+            + "2. Call get_payments(client_id=client_id, limit=100, sort=[{'property':'id','direction':'DESC'}]). "
+            + "Summarise total debt, recent invoices, and the latest payment amount/date."
         )]
 
     @mcp.prompt
-    def book_appointment(domain: str, api_key: str, client_name: str, pet_name: str, doctor_id: int, date: str) -> list[Message]:
+    def book_appointment(
+        client_name: str,
+        pet_name: str,
+        doctor_id: int,
+        date: str,
+    ) -> list[Message]:
         """Book a new admission appointment for a pet.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
-            client_name: Client's name to look up.
-            pet_name: Pet's name/alias.
+            client_name: Client name to look up.
+            pet_name: Pet name or alias.
             doctor_id: ID of the veterinarian.
-            date: Appointment date/time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS).
+            date: Appointment date/time in ISO 8601 format.
         """
         return [Message(
-            f"Book an appointment: client '{client_name}', pet '{pet_name}', "
-            f"doctor ID {doctor_id}, date {date}. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Steps: 1) find client by name with get_clients, "
-            "2) find pet by client_id with get_pets, "
-            "3) call create_admission with pet_id, client_id, doctor_id, date. "
-            "Confirm the created admission ID."
+            _headers_only_prefix()
+            + f"Book an appointment for client '{client_name}', pet '{pet_name}', "
+            + f"doctor ID {doctor_id}, date {date}. "
+            + "1. Call get_clients(name=client_name, limit=20). "
+            + "2. From the chosen client, call get_pets(client_id=client_id, limit=100) and find the pet by alias/name. "
+            + "3. Call create_admission(pet_id=pet_id, client_id=client_id, doctor_id=doctor_id, date=date). "
+            + "Confirm the created admission ID."
         )]
 
     @mcp.prompt
-    def create_invoice_prompt(domain: str, api_key: str, client_id: int, pet_id: int, service_name: str) -> list[Message]:
+    def create_invoice_prompt(
+        client_id: int,
+        pet_id: int,
+        service_name: str,
+    ) -> list[Message]:
         """Create a new invoice for a client with a service/good line item.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             client_id: ID of the client.
             pet_id: ID of the pet.
             service_name: Name of the service or good to add.
         """
         return [Message(
-            f"Create an invoice for client ID {client_id}, pet ID {pet_id} "
-            f"with service/good '{service_name}'. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Steps: 1) find the good by name with get_goods, "
-            "2) call create_invoice with client_id and pet_id, "
-            "3) call add_invoice_document with invoice_id, good_id, quantity=1, price from catalog. "
-            "Return the invoice ID."
+            _headers_only_prefix()
+            + f"Create an invoice for client ID {client_id}, pet ID {pet_id}, "
+            + f"with service or good '{service_name}'. "
+            + "1. Call get_goods(name=service_name, limit=20) and choose the correct good_id. "
+            + "2. Call create_invoice(client_id=client_id, pet_id=pet_id). "
+            + "3. Call add_invoice_document(invoice_id=invoice_id, good_id=good_id, quantity=1, price=selected_price). "
+            + "Return the invoice ID and the added line item."
         )]
 
     @mcp.prompt
-    def doctor_workload(domain: str, api_key: str, doctor_id: int, date_from: str, date_to: str) -> list[Message]:
-        """Analyse a doctor's workload (admissions count) over a date range.
+    def doctor_workload(doctor_id: int, date_from: str, date_to: str) -> list[Message]:
+        """Analyse a doctor's workload over a date range.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             doctor_id: ID of the veterinarian.
             date_from: Start date in YYYY-MM-DD format.
             date_to: End date in YYYY-MM-DD format.
         """
         return [Message(
-            f"Analyse the workload for doctor ID {doctor_id} from {date_from} to {date_to}. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Call get_admissions for each date or page through results filtering by doctor. "
-            "Count total admissions and list days with the most visits."
+            _headers_only_prefix()
+            + f"Analyse the workload for doctor ID {doctor_id} from {date_from} to {date_to}. "
+            + "Fetch admissions for the date range using get_admissions and pagination as needed. "
+            + "Filter the returned records by doctor ID and count visits by day. "
+            + "Return totals and the busiest days."
         )]
 
     @mcp.prompt
-    def unconfirmed_appointments(domain: str, api_key: str, date: str) -> list[Message]:
-        """List unconfirmed (status != confirmed) admissions for the next 2 days.
+    def unconfirmed_appointments(date: str) -> list[Message]:
+        """List unconfirmed admissions for the next two days.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
-            date: Start date in YYYY-MM-DD format (today).
+            date: Start date in YYYY-MM-DD format.
         """
         return [Message(
-            f"List unconfirmed appointments starting from {date} for the next 2 days. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Call get_admissions with date filter and check admission status field. "
-            "Show client name, pet name, time, and doctor for each unconfirmed record."
+            _headers_only_prefix()
+            + f"List unconfirmed appointments starting from {date} for the next 2 days. "
+            + "Call get_admissions(date=date, limit=100). "
+            + "From the returned records, keep appointments whose status is not confirmed/accepted. "
+            + "Show client name, pet name, time, and doctor."
         )]
 
-    # ── Vet doctor prompts ────────────────────────────────────────────────────
-
     @mcp.prompt
-    def pet_history(domain: str, api_key: str, pet_id: int, limit: int = 10) -> list[Message]:
-        """Show the medical history of a pet (last N records).
+    def pet_history(pet_id: int, limit: int = 10) -> list[Message]:
+        """Show the medical history of a pet.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             pet_id: ID of the pet.
-            limit: Number of most recent records to show (default 10).
+            limit: Number of most recent records to show.
         """
         return [Message(
-            f"Show the medical history for pet ID {pet_id}, last {limit} records. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Call get_medical_cards with pet_id and limit. "
-            "Format each record with date, doctor, description, diagnosis, treatment."
+            _headers_only_prefix()
+            + f"Show the medical history for pet ID {pet_id}, last {limit} records. "
+            + "Call get_medical_cards(pet_id=pet_id, limit=limit, "
+            + "sort=[{'property':'id','direction':'DESC'}]). "
+            + "Format each record with date, doctor, description, diagnosis, and treatment."
         )]
 
     @mcp.prompt
-    def last_vaccinations(domain: str, api_key: str, pet_id: int) -> list[Message]:
+    def last_vaccinations(pet_id: int) -> list[Message]:
         """Show vaccination history and status for a pet.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             pet_id: ID of the pet.
         """
         return [Message(
-            f"Show vaccination history for pet ID {pet_id}. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Call get_medical_cards with pet_id and search for records containing 'вакцин' or 'vaccination' in description. "
-            "List vaccine name, date administered, and next due date if mentioned."
+            _headers_only_prefix()
+            + f"Show vaccination history for pet ID {pet_id}. "
+            + "Call get_vaccinations(pet_id=pet_id). "
+            + "List vaccine name, date administered, and next due date."
         )]
 
     @mcp.prompt
-    def add_medical_note(domain: str, api_key: str, pet_id: int, doctor_id: int, note: str, diagnosis: str = "") -> list[Message]:
+    def add_medical_note(
+        pet_id: int,
+        doctor_id: int,
+        note: str,
+        diagnosis: str = "",
+    ) -> list[Message]:
         """Add a new medical record note to a pet's card.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             pet_id: ID of the pet.
             doctor_id: ID of the veterinarian writing the note.
             note: Clinical description or observation text.
-            diagnosis: Diagnosis text (optional).
+            diagnosis: Diagnosis text.
         """
-        today = "today"
         return [Message(
-            f"Add a medical note for pet ID {pet_id} by doctor ID {doctor_id}. "
-            f"Note: '{note}'. Diagnosis: '{diagnosis}'. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            f"Call create_medical_card with pet_id={pet_id}, doctor_id={doctor_id}, "
-            f"date={today}, description=note, diagnosis=diagnosis. "
-            "Confirm the created record ID."
+            _headers_only_prefix()
+            + f"Add a medical note for pet ID {pet_id} by doctor ID {doctor_id}. "
+            + f"Description: '{note}'. Diagnosis: '{diagnosis}'. "
+            + "Call create_medical_card(patient_id=pet_id, doctor_id=doctor_id, "
+            + "date_create=today, description=note, diagnosis=diagnosis). "
+            + "Confirm the created medical card ID."
         )]
 
     @mcp.prompt
-    def current_inpatients(domain: str, api_key: str) -> list[Message]:
-        """List all currently hospitalised patients in the clinic.
-
-        Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
-        """
+    def current_inpatients() -> list[Message]:
+        """List all currently hospitalised patients in the clinic."""
         return [Message(
-            "List all current inpatients (hospitalizations without discharge date). "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Call get_hospitalizations. Filter or note records where dateOut is empty. "
-            "Show pet name, owner, admitting doctor, ward/block, and admission date."
+            _headers_only_prefix()
+            + "List all current inpatients. "
+            + "Call get_hospitalizations(limit=100). "
+            + "Keep records where discharge/dateOut is empty or the patient is still admitted. "
+            + "Show pet name, owner, doctor, ward/block, and admission date."
         )]
 
     @mcp.prompt
-    def pet_invoices(domain: str, api_key: str, pet_id: int) -> list[Message]:
-        """Show all invoices associated with a pet.
+    def pet_invoices(pet_id: int) -> list[Message]:
+        """Show recent invoices associated with a pet.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             pet_id: ID of the pet.
         """
         return [Message(
-            f"Show all invoices for pet ID {pet_id}. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Call get_invoices filtered by pet_id. "
-            "For each invoice show: date, total amount, payment status, and line items (call get_invoice_documents)."
+            _headers_only_prefix()
+            + f"Build the invoice history for pet ID {pet_id}. "
+            + "1. Call get_pet_by_id(pet_id) to determine the owning client_id. "
+            + "2. Call get_invoices(client_id=client_id, limit=100, "
+            + "sort=[{'property':'create_date','direction':'DESC'}]). "
+            + "3. Keep only invoices related to the target pet when the response includes pet linkage. "
+            + "4. For each invoice, call get_invoice_documents(invoice_id=invoice_id, limit=100). "
+            + "Show date, total amount, payment status, and line items."
         )]
 
     @mcp.prompt
-    def pet_full_profile(domain: str, api_key: str, pet_id: int) -> list[Message]:
-        """Get the complete profile of a pet: owner balance, last visit, vaccinations, recent records, recent invoices.
+    def pet_full_profile(pet_id: int) -> list[Message]:
+        """Get the complete profile of a pet.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             pet_id: ID of the pet.
         """
         return [Message(
-            f"Build a full profile for pet ID {pet_id}. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Gather the following in parallel: "
-            "1) pet info via get_pet_by_id, "
-            "2) owner info via get_client_by_id using pet's client_id, "
-            "3) last 3 medical cards via get_medical_cards, "
-            "4) last 3 invoices via get_invoices, "
-            "5) last admission date via get_admissions. "
-            "Summarise into a structured card: pet details, owner balance, last visit, "
-            "vaccination status, recent notes, open invoices."
+            _headers_only_prefix()
+            + f"Build a full profile for pet ID {pet_id}. "
+            + "Prefer get_pet_profile(pet_id) as the primary aggregated tool. "
+            + "If more client context is needed, call get_client_by_id using the owner from the pet record. "
+            + "Summarise pet details, vaccination status, recent medical history, and recent invoices."
         )]
 
-    # ── Financial prompts ─────────────────────────────────────────────────────
-
     @mcp.prompt
-    def daily_revenue(domain: str, api_key: str, date: str) -> list[Message]:
-        """Show clinic revenue for a specific day, broken down by doctor.
+    def daily_revenue(date: str) -> list[Message]:
+        """Show clinic revenue for a specific day.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             date: Date in YYYY-MM-DD format.
         """
         return [Message(
-            f"Calculate the clinic revenue for {date}. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Call get_invoices filtered by date. Sum amounts per doctor. "
-            "Also call get_payments for the same date. "
-            "Report: total invoiced, total received, and per-doctor breakdown."
+            _headers_only_prefix()
+            + f"Calculate the clinic revenue for {date}. "
+            + "Call get_invoices(date_from=date, date_to=date, limit=100) and "
+            + "get_payments(limit=100, sort=[{'property':'id','direction':'DESC'}]) if needed. "
+            + "Summarise total invoiced, total received, and any doctor breakdown available in the data."
         )]
 
     @mcp.prompt
-    def unpaid_invoices(domain: str, api_key: str, limit: int = 50) -> list[Message]:
+    def unpaid_invoices(limit: int = 50) -> list[Message]:
         """List all unpaid or partially paid invoices.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
-            limit: Max number of invoices to check (default 50).
+            limit: Max number of invoices to inspect.
         """
         return [Message(
-            "List unpaid or partially paid invoices. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            f"Call get_invoices with limit={limit}. "
-            "Filter those where payment status indicates unpaid/partial. "
-            "Show client name, pet name, invoice date, total amount, and amount due."
+            _headers_only_prefix()
+            + "List unpaid or partially paid invoices. "
+            + f"Call get_invoices(limit={limit}, sort=[{{'property':'create_date','direction':'DESC'}}]). "
+            + "Keep invoices whose payment status indicates unpaid or partial. "
+            + "Show client name, pet name, invoice date, total amount, and amount due."
         )]
 
     @mcp.prompt
-    def popular_services(domain: str, api_key: str, date_from: str, date_to: str, top_n: int = 10) -> list[Message]:
+    def popular_services(date_from: str, date_to: str, top_n: int = 10) -> list[Message]:
         """Show top goods/services by count and revenue over a date range.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             date_from: Start date in YYYY-MM-DD format.
             date_to: End date in YYYY-MM-DD format.
-            top_n: Number of top positions to show (default 10).
+            top_n: Number of top positions to show.
         """
         return [Message(
-            f"Show the top {top_n} services and goods by usage from {date_from} to {date_to}. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Call get_invoices to get invoices in the period, then call get_invoice_documents for each. "
-            "Group by good_id, count occurrences and sum revenue. "
-            "Return a ranked table: position, good name, count, total revenue."
+            _headers_only_prefix()
+            + f"Show the top {top_n} services and goods from {date_from} to {date_to}. "
+            + "Call get_invoices(date_from=date_from, date_to=date_to, limit=100). "
+            + "For each invoice, call get_invoice_documents(invoice_id=invoice_id, limit=100). "
+            + "Group by good_id, count occurrences, sum revenue, and return a ranked table."
         )]
 
-    # ── Warehouse & client base prompts ───────────────────────────────────────
-
     @mcp.prompt
-    def search_good(domain: str, api_key: str, query: str) -> list[Message]:
-        """Search for a good or service in the clinic price list.
+    def search_good(query: str) -> list[Message]:
+        """Search for a good or service in the clinic catalog.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             query: Name or partial name of the good/service.
         """
         return [Message(
-            f"Search for goods/services matching '{query}' in the price list. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Call get_goods with name=query. "
-            "Show: good ID, name, group, price, unit."
+            _headers_only_prefix()
+            + f"Search for goods or services matching '{query}'. "
+            + "Call get_goods(name=query, limit=20). "
+            + "Show good ID, name, group, price, and unit when available."
         )]
 
     @mcp.prompt
-    def low_stock(domain: str, api_key: str, threshold: int = 5) -> list[Message]:
+    def low_stock(threshold: int = 5) -> list[Message]:
         """List goods with stock quantity below a threshold.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
-            threshold: Quantity below which stock is considered low (default 5).
+            threshold: Quantity below which stock is considered low.
         """
         return [Message(
-            f"Find goods with stock quantity below {threshold}. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Call get_good_sale_params to get current stock levels. "
-            "Filter items where quantity < threshold. "
-            "Show: good name, current quantity, unit, supplier if available."
+            _headers_only_prefix()
+            + f"Find goods with stock quantity below {threshold}. "
+            + "Use get_goods(limit=100) to identify candidate goods and "
+            + "get_good_stock_balance(good_id=..., clinic_id=1) to check balances. "
+            + "Return only goods whose quantity is below the threshold."
         )]
 
     @mcp.prompt
-    def new_clients(domain: str, api_key: str, since_date: str) -> list[Message]:
+    def new_clients(since_date: str) -> list[Message]:
         """List clients registered since a given date.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
             since_date: Start date in YYYY-MM-DD format.
         """
         return [Message(
-            f"List clients registered since {since_date}. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Call get_clients with date filter or sort by registration date. "
-            "Show: client name, phone, email, registration date, number of pets."
+            _headers_only_prefix()
+            + f"List clients registered since {since_date}. "
+            + "Call get_clients(limit=100, sort=[{'property':'id','direction':'DESC'}]) "
+            + "and keep records whose registration/create date is on or after the requested date. "
+            + "Show client name, phone, email, registration date, and number of pets when available."
         )]
 
     @mcp.prompt
-    def client_no_visit(domain: str, api_key: str, days_without_visit: int = 365) -> list[Message]:
+    def client_no_visit(days_without_visit: int = 365) -> list[Message]:
         """List clients who have not visited the clinic for a specified number of days.
 
         Args:
-            domain: Clinic subdomain.
-            api_key: REST API key.
-            days_without_visit: Number of days without a visit (default 365).
+            days_without_visit: Number of days without a visit.
         """
         return [Message(
-            f"Find clients who haven't visited in {days_without_visit}+ days. "
-            f"Use domain='{domain}' and api_key='{api_key}'. "
-            "Call get_admissions sorted by date descending. "
-            "For each client find their last admission date. "
-            "Return clients whose last visit was more than {days_without_visit} days ago. "
-            "Show: client name, phone, last visit date, pets."
+            _headers_only_prefix()
+            + f"Find clients who have not visited in {days_without_visit}+ days. "
+            + "Call get_admissions(limit=100, sort=[{'property':'admission_date','direction':'DESC'}]). "
+            + "Determine each client's latest visit and return clients whose last visit is older than the threshold. "
+            + "Show client name, phone, last visit date, and pets."
         )]

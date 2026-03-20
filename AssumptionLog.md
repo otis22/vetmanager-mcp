@@ -277,3 +277,22 @@
 
 **Тестирование:**
 - В `test_validators.py` добавлены тесты для `LimitParam`: константа `VETMANAGER_MAX_LIMIT == 100` и проверка через Pydantic `create_model`, что схема поля с типом `LimitParam` содержит `minimum=1`, `maximum=100` и описание.
+
+---
+
+## Этап 15.4: MCP Prompts на headers-only контракте
+
+**Архитектурные решения:**
+- `prompts.py` переведён на тот же runtime-контракт, что и tools: prompt-функции принимают только бизнес-параметры сценария и больше не содержат `domain` / `api_key` в сигнатурах.
+- Добавлен единый headers-only префикс для всех prompts: credentials уже доступны из request headers, их не нужно спрашивать у пользователя и нельзя передавать как аргументы инструментов.
+- Тексты prompts уточнены под фактические `tool` names и параметры текущей реализации, чтобы не подсказывать LLM несуществующие аргументы.
+
+**Тестирование:**
+- Добавлен статический regression test `tests/test_prompts_headers_only.py`.
+- Тест проверяет:
+  - что в prompt-функциях нет аргументов `domain` / `api_key`;
+  - что в `prompts.py` не осталось legacy-подсказок вида `Use domain=...` / `api_key=...`;
+  - что в файле есть явная headers-only инструкция.
+
+**Ограничения:**
+- Проверка prompts сделана статической (через AST и source scan), а не через runtime FastMCP introspection, чтобы тест работал независимо от наличия Python-зависимостей на хосте и не нарушал docker-only workflow проекта.
