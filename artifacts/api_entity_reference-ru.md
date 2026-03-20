@@ -925,6 +925,138 @@ GET /rest/api/stores/RestOfGoodInWarehouse/?clinic_id=1&good_id=470
 
 ---
 
+### 2.38. Messages (Уведомления пользователям)
+
+> **Бизнес-контекст:** Набор специальных endpoint'ов для отправки внутренних уведомлений пользователям Vetmanager и получения отчётов по кампаниям рассылки. Это не стандартный CRUD-ресурс, а операционный API для массовых и адресных in-app сообщений.
+
+**Эндпоинты API:**
+- `POST /rest/api/messages/all`
+- `POST /rest/api/messages/users`
+- `GET /rest/api/messages/reports`
+- `POST /rest/api/messages/roles`
+
+**Поддерживаемые сценарии:**
+- `messages/all` — отправить сообщение всем пользователям клиники.
+- `messages/users` — отправить сообщение конкретным пользователям по `user_ids`.
+- `messages/reports` — получить агрегированный отчёт по кампании (`campaign`, `total`, `sent`, `pending`).
+- `messages/roles` — отправить сообщение всем пользователям с указанными ролями.
+
+> **Примечание:** Это специальный API, а не сущность со стандартными REST-операциями по ID. Для `GET /rest/api/messages/reports` OpenAPI описывает общие list-параметры (`limit`, `offset`, `sort`, `filter`), но фактическое API также требует непустой query-параметр `campaign`; без него real API может вернуть `{"success": false, "errors": ["Campaign name cannot be empty"]}`.
+
+#### 2.38.1. POST `/rest/api/messages/all`
+
+**Назначение:** отправить HTML-сообщение всем пользователям программы.
+
+**Тело запроса:**
+
+| Поле | Тип | Обязательное | Описание |
+| :--- | :--- | :--- | :--- |
+| `message` | string | Да | Текст сообщения. Поддерживается HTML. |
+| `campaign` | string | Да | Название кампании / рассылки для последующего отчёта. |
+
+**Пример запроса:**
+```json
+{
+  "message": "Rest post",
+  "campaign": "All1"
+}
+```
+
+**Пример ответа:**
+```json
+{
+  "success": true,
+  "message": "Messages successfully sent to 21 users"
+}
+```
+
+#### 2.38.2. POST `/rest/api/messages/users`
+
+**Назначение:** отправить сообщение выбранным пользователям по их ID.
+
+**Тело запроса:**
+
+| Поле | Тип | Обязательное | Описание |
+| :--- | :--- | :--- | :--- |
+| `message` | string | Да | Текст сообщения. Поддерживается HTML. |
+| `campaign` | string | Да | Название кампании / рассылки. |
+| `user_ids` | array[integer] | Да | Массив ID пользователей-получателей. |
+
+**Пример запроса:**
+```json
+{
+  "message": "Rest post",
+  "campaign": "Concrete1",
+  "user_ids": [1]
+}
+```
+
+**Пример ответа:**
+```json
+{
+  "success": true,
+  "message": "Messages successfully sent to 21 users"
+}
+```
+
+#### 2.38.3. GET `/rest/api/messages/reports`
+
+**Назначение:** получить статус кампании рассылки и счётчики доставки.
+
+**Query-параметры:**
+
+| Параметр | Тип | Обязательный | Описание |
+| :--- | :--- | :--- | :--- |
+| `campaign` | string | Да (фактически) | Название кампании, по которой нужен отчёт. |
+| `limit` | integer | Нет | Количество записей. Поддерживается по общему list-контракту. |
+| `offset` | integer | Нет | Смещение для пагинации. |
+| `sort` | string | Нет | Сортировка в формате JSON-массива. |
+| `filter` | string | Нет | Фильтрация в формате JSON-массива. |
+
+**Пример ответа:**
+```json
+{
+  "success": true,
+  "data": {
+    "campaign": "All users",
+    "total": 0,
+    "sent": 0,
+    "pending": 0
+  }
+}
+```
+
+#### 2.38.4. POST `/rest/api/messages/roles`
+
+**Назначение:** отправить сообщение всем пользователям с указанными ролями.
+
+**Тело запроса:**
+
+| Поле | Тип | Обязательное | Описание |
+| :--- | :--- | :--- | :--- |
+| `message` | string | Да | Текст сообщения. Поддерживается HTML. |
+| `campaign` | string | Да | Название кампании / рассылки. |
+| `roles` | array[string] | Да | Массив названий ролей, например `["Врач"]`. |
+
+**Пример запроса:**
+```json
+{
+  "message": "Rest post",
+  "campaign": "Concrete1",
+  "roles": ["Врач"]
+}
+```
+
+**Пример ответа:**
+```json
+{
+  "success": true,
+  "message": "Messages successfully sent to 2 users with the specified roles"
+}
+```
+
+---
+
 ## 3. Ссылки
 
 1.  [Спецификация Vetmanager OpenAPI v6 (GitHub)](https://github.com/otis22/vetmanager-openapi/blob/master/vetmanager_openapi_v6.json)

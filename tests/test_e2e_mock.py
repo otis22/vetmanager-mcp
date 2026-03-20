@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import request_credentials
 from vetmanager_client import VetmanagerClient
+from server import mcp
 
 DOMAIN = "testclinic"
 API_KEY = "test-key-mock"
@@ -1384,3 +1385,133 @@ async def test_get_good_stock_balance_zero_for_service():
     )
     qty = float(result["data"]["rest_good_in_warehouse"]["quantity"])
     assert qty == 0.0
+
+
+# ── Messages tools ────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_send_message_to_all_tool():
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/messages/all").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "message": "Messages successfully sent to 21 users",
+                "data": {},
+            },
+        )
+    )
+
+    with patch.object(
+        request_credentials,
+        "_get_request_headers",
+        return_value={"x-vm-domain": DOMAIN, "x-vm-api-key": API_KEY},
+    ):
+        result = await mcp.call_tool(
+            "send_message_to_all",
+            {"message": "Rest post", "campaign": "All1"},
+        )
+
+    assert result.structured_content["success"] is True
+    assert route.called
+    assert b'"campaign":"All1"' in route.calls.last.request.content
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_send_message_to_users_tool():
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/messages/users").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "message": "Messages successfully sent to 1 users",
+                "data": {},
+            },
+        )
+    )
+
+    with patch.object(
+        request_credentials,
+        "_get_request_headers",
+        return_value={"x-vm-domain": DOMAIN, "x-vm-api-key": API_KEY},
+    ):
+        result = await mcp.call_tool(
+            "send_message_to_users",
+            {"message": "Rest post", "campaign": "Concrete1", "user_ids": [1]},
+        )
+
+    assert result.structured_content["success"] is True
+    assert route.called
+    assert b'"user_ids":[1]' in route.calls.last.request.content
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_message_reports_tool():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/messages/reports").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "campaign": "All users",
+                    "total": 0,
+                    "sent": 0,
+                    "pending": 0,
+                },
+            },
+        )
+    )
+
+    with patch.object(
+        request_credentials,
+        "_get_request_headers",
+        return_value={"x-vm-domain": DOMAIN, "x-vm-api-key": API_KEY},
+    ):
+        result = await mcp.call_tool(
+            "get_message_reports",
+            {"limit": 20, "offset": 0, "campaign": "All users"},
+        )
+
+    assert result.structured_content["success"] is True
+    assert result.structured_content["data"]["campaign"] == "All users"
+    assert route.called
+    params = route.calls.last.request.url.params
+    assert params["campaign"] == "All users"
+    assert params["limit"] == "20"
+    assert params["offset"] == "0"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_send_message_to_roles_tool():
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/messages/roles").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "message": "Messages successfully sent to 2 users with the specified roles",
+                "data": {},
+            },
+        )
+    )
+
+    with patch.object(
+        request_credentials,
+        "_get_request_headers",
+        return_value={"x-vm-domain": DOMAIN, "x-vm-api-key": API_KEY},
+    ):
+        result = await mcp.call_tool(
+            "send_message_to_roles",
+            {"message": "Rest post", "campaign": "Concrete1", "roles": ["Врач"]},
+        )
+
+    assert result.structured_content["success"] is True
+    assert route.called
+    assert "Врач".encode() in route.calls.last.request.content

@@ -2,6 +2,7 @@ import logging
 import os
 
 from fastmcp import FastMCP
+from tool_descriptions import enhance_tool_descriptions
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -26,6 +27,7 @@ from prompts import register_prompts  # noqa: E402
 
 register_all(mcp)
 register_prompts(mcp)
+enhance_tool_descriptions(mcp)
 
 if __name__ == "__main__":
     transport = os.environ.get("MCP_TRANSPORT", "streamable-http")

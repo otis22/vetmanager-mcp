@@ -49,7 +49,7 @@ def list_tools_with_limit(all_tool_exports):
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 class TestToolsListSchema:
-    """Stages 16-17: tools/list must export useful descriptions and schemas."""
+    """Stages 16-18: tools/list must export useful descriptions and schemas."""
 
     def test_every_tool_has_nonempty_description(self, all_tool_exports):
         missing = [t["name"] for t in all_tool_exports if not t["description"].strip()]
@@ -68,6 +68,43 @@ class TestToolsListSchema:
         assert not offenders, (
             "Tools with legacy credential hints in description: "
             f"{offenders}"
+        )
+
+    def test_every_tool_description_contains_domain_synonyms_hint(self, all_tool_exports):
+        missing = [
+            t["name"]
+            for t in all_tool_exports
+            if "Domain synonyms:" not in t["description"]
+        ]
+        assert not missing, (
+            "Tools without domain synonym hints in description: "
+            f"{missing}"
+        )
+
+    @pytest.mark.parametrize(
+        ("tool_name", "expected_fragment"),
+        [
+            ("get_clients", "владелец"),
+            ("get_pets", "животное"),
+            ("get_admissions", "запись на приём"),
+            ("get_medical_cards", "история болезни"),
+            ("get_goods", "услуга"),
+            ("get_good_stock_balance", "остаток на складе"),
+            ("get_vaccinations", "прививка"),
+            ("get_store_documents", "приходная накладная"),
+            ("get_users", "ветеринар"),
+        ],
+    )
+    def test_representative_tools_export_domain_synonyms(
+        self,
+        all_tool_exports,
+        tool_name,
+        expected_fragment,
+    ):
+        tool = next(t for t in all_tool_exports if t["name"] == tool_name)
+        assert expected_fragment in tool["description"], (
+            f"Tool '{tool_name}' description should contain '{expected_fragment}'. "
+            f"Got: {tool['description']}"
         )
 
     def test_at_least_one_list_tool_exists(self, list_tools_with_limit):

@@ -338,70 +338,25 @@
 - 17.3 Тест/проверка: tools/list возвращает у limit minimum=1, maximum=100 — `done`
 - 17.4 AssumptionLog, README при необходимости — `done`
 
-## Этап 18. Применить Справочник сущностей Vetmanager API — Доменные имена и синонимы(Архив скачан)
+## Этап 18. Применить Справочник сущностей Vetmanager API — Доменные имена и синонимы — `done`
+
+Цель: использовать новый справочник как источник доменной семантики для
+описаний MCP-инструментов, чтобы `tools/list` лучше помогал LLM выбирать нужный
+инструмент по пользовательским формулировкам.
+
+- 18.1 Создать PRD этапа 18 и централизованный каталог доменных синонимов для поддерживаемых сущностей — `done`
+- 18.2 Улучшить descriptions всех MCP-инструментов на основе справочника и применить их при регистрации сервера — `done`
+- 18.3 Добавить тесты/проверки `tools/list` на enriched descriptions и representative synonyms — `done`
+- 18.4 Обновить `README.md` и `AssumptionLog.md`, зафиксировать контракт — `done`
 
 
-## Этап 19. Добавить эти методы
+## Этап 19. Глобальные уведомления `messages/*` — `done`
 
-curl --location 'https://devtr6.vetmanager2.ru/rest/api/messages/all' \
---header 'X-REST-API-KEY: 600e562402f47b4f24ebca4f02331783' \
---data '{
-    "message": "Rest post",
-    "campaign": "All1"
-}'
+Цель: добавить MCP-инструменты для глобальных уведомлений Vetmanager:
+массовая рассылка, отправка конкретным пользователям, отправка по ролям и
+получение отчётов по campaign.
 
-Response: 
-
-{
-    "success": true,
-    "message": "Messages successfully sent to 21 users"
-}
-
-
-curl --location 'https://devtr6.vetmanager2.ru/rest/api/messages/users' \
---header 'X-REST-API-KEY: 600e562402f47b4f24ebca4f02331783' \
---data '{
-    "message": "Rest post",
-    "campaign": "Concrete1",
-    "user_ids":[1]
-}'
-
-Response: 
-
-{
-    "success": true,
-    "message": "Messages successfully sent to 21 users"
-}
-
-
-curl --location '/rest/api/messages/reports?campaign=All%20users' \
---header 'X-REST-API-KEY: {{API Key}}'
-
-Ответ: 
-
-{
-    "success": true,
-    "data": {
-        "campaign": "All users",
-        "total": 0,
-        "sent": 0,
-        "pending": 0
-    }
-}
-
-
-curl --location 'https://devtr6.vetmanager2.ru/rest/api/messages/roles' \
---header 'X-REST-API-KEY: 600e562402f47b4f24ebca4f02331783' \
---header 'Content-Type: text/plain' \
---data '{
-    "message": "Rest post",
-    "campaign": "Concrete1",
-    "roles": ["Врач"]
-}'
-
-Ответ: 
-
-{
-    "success": true,
-    "message": "Messages successfully sent to 2 users with the specified roles"
-}
+- 19.1 Нормализовать этап 19 в PRD и Workplan вместо raw curl-примеров — `done`
+- 19.2 Реализовать `send_message_to_all`, `send_message_to_users`, `get_message_reports`, `send_message_to_roles` в `tools/operations.py` — `done`
+- 19.3 Добавить mock/tool-level тесты и безопасный real smoke на `get_message_reports` — `done`
+- 19.4 Обновить descriptions, `README.md` и `AssumptionLog.md` под новый контракт — `done`

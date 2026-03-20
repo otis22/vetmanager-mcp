@@ -1,8 +1,21 @@
-"""Operational entity tools: Clinics, Timesheet, Properties, AnonymousClient."""
+"""Operational entity tools: Clinics, Timesheet, Properties, AnonymousClient, Messages."""
+
+from typing import Annotated
 
 from fastmcp import FastMCP
+from pydantic import Field
 from validators import LimitParam, build_list_query_params
 from vetmanager_client import VetmanagerClient
+
+UserIdsParam = Annotated[
+    list[int],
+    Field(min_length=1, description="Target user IDs (at least one user ID)."),
+]
+
+RolesParam = Annotated[
+    list[str],
+    Field(min_length=1, description="Target role names (at least one role)."),
+]
 
 
 def register(mcp: FastMCP) -> None:
@@ -114,3 +127,58 @@ def register(mcp: FastMCP) -> None:
             filters=filter,
         )
         return await VetmanagerClient().get("/rest/api/user/anonymousList", params=params)
+
+    @mcp.tool
+    async def send_message_to_all(
+        message: str,
+        campaign: str,
+    ) -> dict:
+        """Send an in-app notification to all clinic users."""
+        payload = {"message": message, "campaign": campaign}
+        return await VetmanagerClient().post("/rest/api/messages/all", json=payload)
+
+    @mcp.tool
+    async def send_message_to_users(
+        message: str,
+        campaign: str,
+        user_ids: UserIdsParam,
+    ) -> dict:
+        """Send an in-app notification to specific users by ID."""
+        payload = {
+            "message": message,
+            "campaign": campaign,
+            "user_ids": user_ids,
+        }
+        return await VetmanagerClient().post("/rest/api/messages/users", json=payload)
+
+    @mcp.tool
+    async def get_message_reports(
+        limit: LimitParam = 20,
+        offset: int = 0,
+        campaign: str = "",
+        sort: list[dict] | None = None,
+        filter: list[dict] | None = None,
+    ) -> dict:
+        """List in-app notification delivery reports and campaign stats."""
+        params = build_list_query_params(
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=filter,
+            extra={"campaign": campaign},
+        )
+        return await VetmanagerClient().get("/rest/api/messages/reports", params=params)
+
+    @mcp.tool
+    async def send_message_to_roles(
+        message: str,
+        campaign: str,
+        roles: RolesParam,
+    ) -> dict:
+        """Send an in-app notification to all users with the specified roles."""
+        payload = {
+            "message": message,
+            "campaign": campaign,
+            "roles": roles,
+        }
+        return await VetmanagerClient().post("/rest/api/messages/roles", json=payload)

@@ -474,3 +474,17 @@ async def test_real_get_good_stock_balance_zero():
     assert result is not None
     qty_str = result.get("data", {}).get("rest_good_in_warehouse", {}).get("quantity", "")
     assert float(qty_str) == 0.0
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_message_reports():
+    result = await call(
+        vc().get(
+            "/rest/api/messages/reports",
+            params={"limit": 5, "offset": 0, "campaign": "All users"},
+        )
+    )
+    if not result.get("success", True):
+        pytest.skip(f"messages/reports returned API validation error: {result}")
+    assert "data" in result
