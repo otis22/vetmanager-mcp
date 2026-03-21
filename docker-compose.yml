@@ -13,6 +13,7 @@ services:
       MCP_HOST: ${MCP_HOST:-0.0.0.0}
       MCP_PATH: ${MCP_PATH:-/mcp}
       PORT: ${PORT:-8000}
+      STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY:-}
     ports:
       - "${PORT:-8000}:${PORT:-8000}"
     volumes:
@@ -29,6 +30,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-}
       LOG_LEVEL: ${LOG_LEVEL:-WARNING}
+      STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY:-}
       TEST_DOMAIN: ${TEST_DOMAIN:-}
       TEST_API_KEY: ${TEST_API_KEY:-}
     volumes:

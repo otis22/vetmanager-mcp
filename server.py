@@ -14,11 +14,9 @@ mcp = FastMCP(
     name="vetmanager",
     instructions=(
         "Vetmanager MCP Server. "
-        "Credentials are provided via X-VM-Domain and X-VM-Api-Key HTTP headers "
-        "configured in your mcp.json (Variant A). "
-        "All tools are headers-only and do not accept runtime credential arguments. "
-        "X-VM-Domain — clinic subdomain (e.g. 'myclinic'); "
-        "X-VM-Api-Key — REST API key from Vetmanager Settings → Integration → Rest API."
+        "Credentials are provided via Authorization: Bearer <service_token> "
+        "configured in your MCP client. "
+        "All tools are bearer-authenticated and do not accept runtime credential arguments."
     ),
 )
 

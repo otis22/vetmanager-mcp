@@ -14,6 +14,8 @@ COPY pyproject.toml ./
 
 # Install all dependencies (prod + dev) via pip — no uv needed on the host.
 RUN pip install --no-cache-dir \
+    "alembic>=1.13.0" \
+    "cryptography>=46.0.0" \
     "fastmcp>=2.0.0" \
     "httpx>=0.27.0" \
     "sqlalchemy>=2.0.0" \

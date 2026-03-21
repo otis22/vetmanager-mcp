@@ -7,11 +7,13 @@ Run inside Docker:
 
 import os
 import pytest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import request_credentials
+import runtime_auth
 from vetmanager_client import VetmanagerClient
 from exceptions import AuthError, VetmanagerError
+from vetmanager_auth import VetmanagerAuthContext
 
 TEST_DOMAIN = os.environ.get("TEST_DOMAIN", "")
 TEST_API_KEY = os.environ.get("TEST_API_KEY", "")
@@ -23,9 +25,22 @@ skip_if_no_creds = pytest.mark.skipif(
 
 
 def vc() -> VetmanagerClient:
-    headers = {"x-vm-domain": TEST_DOMAIN, "x-vm-api-key": TEST_API_KEY}
+    headers = {"authorization": "Bearer real-test-token"}
     with patch.object(request_credentials, "_get_request_headers", return_value=headers):
-        return VetmanagerClient()
+        client = VetmanagerClient()
+    client._vetmanager_auth = VetmanagerAuthContext(
+        auth_mode="domain_api_key",
+        domain=TEST_DOMAIN,
+        api_key=TEST_API_KEY,
+    )
+    client._auth_source = "bearer"
+    client._domain = TEST_DOMAIN
+    client._api_key = TEST_API_KEY
+    client._account_id = 1
+    client._bearer_token_id = 1
+    client._connection_id = 1
+    client._ensure_runtime_credentials = AsyncMock(return_value=None)
+    return client
 
 
 async def call(coro):

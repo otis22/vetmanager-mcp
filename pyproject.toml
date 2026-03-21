@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "MCP server for Vetmanager REST API"
 requires-python = ">=3.11"
 dependencies = [
+    "alembic>=1.13.0",
+    "cryptography>=46.0.0",
     "fastmcp>=2.0.0",
     "httpx>=0.27.0",
     "sqlalchemy>=2.0.0",

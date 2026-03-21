@@ -374,43 +374,43 @@
 - 20.5 Зафиксировать правило: dual-mode не поддерживается; текущий headers-only runtime-контракт подлежит замене на bearer-only — `done`
 - 20.6 Обновить `AssumptionLog.md` — `done`
 
-## Этап 21. Storage и security foundation для Bearer-сервиса (после Этапа 20) — `in_progress`
+## Этап 21. Storage и security foundation для Bearer-сервиса (после Этапа 20) — `done`
 
 Цель: подготовить инфраструктурную основу для аккаунтов, Bearer-токенов и хранения Vetmanager-секретов.
 
 - 21.1 Выбрать и внедрить БД для аккаунтов, интеграций и Bearer-токенов — `done`
-- 21.2 Добавить миграции для `accounts`, `vetmanager_connections`, `service_bearer_tokens`, `token_usage_stats` / `token_usage_logs` — `todo`
-- 21.3 Реализовать безопасное хранение секретов Vetmanager (шифрование / secret management) — `todo`
-- 21.4 Реализовать хранение только hash Bearer-токена и безопасного `token_prefix` для UI и аудита — `todo`
-- 21.5 Добавить модели срока действия, revoke и статусов Bearer-токенов — `todo`
-- 21.6 Добавить unit-тесты persistence/security слоя — `todo`
+- 21.2 Добавить миграции для `accounts`, `vetmanager_connections`, `service_bearer_tokens`, `token_usage_stats` / `token_usage_logs` — `done`
+- 21.3 Реализовать безопасное хранение секретов Vetmanager (шифрование / secret management) — `done`
+- 21.4 Реализовать хранение только hash Bearer-токена и безопасного `token_prefix` для UI и аудита — `done`
+- 21.5 Добавить модели срока действия, revoke и статусов Bearer-токенов — `done`
+- 21.6 Добавить unit-тесты persistence/security слоя — `done`
 
-## Этап 22. Bearer auth в MCP runtime (после Этапа 21) — `todo`
+## Этап 22. Bearer auth в MCP runtime (после Этапа 21) — `done`
 
 Цель: перевести MCP runtime на bearer-only авторизацию аккаунта сервиса.
 
-- 22.1 Реализовать извлечение `Authorization: Bearer` из MCP HTTP request — `todo`
-- 22.2 Реализовать lookup `service_bearer_token -> account -> active vetmanager_connection` — `todo`
-- 22.3 Заменить текущий credentials context на account-based auth context — `todo`
-- 22.4 Удалить runtime-поддержку `X-VM-Domain` / `X-VM-Api-Key` из рабочего контура — `todo`
-- 22.5 Добавить безопасные ошибки: `missing bearer`, `invalid bearer`, `expired bearer`, `revoked bearer`, `account connection not configured` — `todo`
-- 22.6 Обновить unit/e2e тесты bearer-only контракта — `todo`
+- 22.1 Реализовать извлечение `Authorization: Bearer` из MCP HTTP request — `done`
+- 22.2 Реализовать lookup `service_bearer_token -> account -> active vetmanager_connection` — `done`
+- 22.3 Заменить текущий credentials context на account-based auth context — `done`
+- 22.4 Удалить runtime-поддержку `X-VM-Domain` / `X-VM-Api-Key` из рабочего контура — `done`
+- 22.5 Добавить безопасные ошибки: `missing bearer`, `invalid bearer`, `expired bearer`, `revoked bearer`, `account connection not configured` — `done`
+- 22.6 Обновить unit/e2e тесты bearer-only контракта — `done`
 
-## Этап 23. Vetmanager auth mode #1: `domain + rest_api_key` (после Этапа 22) — `todo`
+## Этап 23. Vetmanager auth mode #1: `domain + rest_api_key` (после Этапа 22) — `done`
 
 Цель: первым поддержать подключение аккаунта к Vetmanager через REST API key и домен клиники.
 
-- 23.1 Реализовать connection mode `domain + rest_api_key` — `todo`
-- 23.2 Добавить валидацию и тест подключения при сохранении интеграции аккаунта — `todo`
-- 23.3 Интегрировать mode в `VetmanagerClient` через отдельный abstraction layer — `todo`
-- 23.4 Проверить все существующие MCP tools/prompts на bearer-only runtime — `todo`
-- 23.5 Обновить README и документацию подключения — `todo`
+- 23.1 Реализовать connection mode `domain + rest_api_key` — `done`
+- 23.2 Добавить валидацию и тест подключения при сохранении интеграции аккаунта — `done`
+- 23.3 Интегрировать mode в `VetmanagerClient` через отдельный abstraction layer — `done`
+- 23.4 Проверить все существующие MCP tools/prompts на bearer-only runtime — `done`
+- 23.5 Обновить README и документацию подключения — `done`
 
-## Этап 24. Web: лендинг, регистрация, кабинет аккаунта (после Этапа 23) — `todo`
+## Этап 24. Web: лендинг, регистрация, кабинет аккаунта (после Этапа 23) — `in_progress`
 
 Цель: добавить внешний пользовательский контур сервиса для описания продукта, регистрации и управления интеграцией с Vetmanager.
 
-- 24.1 Создать PRD этапа 24 для web-слоя и UX кабинета — `todo`
+- 24.1 Создать PRD этапа 24 для web-слоя и UX кабинета — `done`
 - 24.2 Реализовать лендинг с описанием сервиса и вариантов подключения — `todo`
 - 24.3 Реализовать обязательную регистрацию и login/logout — `todo`
 - 24.4 Реализовать экран настройки Vetmanager-интеграции для `domain + rest_api_key` — `todo`

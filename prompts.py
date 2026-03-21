@@ -4,9 +4,9 @@ from fastmcp import FastMCP
 from fastmcp.prompts import Message
 
 
-def _headers_only_prefix() -> str:
+def _bearer_runtime_prefix() -> str:
     return (
-        "Credentials are already available from the MCP request headers. "
+        "Credentials are already available from the MCP Bearer token. "
         "Do not ask for a clinic domain or API key and do not pass them as tool arguments. "
     )
 
@@ -27,7 +27,7 @@ def register_prompts(mcp: FastMCP) -> None:
             else ""
         )
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Show the clinic admission schedule for {date}. "
             + "Call get_admissions(date=date, limit=100). "
             + doctor_note
@@ -42,7 +42,7 @@ def register_prompts(mcp: FastMCP) -> None:
             query: Search query for the client.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Find the clinic client matching '{query}'. "
             + "Call get_clients(name=query, limit=20). "
             + "Display full name, phone, email and client ID."
@@ -56,7 +56,7 @@ def register_prompts(mcp: FastMCP) -> None:
             client_id: ID of the client.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Show the financial summary for client ID {client_id}. "
             + "1. Call get_invoices(client_id=client_id, limit=100, sort=[{'property':'create_date','direction':'DESC'}]). "
             + "2. Call get_payments(client_id=client_id, limit=100, sort=[{'property':'id','direction':'DESC'}]). "
@@ -79,7 +79,7 @@ def register_prompts(mcp: FastMCP) -> None:
             date: Appointment date/time in ISO 8601 format.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Book an appointment for client '{client_name}', pet '{pet_name}', "
             + f"doctor ID {doctor_id}, date {date}. "
             + "1. Call get_clients(name=client_name, limit=20). "
@@ -102,7 +102,7 @@ def register_prompts(mcp: FastMCP) -> None:
             service_name: Name of the service or good to add.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Create an invoice for client ID {client_id}, pet ID {pet_id}, "
             + f"with service or good '{service_name}'. "
             + "1. Call get_goods(name=service_name, limit=20) and choose the correct good_id. "
@@ -121,7 +121,7 @@ def register_prompts(mcp: FastMCP) -> None:
             date_to: End date in YYYY-MM-DD format.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Analyse the workload for doctor ID {doctor_id} from {date_from} to {date_to}. "
             + "Fetch admissions for the date range using get_admissions and pagination as needed. "
             + "Filter the returned records by doctor ID and count visits by day. "
@@ -136,7 +136,7 @@ def register_prompts(mcp: FastMCP) -> None:
             date: Start date in YYYY-MM-DD format.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"List unconfirmed appointments starting from {date} for the next 2 days. "
             + "Call get_admissions(date=date, limit=100). "
             + "From the returned records, keep appointments whose status is not confirmed/accepted. "
@@ -152,7 +152,7 @@ def register_prompts(mcp: FastMCP) -> None:
             limit: Number of most recent records to show.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Show the medical history for pet ID {pet_id}, last {limit} records. "
             + "Call get_medical_cards(pet_id=pet_id, limit=limit, "
             + "sort=[{'property':'id','direction':'DESC'}]). "
@@ -167,7 +167,7 @@ def register_prompts(mcp: FastMCP) -> None:
             pet_id: ID of the pet.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Show vaccination history for pet ID {pet_id}. "
             + "Call get_vaccinations(pet_id=pet_id). "
             + "List vaccine name, date administered, and next due date."
@@ -189,7 +189,7 @@ def register_prompts(mcp: FastMCP) -> None:
             diagnosis: Diagnosis text.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Add a medical note for pet ID {pet_id} by doctor ID {doctor_id}. "
             + f"Description: '{note}'. Diagnosis: '{diagnosis}'. "
             + "Call create_medical_card(patient_id=pet_id, doctor_id=doctor_id, "
@@ -201,7 +201,7 @@ def register_prompts(mcp: FastMCP) -> None:
     def current_inpatients() -> list[Message]:
         """List all currently hospitalised patients in the clinic."""
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + "List all current inpatients. "
             + "Call get_hospitalizations(limit=100). "
             + "Keep records where discharge/dateOut is empty or the patient is still admitted. "
@@ -216,7 +216,7 @@ def register_prompts(mcp: FastMCP) -> None:
             pet_id: ID of the pet.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Build the invoice history for pet ID {pet_id}. "
             + "1. Call get_pet_by_id(pet_id) to determine the owning client_id. "
             + "2. Call get_invoices(client_id=client_id, limit=100, "
@@ -234,7 +234,7 @@ def register_prompts(mcp: FastMCP) -> None:
             pet_id: ID of the pet.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Build a full profile for pet ID {pet_id}. "
             + "Prefer get_pet_profile(pet_id) as the primary aggregated tool. "
             + "If more client context is needed, call get_client_by_id using the owner from the pet record. "
@@ -249,7 +249,7 @@ def register_prompts(mcp: FastMCP) -> None:
             date: Date in YYYY-MM-DD format.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Calculate the clinic revenue for {date}. "
             + "Call get_invoices(date_from=date, date_to=date, limit=100) and "
             + "get_payments(limit=100, sort=[{'property':'id','direction':'DESC'}]) if needed. "
@@ -264,7 +264,7 @@ def register_prompts(mcp: FastMCP) -> None:
             limit: Max number of invoices to inspect.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + "List unpaid or partially paid invoices. "
             + f"Call get_invoices(limit={limit}, sort=[{{'property':'create_date','direction':'DESC'}}]). "
             + "Keep invoices whose payment status indicates unpaid or partial. "
@@ -281,7 +281,7 @@ def register_prompts(mcp: FastMCP) -> None:
             top_n: Number of top positions to show.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Show the top {top_n} services and goods from {date_from} to {date_to}. "
             + "Call get_invoices(date_from=date_from, date_to=date_to, limit=100). "
             + "For each invoice, call get_invoice_documents(invoice_id=invoice_id, limit=100). "
@@ -296,7 +296,7 @@ def register_prompts(mcp: FastMCP) -> None:
             query: Name or partial name of the good/service.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Search for goods or services matching '{query}'. "
             + "Call get_goods(name=query, limit=20). "
             + "Show good ID, name, group, price, and unit when available."
@@ -310,7 +310,7 @@ def register_prompts(mcp: FastMCP) -> None:
             threshold: Quantity below which stock is considered low.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Find goods with stock quantity below {threshold}. "
             + "Use get_goods(limit=100) to identify candidate goods and "
             + "get_good_stock_balance(good_id=..., clinic_id=1) to check balances. "
@@ -325,7 +325,7 @@ def register_prompts(mcp: FastMCP) -> None:
             since_date: Start date in YYYY-MM-DD format.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"List clients registered since {since_date}. "
             + "Call get_clients(limit=100, sort=[{'property':'id','direction':'DESC'}]) "
             + "and keep records whose registration/create date is on or after the requested date. "
@@ -340,7 +340,7 @@ def register_prompts(mcp: FastMCP) -> None:
             days_without_visit: Number of days without a visit.
         """
         return [Message(
-            _headers_only_prefix()
+            _bearer_runtime_prefix()
             + f"Find clients who have not visited in {days_without_visit}+ days. "
             + "Call get_admissions(limit=100, sort=[{'property':'admission_date','direction':'DESC'}]). "
             + "Determine each client's latest visit and return clients whose last visit is older than the threshold. "

@@ -455,3 +455,269 @@
 **Границы решения:**
 - Модели, миграции, хранение секретов Vetmanager, hash Bearer-токенов и lifecycle token states оставлены в задачах `21.2–21.5`.
 - Текущий MCP runtime по-прежнему не использует storage слой в боевом auth-контуре; foundation добавлен заранее для следующих этапов.
+
+---
+
+## Этап 21.2: baseline миграции bearer-storage
+
+**Принятое решение:**
+- В качестве миграционного инструмента выбран `Alembic`, чтобы storage-слой развивался поверх `SQLAlchemy` без самописного migration runner.
+- Для этапа `21.2` добавлена baseline revision с таблицами:
+  `accounts`, `vetmanager_connections`, `service_bearer_tokens`,
+  `token_usage_stats`, `token_usage_logs`.
+
+**Архитектурные выводы:**
+- Runtime продолжает использовать async URL (`sqlite+aiosqlite`, `postgresql+asyncpg`), а Alembic получает sync-совместимый URL через отдельную нормализацию.
+- В baseline намеренно присутствуют и агрегированные `token_usage_stats`, и детальные `token_usage_logs`, чтобы дальнейшие этапы не упёрлись в преждевременный выбор только одного варианта аудита.
+- Таблица `service_bearer_tokens` уже хранит только метаданные токена (`token_prefix`, `token_hash`, статусы, timestamps); фактический lifecycle и secret-handling будут дорабатываться в задачах `21.3–21.5`.
+
+**Что реализовано:**
+- Добавлены `storage_models.py`, `alembic.ini`, `alembic/env.py` и baseline revision в `alembic/versions/`.
+- Добавлены тесты, которые прогоняют `alembic upgrade head` на SQLite и проверяют фактическое создание всех целевых таблиц.
+
+---
+
+## Этап 21.3: encrypted storage для Vetmanager secrets
+
+**Принятое решение:**
+- Для шифрования storage payloads выбран `Fernet` из `cryptography`.
+- Ключ берётся из `STORAGE_ENCRYPTION_KEY`; при его отсутствии secret layer fail-closed, а не падает в plaintext fallback.
+
+**Что реализовано:**
+- Добавлен `secret_manager.py` с генерацией ключа, шифрованием и расшифровкой payloads.
+- `VetmanagerConnection` получил helper-методы `set_credentials()` / `get_credentials()`, которые работают только через зашифрованный blob `encrypted_credentials`.
+- Контейнеры `mcp` и `test` теперь принимают `STORAGE_ENCRYPTION_KEY` из окружения.
+
+**Архитектурные последствия:**
+- Vetmanager credentials больше не должны сохраняться по полям `domain/api_key` в открытом виде внутри persistence-слоя; рабочий storage contract для секретов теперь строится вокруг одного encrypted blob.
+- Secret management выделен в отдельный модуль, чтобы lifecycle Bearer-токенов и hash-based token storage не смешивались с шифрованием Vetmanager credentials.
+
+---
+
+## Этап 21.4: hash-only bearer token storage
+
+**Принятое решение:**
+- Raw Bearer-токен генерируется отдельно и предназначен только для одноразового показа пользователю.
+- В persistence-слое хранятся только:
+  - `token_hash` для deterministic lookup/verification;
+  - короткий `token_prefix` для UI, аудита и безопасного различения токенов.
+
+**Что реализовано:**
+- Добавлен `bearer_token_manager.py` с генерацией raw токена, вычислением `token_hash`, выделением `token_prefix` и constant-time verification.
+- `ServiceBearerToken` получил helper-методы `set_raw_token()` и `verify_raw_token()`.
+
+**Архитектурные последствия:**
+- Модель токена больше не требует хранения raw secret даже временно внутри ORM-сущности.
+- Хранение hash и prefix отделено от usage accounting и secret encryption, что упрощает следующий этап с revoke/expiry/status lifecycle.
+
+---
+
+## Этап 21.5–21.6: lifecycle Bearer-токенов и тестовое покрытие
+
+**Что реализовано:**
+- `ServiceBearerToken` получил lifecycle helpers:
+  - `is_active()`
+  - `is_expired()`
+  - `is_revoked()`
+  - `sync_status()`
+  - `revoke()`
+  - `mark_used()`
+- Добавлен unit-набор для storage/security foundation:
+  - bootstrap БД;
+  - Alembic baseline migration;
+  - encrypted Vetmanager secrets;
+  - hash-only bearer token storage;
+  - revoke/expiry/status lifecycle.
+
+**Итог по этапу 21:**
+- Storage foundation завершён как отдельный слой, не ломающий текущий headers-only runtime.
+- Следующий этап может уже строить bearer auth lookup поверх готовых account/token tables, encrypted Vetmanager credentials и lifecycle правил токена.
+
+---
+
+## Этап 22.1: извлечение Bearer из MCP request
+
+**Принятое решение:**
+- Новый bearer-path вынесен в отдельный `request_auth.py`, а не внедрён поверх `request_credentials.py`, чтобы переход на новый runtime контракт шёл поэтапно.
+- На шаге `22.1` headers-only путь ещё не удаляется; добавляется только безопасный parser для `Authorization: Bearer <service_token>`.
+
+**Что реализовано:**
+- Добавлен helper `get_bearer_token()`, который:
+  - читает текущие HTTP headers;
+  - извлекает Bearer-токен из `Authorization`;
+  - различает missing и invalid Authorization forms через `AuthError`.
+- Добавлен unit-тестовый набор для корректного Bearer, отсутствующего заголовка и невалидных схем.
+
+---
+
+## Этап 22.2: lookup bearer token -> account -> active connection
+
+**Принятое решение:**
+- Lookup bearer runtime вынесен в отдельный `bearer_auth.py` с dataclass-контекстом, а не смешан с `VetmanagerClient` или request-layer.
+- Разрешение токена строится по `token_hash`, после чего выбирается первый `active` `vetmanager_connection` аккаунта.
+
+**Что реализовано:**
+- Добавлен `BearerAuthContext`.
+- Добавлен `resolve_bearer_auth_context(raw_token, session, ...)`, который:
+  - ищет `service_bearer_token` по hash;
+  - проверяет revoked/expired/disabled состояния токена;
+  - проверяет активность аккаунта;
+  - находит активный `vetmanager_connection`;
+  - возвращает расшифрованные Vetmanager credentials для следующего runtime слоя.
+
+**Архитектурные последствия:**
+- Этап `22.3` теперь может переключать runtime на готовый account-based context без дублирования SQL и without coupling к ORM details в transport-layer.
+
+---
+
+## Этап 22.3: runtime credentials через account-based auth context
+
+**Принятое решение:**
+- Переходный runtime context вынесен в `runtime_auth.py`.
+- Порядок разрешения credentials сейчас такой:
+  1. `Authorization: Bearer <service_token>` как основной путь;
+  2. legacy `X-VM-Domain` / `X-VM-Api-Key` как временный fallback до этапа `22.4`.
+
+**Что реализовано:**
+- Добавлен `RuntimeCredentials`.
+- Добавлен `resolve_runtime_credentials()`, который:
+  - использует bearer lookup и расшифрованные Vetmanager credentials аккаунта;
+  - при отсутствии Bearer временно падает назад на headers-only контракт.
+- `VetmanagerClient` переведён на lazy runtime resolution через account-based context и больше не привязан жёстко к прямому чтению `X-VM-*` как единственному источнику.
+
+**Архитектурные последствия:**
+- Основной runtime path уже построен вокруг `service_bearer_token -> account -> active connection`.
+- Этап `22.4` теперь сводится к удалению временного legacy fallback и вычистке старых `X-VM-*` assumptions из runtime-контура.
+
+---
+
+## Этап 22.4: удаление `X-VM-*` из runtime-контура
+
+**Что сделано:**
+- `runtime_auth.py` переведён на strict bearer-only resolution без fallback на `X-VM-Domain` / `X-VM-Api-Key`.
+- `VetmanagerClient` больше не использует `request_credentials.get_request_credentials()` как runtime источник.
+- `server.py` обновлён под bearer-only instructions.
+- Клиентские unit-тесты переведены с header-based setup на bearer-shaped runtime setup.
+
+**Архитектурный итог:**
+- Рабочий runtime-контур теперь bearer-only.
+- Старый headers-only путь остаётся только в исторических артефактах и должен дальше вычищаться из документации и legacy tests по мере следующих этапов.
+
+---
+
+## Этап 22.5–22.6: безопасные bearer errors и тесты runtime-контракта
+
+**Что зафиксировано в runtime:**
+- `missing bearer`:
+  - `request_auth.get_bearer_token()` возвращает безопасную ошибку без утечки секретов.
+- `invalid bearer`:
+  - `resolve_bearer_auth_context()` возвращает `Invalid bearer token.` для неизвестного токена.
+- `expired bearer`:
+  - токен переводится в `expired` и отклоняется безопасной ошибкой.
+- `revoked bearer`:
+  - revoked токен немедленно отклоняется безопасной ошибкой.
+- `account connection not configured`:
+  - runtime не раскрывает лишние детали и возвращает явную безопасную ошибку, если у аккаунта нет активной Vetmanager connection.
+
+**Тестовое покрытие:**
+- Обновлены unit-тесты bearer-only runtime-контракта:
+  - request-layer (`Authorization: Bearer`);
+  - token/account/connection lookup;
+  - runtime credentials resolution;
+  - `VetmanagerClient` в bearer-only контуре;
+  - совместимые client-level regression tests для caching/pacing/security.
+
+**Итог по этапу 22:**
+- MCP runtime переведён на bearer-only auth path.
+- Основной следующий этап теперь может реализовывать первый Vetmanager auth mode аккаунта (`domain + rest_api_key`) уже поверх готового bearer runtime и storage слоя.
+
+---
+
+## Этап 23.1: Vetmanager auth mode `domain + rest_api_key`
+
+**Принятое решение:**
+- Первый Vetmanager auth mode оформлен как отдельный abstraction layer, а не как произвольный encrypted dict.
+- Идентификатор первого режима: `domain_api_key`.
+
+**Что реализовано:**
+- Добавлен [vetmanager_auth.py](/home/otis/myprojects/vetmanager-mcp/vetmanager_auth.py) с:
+  - `VETMANAGER_AUTH_MODE_DOMAIN_API_KEY`
+  - `VetmanagerResolvedCredentials`
+  - `resolve_vetmanager_credentials(connection, ...)`
+- `bearer_auth.py` теперь получает domain/api_key через этот auth-mode слой, а не напрямую из generic payload.
+
+**Архитектурные последствия:**
+- Runtime больше не зависит от формы хранения credentials внутри `vetmanager_connection`.
+- Следующий режим (`user login/password -> token`) можно будет добавлять как второй explicit mode в том же abstraction layer, не ломая bearer runtime path.
+
+---
+
+## Этап 23.2: валидация и сохранение account connection
+
+**Что реализовано:**
+- Добавлен [vetmanager_connection_service.py](/home/otis/myprojects/vetmanager-mcp/vetmanager_connection_service.py).
+- Реализован `save_domain_api_key_connection(...)`, который:
+  - валидирует `domain`;
+  - проверяет `api_key` через реальный probe к Vetmanager API после billing host resolution;
+  - шифрует credentials;
+  - отключает предыдущие active connections аккаунта;
+  - сохраняет новый `active` connection режима `domain_api_key`.
+
+**Архитектурные последствия:**
+- Появился отдельный write-path для Vetmanager integration layer, а не только runtime read-path.
+- Правило "у аккаунта один активный способ авторизации в Vetmanager" теперь соблюдается не только документально, но и на уровне сервисной логики сохранения connection.
+
+---
+
+## Этап 23.3: интеграция auth mode в `VetmanagerClient`
+
+**Что изменилось:**
+- `VetmanagerClient` теперь опирается на `VetmanagerAuthContext`, а не на разрозненные `domain/api_key` как на базовый primitive слой.
+- `vetmanager_auth.py` получил runtime-capable методы:
+  - `build_headers()`
+  - `api_key_fingerprint()`
+
+**Архитектурный эффект:**
+- Mode abstraction теперь используется не только при bearer lookup, но и непосредственно в runtime HTTP-клиенте.
+- Это подготавливает код к добавлению второго Vetmanager auth mode без повторной переработки клиента, cache isolation и header construction.
+
+---
+
+## Этап 23.4: проверка tools/prompts в bearer-only runtime
+
+**Что проверено:**
+- Mock e2e тесты переведены на bearer-shaped runtime setup вместо legacy `X-VM-*` headers.
+- Prompt regression тесты теперь проверяют bearer-only инструкции: prompts не должны просить `domain` или `api_key`.
+- Real e2e helper синхронизирован с bearer runtime-контуром, чтобы следующий smoke against real API не расходился с рабочей моделью авторизации.
+
+**Что зафиксировано:**
+- Существующие MCP tools продолжают работать без runtime credential arguments.
+- Prompts и server instructions теперь явно говорят о `Authorization: Bearer <service_token>`, а не о request headers с доменом и API-ключом.
+- Headers-only контракт остаётся только в исторических файлах и должен дальше удаляться из документации и legacy naming.
+
+---
+
+## Этап 23.5: обновление README и документации подключения
+
+**Что обновлено:**
+- `README.md` переведён с headers-only описания на bearer-only runtime модель.
+- Документация теперь описывает storage/migration foundation (`DATABASE_URL`, `STORAGE_ENCRYPTION_KEY`) и новый runtime-контракт `Authorization: Bearer <service_token>`.
+- Явно зафиксировано, что self-service выпуск account/token ещё не завершён и ожидается на web-этапе 24.
+
+**Принятое решение:**
+- Документация не должна обещать пользователю UI или provisioning flow, которых ещё нет в репозитории.
+- До этапа 24 bearer runtime считается продуктовым контрактом MCP-сервера, а создание account connection и bearer token относится к internal/dev provisioning path.
+
+---
+
+## Этап 24.1: PRD web-слоя и UX кабинета
+
+**Что зафиксировано в PRD:**
+- Этап 24 начинается только после того, как bearer runtime и первый Vetmanager auth mode уже готовы.
+- Web-контур должен стать первым пользовательским способом управлять account, active Vetmanager connection и service bearer tokens.
+- Первая web-итерация ограничивается лендингом, регистрацией, login/logout, экраном интеграции `domain + rest_api_key` и базовым token management UI.
+
+**Принятые продуктовые ограничения:**
+- Web-кабинет не меняет bearer-only MCP runtime-контракт: MCP-клиенты по-прежнему используют только `Authorization: Bearer <service_token>`.
+- UI не должен повторно раскрывать raw bearer после создания; это отдельно закреплено как задача `24.7`.
+- До этапа usage analytics экран токенов показывает только то, что уже есть в storage-модели: статус, срок действия и безопасный `token_prefix`; расширенная usage-аналитика остаётся этапу 25.
