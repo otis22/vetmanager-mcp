@@ -12,13 +12,13 @@
 
 Проект реализован как stateless MCP-сервер, который:
 - работает по HTTP transport (`streamable-http`);
-- принимает runtime credentials только через HTTP headers;
+- принимает runtime credentials только через `Authorization: Bearer <service_token>`;
 - преобразует tool calls в запросы к Vetmanager REST API;
 - поддерживает мультитенантность, базовое кеширование, pacing запросов и
   security hardening.
 
-Ближайшая целевая эволюция проекта по roadmap этапов 20–28:
-- bearer-only runtime-контракт вместо headers-only;
+Текущая эволюция проекта по roadmap этапов 20–28:
+- bearer-only runtime-контракт уже реализован;
 - web-контур с лендингом, регистрацией и кабинетом аккаунта;
 - хранение Vetmanager-интеграции на уровне аккаунта;
 - выпуск нескольких Bearer-токенов с TTL, revoke и учётом использования;
@@ -47,20 +47,20 @@
 
 Разделы ниже делятся на два слоя:
 - текущее состояние реализации, уже находящееся в кодовой базе;
-- планируемая архитектурная эволюция, зафиксированная в roadmap и PRD.
+- будущие этапы roadmap, которые ещё не доведены до production-grade maturity.
 
-Если возникает конфликт, для текущего runtime-контракта источником истины
-остаются код и README, а bearer-only архитектура рассматривается как следующий
-этап проекта, ещё не реализованный в репозитории.
+Если возникает конфликт, источником истины для текущего runtime-контракта
+остаются код и README. Bearer-only архитектура уже реализована и описывает
+актуальное состояние проекта.
 
 ### 3.1. Обязательная модель запуска
 
 1. Сервер и тесты запускаются только через `docker compose`.
 2. Runtime credentials не хранятся в репозитории и не задаются через проектный `.env`.
-3. Для рабочего контура credentials приходят только через MCP HTTP headers:
-   - `X-VM-Domain`
-   - `X-VM-Api-Key`
-4. Контейнеры запускаются с UID/GID хоста для корректной работы с bind mounts.
+3. Для рабочего MCP-контура credentials приходят только через:
+   - `Authorization: Bearer <service_token>`
+4. Web-контур (`/register`, `/login`, `/account`) работает через signed session cookie.
+5. Контейнеры запускаются с UID/GID хоста для корректной работы с bind mounts.
 
 ### 3.2. Основные компоненты
 
@@ -76,7 +76,7 @@
   - `MCP_PATH`
 
 Сервер публикует endpoint MCP по пути `/mcp` и предназначен для подключения
-клиентов вроде Cursor/Claude через `url + headers`.
+клиентов вроде Cursor/Claude через `url + Authorization: Bearer <service_token>`.
 
 #### Description enrichment (`tool_descriptions.py`)
 
@@ -89,7 +89,7 @@
 #### Vetmanager API client (`vetmanager_client.py`)
 
 `VetmanagerClient` создаётся на каждый MCP request context и инкапсулирует:
-- чтение credentials из текущего HTTP request;
+- чтение уже резолвленных Vetmanager credentials из bearer auth context;
 - валидацию `domain` как subdomain;
 - резолв базового host через billing API:
   `https://billing-api.vetmanager.cloud/host/{domain}`;
@@ -100,14 +100,19 @@
 - нормализацию ошибок в исключения уровня приложения;
 - in-memory tagged cache для GET-запросов.
 
-#### Credential extraction (`request_credentials.py`)
+#### Bearer auth resolution (`bearer_auth.py`)
 
-Модуль извлекает `X-VM-Domain` и `X-VM-Api-Key` из текущего HTTP request.
+Модуль резолвит `Authorization: Bearer <service_token>` в account-specific
+runtime context.
 
 Контракт:
-- инструменты и prompts не принимают runtime credentials как аргументы;
-- при отсутствии headers сервер возвращает явную безопасную ошибку;
-- секреты не должны раскрываться в логах и пользовательских ошибках.
+- tools и prompts не принимают runtime credentials как аргументы;
+- raw Bearer token используется только для lookup/hash-verify и не сохраняется в
+  audit details или пользовательских ошибках;
+- активное Vetmanager-подключение определяется на уровне аккаунта, а не через
+  request headers;
+- при отсутствии/некорректности Bearer токена сервер возвращает явную безопасную
+  auth error.
 
 #### MCP tools (`tools/*.py`)
 
@@ -232,47 +237,81 @@ vetmanager-mcp/
 ```
 
 Правила:
-- `domain` и `api_key` не передаются в аргументах tools/prompts;
-- `domain` и `api_key` не задаются проектным `.env` для runtime;
+- runtime Bearer token не передаётся в аргументах tools/prompts;
+- `domain` и Vetmanager credential не задаются проектным `.env` для runtime;
 - `TEST_DOMAIN` / `TEST_API_KEY` допустимы только для real e2e tests;
 - один экземпляр сервера обслуживает разные клиники без перезапуска.
 
 #### Host resolution
 
 При первом обращении внутри `VetmanagerClient`:
-1. из headers читается `domain`;
+1. из bearer auth context читается `domain`;
 2. выполняется `GET https://billing-api.vetmanager.cloud/host/{domain}`;
 3. из ответа извлекается clinic-specific base URL;
 4. URL проходит HTTPS и allowlist проверку;
 5. результат кешируется в экземпляре клиента.
 
-### 3.5. Планируемая bearer-only архитектура (roadmap 20–28)
+### 3.5. Bearer-only архитектура и web-контур
 
-Следующий цикл проекта переводит сервис на модель:
+Текущая модель сервиса:
 - пользователь регистрирует аккаунт сервиса;
 - аккаунт настраивает один активный способ авторизации в Vetmanager;
 - аккаунт выпускает один или несколько Bearer-токенов сервиса;
 - MCP-клиенты используют только `Authorization: Bearer <service_token>`;
 - сервис по Bearer находит аккаунт и применяет настроенный Vetmanager auth mode.
 
-Планируемые новые компоненты:
-- web-слой с лендингом, регистрацией и кабинетом;
+Реализованные компоненты:
+- web-слой с лендингом, регистрацией, логином и кабинетом;
 - storage для аккаунтов, интеграций и Bearer-токенов;
 - auth context на основе аккаунта вместо headers-only credentials;
 - usage accounting для токенов (`last_used_at`, `request_count`);
 - abstraction layer для нескольких способов авторизации в Vetmanager.
 
-Планируемые сущности:
+Ключевые сущности storage-модели:
 - `account`
 - `vetmanager_connection`
 - `service_bearer_token`
 - `token_usage_stats` или `token_usage_log`
 
-Ограничения целевой модели:
+Ограничения текущей модели:
 - Bearer-токены привязываются к аккаунту;
 - у аккаунта один активный Vetmanager auth mode в каждый момент времени;
 - dual-mode MCP runtime не планируется;
-- scopes / RBAC рассматриваются как будущий этап после MVP bearer-сервиса.
+- runtime enforcement scopes пока не включён;
+- scope metadata уже может храниться на токене для будущего ограничения прав.
+
+### 3.6. Future token scopes / capability model
+
+Подготовленная модель прав строится вокруг capability list на уровне токена:
+- права принадлежат Bearer-токену, а не аккаунту целиком;
+- scope именуется как `<resource_group>.<action>`;
+- отсутствие scope в будущем трактуется как запрет;
+- legacy токены без scope manifest остаются совместимыми как full-access tokens,
+  пока enforcement не включён.
+
+Coarse-grained scopes первого итерационного релиза:
+- `clients.read`
+- `clients.write`
+- `pets.read`
+- `pets.write`
+- `admissions.read`
+- `admissions.write`
+- `medical_cards.read`
+- `medical_cards.write`
+- `finance.read`
+- `finance.write`
+- `inventory.read`
+- `inventory.write`
+- `users.read`
+- `messaging.read`
+- `messaging.write`
+- `reference.read`
+- `analytics.read`
+
+Storage preparation:
+- `service_bearer_tokens.access_policy_version` хранит версию policy schema;
+- `service_bearer_tokens.scopes_json` хранит сериализованный scope manifest;
+- новые токены получают default full-access manifest для обратной совместимости.
 
 ## 4. Детали реализации
 
@@ -319,8 +358,17 @@ vetmanager-mcp/
 - только HTTPS для резолвленного host;
 - allowlist доменных суффиксов Vetmanager;
 - отсутствие raw API key в логах и ошибках;
+- отсутствие raw Bearer token и `token_hash` в audit log и пользовательских ошибках;
 - отсутствие runtime credentials в репозитории;
-- безопасные лимиты на list операции и суммы платежей.
+- безопасные лимиты на list операции и суммы платежей;
+- rate limiting по `bearer_token_id` до обновления usage accounting;
+- token-centric audit trail для lifecycle и runtime auth events;
+- cleanup expired токенов с переходом в статус `expired`;
+- signed web session cookie c `HttpOnly`, `Secure` и `SameSite=Strict` по умолчанию;
+- обязательный `WEB_SESSION_SECRET` или fallback на `STORAGE_ENCRYPTION_KEY`
+  без встроенного dev-secret;
+- future scope policy хранится отдельно от raw token и не требует хранения
+  дополнительных секретов.
 
 ### 4.4. Производительность и кеширование
 
@@ -336,7 +384,7 @@ vetmanager-mcp/
 ### 5.1. Unit tests
 
 Покрывают:
-- credential extraction;
+- bearer auth resolution и runtime auth context;
 - multitenancy и security ограничения клиента;
 - validation helpers;
 - schema/export contracts;
@@ -348,7 +396,8 @@ vetmanager-mcp/
 - маршрутизацию к billing API и Vetmanager API;
 - корректность HTTP payload/query params;
 - поведение агрегирующих инструментов;
-- ключевые safety и cache сценарии.
+- ключевые safety, auth audit и cache сценарии;
+- web account flow, token issue/revoke и cleanup-поведение.
 
 ### 5.3. Real API e2e tests
 
@@ -379,7 +428,7 @@ docker compose up -d
 ### 6.2. Прод-подобный режим
 
 Сервер публикуется как HTTP MCP endpoint и может быть подключён внешним MCP-клиентом
-через `url + headers`.
+через `url + Authorization: Bearer <service_token>`.
 
 ### 6.3. Деплой
 

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
+import threading
 from functools import lru_cache
 from pathlib import Path
 
@@ -103,7 +105,36 @@ async def initialize_storage() -> None:
         raise StorageError("Failed to initialize storage backend.") from exc
 
 
+async def bootstrap_storage_schema() -> None:
+    """Create current metadata tables for fresh local runtimes if they do not exist."""
+    engine = get_engine()
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except SQLAlchemyError as exc:
+        raise StorageError("Failed to bootstrap storage schema.") from exc
+
+
 def reset_storage_state() -> None:
-    """Clear cached engine/session objects for tests or config reload."""
+    """Clear cached engine/session objects and dispose old engine if present."""
+    cached_engine: AsyncEngine | None = None
+    cache_info = get_engine.cache_info()
+    if cache_info.currsize:
+        cached_engine = get_engine()
     get_session_factory.cache_clear()
     get_engine.cache_clear()
+    if cached_engine is None:
+        return
+
+    def _dispose_engine() -> None:
+        asyncio.run(cached_engine.dispose())
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        _dispose_engine()
+        return
+
+    worker = threading.Thread(target=_dispose_engine, name="storage-engine-dispose", daemon=True)
+    worker.start()
+    worker.join()

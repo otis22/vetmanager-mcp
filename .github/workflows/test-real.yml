@@ -7,6 +7,10 @@ on:
         description: 'Vetmanager test domain (e.g. devtr6)'
         required: true
         default: 'devtr6'
+      test_user_token_base_url:
+        description: 'Optional base URL for login/password -> token smoke (e.g. https://devtr6.vetmanager2.ru)'
+        required: false
+        default: 'https://devtr6.vetmanager2.ru'
 
 jobs:
   test-real:
@@ -22,11 +26,19 @@ jobs:
         env:
           TEST_DOMAIN: ${{ inputs.test_domain }}
           TEST_API_KEY: ${{ secrets.VETMANAGER_TEST_API_KEY }}
+          TEST_USER_TOKEN: ${{ secrets.VETMANAGER_TEST_USER_TOKEN }}
+          TEST_USER_TOKEN_BASE_URL: ${{ inputs.test_user_token_base_url }}
+          TEST_USER_LOGIN: ${{ secrets.VETMANAGER_TEST_USER_LOGIN }}
+          TEST_USER_PASSWORD: ${{ secrets.VETMANAGER_TEST_USER_PASSWORD }}
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/app" \
             -u 1001:1001 \
             -e TEST_DOMAIN \
             -e TEST_API_KEY \
+            -e TEST_USER_TOKEN \
+            -e TEST_USER_TOKEN_BASE_URL \
+            -e TEST_USER_LOGIN \
+            -e TEST_USER_PASSWORD \
             vetmanager-mcp \
             python -m pytest tests/test_e2e_real.py -v

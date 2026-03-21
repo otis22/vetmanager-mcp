@@ -36,6 +36,9 @@ def test_alembic_upgrade_creates_bearer_service_tables(tmp_path: Path):
     assert "token_usage_logs" in table_names
     account_columns = {column["name"] for column in inspector.get_columns("accounts")}
     assert "password_hash" in account_columns
+    token_columns = {column["name"] for column in inspector.get_columns("service_bearer_tokens")}
+    assert "access_policy_version" in token_columns
+    assert "scopes_json" in token_columns
 
 
 def test_postgres_url_is_normalized_for_migrations():

@@ -439,7 +439,7 @@
 - 26.5 Проверить, что bearer runtime не зависит от конкретного Vetmanager auth mode — `done`
 - 26.6 Добавить unit/mock/real smoke тесты второго режима — `done`
 
-## Этап 27. Security hardening Bearer-сервиса (после Этапа 26) — `in_progress`
+## Этап 27. Security hardening Bearer-сервиса (после Этапа 26) — `done`
 
 Цель: усилить безопасность bearer-only сервиса и снизить риски компрометации токенов и веб-контура.
 
@@ -448,16 +448,67 @@
 - 27.1.2 Добавить общие test factories и перевести `tests/test_client_multitenancy.py` на credential-based runtime-контракт — `done`
 - 27.1.3 Перевести legacy helper'ы в `tests/test_e2e_mock.py` и смежных test support модулях — `done`
 - 27.1.4 Прогнать и стабилизировать полный test suite после миграции legacy тестов — `done`
-- 27.2 Добавить более подробный audit trail по auth events — `todo`
-- 27.3 Добавить политику cleanup/revocation для истёкших токенов — `todo`
-- 27.4 Усилить security web-сессий и secret management — `todo`
-- 27.5 Обновить technical requirements и `AssumptionLog.md` — `todo`
+- 27.2 Добавить более подробный audit trail по auth events — `done`
+- 27.3 Добавить политику cleanup/revocation для истёкших токенов — `done`
+- 27.4 Усилить security web-сессий и secret management — `done`
+- 27.5 Обновить technical requirements и `AssumptionLog.md` — `done`
 
-## Этап 28. Future scopes/RBAC для Bearer-токенов (после Этапа 27) — `todo`
+## Этап 28. Future scopes/RBAC для Bearer-токенов (после Этапа 27) — `done`
 
 Цель: спроектировать будущие ограничения прав Bearer-токенов по методам и доменным группам операций.
 
-- 28.1 Спроектировать модель scopes / RBAC для Bearer-токенов — `todo`
-- 28.2 Зафиксировать coarse-grained scopes для первого итерационного релиза прав — `todo`
-- 28.3 Подготовить storage/schema под scopes без обязательного enforcement в этом этапе — `todo`
-- 28.4 Обновить PRD, technical requirements и `AssumptionLog.md` — `todo`
+- 28.1 Спроектировать модель scopes / RBAC для Bearer-токенов — `done`
+- 28.2 Зафиксировать coarse-grained scopes для первого итерационного релиза прав — `done`
+- 28.3 Подготовить storage/schema под scopes без обязательного enforcement в этом этапе — `done`
+- 28.4 Обновить PRD, technical requirements и `AssumptionLog.md` — `done`
+
+## Этап 29. Stabilization: убрать test warnings и хвосты инфраструктуры — `done`
+
+Цель: довести test suite до полностью чистого прогона без известных warning-сигналов и скрытых проблем lifecycle/cleanup.
+
+- 29.1 Исследовать `aiosqlite` thread/loop warnings в `tests/test_client_multitenancy.py` — `done`
+- 29.2 Исправить lifecycle/cleanup SQLite connections в тестовой инфраструктуре или runtime helpers — `done`
+- 29.3 Добавить regression tests или fixture-guardrails против повторного появления warning-сценария — `done`
+- 29.4 Обновить `AssumptionLog.md` по итоговой причине и исправлению — `done`
+
+## Этап 30. Расширить real e2e tests на предоставленные тестовые данные — `done`
+
+Цель: покрыть недостающие реальные сценарии для обоих Vetmanager auth flows на выделенном тестовом контуре `devtr6`.
+
+Принятые тестовые данные для этапа:
+- API key flow: `TEST_DOMAIN=devtr6`, отдельный test API key.
+- Login/password flow: отдельные `TEST_USER_TOKEN_BASE_URL`, `TEST_USER_LOGIN`, `TEST_USER_PASSWORD` для получения user token в real smoke tests.
+
+Правило хранения:
+- Предпочтительный вариант: env/secrets тестового окружения и CI secrets.
+- Хранение прямо в открытом репозитории допускается только если это осознанно подтверждённые несекретные тестовые credentials; по умолчанию так не делать.
+
+- 30.1 Зафиксировать env-контракт для real e2e по обоим flows (`TEST_DOMAIN`, `TEST_API_KEY`, `TEST_USER_TOKEN_BASE_URL`, `TEST_USER_LOGIN`, `TEST_USER_PASSWORD`) — `done`
+- 30.2 Добавить real e2e smoke для login/password -> user token получения токена на выделенном тестовом контуре — `done`
+- 30.3 Добавить недостающие real e2e сценарии для API-key flow на `devtr6` — `done`
+- 30.4 Добавить недостающие real e2e сценарии для user-token flow после получения токена из login/password — `done`
+- 30.5 Обновить `README.md`, CI workflow и `AssumptionLog.md` по хранению/запуску этих тестов — `done`
+
+## Этап 31. Browser E2E: полный пользовательский сценарий до MCP Bearer runtime — `done`
+
+Цель: вручную и через реальный браузер подтвердить, что полный пользовательский путь работает не только на уровне unit/mock/real API tests, но и как сквозной продуктовый сценарий.
+
+Обязательный сценарий этапа:
+- регистрация нового account через web UI;
+- login в account;
+- настройка Vetmanager integration через оба поддерживаемых auth flow:
+  - `domain + api_key`
+  - `login/password -> user token` или эквивалентный актуальный web flow проекта;
+- выпуск Bearer-токена через кабинет;
+- проверка, что Bearer-токен реально работает в MCP runtime;
+- проверка revoke/expired/error-paths там, где это уместно без разрушения тестового контура.
+
+Требование к валидации:
+- агент обязан сам прогнать этот сценарий в браузере, а не ограничиваться только unit/e2e тестами;
+- результат должен быть зафиксирован в `AssumptionLog.md` с указанием, какой именно абсолютный URL/flow был проверен и какие ограничения остались.
+
+- 31.1 Подготовить browser-checklist полного сценария account -> integration -> bearer token -> MCP call — `done`
+- 31.2 Прогнать в браузере сценарий регистрации, логина и настройки integration для API-key flow — `done`
+- 31.3 Прогнать в браузере сценарий user-token/login-password flow, если он доступен в текущем UI — `done`
+- 31.4 Проверить реальный MCP вызов по выпущенному Bearer-токену после web-настройки — `done`
+- 31.5 Зафиксировать результаты browser E2E в `AssumptionLog.md` и при необходимости обновить `README.md`/workflow — `done`

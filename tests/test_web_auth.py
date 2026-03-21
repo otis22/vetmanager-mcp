@@ -14,7 +14,7 @@ from bearer_auth import resolve_bearer_auth_context
 from server import mcp
 from storage import Base, create_database_engine
 from storage_models import Account, ServiceBearerToken, TokenUsageLog, TokenUsageStat, VetmanagerConnection
-from web_auth import SESSION_COOKIE_NAME, register_account
+from web_auth import SESSION_COOKIE_NAME, get_web_session_secret, register_account, set_account_session_cookie
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
 
@@ -23,6 +23,7 @@ async def _prepare_web_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     database_path = tmp_path / "web-auth.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path}")
     monkeypatch.setenv("WEB_SESSION_SECRET", "test-web-session-secret")
+    monkeypatch.setenv("WEB_SESSION_SECURE", "0")
     storage.reset_storage_state()
 
     engine = create_database_engine(f"sqlite:///{database_path}")
@@ -61,6 +62,30 @@ async def test_register_route_creates_account_and_starts_session(tmp_path: Path,
 
     await engine.dispose()
     storage.reset_storage_state()
+
+
+def test_get_web_session_secret_requires_config(monkeypatch):
+    monkeypatch.delenv("WEB_SESSION_SECRET", raising=False)
+    monkeypatch.delenv("STORAGE_ENCRYPTION_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="WEB_SESSION_SECRET"):
+        get_web_session_secret()
+
+
+def test_set_account_session_cookie_uses_strict_secure_defaults(monkeypatch):
+    from starlette.responses import Response
+
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-web-session-secret")
+    monkeypatch.delenv("WEB_SESSION_SECURE", raising=False)
+    monkeypatch.delenv("WEB_SESSION_SAMESITE", raising=False)
+
+    response = Response()
+    set_account_session_cookie(response, 1)
+
+    set_cookie_header = response.headers["set-cookie"].lower()
+    assert "httponly" in set_cookie_header
+    assert "secure" in set_cookie_header
+    assert "samesite=strict" in set_cookie_header
 
 
 @pytest.mark.asyncio
@@ -455,9 +480,9 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
     assert stored.token_hash not in response.text
     assert stats is not None
     assert stats.request_count == 1
-    assert len(logs) == 1
-    assert logs[0].event_type == "token_created"
+    assert [log.event_type for log in logs] == ["token_created", "token_auth_succeeded"]
     assert raw_token not in (logs[0].details_json or "")
+    assert raw_token not in (logs[1].details_json or "")
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -565,6 +590,125 @@ async def test_account_token_revoke_updates_status_and_writes_audit_log(tmp_path
     assert [log.event_type for log in logs] == ["token_created", "token_revoked"]
     assert raw_token not in (logs[0].details_json or "")
     assert raw_token not in (logs[1].details_json or "")
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_account_token_logs_capture_request_metadata(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    async with storage.get_session_factory()() as session:
+        await register_account(
+            session,
+            email="meta-owner@example.com",
+            password="integration-pass-123",
+        )
+
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-meta").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://clinic-meta.vetmanager.cloud"}})
+    )
+    respx.get("https://clinic-meta.vetmanager.cloud/rest/api/client").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+        headers={"user-agent": "audit-test-agent"},
+    ) as client:
+        await client.post(
+            "/login",
+            data={"email": "meta-owner@example.com", "password": "integration-pass-123"},
+        )
+        await client.post(
+            "/account/integration",
+            data={"domain": "clinic-meta", "api_key": "secret-key"},
+        )
+        await client.post(
+            "/account/tokens",
+            data={"token_name": "Meta token", "expires_in_days": "7"},
+        )
+        await client.post("/account/tokens/1/revoke")
+
+    async with storage.get_session_factory()() as session:
+        logs = (
+            await session.execute(
+                select(TokenUsageLog)
+                .where(TokenUsageLog.bearer_token_id == 1)
+                .order_by(TokenUsageLog.id.asc())
+            )
+        ).scalars().all()
+
+    assert [log.event_type for log in logs] == ["token_created", "token_revoked"]
+    assert logs[0].user_agent == "audit-test-agent"
+    assert logs[1].user_agent == "audit-test-agent"
+    assert logs[0].ip_address is not None
+    assert logs[1].ip_address is not None
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_account_page_marks_expired_token_via_cleanup_sweep(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    expired_at = datetime(2026, 3, 1, 10, 0, tzinfo=timezone.utc)
+
+    async with storage.get_session_factory()() as session:
+        account = await register_account(
+            session,
+            email="expired-owner@example.com",
+            password="integration-pass-123",
+        )
+        token = ServiceBearerToken(
+            account_id=account.id,
+            name="Old token",
+            token_prefix="vm_st_old",
+            token_hash="hash",
+            status="active",
+            expires_at=expired_at,
+        )
+        session.add(token)
+        await session.commit()
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await client.post(
+            "/login",
+            data={"email": "expired-owner@example.com", "password": "integration-pass-123"},
+        )
+        account_page = await client.get("/account")
+
+    assert account_page.status_code == 200
+    assert "Old token" in account_page.text
+    assert "expired" in account_page.text
+
+    async with storage.get_session_factory()() as session:
+        token = await session.get(ServiceBearerToken, 1)
+        logs = (
+            await session.execute(
+                select(TokenUsageLog)
+                .where(TokenUsageLog.bearer_token_id == 1)
+                .order_by(TokenUsageLog.id.asc())
+            )
+        ).scalars().all()
+
+    assert token is not None
+    assert token.status == "expired"
+    assert [log.event_type for log in logs] == ["token_expired"]
 
     await engine.dispose()
     storage.reset_storage_state()

@@ -1,8 +1,10 @@
 """Unit tests for stage 21 storage foundation."""
 
+import asyncio
 from pathlib import Path
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import storage
@@ -59,3 +61,51 @@ async def test_initialize_storage_creates_sqlite_file_and_session_factory(
     assert database_path.exists()
     async with session_factory() as session:
         assert isinstance(session, AsyncSession)
+
+
+@pytest.mark.asyncio
+async def test_reset_storage_state_disposes_cached_engine_in_async_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Async tests should fully dispose cached SQLite engine before loop shutdown."""
+    database_path = tmp_path / "state" / "dispose.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path}")
+    storage.reset_storage_state()
+    await storage.initialize_storage()
+    engine = storage.get_engine()
+
+    dispose_called = asyncio.Event()
+    original_dispose = type(engine).dispose
+
+    async def tracked_dispose(self, *args, **kwargs):
+        if self is engine:
+            dispose_called.set()
+        return await original_dispose(self, *args, **kwargs)
+
+    monkeypatch.setattr(type(engine), "dispose", tracked_dispose)
+
+    storage.reset_storage_state()
+
+    assert dispose_called.is_set()
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_storage_schema_creates_fresh_tables(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Fresh local runtime should bootstrap metadata tables before web usage."""
+    database_path = tmp_path / "state" / "bootstrap.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path}")
+    storage.reset_storage_state()
+
+    await storage.initialize_storage()
+    await storage.bootstrap_storage_schema()
+
+    async with storage.get_engine().begin() as conn:
+        rows = await conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'")
+        )
+
+    assert rows.scalar_one() == "accounts"

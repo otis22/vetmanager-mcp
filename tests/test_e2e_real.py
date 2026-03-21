@@ -1,6 +1,15 @@
-"""E2E real API tests against domain devtr6.
+"""E2E real API tests against a dedicated Vetmanager test contour.
 
-Skipped automatically when TEST_DOMAIN / TEST_API_KEY env vars are not set.
+Primary env contract:
+- TEST_DOMAIN
+- TEST_API_KEY
+
+Optional user-token envs:
+- TEST_USER_TOKEN
+- TEST_USER_TOKEN_BASE_URL
+- TEST_USER_LOGIN
+- TEST_USER_PASSWORD
+
 Run inside Docker:
     docker compose run --rm -e TEST_DOMAIN=devtr6 -e TEST_API_KEY=<key> test
 """
@@ -9,10 +18,15 @@ import os
 import pytest
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import request_credentials
 import runtime_auth
 from vetmanager_client import VetmanagerClient
 from exceptions import AuthError, VetmanagerError
+from vetmanager_connection_service import (
+    validate_domain_api_key_connection,
+    validate_user_token_connection,
+)
 from vetmanager_auth import (
     VETMANAGER_AUTH_MODE_USER_TOKEN,
     VetmanagerAuthContext,
@@ -21,14 +35,27 @@ from vetmanager_auth import (
 TEST_DOMAIN = os.environ.get("TEST_DOMAIN", "")
 TEST_API_KEY = os.environ.get("TEST_API_KEY", "")
 TEST_USER_TOKEN = os.environ.get("TEST_USER_TOKEN", "")
+TEST_USER_TOKEN_BASE_URL = os.environ.get("TEST_USER_TOKEN_BASE_URL", "")
+TEST_USER_LOGIN = os.environ.get("TEST_USER_LOGIN", "")
+TEST_USER_PASSWORD = os.environ.get("TEST_USER_PASSWORD", "")
 
 skip_if_no_creds = pytest.mark.skipif(
     not TEST_DOMAIN or not TEST_API_KEY,
     reason="TEST_DOMAIN and TEST_API_KEY not set — skipping real API tests",
 )
 skip_if_no_user_token = pytest.mark.skipif(
-    not TEST_DOMAIN or not TEST_USER_TOKEN,
-    reason="TEST_DOMAIN and TEST_USER_TOKEN not set — skipping user-token real smoke tests",
+    not TEST_DOMAIN or (not TEST_USER_TOKEN and not (TEST_USER_TOKEN_BASE_URL and TEST_USER_LOGIN and TEST_USER_PASSWORD)),
+    reason=(
+        "Need TEST_DOMAIN and either TEST_USER_TOKEN or "
+        "TEST_USER_TOKEN_BASE_URL + TEST_USER_LOGIN + TEST_USER_PASSWORD"
+    ),
+)
+skip_if_no_user_login_flow = pytest.mark.skipif(
+    not TEST_USER_TOKEN_BASE_URL or not TEST_USER_LOGIN or not TEST_USER_PASSWORD,
+    reason=(
+        "TEST_USER_TOKEN_BASE_URL, TEST_USER_LOGIN and TEST_USER_PASSWORD "
+        "not set — skipping login/password real smoke tests"
+    ),
 )
 
 
@@ -51,22 +78,46 @@ def vc() -> VetmanagerClient:
     return client
 
 
+async def resolve_real_user_token() -> str:
+    """Return configured user token or exchange one from login/password for smoke tests."""
+    if TEST_USER_TOKEN:
+        return TEST_USER_TOKEN
+    if not TEST_USER_TOKEN_BASE_URL or not TEST_USER_LOGIN or not TEST_USER_PASSWORD:
+        pytest.skip("User-token real smoke requires TEST_USER_TOKEN or login/password envs.")
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as http:
+        response = await http.post(
+            f"{TEST_USER_TOKEN_BASE_URL.rstrip('/')}/token_auth.php",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-REST-API-KEY": TEST_API_KEY,
+            },
+            data={
+                "login": TEST_USER_LOGIN,
+                "password": TEST_USER_PASSWORD,
+            },
+        )
+
+    if response.status_code == 401:
+        pytest.skip("Login/password token exchange rejected by the test contour.")
+    response.raise_for_status()
+    payload = response.json()
+    data = payload.get("data")
+    if isinstance(data, str) and data.strip():
+        return data.strip()
+    if isinstance(data, dict):
+        for key in ("token", "user_token", "api_key", "key"):
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    raise AssertionError("token_auth.php response did not contain a usable user token.")
+
+
 def vc_user_token() -> VetmanagerClient:
     headers = {"authorization": "Bearer real-test-token"}
     with patch.object(request_credentials, "_get_request_headers", return_value=headers):
         client = VetmanagerClient()
-    client._vetmanager_auth = VetmanagerAuthContext(
-        auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
-        domain=TEST_DOMAIN,
-        credential=TEST_USER_TOKEN,
-    )
-    client._auth_source = "bearer"
-    client._domain = TEST_DOMAIN
-    client._api_key = TEST_USER_TOKEN
-    client._account_id = 1
-    client._bearer_token_id = 1
-    client._connection_id = 1
-    client._ensure_runtime_credentials = AsyncMock(return_value=None)
     return client
 
 
@@ -131,8 +182,48 @@ async def test_real_get_users():
 @pytest.mark.asyncio
 async def test_real_get_users_with_user_token_mode():
     """User-token mode should pass the same runtime/client path as API-key mode."""
-    result = await call(vc_user_token().get("/rest/api/user", params={"limit": 5, "offset": 0}))
+    user_token = await resolve_real_user_token()
+    client = vc_user_token()
+    client._vetmanager_auth = VetmanagerAuthContext(
+        auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
+        domain=TEST_DOMAIN,
+        credential=user_token,
+    )
+    client._auth_source = "bearer"
+    client._domain = TEST_DOMAIN
+    client._api_key = user_token
+    client._account_id = 1
+    client._bearer_token_id = 1
+    client._connection_id = 1
+    client._ensure_runtime_credentials = AsyncMock(return_value=None)
+    result = await call(client.get("/rest/api/user", params={"limit": 5, "offset": 0}))
     assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_validate_domain_api_key_connection():
+    """Validation helper should accept the dedicated real API-key contour."""
+    resolved = await validate_domain_api_key_connection(TEST_DOMAIN, TEST_API_KEY)
+    assert resolved.startswith("https://")
+
+
+@skip_if_no_user_login_flow
+@pytest.mark.asyncio
+async def test_real_exchange_user_token_from_login_password():
+    """Login/password smoke should either yield a token or explicitly skip on auth rejection."""
+    user_token = await resolve_real_user_token()
+    assert user_token
+    assert len(user_token) >= 8
+
+
+@skip_if_no_user_token
+@pytest.mark.asyncio
+async def test_real_validate_user_token_connection_from_login_password_or_env_token():
+    """Validation helper should accept a real user-token contour credential."""
+    user_token = await resolve_real_user_token()
+    resolved = await validate_user_token_connection(TEST_DOMAIN, user_token)
+    assert resolved.startswith("https://")
 
 
 @skip_if_no_creds

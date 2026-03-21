@@ -9,8 +9,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import bearer_rate_limiter
+from auth_audit import (
+    TOKEN_EVENT_AUTH_FAILED_EXPIRED,
+    TOKEN_EVENT_AUTH_FAILED_NO_CONNECTION,
+    TOKEN_EVENT_AUTH_FAILED_REVOKED,
+    TOKEN_EVENT_AUTH_RATE_LIMITED,
+    TOKEN_EVENT_AUTH_SUCCEEDED,
+    add_token_usage_log,
+)
 from bearer_token_manager import hash_bearer_token
-from exceptions import AuthError
+from exceptions import AuthError, RateLimitError
 from storage_models import (
     Account,
     ServiceBearerToken,
@@ -31,6 +39,28 @@ class BearerAuthContext:
     auth_mode: str
     domain: str
     api_key: str
+
+
+def _base_auth_details(
+    *,
+    account_id: int,
+    token: ServiceBearerToken,
+    reason: str | None = None,
+    connection: VetmanagerConnection | None = None,
+    auth_mode: str | None = None,
+    domain: str | None = None,
+    retry_after_seconds: int | None = None,
+) -> dict[str, str | int | None]:
+    details: dict[str, str | int | None] = {
+        "account_id": account_id,
+        "token_prefix": token.token_prefix,
+        "reason": reason,
+        "connection_id": connection.id if connection is not None else None,
+        "auth_mode": auth_mode,
+        "domain": domain,
+        "retry_after_seconds": retry_after_seconds,
+    }
+    return details
 
 
 async def resolve_bearer_auth_context(
@@ -54,13 +84,50 @@ async def resolve_bearer_auth_context(
 
     token, account = token_row
     if token.is_revoked():
+        add_token_usage_log(
+            session,
+            bearer_token_id=token.id,
+            event_type=TOKEN_EVENT_AUTH_FAILED_REVOKED,
+            details=_base_auth_details(
+                account_id=account.id,
+                token=token,
+                reason="revoked",
+            ),
+        )
+        await session.commit()
         raise AuthError("Revoked bearer token.", status_code=401)
     if token.is_expired(now=now):
         token.sync_status(now=now)
+        add_token_usage_log(
+            session,
+            bearer_token_id=token.id,
+            event_type=TOKEN_EVENT_AUTH_FAILED_EXPIRED,
+            details=_base_auth_details(
+                account_id=account.id,
+                token=token,
+                reason="expired",
+            ),
+        )
+        await session.commit()
         raise AuthError("Expired bearer token.", status_code=401)
     if token.status == TOKEN_STATUS_DISABLED or account.status != "active":
         raise AuthError("Invalid bearer token.", status_code=401)
-    await bearer_rate_limiter.BEARER_RATE_LIMITER.check_or_raise(token.id, now=now)
+    try:
+        await bearer_rate_limiter.BEARER_RATE_LIMITER.check_or_raise(token.id, now=now)
+    except RateLimitError as exc:
+        add_token_usage_log(
+            session,
+            bearer_token_id=token.id,
+            event_type=TOKEN_EVENT_AUTH_RATE_LIMITED,
+            details=_base_auth_details(
+                account_id=account.id,
+                token=token,
+                reason="rate_limited",
+                retry_after_seconds=exc.retry_after_seconds,
+            ),
+        )
+        await session.commit()
+        raise
 
     connection_result = await session.execute(
         select(VetmanagerConnection)
@@ -71,11 +138,35 @@ async def resolve_bearer_auth_context(
     )
     connection = connection_result.scalar_one_or_none()
     if connection is None:
+        add_token_usage_log(
+            session,
+            bearer_token_id=token.id,
+            event_type=TOKEN_EVENT_AUTH_FAILED_NO_CONNECTION,
+            details=_base_auth_details(
+                account_id=account.id,
+                token=token,
+                reason="no_connection",
+            ),
+        )
+        await session.commit()
         raise AuthError("Account connection not configured.", status_code=401)
 
     resolved = resolve_vetmanager_credentials(
         connection,
         encryption_key=encryption_key,
+    )
+    add_token_usage_log(
+        session,
+        bearer_token_id=token.id,
+        event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
+        details=_base_auth_details(
+            account_id=account.id,
+            token=token,
+            reason="succeeded",
+            connection=connection,
+            auth_mode=resolved.auth_mode,
+            domain=resolved.domain,
+        ),
     )
     token.mark_used(used_at=now)
     usage_stats = await session.scalar(

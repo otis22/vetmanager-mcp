@@ -1,8 +1,10 @@
 import logging
 import os
+import asyncio
 
 from fastmcp import FastMCP
 
+from storage import bootstrap_storage_schema, initialize_storage
 from tool_descriptions import enhance_tool_descriptions
 from web import register_web_routes
 
@@ -31,6 +33,8 @@ register_web_routes(mcp)
 enhance_tool_descriptions(mcp)
 
 if __name__ == "__main__":
+    asyncio.run(initialize_storage())
+    asyncio.run(bootstrap_storage_schema())
     transport = os.environ.get("MCP_TRANSPORT", "streamable-http")
     host = os.environ.get("MCP_HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))

@@ -1,7 +1,6 @@
 """SQLAlchemy models for the bearer-service storage layer."""
 
 from __future__ import annotations
-
 from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
@@ -10,6 +9,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from bearer_token_manager import build_token_prefix, hash_bearer_token, verify_bearer_token
 from secret_manager import decrypt_secret_payload, encrypt_secret_payload
 from storage import Base
+from token_scopes import (
+    TOKEN_ACCESS_POLICY_VERSION,
+    deserialize_token_scopes,
+    serialize_token_scopes,
+)
 
 TOKEN_STATUS_ACTIVE = "active"
 TOKEN_STATUS_REVOKED = "revoked"
@@ -97,6 +101,13 @@ class ServiceBearerToken(Base):
     token_prefix: Mapped[str] = mapped_column(String(32), nullable=False)
     token_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    access_policy_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=TOKEN_ACCESS_POLICY_VERSION,
+        server_default="1",
+    )
+    scopes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -125,6 +136,15 @@ class ServiceBearerToken(Base):
     def verify_raw_token(self, raw_token: str) -> bool:
         """Verify raw bearer token against stored deterministic hash."""
         return verify_bearer_token(raw_token, self.token_hash)
+
+    def set_scopes(self, scopes: list[str] | tuple[str, ...] | None) -> None:
+        """Persist stable validated scope manifest for this token."""
+        self.access_policy_version = TOKEN_ACCESS_POLICY_VERSION
+        self.scopes_json = serialize_token_scopes(scopes)
+
+    def get_scopes(self) -> list[str]:
+        """Return scope manifest, falling back to legacy full-access policy."""
+        return deserialize_token_scopes(self.scopes_json)
 
     def is_revoked(self) -> bool:
         """Return True when token has already been revoked."""

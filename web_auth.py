@@ -69,11 +69,28 @@ def verify_account_password(password: str, password_hash: str | None) -> bool:
 
 def get_web_session_secret() -> str:
     """Return session-signing secret with explicit env override."""
-    return (
-        os.environ.get("WEB_SESSION_SECRET")
-        or os.environ.get("STORAGE_ENCRYPTION_KEY")
-        or "dev-web-session-secret"
-    )
+    secret = os.environ.get("WEB_SESSION_SECRET") or os.environ.get("STORAGE_ENCRYPTION_KEY")
+    if not secret:
+        raise RuntimeError(
+            "Missing WEB_SESSION_SECRET or STORAGE_ENCRYPTION_KEY for signed web sessions."
+        )
+    return secret
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_web_session_cookie_settings() -> tuple[bool, str]:
+    """Return hardened default cookie settings with explicit env overrides."""
+    secure = _env_flag("WEB_SESSION_SECURE", True)
+    samesite = (os.environ.get("WEB_SESSION_SAMESITE") or "strict").strip().lower() or "strict"
+    if samesite not in {"strict", "lax", "none"}:
+        samesite = "strict"
+    return secure, samesite
 
 
 def _session_signature(payload: str, *, secret: str | None = None) -> str:
@@ -126,13 +143,14 @@ def read_account_session_token(
 
 def set_account_session_cookie(response: Response, account_id: int) -> None:
     """Attach signed web session cookie to response."""
+    secure, samesite = get_web_session_cookie_settings()
     response.set_cookie(
         SESSION_COOKIE_NAME,
         create_account_session_token(account_id),
         max_age=SESSION_MAX_AGE_SECONDS,
         httponly=True,
-        samesite="lax",
-        secure=os.environ.get("WEB_SESSION_SECURE", "").lower() in {"1", "true", "yes"},
+        samesite=samesite,
+        secure=secure,
         path="/",
     )
 

@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bearer_auth import resolve_bearer_auth_context
 from bearer_token_manager import generate_bearer_token
-from exceptions import AuthError
+from exceptions import AuthError, RateLimitError
 from storage import Base, create_database_engine
-from storage_models import Account, ServiceBearerToken, TokenUsageStat, VetmanagerConnection
+from storage_models import Account, ServiceBearerToken, TokenUsageLog, TokenUsageStat, VetmanagerConnection
 from vetmanager_auth import VETMANAGER_AUTH_MODE_USER_TOKEN
 
 
@@ -206,6 +206,53 @@ async def test_resolve_bearer_auth_context_increments_request_count(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+async def test_resolve_bearer_auth_context_writes_success_audit_log(tmp_path: Path):
+    """Successful bearer auth should append a token auth audit event."""
+    session_factory = await _make_session_factory(tmp_path)
+    raw_token = generate_bearer_token()
+
+    async with session_factory() as session:
+        account = Account(email="ops@example.com", status="active")
+        session.add(account)
+        await session.flush()
+
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+            domain="clinic-a",
+        )
+        connection.set_credentials(
+            {"domain": "clinic-a", "api_key": "secret-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        token = ServiceBearerToken(account_id=account.id, name="Cursor token")
+        token.set_raw_token(raw_token)
+        session.add_all([connection, token])
+        await session.commit()
+
+    async with session_factory() as session:
+        await resolve_bearer_auth_context(
+            raw_token,
+            session,
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+
+    async with session_factory() as session:
+        logs = (
+            await session.execute(
+                select(TokenUsageLog)
+                .where(TokenUsageLog.bearer_token_id == 1)
+                .order_by(TokenUsageLog.id.asc())
+            )
+        ).scalars().all()
+
+    assert [log.event_type for log in logs] == ["token_auth_succeeded"]
+    assert "secret-key" not in (logs[0].details_json or "")
+    assert "clinic-a" in (logs[0].details_json or "")
+
+
+@pytest.mark.asyncio
 async def test_resolve_bearer_auth_context_rejects_revoked_token(tmp_path: Path):
     """Lookup should reject revoked bearer tokens."""
     session_factory = await _make_session_factory(tmp_path)
@@ -238,6 +285,17 @@ async def test_resolve_bearer_auth_context_rejects_revoked_token(tmp_path: Path)
                 session,
                 encryption_key=TEST_ENCRYPTION_KEY,
             )
+
+    async with session_factory() as session:
+        logs = (
+            await session.execute(
+                select(TokenUsageLog)
+                .where(TokenUsageLog.bearer_token_id == 1)
+                .order_by(TokenUsageLog.id.asc())
+            )
+        ).scalars().all()
+
+    assert [log.event_type for log in logs] == ["token_auth_failed_revoked"]
 
 
 @pytest.mark.asyncio
@@ -293,6 +351,17 @@ async def test_resolve_bearer_auth_context_rejects_expired_token(tmp_path: Path)
                 encryption_key=TEST_ENCRYPTION_KEY,
             )
 
+    async with session_factory() as session:
+        logs = (
+            await session.execute(
+                select(TokenUsageLog)
+                .where(TokenUsageLog.bearer_token_id == 1)
+                .order_by(TokenUsageLog.id.asc())
+            )
+        ).scalars().all()
+
+    assert [log.event_type for log in logs] == ["token_auth_failed_expired"]
+
 
 @pytest.mark.asyncio
 async def test_resolve_bearer_auth_context_requires_active_connection(tmp_path: Path):
@@ -326,3 +395,81 @@ async def test_resolve_bearer_auth_context_requires_active_connection(tmp_path: 
                 session,
                 encryption_key=TEST_ENCRYPTION_KEY,
             )
+
+    async with session_factory() as session:
+        logs = (
+            await session.execute(
+                select(TokenUsageLog)
+                .where(TokenUsageLog.bearer_token_id == 1)
+                .order_by(TokenUsageLog.id.asc())
+            )
+        ).scalars().all()
+
+    assert [log.event_type for log in logs] == ["token_auth_failed_no_connection"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_bearer_auth_context_writes_rate_limit_audit_log(tmp_path: Path, monkeypatch):
+    """Rate-limited bearer auth should append a dedicated audit event."""
+    import bearer_rate_limiter
+
+    session_factory = await _make_session_factory(tmp_path)
+    raw_token = generate_bearer_token()
+    used_at = datetime(2026, 3, 21, 12, 45, tzinfo=timezone.utc)
+    monkeypatch.setenv("BEARER_RATE_LIMIT_REQUESTS", "1")
+    monkeypatch.setenv("BEARER_RATE_LIMIT_WINDOW_SECONDS", "60")
+    bearer_rate_limiter.reset_bearer_rate_limiter()
+
+    try:
+        async with session_factory() as session:
+            account = Account(email="ops@example.com", status="active")
+            session.add(account)
+            await session.flush()
+
+            connection = VetmanagerConnection(
+                account_id=account.id,
+                auth_mode="domain_api_key",
+                status="active",
+                domain="clinic-a",
+            )
+            connection.set_credentials(
+                {"domain": "clinic-a", "api_key": "secret-key"},
+                encryption_key=TEST_ENCRYPTION_KEY,
+            )
+            token = ServiceBearerToken(account_id=account.id, name="Cursor token")
+            token.set_raw_token(raw_token)
+            session.add_all([connection, token])
+            await session.commit()
+
+        async with session_factory() as session:
+            await resolve_bearer_auth_context(
+                raw_token,
+                session,
+                encryption_key=TEST_ENCRYPTION_KEY,
+                now=used_at,
+            )
+        async with session_factory() as session:
+            with pytest.raises(RateLimitError, match="rate limit exceeded"):
+                await resolve_bearer_auth_context(
+                    raw_token,
+                    session,
+                    encryption_key=TEST_ENCRYPTION_KEY,
+                    now=used_at,
+                )
+
+        async with session_factory() as session:
+            logs = (
+                await session.execute(
+                    select(TokenUsageLog)
+                    .where(TokenUsageLog.bearer_token_id == 1)
+                    .order_by(TokenUsageLog.id.asc())
+                )
+            ).scalars().all()
+    finally:
+        bearer_rate_limiter.reset_bearer_rate_limiter()
+
+    assert [log.event_type for log in logs] == [
+        "token_auth_succeeded",
+        "token_auth_rate_limited",
+    ]
+    assert "retry_after_seconds" in (logs[-1].details_json or "")

@@ -36,8 +36,19 @@ docker compose up -d          # запустить MCP-сервер
 # unit + mock (без реального API)
 docker compose run --rm test
 
-# с реальным API
+# с реальным API по api_key flow
 docker compose run --rm -e TEST_DOMAIN=<домен> -e TEST_API_KEY=<ключ> test
+
+# с real smoke для user-token flow:
+# либо дайте уже готовый TEST_USER_TOKEN,
+# либо передайте контур login/password exchange
+docker compose run --rm \
+  -e TEST_DOMAIN=<домен> \
+  -e TEST_API_KEY=<api_key> \
+  -e TEST_USER_TOKEN_BASE_URL=<https://clinic.vetmanager2.ru> \
+  -e TEST_USER_LOGIN=<login> \
+  -e TEST_USER_PASSWORD=<password> \
+  test
 ```
 
 ## Bearer-only runtime
@@ -116,7 +127,8 @@ docker compose up -d mcp
 | Cursor / Claude | `~/.cursor/mcp.json` → `Authorization: Bearer <service_token>` |
 | Vetmanager `domain` / `api_key` | активное `vetmanager_connection` выбранного account |
 | Явный аргумент инструмента | не поддерживается |
-| e2e real tests | `TEST_DOMAIN` / `TEST_API_KEY` в `.env` или CI secrets |
+| e2e real tests (api_key) | `TEST_DOMAIN` / `TEST_API_KEY` в `.env` или CI secrets |
+| e2e real tests (user_token) | `TEST_USER_TOKEN` или `TEST_USER_TOKEN_BASE_URL` + `TEST_USER_LOGIN` + `TEST_USER_PASSWORD` |
 | Проектный `.env` (runtime) | используется только для infra-конфига (`DATABASE_URL`, `STORAGE_ENCRYPTION_KEY`, transport settings) |
 
 ### Тест подключения
@@ -346,7 +358,10 @@ Prompts работают по тому же bearer-only контракту, чт
 | `test.yml` | push / pull request → main | unit + mock e2e (без реального API) |
 | `test-real.yml` | вручную (`workflow_dispatch`) | real API e2e (требует секрет `VETMANAGER_TEST_API_KEY`) |
 
-Добавить API-ключ для реальных тестов: **Settings → Secrets and variables → Actions → New repository secret**, имя: `VETMANAGER_TEST_API_KEY`.
+Добавить secrets для real tests:
+- `VETMANAGER_TEST_API_KEY`
+- опционально `VETMANAGER_TEST_USER_TOKEN`
+- либо `VETMANAGER_TEST_USER_LOGIN` и `VETMANAGER_TEST_USER_PASSWORD`
 
 ## Артефакты
 

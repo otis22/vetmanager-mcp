@@ -1076,3 +1076,241 @@
   post-implementation audit pass.
 - `commit` и `push` разрешены только после финального полного прогона, если
   после аудита были изменения.
+
+---
+
+## Этап 27.2: более подробный audit trail по auth events
+
+**Что реализовано:**
+- Добавлен общий модуль `auth_audit.py` для token-centric audit events.
+- `token_created` и `token_revoked` переведены на общий helper и теперь тоже
+  получают `ip_address` / `user_agent`, если вызваны в HTTP request context.
+- В `bearer_auth.py` добавлены runtime auth events:
+  - `token_auth_succeeded`
+  - `token_auth_failed_revoked`
+  - `token_auth_failed_expired`
+  - `token_auth_failed_no_connection`
+  - `token_auth_rate_limited`
+
+**Что осознанно не сделано на этом шаге:**
+- Не добавлялась новая таблица для generic auth failures без найденного токена.
+- Поэтому событие `invalid bearer token` для совсем неизвестного raw token пока
+  не логируется: текущая схема `TokenUsageLog` требует валидный `bearer_token_id`.
+
+**Что попадает в audit details:**
+- безопасные metadata вроде `account_id`, `token_prefix`, `connection_id`,
+  `auth_mode`, `domain`, `reason`, `retry_after_seconds`.
+- В лог не попадают raw Bearer token, `token_hash`, Vetmanager secret и пароли.
+
+**Архитектурный эффект:**
+- Audit trail теперь фиксирует не только lifecycle токенов, но и фактическое
+  использование и отказные security-sensitive ветки bearer runtime.
+- Request metadata централизована в одном helper, а не размазана по web/runtime
+  коду.
+
+**Что подтверждено проверками:**
+- Таргетный срез `tests/test_bearer_auth.py tests/test_web_auth.py` прошёл.
+- Полный test suite после audit/refactoring pass прошёл:
+  `501 passed, 302 skipped`.
+
+---
+
+## Этап 27.3: cleanup-политика для истёкших Bearer-токенов
+
+**Что реализовано:**
+- Добавлен `token_cleanup.py` с `sync_expired_tokens(session, account_id=None, now=None)`.
+- Cleanup sweep переводит только `active` токены с прошедшим `expires_at` в статус
+  `expired`.
+- Для каждого такого перехода один раз пишется audit event `token_expired`.
+- Dashboard account-страницы запускает cleanup sweep перед чтением списка токенов,
+  поэтому пользователь видит актуальный статус без отдельной фоновой задачи.
+
+**Выбранная политика:**
+- Истёкший токен становится `expired`, а не `revoked`.
+- Ручной revoke остаётся отдельным пользовательским действием и не смешивается с
+  автоматическим истечением TTL.
+
+**Что осознанно не сделано на этом шаге:**
+- Не добавлялся cron/worker для глобальной фоновой очистки по всем аккаунтам.
+- Cleanup пока process-local и выполняется лениво в web/dashboard flow.
+
+**Архитектурный эффект:**
+- UI и storage больше не расходятся по статусу токена после окончания TTL.
+- Audit trail различает ручной revoke и автоматическое истечение срока действия.
+
+**Что подтверждено проверками:**
+- Добавлены unit tests на cleanup helper:
+  обновление статуса, отсутствие дублей и защита от перезаписи revoked token.
+- Добавлен web-тест на lazy cleanup через `/account`.
+- Полный test suite после внедрения прошёл:
+  `505 passed, 302 skipped`.
+
+---
+
+## Этап 27.4: hardening web-сессий и secret management
+
+**Что реализовано:**
+- Убран небезопасный fallback web-session секрета вида
+  `dev-web-session-secret`.
+- `get_web_session_secret()` теперь принимает только:
+  - `WEB_SESSION_SECRET`, либо
+  - `STORAGE_ENCRYPTION_KEY` как fallback для локальной совместимости.
+- При отсутствии обоих значений web auth теперь падает с явной ошибкой
+  конфигурации вместо запуска с предсказуемым секретом.
+- Cookie настроены с более жёсткими дефолтами:
+  - `HttpOnly`
+  - `Secure=True`
+  - `SameSite=Strict`
+- Для локальных/тестовых сценариев добавлены явные env overrides:
+  `WEB_SESSION_SECURE` и `WEB_SESSION_SAMESITE`.
+
+**Почему выбрана именно такая модель:**
+- Для production нельзя оставлять встроенный статический секрет подписи cookie.
+- Одновременный fallback на `STORAGE_ENCRYPTION_KEY` снижает риск поломки уже
+  существующих окружений, где secret management ещё не был разделён полностью.
+
+**Что осознанно не сделано на этом шаге:**
+- Не вводилась отдельная rotation-механика для session secret.
+- Не добавлялся Redis/server-side session store: текущая signed-cookie модель
+  остаётся достаточной для MVP web-контура.
+
+**Архитектурный эффект:**
+- Web auth больше не зависит от встроенного dev-secret.
+- Безопасные cookie defaults применяются централизованно в одном helper, а не
+  размазаны по route handlers.
+
+**Что подтверждено проверками:**
+- Добавлены тесты на обязательность конфигурации секрета.
+- Добавлены тесты на `Secure` и `SameSite=Strict` как дефолтные cookie flags.
+
+---
+
+## Этап 28: future scopes / RBAC для Bearer-токенов
+
+**Что реализовано:**
+- Создан отдельный PRD на этап 28 с capability-based моделью прав Bearer-токенов.
+- Добавлен единый registry coarse-grained scopes в `token_scopes.py`.
+- В `service_bearer_tokens` добавлены:
+  - `access_policy_version`
+  - `scopes_json`
+- `ServiceBearerToken` получил helper'ы `set_scopes()` и `get_scopes()`.
+- Новые токены при выпуске получают default full-access scope manifest.
+- Legacy токены без `scopes_json` интерпретируются как совместимые full-access
+  токены до будущего runtime enforcement.
+
+**Выбранная модель:**
+- Это не полноценный enterprise RBAC по пользователям и ролям.
+- Базовая единица прав сейчас — сам Bearer-токен с capability list.
+- Naming convention для прав: `<resource_group>.<action>`.
+
+**Зафиксированные coarse-grained scopes:**
+- `clients.read`, `clients.write`
+- `pets.read`, `pets.write`
+- `admissions.read`, `admissions.write`
+- `medical_cards.read`, `medical_cards.write`
+- `finance.read`, `finance.write`
+- `inventory.read`, `inventory.write`
+- `users.read`
+- `messaging.read`, `messaging.write`
+- `reference.read`
+- `analytics.read`
+
+**Что осознанно не сделано на этом шаге:**
+- Не включён runtime enforcement scopes на tools/prompts.
+- Не добавлен UI для выбора scopes при выпуске токена.
+- Не вводились wildcard scopes, deny-rules и сложная иерархия ролей.
+
+**Архитектурный эффект:**
+- Storage уже готов хранить policy metadata токена без изменения bearer-only
+  runtime-контракта.
+- Следующий enforcement-этап сможет опираться на стабильный manifest вместо
+  ad-hoc mapping прямо в runtime.
+
+**Что подтверждено проверками:**
+- Добавлены unit tests на scope helpers и default full-access manifest.
+- Обновлён migration test: Alembic `upgrade head` подтверждает новые колонки.
+- Таргетный срез `tests/test_token_scopes.py tests/test_migrations.py tests/test_bearer_token_security.py tests/test_web_auth.py`
+  прошёл: `23 passed`.
+
+---
+
+## Этап 29: stabilization test warnings и startup lifecycle
+
+**Что реализовано:**
+- `storage.reset_storage_state()` теперь явно dispose'ит cached `AsyncEngine`,
+  а не только очищает LRU cache.
+- Это закрывает thread/loop хвост `aiosqlite`, который раньше проявлялся в
+  teardown полного suite.
+- В `pytest.ini` задан `asyncio_default_fixture_loop_scope=function`, чтобы
+  убрать warning от `pytest-asyncio`.
+- Добавлены regression tests на engine dispose и bootstrap schema.
+
+**Дополнительное наблюдение:**
+- Browser E2E вскрыл ещё один реальный startup gap: свежий локальный runtime
+  падал на `/register` с `sqlite3.OperationalError: no such table: accounts`.
+- Для этого добавлен `bootstrap_storage_schema()` и вызов bootstrap на старте
+  `server.py`, чтобы fresh SQLite runtime мог подняться без ручного create_all.
+
+**Что подтверждено проверками:**
+- Warning-чувствительный срез прошёл с `python -W error`:
+  `40 passed`.
+
+---
+
+## Этап 30: real e2e на контуре `devtr6`
+
+**Что реализовано:**
+- В `tests/test_e2e_real.py` добавлен расширенный env-контракт:
+  - `TEST_DOMAIN`
+  - `TEST_API_KEY`
+  - `TEST_USER_TOKEN`
+  - `TEST_USER_TOKEN_BASE_URL`
+  - `TEST_USER_LOGIN`
+  - `TEST_USER_PASSWORD`
+- Сохранён backward-compatible путь через уже готовый `TEST_USER_TOKEN`.
+- Добавлены real smoke tests для:
+  - `validate_domain_api_key_connection()`
+  - login/password -> token exchange
+  - `validate_user_token_connection()` на user-token contour
+- Обновлены `.env.example`, `docker-compose.yml`, `README.md` и `test-real.yml`.
+
+**Что установлено по факту на предоставленных данных:**
+- API-key contour `devtr6` с предоставленным test API key проходит real smoke.
+- `POST https://devtr6.vetmanager2.ru/token_auth.php` на предоставленных
+  `admin4` / `123456` возвращает `401 Wrong authentification`.
+- Поэтому login/password smoke в этом контуре сейчас skip'ается как
+  environment/auth-data limitation, а не как transport/protocol bug сервиса.
+
+**Что подтверждено проверками:**
+- Реальный прогон `tests/test_e2e_real.py` на `devtr6` прошёл:
+  `48 passed, 4 skipped`.
+
+---
+
+## Этап 31: browser E2E полного пути до MCP Bearer runtime
+
+**Что реально проверено:**
+- Абсолютный URL browser flow:
+  - `http://127.0.0.1:8000/register`
+  - `http://127.0.0.1:8000/account`
+  - `http://127.0.0.1:8000/account/integration`
+  - `http://127.0.0.1:8000/account/tokens`
+- Через браузер подтверждены:
+  - регистрация нового account;
+  - login;
+  - сохранение active Vetmanager integration для `devtr6` по API key;
+  - выпуск Bearer token;
+  - отображение token list, usage metadata и revoke action.
+- После web-выпуска raw Bearer token был проверен реальным MCP runtime вызовом
+  через `fastmcp.client.Client('http://127.0.0.1:8000/mcp', auth=<raw_token>)`.
+- `list_tools()` и `call_tool('get_clients', {'limit': 1, 'offset': 0})`
+  прошли успешно на реальном `devtr6` contour.
+- После revoke из браузера повторный MCP вызов вернул ожидаемую ошибку
+  `Revoked bearer token`.
+
+**Что осталось ограничением:**
+- Текущий web UI по-прежнему принимает готовый `user_token`, а не выполняет
+  login/password exchange сам.
+- На предоставленных login/password данных `token_auth.php` возвращает `401`,
+  поэтому browser-проверка login/password user-token flow не могла быть
+  подтверждена в этом прогоне.

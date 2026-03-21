@@ -33,6 +33,7 @@ from web_auth import (
     register_account,
     set_account_session_cookie,
 )
+from token_cleanup import sync_expired_tokens
 
 
 def _render_shell(title: str, body: str) -> str:
@@ -422,6 +423,7 @@ async def _load_account_dashboard(
     account_id: int,
 ) -> tuple[Account | None, int, int, VetmanagerConnection | None, list[dict[str, str | int]]]:
     async with get_session_factory()() as session:
+        await sync_expired_tokens(session, account_id=account_id)
         account = await session.get(Account, account_id)
         if account is None:
             return None, 0, 0, None, []
