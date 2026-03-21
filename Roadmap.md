@@ -418,32 +418,36 @@
 - 24.6 Реализовать экран списка токенов со статусом, сроком действия, последним использованием и количеством запросов — `done`
 - 24.7 Зафиксировать одноразовый показ raw Bearer после создания и дальнейшее хранение только hash — `done`
 
-## Этап 25. Usage accounting и admin analytics (после Этапа 24) — `todo`
+## Этап 25. Usage accounting и admin analytics (после Этапа 24) — `done`
 
 Цель: вести эксплуатационную статистику по Bearer-токенам и показывать её в кабинете аккаунта.
 
-- 25.1 Реализовать обновление `last_used_at` для Bearer-токенов — `todo`
-- 25.2 Реализовать счётчик запросов по Bearer-токену — `todo`
-- 25.3 Добавить безопасный аудит создания и revoke токенов — `todo`
-- 25.4 Добавить отображение использования токенов в кабинете аккаунта — `todo`
-- 25.5 Добавить тесты на usage accounting без утечек секретов — `todo`
+- 25.1 Реализовать обновление `last_used_at` для Bearer-токенов — `done`
+- 25.2 Реализовать счётчик запросов по Bearer-токену — `done`
+- 25.3 Добавить безопасный аудит создания и revoke токенов — `done`
+- 25.4 Добавить отображение использования токенов в кабинете аккаунта — `done`
+- 25.5 Добавить тесты на usage accounting без утечек секретов — `done`
 
-## Этап 26. Vetmanager auth mode #2: `user login/password -> token` (после Этапа 25) — `todo`
+## Этап 26. Vetmanager auth mode #2: `user login/password -> token` (после Этапа 25) — `done`
 
 Цель: добавить второй способ подключения аккаунта к Vetmanager через пользовательский токен, получаемый по login/password flow.
 
-- 26.1 Уточнить и зафиксировать контракт Vetmanager user-token flow по Postman и реальному API — `todo`
-- 26.2 Реализовать второй connection mode в abstraction layer — `todo`
-- 26.3 Добавить настройку этого mode в кабинете аккаунта — `todo`
-- 26.4 Добавить валидацию и тест подключения для второго mode — `todo`
-- 26.5 Проверить, что bearer runtime не зависит от конкретного Vetmanager auth mode — `todo`
-- 26.6 Добавить unit/mock/real smoke тесты второго режима — `todo`
+- 26.1 Уточнить и зафиксировать контракт Vetmanager user-token flow по Postman и реальному API — `done`
+- 26.2 Реализовать второй connection mode в abstraction layer — `done`
+- 26.3 Добавить настройку этого mode в кабинете аккаунта — `done`
+- 26.4 Добавить валидацию и тест подключения для второго mode — `done`
+- 26.5 Проверить, что bearer runtime не зависит от конкретного Vetmanager auth mode — `done`
+- 26.6 Добавить unit/mock/real smoke тесты второго режима — `done`
 
-## Этап 27. Security hardening Bearer-сервиса (после Этапа 26) — `todo`
+## Этап 27. Security hardening Bearer-сервиса (после Этапа 26) — `in_progress`
 
 Цель: усилить безопасность bearer-only сервиса и снизить риски компрометации токенов и веб-контура.
 
-- 27.1 Добавить rate limiting по Bearer-токену — `todo`
+- 27.1 Добавить rate limiting по Bearer-токену — `done`
+- 27.1.1 Провести аудит legacy test/runtime helper-кода под новый runtime-контракт и зафиксировать план рефакторинга — `done`
+- 27.1.2 Добавить общие test factories и перевести `tests/test_client_multitenancy.py` на credential-based runtime-контракт — `done`
+- 27.1.3 Перевести legacy helper'ы в `tests/test_e2e_mock.py` и смежных test support модулях — `done`
+- 27.1.4 Прогнать и стабилизировать полный test suite после миграции legacy тестов — `done`
 - 27.2 Добавить более подробный audit trail по auth events — `todo`
 - 27.3 Добавить политику cleanup/revocation для истёкших токенов — `todo`
 - 27.4 Усилить security web-сессий и secret management — `todo`

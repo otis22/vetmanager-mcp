@@ -789,3 +789,290 @@
 **Договорённость по данным:**
 - До этапа 25 поле `request_count` может оставаться `0`, а `last_used_at` — `Never`, если usage accounting ещё не обновлял их.
 - Это не считается дефектом списка; web UI уже готов к показу usage metadata, а заполнение этих полей приходит следующим этапом.
+
+---
+
+## Этап 25.1: обновление `last_used_at`
+
+**Что реализовано:**
+- Успешный bearer lookup теперь обновляет `ServiceBearerToken.last_used_at`.
+- Timestamp ставится в том же runtime path, где токен уже был подтверждён как валидный и связан с active account connection.
+- Ошибочные ветки (`invalid`, `revoked`, `expired`, `no connection`) не создают ложной отметки использования.
+
+**Архитектурный эффект:**
+- Web-кабинет получает живое поле `last_used_at` без дополнительных обходов через tool-level код.
+- Следующий шаг `25.2` может на том же runtime path добавить `request_count`, не меняя место интеграции usage accounting.
+
+---
+
+## Этап 25.2: счётчик запросов по Bearer-токену
+
+**Что реализовано:**
+- На успешном bearer lookup теперь создаётся или обновляется `TokenUsageStat`.
+- `request_count` инкрементируется на каждый успешный runtime resolve Bearer-токена.
+- `TokenUsageStat.last_used_at` синхронизируется с `ServiceBearerToken.last_used_at`.
+
+**Архитектурный эффект:**
+- Usage accounting остаётся сосредоточен в одном runtime entry point, а не размазан по tool handlers.
+- Web-кабинет уже может читать не только `last_used_at`, но и реальный `request_count`; следующая задача теперь сводится к lifecycle audit log, а не к базовой статистике.
+
+---
+
+## Этап 25.3: безопасный аудит create/revoke
+
+**Что реализовано:**
+- Выпуск Bearer-токена теперь пишет `token_created` в `TokenUsageLog`.
+- Revoke Bearer-токена теперь пишет `token_revoked` в `TokenUsageLog`.
+- Для revoke добавлен явный web path из кабинета, чтобы lifecycle audit был привязан к реальному пользовательскому действию, а не только к ручным изменениям в БД.
+
+**Что зафиксировано по безопасности:**
+- В `details_json` пишутся только безопасные metadata вроде `name`, `token_prefix`, `expires_at`, `revoked_at`.
+- Raw token не попадает ни в audit log, ни в повторно открываемые страницы кабинета.
+
+---
+
+## Этап 25.4: отображение usage в кабинете
+
+**Что реализовано:**
+- Кабинет показывает `last_used_at` и `request_count` уже как живые runtime-данные.
+- Список токенов дополнился action-кнопкой revoke, а usage metadata остаются рядом с каждым токеном.
+
+**Итог:**
+- Web account теперь не только выпускает токены, но и даёт минимальную операционную наблюдаемость по их фактическому использованию.
+
+---
+
+## Этап 25.5: тесты usage accounting без утечек секретов
+
+**Что покрыто тестами:**
+- `last_used_at` обновляется только на успешном bearer path.
+- `request_count` накапливается на повторных successful resolves.
+- UI показывает usage metadata после реального runtime использования токена.
+- Audit log на create/revoke не содержит raw token.
+
+**Итог по этапу 25:**
+- Usage accounting и минимальная admin analytics готовы.
+- Следующий крупный шаг roadmap теперь уже про второй Vetmanager auth mode (`user login/password -> token`).
+
+---
+
+## Этап 26.1: контракт `user login/password -> token`
+
+**Что подтверждено локальными артефактами:**
+- В продуктовых требованиях второй Vetmanager auth mode уже предусмотрен как
+  целевой способ подключения аккаунта наряду с `domain + rest_api_key`.
+- В `artifacts/vetmanager_openapi_v6.json` есть `POST /token_auth.php` с
+  summary `Get Token (by User Login & Password)`.
+- В `artifacts/vetmanager_postman_collection.json` есть отдельный Postman item
+  для этого endpoint.
+
+**Что остаётся неуточнённым по локальным данным:**
+- Точная форма request payload для `token_auth.php`.
+- Точные имена полей user credentials.
+- Обязательность `X-REST-API-KEY` именно для этого flow.
+- Точная структура `data` в успешном ответе с user token.
+
+**Архитектурное решение:**
+- `26.1` закрыт как этап фиксации фактов и пробелов контракта, а не как полная
+  runtime-верификация через реальный API.
+- Реализация `26.2+` должна идти через изолированный abstraction layer, чтобы
+  bearer runtime продолжал получать унифицированный auth context и не зависел
+  от конкретного Vetmanager auth mode.
+
+---
+
+## Этап 26.2: второй connection mode в abstraction layer
+
+**Что реализовано:**
+- В `vetmanager_auth.py` добавлен второй `auth_mode`: `user_token`.
+- `VetmanagerAuthContext` стал более общим: хранит runtime credential как
+  абстрактный секрет, а не только как `api_key`.
+- При этом backward-compatible `api_key` alias сохранён, чтобы не ломать
+  существующий bearer runtime и `VetmanagerClient`.
+
+**Принятое допущение:**
+- До подтверждения иного контракта реальным API user-token режим использует тот
+  же transport header `X-REST-API-KEY`, потому что локальная OpenAPI знает
+  только эту security scheme даже для tagged `Auth #3` endpoints.
+
+**Архитектурный эффект:**
+- Runtime уже умеет работать с несколькими Vetmanager auth modes через единый
+  `VetmanagerAuthContext`.
+- Следующие задачи могут отдельно добавлять web form и validation flow для
+  `user_token`, не меняя bearer-only runtime boundary.
+
+---
+
+## Этап 26.3: настройка `user_token` в кабинете
+
+**Что реализовано:**
+- В кабинете `/account` форма integration теперь позволяет выбрать `auth_mode`.
+- Для `domain_api_key` сохранён прежний путь сохранения с сетевой проверкой.
+- Для `user_token` добавлен отдельный save path, который пока только безопасно
+  сохраняет зашифрованные credentials и делает connection активным.
+
+**Почему без runtime validation на этом шаге:**
+- Такова граница roadmap: `26.3` отвечает за web-настройку, а `26.4` отдельно
+  закрывает connection validation/test flow.
+- Это позволяет не смешивать UI-изменения и догадки о контракте `token_auth.php`
+  в одном шаге.
+
+**Временный UX-контракт:**
+- Пока локальные артефакты не раскрывают надёжно `token_auth.php`, кабинет
+  принимает уже выданный Vetmanager `user_token`, а не сам выполняет
+  login/password exchange.
+
+**Что важно по безопасности:**
+- `user_token`, как и `api_key`, не показывается повторно после сохранения и
+  хранится только в `encrypted_credentials`.
+
+---
+
+## Этап 26.4: валидация `user_token` connection
+
+**Что реализовано:**
+- Перед сохранением `user_token` integration сервис теперь резолвит billing host
+  и делает probe `GET /rest/api/user`.
+- Для probe используется тот же transport header `X-REST-API-KEY`, который уже
+  зафиксирован как текущее допущение для `Auth #3`.
+- Невалидный `user_token` возвращает безопасную ошибку и не создаёт connection
+  в БД.
+
+**Что дополнительно поймано и исправлено:**
+- На error-path поле `user_token` перестало подставляться обратно в HTML формы.
+- Это закрывает регресс, при котором секрет мог бы отобразиться в ответе после
+  неуспешной валидации.
+
+**Итог:**
+- Второй Vetmanager mode теперь уже не просто хранится, а проходит явный test
+  connection до записи.
+
+---
+
+## Этап 26.5–26.6: runtime independence и тесты второго режима
+
+**Что подтверждено тестами:**
+- `resolve_bearer_auth_context()` возвращает одинаково нормализованный runtime
+  context и для `domain_api_key`, и для `user_token`.
+- `resolve_runtime_credentials()` и `VetmanagerClient` не ветвятся по
+  конкретному Vetmanager auth mode; runtime использует единый
+  `VetmanagerAuthContext` и transport header builder.
+- Для `user_token` режима добавлены unit/mock тесты на bearer lookup, runtime
+  resolution и client request path.
+
+**Что дополнительно исправлено:**
+- Real e2e harness в `tests/test_e2e_real.py` был рассинхронизирован с текущим
+  `VetmanagerAuthContext` и создавал его через устаревший аргумент `api_key`.
+- Harness переведён на актуальный аргумент `credential`, чтобы real smoke tests
+  действительно проверяли текущий runtime-контракт.
+
+**Контракт real smoke:**
+- Отдельный real smoke для `user_token` режима выполняется только если заданы
+  `TEST_DOMAIN` и `TEST_USER_TOKEN`.
+- При отсутствии `TEST_USER_TOKEN` этот smoke корректно skip'ается и не
+  блокирует обычный real suite для `domain_api_key`.
+
+**Итог:**
+- Bearer runtime остаётся mode-agnostic: конкретный способ Vetmanager auth
+  инкапсулирован внутри connection/auth layer, а MCP runtime получает уже
+  унифицированные runtime credentials.
+
+---
+
+## Этап 27.1: rate limiting по Bearer-токену
+
+**Что реализовано:**
+- Добавлен process-local in-memory limiter `bearer_rate_limiter.py`.
+- Лимит применяется в `resolve_bearer_auth_context()` после успешного lookup и
+  валидации Bearer-токена, но до обновления `last_used_at` и `request_count`.
+- Превышение лимита возвращается через отдельный `RateLimitError` со статусом
+  `429`, без раскрытия raw Bearer-токена.
+
+**Выбранный контракт:**
+- Ключ лимита: `bearer_token_id`, а не raw token и не account id.
+- Алгоритм: sliding window по timestamps.
+- Конфигурация:
+  - `BEARER_RATE_LIMIT_REQUESTS`
+  - `BEARER_RATE_LIMIT_WINDOW_SECONDS`
+- Дефолт выбран консервативно-мягким: `1000` запросов за `60` секунд.
+
+**Почему дефолт не сделан агрессивным:**
+- В проекте уже есть объёмный mock/e2e контур и агрегирующие инструменты,
+  которые могут делать плотные серии вызовов в одном процессе.
+- Слишком низкий дефолт создавал бы ложные срабатывания в обычных сценариях и
+  мешал бы существующему тестовому harness.
+- При этом реальное ужесточение лимита остаётся доступным через env-конфиг без
+  изменения кода.
+
+**Осознанное ограничение текущего решения:**
+- Лимитер process-local и не синхронизируется между несколькими инстансами.
+- Для single-process deployment это уже даёт полезную защиту от burst abuse.
+- Если сервис будет масштабироваться горизонтально, следующий шаг потребует
+  shared backend (например, Redis) или edge-level rate limiting.
+
+**Что подтверждено тестами:**
+- Запросы внутри лимита проходят.
+- Следующий запрос в том же окне блокируется.
+- Лимит изолирован между разными Bearer-токенами.
+- После истечения окна запросы снова допускаются.
+- Заблокированный запрос не увеличивает `TokenUsageStat.request_count`.
+
+---
+
+## Этап 27.1.1–27.1.4: legacy runtime/test refactoring под credential-контракт
+
+**Что было не так до рефакторинга:**
+- В legacy tests оставались прямые вызовы `VetmanagerAuthContext(api_key=...)`,
+  хотя канонический runtime-контракт уже перешёл на `credential`.
+- `tests/test_client_multitenancy.py` и `tests/test_e2e_mock.py` дублировали
+  ручную настройку внутреннего состояния `VetmanagerClient`.
+- Этот дублирующийся setup уже начал расходиться с реальным runtime boundary и
+  ломал suite при эволюции auth layer.
+
+**Что реализовано:**
+- Добавлен общий helper-модуль `tests/runtime_factories.py`.
+- В него вынесены фабрики для:
+  - `VetmanagerAuthContext`;
+  - `RuntimeCredentials`;
+  - преднастроенного `VetmanagerClient`;
+  - patch-набора для runtime credential resolution.
+- `tests/test_client_multitenancy.py` переведён на эти helpers.
+- `tests/test_e2e_mock.py` тоже переведён на те же factories без ручного
+  конструирования устаревшего auth context.
+
+**Архитектурное решение:**
+- Внутри runtime/test helper-слоя каноническим именем считается `credential`.
+- Название `api_key` сохраняется только там, где речь реально идёт о payload
+  connection mode `domain_api_key`, а не о внутреннем runtime abstraction.
+- Backward-compatible property `api_key` в `VetmanagerAuthContext` остаётся как
+  alias для runtime-кода, но новые тестовые helpers больше на него не опираются
+  как на конструкторный контракт.
+
+**Результат:**
+- Снята рассинхронизация между текущим auth layer и старым test support кодом.
+- Тестовые сценарии `client_multitenancy` и `e2e_mock` снова используют единый
+  runtime boundary и дешевле поддерживаются при следующих изменениях auth flow.
+- Полный test suite после миграции прошёл: `498 passed, 302 skipped`.
+
+---
+
+## Процессное решение: аудит и повторный полный прогон перед commit/push
+
+**Что зафиксировано в workflow:**
+- После первого полного прогона проверок агент обязан сделать аудит изменений.
+- Цель аудита: поймать legacy-паттерны, дублирование, локальные хаки и
+  рассинхрон со свежим контрактом, который мог появиться во время реализации.
+- Если по итогам аудита внесён рефакторинг или любые дополнительные правки,
+  перед `commit`/`push` обязателен ещё один полный прогон тестов и проверок.
+
+**Почему правило добавлено:**
+- Простого прохождения тестов сразу после Green-недостаточно, если следом был
+  cleanup/refactoring pass.
+- Иначе агент может запушить код после полезного рефакторинга, не подтвердив,
+  что полный контур всё ещё зелёный.
+
+**Практический эффект:**
+- Core Loop теперь включает не только `Red -> Green`, но и обязательный
+  post-implementation audit pass.
+- `commit` и `push` разрешены только после финального полного прогона, если
+  после аудита были изменения.

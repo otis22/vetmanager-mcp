@@ -10,6 +10,20 @@ class AuthError(VetmanagerError):
     """Invalid or missing API key."""
 
 
+class RateLimitError(VetmanagerError):
+    """Request frequency exceeded the configured safety limit."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = 429,
+        retry_after_seconds: int | None = None,
+    ):
+        super().__init__(message, status_code=status_code)
+        self.retry_after_seconds = retry_after_seconds
+
+
 class NotFoundError(VetmanagerError):
     """Requested resource does not exist."""
 

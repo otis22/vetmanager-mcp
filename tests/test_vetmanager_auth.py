@@ -6,6 +6,7 @@ from exceptions import AuthError, VetmanagerError
 from storage_models import VetmanagerConnection
 from vetmanager_auth import (
     VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
+    VETMANAGER_AUTH_MODE_USER_TOKEN,
     resolve_vetmanager_credentials,
 )
 
@@ -37,6 +38,31 @@ def test_resolve_domain_api_key_mode_returns_runtime_credentials():
     assert len(resolved.api_key_fingerprint()) == 16
 
 
+def test_resolve_user_token_mode_returns_runtime_credentials():
+    """user_token mode should yield normalized domain/token pair."""
+    connection = VetmanagerConnection(
+        account_id=1,
+        auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
+        status="active",
+    )
+    connection.set_credentials(
+        {"domain": "clinic-b", "user_token": "user-token-secret"},
+        encryption_key=TEST_ENCRYPTION_KEY,
+    )
+
+    resolved = resolve_vetmanager_credentials(
+        connection,
+        encryption_key=TEST_ENCRYPTION_KEY,
+    )
+
+    assert resolved.auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN
+    assert resolved.domain == "clinic-b"
+    assert resolved.credential == "user-token-secret"
+    assert resolved.api_key == "user-token-secret"
+    assert resolved.build_headers()["X-REST-API-KEY"] == "user-token-secret"
+    assert len(resolved.credential_fingerprint()) == 16
+
+
 def test_resolve_vetmanager_credentials_rejects_unknown_auth_mode():
     """Unknown Vetmanager auth modes must fail explicitly."""
     connection = VetmanagerConnection(
@@ -66,4 +92,20 @@ def test_resolve_domain_api_key_mode_requires_both_domain_and_api_key():
     )
 
     with pytest.raises(AuthError, match="missing Vetmanager API key"):
+        resolve_vetmanager_credentials(connection, encryption_key=TEST_ENCRYPTION_KEY)
+
+
+def test_resolve_user_token_mode_requires_token():
+    """user_token mode must reject incomplete payloads."""
+    connection = VetmanagerConnection(
+        account_id=1,
+        auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
+        status="active",
+    )
+    connection.set_credentials(
+        {"domain": "clinic-b"},
+        encryption_key=TEST_ENCRYPTION_KEY,
+    )
+
+    with pytest.raises(AuthError, match="missing Vetmanager user token"):
         resolve_vetmanager_credentials(connection, encryption_key=TEST_ENCRYPTION_KEY)

@@ -59,7 +59,7 @@ Bearer-токен привязан к account сервиса:
 - доступна страница `/account`;
 - доступна настройка активной Vetmanager integration через `domain + rest_api_key`;
 - доступен выпуск Bearer-токенов с именем и сроком действия;
-- доступен список токенов со статусом, сроком действия, `last_used_at` и `request_count`.
+- доступен список токенов со статусом, сроком действия, `last_used_at`, `request_count` и revoke action.
 
 На текущем этапе в репозитории уже есть:
 
@@ -70,9 +70,11 @@ Bearer-токен привязан к account сервиса:
 - web auth для account через email/password и signed cookie session;
 - web-экран сохранения active Vetmanager integration;
 - web-выпуск Bearer-токенов с one-time показом raw значения;
-- список Bearer-токенов с безопасными полями и usage placeholders.
+- список Bearer-токенов с usage metadata;
+- runtime usage accounting (`last_used_at`, `request_count`);
+- безопасный audit log для create/revoke Bearer-токенов.
 
-То есть runtime-контракт уже bearer-only, а account provisioning, Vetmanager integration и token management больше не internal-only. Следующий этап теперь уже про фактическое обновление usage metadata и admin analytics.
+То есть runtime-контракт уже bearer-only, а account provisioning, Vetmanager integration, token management и usage accounting больше не internal-only. Следующий этап roadmap теперь уже про второй Vetmanager auth mode.
 
 ## Подключение Cursor
 

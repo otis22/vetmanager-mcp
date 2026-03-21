@@ -14,10 +14,17 @@ from starlette.responses import HTMLResponse, RedirectResponse
 
 from exceptions import AuthError, HostResolutionError, VetmanagerError
 from landing_page import render_landing_page
-from service_token_service import issue_service_bearer_token
+from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
 from storage import get_session_factory
 from storage_models import Account, ServiceBearerToken, TokenUsageStat, VetmanagerConnection
-from vetmanager_connection_service import save_domain_api_key_connection
+from vetmanager_auth import (
+    VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
+    VETMANAGER_AUTH_MODE_USER_TOKEN,
+)
+from vetmanager_connection_service import (
+    save_domain_api_key_connection,
+    save_user_token_connection,
+)
 from web_auth import (
     SESSION_COOKIE_NAME,
     authenticate_account,
@@ -70,7 +77,7 @@ def _render_shell(title: str, body: str) -> str:
       margin: 0 0 14px;
       font: 700 clamp(2.2rem, 5vw, 3.4rem)/0.95 "Iowan Old Style", "Palatino Linotype", serif;
     }}
-    p, li, label, input, button, a {{
+    p, li, label, input, select, button, a {{
       font-size: 1rem;
       line-height: 1.6;
     }}
@@ -80,7 +87,7 @@ def _render_shell(title: str, body: str) -> str:
       gap: 14px;
       margin-top: 18px;
     }}
-    input {{
+    input, select {{
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 18px;
@@ -243,6 +250,7 @@ def _render_account_page(
     bearer_tokens: list[dict[str, str | int]],
     integration_error: str | None = None,
     integration_success: str | None = None,
+    form_auth_mode: str = VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
     form_domain: str = "",
     token_error: str | None = None,
     token_success: str | None = None,
@@ -250,6 +258,9 @@ def _render_account_page(
     token_name: str = "",
     token_expiry_days: str = "",
 ) -> str:
+    selected_auth_mode = form_auth_mode or (
+        active_connection.auth_mode if active_connection else VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
+    )
     active_connection_html = """
         <p>Активная Vetmanager integration ещё не настроена. Следующий Bearer-токен этого account пока не сможет резолвить clinic credentials.</p>
     """
@@ -261,7 +272,7 @@ def _render_account_page(
           <li><strong>Domain:</strong> <code>{escape(active_connection.domain or "n/a")}</code></li>
           <li><strong>Status:</strong> <code>{escape(active_connection.status)}</code></li>
         </ul>
-        <p>Vetmanager API key хранится в зашифрованном виде и больше не показывается после сохранения.</p>
+        <p>Vetmanager credential хранится в зашифрованном виде и больше не показывается после сохранения.</p>
         """
     error_html = f'<div class="error">{escape(integration_error)}</div>' if integration_error else ""
     success_html = (
@@ -294,6 +305,13 @@ def _render_account_page(
     if bearer_tokens:
         rows = []
         for token in bearer_tokens:
+            action_html = "&mdash;"
+            if str(token["status"]) == "active":
+                action_html = (
+                    f'<form method="post" action="/account/tokens/{token["id"]}/revoke">'
+                    '<button type="submit">Revoke</button>'
+                    "</form>"
+                )
             rows.append(
                 "<tr>"
                 f"<td>{escape(str(token['name']))}</td>"
@@ -302,12 +320,13 @@ def _render_account_page(
                 f"<td>{escape(str(token['expires_at']))}</td>"
                 f"<td>{escape(str(token['last_used_at']))}</td>"
                 f"<td>{escape(str(token['request_count']))}</td>"
+                f"<td>{action_html}</td>"
                 "</tr>"
             )
         token_list_html = (
             "<table>"
             "<thead><tr>"
-            "<th>Name</th><th>Prefix</th><th>Status</th><th>Expires</th><th>Last used</th><th>Requests</th>"
+            "<th>Name</th><th>Prefix</th><th>Status</th><th>Expires</th><th>Last used</th><th>Requests</th><th>Actions</th>"
             "</tr></thead>"
             f"<tbody>{''.join(rows)}</tbody>"
             "</table>"
@@ -336,11 +355,20 @@ def _render_account_page(
         {success_html}
         {active_connection_html}
         <form method="post" action="/account/integration">
+          <label>Auth mode
+            <select name="auth_mode">
+              <option value="{VETMANAGER_AUTH_MODE_DOMAIN_API_KEY}" {"selected" if selected_auth_mode == VETMANAGER_AUTH_MODE_DOMAIN_API_KEY else ""}>domain + rest_api_key</option>
+              <option value="{VETMANAGER_AUTH_MODE_USER_TOKEN}" {"selected" if selected_auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN else ""}>user token (Auth #3 runtime)</option>
+            </select>
+          </label>
           <label>Clinic domain
             <input type="text" name="domain" value="{escape(form_domain or (active_connection.domain if active_connection else ''))}" placeholder="myclinic" required>
           </label>
           <label>Vetmanager REST API key
-            <input type="password" name="api_key" autocomplete="off" placeholder="rest-api-key" required>
+            <input type="password" name="api_key" autocomplete="off" placeholder="rest-api-key">
+          </label>
+          <label>Vetmanager user token
+            <input type="password" name="user_token" autocomplete="off" placeholder="user-token">
           </label>
           <button type="submit">Сохранить интеграцию</button>
         </form>
@@ -440,6 +468,7 @@ async def _load_account_dashboard(
             usage = usage_by_token_id.get(token.id)
             token_view.append(
                 {
+                    "id": token.id,
                     "name": token.name,
                     "token_prefix": token.token_prefix,
                     "status": token.status,
@@ -556,18 +585,29 @@ def register_web_routes(mcp: FastMCP) -> None:
             return response
 
         form = await _read_form(request)
+        auth_mode = form.get("auth_mode", VETMANAGER_AUTH_MODE_DOMAIN_API_KEY).strip()
         domain = form.get("domain", "")
         api_key = form.get("api_key", "")
+        user_token = form.get("user_token", "")
 
         try:
             async with get_session_factory()() as session:
-                await save_domain_api_key_connection(
-                    session,
-                    account_id=account_id,
-                    domain=domain,
-                    api_key=api_key,
-                    encryption_key=os.environ.get("STORAGE_ENCRYPTION_KEY"),
-                )
+                if auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN:
+                    await save_user_token_connection(
+                        session,
+                        account_id=account_id,
+                        domain=domain,
+                        user_token=user_token,
+                        encryption_key=os.environ.get("STORAGE_ENCRYPTION_KEY"),
+                    )
+                else:
+                    await save_domain_api_key_connection(
+                        session,
+                        account_id=account_id,
+                        domain=domain,
+                        api_key=api_key,
+                        encryption_key=os.environ.get("STORAGE_ENCRYPTION_KEY"),
+                    )
         except (ValueError, AuthError, HostResolutionError, VetmanagerError) as exc:
             account, active_connection_count, bearer_token_count, active_connection, bearer_tokens = await _load_account_dashboard(
                 account_id
@@ -584,6 +624,7 @@ def register_web_routes(mcp: FastMCP) -> None:
                     active_connection=active_connection,
                     bearer_tokens=bearer_tokens,
                     integration_error=str(exc),
+                    form_auth_mode=auth_mode,
                     form_domain=domain,
                 ),
                 status_code=400,
@@ -689,5 +730,59 @@ def register_web_routes(mcp: FastMCP) -> None:
                 bearer_tokens=bearer_tokens,
                 token_success="Bearer token issued successfully.",
                 issued_raw_token=raw_token,
+            )
+        )
+
+    @mcp.custom_route("/account/tokens/{token_id:int}/revoke", methods=["POST"], include_in_schema=False)
+    async def account_token_revoke(request: Request) -> HTMLResponse | RedirectResponse:
+        account_id = _get_account_id_from_request(request)
+        if account_id is None:
+            response = RedirectResponse(url="/login", status_code=303)
+            clear_account_session_cookie(response)
+            return response
+
+        token_id = int(request.path_params["token_id"])
+        try:
+            async with get_session_factory()() as session:
+                await revoke_service_bearer_token(
+                    session,
+                    account_id=account_id,
+                    token_id=token_id,
+                )
+        except ValueError as exc:
+            account, active_connection_count, bearer_token_count, active_connection, bearer_tokens = await _load_account_dashboard(
+                account_id
+            )
+            if account is None:
+                response = RedirectResponse(url="/login", status_code=303)
+                clear_account_session_cookie(response)
+                return response
+            return HTMLResponse(
+                _render_account_page(
+                    account,
+                    active_connection_count=active_connection_count,
+                    bearer_token_count=bearer_token_count,
+                    active_connection=active_connection,
+                    bearer_tokens=bearer_tokens,
+                    token_error=str(exc),
+                ),
+                status_code=400,
+            )
+
+        account, active_connection_count, bearer_token_count, active_connection, bearer_tokens = await _load_account_dashboard(
+            account_id
+        )
+        if account is None:
+            response = RedirectResponse(url="/login", status_code=303)
+            clear_account_session_cookie(response)
+            return response
+        return HTMLResponse(
+            _render_account_page(
+                account,
+                active_connection_count=active_connection_count,
+                bearer_token_count=bearer_token_count,
+                active_connection=active_connection,
+                bearer_tokens=bearer_tokens,
+                token_success="Bearer token revoked successfully.",
             )
         )

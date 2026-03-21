@@ -8,12 +8,14 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import bearer_rate_limiter
 from bearer_token_manager import hash_bearer_token
 from exceptions import AuthError
 from storage_models import (
     Account,
     ServiceBearerToken,
     TOKEN_STATUS_DISABLED,
+    TokenUsageStat,
     VetmanagerConnection,
 )
 from vetmanager_auth import resolve_vetmanager_credentials
@@ -58,6 +60,7 @@ async def resolve_bearer_auth_context(
         raise AuthError("Expired bearer token.", status_code=401)
     if token.status == TOKEN_STATUS_DISABLED or account.status != "active":
         raise AuthError("Invalid bearer token.", status_code=401)
+    await bearer_rate_limiter.BEARER_RATE_LIMITER.check_or_raise(token.id, now=now)
 
     connection_result = await session.execute(
         select(VetmanagerConnection)
@@ -74,6 +77,20 @@ async def resolve_bearer_auth_context(
         connection,
         encryption_key=encryption_key,
     )
+    token.mark_used(used_at=now)
+    usage_stats = await session.scalar(
+        select(TokenUsageStat).where(TokenUsageStat.bearer_token_id == token.id)
+    )
+    if usage_stats is None:
+        usage_stats = TokenUsageStat(
+            bearer_token_id=token.id,
+            request_count=0,
+        )
+        session.add(usage_stats)
+    usage_stats.request_count += 1
+    usage_stats.last_used_at = token.last_used_at
+    await session.commit()
+    await session.refresh(token)
     return BearerAuthContext(
         account_id=account.id,
         bearer_token_id=token.id,

@@ -13,14 +13,22 @@ import request_credentials
 import runtime_auth
 from vetmanager_client import VetmanagerClient
 from exceptions import AuthError, VetmanagerError
-from vetmanager_auth import VetmanagerAuthContext
+from vetmanager_auth import (
+    VETMANAGER_AUTH_MODE_USER_TOKEN,
+    VetmanagerAuthContext,
+)
 
 TEST_DOMAIN = os.environ.get("TEST_DOMAIN", "")
 TEST_API_KEY = os.environ.get("TEST_API_KEY", "")
+TEST_USER_TOKEN = os.environ.get("TEST_USER_TOKEN", "")
 
 skip_if_no_creds = pytest.mark.skipif(
     not TEST_DOMAIN or not TEST_API_KEY,
     reason="TEST_DOMAIN and TEST_API_KEY not set — skipping real API tests",
+)
+skip_if_no_user_token = pytest.mark.skipif(
+    not TEST_DOMAIN or not TEST_USER_TOKEN,
+    reason="TEST_DOMAIN and TEST_USER_TOKEN not set — skipping user-token real smoke tests",
 )
 
 
@@ -31,11 +39,30 @@ def vc() -> VetmanagerClient:
     client._vetmanager_auth = VetmanagerAuthContext(
         auth_mode="domain_api_key",
         domain=TEST_DOMAIN,
-        api_key=TEST_API_KEY,
+        credential=TEST_API_KEY,
     )
     client._auth_source = "bearer"
     client._domain = TEST_DOMAIN
     client._api_key = TEST_API_KEY
+    client._account_id = 1
+    client._bearer_token_id = 1
+    client._connection_id = 1
+    client._ensure_runtime_credentials = AsyncMock(return_value=None)
+    return client
+
+
+def vc_user_token() -> VetmanagerClient:
+    headers = {"authorization": "Bearer real-test-token"}
+    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
+        client = VetmanagerClient()
+    client._vetmanager_auth = VetmanagerAuthContext(
+        auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
+        domain=TEST_DOMAIN,
+        credential=TEST_USER_TOKEN,
+    )
+    client._auth_source = "bearer"
+    client._domain = TEST_DOMAIN
+    client._api_key = TEST_USER_TOKEN
     client._account_id = 1
     client._bearer_token_id = 1
     client._connection_id = 1
@@ -97,6 +124,14 @@ async def test_real_get_clients():
 @pytest.mark.asyncio
 async def test_real_get_users():
     result = await call(vc().get("/rest/api/user", params={"limit": 5, "offset": 0}))
+    assert "data" in result
+
+
+@skip_if_no_user_token
+@pytest.mark.asyncio
+async def test_real_get_users_with_user_token_mode():
+    """User-token mode should pass the same runtime/client path as API-key mode."""
+    result = await call(vc_user_token().get("/rest/api/user", params={"limit": 5, "offset": 0}))
     assert "data" in result
 
 

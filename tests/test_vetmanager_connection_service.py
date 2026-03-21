@@ -11,7 +11,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from exceptions import AuthError
 from storage import Base, create_database_engine
 from storage_models import VetmanagerConnection
-from vetmanager_connection_service import save_domain_api_key_connection
+from vetmanager_connection_service import (
+    save_domain_api_key_connection,
+    save_user_token_connection,
+)
 
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
@@ -124,5 +127,60 @@ async def test_save_domain_api_key_connection_rejects_invalid_api_key(tmp_path: 
                 account_id=1,
                 domain="clinic-c",
                 api_key="bad-key",
+                encryption_key=TEST_ENCRYPTION_KEY,
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_save_user_token_connection_persists_encrypted_active_connection(tmp_path: Path):
+    """User-token mode should validate probe and persist encrypted credentials."""
+    session_factory = await _make_session_factory(tmp_path)
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-user").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://clinic-user.vetmanager.cloud"}})
+    )
+    respx.get("https://clinic-user.vetmanager.cloud/rest/api/user").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+
+    async with session_factory() as session:
+        connection = await save_user_token_connection(
+            session,
+            account_id=1,
+            domain="clinic-user",
+            user_token="user-token-secret",
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+
+    async with session_factory() as session:
+        stored = await session.get(VetmanagerConnection, connection.id)
+
+    assert stored is not None
+    assert stored.status == "active"
+    assert stored.auth_mode == "user_token"
+    assert stored.domain == "clinic-user"
+    assert stored.encrypted_credentials is not None
+    assert "user-token-secret" not in stored.encrypted_credentials
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_save_user_token_connection_rejects_invalid_user_token(tmp_path: Path):
+    """User-token mode should fail safely when runtime token probe is unauthorized."""
+    session_factory = await _make_session_factory(tmp_path)
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-user-bad").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://clinic-user-bad.vetmanager.cloud"}})
+    )
+    respx.get("https://clinic-user-bad.vetmanager.cloud/rest/api/user").mock(
+        return_value=httpx.Response(401, json={"error": "unauthorized"})
+    )
+
+    async with session_factory() as session:
+        with pytest.raises(AuthError, match="Invalid Vetmanager user token"):
+            await save_user_token_connection(
+                session,
+                account_id=1,
+                domain="clinic-user-bad",
+                user_token="bad-user-token",
                 encryption_key=TEST_ENCRYPTION_KEY,
             )

@@ -12,7 +12,10 @@ from bearer_token_manager import generate_bearer_token
 from exceptions import AuthError
 from storage import Base, create_database_engine
 from storage_models import Account, ServiceBearerToken, VetmanagerConnection
-from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
+from vetmanager_auth import (
+    VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
+    VETMANAGER_AUTH_MODE_USER_TOKEN,
+)
 
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
@@ -60,6 +63,43 @@ async def test_resolve_runtime_credentials_prefers_bearer_context(tmp_path: Path
     assert resolved.domain == "bearer-clinic"
     assert resolved.api_key == "bearer-key"
     assert resolved.vetmanager_auth.auth_mode == VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
+
+
+@pytest.mark.asyncio
+async def test_resolve_runtime_credentials_normalizes_user_token_mode(tmp_path: Path, monkeypatch):
+    """Runtime layer should not care whether bearer resolves to API key or user token."""
+    session_factory = await _make_session_factory(tmp_path)
+    raw_token = generate_bearer_token()
+
+    async with session_factory() as session:
+        account = Account(email="ops@example.com", status="active")
+        session.add(account)
+        await session.flush()
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
+            status="active",
+            domain="bearer-user-clinic",
+        )
+        connection.set_credentials(
+            {"domain": "bearer-user-clinic", "user_token": "user-token-secret"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        token = ServiceBearerToken(account_id=account.id, name="Cursor")
+        token.set_raw_token(raw_token)
+        session.add_all([connection, token])
+        await session.commit()
+
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    headers = {"authorization": f"Bearer {raw_token}"}
+    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
+        with patch.object(runtime_auth, "get_session_factory", return_value=session_factory):
+            resolved = await runtime_auth.resolve_runtime_credentials()
+
+    assert resolved.source == "bearer"
+    assert resolved.domain == "bearer-user-clinic"
+    assert resolved.api_key == "user-token-secret"
+    assert resolved.vetmanager_auth.auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN
 
 
 @pytest.mark.asyncio
@@ -127,3 +167,64 @@ async def test_vetmanager_client_uses_bearer_runtime_credentials(tmp_path: Path,
     assert client._api_key == "runtime-key"
     assert captured_request is not None
     assert captured_request.headers["X-REST-API-KEY"] == "runtime-key"
+
+
+@pytest.mark.asyncio
+async def test_vetmanager_client_uses_user_token_runtime_credentials(tmp_path: Path, monkeypatch):
+    """Client transport should consume normalized runtime credentials for user_token mode too."""
+    import httpx
+    import respx
+    from vetmanager_client import VetmanagerClient
+
+    session_factory = await _make_session_factory(tmp_path)
+    raw_token = generate_bearer_token()
+
+    async with session_factory() as session:
+        account = Account(email="ops@example.com", status="active")
+        session.add(account)
+        await session.flush()
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
+            status="active",
+            domain="runtime-user-clinic",
+        )
+        connection.set_credentials(
+            {"domain": "runtime-user-clinic", "user_token": "runtime-user-token"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        token = ServiceBearerToken(account_id=account.id, name="Cursor")
+        token.set_raw_token(raw_token)
+        session.add_all([connection, token])
+        await session.commit()
+
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    headers = {"authorization": f"Bearer {raw_token}"}
+    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
+        with patch.object(runtime_auth, "get_session_factory", return_value=session_factory):
+            captured_request = None
+
+            def capture(req: httpx.Request) -> httpx.Response:
+                nonlocal captured_request
+                captured_request = req
+                return httpx.Response(200, json={"data": []})
+
+            with respx.mock:
+                respx.get("https://billing-api.vetmanager.cloud/host/runtime-user-clinic").mock(
+                    return_value=httpx.Response(
+                        200,
+                        json={"data": {"url": "https://runtime-user.vetmanager.cloud"}},
+                    )
+                )
+                respx.get("https://runtime-user.vetmanager.cloud/rest/api/user").mock(
+                    side_effect=capture
+                )
+
+                client = VetmanagerClient()
+                await client.get("/rest/api/user")
+
+    assert client._auth_source == "bearer"
+    assert client._domain == "runtime-user-clinic"
+    assert client._api_key == "runtime-user-token"
+    assert captured_request is not None
+    assert captured_request.headers["X-REST-API-KEY"] == "runtime-user-token"

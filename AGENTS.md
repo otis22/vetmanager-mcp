@@ -8,7 +8,7 @@
 
 | Правило | Назначение |
 |--------|------------|
-| [.cursor/rules/agent-workflow.mdc](.cursor/rules/agent-workflow.mdc) | Workplan в Roadmap, выбор задачи, PRD, Core Loop (тесты → Red/Green → проверки), AssumptionLog, справочные артефакты |
+| [.cursor/rules/agent-workflow.mdc](.cursor/rules/agent-workflow.mdc) | Workplan в Roadmap, выбор задачи, PRD, Core Loop (тесты → Red/Green → проверки → аудит/рефакторинг при необходимости → повторный полный прогон), AssumptionLog, справочные артефакты |
 
 ## Обязательные артефакты
 
@@ -39,3 +39,7 @@
 - CI: `.github/workflows/test.yml` (unit + mock); `test-real.yml` — ручной запуск с секретом.
 
 Задача не считается завершённой без прохождения проверок и записи в AssumptionLog.
+
+Дополнение к workflow:
+- Перед `commit`/`push` агент обязан сделать аудит внесённых изменений.
+- Если аудит потребовал рефакторинга, после него обязателен новый полный прогон тестов и проверок.

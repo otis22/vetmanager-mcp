@@ -11,7 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from exceptions import AuthError, HostResolutionError, VetmanagerError
 from runtime_auth import _validate_domain
 from storage_models import VetmanagerConnection
-from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
+from vetmanager_auth import (
+    VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
+    VETMANAGER_AUTH_MODE_USER_TOKEN,
+)
 
 BILLING_API = "https://billing-api.vetmanager.cloud/host/{domain}"
 REQUEST_TIMEOUT = 30.0
@@ -66,6 +69,44 @@ async def validate_domain_api_key_connection(domain: str, api_key: str) -> str:
     return resolved_host
 
 
+async def validate_user_token_connection(domain: str, user_token: str) -> str:
+    """Validate domain+user_token pair and return resolved Vetmanager host."""
+    normalized_domain = _validate_domain(domain.strip())
+    normalized_user_token = user_token.strip()
+    if not normalized_user_token:
+        raise AuthError("Invalid Vetmanager user token.", status_code=401)
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(REQUEST_TIMEOUT)) as http:
+        billing_response = await http.get(BILLING_API.format(domain=normalized_domain))
+        billing_response.raise_for_status()
+        data = billing_response.json()
+        host = data.get("data", {}).get("url") or data.get("url")
+        if not host:
+            raise HostResolutionError(
+                f"Unexpected billing API response for domain '{normalized_domain}'."
+            )
+        if not host.startswith("http"):
+            host = f"https://{host}"
+        resolved_host = _validate_resolved_host(host, normalized_domain)
+
+        probe = await http.get(
+            f"{resolved_host}/rest/api/user",
+            params={"limit": 1, "offset": 0},
+            headers={
+                "X-REST-API-KEY": normalized_user_token,
+                "Accept": "application/json",
+            },
+        )
+        if probe.status_code == 401:
+            raise AuthError("Invalid Vetmanager user token.", status_code=401)
+        if probe.status_code >= 400:
+            raise VetmanagerError(
+                f"Vetmanager user-token connection test failed with status {probe.status_code}.",
+                status_code=probe.status_code,
+            )
+    return resolved_host
+
+
 async def save_domain_api_key_connection(
     session: AsyncSession,
     *,
@@ -98,6 +139,46 @@ async def save_domain_api_key_connection(
     )
     connection.set_credentials(
         {"domain": normalized_domain, "api_key": normalized_api_key},
+        encryption_key=encryption_key,
+    )
+    session.add(connection)
+    await session.commit()
+    await session.refresh(connection)
+    return connection
+
+
+async def save_user_token_connection(
+    session: AsyncSession,
+    *,
+    account_id: int,
+    domain: str,
+    user_token: str,
+    encryption_key: str | None = None,
+) -> VetmanagerConnection:
+    """Validate and persist active user_token connection for one account."""
+    normalized_domain = _validate_domain(domain.strip())
+    normalized_user_token = user_token.strip()
+    await validate_user_token_connection(normalized_domain, normalized_user_token)
+
+    existing_connections = (
+        await session.execute(
+            select(VetmanagerConnection).where(
+                VetmanagerConnection.account_id == account_id,
+                VetmanagerConnection.status == "active",
+            )
+        )
+    ).scalars().all()
+    for existing in existing_connections:
+        existing.status = "disabled"
+
+    connection = VetmanagerConnection(
+        account_id=account_id,
+        auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
+        status="active",
+        domain=normalized_domain,
+    )
+    connection.set_credentials(
+        {"domain": normalized_domain, "user_token": normalized_user_token},
         encryption_key=encryption_key,
     )
     session.add(connection)

@@ -3,13 +3,12 @@
 import pytest
 import respx
 import httpx
-from unittest.mock import AsyncMock, patch
 
-import request_credentials
-import runtime_auth
-from vetmanager_client import VetmanagerClient
 from server import mcp
-from vetmanager_auth import VetmanagerAuthContext
+from tests.runtime_factories import (
+    make_client_with_resolved_runtime,
+    patch_runtime_credentials,
+)
 
 DOMAIN = "testclinic"
 API_KEY = "test-key-mock"
@@ -23,45 +22,20 @@ def billing_mock():
 
 
 def client(domain=DOMAIN, api_key=API_KEY):
-    headers = {"authorization": "Bearer mock-token"}
-    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
-        vc = VetmanagerClient()
-    vc._vetmanager_auth = VetmanagerAuthContext(
-        auth_mode="domain_api_key",
-        domain=domain,
-        api_key=api_key,
+    return make_client_with_resolved_runtime(
+        domain,
+        api_key,
+        bearer_token="mock-token",
     )
-    vc._auth_source = "bearer"
-    vc._domain = domain
-    vc._api_key = api_key
-    vc._account_id = 1
-    vc._bearer_token_id = 1
-    vc._connection_id = 1
-    vc._ensure_runtime_credentials = AsyncMock(return_value=None)
-    return vc
 
 
 def bearer_runtime_patch(domain=DOMAIN, api_key=API_KEY):
-    headers = {"authorization": "Bearer mock-token"}
-    return patch.object(
-        request_credentials,
-        "_get_request_headers",
-        return_value=headers,
-    ), patch(
-        "vetmanager_client.resolve_runtime_credentials",
-        AsyncMock(
-            return_value=runtime_auth.RuntimeCredentials(
-                vetmanager_auth=VetmanagerAuthContext(
-                    auth_mode="domain_api_key",
-                    domain=domain,
-                    api_key=api_key,
-                ),
-                source="bearer",
-                account_id=1,
-                bearer_token_id=1,
-                connection_id=1,
-            )
-        ),
+    return patch_runtime_credentials(
+        domain,
+        api_key,
+        bearer_token="mock-token",
+        bearer_token_id=1,
+        connection_id=1,
     )
 
 

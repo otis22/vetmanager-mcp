@@ -1,19 +1,21 @@
 """Unit tests: VetmanagerClient runtime auth, caching and transport security."""
 
-import time
 import asyncio
-from unittest.mock import AsyncMock, patch
+import time
+from unittest.mock import patch
 
 import httpx
 import pytest
 import respx
 
 import request_credentials
-import runtime_auth
 import vetmanager_client
 from exceptions import AuthError, HostResolutionError, NotFoundError, VetmanagerError
+from tests.runtime_factories import (
+    make_client_with_resolved_runtime,
+    patch_runtime_credentials,
+)
 from vetmanager_client import VetmanagerClient
-from vetmanager_auth import VetmanagerAuthContext
 
 
 def make_host_response(url: str) -> dict:
@@ -21,26 +23,10 @@ def make_host_response(url: str) -> dict:
 
 
 def make_client(domain: str, api_key: str) -> VetmanagerClient:
-    headers = {"authorization": "Bearer test-token"}
-    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
-        client = VetmanagerClient()
-    client._vetmanager_auth = VetmanagerAuthContext(
-        auth_mode="domain_api_key",
-        domain=domain,
-        api_key=api_key,
-    )
-    client._auth_source = "bearer"
-    client._domain = domain
-    client._api_key = api_key
-    client._account_id = 1
-    client._bearer_token_id = 1
-    client._connection_id = 1
-    client._credentials_lock = asyncio.Lock()
-    client._ensure_runtime_credentials = AsyncMock(return_value=None)
-    return client
+    return make_client_with_resolved_runtime(domain, api_key)
 
 
-def make_bearer_client_without_resolved_credentials(domain: str, api_key: str) -> VetmanagerClient:
+def make_bearer_client_without_resolved_credentials(_: str, __: str) -> VetmanagerClient:
     headers = {"authorization": "Bearer integration-token"}
     with patch.object(request_credentials, "_get_request_headers", return_value=headers):
         return VetmanagerClient()
@@ -181,23 +167,8 @@ def test_bearer_header_initializes_client_for_lazy_runtime_resolution():
 async def test_invalid_domain_rejected():
     """Invalid domain from bearer runtime context must be rejected before network access."""
     vc = make_bearer_client_without_resolved_credentials("bad.domain", "header-key")
-    with patch.object(
-        vetmanager_client,
-        "resolve_runtime_credentials",
-        AsyncMock(
-            return_value=runtime_auth.RuntimeCredentials(
-                vetmanager_auth=VetmanagerAuthContext(
-                    auth_mode="domain_api_key",
-                    domain="bad.domain",
-                    api_key="header-key",
-                ),
-                source="bearer",
-                account_id=1,
-                bearer_token_id=11,
-                connection_id=21,
-            )
-        ),
-    ):
+    _, runtime_patch = patch_runtime_credentials("bad.domain", "header-key")
+    with runtime_patch:
         with pytest.raises(VetmanagerError, match="Invalid Vetmanager domain"):
             await vc.get("/rest/api/client")
 
@@ -226,23 +197,8 @@ async def test_client_can_resolve_credentials_via_runtime_auth_context():
     )
 
     vc = make_bearer_client_without_resolved_credentials("bearer-clinic", "bearer-key")
-    with patch.object(
-        vetmanager_client,
-        "resolve_runtime_credentials",
-        AsyncMock(
-            return_value=runtime_auth.RuntimeCredentials(
-                vetmanager_auth=VetmanagerAuthContext(
-                    auth_mode="domain_api_key",
-                    domain="bearer-clinic",
-                    api_key="bearer-key",
-                ),
-                source="bearer",
-                account_id=1,
-                bearer_token_id=11,
-                connection_id=21,
-            )
-        ),
-    ):
+    _, runtime_patch = patch_runtime_credentials("bearer-clinic", "bearer-key")
+    with runtime_patch:
         await vc.get("/rest/api/client")
 
     assert vc._auth_source == "bearer"

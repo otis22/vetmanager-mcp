@@ -87,7 +87,7 @@ class VetmanagerClient:
             self._vetmanager_auth = VetmanagerAuthContext(
                 auth_mode=resolved.vetmanager_auth.auth_mode,
                 domain=validate_runtime_domain(resolved.domain),
-                api_key=resolved.api_key,
+                credential=resolved.api_key,
             )
             self._domain = self._vetmanager_auth.domain
             self._api_key = self._vetmanager_auth.api_key
