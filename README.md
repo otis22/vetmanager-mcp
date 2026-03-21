@@ -18,6 +18,11 @@ docker compose build
 docker compose up -d          # запустить MCP-сервер
 ```
 
+После запуска:
+
+- публичный лендинг доступен на `http://localhost:8000/`
+- MCP endpoint остаётся на `http://localhost:8000/mcp`
+
 Полезные runtime-переменные:
 
 - `DATABASE_URL` — строка подключения к БД. По умолчанию используется локальный `sqlite+aiosqlite:///./data/vetmanager.db`.

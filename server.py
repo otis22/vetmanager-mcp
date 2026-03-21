@@ -2,6 +2,10 @@ import logging
 import os
 
 from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import HTMLResponse
+
+from landing_page import render_landing_page
 from tool_descriptions import enhance_tool_descriptions
 
 logging.basicConfig(
@@ -19,6 +23,12 @@ mcp = FastMCP(
         "All tools are bearer-authenticated and do not accept runtime credential arguments."
     ),
 )
+
+
+@mcp.custom_route("/", methods=["GET"], include_in_schema=False)
+async def landing_page(request: Request) -> HTMLResponse:
+    """Render the public product landing page."""
+    return HTMLResponse(render_landing_page())
 
 from tools import register_all  # noqa: E402
 from prompts import register_prompts  # noqa: E402
