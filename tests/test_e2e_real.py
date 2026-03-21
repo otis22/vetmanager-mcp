@@ -15,12 +15,17 @@ Run inside Docker:
 """
 
 import os
+from pathlib import Path
 import pytest
+import re
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import request_credentials
 import runtime_auth
+import storage
+from server import mcp
+from storage import Base, create_database_engine
 from vetmanager_client import VetmanagerClient
 from exceptions import AuthError, VetmanagerError
 from vetmanager_connection_service import (
@@ -38,6 +43,8 @@ TEST_USER_TOKEN = os.environ.get("TEST_USER_TOKEN", "")
 TEST_USER_TOKEN_BASE_URL = os.environ.get("TEST_USER_TOKEN_BASE_URL", "")
 TEST_USER_LOGIN = os.environ.get("TEST_USER_LOGIN", "")
 TEST_USER_PASSWORD = os.environ.get("TEST_USER_PASSWORD", "")
+TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
+CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
 
 skip_if_no_creds = pytest.mark.skipif(
     not TEST_DOMAIN or not TEST_API_KEY,
@@ -100,7 +107,15 @@ async def resolve_real_user_token() -> str:
         )
 
     if response.status_code == 401:
-        pytest.skip("Login/password token exchange rejected by the test contour.")
+        detail = ""
+        try:
+            detail = str(response.json().get("detail") or "").strip()
+        except Exception:
+            detail = ""
+        pytest.skip(
+            "Login/password token exchange rejected by the test contour."
+            + (f" Detail: {detail}" if detail else "")
+        )
     response.raise_for_status()
     payload = response.json()
     data = payload.get("data")
@@ -119,6 +134,40 @@ def vc_user_token() -> VetmanagerClient:
     with patch.object(request_credentials, "_get_request_headers", return_value=headers):
         client = VetmanagerClient()
     return client
+
+
+async def _prepare_web_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    database_path = tmp_path / "real-web-auth.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path}")
+    monkeypatch.setenv("WEB_SESSION_SECRET", "real-web-session-secret")
+    monkeypatch.setenv("WEB_SESSION_SECURE", "0")
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    storage.reset_storage_state()
+
+    engine = create_database_engine(f"sqlite:///{database_path}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    return engine
+
+
+def _extract_csrf_token(html: str) -> str:
+    match = CSRF_RE.search(html)
+    assert match is not None
+    return match.group(1)
+
+
+async def _post_with_csrf(
+    client: httpx.AsyncClient,
+    path: str,
+    data: dict[str, str],
+    *,
+    page_path: str | None = None,
+) -> httpx.Response:
+    csrf_page = await client.get(page_path or path)
+    token = _extract_csrf_token(csrf_page.text)
+    payload = dict(data)
+    payload["csrf_token"] = token
+    return await client.post(path, data=payload)
 
 
 async def call(coro):
@@ -198,6 +247,60 @@ async def test_real_get_users_with_user_token_mode():
     client._ensure_runtime_credentials = AsyncMock(return_value=None)
     result = await call(client.get("/rest/api/user", params={"limit": 5, "offset": 0}))
     assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_web_account_can_issue_bearer_and_call_tool(tmp_path: Path, monkeypatch):
+    """Real happy-path: web account -> real API-key integration -> bearer -> MCP tool."""
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        register = await _post_with_csrf(
+            client,
+            "/register",
+            data={"email": "real-flow@example.com", "password": "real-flow-pass-123"},
+        )
+        assert register.status_code == 200
+
+        integration = await _post_with_csrf(
+            client,
+            "/account/integration",
+            data={"auth_mode": "domain_api_key", "domain": TEST_DOMAIN, "api_key": TEST_API_KEY},
+            page_path="/account",
+        )
+        assert integration.status_code == 200
+        assert "Vetmanager integration saved successfully." in integration.text
+
+        issued = await _post_with_csrf(
+            client,
+            "/account/tokens",
+            data={"token_name": "Real E2E token", "expires_in_days": "7"},
+            page_path="/account",
+        )
+        assert issued.status_code == 200
+        token_match = re.search(r"vm_st_[A-Za-z0-9_\-]+", issued.text)
+        assert token_match is not None
+        raw_token = token_match.group(0)
+
+    with patch.object(
+        request_credentials,
+        "_get_request_headers",
+        return_value={"authorization": f"Bearer {raw_token}"},
+    ):
+        result = await mcp.call_tool("get_clients", {"limit": 2, "offset": 0})
+
+    assert result.structured_content is not None
+    assert "data" in result.structured_content
+
+    await engine.dispose()
+    storage.reset_storage_state()
 
 
 @skip_if_no_creds

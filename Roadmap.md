@@ -557,3 +557,73 @@
 - 35.5 Провести dependency/config audit: production defaults, security headers, debug mode, SQLite/Postgres operational differences — `done`
 - 35.6 Сформировать remediation list с приоритетами `high` / `medium` / `low` и внести его в roadmap отдельными задачами при необходимости — `done`
 - 35.7 Зафиксировать результаты аудита в `AssumptionLog.md` и связанных артефактах — `done`
+
+## Этап 36. Security remediation — `done`
+
+Цель: закрыть medium-risk security хвосты, выявленные после этапа 35, и довести web-контур до более строгого production-grade baseline.
+
+- 36.1 Добавить CSRF protection для web forms `/register`, `/login`, `/account/*` — `done`
+- 36.2 Добавить brute-force / rate limiting protection для `/login` и `/register` — `done`
+- 36.3 Добавить security headers для web UI и production transport (`CSP`, `X-Frame-Options`, `Referrer-Policy`, при необходимости `HSTS` для prod) — `done`
+- 36.4 Проверить logout/session invalidation и отсутствие session fixation regressions после hardening — `done`
+- 36.5 Добавить unit/http/browser tests на новые security controls и negative paths — `done`
+- 36.6 Обновить `README.md`, PRD и `AssumptionLog.md` по итоговым security remediation решениям — `done`
+
+## Этап 37. Landing page для ветврачей и руководителей клиник — `done`
+
+Цель: перепозиционировать главную страницу из developer-centric landing в понятную продуктовую витрину для ветврачей, администраторов и руководителей ветклиник, с явным и заметным акцентом на регистрацию.
+
+- 37.1 Переписать hero и первый экран на языке пользы для ветврачей и руководителей клиник, без упора на Cursor и developer-термины — `done`
+- 37.2 Сформулировать главную ценность через понятные сценарии: быстрый доступ к клиентам, пациентам, приёмам, финансам и складу через AI-ассистента — `done`
+- 37.3 Убрать узкий акцент на `Cursor` и заменить его на нейтральные формулировки про AI-ассистентов и MCP-совместимые клиенты — `done`
+- 37.4 Сделать регистрацию главным CTA первого экрана: выделенная заметная кнопка `Зарегистрироваться` / `Создать аккаунт` — `done`
+- 37.5 Добавить с главной явный путь на регистрацию и вход, при этом регистрация должна быть визуально приоритетнее — `done`
+- 37.6 Переписать блок `Как это работает` на языке практической пользы, а не runtime/auth implementation details — `done`
+- 37.7 Добавить блок `Для кого сервис`: ветврач, администратор, руководитель клиники — `done`
+- 37.8 Добавить блок с примерами реальных запросов и сценариев использования для ветклиники — `done`
+- 37.9 Сохранить короткий technical block про MCP/API только ниже по странице, не в главном hero — `done`
+- 37.10 Добавить tests на landing copy и заметный CTA регистрации — `done`
+- 37.11 Прогнать browser-check главной страницы на desktop/mobile и зафиксировать результат — `done`
+- 37.12 Обновить `README.md`, PRD и `AssumptionLog.md` по новой продуктовой формулировке landing page — `done`
+
+## Этап 38. Account onboarding и wizard авторизации — `done`
+
+Цель: упростить onboarding в кабинете для нетехнических пользователей, переделать форму подключения Vetmanager в wizard, улучшить UX выпуска bearer-токенов и отдельно расследовать проблемный `login/password -> user token` flow на реальных тестовых данных.
+
+- 38.1 Переписать `/account` на язык пользы для ветклиник, без перегруженных технических формулировок — `done`
+- 38.2 Переделать подключение Vetmanager в wizard: сначала выбор способа авторизации, затем только релевантные поля — `done`
+- 38.3 Для варианта `API key` показывать только `domain` и `api_key` — `done`
+- 38.4 Для варианта `login/password` показывать только `domain`, `api_key`, `login`, `password` — `done`
+- 38.5 Убрать одновременный показ всех auth-полей и снизить когнитивную нагрузку формы — `done`
+- 38.6 Добавить понятные пользовательские подсказки: когда выбирать `API key`, а когда `login/password` — `done`
+- 38.7 Расследовать кейс `https://devtr6.vetmanager2.ru/ + admin4 + 123456`, почему token exchange не приводит к получению рабочего user token — `done`
+- 38.8 Добавить более понятную диагностику user-token flow: invalid credentials, invalid api key, disabled token auth, host mismatch, network failure — `done`
+- 38.9 Если проблема окажется в контракте Vetmanager или ограничениях тестового окружения, зафиксировать это в `AssumptionLog.md` и пользовательском UI-message — `done`
+- 38.10 Улучшить token management UI: статусы, re-auth, замена нерабочих токенов и более понятные действия для пользователя — `done`
+- 38.11 Улучшить UX выпуска нового bearer token: после создания пользователь должен сразу видеть raw token без ручного поиска и скролла по странице — `done`
+- 38.12 После успешного выпуска token автоматически прокручивать к блоку нового token или показывать его в заметной success-panel в верхней видимой части экрана — `done`
+- 38.13 Сделать one-time raw token визуально заметным: отдельная карточка, предупреждение `скопируйте сейчас`, кнопка копирования — `done`
+- 38.14 Добавить onboarding state для нового account без integration, чтобы следующий шаг был очевиден сразу после регистрации — `done`
+- 38.15 Добавить browser-check на wizard flow кабинета и на сценарий выпуска bearer token, где token сразу остаётся в зоне видимости — `done`
+- 38.16 Обновить `README.md`, PRD и `AssumptionLog.md` по итоговому UX/account onboarding контракту — `done`
+
+## Этап 39. Browser E2E главного сценария — `done`
+
+Цель: гарантировать через browser-level проверки, что основной пользовательский путь работает от регистрации до реального MCP-вызова через service bearer token.
+
+- 39.1 Добавить browser E2E полного happy-path: регистрация account — `done`
+- 39.2 Добавить browser E2E шага настройки Vetmanager authorization через wizard — `done`
+- 39.3 Добавить browser E2E шага выпуска service bearer token — `done`
+- 39.4 Добавить browser E2E проверки, что raw bearer token после выпуска сразу виден пользователю и не теряется ниже по странице — `done`
+- 39.5 Добавить browser E2E реального MCP-вызова с выпущенным bearer token — `done`
+- 39.6 По возможности прогнать happy-path на реальных тестовых данных и зафиксировать ограничения/known failures — `done`
+- 39.7 Зафиксировать результат, ограничения и release-check шаги в `AssumptionLog.md` и regression notes — `done`
+
+## Этап 40. Production hardening — `done`
+
+Цель: подготовить security и operational baseline к более реалистичному production deployment, где одного process-local hardening уже недостаточно.
+
+- 40.1 Спроектировать shared rate limiting или edge-enforced protection вместо process-local-only limiter для production deployment — `done`
+- 40.2 Проверить multi-instance безопасность web auth, session и CSRF-механизма — `done`
+- 40.3 Сформировать ops/security deployment checklist для production — `done`
+- 40.4 Обновить `README.md`, PRD и `AssumptionLog.md` по итогам production hardening planning/implementation — `done`

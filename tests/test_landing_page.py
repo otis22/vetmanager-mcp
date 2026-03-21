@@ -21,3 +21,7 @@ async def test_root_landing_page_renders_product_message():
     assert "/mcp" in response.text
     assert "не сохраняет бизнес-данные из Vetmanager" in response.text
     assert "логин и пароль Vetmanager не сохраняются" in response.text
+    assert "для ветврачей, администраторов и руководителей клиник" in response.text
+    assert "Зарегистрироваться" in response.text
+    assert "/register" in response.text
+    assert "Cursor" not in response.text

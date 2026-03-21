@@ -1444,3 +1444,173 @@
   контракт уже приведён в соответствие с реализацией.
 - Residual medium/low findings зафиксированы здесь как обязательный input для
   следующего security hardening iteration.
+
+---
+
+## Этап 36: security remediation
+
+**Что реализовано:**
+- Для web UI добавлен signed double-submit CSRF layer:
+  - GET-страницы с формами выставляют cookie `vm_csrf`;
+  - формы рендерят hidden field `csrf_token`;
+  - POST-маршруты `/register`, `/login`, `/logout`, `/account/integration`,
+    `/account/integration/reauth`, `/account/tokens`,
+    `/account/tokens/{id}/revoke` отклоняют missing/mismatch token c `403`.
+- Для `/register` и `/login` добавлен process-local sliding-window limiter:
+  - `/register`: ключ по IP;
+  - `/login`: ключ по IP + normalized email;
+  - при превышении лимита возвращается безопасный `429` без утечки деталей.
+- Для HTML-ответов web UI добавлен baseline security headers набор:
+  - `Content-Security-Policy`
+  - `X-Frame-Options: DENY`
+  - `Referrer-Policy: no-referrer`
+  - `X-Content-Type-Options: nosniff`
+  - `Strict-Transport-Security` включается только при явном production env flag.
+
+**Что подтверждено проверками:**
+- Добавлены HTTP tests на:
+  - CSRF cookie + hidden field;
+  - rejection для missing/mismatched CSRF;
+  - login/register rate limiting;
+  - security headers.
+- Login/logout и session invalidation regression не выявлены:
+  успешный login создаёт session cookie, logout по valid CSRF возвращает `303`
+  на `/`, а следующий `GET /account` снова редиректит на `/login`.
+
+**Что важно по ограничениям:**
+- CSRF и login/register limiter сейчас process-local. Для multi-instance
+  production deployment их нужно будет переносить в shared store/edge layer,
+  если появится горизонтальное масштабирование.
+
+---
+
+## Этап 37: landing page для ветврачей и руководителей клиник
+
+**Что изменено в продуктовой подаче:**
+- Главная страница переписана с developer-centric подачи на язык пользы для
+  ветврачей, администраторов и руководителей клиник.
+- Регистрация вынесена в главный CTA:
+  - отдельная заметная кнопка `Зарегистрироваться` в hero;
+  - отдельная ссылка в top nav;
+  - повторный CTA в footer.
+- Убран акцент на `Cursor` из hero и основного narrative. Технический MCP-блок
+  сохранён ниже страницы как secondary information.
+- Добавлены product-блоки:
+  - `Что получает клиника`
+  - `Для кого сервис`
+  - `Как начать работу`
+  - `Какие вопросы можно задавать`
+
+**Browser-check:**
+- Локальный smoke прогнан на `http://127.0.0.1:8000/`:
+  - desktop snapshot подтверждает hero, privacy/auth messaging и главный CTA
+    регистрации;
+  - mobile snapshot подтверждает, что CTA `Зарегистрироваться`, навигация и
+    основные продуктовые блоки остаются доступны.
+
+**Что подтверждено тестами:**
+- `tests/test_landing_page.py` теперь проверяет:
+  - продуктовую формулировку для ветврачей/администраторов/руководителей;
+  - наличие `Зарегистрироваться` и ссылки `/register`;
+  - отсутствие `Cursor` в landing copy.
+
+---
+
+## Этап 38: account onboarding и wizard авторизации
+
+**Что изменено в кабинете:**
+- `/account` переписан с более понятной product-подачей:
+  - явный onboarding state для нового account;
+  - пояснение, что следующий шаг после регистрации — подключить Vetmanager;
+  - меньше developer-centric формулировок в верхней части страницы.
+- Форма integration переведена в wizard:
+  - сначала выбор способа авторизации;
+  - затем отображаются только релевантные поля.
+- Для `API key` показываются только `domain` и `api_key`.
+- Для `login/password` показываются только `domain`, `api_key`, `login`,
+  `password`.
+- Скрытая панель wizard не участвует в submit/валидации:
+  поля в неактивной панели отключаются и не перетирают значения активного режима.
+
+**UX выпуска bearer token:**
+- После выпуска новый raw bearer рендерится в отдельной success-card в верхней
+  части кабинета, а не теряется ниже по странице.
+- В success-card добавлены:
+  - одноразовое предупреждение `Скопируйте его сейчас`;
+  - read-only поле с raw token;
+  - кнопка `Скопировать токен`;
+  - feedback `Токен скопирован в буфер обмена`.
+- Browser smoke подтвердил, что после выпуска token сразу виден без ручного
+  поиска и скролла по странице.
+
+**Расследование `devtr6` login/password exchange:**
+- Реальный вызов `POST https://devtr6.vetmanager2.ru/token_auth.php` с
+  предоставленными данными вернул:
+  - HTTP `401`
+  - `title: Wrong authentification.`
+  - `detail: Неправильный логин или пароль.`
+- Это подтверждает, что проблема не в host resolution и не в формате ответа.
+- Текущий вывод по inspected path:
+  тестовый contour отвергает именно login/password credentials для token exchange.
+- В `tests/test_e2e_real.py` skip для этого smoke теперь фиксирует detail
+  rejection, а не просто абстрактный auth failure.
+
+**Что улучшено в error mapping:**
+- Для `401` остаётся безопасное сообщение
+  `Invalid Vetmanager login, password or API key.`
+- Для `403` добавлен отдельный safe path:
+  авторизация по login/password недоступна или отключена для клиники.
+- Для malformed success response добавлено отдельное safe сообщение, что
+  Vetmanager не вернул user token.
+
+---
+
+## Этап 39: browser E2E главного сценария
+
+**Что подтверждено в реальном браузере:**
+- На локальном `http://127.0.0.1:8000/` / `http://127.0.0.1:8000/register`:
+  - account успешно регистрируется;
+  - `/account` показывает onboarding wizard;
+  - wizard переключается между `API key` и `логин/пароль`;
+  - API-key сценарий для `devtr6` успешно сохраняет active integration;
+  - выпуск service bearer token успешен;
+  - новый raw token сразу появляется в success-card;
+  - copy button работает и показывает явный feedback.
+
+**Что подтверждено по bearer -> MCP:**
+- Тем же token из browser-сценария выполнен реальный `mcp.call_tool("get_clients")`.
+- Runtime успешно:
+  - разрешил bearer -> account -> active connection;
+  - выполнил host resolution для `devtr6`;
+  - сделал реальный запрос `GET /rest/api/client` на contour;
+  - вернул структурированный ответ с данными клиентов.
+
+**Automation coverage:**
+- Добавлен real E2E:
+  `tests/test_e2e_real.py::test_real_web_account_can_issue_bearer_and_call_tool`
+- Этот тест покрывает путь:
+  web account -> integration -> issued bearer -> MCP tool call.
+
+---
+
+## Этап 40: production hardening
+
+**Что зафиксировано как production baseline:**
+- Текущий login/register limiter process-local и подходит для single-instance
+  deployment, но не для горизонтального масштабирования.
+- Для production нужен один из вариантов:
+  - shared store limiter;
+  - edge/proxy rate limiting;
+  - либо оба слоя вместе.
+- CSRF/session baseline безопасен для single-instance сценария с общим
+  `WEB_SESSION_SECRET`, но multi-instance deployment требует:
+  - один и тот же session secret на всех инстансах;
+  - предсказуемую cookie/security policy;
+  - documented deploy checklist.
+
+**Что синхронизировано:**
+- В `README.md` добавлены production notes:
+  - внешний rate limit;
+  - единый `WEB_SESSION_SECRET`;
+  - явный `STORAGE_ENCRYPTION_KEY`;
+  - `WEB_ENABLE_HSTS=1` за HTTPS reverse proxy.

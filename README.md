@@ -72,13 +72,22 @@ Bearer-токен привязан к account сервиса:
 
 Пользовательский web-контур уже начал работать:
 
+- лендинг перепозиционирован под ветврачей, администраторов и руководителей клиник;
+- регистрация вынесена в главный CTA главной страницы;
 - доступны лендинг, регистрация account и login/logout;
 - доступна страница `/account`;
-- доступна настройка активной Vetmanager integration через `domain + rest_api_key`;
+- доступна настройка активной Vetmanager integration через wizard:
+  сначала выбор способа авторизации, затем только релевантные поля;
+- доступна настройка `domain + rest_api_key`;
 - доступна настройка user-token integration через `domain + api_key + login/password -> user token`;
 - логин и пароль Vetmanager не сохраняются и не отображаются повторно после submit;
+- для нового account кабинет показывает onboarding state с явным следующим шагом;
+- state-changing web forms защищены signed CSRF token layer;
+- `/register` и `/login` защищены process-local rate limiting от brute-force / abuse;
+- HTML responses отдают baseline security headers: `CSP`, `X-Frame-Options`, `Referrer-Policy`, `X-Content-Type-Options`;
 - кабинет показывает health активной integration и статус `reauth_required`, если сохранённый user token больше не проходит валидацию;
 - доступен выпуск Bearer-токенов с именем и сроком действия;
+- после выпуска raw bearer token показывается в отдельной success-card в верхней части страницы и может быть скопирован кнопкой;
 - доступен список токенов со статусом, сроком действия, `last_used_at`, `request_count` и revoke action.
 
 На текущем этапе в репозитории уже есть:
@@ -89,13 +98,18 @@ Bearer-токен привязан к account сервиса:
 - сервис сохранения Vetmanager connection `domain + rest_api_key`;
 - web exchange `login/password -> user token` c сохранением только полученного user token;
 - web auth для account через email/password и signed cookie session;
+- account onboarding wizard с выбором `API key` или `login/password`;
+- signed CSRF layer для `/register`, `/login`, `/logout` и `/account/*`;
+- rate limiting для `/register` и `/login`;
+- baseline security headers для HTML-ответов web UI;
 - web-экран сохранения active Vetmanager integration;
 - web-выпуск Bearer-токенов с one-time показом raw значения;
+- success-card для нового raw bearer token с copy action;
 - список Bearer-токенов с usage metadata;
 - runtime usage accounting (`last_used_at`, `request_count`);
 - безопасный audit log для create/revoke Bearer-токенов.
 
-То есть runtime-контракт уже bearer-only, а account provisioning, Vetmanager integration, token management и usage accounting больше не internal-only. Следующий этап roadmap теперь уже про второй Vetmanager auth mode.
+То есть runtime-контракт уже bearer-only, а account provisioning, Vetmanager integration, token management, security baseline web-контура и продуктовый landing больше не internal-only.
 
 ## Подключение Cursor
 
@@ -140,6 +154,19 @@ docker compose up -d mcp
 | e2e real tests (api_key) | `TEST_DOMAIN` / `TEST_API_KEY` в `.env` или CI secrets |
 | e2e real tests (user_token) | `TEST_USER_TOKEN` или `TEST_USER_TOKEN_BASE_URL` + `TEST_USER_LOGIN` + `TEST_USER_PASSWORD` |
 | Проектный `.env` (runtime) | используется только для infra-конфига (`DATABASE_URL`, `STORAGE_ENCRYPTION_KEY`, transport settings) |
+
+### Production notes
+
+- Текущий web rate limiting process-local; для multi-instance production нужен
+  shared store или edge enforcement.
+- Текущий CSRF/session hardening рассчитан на single-instance deployment с
+  общим `WEB_SESSION_SECRET`; при горизонтальном масштабировании нужен единый
+  secret и согласованный deployment policy.
+- Для production рекомендуется:
+  - явный `WEB_SESSION_SECRET`;
+  - явный `STORAGE_ENCRYPTION_KEY`;
+  - `WEB_ENABLE_HSTS=1` за HTTPS reverse proxy;
+  - внешний rate limit на `/register` и `/login`.
 
 ### Тест подключения
 

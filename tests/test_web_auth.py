@@ -14,9 +14,11 @@ from bearer_auth import resolve_bearer_auth_context
 from server import mcp
 from storage import Base, create_database_engine
 from storage_models import Account, ServiceBearerToken, TokenUsageLog, TokenUsageStat, VetmanagerConnection
+from web_security import reset_web_security_state
 from web_auth import SESSION_COOKIE_NAME, get_web_session_secret, register_account, set_account_session_cookie
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
+CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
 
 
 async def _prepare_web_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -25,11 +27,35 @@ async def _prepare_web_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("WEB_SESSION_SECRET", "test-web-session-secret")
     monkeypatch.setenv("WEB_SESSION_SECURE", "0")
     storage.reset_storage_state()
+    reset_web_security_state()
 
     engine = create_database_engine(f"sqlite:///{database_path}")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     return engine
+
+
+def _extract_csrf_token(html: str) -> str:
+    match = CSRF_RE.search(html)
+    assert match is not None
+    return match.group(1)
+
+
+async def _post_with_csrf(
+    client: httpx.AsyncClient,
+    path: str,
+    data: dict[str, str],
+    *,
+    page_path: str | None = None,
+    follow_redirects: bool | None = None,
+) -> httpx.Response:
+    csrf_page = await client.get(page_path or path)
+    token = _extract_csrf_token(csrf_page.text)
+    request_data = dict(data)
+    request_data["csrf_token"] = token
+    if follow_redirects is None:
+        return await client.post(path, data=request_data)
+    return await client.post(path, data=request_data, follow_redirects=follow_redirects)
 
 
 @pytest.mark.asyncio
@@ -43,7 +69,8 @@ async def test_register_route_creates_account_and_starts_session(tmp_path: Path,
         base_url="http://testserver",
         follow_redirects=True,
     ) as client:
-        response = await client.post(
+        response = await _post_with_csrf(
+            client,
             "/register",
             data={"email": "owner@example.com", "password": "strong-pass-123"},
         )
@@ -89,6 +116,82 @@ def test_set_account_session_cookie_uses_strict_secure_defaults(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_register_page_sets_csrf_cookie_and_security_headers(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/register")
+
+    assert response.status_code == 200
+    assert "vm_csrf" in client.cookies
+    assert 'name="csrf_token"' in response.text
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert "default-src 'self'" in response.headers["content-security-policy"]
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_register_route_rejects_missing_csrf_token(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await client.get("/register")
+        response = await client.post(
+            "/register",
+            data={"email": "owner@example.com", "password": "strong-pass-123"},
+        )
+
+    assert response.status_code == 403
+    assert "Invalid CSRF token." in response.text
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_logout_rejects_mismatched_csrf_token(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    async with storage.get_session_factory()() as session:
+        await register_account(
+            session,
+            email="logout@example.com",
+            password="correct-horse-battery",
+        )
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await _post_with_csrf(
+            client,
+            "/login",
+            data={"email": "logout@example.com", "password": "correct-horse-battery"},
+        )
+        response = await client.post("/logout", data={"csrf_token": "bad-token"}, follow_redirects=False)
+
+    assert response.status_code == 403
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
 async def test_login_logout_flow_requires_valid_credentials(tmp_path: Path, monkeypatch):
     engine = await _prepare_web_db(tmp_path, monkeypatch)
     async with storage.get_session_factory()() as session:
@@ -108,12 +211,17 @@ async def test_login_logout_flow_requires_valid_credentials(tmp_path: Path, monk
     ) as client:
         invalid = await client.post(
             "/login",
-            data={"email": "doctor@example.com", "password": "wrong-pass"},
+            data={
+                "email": "doctor@example.com",
+                "password": "wrong-pass",
+                "csrf_token": _extract_csrf_token((await client.get("/login")).text),
+            },
         )
         assert invalid.status_code == 401
         assert "Invalid email or password." in invalid.text
 
-        valid = await client.post(
+        valid = await _post_with_csrf(
+            client,
             "/login",
             data={"email": "doctor@example.com", "password": "correct-horse-battery"},
         )
@@ -121,13 +229,96 @@ async def test_login_logout_flow_requires_valid_credentials(tmp_path: Path, monk
         assert "doctor@example.com" in valid.text
         assert SESSION_COOKIE_NAME in client.cookies
 
-        logout = await client.post("/logout", follow_redirects=False)
+        logout = await _post_with_csrf(
+            client,
+            "/logout",
+            data={},
+            page_path="/account",
+            follow_redirects=False,
+        )
         assert logout.status_code == 303
         assert logout.headers["location"] == "/"
 
         account_page = await client.get("/account", follow_redirects=False)
         assert account_page.status_code == 303
         assert account_page.headers["location"] == "/login"
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_login_rate_limit_returns_429_after_repeated_failures(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("WEB_LOGIN_RATE_LIMIT_ATTEMPTS", "2")
+    monkeypatch.setenv("WEB_LOGIN_RATE_LIMIT_WINDOW_SECONDS", "60")
+    async with storage.get_session_factory()() as session:
+        await register_account(
+            session,
+            email="doctor@example.com",
+            password="correct-horse-battery",
+        )
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        first = await _post_with_csrf(
+            client,
+            "/login",
+            data={"email": "doctor@example.com", "password": "wrong-pass"},
+        )
+        second = await _post_with_csrf(
+            client,
+            "/login",
+            data={"email": "doctor@example.com", "password": "wrong-pass"},
+        )
+        third = await _post_with_csrf(
+            client,
+            "/login",
+            data={"email": "doctor@example.com", "password": "wrong-pass"},
+        )
+
+    assert first.status_code == 401
+    assert second.status_code == 401
+    assert third.status_code == 429
+    assert "Too many login attempts." in third.text
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_register_rate_limit_returns_429_after_repeated_attempts(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("WEB_REGISTER_RATE_LIMIT_ATTEMPTS", "1")
+    monkeypatch.setenv("WEB_REGISTER_RATE_LIMIT_WINDOW_SECONDS", "60")
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        first = await _post_with_csrf(
+            client,
+            "/register",
+            data={"email": "first@example.com", "password": "first-pass-123"},
+        )
+        second = await _post_with_csrf(
+            client,
+            "/register",
+            data={"email": "second@example.com", "password": "second-pass-123"},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert "Too many registration attempts." in second.text
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -144,13 +335,15 @@ async def test_register_rejects_duplicate_email(tmp_path: Path, monkeypatch):
         base_url="http://testserver",
         follow_redirects=True,
     ) as client:
-        first = await client.post(
+        first = await _post_with_csrf(
+            client,
             "/register",
             data={"email": "ops@example.com", "password": "first-pass-123"},
         )
         assert first.status_code == 200
 
-        second = await client.post(
+        second = await _post_with_csrf(
+            client,
             "/register",
             data={"email": "ops@example.com", "password": "second-pass-456"},
         )
@@ -189,19 +382,22 @@ async def test_account_integration_form_saves_active_vetmanager_connection(tmp_p
         base_url="http://testserver",
         follow_redirects=True,
     ) as client:
-        login = await client.post(
+        login = await _post_with_csrf(
+            client,
             "/login",
             data={"email": "integration@example.com", "password": "integration-pass-123"},
         )
         assert login.status_code == 200
 
-        response = await client.post(
+        response = await _post_with_csrf(
+            client,
             "/account/integration",
             data={
                 "auth_mode": "domain_api_key",
                 "domain": "clinic-a",
                 "api_key": "secret-key",
             },
+            page_path="/account",
         )
 
     assert response.status_code == 200
@@ -242,7 +438,8 @@ async def test_account_page_shows_privacy_and_reauth_notices(tmp_path: Path, mon
         base_url="http://testserver",
         follow_redirects=True,
     ) as client:
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/login",
             data={"email": "notices@example.com", "password": "integration-pass-123"},
         )
@@ -252,9 +449,53 @@ async def test_account_page_shows_privacy_and_reauth_notices(tmp_path: Path, mon
     assert "не сохраняет бизнес-данные Vetmanager" in response.text
     assert "логин и пароль Vetmanager не сохраняются" in response.text
     assert "при смене пароля в Vetmanager" in response.text
+    assert "Выберите способ авторизации Vetmanager" in response.text
+    assert "Подключить по API key" in response.text
+    assert "Подключить по логину и паролю" in response.text
     assert "Vetmanager login" in response.text
     assert "Vetmanager password" in response.text
     assert "Vetmanager user token" not in response.text
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_account_page_shows_onboarding_wizard_for_new_account(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    async with storage.get_session_factory()() as session:
+        await register_account(
+            session,
+            email="wizard@example.com",
+            password="integration-pass-123",
+        )
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await _post_with_csrf(
+            client,
+            "/login",
+            data={"email": "wizard@example.com", "password": "integration-pass-123"},
+        )
+        response = await client.get("/account")
+
+    assert response.status_code == 200
+    assert "Сначала подключите Vetmanager" in response.text
+    assert 'data-auth-wizard="true"' in response.text
+    assert 'value="domain_api_key"' in response.text
+    assert 'value="user_token"' in response.text
+    assert 'id="auth-mode-domain-api-key"' in response.text
+    assert 'id="auth-mode-user-token"' in response.text
+    assert 'data-mode-panel="domain_api_key"' in response.text
+    assert 'data-mode-panel="user_token"' in response.text
+    assert "Подключить по API key" in response.text
+    assert "Подключить по логину и паролю" in response.text
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -290,11 +531,13 @@ async def test_account_integration_form_exchanges_login_password_into_user_token
         base_url="http://testserver",
         follow_redirects=True,
     ) as client:
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/login",
             data={"email": "user-token@example.com", "password": "integration-pass-123"},
         )
-        response = await client.post(
+        response = await _post_with_csrf(
+            client,
             "/account/integration",
             data={
                 "auth_mode": "user_token",
@@ -303,6 +546,7 @@ async def test_account_integration_form_exchanges_login_password_into_user_token
                 "vm_login": "doctor",
                 "vm_password": "doctor-pass-123",
             },
+            page_path="/account",
         )
 
     assert response.status_code == 200
@@ -356,11 +600,13 @@ async def test_account_integration_form_shows_safe_error_for_failed_login_passwo
         base_url="http://testserver",
         follow_redirects=True,
     ) as client:
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/login",
             data={"email": "invalid-user-token@example.com", "password": "integration-pass-123"},
         )
-        response = await client.post(
+        response = await _post_with_csrf(
+            client,
             "/account/integration",
             data={
                 "auth_mode": "user_token",
@@ -369,6 +615,7 @@ async def test_account_integration_form_shows_safe_error_for_failed_login_passwo
                 "vm_login": "doctor",
                 "vm_password": "bad-password",
             },
+            page_path="/account",
         )
 
     assert response.status_code == 400
@@ -413,13 +660,16 @@ async def test_account_integration_form_shows_safe_error_for_invalid_api_key(tmp
         base_url="http://testserver",
         follow_redirects=True,
     ) as client:
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/login",
             data={"email": "invalid-key@example.com", "password": "integration-pass-123"},
         )
-        response = await client.post(
+        response = await _post_with_csrf(
+            client,
             "/account/integration",
             data={"domain": "clinic-b", "api_key": "bad-key"},
+            page_path="/account",
         )
 
     assert response.status_code == 400
@@ -462,25 +712,33 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
         base_url="http://testserver",
         follow_redirects=True,
     ) as client:
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/login",
             data={"email": "token-owner@example.com", "password": "integration-pass-123"},
         )
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/account/integration",
             data={"domain": "clinic-token", "api_key": "secret-key"},
+            page_path="/account",
         )
-        response = await client.post(
+        response = await _post_with_csrf(
+            client,
             "/account/tokens",
             data={"token_name": "Cursor prod", "expires_in_days": "30"},
+            page_path="/account",
         )
 
     assert response.status_code == 200
     assert "Bearer token issued successfully." in response.text
+    assert 'id="issued-token-panel"' in response.text
+    assert "Скопировать токен" in response.text
     raw_token_match = re.search(r"vm_st_[A-Za-z0-9_\\-]+", response.text)
     assert raw_token_match is not None
     raw_token = raw_token_match.group(0)
     assert "копируйте его сейчас" in response.text.lower()
+    assert response.text.index('id="issued-token-panel"') < response.text.index("Bearer token issuance")
 
     used_at = datetime(2026, 3, 21, 14, 30, tzinfo=timezone.utc)
     async with storage.get_session_factory()() as session:
@@ -496,7 +754,8 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
         base_url="http://testserver",
         follow_redirects=True,
     ) as client:
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/login",
             data={"email": "token-owner@example.com", "password": "integration-pass-123"},
         )
@@ -556,13 +815,16 @@ async def test_account_token_issue_requires_active_integration(tmp_path: Path, m
         base_url="http://testserver",
         follow_redirects=True,
     ) as client:
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/login",
             data={"email": "no-integration@example.com", "password": "token-pass-123"},
         )
-        response = await client.post(
+        response = await _post_with_csrf(
+            client,
             "/account/tokens",
             data={"token_name": "Blocked token", "expires_in_days": "14"},
+            page_path="/account",
         )
 
     assert response.status_code == 400
@@ -604,20 +866,30 @@ async def test_account_token_revoke_updates_status_and_writes_audit_log(tmp_path
         base_url="http://testserver",
         follow_redirects=True,
     ) as client:
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/login",
             data={"email": "revoke-owner@example.com", "password": "integration-pass-123"},
         )
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/account/integration",
             data={"domain": "clinic-revoke", "api_key": "secret-key"},
+            page_path="/account",
         )
-        created = await client.post(
+        created = await _post_with_csrf(
+            client,
             "/account/tokens",
             data={"token_name": "Disposable token", "expires_in_days": "7"},
+            page_path="/account",
         )
         raw_token = re.search(r"vm_st_[A-Za-z0-9_\\-]+", created.text).group(0)  # type: ignore[union-attr]
-        revoked = await client.post("/account/tokens/1/revoke")
+        revoked = await _post_with_csrf(
+            client,
+            "/account/tokens/1/revoke",
+            data={},
+            page_path="/account",
+        )
 
     assert revoked.status_code == 200
     assert "Bearer token revoked successfully." in revoked.text
@@ -673,19 +945,29 @@ async def test_account_token_logs_capture_request_metadata(tmp_path: Path, monke
         follow_redirects=True,
         headers={"user-agent": "audit-test-agent"},
     ) as client:
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/login",
             data={"email": "meta-owner@example.com", "password": "integration-pass-123"},
         )
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/account/integration",
             data={"domain": "clinic-meta", "api_key": "secret-key"},
+            page_path="/account",
         )
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/account/tokens",
             data={"token_name": "Meta token", "expires_in_days": "7"},
+            page_path="/account",
         )
-        await client.post("/account/tokens/1/revoke")
+        await _post_with_csrf(
+            client,
+            "/account/tokens/1/revoke",
+            data={},
+            page_path="/account",
+        )
 
     async with storage.get_session_factory()() as session:
         logs = (
@@ -736,7 +1018,8 @@ async def test_account_page_marks_expired_token_via_cleanup_sweep(tmp_path: Path
         base_url="http://testserver",
         follow_redirects=True,
     ) as client:
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/login",
             data={"email": "expired-owner@example.com", "password": "integration-pass-123"},
         )
@@ -804,7 +1087,8 @@ async def test_account_page_marks_invalid_user_token_connection_as_reauth_requir
         base_url="http://testserver",
         follow_redirects=True,
     ) as client:
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/login",
             data={"email": "reauth-owner@example.com", "password": "integration-pass-123"},
         )
@@ -862,11 +1146,13 @@ async def test_reauth_submit_replaces_invalid_user_token_connection(tmp_path: Pa
         base_url="http://testserver",
         follow_redirects=True,
     ) as client:
-        await client.post(
+        await _post_with_csrf(
+            client,
             "/login",
             data={"email": "reauth-submit@example.com", "password": "integration-pass-123"},
         )
-        response = await client.post(
+        response = await _post_with_csrf(
+            client,
             "/account/integration/reauth",
             data={
                 "auth_mode": "user_token",
@@ -875,6 +1161,7 @@ async def test_reauth_submit_replaces_invalid_user_token_connection(tmp_path: Pa
                 "vm_login": "doctor",
                 "vm_password": "new-password-123",
             },
+            page_path="/account",
         )
 
     assert response.status_code == 200

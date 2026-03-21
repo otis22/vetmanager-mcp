@@ -110,6 +110,20 @@ def _extract_user_token(payload: object) -> str | None:
     return None
 
 
+def _safe_error_detail(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        return ""
+    detail = payload.get("detail")
+    title = payload.get("title")
+    if isinstance(detail, str) and detail.strip():
+        return detail.strip()
+    if isinstance(title, str) and title.strip():
+        return title.strip()
+    return ""
+
+
 async def exchange_user_token(
     domain: str,
     *,
@@ -147,15 +161,27 @@ async def exchange_user_token(
 
     if response.status_code == 401:
         raise AuthError("Invalid Vetmanager login, password or API key.", status_code=401)
+    if response.status_code == 403:
+        raise AuthError(
+            "Vetmanager login/password authorization is disabled or unavailable for this clinic. Use API key or verify clinic settings.",
+            status_code=403,
+        )
     if response.status_code >= 400:
+        detail = _safe_error_detail(response)
         raise VetmanagerError(
-            f"Vetmanager authorization failed with status {response.status_code}.",
+            (
+                f"Vetmanager authorization failed with status {response.status_code}."
+                if not detail
+                else f"Vetmanager authorization failed with status {response.status_code}. {detail}"
+            ),
             status_code=response.status_code,
         )
 
     token = _extract_user_token(response.json().get("data"))
     if not token:
-        raise VetmanagerError("Vetmanager authorization response did not contain a user token.")
+        raise VetmanagerError(
+            "Vetmanager authorization response did not contain a user token. Use API key or verify clinic settings."
+        )
     return resolved_host, token
 
 

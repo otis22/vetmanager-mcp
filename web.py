@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import timezone
 from html import escape
 import os
+from secrets import token_urlsafe
 from urllib.parse import parse_qs
 
 from fastmcp import FastMCP
@@ -12,7 +13,7 @@ from sqlalchemy import func, select
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
 
-from exceptions import AuthError, HostResolutionError, VetmanagerError
+from exceptions import AuthError, HostResolutionError, RateLimitError, VetmanagerError
 from landing_page import render_landing_page
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
 from storage import get_session_factory
@@ -38,6 +39,89 @@ from web_auth import (
     set_account_session_cookie,
 )
 from token_cleanup import sync_expired_tokens
+from web_auth import normalize_account_email
+from web_security import (
+    CSRF_FIELD_NAME,
+    CSRF_COOKIE_NAME,
+    check_rate_limit,
+    clear_rate_limit_key,
+    create_csrf_token,
+    ensure_csrf_cookie,
+    get_rate_limit_config,
+    get_request_ip,
+    record_rate_limit_hit,
+    read_csrf_token,
+    validate_csrf_request,
+)
+
+
+def _hidden_csrf_input(csrf_token: str) -> str:
+    return f'<input type="hidden" name="{CSRF_FIELD_NAME}" value="{escape(csrf_token)}">'
+
+
+def _resolve_csrf_token(request: Request) -> str:
+    return read_csrf_token(request.cookies.get(CSRF_COOKIE_NAME)) or create_csrf_token()
+
+
+def _generate_csp_nonce() -> str:
+    return token_urlsafe(16)
+
+
+def _apply_security_headers(
+    response: HTMLResponse | RedirectResponse,
+    *,
+    script_nonce: str | None = None,
+) -> None:
+    script_src = "script-src 'self'"
+    if script_nonce:
+        script_src += f" 'nonce-{script_nonce}'"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        f"{script_src}; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'"
+    )
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    if os.environ.get("WEB_ENABLE_HSTS", "").strip().lower() in {"1", "true", "yes", "on"}:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+
+def _html_response(
+    request: Request,
+    content: str,
+    *,
+    status_code: int = 200,
+    with_csrf_cookie: bool = False,
+    csrf_token: str | None = None,
+    script_nonce: str | None = None,
+) -> HTMLResponse:
+    response = HTMLResponse(content, status_code=status_code)
+    _apply_security_headers(response, script_nonce=script_nonce)
+    if with_csrf_cookie:
+        ensure_csrf_cookie(
+            response,
+            existing_token=csrf_token or request.cookies.get(CSRF_COOKIE_NAME),
+        )
+    return response
+
+
+def _redirect_response(
+    request: Request,
+    *,
+    url: str,
+    status_code: int = 303,
+    with_csrf_cookie: bool = False,
+) -> RedirectResponse:
+    response = RedirectResponse(url=url, status_code=status_code)
+    _apply_security_headers(response)
+    if with_csrf_cookie:
+        ensure_csrf_cookie(response, existing_token=request.cookies.get(CSRF_COOKIE_NAME))
+    return response
 
 
 def _render_shell(title: str, body: str) -> str:
@@ -140,6 +224,79 @@ def _render_shell(title: str, body: str) -> str:
       background: rgba(47, 109, 115, 0.12);
       color: #1f4b50;
     }}
+    .panel-card {{
+      margin-top: 18px;
+      padding: 18px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.68);
+    }}
+    .hint {{
+      font-size: 0.95rem;
+      color: var(--muted);
+    }}
+    .choice-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }}
+    .choice-option {{
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 14px;
+      background: rgba(255,255,255,0.72);
+    }}
+    .choice-option input {{
+      width: auto;
+      margin-right: 8px;
+    }}
+    .choice-option strong {{
+      display: block;
+      color: var(--ink);
+      margin-bottom: 6px;
+    }}
+    .choice-option p {{
+      margin: 6px 0 0;
+      font-size: 0.95rem;
+    }}
+    .field-panel[hidden] {{
+      display: none;
+    }}
+    .token-flash {{
+      margin-top: 20px;
+      padding: 18px;
+      border-radius: 24px;
+      border: 1px solid rgba(47, 109, 115, 0.22);
+      background: linear-gradient(180deg, rgba(47, 109, 115, 0.18), rgba(255,255,255,0.86));
+      scroll-margin-top: 24px;
+    }}
+    .copy-row {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: start;
+      margin-top: 12px;
+    }}
+    .copy-input {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px 14px;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 0.92rem;
+      background: rgba(255,255,255,0.92);
+      color: var(--ink);
+    }}
+    .copy-button {{
+      white-space: nowrap;
+    }}
+    .copy-status {{
+      min-height: 1.2em;
+      margin-top: 10px;
+      font-size: 0.92rem;
+      color: #1f4b50;
+    }}
     .grid {{
       display: grid;
       gap: 14px;
@@ -156,6 +313,10 @@ def _render_shell(title: str, body: str) -> str:
       display: block;
       font-size: 1.8rem;
       color: var(--ink);
+    }}
+    .section-note {{
+      margin-top: 8px;
+      color: var(--muted);
     }}
     code {{
       font-family: "JetBrains Mono", Consolas, monospace;
@@ -187,6 +348,8 @@ def _render_shell(title: str, body: str) -> str:
     }}
     @media (max-width: 780px) {{
       .grid {{ grid-template-columns: 1fr; }}
+      .choice-grid {{ grid-template-columns: 1fr; }}
+      .copy-row {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -196,7 +359,7 @@ def _render_shell(title: str, body: str) -> str:
 </html>"""
 
 
-def _render_register_page(*, error: str | None = None, email: str = "") -> str:
+def _render_register_page(*, csrf_token: str, error: str | None = None, email: str = "") -> str:
     error_html = f'<div class="error">{escape(error)}</div>' if error else ""
     return _render_shell(
         "Регистрация аккаунта",
@@ -205,6 +368,7 @@ def _render_register_page(*, error: str | None = None, email: str = "") -> str:
         <p>Создайте account сервиса, который позже получит Vetmanager integration и Bearer-токены.</p>
         {error_html}
         <form method="post" action="/register">
+          {_hidden_csrf_input(csrf_token)}
           <label>Email
             <input type="email" name="email" autocomplete="email" value="{escape(email)}" required>
           </label>
@@ -221,7 +385,7 @@ def _render_register_page(*, error: str | None = None, email: str = "") -> str:
     )
 
 
-def _render_login_page(*, error: str | None = None, email: str = "") -> str:
+def _render_login_page(*, csrf_token: str, error: str | None = None, email: str = "") -> str:
     error_html = f'<div class="error">{escape(error)}</div>' if error else ""
     return _render_shell(
         "Вход в аккаунт",
@@ -230,6 +394,7 @@ def _render_login_page(*, error: str | None = None, email: str = "") -> str:
         <p>Войдите в account сервиса, чтобы управлять интеграцией с Vetmanager и Bearer-токенами.</p>
         {error_html}
         <form method="post" action="/login">
+          {_hidden_csrf_input(csrf_token)}
           <label>Email
             <input type="email" name="email" autocomplete="email" value="{escape(email)}" required>
           </label>
@@ -249,6 +414,8 @@ def _render_login_page(*, error: str | None = None, email: str = "") -> str:
 def _render_account_page(
     account: Account,
     *,
+    csrf_token: str,
+    script_nonce: str,
     active_connection_count: int,
     bearer_token_count: int,
     active_connection: VetmanagerConnection | None,
@@ -269,6 +436,31 @@ def _render_account_page(
     selected_auth_mode = form_auth_mode or (
         active_connection.auth_mode if active_connection else VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
     )
+    domain_value = form_domain or (active_connection.domain if active_connection else "")
+    show_domain_api_key_panel = selected_auth_mode == VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
+    show_user_token_panel = selected_auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN
+    domain_input_attrs = 'data-panel-input="true"'
+    api_key_input_attrs = 'data-panel-input="true"'
+    login_input_attrs = 'data-panel-input="true" data-required-when-active="true"'
+    password_input_attrs = 'data-panel-input="true" data-required-when-active="true"'
+    if show_domain_api_key_panel:
+        domain_input_attrs += " required"
+        api_key_input_attrs += " required"
+        login_input_attrs += " disabled"
+        password_input_attrs += " disabled"
+    else:
+        domain_input_attrs += " disabled"
+        api_key_input_attrs += " disabled"
+        login_input_attrs += " required"
+        password_input_attrs += " required"
+    onboarding_html = ""
+    if active_connection is None:
+        onboarding_html = """
+        <div class="panel-card">
+          <strong>Сначала подключите Vetmanager</strong>
+          <p>После регистрации следующий шаг один: выбрать способ авторизации, подключить клинику и только потом выпускать Bearer-токены для AI-ассистента.</p>
+        </div>
+        """
     active_connection_html = """
         <p>Активная Vetmanager integration ещё не настроена. Следующий Bearer-токен этого account пока не сможет резолвить clinic credentials.</p>
     """
@@ -308,11 +500,15 @@ def _render_account_page(
     issued_token_html = ""
     if issued_raw_token:
         issued_token_html = f"""
-        <div class="success">
+        <section class="token-flash" id="issued-token-panel">
           <strong>Новый Bearer token</strong>
           <p>Скопируйте его сейчас. После этого экран больше не сможет показать raw token повторно.</p>
-          <pre><code>{escape(issued_raw_token)}</code></pre>
-        </div>
+          <div class="copy-row">
+            <input class="copy-input" id="issued-token-value" type="text" readonly value="{escape(issued_raw_token)}">
+            <button class="copy-button" id="issued-token-copy-button" type="button" data-copy-target="issued-token-value">Скопировать токен</button>
+          </div>
+          <div class="copy-status" id="issued-token-copy-status" aria-live="polite"></div>
+        </section>
         """
     token_disabled = "disabled" if active_connection is None or integration_health_status != INTEGRATION_HEALTH_ACTIVE else ""
     token_note = (
@@ -332,6 +528,7 @@ def _render_account_page(
             if str(token["status"]) == "active":
                 action_html = (
                     f'<form method="post" action="/account/tokens/{token["id"]}/revoke">'
+                    f'{_hidden_csrf_input(csrf_token)}'
                     '<button type="submit">Revoke</button>'
                     "</form>"
                 )
@@ -358,7 +555,9 @@ def _render_account_page(
         "Кабинет аккаунта",
         f"""
         <h1>Личный кабинет</h1>
-        <p>Вы вошли как <strong>{escape(account.email)}</strong>. Bearer-only runtime уже активен, а следующие шаги web-контура добавят настройку Vetmanager integration и выпуск токенов прямо из кабинета.</p>
+        <p>Вы вошли как <strong>{escape(account.email)}</strong>. Здесь вы подключаете Vetmanager клиники, проверяете статус интеграции и выпускаете Bearer-токены для работы AI-ассистента.</p>
+        {issued_token_html}
+        {onboarding_html}
         <div class="metric">
           <span>Privacy и auth transparency</span>
           <p>Сервис не сохраняет бизнес-данные Vetmanager для постоянного хранения. Хранятся только технические данные интеграции и service bearer metadata, необходимые для авторизации и работы MCP runtime.</p>
@@ -382,37 +581,65 @@ def _render_account_page(
         {error_html}
         {success_html}
         {active_connection_html}
-        <form method="post" action="/account/integration">
-          <label>Auth mode
-            <select name="auth_mode">
-              <option value="{VETMANAGER_AUTH_MODE_DOMAIN_API_KEY}" {"selected" if selected_auth_mode == VETMANAGER_AUTH_MODE_DOMAIN_API_KEY else ""}>domain + rest_api_key</option>
-              <option value="{VETMANAGER_AUTH_MODE_USER_TOKEN}" {"selected" if selected_auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN else ""}>user token (Auth #3 runtime)</option>
-            </select>
-          </label>
-          <label>Clinic domain
-            <input type="text" name="domain" value="{escape(form_domain or (active_connection.domain if active_connection else ''))}" placeholder="myclinic" required>
-          </label>
-          <label>Vetmanager REST API key
-            <input type="password" name="api_key" autocomplete="off" placeholder="API key">
-          </label>
-          <label>Vetmanager login
-            <input type="text" name="vm_login" value="{escape(form_vm_login)}" autocomplete="username" placeholder="user login">
-          </label>
-          <label>Vetmanager password
-            <input type="password" name="vm_password" autocomplete="current-password" placeholder="password">
-          </label>
-          <p>Для режима <code>user_token</code> сервис использует login и password только для получения нового user token. Эти данные не сохраняются в storage, логи и audit trail.</p>
+        <form method="post" action="/account/integration" data-auth-wizard="true">
+          {_hidden_csrf_input(csrf_token)}
+          <div class="panel-card">
+            <strong>Выберите способ авторизации Vetmanager</strong>
+            <p class="section-note">Сначала выберите удобный способ подключения. Мы покажем только нужные поля для следующего шага.</p>
+            <div class="choice-grid">
+              <label class="choice-option" id="auth-mode-domain-api-key">
+                <span>
+                  <input type="radio" name="auth_mode" value="{VETMANAGER_AUTH_MODE_DOMAIN_API_KEY}" {"checked" if show_domain_api_key_panel else ""}>
+                  <strong>Подключить по API key</strong>
+                </span>
+                <p>Подходит, если у вас уже есть рабочий Vetmanager REST API key и нужно быстро подключить клинику.</p>
+              </label>
+              <label class="choice-option" id="auth-mode-user-token">
+                <span>
+                  <input type="radio" name="auth_mode" value="{VETMANAGER_AUTH_MODE_USER_TOKEN}" {"checked" if show_user_token_panel else ""}>
+                  <strong>Подключить по логину и паролю</strong>
+                </span>
+                <p>Используйте этот вариант, если сервис должен сам получить user token через login/password и дальше хранить только токен.</p>
+              </label>
+            </div>
+          </div>
+          <div class="panel-card field-panel" data-mode-panel="{VETMANAGER_AUTH_MODE_DOMAIN_API_KEY}" {"hidden" if not show_domain_api_key_panel else ""}>
+            <strong>Шаг 2. Данные клиники для API key</strong>
+            <label>Clinic domain
+              <input type="text" name="domain" value="{escape(domain_value)}" placeholder="myclinic" {domain_input_attrs}>
+            </label>
+            <label>Vetmanager REST API key
+              <input type="password" name="api_key" autocomplete="off" placeholder="API key" {api_key_input_attrs}>
+            </label>
+            <p class="hint">Этот вариант не требует логин и пароль пользователя Vetmanager. Достаточно домена клиники и REST API key.</p>
+          </div>
+          <div class="panel-card field-panel" data-mode-panel="{VETMANAGER_AUTH_MODE_USER_TOKEN}" {"hidden" if not show_user_token_panel else ""}>
+            <strong>Шаг 2. Данные клиники для логина и пароля</strong>
+            <label>Clinic domain
+              <input type="text" name="domain" value="{escape(domain_value)}" placeholder="myclinic" {'' if show_user_token_panel else 'disabled'} data-panel-input="true" {'required' if show_user_token_panel else ''}>
+            </label>
+            <label>Vetmanager REST API key
+              <input type="password" name="api_key" autocomplete="off" placeholder="API key" {'' if show_user_token_panel else 'disabled'} data-panel-input="true" {'required' if show_user_token_panel else ''}>
+            </label>
+            <label>Vetmanager login
+              <input type="text" name="vm_login" value="{escape(form_vm_login)}" autocomplete="username" placeholder="user login" {login_input_attrs}>
+            </label>
+            <label>Vetmanager password
+              <input type="password" name="vm_password" autocomplete="current-password" placeholder="password" {password_input_attrs}>
+            </label>
+            <p class="hint">Для этого режима сервис использует логин и пароль только для получения нового user token. Эти данные не сохраняются в storage, логи и audit trail.</p>
+          </div>
           <div class="actions">
-            <button type="submit">Сохранить интеграцию</button>
+            <button type="submit">Сохранить подключение</button>
             <button type="submit" formaction="/account/integration/reauth">Переавторизоваться и обновить токен</button>
           </div>
         </form>
         <h2>Bearer token issuance</h2>
         {token_error_html}
         {token_success_html}
-        {issued_token_html}
         {token_note}
         <form method="post" action="/account/tokens">
+          {_hidden_csrf_input(csrf_token)}
           <label>Token name
             <input type="text" name="token_name" value="{escape(token_name)}" placeholder="Cursor production" required {token_disabled}>
           </label>
@@ -426,11 +653,59 @@ def _render_account_page(
         {token_list_html}
         <p>Текущий MCP runtime использует только <code>Authorization: Bearer &lt;service_token&gt;</code>. Этот web account уже стал источником регистрации, интеграции и выпуска токенов; следующим шагом здесь появится полноценный token list UI.</p>
         <form method="post" action="/logout">
+          {_hidden_csrf_input(csrf_token)}
           <button type="submit">Выйти</button>
         </form>
         <div class="actions">
           <a class="link" href="/">На лендинг</a>
         </div>
+        <script nonce="{escape(script_nonce)}">
+          (() => {{
+            const wizard = document.querySelector('[data-auth-wizard="true"]');
+            if (wizard) {{
+              const radios = Array.from(wizard.querySelectorAll('input[name="auth_mode"]'));
+              const panels = Array.from(wizard.querySelectorAll('[data-mode-panel]'));
+              const updatePanels = () => {{
+                const selected = radios.find((radio) => radio.checked)?.value || '{VETMANAGER_AUTH_MODE_DOMAIN_API_KEY}';
+                for (const panel of panels) {{
+                  const isActive = panel.getAttribute('data-mode-panel') === selected;
+                  panel.hidden = !isActive;
+                  const inputs = panel.querySelectorAll('[data-panel-input="true"]');
+                  for (const input of inputs) {{
+                    const shouldRequire = input.hasAttribute('data-required-when-active') || input.getAttribute('name') === 'domain' || input.getAttribute('name') === 'api_key';
+                    input.disabled = !isActive;
+                    input.required = isActive && shouldRequire;
+                  }}
+                }}
+              }};
+              for (const radio of radios) {{
+                radio.addEventListener('change', updatePanels);
+              }}
+              updatePanels();
+            }}
+
+            const copyButton = document.getElementById('issued-token-copy-button');
+            const copyInput = document.getElementById('issued-token-value');
+            const copyStatus = document.getElementById('issued-token-copy-status');
+            if (copyButton && copyInput) {{
+              copyButton.addEventListener('click', async () => {{
+                try {{
+                  await navigator.clipboard.writeText(copyInput.value);
+                  if (copyStatus) copyStatus.textContent = 'Токен скопирован в буфер обмена.';
+                }} catch (_error) {{
+                  copyInput.focus();
+                  copyInput.select();
+                  if (copyStatus) copyStatus.textContent = 'Автокопирование недоступно. Токен выделен, его можно скопировать вручную.';
+                }}
+              }});
+            }}
+
+            const issuedPanel = document.getElementById('issued-token-panel');
+            if (issuedPanel) {{
+              issuedPanel.scrollIntoView({{ behavior: 'auto', block: 'start' }});
+            }}
+          }})();
+        </script>
         """,
     )
 
@@ -532,6 +807,7 @@ async def _load_account_dashboard(
 
 
 async def _render_account_dashboard_response(
+    request: Request,
     account_id: int,
     *,
     status_code: int = 200,
@@ -546,6 +822,8 @@ async def _render_account_dashboard_response(
     token_name: str = "",
     token_expiry_days: str = "",
 ) -> HTMLResponse | RedirectResponse:
+    csrf_token = _resolve_csrf_token(request)
+    script_nonce = _generate_csp_nonce()
     (
         account,
         active_connection_count,
@@ -556,12 +834,15 @@ async def _render_account_dashboard_response(
         bearer_tokens,
     ) = await _load_account_dashboard(account_id)
     if account is None:
-        response = RedirectResponse(url="/login", status_code=303)
+        response = _redirect_response(request, url="/login", status_code=303)
         clear_account_session_cookie(response)
         return response
-    return HTMLResponse(
+    return _html_response(
+        request,
         _render_account_page(
             account,
+            csrf_token=csrf_token,
+            script_nonce=script_nonce,
             active_connection_count=active_connection_count,
             bearer_token_count=bearer_token_count,
             active_connection=active_connection,
@@ -580,6 +861,9 @@ async def _render_account_dashboard_response(
             token_expiry_days=token_expiry_days,
         ),
         status_code=status_code,
+        with_csrf_cookie=True,
+        csrf_token=csrf_token,
+        script_nonce=script_nonce,
     )
 
 
@@ -588,15 +872,65 @@ def register_web_routes(mcp: FastMCP) -> None:
 
     @mcp.custom_route("/", methods=["GET"], include_in_schema=False)
     async def landing_page(request: Request) -> HTMLResponse:
-        return HTMLResponse(render_landing_page())
+        return _html_response(request, render_landing_page())
 
     @mcp.custom_route("/register", methods=["GET"], include_in_schema=False)
     async def register_page(request: Request) -> HTMLResponse:
-        return HTMLResponse(_render_register_page())
+        csrf_token = _resolve_csrf_token(request)
+        return _html_response(
+            request,
+            _render_register_page(csrf_token=csrf_token),
+            with_csrf_cookie=True,
+            csrf_token=csrf_token,
+        )
 
     @mcp.custom_route("/register", methods=["POST"], include_in_schema=False)
     async def register_submit(request: Request) -> HTMLResponse | RedirectResponse:
         form = await _read_form(request)
+        try:
+            validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
+        except ValueError as exc:
+            csrf_token = _resolve_csrf_token(request)
+            return _html_response(
+                request,
+                _render_register_page(
+                    csrf_token=csrf_token,
+                    error=str(exc),
+                    email=form.get("email", ""),
+                ),
+                status_code=403,
+                with_csrf_cookie=True,
+                csrf_token=csrf_token,
+            )
+
+        register_limit, register_window = get_rate_limit_config(
+            "WEB_REGISTER_RATE_LIMIT",
+            default_attempts=10,
+            default_window_seconds=60,
+        )
+        register_key = get_request_ip(request)
+        try:
+            check_rate_limit(
+                "register",
+                register_key,
+                limit=register_limit,
+                window_seconds=register_window,
+            )
+        except RateLimitError:
+            csrf_token = _resolve_csrf_token(request)
+            return _html_response(
+                request,
+                _render_register_page(
+                    csrf_token=csrf_token,
+                    error="Too many registration attempts.",
+                    email=form.get("email", ""),
+                ),
+                status_code=429,
+                with_csrf_cookie=True,
+                csrf_token=csrf_token,
+            )
+
+        record_rate_limit_hit("register", register_key, window_seconds=register_window)
         async with get_session_factory()() as session:
             try:
                 account = await register_account(
@@ -605,22 +939,79 @@ def register_web_routes(mcp: FastMCP) -> None:
                     password=form.get("password", ""),
                 )
             except ValueError as exc:
-                return HTMLResponse(
-                    _render_register_page(error=str(exc), email=form.get("email", "")),
+                csrf_token = _resolve_csrf_token(request)
+                return _html_response(
+                    request,
+                    _render_register_page(
+                        csrf_token=csrf_token,
+                        error=str(exc),
+                        email=form.get("email", ""),
+                    ),
                     status_code=400,
+                    with_csrf_cookie=True,
+                    csrf_token=csrf_token,
                 )
 
-        response = RedirectResponse(url="/account", status_code=303)
+        response = _redirect_response(request, url="/account", status_code=303)
         set_account_session_cookie(response, account.id)
         return response
 
     @mcp.custom_route("/login", methods=["GET"], include_in_schema=False)
     async def login_page(request: Request) -> HTMLResponse:
-        return HTMLResponse(_render_login_page())
+        csrf_token = _resolve_csrf_token(request)
+        return _html_response(
+            request,
+            _render_login_page(csrf_token=csrf_token),
+            with_csrf_cookie=True,
+            csrf_token=csrf_token,
+        )
 
     @mcp.custom_route("/login", methods=["POST"], include_in_schema=False)
     async def login_submit(request: Request) -> HTMLResponse | RedirectResponse:
         form = await _read_form(request)
+        try:
+            validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
+        except ValueError as exc:
+            csrf_token = _resolve_csrf_token(request)
+            return _html_response(
+                request,
+                _render_login_page(
+                    csrf_token=csrf_token,
+                    error=str(exc),
+                    email=form.get("email", ""),
+                ),
+                status_code=403,
+                with_csrf_cookie=True,
+                csrf_token=csrf_token,
+            )
+
+        login_limit, login_window = get_rate_limit_config(
+            "WEB_LOGIN_RATE_LIMIT",
+            default_attempts=5,
+            default_window_seconds=60,
+        )
+        login_key = f"{get_request_ip(request)}:{normalize_account_email(form.get('email', ''))}"
+        try:
+            check_rate_limit(
+                "login",
+                login_key,
+                limit=login_limit,
+                window_seconds=login_window,
+            )
+        except RateLimitError:
+            csrf_token = _resolve_csrf_token(request)
+            return _html_response(
+                request,
+                _render_login_page(
+                    csrf_token=csrf_token,
+                    error="Too many login attempts.",
+                    email=form.get("email", ""),
+                ),
+                status_code=429,
+                with_csrf_cookie=True,
+                csrf_token=csrf_token,
+            )
+
         async with get_session_factory()() as session:
             account = await authenticate_account(
                 session,
@@ -629,21 +1020,43 @@ def register_web_routes(mcp: FastMCP) -> None:
             )
 
         if account is None:
-            return HTMLResponse(
+            csrf_token = _resolve_csrf_token(request)
+            record_rate_limit_hit("login", login_key, window_seconds=login_window)
+            return _html_response(
+                request,
                 _render_login_page(
+                    csrf_token=csrf_token,
                     error="Invalid email or password.",
                     email=form.get("email", ""),
                 ),
                 status_code=401,
+                with_csrf_cookie=True,
+                csrf_token=csrf_token,
             )
 
-        response = RedirectResponse(url="/account", status_code=303)
+        clear_rate_limit_key("login", login_key)
+        response = _redirect_response(request, url="/account", status_code=303)
         set_account_session_cookie(response, account.id)
         return response
 
     @mcp.custom_route("/logout", methods=["POST"], include_in_schema=False)
-    async def logout_submit(request: Request) -> RedirectResponse:
-        response = RedirectResponse(url="/", status_code=303)
+    async def logout_submit(request: Request) -> HTMLResponse | RedirectResponse:
+        form = await _read_form(request)
+        try:
+            validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
+        except ValueError as exc:
+            csrf_token = _resolve_csrf_token(request)
+            return _html_response(
+                request,
+                _render_login_page(
+                    csrf_token=csrf_token,
+                    error=str(exc),
+                ),
+                status_code=403,
+                with_csrf_cookie=True,
+                csrf_token=csrf_token,
+            )
+        response = _redirect_response(request, url="/", status_code=303)
         clear_account_session_cookie(response)
         return response
 
@@ -651,20 +1064,29 @@ def register_web_routes(mcp: FastMCP) -> None:
     async def account_page(request: Request) -> HTMLResponse | RedirectResponse:
         account_id = _get_account_id_from_request(request)
         if account_id is None:
-            response = RedirectResponse(url="/login", status_code=303)
+            response = _redirect_response(request, url="/login", status_code=303)
             clear_account_session_cookie(response)
             return response
-        return await _render_account_dashboard_response(account_id)
+        return await _render_account_dashboard_response(request, account_id)
 
     @mcp.custom_route("/account/integration", methods=["POST"], include_in_schema=False)
     async def account_integration_submit(request: Request) -> HTMLResponse | RedirectResponse:
         account_id = _get_account_id_from_request(request)
         if account_id is None:
-            response = RedirectResponse(url="/login", status_code=303)
+            response = _redirect_response(request, url="/login", status_code=303)
             clear_account_session_cookie(response)
             return response
 
         form = await _read_form(request)
+        try:
+            validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
+        except ValueError as exc:
+            return await _render_account_dashboard_response(
+                request,
+                account_id,
+                status_code=403,
+                integration_error=str(exc),
+            )
         auth_mode = form.get("auth_mode", VETMANAGER_AUTH_MODE_DOMAIN_API_KEY).strip()
         domain = form.get("domain", "")
         api_key = form.get("api_key", "")
@@ -693,6 +1115,7 @@ def register_web_routes(mcp: FastMCP) -> None:
                     )
         except (ValueError, AuthError, HostResolutionError, VetmanagerError) as exc:
             return await _render_account_dashboard_response(
+                request,
                 account_id,
                 status_code=400,
                 integration_error=str(exc),
@@ -701,6 +1124,7 @@ def register_web_routes(mcp: FastMCP) -> None:
             )
 
         return await _render_account_dashboard_response(
+            request,
             account_id,
             integration_success="Vetmanager integration saved successfully.",
         )
@@ -709,11 +1133,20 @@ def register_web_routes(mcp: FastMCP) -> None:
     async def account_integration_reauth_submit(request: Request) -> HTMLResponse | RedirectResponse:
         account_id = _get_account_id_from_request(request)
         if account_id is None:
-            response = RedirectResponse(url="/login", status_code=303)
+            response = _redirect_response(request, url="/login", status_code=303)
             clear_account_session_cookie(response)
             return response
 
         form = await _read_form(request)
+        try:
+            validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
+        except ValueError as exc:
+            return await _render_account_dashboard_response(
+                request,
+                account_id,
+                status_code=403,
+                integration_error=str(exc),
+            )
         auth_mode = form.get("auth_mode", VETMANAGER_AUTH_MODE_DOMAIN_API_KEY).strip()
         domain = form.get("domain", "")
         api_key = form.get("api_key", "")
@@ -742,6 +1175,7 @@ def register_web_routes(mcp: FastMCP) -> None:
                     )
         except (ValueError, AuthError, HostResolutionError, VetmanagerError) as exc:
             return await _render_account_dashboard_response(
+                request,
                 account_id,
                 status_code=400,
                 integration_error=str(exc),
@@ -750,6 +1184,7 @@ def register_web_routes(mcp: FastMCP) -> None:
             )
 
         return await _render_account_dashboard_response(
+            request,
             account_id,
             integration_success="Vetmanager integration re-authorized successfully.",
         )
@@ -758,10 +1193,20 @@ def register_web_routes(mcp: FastMCP) -> None:
     async def account_token_submit(request: Request) -> HTMLResponse | RedirectResponse:
         account_id = _get_account_id_from_request(request)
         if account_id is None:
-            response = RedirectResponse(url="/login", status_code=303)
+            response = _redirect_response(request, url="/login", status_code=303)
             clear_account_session_cookie(response)
             return response
 
+        form = await _read_form(request)
+        try:
+            validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
+        except ValueError as exc:
+            return await _render_account_dashboard_response(
+                request,
+                account_id,
+                status_code=403,
+                token_error=str(exc),
+            )
         (
             account,
             active_connection_count,
@@ -772,16 +1217,16 @@ def register_web_routes(mcp: FastMCP) -> None:
             bearer_tokens,
         ) = await _load_account_dashboard(account_id)
         if account is None:
-            response = RedirectResponse(url="/login", status_code=303)
+            response = _redirect_response(request, url="/login", status_code=303)
             clear_account_session_cookie(response)
             return response
 
-        form = await _read_form(request)
         token_name = form.get("token_name", "")
         expiry_raw = form.get("expires_in_days", "").strip()
 
         if active_connection is None or integration_health_status != INTEGRATION_HEALTH_ACTIVE:
             return await _render_account_dashboard_response(
+                request,
                 account_id,
                 status_code=400,
                 token_error=(
@@ -804,6 +1249,7 @@ def register_web_routes(mcp: FastMCP) -> None:
                 )
         except ValueError as exc:
             return await _render_account_dashboard_response(
+                request,
                 account_id,
                 status_code=400,
                 token_error=str(exc),
@@ -812,6 +1258,7 @@ def register_web_routes(mcp: FastMCP) -> None:
             )
 
         return await _render_account_dashboard_response(
+            request,
             account_id,
             token_success="Bearer token issued successfully.",
             issued_raw_token=raw_token,
@@ -821,10 +1268,20 @@ def register_web_routes(mcp: FastMCP) -> None:
     async def account_token_revoke(request: Request) -> HTMLResponse | RedirectResponse:
         account_id = _get_account_id_from_request(request)
         if account_id is None:
-            response = RedirectResponse(url="/login", status_code=303)
+            response = _redirect_response(request, url="/login", status_code=303)
             clear_account_session_cookie(response)
             return response
 
+        form = await _read_form(request)
+        try:
+            validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
+        except ValueError as exc:
+            return await _render_account_dashboard_response(
+                request,
+                account_id,
+                status_code=403,
+                token_error=str(exc),
+            )
         token_id = int(request.path_params["token_id"])
         try:
             async with get_session_factory()() as session:
@@ -835,12 +1292,14 @@ def register_web_routes(mcp: FastMCP) -> None:
                 )
         except ValueError as exc:
             return await _render_account_dashboard_response(
+                request,
                 account_id,
                 status_code=400,
                 token_error=str(exc),
             )
 
         return await _render_account_dashboard_response(
+            request,
             account_id,
             token_success="Bearer token revoked successfully.",
         )

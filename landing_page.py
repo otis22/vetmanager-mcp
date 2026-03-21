@@ -416,20 +416,22 @@ def render_landing_page() -> str:
         </div>
       </div>
       <nav>
-        <a href="#product">Продукт</a>
-        <a href="#flow">Подключение</a>
-        <a href="#runtime">MCP runtime</a>
+        <a href="#product">Возможности</a>
+        <a href="#audience">Для кого</a>
+        <a href="#examples">Примеры</a>
+        <a href="/register">Зарегистрироваться</a>
       </nav>
     </header>
 
     <section class="hero" id="product">
       <div>
-        <p class="eyebrow">Vetmanager x MCP</p>
-        <h2>Один <span>service token</span> вместо ручной прокладки секретов.</h2>
+        <p class="eyebrow">Для ветклиник и врачей</p>
+        <h2>Данные клиники и команды <span>по запросу за секунды</span>.</h2>
         <p class="lede">
-          Vetmanager MCP Service переводит клинику на bearer-only контур:
-          MCP-клиент видит только <code>Authorization: Bearer &lt;service_token&gt;</code>,
-          а домен клиники и Vetmanager API key остаются внутри account-level integration.
+          Сервис для ветврачей, администраторов и руководителей клиник помогает быстрее
+          получать данные из Vetmanager через AI-ассистента: по клиентам, пациентам,
+          приёмам, финансам и складу. Без ручного поиска по разделам и без передачи
+          секретов клиники в каждое подключение.
         </p>
         <p class="mini">
           Сервис не сохраняет бизнес-данные из Vetmanager для постоянного хранения. Он хранит только технические данные интеграции и сервисные bearer-метаданные, необходимые для авторизации и работы MCP runtime.
@@ -438,81 +440,106 @@ def render_landing_page() -> str:
           Если выбран режим авторизации через Vetmanager login/password, логин и пароль Vetmanager не сохраняются: они нужны только для получения user token. При смене пароля в Vetmanager такой token может стать невалидным, и потребуется повторная авторизация.
         </p>
         <div class="cta-row">
-          <a class="cta" href="/register">Создать аккаунт</a>
+          <a class="cta" href="/register">Зарегистрироваться</a>
           <a class="ghost" href="/login">Войти</a>
-          <a class="ghost" href="#runtime">Посмотреть MCP-подключение</a>
+          <a class="ghost" href="#examples">Посмотреть примеры</a>
         </div>
       </div>
       <div class="hero-side">
         <div class="stat">
-          <strong>75</strong>
-          <span>инструментов уже доступны через bearer-authenticated runtime.</span>
+          <strong>Клиенты и пациенты</strong>
+          <span>Быстрый доступ к карточкам, истории и последним обращениям без ручной навигации по системе.</span>
         </div>
         <div class="stat">
-          <strong>20</strong>
-          <span>готовых prompts для администратора, врача, финансового и складского контуров.</span>
+          <strong>Приёмы, финансы, склад</strong>
+          <span>Записи на сегодня, долги клиентов, выручка и остатки доступны через один AI-интерфейс.</span>
         </div>
         <div class="stat">
-          <strong>1</strong>
-          <span>активная Vetmanager integration на account, которую разделяют все токены этого аккаунта.</span>
+          <strong>Безопасное подключение</strong>
+          <span>Интеграция подключается один раз на уровне аккаунта клиники, а доступ выдаётся через service token.</span>
         </div>
       </div>
     </section>
 
     <section class="grid">
       <article class="panel wide">
-        <h3 class="section-title">Что уже умеет сервис</h3>
+        <h3 class="section-title">Что получает клиника</h3>
         <p class="body-copy">
-          Bearer runtime, account-scoped Vetmanager integration, encrypted secret storage,
-          hash-only token storage и tool/prompt слой уже работают как единый контракт.
-          Следующий шаг продукта — вынести это в полноценный web-кабинет.
+          Сервис помогает быстрее отвечать на ежедневные вопросы клиники:
+          кто записан на сегодня, какая история у пациента, есть ли долг у клиента,
+          что осталось на складе и какие сотрудники свободны или загружены.
         </p>
         <ul class="list">
-          <li>Account хранит активное подключение к Vetmanager через <code>domain + rest_api_key</code>.</li>
-          <li>Для user-token режима сервис получает token по login/password, но не сохраняет сами login/password.</li>
-          <li>Bearer-токены живут отдельно, имеют статус, срок действия и безопасный <code>token_prefix</code>.</li>
-          <li>Tools не принимают runtime credentials в аргументах и работают только через account context.</li>
+          <li>Врач быстрее получает историю пациента, прививки, назначения и последние приёмы.</li>
+          <li>Администратор быстрее проверяет записи, клиентов, задолженности и расписание.</li>
+          <li>Руководитель быстрее смотрит финансы, склад и общую картину по клинике.</li>
+          <li>Доступ настраивается один раз, а дальше команда работает через AI-ассистента и service token.</li>
         </ul>
       </article>
 
-      <article class="panel tall">
-        <h3 class="section-title">Текущий статус продукта</h3>
+      <article class="panel tall" id="audience">
+        <h3 class="section-title">Для кого сервис</h3>
         <p class="body-copy">
-          Регистрация и login уже доступны. Следом в кабинет добавляются настройка
-          Vetmanager integration и выпуск Bearer-токенов.
+          Сервис сделан для ветврачей, администраторов и руководителей клиник,
+          которым нужен быстрый доступ к данным Vetmanager через AI-ассистента.
         </p>
-        <p class="mini">
-          Иначе говоря: runtime, storage и account auth уже продуктовые, а дальше
-          сюда доезжает integration и token management UI.
-        </p>
+        <ul class="list">
+          <li><strong>Ветврач:</strong> история пациента, прививки, медицинские карты, последние визиты.</li>
+          <li><strong>Администратор:</strong> записи, клиенты, контакты, сотрудники, задолженности.</li>
+          <li><strong>Руководитель:</strong> финансы, склад, выручка, сотрудники и общая операционная картина.</li>
+        </ul>
       </article>
 
       <article class="panel tall" id="flow">
-        <h3 class="section-title">Как выглядит путь подключения</h3>
+        <h3 class="section-title">Как начать работу</h3>
         <div class="steps">
           <div class="step">
             <div>
-              <p class="body-copy"><strong>Создать account</strong><br>Зарегистрировать рабочее пространство клиники в сервисе.</p>
+              <p class="body-copy"><strong>Зарегистрироваться</strong><br>Создать аккаунт клиники и открыть личный кабинет.</p>
             </div>
           </div>
           <div class="step">
             <div>
-              <p class="body-copy"><strong>Подключить Vetmanager</strong><br>Указать <code>domain</code> и либо Vetmanager <code>rest_api_key</code>, либо API key + login/password для выпуска user token.</p>
+              <p class="body-copy"><strong>Подключить Vetmanager</strong><br>Указать домен клиники и настроить безопасную авторизацию один раз.</p>
             </div>
           </div>
           <div class="step">
             <div>
-              <p class="body-copy"><strong>Выпустить service token</strong><br>Использовать Bearer в Cursor или другом MCP-клиенте без прокидывания секретов клиники.</p>
+              <p class="body-copy"><strong>Работать через AI-ассистента</strong><br>Задавать вопросы по клиентам, пациентам, приёмам, финансам и складу в одном интерфейсе.</p>
             </div>
           </div>
         </div>
       </article>
 
-      <article class="panel wide" id="runtime">
-        <h3 class="section-title">Bearer-only MCP runtime</h3>
+      <article class="panel wide" id="examples">
+        <h3 class="section-title">Какие вопросы можно задавать</h3>
         <p class="body-copy">
-          Конфигурация клиента теперь сводится к одному заголовку. MCP endpoint
-          остаётся на <code>/mcp</code>, а доменные credentials больше не живут в локальном клиентском конфиге.
+          Сервис рассчитан на повседневные вопросы, которые обычно требуют
+          нескольких переходов по Vetmanager или помощи администратора.
+        </p>
+        <ul class="list">
+          <li>Покажи записи на сегодня и ближайшие приёмы по врачам.</li>
+          <li>Найди клиента и покажи историю обращений его питомца.</li>
+          <li>Какие пациенты давно не приходили на повторный приём?</li>
+          <li>Покажи должников и суммы задолженности.</li>
+          <li>Какие товары заканчиваются на складе?</li>
+          <li>Покажи выручку и последние оплаты.</li>
+        </ul>
+        <p class="mini">
+          Регистрация вынесена в главный сценарий страницы, потому что именно с
+          неё начинается настройка клиники и безопасного доступа команды.
+        </p>
+      </article>
+
+      <article class="panel wide" id="runtime">
+        <h3 class="section-title">Технический блок</h3>
+        <p class="body-copy">
+          Для технической команды сервис остаётся совместимым с MCP-клиентами и
+          использует bearer-only runtime, но эти детали не нужны для старта работы
+          клиники и спрятаны ниже как вторичный слой страницы.
+        </p>
+        <p class="mini">
+          Формат подключения: <code>Authorization: Bearer &lt;service_token&gt;</code>.
         </p>
         <pre>{
   "mcpServers": {
@@ -524,17 +551,13 @@ def render_landing_page() -> str:
     }
   }
 }</pre>
-        <p class="mini">
-          Runtime errors для missing, invalid, expired и revoked bearer уже реализованы
-          и не раскрывают секреты Vetmanager.
-        </p>
       </article>
     </section>
 
     <footer class="footer">
       <div><strong>Endpoint:</strong> <code>/mcp</code></div>
-      <div><strong>Mode:</strong> bearer-only, account-scoped Vetmanager connection</div>
-      <div><strong>Next:</strong> регистрация, кабинет, выпуск токенов</div>
+      <div><strong>Mode:</strong> безопасное подключение клиники через account-level integration</div>
+      <div><strong>Главный шаг:</strong> <a href="/register">зарегистрировать клинику</a></div>
     </footer>
   </div>
 </body>
