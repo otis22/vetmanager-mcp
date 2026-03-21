@@ -1314,3 +1314,133 @@
 - На предоставленных login/password данных `token_auth.php` возвращает `401`,
   поэтому browser-проверка login/password user-token flow не могла быть
   подтверждена в этом прогоне.
+
+---
+
+## Этап 32: privacy messaging и auth transparency
+
+**Что реализовано:**
+- На лендинге добавлен явный privacy/auth блок:
+  - сервис не сохраняет бизнес-данные Vetmanager для постоянного хранения;
+  - хранятся только технические integration metadata и service bearer metadata;
+  - login/password используются только для получения user token.
+- В кабинете account добавлен отдельный privacy/auth transparency блок с тем же
+  продуктовым контрактом.
+- В форме Vetmanager integration добавлено прямое пояснение, что login/password
+  не сохраняются и используются только для token exchange.
+- В UI зафиксировано явное предупреждение: при смене пароля в Vetmanager
+  сохранённый user token может стать невалидным и потребуется повторная
+  авторизация.
+
+**Что подтверждено проверками:**
+- Добавлены и прошли HTTP tests на landing/account messaging.
+
+---
+
+## Этап 33: token health, token rotation и re-auth UX
+
+**Что реализовано:**
+- Для active Vetmanager integration введён on-demand health status:
+  - `active`
+  - `invalid`
+  - `reauth_required`
+  - `unknown`
+- `/account` теперь делает health-check active connection при рендере dashboard.
+- Для невалидного `user_token` в кабинете показываются:
+  - `reauth_required`
+  - reason message
+  - явный CTA `Переавторизоваться и обновить токен`
+- Добавлен re-auth submit path `/account/integration/reauth`.
+- Выдача новых service bearer tokens теперь блокируется, если active
+  integration отсутствует или её health не `active`.
+
+**Принятая стратегия revalidation:**
+- Для текущего релиза выбран безопасный on-demand health check.
+- Background scheduler или отдельная health history не добавлялись.
+- Это держит модель простой и не требует нового storage state для heartbeat.
+
+**Что подтверждено проверками:**
+- Добавлены тесты на `reauth_required` и замену invalid user-token connection.
+
+---
+
+## Этап 34: hardening login/password и auth lifecycle UX
+
+**Что реализовано:**
+- Web UI для user-token режима больше не требует вручную вставлять raw
+  `user_token`.
+- Вместо этого кабинет принимает:
+  - `domain`
+  - `api_key`
+  - `Vetmanager login`
+  - `Vetmanager password`
+- Backend выполняет `POST /token_auth.php`, извлекает token и сохраняет только
+  `user_token` в encrypted storage.
+- Login/password не сохраняются в `vetmanager_connections.encrypted_credentials`
+  и не отражаются обратно в HTML после submit/error state.
+- Safe error mapping для exchange path:
+  - invalid credentials/API key -> `Invalid Vetmanager login, password or API key.`
+  - network/timeout failures -> safe `VetmanagerError` / `VetmanagerTimeoutError`
+    без отражения исходных credentials.
+
+**Что установлено по contract shape:**
+- Для exchange используется:
+  - `POST <resolved_host>/token_auth.php`
+  - `Content-Type: application/x-www-form-urlencoded`
+  - `Accept: application/json`
+  - `X-REST-API-KEY: <rest api key>`
+  - form-data `login`, `password`
+- Token extraction сделан tolerant к нескольким payload shapes:
+  - `data` как строка
+  - `data.token`
+  - `data.user_token`
+  - `data.api_key`
+  - `data.key`
+
+**Что подтверждено проверками:**
+- Добавлены HTTP tests на успешный exchange flow и safe failure path без утечки
+  `api_key`, login и password.
+- Browser-smoke после UI-изменений подтверждён на локальном `http://127.0.0.1:8000/account`:
+  - privacy/auth transparency block отображается;
+  - форма user-token режима показывает поля `REST API key`, `Vetmanager login`,
+    `Vetmanager password`;
+  - submit на предоставленных `devtr6` credentials возвращает безопасную ошибку
+    `Invalid Vetmanager login, password or API key.` без эха credentials в UI.
+
+---
+
+## Этап 35: security audit и remediation backlog
+
+**Что проверено вручную по коду:**
+- Секреты account auth:
+  - password account хранится как PBKDF2 hash;
+  - signed web session cookie уже использует `HttpOnly`, `Secure` и
+    `SameSite=Strict` defaults.
+- Секреты Vetmanager integration:
+  - `domain_api_key` и `user_token` сохраняются только в encrypted storage;
+  - login/password для user-token flow не сохраняются.
+- Service bearer:
+  - raw bearer показывается только один раз при выпуске;
+  - дальше хранится только hash + safe prefix;
+  - revoke/expired/invalid paths уже закрыты отдельными safe errors и audit logs.
+- Logging / audit:
+  - в inspected коде нет явного `print` / debug logging с credentials;
+  - tests подтверждают, что raw bearer и Vetmanager credentials не попадают в
+    rendered HTML и `details_json` audit trail.
+
+**Findings и приоритет:**
+- `high`: новых blocker-findings в рамках inspected path не выявлено.
+- `medium`: у web forms всё ещё нет отдельного CSRF token layer; текущая
+  защита опирается на signed session cookie и `SameSite=Strict`, но это не
+  полноценная замена CSRF-механизму.
+- `medium`: нет отдельного login/register brute-force limiter для web account
+  endpoints.
+- `low`: не добавлен явный набор HTTP security headers уровня CSP/HSTS/XFO для
+  web UI, так как current scope был сфокусирован на auth secrecy и lifecycle.
+
+**Решение по backlog:**
+- Отдельный remediation этап в roadmap в этом проходе не добавлялся, так как
+  blocker/high findings не найдено, а основной пользовательский auth/privacy
+  контракт уже приведён в соответствие с реализацией.
+- Residual medium/low findings зафиксированы здесь как обязательный input для
+  следующего security hardening iteration.

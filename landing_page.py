@@ -431,6 +431,12 @@ def render_landing_page() -> str:
           MCP-клиент видит только <code>Authorization: Bearer &lt;service_token&gt;</code>,
           а домен клиники и Vetmanager API key остаются внутри account-level integration.
         </p>
+        <p class="mini">
+          Сервис не сохраняет бизнес-данные из Vetmanager для постоянного хранения. Он хранит только технические данные интеграции и сервисные bearer-метаданные, необходимые для авторизации и работы MCP runtime.
+        </p>
+        <p class="mini">
+          Если выбран режим авторизации через Vetmanager login/password, логин и пароль Vetmanager не сохраняются: они нужны только для получения user token. При смене пароля в Vetmanager такой token может стать невалидным, и потребуется повторная авторизация.
+        </p>
         <div class="cta-row">
           <a class="cta" href="/register">Создать аккаунт</a>
           <a class="ghost" href="/login">Войти</a>
@@ -463,6 +469,7 @@ def render_landing_page() -> str:
         </p>
         <ul class="list">
           <li>Account хранит активное подключение к Vetmanager через <code>domain + rest_api_key</code>.</li>
+          <li>Для user-token режима сервис получает token по login/password, но не сохраняет сами login/password.</li>
           <li>Bearer-токены живут отдельно, имеют статус, срок действия и безопасный <code>token_prefix</code>.</li>
           <li>Tools не принимают runtime credentials в аргументах и работают только через account context.</li>
         </ul>
@@ -490,7 +497,7 @@ def render_landing_page() -> str:
           </div>
           <div class="step">
             <div>
-              <p class="body-copy"><strong>Подключить Vetmanager</strong><br>Указать <code>domain</code> и Vetmanager <code>rest_api_key</code> один раз на уровне аккаунта.</p>
+              <p class="body-copy"><strong>Подключить Vetmanager</strong><br>Указать <code>domain</code> и либо Vetmanager <code>rest_api_key</code>, либо API key + login/password для выпуска user token.</p>
             </div>
           </div>
           <div class="step">

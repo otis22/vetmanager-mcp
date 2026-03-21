@@ -4,6 +4,12 @@ MCP-сервер для интеграции [Vetmanager REST API](https://help.
 
 Сервер берёт на себя bearer-аутентификацию сервиса, хранение Vetmanager credentials на уровне service account, динамическое определение URL API (через `billing-api.vetmanager.cloud`) и форматирование данных. Runtime-контур теперь **bearer-only**: MCP-клиент передаёт только `Authorization: Bearer <service_token>`, а активное Vetmanager-подключение определяется через account context.
 
+Privacy / auth boundary:
+- сервис не сохраняет бизнес-данные Vetmanager для постоянного хранения;
+- сервис хранит только технические данные integration и metadata сервисных bearer-токенов;
+- для режима `login/password -> user token` логин и пароль используются только для token exchange и не сохраняются в storage;
+- при смене пароля в Vetmanager сохранённый user token может стать невалидным, и тогда в кабинете потребуется повторная авторизация.
+
 ## Требования
 
 - Docker (с плагином Compose)
@@ -59,7 +65,7 @@ Bearer-токен привязан к account сервиса:
 
 - `service_bearer_token` идентифицирует account;
 - account хранит ровно одно активное `vetmanager_connection`;
-- активное connection сейчас поддерживает auth mode `domain + rest_api_key`;
+- активное connection поддерживает auth mode `domain + rest_api_key` и `login/password + api_key -> user token`;
 - домен и Vetmanager API key хранятся в storage-слое и не передаются в MCP tool arguments.
 
 ### Текущий статус provisioning
@@ -69,6 +75,9 @@ Bearer-токен привязан к account сервиса:
 - доступны лендинг, регистрация account и login/logout;
 - доступна страница `/account`;
 - доступна настройка активной Vetmanager integration через `domain + rest_api_key`;
+- доступна настройка user-token integration через `domain + api_key + login/password -> user token`;
+- логин и пароль Vetmanager не сохраняются и не отображаются повторно после submit;
+- кабинет показывает health активной integration и статус `reauth_required`, если сохранённый user token больше не проходит валидацию;
 - доступен выпуск Bearer-токенов с именем и сроком действия;
 - доступен список токенов со статусом, сроком действия, `last_used_at`, `request_count` и revoke action.
 
@@ -78,6 +87,7 @@ Bearer-токен привязан к account сервиса:
 - шифрование Vetmanager credentials;
 - hash-only хранение bearer-токенов;
 - сервис сохранения Vetmanager connection `domain + rest_api_key`;
+- web exchange `login/password -> user token` c сохранением только полученного user token;
 - web auth для account через email/password и signed cookie session;
 - web-экран сохранения active Vetmanager integration;
 - web-выпуск Bearer-токенов с one-time показом raw значения;

@@ -512,3 +512,48 @@
 - 31.3 Прогнать в браузере сценарий user-token/login-password flow, если он доступен в текущем UI — `done`
 - 31.4 Проверить реальный MCP вызов по выпущенному Bearer-токену после web-настройки — `done`
 - 31.5 Зафиксировать результаты browser E2E в `AssumptionLog.md` и при необходимости обновить `README.md`/workflow — `done`
+
+## Этап 32. Privacy messaging и auth transparency — `done`
+
+Цель: явно и корректно объяснить пользователю, какие данные сервис не хранит, что именно используется в auth flow, и когда требуется повторная авторизация.
+
+- 32.1 Добавить на лендинг явный privacy notice о том, что сервис не сохраняет бизнес-данные из Vetmanager для постоянного хранения — `done`
+- 32.2 Уточнить формулировки на лендинге и в web UI: какие именно технические auth/integration metadata сервис всё же хранит — `done`
+- 32.3 Добавить на экран ввода `login/password` notice о том, что логин и пароль не сохраняются и используются только для получения user token — `done`
+- 32.4 Добавить в UI пояснение, что при смене пароля в Vetmanager полученный токен перестанет работать и потребуется повторная авторизация — `done`
+- 32.5 Обновить `README.md`, PRD и `AssumptionLog.md` по итоговым privacy/auth формулировкам — `done`
+
+## Этап 33. Token health, token rotation и re-auth UX — `done`
+
+Цель: довести пользовательский контур управления токенами до состояния, где видно работоспособность интеграции, можно безопасно переавторизоваться и заменить нерабочие токены.
+
+- 33.1 Спроектировать и зафиксировать модель состояний интеграции и токенов: `active`, `invalid`, `expired`, `revoked`, `reauth_required`, `unknown` — `done`
+- 33.2 Реализовать проверку работоспособности сохранённых Vetmanager credentials/token-based integration — `done`
+- 33.3 Добавить отображение статуса токена/интеграции и причины невалидности в кабинете — `done`
+- 33.4 Доделать UX смены токена или повторной авторизации без пересоздания аккаунта — `done`
+- 33.5 Добавить явный CTA на re-auth для нерабочих токенов и сценариев `password changed` / `token invalidated` — `done`
+- 33.6 Продумать и реализовать безопасную стратегию revalidation: on-demand, background или смешанную — `done`
+- 33.7 Добавить unit/mock/real/browser e2e тесты на invalid token, manual token rotation и повторную авторизацию — `done`
+
+## Этап 34. Hardening login/password и auth lifecycle UX — `done`
+
+Цель: убедиться, что одноразовые credentials не сохраняются и не утекут через логи, ошибки или побочные механизмы UI/runtime.
+
+- 34.1 Провести аудит пути `login/password -> user token` на предмет сохранения login/password в storage, логах, audit trail и debug output — `done`
+- 34.2 Проверить обработку browser autofill, form hints и client-side поведения для полей credentials — `done`
+- 34.3 Уточнить и зафиксировать безопасную обработку ошибок token exchange: invalid credentials, API disabled, rate limit, network failure — `done`
+- 34.4 Добавить безопасные пользовательские сообщения об ошибках без утечки внутренних деталей или секретов — `done`
+- 34.5 Проверить и при необходимости усилить token rotation/re-auth flow для bearer/service token контура — `done`
+- 34.6 Обновить документацию, PRD и `AssumptionLog.md` по итоговому auth lifecycle контракту — `done`
+
+## Этап 35. Security audit и remediation backlog — `done`
+
+Цель: провести целостный аудит безопасности веб-контура, bearer runtime и хранения секретов, а затем зафиксировать отдельный backlog исправлений.
+
+- 35.1 Провести аудит хранения секретов: session secret, encryption key, bearer tokens, Vetmanager credentials, env handling — `done`
+- 35.2 Провести аудит web auth: cookies, CSRF, session fixation, brute-force/rate limiting, logout/session invalidation — `done`
+- 35.3 Провести аудит bearer auth: issuance, display-once semantics, revocation, last-used tracking, invalid-token handling и scope model — `done`
+- 35.4 Провести аудит логирования, exception handling и telemetry на предмет утечки секретов — `done`
+- 35.5 Провести dependency/config audit: production defaults, security headers, debug mode, SQLite/Postgres operational differences — `done`
+- 35.6 Сформировать remediation list с приоритетами `high` / `medium` / `low` и внести его в roadmap отдельными задачами при необходимости — `done`
+- 35.7 Зафиксировать результаты аудита в `AssumptionLog.md` и связанных артефактах — `done`

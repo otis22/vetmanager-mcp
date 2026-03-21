@@ -225,7 +225,44 @@ async def test_account_integration_form_saves_active_vetmanager_connection(tmp_p
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_account_integration_form_saves_user_token_mode(tmp_path: Path, monkeypatch):
+async def test_account_page_shows_privacy_and_reauth_notices(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    async with storage.get_session_factory()() as session:
+        await register_account(
+            session,
+            email="notices@example.com",
+            password="integration-pass-123",
+        )
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await client.post(
+            "/login",
+            data={"email": "notices@example.com", "password": "integration-pass-123"},
+        )
+        response = await client.get("/account")
+
+    assert response.status_code == 200
+    assert "не сохраняет бизнес-данные Vetmanager" in response.text
+    assert "логин и пароль Vetmanager не сохраняются" in response.text
+    assert "при смене пароля в Vetmanager" in response.text
+    assert "Vetmanager login" in response.text
+    assert "Vetmanager password" in response.text
+    assert "Vetmanager user token" not in response.text
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_account_integration_form_exchanges_login_password_into_user_token(tmp_path: Path, monkeypatch):
     engine = await _prepare_web_db(tmp_path, monkeypatch)
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
     async with storage.get_session_factory()() as session:
@@ -237,6 +274,9 @@ async def test_account_integration_form_saves_user_token_mode(tmp_path: Path, mo
 
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-user").mock(
         return_value=httpx.Response(200, json={"data": {"url": "https://clinic-user.vetmanager.cloud"}})
+    )
+    respx.post("https://clinic-user.vetmanager.cloud/token_auth.php").mock(
+        return_value=httpx.Response(200, json={"data": {"token": "user-token-secret"}})
     )
     respx.get("https://clinic-user.vetmanager.cloud/rest/api/user").mock(
         return_value=httpx.Response(200, json={"data": []})
@@ -259,7 +299,9 @@ async def test_account_integration_form_saves_user_token_mode(tmp_path: Path, mo
             data={
                 "auth_mode": "user_token",
                 "domain": "clinic-user",
-                "user_token": "user-token-secret",
+                "api_key": "rest-api-key",
+                "vm_login": "doctor",
+                "vm_password": "doctor-pass-123",
             },
         )
 
@@ -268,6 +310,8 @@ async def test_account_integration_form_saves_user_token_mode(tmp_path: Path, mo
     assert "clinic-user" in response.text
     assert "user_token" in response.text
     assert "user-token-secret" not in response.text
+    assert "rest-api-key" not in response.text
+    assert "doctor-pass-123" not in response.text
 
     async with storage.get_session_factory()() as session:
         stored = await session.get(VetmanagerConnection, 1)
@@ -278,6 +322,8 @@ async def test_account_integration_form_saves_user_token_mode(tmp_path: Path, mo
     assert stored.auth_mode == "user_token"
     assert stored.encrypted_credentials is not None
     assert "user-token-secret" not in stored.encrypted_credentials
+    assert "rest-api-key" not in stored.encrypted_credentials
+    assert "doctor-pass-123" not in stored.encrypted_credentials
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -285,7 +331,7 @@ async def test_account_integration_form_saves_user_token_mode(tmp_path: Path, mo
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_account_integration_form_shows_safe_error_for_invalid_user_token(tmp_path: Path, monkeypatch):
+async def test_account_integration_form_shows_safe_error_for_failed_login_password_exchange(tmp_path: Path, monkeypatch):
     engine = await _prepare_web_db(tmp_path, monkeypatch)
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
     async with storage.get_session_factory()() as session:
@@ -298,7 +344,7 @@ async def test_account_integration_form_shows_safe_error_for_invalid_user_token(
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-user-bad").mock(
         return_value=httpx.Response(200, json={"data": {"url": "https://clinic-user-bad.vetmanager.cloud"}})
     )
-    respx.get("https://clinic-user-bad.vetmanager.cloud/rest/api/user").mock(
+    respx.post("https://clinic-user-bad.vetmanager.cloud/token_auth.php").mock(
         return_value=httpx.Response(401, json={"error": "unauthorized"})
     )
 
@@ -319,13 +365,17 @@ async def test_account_integration_form_shows_safe_error_for_invalid_user_token(
             data={
                 "auth_mode": "user_token",
                 "domain": "clinic-user-bad",
-                "user_token": "bad-user-token",
+                "api_key": "rest-api-key",
+                "vm_login": "doctor",
+                "vm_password": "bad-password",
             },
         )
 
     assert response.status_code == 400
-    assert "Invalid Vetmanager user token." in response.text
-    assert "bad-user-token" not in response.text
+    assert "Invalid Vetmanager login, password or API key." in response.text
+    assert "rest-api-key" not in response.text
+    assert "doctor" not in response.text
+    assert "bad-password" not in response.text
 
     async with storage.get_session_factory()() as session:
         stored = await session.get(VetmanagerConnection, 1)
@@ -709,6 +759,139 @@ async def test_account_page_marks_expired_token_via_cleanup_sweep(tmp_path: Path
     assert token is not None
     assert token.status == "expired"
     assert [log.event_type for log in logs] == ["token_expired"]
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_account_page_marks_invalid_user_token_connection_as_reauth_required(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+
+    async with storage.get_session_factory()() as session:
+        account = await register_account(
+            session,
+            email="reauth-owner@example.com",
+            password="integration-pass-123",
+        )
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="user_token",
+            status="active",
+            domain="clinic-reauth",
+        )
+        connection.set_credentials(
+            {"domain": "clinic-reauth", "user_token": "stale-user-token"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        session.add(connection)
+        await session.commit()
+
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-reauth").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://clinic-reauth.vetmanager.cloud"}})
+    )
+    respx.get("https://clinic-reauth.vetmanager.cloud/rest/api/user").mock(
+        return_value=httpx.Response(401, json={"error": "unauthorized"})
+    )
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await client.post(
+            "/login",
+            data={"email": "reauth-owner@example.com", "password": "integration-pass-123"},
+        )
+        response = await client.get("/account")
+
+    assert response.status_code == 200
+    assert "reauth_required" in response.text
+    assert "Повторная авторизация требуется" in response.text
+    assert "Переавторизоваться и обновить токен" in response.text
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_reauth_submit_replaces_invalid_user_token_connection(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+
+    async with storage.get_session_factory()() as session:
+        account = await register_account(
+            session,
+            email="reauth-submit@example.com",
+            password="integration-pass-123",
+        )
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="user_token",
+            status="active",
+            domain="clinic-rotate",
+        )
+        connection.set_credentials(
+            {"domain": "clinic-rotate", "user_token": "stale-user-token"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        session.add(connection)
+        await session.commit()
+
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-rotate").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://clinic-rotate.vetmanager.cloud"}})
+    )
+    respx.post("https://clinic-rotate.vetmanager.cloud/token_auth.php").mock(
+        return_value=httpx.Response(200, json={"data": {"token": "fresh-user-token"}})
+    )
+    respx.get("https://clinic-rotate.vetmanager.cloud/rest/api/user").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await client.post(
+            "/login",
+            data={"email": "reauth-submit@example.com", "password": "integration-pass-123"},
+        )
+        response = await client.post(
+            "/account/integration/reauth",
+            data={
+                "auth_mode": "user_token",
+                "domain": "clinic-rotate",
+                "api_key": "rest-api-key",
+                "vm_login": "doctor",
+                "vm_password": "new-password-123",
+            },
+        )
+
+    assert response.status_code == 200
+    assert "Vetmanager integration re-authorized successfully." in response.text
+    assert "fresh-user-token" not in response.text
+    assert "new-password-123" not in response.text
+
+    async with storage.get_session_factory()() as session:
+        connections = (
+            await session.execute(
+                select(VetmanagerConnection).order_by(VetmanagerConnection.id.asc())
+            )
+        ).scalars().all()
+
+    assert len(connections) == 2
+    assert connections[0].status == "disabled"
+    assert connections[1].status == "active"
 
     await engine.dispose()
     storage.reset_storage_state()

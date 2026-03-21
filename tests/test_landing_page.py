@@ -19,3 +19,5 @@ async def test_root_landing_page_renders_product_message():
     assert "Vetmanager MCP Service" in response.text
     assert "Authorization: Bearer" in response.text
     assert "/mcp" in response.text
+    assert "не сохраняет бизнес-данные из Vetmanager" in response.text
+    assert "логин и пароль Vetmanager не сохраняются" in response.text
