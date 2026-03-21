@@ -360,3 +360,100 @@
 - 19.2 Реализовать `send_message_to_all`, `send_message_to_users`, `get_message_reports`, `send_message_to_roles` в `tools/operations.py` — `done`
 - 19.3 Добавить mock/tool-level тесты и безопасный real smoke на `get_message_reports` — `done`
 - 19.4 Обновить descriptions, `README.md` и `AssumptionLog.md` под новый контракт — `done`
+
+---
+
+## Этап 20. Bearer-only архитектура и артефакты (после Этапа 19) — `done`
+
+Цель: спроектировать следующий этап продукта, в котором MCP-сервер использует только `Authorization: Bearer <service_token>`, а выбор и хранение Vetmanager-авторизации переносятся в аккаунт сервиса.
+
+- 20.1 Создать PRD этапа 20 для bearer-only модели аккаунта и интеграции с Vetmanager — `done`
+- 20.2 Обновить `artifacts/prd-vetmanager-mcp-ru.md` и `artifacts/technical-requirements-vetmanager-mcp-ru.md` под bearer-only направление — `done`
+- 20.3 Зафиксировать доменную модель: `account`, `vetmanager_connection`, `service_bearer_token`, `token_usage_stats` / `token_usage_log` — `done`
+- 20.4 Зафиксировать правило: Bearer-токены привязываются к аккаунту, а аккаунт хранит ровно один активный способ авторизации в Vetmanager — `done`
+- 20.5 Зафиксировать правило: dual-mode не поддерживается; текущий headers-only runtime-контракт подлежит замене на bearer-only — `done`
+- 20.6 Обновить `AssumptionLog.md` — `done`
+
+## Этап 21. Storage и security foundation для Bearer-сервиса (после Этапа 20) — `in_progress`
+
+Цель: подготовить инфраструктурную основу для аккаунтов, Bearer-токенов и хранения Vetmanager-секретов.
+
+- 21.1 Выбрать и внедрить БД для аккаунтов, интеграций и Bearer-токенов — `done`
+- 21.2 Добавить миграции для `accounts`, `vetmanager_connections`, `service_bearer_tokens`, `token_usage_stats` / `token_usage_logs` — `todo`
+- 21.3 Реализовать безопасное хранение секретов Vetmanager (шифрование / secret management) — `todo`
+- 21.4 Реализовать хранение только hash Bearer-токена и безопасного `token_prefix` для UI и аудита — `todo`
+- 21.5 Добавить модели срока действия, revoke и статусов Bearer-токенов — `todo`
+- 21.6 Добавить unit-тесты persistence/security слоя — `todo`
+
+## Этап 22. Bearer auth в MCP runtime (после Этапа 21) — `todo`
+
+Цель: перевести MCP runtime на bearer-only авторизацию аккаунта сервиса.
+
+- 22.1 Реализовать извлечение `Authorization: Bearer` из MCP HTTP request — `todo`
+- 22.2 Реализовать lookup `service_bearer_token -> account -> active vetmanager_connection` — `todo`
+- 22.3 Заменить текущий credentials context на account-based auth context — `todo`
+- 22.4 Удалить runtime-поддержку `X-VM-Domain` / `X-VM-Api-Key` из рабочего контура — `todo`
+- 22.5 Добавить безопасные ошибки: `missing bearer`, `invalid bearer`, `expired bearer`, `revoked bearer`, `account connection not configured` — `todo`
+- 22.6 Обновить unit/e2e тесты bearer-only контракта — `todo`
+
+## Этап 23. Vetmanager auth mode #1: `domain + rest_api_key` (после Этапа 22) — `todo`
+
+Цель: первым поддержать подключение аккаунта к Vetmanager через REST API key и домен клиники.
+
+- 23.1 Реализовать connection mode `domain + rest_api_key` — `todo`
+- 23.2 Добавить валидацию и тест подключения при сохранении интеграции аккаунта — `todo`
+- 23.3 Интегрировать mode в `VetmanagerClient` через отдельный abstraction layer — `todo`
+- 23.4 Проверить все существующие MCP tools/prompts на bearer-only runtime — `todo`
+- 23.5 Обновить README и документацию подключения — `todo`
+
+## Этап 24. Web: лендинг, регистрация, кабинет аккаунта (после Этапа 23) — `todo`
+
+Цель: добавить внешний пользовательский контур сервиса для описания продукта, регистрации и управления интеграцией с Vetmanager.
+
+- 24.1 Создать PRD этапа 24 для web-слоя и UX кабинета — `todo`
+- 24.2 Реализовать лендинг с описанием сервиса и вариантов подключения — `todo`
+- 24.3 Реализовать обязательную регистрацию и login/logout — `todo`
+- 24.4 Реализовать экран настройки Vetmanager-интеграции для `domain + rest_api_key` — `todo`
+- 24.5 Реализовать выпуск Bearer-токенов с именем и сроком действия — `todo`
+- 24.6 Реализовать экран списка токенов со статусом, сроком действия, последним использованием и количеством запросов — `todo`
+- 24.7 Зафиксировать одноразовый показ raw Bearer после создания и дальнейшее хранение только hash — `todo`
+
+## Этап 25. Usage accounting и admin analytics (после Этапа 24) — `todo`
+
+Цель: вести эксплуатационную статистику по Bearer-токенам и показывать её в кабинете аккаунта.
+
+- 25.1 Реализовать обновление `last_used_at` для Bearer-токенов — `todo`
+- 25.2 Реализовать счётчик запросов по Bearer-токену — `todo`
+- 25.3 Добавить безопасный аудит создания и revoke токенов — `todo`
+- 25.4 Добавить отображение использования токенов в кабинете аккаунта — `todo`
+- 25.5 Добавить тесты на usage accounting без утечек секретов — `todo`
+
+## Этап 26. Vetmanager auth mode #2: `user login/password -> token` (после Этапа 25) — `todo`
+
+Цель: добавить второй способ подключения аккаунта к Vetmanager через пользовательский токен, получаемый по login/password flow.
+
+- 26.1 Уточнить и зафиксировать контракт Vetmanager user-token flow по Postman и реальному API — `todo`
+- 26.2 Реализовать второй connection mode в abstraction layer — `todo`
+- 26.3 Добавить настройку этого mode в кабинете аккаунта — `todo`
+- 26.4 Добавить валидацию и тест подключения для второго mode — `todo`
+- 26.5 Проверить, что bearer runtime не зависит от конкретного Vetmanager auth mode — `todo`
+- 26.6 Добавить unit/mock/real smoke тесты второго режима — `todo`
+
+## Этап 27. Security hardening Bearer-сервиса (после Этапа 26) — `todo`
+
+Цель: усилить безопасность bearer-only сервиса и снизить риски компрометации токенов и веб-контура.
+
+- 27.1 Добавить rate limiting по Bearer-токену — `todo`
+- 27.2 Добавить более подробный audit trail по auth events — `todo`
+- 27.3 Добавить политику cleanup/revocation для истёкших токенов — `todo`
+- 27.4 Усилить security web-сессий и secret management — `todo`
+- 27.5 Обновить technical requirements и `AssumptionLog.md` — `todo`
+
+## Этап 28. Future scopes/RBAC для Bearer-токенов (после Этапа 27) — `todo`
+
+Цель: спроектировать будущие ограничения прав Bearer-токенов по методам и доменным группам операций.
+
+- 28.1 Спроектировать модель scopes / RBAC для Bearer-токенов — `todo`
+- 28.2 Зафиксировать coarse-grained scopes для первого итерационного релиза прав — `todo`
+- 28.3 Подготовить storage/schema под scopes без обязательного enforcement в этом этапе — `todo`
+- 28.4 Обновить PRD, technical requirements и `AssumptionLog.md` — `todo`

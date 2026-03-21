@@ -397,3 +397,61 @@
 **Неясности / фактическое поведение API:**
 - В real API `GET /rest/api/messages/reports` фактически требует непустой `campaign` и при его отсутствии возвращает `{"success": false, "errors": ["Campaign name cannot be empty"]}`.
 - Это требование не отражено явно в текущем OpenAPI-фрагменте, поэтому в real smoke test используется `campaign="All users"`, а при доменно-специфичной ошибке тест корректно `skip`-ается вместо ложного падения.
+
+---
+
+## Аудит артефактов после этапа 19
+
+**Результат аудита:**
+- `artifacts/technical-requirements-vetmanager-mcp-ru.md` в целом соответствовал текущей архитектуре, но не фиксировал явно роль `tool_descriptions.py`, контракт `tools/list` как source of truth и наличие специальных инструментов поверх нестандартных endpoint'ов.
+- `artifacts/prd-vetmanager-mcp-ru.md` отставал сильнее: в нём были описаны базовые tools и headers-only credentials, но не были зафиксированы MCP prompts, enriched `tools/list`, schema-level safety ограничения и специальные операции вроде профилей и `messages/*`.
+- `artifacts/api_entity_reference-ru.md` и `artifacts/api_entity_reference-ru(с синонимами).md` менять не потребовалось: они уже содержат актуальные разделы по `messages/*` и используются как справочный, а не архитектурный слой.
+
+**Архитектурное решение:**
+- При регулярной синхронизации проекта с Roadmap ключевыми артефактами для обновления являются продуктовый PRD и технические требования; справочники сущностей обновляются только при изменении источников истины OpenAPI/API reference, а не при каждом изменении MCP-обвязки.
+
+---
+
+## Планирование bearer-only следующего цикла
+
+**Зафиксированные продуктовые решения:**
+- Bearer-токены привязываются к аккаунту сервиса, а не к workspace.
+- Аккаунт хранит один активный способ авторизации в Vetmanager и все Bearer-токены аккаунта используют именно его.
+- Dual-mode не планируется: целевой runtime-контракт MCP переводится на bearer-only.
+- В первой итерации реализуется auth mode `domain + rest_api_key`, но в roadmap и артефактах сразу закладываются оба способа авторизации Vetmanager.
+
+**Архитектурные последствия:**
+- `artifacts/prd-vetmanager-mcp-ru.md` переведён с текущего headers-only описания на целевую bearer-only продуктовую модель.
+- `artifacts/technical-requirements-vetmanager-mcp-ru.md` сохранён как двухслойный документ: он одновременно описывает текущее состояние кода и планируемую bearer-only архитектуру roadmap этапов 20–28.
+- Новый roadmap после этапа 19 перестраивается вокруг Bearer-сервиса, аккаунтов, web-контура и storage, а не вокруг incremental hardening текущего headers-only runtime.
+
+**Завершение этапа 20:**
+- Добавлен отдельный PRD-файл `PRD/этап-20-bearer-only-архитектура.md`, чтобы следующие этапы 21–28 опирались не только на Roadmap и обновлённые артефакты, но и на явную декомпозицию planning-этапа.
+- Этап 20 закрыт как artifact-only/planning этап; runtime-код проекта не менялся и текущая headers-only реализация остаётся действующей до начала этапов bearer migration.
+
+---
+
+## Этап 21.1: выбор storage foundation для Bearer-сервиса
+
+**Принятое решение:**
+- В качестве persistence toolkit выбран `SQLAlchemy 2.x` с async engine/session.
+- Локальный default для проекта и тестов: `SQLite` через `sqlite+aiosqlite`.
+- Конфигурация строится через `DATABASE_URL`, чтобы следующий этап мог перейти на PostgreSQL без переписывания storage-слоя.
+
+**Почему так:**
+- Текущий проект уже async-first (`FastMCP`, `httpx`, async tests), поэтому sync ORM только добавил бы адаптерный слой перед этапами bearer auth и web.
+- Для задачи `21.1` поднимать отдельный database container преждевременно: SQLite даёт zero-setup foundation, а нормализация `DATABASE_URL` сохраняет путь к production-grade СУБД.
+
+**Что реализовано:**
+- Добавлен `storage.py` с:
+  - нормализацией `DATABASE_URL` в async dialect;
+  - `AsyncEngine`;
+  - `async_sessionmaker`;
+  - `DeclarativeBase`;
+  - bootstrap-проверкой подключения `initialize_storage()`.
+- Добавлены unit-тесты storage bootstrap и URL normalization.
+- Контейнеры `mcp` и `test` теперь принимают `DATABASE_URL` из окружения.
+
+**Границы решения:**
+- Модели, миграции, хранение секретов Vetmanager, hash Bearer-токенов и lifecycle token states оставлены в задачах `21.2–21.5`.
+- Текущий MCP runtime по-прежнему не использует storage слой в боевом auth-контуре; foundation добавлен заранее для следующих этапов.

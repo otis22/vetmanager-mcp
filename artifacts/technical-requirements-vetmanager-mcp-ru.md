@@ -5,7 +5,8 @@
 
 ## 1. Введение
 
-Документ фиксирует текущую техническую архитектуру проекта `vetmanager-mcp`.
+Документ фиксирует текущую техническую архитектуру проекта `vetmanager-mcp`
+и ближайшую целевую эволюцию, уже отражённую в `Roadmap.md`.
 Он используется как справочный артефакт при декомпозиции задач, проверке
 согласованности решений и развитии MCP-инструментов поверх Vetmanager REST API.
 
@@ -15,6 +16,14 @@
 - преобразует tool calls в запросы к Vetmanager REST API;
 - поддерживает мультитенантность, базовое кеширование, pacing запросов и
   security hardening.
+
+Ближайшая целевая эволюция проекта по roadmap этапов 20–28:
+- bearer-only runtime-контракт вместо headers-only;
+- web-контур с лендингом, регистрацией и кабинетом аккаунта;
+- хранение Vetmanager-интеграции на уровне аккаунта;
+- выпуск нескольких Bearer-токенов с TTL, revoke и учётом использования;
+- поддержка двух Vetmanager auth modes: `domain + rest_api_key` и
+  `user login/password -> user token`.
 
 ## 2. Технологический стек
 
@@ -33,6 +42,16 @@
 - Текущий проект не использует `uv`, `.venv`, `requirements.txt` или `config.py`.
 
 ## 3. Архитектура и модель запуска
+
+### 3.0. Статус документа
+
+Разделы ниже делятся на два слоя:
+- текущее состояние реализации, уже находящееся в кодовой базе;
+- планируемая архитектурная эволюция, зафиксированная в roadmap и PRD.
+
+Если возникает конфликт, для текущего runtime-контракта источником истины
+остаются код и README, а bearer-only архитектура рассматривается как следующий
+этап проекта, ещё не реализованный в репозитории.
 
 ### 3.1. Обязательная модель запуска
 
@@ -58,6 +77,14 @@
 
 Сервер публикует endpoint MCP по пути `/mcp` и предназначен для подключения
 клиентов вроде Cursor/Claude через `url + headers`.
+
+#### Description enrichment (`tool_descriptions.py`)
+
+Модуль централизованно обогащает descriptions зарегистрированных MCP tools:
+- использует доменные синонимы из справочного слоя проекта;
+- дополняет descriptions после `register_all(mcp)`;
+- делает `tools/list` более полезным для LLM без изменения бизнес-логики
+  инструментов и без ручного редактирования десятков docstrings.
 
 #### Vetmanager API client (`vetmanager_client.py`)
 
@@ -106,6 +133,11 @@
 - использует docstring и type hints для MCP schema/export;
 - для list GET поддерживает `limit`, `offset`, а также общий контракт `sort/filter`.
 
+Отдельно поддерживаются:
+- агрегирующие инструменты вроде `get_client_profile` и `get_pet_profile`;
+- специализированные endpoint-driven инструменты вроде `get_vaccinations`;
+- операционные инструменты глобальных уведомлений `messages/*`.
+
 #### MCP prompts (`prompts.py`)
 
 Prompts регистрируются отдельно от tools и:
@@ -113,6 +145,12 @@ Prompts регистрируются отдельно от tools и:
 - работают по тому же headers-only контракту;
 - не принимают `domain` / `api_key`;
 - не должны подсказывать передачу credentials в tool calls.
+
+Покрываемые сценарии включают:
+- расписание и работу администратора;
+- клинические сценарии врача;
+- финансовую аналитику;
+- складские и клиентские выборки.
 
 #### Validation helpers (`validators.py`)
 
@@ -130,6 +168,19 @@ Prompts регистрируются отдельно от tools и:
 - ключ: `METHOD + canonical_full_url_with_query + api_key_hash`;
 - теги вида `domain:entity`;
 - инвалидация по тегу после `POST` / `PUT` / `DELETE`.
+
+#### `tools/list` contract
+
+Сервер рассматривает `tools/list` как source of truth по своим возможностям.
+Для каждого инструмента экспортируются:
+- `name`;
+- `description`;
+- `inputSchema`.
+
+Дополнительные требования текущей реализации:
+- `description` строится из docstring и может обогащаться доменными синонимами;
+- `inputSchema` отражает реальные типы и ограничения, включая safety-границы
+  для `limit` и ограничения непустых массивов там, где это критично.
 
 ### 3.3. Структура проекта
 
@@ -151,6 +202,7 @@ vetmanager-mcp/
 ├── request_cache.py
 ├── validators.py
 ├── prompts.py
+├── tool_descriptions.py
 ├── exceptions.py
 ├── Dockerfile
 ├── docker-compose.yml
@@ -194,6 +246,34 @@ vetmanager-mcp/
 4. URL проходит HTTPS и allowlist проверку;
 5. результат кешируется в экземпляре клиента.
 
+### 3.5. Планируемая bearer-only архитектура (roadmap 20–28)
+
+Следующий цикл проекта переводит сервис на модель:
+- пользователь регистрирует аккаунт сервиса;
+- аккаунт настраивает один активный способ авторизации в Vetmanager;
+- аккаунт выпускает один или несколько Bearer-токенов сервиса;
+- MCP-клиенты используют только `Authorization: Bearer <service_token>`;
+- сервис по Bearer находит аккаунт и применяет настроенный Vetmanager auth mode.
+
+Планируемые новые компоненты:
+- web-слой с лендингом, регистрацией и кабинетом;
+- storage для аккаунтов, интеграций и Bearer-токенов;
+- auth context на основе аккаунта вместо headers-only credentials;
+- usage accounting для токенов (`last_used_at`, `request_count`);
+- abstraction layer для нескольких способов авторизации в Vetmanager.
+
+Планируемые сущности:
+- `account`
+- `vetmanager_connection`
+- `service_bearer_token`
+- `token_usage_stats` или `token_usage_log`
+
+Ограничения целевой модели:
+- Bearer-токены привязываются к аккаунту;
+- у аккаунта один активный Vetmanager auth mode в каждый момент времени;
+- dual-mode MCP runtime не планируется;
+- scopes / RBAC рассматриваются как будущий этап после MVP bearer-сервиса.
+
 ## 4. Детали реализации
 
 ### 4.1. Реализация tools
@@ -211,6 +291,12 @@ vetmanager-mcp/
 - `offset` от 0 до 10 000;
 - `sort` в формате Vetmanager API;
 - `filter` в формате Vetmanager API.
+
+Кроме CRUD/list-инструментов, проект поддерживает:
+- агрегирующие профили клиента и питомца;
+- извлечение вакцинаций питомца через специальный endpoint;
+- глобальные уведомления `messages/all`, `messages/users`,
+  `messages/reports`, `messages/roles`.
 
 ### 4.2. Обработка ошибок
 
@@ -253,7 +339,8 @@ vetmanager-mcp/
 - credential extraction;
 - multitenancy и security ограничения клиента;
 - validation helpers;
-- schema/export contracts.
+- schema/export contracts;
+- prompts и enriched descriptions.
 
 ### 5.2. Mock e2e / contract tests
 

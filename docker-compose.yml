@@ -7,6 +7,7 @@ services:
         GID: ${GID:-1000}
     image: vetmanager-mcp
     environment:
+      DATABASE_URL: ${DATABASE_URL:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       MCP_TRANSPORT: ${MCP_TRANSPORT:-streamable-http}
       MCP_HOST: ${MCP_HOST:-0.0.0.0}
@@ -26,6 +27,7 @@ services:
         GID: ${GID:-1000}
     image: vetmanager-mcp
     environment:
+      DATABASE_URL: ${DATABASE_URL:-}
       LOG_LEVEL: ${LOG_LEVEL:-WARNING}
       TEST_DOMAIN: ${TEST_DOMAIN:-}
       TEST_API_KEY: ${TEST_API_KEY:-}

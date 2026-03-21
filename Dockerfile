@@ -16,6 +16,9 @@ COPY pyproject.toml ./
 RUN pip install --no-cache-dir \
     "fastmcp>=2.0.0" \
     "httpx>=0.27.0" \
+    "sqlalchemy>=2.0.0" \
+    "aiosqlite>=0.20.0" \
+    "asyncpg>=0.29.0" \
     "pytest>=8.0.0" \
     "pytest-asyncio>=0.23.0" \
     "respx>=0.21.0"
