@@ -14,6 +14,7 @@ services:
       MCP_PATH: ${MCP_PATH:-/mcp}
       PORT: ${PORT:-8000}
       STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY:-}
+      WEB_SESSION_SECRET: ${WEB_SESSION_SECRET:-}
     ports:
       - "${PORT:-8000}:${PORT:-8000}"
     volumes:
@@ -31,6 +32,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-}
       LOG_LEVEL: ${LOG_LEVEL:-WARNING}
       STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY:-}
+      WEB_SESSION_SECRET: ${WEB_SESSION_SECRET:-}
       TEST_DOMAIN: ${TEST_DOMAIN:-}
       TEST_API_KEY: ${TEST_API_KEY:-}
     volumes:

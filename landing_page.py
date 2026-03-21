@@ -432,8 +432,9 @@ def render_landing_page() -> str:
           а домен клиники и Vetmanager API key остаются внутри account-level integration.
         </p>
         <div class="cta-row">
-          <a class="cta" href="#runtime">Посмотреть MCP-подключение</a>
-          <a class="ghost" href="/mcp">Открыть MCP endpoint</a>
+          <a class="cta" href="/register">Создать аккаунт</a>
+          <a class="ghost" href="/login">Войти</a>
+          <a class="ghost" href="#runtime">Посмотреть MCP-подключение</a>
         </div>
       </div>
       <div class="hero-side">
@@ -470,12 +471,12 @@ def render_landing_page() -> str:
       <article class="panel tall">
         <h3 class="section-title">Текущий статус продукта</h3>
         <p class="body-copy">
-          Self-service кабинет ещё в работе. Лендинг уже публичный, а регистрация,
-          настройка интеграции и выпуск токенов идут следующим этапом web-контура.
+          Регистрация и login уже доступны. Следом в кабинет добавляются настройка
+          Vetmanager integration и выпуск Bearer-токенов.
         </p>
         <p class="mini">
-          Иначе говоря: runtime и storage уже продуктовые, а пользовательский UI
-          только начинает обрастать интерфейсом.
+          Иначе говоря: runtime, storage и account auth уже продуктовые, а дальше
+          сюда доезжает integration и token management UI.
         </p>
       </article>
 

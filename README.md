@@ -27,6 +27,7 @@ docker compose up -d          # запустить MCP-сервер
 
 - `DATABASE_URL` — строка подключения к БД. По умолчанию используется локальный `sqlite+aiosqlite:///./data/vetmanager.db`.
 - `STORAGE_ENCRYPTION_KEY` — ключ шифрования для сохранённых Vetmanager secrets. В production должен быть задан явно.
+- `WEB_SESSION_SECRET` — секрет подписи web session cookie для `/register`, `/login`, `/account`. В production должен быть задан явно.
 - `PORT`, `MCP_PATH`, `LOG_LEVEL` — стандартные настройки MCP HTTP runtime.
 
 Запуск тестов:
@@ -52,16 +53,26 @@ Bearer-токен привязан к account сервиса:
 
 ### Текущий статус provisioning
 
-Пользовательский web-кабинет для регистрации account, настройки Vetmanager integration и выпуска Bearer-токенов ещё не реализован. Этот self-service контур запланирован на этап 24.
+Пользовательский web-контур уже начал работать:
+
+- доступны лендинг, регистрация account и login/logout;
+- доступна страница `/account`;
+- доступна настройка активной Vetmanager integration через `domain + rest_api_key`;
+- доступен выпуск Bearer-токенов с именем и сроком действия;
+- доступен список токенов со статусом, сроком действия, `last_used_at` и `request_count`.
 
 На текущем этапе в репозитории уже есть:
 
 - storage foundation и миграции для `accounts`, `vetmanager_connections`, `service_bearer_tokens`;
 - шифрование Vetmanager credentials;
 - hash-only хранение bearer-токенов;
-- сервис сохранения Vetmanager connection `domain + rest_api_key`.
+- сервис сохранения Vetmanager connection `domain + rest_api_key`;
+- web auth для account через email/password и signed cookie session;
+- web-экран сохранения active Vetmanager integration;
+- web-выпуск Bearer-токенов с one-time показом raw значения;
+- список Bearer-токенов с безопасными полями и usage placeholders.
 
-То есть runtime-контракт уже bearer-only, но выпуск account/token пока считается internal/dev provisioning path.
+То есть runtime-контракт уже bearer-only, а account provisioning, Vetmanager integration и token management больше не internal-only. Следующий этап теперь уже про фактическое обновление usage metadata и admin analytics.
 
 ## Подключение Cursor
 
@@ -71,6 +82,12 @@ Bearer-токен привязан к account сервиса:
 cp .env.example .env          # задайте UID/GID и LOG_LEVEL при необходимости
 docker compose up -d mcp
 ```
+
+### Шаг 1.1 — создать web account
+
+- `http://localhost:8000/register` — регистрация account
+- `http://localhost:8000/login` — вход в account
+- `http://localhost:8000/account` — кабинет после входа, включая Vetmanager integration, выпуск Bearer-токенов и их список
 
 ### Шаг 2 — настроить `~/.cursor/mcp.json`
 

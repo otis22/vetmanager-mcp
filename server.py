@@ -2,11 +2,9 @@ import logging
 import os
 
 from fastmcp import FastMCP
-from starlette.requests import Request
-from starlette.responses import HTMLResponse
 
-from landing_page import render_landing_page
 from tool_descriptions import enhance_tool_descriptions
+from web import register_web_routes
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -24,17 +22,12 @@ mcp = FastMCP(
     ),
 )
 
-
-@mcp.custom_route("/", methods=["GET"], include_in_schema=False)
-async def landing_page(request: Request) -> HTMLResponse:
-    """Render the public product landing page."""
-    return HTMLResponse(render_landing_page())
-
 from tools import register_all  # noqa: E402
 from prompts import register_prompts  # noqa: E402
 
 register_all(mcp)
 register_prompts(mcp)
+register_web_routes(mcp)
 enhance_tool_descriptions(mcp)
 
 if __name__ == "__main__":
