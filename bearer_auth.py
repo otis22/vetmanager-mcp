@@ -19,6 +19,7 @@ from auth_audit import (
 )
 from bearer_token_manager import hash_bearer_token
 from exceptions import AuthError, RateLimitError
+from service_metrics import record_auth_failure
 from storage_models import (
     Account,
     ServiceBearerToken,
@@ -81,10 +82,12 @@ async def resolve_bearer_auth_context(
     )
     token_row = token_result.first()
     if token_row is None:
+        record_auth_failure(source="bearer_runtime", reason="invalid_token")
         raise AuthError("Invalid bearer token.", status_code=401)
 
     token, account = token_row
     if token.is_revoked():
+        record_auth_failure(source="bearer_runtime", reason="revoked")
         add_token_usage_log(
             session,
             bearer_token_id=token.id,
@@ -98,6 +101,7 @@ async def resolve_bearer_auth_context(
         await session.commit()
         raise AuthError("Revoked bearer token.", status_code=401)
     if token.is_expired(now=now):
+        record_auth_failure(source="bearer_runtime", reason="expired")
         token.sync_status(now=now)
         add_token_usage_log(
             session,
@@ -112,10 +116,12 @@ async def resolve_bearer_auth_context(
         await session.commit()
         raise AuthError("Expired bearer token.", status_code=401)
     if token.status == TOKEN_STATUS_DISABLED or account.status != "active":
+        record_auth_failure(source="bearer_runtime", reason="disabled")
         raise AuthError("Invalid bearer token.", status_code=401)
     try:
         await bearer_rate_limiter.BEARER_RATE_LIMITER.check_or_raise(token.id, now=now)
     except RateLimitError as exc:
+        record_auth_failure(source="bearer_runtime", reason="rate_limited")
         add_token_usage_log(
             session,
             bearer_token_id=token.id,
@@ -139,6 +145,7 @@ async def resolve_bearer_auth_context(
     )
     connection = connection_result.scalar_one_or_none()
     if connection is None:
+        record_auth_failure(source="bearer_runtime", reason="no_connection")
         add_token_usage_log(
             session,
             bearer_token_id=token.id,

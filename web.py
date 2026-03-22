@@ -6,7 +6,9 @@ from datetime import timezone
 from html import escape
 import os
 from secrets import token_urlsafe
+import time
 from urllib.parse import parse_qs
+from functools import wraps
 
 from fastmcp import FastMCP
 from sqlalchemy import func, select, text
@@ -18,6 +20,7 @@ from landing_page import render_landing_page
 from observability_logging import RUNTIME_LOGGER
 from request_context import attach_request_context_headers
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
+from service_metrics import record_auth_failure, record_http_request
 from storage import get_session_factory
 from storage_models import Account, ServiceBearerToken, TokenUsageStat, VetmanagerConnection
 from vetmanager_auth import (
@@ -138,6 +141,37 @@ def _json_response(
     response.headers["Cache-Control"] = "no-store"
     attach_request_context_headers(response, request)
     return response
+
+
+def _observed_custom_route(
+    mcp: FastMCP,
+    path: str,
+    *,
+    methods: list[str],
+    include_in_schema: bool = False,
+):
+    """Register route with automatic HTTP metrics for latency and status totals."""
+
+    def _decorator(func):
+        @wraps(func)
+        async def _wrapped(request: Request, *args, **kwargs):
+            started_at = time.perf_counter()
+            status_code = 500
+            try:
+                response = await func(request, *args, **kwargs)
+                status_code = getattr(response, "status_code", 500)
+                return response
+            finally:
+                record_http_request(
+                    route=path,
+                    method=request.method,
+                    status_code=status_code,
+                    duration_seconds=time.perf_counter() - started_at,
+                )
+
+        return mcp.custom_route(path, methods=methods, include_in_schema=include_in_schema)(_wrapped)
+
+    return _decorator
 
 
 async def _check_storage_readiness() -> tuple[bool, str]:
@@ -895,11 +929,11 @@ async def _render_account_dashboard_response(
 def register_web_routes(mcp: FastMCP) -> None:
     """Register public web routes on top of the MCP HTTP app."""
 
-    @mcp.custom_route("/", methods=["GET"], include_in_schema=False)
+    @_observed_custom_route(mcp, "/", methods=["GET"], include_in_schema=False)
     async def landing_page(request: Request) -> HTMLResponse:
         return _html_response(request, render_landing_page())
 
-    @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
+    @_observed_custom_route(mcp, "/healthz", methods=["GET"], include_in_schema=False)
     async def healthcheck(request: Request) -> JSONResponse:
         return _json_response(
             request,
@@ -910,7 +944,7 @@ def register_web_routes(mcp: FastMCP) -> None:
             },
         )
 
-    @mcp.custom_route("/readyz", methods=["GET"], include_in_schema=False)
+    @_observed_custom_route(mcp, "/readyz", methods=["GET"], include_in_schema=False)
     async def readiness_check(request: Request) -> JSONResponse:
         is_ready, reason = await _check_storage_readiness()
         return _json_response(
@@ -929,7 +963,7 @@ def register_web_routes(mcp: FastMCP) -> None:
             status_code=200 if is_ready else 503,
         )
 
-    @mcp.custom_route("/register", methods=["GET"], include_in_schema=False)
+    @_observed_custom_route(mcp, "/register", methods=["GET"], include_in_schema=False)
     async def register_page(request: Request) -> HTMLResponse:
         csrf_token = _resolve_csrf_token(request)
         return _html_response(
@@ -939,7 +973,7 @@ def register_web_routes(mcp: FastMCP) -> None:
             csrf_token=csrf_token,
         )
 
-    @mcp.custom_route("/register", methods=["POST"], include_in_schema=False)
+    @_observed_custom_route(mcp, "/register", methods=["POST"], include_in_schema=False)
     async def register_submit(request: Request) -> HTMLResponse | RedirectResponse:
         form = await _read_form(request)
         try:
@@ -1011,7 +1045,7 @@ def register_web_routes(mcp: FastMCP) -> None:
         set_account_session_cookie(response, account.id)
         return response
 
-    @mcp.custom_route("/login", methods=["GET"], include_in_schema=False)
+    @_observed_custom_route(mcp, "/login", methods=["GET"], include_in_schema=False)
     async def login_page(request: Request) -> HTMLResponse:
         csrf_token = _resolve_csrf_token(request)
         return _html_response(
@@ -1021,7 +1055,7 @@ def register_web_routes(mcp: FastMCP) -> None:
             csrf_token=csrf_token,
         )
 
-    @mcp.custom_route("/login", methods=["POST"], include_in_schema=False)
+    @_observed_custom_route(mcp, "/login", methods=["POST"], include_in_schema=False)
     async def login_submit(request: Request) -> HTMLResponse | RedirectResponse:
         form = await _read_form(request)
         try:
@@ -1076,6 +1110,7 @@ def register_web_routes(mcp: FastMCP) -> None:
 
         if account is None:
             csrf_token = _resolve_csrf_token(request)
+            record_auth_failure(source="web_login", reason="invalid_credentials")
             record_rate_limit_hit("login", login_key, window_seconds=login_window)
             return _html_response(
                 request,
@@ -1094,7 +1129,7 @@ def register_web_routes(mcp: FastMCP) -> None:
         set_account_session_cookie(response, account.id)
         return response
 
-    @mcp.custom_route("/logout", methods=["POST"], include_in_schema=False)
+    @_observed_custom_route(mcp, "/logout", methods=["POST"], include_in_schema=False)
     async def logout_submit(request: Request) -> HTMLResponse | RedirectResponse:
         form = await _read_form(request)
         try:
@@ -1115,7 +1150,7 @@ def register_web_routes(mcp: FastMCP) -> None:
         clear_account_session_cookie(response)
         return response
 
-    @mcp.custom_route("/account", methods=["GET"], include_in_schema=False)
+    @_observed_custom_route(mcp, "/account", methods=["GET"], include_in_schema=False)
     async def account_page(request: Request) -> HTMLResponse | RedirectResponse:
         account_id = _get_account_id_from_request(request)
         if account_id is None:
@@ -1124,7 +1159,7 @@ def register_web_routes(mcp: FastMCP) -> None:
             return response
         return await _render_account_dashboard_response(request, account_id)
 
-    @mcp.custom_route("/account/integration", methods=["POST"], include_in_schema=False)
+    @_observed_custom_route(mcp, "/account/integration", methods=["POST"], include_in_schema=False)
     async def account_integration_submit(request: Request) -> HTMLResponse | RedirectResponse:
         account_id = _get_account_id_from_request(request)
         if account_id is None:
@@ -1182,7 +1217,7 @@ def register_web_routes(mcp: FastMCP) -> None:
             integration_success="Vetmanager integration saved successfully.",
         )
 
-    @mcp.custom_route("/account/integration/reauth", methods=["POST"], include_in_schema=False)
+    @_observed_custom_route(mcp, "/account/integration/reauth", methods=["POST"], include_in_schema=False)
     async def account_integration_reauth_submit(request: Request) -> HTMLResponse | RedirectResponse:
         account_id = _get_account_id_from_request(request)
         if account_id is None:
@@ -1240,7 +1275,7 @@ def register_web_routes(mcp: FastMCP) -> None:
             integration_success="Vetmanager integration re-authorized successfully.",
         )
 
-    @mcp.custom_route("/account/tokens", methods=["POST"], include_in_schema=False)
+    @_observed_custom_route(mcp, "/account/tokens", methods=["POST"], include_in_schema=False)
     async def account_token_submit(request: Request) -> HTMLResponse | RedirectResponse:
         account_id = _get_account_id_from_request(request)
         if account_id is None:
@@ -1315,7 +1350,12 @@ def register_web_routes(mcp: FastMCP) -> None:
             issued_raw_token=raw_token,
         )
 
-    @mcp.custom_route("/account/tokens/{token_id:int}/revoke", methods=["POST"], include_in_schema=False)
+    @_observed_custom_route(
+        mcp,
+        "/account/tokens/{token_id:int}/revoke",
+        methods=["POST"],
+        include_in_schema=False,
+    )
     async def account_token_revoke(request: Request) -> HTMLResponse | RedirectResponse:
         account_id = _get_account_id_from_request(request)
         if account_id is None:

@@ -15,6 +15,7 @@ from starlette.responses import Response
 
 from exceptions import RateLimitError
 from observability_logging import SECURITY_LOGGER
+from service_metrics import record_auth_failure
 from web_auth import get_web_session_cookie_settings, get_web_session_secret
 
 CSRF_COOKIE_NAME = "vm_csrf"
@@ -94,6 +95,7 @@ def validate_csrf_request(request: Request, submitted_token: str | None) -> None
     valid_cookie = read_csrf_token(cookie_token)
     valid_submitted = read_csrf_token(submitted_token)
     if not valid_cookie or not valid_submitted or not hmac.compare_digest(valid_cookie, valid_submitted):
+        record_auth_failure(source="web_csrf", reason="invalid_token")
         SECURITY_LOGGER.warning(
             "Rejected request with invalid CSRF token.",
             extra={
@@ -152,6 +154,7 @@ def check_rate_limit(namespace: str, key: str, *, limit: int, window_seconds: in
     entries = _RATE_LIMIT_STATE[namespace][key]
     _prune_entries(entries, now_ts=now_ts, window_seconds=window_seconds)
     if len(entries) >= limit:
+        record_auth_failure(source="web_rate_limit", reason=namespace)
         SECURITY_LOGGER.warning(
             "Rejected request due to rate limit.",
             extra={

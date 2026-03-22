@@ -692,7 +692,7 @@
 - 45.2 Добавить request/correlation id для web и MCP запросов — `done`
 - 45.3 Разделить runtime, audit и security log events — `done`
 - 45.4 Добавить health/readiness endpoints — `done`
-- 45.5 Добавить базовые service metrics: latency, error rate, auth failures, upstream failures — `todo`
+- 45.5 Добавить базовые service metrics: latency, error rate, auth failures, upstream failures — `done`
 - 45.6 Подготовить экспорт в Prometheus-совместимом виде — `todo`
 - 45.7 Добавить интеграцию с error tracking системой — `todo`
 - 45.8 Описать runbook по логам, метрикам и расследованию инцидентов — `todo`

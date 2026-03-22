@@ -20,6 +20,7 @@ from request_cache import REQUEST_CACHE
 from request_auth import get_bearer_token
 from runtime_auth import _validate_domain as validate_runtime_domain
 from runtime_auth import resolve_runtime_credentials
+from service_metrics import record_upstream_failure
 from token_scopes import required_scope_for_request
 from vetmanager_auth import VetmanagerAuthContext
 
@@ -182,8 +183,13 @@ class VetmanagerClient:
                 if attempt < MAX_RETRIES:
                     await asyncio.sleep(0.1 * (attempt + 1))
                     continue
+                record_upstream_failure(target="billing_api", reason="timeout")
                 raise VetmanagerTimeoutError(f"Timeout resolving host for domain '{self._domain}'") from exc
             except httpx.HTTPStatusError as exc:
+                record_upstream_failure(
+                    target="billing_api",
+                    reason=f"http_{exc.response.status_code}",
+                )
                 raise HostResolutionError(
                     f"Billing API returned {exc.response.status_code} for domain '{self._domain}'."
                 ) from exc
@@ -191,6 +197,7 @@ class VetmanagerClient:
                 if attempt < MAX_RETRIES:
                     await asyncio.sleep(0.1 * (attempt + 1))
                     continue
+                record_upstream_failure(target="billing_api", reason="network_error")
                 raise VetmanagerError(
                     f"Network error resolving host for domain '{self._domain}': {exc}"
                 ) from exc
@@ -254,6 +261,7 @@ class VetmanagerClient:
                 if attempt < MAX_RETRIES:
                     await asyncio.sleep(0.1 * (attempt + 1))
                     continue
+                record_upstream_failure(target="vetmanager_api", reason="timeout")
                 raise VetmanagerTimeoutError(f"Request to {url} timed out") from exc
             except (AuthError, NotFoundError, VetmanagerError):
                 raise
@@ -261,6 +269,7 @@ class VetmanagerClient:
                 if attempt < MAX_RETRIES:
                     await asyncio.sleep(0.1 * (attempt + 1))
                     continue
+                record_upstream_failure(target="vetmanager_api", reason="network_error")
                 raise VetmanagerError(f"Network error requesting {url}: {exc}") from exc
 
     def _raise_for_status(self, response: httpx.Response) -> None:
@@ -274,6 +283,7 @@ class VetmanagerClient:
         if response.status_code == 404:
             raise NotFoundError("Resource not found", status_code=404)
         if response.status_code >= 400:
+            record_upstream_failure(target="vetmanager_api", reason=f"http_{response.status_code}")
             raise VetmanagerError(
                 f"API error {response.status_code}: {response.text[:200]}",
                 status_code=response.status_code,
