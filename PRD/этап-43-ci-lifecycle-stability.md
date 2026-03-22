@@ -213,3 +213,22 @@ manual real job использовали те же entrypoint'ы, что и ло
 - Обязательный CI запускает `fast` и `default`.
 - Manual real workflow запускает `opt-in real`.
 - Marker expressions и наборы тестов определяются launcher'ами, а не YAML.
+
+## Цель 43.7
+
+Зафиксировать новую warning/test-contour policy в публичной документации
+проекта, чтобы локальный запуск, CI и manual real checks описывались единообразно.
+
+## Решение 43.7
+
+- Обновить README:
+  - описать `fast`, `default`, `opt-in real`;
+  - зафиксировать, что `docker compose run --rm test` = `default`;
+  - описать новые CI workflow semantics.
+- Синхронизировать PRD и `AssumptionLog.md` с итоговой policy.
+
+## Критерии готовности 43.7
+
+- README описывает named test contours и их запуск.
+- README больше не оставляет двусмысленности, что default suite может запускать real tests.
+- Артефакты этапа 43 согласованы между собой.

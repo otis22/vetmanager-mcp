@@ -658,7 +658,7 @@
 - 42.9 Обновить `README.md`, PRD и `AssumptionLog.md`: browser happy-path tests входят в обязательный suite — `done`
 - 42.10 Добавить optional browser tests с реальными данными как отдельный opt-in режим, не входящий в дефолтный прогон — `done`
 
-## Этап 43. Чистый CI и стабилизация test/runtime lifecycle — `in_progress`
+## Этап 43. Чистый CI и стабилизация test/runtime lifecycle — `done`
 
 Цель: убрать warning-шум, сделать test infrastructure предсказуемой и усилить quality gate для default suite и CI.
 
@@ -668,7 +668,7 @@
 - 43.4 Подготовить режим fail-on-unexpected-warnings для default suite — `done`
 - 43.5 Разделить test contours: fast, default, opt-in real — `done`
 - 43.6 Обновить CI workflow под новые test contours — `done`
-- 43.7 Зафиксировать policy в `README.md`, PRD и `AssumptionLog.md` — `todo`
+- 43.7 Зафиксировать policy в `README.md`, PRD и `AssumptionLog.md` — `done`
 
 ## Этап 44. Security review и hardening — `todo`
 

@@ -39,34 +39,50 @@ docker compose up -d          # запустить MCP-сервер
 Запуск тестов:
 
 ```bash
-# default suite: unit + mock + live browser happy-path tests
+# default contour: unit + mock + live browser happy-path tests
 # Chromium уже предустановлен в test image, доп. setup не нужен
 docker compose run --rm test
 
-# с реальным API по api_key flow
-docker compose run --rm -e TEST_DOMAIN=<домен> -e TEST_API_KEY=<ключ> test
+# fast contour: без browser и real contour tests
+docker compose run --rm test sh -c "python scripts/run_fast_test_suite.py"
 
-# с direct real smoke для уже выданного user-token
+# opt-in real contour: real API и real browser tests
+docker compose run --rm \
+  -e TEST_DOMAIN=<домен> \
+  -e TEST_API_KEY=<ключ> \
+  test sh -c "python scripts/run_opt_in_real_test_suite.py"
+
+# opt-in real contour с direct real smoke для уже выданного user-token
 docker compose run --rm \
   -e TEST_DOMAIN=<домен> \
   -e TEST_USER_TOKEN=<user_token> \
-  test
+  test sh -c "python scripts/run_opt_in_real_test_suite.py"
 
-# с real smoke для login/password -> user token exchange
+# opt-in real contour с login/password -> user token exchange
 docker compose run --rm \
   -e TEST_DOMAIN=<домен> \
   -e TEST_USER_TOKEN_BASE_URL=<https://clinic.vetmanager2.ru> \
   -e TEST_USER_LOGIN=<login> \
   -e TEST_USER_PASSWORD=<password> \
-  test
+  test sh -c "python scripts/run_opt_in_real_test_suite.py"
 ```
+
+Тестовые контуры:
+- `fast`:
+  быстрый inner-loop без Playwright/browser и без real API/browser tests.
+- `default`:
+  unit + mock/e2e + live localhost browser tests, без реального Vetmanager API.
+- `opt_in_real`:
+  real API e2e + real browser tests; real browser flow дополнительно требует
+  `RUN_REAL_BROWSER_TESTS=1`.
 
 Что входит в default `docker compose run --rm test`:
 - unit tests;
 - mock/e2e tests;
 - live localhost browser tests через Playwright;
 - browser happy-path tests для обоих web auth flows;
-- cleanup regression для browser-created account data.
+- cleanup regression для browser-created account data;
+- zero-warning quality gate через warning-as-error launcher.
 
 ## Bearer-only runtime
 
@@ -405,13 +421,14 @@ Prompts работают по тому же bearer-only контракту, чт
 
 | Воркфлоу | Триггер | Что тестирует |
 |----------|---------|---------------|
-| `test.yml` | push / pull request → main | default suite: unit + mock e2e + browser/live tests (без реального Vetmanager API) |
-| `test-real.yml` | вручную (`workflow_dispatch`) | real API e2e (требует секрет `VETMANAGER_TEST_API_KEY`) |
+| `test.yml` | push / pull request → main | два обязательных contour job: `fast` и `default` |
+| `test-real.yml` | вручную (`workflow_dispatch`) | `opt_in_real` contour: real API e2e и opt-in real browser tests |
 
 Добавить secrets для real tests:
 - `VETMANAGER_TEST_API_KEY`
 - опционально `VETMANAGER_TEST_USER_TOKEN`
 - либо `VETMANAGER_TEST_USER_LOGIN` и `VETMANAGER_TEST_USER_PASSWORD`
+- для real browser tests дополнительно включать `RUN_REAL_BROWSER_TESTS=1`
 
 ## Артефакты
 
