@@ -49,7 +49,7 @@ if [ "${GID_VAL}" -eq 0 ]; then GID_VAL=1000; fi
 docker build --build-arg UID="${UID_VAL}" --build-arg GID="${GID_VAL}" -t vetmanager-mcp .
 
 compose() {
-  UID="${UID_VAL}" GID="${GID_VAL}" docker compose "$@"
+  env UID="${UID_VAL}" GID="${GID_VAL}" docker compose "$@"
 }
 
 dump_compose_diagnostics() {
