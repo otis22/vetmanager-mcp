@@ -1,7 +1,7 @@
 # Технические требования: Vetmanager MCP Server
 
 **Автор:** Manus AI  
-**Актуализировано:** 21 марта 2026 г.
+**Актуализировано:** 23 марта 2026 г.
 
 ## 1. Введение
 
@@ -17,7 +17,7 @@
 - поддерживает мультитенантность, базовое кеширование, pacing запросов и
   security hardening.
 
-Текущая эволюция проекта по roadmap этапов 20–28:
+Текущая эволюция проекта по roadmap этапам 20–49:
 - bearer-only runtime-контракт уже реализован;
 - web-контур с лендингом, регистрацией и кабинетом аккаунта;
 - хранение Vetmanager-интеграции на уровне аккаунта;
@@ -147,8 +147,8 @@ runtime context.
 
 Prompts регистрируются отдельно от tools и:
 - реализуют типовые workflow-сценарии для LLM;
-- работают по тому же headers-only контракту;
-- не принимают `domain` / `api_key`;
+- работают по тому же bearer-only runtime-контракту, что и tools;
+- не принимают runtime credentials;
 - не должны подсказывать передачу credentials в tool calls.
 
 Покрываемые сценарии включают:
@@ -220,7 +220,7 @@ vetmanager-mcp/
 
 #### Runtime contract
 
-Рабочий контур использует только headers-only схему:
+Рабочий контур использует только bearer-only схему:
 
 ```json
 {
@@ -228,8 +228,7 @@ vetmanager-mcp/
     "vetmanager": {
       "url": "http://localhost:8000/mcp",
       "headers": {
-        "X-VM-Domain": "myclinic",
-        "X-VM-Api-Key": "your-rest-api-key"
+        "Authorization": "Bearer vm_st_your_service_token"
       }
     }
   }
@@ -237,19 +236,24 @@ vetmanager-mcp/
 ```
 
 Правила:
-- runtime Bearer token не передаётся в аргументах tools/prompts;
-- `domain` и Vetmanager credential не задаются проектным `.env` для runtime;
-- `TEST_DOMAIN` / `TEST_API_KEY` допустимы только для real e2e tests;
-- один экземпляр сервера обслуживает разные клиники без перезапуска.
+- runtime credentials не передаются в аргументах tools/prompts;
+- `Authorization: Bearer <service_token>` является единственным runtime-входом
+  в MCP-контур;
+- Vetmanager credentials хранятся в активном `vetmanager_connection`
+  конкретного аккаунта;
+- `TEST_DOMAIN` / `TEST_API_KEY` и другие `TEST_*` допустимы только для
+  opt-in real tests;
+- один экземпляр сервера обслуживает разные аккаунты и клиники без перезапуска.
 
 #### Host resolution
 
 При первом обращении внутри `VetmanagerClient`:
-1. из bearer auth context читается `domain`;
-2. выполняется `GET https://billing-api.vetmanager.cloud/host/{domain}`;
-3. из ответа извлекается clinic-specific base URL;
-4. URL проходит HTTPS и allowlist проверку;
-5. результат кешируется в экземпляре клиента.
+1. из account-based auth context читается активный Vetmanager auth mode;
+2. для mode `domain + rest_api_key` из connection читается `domain`;
+3. выполняется `GET https://billing-api.vetmanager.cloud/host/{domain}`;
+4. из ответа извлекается clinic-specific base URL;
+5. URL проходит HTTPS и allowlist проверку;
+6. результат кешируется в экземпляре клиента.
 
 ### 3.5. Bearer-only архитектура и web-контур
 
@@ -414,6 +418,10 @@ Storage preparation:
 - `TEST_API_KEY`
 
 Используются как smoke/integration уровень против живого API.
+
+Дополнительно поддерживается opt-in real contour для `login/password -> user token`
+и production/browser verification через `TEST_USER_TOKEN` или
+`TEST_USER_TOKEN_BASE_URL` + `TEST_USER_LOGIN` + `TEST_USER_PASSWORD`.
 
 ### 5.4. Способ запуска
 

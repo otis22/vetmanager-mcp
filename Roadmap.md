@@ -742,3 +742,13 @@
 - 49.5 Добавить opt-in real e2e regression на `login/password -> user token` через `TEST_DOMAIN`, `TEST_USER_TOKEN_BASE_URL`, `TEST_USER_LOGIN`, `TEST_USER_PASSWORD` — `done`
 - 49.6 Пройти production browser happy-path для `/register -> /login -> /account`, включая integration save и bearer issuance, и зафиксировать результат — `done`
 - 49.7 Зафиксировать безопасный opt-in workflow для real production/browser verification в README, PRD и AssumptionLog — `done`
+
+## Этап 50. Синхронизация артефактов и reset roadmap baseline — `done`
+
+Цель: привести управленческие и справочные артефакты к единому актуальному состоянию после завершения этапов 1–49 и подготовить чистую точку входа для следующего цикла планирования.
+
+- 50.1 Провести аудит рассинхронов между `Roadmap.md`, `README.md`, `AssumptionLog.md`, `PRD/` и `artifacts/*` — `done`
+- 50.2 Зафиксировать текущее product/runtime baseline проекта после этапов 1–49 в справочных артефактах — `done`
+- 50.3 Обновить `artifacts/prd-vetmanager-mcp-ru.md` и `artifacts/technical-requirements-vetmanager-mcp-ru.md` под фактическое текущее состояние — `done`
+- 50.4 Создать PRD этапа 50 с декомпозицией и правилами синхронизации артефактов — `done`
+- 50.5 Обновить `AssumptionLog.md` по итогам синхронизации и зафиксировать новый baseline для дальнейшего roadmap — `done`
