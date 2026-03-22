@@ -8,50 +8,111 @@ set -euo pipefail
 
 BASE_URL="${1:-http://127.0.0.1:${PORT:-8000}}"
 PUBLIC_DOMAIN="${2:-}"
+SMOKE_MAX_ATTEMPTS="${SMOKE_MAX_ATTEMPTS:-10}"
+SMOKE_SLEEP_SECONDS="${SMOKE_SLEEP_SECONDS:-1}"
+SMOKE_CONNECT_TIMEOUT_SECONDS="${SMOKE_CONNECT_TIMEOUT_SECONDS:-2}"
+SMOKE_CURL_MAX_TIME_SECONDS="${SMOKE_CURL_MAX_TIME_SECONDS:-5}"
+TMP_DIR="$(mktemp -d)"
+
+cleanup() {
+  rm -rf "${TMP_DIR}"
+}
+
+preview_text() {
+  printf '%s' "$1" | tr '\n' ' ' | head -c 200
+}
+
+perform_request() {
+  local url="$1"
+  local body_file="${TMP_DIR}/body"
+  local status_file="${TMP_DIR}/status"
+  local error_file="${TMP_DIR}/error"
+
+  : > "${body_file}"
+  : > "${status_file}"
+  : > "${error_file}"
+
+  if curl -sS \
+    --connect-timeout "${SMOKE_CONNECT_TIMEOUT_SECONDS}" \
+    --max-time "${SMOKE_CURL_MAX_TIME_SECONDS}" \
+    -o "${body_file}" \
+    -w '%{http_code}' \
+    "${url}" > "${status_file}" 2> "${error_file}"; then
+    SMOKE_LAST_CURL_EXIT=0
+  else
+    SMOKE_LAST_CURL_EXIT=$?
+  fi
+
+  SMOKE_LAST_URL="${url}"
+  SMOKE_LAST_STATUS="$(cat "${status_file}")"
+  SMOKE_LAST_BODY="$(cat "${body_file}")"
+  SMOKE_LAST_ERROR="$(cat "${error_file}")"
+}
+
+health_is_ok() {
+  [ "${SMOKE_LAST_CURL_EXIT}" = "0" ] || return 1
+  [ "${SMOKE_LAST_STATUS}" = "200" ] || return 1
+  case "${SMOKE_LAST_BODY}" in
+    *'"status":"ok"'*|*'"status": "ok"'*) return 0 ;;
+  esac
+  return 1
+}
+
+ready_is_ok() {
+  [ "${SMOKE_LAST_CURL_EXIT}" = "0" ] || return 1
+  [ "${SMOKE_LAST_STATUS}" = "200" ]
+}
+
+metrics_is_ok() {
+  [ "${SMOKE_LAST_CURL_EXIT}" = "0" ] || return 1
+  [ "${SMOKE_LAST_STATUS}" = "200" ] || return 1
+  case "${SMOKE_LAST_BODY}" in
+    *'vetmanager_http_requests_total'*) return 0 ;;
+  esac
+  return 1
+}
+
+mcp_status_is_ok() {
+  [ "${SMOKE_LAST_CURL_EXIT}" = "0" ] || return 1
+  [ "${SMOKE_LAST_STATUS}" -ge 200 ] && [ "${SMOKE_LAST_STATUS}" -lt 500 ]
+}
+
+retry_request() {
+  local label="$1"
+  local url="$2"
+  local validator="$3"
+  local attempt=1
+
+  while [ "${attempt}" -le "${SMOKE_MAX_ATTEMPTS}" ]; do
+    perform_request "${url}"
+    if "${validator}"; then
+      return 0
+    fi
+
+    echo "--> ${label} attempt ${attempt}/${SMOKE_MAX_ATTEMPTS} failed: url=${url} curl_exit=${SMOKE_LAST_CURL_EXIT} http_status=${SMOKE_LAST_STATUS:-000} body=$(preview_text "${SMOKE_LAST_BODY}") error=$(preview_text "${SMOKE_LAST_ERROR}")"
+
+    if [ "${attempt}" -lt "${SMOKE_MAX_ATTEMPTS}" ]; then
+      sleep "${SMOKE_SLEEP_SECONDS}"
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  echo "ERROR: ${label} failed after ${SMOKE_MAX_ATTEMPTS} attempts: url=${url} curl_exit=${SMOKE_LAST_CURL_EXIT} http_status=${SMOKE_LAST_STATUS:-000} body=$(preview_text "${SMOKE_LAST_BODY}") error=$(preview_text "${SMOKE_LAST_ERROR}")"
+  return 1
+}
+
+trap cleanup EXIT
 
 echo "==> Running post-deploy smoke checks against ${BASE_URL}"
 
-health_json="$(curl -fsS "${BASE_URL}/healthz")"
-ready_body=""
-ready_status="$(curl -sS -o /tmp/vm-readyz-body.$$ -w '%{http_code}' "${BASE_URL}/readyz")"
-ready_body="$(cat /tmp/vm-readyz-body.$$)"
-rm -f /tmp/vm-readyz-body.$$
-metrics_body="$(curl -fsS "${BASE_URL}/metrics")"
-mcp_status="$(curl -sS -o /dev/null -w '%{http_code}' "${BASE_URL}/mcp" || true)"
-
-case "${health_json}" in
-  *'"status":"ok"'*|*'"status": "ok"'*) ;;
-  *)
-    echo "ERROR: /healthz did not report ok: ${health_json}"
-    exit 1
-    ;;
-esac
-
-if [ "${ready_status}" != "200" ]; then
-  echo "ERROR: /readyz returned ${ready_status}: ${ready_body}"
-  exit 1
-fi
-
-case "${metrics_body}" in
-  *'vetmanager_http_requests_total'* ) ;;
-  *)
-    echo "ERROR: /metrics does not expose expected Prometheus families."
-    exit 1
-    ;;
-esac
-
-if [ "${mcp_status}" -lt 200 ] || [ "${mcp_status}" -ge 500 ]; then
-  echo "ERROR: /mcp returned unexpected status ${mcp_status}"
-  exit 1
-fi
+retry_request "healthz" "${BASE_URL}/healthz" health_is_ok
+retry_request "readyz" "${BASE_URL}/readyz" ready_is_ok
+retry_request "metrics" "${BASE_URL}/metrics" metrics_is_ok
+retry_request "mcp" "${BASE_URL}/mcp" mcp_status_is_ok
 
 if [ -n "${PUBLIC_DOMAIN}" ]; then
   echo "--> Checking public HTTPS endpoint for ${PUBLIC_DOMAIN}"
-  public_status="$(curl -sS -o /dev/null -w '%{http_code}' "https://${PUBLIC_DOMAIN}/mcp" || true)"
-  if [ "${public_status}" -lt 200 ] || [ "${public_status}" -ge 500 ]; then
-    echo "ERROR: public HTTPS /mcp returned unexpected status ${public_status}"
-    exit 1
-  fi
+  retry_request "public_mcp" "https://${PUBLIC_DOMAIN}/mcp" mcp_status_is_ok
 fi
 
 echo "==> Post-deploy smoke checks passed."

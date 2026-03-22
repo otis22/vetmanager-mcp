@@ -42,6 +42,11 @@ docker compose up -d          # запустить MCP-сервер
 Operational helpers:
 - `scripts/post_deploy_smoke_checks.sh` — post-deploy checks для `/healthz`,
   `/readyz`, `/metrics` и `/mcp`.
+  Поддерживает retry/grace knobs через env:
+  `SMOKE_MAX_ATTEMPTS`, `SMOKE_SLEEP_SECONDS`,
+  `SMOKE_CONNECT_TIMEOUT_SECONDS`, `SMOKE_CURL_MAX_TIME_SECONDS`.
+  При падении deploy script дополнительно печатает `docker compose ps` и tail
+  container logs для fast triage.
 
 Запуск тестов:
 

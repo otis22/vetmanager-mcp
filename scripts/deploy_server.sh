@@ -48,6 +48,16 @@ if [ "${UID_VAL}" -eq 0 ]; then UID_VAL=1000; fi
 if [ "${GID_VAL}" -eq 0 ]; then GID_VAL=1000; fi
 docker build --build-arg UID="${UID_VAL}" --build-arg GID="${GID_VAL}" -t vetmanager-mcp .
 
+dump_compose_diagnostics() {
+  echo "--> Deploy diagnostics..."
+  docker compose ps || true
+  if docker compose ps -q mcp >/dev/null 2>&1; then
+    docker compose logs --tail=100 mcp || true
+  else
+    docker compose logs --tail=100 || true
+  fi
+}
+
 # ── Restart service ───────────────────────────────────────────────────────────
 echo "--> Restarting service..."
 docker compose down --remove-orphans
@@ -83,7 +93,11 @@ fi
 # ── App smoke checks ──────────────────────────────────────────────────────────
 if [ -f "./scripts/post_deploy_smoke_checks.sh" ]; then
   echo "--> Running post-deploy smoke checks..."
-  bash ./scripts/post_deploy_smoke_checks.sh "http://127.0.0.1:8000" "${SSL_DOMAIN}"
+  if ! bash ./scripts/post_deploy_smoke_checks.sh "http://127.0.0.1:8000" "${SSL_DOMAIN}"; then
+    echo "ERROR: post-deploy smoke checks failed."
+    dump_compose_diagnostics
+    exit 1
+  fi
 else
   echo "WARNING: scripts/post_deploy_smoke_checks.sh not found, skipping app smoke checks."
 fi
