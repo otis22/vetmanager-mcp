@@ -269,3 +269,26 @@ userinfo, custom ports и небезопасные non-origin billing responses.
 - Billing-resolved host должен быть bare HTTPS origin.
 - Client и account integration используют одинаковую allowlist policy.
 - Regression tests закрывают типовые SSRF/bypass формы.
+
+## Цель 44.7
+
+Собрать результаты `44.2–44.6` в явный hardening outcome и подтвердить, что
+отдельного незакрытого security fix bucket после аудита не осталось.
+
+## Решение 44.7
+
+- Зафиксировать, что найденные medium/high-priority fixes были реализованы
+  инкрементально в подпунктах:
+  - `44.2` secret boundary;
+  - `44.3` scope enforcement;
+  - `44.4` audit redaction;
+  - `44.5` trusted proxy policy;
+  - `44.6` bare-origin host validation.
+- Не добавлять искусственный “ещё один fix commit”, если реальные изменения уже
+  внесены и проверены в предыдущих задачах.
+
+## Критерии готовности 44.7
+
+- В roadmap и артефактах явно сказано, где именно были реализованы hardening fixes.
+- После `44.6` не остаётся незакрытого технического хвоста по findings этапа 44,
+  кроме документации и финальной упаковки regressions.

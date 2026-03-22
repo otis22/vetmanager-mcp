@@ -680,7 +680,7 @@
 - 44.4 Проверить logging/audit trail на утечки секретов и sensitive metadata — `done`
 - 44.5 Проверить rate limiting, abuse cases и brute-force surface — `done`
 - 44.6 Проверить SSRF/host resolution/allowlist контур — `done`
-- 44.7 Реализовать найденные hardening fixes — `todo`
+- 44.7 Реализовать найденные hardening fixes — `done`
 - 44.8 Добавить security regression tests — `todo`
 - 44.9 Обновить `README.md`, deployment notes и `AssumptionLog.md` — `todo`
 
