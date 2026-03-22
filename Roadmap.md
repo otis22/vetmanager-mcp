@@ -670,11 +670,11 @@
 - 43.6 Обновить CI workflow под новые test contours — `done`
 - 43.7 Зафиксировать policy в `README.md`, PRD и `AssumptionLog.md` — `done`
 
-## Этап 44. Security review и hardening — `todo`
+## Этап 44. Security review и hardening — `in_progress`
 
 Цель: провести security audit bearer/web/runtime контуров и закрыть найденные риски.
 
-- 44.1 Сформировать threat model для web, bearer auth, MCP runtime и storage — `todo`
+- 44.1 Сформировать threat model для web, bearer auth, MCP runtime и storage — `done`
 - 44.2 Проверить секреты, session/cookie/CSRF и safe error handling — `todo`
 - 44.3 Проверить authz границы bearer token и scope model — `todo`
 - 44.4 Проверить logging/audit trail на утечки секретов и sensitive metadata — `todo`
