@@ -314,3 +314,23 @@ userinfo, custom ports и небезопасные non-origin billing responses.
 - В `pytest.ini` зарегистрирован marker `security`.
 - Ключевые security-invariant tests помечены этим marker'ом.
 - `pytest -m security` проходит зелёным.
+
+## Цель 44.9
+
+Синхронизировать user-facing и deployment-facing документацию с новым security
+baseline этапа 44.
+
+## Решение 44.9
+
+- Обновить `README.md`:
+  - `WEB_TRUSTED_PROXY_IPS`;
+  - отдельный запуск `pytest -m security`;
+  - production notes по разделению secrets и bare-origin policy.
+- Добавить отдельные deployment notes по security baseline этапа 44.
+- Закрыть stage 44 в roadmap и зафиксировать итог в `AssumptionLog.md`.
+
+## Критерии готовности 44.9
+
+- `README.md` описывает новые security controls.
+- В репозитории есть отдельный deployment/security notes artifact.
+- Этап 44 закрыт в roadmap и журнале решений.

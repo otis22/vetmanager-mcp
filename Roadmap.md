@@ -670,7 +670,7 @@
 - 43.6 Обновить CI workflow под новые test contours — `done`
 - 43.7 Зафиксировать policy в `README.md`, PRD и `AssumptionLog.md` — `done`
 
-## Этап 44. Security review и hardening — `in_progress`
+## Этап 44. Security review и hardening — `done`
 
 Цель: провести security audit bearer/web/runtime контуров и закрыть найденные риски.
 
@@ -682,7 +682,7 @@
 - 44.6 Проверить SSRF/host resolution/allowlist контур — `done`
 - 44.7 Реализовать найденные hardening fixes — `done`
 - 44.8 Добавить security regression tests — `done`
-- 44.9 Обновить `README.md`, deployment notes и `AssumptionLog.md` — `todo`
+- 44.9 Обновить `README.md`, deployment notes и `AssumptionLog.md` — `done`
 
 ## Этап 45. Observability, мониторинг и error telemetry — `todo`
 

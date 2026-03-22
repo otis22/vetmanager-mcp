@@ -34,6 +34,7 @@ docker compose up -d          # запустить MCP-сервер
 - `DATABASE_URL` — строка подключения к БД. По умолчанию используется локальный `sqlite+aiosqlite:///./data/vetmanager.db`.
 - `STORAGE_ENCRYPTION_KEY` — ключ шифрования для сохранённых Vetmanager secrets. В production должен быть задан явно.
 - `WEB_SESSION_SECRET` — секрет подписи web session cookie для `/register`, `/login`, `/account`. В production должен быть задан явно.
+- `WEB_TRUSTED_PROXY_IPS` — список доверенных reverse proxy IP/host через запятую; только для них сервис учитывает `X-Forwarded-For`.
 - `PORT`, `MCP_PATH`, `LOG_LEVEL` — стандартные настройки MCP HTTP runtime.
 
 Запуск тестов:
@@ -45,6 +46,9 @@ docker compose run --rm test
 
 # fast contour: без browser и real contour tests
 docker compose run --rm test sh -c "python scripts/run_fast_test_suite.py"
+
+# security contour: только security regressions этапа 44
+docker compose run --rm test sh -c "python -m pytest -m security -q"
 
 # opt-in real contour: real API и real browser tests
 docker compose run --rm \
@@ -194,8 +198,15 @@ docker compose up -d mcp
 - Для production рекомендуется:
   - явный `WEB_SESSION_SECRET`;
   - явный `STORAGE_ENCRYPTION_KEY`;
+  - раздельное хранение этих двух секретов;
+  - `WEB_TRUSTED_PROXY_IPS=<ip1,ip2>` только если сервис реально стоит за
+    доверенным reverse proxy;
   - `WEB_ENABLE_HSTS=1` за HTTPS reverse proxy;
   - внешний rate limit на `/register` и `/login`.
+- Billing-resolved Vetmanager host теперь принимается только как bare HTTPS
+  origin: без `userinfo`, custom port и path/query/fragment.
+- Отдельные deployment notes по security baseline этапа 44:
+  `artifacts/security-deployment-notes-vetmanager-mcp-ru.md`.
 
 ### Тест подключения
 
