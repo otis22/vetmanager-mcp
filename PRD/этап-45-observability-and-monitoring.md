@@ -183,3 +183,20 @@ production runtime мог отправлять unhandled exceptions и error con
 - При наличии DSN backend инициализируется с предсказуемым config contract.
 - Sensitive headers не уходят в event payload.
 - Поведение покрыто tests.
+
+## Цель 45.8
+
+Зафиксировать для команды эксплуатационный runbook: где смотреть health,
+метрики, логи и error tracking при деградациях и инцидентах.
+
+## Решение 45.8
+
+- Обновить README runtime knobs и observability endpoints.
+- Добавить отдельный runbook artifact с диагностическими сценариями.
+- Связать runbook с уже существующими security/deployment notes.
+
+## Критерии готовности 45.8
+
+- README описывает probes, metrics и error tracking knobs.
+- В репозитории есть отдельный observability runbook artifact.
+- Roadmap и AssumptionLog отражают завершение этапа 45.

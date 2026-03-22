@@ -35,6 +35,8 @@ docker compose up -d          # запустить MCP-сервер
 - `STORAGE_ENCRYPTION_KEY` — ключ шифрования для сохранённых Vetmanager secrets. В production должен быть задан явно.
 - `WEB_SESSION_SECRET` — секрет подписи web session cookie для `/register`, `/login`, `/account`. В production должен быть задан явно.
 - `WEB_TRUSTED_PROXY_IPS` — список доверенных reverse proxy IP/host через запятую; только для них сервис учитывает `X-Forwarded-For`.
+- `ERROR_TRACKING_DSN` / `SENTRY_DSN` — opt-in DSN для отправки unhandled errors в Sentry.
+- `ERROR_TRACKING_ENVIRONMENT`, `ERROR_TRACKING_RELEASE`, `ERROR_TRACKING_TRACES_SAMPLE_RATE` — knobs для error tracking bootstrap.
 - `PORT`, `MCP_PATH`, `LOG_LEVEL` — стандартные настройки MCP HTTP runtime.
 
 Запуск тестов:
@@ -87,6 +89,31 @@ docker compose run --rm \
 - browser happy-path tests для обоих web auth flows;
 - cleanup regression для browser-created account data;
 - zero-warning quality gate через warning-as-error launcher.
+
+## Observability
+
+HTTP probes и scrape endpoints:
+- `GET /healthz` — process liveness, не ходит во внешние зависимости.
+- `GET /readyz` — readiness probe; сейчас проверяет storage через `SELECT 1`.
+- `GET /metrics` — Prometheus-compatible text exposition для process-local service metrics.
+
+Что собирается из коробки:
+- structured logs c `request_id`, `correlation_id`, `event_category`, `event_name`;
+- `runtime` / `audit` / `security` logger taxonomy;
+- service metrics:
+  - `vetmanager_http_requests_total`;
+  - `vetmanager_http_request_latency_seconds_count/sum/max`;
+  - `vetmanager_auth_failures_total`;
+  - `vetmanager_upstream_failures_total`;
+- opt-in Sentry bootstrap для unhandled exceptions.
+
+Error tracking:
+- без `ERROR_TRACKING_DSN`/`SENTRY_DSN` integration не активируется;
+- перед отправкой в Sentry редактируются `Authorization`, `Cookie`,
+  `Set-Cookie`, `X-REST-API-KEY`, `X-API-KEY`.
+
+Отдельный runbook по эксплуатации observability-контура:
+- `artifacts/observability-runbook-vetmanager-mcp-ru.md`
 
 ## Bearer-only runtime
 
@@ -203,10 +230,18 @@ docker compose up -d mcp
     доверенным reverse proxy;
   - `WEB_ENABLE_HSTS=1` за HTTPS reverse proxy;
   - внешний rate limit на `/register` и `/login`.
+- Для error tracking в production:
+  - задавать только production DSN;
+  - держать `ERROR_TRACKING_TRACES_SAMPLE_RATE=0` или низкое значение, если
+    нужен только exception tracking;
+  - проверять, что reverse proxy не добавляет в headers чувствительные данные,
+    которые не нужны приложению.
 - Billing-resolved Vetmanager host теперь принимается только как bare HTTPS
   origin: без `userinfo`, custom port и path/query/fragment.
 - Отдельные deployment notes по security baseline этапа 44:
   `artifacts/security-deployment-notes-vetmanager-mcp-ru.md`.
+- Observability runbook этапа 45:
+  `artifacts/observability-runbook-vetmanager-mcp-ru.md`.
 
 ### Тест подключения
 
