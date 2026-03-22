@@ -68,12 +68,10 @@ def verify_account_password(password: str, password_hash: str | None) -> bool:
 
 
 def get_web_session_secret() -> str:
-    """Return session-signing secret with explicit env override."""
-    secret = os.environ.get("WEB_SESSION_SECRET") or os.environ.get("STORAGE_ENCRYPTION_KEY")
+    """Return dedicated session-signing secret for web auth surfaces."""
+    secret = os.environ.get("WEB_SESSION_SECRET")
     if not secret:
-        raise RuntimeError(
-            "Missing WEB_SESSION_SECRET or STORAGE_ENCRYPTION_KEY for signed web sessions."
-        )
+        raise RuntimeError("Missing WEB_SESSION_SECRET for signed web sessions.")
     return secret
 
 

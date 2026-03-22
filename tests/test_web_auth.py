@@ -93,7 +93,15 @@ async def test_register_route_creates_account_and_starts_session(tmp_path: Path,
 
 def test_get_web_session_secret_requires_config(monkeypatch):
     monkeypatch.delenv("WEB_SESSION_SECRET", raising=False)
-    monkeypatch.delenv("STORAGE_ENCRYPTION_KEY", raising=False)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+
+    with pytest.raises(RuntimeError, match="WEB_SESSION_SECRET"):
+        get_web_session_secret()
+
+
+def test_get_web_session_secret_does_not_fallback_to_storage_encryption_key(monkeypatch):
+    monkeypatch.delenv("WEB_SESSION_SECRET", raising=False)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
 
     with pytest.raises(RuntimeError, match="WEB_SESSION_SECRET"):
         get_web_session_secret()

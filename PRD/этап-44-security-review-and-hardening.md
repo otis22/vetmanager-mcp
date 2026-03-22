@@ -79,3 +79,41 @@ security-эссе.
 - Threat model опирается на фактическую реализацию, а не на предполагаемую.
 - В документе выделены приоритетные risk hypotheses, которые напрямую
   продолжаются в `44.2–44.6`.
+
+## Цель 44.2
+
+Проверить контур web secrets/session/cookie/CSRF и safe error handling, чтобы
+исключить слабую связку между web session secret и storage encryption key и
+подтвердить, что web UI не показывает пользователю upstream/internal детали.
+
+## Решение 44.2
+
+- Разделить секреты по назначению:
+  - web session signing должен требовать отдельный `WEB_SESSION_SECRET`;
+  - `STORAGE_ENCRYPTION_KEY` остаётся только для encrypted storage.
+- Зафиксировать regression test на запрет fallback
+  `WEB_SESSION_SECRET <- STORAGE_ENCRYPTION_KEY`.
+- Перепроверить, что текущие web ошибки остаются safe-by-default:
+  - формы логина/интеграции возвращают user-safe сообщения;
+  - CSRF/session cookies сохраняют `HttpOnly`/`Secure`/`SameSite` contract;
+  - security headers продолжают выставляться на HTML responses.
+
+## Декомпозиция 44.2
+
+### 44.2.1 Secret boundary hardening
+- Убрать fallback session secret на `STORAGE_ENCRYPTION_KEY`.
+- Оставить явную runtime-ошибку при отсутствии `WEB_SESSION_SECRET`.
+
+### 44.2.2 Regression coverage
+- Обновить unit/web tests так, чтобы они ловили попытку неявного reuse storage key
+  для web session signing.
+
+### 44.2.3 Validation
+- Прогнать целевые web auth tests.
+- Прогнать обязательный default contour.
+
+## Критерии готовности 44.2
+
+- Web session signing требует отдельный `WEB_SESSION_SECRET`.
+- Тесты покрывают отсутствие fallback на `STORAGE_ENCRYPTION_KEY`.
+- Default suite остаётся зелёным без regressions в web auth flow.
