@@ -51,11 +51,8 @@ skip_if_no_creds = pytest.mark.skipif(
     reason="TEST_DOMAIN and TEST_API_KEY not set — skipping real API tests",
 )
 skip_if_no_user_token = pytest.mark.skipif(
-    not TEST_DOMAIN or (not TEST_USER_TOKEN and not (TEST_USER_TOKEN_BASE_URL and TEST_USER_LOGIN and TEST_USER_PASSWORD)),
-    reason=(
-        "Need TEST_DOMAIN and either TEST_USER_TOKEN or "
-        "TEST_USER_TOKEN_BASE_URL + TEST_USER_LOGIN + TEST_USER_PASSWORD"
-    ),
+    not TEST_DOMAIN or not TEST_USER_TOKEN,
+    reason="Need TEST_DOMAIN and TEST_USER_TOKEN for direct user-token validation tests",
 )
 skip_if_no_user_login_flow = pytest.mark.skipif(
     not TEST_USER_TOKEN_BASE_URL or not TEST_USER_LOGIN or not TEST_USER_PASSWORD,
@@ -86,35 +83,36 @@ def vc() -> VetmanagerClient:
 
 
 async def resolve_real_user_token() -> str:
-    """Return configured user token or exchange one from login/password for smoke tests."""
-    if TEST_USER_TOKEN:
-        return TEST_USER_TOKEN
+    """Exchange one user token from login/password for smoke tests."""
     if not TEST_USER_TOKEN_BASE_URL or not TEST_USER_LOGIN or not TEST_USER_PASSWORD:
-        pytest.skip("User-token real smoke requires TEST_USER_TOKEN or login/password envs.")
+        pytest.skip("Login/password real smoke requires TEST_USER_TOKEN_BASE_URL, TEST_USER_LOGIN and TEST_USER_PASSWORD.")
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as http:
         response = await http.post(
             f"{TEST_USER_TOKEN_BASE_URL.rstrip('/')}/token_auth.php",
             headers={
                 "Accept": "application/json",
-                "Content-Type": "application/x-www-form-urlencoded",
-                "X-REST-API-KEY": TEST_API_KEY,
             },
-            data={
-                "login": TEST_USER_LOGIN,
-                "password": TEST_USER_PASSWORD,
+            files={
+                "login": (None, TEST_USER_LOGIN),
+                "password": (None, TEST_USER_PASSWORD),
+                "app_name": (None, "vetmanager-mcp"),
             },
         )
 
     if response.status_code == 401:
         detail = ""
+        title = ""
         try:
-            detail = str(response.json().get("detail") or "").strip()
+            payload = response.json()
+            detail = str(payload.get("detail") or "").strip()
+            title = str(payload.get("title") or "").strip()
         except Exception:
-            detail = ""
-        pytest.skip(
-            "Login/password token exchange rejected by the test contour."
-            + (f" Detail: {detail}" if detail else "")
+            pass
+        detail_suffix = f" title={title!r} detail={detail!r}" if title or detail else ""
+        raise AssertionError(
+            "Login/password token exchange returned HTTP 401."
+            + detail_suffix
         )
     response.raise_for_status()
     payload = response.json()
@@ -323,7 +321,15 @@ async def test_real_exchange_user_token_from_login_password():
 @skip_if_no_user_token
 @pytest.mark.asyncio
 async def test_real_validate_user_token_connection_from_login_password_or_env_token():
-    """Validation helper should accept a real user-token contour credential."""
+    """Validation helper should accept an explicitly provided real user token."""
+    resolved = await validate_user_token_connection(TEST_DOMAIN, TEST_USER_TOKEN)
+    assert resolved.startswith("https://")
+
+
+@skip_if_no_user_login_flow
+@pytest.mark.asyncio
+async def test_real_validate_user_token_connection_from_login_password_exchange():
+    """Validation helper should accept a token received from the real exchange flow."""
     user_token = await resolve_real_user_token()
     resolved = await validate_user_token_connection(TEST_DOMAIN, user_token)
     assert resolved.startswith("https://")

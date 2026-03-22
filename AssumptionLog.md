@@ -258,6 +258,19 @@
 - Добавлены e2e mock и real smoke сценарии с `sort/filter`.
 - Ручная проверка через MCP как внешний агент выполнена успешно:
   - `get_clients` с `sort` + `filter` (`id >= ...`);
+
+## Этап 42.1: Browser test stack в стандартном pytest
+
+**Архитектурные решения:**
+- В default test suite добавлен browser smoke-test `tests/test_browser_stack.py`, который реально открывает Playwright `page` и тем самым проверяет не только импорт библиотеки, но и наличие рабочего Chromium в test container.
+- Для browser stack выбран локальный набор pytest fixtures в `tests/conftest.py` (`browser_name`, `page`) поверх `playwright.sync_api`, а не внешний `pytest-playwright` plugin.
+- Причина отказа от `pytest-playwright`: при интеграции с существующим async suite он вмешивался в event loop lifecycle и ломал последующие `pytest-asyncio` тесты. Локальные fixtures дали тот же browser baseline без global plugin side effects.
+- В Docker image добавлены Playwright Python dependency и установка Chromium через `python -m playwright install --with-deps chromium`, поэтому `docker compose --profile test run --rm test` уже содержит готовый browser runtime.
+- Test stack закреплён на совместимом поколении `pytest 8.x` и `pytest-asyncio 0.23.x`, чтобы не ломать существующий async test contract проекта.
+
+**Результат проверки:**
+- `docker compose --profile test run --rm test` -> `527 passed, 305 skipped, 4 warnings`.
+- 4 warnings относятся к уже существующему `aiosqlite` thread/loop shutdown поведению в `tests/test_bearer_auth.py` и не были внесены этапом 42.1.
   - `get_pets` с `filter` (`owner_id = ...`) и `sort`.
 
 **Ограничения:**
@@ -1614,3 +1627,166 @@
   - единый `WEB_SESSION_SECRET`;
   - явный `STORAGE_ENCRYPTION_KEY`;
   - `WEB_ENABLE_HSTS=1` за HTTPS reverse proxy.
+
+---
+
+## Этап 41: ревизия user-token flow
+
+**Что зафиксировано по контракту `token_auth.php`:**
+- Предыдущее проектное допущение было неверным:
+  `login/password -> user token` flow не должен зависеть от
+  `X-REST-API-KEY` и не должен моделироваться как режим
+  `domain + api_key + login/password`.
+- Для этапа 41 источником истины считается контракт:
+  - `POST /token_auth.php`
+  - `multipart/form-data`
+  - поля `login`, `password`, `app_name`
+  - без `X-REST-API-KEY` в exchange-запросе
+- Значение `app_name` в проекте фиксировано как `vetmanager-mcp`.
+
+**Что это меняет для проекта:**
+- Web wizard режима `login/password` должен запрашивать только:
+  `domain`, `login`, `password`.
+- Backend exchange и reauth обязаны работать по одному и тому же контракту.
+- Real/mock/browser tests должны различать:
+  - прямую валидацию уже имеющегося `user_token`;
+  - обязательную проверку самого `login/password exchange`.
+
+**Что изменено в коде и тестах:**
+- `vetmanager_connection_service.exchange_user_token()` переведён на
+  `multipart/form-data` через поля `login`, `password`, `app_name`, без
+  `X-REST-API-KEY`.
+- `app_name` зафиксирован константой `vetmanager-mcp`.
+- Safe auth error для `401` в exchange больше не упоминает `api_key`:
+  теперь это `Invalid Vetmanager login or password.`
+- `save_user_login_password_connection()` и web reauth path больше не принимают
+  `api_key`.
+- В `/account` и `/account/integration/reauth` у режима `login/password`
+  удалено поле `api_key`; в DOM остаётся только один `api_key` input,
+  относящийся к отдельному режиму `API key`.
+- `tests/test_vetmanager_connection_service.py` и `tests/test_web_auth.py`
+  теперь явно проверяют:
+  - `multipart/form-data`;
+  - наличие `app_name=vetmanager-mcp`;
+  - отсутствие `X-REST-API-KEY` в exchange request;
+  - отсутствие `api_key` в web submit для `login/password` режима.
+- `tests/test_e2e_real.py` разделён на два независимых real smoke path:
+  - direct validation с `TEST_USER_TOKEN`;
+  - обязательный `login/password exchange` через
+    `TEST_USER_TOKEN_BASE_URL`, `TEST_USER_LOGIN`, `TEST_USER_PASSWORD`.
+- Для real exchange `401` больше не трактуется как benign skip: это теперь
+  явный failure, если credentials были переданы и flow сломан.
+
+**Проверки после аудита:**
+- Точечный прогон:
+  `docker compose --profile test run --rm test pytest tests/test_vetmanager_connection_service.py tests/test_web_auth.py -q`
+  -> `30 passed`.
+- Полный suite после всех правок:
+  `docker compose --profile test run --rm test`
+  -> `526 passed, 305 skipped`.
+
+---
+
+## Этап 42.3: deterministic upstream mocks для browser auth flows
+
+**Что зафиксировано по mock layer:**
+- Для live browser/live HTTP тестов нужен process-wide перехват `httpx`,
+  иначе запросы из Uvicorn thread уходят наружу мимо обычных per-test mocks.
+- `respx` подходит для этого сценария, если:
+  - router стартует как глобальный patcher;
+  - `127.0.0.1` и `localhost` явно пропущены через `pass_through()`,
+    чтобы не ломать сам тестовый клиент к локальному harness.
+
+**Какие reusable fixtures добавлены:**
+- В `tests/conftest.py` добавлен `upstream_mock_router` для process-global
+  mock layer.
+- Добавлены две фабрики:
+  - `mock_domain_api_key_upstream(...)`
+  - `mock_user_token_upstream(...)`
+- Обе фабрики возвращают объект состояния с:
+  - параметрами домена/credentials;
+  - ссылками на зарегистрированные routes;
+  - captured request списками для token exchange и validation.
+
+**Что подтверждено regression tests:**
+- `tests/test_live_upstream_mocks.py` доказывает, что live localhost server
+  действительно использует deterministic mocks для обоих auth flow.
+- Для `domain + api_key` подтверждено:
+  - billing resolve мокается;
+  - validation идёт в `/rest/api/client`;
+  - в запросе уходит `X-REST-API-KEY` и query `limit=1&offset=0`.
+- Для `login/password -> user token` подтверждено:
+  - billing resolve мокается;
+  - `POST /token_auth.php` уходит как `multipart/form-data`;
+  - в exchange нет `X-REST-API-KEY`;
+  - в payload есть `app_name=vetmanager-mcp`;
+  - последующая validation использует выданный `user_token`.
+
+**Наблюдаемый контракт текущего web-flow:**
+- После успешного сохранения integration страница аккаунта сразу выполняет
+  повторную health-check валидацию connection.
+- Поэтому deterministic mocks должны терпеть как минимум один повторный
+  validation request в рамках одного submit/redirect цикла.
+
+**Проверки после аудита:**
+- Точечный прогон:
+  `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_browser_live_harness.py tests/test_live_upstream_mocks.py -q"`
+  -> `3 passed, 2 warnings`.
+
+---
+
+## Этапы 42.4-42.6: browser happy-path для обоих auth flow + UI secrecy assertions
+
+**Что зафиксировано по browser happy-path coverage:**
+- Добавлен browser сценарий для `domain + api_key`:
+  `tests/test_browser_happy_path_domain_api_key.py`
+- Добавлен browser сценарий для `login/password -> user token`:
+  `tests/test_browser_happy_path_user_token.py`
+- Оба теста проходят путь:
+  - регистрация account через реальный localhost HTTP harness;
+  - настройка Vetmanager integration через web UI;
+  - выпуск service bearer token;
+  - `mcp.call_tool(...)` с этим bearer token.
+
+**Технические решения для browser -> MCP call:**
+- Sync Playwright tests нельзя безопасно завершать `asyncio.run(...)`,
+  потому что в потоке уже может жить event loop браузерного рантайма.
+- Для этого в `tests/conftest.py` добавлен reusable helper fixture
+  `run_async`, который исполняет coroutine в отдельном worker thread.
+- Этот helper уже пригоден и для следующих browser задач этапа 42.
+
+**Что подтверждено для `domain + api_key`:**
+- Browser flow реально доходит до сохранения integration и выпуска bearer.
+- Далее bearer используется в `mcp.call_tool("get_clients", ...)`.
+- В captured upstream requests виден отдельный tool-вызов с `limit=2`,
+  то есть browser path не заканчивается только на validation check.
+
+**Что подтверждено для `login/password -> user token`:**
+- Browser flow переключает wizard на `user_token` режим, отправляет
+  `domain`, `vm_login`, `vm_password`, получает user token через
+  `token_auth.php`, затем выпускает bearer token.
+- Далее bearer используется в `mcp.call_tool("get_users", ...)`.
+- Captured requests подтверждают использование и `POST /token_auth.php`,
+  и `GET /rest/api/user` с параметрами tool-вызова.
+
+**Что зафиксировано по UI contract и secret leak protection:**
+- Browser tests теперь явно проверяют:
+  - в DOM ровно один `api_key` input;
+  - активна только соответствующая auth panel;
+  - неактивная panel скрыта.
+- После submit в итоговом HTML не должны появляться:
+  - `api_key` для API-key режима;
+  - `vm_password` и полученный `user_token` для user-token режима.
+
+**Проверки после аудита:**
+- Browser subset:
+  `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_browser_happy_path_domain_api_key.py tests/test_browser_happy_path_user_token.py -q"`
+  -> `2 passed, 2 warnings`.
+- Полный suite после добавления browser happy-path tests:
+  `docker compose --profile test run --rm test`
+  -> `532 passed, 305 skipped, 5 warnings`.
+- Из них:
+  - 2 warnings связаны с `uvicorn/websockets` deprecation в live browser
+    harness;
+  - 3 warnings относятся к уже существующему `aiosqlite` thread/loop
+    shutdown поведению в `tests/test_token_cleanup.py`.

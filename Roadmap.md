@@ -627,3 +627,33 @@
 - 40.2 Проверить multi-instance безопасность web auth, session и CSRF-механизма — `done`
 - 40.3 Сформировать ops/security deployment checklist для production — `done`
 - 40.4 Обновить `README.md`, PRD и `AssumptionLog.md` по итогам production hardening planning/implementation — `done`
+
+## Этап 41. Исправление user-token flow и ревизия e2e — `done`
+
+Цель: привести `login/password -> user token` к реальному контракту Vetmanager, убрать ложные допущения про `api_key`, обновить UI и сделать e2e-покрытие честным.
+
+- 41.1 Зафиксировать актуальный контракт `POST /token_auth.php`: `multipart/form-data`, поля `login`, `password`, `app_name`, без `X-REST-API-KEY` — `done`
+- 41.2 Обновить backend exchange-алгоритм под новый контракт и `app_name=vetmanager-mcp` — `done`
+- 41.3 Обновить reauth flow под тот же контракт без `api_key` — `done`
+- 41.4 Переделать web UI `/account` и `/account/integration/reauth`: в режиме `login/password` убрать поле `api_key`, обновить тексты и безопасные ошибки — `done`
+- 41.5 Добавить и обновить unit/mock/web tests на новый `token_auth.php` flow — `done`
+- 41.6 Переписать real e2e для user-token режима: разделить `direct user_token validation` и обязательный `login/password exchange` — `done`
+- 41.7 Убрать ложноположительные проверки и `skip`-семантику там, где переданные credentials должны приводить к `fail`, если flow сломан — `done`
+- 41.8 Провести аудит остальных real/mock e2e helper'ов и исправить тесты, которые не проверяют заявленный контракт — `done`
+- 41.9 Обновить `README.md`, PRD, technical requirements и `AssumptionLog.md` под новый auth flow — `done`
+- 41.10 Выполнить полный прогон test suite после аудита и правок — `done`
+
+## Этап 42. Automated Browser Happy Path для web auth flows — `in_progress`
+
+Цель: сделать browser happy-path частью обычного test suite для обоих сценариев авторизации, с автоматической очисткой тестовых аккаунтов. Browser tests с реальными внешними данными остаются отдельной опцией.
+
+- 42.1 Добавить browser test stack в стандартный `pytest` и `docker compose --profile test run --rm test` — `done`
+- 42.2 Поднять live HTTP test harness для browser tests и встроить его в общий запуск тестов — `done`
+- 42.3 Подготовить deterministic upstream mocks для обоих auth flow, чтобы дефолтные browser tests не зависели от внешнего Vetmanager — `done`
+- 42.4 Написать browser happy-path для `domain + api_key`: регистрация -> login -> integration -> bearer issuance -> MCP call — `done`
+- 42.5 Написать browser happy-path для `login/password -> user token`: регистрация -> login -> exchange -> integration -> bearer issuance -> MCP call — `done`
+- 42.6 Добавить browser assertions на UI-контракт и отсутствие утечек секретов после submit — `done`
+- 42.7 Реализовать cleanup helper для удаления тестового account и всех связанных сущностей после каждого browser test — `todo`
+- 42.8 Добавить regression test на cleanup: после browser tests в БД не остаётся тестовых account и связанных записей — `todo`
+- 42.9 Обновить `README.md`, PRD и `AssumptionLog.md`: browser happy-path tests входят в обязательный suite — `todo`
+- 42.10 Добавить optional browser tests с реальными данными как отдельный opt-in режим, не входящий в дефолтный прогон — `todo`

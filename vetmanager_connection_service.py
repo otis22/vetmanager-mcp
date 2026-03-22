@@ -25,6 +25,7 @@ INTEGRATION_HEALTH_ACTIVE = "active"
 INTEGRATION_HEALTH_INVALID = "invalid"
 INTEGRATION_HEALTH_REAUTH_REQUIRED = "reauth_required"
 INTEGRATION_HEALTH_UNKNOWN = "unknown"
+TOKEN_AUTH_APP_NAME = "vetmanager-mcp"
 
 
 def _validate_resolved_host(host: str, domain: str) -> str:
@@ -127,17 +128,15 @@ def _safe_error_detail(response: httpx.Response) -> str:
 async def exchange_user_token(
     domain: str,
     *,
-    api_key: str,
     login: str,
     password: str,
 ) -> tuple[str, str]:
     """Exchange login/password into a Vetmanager user token."""
     normalized_domain = _validate_domain(domain.strip())
-    normalized_api_key = api_key.strip()
     normalized_login = login.strip()
     normalized_password = password.strip()
-    if not normalized_api_key or not normalized_login or not normalized_password:
-        raise AuthError("Invalid Vetmanager login, password or API key.", status_code=401)
+    if not normalized_login or not normalized_password:
+        raise AuthError("Invalid Vetmanager login or password.", status_code=401)
 
     resolved_host = await resolve_vetmanager_host(normalized_domain)
     async with httpx.AsyncClient(timeout=httpx.Timeout(REQUEST_TIMEOUT)) as http:
@@ -146,12 +145,11 @@ async def exchange_user_token(
                 f"{resolved_host}/token_auth.php",
                 headers={
                     "Accept": "application/json",
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "X-REST-API-KEY": normalized_api_key,
                 },
-                data={
-                    "login": normalized_login,
-                    "password": normalized_password,
+                files={
+                    "login": (None, normalized_login),
+                    "password": (None, normalized_password),
+                    "app_name": (None, TOKEN_AUTH_APP_NAME),
                 },
             )
         except httpx.TimeoutException as exc:
@@ -160,7 +158,7 @@ async def exchange_user_token(
             raise VetmanagerError("Vetmanager authorization is temporarily unavailable.") from exc
 
     if response.status_code == 401:
-        raise AuthError("Invalid Vetmanager login, password or API key.", status_code=401)
+        raise AuthError("Invalid Vetmanager login or password.", status_code=401)
     if response.status_code == 403:
         raise AuthError(
             "Vetmanager login/password authorization is disabled or unavailable for this clinic. Use API key or verify clinic settings.",
@@ -301,7 +299,6 @@ async def save_user_login_password_connection(
     *,
     account_id: int,
     domain: str,
-    api_key: str,
     login: str,
     password: str,
     encryption_key: str | None = None,
@@ -310,7 +307,6 @@ async def save_user_login_password_connection(
     normalized_domain = _validate_domain(domain.strip())
     resolved_host, user_token = await exchange_user_token(
         normalized_domain,
-        api_key=api_key,
         login=login,
         password=password,
     )

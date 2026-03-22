@@ -1,0 +1,240 @@
+"""Shared pytest fixtures for browser-level tests."""
+
+import asyncio
+from collections.abc import Generator
+from dataclasses import dataclass, field
+from pathlib import Path
+import threading
+import time
+
+import httpx
+import pytest
+from playwright.sync_api import Page, sync_playwright
+import respx
+import storage
+import uvicorn
+from server import mcp
+from storage import Base, create_database_engine
+from web_security import reset_web_security_state
+
+TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
+
+
+@dataclass
+class DeterministicUpstreamMock:
+    """State holder for deterministic Vetmanager upstream auth mocks."""
+
+    domain: str
+    resolved_host: str
+    api_key: str | None = None
+    user_token: str | None = None
+    login: str | None = None
+    password: str | None = None
+    billing_route: object | None = None
+    token_auth_route: object | None = None
+    validation_route: object | None = None
+    token_exchange_requests: list[httpx.Request] = field(default_factory=list)
+    validation_requests: list[httpx.Request] = field(default_factory=list)
+
+
+def _build_http_app():
+    return mcp.http_app(path="/mcp", transport="streamable-http")
+
+
+def _dispose_engine_sync(engine) -> None:
+    _run_coro_in_thread(engine.dispose())
+
+
+def _run_coro_in_thread(coro):
+    error: list[BaseException] = []
+    result: list[object] = []
+
+    def _runner() -> None:
+        try:
+            result.append(asyncio.run(coro))
+        except BaseException as exc:  # pragma: no cover - escalated back to fixture caller
+            error.append(exc)
+
+    worker = threading.Thread(target=_runner, name="pytest-async-fixture-worker", daemon=True)
+    worker.start()
+    worker.join()
+    if error:
+        raise error[0]
+    if result:
+        return result[0]
+    return None
+
+
+@pytest.fixture
+def prepared_web_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Prepare isolated SQLite storage and web security state for live web tests."""
+    database_path = tmp_path / "browser-live.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path}")
+    monkeypatch.setenv("WEB_SESSION_SECRET", "browser-live-session-secret")
+    monkeypatch.setenv("WEB_SESSION_SECURE", "0")
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+
+    storage.reset_storage_state()
+    reset_web_security_state()
+
+    engine = create_database_engine(f"sqlite:///{database_path}")
+    async def _bootstrap() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    _run_coro_in_thread(_bootstrap())
+
+    try:
+        yield database_path
+    finally:
+        _dispose_engine_sync(engine)
+        storage.reset_storage_state()
+        reset_web_security_state()
+
+
+@pytest.fixture
+def upstream_mock_router():
+    """Patch httpx process-wide so live server requests also hit deterministic mocks."""
+    router = respx.mock(assert_all_mocked=True, assert_all_called=False)
+    router.route(host="127.0.0.1").pass_through()
+    router.route(host="localhost").pass_through()
+    router.start()
+    try:
+        yield router
+    finally:
+        router.stop()
+        router.reset()
+
+
+@pytest.fixture
+def mock_domain_api_key_upstream(upstream_mock_router):
+    """Create deterministic billing + API-key validation mocks for one clinic."""
+
+    def _factory(
+        *,
+        domain: str = "browser-api-key-clinic",
+        resolved_host: str | None = None,
+        api_key: str = "browser-api-key-secret",
+    ) -> DeterministicUpstreamMock:
+        host = resolved_host or f"https://{domain}.vetmanager.cloud"
+        state = DeterministicUpstreamMock(
+            domain=domain,
+            resolved_host=host.rstrip("/"),
+            api_key=api_key,
+        )
+
+        def _capture_validation(request: httpx.Request) -> httpx.Response:
+            state.validation_requests.append(request)
+            return httpx.Response(200, json={"data": []})
+
+        state.billing_route = upstream_mock_router.get(
+            f"https://billing-api.vetmanager.cloud/host/{domain}"
+        ).mock(return_value=httpx.Response(200, json={"data": {"url": state.resolved_host}}))
+        state.validation_route = upstream_mock_router.get(
+            f"{state.resolved_host}/rest/api/client"
+        ).mock(side_effect=_capture_validation)
+        return state
+
+    return _factory
+
+
+@pytest.fixture
+def mock_user_token_upstream(upstream_mock_router):
+    """Create deterministic billing + token exchange + token validation mocks."""
+
+    def _factory(
+        *,
+        domain: str = "browser-user-token-clinic",
+        resolved_host: str | None = None,
+        login: str = "browser-doctor",
+        password: str = "browser-password-123",
+        user_token: str = "browser-issued-user-token",
+    ) -> DeterministicUpstreamMock:
+        host = resolved_host or f"https://{domain}.vetmanager.cloud"
+        state = DeterministicUpstreamMock(
+            domain=domain,
+            resolved_host=host.rstrip("/"),
+            login=login,
+            password=password,
+            user_token=user_token,
+        )
+
+        def _capture_token_exchange(request: httpx.Request) -> httpx.Response:
+            state.token_exchange_requests.append(request)
+            return httpx.Response(200, json={"data": {"token": state.user_token}})
+
+        def _capture_validation(request: httpx.Request) -> httpx.Response:
+            state.validation_requests.append(request)
+            return httpx.Response(200, json={"data": []})
+
+        state.billing_route = upstream_mock_router.get(
+            f"https://billing-api.vetmanager.cloud/host/{domain}"
+        ).mock(return_value=httpx.Response(200, json={"data": {"url": state.resolved_host}}))
+        state.token_auth_route = upstream_mock_router.post(
+            f"{state.resolved_host}/token_auth.php"
+        ).mock(side_effect=_capture_token_exchange)
+        state.validation_route = upstream_mock_router.get(
+            f"{state.resolved_host}/rest/api/user"
+        ).mock(side_effect=_capture_validation)
+        return state
+
+    return _factory
+
+
+@pytest.fixture
+def live_server_url(prepared_web_db, free_tcp_port: int) -> Generator[str, None, None]:
+    """Run the app on a real localhost HTTP port for browser-level navigation."""
+    app = _build_http_app()
+    config = uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=free_tcp_port,
+        log_level="warning",
+        access_log=False,
+    )
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, name="pytest-live-http-server", daemon=True)
+    thread.start()
+
+    deadline = time.time() + 10.0
+    while not getattr(server, "started", False):
+        if not thread.is_alive():
+            raise RuntimeError("Live HTTP test server stopped before startup completed.")
+        if time.time() >= deadline:
+            raise RuntimeError("Timed out waiting for live HTTP test server startup.")
+        time.sleep(0.05)
+
+    try:
+        yield f"http://127.0.0.1:{free_tcp_port}"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10.0)
+        if thread.is_alive():
+            raise RuntimeError("Live HTTP test server did not stop cleanly.")
+
+
+@pytest.fixture
+def run_async():
+    """Run async project calls safely from sync browser/live tests."""
+    return _run_coro_in_thread
+
+
+@pytest.fixture
+def browser_name() -> str:
+    """Return the default browser used by the project browser stack."""
+    return "chromium"
+
+
+@pytest.fixture
+def page(browser_name: str) -> Generator[Page, None, None]:
+    """Provide an isolated Playwright page without loading external plugins."""
+    with sync_playwright() as playwright:
+        browser_launcher = getattr(playwright, browser_name)
+        browser = browser_launcher.launch()
+        context = browser.new_context()
+        current_page = context.new_page()
+        try:
+            yield current_page
+        finally:
+            context.close()
+            browser.close()

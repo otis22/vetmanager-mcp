@@ -439,20 +439,16 @@ def _render_account_page(
     domain_value = form_domain or (active_connection.domain if active_connection else "")
     show_domain_api_key_panel = selected_auth_mode == VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
     show_user_token_panel = selected_auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN
-    domain_input_attrs = 'data-panel-input="true"'
-    api_key_input_attrs = 'data-panel-input="true"'
+    domain_input_attrs = 'data-panel-input="true" data-required-when-active="true"'
+    api_key_input_attrs = 'data-panel-input="true" data-required-when-active="true"'
     login_input_attrs = 'data-panel-input="true" data-required-when-active="true"'
     password_input_attrs = 'data-panel-input="true" data-required-when-active="true"'
     if show_domain_api_key_panel:
-        domain_input_attrs += " required"
-        api_key_input_attrs += " required"
         login_input_attrs += " disabled"
         password_input_attrs += " disabled"
     else:
         domain_input_attrs += " disabled"
         api_key_input_attrs += " disabled"
-        login_input_attrs += " required"
-        password_input_attrs += " required"
     onboarding_html = ""
     if active_connection is None:
         onboarding_html = """
@@ -616,10 +612,7 @@ def _render_account_page(
           <div class="panel-card field-panel" data-mode-panel="{VETMANAGER_AUTH_MODE_USER_TOKEN}" {"hidden" if not show_user_token_panel else ""}>
             <strong>Шаг 2. Данные клиники для логина и пароля</strong>
             <label>Clinic domain
-              <input type="text" name="domain" value="{escape(domain_value)}" placeholder="myclinic" {'' if show_user_token_panel else 'disabled'} data-panel-input="true" {'required' if show_user_token_panel else ''}>
-            </label>
-            <label>Vetmanager REST API key
-              <input type="password" name="api_key" autocomplete="off" placeholder="API key" {'' if show_user_token_panel else 'disabled'} data-panel-input="true" {'required' if show_user_token_panel else ''}>
+              <input type="text" name="domain" value="{escape(domain_value)}" placeholder="myclinic" {'' if show_user_token_panel else 'disabled'} data-panel-input="true" data-required-when-active="true">
             </label>
             <label>Vetmanager login
               <input type="text" name="vm_login" value="{escape(form_vm_login)}" autocomplete="username" placeholder="user login" {login_input_attrs}>
@@ -672,7 +665,7 @@ def _render_account_page(
                   panel.hidden = !isActive;
                   const inputs = panel.querySelectorAll('[data-panel-input="true"]');
                   for (const input of inputs) {{
-                    const shouldRequire = input.hasAttribute('data-required-when-active') || input.getAttribute('name') === 'domain' || input.getAttribute('name') === 'api_key';
+                    const shouldRequire = input.hasAttribute('data-required-when-active');
                     input.disabled = !isActive;
                     input.required = isActive && shouldRequire;
                   }}
@@ -1089,7 +1082,6 @@ def register_web_routes(mcp: FastMCP) -> None:
             )
         auth_mode = form.get("auth_mode", VETMANAGER_AUTH_MODE_DOMAIN_API_KEY).strip()
         domain = form.get("domain", "")
-        api_key = form.get("api_key", "")
         vm_login = form.get("vm_login", "")
         vm_password = form.get("vm_password", "")
 
@@ -1100,7 +1092,6 @@ def register_web_routes(mcp: FastMCP) -> None:
                         session,
                         account_id=account_id,
                         domain=domain,
-                        api_key=api_key,
                         login=vm_login,
                         password=vm_password,
                         encryption_key=os.environ.get("STORAGE_ENCRYPTION_KEY"),
@@ -1110,7 +1101,7 @@ def register_web_routes(mcp: FastMCP) -> None:
                         session,
                         account_id=account_id,
                         domain=domain,
-                        api_key=api_key,
+                        api_key=form.get("api_key", ""),
                         encryption_key=os.environ.get("STORAGE_ENCRYPTION_KEY"),
                     )
         except (ValueError, AuthError, HostResolutionError, VetmanagerError) as exc:
@@ -1149,7 +1140,6 @@ def register_web_routes(mcp: FastMCP) -> None:
             )
         auth_mode = form.get("auth_mode", VETMANAGER_AUTH_MODE_DOMAIN_API_KEY).strip()
         domain = form.get("domain", "")
-        api_key = form.get("api_key", "")
         vm_login = form.get("vm_login", "")
         vm_password = form.get("vm_password", "")
 
@@ -1160,7 +1150,6 @@ def register_web_routes(mcp: FastMCP) -> None:
                         session,
                         account_id=account_id,
                         domain=domain,
-                        api_key=api_key,
                         login=vm_login,
                         password=vm_password,
                         encryption_key=os.environ.get("STORAGE_ENCRYPTION_KEY"),
@@ -1170,7 +1159,7 @@ def register_web_routes(mcp: FastMCP) -> None:
                         session,
                         account_id=account_id,
                         domain=domain,
-                        api_key=api_key,
+                        api_key=form.get("api_key", ""),
                         encryption_key=os.environ.get("STORAGE_ENCRYPTION_KEY"),
                     )
         except (ValueError, AuthError, HostResolutionError, VetmanagerError) as exc:

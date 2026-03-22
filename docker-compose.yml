@@ -43,7 +43,6 @@ services:
       - .:/app
     user: "${UID:-1000}:${GID:-1000}"
     command: >
-      sh -c "pip install --quiet respx pytest-asyncio &&
-             python -m pytest tests/ -v"
+      sh -c "python -m pytest tests/ -v"
     profiles:
       - test

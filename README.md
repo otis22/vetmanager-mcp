@@ -45,12 +45,15 @@ docker compose run --rm test
 # с реальным API по api_key flow
 docker compose run --rm -e TEST_DOMAIN=<домен> -e TEST_API_KEY=<ключ> test
 
-# с real smoke для user-token flow:
-# либо дайте уже готовый TEST_USER_TOKEN,
-# либо передайте контур login/password exchange
+# с direct real smoke для уже выданного user-token
 docker compose run --rm \
   -e TEST_DOMAIN=<домен> \
-  -e TEST_API_KEY=<api_key> \
+  -e TEST_USER_TOKEN=<user_token> \
+  test
+
+# с real smoke для login/password -> user token exchange
+docker compose run --rm \
+  -e TEST_DOMAIN=<домен> \
   -e TEST_USER_TOKEN_BASE_URL=<https://clinic.vetmanager2.ru> \
   -e TEST_USER_LOGIN=<login> \
   -e TEST_USER_PASSWORD=<password> \
@@ -65,7 +68,7 @@ Bearer-токен привязан к account сервиса:
 
 - `service_bearer_token` идентифицирует account;
 - account хранит ровно одно активное `vetmanager_connection`;
-- активное connection поддерживает auth mode `domain + rest_api_key` и `login/password + api_key -> user token`;
+- активное connection поддерживает auth mode `domain + rest_api_key` и `login/password -> user token`;
 - домен и Vetmanager API key хранятся в storage-слое и не передаются в MCP tool arguments.
 
 ### Текущий статус provisioning
@@ -79,8 +82,10 @@ Bearer-токен привязан к account сервиса:
 - доступна настройка активной Vetmanager integration через wizard:
   сначала выбор способа авторизации, затем только релевантные поля;
 - доступна настройка `domain + rest_api_key`;
-- доступна настройка user-token integration через `domain + api_key + login/password -> user token`;
+- доступна настройка user-token integration через `domain + login/password -> user token`;
 - логин и пароль Vetmanager не сохраняются и не отображаются повторно после submit;
+- для token exchange используется `POST /token_auth.php` с `multipart/form-data`
+  и фиксированным `app_name=vetmanager-mcp`, без `X-REST-API-KEY`;
 - для нового account кабинет показывает onboarding state с явным следующим шагом;
 - state-changing web forms защищены signed CSRF token layer;
 - `/register` и `/login` защищены process-local rate limiting от brute-force / abuse;

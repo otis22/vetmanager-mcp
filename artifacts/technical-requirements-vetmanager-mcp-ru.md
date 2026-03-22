@@ -267,6 +267,14 @@ vetmanager-mcp/
 - usage accounting для токенов (`last_used_at`, `request_count`);
 - abstraction layer для нескольких способов авторизации в Vetmanager.
 
+Контракт `login/password -> user token` для web-контура:
+- exchange выполняется через `POST /token_auth.php`;
+- request body: `multipart/form-data`;
+- поля exchange: `login`, `password`, `app_name`;
+- `app_name` фиксирован как `vetmanager-mcp`;
+- `X-REST-API-KEY` в exchange-запросе не используется;
+- после exchange в storage сохраняется только `user_token`.
+
 Ключевые сущности storage-модели:
 - `account`
 - `vetmanager_connection`

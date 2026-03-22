@@ -516,9 +516,14 @@ async def test_account_integration_form_exchanges_login_password_into_user_token
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-user").mock(
         return_value=httpx.Response(200, json={"data": {"url": "https://clinic-user.vetmanager.cloud"}})
     )
-    respx.post("https://clinic-user.vetmanager.cloud/token_auth.php").mock(
-        return_value=httpx.Response(200, json={"data": {"token": "user-token-secret"}})
-    )
+    captured: dict[str, object] = {}
+
+    def _token_auth_response(request: httpx.Request) -> httpx.Response:
+        captured["headers"] = dict(request.headers)
+        captured["body"] = request.content
+        return httpx.Response(200, json={"data": {"token": "user-token-secret"}})
+
+    respx.post("https://clinic-user.vetmanager.cloud/token_auth.php").mock(side_effect=_token_auth_response)
     respx.get("https://clinic-user.vetmanager.cloud/rest/api/user").mock(
         return_value=httpx.Response(200, json={"data": []})
     )
@@ -542,7 +547,6 @@ async def test_account_integration_form_exchanges_login_password_into_user_token
             data={
                 "auth_mode": "user_token",
                 "domain": "clinic-user",
-                "api_key": "rest-api-key",
                 "vm_login": "doctor",
                 "vm_password": "doctor-pass-123",
             },
@@ -554,8 +558,15 @@ async def test_account_integration_form_exchanges_login_password_into_user_token
     assert "clinic-user" in response.text
     assert "user_token" in response.text
     assert "user-token-secret" not in response.text
-    assert "rest-api-key" not in response.text
     assert "doctor-pass-123" not in response.text
+    assert response.text.count('name="api_key"') == 1
+
+    headers = captured["headers"]
+    body = captured["body"]
+    assert headers["content-type"].startswith("multipart/form-data; boundary=")
+    assert "x-rest-api-key" not in {key.lower() for key in headers}
+    assert b'name="app_name"' in body
+    assert b'vetmanager-mcp' in body
 
     async with storage.get_session_factory()() as session:
         stored = await session.get(VetmanagerConnection, 1)
@@ -566,7 +577,6 @@ async def test_account_integration_form_exchanges_login_password_into_user_token
     assert stored.auth_mode == "user_token"
     assert stored.encrypted_credentials is not None
     assert "user-token-secret" not in stored.encrypted_credentials
-    assert "rest-api-key" not in stored.encrypted_credentials
     assert "doctor-pass-123" not in stored.encrypted_credentials
 
     await engine.dispose()
@@ -611,7 +621,6 @@ async def test_account_integration_form_shows_safe_error_for_failed_login_passwo
             data={
                 "auth_mode": "user_token",
                 "domain": "clinic-user-bad",
-                "api_key": "rest-api-key",
                 "vm_login": "doctor",
                 "vm_password": "bad-password",
             },
@@ -619,8 +628,7 @@ async def test_account_integration_form_shows_safe_error_for_failed_login_passwo
         )
 
     assert response.status_code == 400
-    assert "Invalid Vetmanager login, password or API key." in response.text
-    assert "rest-api-key" not in response.text
+    assert "Invalid Vetmanager login or password." in response.text
     assert "doctor" not in response.text
     assert "bad-password" not in response.text
 
@@ -1157,7 +1165,6 @@ async def test_reauth_submit_replaces_invalid_user_token_connection(tmp_path: Pa
             data={
                 "auth_mode": "user_token",
                 "domain": "clinic-rotate",
-                "api_key": "rest-api-key",
                 "vm_login": "doctor",
                 "vm_password": "new-password-123",
             },

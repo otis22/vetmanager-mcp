@@ -12,7 +12,9 @@ from exceptions import AuthError
 from storage import Base, create_database_engine
 from storage_models import VetmanagerConnection
 from vetmanager_connection_service import (
+    exchange_user_token,
     save_domain_api_key_connection,
+    save_user_login_password_connection,
     save_user_token_connection,
 )
 
@@ -184,3 +186,74 @@ async def test_save_user_token_connection_rejects_invalid_user_token(tmp_path: P
                 user_token="bad-user-token",
                 encryption_key=TEST_ENCRYPTION_KEY,
             )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_exchange_user_token_uses_multipart_form_and_app_name_without_api_key():
+    """Login/password exchange must use multipart form-data with app_name only."""
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-auth").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://clinic-auth.vetmanager.cloud"}})
+    )
+
+    captured: dict[str, object] = {}
+
+    def _token_auth_response(request: httpx.Request) -> httpx.Response:
+        captured["headers"] = dict(request.headers)
+        captured["body"] = request.content
+        return httpx.Response(200, json={"data": {"token": "fresh-user-token"}})
+
+    respx.post("https://clinic-auth.vetmanager.cloud/token_auth.php").mock(side_effect=_token_auth_response)
+
+    resolved_host, user_token = await exchange_user_token(
+        "clinic-auth",
+        login="doctor",
+        password="doctor-pass-123",
+    )
+
+    headers = captured["headers"]
+    body = captured["body"]
+    assert resolved_host == "https://clinic-auth.vetmanager.cloud"
+    assert user_token == "fresh-user-token"
+    assert headers["content-type"].startswith("multipart/form-data; boundary=")
+    assert "x-rest-api-key" not in {key.lower() for key in headers}
+    assert b'name="login"' in body
+    assert b'doctor' in body
+    assert b'name="password"' in body
+    assert b'doctor-pass-123' in body
+    assert b'name="app_name"' in body
+    assert b'vetmanager-mcp' in body
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_save_user_login_password_connection_persists_token_without_api_key(tmp_path: Path):
+    """Saving login/password mode should not require or persist an API key."""
+    session_factory = await _make_session_factory(tmp_path)
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-login").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://clinic-login.vetmanager.cloud"}})
+    )
+    respx.post("https://clinic-login.vetmanager.cloud/token_auth.php").mock(
+        return_value=httpx.Response(200, json={"data": {"token": "user-token-secret"}})
+    )
+    respx.get("https://clinic-login.vetmanager.cloud/rest/api/user").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+
+    async with session_factory() as session:
+        connection = await save_user_login_password_connection(
+            session,
+            account_id=1,
+            domain="clinic-login",
+            login="doctor",
+            password="doctor-pass-123",
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+
+    async with session_factory() as session:
+        stored = await session.get(VetmanagerConnection, connection.id)
+
+    assert stored is not None
+    assert stored.auth_mode == "user_token"
+    assert "user-token-secret" not in stored.encrypted_credentials
+    assert "doctor-pass-123" not in stored.encrypted_credentials
