@@ -13,14 +13,19 @@ from functools import wraps
 from fastmcp import FastMCP
 from sqlalchemy import func, select, text
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
+from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 
 from exceptions import AuthError, HostResolutionError, RateLimitError, VetmanagerError
 from landing_page import render_landing_page
 from observability_logging import RUNTIME_LOGGER
 from request_context import attach_request_context_headers
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
-from service_metrics import record_auth_failure, record_http_request
+from service_metrics import (
+    PROMETHEUS_CONTENT_TYPE,
+    record_auth_failure,
+    record_http_request,
+    render_prometheus_metrics,
+)
 from storage import get_session_factory
 from storage_models import Account, ServiceBearerToken, TokenUsageStat, VetmanagerConnection
 from vetmanager_auth import (
@@ -138,6 +143,19 @@ def _json_response(
     status_code: int = 200,
 ) -> JSONResponse:
     response = JSONResponse(payload, status_code=status_code)
+    response.headers["Cache-Control"] = "no-store"
+    attach_request_context_headers(response, request)
+    return response
+
+
+def _plain_text_response(
+    request: Request,
+    content: str,
+    *,
+    status_code: int = 200,
+    media_type: str = "text/plain",
+) -> PlainTextResponse:
+    response = PlainTextResponse(content, status_code=status_code, media_type=media_type)
     response.headers["Cache-Control"] = "no-store"
     attach_request_context_headers(response, request)
     return response
@@ -961,6 +979,14 @@ def register_web_routes(mcp: FastMCP) -> None:
                 },
             },
             status_code=200 if is_ready else 503,
+        )
+
+    @_observed_custom_route(mcp, "/metrics", methods=["GET"], include_in_schema=False)
+    async def metrics_export(request: Request) -> PlainTextResponse:
+        return _plain_text_response(
+            request,
+            render_prometheus_metrics(),
+            media_type=PROMETHEUS_CONTENT_TYPE,
         )
 
     @_observed_custom_route(mcp, "/register", methods=["GET"], include_in_schema=False)

@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass
 from threading import Lock
 from typing import DefaultDict
 
+PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
+
 
 @dataclass(slots=True)
 class LatencyAggregate:
@@ -81,3 +83,73 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 for (target, reason), count in sorted(_UPSTREAM_FAILURES_TOTAL.items())
             },
         }
+
+
+def _escape_label_value(value: object) -> str:
+    return str(value).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _labels_text(**labels: object) -> str:
+    serialized = ",".join(
+        f'{name}="{_escape_label_value(value)}"'
+        for name, value in labels.items()
+    )
+    return f"{{{serialized}}}"
+
+
+def render_prometheus_metrics() -> str:
+    """Render current registry snapshot in Prometheus text exposition format."""
+    snapshot = snapshot_service_metrics()
+    lines = [
+        "# HELP vetmanager_http_requests_total Total observed HTTP requests by route, method, and status code.",
+        "# TYPE vetmanager_http_requests_total counter",
+    ]
+    for key, value in snapshot["http_requests_total"].items():
+        route, method, status_code = key.split("|", 2)
+        lines.append(
+            f"vetmanager_http_requests_total"
+            f"{_labels_text(route=route, method=method, status_code=status_code)} {value}"
+        )
+
+    lines.extend(
+        [
+            "# HELP vetmanager_http_request_latency_seconds Request latency aggregates for observed HTTP routes.",
+            "# TYPE vetmanager_http_request_latency_seconds summary",
+            "# HELP vetmanager_http_request_latency_seconds_max Maximum observed HTTP request latency by route and method.",
+            "# TYPE vetmanager_http_request_latency_seconds_max gauge",
+        ]
+    )
+    for key, value in snapshot["http_request_latency_seconds"].items():
+        route, method = key.split("|", 1)
+        labels = _labels_text(route=route, method=method)
+        lines.append(f"vetmanager_http_request_latency_seconds_count{labels} {value['count']}")
+        lines.append(f"vetmanager_http_request_latency_seconds_sum{labels} {value['sum_seconds']}")
+        lines.append(f"vetmanager_http_request_latency_seconds_max{labels} {value['max_seconds']}")
+
+    lines.extend(
+        [
+            "# HELP vetmanager_auth_failures_total Total auth failures by source and reason.",
+            "# TYPE vetmanager_auth_failures_total counter",
+        ]
+    )
+    for key, value in snapshot["auth_failures_total"].items():
+        source, reason = key.split("|", 1)
+        lines.append(
+            f"vetmanager_auth_failures_total"
+            f"{_labels_text(source=source, reason=reason)} {value}"
+        )
+
+    lines.extend(
+        [
+            "# HELP vetmanager_upstream_failures_total Total upstream failures by target and reason.",
+            "# TYPE vetmanager_upstream_failures_total counter",
+        ]
+    )
+    for key, value in snapshot["upstream_failures_total"].items():
+        target, reason = key.split("|", 1)
+        lines.append(
+            f"vetmanager_upstream_failures_total"
+            f"{_labels_text(target=target, reason=reason)} {value}"
+        )
+
+    return "\n".join(lines) + "\n"
