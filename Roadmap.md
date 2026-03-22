@@ -684,14 +684,14 @@
 - 44.8 Добавить security regression tests — `done`
 - 44.9 Обновить `README.md`, deployment notes и `AssumptionLog.md` — `done`
 
-## Этап 45. Observability, мониторинг и error telemetry — `todo`
+## Этап 45. Observability, мониторинг и error telemetry — `in_progress`
 
 Цель: сделать сервис наблюдаемым в эксплуатации и упростить расследование инцидентов.
 
 - 45.1 Ввести structured logging contract — `done`
 - 45.2 Добавить request/correlation id для web и MCP запросов — `done`
 - 45.3 Разделить runtime, audit и security log events — `done`
-- 45.4 Добавить health/readiness endpoints — `todo`
+- 45.4 Добавить health/readiness endpoints — `done`
 - 45.5 Добавить базовые service metrics: latency, error rate, auth failures, upstream failures — `todo`
 - 45.6 Подготовить экспорт в Prometheus-совместимом виде — `todo`
 - 45.7 Добавить интеграцию с error tracking системой — `todo`

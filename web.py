@@ -9,12 +9,13 @@ from secrets import token_urlsafe
 from urllib.parse import parse_qs
 
 from fastmcp import FastMCP
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from exceptions import AuthError, HostResolutionError, RateLimitError, VetmanagerError
 from landing_page import render_landing_page
+from observability_logging import RUNTIME_LOGGER
 from request_context import attach_request_context_headers
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
 from storage import get_session_factory
@@ -125,6 +126,34 @@ def _redirect_response(
     if with_csrf_cookie:
         ensure_csrf_cookie(response, existing_token=request.cookies.get(CSRF_COOKIE_NAME))
     return response
+
+
+def _json_response(
+    request: Request,
+    payload: dict[str, object],
+    *,
+    status_code: int = 200,
+) -> JSONResponse:
+    response = JSONResponse(payload, status_code=status_code)
+    response.headers["Cache-Control"] = "no-store"
+    attach_request_context_headers(response, request)
+    return response
+
+
+async def _check_storage_readiness() -> tuple[bool, str]:
+    try:
+        async with get_session_factory()() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception as exc:
+        RUNTIME_LOGGER.warning(
+            "Readiness probe detected unavailable storage.",
+            extra={
+                "event_name": "storage_readiness_failed",
+                "error_type": type(exc).__name__,
+            },
+        )
+        return False, "storage_unavailable"
+    return True, "ok"
 
 
 def _render_shell(title: str, body: str) -> str:
@@ -869,6 +898,36 @@ def register_web_routes(mcp: FastMCP) -> None:
     @mcp.custom_route("/", methods=["GET"], include_in_schema=False)
     async def landing_page(request: Request) -> HTMLResponse:
         return _html_response(request, render_landing_page())
+
+    @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
+    async def healthcheck(request: Request) -> JSONResponse:
+        return _json_response(
+            request,
+            {
+                "status": "ok",
+                "probe": "liveness",
+                "service": "vetmanager-mcp",
+            },
+        )
+
+    @mcp.custom_route("/readyz", methods=["GET"], include_in_schema=False)
+    async def readiness_check(request: Request) -> JSONResponse:
+        is_ready, reason = await _check_storage_readiness()
+        return _json_response(
+            request,
+            {
+                "status": "ok" if is_ready else "degraded",
+                "probe": "readiness",
+                "service": "vetmanager-mcp",
+                "checks": {
+                    "storage": {
+                        "status": "ok" if is_ready else "failed",
+                        "reason": reason,
+                    }
+                },
+            },
+            status_code=200 if is_ready else 503,
+        )
 
     @mcp.custom_route("/register", methods=["GET"], include_in_schema=False)
     async def register_page(request: Request) -> HTMLResponse:
