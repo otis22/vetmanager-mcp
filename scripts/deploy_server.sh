@@ -52,6 +52,12 @@ compose() {
   env UID="${UID_VAL}" GID="${GID_VAL}" docker compose "$@"
 }
 
+prepare_storage_permissions() {
+  mkdir -p data
+  docker run --rm --user 0 -v "${PWD}/data:/target" vetmanager-mcp \
+    sh -c "mkdir -p /target && chown -R ${UID_VAL}:${GID_VAL} /target && chmod -R ug+rwX /target"
+}
+
 dump_compose_diagnostics() {
   echo "--> Deploy diagnostics..."
   compose ps || true
@@ -64,7 +70,7 @@ dump_compose_diagnostics() {
 
 # ── Restart service ───────────────────────────────────────────────────────────
 echo "--> Restarting service..."
-mkdir -p data
+prepare_storage_permissions
 compose down --remove-orphans
 compose up -d
 
