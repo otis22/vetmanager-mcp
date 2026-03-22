@@ -59,6 +59,8 @@ skip_if_no_user_login_flow = pytest.mark.skipif(
     ),
 )
 
+pytestmark = pytest.mark.real_api
+
 
 @pytest.fixture(autouse=True)
 def cleanup_orphaned_default_loop():

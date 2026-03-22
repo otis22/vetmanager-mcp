@@ -145,3 +145,40 @@
 - `docker compose run --rm test` падает на unexpected warnings.
 - Конфигурация опирается на warning policy, а не на разрозненный inline shell.
 - Default suite по-прежнему проходит зелёным на текущем состоянии репозитория.
+
+## Цель 43.5
+
+Явно разделить test contours на `fast`, `default` и `opt-in real`, чтобы
+локальный запуск, CI и manual real jobs опирались на один и тот же набор
+entrypoint'ов и marker-контрактов.
+
+## Решение 43.5
+
+- Ввести отдельный marker для real API contour.
+- Зафиксировать launcher'ы для трёх контуров:
+  - `fast`: без browser и real тестов;
+  - `default`: mock/unit + browser/live, но без real API/browser;
+  - `opt-in real`: только real API/browser contour.
+- Проверять контурный контракт тестами, чтобы случайно не вернуть real tests
+  обратно в default suite.
+
+## Декомпозиция 43.5
+
+### 43.5.1 Marker contract
+- Зарегистрировать marker для real API tests.
+- Пометить `tests/test_e2e_real.py` как opt-in real contour.
+
+### 43.5.2 Launchers
+- Добавить отдельные scripts для `fast` и `opt-in real`.
+- Обновить default launcher под marker expression.
+
+### 43.5.3 Validation
+- Добавить guardrail tests на contour contract.
+- Прогнать `fast`, `default` и `opt-in real` launchers.
+- Обновить `AssumptionLog.md`.
+
+## Критерии готовности 43.5
+
+- У проекта есть явные entrypoint'ы для `fast`, `default` и `opt-in real`.
+- Default contour гарантированно не запускает real API/browser tests.
+- Opt-in real contour запускает только real tests.

@@ -666,7 +666,7 @@
 - 43.2 Разобрать `uvicorn/websockets` deprecation warnings в live browser harness — `done`
 - 43.3 Ввести policy по warnings: какие допустимы, какие блокируют CI — `done`
 - 43.4 Подготовить режим fail-on-unexpected-warnings для default suite — `done`
-- 43.5 Разделить test contours: fast, default, opt-in real — `todo`
+- 43.5 Разделить test contours: fast, default, opt-in real — `done`
 - 43.6 Обновить CI workflow под новые test contours — `todo`
 - 43.7 Зафиксировать policy в `README.md`, PRD и `AssumptionLog.md` — `todo`
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the default test contour with blocking warnings promoted to errors."""
+"""Run the opt-in real contour with blocking warnings as errors."""
 
 from __future__ import annotations
 
@@ -12,14 +12,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from test_contours import DEFAULT_TEST_CONTOUR
-from warning_policy import DEFAULT_SUITE_WARNING_POLICY, build_warning_error_flags
+from test_contours import OPT_IN_REAL_TEST_CONTOUR
+from warning_policy import build_warning_error_flags
 
 
 def main() -> int:
-    if DEFAULT_SUITE_WARNING_POLICY.warnings_allowed != 0:
-        raise SystemExit("Default suite warning policy must require zero warnings.")
-
     command = [
         sys.executable,
         *[item for flag in build_warning_error_flags() for item in ("-W", flag)],
@@ -28,7 +25,7 @@ def main() -> int:
         "tests/",
         "-v",
         "-m",
-        DEFAULT_TEST_CONTOUR.marker_expression,
+        OPT_IN_REAL_TEST_CONTOUR.marker_expression,
     ]
     env = dict(os.environ)
     completed = subprocess.run(command, env=env, check=False)
