@@ -709,14 +709,14 @@
 - 46.6 Выделить quick wins и long-term refactors — `done`
 - 46.7 Зафиксировать архитектурные решения и debt register в артефактах — `done`
 
-## Этап 47. Operational maturity и production readiness — `todo`
+## Этап 47. Operational maturity и production readiness — `done`
 
 Цель: довести сервис до более зрелого продового контура.
 
-- 47.1 Описать backup/restore strategy для storage — `todo`
-- 47.2 Описать secret rotation policy — `todo`
-- 47.3 Оформить migration/rollback policy — `todo`
-- 47.4 Добавить post-deploy smoke checks — `todo`
-- 47.5 Ввести release checklist — `todo`
-- 47.6 Описать SLO/SLA и базовые alerting thresholds — `todo`
-- 47.7 Обновить ops docs и `AssumptionLog.md` — `todo`
+- 47.1 Описать backup/restore strategy для storage — `done`
+- 47.2 Описать secret rotation policy — `done`
+- 47.3 Оформить migration/rollback policy — `done`
+- 47.4 Добавить post-deploy smoke checks — `done`
+- 47.5 Ввести release checklist — `done`
+- 47.6 Описать SLO/SLA и базовые alerting thresholds — `done`
+- 47.7 Обновить ops docs и `AssumptionLog.md` — `done`

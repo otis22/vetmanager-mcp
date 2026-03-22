@@ -39,6 +39,10 @@ docker compose up -d          # запустить MCP-сервер
 - `ERROR_TRACKING_ENVIRONMENT`, `ERROR_TRACKING_RELEASE`, `ERROR_TRACKING_TRACES_SAMPLE_RATE` — knobs для error tracking bootstrap.
 - `PORT`, `MCP_PATH`, `LOG_LEVEL` — стандартные настройки MCP HTTP runtime.
 
+Operational helpers:
+- `scripts/post_deploy_smoke_checks.sh` — post-deploy checks для `/healthz`,
+  `/readyz`, `/metrics` и `/mcp`.
+
 Запуск тестов:
 
 ```bash
@@ -242,6 +246,10 @@ docker compose up -d mcp
   `artifacts/security-deployment-notes-vetmanager-mcp-ru.md`.
 - Observability runbook этапа 45:
   `artifacts/observability-runbook-vetmanager-mcp-ru.md`.
+- Operations readiness baseline этапа 47:
+  `artifacts/operations-readiness-vetmanager-mcp-ru.md`.
+- Release checklist этапа 47:
+  `artifacts/release-checklist-vetmanager-mcp-ru.md`.
 
 ### Тест подключения
 
@@ -282,6 +290,15 @@ docker compose up -d mcp
 - синхронизирует проект через `rsync` (без `.git`, `.env`, служебных директорий);
 - запускает `deploy_server.sh` с `SKIP_GIT_PULL=1`;
 - выполняет те же smoke-check и TLS-check, что обычный deploy.
+
+### Post-deploy smoke
+
+Локально или на сервере можно прогнать:
+
+```bash
+./scripts/post_deploy_smoke_checks.sh
+./scripts/post_deploy_smoke_checks.sh http://127.0.0.1:8000 342915.simplecloud.ru
+```
 
 ### Полностью автоматический деплой после push в main
 

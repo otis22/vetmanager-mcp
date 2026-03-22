@@ -80,24 +80,13 @@ else
   echo "WARNING: scripts/renew_cert_if_needed.sh not found, skipping TLS renew."
 fi
 
-# ── HTTPS endpoint smoke check ────────────────────────────────────────────────
-echo "--> HTTPS smoke check: https://${SSL_DOMAIN}/mcp"
-REACHABLE="false"
-for _ in $(seq 1 12); do
-  HTTP_CODE="$(curl -sS -o /dev/null -w '%{http_code}' "https://${SSL_DOMAIN}/mcp" || true)"
-  if [ "${HTTP_CODE}" -ge 200 ] && [ "${HTTP_CODE}" -lt 500 ]; then
-    REACHABLE="true"
-    break
-  fi
-  sleep 5
-done
-
-if [ "${REACHABLE}" != "true" ]; then
-  echo "ERROR: HTTPS endpoint is not reachable: https://${SSL_DOMAIN}/mcp"
-  exit 1
+# ── App smoke checks ──────────────────────────────────────────────────────────
+if [ -f "./scripts/post_deploy_smoke_checks.sh" ]; then
+  echo "--> Running post-deploy smoke checks..."
+  bash ./scripts/post_deploy_smoke_checks.sh "http://127.0.0.1:8000" "${SSL_DOMAIN}"
+else
+  echo "WARNING: scripts/post_deploy_smoke_checks.sh not found, skipping app smoke checks."
 fi
-
-echo "--> Deploy smoke checks passed."
 REMOTE
 
 echo "==> Deploy complete: ${SSH_TARGET}:${REMOTE_DIR}"
