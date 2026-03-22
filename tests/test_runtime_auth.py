@@ -11,6 +11,7 @@ import runtime_auth
 from bearer_token_manager import generate_bearer_token
 from exceptions import AuthError
 from storage_models import Account, ServiceBearerToken, VetmanagerConnection
+from token_scopes import SCOPE_CLIENTS_READ
 from vetmanager_auth import (
     VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
     VETMANAGER_AUTH_MODE_USER_TOKEN,
@@ -59,6 +60,7 @@ async def test_resolve_runtime_credentials_prefers_bearer_context(session_factor
     assert resolved.domain == "bearer-clinic"
     assert resolved.api_key == "bearer-key"
     assert resolved.vetmanager_auth.auth_mode == VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
+    assert "clients.read" in resolved.scopes
 
 
 @pytest.mark.asyncio
@@ -161,6 +163,42 @@ async def test_vetmanager_client_uses_bearer_runtime_credentials(session_factory
     assert client._api_key == "runtime-key"
     assert captured_request is not None
     assert captured_request.headers["X-REST-API-KEY"] == "runtime-key"
+
+
+@pytest.mark.asyncio
+async def test_vetmanager_client_rejects_request_without_required_scope(session_factory, monkeypatch):
+    """Client should enforce coarse-grained bearer scopes before upstream request."""
+    from vetmanager_client import VetmanagerClient
+
+    raw_token = generate_bearer_token()
+
+    async with session_factory() as session:
+        account = Account(email="ops@example.com", status="active")
+        session.add(account)
+        await session.flush()
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+            domain="runtime-clinic",
+        )
+        connection.set_credentials(
+            {"domain": "runtime-clinic", "api_key": "runtime-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        token = ServiceBearerToken(account_id=account.id, name="Scoped token")
+        token.set_raw_token(raw_token)
+        token.set_scopes([SCOPE_CLIENTS_READ])
+        session.add_all([connection, token])
+        await session.commit()
+
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    headers = {"authorization": f"Bearer {raw_token}"}
+    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
+        with patch.object(runtime_auth, "get_session_factory", return_value=session_factory):
+            client = VetmanagerClient()
+            with pytest.raises(AuthError, match="finance.read"):
+                await client.get("/rest/api/invoice")
 
 
 @pytest.mark.asyncio

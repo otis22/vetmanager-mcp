@@ -39,6 +39,7 @@ class BearerAuthContext:
     auth_mode: str
     domain: str
     api_key: str
+    scopes: tuple[str, ...]
 
 
 def _base_auth_details(
@@ -189,4 +190,5 @@ async def resolve_bearer_auth_context(
         auth_mode=resolved.auth_mode,
         domain=resolved.domain,
         api_key=resolved.api_key,
+        scopes=tuple(token.get_scopes()),
     )

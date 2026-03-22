@@ -676,7 +676,7 @@
 
 - 44.1 Сформировать threat model для web, bearer auth, MCP runtime и storage — `done`
 - 44.2 Проверить секреты, session/cookie/CSRF и safe error handling — `done`
-- 44.3 Проверить authz границы bearer token и scope model — `todo`
+- 44.3 Проверить authz границы bearer token и scope model — `done`
 - 44.4 Проверить logging/audit trail на утечки секретов и sensitive metadata — `todo`
 - 44.5 Проверить rate limiting, abuse cases и brute-force surface — `todo`
 - 44.6 Проверить SSRF/host resolution/allowlist контур — `todo`

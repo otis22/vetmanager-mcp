@@ -117,3 +117,43 @@ security-эссе.
 - Web session signing требует отдельный `WEB_SESSION_SECRET`.
 - Тесты покрывают отсутствие fallback на `STORAGE_ENCRYPTION_KEY`.
 - Default suite остаётся зелёным без regressions в web auth flow.
+
+## Цель 44.3
+
+Проверить, что bearer token scopes реально участвуют в authz, а не только
+хранятся в БД как декоративный metadata field.
+
+## Решение 44.3
+
+- Пробросить scopes из bearer token через `BearerAuthContext` и
+  `RuntimeCredentials`.
+- Ввести deterministic coarse-grained scope mapping на уровне
+  `VetmanagerClient`, где доступны HTTP method и request path.
+- Оставить legacy fallback только для токенов без `scopes_json`:
+  они продолжают получать full-access policy через существующую
+  backward-compatible десериализацию.
+- Зафиксировать regression test на `403`, когда токен не содержит нужного scope.
+
+## Декомпозиция 44.3
+
+### 44.3.1 Scope propagation
+- Добавить scopes в runtime auth context.
+
+### 44.3.2 Request-level enforcement
+- Ввести mapping `method + entity path -> required scope`.
+- Проверять его до outbound HTTP request.
+
+### 44.3.3 Regression coverage
+- Добавить тесты на:
+  - наличие scopes в resolved runtime context;
+  - отказ для запроса вне разрешённого scope.
+
+### 44.3.4 Validation
+- Прогнать целевые bearer/runtime tests.
+- Прогнать обязательный default contour.
+
+## Критерии готовности 44.3
+
+- Scope model влияет на runtime authz, а не только на storage.
+- Токен без нужного scope получает локальный `403` до upstream call.
+- Legacy токены без `scopes_json` сохраняют full-access compatibility.

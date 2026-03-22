@@ -18,6 +18,7 @@ from request_cache import REQUEST_CACHE
 from request_auth import get_bearer_token
 from runtime_auth import _validate_domain as validate_runtime_domain
 from runtime_auth import resolve_runtime_credentials
+from token_scopes import required_scope_for_request
 from vetmanager_auth import VetmanagerAuthContext
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,7 @@ class VetmanagerClient:
         self._account_id: int | None = None
         self._bearer_token_id: int | None = None
         self._connection_id: int | None = None
+        self._scopes: tuple[str, ...] = ()
         self._base_url: str | None = None
         self._last_request_started_at = 0.0
         self._pace_lock = asyncio.Lock()
@@ -95,6 +97,7 @@ class VetmanagerClient:
             self._account_id = resolved.account_id
             self._bearer_token_id = resolved.bearer_token_id
             self._connection_id = resolved.connection_id
+            self._scopes = resolved.scopes
 
     def _api_key_fingerprint(self) -> str:
         if not self._vetmanager_auth:
@@ -201,7 +204,19 @@ class VetmanagerClient:
             raise AuthError("Runtime credentials are not initialized.", status_code=401)
         return self._vetmanager_auth.build_headers()
 
+    def _require_scope(self, method: str, path: str) -> None:
+        required_scope = required_scope_for_request(method, path)
+        if required_scope is None:
+            return
+        if required_scope not in self._scopes:
+            raise AuthError(
+                f"Bearer token lacks required scope '{required_scope}'.",
+                status_code=403,
+            )
+
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+        await self._ensure_runtime_credentials()
+        self._require_scope(method, path)
         base = await self._resolve_host()
         url = f"{base}{path}"
         params = kwargs.get("params")

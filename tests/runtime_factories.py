@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import request_credentials
 import runtime_auth
+from token_scopes import SUPPORTED_TOKEN_SCOPES
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY, VetmanagerAuthContext
 from vetmanager_client import VetmanagerClient
 
@@ -33,6 +34,7 @@ def make_runtime_credentials(
     account_id: int = 1,
     bearer_token_id: int = 1,
     connection_id: int = 1,
+    scopes: tuple[str, ...] = SUPPORTED_TOKEN_SCOPES,
 ) -> runtime_auth.RuntimeCredentials:
     """Build normalized runtime credentials for bearer-auth tests."""
     return runtime_auth.RuntimeCredentials(
@@ -45,6 +47,7 @@ def make_runtime_credentials(
         account_id=account_id,
         bearer_token_id=bearer_token_id,
         connection_id=connection_id,
+        scopes=tuple(scopes),
     )
 
 
@@ -57,6 +60,7 @@ def make_client_with_resolved_runtime(
     account_id: int = 1,
     bearer_token_id: int = 1,
     connection_id: int = 1,
+    scopes: tuple[str, ...] = SUPPORTED_TOKEN_SCOPES,
 ) -> VetmanagerClient:
     """Build a client with resolved runtime auth state, bypassing DB lookup."""
     headers = {"authorization": f"Bearer {bearer_token}"}
@@ -70,6 +74,7 @@ def make_client_with_resolved_runtime(
     client._account_id = account_id
     client._bearer_token_id = bearer_token_id
     client._connection_id = connection_id
+    client._scopes = tuple(scopes)
     client._credentials_lock = asyncio.Lock()
     client._ensure_runtime_credentials = AsyncMock(return_value=None)
     return client
@@ -84,6 +89,7 @@ def patch_runtime_credentials(
     account_id: int = 1,
     bearer_token_id: int = 11,
     connection_id: int = 21,
+    scopes: tuple[str, ...] = SUPPORTED_TOKEN_SCOPES,
 ) -> tuple:
     """Return patches for bearer header extraction and runtime credential resolve."""
     headers_patch = patch.object(
@@ -101,6 +107,7 @@ def patch_runtime_credentials(
                 account_id=account_id,
                 bearer_token_id=bearer_token_id,
                 connection_id=connection_id,
+                scopes=scopes,
             )
         ),
     )

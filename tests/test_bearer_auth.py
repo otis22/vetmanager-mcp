@@ -60,6 +60,7 @@ async def test_resolve_bearer_auth_context_returns_active_account_and_connection
     assert context.auth_mode == "domain_api_key"
     assert context.domain == "clinic-a"
     assert context.api_key == "secret-key"
+    assert "clients.read" in context.scopes
 
 
 @pytest.mark.asyncio

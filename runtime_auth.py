@@ -24,6 +24,7 @@ class RuntimeCredentials:
     account_id: int | None = None
     bearer_token_id: int | None = None
     connection_id: int | None = None
+    scopes: tuple[str, ...] = ()
 
     @property
     def domain(self) -> str:
@@ -61,4 +62,5 @@ async def resolve_runtime_credentials() -> RuntimeCredentials:
         account_id=context.account_id,
         bearer_token_id=context.bearer_token_id,
         connection_id=context.connection_id,
+        scopes=context.scopes,
     )
