@@ -5,23 +5,17 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from storage import Base, create_database_engine
 from storage_models import Account, ServiceBearerToken, TokenUsageLog
 from token_cleanup import sync_expired_tokens
 
 
-async def _make_session_factory(tmp_path: Path) -> async_sessionmaker:
-    engine = create_database_engine(f"sqlite:///{tmp_path / 'token-cleanup.db'}")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return async_sessionmaker(engine, expire_on_commit=False)
-
-
 @pytest.mark.asyncio
-async def test_sync_expired_tokens_marks_active_token_expired_and_logs_event(tmp_path: Path):
-    session_factory = await _make_session_factory(tmp_path)
+async def test_sync_expired_tokens_marks_active_token_expired_and_logs_event(
+    tmp_path: Path,
+    sqlite_session_factory_builder,
+):
+    session_factory = await sqlite_session_factory_builder(tmp_path / "token-cleanup.db")
     now = datetime(2026, 3, 22, 10, 0, tzinfo=timezone.utc)
 
     async with session_factory() as session:
@@ -59,8 +53,11 @@ async def test_sync_expired_tokens_marks_active_token_expired_and_logs_event(tmp
 
 
 @pytest.mark.asyncio
-async def test_sync_expired_tokens_does_not_duplicate_event_for_already_expired_token(tmp_path: Path):
-    session_factory = await _make_session_factory(tmp_path)
+async def test_sync_expired_tokens_does_not_duplicate_event_for_already_expired_token(
+    tmp_path: Path,
+    sqlite_session_factory_builder,
+):
+    session_factory = await sqlite_session_factory_builder(tmp_path / "token-cleanup.db")
     now = datetime(2026, 3, 22, 11, 0, tzinfo=timezone.utc)
 
     async with session_factory() as session:
@@ -98,8 +95,11 @@ async def test_sync_expired_tokens_does_not_duplicate_event_for_already_expired_
 
 
 @pytest.mark.asyncio
-async def test_sync_expired_tokens_does_not_override_revoked_token(tmp_path: Path):
-    session_factory = await _make_session_factory(tmp_path)
+async def test_sync_expired_tokens_does_not_override_revoked_token(
+    tmp_path: Path,
+    sqlite_session_factory_builder,
+):
+    session_factory = await sqlite_session_factory_builder(tmp_path / "token-cleanup.db")
     now = datetime(2026, 3, 22, 12, 0, tzinfo=timezone.utc)
 
     async with session_factory() as session:

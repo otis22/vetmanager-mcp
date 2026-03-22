@@ -657,3 +657,66 @@
 - 42.8 Добавить regression test на cleanup: после browser tests в БД не остаётся тестовых account и связанных записей — `done`
 - 42.9 Обновить `README.md`, PRD и `AssumptionLog.md`: browser happy-path tests входят в обязательный suite — `done`
 - 42.10 Добавить optional browser tests с реальными данными как отдельный opt-in режим, не входящий в дефолтный прогон — `done`
+
+## Этап 43. Чистый CI и стабилизация test/runtime lifecycle — `in_progress`
+
+Цель: убрать warning-шум, сделать test infrastructure предсказуемой и усилить quality gate для default suite и CI.
+
+- 43.1 Разобрать и устранить `aiosqlite` thread/event-loop warnings в тестах — `done`
+- 43.2 Разобрать `uvicorn/websockets` deprecation warnings в live browser harness — `todo`
+- 43.3 Ввести policy по warnings: какие допустимы, какие блокируют CI — `todo`
+- 43.4 Подготовить режим fail-on-unexpected-warnings для default suite — `todo`
+- 43.5 Разделить test contours: fast, default, opt-in real — `todo`
+- 43.6 Обновить CI workflow под новые test contours — `todo`
+- 43.7 Зафиксировать policy в `README.md`, PRD и `AssumptionLog.md` — `todo`
+
+## Этап 44. Security review и hardening — `todo`
+
+Цель: провести security audit bearer/web/runtime контуров и закрыть найденные риски.
+
+- 44.1 Сформировать threat model для web, bearer auth, MCP runtime и storage — `todo`
+- 44.2 Проверить секреты, session/cookie/CSRF и safe error handling — `todo`
+- 44.3 Проверить authz границы bearer token и scope model — `todo`
+- 44.4 Проверить logging/audit trail на утечки секретов и sensitive metadata — `todo`
+- 44.5 Проверить rate limiting, abuse cases и brute-force surface — `todo`
+- 44.6 Проверить SSRF/host resolution/allowlist контур — `todo`
+- 44.7 Реализовать найденные hardening fixes — `todo`
+- 44.8 Добавить security regression tests — `todo`
+- 44.9 Обновить `README.md`, deployment notes и `AssumptionLog.md` — `todo`
+
+## Этап 45. Observability, мониторинг и error telemetry — `todo`
+
+Цель: сделать сервис наблюдаемым в эксплуатации и упростить расследование инцидентов.
+
+- 45.1 Ввести structured logging contract — `todo`
+- 45.2 Добавить request/correlation id для web и MCP запросов — `todo`
+- 45.3 Разделить runtime, audit и security log events — `todo`
+- 45.4 Добавить health/readiness endpoints — `todo`
+- 45.5 Добавить базовые service metrics: latency, error rate, auth failures, upstream failures — `todo`
+- 45.6 Подготовить экспорт в Prometheus-совместимом виде — `todo`
+- 45.7 Добавить интеграцию с error tracking системой — `todo`
+- 45.8 Описать runbook по логам, метрикам и расследованию инцидентов — `todo`
+
+## Этап 46. Архитектурное ревью и программа рефакторинга — `todo`
+
+Цель: провести системный tech review и превратить его в управляемый backlog.
+
+- 46.1 Провести ревью модульных границ: web, auth, client, storage, tools — `todo`
+- 46.2 Найти дублирование и неявные внутренние контракты — `todo`
+- 46.3 Оценить связность и зоны высокой сложности — `todo`
+- 46.4 Проверить test architecture и стоимость поддержки suite — `todo`
+- 46.5 Сформировать backlog рефакторинга по приоритетам — `todo`
+- 46.6 Выделить quick wins и long-term refactors — `todo`
+- 46.7 Зафиксировать архитектурные решения и debt register в артефактах — `todo`
+
+## Этап 47. Operational maturity и production readiness — `todo`
+
+Цель: довести сервис до более зрелого продового контура.
+
+- 47.1 Описать backup/restore strategy для storage — `todo`
+- 47.2 Описать secret rotation policy — `todo`
+- 47.3 Оформить migration/rollback policy — `todo`
+- 47.4 Добавить post-deploy smoke checks — `todo`
+- 47.5 Ввести release checklist — `todo`
+- 47.6 Описать SLO/SLA и базовые alerting thresholds — `todo`
+- 47.7 Обновить ops docs и `AssumptionLog.md` — `todo`

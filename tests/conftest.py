@@ -9,10 +9,12 @@ import time
 
 import httpx
 import pytest
+import pytest_asyncio
 from playwright.sync_api import Page, sync_playwright
 import respx
 import storage
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 import uvicorn
 from server import mcp
 from storage import Base, create_database_engine, get_session_factory
@@ -296,6 +298,25 @@ def browser_account_cleanup(prepared_web_db) -> Generator[BrowserAccountCleanup,
         yield helper
     finally:
         helper.cleanup_now()
+
+
+@pytest_asyncio.fixture
+async def sqlite_session_factory_builder():
+    """Build disposable SQLite session factories for async tests."""
+    engines = []
+
+    async def _build(database_path: Path) -> async_sessionmaker:
+        engine = create_database_engine(f"sqlite:///{database_path}")
+        engines.append(engine)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        return async_sessionmaker(engine, expire_on_commit=False)
+
+    try:
+        yield _build
+    finally:
+        for engine in reversed(engines):
+            await engine.dispose()
 
 
 @pytest.fixture
