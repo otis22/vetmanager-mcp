@@ -8,7 +8,7 @@ import pytest_asyncio
 import respx
 from sqlalchemy import select
 
-from exceptions import AuthError
+from exceptions import AuthError, HostResolutionError
 from storage_models import VetmanagerConnection
 from vetmanager_connection_service import (
     exchange_user_token,
@@ -248,3 +248,25 @@ async def test_save_user_login_password_connection_persists_token_without_api_ke
     assert stored.auth_mode == "user_token"
     assert "user-token-secret" not in stored.encrypted_credentials
     assert "doctor-pass-123" not in stored.encrypted_credentials
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_save_domain_api_key_connection_rejects_host_with_path_or_query(session_factory):
+    """Billing-resolved host must stay a bare origin before probe requests."""
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-unsafe").mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": {"url": "https://clinic-unsafe.vetmanager.cloud/nested?x=1"}},
+        )
+    )
+
+    async with session_factory() as session:
+        with pytest.raises(HostResolutionError):
+            await save_domain_api_key_connection(
+                session,
+                account_id=1,
+                domain="clinic-unsafe",
+                api_key="unsafe-key",
+                encryption_key=TEST_ENCRYPTION_KEY,
+            )

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from urllib.parse import urlparse
-
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from exceptions import AuthError, HostResolutionError, VetmanagerError, VetmanagerTimeoutError
+from host_validation import validate_resolved_vetmanager_origin
 from runtime_auth import _validate_domain
 from storage_models import VetmanagerConnection
 from vetmanager_auth import (
@@ -19,7 +18,6 @@ from vetmanager_auth import (
 
 BILLING_API = "https://billing-api.vetmanager.cloud/host/{domain}"
 REQUEST_TIMEOUT = 30.0
-ALLOWED_HOST_SUFFIXES = ("vetmanager.cloud", "vetmanager2.ru")
 
 INTEGRATION_HEALTH_ACTIVE = "active"
 INTEGRATION_HEALTH_INVALID = "invalid"
@@ -29,13 +27,7 @@ TOKEN_AUTH_APP_NAME = "vetmanager-mcp"
 
 
 def _validate_resolved_host(host: str, domain: str) -> str:
-    parsed = urlparse(host)
-    hostname = (parsed.hostname or "").lower()
-    if parsed.scheme != "https":
-        raise HostResolutionError(f"Resolved host must use HTTPS for domain '{domain}'.")
-    if not any(hostname == suffix or hostname.endswith(f".{suffix}") for suffix in ALLOWED_HOST_SUFFIXES):
-        raise HostResolutionError(f"Resolved host is not allowlisted for domain '{domain}'.")
-    return host.rstrip("/")
+    return validate_resolved_vetmanager_origin(host, domain=domain)
 
 
 async def resolve_vetmanager_host(domain: str) -> str:

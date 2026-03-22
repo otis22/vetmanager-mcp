@@ -3,7 +3,7 @@ import asyncio
 import hashlib
 import time
 from typing import Any
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode
 
 import httpx
 
@@ -14,6 +14,7 @@ from exceptions import (
     VetmanagerError,
     VetmanagerTimeoutError,
 )
+from host_validation import validate_resolved_vetmanager_origin
 from request_cache import REQUEST_CACHE
 from request_auth import get_bearer_token
 from runtime_auth import _validate_domain as validate_runtime_domain
@@ -27,7 +28,6 @@ BILLING_API = "https://billing-api.vetmanager.cloud/host/{domain}"
 REQUEST_TIMEOUT = 30.0
 REQUEST_GAP_SECONDS = 0.05
 MAX_RETRIES = 1
-ALLOWED_HOST_SUFFIXES = ("vetmanager.cloud", "vetmanager2.ru")
 # Default cache TTL for stable reference data (breeds, cities, goods, etc.).
 CACHE_TTL_SECONDS = 900.0
 # Short TTL for frequently-updated entities: admissions, medical cards, invoices, clients.
@@ -143,17 +143,7 @@ class VetmanagerClient:
             self._last_request_started_at = time.monotonic()
 
     def _validate_resolved_host(self, host: str) -> str:
-        parsed = urlparse(host)
-        hostname = (parsed.hostname or "").lower()
-        if parsed.scheme != "https":
-            raise HostResolutionError(
-                f"Resolved host must use HTTPS for domain '{self._domain}'."
-            )
-        if not any(hostname == suffix or hostname.endswith(f".{suffix}") for suffix in ALLOWED_HOST_SUFFIXES):
-            raise HostResolutionError(
-                f"Resolved host is not allowlisted for domain '{self._domain}'."
-            )
-        return host
+        return validate_resolved_vetmanager_origin(host, domain=self._domain or "unknown")
 
     async def _resolve_host(self) -> str:
         await self._ensure_runtime_credentials()

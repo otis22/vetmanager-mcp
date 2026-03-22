@@ -187,6 +187,23 @@ async def test_non_allowlisted_or_non_https_host_rejected():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_resolved_host_rejects_userinfo_and_custom_port():
+    """Billing host must be a bare HTTPS origin without userinfo or custom port."""
+    route = respx.get("https://billing-api.vetmanager.cloud/host/clinic-unsafe")
+    route.mock(
+        return_value=httpx.Response(
+            200,
+            json=make_host_response("https://user:pass@clinic-unsafe.vetmanager.cloud:444"),
+        )
+    )
+    vc = make_client("clinic-unsafe", "key-unsafe")
+
+    with pytest.raises(HostResolutionError):
+        await vc.get("/rest/api/client")
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_client_can_resolve_credentials_via_runtime_auth_context():
     """Client should use runtime_auth resolver for bearer-authenticated requests."""
     respx.get("https://billing-api.vetmanager.cloud/host/bearer-clinic").mock(

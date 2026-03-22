@@ -230,3 +230,42 @@ security-эссе.
 - Spoofed `X-Forwarded-For` больше не влияет на limiter и audit по умолчанию.
 - Reverse proxy deployment может явно включить доверие через allowlist.
 - Web и audit используют одинаковую политику client IP resolution.
+
+## Цель 44.6
+
+Проверить SSRF/host resolution/allowlist контур и исключить обходы через
+userinfo, custom ports и небезопасные non-origin billing responses.
+
+## Решение 44.6
+
+- Вынести общий validator resolved origin для runtime client и account
+  integration service.
+- Разрешать только bare HTTPS origin:
+  - без userinfo;
+  - без custom port;
+  - без path/query/fragment;
+  - только с allowlisted suffix.
+- Нормализовать валидный host к canonical origin.
+- Добавить regression tests на path/query, userinfo и custom-port bypass.
+
+## Декомпозиция 44.6
+
+### 44.6.1 Shared host validator
+- Вынести общую функцию в отдельный модуль.
+
+### 44.6.2 Runtime + account integration hardening
+- Подключить общий validator в `VetmanagerClient` и
+  `vetmanager_connection_service`.
+
+### 44.6.3 Regression coverage
+- Добавить тесты на reject userinfo/custom port/path/query billing host.
+
+### 44.6.4 Validation
+- Прогнать целевые client/connection-service tests.
+- Прогнать обязательный default contour.
+
+## Критерии готовности 44.6
+
+- Billing-resolved host должен быть bare HTTPS origin.
+- Client и account integration используют одинаковую allowlist policy.
+- Regression tests закрывают типовые SSRF/bypass формы.
