@@ -43,6 +43,6 @@ services:
       - .:/app
     user: "${UID:-1000}:${GID:-1000}"
     command: >
-      sh -c "python -m pytest tests/ -v"
+      sh -c "python scripts/run_default_test_suite.py"
     profiles:
       - test

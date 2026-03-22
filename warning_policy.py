@@ -23,6 +23,16 @@ BLOCKING_WARNING_CATEGORIES = (
 )
 
 
+def build_warning_error_flags() -> tuple[str, ...]:
+    """Return `python -W` flags for default suite execution.
+
+    We use coarse `-W error` here because Python's CLI warning parser cannot
+    reliably resolve third-party categories such as `pytest.PytestWarning`
+    before pytest itself is imported.
+    """
+    return ("error",)
+
+
 DEFAULT_SUITE_WARNING_POLICY = SuiteWarningPolicy(
     name="default",
     warnings_allowed=0,

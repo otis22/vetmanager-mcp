@@ -4,29 +4,26 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import bearer_rate_limiter
 from bearer_auth import resolve_bearer_auth_context
 from bearer_token_manager import generate_bearer_token
 from exceptions import RateLimitError
-from storage import Base, create_database_engine
 from storage_models import Account, ServiceBearerToken, TokenUsageStat, VetmanagerConnection
 
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
 
 
-async def _make_session_factory(tmp_path: Path) -> async_sessionmaker:
-    engine = create_database_engine(f"sqlite:///{tmp_path / 'bearer-rate-limit.db'}")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return async_sessionmaker(engine, expire_on_commit=False)
+@pytest_asyncio.fixture
+async def session_factory(tmp_path: Path, sqlite_session_factory_builder):
+    return await sqlite_session_factory_builder(tmp_path / "bearer-rate-limit.db")
 
 
 async def _create_token(
-    session_factory: async_sessionmaker,
+    session_factory,
     *,
     email: str,
     domain: str,
@@ -55,9 +52,8 @@ async def _create_token(
 
 
 @pytest.mark.asyncio
-async def test_bearer_rate_limit_blocks_request_above_limit(tmp_path: Path, monkeypatch):
+async def test_bearer_rate_limit_blocks_request_above_limit(session_factory, monkeypatch):
     """Third request in the same window should fail with a 429-safe error."""
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = await _create_token(
         session_factory,
         email="ops@example.com",
@@ -106,9 +102,8 @@ async def test_bearer_rate_limit_blocks_request_above_limit(tmp_path: Path, monk
 
 
 @pytest.mark.asyncio
-async def test_bearer_rate_limit_isolated_per_token(tmp_path: Path, monkeypatch):
+async def test_bearer_rate_limit_isolated_per_token(session_factory, monkeypatch):
     """One noisy token must not consume the budget of another token."""
-    session_factory = await _make_session_factory(tmp_path)
     first_token = await _create_token(
         session_factory,
         email="first@example.com",
@@ -155,9 +150,8 @@ async def test_bearer_rate_limit_isolated_per_token(tmp_path: Path, monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_bearer_rate_limit_allows_requests_after_window_expires(tmp_path: Path, monkeypatch):
+async def test_bearer_rate_limit_allows_requests_after_window_expires(session_factory, monkeypatch):
     """Requests should be admitted again once the sliding window has moved on."""
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = await _create_token(
         session_factory,
         email="ops@example.com",

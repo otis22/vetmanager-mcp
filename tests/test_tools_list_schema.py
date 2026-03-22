@@ -3,7 +3,6 @@
 Stage 16: every tool must expose meaningful description and inputSchema.
 Stage 17: every list tool must expose minimum=1 and maximum=100 for limit.
 """
-import asyncio
 import pytest
 import sys
 from pathlib import Path
@@ -15,7 +14,7 @@ if str(ROOT) not in sys.path:
 from server import mcp  # noqa: E402
 
 
-def _get_all_tool_exports() -> list[dict]:
+def _get_all_tool_exports(run_async) -> list[dict]:
     """Return list of exported MCP tool metadata for all registered tools."""
     async def _fetch():
         tools = await mcp.list_tools()
@@ -27,17 +26,17 @@ def _get_all_tool_exports() -> list[dict]:
             }
             for t in tools
         ]
-    return asyncio.run(_fetch())
+    return run_async(_fetch())
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
-@pytest.fixture(scope="module")
-def all_tool_exports():
-    return _get_all_tool_exports()
+@pytest.fixture
+def all_tool_exports(run_async):
+    return _get_all_tool_exports(run_async)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def list_tools_with_limit(all_tool_exports):
     """All tools that have a 'limit' property in their inputSchema."""
     return [
@@ -121,86 +120,98 @@ class TestToolsListSchema:
             "Some tools may be missing LimitParam annotation."
         )
 
-    @pytest.mark.parametrize("tool_info", _get_all_tool_exports())
-    def test_limit_has_minimum_when_present(self, tool_info):
+    def test_limit_has_minimum_when_present(self, all_tool_exports):
         """Every tool with a 'limit' param must declare minimum in its schema."""
-        schema = tool_info["schema"]
-        props = schema.get("properties", {})
-        if "limit" not in props:
-            pytest.skip(f"Tool '{tool_info['name']}' has no limit parameter")
-        limit_schema = props["limit"]
-        assert "minimum" in limit_schema, (
-            f"Tool '{tool_info['name']}': limit schema missing 'minimum'. "
-            f"Got: {limit_schema}"
-        )
+        checked_tools = 0
+        for tool_info in all_tool_exports:
+            schema = tool_info["schema"]
+            props = schema.get("properties", {})
+            if "limit" not in props:
+                continue
+            checked_tools += 1
+            limit_schema = props["limit"]
+            assert "minimum" in limit_schema, (
+                f"Tool '{tool_info['name']}': limit schema missing 'minimum'. "
+                f"Got: {limit_schema}"
+            )
+        assert checked_tools >= 1
 
-    @pytest.mark.parametrize("tool_info", _get_all_tool_exports())
-    def test_limit_has_maximum_when_present(self, tool_info):
+    def test_limit_has_maximum_when_present(self, all_tool_exports):
         """Every tool with a 'limit' param must declare maximum in its schema."""
-        schema = tool_info["schema"]
-        props = schema.get("properties", {})
-        if "limit" not in props:
-            pytest.skip(f"Tool '{tool_info['name']}' has no limit parameter")
-        limit_schema = props["limit"]
-        assert "maximum" in limit_schema, (
-            f"Tool '{tool_info['name']}': limit schema missing 'maximum'. "
-            f"Got: {limit_schema}"
-        )
+        checked_tools = 0
+        for tool_info in all_tool_exports:
+            schema = tool_info["schema"]
+            props = schema.get("properties", {})
+            if "limit" not in props:
+                continue
+            checked_tools += 1
+            limit_schema = props["limit"]
+            assert "maximum" in limit_schema, (
+                f"Tool '{tool_info['name']}': limit schema missing 'maximum'. "
+                f"Got: {limit_schema}"
+            )
+        assert checked_tools >= 1
 
-    @pytest.mark.parametrize("tool_info", _get_all_tool_exports())
-    def test_limit_minimum_is_1(self, tool_info):
+    def test_limit_minimum_is_1(self, all_tool_exports):
         """Limit minimum must be 1 (not 0 or negative)."""
-        schema = tool_info["schema"]
-        props = schema.get("properties", {})
-        if "limit" not in props:
-            pytest.skip(f"Tool '{tool_info['name']}' has no limit parameter")
-        limit_schema = props["limit"]
-        if "minimum" not in limit_schema:
-            pytest.skip(f"Tool '{tool_info['name']}' has no minimum (covered by other test)")
-        assert limit_schema["minimum"] == 1, (
-            f"Tool '{tool_info['name']}': expected minimum=1, got {limit_schema['minimum']}"
-        )
+        checked_tools = 0
+        for tool_info in all_tool_exports:
+            schema = tool_info["schema"]
+            props = schema.get("properties", {})
+            if "limit" not in props or "minimum" not in props["limit"]:
+                continue
+            checked_tools += 1
+            limit_schema = props["limit"]
+            assert limit_schema["minimum"] == 1, (
+                f"Tool '{tool_info['name']}': expected minimum=1, got {limit_schema['minimum']}"
+            )
+        assert checked_tools >= 1
 
-    @pytest.mark.parametrize("tool_info", _get_all_tool_exports())
-    def test_limit_maximum_is_100(self, tool_info):
+    def test_limit_maximum_is_100(self, all_tool_exports):
         """Limit maximum must be 100 (VETMANAGER_MAX_LIMIT)."""
-        schema = tool_info["schema"]
-        props = schema.get("properties", {})
-        if "limit" not in props:
-            pytest.skip(f"Tool '{tool_info['name']}' has no limit parameter")
-        limit_schema = props["limit"]
-        if "maximum" not in limit_schema:
-            pytest.skip(f"Tool '{tool_info['name']}' has no maximum (covered by other test)")
-        assert limit_schema["maximum"] == 100, (
-            f"Tool '{tool_info['name']}': expected maximum=100, got {limit_schema['maximum']}"
-        )
+        checked_tools = 0
+        for tool_info in all_tool_exports:
+            schema = tool_info["schema"]
+            props = schema.get("properties", {})
+            if "limit" not in props or "maximum" not in props["limit"]:
+                continue
+            checked_tools += 1
+            limit_schema = props["limit"]
+            assert limit_schema["maximum"] == 100, (
+                f"Tool '{tool_info['name']}': expected maximum=100, got {limit_schema['maximum']}"
+            )
+        assert checked_tools >= 1
 
-    @pytest.mark.parametrize("tool_info", _get_all_tool_exports())
-    def test_limit_default_is_reasonable(self, tool_info):
+    def test_limit_default_is_reasonable(self, all_tool_exports):
         """Limit default must be between 1 and 100 (not 0 or 200)."""
-        schema = tool_info["schema"]
-        props = schema.get("properties", {})
-        if "limit" not in props:
-            pytest.skip(f"Tool '{tool_info['name']}' has no limit parameter")
-        limit_schema = props["limit"]
-        if "default" not in limit_schema:
-            pytest.skip(f"Tool '{tool_info['name']}' has no default limit")
-        default = limit_schema["default"]
-        assert 1 <= default <= 100, (
-            f"Tool '{tool_info['name']}': limit default={default} is out of range [1, 100]"
-        )
+        checked_tools = 0
+        for tool_info in all_tool_exports:
+            schema = tool_info["schema"]
+            props = schema.get("properties", {})
+            if "limit" not in props or "default" not in props["limit"]:
+                continue
+            checked_tools += 1
+            limit_schema = props["limit"]
+            default = limit_schema["default"]
+            assert 1 <= default <= 100, (
+                f"Tool '{tool_info['name']}': limit default={default} is out of range [1, 100]"
+            )
+        assert checked_tools >= 1
 
-    @pytest.mark.parametrize("tool_info", _get_all_tool_exports())
-    def test_limit_has_description(self, tool_info):
+    def test_limit_has_description(self, all_tool_exports):
         """Limit must have a description so LLM understands the constraint."""
-        schema = tool_info["schema"]
-        props = schema.get("properties", {})
-        if "limit" not in props:
-            pytest.skip(f"Tool '{tool_info['name']}' has no limit parameter")
-        limit_schema = props["limit"]
-        assert "description" in limit_schema and limit_schema["description"], (
-            f"Tool '{tool_info['name']}': limit schema missing 'description'."
-        )
+        checked_tools = 0
+        for tool_info in all_tool_exports:
+            schema = tool_info["schema"]
+            props = schema.get("properties", {})
+            if "limit" not in props:
+                continue
+            checked_tools += 1
+            limit_schema = props["limit"]
+            assert "description" in limit_schema and limit_schema["description"], (
+                f"Tool '{tool_info['name']}': limit schema missing 'description'."
+            )
+        assert checked_tools >= 1
 
     def test_no_tool_accepts_limit_over_100(self, list_tools_with_limit):
         """No list tool should accept limit > 100 (catches regressions)."""

@@ -4,13 +4,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker
+import pytest_asyncio
 
 import request_credentials
 import runtime_auth
 from bearer_token_manager import generate_bearer_token
 from exceptions import AuthError
-from storage import Base, create_database_engine
 from storage_models import Account, ServiceBearerToken, VetmanagerConnection
 from vetmanager_auth import (
     VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
@@ -21,17 +20,14 @@ from vetmanager_auth import (
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
 
 
-async def _make_session_factory(tmp_path: Path) -> async_sessionmaker:
-    engine = create_database_engine(f"sqlite:///{tmp_path / 'runtime-auth.db'}")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return async_sessionmaker(engine, expire_on_commit=False)
+@pytest_asyncio.fixture
+async def session_factory(tmp_path: Path, sqlite_session_factory_builder):
+    return await sqlite_session_factory_builder(tmp_path / "runtime-auth.db")
 
 
 @pytest.mark.asyncio
-async def test_resolve_runtime_credentials_prefers_bearer_context(tmp_path: Path, monkeypatch):
+async def test_resolve_runtime_credentials_prefers_bearer_context(session_factory, monkeypatch):
     """Bearer-based account context should become the primary runtime source."""
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = generate_bearer_token()
 
     async with session_factory() as session:
@@ -66,9 +62,8 @@ async def test_resolve_runtime_credentials_prefers_bearer_context(tmp_path: Path
 
 
 @pytest.mark.asyncio
-async def test_resolve_runtime_credentials_normalizes_user_token_mode(tmp_path: Path, monkeypatch):
+async def test_resolve_runtime_credentials_normalizes_user_token_mode(session_factory, monkeypatch):
     """Runtime layer should not care whether bearer resolves to API key or user token."""
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = generate_bearer_token()
 
     async with session_factory() as session:
@@ -111,13 +106,12 @@ async def test_resolve_runtime_credentials_requires_bearer_header():
 
 
 @pytest.mark.asyncio
-async def test_vetmanager_client_uses_bearer_runtime_credentials(tmp_path: Path, monkeypatch):
+async def test_vetmanager_client_uses_bearer_runtime_credentials(session_factory, monkeypatch):
     """Client should lazily resolve credentials from bearer account context."""
     import httpx
     import respx
     from vetmanager_client import VetmanagerClient
 
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = generate_bearer_token()
 
     async with session_factory() as session:
@@ -170,13 +164,12 @@ async def test_vetmanager_client_uses_bearer_runtime_credentials(tmp_path: Path,
 
 
 @pytest.mark.asyncio
-async def test_vetmanager_client_uses_user_token_runtime_credentials(tmp_path: Path, monkeypatch):
+async def test_vetmanager_client_uses_user_token_runtime_credentials(session_factory, monkeypatch):
     """Client transport should consume normalized runtime credentials for user_token mode too."""
     import httpx
     import respx
     from vetmanager_client import VetmanagerClient
 
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = generate_bearer_token()
 
     async with session_factory() as session:

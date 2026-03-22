@@ -1,34 +1,11 @@
-"""Regression coverage for deterministic upstream mocks over live HTTP."""
+"""Regression coverage for deterministic upstream mocks over live browser HTTP."""
 
-import re
-
-import httpx
+import pytest
 
 
-CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
-
-
-def _extract_csrf_token(html: str) -> str:
-    match = CSRF_RE.search(html)
-    assert match is not None
-    return match.group(1)
-
-
-def _post_with_csrf(
-    client: httpx.Client,
-    path: str,
-    data: dict[str, str],
-    *,
-    page_path: str | None = None,
-) -> httpx.Response:
-    csrf_page = client.get(page_path or path)
-    token = _extract_csrf_token(csrf_page.text)
-    request_data = dict(data)
-    request_data["csrf_token"] = token
-    return client.post(path, data=request_data, follow_redirects=True)
-
-
+@pytest.mark.browser
 def test_live_http_domain_api_key_flow_uses_deterministic_upstream_mocks(
+    page,
     live_server_url: str,
     mock_domain_api_key_upstream,
 ) -> None:
@@ -37,35 +14,28 @@ def test_live_http_domain_api_key_flow_uses_deterministic_upstream_mocks(
         api_key="browser-api-key-secret",
     )
 
-    with httpx.Client(base_url=live_server_url, follow_redirects=True, timeout=10.0) as client:
-        register = _post_with_csrf(
-            client,
-            "/register",
-            data={"email": "browser-api@example.com", "password": "browser-pass-123"},
-        )
-        assert register.status_code == 200
+    page.goto(f"{live_server_url}/register")
+    page.locator('input[name="email"]').fill("browser-api@example.com")
+    page.locator('input[name="password"]').fill("browser-pass-123")
+    page.locator('form[action="/register"] button[type="submit"]').click()
+    page.wait_for_load_state("networkidle")
 
-        login = _post_with_csrf(
-            client,
-            "/login",
-            data={"email": "browser-api@example.com", "password": "browser-pass-123"},
-        )
-        assert login.status_code == 200
+    page.goto(f"{live_server_url}/login")
+    page.locator('input[name="email"]').fill("browser-api@example.com")
+    page.locator('input[name="password"]').fill("browser-pass-123")
+    page.locator('form[action="/login"] button[type="submit"]').click()
+    page.wait_for_load_state("networkidle")
 
-        response = _post_with_csrf(
-            client,
-            "/account/integration",
-            data={
-                "auth_mode": "domain_api_key",
-                "domain": mocked.domain,
-                "api_key": mocked.api_key,
-            },
-            page_path="/account",
-        )
+    integration_form = page.locator('form[data-auth-wizard="true"]')
+    api_panel = integration_form.locator('[data-mode-panel="domain_api_key"]')
+    api_panel.locator('input[name="domain"]').fill(mocked.domain)
+    api_panel.locator('input[name="api_key"]').fill(mocked.api_key)
+    integration_form.locator('button[type="submit"]').first.click()
+    page.wait_for_load_state("networkidle")
 
-    assert response.status_code == 200
-    assert "Vetmanager integration saved successfully." in response.text
-    assert mocked.api_key not in response.text
+    html = page.content()
+    assert "Vetmanager integration saved successfully." in html
+    assert mocked.api_key not in html
     assert mocked.billing_route.called
     assert mocked.validation_route.called
     assert len(mocked.validation_requests) >= 1
@@ -77,7 +47,9 @@ def test_live_http_domain_api_key_flow_uses_deterministic_upstream_mocks(
     assert validation_request.url.params["offset"] == "0"
 
 
+@pytest.mark.browser
 def test_live_http_user_token_flow_uses_deterministic_upstream_mocks(
+    page,
     live_server_url: str,
     mock_user_token_upstream,
 ) -> None:
@@ -88,37 +60,32 @@ def test_live_http_user_token_flow_uses_deterministic_upstream_mocks(
         user_token="browser-issued-user-token",
     )
 
-    with httpx.Client(base_url=live_server_url, follow_redirects=True, timeout=10.0) as client:
-        register = _post_with_csrf(
-            client,
-            "/register",
-            data={"email": "browser-user@example.com", "password": "browser-pass-123"},
-        )
-        assert register.status_code == 200
+    page.goto(f"{live_server_url}/register")
+    page.locator('input[name="email"]').fill("browser-user@example.com")
+    page.locator('input[name="password"]').fill("browser-pass-123")
+    page.locator('form[action="/register"] button[type="submit"]').click()
+    page.wait_for_load_state("networkidle")
 
-        login = _post_with_csrf(
-            client,
-            "/login",
-            data={"email": "browser-user@example.com", "password": "browser-pass-123"},
-        )
-        assert login.status_code == 200
+    page.goto(f"{live_server_url}/login")
+    page.locator('input[name="email"]').fill("browser-user@example.com")
+    page.locator('input[name="password"]').fill("browser-pass-123")
+    page.locator('form[action="/login"] button[type="submit"]').click()
+    page.wait_for_load_state("networkidle")
 
-        response = _post_with_csrf(
-            client,
-            "/account/integration",
-            data={
-                "auth_mode": "user_token",
-                "domain": mocked.domain,
-                "vm_login": mocked.login,
-                "vm_password": mocked.password,
-            },
-            page_path="/account",
-        )
+    integration_form = page.locator('form[data-auth-wizard="true"]')
+    integration_form.locator('input[name="auth_mode"][value="user_token"]').check()
+    page.wait_for_timeout(50)
+    user_panel = integration_form.locator('[data-mode-panel="user_token"]')
+    user_panel.locator('input[name="domain"]').fill(mocked.domain)
+    user_panel.locator('input[name="vm_login"]').fill(mocked.login)
+    user_panel.locator('input[name="vm_password"]').fill(mocked.password)
+    integration_form.locator('button[type="submit"]').first.click()
+    page.wait_for_load_state("networkidle")
 
-    assert response.status_code == 200
-    assert "Vetmanager integration saved successfully." in response.text
-    assert mocked.user_token not in response.text
-    assert mocked.password not in response.text
+    html = page.content()
+    assert "Vetmanager integration saved successfully." in html
+    assert mocked.user_token not in html
+    assert mocked.password not in html
     assert mocked.billing_route.called
     assert mocked.token_auth_route.called
     assert mocked.validation_route.called

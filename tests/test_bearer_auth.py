@@ -4,13 +4,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bearer_auth import resolve_bearer_auth_context
 from bearer_token_manager import generate_bearer_token
 from exceptions import AuthError, RateLimitError
-from storage import Base, create_database_engine
 from storage_models import Account, ServiceBearerToken, TokenUsageLog, TokenUsageStat, VetmanagerConnection
 from vetmanager_auth import VETMANAGER_AUTH_MODE_USER_TOKEN
 
@@ -18,17 +17,14 @@ from vetmanager_auth import VETMANAGER_AUTH_MODE_USER_TOKEN
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
 
 
-async def _make_session_factory(tmp_path: Path) -> async_sessionmaker:
-    engine = create_database_engine(f"sqlite:///{tmp_path / 'bearer-auth.db'}")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return async_sessionmaker(engine, expire_on_commit=False)
+@pytest_asyncio.fixture
+async def session_factory(tmp_path: Path, sqlite_session_factory_builder):
+    return await sqlite_session_factory_builder(tmp_path / "bearer-auth.db")
 
 
 @pytest.mark.asyncio
-async def test_resolve_bearer_auth_context_returns_active_account_and_connection(tmp_path: Path):
+async def test_resolve_bearer_auth_context_returns_active_account_and_connection(session_factory):
     """Lookup should resolve token -> account -> active Vetmanager connection."""
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = generate_bearer_token()
 
     async with session_factory() as session:
@@ -68,10 +64,9 @@ async def test_resolve_bearer_auth_context_returns_active_account_and_connection
 
 @pytest.mark.asyncio
 async def test_resolve_bearer_auth_context_returns_normalized_credentials_for_user_token_mode(
-    tmp_path: Path,
+    session_factory,
 ):
     """Bearer runtime should expose the same normalized context for user_token mode."""
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = generate_bearer_token()
 
     async with session_factory() as session:
@@ -110,9 +105,8 @@ async def test_resolve_bearer_auth_context_returns_normalized_credentials_for_us
 
 
 @pytest.mark.asyncio
-async def test_resolve_bearer_auth_context_updates_last_used_at_for_active_token(tmp_path: Path):
+async def test_resolve_bearer_auth_context_updates_last_used_at_for_active_token(session_factory):
     """Successful bearer resolution should stamp last_used_at for usage accounting."""
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = generate_bearer_token()
     used_at = datetime(2026, 3, 21, 12, 0, tzinfo=timezone.utc)
 
@@ -153,9 +147,8 @@ async def test_resolve_bearer_auth_context_updates_last_used_at_for_active_token
 
 
 @pytest.mark.asyncio
-async def test_resolve_bearer_auth_context_increments_request_count(tmp_path: Path):
+async def test_resolve_bearer_auth_context_increments_request_count(session_factory):
     """Successful bearer resolution should create/update usage stats request count."""
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = generate_bearer_token()
     used_at = datetime(2026, 3, 21, 12, 5, tzinfo=timezone.utc)
 
@@ -206,9 +199,8 @@ async def test_resolve_bearer_auth_context_increments_request_count(tmp_path: Pa
 
 
 @pytest.mark.asyncio
-async def test_resolve_bearer_auth_context_writes_success_audit_log(tmp_path: Path):
+async def test_resolve_bearer_auth_context_writes_success_audit_log(session_factory):
     """Successful bearer auth should append a token auth audit event."""
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = generate_bearer_token()
 
     async with session_factory() as session:
@@ -253,9 +245,8 @@ async def test_resolve_bearer_auth_context_writes_success_audit_log(tmp_path: Pa
 
 
 @pytest.mark.asyncio
-async def test_resolve_bearer_auth_context_rejects_revoked_token(tmp_path: Path):
+async def test_resolve_bearer_auth_context_rejects_revoked_token(session_factory):
     """Lookup should reject revoked bearer tokens."""
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = generate_bearer_token()
 
     async with session_factory() as session:
@@ -299,10 +290,8 @@ async def test_resolve_bearer_auth_context_rejects_revoked_token(tmp_path: Path)
 
 
 @pytest.mark.asyncio
-async def test_resolve_bearer_auth_context_rejects_invalid_token(tmp_path: Path):
+async def test_resolve_bearer_auth_context_rejects_invalid_token(session_factory):
     """Lookup should fail safely for unknown bearer token."""
-    session_factory = await _make_session_factory(tmp_path)
-
     async with session_factory() as session:
         with pytest.raises(AuthError, match="Invalid bearer"):
             await resolve_bearer_auth_context(
@@ -313,11 +302,10 @@ async def test_resolve_bearer_auth_context_rejects_invalid_token(tmp_path: Path)
 
 
 @pytest.mark.asyncio
-async def test_resolve_bearer_auth_context_rejects_expired_token(tmp_path: Path):
+async def test_resolve_bearer_auth_context_rejects_expired_token(session_factory):
     """Lookup should reject expired bearer tokens."""
     from datetime import datetime, timedelta, timezone
 
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = generate_bearer_token()
 
     async with session_factory() as session:
@@ -364,9 +352,8 @@ async def test_resolve_bearer_auth_context_rejects_expired_token(tmp_path: Path)
 
 
 @pytest.mark.asyncio
-async def test_resolve_bearer_auth_context_requires_active_connection(tmp_path: Path):
+async def test_resolve_bearer_auth_context_requires_active_connection(session_factory):
     """Lookup should fail when account has no active Vetmanager connection."""
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = generate_bearer_token()
 
     async with session_factory() as session:
@@ -409,11 +396,10 @@ async def test_resolve_bearer_auth_context_requires_active_connection(tmp_path: 
 
 
 @pytest.mark.asyncio
-async def test_resolve_bearer_auth_context_writes_rate_limit_audit_log(tmp_path: Path, monkeypatch):
+async def test_resolve_bearer_auth_context_writes_rate_limit_audit_log(session_factory, monkeypatch):
     """Rate-limited bearer auth should append a dedicated audit event."""
     import bearer_rate_limiter
 
-    session_factory = await _make_session_factory(tmp_path)
     raw_token = generate_bearer_token()
     used_at = datetime(2026, 3, 21, 12, 45, tzinfo=timezone.utc)
     monkeypatch.setenv("BEARER_RATE_LIMIT_REQUESTS", "1")

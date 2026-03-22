@@ -4,12 +4,11 @@ from pathlib import Path
 
 import httpx
 import pytest
+import pytest_asyncio
 import respx
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from exceptions import AuthError
-from storage import Base, create_database_engine
 from storage_models import VetmanagerConnection
 from vetmanager_connection_service import (
     exchange_user_token,
@@ -22,18 +21,15 @@ from vetmanager_connection_service import (
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
 
 
-async def _make_session_factory(tmp_path: Path) -> async_sessionmaker:
-    engine = create_database_engine(f"sqlite:///{tmp_path / 'connection-service.db'}")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return async_sessionmaker(engine, expire_on_commit=False)
+@pytest_asyncio.fixture
+async def session_factory(tmp_path: Path, sqlite_session_factory_builder):
+    return await sqlite_session_factory_builder(tmp_path / "connection-service.db")
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_save_domain_api_key_connection_persists_validated_active_connection(tmp_path: Path):
+async def test_save_domain_api_key_connection_persists_validated_active_connection(session_factory):
     """Saving connection should validate host/key and persist encrypted active record."""
-    session_factory = await _make_session_factory(tmp_path)
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-a").mock(
         return_value=httpx.Response(200, json={"data": {"url": "https://clinic-a.vetmanager.cloud"}})
     )
@@ -63,9 +59,8 @@ async def test_save_domain_api_key_connection_persists_validated_active_connecti
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_save_domain_api_key_connection_disables_previous_active_connection(tmp_path: Path):
+async def test_save_domain_api_key_connection_disables_previous_active_connection(session_factory):
     """Account should keep only one active Vetmanager connection after save."""
-    session_factory = await _make_session_factory(tmp_path)
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-b").mock(
         return_value=httpx.Response(200, json={"data": {"url": "https://clinic-b.vetmanager.cloud"}})
     )
@@ -112,9 +107,8 @@ async def test_save_domain_api_key_connection_disables_previous_active_connectio
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_save_domain_api_key_connection_rejects_invalid_api_key(tmp_path: Path):
+async def test_save_domain_api_key_connection_rejects_invalid_api_key(session_factory):
     """Connection save should fail safely when API key is invalid."""
-    session_factory = await _make_session_factory(tmp_path)
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-c").mock(
         return_value=httpx.Response(200, json={"data": {"url": "https://clinic-c.vetmanager.cloud"}})
     )
@@ -135,9 +129,8 @@ async def test_save_domain_api_key_connection_rejects_invalid_api_key(tmp_path: 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_save_user_token_connection_persists_encrypted_active_connection(tmp_path: Path):
+async def test_save_user_token_connection_persists_encrypted_active_connection(session_factory):
     """User-token mode should validate probe and persist encrypted credentials."""
-    session_factory = await _make_session_factory(tmp_path)
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-user").mock(
         return_value=httpx.Response(200, json={"data": {"url": "https://clinic-user.vetmanager.cloud"}})
     )
@@ -167,9 +160,8 @@ async def test_save_user_token_connection_persists_encrypted_active_connection(t
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_save_user_token_connection_rejects_invalid_user_token(tmp_path: Path):
+async def test_save_user_token_connection_rejects_invalid_user_token(session_factory):
     """User-token mode should fail safely when runtime token probe is unauthorized."""
-    session_factory = await _make_session_factory(tmp_path)
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-user-bad").mock(
         return_value=httpx.Response(200, json={"data": {"url": "https://clinic-user-bad.vetmanager.cloud"}})
     )
@@ -227,9 +219,8 @@ async def test_exchange_user_token_uses_multipart_form_and_app_name_without_api_
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_save_user_login_password_connection_persists_token_without_api_key(tmp_path: Path):
+async def test_save_user_login_password_connection_persists_token_without_api_key(session_factory):
     """Saving login/password mode should not require or persist an API key."""
-    session_factory = await _make_session_factory(tmp_path)
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-login").mock(
         return_value=httpx.Response(200, json={"data": {"url": "https://clinic-login.vetmanager.cloud"}})
     )

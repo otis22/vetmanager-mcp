@@ -7,6 +7,7 @@ import math
 import os
 from collections import deque
 from datetime import datetime, timezone
+from weakref import WeakKeyDictionary
 
 from exceptions import RateLimitError
 
@@ -43,7 +44,17 @@ class InMemoryBearerRateLimiter:
 
     def __init__(self) -> None:
         self._requests_by_token: dict[int, deque[float]] = {}
-        self._lock = asyncio.Lock()
+        self._locks_by_loop: WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
+            WeakKeyDictionary()
+        )
+
+    def _get_lock(self) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        lock = self._locks_by_loop.get(loop)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks_by_loop[loop] = lock
+        return lock
 
     async def check_or_raise(
         self,
@@ -60,7 +71,7 @@ class InMemoryBearerRateLimiter:
         window_seconds = get_bearer_rate_limit_window_seconds()
         cutoff = current_ts - window_seconds
 
-        async with self._lock:
+        async with self._get_lock():
             bucket = self._requests_by_token.setdefault(bearer_token_id, deque())
             while bucket and bucket[0] <= cutoff:
                 bucket.popleft()
@@ -79,7 +90,7 @@ class InMemoryBearerRateLimiter:
 
     async def reset(self) -> None:
         """Clear process-local limiter state, mainly for tests."""
-        async with self._lock:
+        async with self._get_lock():
             self._requests_by_token.clear()
 
 

@@ -114,3 +114,34 @@
 - В репозитории есть явный source of truth для warning policy.
 - Policy отделяет default CI-blocking contour от opt-in contour.
 - Добавлены guardrails против тихого появления глобальных warning-ignore правил.
+
+## Цель 43.4
+
+Включить для default suite реальный fail-on-unexpected-warnings режим, который
+использует policy из `43.3` и не опирается на ручные договорённости.
+
+## Решение 43.4
+
+- Добавить отдельный launcher для default suite.
+- Launcher должен запускать pytest с `-W error::...` по blocking categories из
+  warning policy.
+- `docker compose run --rm test` должен перейти на этот launcher.
+
+## Декомпозиция 43.4
+
+### 43.4.1 Launcher
+- Добавить script/entrypoint для default suite с warning-as-error flags.
+
+### 43.4.2 Integration
+- Подключить launcher в `docker-compose.yml` для profile `test`.
+
+### 43.4.3 Validation
+- Прогнать launcher отдельно.
+- Прогнать полный suite через обычную compose-команду.
+- Обновить `AssumptionLog.md`.
+
+## Критерии готовности 43.4
+
+- `docker compose run --rm test` падает на unexpected warnings.
+- Конфигурация опирается на warning policy, а не на разрозненный inline shell.
+- Default suite по-прежнему проходит зелёным на текущем состоянии репозитория.

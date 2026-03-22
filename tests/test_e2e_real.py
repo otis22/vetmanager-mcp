@@ -14,8 +14,8 @@ Run inside Docker:
     docker compose run --rm -e TEST_DOMAIN=devtr6 -e TEST_API_KEY=<key> test
 """
 
+import asyncio
 import os
-from pathlib import Path
 import pytest
 import re
 from unittest.mock import AsyncMock, patch
@@ -23,9 +23,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import request_credentials
 import runtime_auth
-import storage
 from server import mcp
-from storage import Base, create_database_engine
 from vetmanager_client import VetmanagerClient
 from exceptions import AuthError, VetmanagerError
 from vetmanager_connection_service import (
@@ -43,7 +41,6 @@ TEST_USER_TOKEN = os.environ.get("TEST_USER_TOKEN", "")
 TEST_USER_TOKEN_BASE_URL = os.environ.get("TEST_USER_TOKEN_BASE_URL", "")
 TEST_USER_LOGIN = os.environ.get("TEST_USER_LOGIN", "")
 TEST_USER_PASSWORD = os.environ.get("TEST_USER_PASSWORD", "")
-TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
 CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
 
 skip_if_no_creds = pytest.mark.skipif(
@@ -61,6 +58,20 @@ skip_if_no_user_login_flow = pytest.mark.skipif(
         "not set — skipping login/password real smoke tests"
     ),
 )
+
+
+@pytest.fixture(autouse=True)
+def cleanup_orphaned_default_loop():
+    """Close stray default loops that some sync helpers may leave behind in real E2E runs."""
+    yield
+    try:
+        loop = asyncio.get_event_loop_policy().get_event_loop()
+    except RuntimeError:
+        return
+    if loop.is_running() or loop.is_closed():
+        return
+    loop.close()
+    asyncio.set_event_loop(None)
 
 
 def vc() -> VetmanagerClient:
@@ -134,20 +145,6 @@ def vc_user_token() -> VetmanagerClient:
     return client
 
 
-async def _prepare_web_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    database_path = tmp_path / "real-web-auth.db"
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path}")
-    monkeypatch.setenv("WEB_SESSION_SECRET", "real-web-session-secret")
-    monkeypatch.setenv("WEB_SESSION_SECURE", "0")
-    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
-    storage.reset_storage_state()
-
-    engine = create_database_engine(f"sqlite:///{database_path}")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return engine
-
-
 def _extract_csrf_token(html: str) -> str:
     match = CSRF_RE.search(html)
     assert match is not None
@@ -166,6 +163,20 @@ async def _post_with_csrf(
     payload = dict(data)
     payload["csrf_token"] = token
     return await client.post(path, data=payload)
+
+
+def _post_with_csrf_sync(
+    client: httpx.Client,
+    path: str,
+    data: dict[str, str],
+    *,
+    page_path: str | None = None,
+) -> httpx.Response:
+    csrf_page = client.get(page_path or path)
+    token = _extract_csrf_token(csrf_page.text)
+    payload = dict(data)
+    payload["csrf_token"] = token
+    return client.post(path, data=payload)
 
 
 async def call(coro):
@@ -248,26 +259,20 @@ async def test_real_get_users_with_user_token_mode():
 
 
 @skip_if_no_creds
-@pytest.mark.asyncio
-async def test_real_web_account_can_issue_bearer_and_call_tool(tmp_path: Path, monkeypatch):
+def test_real_web_account_can_issue_bearer_and_call_tool(live_server_url: str, run_async):
     """Real happy-path: web account -> real API-key integration -> bearer -> MCP tool."""
-    engine = await _prepare_web_db(tmp_path, monkeypatch)
-    app = mcp.http_app(path="/mcp", transport="streamable-http")
-    transport = httpx.ASGITransport(app=app)
-
-    async with httpx.AsyncClient(
-        transport=transport,
-        base_url="http://testserver",
+    with httpx.Client(
+        base_url=live_server_url,
         follow_redirects=True,
     ) as client:
-        register = await _post_with_csrf(
+        register = _post_with_csrf_sync(
             client,
             "/register",
             data={"email": "real-flow@example.com", "password": "real-flow-pass-123"},
         )
         assert register.status_code == 200
 
-        integration = await _post_with_csrf(
+        integration = _post_with_csrf_sync(
             client,
             "/account/integration",
             data={"auth_mode": "domain_api_key", "domain": TEST_DOMAIN, "api_key": TEST_API_KEY},
@@ -276,7 +281,7 @@ async def test_real_web_account_can_issue_bearer_and_call_tool(tmp_path: Path, m
         assert integration.status_code == 200
         assert "Vetmanager integration saved successfully." in integration.text
 
-        issued = await _post_with_csrf(
+        issued = _post_with_csrf_sync(
             client,
             "/account/tokens",
             data={"token_name": "Real E2E token", "expires_in_days": "7"},
@@ -292,13 +297,10 @@ async def test_real_web_account_can_issue_bearer_and_call_tool(tmp_path: Path, m
         "_get_request_headers",
         return_value={"authorization": f"Bearer {raw_token}"},
     ):
-        result = await mcp.call_tool("get_clients", {"limit": 2, "offset": 0})
+        result = run_async(mcp.call_tool("get_clients", {"limit": 2, "offset": 0}))
 
     assert result.structured_content is not None
     assert "data" in result.structured_content
-
-    await engine.dispose()
-    storage.reset_storage_state()
 
 
 @skip_if_no_creds
