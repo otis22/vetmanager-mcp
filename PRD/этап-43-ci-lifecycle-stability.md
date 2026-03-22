@@ -78,3 +78,39 @@
 - Browser/live tests проходят без `uvicorn/websockets` deprecation warnings.
 - Решение ограничено test infrastructure.
 - Полный suite проходит без неожиданных warning'ов от browser harness.
+
+## Цель 43.3
+
+Зафиксировать явную warning policy для test/CI contour: какие warnings считаются
+допустимыми, какие блокируют CI, и какие механизмы suppression разрешены.
+
+## Решение 43.3
+
+- Сделать policy machine-readable, чтобы следующие этапы могли использовать её
+  как источник истины.
+- Зафиксировать нулевую tolerance для warnings в default suite.
+- Явно запретить глобальные `ignore`/`default` фильтры в `pytest.ini`.
+- Разрешить только scoped suppression, если она когда-либо понадобится:
+  per-test/per-module с явной причиной и отдельной roadmap-задачей.
+
+## Декомпозиция 43.3
+
+### 43.3.1 Policy contract
+- Добавить модуль с явной warning policy для default и opt-in suites.
+
+### 43.3.2 Guardrails
+- Добавить тесты, которые проверяют:
+  - default suite требует zero warnings;
+  - блокирующие категории определены явно;
+  - в `pytest.ini` нет глобальных filterwarnings-ignore правил.
+
+### 43.3.3 Validation
+- Прогнать policy tests.
+- Прогнать полный suite.
+- Обновить `AssumptionLog.md`.
+
+## Критерии готовности 43.3
+
+- В репозитории есть явный source of truth для warning policy.
+- Policy отделяет default CI-blocking contour от opt-in contour.
+- Добавлены guardrails против тихого появления глобальных warning-ignore правил.

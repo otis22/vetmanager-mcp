@@ -664,7 +664,7 @@
 
 - 43.1 Разобрать и устранить `aiosqlite` thread/event-loop warnings в тестах — `done`
 - 43.2 Разобрать `uvicorn/websockets` deprecation warnings в live browser harness — `done`
-- 43.3 Ввести policy по warnings: какие допустимы, какие блокируют CI — `todo`
+- 43.3 Ввести policy по warnings: какие допустимы, какие блокируют CI — `done`
 - 43.4 Подготовить режим fail-on-unexpected-warnings для default suite — `todo`
 - 43.5 Разделить test contours: fast, default, opt-in real — `todo`
 - 43.6 Обновить CI workflow под новые test contours — `todo`
