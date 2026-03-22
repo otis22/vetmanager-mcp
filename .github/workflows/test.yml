@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  fast:
     runs-on: ubuntu-latest
 
     steps:
@@ -16,10 +16,27 @@ jobs:
       - name: Build Docker image
         run: docker build --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp .
 
-      - name: Run unit + mock e2e tests
+      - name: Run fast contour
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/app" \
             -u 1001:1001 \
             vetmanager-mcp \
-            python -m pytest tests/test_client_multitenancy.py tests/test_e2e_mock.py -v
+            python scripts/run_fast_test_suite.py
+
+  default:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp .
+
+      - name: Run default contour
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/app" \
+            -u 1001:1001 \
+            vetmanager-mcp \
+            python scripts/run_default_test_suite.py

@@ -182,3 +182,34 @@ entrypoint'ов и marker-контрактов.
 - У проекта есть явные entrypoint'ы для `fast`, `default` и `opt-in real`.
 - Default contour гарантированно не запускает real API/browser tests.
 - Opt-in real contour запускает только real tests.
+
+## Цель 43.6
+
+Перевести GitHub Actions на новые test contours, чтобы обязательный CI и
+manual real job использовали те же entrypoint'ы, что и локальные прогоны.
+
+## Решение 43.6
+
+- `test.yml` должен запускать отдельные jobs для `fast` и `default`.
+- `test-real.yml` должен использовать `opt-in real` launcher вместо прямого
+  обращения к одному test module.
+- Workflow не должен дублировать marker expressions или вручную перечислять
+  старые test modules.
+
+## Декомпозиция 43.6
+
+### 43.6.1 Required CI
+- Обновить `test.yml` под jobs `fast` и `default`.
+
+### 43.6.2 Manual real CI
+- Обновить `test-real.yml` под `scripts/run_opt_in_real_test_suite.py`.
+
+### 43.6.3 Audit
+- Проверить, что workflow'ы не расходятся с contour launcher'ами.
+- Обновить `AssumptionLog.md`.
+
+## Критерии готовности 43.6
+
+- Обязательный CI запускает `fast` и `default`.
+- Manual real workflow запускает `opt-in real`.
+- Marker expressions и наборы тестов определяются launcher'ами, а не YAML.

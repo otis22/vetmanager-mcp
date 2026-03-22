@@ -22,7 +22,7 @@ jobs:
       - name: Build Docker image
         run: docker build --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp .
 
-      - name: Run real API e2e tests
+      - name: Run opt-in real contour
         env:
           TEST_DOMAIN: ${{ inputs.test_domain }}
           TEST_API_KEY: ${{ secrets.VETMANAGER_TEST_API_KEY }}
@@ -41,4 +41,4 @@ jobs:
             -e TEST_USER_LOGIN \
             -e TEST_USER_PASSWORD \
             vetmanager-mcp \
-            python -m pytest tests/test_e2e_real.py -v
+            python scripts/run_opt_in_real_test_suite.py
