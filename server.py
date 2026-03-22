@@ -5,14 +5,11 @@ import asyncio
 from fastmcp import FastMCP
 
 from storage import bootstrap_storage_schema, initialize_storage
+from structured_logging import configure_logging
 from tool_descriptions import enhance_tool_descriptions
 from web import register_web_routes
 
-logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler()],
-)
+configure_logging()
 
 mcp = FastMCP(
     name="vetmanager",
