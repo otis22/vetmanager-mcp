@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from observability_logging import AUDIT_LOGGER
 from storage_models import TokenUsageLog
 from web_security import resolve_client_ip
 
@@ -101,6 +102,14 @@ def add_token_usage_log(
 ) -> None:
     """Append a token-centric audit log entry with best-effort request metadata."""
     ip_address, user_agent = get_request_audit_metadata()
+    AUDIT_LOGGER.info(
+        "Recorded token audit event.",
+        extra={
+            "event_name": "token_audit_log_appended",
+            "token_event_type": event_type,
+            "bearer_token_id": bearer_token_id,
+        },
+    )
     session.add(
         TokenUsageLog(
             bearer_token_id=bearer_token_id,

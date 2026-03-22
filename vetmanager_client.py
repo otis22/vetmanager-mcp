@@ -15,14 +15,13 @@ from exceptions import (
     VetmanagerTimeoutError,
 )
 from host_validation import validate_resolved_vetmanager_origin
+from observability_logging import RUNTIME_LOGGER
 from request_cache import REQUEST_CACHE
 from request_auth import get_bearer_token
 from runtime_auth import _validate_domain as validate_runtime_domain
 from runtime_auth import resolve_runtime_credentials
 from token_scopes import required_scope_for_request
 from vetmanager_auth import VetmanagerAuthContext
-
-logger = logging.getLogger(__name__)
 
 BILLING_API = "https://billing-api.vetmanager.cloud/host/{domain}"
 REQUEST_TIMEOUT = 30.0
@@ -170,7 +169,14 @@ class VetmanagerClient:
                     if not host.startswith("http"):
                         host = f"https://{host}"
                     self._base_url = self._validate_resolved_host(host)
-                    logger.debug("Resolved host for '%s': %s", self._domain, self._base_url)
+                    RUNTIME_LOGGER.debug(
+                        "Resolved billing host.",
+                        extra={
+                            "event_name": "billing_host_resolved",
+                            "domain": self._domain,
+                            "resolved_host": self._base_url,
+                        },
+                    )
                     return self._base_url
             except httpx.TimeoutException as exc:
                 if attempt < MAX_RETRIES:

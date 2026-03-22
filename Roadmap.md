@@ -690,7 +690,7 @@
 
 - 45.1 Ввести structured logging contract — `done`
 - 45.2 Добавить request/correlation id для web и MCP запросов — `done`
-- 45.3 Разделить runtime, audit и security log events — `todo`
+- 45.3 Разделить runtime, audit и security log events — `done`
 - 45.4 Добавить health/readiness endpoints — `todo`
 - 45.5 Добавить базовые service metrics: latency, error rate, auth failures, upstream failures — `todo`
 - 45.6 Подготовить экспорт в Prometheus-совместимом виде — `todo`
