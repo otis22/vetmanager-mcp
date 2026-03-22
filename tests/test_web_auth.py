@@ -99,6 +99,7 @@ def test_get_web_session_secret_requires_config(monkeypatch):
         get_web_session_secret()
 
 
+@pytest.mark.security
 def test_get_web_session_secret_does_not_fallback_to_storage_encryption_key(monkeypatch):
     monkeypatch.delenv("WEB_SESSION_SECRET", raising=False)
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
@@ -593,6 +594,7 @@ async def test_account_integration_form_exchanges_login_password_into_user_token
 
 @pytest.mark.asyncio
 @respx.mock
+@pytest.mark.security
 async def test_account_integration_form_shows_safe_error_for_failed_login_password_exchange(tmp_path: Path, monkeypatch):
     engine = await _prepare_web_db(tmp_path, monkeypatch)
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
@@ -651,6 +653,7 @@ async def test_account_integration_form_shows_safe_error_for_failed_login_passwo
 
 @pytest.mark.asyncio
 @respx.mock
+@pytest.mark.security
 async def test_account_integration_form_shows_safe_error_for_invalid_api_key(tmp_path: Path, monkeypatch):
     engine = await _prepare_web_db(tmp_path, monkeypatch)
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)

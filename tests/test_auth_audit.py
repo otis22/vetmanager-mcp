@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from auth_audit import _serialize_details
+
+pytestmark = pytest.mark.security
 
 
 def test_serialize_details_redacts_sensitive_top_level_fields():

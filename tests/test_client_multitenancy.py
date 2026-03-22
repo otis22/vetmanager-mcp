@@ -187,6 +187,7 @@ async def test_non_allowlisted_or_non_https_host_rejected():
 
 @pytest.mark.asyncio
 @respx.mock
+@pytest.mark.security
 async def test_resolved_host_rejects_userinfo_and_custom_port():
     """Billing host must be a bare HTTPS origin without userinfo or custom port."""
     route = respx.get("https://billing-api.vetmanager.cloud/host/clinic-unsafe")

@@ -292,3 +292,25 @@ userinfo, custom ports и небезопасные non-origin billing responses.
 - В roadmap и артефактах явно сказано, где именно были реализованы hardening fixes.
 - После `44.6` не остаётся незакрытого технического хвоста по findings этапа 44,
   кроме документации и финальной упаковки regressions.
+
+## Цель 44.8
+
+Собрать ключевые security regressions в явный pytest subset, чтобы их можно было
+запускать и сопровождать как отдельный security baseline.
+
+## Решение 44.8
+
+- Ввести marker `security`.
+- Пометить критичные regression tests по:
+  - session secret boundary;
+  - scope enforcement;
+  - safe auth errors;
+  - audit redaction;
+  - trusted proxy policy;
+  - bare-origin host validation.
+
+## Критерии готовности 44.8
+
+- В `pytest.ini` зарегистрирован marker `security`.
+- Ключевые security-invariant tests помечены этим marker'ом.
+- `pytest -m security` проходит зелёным.

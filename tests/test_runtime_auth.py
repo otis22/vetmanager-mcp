@@ -165,6 +165,7 @@ async def test_vetmanager_client_uses_bearer_runtime_credentials(session_factory
     assert captured_request.headers["X-REST-API-KEY"] == "runtime-key"
 
 
+@pytest.mark.security
 @pytest.mark.asyncio
 async def test_vetmanager_client_rejects_request_without_required_scope(session_factory, monkeypatch):
     """Client should enforce coarse-grained bearer scopes before upstream request."""

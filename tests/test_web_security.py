@@ -11,6 +11,8 @@ from starlette.requests import Request
 from auth_audit import get_request_audit_metadata
 from web_security import get_request_ip, resolve_client_ip
 
+pytestmark = pytest.mark.security
+
 
 def _make_request(
     *,

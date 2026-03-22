@@ -681,7 +681,7 @@
 - 44.5 Проверить rate limiting, abuse cases и brute-force surface — `done`
 - 44.6 Проверить SSRF/host resolution/allowlist контур — `done`
 - 44.7 Реализовать найденные hardening fixes — `done`
-- 44.8 Добавить security regression tests — `todo`
+- 44.8 Добавить security regression tests — `done`
 - 44.9 Обновить `README.md`, deployment notes и `AssumptionLog.md` — `todo`
 
 ## Этап 45. Observability, мониторинг и error telemetry — `todo`

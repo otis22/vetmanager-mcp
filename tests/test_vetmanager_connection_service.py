@@ -252,6 +252,7 @@ async def test_save_user_login_password_connection_persists_token_without_api_ke
 
 @pytest.mark.asyncio
 @respx.mock
+@pytest.mark.security
 async def test_save_domain_api_key_connection_rejects_host_with_path_or_query(session_factory):
     """Billing-resolved host must stay a bare origin before probe requests."""
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-unsafe").mock(
