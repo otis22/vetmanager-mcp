@@ -46,3 +46,35 @@
 - `aiosqlite` warnings больше не возникают в default suite.
 - Решение не основано на ignore/filter policy.
 - Изменение остаётся локальным для test infrastructure и не ломает runtime.
+
+## Цель 43.2
+
+Устранить `DeprecationWarning` от `uvicorn/websockets` в live browser harness
+без подавления warning-фильтрами и без изменения runtime-контракта приложения.
+
+## Решение 43.2
+
+- Не добавлять глобальные ignore/filter rules для `DeprecationWarning`.
+- Проверить, действительно ли live browser harness использует только HTTP.
+- Если websocket transport не нужен, отключить websocket protocol в test-only
+  `uvicorn.Config`, чтобы не импортировался legacy `websockets` stack.
+
+## Декомпозиция 43.2
+
+### 43.2.1 Reproduction
+- Подтвердить, что warning приходит из test-only live HTTP server.
+
+### 43.2.2 Fix
+- Изменить конфигурацию test-only uvicorn server так, чтобы browser harness
+  поднимался только как HTTP endpoint без websocket protocol.
+
+### 43.2.3 Validation
+- Прогнать browser/live subset с `DeprecationWarning` как ошибкой.
+- Прогнать полный suite.
+- Обновить `AssumptionLog.md`.
+
+## Критерии готовности 43.2
+
+- Browser/live tests проходят без `uvicorn/websockets` deprecation warnings.
+- Решение ограничено test infrastructure.
+- Полный suite проходит без неожиданных warning'ов от browser harness.

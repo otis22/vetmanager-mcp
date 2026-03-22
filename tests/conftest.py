@@ -268,6 +268,7 @@ def live_server_url(prepared_web_db, free_tcp_port: int) -> Generator[str, None,
         port=free_tcp_port,
         log_level="warning",
         access_log=False,
+        ws="none",
     )
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, name="pytest-live-http-server", daemon=True)
