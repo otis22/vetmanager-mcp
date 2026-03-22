@@ -15,6 +15,7 @@ from starlette.responses import HTMLResponse, RedirectResponse
 
 from exceptions import AuthError, HostResolutionError, RateLimitError, VetmanagerError
 from landing_page import render_landing_page
+from request_context import attach_request_context_headers
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
 from storage import get_session_factory
 from storage_models import Account, ServiceBearerToken, TokenUsageStat, VetmanagerConnection
@@ -102,6 +103,7 @@ def _html_response(
 ) -> HTMLResponse:
     response = HTMLResponse(content, status_code=status_code)
     _apply_security_headers(response, script_nonce=script_nonce)
+    attach_request_context_headers(response, request)
     if with_csrf_cookie:
         ensure_csrf_cookie(
             response,
@@ -119,6 +121,7 @@ def _redirect_response(
 ) -> RedirectResponse:
     response = RedirectResponse(url=url, status_code=status_code)
     _apply_security_headers(response)
+    attach_request_context_headers(response, request)
     if with_csrf_cookie:
         ensure_csrf_cookie(response, existing_token=request.cookies.get(CSRF_COOKIE_NAME))
     return response

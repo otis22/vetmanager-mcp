@@ -8,6 +8,7 @@ import logging
 from structured_logging import (
     DEFAULT_LOG_FORMAT,
     JsonLogFormatter,
+    RequestContextLogFilter,
     STRUCTURED_LOG_RECORD_FIELDS,
     TextLogFormatter,
     build_log_formatter,
@@ -74,3 +75,25 @@ def test_text_formatter_preserves_core_message_and_extras():
     assert "vetmanager.test" in rendered
     assert "text message" in rendered
     assert "request_id=req-1" in rendered
+
+
+def test_request_context_log_filter_attaches_request_fields(monkeypatch):
+    record = logging.LogRecord(
+        name="vetmanager.test",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=30,
+        msg="with context",
+        args=(),
+        exc_info=None,
+    )
+
+    monkeypatch.setattr(
+        "structured_logging.get_current_request_context",
+        lambda: {"request_id": "req-1", "correlation_id": "corr-1"},
+    )
+
+    RequestContextLogFilter().filter(record)
+
+    assert record.request_id == "req-1"
+    assert record.correlation_id == "corr-1"

@@ -8,6 +8,8 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from request_context import get_current_request_context
+
 DEFAULT_LOG_FORMAT = "text"
 SUPPORTED_LOG_FORMATS = {"json", "text"}
 STRUCTURED_LOG_RECORD_FIELDS = (
@@ -103,6 +105,17 @@ class TextLogFormatter(logging.Formatter):
         return base
 
 
+class RequestContextLogFilter(logging.Filter):
+    """Attach request-scoped ids to log records when available."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        context = get_current_request_context()
+        for key, value in context.items():
+            if not getattr(record, key, None):
+                setattr(record, key, value)
+        return True
+
+
 def build_log_formatter(*, log_format: str | None = None) -> logging.Formatter:
     """Return formatter matching the current structured logging contract."""
     effective_format = log_format or get_log_format()
@@ -121,4 +134,5 @@ def configure_logging() -> None:
     )
     formatter = build_log_formatter()
     for handler in logging.getLogger().handlers:
+        handler.addFilter(RequestContextLogFilter())
         handler.setFormatter(formatter)

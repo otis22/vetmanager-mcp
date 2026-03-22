@@ -140,6 +140,8 @@ async def test_register_page_sets_csrf_cookie_and_security_headers(tmp_path: Pat
     assert response.headers["referrer-policy"] == "no-referrer"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert "default-src 'self'" in response.headers["content-security-policy"]
+    assert response.headers["x-request-id"]
+    assert response.headers["x-correlation-id"] == response.headers["x-request-id"]
 
     await engine.dispose()
     storage.reset_storage_state()
