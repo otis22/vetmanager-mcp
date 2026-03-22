@@ -643,7 +643,7 @@
 - 41.9 Обновить `README.md`, PRD, technical requirements и `AssumptionLog.md` под новый auth flow — `done`
 - 41.10 Выполнить полный прогон test suite после аудита и правок — `done`
 
-## Этап 42. Automated Browser Happy Path для web auth flows — `in_progress`
+## Этап 42. Automated Browser Happy Path для web auth flows — `done`
 
 Цель: сделать browser happy-path частью обычного test suite для обоих сценариев авторизации, с автоматической очисткой тестовых аккаунтов. Browser tests с реальными внешними данными остаются отдельной опцией.
 
@@ -653,7 +653,7 @@
 - 42.4 Написать browser happy-path для `domain + api_key`: регистрация -> login -> integration -> bearer issuance -> MCP call — `done`
 - 42.5 Написать browser happy-path для `login/password -> user token`: регистрация -> login -> exchange -> integration -> bearer issuance -> MCP call — `done`
 - 42.6 Добавить browser assertions на UI-контракт и отсутствие утечек секретов после submit — `done`
-- 42.7 Реализовать cleanup helper для удаления тестового account и всех связанных сущностей после каждого browser test — `todo`
-- 42.8 Добавить regression test на cleanup: после browser tests в БД не остаётся тестовых account и связанных записей — `todo`
-- 42.9 Обновить `README.md`, PRD и `AssumptionLog.md`: browser happy-path tests входят в обязательный suite — `todo`
-- 42.10 Добавить optional browser tests с реальными данными как отдельный opt-in режим, не входящий в дефолтный прогон — `todo`
+- 42.7 Реализовать cleanup helper для удаления тестового account и всех связанных сущностей после каждого browser test — `done`
+- 42.8 Добавить regression test на cleanup: после browser tests в БД не остаётся тестовых account и связанных записей — `done`
+- 42.9 Обновить `README.md`, PRD и `AssumptionLog.md`: browser happy-path tests входят в обязательный suite — `done`
+- 42.10 Добавить optional browser tests с реальными данными как отдельный opt-in режим, не входящий в дефолтный прогон — `done`

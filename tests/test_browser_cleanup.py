@@ -1,4 +1,5 @@
-"""Browser happy-path coverage for domain+api_key account onboarding."""
+"""Regression coverage for browser account cleanup helper."""
+
 from unittest.mock import patch
 
 import pytest
@@ -8,7 +9,7 @@ from server import mcp
 
 
 @pytest.mark.browser
-def test_browser_domain_api_key_flow_can_issue_bearer_and_call_mcp(
+def test_browser_cleanup_removes_account_and_related_entities(
     page,
     live_server_url: str,
     mock_domain_api_key_upstream,
@@ -16,22 +17,17 @@ def test_browser_domain_api_key_flow_can_issue_bearer_and_call_mcp(
     run_async,
 ) -> None:
     mocked = mock_domain_api_key_upstream(
-        domain="browser-domain-api-key",
-        api_key="browser-domain-api-key-secret",
+        domain="browser-cleanup-domain",
+        api_key="browser-cleanup-api-key",
     )
-    account_email = "browser-domain-api@example.com"
+    account_email = "browser-cleanup@example.com"
     browser_account_cleanup.track_account_email(account_email)
 
     page.goto(f"{live_server_url}/register")
     page.locator('input[name="email"]').fill(account_email)
-    page.locator('input[name="password"]').fill("browser-domain-pass-123")
+    page.locator('input[name="password"]').fill("browser-cleanup-pass-123")
     page.locator('form[action="/register"] button[type="submit"]').click()
     page.wait_for_load_state("networkidle")
-
-    assert page.locator("h1").inner_text() == "Личный кабинет"
-    assert page.locator('input[name="api_key"]').count() == 1
-    assert page.locator('[data-mode-panel="domain_api_key"]').is_visible()
-    assert page.locator('[data-mode-panel="user_token"]').is_hidden()
 
     integration_form = page.locator('form[data-auth-wizard="true"]')
     domain_api_key_panel = integration_form.locator('[data-mode-panel="domain_api_key"]')
@@ -40,18 +36,12 @@ def test_browser_domain_api_key_flow_can_issue_bearer_and_call_mcp(
     integration_form.locator('button[type="submit"]').first.click()
     page.wait_for_load_state("networkidle")
 
-    assert "Vetmanager integration saved successfully." in page.content()
-    assert mocked.api_key not in page.content()
-
-    page.locator('form[action="/account/tokens"] input[name="token_name"]').fill("Browser API token")
+    page.locator('form[action="/account/tokens"] input[name="token_name"]').fill("Browser cleanup token")
     page.locator('form[action="/account/tokens"] input[name="expires_in_days"]').fill("7")
     page.locator('form[action="/account/tokens"] button[type="submit"]').click()
     page.wait_for_load_state("networkidle")
 
     raw_token = page.locator("#issued-token-value").input_value()
-    assert raw_token.startswith("vm_st_")
-    assert mocked.api_key not in page.content()
-
     with patch.object(
         request_credentials,
         "_get_request_headers",
@@ -60,7 +50,19 @@ def test_browser_domain_api_key_flow_can_issue_bearer_and_call_mcp(
         result = run_async(mcp.call_tool("get_clients", {"limit": 2, "offset": 0}))
 
     assert result.structured_content is not None
-    assert "data" in result.structured_content
-    assert mocked.billing_route.called
-    assert mocked.validation_route.called
-    assert any(request.url.params["limit"] == "2" for request in mocked.validation_requests)
+
+    report = browser_account_cleanup.cleanup_now()
+
+    assert report.deleted_accounts == 1
+    assert report.before["accounts"] == 1
+    assert report.before["vetmanager_connections"] == 1
+    assert report.before["service_bearer_tokens"] == 1
+    assert report.before["token_usage_stats"] == 1
+    assert report.before["token_usage_logs"] >= 2
+    assert report.after == {
+        "accounts": 0,
+        "vetmanager_connections": 0,
+        "service_bearer_tokens": 0,
+        "token_usage_stats": 0,
+        "token_usage_logs": 0,
+    }

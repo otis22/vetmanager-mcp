@@ -39,7 +39,8 @@ docker compose up -d          # запустить MCP-сервер
 Запуск тестов:
 
 ```bash
-# unit + mock (без реального API)
+# default suite: unit + mock + live browser happy-path tests
+# Chromium уже предустановлен в test image, доп. setup не нужен
 docker compose run --rm test
 
 # с реальным API по api_key flow
@@ -59,6 +60,13 @@ docker compose run --rm \
   -e TEST_USER_PASSWORD=<password> \
   test
 ```
+
+Что входит в default `docker compose run --rm test`:
+- unit tests;
+- mock/e2e tests;
+- live localhost browser tests через Playwright;
+- browser happy-path tests для обоих web auth flows;
+- cleanup regression для browser-created account data.
 
 ## Bearer-only runtime
 
@@ -397,7 +405,7 @@ Prompts работают по тому же bearer-only контракту, чт
 
 | Воркфлоу | Триггер | Что тестирует |
 |----------|---------|---------------|
-| `test.yml` | push / pull request → main | unit + mock e2e (без реального API) |
+| `test.yml` | push / pull request → main | default suite: unit + mock e2e + browser/live tests (без реального Vetmanager API) |
 | `test-real.yml` | вручную (`workflow_dispatch`) | real API e2e (требует секрет `VETMANAGER_TEST_API_KEY`) |
 
 Добавить secrets для real tests:

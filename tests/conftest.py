@@ -12,9 +12,11 @@ import pytest
 from playwright.sync_api import Page, sync_playwright
 import respx
 import storage
+from sqlalchemy import func, select
 import uvicorn
 from server import mcp
-from storage import Base, create_database_engine
+from storage import Base, create_database_engine, get_session_factory
+from storage_models import Account, ServiceBearerToken, TokenUsageLog, TokenUsageStat, VetmanagerConnection
 from web_security import reset_web_security_state
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
@@ -35,6 +37,79 @@ class DeterministicUpstreamMock:
     validation_route: object | None = None
     token_exchange_requests: list[httpx.Request] = field(default_factory=list)
     validation_requests: list[httpx.Request] = field(default_factory=list)
+
+
+@dataclass
+class BrowserCleanupReport:
+    """Snapshot of browser-test database residue before and after cleanup."""
+
+    deleted_accounts: int
+    before: dict[str, int]
+    after: dict[str, int]
+
+
+class BrowserAccountCleanup:
+    """Track browser-created accounts and remove all related records via ORM cascades."""
+
+    def __init__(self) -> None:
+        self._tracked_emails: set[str] = set()
+        self.last_report: BrowserCleanupReport | None = None
+
+    def track_account_email(self, email: str) -> None:
+        normalized_email = email.strip().lower()
+        if normalized_email:
+            self._tracked_emails.add(normalized_email)
+
+    async def _count_entities(self) -> dict[str, int]:
+        async with get_session_factory()() as session:
+            return {
+                "accounts": int(
+                    (await session.scalar(select(func.count()).select_from(Account))) or 0
+                ),
+                "vetmanager_connections": int(
+                    (await session.scalar(select(func.count()).select_from(VetmanagerConnection))) or 0
+                ),
+                "service_bearer_tokens": int(
+                    (await session.scalar(select(func.count()).select_from(ServiceBearerToken))) or 0
+                ),
+                "token_usage_stats": int(
+                    (await session.scalar(select(func.count()).select_from(TokenUsageStat))) or 0
+                ),
+                "token_usage_logs": int(
+                    (await session.scalar(select(func.count()).select_from(TokenUsageLog))) or 0
+                ),
+            }
+
+    async def _cleanup_async(self) -> BrowserCleanupReport:
+        before = await self._count_entities()
+        deleted_accounts = 0
+
+        if self._tracked_emails:
+            async with get_session_factory()() as session:
+                accounts = (
+                    await session.execute(
+                        select(Account).where(Account.email.in_(sorted(self._tracked_emails)))
+                    )
+                ).scalars().all()
+                for account in accounts:
+                    await session.delete(account)
+                    deleted_accounts += 1
+                await session.commit()
+            self._tracked_emails.clear()
+
+        after = await self._count_entities()
+        report = BrowserCleanupReport(
+            deleted_accounts=deleted_accounts,
+            before=before,
+            after=after,
+        )
+        self.last_report = report
+        return report
+
+    def cleanup_now(self) -> BrowserCleanupReport:
+        report = _run_coro_in_thread(self._cleanup_async())
+        assert isinstance(report, BrowserCleanupReport)
+        return report
 
 
 def _build_http_app():
@@ -211,6 +286,16 @@ def live_server_url(prepared_web_db, free_tcp_port: int) -> Generator[str, None,
         thread.join(timeout=10.0)
         if thread.is_alive():
             raise RuntimeError("Live HTTP test server did not stop cleanly.")
+
+
+@pytest.fixture
+def browser_account_cleanup(prepared_web_db) -> Generator[BrowserAccountCleanup, None, None]:
+    """Cleanup helper for browser tests that create real account-linked rows."""
+    helper = BrowserAccountCleanup()
+    try:
+        yield helper
+    finally:
+        helper.cleanup_now()
 
 
 @pytest.fixture

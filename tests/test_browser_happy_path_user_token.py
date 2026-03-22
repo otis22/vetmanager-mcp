@@ -13,6 +13,7 @@ def test_browser_user_token_flow_can_issue_bearer_and_call_mcp(
     page,
     live_server_url: str,
     mock_user_token_upstream,
+    browser_account_cleanup,
     run_async,
 ) -> None:
     mocked = mock_user_token_upstream(
@@ -21,9 +22,11 @@ def test_browser_user_token_flow_can_issue_bearer_and_call_mcp(
         password="browser-doctor-pass-123",
         user_token="browser-user-token-secret",
     )
+    account_email = "browser-user-token@example.com"
+    browser_account_cleanup.track_account_email(account_email)
 
     page.goto(f"{live_server_url}/register")
-    page.locator('input[name="email"]').fill("browser-user-token@example.com")
+    page.locator('input[name="email"]').fill(account_email)
     page.locator('input[name="password"]').fill("browser-user-pass-123")
     page.locator('form[action="/register"] button[type="submit"]').click()
     page.wait_for_load_state("networkidle")

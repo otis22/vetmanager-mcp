@@ -1790,3 +1790,92 @@
     harness;
   - 3 warnings относятся к уже существующему `aiosqlite` thread/loop
     shutdown поведению в `tests/test_token_cleanup.py`.
+
+---
+
+## Этапы 42.7-42.8: cleanup helper и regression на очистку browser данных
+
+**Что реализовано в test infrastructure:**
+- В `tests/conftest.py` добавлен reusable helper `browser_account_cleanup`.
+- Helper отслеживает test accounts по email и умеет:
+  - запускать cleanup вручную через `cleanup_now()`;
+  - автоматически выполнять cleanup в teardown;
+  - возвращать отчёт `before/after` по ключевым таблицам.
+
+**Что удаляется cleanup helper:**
+- `accounts`
+- `vetmanager_connections`
+- `service_bearer_tokens`
+- `token_usage_stats`
+- `token_usage_logs`
+
+Удаление выполняется через ORM delete на `Account` с уже описанными
+relationship cascade, поэтому cleanup не дублирует бизнес-логику удаления по
+таблицам вручную.
+
+**Как helper встроен в browser suite:**
+- Оба browser happy-path теста теперь регистрируют свой test account email в
+  helper сразу перед созданием account.
+- Это делает cleanup единым и независимым от конкретного auth flow.
+
+**Что подтверждено regression test:**
+- Добавлен `tests/test_browser_cleanup.py`.
+- Тест проходит browser flow с созданием:
+  - account;
+  - Vetmanager integration;
+  - service bearer token;
+  - usage stat/log через реальный `mcp.call_tool(...)`.
+- После `cleanup_now()` в БД остаются нули по всем связанным таблицам.
+
+**Проверки после аудита:**
+- Узкий прогон cleanup/browser блока:
+  `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_browser_happy_path_domain_api_key.py tests/test_browser_happy_path_user_token.py tests/test_browser_cleanup.py -q"`
+  -> `3 passed, 2 warnings`.
+
+---
+
+## Этап 42.9: doc sync для обязательного browser suite
+
+**Что синхронизировано:**
+- В `README.md` default команда `docker compose run --rm test` теперь явно
+  описана как обязательный suite, включающий:
+  - unit tests;
+  - mock/e2e tests;
+  - live Playwright browser tests;
+  - browser happy-path tests для обоих auth flow;
+  - cleanup regression.
+- В `README.md` зафиксировано, что Chromium уже предустановлен в test image и
+  для browser suite не нужен отдельный runtime setup.
+- В таблице CI/CD `test.yml` теперь описан как workflow для полного default
+  suite без реального Vetmanager API.
+
+---
+
+## Этап 42.10: opt-in real browser tests
+
+**Что добавлено:**
+- В `pytest.ini` зарегистрирован marker `real_browser`.
+- Добавлен файл `tests/test_browser_real_opt_in.py` с двумя opt-in tests:
+  - real browser API-key flow;
+  - real browser login/password -> user token flow.
+
+**Контракт opt-in режима:**
+- Для запуска нужен явный флаг `RUN_REAL_BROWSER_TESTS=1`.
+- Для API-key сценария требуются `TEST_DOMAIN` и `TEST_API_KEY`.
+- Для user-token сценария требуются
+  `TEST_USER_TOKEN_BASE_URL`, `TEST_USER_LOGIN`, `TEST_USER_PASSWORD`.
+- Без этих env tests только коллектаются и корректно `skip`, не меняя
+  смысл default suite.
+
+**Что подтверждено:**
+- В default режиме `tests/test_browser_real_opt_in.py` даёт `2 skipped`.
+- Это позволяет держать real browser coverage в репозитории, не включая её в
+  обязательный прогон без явного opt-in.
+
+**Итоговый статус этапа 42:**
+- Default suite после полного закрытия этапа:
+  `docker compose --profile test run --rm test`
+  -> `533 passed, 307 skipped, 2 warnings`.
+- Два skip сверху — это opt-in `real_browser` tests без `RUN_REAL_BROWSER_TESTS=1`.
+- Две warnings относятся к `uvicorn/websockets` deprecation в live browser
+  harness и не блокируют default regression contract.
