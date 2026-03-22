@@ -27,7 +27,7 @@ from storage_models import (
     TokenUsageStat,
     VetmanagerConnection,
 )
-from vetmanager_auth import resolve_vetmanager_credentials
+from vetmanager_auth import VetmanagerAuthContext, resolve_vetmanager_credentials
 
 
 @dataclass(slots=True)
@@ -40,6 +40,7 @@ class BearerAuthContext:
     auth_mode: str
     domain: str
     api_key: str
+    vetmanager_auth: VetmanagerAuthContext
     scopes: tuple[str, ...]
 
 
@@ -197,5 +198,6 @@ async def resolve_bearer_auth_context(
         auth_mode=resolved.auth_mode,
         domain=resolved.domain,
         api_key=resolved.api_key,
+        vetmanager_auth=resolved,
         scopes=tuple(token.get_scopes()),
     )

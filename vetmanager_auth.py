@@ -11,6 +11,9 @@ from storage_models import VetmanagerConnection
 VETMANAGER_AUTH_MODE_DOMAIN_API_KEY = "domain_api_key"
 VETMANAGER_AUTH_MODE_USER_TOKEN = "user_token"
 VETMANAGER_AUTH_HEADER = "X-REST-API-KEY"
+VETMANAGER_USER_TOKEN_HEADER = "X-USER-TOKEN"
+VETMANAGER_APP_NAME_HEADER = "X-APP-NAME"
+DEFAULT_USER_TOKEN_APP_NAME = "vetmanager-mcp"
 
 
 @dataclass(slots=True)
@@ -21,14 +24,18 @@ class VetmanagerAuthContext:
     domain: str
     credential: str
     credential_header: str = VETMANAGER_AUTH_HEADER
+    app_name: str | None = None
 
     def build_headers(self) -> dict[str, str]:
         """Build outgoing Vetmanager API headers for this auth mode."""
-        return {
+        headers = {
             self.credential_header: self.credential,
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
+        if self.app_name:
+            headers[VETMANAGER_APP_NAME_HEADER] = self.app_name
+        return headers
 
     @property
     def api_key(self) -> str:
@@ -71,6 +78,7 @@ def resolve_vetmanager_credentials(
 
     if connection.auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN:
         user_token = (payload.get("user_token") or "").strip()
+        app_name = (payload.get("app_name") or DEFAULT_USER_TOKEN_APP_NAME).strip()
         if not user_token:
             raise AuthError(
                 "Account connection is missing Vetmanager user token.",
@@ -80,6 +88,8 @@ def resolve_vetmanager_credentials(
             auth_mode=connection.auth_mode,
             domain=domain,
             credential=user_token,
+            credential_header=VETMANAGER_USER_TOKEN_HEADER,
+            app_name=app_name,
         )
 
     raise VetmanagerError(f"Unsupported Vetmanager auth mode: {connection.auth_mode}")

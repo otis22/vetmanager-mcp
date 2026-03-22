@@ -179,13 +179,17 @@ async def validate_user_token_connection(
     domain: str,
     user_token: str,
     *,
+    app_name: str = TOKEN_AUTH_APP_NAME,
     resolved_host: str | None = None,
 ) -> str:
     """Validate domain+user_token pair and return resolved Vetmanager host."""
     normalized_domain = _validate_domain(domain.strip())
     normalized_user_token = user_token.strip()
+    normalized_app_name = app_name.strip()
     if not normalized_user_token:
         raise AuthError("Invalid Vetmanager user token.", status_code=401)
+    if not normalized_app_name:
+        raise AuthError("Invalid Vetmanager app name.", status_code=401)
 
     resolved_host = resolved_host or await resolve_vetmanager_host(normalized_domain)
     async with httpx.AsyncClient(timeout=httpx.Timeout(REQUEST_TIMEOUT)) as http:
@@ -194,7 +198,8 @@ async def validate_user_token_connection(
                 f"{resolved_host}/rest/api/user",
                 params={"limit": 1, "offset": 0},
                 headers={
-                    "X-REST-API-KEY": normalized_user_token,
+                    "X-USER-TOKEN": normalized_user_token,
+                    "X-APP-NAME": normalized_app_name,
                     "Accept": "application/json",
                 },
             )
@@ -262,12 +267,18 @@ async def save_user_token_connection(
     account_id: int,
     domain: str,
     user_token: str,
+    app_name: str = TOKEN_AUTH_APP_NAME,
     encryption_key: str | None = None,
 ) -> VetmanagerConnection:
     """Validate and persist active user_token connection for one account."""
     normalized_domain = _validate_domain(domain.strip())
     normalized_user_token = user_token.strip()
-    await validate_user_token_connection(normalized_domain, normalized_user_token)
+    normalized_app_name = app_name.strip()
+    await validate_user_token_connection(
+        normalized_domain,
+        normalized_user_token,
+        app_name=normalized_app_name,
+    )
     await _disable_existing_active_connections(session, account_id=account_id)
 
     connection = VetmanagerConnection(
@@ -277,7 +288,11 @@ async def save_user_token_connection(
         domain=normalized_domain,
     )
     connection.set_credentials(
-        {"domain": normalized_domain, "user_token": normalized_user_token},
+        {
+            "domain": normalized_domain,
+            "user_token": normalized_user_token,
+            "app_name": normalized_app_name,
+        },
         encryption_key=encryption_key,
     )
     session.add(connection)
@@ -305,6 +320,7 @@ async def save_user_login_password_connection(
     await validate_user_token_connection(
         normalized_domain,
         user_token,
+        app_name=TOKEN_AUTH_APP_NAME,
         resolved_host=resolved_host,
     )
     await _disable_existing_active_connections(session, account_id=account_id)
@@ -316,7 +332,11 @@ async def save_user_login_password_connection(
         domain=normalized_domain,
     )
     connection.set_credentials(
-        {"domain": normalized_domain, "user_token": user_token},
+        {
+            "domain": normalized_domain,
+            "user_token": user_token,
+            "app_name": TOKEN_AUTH_APP_NAME,
+        },
         encryption_key=encryption_key,
     )
     session.add(connection)
@@ -337,7 +357,11 @@ async def evaluate_connection_health(
             await validate_domain_api_key_connection(auth_context.domain, auth_context.credential)
             return INTEGRATION_HEALTH_ACTIVE, "Integration is active."
         if auth_context.auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN:
-            await validate_user_token_connection(auth_context.domain, auth_context.credential)
+            await validate_user_token_connection(
+                auth_context.domain,
+                auth_context.credential,
+                app_name=auth_context.app_name or TOKEN_AUTH_APP_NAME,
+            )
             return INTEGRATION_HEALTH_ACTIVE, "Integration is active."
     except AuthError:
         if auth_context.auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN:

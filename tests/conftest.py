@@ -32,6 +32,7 @@ class DeterministicUpstreamMock:
     resolved_host: str
     api_key: str | None = None
     user_token: str | None = None
+    app_name: str = "vetmanager-mcp"
     login: str | None = None
     password: str | None = None
     billing_route: object | None = None
@@ -226,6 +227,7 @@ def mock_user_token_upstream(upstream_mock_router):
         login: str = "browser-doctor",
         password: str = "browser-password-123",
         user_token: str = "browser-issued-user-token",
+        app_name: str = "vetmanager-mcp",
     ) -> DeterministicUpstreamMock:
         host = resolved_host or f"https://{domain}.vetmanager.cloud"
         state = DeterministicUpstreamMock(
@@ -234,6 +236,7 @@ def mock_user_token_upstream(upstream_mock_router):
             login=login,
             password=password,
             user_token=user_token,
+            app_name=app_name,
         )
 
         def _capture_token_exchange(request: httpx.Request) -> httpx.Response:

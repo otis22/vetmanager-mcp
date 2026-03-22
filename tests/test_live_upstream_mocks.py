@@ -100,7 +100,8 @@ def test_live_http_user_token_flow_uses_deterministic_upstream_mocks(
     assert "x-rest-api-key" not in {key.lower() for key in token_exchange_request.headers}
     assert b'name="app_name"' in token_exchange_request.content
     assert b"vetmanager-mcp" in token_exchange_request.content
-    assert validation_request.headers["X-REST-API-KEY"] == mocked.user_token
+    assert validation_request.headers["X-USER-TOKEN"] == mocked.user_token
+    assert validation_request.headers["X-APP-NAME"] == mocked.app_name
     assert validation_request.url.path == "/rest/api/user"
     assert validation_request.url.params["limit"] == "1"
     assert validation_request.url.params["offset"] == "0"

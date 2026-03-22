@@ -535,9 +535,12 @@ async def test_account_integration_form_exchanges_login_password_into_user_token
         return httpx.Response(200, json={"data": {"token": "user-token-secret"}})
 
     respx.post("https://clinic-user.vetmanager.cloud/token_auth.php").mock(side_effect=_token_auth_response)
-    respx.get("https://clinic-user.vetmanager.cloud/rest/api/user").mock(
-        return_value=httpx.Response(200, json={"data": []})
-    )
+
+    def _validation_response(request: httpx.Request) -> httpx.Response:
+        captured["validation_headers"] = dict(request.headers)
+        return httpx.Response(200, json={"data": []})
+
+    respx.get("https://clinic-user.vetmanager.cloud/rest/api/user").mock(side_effect=_validation_response)
 
     app = mcp.http_app(path="/mcp", transport="streamable-http")
     transport = httpx.ASGITransport(app=app)
@@ -589,6 +592,12 @@ async def test_account_integration_form_exchanges_login_password_into_user_token
     assert stored.encrypted_credentials is not None
     assert "user-token-secret" not in stored.encrypted_credentials
     assert "doctor-pass-123" not in stored.encrypted_credentials
+    assert stored.get_credentials(encryption_key=TEST_ENCRYPTION_KEY)["app_name"] == "vetmanager-mcp"
+    validation_headers = {
+        key.lower(): value for key, value in captured["validation_headers"].items()
+    }
+    assert validation_headers["x-user-token"] == "user-token-secret"
+    assert validation_headers["x-app-name"] == "vetmanager-mcp"
 
     await engine.dispose()
     storage.reset_storage_state()

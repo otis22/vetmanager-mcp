@@ -54,9 +54,11 @@ async def resolve_runtime_credentials() -> RuntimeCredentials:
         )
     return RuntimeCredentials(
         vetmanager_auth=VetmanagerAuthContext(
-            auth_mode=context.auth_mode,
-            domain=_validate_domain(context.domain),
-            credential=context.api_key,
+            auth_mode=context.vetmanager_auth.auth_mode,
+            domain=_validate_domain(context.vetmanager_auth.domain),
+            credential=context.vetmanager_auth.credential,
+            credential_header=context.vetmanager_auth.credential_header,
+            app_name=context.vetmanager_auth.app_name,
         ),
         source="bearer",
         account_id=context.account_id,

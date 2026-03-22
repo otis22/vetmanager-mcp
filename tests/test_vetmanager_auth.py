@@ -46,7 +46,7 @@ def test_resolve_user_token_mode_returns_runtime_credentials():
         status="active",
     )
     connection.set_credentials(
-        {"domain": "clinic-b", "user_token": "user-token-secret"},
+        {"domain": "clinic-b", "user_token": "user-token-secret", "app_name": "vetmanager-mcp"},
         encryption_key=TEST_ENCRYPTION_KEY,
     )
 
@@ -59,7 +59,8 @@ def test_resolve_user_token_mode_returns_runtime_credentials():
     assert resolved.domain == "clinic-b"
     assert resolved.credential == "user-token-secret"
     assert resolved.api_key == "user-token-secret"
-    assert resolved.build_headers()["X-REST-API-KEY"] == "user-token-secret"
+    assert resolved.build_headers()["X-USER-TOKEN"] == "user-token-secret"
+    assert resolved.build_headers()["X-APP-NAME"] == "vetmanager-mcp"
     assert len(resolved.credential_fingerprint()) == 16
 
 
@@ -109,3 +110,19 @@ def test_resolve_user_token_mode_requires_token():
 
     with pytest.raises(AuthError, match="missing Vetmanager user token"):
         resolve_vetmanager_credentials(connection, encryption_key=TEST_ENCRYPTION_KEY)
+
+
+def test_resolve_user_token_mode_defaults_missing_app_name_for_legacy_rows():
+    """Legacy user_token rows without app_name should fall back to default app name."""
+    connection = VetmanagerConnection(
+        account_id=1,
+        auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
+        status="active",
+    )
+    connection.set_credentials(
+        {"domain": "clinic-b", "user_token": "user-token-secret"},
+        encryption_key=TEST_ENCRYPTION_KEY,
+    )
+
+    resolved = resolve_vetmanager_credentials(connection, encryption_key=TEST_ENCRYPTION_KEY)
+    assert resolved.build_headers()["X-APP-NAME"] == "vetmanager-mcp"

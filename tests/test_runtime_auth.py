@@ -79,7 +79,11 @@ async def test_resolve_runtime_credentials_normalizes_user_token_mode(session_fa
             domain="bearer-user-clinic",
         )
         connection.set_credentials(
-            {"domain": "bearer-user-clinic", "user_token": "user-token-secret"},
+            {
+                "domain": "bearer-user-clinic",
+                "user_token": "user-token-secret",
+                "app_name": "vetmanager-mcp",
+            },
             encryption_key=TEST_ENCRYPTION_KEY,
         )
         token = ServiceBearerToken(account_id=account.id, name="Cursor")
@@ -97,6 +101,8 @@ async def test_resolve_runtime_credentials_normalizes_user_token_mode(session_fa
     assert resolved.domain == "bearer-user-clinic"
     assert resolved.api_key == "user-token-secret"
     assert resolved.vetmanager_auth.auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN
+    assert resolved.vetmanager_auth.build_headers()["X-USER-TOKEN"] == "user-token-secret"
+    assert resolved.vetmanager_auth.build_headers()["X-APP-NAME"] == "vetmanager-mcp"
 
 
 @pytest.mark.asyncio
@@ -222,7 +228,11 @@ async def test_vetmanager_client_uses_user_token_runtime_credentials(session_fac
             domain="runtime-user-clinic",
         )
         connection.set_credentials(
-            {"domain": "runtime-user-clinic", "user_token": "runtime-user-token"},
+            {
+                "domain": "runtime-user-clinic",
+                "user_token": "runtime-user-token",
+                "app_name": "vetmanager-mcp",
+            },
             encryption_key=TEST_ENCRYPTION_KEY,
         )
         token = ServiceBearerToken(account_id=account.id, name="Cursor")
@@ -259,4 +269,5 @@ async def test_vetmanager_client_uses_user_token_runtime_credentials(session_fac
     assert client._domain == "runtime-user-clinic"
     assert client._api_key == "runtime-user-token"
     assert captured_request is not None
-    assert captured_request.headers["X-REST-API-KEY"] == "runtime-user-token"
+    assert captured_request.headers["X-USER-TOKEN"] == "runtime-user-token"
+    assert captured_request.headers["X-APP-NAME"] == "vetmanager-mcp"

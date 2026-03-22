@@ -94,6 +94,16 @@ docker compose run --rm \
   real API e2e + real browser tests; real browser flow дополнительно требует
   `RUN_REAL_BROWSER_TESTS=1`.
 
+Safe workflow для real/browser verification:
+- использовать только env-driven `TEST_*` и `RUN_REAL_BROWSER_TESTS=1`, не
+  записывать clinic credentials в репозиторий;
+- для `login/password -> user token` real flow сервис повторяет production
+  контракт Vetmanager:
+  `POST /token_auth.php` c `app_name=vetmanager-mcp`, затем
+  `X-USER-TOKEN` + `X-APP-NAME` на последующих API-запросах;
+- для production browser checks использовать временный account и удалять его
+  после ручной верификации, чтобы не копить тестовые сущности в production.
+
 Что входит в default `docker compose run --rm test`:
 - unit tests;
 - mock/e2e tests;

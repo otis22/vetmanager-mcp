@@ -24,13 +24,16 @@ import httpx
 import request_credentials
 import runtime_auth
 from server import mcp
+from tests.conftest import TEST_ENCRYPTION_KEY
 from vetmanager_client import VetmanagerClient
 from exceptions import AuthError, VetmanagerError
 from vetmanager_connection_service import (
+    save_user_login_password_connection,
     validate_domain_api_key_connection,
     validate_user_token_connection,
 )
 from vetmanager_auth import (
+    DEFAULT_USER_TOKEN_APP_NAME,
     VETMANAGER_AUTH_MODE_USER_TOKEN,
     VetmanagerAuthContext,
 )
@@ -238,7 +241,7 @@ async def test_real_get_users():
     assert "data" in result
 
 
-@skip_if_no_user_token
+@skip_if_no_user_login_flow
 @pytest.mark.asyncio
 async def test_real_get_users_with_user_token_mode():
     """User-token mode should pass the same runtime/client path as API-key mode."""
@@ -248,6 +251,8 @@ async def test_real_get_users_with_user_token_mode():
         auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
         domain=TEST_DOMAIN,
         credential=user_token,
+        credential_header="X-USER-TOKEN",
+        app_name=DEFAULT_USER_TOKEN_APP_NAME,
     )
     client._auth_source = "bearer"
     client._domain = TEST_DOMAIN
@@ -326,7 +331,11 @@ async def test_real_exchange_user_token_from_login_password():
 @pytest.mark.asyncio
 async def test_real_validate_user_token_connection_from_login_password_or_env_token():
     """Validation helper should accept an explicitly provided real user token."""
-    resolved = await validate_user_token_connection(TEST_DOMAIN, TEST_USER_TOKEN)
+    resolved = await validate_user_token_connection(
+        TEST_DOMAIN,
+        TEST_USER_TOKEN,
+        app_name=DEFAULT_USER_TOKEN_APP_NAME,
+    )
     assert resolved.startswith("https://")
 
 
@@ -335,8 +344,39 @@ async def test_real_validate_user_token_connection_from_login_password_or_env_to
 async def test_real_validate_user_token_connection_from_login_password_exchange():
     """Validation helper should accept a token received from the real exchange flow."""
     user_token = await resolve_real_user_token()
-    resolved = await validate_user_token_connection(TEST_DOMAIN, user_token)
+    resolved = await validate_user_token_connection(
+        TEST_DOMAIN,
+        user_token,
+        app_name=DEFAULT_USER_TOKEN_APP_NAME,
+    )
     assert resolved.startswith("https://")
+
+
+@skip_if_no_user_login_flow
+@pytest.mark.asyncio
+async def test_real_save_user_login_password_connection_uses_real_user_token_contract(sqlite_session_factory_builder, tmp_path):
+    """Full service helper should accept real login/password exchange and persist user_token mode."""
+    session_factory = await sqlite_session_factory_builder(tmp_path / "real-user-token-save.db")
+    async with session_factory() as session:
+        connection = await save_user_login_password_connection(
+            session,
+            account_id=1,
+            domain=TEST_DOMAIN,
+            login=TEST_USER_LOGIN,
+            password=TEST_USER_PASSWORD,
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+
+    async with session_factory() as session:
+        stored = await session.get(type(connection), connection.id)
+
+    assert stored is not None
+    credentials = stored.get_credentials(encryption_key=TEST_ENCRYPTION_KEY)
+    assert stored.auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN
+    assert credentials is not None
+    assert credentials["domain"] == TEST_DOMAIN
+    assert credentials["app_name"] == DEFAULT_USER_TOKEN_APP_NAME
+    assert credentials["user_token"]
 
 
 @skip_if_no_creds

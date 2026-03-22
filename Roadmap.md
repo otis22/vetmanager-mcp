@@ -731,11 +731,14 @@
 - 48.4 Прогнать shell/static checks и повторно подтвердить зелёный `Deploy Prod` на `main` — `done`
 - 48.5 Обновить `README.md`, PRD и `AssumptionLog.md` под новый deploy smoke контракт — `done`
 
-## Этап 49. Production web happy-path verification — `todo`
+## Этап 49. Production web happy-path and real user-token verification — `done`
 
-Цель: проверить и стабилизировать production web-контур через реальный browser happy-path, начиная с текущего падения `/register`.
+Цель: проверить и стабилизировать production web-контур через реальный browser happy-path, включая `login/password -> user token` flow с real Vetmanager credentials, не храня секреты в репозитории.
 
 - 49.1 Воспроизвести и локализовать `500 Internal Server Error` на `https://342915.simplecloud.ru/register` в production — `done`
 - 49.2 Найти и исправить production-specific причину падения web registration flow — `done`
-- 49.3 Пройти production browser happy-path для `/register -> /login -> /account` и зафиксировать результат — `todo`
-- 49.4 Зафиксировать безопасный opt-in workflow для production browser verification в README, PRD и AssumptionLog — `todo`
+- 49.3 Воспроизвести production-сбой `login/password -> user token` в web flow и сравнить его с прямым успешным `token_auth.php` — `done`
+- 49.4 Найти и исправить причину, по которой web flow выдаёт `Invalid Vetmanager user token` при валидных real credentials — `done`
+- 49.5 Добавить opt-in real e2e regression на `login/password -> user token` через `TEST_DOMAIN`, `TEST_USER_TOKEN_BASE_URL`, `TEST_USER_LOGIN`, `TEST_USER_PASSWORD` — `done`
+- 49.6 Пройти production browser happy-path для `/register -> /login -> /account`, включая integration save и bearer issuance, и зафиксировать результат — `done`
+- 49.7 Зафиксировать безопасный opt-in workflow для real production/browser verification в README, PRD и AssumptionLog — `done`

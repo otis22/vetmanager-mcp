@@ -176,6 +176,7 @@ async def test_save_user_token_connection_rejects_invalid_user_token(session_fac
                 account_id=1,
                 domain="clinic-user-bad",
                 user_token="bad-user-token",
+                app_name="vetmanager-mcp",
                 encryption_key=TEST_ENCRYPTION_KEY,
             )
 
@@ -227,9 +228,13 @@ async def test_save_user_login_password_connection_persists_token_without_api_ke
     respx.post("https://clinic-login.vetmanager.cloud/token_auth.php").mock(
         return_value=httpx.Response(200, json={"data": {"token": "user-token-secret"}})
     )
-    respx.get("https://clinic-login.vetmanager.cloud/rest/api/user").mock(
-        return_value=httpx.Response(200, json={"data": []})
-    )
+    captured_validation: dict[str, object] = {}
+
+    def _validation_response(request: httpx.Request) -> httpx.Response:
+        captured_validation["headers"] = dict(request.headers)
+        return httpx.Response(200, json={"data": []})
+
+    respx.get("https://clinic-login.vetmanager.cloud/rest/api/user").mock(side_effect=_validation_response)
 
     async with session_factory() as session:
         connection = await save_user_login_password_connection(
@@ -248,6 +253,11 @@ async def test_save_user_login_password_connection_persists_token_without_api_ke
     assert stored.auth_mode == "user_token"
     assert "user-token-secret" not in stored.encrypted_credentials
     assert "doctor-pass-123" not in stored.encrypted_credentials
+    assert "vetmanager-mcp" in stored.get_credentials(encryption_key=TEST_ENCRYPTION_KEY).get("app_name", "")
+    headers = {key.lower(): value for key, value in captured_validation["headers"].items()}
+    assert headers["x-user-token"] == "user-token-secret"
+    assert headers["x-app-name"] == "vetmanager-mcp"
+    assert "x-rest-api-key" not in headers
 
 
 @pytest.mark.asyncio
