@@ -735,7 +735,7 @@
 
 Цель: проверить и стабилизировать production web-контур через реальный browser happy-path, начиная с текущего падения `/register`.
 
-- 49.1 Воспроизвести и локализовать `500 Internal Server Error` на `https://342915.simplecloud.ru/register` в production — `todo`
-- 49.2 Найти и исправить production-specific причину падения web registration flow — `todo`
+- 49.1 Воспроизвести и локализовать `500 Internal Server Error` на `https://342915.simplecloud.ru/register` в production — `done`
+- 49.2 Найти и исправить production-specific причину падения web registration flow — `done`
 - 49.3 Пройти production browser happy-path для `/register -> /login -> /account` и зафиксировать результат — `todo`
 - 49.4 Зафиксировать безопасный opt-in workflow для production browser verification в README, PRD и AssumptionLog — `todo`
