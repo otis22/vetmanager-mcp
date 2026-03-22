@@ -4,12 +4,14 @@ import asyncio
 
 from fastmcp import FastMCP
 
+from error_tracking import configure_error_tracking
 from storage import bootstrap_storage_schema, initialize_storage
 from structured_logging import configure_logging
 from tool_descriptions import enhance_tool_descriptions
 from web import register_web_routes
 
 configure_logging()
+configure_error_tracking()
 
 mcp = FastMCP(
     name="vetmanager",

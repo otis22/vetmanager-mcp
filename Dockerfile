@@ -24,6 +24,7 @@ RUN pip install --no-cache-dir \
     "cryptography>=46.0.0" \
     "fastmcp>=2.0.0" \
     "httpx>=0.27.0" \
+    "sentry-sdk>=2.0.0" \
     "sqlalchemy>=2.0.0" \
     "aiosqlite>=0.20.0" \
     "asyncpg>=0.29.0" \

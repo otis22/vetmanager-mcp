@@ -694,7 +694,7 @@
 - 45.4 Добавить health/readiness endpoints — `done`
 - 45.5 Добавить базовые service metrics: latency, error rate, auth failures, upstream failures — `done`
 - 45.6 Подготовить экспорт в Prometheus-совместимом виде — `done`
-- 45.7 Добавить интеграцию с error tracking системой — `todo`
+- 45.7 Добавить интеграцию с error tracking системой — `done`
 - 45.8 Описать runbook по логам, метрикам и расследованию инцидентов — `todo`
 
 ## Этап 46. Архитектурное ревью и программа рефакторинга — `todo`

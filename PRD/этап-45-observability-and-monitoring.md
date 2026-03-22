@@ -163,3 +163,23 @@ Prometheus-совместимым агентом без дополнительн
 - В проекте есть Prometheus-compatible exporter поверх текущего registry.
 - `/metrics` отвечает scrape-friendly plaintext response.
 - Формат и endpoint покрыты tests.
+
+## Цель 45.7
+
+Добавить opt-in integration с внешней error tracking системой, чтобы
+production runtime мог отправлять unhandled exceptions и error context за
+пределы локальных логов.
+
+## Решение 45.7
+
+- Выбрать один конкретный backend: Sentry как стандартный Python/ASGI вариант.
+- Инициализировать его только при наличии DSN.
+- Подключить ASGI/Starlette integration на раннем этапе server bootstrap.
+- Добавить sanitize hook для редактирования чувствительных headers перед отправкой.
+
+## Критерии готовности 45.7
+
+- Error tracking backend не активен без явного DSN.
+- При наличии DSN backend инициализируется с предсказуемым config contract.
+- Sensitive headers не уходят в event payload.
+- Поведение покрыто tests.
