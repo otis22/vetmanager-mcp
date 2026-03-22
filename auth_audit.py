@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,10 +19,53 @@ TOKEN_EVENT_AUTH_FAILED_EXPIRED = "token_auth_failed_expired"
 TOKEN_EVENT_AUTH_FAILED_NO_CONNECTION = "token_auth_failed_no_connection"
 TOKEN_EVENT_AUTH_RATE_LIMITED = "token_auth_rate_limited"
 
+_SENSITIVE_DETAIL_KEY_TOKENS = (
+    "api_key",
+    "authorization",
+    "cookie",
+    "password",
+    "secret",
+    "session",
+    "token",
+    "user_token",
+)
+_BEARER_TOKEN_PATTERN = re.compile(r"\bvm_st_[A-Za-z0-9_-]+\b")
+_SAFE_DETAIL_KEYS = {"token_prefix"}
+
+
+def _is_sensitive_detail_key(key: str) -> bool:
+    normalized = key.strip().lower().replace("-", "_")
+    if normalized in _SAFE_DETAIL_KEYS:
+        return False
+    return any(token in normalized for token in _SENSITIVE_DETAIL_KEY_TOKENS)
+
+
+def _sanitize_detail_value(value: Any, *, key: str | None = None) -> Any:
+    if key and _is_sensitive_detail_key(key):
+        return "[redacted]"
+    if isinstance(value, dict):
+        return {
+            str(child_key): _sanitize_detail_value(child_value, key=str(child_key))
+            for child_key, child_value in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_detail_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_detail_value(item) for item in value]
+    if isinstance(value, str):
+        if key and key.strip().lower().replace("-", "_") in _SAFE_DETAIL_KEYS:
+            return value
+        return _BEARER_TOKEN_PATTERN.sub("[redacted]", value)
+    return value
+
 
 def _serialize_details(details: dict[str, Any]) -> str:
     """Serialize only safe audit metadata into stable JSON."""
-    return json.dumps(details, ensure_ascii=True, sort_keys=True)
+    sanitized = {
+        str(key): _sanitize_detail_value(value, key=str(key))
+        for key, value in details.items()
+    }
+    return json.dumps(sanitized, ensure_ascii=True, sort_keys=True)
 
 
 def get_request_audit_metadata() -> tuple[str | None, str | None]:

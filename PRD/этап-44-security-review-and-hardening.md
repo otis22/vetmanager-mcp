@@ -157,3 +157,40 @@ security-эссе.
 - Scope model влияет на runtime authz, а не только на storage.
 - Токен без нужного scope получает локальный `403` до upstream call.
 - Legacy токены без `scopes_json` сохраняют full-access compatibility.
+
+## Цель 44.4
+
+Проверить audit/logging контур на утечки секретов и sensitive metadata и
+добавить защиту на уровне общего audit-layer, а не только отдельных callsite'ов.
+
+## Решение 44.4
+
+- Ввести defensive sanitization в `auth_audit` перед сериализацией `details`.
+- Скрывать или редактировать поля с типовыми sensitive ключами:
+  raw token, `api_key`, `user_token`, `password`, `authorization`, cookie/session.
+- Сохранить полезные non-secret audit fields (`token_prefix`, `account_id`,
+  `connection_id`, `domain`, event metadata).
+- Зафиксировать regression tests, что audit log не сохраняет raw secret material,
+  даже если такой payload случайно передан в helper.
+
+## Декомпозиция 44.4
+
+### 44.4.1 Sensitive-field policy
+- Зафиксировать список ключей/паттернов, которые подлежат redaction.
+
+### 44.4.2 Audit-layer hardening
+- Добавить sanitization в `_serialize_details()` или рядом с ним.
+
+### 44.4.3 Regression coverage
+- Добавить unit tests на redaction.
+- Подтвердить, что существующие bearer/web audit flows остаются зелёными.
+
+### 44.4.4 Validation
+- Прогнать целевые audit/bearer/web tests.
+- Прогнать обязательный default contour.
+
+## Критерии готовности 44.4
+
+- Audit trail не сохраняет raw secret material даже при ошибке callsite'а.
+- Полезные operational metadata сохраняются.
+- Regression tests покрывают redaction policy.
