@@ -720,3 +720,13 @@
 - 47.5 Ввести release checklist — `done`
 - 47.6 Описать SLO/SLA и базовые alerting thresholds — `done`
 - 47.7 Обновить ops docs и `AssumptionLog.md` — `done`
+
+## Этап 48. Stabilize production deploy CI smoke checks — `in_progress`
+
+Цель: устранить падение `Deploy Prod` workflow после успешного деплоя и сделать post-deploy smoke проверку устойчивой к startup race после рестарта контейнера.
+
+- 48.1 Воспроизвести и точно локализовать падение `Deploy Prod` на post-deploy smoke check по GitHub Actions logs и server-side симптомам — `todo`
+- 48.2 Усилить `scripts/post_deploy_smoke_checks.sh`: добавить ограниченный retry/grace period после рестарта сервиса — `todo`
+- 48.3 Добавить actionable diagnostics в deploy workflow и/или deploy script: container logs, health probe context, exit reason — `todo`
+- 48.4 Прогнать shell/static checks и повторно подтвердить зелёный `Deploy Prod` на `main` — `todo`
+- 48.5 Обновить `README.md`, PRD и `AssumptionLog.md` под новый deploy smoke контракт — `todo`
