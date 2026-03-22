@@ -678,7 +678,7 @@
 - 44.2 Проверить секреты, session/cookie/CSRF и safe error handling — `done`
 - 44.3 Проверить authz границы bearer token и scope model — `done`
 - 44.4 Проверить logging/audit trail на утечки секретов и sensitive metadata — `done`
-- 44.5 Проверить rate limiting, abuse cases и brute-force surface — `todo`
+- 44.5 Проверить rate limiting, abuse cases и brute-force surface — `done`
 - 44.6 Проверить SSRF/host resolution/allowlist контур — `todo`
 - 44.7 Реализовать найденные hardening fixes — `todo`
 - 44.8 Добавить security regression tests — `todo`

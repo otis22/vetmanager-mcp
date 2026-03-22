@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from storage_models import TokenUsageLog
+from web_security import resolve_client_ip
 
 TOKEN_EVENT_CREATED = "token_created"
 TOKEN_EVENT_REVOKED = "token_revoked"
@@ -80,12 +81,13 @@ def get_request_audit_metadata() -> tuple[str | None, str | None]:
     headers = dict(request.headers)
     user_agent = (headers.get("user-agent") or "").strip() or None
 
-    forwarded_for = (headers.get("x-forwarded-for") or "").strip()
-    if forwarded_for:
-        ip_address = forwarded_for.split(",", 1)[0].strip() or None
-    else:
-        client = getattr(request, "client", None)
-        ip_address = getattr(client, "host", None)
+    client = getattr(request, "client", None)
+    ip_address = resolve_client_ip(
+        client_host=getattr(client, "host", None),
+        forwarded_for=headers.get("x-forwarded-for"),
+    )
+    if ip_address == "unknown":
+        ip_address = None
 
     return ip_address, user_agent
 

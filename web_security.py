@@ -96,12 +96,38 @@ def validate_csrf_request(request: Request, submitted_token: str | None) -> None
         raise ValueError("Invalid CSRF token.")
 
 
+def _trusted_proxy_hosts() -> set[str]:
+    raw_value = os.environ.get("WEB_TRUSTED_PROXY_IPS", "")
+    return {
+        candidate.strip()
+        for candidate in raw_value.split(",")
+        if candidate.strip()
+    }
+
+
+def resolve_client_ip(
+    *,
+    client_host: str | None,
+    forwarded_for: str | None = None,
+) -> str:
+    """Resolve client IP, trusting forwarded headers only behind configured proxies."""
+    direct_host = (client_host or "").strip() or "unknown"
+    trusted_proxies = _trusted_proxy_hosts()
+    if direct_host in trusted_proxies:
+        forwarded_chain = (forwarded_for or "").strip()
+        if forwarded_chain:
+            forwarded_ip = forwarded_chain.split(",", 1)[0].strip()
+            if forwarded_ip:
+                return forwarded_ip
+    return direct_host
+
+
 def get_request_ip(request: Request) -> str:
     """Return best-effort client IP for process-local safety controls."""
-    forwarded_for = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-    if forwarded_for:
-        return forwarded_for
-    return getattr(request.client, "host", None) or "unknown"
+    return resolve_client_ip(
+        client_host=getattr(request.client, "host", None),
+        forwarded_for=request.headers.get("x-forwarded-for"),
+    )
 
 
 def _prune_entries(entries: deque[float], *, now_ts: float, window_seconds: int) -> None:

@@ -194,3 +194,39 @@ security-эссе.
 - Audit trail не сохраняет raw secret material даже при ошибке callsite'а.
 - Полезные operational metadata сохраняются.
 - Regression tests покрывают redaction policy.
+
+## Цель 44.5
+
+Проверить rate limiting и abuse surface вокруг web/bearer auth, в первую очередь
+убрав прямое доверие к spoofable forwarded headers.
+
+## Решение 44.5
+
+- Ввести explicit trusted-proxy policy для определения client IP.
+- Использовать одну и ту же policy для web rate limiting и audit metadata.
+- Игнорировать `X-Forwarded-For`, если immediate client host не входит в
+  allowlist trusted proxies.
+- Зафиксировать regression tests на spoofing-resistant поведение.
+
+## Декомпозиция 44.5
+
+### 44.5.1 Trusted proxy contract
+- Определить env-driven allowlist trusted proxy IP/host values.
+
+### 44.5.2 Shared client IP resolution
+- Вынести/переиспользовать helper для web rate limiting и auth audit.
+
+### 44.5.3 Regression coverage
+- Добавить тесты на:
+  - игнорирование spoofed `X-Forwarded-For` без trusted proxy;
+  - учёт forwarded chain только за trusted proxy.
+
+### 44.5.4 Validation
+- Прогнать целевые web/audit tests.
+- Прогнать обязательный default contour.
+
+## Критерии готовности 44.5
+
+- Spoofed `X-Forwarded-For` больше не влияет на limiter и audit по умолчанию.
+- Reverse proxy deployment может явно включить доверие через allowlist.
+- Web и audit используют одинаковую политику client IP resolution.
