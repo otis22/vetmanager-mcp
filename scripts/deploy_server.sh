@@ -48,37 +48,42 @@ if [ "${UID_VAL}" -eq 0 ]; then UID_VAL=1000; fi
 if [ "${GID_VAL}" -eq 0 ]; then GID_VAL=1000; fi
 docker build --build-arg UID="${UID_VAL}" --build-arg GID="${GID_VAL}" -t vetmanager-mcp .
 
+compose() {
+  UID="${UID_VAL}" GID="${GID_VAL}" docker compose "$@"
+}
+
 dump_compose_diagnostics() {
   echo "--> Deploy diagnostics..."
-  docker compose ps || true
-  if docker compose ps -q mcp >/dev/null 2>&1; then
-    docker compose logs --tail=100 mcp || true
+  compose ps || true
+  if compose ps -q mcp >/dev/null 2>&1; then
+    compose logs --tail=100 mcp || true
   else
-    docker compose logs --tail=100 || true
+    compose logs --tail=100 || true
   fi
 }
 
 # ── Restart service ───────────────────────────────────────────────────────────
 echo "--> Restarting service..."
-docker compose down --remove-orphans
-docker compose up -d
+mkdir -p data
+compose down --remove-orphans
+compose up -d
 
 # ── Container smoke check ─────────────────────────────────────────────────────
 echo "--> Container smoke check..."
 sleep 3
-docker compose ps
+compose ps
 
-MCP_CONTAINER_ID="$(docker compose ps -q mcp || true)"
+MCP_CONTAINER_ID="$(compose ps -q mcp || true)"
 if [ -z "${MCP_CONTAINER_ID}" ]; then
   echo "ERROR: mcp container is missing."
-  docker compose logs --tail=30
+  compose logs --tail=30
   exit 1
 fi
 
 MCP_RUNNING="$(docker inspect -f '{{.State.Running}}' "${MCP_CONTAINER_ID}" 2>/dev/null || echo "false")"
 if [ "${MCP_RUNNING}" != "true" ]; then
   echo "ERROR: mcp container is not running."
-  docker compose logs --tail=50
+  compose logs --tail=50
   exit 1
 fi
 

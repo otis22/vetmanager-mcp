@@ -47,6 +47,9 @@ Operational helpers:
   `SMOKE_CONNECT_TIMEOUT_SECONDS`, `SMOKE_CURL_MAX_TIME_SECONDS`.
   При падении deploy script дополнительно печатает `docker compose ps` и tail
   container logs для fast triage.
+  Deploy path также принудительно выравнивает `UID`/`GID` для `docker compose`
+  и заранее создаёт локальный `data/`, чтобы SQLite storage мог стартовать на
+  bind-mounted репозитории без permission drift.
 
 Запуск тестов:
 
