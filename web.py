@@ -1038,12 +1038,19 @@ def register_web_routes(mcp: FastMCP) -> None:
             default_window_seconds=60,
         )
         register_key = get_request_ip(request)
+        register_email_key = f"email:{normalize_account_email(form.get('email', ''))}"
         try:
             check_rate_limit(
                 "register",
                 register_key,
                 limit=register_limit,
                 window_seconds=register_window,
+            )
+            check_rate_limit(
+                "register_email",
+                register_email_key,
+                limit=3,
+                window_seconds=3600,
             )
         except RateLimitError:
             csrf_token = _resolve_csrf_token(request)
@@ -1060,6 +1067,7 @@ def register_web_routes(mcp: FastMCP) -> None:
             )
 
         record_rate_limit_hit("register", register_key, window_seconds=register_window)
+        record_rate_limit_hit("register_email", register_email_key, window_seconds=3600)
         async with get_session_factory()() as session:
             try:
                 account = await register_account(
@@ -1120,12 +1128,19 @@ def register_web_routes(mcp: FastMCP) -> None:
             default_window_seconds=60,
         )
         login_key = f"{get_request_ip(request)}:{normalize_account_email(form.get('email', ''))}"
+        lockout_email_key = f"email:{normalize_account_email(form.get('email', ''))}"
         try:
             check_rate_limit(
                 "login",
                 login_key,
                 limit=login_limit,
                 window_seconds=login_window,
+            )
+            check_rate_limit(
+                "login_lockout",
+                lockout_email_key,
+                limit=10,
+                window_seconds=900,
             )
         except RateLimitError:
             csrf_token = _resolve_csrf_token(request)
@@ -1152,6 +1167,7 @@ def register_web_routes(mcp: FastMCP) -> None:
             csrf_token = _resolve_csrf_token(request)
             record_auth_failure(source="web_login", reason="invalid_credentials")
             record_rate_limit_hit("login", login_key, window_seconds=login_window)
+            record_rate_limit_hit("login_lockout", lockout_email_key, window_seconds=900)
             return _html_response(
                 request,
                 _render_login_page(
@@ -1165,6 +1181,7 @@ def register_web_routes(mcp: FastMCP) -> None:
             )
 
         clear_rate_limit_key("login", login_key)
+        clear_rate_limit_key("login_lockout", lockout_email_key)
         response = _redirect_response(request, url="/account", status_code=303)
         set_account_session_cookie(response, account.id)
         return response
