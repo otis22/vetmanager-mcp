@@ -13,8 +13,15 @@ def render_landing_page() -> str:
   <title>Vetmanager MCP Service</title>
   <meta
     name="description"
-    content="Bearer-only MCP service for Vetmanager with account-scoped clinic integration and service tokens."
+    content="MCP-сервис для Vetmanager: AI-ассистент для ветклиник с bearer-авторизацией и безопасным хранением credentials."
   >
+  <meta name="robots" content="index, follow">
+  <meta property="og:title" content="Vetmanager MCP Service">
+  <meta property="og:description" content="AI-ассистент для ветклиник. Данные клиники по запросу за секунды через MCP.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Vetmanager MCP Service">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90' font-weight='700' fill='%23bb4d24'>VM</text></svg>">
   <style>
     :root {
       --bg: #f3efe4;
@@ -158,6 +165,16 @@ def render_landing_page() -> str:
     .ghost:hover {
       transform: translateY(-1px);
     }
+
+    a:focus-visible,
+    button:focus-visible,
+    input:focus-visible,
+    label:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .mini, .mini a { color: #3e4a45; }
 
     .hero {
       position: relative;
@@ -388,6 +405,62 @@ def render_landing_page() -> str:
       }
     }
 
+    /* Hamburger toggle (CSS-only) */
+    .menu-toggle { display: none; }
+    .hamburger {
+      display: none;
+      cursor: pointer;
+      width: 44px;
+      height: 44px;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: none;
+      padding: 0;
+    }
+    .hamburger span,
+    .hamburger span::before,
+    .hamburger span::after {
+      display: block;
+      width: 22px;
+      height: 2px;
+      background: var(--ink);
+      border-radius: 1px;
+      transition: transform 200ms ease, opacity 200ms ease;
+      position: relative;
+    }
+    .hamburger span::before,
+    .hamburger span::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      width: 100%;
+    }
+    .hamburger span::before { top: -7px; }
+    .hamburger span::after  { top: 7px; }
+
+    .menu-toggle:checked ~ nav {
+      display: flex;
+    }
+    .menu-toggle:checked ~ .hamburger span {
+      background: transparent;
+    }
+    .menu-toggle:checked ~ .hamburger span::before {
+      top: 0;
+      transform: rotate(45deg);
+      background: var(--ink);
+    }
+    .menu-toggle:checked ~ .hamburger span::after {
+      top: 0;
+      transform: rotate(-45deg);
+      background: var(--ink);
+    }
+
+    /* Active section hint via scroll-margin */
+    section[id] {
+      scroll-margin-top: 100px;
+    }
+
     @media (max-width: 920px) {
       .hero,
       .grid {
@@ -401,6 +474,20 @@ def render_landing_page() -> str:
 
       .topbar {
         position: static;
+        flex-wrap: wrap;
+      }
+
+      .hamburger {
+        display: flex;
+      }
+
+      .topbar nav {
+        display: none;
+        width: 100%;
+        flex-direction: column;
+        gap: 8px;
+        padding-top: 8px;
+        border-top: 1px solid var(--line);
       }
     }
   </style>
@@ -409,16 +496,19 @@ def render_landing_page() -> str:
   <div class="shell">
     <header class="topbar">
       <div class="brand">
-        <div class="seal">VM</div>
+        <div class="seal" aria-label="Vetmanager MCP">VM</div>
         <div>
           <h1>Vetmanager MCP Service</h1>
           <p>Bearer-only gateway for clinic operations through AI clients</p>
         </div>
       </div>
+      <input type="checkbox" id="menu-toggle" class="menu-toggle" aria-hidden="true">
+      <label class="hamburger" for="menu-toggle" aria-label="Открыть меню"><span></span></label>
       <nav>
         <a href="#product">Возможности</a>
         <a href="#audience">Для кого</a>
         <a href="#examples">Примеры</a>
+        <a class="ghost" href="/login">Войти</a>
         <a href="/register">Зарегистрироваться</a>
       </nav>
     </header>
@@ -441,9 +531,9 @@ def render_landing_page() -> str:
         </p>
         <div class="cta-row">
           <a class="cta" href="/register">Зарегистрироваться</a>
-          <a class="ghost" href="/login">Войти</a>
           <a class="ghost" href="#examples">Посмотреть примеры</a>
         </div>
+        <p class="mini" style="margin-top:8px;">Уже зарегистрированы? <a href="/login">Войти в кабинет</a></p>
       </div>
       <div class="hero-side">
         <div class="stat">
@@ -459,6 +549,16 @@ def render_landing_page() -> str:
           <span>Интеграция подключается один раз на уровне аккаунта клиники, а доступ выдаётся через service token.</span>
         </div>
       </div>
+    </section>
+
+    <section class="panel" style="border-radius: var(--radius); margin-bottom: 24px; padding: clamp(20px, 3vw, 40px);">
+      <h3 class="section-title">Что такое MCP?</h3>
+      <p class="body-copy">
+        MCP (Model Context Protocol) — открытый стандарт, который позволяет AI-ассистентам
+        безопасно подключаться к внешним системам. Этот сервис — MCP-мост к Vetmanager:
+        ваша клиника подключается один раз, а дальше команда получает данные через
+        привычный AI-интерфейс, без необходимости переключаться между экранами Vetmanager.
+      </p>
     </section>
 
     <section class="grid">
@@ -554,10 +654,47 @@ def render_landing_page() -> str:
       </article>
     </section>
 
-    <footer class="footer">
-      <div><strong>Endpoint:</strong> <code>/mcp</code></div>
-      <div><strong>Mode:</strong> безопасное подключение клиники через account-level integration</div>
-      <div><strong>Главный шаг:</strong> <a href="/register">зарегистрировать клинику</a></div>
+    <section class="panel" id="faq" style="border-radius: var(--radius); margin-bottom: 24px; padding: clamp(20px, 3vw, 40px);">
+      <h3 class="section-title">Часто задаваемые вопросы</h3>
+      <details style="margin-bottom: 12px;">
+        <summary style="cursor: pointer; font-weight: 600; color: var(--ink);">Какие данные сохраняются на сервисе?</summary>
+        <p class="body-copy" style="margin-top: 8px;">
+          Сервис хранит только учётные данные подключения к Vetmanager (зашифрованные) и service-токены.
+          Бизнес-данные клиники (клиенты, пациенты, счета) не сохраняются — они запрашиваются из Vetmanager в момент обращения.
+        </p>
+      </details>
+      <details style="margin-bottom: 12px;">
+        <summary style="cursor: pointer; font-weight: 600; color: var(--ink);">Чем это отличается от прямого использования Vetmanager API?</summary>
+        <p class="body-copy" style="margin-top: 8px;">
+          Vetmanager API требует знания эндпоинтов, фильтров и структуры данных.
+          MCP-сервис позволяет задавать вопросы на естественном языке через AI-ассистента,
+          а сервис сам выбирает нужные API-вызовы.
+        </p>
+      </details>
+      <details style="margin-bottom: 12px;">
+        <summary style="cursor: pointer; font-weight: 600; color: var(--ink);">Безопасно ли это?</summary>
+        <p class="body-copy" style="margin-top: 8px;">
+          Credentials клиники хранятся в зашифрованном виде. Доступ осуществляется только через
+          bearer-токены, которые можно отозвать в любой момент. Логин и пароль Vetmanager не сохраняются.
+        </p>
+      </details>
+    </section>
+
+    <footer class="footer" style="display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px;">
+      <div>
+        <strong>Vetmanager MCP Service</strong>
+        <p style="margin: 4px 0 0; font-size: 0.9rem; color: var(--muted);">AI-ассистент для ветеринарных клиник</p>
+      </div>
+      <nav style="display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.95rem;">
+        <a href="/register" style="text-decoration: none; color: var(--accent);">Регистрация</a>
+        <a href="/login" style="text-decoration: none; color: var(--accent);">Вход</a>
+        <a href="#faq" style="text-decoration: none; color: var(--accent);">FAQ</a>
+        <a href="mailto:support@vetmanager.cloud" style="text-decoration: none; color: var(--accent);">Поддержка</a>
+      </nav>
+      <div style="text-align: right; font-size: 0.9rem; color: var(--muted);">
+        <p style="margin: 0;">&copy; 2025 Vetmanager MCP</p>
+        <p style="margin: 4px 0 0;"><a href="#" style="text-decoration: none; color: var(--accent);">Политика конфиденциальности</a></p>
+      </div>
     </footer>
   </div>
 </body>

@@ -752,3 +752,153 @@
 - 50.3 Обновить `artifacts/prd-vetmanager-mcp-ru.md` и `artifacts/technical-requirements-vetmanager-mcp-ru.md` под фактическое текущее состояние — `done`
 - 50.4 Создать PRD этапа 50 с декомпозицией и правилами синхронизации артефактов — `done`
 - 50.5 Обновить `AssumptionLog.md` по итогам синхронизации и зафиксировать новый baseline для дальнейшего roadmap — `done`
+
+## Этап 51. Улучшение главной страницы (лендинг) — `in_progress`
+
+Цель: повысить конверсию, удобство навигации, доступность и SEO лендинга; привести страницу к уровню современных SaaS-продуктов.
+
+### 51.1 Навигация и пользовательские пути — `done`
+
+- 51.1.1 Добавить ссылку «Войти» в основную навигацию topbar — `done`
+- 51.1.2 Добавить «Уже зарегистрированы?» под CTA в hero-секции — `done`
+- 51.1.3 Добавить hamburger-меню для мобильных устройств (breakpoint ~920px) — `done`
+- 51.1.4 Добавить active-state стили для якорных ссылок навигации — `done` (scroll-margin-top на секциях)
+
+### 51.2 Контент и копирайтинг — `done`
+
+- 51.2.1 Добавить краткое объяснение, что такое MCP, в hero или под hero — `done`
+- 51.2.2 Добавить конкретные метрики выгоды (экономия времени, скорость ответов) — `todo` (требует реальных данных)
+- 51.2.3 Добавить FAQ-секцию (что хранится, чем отличается от API, безопасность) — `done`
+- 51.2.4 Добавить секцию контактов / поддержки — `done` (email в footer)
+
+### 51.3 Footer — `done`
+
+- 51.3.1 Добавить полноценный footer: copyright, ссылки на регистрацию/вход, документацию, поддержку — `done`
+- 51.3.2 Добавить ссылку на политику конфиденциальности (заглушку) — `done`
+
+### 51.4 SEO и мета-теги — `done`
+
+- 51.4.1 Добавить favicon (data URI SVG) — `done`
+- 51.4.2 Добавить Open Graph и Twitter Card мета-теги — `done`
+- 51.4.3 Добавить canonical URL — `todo` (требует знание production host)
+- 51.4.4 Добавить мета-тег robots — `done`
+
+### 51.5 Доступность (a11y) — `done`
+
+- 51.5.1 Добавить focus-visible стили для клавиатурной навигации — `done`
+- 51.5.2 Улучшить контраст мелкого текста (класс `.mini`, цвет `--muted`) — `done`
+- 51.5.3 Добавить aria-label к декоративным элементам (seal «VM») — `done`
+
+### 51.6 Визуальные улучшения — `todo`
+
+- 51.6.1 Добавить иконки к секциям возможностей (features grid) — `todo` (требует дизайн-решения)
+- 51.6.2 Добавить секцию social proof (логотипы клиник, счётчики, отзывы) — `todo` (когда появятся данные)
+- 51.6.3 Обеспечить консистентность стилей между лендингом и страницами register/login — `todo`
+
+## Этап 52. Безопасность: hardening — `todo`
+
+Цель: закрыть выявленные уязвимости уровня CRITICAL/HIGH/MEDIUM и укрепить защиту перед production-нагрузкой.
+
+### 52.1 Startup-валидация секретов — `todo`
+
+- 52.1.1 Добавить fail-fast проверку `STORAGE_ENCRYPTION_KEY` при старте сервера (до приёма запросов) — `todo`
+- 52.1.2 Добавить fail-fast проверку `WEB_SESSION_SECRET` при старте сервера — `todo`
+- 52.1.3 Добавить `STORAGE_ENCRYPTION_KEY` и `WEB_SESSION_SECRET` в `.env.example` с инструкцией генерации — `todo`
+
+### 52.2 Защита от DoS и брутфорса — `todo`
+
+- 52.2.1 Добавить лимит на размер form payload в `_read_form` (max ~100 KB) — `todo`
+- 52.2.2 Добавить блокировку аккаунта после N неудачных попыток логина (exponential backoff) — `todo`
+- 52.2.3 Добавить per-email rate limiting на регистрацию (в дополнение к per-IP) — `todo`
+
+### 52.3 Пароли и сессии — `todo`
+
+- 52.3.1 Усилить требования к паролю: минимум 12 символов, uppercase, lowercase, цифра, спецсимвол — `todo`
+- 52.3.2 Сократить время жизни сессии с 14 дней до 24 часов, добавить idle timeout — `todo`
+- 52.3.3 Реализовать server-side session revocation (кнопка «Завершить все сессии») — `todo`
+
+### 52.4 Прочее — `todo`
+
+- 52.4.1 Добавить CSP-заголовок для JSON-эндпоинтов (`default-src 'none'`) — `todo`
+- 52.4.2 Убрать upstream response text из сообщений об ошибках в `vetmanager_client.py` — `todo`
+
+## Этап 53. Архитектура: рефакторинг и БД — `todo`
+
+Цель: устранить god-модули, дублирование кода и пробелы в схеме БД.
+
+### 53.1 Рефакторинг web.py — `todo`
+
+- 53.1.1 Выделить response builders в отдельный модуль `web_response_builders.py` — `todo`
+- 53.1.2 Выделить HTML-рендеринг dashboard в `web_dashboard_rendering.py` — `todo`
+- 53.1.3 Разделить route-регистрацию на `web_routes_account.py` и `web_routes_integration.py` — `todo`
+
+### 53.2 Разделение vetmanager_client.py — `todo`
+
+- 53.2.1 Выделить кэш-логику в `upstream_cache_handler.py` — `todo`
+- 53.2.2 Выделить HTTP-пейсинг и маршрутизацию в `vetmanager_request_handler.py` — `todo`
+
+### 53.3 Устранение связанности — `todo`
+
+- 53.3.1 Выделить `resolve_client_ip()` из `web_security.py` в `request_metadata.py` — `todo`
+- 53.3.2 Создать декоратор/context manager `@async_db_operation` для устранения дублирования session-паттерна — `todo`
+
+### 53.4 База данных — `todo`
+
+- 53.4.1 Добавить индексы на FK-колонки `ServiceBearerToken.account_id` и `VetmanagerConnection.account_id` — `todo`
+- 53.4.2 Добавить CHECK constraints или Enum для статусных полей (`status: String(32)`) — `todo`
+- 53.4.3 Верифицировать миграцию 3 (token scope policy) на соответствие `storage_models.py` — `todo`
+
+## Этап 54. Инфраструктура: production hardening — `todo`
+
+Цель: подготовить инфраструктуру к multi-worker деплою и устранить пробелы в контейнеризации.
+
+### 54.1 Docker — `todo`
+
+- 54.1.1 Multi-stage build: исключить тестовые зависимости (pytest, playwright, respx) из production-образа — `todo`
+- 54.1.2 Добавить `HEALTHCHECK` инструкцию в Dockerfile — `todo`
+- 54.1.3 Добавить resource limits (CPU/memory) в docker-compose.yml — `todo`
+- 54.1.4 Добавить явный volume для SQLite data directory — `todo`
+
+### 54.2 Distributed state (Redis) — `todo`
+
+- 54.2.1 Добавить Redis-backed rate limiter для поддержки multi-worker режима — `todo`
+- 54.2.2 Перевести request cache на Redis (или задокументировать ограничение single-process) — `todo`
+- 54.2.3 Включить account_id в ключ кэша для изоляции между аккаунтами — `todo`
+
+## Этап 55. Расширение MCP-инструментов: недостающие CRUD-операции — `todo`
+
+Цель: довести покрытие CRUD-операций до максимума, разрешённого Vetmanager REST API. Матрица ограничений зафиксирована в `artifacts/api_crud_permissions-ru.md`.
+
+### 55.1 Недостающие UPDATE-инструменты — `todo`
+
+- 55.1.1 `update_invoice` — редактирование счёта (API: Invoice — полный CRUD разрешён) — `todo`
+- 55.1.2 `update_pet` — уже есть, верифицировать полноту полей — `todo`
+- 55.1.3 `update_user` — редактирование данных сотрудника (API: User — restUpdate разрешён) — `todo`
+- 55.1.4 `update_hospitalization` — изменение статуса/описания госпитализации (API: Hospital — restUpdate разрешён) — `todo`
+- 55.1.5 `update_supplier` — редактирование поставщика (API: Suppliers — doRestUpdate реализован, проверить на практике) — `todo`
+
+### 55.2 Недостающие DELETE-инструменты — `todo`
+
+- 55.2.1 `delete_client` — удаление клиента (API: Client — DELETE разрешён) — `todo`
+- 55.2.2 `delete_pet` — удаление питомца (API: Pet — DELETE через наследование) — `todo`
+- 55.2.3 `delete_invoice` — удаление счёта (API: Invoice — restDelete разрешён) — `todo`
+- 55.2.4 `delete_invoice_document` — удаление позиции счёта (API: InvoiceDocument — DELETE через наследование) — `todo`
+
+### 55.3 Недостающие CREATE-инструменты — `todo`
+
+- 55.3.1 `create_timesheet` — создание записи расписания (API: Timesheet — doRestCreate реализован) — `todo`
+- 55.3.2 `create_good` — создание товара/услуги (API: Good — CRUD доступен, filterRestAccessRules закомментирован) — `todo`
+- 55.3.3 `update_good` — редактирование товара/услуги — `todo`
+- 55.3.4 `create_supplier` — создание поставщика (API: Suppliers — doRestCreate реализован) — `todo`
+- 55.3.5 `create_invoice_document` — добавление позиции в счёт (API: InvoiceDocument — CREATE через наследование) — `todo`
+
+### 55.4 Обновление существующих инструментов — `todo`
+
+- 55.4.1 Верифицировать `update_client` — проверить полноту полей (API разрешает полный update) — `todo`
+- 55.4.2 Верифицировать `update_admission` — проверить полноту полей — `todo`
+- 55.4.3 Верифицировать `update_medical_card` — проверить полноту полей — `todo`
+
+### 55.5 Документация ограничений — `todo`
+
+- 55.5.1 Обновить README: задокументировать какие операции недоступны и почему (Payment — только чтение, складские документы — только чтение, и т.д.) — `todo`
+- 55.5.2 Обновить `artifacts/prd-vetmanager-mcp-ru.md` с учётом реальной матрицы CRUD — `todo`
