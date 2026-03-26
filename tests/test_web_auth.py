@@ -72,7 +72,7 @@ async def test_register_route_creates_account_and_starts_session(tmp_path: Path,
         response = await _post_with_csrf(
             client,
             "/register",
-            data={"email": "owner@example.com", "password": "strong-pass-123"},
+            data={"email": "owner@example.com", "password": "Strong-Pass-123"},
         )
 
     assert response.status_code == 200
@@ -84,7 +84,7 @@ async def test_register_route_creates_account_and_starts_session(tmp_path: Path,
         stored = await session.get(Account, 1)
 
     assert stored is not None
-    assert stored.password_hash != "strong-pass-123"
+    assert stored.password_hash != "Strong-Pass-123"
     assert stored.password_hash.startswith("pbkdf2_sha256$")
 
     await engine.dispose()
@@ -161,7 +161,7 @@ async def test_register_route_rejects_missing_csrf_token(tmp_path: Path, monkeyp
         await client.get("/register")
         response = await client.post(
             "/register",
-            data={"email": "owner@example.com", "password": "strong-pass-123"},
+            data={"email": "owner@example.com", "password": "Strong-Pass-123"},
         )
 
     assert response.status_code == 403
@@ -178,7 +178,7 @@ async def test_logout_rejects_mismatched_csrf_token(tmp_path: Path, monkeypatch)
         await register_account(
             session,
             email="logout@example.com",
-            password="correct-horse-battery",
+            password="Correct-Horse-Bat1",
         )
 
     app = mcp.http_app(path="/mcp", transport="streamable-http")
@@ -192,7 +192,7 @@ async def test_logout_rejects_mismatched_csrf_token(tmp_path: Path, monkeypatch)
         await _post_with_csrf(
             client,
             "/login",
-            data={"email": "logout@example.com", "password": "correct-horse-battery"},
+            data={"email": "logout@example.com", "password": "Correct-Horse-Bat1"},
         )
         response = await client.post("/logout", data={"csrf_token": "bad-token"}, follow_redirects=False)
 
@@ -209,7 +209,7 @@ async def test_login_logout_flow_requires_valid_credentials(tmp_path: Path, monk
         await register_account(
             session,
             email="doctor@example.com",
-            password="correct-horse-battery",
+            password="Correct-Horse-Bat1",
         )
 
     app = mcp.http_app(path="/mcp", transport="streamable-http")
@@ -234,7 +234,7 @@ async def test_login_logout_flow_requires_valid_credentials(tmp_path: Path, monk
         valid = await _post_with_csrf(
             client,
             "/login",
-            data={"email": "doctor@example.com", "password": "correct-horse-battery"},
+            data={"email": "doctor@example.com", "password": "Correct-Horse-Bat1"},
         )
         assert valid.status_code == 200
         assert "doctor@example.com" in valid.text
@@ -267,7 +267,7 @@ async def test_login_rate_limit_returns_429_after_repeated_failures(tmp_path: Pa
         await register_account(
             session,
             email="doctor@example.com",
-            password="correct-horse-battery",
+            password="Correct-Horse-Bat1",
         )
 
     app = mcp.http_app(path="/mcp", transport="streamable-http")
@@ -319,12 +319,12 @@ async def test_register_rate_limit_returns_429_after_repeated_attempts(tmp_path:
         first = await _post_with_csrf(
             client,
             "/register",
-            data={"email": "first@example.com", "password": "first-pass-123"},
+            data={"email": "first@example.com", "password": "First-Pass-123"},
         )
         second = await _post_with_csrf(
             client,
             "/register",
-            data={"email": "second@example.com", "password": "second-pass-123"},
+            data={"email": "second@example.com", "password": "Second-Pass-123"},
         )
 
     assert first.status_code == 200
@@ -349,14 +349,14 @@ async def test_register_rejects_duplicate_email(tmp_path: Path, monkeypatch):
         first = await _post_with_csrf(
             client,
             "/register",
-            data={"email": "ops@example.com", "password": "first-pass-123"},
+            data={"email": "ops@example.com", "password": "First-Pass-123"},
         )
         assert first.status_code == 200
 
         second = await _post_with_csrf(
             client,
             "/register",
-            data={"email": "ops@example.com", "password": "second-pass-456"},
+            data={"email": "ops@example.com", "password": "Second-Pass-456"},
         )
 
     assert second.status_code == 400
@@ -375,7 +375,7 @@ async def test_account_integration_form_saves_active_vetmanager_connection(tmp_p
         await register_account(
             session,
             email="integration@example.com",
-            password="integration-pass-123",
+            password="Integration-Pass-123",
         )
 
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-a").mock(
@@ -396,7 +396,7 @@ async def test_account_integration_form_saves_active_vetmanager_connection(tmp_p
         login = await _post_with_csrf(
             client,
             "/login",
-            data={"email": "integration@example.com", "password": "integration-pass-123"},
+            data={"email": "integration@example.com", "password": "Integration-Pass-123"},
         )
         assert login.status_code == 200
 
@@ -438,7 +438,7 @@ async def test_account_page_shows_privacy_and_reauth_notices(tmp_path: Path, mon
         await register_account(
             session,
             email="notices@example.com",
-            password="integration-pass-123",
+            password="Integration-Pass-123",
         )
 
     app = mcp.http_app(path="/mcp", transport="streamable-http")
@@ -452,7 +452,7 @@ async def test_account_page_shows_privacy_and_reauth_notices(tmp_path: Path, mon
         await _post_with_csrf(
             client,
             "/login",
-            data={"email": "notices@example.com", "password": "integration-pass-123"},
+            data={"email": "notices@example.com", "password": "Integration-Pass-123"},
         )
         response = await client.get("/account")
 
@@ -478,7 +478,7 @@ async def test_account_page_shows_onboarding_wizard_for_new_account(tmp_path: Pa
         await register_account(
             session,
             email="wizard@example.com",
-            password="integration-pass-123",
+            password="Integration-Pass-123",
         )
 
     app = mcp.http_app(path="/mcp", transport="streamable-http")
@@ -492,7 +492,7 @@ async def test_account_page_shows_onboarding_wizard_for_new_account(tmp_path: Pa
         await _post_with_csrf(
             client,
             "/login",
-            data={"email": "wizard@example.com", "password": "integration-pass-123"},
+            data={"email": "wizard@example.com", "password": "Integration-Pass-123"},
         )
         response = await client.get("/account")
 
@@ -521,7 +521,7 @@ async def test_account_integration_form_exchanges_login_password_into_user_token
         await register_account(
             session,
             email="user-token@example.com",
-            password="integration-pass-123",
+            password="Integration-Pass-123",
         )
 
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-user").mock(
@@ -553,7 +553,7 @@ async def test_account_integration_form_exchanges_login_password_into_user_token
         await _post_with_csrf(
             client,
             "/login",
-            data={"email": "user-token@example.com", "password": "integration-pass-123"},
+            data={"email": "user-token@example.com", "password": "Integration-Pass-123"},
         )
         response = await _post_with_csrf(
             client,
@@ -613,7 +613,7 @@ async def test_account_integration_form_shows_safe_error_for_failed_login_passwo
         await register_account(
             session,
             email="invalid-user-token@example.com",
-            password="integration-pass-123",
+            password="Integration-Pass-123",
         )
 
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-user-bad").mock(
@@ -634,7 +634,7 @@ async def test_account_integration_form_shows_safe_error_for_failed_login_passwo
         await _post_with_csrf(
             client,
             "/login",
-            data={"email": "invalid-user-token@example.com", "password": "integration-pass-123"},
+            data={"email": "invalid-user-token@example.com", "password": "Integration-Pass-123"},
         )
         response = await _post_with_csrf(
             client,
@@ -672,7 +672,7 @@ async def test_account_integration_form_shows_safe_error_for_invalid_api_key(tmp
         await register_account(
             session,
             email="invalid-key@example.com",
-            password="integration-pass-123",
+            password="Integration-Pass-123",
         )
 
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-b").mock(
@@ -693,7 +693,7 @@ async def test_account_integration_form_shows_safe_error_for_invalid_api_key(tmp
         await _post_with_csrf(
             client,
             "/login",
-            data={"email": "invalid-key@example.com", "password": "integration-pass-123"},
+            data={"email": "invalid-key@example.com", "password": "Integration-Pass-123"},
         )
         response = await _post_with_csrf(
             client,
@@ -724,7 +724,7 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
         await register_account(
             session,
             email="token-owner@example.com",
-            password="integration-pass-123",
+            password="Integration-Pass-123",
         )
 
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-token").mock(
@@ -745,7 +745,7 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
         await _post_with_csrf(
             client,
             "/login",
-            data={"email": "token-owner@example.com", "password": "integration-pass-123"},
+            data={"email": "token-owner@example.com", "password": "Integration-Pass-123"},
         )
         await _post_with_csrf(
             client,
@@ -787,7 +787,7 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
         await _post_with_csrf(
             client,
             "/login",
-            data={"email": "token-owner@example.com", "password": "integration-pass-123"},
+            data={"email": "token-owner@example.com", "password": "Integration-Pass-123"},
         )
         follow_up = await client.get("/account")
 
@@ -834,7 +834,7 @@ async def test_account_token_issue_requires_active_integration(tmp_path: Path, m
         await register_account(
             session,
             email="no-integration@example.com",
-            password="token-pass-123",
+            password="Token-Pass-123",
         )
 
     app = mcp.http_app(path="/mcp", transport="streamable-http")
@@ -848,7 +848,7 @@ async def test_account_token_issue_requires_active_integration(tmp_path: Path, m
         await _post_with_csrf(
             client,
             "/login",
-            data={"email": "no-integration@example.com", "password": "token-pass-123"},
+            data={"email": "no-integration@example.com", "password": "Token-Pass-123"},
         )
         response = await _post_with_csrf(
             client,
@@ -878,7 +878,7 @@ async def test_account_token_revoke_updates_status_and_writes_audit_log(tmp_path
         await register_account(
             session,
             email="revoke-owner@example.com",
-            password="integration-pass-123",
+            password="Integration-Pass-123",
         )
 
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-revoke").mock(
@@ -899,7 +899,7 @@ async def test_account_token_revoke_updates_status_and_writes_audit_log(tmp_path
         await _post_with_csrf(
             client,
             "/login",
-            data={"email": "revoke-owner@example.com", "password": "integration-pass-123"},
+            data={"email": "revoke-owner@example.com", "password": "Integration-Pass-123"},
         )
         await _post_with_csrf(
             client,
@@ -956,7 +956,7 @@ async def test_account_token_logs_capture_request_metadata(tmp_path: Path, monke
         await register_account(
             session,
             email="meta-owner@example.com",
-            password="integration-pass-123",
+            password="Integration-Pass-123",
         )
 
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-meta").mock(
@@ -978,7 +978,7 @@ async def test_account_token_logs_capture_request_metadata(tmp_path: Path, monke
         await _post_with_csrf(
             client,
             "/login",
-            data={"email": "meta-owner@example.com", "password": "integration-pass-123"},
+            data={"email": "meta-owner@example.com", "password": "Integration-Pass-123"},
         )
         await _post_with_csrf(
             client,
@@ -1027,7 +1027,7 @@ async def test_account_page_marks_expired_token_via_cleanup_sweep(tmp_path: Path
         account = await register_account(
             session,
             email="expired-owner@example.com",
-            password="integration-pass-123",
+            password="Integration-Pass-123",
         )
         token = ServiceBearerToken(
             account_id=account.id,
@@ -1051,7 +1051,7 @@ async def test_account_page_marks_expired_token_via_cleanup_sweep(tmp_path: Path
         await _post_with_csrf(
             client,
             "/login",
-            data={"email": "expired-owner@example.com", "password": "integration-pass-123"},
+            data={"email": "expired-owner@example.com", "password": "Integration-Pass-123"},
         )
         account_page = await client.get("/account")
 
@@ -1087,7 +1087,7 @@ async def test_account_page_marks_invalid_user_token_connection_as_reauth_requir
         account = await register_account(
             session,
             email="reauth-owner@example.com",
-            password="integration-pass-123",
+            password="Integration-Pass-123",
         )
         connection = VetmanagerConnection(
             account_id=account.id,
@@ -1120,7 +1120,7 @@ async def test_account_page_marks_invalid_user_token_connection_as_reauth_requir
         await _post_with_csrf(
             client,
             "/login",
-            data={"email": "reauth-owner@example.com", "password": "integration-pass-123"},
+            data={"email": "reauth-owner@example.com", "password": "Integration-Pass-123"},
         )
         response = await client.get("/account")
 
@@ -1143,7 +1143,7 @@ async def test_reauth_submit_replaces_invalid_user_token_connection(tmp_path: Pa
         account = await register_account(
             session,
             email="reauth-submit@example.com",
-            password="integration-pass-123",
+            password="Integration-Pass-123",
         )
         connection = VetmanagerConnection(
             account_id=account.id,
@@ -1179,7 +1179,7 @@ async def test_reauth_submit_replaces_invalid_user_token_connection(tmp_path: Pa
         await _post_with_csrf(
             client,
             "/login",
-            data={"email": "reauth-submit@example.com", "password": "integration-pass-123"},
+            data={"email": "reauth-submit@example.com", "password": "Integration-Pass-123"},
         )
         response = await _post_with_csrf(
             client,

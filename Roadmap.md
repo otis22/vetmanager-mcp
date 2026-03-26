@@ -795,25 +795,25 @@
 - 51.6.2 Добавить секцию social proof (логотипы клиник, счётчики, отзывы) — `todo` (когда появятся данные)
 - 51.6.3 Обеспечить консистентность стилей между лендингом и страницами register/login — `todo`
 
-## Этап 52. Безопасность: hardening — `todo`
+## Этап 52. Безопасность: hardening — `in_progress`
 
 Цель: закрыть выявленные уязвимости уровня CRITICAL/HIGH/MEDIUM и укрепить защиту перед production-нагрузкой.
 
-### 52.1 Startup-валидация секретов — `todo`
+### 52.1 Startup-валидация секретов — `done`
 
-- 52.1.1 Добавить fail-fast проверку `STORAGE_ENCRYPTION_KEY` при старте сервера (до приёма запросов) — `todo`
-- 52.1.2 Добавить fail-fast проверку `WEB_SESSION_SECRET` при старте сервера — `todo`
-- 52.1.3 Добавить `STORAGE_ENCRYPTION_KEY` и `WEB_SESSION_SECRET` в `.env.example` с инструкцией генерации — `todo`
+- 52.1.1 Добавить fail-fast проверку `STORAGE_ENCRYPTION_KEY` при старте сервера (до приёма запросов) — `done`
+- 52.1.2 Добавить fail-fast проверку `WEB_SESSION_SECRET` при старте сервера — `done`
+- 52.1.3 Добавить `STORAGE_ENCRYPTION_KEY` в `.env.example` с инструкцией генерации — `done`
 
-### 52.2 Защита от DoS и брутфорса — `todo`
+### 52.2 Защита от DoS и брутфорса — `in_progress`
 
-- 52.2.1 Добавить лимит на размер form payload в `_read_form` (max ~100 KB) — `todo`
+- 52.2.1 Добавить лимит на размер form payload в `_read_form` (max 100 KB, HTTP 413) — `done`
 - 52.2.2 Добавить блокировку аккаунта после N неудачных попыток логина (exponential backoff) — `todo`
 - 52.2.3 Добавить per-email rate limiting на регистрацию (в дополнение к per-IP) — `todo`
 
-### 52.3 Пароли и сессии — `todo`
+### 52.3 Пароли и сессии — `in_progress`
 
-- 52.3.1 Усилить требования к паролю: минимум 12 символов, uppercase, lowercase, цифра, спецсимвол — `todo`
+- 52.3.1 Усилить требования к паролю: минимум 10 символов, uppercase, lowercase, цифра — `done`
 - 52.3.2 Сократить время жизни сессии с 14 дней до 24 часов, добавить idle timeout — `todo`
 - 52.3.3 Реализовать server-side session revocation (кнопка «Завершить все сессии») — `todo`
 

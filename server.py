@@ -32,6 +32,13 @@ register_web_routes(mcp)
 enhance_tool_descriptions(mcp)
 
 if __name__ == "__main__":
+    from secret_manager import SecretManagerError, validate_required_secrets
+
+    try:
+        validate_required_secrets()
+    except SecretManagerError as exc:
+        logging.critical("Startup aborted: %s", exc)
+        raise SystemExit(1) from exc
     asyncio.run(initialize_storage())
     asyncio.run(bootstrap_storage_schema())
     transport = os.environ.get("MCP_TRANSPORT", "streamable-http")

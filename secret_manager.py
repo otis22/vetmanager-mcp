@@ -13,6 +13,31 @@ class SecretManagerError(RuntimeError):
     """Raised when secret encryption/decryption cannot be performed safely."""
 
 
+def validate_required_secrets() -> None:
+    """Validate that all required secrets are configured.
+
+    Call at startup before accepting requests.  Raises *SecretManagerError*
+    with a descriptive message listing every missing variable.
+    """
+    from web_auth import get_web_session_secret  # local import to avoid cycle
+
+    missing: list[str] = []
+    try:
+        get_storage_encryption_key()
+    except (SecretManagerError, RuntimeError):
+        missing.append("STORAGE_ENCRYPTION_KEY")
+    try:
+        get_web_session_secret()
+    except RuntimeError:
+        missing.append("WEB_SESSION_SECRET")
+    if missing:
+        raise SecretManagerError(
+            "Required secrets missing: "
+            + ", ".join(missing)
+            + ". Set them as environment variables before starting the server."
+        )
+
+
 def get_storage_encryption_key() -> str:
     """Return configured storage encryption key or fail closed."""
     key = os.environ.get("STORAGE_ENCRYPTION_KEY")

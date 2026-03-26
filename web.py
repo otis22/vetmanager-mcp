@@ -179,6 +179,9 @@ def _observed_custom_route(
                 response = await func(request, *args, **kwargs)
                 status_code = getattr(response, "status_code", 500)
                 return response
+            except FormPayloadTooLarge:
+                status_code = 413
+                return PlainTextResponse("Payload too large.", status_code=413)
             finally:
                 record_http_request(
                     route=path,
@@ -787,9 +790,18 @@ def _render_account_page(
     )
 
 
+MAX_FORM_PAYLOAD_BYTES = 100 * 1024  # 100 KB
+
+
+class FormPayloadTooLarge(Exception):
+    """Raised when form body exceeds MAX_FORM_PAYLOAD_BYTES."""
+
+
 async def _read_form(request: Request) -> dict[str, str]:
-    body = (await request.body()).decode("utf-8")
-    parsed = parse_qs(body, keep_blank_values=True)
+    body = await request.body()
+    if len(body) > MAX_FORM_PAYLOAD_BYTES:
+        raise FormPayloadTooLarge("Form payload too large.")
+    parsed = parse_qs(body.decode("utf-8"), keep_blank_values=True)
     return {key: values[-1] for key, values in parsed.items()}
 
 

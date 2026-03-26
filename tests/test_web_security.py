@@ -86,3 +86,49 @@ def test_get_request_audit_metadata_ignores_spoofed_forwarded_for_without_truste
 
     assert ip_address == "203.0.113.10"
     assert user_agent == "pytest-agent"
+
+
+@pytest.mark.asyncio
+async def test_read_form_rejects_oversized_payload():
+    """_read_form must reject payloads exceeding MAX_FORM_PAYLOAD_BYTES."""
+    import httpx
+    from server import mcp
+    from web import MAX_FORM_PAYLOAD_BYTES
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    oversized_body = "x=" + "a" * (MAX_FORM_PAYLOAD_BYTES + 1)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/register",
+            content=oversized_body,
+            headers={"content-type": "application/x-www-form-urlencoded"},
+        )
+
+    assert response.status_code == 413
+
+
+def test_password_validation_rejects_weak_passwords():
+    """Password validator must enforce minimum complexity."""
+    from web_auth import _validate_password_strength
+
+    # Too short
+    with pytest.raises(ValueError, match="не менее"):
+        _validate_password_strength("Abc1")
+
+    # No uppercase
+    with pytest.raises(ValueError, match="заглавную"):
+        _validate_password_strength("abcdefgh123")
+
+    # No lowercase
+    with pytest.raises(ValueError, match="строчную"):
+        _validate_password_strength("ABCDEFGH123")
+
+    # No digit
+    with pytest.raises(ValueError, match="цифру"):
+        _validate_password_strength("Abcdefghij")
+
+    # Valid password — should not raise
+    _validate_password_strength("Strong-Pass-123")

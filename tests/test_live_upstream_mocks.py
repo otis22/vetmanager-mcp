@@ -16,13 +16,13 @@ def test_live_http_domain_api_key_flow_uses_deterministic_upstream_mocks(
 
     page.goto(f"{live_server_url}/register")
     page.locator('input[name="email"]').fill("browser-api@example.com")
-    page.locator('input[name="password"]').fill("browser-pass-123")
+    page.locator('input[name="password"]').fill("Browser-Pass-123")
     page.locator('form[action="/register"] button[type="submit"]').click()
     page.wait_for_load_state("networkidle")
 
     page.goto(f"{live_server_url}/login")
     page.locator('input[name="email"]').fill("browser-api@example.com")
-    page.locator('input[name="password"]').fill("browser-pass-123")
+    page.locator('input[name="password"]').fill("Browser-Pass-123")
     page.locator('form[action="/login"] button[type="submit"]').click()
     page.wait_for_load_state("networkidle")
 
@@ -62,13 +62,13 @@ def test_live_http_user_token_flow_uses_deterministic_upstream_mocks(
 
     page.goto(f"{live_server_url}/register")
     page.locator('input[name="email"]').fill("browser-user@example.com")
-    page.locator('input[name="password"]').fill("browser-pass-123")
+    page.locator('input[name="password"]').fill("Browser-Pass-123")
     page.locator('form[action="/register"] button[type="submit"]').click()
     page.wait_for_load_state("networkidle")
 
     page.goto(f"{live_server_url}/login")
     page.locator('input[name="email"]').fill("browser-user@example.com")
-    page.locator('input[name="password"]').fill("browser-pass-123")
+    page.locator('input[name="password"]').fill("Browser-Pass-123")
     page.locator('form[action="/login"] button[type="submit"]').click()
     page.wait_for_load_state("networkidle")
 

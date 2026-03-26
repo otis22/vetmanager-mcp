@@ -25,7 +25,7 @@ def test_browser_cleanup_removes_account_and_related_entities(
 
     page.goto(f"{live_server_url}/register")
     page.locator('input[name="email"]').fill(account_email)
-    page.locator('input[name="password"]').fill("browser-cleanup-pass-123")
+    page.locator('input[name="password"]').fill("Browser-Cleanup-Pass-123")
     page.locator('form[action="/register"] button[type="submit"]').click()
     page.wait_for_load_state("networkidle")
 

@@ -50,7 +50,7 @@ def test_real_browser_domain_api_key_flow_can_issue_bearer_and_call_mcp(
 
     page.goto(f"{live_server_url}/register")
     page.locator('input[name="email"]').fill(account_email)
-    page.locator('input[name="password"]').fill("real-browser-pass-123")
+    page.locator('input[name="password"]').fill("Real-Browser-Pass-123")
     page.locator('form[action="/register"] button[type="submit"]').click()
     page.wait_for_load_state("networkidle")
 
@@ -95,7 +95,7 @@ def test_real_browser_user_token_flow_can_issue_bearer_and_call_mcp(
 
     page.goto(f"{live_server_url}/register")
     page.locator('input[name="email"]').fill(account_email)
-    page.locator('input[name="password"]').fill("real-browser-pass-123")
+    page.locator('input[name="password"]').fill("Real-Browser-Pass-123")
     page.locator('form[action="/register"] button[type="submit"]').click()
     page.wait_for_load_state("networkidle")
 

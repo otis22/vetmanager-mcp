@@ -23,6 +23,25 @@ SESSION_COOKIE_NAME = "vm_account_session"
 SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
 
 
+PASSWORD_MIN_LENGTH = 10
+
+
+def _validate_password_strength(password: str) -> None:
+    """Validate password meets minimum complexity requirements."""
+    if len(password) < PASSWORD_MIN_LENGTH:
+        raise ValueError(
+            f"Пароль должен быть не менее {PASSWORD_MIN_LENGTH} символов."
+        )
+    import re
+
+    if not re.search(r"[A-ZА-ЯЁ]", password):
+        raise ValueError("Пароль должен содержать хотя бы одну заглавную букву.")
+    if not re.search(r"[a-zа-яё]", password):
+        raise ValueError("Пароль должен содержать хотя бы одну строчную букву.")
+    if not re.search(r"\d", password):
+        raise ValueError("Пароль должен содержать хотя бы одну цифру.")
+
+
 def normalize_account_email(email: str) -> str:
     """Return normalized account email used for unique lookup."""
     return email.strip().lower()
@@ -168,8 +187,7 @@ async def register_account(
     normalized_email = normalize_account_email(email)
     if not normalized_email or not EMAIL_RE.match(normalized_email):
         raise ValueError("Provide a valid email address.")
-    if len(password) < 8:
-        raise ValueError("Password must be at least 8 characters long.")
+    _validate_password_strength(password)
 
     existing = await session.scalar(select(Account).where(Account.email == normalized_email))
     if existing is not None:

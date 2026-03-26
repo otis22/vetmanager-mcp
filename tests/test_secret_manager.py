@@ -41,3 +41,48 @@ def test_vetmanager_connection_stores_only_encrypted_credentials(monkeypatch):
     assert connection.encrypted_credentials is not None
     assert "plain-key" not in connection.encrypted_credentials
     assert connection.get_credentials() == {"domain": "abc", "api_key": "plain-key"}
+
+
+def test_validate_required_secrets_passes_when_all_set(monkeypatch):
+    """validate_required_secrets must not raise when both secrets are present."""
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-session-secret-min-16ch")
+    secret_manager.validate_required_secrets()
+
+
+def test_validate_required_secrets_fails_when_encryption_key_missing(monkeypatch):
+    """validate_required_secrets must list STORAGE_ENCRYPTION_KEY when missing."""
+    monkeypatch.delenv("STORAGE_ENCRYPTION_KEY", raising=False)
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-session-secret-min-16ch")
+    try:
+        secret_manager.validate_required_secrets()
+    except secret_manager.SecretManagerError as exc:
+        assert "STORAGE_ENCRYPTION_KEY" in str(exc)
+    else:
+        raise AssertionError("SecretManagerError was not raised")
+
+
+def test_validate_required_secrets_fails_when_session_secret_missing(monkeypatch):
+    """validate_required_secrets must list WEB_SESSION_SECRET when missing."""
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    monkeypatch.delenv("WEB_SESSION_SECRET", raising=False)
+    try:
+        secret_manager.validate_required_secrets()
+    except secret_manager.SecretManagerError as exc:
+        assert "WEB_SESSION_SECRET" in str(exc)
+    else:
+        raise AssertionError("SecretManagerError was not raised")
+
+
+def test_validate_required_secrets_lists_all_missing(monkeypatch):
+    """validate_required_secrets must list all missing secrets at once."""
+    monkeypatch.delenv("STORAGE_ENCRYPTION_KEY", raising=False)
+    monkeypatch.delenv("WEB_SESSION_SECRET", raising=False)
+    try:
+        secret_manager.validate_required_secrets()
+    except secret_manager.SecretManagerError as exc:
+        msg = str(exc)
+        assert "STORAGE_ENCRYPTION_KEY" in msg
+        assert "WEB_SESSION_SECRET" in msg
+    else:
+        raise AssertionError("SecretManagerError was not raised")
