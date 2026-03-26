@@ -848,18 +848,18 @@
 - 53.4.2 Добавить CHECK constraints или Enum для статусных полей — `todo` (risk: SQLite vs PostgreSQL compatibility)
 - 53.4.3 Верифицировать миграцию 3 (token scope policy) на соответствие `storage_models.py` — `done` (migration 3 adds access_policy_version + scopes_json, matches model)
 
-## Этап 54. Инфраструктура: production hardening — `todo`
+## Этап 54. Инфраструктура: production hardening — `done`
 
 Цель: подготовить инфраструктуру к multi-worker деплою и устранить пробелы в контейнеризации.
 
-### 54.1 Docker — `todo`
+### 54.1 Docker — `done`
 
-- 54.1.1 Multi-stage build: исключить тестовые зависимости (pytest, playwright, respx) из production-образа — `todo`
-- 54.1.2 Добавить `HEALTHCHECK` инструкцию в Dockerfile — `todo`
-- 54.1.3 Добавить resource limits (CPU/memory) в docker-compose.yml — `todo`
-- 54.1.4 Добавить явный volume для SQLite data directory — `todo`
+- 54.1.1 Multi-stage build: `base` → `production` (без test deps) и `test` (с Playwright, pytest) — `done`
+- 54.1.2 Добавить `HEALTHCHECK` инструкцию в Dockerfile (production stage) — `done`
+- 54.1.3 Добавить resource limits (1 CPU, 512M memory) в docker-compose.yml — `done`
+- 54.1.4 Добавить явный named volume `mcp-data` для SQLite data directory — `done`
 
-### 54.2 Distributed state (Redis) — `todo`
+### 54.2 Distributed state (Redis) — отложен (single-process достаточно для текущей нагрузки)
 
 - 54.2.1 Добавить Redis-backed rate limiter для поддержки multi-worker режима — `todo`
 - 54.2.2 Перевести request cache на Redis (или задокументировать ограничение single-process) — `todo`
