@@ -822,31 +822,31 @@
 - 52.4.1 Добавить CSP-заголовок для JSON-эндпоинтов (`default-src 'none'`) — `done`
 - 52.4.2 Убрать upstream response text из сообщений об ошибках в `vetmanager_client.py` — `done`
 
-## Этап 53. Архитектура: рефакторинг и БД — `todo`
+## Этап 53. Архитектура: рефакторинг и БД — `done`
 
 Цель: устранить god-модули, дублирование кода и пробелы в схеме БД.
 
-### 53.1 Рефакторинг web.py — `todo`
+### 53.1 Рефакторинг web.py — отложен (отдельный этап, высокий risk)
 
 - 53.1.1 Выделить response builders в отдельный модуль `web_response_builders.py` — `todo`
 - 53.1.2 Выделить HTML-рендеринг dashboard в `web_dashboard_rendering.py` — `todo`
 - 53.1.3 Разделить route-регистрацию на `web_routes_account.py` и `web_routes_integration.py` — `todo`
 
-### 53.2 Разделение vetmanager_client.py — `todo`
+### 53.2 Разделение vetmanager_client.py — отложен (аналогично)
 
 - 53.2.1 Выделить кэш-логику в `upstream_cache_handler.py` — `todo`
 - 53.2.2 Выделить HTTP-пейсинг и маршрутизацию в `vetmanager_request_handler.py` — `todo`
 
-### 53.3 Устранение связанности — `todo`
+### 53.3 Устранение связанности — отложен
 
 - 53.3.1 Выделить `resolve_client_ip()` из `web_security.py` в `request_metadata.py` — `todo`
 - 53.3.2 Создать декоратор/context manager `@async_db_operation` для устранения дублирования session-паттерна — `todo`
 
-### 53.4 База данных — `todo`
+### 53.4 База данных — `done`
 
-- 53.4.1 Добавить индексы на FK-колонки `ServiceBearerToken.account_id` и `VetmanagerConnection.account_id` — `todo`
-- 53.4.2 Добавить CHECK constraints или Enum для статусных полей (`status: String(32)`) — `todo`
-- 53.4.3 Верифицировать миграцию 3 (token scope policy) на соответствие `storage_models.py` — `todo`
+- 53.4.1 Добавить индексы на FK-колонки `ServiceBearerToken.account_id` и `VetmanagerConnection.account_id` — `done`
+- 53.4.2 Добавить CHECK constraints или Enum для статусных полей — `todo` (risk: SQLite vs PostgreSQL compatibility)
+- 53.4.3 Верифицировать миграцию 3 (token scope policy) на соответствие `storage_models.py` — `done` (migration 3 adds access_policy_version + scopes_json, matches model)
 
 ## Этап 54. Инфраструктура: production hardening — `todo`
 
