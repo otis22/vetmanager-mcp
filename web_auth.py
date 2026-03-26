@@ -20,7 +20,9 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PASSWORD_SCHEME = "pbkdf2_sha256"
 PASSWORD_ITERATIONS = 390_000
 SESSION_COOKIE_NAME = "vm_account_session"
-SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
+SESSION_MAX_AGE_SECONDS = int(
+    os.environ.get("WEB_SESSION_MAX_AGE_SECONDS", 60 * 60 * 24)
+)  # default: 24 hours
 
 
 PASSWORD_MIN_LENGTH = 10

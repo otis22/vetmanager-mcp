@@ -287,7 +287,7 @@ class VetmanagerClient:
         if response.status_code >= 400:
             record_upstream_failure(target="vetmanager_api", reason=f"http_{response.status_code}")
             raise VetmanagerError(
-                f"API error {response.status_code}: {response.text[:200]}",
+                f"Upstream API error (HTTP {response.status_code})",
                 status_code=response.status_code,
             )
 

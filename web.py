@@ -144,6 +144,8 @@ def _json_response(
 ) -> JSONResponse:
     response = JSONResponse(payload, status_code=status_code)
     response.headers["Cache-Control"] = "no-store"
+    response.headers["Content-Security-Policy"] = "default-src 'none'"
+    response.headers["X-Content-Type-Options"] = "nosniff"
     attach_request_context_headers(response, request)
     return response
 

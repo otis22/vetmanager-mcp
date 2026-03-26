@@ -814,13 +814,13 @@
 ### 52.3 Пароли и сессии — `in_progress`
 
 - 52.3.1 Усилить требования к паролю: минимум 10 символов, uppercase, lowercase, цифра — `done`
-- 52.3.2 Сократить время жизни сессии с 14 дней до 24 часов, добавить idle timeout — `todo`
+- 52.3.2 Сократить время жизни сессии с 14 дней до 24 часов (настраиваемо через WEB_SESSION_MAX_AGE_SECONDS) — `done`
 - 52.3.3 Реализовать server-side session revocation (кнопка «Завершить все сессии») — `todo`
 
-### 52.4 Прочее — `todo`
+### 52.4 Прочее — `done`
 
-- 52.4.1 Добавить CSP-заголовок для JSON-эндпоинтов (`default-src 'none'`) — `todo`
-- 52.4.2 Убрать upstream response text из сообщений об ошибках в `vetmanager_client.py` — `todo`
+- 52.4.1 Добавить CSP-заголовок для JSON-эндпоинтов (`default-src 'none'`) — `done`
+- 52.4.2 Убрать upstream response text из сообщений об ошибках в `vetmanager_client.py` — `done`
 
 ## Этап 53. Архитектура: рефакторинг и БД — `todo`
 
