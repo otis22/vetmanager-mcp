@@ -46,7 +46,7 @@ UID_VAL="${DOCKER_UID:-$(id -u)}"
 GID_VAL="${DOCKER_GID:-$(id -g)}"
 if [ "${UID_VAL}" -eq 0 ]; then UID_VAL=1000; fi
 if [ "${GID_VAL}" -eq 0 ]; then GID_VAL=1000; fi
-docker build --build-arg UID="${UID_VAL}" --build-arg GID="${GID_VAL}" -t vetmanager-mcp .
+docker build --target production --build-arg UID="${UID_VAL}" --build-arg GID="${GID_VAL}" -t vetmanager-mcp .
 
 compose() {
   env UID="${UID_VAL}" GID="${GID_VAL}" docker compose "$@"
