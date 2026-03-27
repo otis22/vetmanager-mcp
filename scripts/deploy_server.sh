@@ -30,9 +30,11 @@ export CERTBOT_EMAIL
 
 cd "${REMOTE_DIR}"
 
-# Source .env for POSTGRES_USER etc.
+# Source .env for POSTGRES_USER etc. (skip UID/GID — readonly in bash)
 if [ -f .env ]; then
-  set -a; source .env; set +a
+  set -a
+  eval "$(grep -v '^\(UID\|GID\)=' .env | grep -v '^#' | grep -v '^$')"
+  set +a
 fi
 
 POSTGRES_USER="${POSTGRES_USER:-vetmanager}"
