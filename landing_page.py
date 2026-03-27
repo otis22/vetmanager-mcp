@@ -160,6 +160,30 @@ def render_landing_page() -> str:
 
     .topbar nav a {
       font-size: 0.95rem;
+      border-radius: 999px;
+      padding: 8px 16px;
+      border: 1px solid transparent;
+    }
+
+    .topbar nav a.nav-link {
+      border-color: var(--line);
+      background: rgba(255, 255, 255, 0.48);
+    }
+
+    .topbar nav a.nav-link:hover {
+      background: rgba(255, 255, 255, 0.82);
+      border-color: var(--sand);
+    }
+
+    .topbar nav a.nav-cta {
+      background: var(--accent);
+      color: #fff9f3;
+      font-weight: 600;
+      padding: 8px 20px;
+    }
+
+    .topbar nav a.nav-cta:hover {
+      background: var(--accent-deep);
     }
 
     .topbar nav a:hover,
@@ -507,11 +531,11 @@ def render_landing_page() -> str:
       <input type="checkbox" id="menu-toggle" class="menu-toggle" aria-hidden="true">
       <label class="hamburger" for="menu-toggle" aria-label="Открыть меню"><span></span></label>
       <nav>
-        <a href="#product">Возможности</a>
-        <a href="#audience">Для кого</a>
-        <a href="#examples">Примеры</a>
+        <a class="nav-link" href="#product">Возможности</a>
+        <a class="nav-link" href="#audience">Для кого</a>
+        <a class="nav-link" href="#examples">Примеры</a>
         <a class="ghost" href="/login">Войти</a>
-        <a href="/register">Зарегистрироваться</a>
+        <a class="nav-cta" href="/register">Создать аккаунт</a>
       </nav>
     </header>
 
@@ -682,16 +706,25 @@ def render_landing_page() -> str:
       </details>
     </section>
 
+    <section class="panel" style="text-align: center; padding: 40px 24px; margin-top: 22px; border-radius: var(--radius); animation-delay: 0.7s;">
+      <h3 class="section-title" style="font-size: 1.6rem; margin-bottom: 12px;">Готовы начать?</h3>
+      <p class="body-copy" style="max-width: 48ch; margin: 0 auto 20px;">Регистрация занимает пару минут. Подключите AI-ассистента к данным вашей клиники уже сегодня.</p>
+      <div class="cta-row" style="justify-content: center;">
+        <a class="cta" href="/register">Создать аккаунт</a>
+        <a class="ghost" href="/login">Войти</a>
+      </div>
+    </section>
+
     <footer class="footer" style="display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px;">
       <div>
         <strong>Vetmanager MCP Service</strong>
         <p style="margin: 4px 0 0; font-size: 0.9rem; color: var(--muted);">AI-ассистент для ветеринарных клиник</p>
       </div>
-      <nav style="display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.95rem;">
-        <a href="/register" style="text-decoration: none; color: var(--accent);">Регистрация</a>
-        <a href="/login" style="text-decoration: none; color: var(--accent);">Вход</a>
-        <a href="#faq" style="text-decoration: none; color: var(--accent);">FAQ</a>
-        <a href="mailto:support@vetmanager.cloud" style="text-decoration: none; color: var(--accent);">Поддержка</a>
+      <nav style="display: flex; gap: 10px; flex-wrap: wrap; font-size: 0.95rem;">
+        <a class="ghost" href="/register" style="padding: 8px 16px; font-size: 0.9rem;">Регистрация</a>
+        <a class="ghost" href="/login" style="padding: 8px 16px; font-size: 0.9rem;">Вход</a>
+        <a class="ghost" href="#faq" style="padding: 8px 16px; font-size: 0.9rem;">FAQ</a>
+        <a class="ghost" href="mailto:support@vetmanager.cloud" style="padding: 8px 16px; font-size: 0.9rem;">Поддержка</a>
       </nav>
       <div style="text-align: right; font-size: 0.9rem; color: var(--muted);">
         <p style="margin: 0;">&copy; 2025 Vetmanager MCP</p>
