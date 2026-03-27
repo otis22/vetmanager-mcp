@@ -76,7 +76,7 @@ compose up -d
 
 # ── Container smoke check ─────────────────────────────────────────────────────
 echo "--> Container smoke check..."
-sleep 3
+sleep 5
 compose ps
 
 MCP_CONTAINER_ID="$(compose ps -q mcp || true)"
@@ -104,7 +104,7 @@ fi
 # ── App smoke checks ──────────────────────────────────────────────────────────
 if [ -f "./scripts/post_deploy_smoke_checks.sh" ]; then
   echo "--> Running post-deploy smoke checks..."
-  if ! bash ./scripts/post_deploy_smoke_checks.sh "http://127.0.0.1:8000" "${SSL_DOMAIN}"; then
+  if ! SMOKE_MAX_ATTEMPTS=20 bash ./scripts/post_deploy_smoke_checks.sh "http://127.0.0.1:8000" "${SSL_DOMAIN}"; then
     echo "ERROR: post-deploy smoke checks failed."
     dump_compose_diagnostics
     exit 1
