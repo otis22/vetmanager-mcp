@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -13,7 +14,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-configured_url = config.get_main_option("sqlalchemy.url")
+configured_url = os.environ.get("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
 config.set_main_option(
     "sqlalchemy.url",
     normalize_database_url_for_migrations(configured_url),

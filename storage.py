@@ -72,11 +72,21 @@ def create_database_engine(database_url: str | None = None) -> AsyncEngine:
     """Create async engine for the configured database."""
     normalized_url = normalize_database_url(database_url)
     _ensure_sqlite_path(normalized_url)
-    return create_async_engine(
-        normalized_url,
-        future=True,
-        pool_pre_ping=True,
-    )
+
+    kwargs: dict[str, object] = {
+        "future": True,
+        "pool_pre_ping": True,
+    }
+
+    if normalized_url.startswith("postgresql"):
+        kwargs.update({
+            "pool_size": int(os.environ.get("DB_POOL_SIZE", "10")),
+            "max_overflow": int(os.environ.get("DB_MAX_OVERFLOW", "20")),
+            "pool_timeout": 30,
+            "pool_recycle": 1800,
+        })
+
+    return create_async_engine(normalized_url, **kwargs)
 
 
 @lru_cache(maxsize=1)

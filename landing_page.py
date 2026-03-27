@@ -280,8 +280,8 @@ def render_landing_page() -> str:
 
     .ghost {
       color: var(--ink);
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.48);
+      border: 2px solid var(--sand);
+      background: rgba(255, 255, 255, 0.58);
     }
 
     .hero-side {

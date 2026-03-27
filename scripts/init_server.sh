@@ -76,28 +76,78 @@ fi
 
 cd "${REMOTE_DIR}"
 
+# ── PostgreSQL data & backup directories ──────────────────────────────────────
+PG_DATA_DIR="/var/lib/vetmanager-postgres"
+PG_BACKUP_DIR="/var/backups/vetmanager-postgres"
+${SUDO} mkdir -p "${PG_DATA_DIR}" "${PG_BACKUP_DIR}"
+${SUDO} chown "$(id -u):$(id -g)" "${PG_DATA_DIR}" "${PG_BACKUP_DIR}"
+echo "--> Created ${PG_DATA_DIR} and ${PG_BACKUP_DIR}"
+
 # ── .env ─────────────────────────────────────────────────────────────────────
 if [ ! -f .env ]; then
   if [ -f .env.example ]; then
     cp .env.example .env
     echo ""
     echo ">>> Created .env from .env.example."
-    echo ">>> IMPORTANT: edit ${REMOTE_DIR}/.env and set LOG_LEVEL, UID/GID."
-    echo ">>> The MCP server receives domain/api_key per request — no need to set them here."
   else
     echo "WARNING: .env.example not found in ${REMOTE_DIR}, skipping .env creation."
   fi
 fi
 
-# ── Nginx reverse proxy ───────────────────────────────────────────────────────
+# Generate POSTGRES_PASSWORD if not already set
+if ! grep -q '^POSTGRES_PASSWORD=.\+' .env 2>/dev/null; then
+  PG_PASS="$(openssl rand -base64 24 | tr -d '=/+' | head -c 32)"
+  if grep -q '^POSTGRES_PASSWORD=' .env 2>/dev/null; then
+    sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${PG_PASS}|" .env
+  else
+    echo "POSTGRES_PASSWORD=${PG_PASS}" >> .env
+  fi
+  echo ">>> Generated POSTGRES_PASSWORD in .env"
+fi
+
+# Set DATABASE_URL if not already set
+if ! grep -q '^DATABASE_URL=.\+' .env 2>/dev/null; then
+  # Read the password we just set
+  PG_PASS="$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)"
+  PG_USER="$(grep '^POSTGRES_USER=' .env | cut -d= -f2- || true)"
+  PG_USER="${PG_USER:-vetmanager}"
+  DB_URL="postgresql+asyncpg://${PG_USER}:${PG_PASS}@postgres:5432/vetmanager"
+  if grep -q '^# \?DATABASE_URL=' .env 2>/dev/null || grep -q '^DATABASE_URL=' .env 2>/dev/null; then
+    sed -i "s|^#\? \?DATABASE_URL=.*|DATABASE_URL=${DB_URL}|" .env
+  else
+    echo "DATABASE_URL=${DB_URL}" >> .env
+  fi
+  echo ">>> Set DATABASE_URL in .env"
+fi
+
+echo ""
+echo ">>> IMPORTANT: review ${REMOTE_DIR}/.env — verify POSTGRES_PASSWORD, STORAGE_ENCRYPTION_KEY, WEB_SESSION_SECRET."
+
+# ── Backup cron job ───────────────────────────────────────────────────────────
+CRON_FILE="/etc/cron.d/vetmanager-backup"
+${SUDO} tee "${CRON_FILE}" >/dev/null <<CRON
+# vetmanager-mcp PostgreSQL backups — twice daily
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+0 3,15 * * * root REMOTE_DIR=${REMOTE_DIR} ${REMOTE_DIR}/scripts/backup_postgres.sh >> /var/log/vetmanager-backup.log 2>&1
+CRON
+${SUDO} chmod 644 "${CRON_FILE}"
+echo "--> Installed backup cron: ${CRON_FILE} (03:00, 15:00 daily)"
+
+# ── Nginx reverse proxy with keepalive ────────────────────────────────────────
 NGINX_SITE="/etc/nginx/sites-available/vetmanager-mcp.conf"
 ${SUDO} tee "${NGINX_SITE}" >/dev/null <<EOF
+upstream mcp_backend {
+    server 127.0.0.1:8000;
+    keepalive 32;
+}
+
 server {
     listen 80;
     server_name ${SSL_DOMAIN};
 
     location / {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://mcp_backend;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -122,15 +172,15 @@ if [ -f Dockerfile ]; then
   GID_VAL="${DOCKER_GID:-$(id -g)}"
   if [ "${UID_VAL}" -eq 0 ]; then UID_VAL=1000; fi
   if [ "${GID_VAL}" -eq 0 ]; then GID_VAL=1000; fi
-  docker build --build-arg UID="${UID_VAL}" --build-arg GID="${GID_VAL}" -t vetmanager-mcp .
+  docker build --target production --build-arg UID="${UID_VAL}" --build-arg GID="${GID_VAL}" -t vetmanager-mcp .
 else
   echo "WARNING: Dockerfile not found in ${REMOTE_DIR}, skipping image build."
 fi
 
 echo ""
 echo "==> Init complete. Edit .env if needed, then run:"
-echo "    docker compose up -d"
-echo "==> Nginx configured for ${SSL_DOMAIN} on port 80."
+echo "    docker compose --profile production up -d"
+echo "==> Nginx configured for ${SSL_DOMAIN} on port 80 with upstream keepalive."
 REMOTE
 
 echo "==> Done. Server is ready at ${SSH_TARGET}:${REMOTE_DIR}"

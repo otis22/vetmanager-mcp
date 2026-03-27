@@ -30,6 +30,14 @@ export CERTBOT_EMAIL
 
 cd "${REMOTE_DIR}"
 
+# Source .env for POSTGRES_USER etc.
+if [ -f .env ]; then
+  set -a; source .env; set +a
+fi
+
+POSTGRES_USER="${POSTGRES_USER:-vetmanager}"
+POSTGRES_DB="${POSTGRES_DB:-vetmanager}"
+
 # ── Pull latest code ──────────────────────────────────────────────────────────
 if [ "${SKIP_GIT_PULL}" = "1" ]; then
   echo "--> SKIP_GIT_PULL=1, skipping git pull."
@@ -49,13 +57,7 @@ if [ "${GID_VAL}" -eq 0 ]; then GID_VAL=1000; fi
 docker build --target production --build-arg UID="${UID_VAL}" --build-arg GID="${GID_VAL}" -t vetmanager-mcp .
 
 compose() {
-  env UID="${UID_VAL}" GID="${GID_VAL}" docker compose "$@"
-}
-
-prepare_storage_permissions() {
-  mkdir -p data
-  docker run --rm --user 0 -v "${PWD}/data:/target" vetmanager-mcp \
-    sh -c "mkdir -p /target && chown -R ${UID_VAL}:${GID_VAL} /target && chmod -R ug+rwX /target"
+  env UID="${UID_VAL}" GID="${GID_VAL}" docker compose --profile production "$@"
 }
 
 dump_compose_diagnostics() {
@@ -68,24 +70,54 @@ dump_compose_diagnostics() {
   fi
 }
 
-# ── Pre-deploy database backup ────────────────────────────────────────────────
-BACKUP_DIR="${REMOTE_DIR}/backups"
+# ── Pre-deploy PostgreSQL backup ─────────────────────────────────────────────
+BACKUP_DIR="/var/backups/vetmanager-postgres"
 mkdir -p "${BACKUP_DIR}"
-DB_FILE="${REMOTE_DIR}/data/vetmanager_mcp.db"
-if [ -f "${DB_FILE}" ]; then
-  BACKUP_NAME="pre-deploy-$(date +%Y%m%d-%H%M%S).db"
-  cp "${DB_FILE}" "${BACKUP_DIR}/${BACKUP_NAME}"
-  echo "--> Database backed up to backups/${BACKUP_NAME}"
-  # Keep only last 10 backups
-  ls -t "${BACKUP_DIR}"/pre-deploy-*.db 2>/dev/null | tail -n +11 | xargs rm -f 2>/dev/null || true
+PG_CONTAINER="$(docker compose --profile production ps -q postgres 2>/dev/null || true)"
+if [ -n "${PG_CONTAINER}" ]; then
+  TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+  BACKUP_FILE="${BACKUP_DIR}/pre-deploy-${TIMESTAMP}.sql.gz"
+  docker exec "${PG_CONTAINER}" pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
+    | gzip > "${BACKUP_FILE}"
+  if [ -s "${BACKUP_FILE}" ]; then
+    echo "--> Pre-deploy backup: ${BACKUP_FILE}"
+  else
+    echo "WARNING: Pre-deploy backup is empty, removing."
+    rm -f "${BACKUP_FILE}"
+  fi
+  # Keep only last 20 pre-deploy backups
+  ls -t "${BACKUP_DIR}"/pre-deploy-*.sql.gz 2>/dev/null | tail -n +21 | xargs rm -f 2>/dev/null || true
 else
-  echo "--> No database file found at ${DB_FILE}, skipping backup."
+  echo "--> PostgreSQL container not running, skipping pre-deploy backup."
 fi
 
-# ── Restart service ───────────────────────────────────────────────────────────
-echo "--> Restarting service..."
-prepare_storage_permissions
+# ── Start PostgreSQL first, run migrations, then start mcp ────────────────────
+echo "--> Starting PostgreSQL..."
 compose down --remove-orphans
+compose up -d postgres
+
+# Wait for PostgreSQL to be healthy
+echo "--> Waiting for PostgreSQL to be ready..."
+for i in $(seq 1 30); do
+  PG_CONTAINER_ID="$(compose ps -q postgres || true)"
+  if [ -n "${PG_CONTAINER_ID}" ] && docker exec "${PG_CONTAINER_ID}" pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" >/dev/null 2>&1; then
+    echo "--> PostgreSQL is ready."
+    break
+  fi
+  if [ "${i}" -eq 30 ]; then
+    echo "ERROR: PostgreSQL did not become ready in time."
+    dump_compose_diagnostics
+    exit 1
+  fi
+  sleep 2
+done
+
+# ── Run database migrations before starting the app ───────────────────────────
+echo "--> Running database migrations..."
+compose run --rm mcp alembic upgrade head
+
+# ── Start all services ────────────────────────────────────────────────────────
+echo "--> Starting mcp service..."
 compose up -d
 
 # ── Container smoke check ─────────────────────────────────────────────────────
@@ -105,17 +137,6 @@ if [ "${MCP_RUNNING}" != "true" ]; then
   echo "ERROR: mcp container is not running."
   compose logs --tail=50
   exit 1
-fi
-
-# ── Database integrity check ──────────────────────────────────────────────────
-if [ -f "${DB_FILE}" ]; then
-  DB_SIZE=$(stat -f%z "${DB_FILE}" 2>/dev/null || stat -c%s "${DB_FILE}" 2>/dev/null || echo "0")
-  echo "--> Database file exists (${DB_SIZE} bytes)."
-  if [ "${DB_SIZE}" -lt 1024 ] 2>/dev/null; then
-    echo "WARNING: Database file is suspiciously small (${DB_SIZE} bytes). Possible data loss."
-  fi
-else
-  echo "WARNING: Database file not found after restart. First deploy or possible data loss."
 fi
 
 # ── TLS certificate renew (<30 days) ──────────────────────────────────────────

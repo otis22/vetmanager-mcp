@@ -1,4 +1,38 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vetmanager
+      POSTGRES_USER: ${POSTGRES_USER:-vetmanager}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      - /var/lib/vetmanager-postgres:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    command: >
+      postgres
+      -c shared_buffers=128MB
+      -c effective_cache_size=256MB
+      -c max_connections=50
+      -c work_mem=4MB
+      -c maintenance_work_mem=64MB
+      -c wal_buffers=4MB
+      -c checkpoint_completion_target=0.9
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vetmanager} -d vetmanager"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    profiles:
+      - production
+
   mcp:
     build:
       context: .
@@ -17,11 +51,16 @@ services:
       STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY:-}
       WEB_SESSION_SECRET: ${WEB_SESSION_SECRET:-}
     ports:
-      - "${PORT:-8000}:${PORT:-8000}"
+      - "127.0.0.1:${PORT:-8000}:${PORT:-8000}"
     volumes:
       - .:/app
-      - mcp-data:/app/data
+      - mcp-data:/app/data  # SQLite fallback for local dev
     user: "${UID:-1000}:${GID:-1000}"
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
     deploy:
       resources:
         limits:

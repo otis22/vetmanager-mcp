@@ -5,7 +5,7 @@ import asyncio
 from fastmcp import FastMCP
 
 from error_tracking import configure_error_tracking
-from storage import bootstrap_storage_schema, initialize_storage
+from storage import bootstrap_storage_schema, get_database_url, initialize_storage
 from structured_logging import configure_logging
 from tool_descriptions import enhance_tool_descriptions
 from web import register_web_routes
@@ -40,7 +40,8 @@ if __name__ == "__main__":
         logging.critical("Startup aborted: %s", exc)
         raise SystemExit(1) from exc
     asyncio.run(initialize_storage())
-    asyncio.run(bootstrap_storage_schema())
+    if get_database_url().startswith("sqlite"):
+        asyncio.run(bootstrap_storage_schema())
     transport = os.environ.get("MCP_TRANSPORT", "streamable-http")
     host = os.environ.get("MCP_HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
