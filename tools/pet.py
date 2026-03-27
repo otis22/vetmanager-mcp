@@ -78,34 +78,72 @@ def register(mcp: FastMCP) -> None:
     async def update_pet(
         pet_id: int,
         alias: str = "",
+        owner_id: int = 0,
         type_id: int = 0,
         breed_id: int = 0,
+        sex: str = "",
         birthday: str = "",
         note: str = "",
+        color_id: int = 0,
+        chip_number: str = "",
+        weight: str = "",
+        status: str = "",
     ) -> dict:
         """Update an existing pet's details.
 
         Args:
             pet_id: ID of the pet to update.
             alias: New pet name/alias (leave empty to keep current).
+            owner_id: New owner (client) ID (0 = no change).
             type_id: New animal type ID (0 = no change).
             breed_id: New breed ID (0 = no change).
-            birthday: Date of birth in YYYY-MM-DD format (optional).
+            sex: Pet sex: 'male', 'female', 'castrated', 'sterilized' (leave empty to keep current).
+            birthday: Date of birth in YYYY-MM-DD format (leave empty to keep current).
             note: Updated notes about the pet.
+            color_id: New color ID (0 = no change).
+            chip_number: Microchip number (leave empty to keep current).
+            weight: Pet weight as string, e.g. '5.2' (leave empty to keep current).
+            status: New status (leave empty to keep current).
         """
         vc = VetmanagerClient()
         payload: dict = {}
         if alias:
             payload["alias"] = alias
+        if owner_id:
+            payload["owner_id"] = owner_id
         if type_id:
             payload["type_id"] = type_id
         if breed_id:
             payload["breed_id"] = breed_id
+        if sex:
+            payload["sex"] = sex
         if birthday:
             payload["birthday"] = birthday
         if note:
             payload["note"] = note
+        if color_id:
+            payload["color_id"] = color_id
+        if chip_number:
+            payload["chip_number"] = chip_number
+        if weight:
+            payload["weight"] = weight
+        if status:
+            payload["status"] = status
         return await vc.put(f"/rest/api/pet/{pet_id}", json=payload)
+
+    @mcp.tool
+    async def delete_pet(
+        pet_id: int,
+    ) -> dict:
+        """Delete a pet by its ID.
+
+        WARNING: This permanently removes the pet record. Use with caution.
+
+        Args:
+            pet_id: ID of the pet to delete.
+        """
+        vc = VetmanagerClient()
+        return await vc.delete(f"/rest/api/pet/{pet_id}")
 
     @mcp.tool
     async def get_pet_profile(

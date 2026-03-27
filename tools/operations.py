@@ -87,6 +87,38 @@ def register(mcp: FastMCP) -> None:
         return await VetmanagerClient().get(f"/rest/api/timesheet/{timesheet_id}")
 
     @mcp.tool
+    async def create_timesheet(
+        doctor_id: int,
+        begin_datetime: str,
+        end_datetime: str,
+        clinic_id: int,
+        title: str = "",
+        type: str = "",
+    ) -> dict:
+        """Create a new work schedule entry (timesheet) for a staff member.
+
+        Args:
+            doctor_id: ID of the staff member/doctor.
+            begin_datetime: Start date/time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS).
+            end_datetime: End date/time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS).
+            clinic_id: ID of the clinic branch.
+            title: Schedule entry title/label (optional).
+            type: Schedule type (optional).
+        """
+        vc = VetmanagerClient()
+        payload: dict = {
+            "doctor_id": doctor_id,
+            "begin_datetime": begin_datetime,
+            "end_datetime": end_datetime,
+            "clinic_id": clinic_id,
+        }
+        if title:
+            payload["title"] = title
+        if type:
+            payload["type"] = type
+        return await vc.post("/rest/api/timesheet", json=payload)
+
+    @mcp.tool
     async def get_properties(
         limit: LimitParam = 50,
         offset: int = 0,

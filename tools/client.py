@@ -157,8 +157,15 @@ def register(mcp: FastMCP) -> None:
         client_id: int,
         first_name: str = "",
         last_name: str = "",
+        middle_name: str = "",
         phone: str = "",
+        cell_phone: str = "",
         email: str = "",
+        address: str = "",
+        city_id: int = 0,
+        street_id: int = 0,
+        note: str = "",
+        status: str = "",
     ) -> dict:
         """Update an existing client's information.
 
@@ -166,20 +173,55 @@ def register(mcp: FastMCP) -> None:
             client_id: ID of the client to update.
             first_name: New first name (leave empty to keep current).
             last_name: New last name (leave empty to keep current).
-            phone: New phone number.
+            middle_name: New middle name (leave empty to keep current).
+            phone: New home phone number.
+            cell_phone: New cell phone number.
             email: New email address.
+            address: New postal address.
+            city_id: New city ID (0 = no change).
+            street_id: New street ID (0 = no change).
+            note: Updated notes.
+            status: New status: 'ACTIVE', 'DELETED', 'INACTIVE' (leave empty to keep current).
         """
         client = VetmanagerClient()
         payload: dict = {}
         if first_name:
-            payload["firstName"] = first_name
+            payload["first_name"] = first_name
         if last_name:
-            payload["lastName"] = last_name
+            payload["last_name"] = last_name
+        if middle_name:
+            payload["middle_name"] = middle_name
         if phone:
-            payload["phone"] = phone
+            payload["home_phone"] = phone
+        if cell_phone:
+            payload["cell_phone"] = cell_phone
         if email:
             payload["email"] = email
+        if address:
+            payload["address"] = address
+        if city_id:
+            payload["city_id"] = city_id
+        if street_id:
+            payload["street_id"] = street_id
+        if note:
+            payload["note"] = note
+        if status:
+            payload["status"] = status
         return await client.put(f"/rest/api/client/{client_id}", json=payload)
+
+    @mcp.tool
+    async def delete_client(
+        client_id: int,
+    ) -> dict:
+        """Delete a client by their ID.
+
+        WARNING: This permanently removes the client record. Use with caution.
+
+        Args:
+            client_id: ID of the client to delete.
+        """
+        vc = VetmanagerClient()
+        return await vc.delete(f"/rest/api/client/{client_id}")
 
     @mcp.tool
     async def get_client_profile(

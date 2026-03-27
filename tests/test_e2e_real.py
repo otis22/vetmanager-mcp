@@ -275,7 +275,7 @@ def test_real_web_account_can_issue_bearer_and_call_tool(live_server_url: str, r
         register = _post_with_csrf_sync(
             client,
             "/register",
-            data={"email": "real-flow@example.com", "password": "real-flow-pass-123"},
+            data={"email": "real-flow@example.com", "password": "RealFlow-pass-123"},
         )
         assert register.status_code == 200
 

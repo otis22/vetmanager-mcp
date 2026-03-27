@@ -136,6 +136,17 @@ def register(mcp: FastMCP) -> None:
         return await vc.post("/rest/api/invoiceDocument", json={"invoiceId": invoice_id, "goodId": good_id, "quantity": quantity, "price": price})
 
     @mcp.tool
+    async def delete_invoice_document(doc_id: int) -> dict:
+        """Delete an invoice line item by its ID.
+
+        WARNING: This permanently removes the line item from the invoice.
+
+        Args:
+            doc_id: ID of the invoice document (line item) to delete.
+        """
+        return await VetmanagerClient().delete(f"/rest/api/invoiceDocument/{doc_id}")
+
+    @mcp.tool
     async def get_cassas(
         limit: LimitParam = 20,
         offset: int = 0,

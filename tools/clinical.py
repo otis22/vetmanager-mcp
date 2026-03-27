@@ -61,6 +61,37 @@ def register(mcp: FastMCP) -> None:
         return await vc.post("/rest/api/hospital", json=payload)
 
     @mcp.tool
+    async def update_hospitalization(
+        hospital_id: int,
+        date_out: str = "",
+        description: str = "",
+        status: str = "",
+        block_id: int = 0,
+    ) -> dict:
+        """Update an existing hospitalization record.
+
+        Note: Vetmanager API does not allow deleting hospitalizations via REST.
+
+        Args:
+            hospital_id: ID of the hospitalization record to update.
+            date_out: Discharge date/time in ISO 8601 format (leave empty to keep current).
+            description: Updated clinical notes (leave empty to keep current).
+            status: Updated status (leave empty to keep current).
+            block_id: New hospital block/ward ID (0 = no change).
+        """
+        vc = VetmanagerClient()
+        payload: dict = {}
+        if date_out:
+            payload["dateOut"] = date_out
+        if description:
+            payload["description"] = description
+        if status:
+            payload["status"] = status
+        if block_id:
+            payload["blockId"] = block_id
+        return await vc.put(f"/rest/api/hospital/{hospital_id}", json=payload)
+
+    @mcp.tool
     async def get_hospital_blocks(
         limit: LimitParam = 20,
         offset: int = 0,

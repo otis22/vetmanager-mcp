@@ -168,6 +168,82 @@ def register(mcp: FastMCP) -> None:
         return await VetmanagerClient().get(f"/rest/api/Suppliers/{supplier_id}")
 
     @mcp.tool
+    async def create_supplier(
+        company_name: str,
+        contact_person: str = "",
+        phone: str = "",
+        mail: str = "",
+        address: str = "",
+        note: str = "",
+    ) -> dict:
+        """Create a new supplier/counterparty in the clinic system.
+
+        Args:
+            company_name: Company or individual name (required).
+            contact_person: Contact person name.
+            phone: Contact phone number.
+            mail: Email address.
+            address: Postal address.
+            note: Additional notes.
+        """
+        vc = VetmanagerClient()
+        payload: dict = {"company_name": company_name}
+        if contact_person:
+            payload["contact_person"] = contact_person
+        if phone:
+            payload["phone"] = phone
+        if mail:
+            payload["mail"] = mail
+        if address:
+            payload["address"] = address
+        if note:
+            payload["note"] = note
+        return await vc.post("/rest/api/Suppliers", json=payload)
+
+    @mcp.tool
+    async def update_supplier(
+        supplier_id: int,
+        company_name: str = "",
+        contact_person: str = "",
+        phone: str = "",
+        mail: str = "",
+        address: str = "",
+        note: str = "",
+        status: str = "",
+    ) -> dict:
+        """Update an existing supplier/counterparty.
+
+        Note: Vetmanager API does not allow deleting suppliers via REST.
+
+        Args:
+            supplier_id: ID of the supplier to update.
+            company_name: Updated company name (leave empty to keep current).
+            contact_person: Updated contact person name.
+            phone: Updated phone number.
+            mail: Updated email address.
+            address: Updated postal address.
+            note: Updated notes.
+            status: Updated status.
+        """
+        vc = VetmanagerClient()
+        payload: dict = {}
+        if company_name:
+            payload["company_name"] = company_name
+        if contact_person:
+            payload["contact_person"] = contact_person
+        if phone:
+            payload["phone"] = phone
+        if mail:
+            payload["mail"] = mail
+        if address:
+            payload["address"] = address
+        if note:
+            payload["note"] = note
+        if status:
+            payload["status"] = status
+        return await vc.put(f"/rest/api/Suppliers/{supplier_id}", json=payload)
+
+    @mcp.tool
     async def get_good_stock_balance(
         good_id: int,
         clinic_id: int = 1,

@@ -106,17 +106,27 @@ def register(mcp: FastMCP) -> None:
         admission_id: int,
         date: str = "",
         doctor_id: int = 0,
+        client_id: int = 0,
+        pet_id: int = 0,
         reason: str = "",
         status: str = "",
+        clinic_id: int = 0,
+        type: str = "",
     ) -> dict:
         """Update an existing admission (appointment) record.
+
+        Note: Vetmanager API does not allow deleting admissions via REST.
 
         Args:
             admission_id: ID of the admission to update.
             date: New date/time in ISO 8601 format (leave empty to keep current).
             doctor_id: New doctor ID (0 = no change).
+            client_id: New client ID (0 = no change).
+            pet_id: New pet ID (0 = no change).
             reason: Updated reason for the visit.
             status: New status value (e.g. 'assigned', 'accepted', 'booked', 'canceled').
+            clinic_id: New clinic ID (0 = no change).
+            type: Admission type (leave empty to keep current).
         """
         vc = VetmanagerClient()
         payload: dict = {}
@@ -124,8 +134,16 @@ def register(mcp: FastMCP) -> None:
             payload["date"] = date
         if doctor_id:
             payload["doctor_id"] = doctor_id
+        if client_id:
+            payload["client_id"] = client_id
+        if pet_id:
+            payload["pet_id"] = pet_id
         if reason:
             payload["reason"] = reason
         if status:
             payload["status"] = status
+        if clinic_id:
+            payload["clinic_id"] = clinic_id
+        if type:
+            payload["type"] = type
         return await vc.put(f"/rest/api/admission/{admission_id}", json=payload)

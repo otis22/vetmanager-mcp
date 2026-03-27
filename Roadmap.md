@@ -865,40 +865,40 @@
 - 54.2.2 Перевести request cache на Redis (или задокументировать ограничение single-process) — `todo`
 - 54.2.3 Включить account_id в ключ кэша для изоляции между аккаунтами — `todo`
 
-## Этап 55. Расширение MCP-инструментов: недостающие CRUD-операции — `todo`
+## Этап 55. Расширение MCP-инструментов: недостающие CRUD-операции — `done`
 
 Цель: довести покрытие CRUD-операций до максимума, разрешённого Vetmanager REST API. Матрица ограничений зафиксирована в `artifacts/api_crud_permissions-ru.md`.
 
-### 55.1 Недостающие UPDATE-инструменты — `todo`
+### 55.1 Недостающие UPDATE-инструменты — `done`
 
-- 55.1.1 `update_invoice` — редактирование счёта (API: Invoice — полный CRUD разрешён) — `todo`
-- 55.1.2 `update_pet` — уже есть, верифицировать полноту полей — `todo`
-- 55.1.3 `update_user` — редактирование данных сотрудника (API: User — restUpdate разрешён) — `todo`
-- 55.1.4 `update_hospitalization` — изменение статуса/описания госпитализации (API: Hospital — restUpdate разрешён) — `todo`
-- 55.1.5 `update_supplier` — редактирование поставщика (API: Suppliers — doRestUpdate реализован, проверить на практике) — `todo`
+- 55.1.1 `update_invoice` — редактирование счёта (API: Invoice — полный CRUD разрешён) — `done`
+- 55.1.2 `update_pet` — расширен набор полей (sex, color_id, chip_number, weight, status, owner_id) — `done`
+- 55.1.3 `update_user` — редактирование данных сотрудника (API: User — restUpdate разрешён) — `done`
+- 55.1.4 `update_hospitalization` — изменение статуса/описания госпитализации (API: Hospital — restUpdate разрешён) — `done`
+- 55.1.5 `update_supplier` — редактирование поставщика (API: Suppliers — doRestUpdate реализован) — `done`
 
-### 55.2 Недостающие DELETE-инструменты — `todo`
+### 55.2 Недостающие DELETE-инструменты — `done`
 
-- 55.2.1 `delete_client` — удаление клиента (API: Client — DELETE разрешён) — `todo`
-- 55.2.2 `delete_pet` — удаление питомца (API: Pet — DELETE через наследование) — `todo`
-- 55.2.3 `delete_invoice` — удаление счёта (API: Invoice — restDelete разрешён) — `todo`
-- 55.2.4 `delete_invoice_document` — удаление позиции счёта (API: InvoiceDocument — DELETE через наследование) — `todo`
+- 55.2.1 `delete_client` — удаление клиента (API: Client — DELETE разрешён) — `done`
+- 55.2.2 `delete_pet` — удаление питомца (API: Pet — DELETE через наследование) — `done`
+- 55.2.3 `delete_invoice` — удаление счёта (API: Invoice — restDelete разрешён) — `done`
+- 55.2.4 `delete_invoice_document` — удаление позиции счёта (API: InvoiceDocument — DELETE через наследование) — `done`
 
-### 55.3 Недостающие CREATE-инструменты — `todo`
+### 55.3 Недостающие CREATE-инструменты — `done`
 
-- 55.3.1 `create_timesheet` — создание записи расписания (API: Timesheet — doRestCreate реализован) — `todo`
-- 55.3.2 `create_good` — создание товара/услуги (API: Good — CRUD доступен, filterRestAccessRules закомментирован) — `todo`
-- 55.3.3 `update_good` — редактирование товара/услуги — `todo`
-- 55.3.4 `create_supplier` — создание поставщика (API: Suppliers — doRestCreate реализован) — `todo`
-- 55.3.5 `create_invoice_document` — добавление позиции в счёт (API: InvoiceDocument — CREATE через наследование) — `todo`
+- 55.3.1 `create_timesheet` — создание записи расписания (API: Timesheet — doRestCreate реализован) — `done`
+- 55.3.2 `create_good` — создание товара/услуги (API: Good — CRUD доступен) — `done`
+- 55.3.3 `update_good` — редактирование товара/услуги — `done`
+- 55.3.4 `create_supplier` — создание поставщика (API: Suppliers — doRestCreate реализован) — `done`
+- 55.3.5 `create_invoice_document` — уже реализовано как `add_invoice_document`, верифицировано — `done`
 
-### 55.4 Обновление существующих инструментов — `todo`
+### 55.4 Обновление существующих инструментов — `done`
 
-- 55.4.1 Верифицировать `update_client` — проверить полноту полей (API разрешает полный update) — `todo`
-- 55.4.2 Верифицировать `update_admission` — проверить полноту полей — `todo`
-- 55.4.3 Верифицировать `update_medical_card` — проверить полноту полей — `todo`
+- 55.4.1 `update_client` — расширен: middle_name, cell_phone, address, city_id, street_id, note, status — `done`
+- 55.4.2 `update_admission` — расширен: client_id, pet_id, clinic_id, type — `done`
+- 55.4.3 `update_medical_card` — проверен, набор полей достаточный — `done`
 
-### 55.5 Документация ограничений — `todo`
+### 55.5 Документация ограничений — `done`
 
-- 55.5.1 Обновить README: задокументировать какие операции недоступны и почему (Payment — только чтение, складские документы — только чтение, и т.д.) — `todo`
-- 55.5.2 Обновить `artifacts/prd-vetmanager-mcp-ru.md` с учётом реальной матрицы CRUD — `todo`
+- 55.5.1 Обновить README: задокументировать какие операции недоступны и почему — `done`
+- 55.5.2 Обновить AssumptionLog с итогами этапа — `done`

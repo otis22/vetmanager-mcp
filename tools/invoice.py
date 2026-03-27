@@ -152,3 +152,54 @@ def register(mcp: FastMCP) -> None:
         if description:
             payload["description"] = description
         return await vc.post("/rest/api/invoice", json=payload)
+
+    @mcp.tool
+    async def update_invoice(
+        invoice_id: int,
+        client_id: int = 0,
+        pet_id: int = 0,
+        description: str = "",
+        status: str = "",
+        percent: float = 0.0,
+        discount: float = 0.0,
+    ) -> dict:
+        """Update an existing invoice.
+
+        Args:
+            invoice_id: ID of the invoice to update.
+            client_id: New client ID (0 = no change).
+            pet_id: New pet ID (0 = no change).
+            description: Updated description (leave empty to keep current).
+            status: Updated invoice status (leave empty to keep current).
+            percent: Updated percent value (0 = no change).
+            discount: Updated discount value (0 = no change).
+        """
+        vc = VetmanagerClient()
+        payload: dict = {}
+        if client_id:
+            payload["client_id"] = client_id
+        if pet_id:
+            payload["pet_id"] = pet_id
+        if description:
+            payload["description"] = description
+        if status:
+            payload["status"] = status
+        if percent:
+            payload["percent"] = percent
+        if discount:
+            payload["discount"] = discount
+        return await vc.put(f"/rest/api/invoice/{invoice_id}", json=payload)
+
+    @mcp.tool
+    async def delete_invoice(
+        invoice_id: int,
+    ) -> dict:
+        """Delete an invoice by its ID.
+
+        WARNING: This permanently removes the invoice. Use with caution.
+
+        Args:
+            invoice_id: ID of the invoice to delete.
+        """
+        vc = VetmanagerClient()
+        return await vc.delete(f"/rest/api/invoice/{invoice_id}")

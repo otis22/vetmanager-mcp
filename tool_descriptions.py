@@ -538,6 +538,18 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "get_timesheet_by_id": "timesheet",
     "get_properties": "property",
     "get_anonymous_clients": "anonymous_client",
+    "delete_client": "client",
+    "delete_pet": "pet",
+    "update_invoice": "invoice",
+    "delete_invoice": "invoice",
+    "create_good": "good",
+    "update_good": "good",
+    "update_user": "user",
+    "delete_invoice_document": "invoice_document",
+    "create_supplier": "supplier",
+    "update_supplier": "supplier",
+    "update_hospitalization": "hospital",
+    "create_timesheet": "timesheet",
 }
 
 
@@ -653,6 +665,11 @@ def _build_generic_description(tool_name: str) -> str | None:
         return (
             f"Update an existing {singular}. Use when the user asks to change, edit, "
             f"or correct a record in this domain area. Domain synonyms: {synonyms}."
+        )
+    if tool_name.startswith("delete_"):
+        return (
+            f"Delete an existing {singular}. Use when the user asks to remove or "
+            f"delete a record in this domain area. Domain synonyms: {synonyms}."
         )
     if tool_name.startswith("add_"):
         return (
