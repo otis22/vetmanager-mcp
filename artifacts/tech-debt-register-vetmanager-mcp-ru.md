@@ -1,6 +1,6 @@
 # Tech Debt Register: vetmanager-mcp
 
-Дата: 2026-03-22
+Дата: 2026-03-27 (обновлено после stages 51-55)
 
 ## P1
 
@@ -9,8 +9,8 @@
 - Severity: высокая
 - Cost: medium
 - Rationale:
-  `web.py` на 1422 LOC уже совмещает слишком много responsibility и является
-  главным regression hotspot.
+  `web.py` на 1453 LOC (рост с 1422) уже совмещает слишком много responsibility
+  и является главным regression hotspot. Запланировано в этапе 59.
 - Target split:
   - `web_routes_auth`
   - `web_routes_account`
@@ -55,7 +55,8 @@
 - Severity: средняя
 - Cost: medium
 - Rationale:
-  91 тест в одном файле ухудшают навигацию и review cost.
+  118 тестов в одном файле (1887 LOC, рост с 91) ухудшают навигацию
+  и review cost. Запланировано в этапе 60.
 
 ## P3
 
@@ -94,3 +95,40 @@
 - TD-46-02
 - TD-46-03
 - TD-46-06
+
+---
+
+## Новые items (stages 51-55)
+
+### TD-55-01 Зависимости без upper bounds в Dockerfile
+
+- Severity: высокая
+- Cost: low
+- Rationale:
+  `fastmcp>=2.0.0`, `httpx>=0.27.0` и др. без upper bounds — риск
+  breaking changes и невоспроизводимых сборок. Запланировано в этапе 58.
+
+### TD-55-02 CSP `style-src 'unsafe-inline'`
+
+- Severity: средняя
+- Cost: medium
+- Rationale:
+  inline styles ослабляют CSP. Нужно вынести стили в external CSS или
+  использовать nonce. Запланировано в этапе 58.
+
+### TD-55-03 Process-local rate limiting
+
+- Severity: средняя
+- Cost: high
+- Rationale:
+  Rate limiting (bearer + web) хранится in-memory и не шарится между
+  workers. Для multi-instance deployment нужен Redis. Деферировано из
+  этапа 54.2, отложено до реальной потребности в горизонтальном масштабировании.
+
+### TD-55-04 Нет coverage reporting в CI
+
+- Severity: низкая
+- Cost: low
+- Rationale:
+  Отсутствует pytest-cov и минимальный порог покрытия. Запланировано
+  в этапе 60.

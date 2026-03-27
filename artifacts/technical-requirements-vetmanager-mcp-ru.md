@@ -373,14 +373,22 @@ Storage preparation:
 - отсутствие raw Bearer token и `token_hash` в audit log и пользовательских ошибках;
 - отсутствие runtime credentials в репозитории;
 - безопасные лимиты на list операции и суммы платежей;
-- rate limiting по `bearer_token_id` до обновления usage accounting;
+- rate limiting по `bearer_token_id` (1000 req/60s по умолчанию) до обновления usage accounting;
+- per-email login lockout: 10 попыток за 15 минут (namespace `login_lockout`);
+- per-email registration rate limit: 3 попытки за 1 час (namespace `register_email`);
+- per-IP rate limiting для web endpoints;
 - token-centric audit trail для lifecycle и runtime auth events;
 - cleanup expired токенов с переходом в статус `expired`;
 - signed web session cookie c `HttpOnly`, `Secure` и `SameSite=Strict` по умолчанию;
+- session timeout: 24 часа (настраиваемо через `WEB_SESSION_MAX_AGE_SECONDS`);
 - обязательный `WEB_SESSION_SECRET` или fallback на `STORAGE_ENCRYPTION_KEY`
   без встроенного dev-secret;
+- password hashing: PBKDF2-HMAC-SHA256 с salt, минимум 10 символов, uppercase + lowercase + цифра;
+- CSRF: double-submit cookie с HMAC-SHA256 подписью, TTL 2 часа;
 - future scope policy хранится отдельно от raw token и не требует хранения
-  дополнительных секретов.
+  дополнительных секретов;
+- pre-deploy backup SQLite БД с ротацией (хранит последние 10 бэкапов);
+- post-deploy integrity check: проверка наличия и размера файла БД.
 
 ### 4.4. Производительность и кеширование
 

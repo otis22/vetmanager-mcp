@@ -303,6 +303,16 @@
 - allowlist есть, но нужен отдельный review на SSRF/host validation completeness,
   включая redirects, нестандартные host representations и reuse resolved host.
 
+## 9.7 Remediation Status (обновлено 2026-03-27)
+
+| Гипотеза | Статус | Этапы | Примечание |
+|----------|--------|-------|------------|
+| 44.2 (secrets coupling, cookie defaults) | Частично закрыто | 44, 52 | Session timeout 24h, CSP headers, fail-fast startup validation. WEB_SESSION_SECRET / STORAGE_ENCRYPTION_KEY coupling остаётся by design. |
+| 44.3 (scope model) | Подготовлено | 28 | Schema/storage готовы, enforcement не включён. Legacy tokens → full access. |
+| 44.4 (audit log leaks) | Закрыто | 44, 52 | Upstream error text stripped, JSON CSP, safe error messages. |
+| 44.5 (rate limiting, XFF) | Частично закрыто | 27, 40, 52 | Per-token, per-email lockout, per-IP limiting реализованы. Process-local only — known limitation для multi-instance. `WEB_TRUSTED_PROXY_IPS` добавлен (stage 52). |
+| 44.6 (SSRF/host validation) | Закрыто | 12, 44 | Domain validation + HTTPS + allowlist суффиксов. Redirect following disabled. |
+
 ## 10. Security Review Output Contract
 
 Что считать успешным продолжением threat model на следующих шагах:

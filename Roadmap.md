@@ -753,7 +753,7 @@
 - 50.4 Создать PRD этапа 50 с декомпозицией и правилами синхронизации артефактов — `done`
 - 50.5 Обновить `AssumptionLog.md` по итогам синхронизации и зафиксировать новый baseline для дальнейшего roadmap — `done`
 
-## Этап 51. Улучшение главной страницы (лендинг) — `in_progress`
+## Этап 51. Улучшение главной страницы (лендинг) — `done`
 
 Цель: повысить конверсию, удобство навигации, доступность и SEO лендинга; привести страницу к уровню современных SaaS-продуктов.
 
@@ -767,7 +767,7 @@
 ### 51.2 Контент и копирайтинг — `done`
 
 - 51.2.1 Добавить краткое объяснение, что такое MCP, в hero или под hero — `done`
-- 51.2.2 Добавить конкретные метрики выгоды (экономия времени, скорость ответов) — `todo` (требует реальных данных)
+- 51.2.2 Добавить конкретные метрики выгоды (экономия времени, скорость ответов) — `stop` (требует реальных данных, перенесено в backlog)
 - 51.2.3 Добавить FAQ-секцию (что хранится, чем отличается от API, безопасность) — `done`
 - 51.2.4 Добавить секцию контактов / поддержки — `done` (email в footer)
 
@@ -780,7 +780,7 @@
 
 - 51.4.1 Добавить favicon (data URI SVG) — `done`
 - 51.4.2 Добавить Open Graph и Twitter Card мета-теги — `done`
-- 51.4.3 Добавить canonical URL — `todo` (требует знание production host)
+- 51.4.3 Добавить canonical URL — `todo` (production host: 342915.simplecloud.ru)
 - 51.4.4 Добавить мета-тег robots — `done`
 
 ### 51.5 Доступность (a11y) — `done`
@@ -789,11 +789,11 @@
 - 51.5.2 Улучшить контраст мелкого текста (класс `.mini`, цвет `--muted`) — `done`
 - 51.5.3 Добавить aria-label к декоративным элементам (seal «VM») — `done`
 
-### 51.6 Визуальные улучшения — `todo`
+### 51.6 Визуальные улучшения — `stop`
 
-- 51.6.1 Добавить иконки к секциям возможностей (features grid) — `todo` (требует дизайн-решения)
-- 51.6.2 Добавить секцию social proof (логотипы клиник, счётчики, отзывы) — `todo` (когда появятся данные)
-- 51.6.3 Обеспечить консистентность стилей между лендингом и страницами register/login — `todo`
+- 51.6.1 Добавить иконки к секциям возможностей (features grid) — `stop` (требует дизайн-решения, перенесено в backlog)
+- 51.6.2 Добавить секцию social proof (логотипы клиник, счётчики, отзывы) — `stop` (нет данных, перенесено в backlog)
+- 51.6.3 Обеспечить консистентность стилей между лендингом и страницами register/login — `stop` (перенесено в backlog)
 
 ## Этап 52. Безопасность: hardening — `done`
 
@@ -902,3 +902,66 @@
 
 - 55.5.1 Обновить README: задокументировать какие операции недоступны и почему — `done`
 - 55.5.2 Обновить AssumptionLog с итогами этапа — `done`
+
+## Этап 56. Синхронизация документации и артефактов — `done`
+
+Цель: привести документацию в соответствие с текущим состоянием проекта (101 инструмент, 87→101 в README, обновить PRD и tech requirements, закрыть пробелы после ревью).
+
+### 56.1 README.md — `done`
+
+- 56.1.1 Исправить счётчик инструментов (87 → актуальное число) и таблицу по группам — `done`
+- 56.1.2 Добавить в таблицу недостающие инструменты: profiles, analytics, messages, stock balance — `done`
+- 56.1.3 Добавить deploy-prod.yml в секцию CI/CD — `done`
+- 56.1.4 Добавить canonical URL на лендинг (production host: 342915.simplecloud.ru) — `done`
+
+### 56.2 PRD и tech requirements — `done`
+
+- 56.2.1 Обновить `artifacts/prd-vetmanager-mcp-ru.md`: web-контур, rate limiting, health endpoints — `done`
+- 56.2.2 Обновить `artifacts/technical-requirements-vetmanager-mcp-ru.md`: storage layer, session security, password hashing, rate limiting — `done`
+
+### 56.3 Остальные артефакты — `done`
+
+- 56.3.1 Создать недостающий PRD для этапа 54 (инфраструктура) — `done`
+- 56.3.2 Обновить `artifacts/tech-debt-register-vetmanager-mcp-ru.md`: добавить items из stages 51-55 — `done`
+- 56.3.3 Обновить `artifacts/release-checklist-vetmanager-mcp-ru.md`: browser E2E gate, security sign-off — `done`
+- 56.3.4 Обновить `artifacts/security-threat-model-vetmanager-mcp-ru.md`: отметить ремедиацию T4, T5 после stages 44-52 — `done`
+- 56.3.5 Обновить AssumptionLog — `done`
+
+## Этап 57. Deploy safety и инфраструктурная надёжность — `todo`
+
+Цель: предотвратить повторение потери данных и сбоев деплоя, усилить production safety.
+
+- 57.1 Добавить `--volumes` protection: `docker compose down` без `--volumes` (уже так, но задокументировать) — `todo`
+- 57.2 Добавить pre-deploy database migration check (Alembic `current` vs `heads`) — `todo`
+- 57.3 Добавить post-deploy DB integrity smoke: проверка что таблицы accounts, service_bearer_tokens существуют — `todo`
+- 57.4 Добавить rollback script: восстановление БД из последнего backup — `todo`
+- 57.5 Добавить CI test для deploy script (shellcheck, dry-run) — `todo`
+- 57.6 Обновить AssumptionLog и release checklist — `todo`
+
+## Этап 58. Dependency pinning и security hardening — `todo`
+
+Цель: закрепить воспроизводимость сборки и убрать оставшиеся security debt items.
+
+- 58.1 Добавить upper bounds к зависимостям в Dockerfile (fastmcp<4, httpx<1, etc.) — `todo`
+- 58.2 Убрать `style-src 'unsafe-inline'` из CSP (вынести стили в external CSS или nonce) — `todo`
+- 58.3 Добавить `upgrade-insecure-requests` в CSP для production — `todo`
+- 58.4 Обновить security threat model по итогам — `todo`
+
+## Этап 59. Рефакторинг web.py (god-module split) — `todo`
+
+Цель: разбить god-module web.py (1453 строк) на модули с чёткими границами ответственности.
+
+- 59.1 Выделить route handlers в `web_routes_auth.py` (login, register, logout) — `todo`
+- 59.2 Выделить route handlers в `web_routes_account.py` (account, integration, tokens) — `todo`
+- 59.3 Выделить health/metrics endpoints в `web_routes_system.py` — `todo`
+- 59.4 Выделить HTML rendering helpers в отдельный модуль — `todo`
+- 59.5 Оставить в web.py только оркестрацию (register_web_routes) — `todo`
+- 59.6 Обновить тесты, AssumptionLog, tech debt register — `todo`
+
+## Этап 60. Test suite refactoring — `todo`
+
+Цель: разбить крупные test-файлы и добавить coverage reporting.
+
+- 60.1 Сплитить test_e2e_mock.py (~1900 строк) по доменным группам — `todo`
+- 60.2 Добавить coverage reporting в CI (pytest-cov, минимальный порог) — `todo`
+- 60.3 Обновить AssumptionLog и tech debt register — `todo`
