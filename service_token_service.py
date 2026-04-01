@@ -30,8 +30,11 @@ async def issue_service_bearer_token(
     account_id: int,
     name: str,
     expires_in_days: int | None = None,
+    ip_mask: str | None = None,
 ) -> tuple[ServiceBearerToken, str]:
     """Create a new bearer token record and return it with the raw one-time value."""
+    from domain_validation import validate_ip_mask
+
     normalized_name = name.strip()
     if not normalized_name:
         raise ValueError("Token name is required.")
@@ -39,6 +42,10 @@ async def issue_service_bearer_token(
         raise ValueError("Token name must be 128 characters or fewer.")
     if expires_in_days is not None and expires_in_days <= 0:
         raise ValueError("Token expiry must be a positive number of days.")
+
+    effective_ip_mask: str | None = None
+    if ip_mask is not None and ip_mask.strip() != "*.*.*.*":
+        effective_ip_mask = validate_ip_mask(ip_mask)
 
     raw_token = generate_bearer_token()
     expires_at = None
@@ -50,6 +57,7 @@ async def issue_service_bearer_token(
         name=normalized_name,
         status="active",
         expires_at=expires_at,
+        allowed_ip_mask=effective_ip_mask,
     )
     token.set_raw_token(raw_token)
     token.set_scopes(SUPPORTED_TOKEN_SCOPES)
@@ -63,6 +71,7 @@ async def issue_service_bearer_token(
             "name": token.name,
             "token_prefix": token.token_prefix,
             "expires_at": _token_expiry_string(token.expires_at),
+            "ip_mask": token.get_allowed_ip_mask(),
         },
     )
     await session.commit()

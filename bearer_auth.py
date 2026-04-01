@@ -11,14 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import bearer_rate_limiter
 from auth_audit import (
     TOKEN_EVENT_AUTH_FAILED_EXPIRED,
+    TOKEN_EVENT_AUTH_FAILED_IP_DENIED,
     TOKEN_EVENT_AUTH_FAILED_NO_CONNECTION,
     TOKEN_EVENT_AUTH_FAILED_NO_SCOPES,
     TOKEN_EVENT_AUTH_FAILED_REVOKED,
     TOKEN_EVENT_AUTH_RATE_LIMITED,
     TOKEN_EVENT_AUTH_SUCCEEDED,
     add_token_usage_log,
+    get_request_audit_metadata,
 )
 from bearer_token_manager import hash_bearer_token
+from domain_validation import ip_matches_mask
 from exceptions import AuthError, RateLimitError
 from service_metrics import record_auth_failure
 from storage_models import (
@@ -120,6 +123,26 @@ async def resolve_bearer_auth_context(
     if token.status == TOKEN_STATUS_DISABLED or account.status != "active":
         record_auth_failure(source="bearer_runtime", reason="disabled")
         raise AuthError("Invalid authorization.", status_code=401)
+
+    # IP mask enforcement
+    effective_mask = token.get_allowed_ip_mask()
+    if effective_mask != "*.*.*.*":
+        client_ip, _ = get_request_audit_metadata()
+        if client_ip is None or not ip_matches_mask(client_ip, effective_mask):
+            record_auth_failure(source="bearer_runtime", reason="ip_denied")
+            add_token_usage_log(
+                session,
+                bearer_token_id=token.id,
+                event_type=TOKEN_EVENT_AUTH_FAILED_IP_DENIED,
+                details=_base_auth_details(
+                    account_id=account.id,
+                    token=token,
+                    reason="ip_denied",
+                ),
+            )
+            await session.commit()
+            raise AuthError("Invalid authorization.", status_code=403)
+
     try:
         await bearer_rate_limiter.BEARER_RATE_LIMITER.check_or_raise(token.id, now=now)
     except RateLimitError as exc:

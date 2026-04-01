@@ -523,6 +523,7 @@ def _render_account_page(
     issued_raw_token: str | None = None,
     token_name: str = "",
     token_expiry_days: str = "",
+    ip_mask: str = "*.*.*.*",
 ) -> str:
     selected_auth_mode = form_auth_mode or (
         active_connection.auth_mode if active_connection else VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
@@ -624,6 +625,7 @@ def _render_account_page(
                 f"<td>{escape(str(token['name']))}</td>"
                 f"<td><code>{escape(str(token['token_prefix']))}</code></td>"
                 f"<td><code>{escape(str(token['status']))}</code></td>"
+                f"<td><code>{escape(str(token.get('ip_mask', '*.*.*.*')))}</code></td>"
                 f"<td>{escape(str(token['expires_at']))}</td>"
                 f"<td>{escape(str(token['last_used_at']))}</td>"
                 f"<td>{escape(str(token['request_count']))}</td>"
@@ -633,7 +635,7 @@ def _render_account_page(
         token_list_html = (
             "<table>"
             "<thead><tr>"
-            "<th>Name</th><th>Prefix</th><th>Status</th><th>Expires</th><th>Last used</th><th>Requests</th><th>Actions</th>"
+            "<th>Name</th><th>Prefix</th><th>Status</th><th>IP mask</th><th>Expires</th><th>Last used</th><th>Requests</th><th>Actions</th>"
             "</tr></thead>"
             f"<tbody>{''.join(rows)}</tbody>"
             "</table>"
@@ -731,6 +733,10 @@ def _render_account_page(
           </label>
           <label>Expires in days
             <input type="number" name="expires_in_days" value="{escape(token_expiry_days)}" min="1" placeholder="30" {token_disabled}>
+          </label>
+          <label>Ограничение по IP
+            <input type="text" name="ip_mask" value="{escape(ip_mask)}" placeholder="*.*.*.*" {token_disabled}>
+            <small style="color: var(--muted); font-size: 0.85rem;">Маска IP: *.*.*.* — любой, 85.90.100.* — подсеть, 45.67.89.123 — точный IP</small>
           </label>
           <button type="submit" {token_disabled}>Выпустить Bearer token</button>
         </form>
@@ -882,6 +888,7 @@ async def _load_account_dashboard(
                     "expires_at": _format_dt(token.expires_at) if token.expires_at else "No expiry",
                     "last_used_at": _format_dt(token.last_used_at or (usage.last_used_at if usage else None)),
                     "request_count": int(usage.request_count if usage else 0),
+                    "ip_mask": token.get_allowed_ip_mask(),
                 }
             )
         integration_health_status = INTEGRATION_HEALTH_UNKNOWN
@@ -917,6 +924,7 @@ async def _render_account_dashboard_response(
     issued_raw_token: str | None = None,
     token_name: str = "",
     token_expiry_days: str = "",
+    ip_mask: str = "*.*.*.*",
 ) -> HTMLResponse | RedirectResponse:
     csrf_token = _resolve_csrf_token(request)
     script_nonce = _generate_csp_nonce()
@@ -955,6 +963,7 @@ async def _render_account_dashboard_response(
             issued_raw_token=issued_raw_token,
             token_name=token_name,
             token_expiry_days=token_expiry_days,
+            ip_mask=ip_mask,
         ),
         status_code=status_code,
         with_csrf_cookie=True,
@@ -1375,6 +1384,7 @@ def register_web_routes(mcp: FastMCP) -> None:
 
         token_name = form.get("token_name", "")
         expiry_raw = form.get("expires_in_days", "").strip()
+        ip_mask_raw = form.get("ip_mask", "*.*.*.*").strip() or "*.*.*.*"
 
         if active_connection is None or integration_health_status != INTEGRATION_HEALTH_ACTIVE:
             return await _render_account_dashboard_response(
@@ -1388,6 +1398,7 @@ def register_web_routes(mcp: FastMCP) -> None:
                 ),
                 token_name=token_name,
                 token_expiry_days=expiry_raw,
+                ip_mask=ip_mask_raw,
             )
 
         try:
@@ -1398,6 +1409,7 @@ def register_web_routes(mcp: FastMCP) -> None:
                     account_id=account_id,
                     name=token_name,
                     expires_in_days=expires_in_days,
+                    ip_mask=ip_mask_raw,
                 )
         except ValueError as exc:
             return await _render_account_dashboard_response(
@@ -1407,6 +1419,7 @@ def register_web_routes(mcp: FastMCP) -> None:
                 token_error=str(exc),
                 token_name=token_name,
                 token_expiry_days=expiry_raw,
+                ip_mask=ip_mask_raw,
             )
 
         return await _render_account_dashboard_response(

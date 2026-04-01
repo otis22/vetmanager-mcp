@@ -108,6 +108,7 @@ class ServiceBearerToken(Base):
         server_default="1",
     )
     scopes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    allowed_ip_mask: Mapped[str | None] = mapped_column(String(64), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -145,6 +146,10 @@ class ServiceBearerToken(Base):
     def get_scopes(self) -> list[str]:
         """Return scope manifest, falling back to legacy full-access policy."""
         return deserialize_token_scopes(self.scopes_json)
+
+    def get_allowed_ip_mask(self) -> str:
+        """Return effective IP mask, defaulting to unrestricted."""
+        return self.allowed_ip_mask or "*.*.*.*"
 
     def is_revoked(self) -> bool:
         """Return True when token has already been revoked."""

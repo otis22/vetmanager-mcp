@@ -1165,3 +1165,24 @@
 - 72.3 Создать скрипт ежедневного бекапа с ротацией (30 дней) — `done`
 - 72.4 Установить cron на production сервере — `done`
 - 72.5 Проверить что данные живут при деплое — `done`
+
+## Этап 73. IP mask ограничение для bearer токенов — `done`
+
+Цель: возможность ограничить использование bearer токена по IP-маске.
+
+- 73.1 Миграция: allowed_ip_mask column в service_bearer_tokens — `done`
+- 73.2 Модель: get_allowed_ip_mask() method — `done`
+- 73.3 Валидация: validate_ip_mask(), ip_matches_mask() в domain_validation.py — `done`
+- 73.4 Enforcement: IP check в bearer_auth.py — `done`
+- 73.5 Выпуск токенов: ip_mask parameter в service_token_service — `done`
+- 73.6 Web UI: форма, handler, список токенов — `done`
+- 73.7 Лендинг: информация об IP ограничении — `done`
+- 73.8 Тесты: 21 тест в test_ip_mask.py — `done`
+
+Цель: исключить потерю данных при деплое, добавить ежедневный бекап.
+
+- 72.1 Исправить deploy_server.sh: не пересоздавать postgres контейнер при деплое — `done`
+- 72.2 Добавить pre-deploy проверку наличия PG_VERSION в data dir — `done`
+- 72.3 Создать скрипт ежедневного бекапа с ротацией (30 дней) — `done`
+- 72.4 Установить cron на production сервере — `done`
+- 72.5 Проверить что данные живут при деплое — `done`

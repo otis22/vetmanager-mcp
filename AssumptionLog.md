@@ -3170,3 +3170,17 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - Добавлена pre-deploy проверка: если PG_VERSION отсутствует в data dir — деплой прерывается.
 - Создан scripts/backup_daily_cron.sh: ежедневный pg_dump + gzip, ротация 30 дней, symlink latest.sql.gz.
 - Cron установлен на production: `0 3 * * *`.
+
+## Этап 73. IP mask ограничение для bearer токенов
+
+**Что сделано:**
+
+- Новая колонка `allowed_ip_mask` (String(64), nullable) в service_bearer_tokens. NULL = без ограничений.
+- Формат маски: 4 октета через точку, каждый 0-255 или "*". Запрещён "0.0.0.0".
+- IP проверка в bearer_auth.py: после disabled check, до rate limiter. 403 при несовпадении.
+- Выпуск токенов: новый параметр ip_mask в issue_service_bearer_token().
+- Web UI: поле "Ограничение по IP" в форме, IP mask в списке токенов.
+- Лендинг: добавлена инфо о возможности ограничения по IP.
+- 21 тест в test_ip_mask.py (validation + matching).
+- IPv6: при ограничительной маске IPv6 адреса будут отклонены (safe default).
+- 402 passed, 51 skipped, 0 failed.
