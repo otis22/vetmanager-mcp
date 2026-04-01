@@ -23,7 +23,8 @@ RUN pip install --no-cache-dir \
     "sentry-sdk>=2.0.0" \
     "sqlalchemy>=2.0.0" \
     "aiosqlite>=0.20.0" \
-    "asyncpg>=0.29.0"
+    "asyncpg>=0.29.0" \
+    "psycopg2-binary>=2.9.0"
 
 # ── Production image ─────────────────────────────────────────────────────────
 FROM base AS production
