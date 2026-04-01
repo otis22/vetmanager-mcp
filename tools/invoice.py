@@ -1,8 +1,7 @@
-import json
 from fastmcp import FastMCP
 
-from validators import LimitParam, build_list_query_params
-from vetmanager_client import VetmanagerClient
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete, paginate_all
+from validators import LimitParam
 
 
 def register(mcp: FastMCP) -> None:
@@ -26,8 +25,6 @@ def register(mcp: FastMCP) -> None:
             date_from: Filter invoices created on or after this date (YYYY-MM-DD, optional).
             date_to: Filter invoices created on or before this date (YYYY-MM-DD, optional).
         """
-        vc = VetmanagerClient()
-
         combined_filters: list[dict] = list(filter or [])
         if date_from:
             combined_filters.append(
@@ -38,14 +35,11 @@ def register(mcp: FastMCP) -> None:
                 {"property": "create_date", "value": date_to, "operator": "<="}
             )
 
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=combined_filters if combined_filters else None,
+        return await crud_list(
+            "/rest/api/invoice", limit=limit, offset=offset,
+            sort=sort, filters=combined_filters if combined_filters else None,
             extra={"client_id": client_id},
         )
-        return await vc.get("/rest/api/invoice", params=params)
 
     @mcp.tool
     async def get_average_invoice(
@@ -64,8 +58,6 @@ def register(mcp: FastMCP) -> None:
         """
         from datetime import date, timedelta
 
-        vc = VetmanagerClient()
-
         today = date.today()
         if not date_to:
             date_to = today.isoformat()
@@ -76,40 +68,25 @@ def register(mcp: FastMCP) -> None:
             {"property": "create_date", "value": date_from, "operator": ">="},
             {"property": "create_date", "value": date_to, "operator": "<="},
         ]
-        filter_str = json.dumps(combined_filters, separators=(",", ":"))
+
+        invoices, _ = await paginate_all(
+            "/rest/api/invoice",
+            filters=combined_filters,
+            page_size=100,
+            entity_key="invoice",
+        )
 
         total_sum = 0.0
         total_count = 0
-        offset = 0
-        page_size = 100
-
-        while True:
-            params = {
-                "filter": filter_str,
-                "limit": page_size,
-                "offset": offset,
-            }
-            resp = await vc.get("/rest/api/invoice", params=params)
-            data = resp.get("data", {})
-            total_records = int(data.get("totalCount", 0)) if isinstance(data, dict) else 0
-            invoices = data.get("invoice", []) if isinstance(data, dict) else []
-
-            if not invoices:
-                break
-
-            for inv in invoices:
-                amount_raw = inv.get("amount") or inv.get("total") or inv.get("sum") or 0
-                try:
-                    amount = float(amount_raw)
-                except (TypeError, ValueError):
-                    amount = 0.0
-                if amount > 0:
-                    total_sum += amount
-                    total_count += 1
-
-            offset += len(invoices)
-            if offset >= total_records or len(invoices) < page_size:
-                break
+        for inv in invoices:
+            amount_raw = inv.get("amount") or inv.get("total") or inv.get("sum") or 0
+            try:
+                amount = float(amount_raw)
+            except (TypeError, ValueError):
+                amount = 0.0
+            if amount > 0:
+                total_sum += amount
+                total_count += 1
 
         average = round(total_sum / total_count, 2) if total_count > 0 else 0.0
 
@@ -131,8 +108,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             invoice_id: Unique numeric ID of the invoice.
         """
-        vc = VetmanagerClient()
-        return await vc.get(f"/rest/api/invoice/{invoice_id}")
+        return await crud_get_by_id("/rest/api/invoice", invoice_id)
 
     @mcp.tool
     async def create_invoice(
@@ -147,11 +123,10 @@ def register(mcp: FastMCP) -> None:
             pet_id: ID of the pet the invoice is for.
             description: Optional description for the invoice.
         """
-        vc = VetmanagerClient()
         payload: dict = {"client_id": client_id, "pet_id": pet_id}
         if description:
             payload["description"] = description
-        return await vc.post("/rest/api/invoice", json=payload)
+        return await crud_create("/rest/api/invoice", payload)
 
     @mcp.tool
     async def update_invoice(
@@ -174,7 +149,6 @@ def register(mcp: FastMCP) -> None:
             percent: Updated percent value (0 = no change).
             discount: Updated discount value (0 = no change).
         """
-        vc = VetmanagerClient()
         payload: dict = {}
         if client_id:
             payload["client_id"] = client_id
@@ -188,7 +162,7 @@ def register(mcp: FastMCP) -> None:
             payload["percent"] = percent
         if discount:
             payload["discount"] = discount
-        return await vc.put(f"/rest/api/invoice/{invoice_id}", json=payload)
+        return await crud_update("/rest/api/invoice", invoice_id, payload)
 
     @mcp.tool
     async def delete_invoice(
@@ -201,5 +175,4 @@ def register(mcp: FastMCP) -> None:
         Args:
             invoice_id: ID of the invoice to delete.
         """
-        vc = VetmanagerClient()
-        return await vc.delete(f"/rest/api/invoice/{invoice_id}")
+        return await crud_delete("/rest/api/invoice", invoice_id)

@@ -39,12 +39,21 @@ def validate_required_secrets() -> None:
 
 
 def get_storage_encryption_key() -> str:
-    """Return configured storage encryption key or fail closed."""
+    """Return configured storage encryption key or fail closed.
+
+    Validates that the key is present and is a valid Fernet key format.
+    """
     key = os.environ.get("STORAGE_ENCRYPTION_KEY")
     if not key:
         raise SecretManagerError(
             "Missing STORAGE_ENCRYPTION_KEY for encrypted storage payloads."
         )
+    try:
+        Fernet(key.encode("utf-8"))
+    except (ValueError, Exception) as exc:
+        raise SecretManagerError(
+            f"Invalid STORAGE_ENCRYPTION_KEY format: {exc}"
+        ) from exc
     return key
 
 

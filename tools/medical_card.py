@@ -1,6 +1,7 @@
 import json
 from fastmcp import FastMCP
 
+from tools.crud_helpers import crud_get_by_id, crud_create, crud_update
 from validators import LimitParam, build_list_query_params
 from vetmanager_client import VetmanagerClient
 
@@ -30,11 +31,6 @@ def register(mcp: FastMCP) -> None:
         """
         vc = VetmanagerClient()
         # patient_id filter is required — pet_id param alone is ignored by the API
-        patient_filter = json.dumps(
-            [{"property": "patient_id", "value": str(pet_id), "operator": "="}],
-            separators=(",", ":"),
-        )
-        # Merge caller-supplied filters with the mandatory patient_id filter
         extra_filters: list[dict] = []
         if filter:
             extra_filters = filter if isinstance(filter, list) else []
@@ -146,10 +142,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             card_id: Unique numeric ID of the medical card record.
         """
-        vc = VetmanagerClient()
-        # The endpoint accepts ?filter=[{"property":"id","value":"800","operator":"="}]
-        # or simply /{id} — both work with the capital-letter endpoint.
-        return await vc.get(f"{_MC_ENDPOINT}/{card_id}")
+        return await crud_get_by_id(_MC_ENDPOINT, card_id)
 
     @mcp.tool
     async def create_medical_card(
@@ -186,7 +179,6 @@ def register(mcp: FastMCP) -> None:
             weight: Animal weight in kg at the time of visit (optional, 0 = not recorded).
             temperature: Animal body temperature in °C (optional, 0 = not recorded).
         """
-        vc = VetmanagerClient()
         payload: dict = {
             "patient_id": patient_id,
             "doctor_id": doctor_id,
@@ -210,7 +202,7 @@ def register(mcp: FastMCP) -> None:
             payload["weight"] = weight
         if temperature:
             payload["temperature"] = temperature
-        return await vc.post(_MC_ENDPOINT, json=payload)
+        return await crud_create(_MC_ENDPOINT, payload)
 
     @mcp.tool
     async def update_medical_card(
@@ -233,7 +225,6 @@ def register(mcp: FastMCP) -> None:
             weight: Updated animal weight in kg (0 = no change).
             temperature: Updated body temperature in °C (0 = no change).
         """
-        vc = VetmanagerClient()
         payload: dict = {}
         if description:
             payload["description"] = description
@@ -247,7 +238,7 @@ def register(mcp: FastMCP) -> None:
             payload["weight"] = weight
         if temperature:
             payload["temperature"] = temperature
-        return await vc.put(f"{_MC_ENDPOINT}/{card_id}", json=payload)
+        return await crud_update(_MC_ENDPOINT, card_id, payload)
 
     @mcp.tool
     async def get_vaccinations(

@@ -152,4 +152,26 @@ def render_prometheus_metrics() -> str:
             f"{_labels_text(target=target, reason=reason)} {value}"
         )
 
+    # Cache metrics (from request_cache singleton).
+    from request_cache import REQUEST_CACHE
+
+    m = REQUEST_CACHE.metrics
+    lines.extend([
+        "# HELP vetmanager_cache_hits_total Total cache hits.",
+        "# TYPE vetmanager_cache_hits_total counter",
+        f"vetmanager_cache_hits_total {m.hits}",
+        "# HELP vetmanager_cache_misses_total Total cache misses.",
+        "# TYPE vetmanager_cache_misses_total counter",
+        f"vetmanager_cache_misses_total {m.misses}",
+        "# HELP vetmanager_cache_invalidations_total Total cache tag invalidations.",
+        "# TYPE vetmanager_cache_invalidations_total counter",
+        f"vetmanager_cache_invalidations_total {m.invalidations}",
+        "# HELP vetmanager_cache_evictions_total Total LRU cache evictions.",
+        "# TYPE vetmanager_cache_evictions_total counter",
+        f"vetmanager_cache_evictions_total {m.evictions}",
+        "# HELP vetmanager_cache_entries Current number of cached entries.",
+        "# TYPE vetmanager_cache_entries gauge",
+        f"vetmanager_cache_entries {REQUEST_CACHE.size}",
+    ])
+
     return "\n".join(lines) + "\n"

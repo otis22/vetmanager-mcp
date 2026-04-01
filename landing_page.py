@@ -116,7 +116,7 @@ def render_landing_page() -> str:
     }
 
     .brand h1,
-    .hero h2,
+    .hero h1,
     .section-title,
     .stat strong {
       font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
@@ -241,14 +241,14 @@ def render_landing_page() -> str:
       background: var(--accent);
     }
 
-    .hero h2 {
+    .hero h1 {
       margin: 0;
       font-size: clamp(2.8rem, 6vw, 5.4rem);
       line-height: 0.95;
       max-width: 10ch;
     }
 
-    .hero h2 span {
+    .hero h1 span {
       color: var(--accent-deep);
     }
 
@@ -542,7 +542,7 @@ def render_landing_page() -> str:
     <section class="hero" id="product">
       <div>
         <p class="eyebrow">Для ветклиник и врачей</p>
-        <h2>Данные клиники и команды <span>по запросу за секунды</span>.</h2>
+        <h1>Данные клиники и команды <span>по запросу за секунды</span>.</h1>
         <p class="lede">
           Сервис для ветврачей, администраторов и руководителей клиник помогает быстрее
           получать данные из Vetmanager через AI-ассистента: по клиентам, пациентам,
@@ -727,7 +727,7 @@ def render_landing_page() -> str:
         <a class="ghost" href="mailto:support@vetmanager.cloud" style="padding: 8px 16px; font-size: 0.9rem;">Поддержка</a>
       </nav>
       <div style="text-align: right; font-size: 0.9rem; color: var(--muted);">
-        <p style="margin: 0;">&copy; 2025 Vetmanager MCP</p>
+        <p style="margin: 0;">&copy; 2026 Vetmanager MCP</p>
         <p style="margin: 4px 0 0;"><a href="#" style="text-decoration: none; color: var(--accent);">Политика конфиденциальности</a></p>
       </div>
     </footer>

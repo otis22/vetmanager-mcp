@@ -132,3 +132,63 @@
 - Rationale:
   Отсутствует pytest-cov и минимальный порог покрытия. Запланировано
   в этапе 60.
+
+## Новые items (этап 61 — ревью архитектуры)
+
+### TD-61-01 God-object VetmanagerClient (8 ответственностей)
+
+- Severity: критическая
+- Cost: high
+- Rationale:
+  vetmanager_client.py совмещает HTTP, auth resolution, кеширование,
+  rate limiting, host resolution, scope check, error translation,
+  observability. Затрудняет тестирование и расширение.
+
+### TD-61-02 CRUD boilerplate дублирование в tools/ (50+ функций)
+
+- Severity: критическая
+- Cost: high
+- Rationale:
+  12 tool-модулей независимо реализуют идентичные list/by_id/create/
+  update/delete паттерны. Добавление новой сущности требует копирования
+  ~100 строк boilerplate.
+
+### TD-61-03 Криптография в ORM-моделях
+
+- Severity: высокая
+- Cost: low
+- Rationale:
+  storage_models.py вызывает encrypt/decrypt/hash напрямую. Модели
+  должны быть dumb data structures; crypto — в сервисном слое.
+
+### TD-61-04 Encryption key доступ без валидации
+
+- Severity: высокая
+- Cost: low
+- Rationale:
+  5 мест в runtime_auth.py и web.py используют os.environ.get()
+  напрямую, обходя валидацию get_storage_encryption_key().
+
+### TD-61-05 Приватная _validate_domain() экспортирована в 3 модуля
+
+- Severity: высокая
+- Cost: low
+- Rationale:
+  Функция с _ префиксом используется как публичная. Нужен отдельный
+  модуль domain_validation.py с публичным API.
+
+### TD-61-06 Scope checking не fail-fast
+
+- Severity: высокая
+- Cost: medium
+- Rationale:
+  Токен с недостаточными правами проходит bearer_auth и отклоняется
+  только при выполнении запроса в vetmanager_client. Нарушение fail-fast.
+
+### TD-61-07 Pagination loop дублируется в 3 модулях
+
+- Severity: высокая
+- Cost: low
+- Rationale:
+  Идентичный while/offset/totalCount цикл в client.py, invoice.py,
+  medical_card.py. Нужна утилита paginate_all().

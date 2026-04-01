@@ -74,7 +74,7 @@ def test_live_http_user_token_flow_uses_deterministic_upstream_mocks(
 
     integration_form = page.locator('form[data-auth-wizard="true"]')
     integration_form.locator('input[name="auth_mode"][value="user_token"]').check()
-    page.wait_for_timeout(50)
+    page.locator('[data-mode-panel="user_token"]').wait_for(state="visible")
     user_panel = integration_form.locator('[data-mode-panel="user_token"]')
     user_panel.locator('input[name="domain"]').fill(mocked.domain)
     user_panel.locator('input[name="vm_login"]').fill(mocked.login)

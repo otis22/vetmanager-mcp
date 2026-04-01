@@ -1,7 +1,7 @@
 from fastmcp import FastMCP
 
-from validators import LimitParam, build_list_query_params
-from vetmanager_client import VetmanagerClient
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_update
+from validators import LimitParam
 
 
 def register(mcp: FastMCP) -> None:
@@ -19,14 +19,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
         """
-        vc = VetmanagerClient()
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
+        return await crud_list(
+            "/rest/api/user", limit=limit, offset=offset, sort=sort, filters=filter,
         )
-        return await vc.get("/rest/api/user", params=params)
 
     @mcp.tool
     async def get_user_by_id(
@@ -37,8 +32,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             user_id: Unique numeric ID of the user.
         """
-        vc = VetmanagerClient()
-        return await vc.get(f"/rest/api/user/{user_id}")
+        return await crud_get_by_id("/rest/api/user", user_id)
 
     @mcp.tool
     async def update_user(
@@ -69,7 +63,6 @@ def register(mcp: FastMCP) -> None:
             role_id: New role ID (0 = no change).
             is_active: Set active status: 1 = active, 0 = inactive, -1 = no change.
         """
-        vc = VetmanagerClient()
         payload: dict = {}
         if last_name:
             payload["last_name"] = last_name
@@ -89,4 +82,4 @@ def register(mcp: FastMCP) -> None:
             payload["role_id"] = role_id
         if is_active != -1:
             payload["is_active"] = is_active
-        return await vc.put(f"/rest/api/user/{user_id}", json=payload)
+        return await crud_update("/rest/api/user", user_id, payload)

@@ -18,6 +18,7 @@ from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, R
 from exceptions import AuthError, HostResolutionError, RateLimitError, VetmanagerError
 from landing_page import render_landing_page
 from observability_logging import RUNTIME_LOGGER
+from secret_manager import get_storage_encryption_key
 from request_context import attach_request_context_headers
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
 from service_metrics import (
@@ -454,7 +455,7 @@ def _render_register_page(*, csrf_token: str, error: str | None = None, email: s
         "Регистрация аккаунта",
         f"""
         <h1>Регистрация аккаунта</h1>
-        <p>Создайте account сервиса, который позже получит Vetmanager integration и Bearer-токены.</p>
+        <p>Создайте аккаунт сервиса для подключения клиники и выпуска Bearer-токенов.</p>
         {error_html}
         <form method="post" action="/register">
           {_hidden_csrf_input(csrf_token)}
@@ -463,6 +464,7 @@ def _render_register_page(*, csrf_token: str, error: str | None = None, email: s
           </label>
           <label>Пароль
             <input type="password" name="password" autocomplete="new-password" minlength="8" required>
+            <small style="color: var(--muted); font-size: 0.85rem;">Минимум 8 символов</small>
           </label>
           <button type="submit">Создать аккаунт</button>
         </form>
@@ -480,7 +482,7 @@ def _render_login_page(*, csrf_token: str, error: str | None = None, email: str 
         "Вход в аккаунт",
         f"""
         <h1>Вход в аккаунт</h1>
-        <p>Войдите в account сервиса, чтобы управлять интеграцией с Vetmanager и Bearer-токенами.</p>
+        <p>Войдите в аккаунт для управления интеграцией с Vetmanager и Bearer-токенами.</p>
         {error_html}
         <form method="post" action="/login">
           {_hidden_csrf_input(csrf_token)}
@@ -662,7 +664,8 @@ def _render_account_page(
             <strong>{bearer_token_count}</strong>
           </section>
         </div>
-        <h2>Vetmanager integration</h2>
+        <hr style="border: none; border-top: 1px solid var(--line); margin: 28px 0;">
+        <h2>Интеграция Vetmanager</h2>
         {error_html}
         {success_html}
         {active_connection_html}
@@ -716,7 +719,8 @@ def _render_account_page(
             <button type="submit" formaction="/account/integration/reauth">Переавторизоваться и обновить токен</button>
           </div>
         </form>
-        <h2>Bearer token issuance</h2>
+        <hr style="border: none; border-top: 1px solid var(--line); margin: 28px 0;">
+        <h2>Выпуск Bearer-токенов</h2>
         {token_error_html}
         {token_success_html}
         {token_note}
@@ -730,7 +734,8 @@ def _render_account_page(
           </label>
           <button type="submit" {token_disabled}>Выпустить Bearer token</button>
         </form>
-        <h2>Current tokens</h2>
+        <hr style="border: none; border-top: 1px solid var(--line); margin: 28px 0;">
+        <h2>Текущие токены</h2>
         <p>В списке показываются только безопасные поля. Raw token после создания больше не доступен.</p>
         {token_list_html}
         <p>Текущий MCP runtime использует только <code>Authorization: Bearer &lt;service_token&gt;</code>. Этот web account уже стал источником регистрации, интеграции и выпуска токенов; следующим шагом здесь появится полноценный token list UI.</p>
@@ -884,7 +889,7 @@ async def _load_account_dashboard(
         if active_connection is not None:
             integration_health_status, integration_health_reason = await evaluate_connection_health(
                 active_connection,
-                encryption_key=os.environ.get("STORAGE_ENCRYPTION_KEY"),
+                encryption_key=get_storage_encryption_key(),
             )
         return (
             account,
@@ -1182,6 +1187,10 @@ def register_web_routes(mcp: FastMCP) -> None:
 
         clear_rate_limit_key("login", login_key)
         clear_rate_limit_key("login_lockout", lockout_email_key)
+        RUNTIME_LOGGER.info(
+            "Web login succeeded",
+            extra={"event_name": "web_login_succeeded", "account_id": account.id},
+        )
         response = _redirect_response(request, url="/account", status_code=303)
         set_account_session_cookie(response, account.id)
         return response
@@ -1248,7 +1257,7 @@ def register_web_routes(mcp: FastMCP) -> None:
                         domain=domain,
                         login=vm_login,
                         password=vm_password,
-                        encryption_key=os.environ.get("STORAGE_ENCRYPTION_KEY"),
+                        encryption_key=get_storage_encryption_key(),
                     )
                 else:
                     await save_domain_api_key_connection(
@@ -1256,7 +1265,7 @@ def register_web_routes(mcp: FastMCP) -> None:
                         account_id=account_id,
                         domain=domain,
                         api_key=form.get("api_key", ""),
-                        encryption_key=os.environ.get("STORAGE_ENCRYPTION_KEY"),
+                        encryption_key=get_storage_encryption_key(),
                     )
         except (ValueError, AuthError, HostResolutionError, VetmanagerError) as exc:
             return await _render_account_dashboard_response(
@@ -1306,7 +1315,7 @@ def register_web_routes(mcp: FastMCP) -> None:
                         domain=domain,
                         login=vm_login,
                         password=vm_password,
-                        encryption_key=os.environ.get("STORAGE_ENCRYPTION_KEY"),
+                        encryption_key=get_storage_encryption_key(),
                     )
                 else:
                     await save_domain_api_key_connection(
@@ -1314,7 +1323,7 @@ def register_web_routes(mcp: FastMCP) -> None:
                         account_id=account_id,
                         domain=domain,
                         api_key=form.get("api_key", ""),
-                        encryption_key=os.environ.get("STORAGE_ENCRYPTION_KEY"),
+                        encryption_key=get_storage_encryption_key(),
                     )
         except (ValueError, AuthError, HostResolutionError, VetmanagerError) as exc:
             return await _render_account_dashboard_response(

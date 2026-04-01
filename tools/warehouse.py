@@ -2,7 +2,8 @@
 PartyAccountDoc, StoreDocument, Suppliers."""
 
 from fastmcp import FastMCP
-from validators import LimitParam, build_list_query_params
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
+from validators import LimitParam
 from vetmanager_client import VetmanagerClient
 
 
@@ -21,8 +22,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
-        return await VetmanagerClient().get("/rest/api/GoodGroup", params=params)
+        return await crud_list(
+            "/rest/api/GoodGroup", limit=limit, offset=offset, sort=sort, filters=filter,
+        )
 
     @mcp.tool
     async def get_good_group_by_id(group_id: int) -> dict:
@@ -31,7 +33,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             group_id: Unique numeric ID of the group.
         """
-        return await VetmanagerClient().get(f"/rest/api/GoodGroup/{group_id}")
+        return await crud_get_by_id("/rest/api/GoodGroup", group_id)
 
     @mcp.tool
     async def get_good_sale_params(
@@ -48,15 +50,10 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        vc = VetmanagerClient()
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
-            extra={"goodId": good_id},
+        return await crud_list(
+            "/rest/api/goodSaleParam", limit=limit, offset=offset,
+            sort=sort, filters=filter, extra={"goodId": good_id},
         )
-        return await vc.get("/rest/api/goodSaleParam", params=params)
 
     @mcp.tool
     async def get_good_sale_param_by_id(param_id: int) -> dict:
@@ -65,7 +62,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             param_id: Unique numeric ID of the sale parameter.
         """
-        return await VetmanagerClient().get(f"/rest/api/goodSaleParam/{param_id}")
+        return await crud_get_by_id("/rest/api/goodSaleParam", param_id)
 
     @mcp.tool
     async def get_party_accounts(
@@ -80,8 +77,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
-        return await VetmanagerClient().get("/rest/api/PartyAccount", params=params)
+        return await crud_list(
+            "/rest/api/PartyAccount", limit=limit, offset=offset, sort=sort, filters=filter,
+        )
 
     @mcp.tool
     async def get_party_account_by_id(party_id: int) -> dict:
@@ -90,7 +88,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             party_id: Unique numeric ID of the party account.
         """
-        return await VetmanagerClient().get(f"/rest/api/PartyAccount/{party_id}")
+        return await crud_get_by_id("/rest/api/PartyAccount", party_id)
 
     @mcp.tool
     async def get_party_account_docs(
@@ -105,8 +103,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
-        return await VetmanagerClient().get("/rest/api/PartyAccountDoc", params=params)
+        return await crud_list(
+            "/rest/api/PartyAccountDoc", limit=limit, offset=offset, sort=sort, filters=filter,
+        )
 
     @mcp.tool
     async def get_party_account_doc_by_id(doc_id: int) -> dict:
@@ -115,7 +114,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             doc_id: Unique numeric ID of the document.
         """
-        return await VetmanagerClient().get(f"/rest/api/PartyAccountDoc/{doc_id}")
+        return await crud_get_by_id("/rest/api/PartyAccountDoc", doc_id)
 
     @mcp.tool
     async def get_store_documents(
@@ -130,8 +129,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
-        return await VetmanagerClient().get("/rest/api/StoreDocument", params=params)
+        return await crud_list(
+            "/rest/api/StoreDocument", limit=limit, offset=offset, sort=sort, filters=filter,
+        )
 
     @mcp.tool
     async def get_store_document_by_id(doc_id: int) -> dict:
@@ -140,7 +140,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             doc_id: Unique numeric ID of the store document.
         """
-        return await VetmanagerClient().get(f"/rest/api/StoreDocument/{doc_id}")
+        return await crud_get_by_id("/rest/api/StoreDocument", doc_id)
 
     @mcp.tool
     async def get_suppliers(
@@ -155,8 +155,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
-        return await VetmanagerClient().get("/rest/api/Suppliers", params=params)
+        return await crud_list(
+            "/rest/api/Suppliers", limit=limit, offset=offset, sort=sort, filters=filter,
+        )
 
     @mcp.tool
     async def get_supplier_by_id(supplier_id: int) -> dict:
@@ -165,7 +166,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             supplier_id: Unique numeric ID of the supplier.
         """
-        return await VetmanagerClient().get(f"/rest/api/Suppliers/{supplier_id}")
+        return await crud_get_by_id("/rest/api/Suppliers", supplier_id)
 
     @mcp.tool
     async def create_supplier(
@@ -186,7 +187,6 @@ def register(mcp: FastMCP) -> None:
             address: Postal address.
             note: Additional notes.
         """
-        vc = VetmanagerClient()
         payload: dict = {"company_name": company_name}
         if contact_person:
             payload["contact_person"] = contact_person
@@ -198,7 +198,7 @@ def register(mcp: FastMCP) -> None:
             payload["address"] = address
         if note:
             payload["note"] = note
-        return await vc.post("/rest/api/Suppliers", json=payload)
+        return await crud_create("/rest/api/Suppliers", payload)
 
     @mcp.tool
     async def update_supplier(
@@ -225,7 +225,6 @@ def register(mcp: FastMCP) -> None:
             note: Updated notes.
             status: Updated status.
         """
-        vc = VetmanagerClient()
         payload: dict = {}
         if company_name:
             payload["company_name"] = company_name
@@ -241,7 +240,7 @@ def register(mcp: FastMCP) -> None:
             payload["note"] = note
         if status:
             payload["status"] = status
-        return await vc.put(f"/rest/api/Suppliers/{supplier_id}", json=payload)
+        return await crud_update("/rest/api/Suppliers", supplier_id, payload)
 
     @mcp.tool
     async def get_good_stock_balance(

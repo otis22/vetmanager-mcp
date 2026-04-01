@@ -55,7 +55,7 @@
 ## 3. Hotspots и связность
 
 Крупные модули:
-- `web.py`: 1422 LOC
+- `web.py`: 1453 LOC
 - `vetmanager_connection_service.py`: 354 LOC
 - `vetmanager_client.py`: 302 LOC
 - `storage_models.py`: 234 LOC
@@ -95,7 +95,7 @@
 - `default contour`: 297 passed, 56 deselected
 - есть unit слой, mock e2e, live localhost browser suite, opt-in real contour
 - крупнейшие test hotspots:
-  - `tests/test_e2e_mock.py`: 91 тест
+  - `tests/test_e2e_mock.py`: 118 тестов
   - `tests/test_e2e_real.py`: 54 теста
   - `tests/test_web_auth.py`: 24 теста
   - `tests/test_client_multitenancy.py`: 19 тестов

@@ -7,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from exceptions import AuthError, HostResolutionError, VetmanagerError, VetmanagerTimeoutError
-from host_validation import validate_resolved_vetmanager_origin
-from runtime_auth import _validate_domain
+from host_resolver import resolve_vetmanager_host as _resolve_host_via_billing
+from domain_validation import validate_domain as _validate_domain
 from storage_models import VetmanagerConnection
 from vetmanager_auth import (
     VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
@@ -16,7 +16,6 @@ from vetmanager_auth import (
     resolve_vetmanager_credentials,
 )
 
-BILLING_API = "https://billing-api.vetmanager.cloud/host/{domain}"
 REQUEST_TIMEOUT = 30.0
 
 INTEGRATION_HEALTH_ACTIVE = "active"
@@ -26,31 +25,10 @@ INTEGRATION_HEALTH_UNKNOWN = "unknown"
 TOKEN_AUTH_APP_NAME = "vetmanager-mcp"
 
 
-def _validate_resolved_host(host: str, domain: str) -> str:
-    return validate_resolved_vetmanager_origin(host, domain=domain)
-
-
 async def resolve_vetmanager_host(domain: str) -> str:
     """Resolve normalized clinic domain into an allowlisted HTTPS host."""
     normalized_domain = _validate_domain(domain.strip())
-    async with httpx.AsyncClient(timeout=httpx.Timeout(REQUEST_TIMEOUT)) as http:
-        try:
-            billing_response = await http.get(BILLING_API.format(domain=normalized_domain))
-            billing_response.raise_for_status()
-        except httpx.TimeoutException as exc:
-            raise VetmanagerTimeoutError("Vetmanager host resolution timed out.") from exc
-        except httpx.RequestError as exc:
-            raise VetmanagerError("Vetmanager host resolution is temporarily unavailable.") from exc
-
-    data = billing_response.json()
-    host = data.get("data", {}).get("url") or data.get("url")
-    if not host:
-        raise HostResolutionError(
-            f"Unexpected billing API response for domain '{normalized_domain}'."
-        )
-    if not host.startswith("http"):
-        host = f"https://{host}"
-    return _validate_resolved_host(host, normalized_domain)
+    return await _resolve_host_via_billing(normalized_domain, max_retries=0)
 
 
 async def validate_domain_api_key_connection(

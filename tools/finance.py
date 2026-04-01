@@ -1,8 +1,8 @@
 """Financial entity tools: Payment, ClosingOfInvoices, InvoiceDocument, Cassa, CassaClose."""
 
 from fastmcp import FastMCP
-from validators import LimitParam, build_list_query_params, validate_amount
-from vetmanager_client import VetmanagerClient
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_delete
+from validators import LimitParam, validate_amount
 
 
 def register(mcp: FastMCP) -> None:
@@ -22,15 +22,10 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             client_id: Filter by client ID (0 = no filter).
         """
-        vc = VetmanagerClient()
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
-            extra={"clientId": client_id},
+        return await crud_list(
+            "/rest/api/payment", limit=limit, offset=offset,
+            sort=sort, filters=filter, extra={"clientId": client_id},
         )
-        return await vc.get("/rest/api/payment", params=params)
 
     @mcp.tool
     async def get_payment_by_id(payment_id: int) -> dict:
@@ -39,7 +34,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             payment_id: Unique numeric ID of the payment.
         """
-        return await VetmanagerClient().get(f"/rest/api/payment/{payment_id}")
+        return await crud_get_by_id("/rest/api/payment", payment_id)
 
     @mcp.tool
     async def create_payment(client_id: int, amount: float, cassa_id: int, description: str = "") -> dict:
@@ -51,12 +46,11 @@ def register(mcp: FastMCP) -> None:
             cassa_id: ID of the cash register (cassa) receiving payment.
             description: Optional payment description or note.
         """
-        vc = VetmanagerClient()
         validate_amount(amount)
         payload: dict = {"clientId": client_id, "amount": amount, "cassaId": cassa_id}
         if description:
             payload["description"] = description
-        return await vc.post("/rest/api/payment", json=payload)
+        return await crud_create("/rest/api/payment", payload)
 
     @mcp.tool
     async def get_closing_of_invoices(
@@ -71,13 +65,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
+        return await crud_list(
+            "/rest/api/closingOfInvoices", limit=limit, offset=offset, sort=sort, filters=filter,
         )
-        return await VetmanagerClient().get("/rest/api/closingOfInvoices", params=params)
 
     @mcp.tool
     async def get_closing_of_invoice_by_id(closing_id: int) -> dict:
@@ -86,7 +76,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             closing_id: Unique numeric ID of the closing record.
         """
-        return await VetmanagerClient().get(f"/rest/api/closingOfInvoices/{closing_id}")
+        return await crud_get_by_id("/rest/api/closingOfInvoices", closing_id)
 
     @mcp.tool
     async def get_invoice_documents(
@@ -103,15 +93,10 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        vc = VetmanagerClient()
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
-            extra={"invoiceId": invoice_id},
+        return await crud_list(
+            "/rest/api/invoiceDocument", limit=limit, offset=offset,
+            sort=sort, filters=filter, extra={"invoiceId": invoice_id},
         )
-        return await vc.get("/rest/api/invoiceDocument", params=params)
 
     @mcp.tool
     async def get_invoice_document_by_id(doc_id: int) -> dict:
@@ -120,7 +105,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             doc_id: Unique numeric ID of the invoice document.
         """
-        return await VetmanagerClient().get(f"/rest/api/invoiceDocument/{doc_id}")
+        return await crud_get_by_id("/rest/api/invoiceDocument", doc_id)
 
     @mcp.tool
     async def add_invoice_document(invoice_id: int, good_id: int, quantity: float, price: float) -> dict:
@@ -132,8 +117,10 @@ def register(mcp: FastMCP) -> None:
             quantity: Quantity of the item.
             price: Price per unit.
         """
-        vc = VetmanagerClient()
-        return await vc.post("/rest/api/invoiceDocument", json={"invoiceId": invoice_id, "goodId": good_id, "quantity": quantity, "price": price})
+        return await crud_create(
+            "/rest/api/invoiceDocument",
+            {"invoiceId": invoice_id, "goodId": good_id, "quantity": quantity, "price": price},
+        )
 
     @mcp.tool
     async def delete_invoice_document(doc_id: int) -> dict:
@@ -144,7 +131,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             doc_id: ID of the invoice document (line item) to delete.
         """
-        return await VetmanagerClient().delete(f"/rest/api/invoiceDocument/{doc_id}")
+        return await crud_delete("/rest/api/invoiceDocument", doc_id)
 
     @mcp.tool
     async def get_cassas(
@@ -159,13 +146,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
+        return await crud_list(
+            "/rest/api/cassa", limit=limit, offset=offset, sort=sort, filters=filter,
         )
-        return await VetmanagerClient().get("/rest/api/cassa", params=params)
 
     @mcp.tool
     async def get_cassa_by_id(cassa_id: int) -> dict:
@@ -174,7 +157,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             cassa_id: Unique numeric ID of the cash register.
         """
-        return await VetmanagerClient().get(f"/rest/api/cassa/{cassa_id}")
+        return await crud_get_by_id("/rest/api/cassa", cassa_id)
 
     @mcp.tool
     async def get_cassa_closes(
@@ -189,13 +172,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
+        return await crud_list(
+            "/rest/api/cassaclose", limit=limit, offset=offset, sort=sort, filters=filter,
         )
-        return await VetmanagerClient().get("/rest/api/cassaclose", params=params)
 
     @mcp.tool
     async def get_cassa_close_by_id(close_id: int) -> dict:
@@ -204,4 +183,4 @@ def register(mcp: FastMCP) -> None:
         Args:
             close_id: Unique numeric ID of the closing record.
         """
-        return await VetmanagerClient().get(f"/rest/api/cassaclose/{close_id}")
+        return await crud_get_by_id("/rest/api/cassaclose", close_id)

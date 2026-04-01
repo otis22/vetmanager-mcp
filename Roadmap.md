@@ -965,3 +965,193 @@
 - 60.1 Сплитить test_e2e_mock.py (~1900 строк) по доменным группам — `todo`
 - 60.2 Добавить coverage reporting в CI (pytest-cov, минимальный порог) — `todo`
 - 60.3 Обновить AssumptionLog и tech debt register — `todo`
+
+---
+
+## Этап 61. Ревью архитектуры (code smells) — `done`
+
+Цель: выявить архитектурные запахи, нарушения SRP, скрытые связности, дублирование, god-objects и предложить рефакторинг.
+
+- 61.1 Ревью модулей server.py, vetmanager_client.py, web.py — ответственности, размер, связность — `done`
+- 61.2 Ревью tools/ — дублирование паттернов между tool-модулями, возможность обобщения — `done`
+- 61.3 Ревью storage layer — модели, сервисы, миграции: утечки абстракций, circular imports — `done`
+- 61.4 Ревью auth chain — request_auth, runtime_auth, web_auth, web_security: пересечение ответственностей — `done`
+- 61.5 Составить список найденных запахов с приоритетами и планом устранения — `done`
+- 61.6 Обновить AssumptionLog и tech debt register — `done`
+
+## Этап 62. Ревью артефактов — `done`
+
+Цель: выявить устаревшие, неактуальные или недостающие артефакты; привести документацию в соответствие текущему состоянию проекта.
+
+- 62.1 Аудит artifacts/: пройти каждый файл, проверить актуальность относительно текущего кода — `done`
+- 62.2 Аудит PRD/: выявить этапы с устаревшими решениями или расхождениями с реализацией — `done`
+- 62.3 Проверить README.md, AssumptionLog.md, AGENTS.md на соответствие текущей архитектуре — `done`
+- 62.4 Составить список: что удалить, что обновить, что добавить — `done`
+- 62.5 Выполнить обновления и удаления по списку — `done`
+- 62.6 Обновить AssumptionLog — `done`
+
+## Этап 63. Ревью тестируемости (особенно E2E) — `done`
+
+Цель: оценить покрытие, надёжность и поддерживаемость тестов; усилить E2E-контур.
+
+- 63.1 Аудит покрытия: какие tools/routes/flows не покрыты тестами — `done`
+- 63.2 Ревью E2E-тестов: стабильность, flakiness, зависимость от timing/порядка — `done`
+- 63.3 Ревью mock-контрактов: соответствуют ли моки реальному API Vetmanager — `done`
+- 63.4 Оценить test isolation: побочные эффекты между тестами, shared state — `done`
+- 63.5 Составить план: недостающие E2E-сценарии, улучшения стабильности — `done`
+- 63.6 Реализовать приоритетные улучшения — `todo` (вынесено в этап 68)
+- 63.7 Обновить AssumptionLog и tech debt register — `done`
+
+## Этап 64. Ревью визуала — `done`
+
+Цель: оценить и улучшить UI лендинга, форм регистрации/логина, дашборда аккаунта.
+
+- 64.1 Визуальный аудит лендинга: layout, типографика, адаптивность, CTA — `done`
+- 64.2 Визуальный аудит форм: регистрация, логин, интеграция, токены — UX, валидация, ошибки — `done`
+- 64.3 Визуальный аудит дашборда аккаунта: информативность, навигация — `done`
+- 64.4 Проверка доступности (a11y): контраст, фокус, семантика, screen reader — `done`
+- 64.5 Проверка мобильной адаптивности на реальных viewport-ах — `done`
+- 64.6 Составить список исправлений — `done` (реализация в этапе 69)
+- 64.7 Обновить AssumptionLog — `done`
+
+## Этап 65. Ревью безопасности — `done`
+
+Цель: комплексный аудит безопасности — аутентификация, хранение секретов, инъекции, заголовки, конфигурация.
+
+- 65.1 Аудит auth chain: bearer token validation, session management, CSRF — `done`
+- 65.2 Аудит хранения секретов: encryption key management, credential rotation, key derivation — `done`
+- 65.3 Аудит input validation: инъекции через tool-аргументы, filter/sort параметры — `done`
+- 65.4 Аудит HTTP-заголовков: CSP, CORS, HSTS, cookie flags — `done`
+- 65.5 Аудит конфигурации: .env exposure, debug mode, error messages с внутренними деталями — `done`
+- 65.6 Аудит зависимостей: known CVEs, outdated packages — `done` (рекомендация: добавить pip audit в CI)
+- 65.7 Составить отчёт с severity и планом ремедиации — `done`
+- 65.8 Обновить security threat model и AssumptionLog — `done`
+
+## Этап 66. Ревью использования ресурсов API Vetmanager — `done`
+
+Цель: убедиться что кеширование на стороне сервиса эффективно работает, минимизировать лишние запросы к upstream API.
+
+- 66.1 Аудит request_cache.py: TTL-стратегия, cache hit ratio, инвалидация после мутаций — `done`
+- 66.2 Аудит vetmanager_client.py: дублирующие запросы, N+1 проблемы, избыточные вызовы — `done`
+- 66.3 Проверить что все GET-запросы к справочным данным проходят через кеш — `done`
+- 66.4 Проверить что мутации (POST/PUT/DELETE) корректно инвалидируют связанные кеши — `done`
+- 66.5 Оценить rate limiting к upstream API: текущий 0.05s gap, достаточность при нагрузке — `done`
+- 66.6 Добавить метрики кеша: hit/miss ratio, eviction count — в Prometheus — `todo` (вынесено в этап 71)
+- 66.7 Рассмотреть bulk-запросы и prefetch для частых сценариев (список клиентов + питомцы) — `done`
+- 66.8 Обновить AssumptionLog и tech debt register — `done`
+
+## Этап 67. Устранение архитектурных запахов (по итогам этапа 61) — `done`
+
+Цель: устранить найденные code smells по приоритету, начиная с CRITICAL и HIGH.
+
+### 67.1 CRUD factory для tools/ (TD-61-02) — `done`
+
+- 67.1.1 Создать generic helpers: `crud_list()`, `crud_by_id()`, `crud_create()`, `crud_update()`, `crud_delete()` — `done`
+- 67.1.2 Создать `paginate_all()` utility (TD-61-07) — `done`
+- 67.1.3 Перевести tool-модули на generic helpers — `done`
+- 67.1.4 Убедиться что тесты проходят, обновить AssumptionLog — `done`
+
+### 67.2 Декомпозиция VetmanagerClient (TD-61-01) — `done`
+
+- 67.2.1 Выделить `host_resolver.py` (host resolution + billing API) — `done`
+- 67.2.2 Вынести scope checking в bearer_auth (fail-fast, TD-61-06) — `done`
+- 67.2.3 Оставить в VetmanagerClient только HTTP orchestration — `done`
+- 67.2.4 Убедиться что тесты проходят, обновить AssumptionLog — `done`
+
+### 67.3 Storage layer cleanup (TD-61-03, TD-61-04, TD-61-05) — `done`
+
+- 67.3.1 Перенести crypto из ORM-моделей в сервисный слой — `stop` (отложено: crypto в моделях используется из 6+ мест через encryption_key param — рефакторинг потребует изменения всех callsites + тестов. Принято как tech debt.)
+- 67.3.2 Унифицировать доступ к encryption key через `get_storage_encryption_key()` — `done`
+- 67.3.3 Выделить `domain_validation.py` с публичной `validate_domain()` — `done`
+- 67.3.4 Убедиться что тесты проходят, обновить AssumptionLog и tech debt register — `done`
+
+## Этап 68. Устранение проблем тестируемости (по итогам этапа 63) — `done`
+
+Цель: закрыть пробелы покрытия и повысить стабильность E2E-тестов.
+
+### 68.1 Покрытие непокрытых tools — `done`
+
+- 68.1.1 Добавить mock-тесты: get_invoice_by_id, get_medical_card_by_id, update_medical_card — `done`
+- 68.1.2 Добавить тест normalization обоих ключей MedicalCards — `done`
+
+### 68.2 Error scenario тесты — `done`
+
+- 68.2.1 Добавить тесты HTTP-ошибок: 400, 401, 404, 422, 429 — `done`
+- 68.2.2 Добавить тесты: timeout, malformed JSON — `done`
+
+### 68.3 Стабильность browser E2E — `done`
+
+- 68.3.1 Заменить wait_for_timeout(50) на visibility waits — `done`
+- 68.3.2 Добавить data-testid атрибуты в HTML, обновить селекторы — `todo` (отложено в этап 69, т.к. требует изменений HTML)
+
+### 68.4 Аудит test-файлов без тестов — `done`
+
+- 68.4.1 Проверить 9 файлов — `done` (все файлы содержат тесты, audit finding был ложным)
+
+### 68.5 Обновить AssumptionLog и tech debt register — `done`
+
+## Этап 69. Устранение проблем визуала (по итогам этапа 64) — `done`
+
+Цель: исправить найденные UI/UX/a11y проблемы.
+
+### 69.1 Приоритет 1 (HIGH) — `done`
+
+- 69.1.1 Исправить heading hierarchy: hero → h1 — `done`
+- 69.1.2 Добавить требования к паролю в форму регистрации — `done`
+- 69.1.3 Перевести заголовки дашборда на русский — `done`
+- 69.1.4 Визуально разделить секции дашборда (cards/separators) — `done`
+- 69.1.5 Добавить hamburger menu для мобильного header — `done` (уже был реализован в landing_page.py)
+
+### 69.2 Приоритет 2 (MEDIUM) — `stop`
+
+- 69.2.1 Inline validation / подсветка ошибок полей — `stop` (требует JS, отложено)
+- 69.2.2 Toggle показа/скрытия пароля — `stop` (требует JS, отложено)
+- 69.2.3 Улучшить hints: domain field, empty state токенов, hero text — `stop` (отложено)
+- 69.2.4 Добавить landmark roles и aria атрибуты — `stop` (отложено)
+- 69.2.5 Улучшить мобильную адаптивность текста и форм — `stop` (отложено)
+
+### 69.3 Приоритет 3 (LOW) — `done`
+
+- 69.3.1 Обновить год в футере — `done`
+- 69.3.2 Исправить mixed language в описаниях форм — `done`
+
+### 69.4 Обновить AssumptionLog и тесты — `done`
+
+## Этап 70. Ремедиация безопасности (по итогам этапа 65) — `done`
+
+Цель: устранить найденные уязвимости по приоритету.
+
+### 70.1 CRITICAL + HIGH — `done`
+
+- 70.1.1 Унифицировать auth error messages в bearer_auth.py (S1) — `done`
+- 70.1.2 Исправить timing attack в verify_account_password: dummy PBKDF2 при early return (S2) — `done`
+
+### 70.2 MEDIUM — `done`
+
+- 70.2.1 Session fixation: cookie перезаписывается при логине (S3) — `done` (уже работает корректно — redirect создаёт новый response)
+- 70.2.2 Добавить random nonce в session token (S4) — `done`
+- 70.2.3 Валидация формата encryption key при startup (S6) — `done`
+- 70.2.4 CSRF token single-use или сокращение окна (S7) — `stop` (single-use требует DB storage, отложено)
+
+### 70.3 LOW + CI — `done`
+
+- 70.3.1 Добавить pip audit в CI pipeline (S8) — `stop` (отложено, не блокирует)
+- 70.3.2 Логирование успешных аутентификаций (S9) — `done`
+
+### 70.4 Обновить security threat model, тесты, AssumptionLog — `done`
+
+## Этап 71. Оптимизация кеширования и API usage (по итогам этапа 66) — `done`
+
+Цель: добавить cache bounds, метрики, параллелизировать profile tools, устранить N+1.
+
+### 71.1 Cache bounds и LRU (R1) — `done`
+
+- 71.1.1 Добавить max_entries в InMemoryTaggedCache с LRU eviction — `done`
+- 71.1.2 Добавить Prometheus метрики кеша: hits, misses, invalidations, size (R3) — `done`
+
+### 71.2 Устранение N+1 (R2) — `done`
+
+- 71.2.1 get_medical_cards_by_client_id: N+1 by design (API не поддерживает filter medicalcards по client_id) — `stop`
+- 71.2.2 get_client_profile, get_pet_profile: параллелизация через asyncio.gather() (R4) — `done`
+
+### 71.3 Обновить AssumptionLog и tech debt register — `done`

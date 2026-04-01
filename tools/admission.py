@@ -1,8 +1,7 @@
-import json
 from fastmcp import FastMCP
 
-from validators import LimitParam, build_list_query_params
-from vetmanager_client import VetmanagerClient
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
+from validators import LimitParam
 
 
 def register(mcp: FastMCP) -> None:
@@ -33,9 +32,6 @@ def register(mcp: FastMCP) -> None:
             sort: Sort specification, e.g. [{"property": "admission_date", "direction": "ASC"}].
             filter: Additional filter conditions (merged with date/status filters).
         """
-        vc = VetmanagerClient()
-
-        # Build filter list: merge explicit filters with date and status shortcuts.
         combined_filters: list[dict] = list(filter or [])
         if date:
             combined_filters.append(
@@ -46,17 +42,13 @@ def register(mcp: FastMCP) -> None:
                 {"property": "status", "value": status, "operator": "="}
             )
 
-        # Default sort by admission_date ASC so today's records appear in time order.
         if sort is None and date:
             sort = [{"property": "admission_date", "direction": "ASC"}]
 
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=combined_filters if combined_filters else None,
+        return await crud_list(
+            "/rest/api/admission", limit=limit, offset=offset,
+            sort=sort, filters=combined_filters if combined_filters else None,
         )
-        return await vc.get("/rest/api/admission", params=params)
 
     @mcp.tool
     async def get_admission_by_id(
@@ -67,8 +59,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             admission_id: Unique numeric ID of the admission.
         """
-        vc = VetmanagerClient()
-        return await vc.get(f"/rest/api/admission/{admission_id}")
+        return await crud_get_by_id("/rest/api/admission", admission_id)
 
     @mcp.tool
     async def create_admission(
@@ -89,7 +80,6 @@ def register(mcp: FastMCP) -> None:
             reason: Reason for the visit (optional).
             status: Admission status: 'assigned' (default), 'booked', 'accepted'.
         """
-        vc = VetmanagerClient()
         payload: dict = {
             "pet_id": pet_id,
             "client_id": client_id,
@@ -99,7 +89,7 @@ def register(mcp: FastMCP) -> None:
         }
         if reason:
             payload["reason"] = reason
-        return await vc.post("/rest/api/admission", json=payload)
+        return await crud_create("/rest/api/admission", payload)
 
     @mcp.tool
     async def update_admission(
@@ -128,7 +118,6 @@ def register(mcp: FastMCP) -> None:
             clinic_id: New clinic ID (0 = no change).
             type: Admission type (leave empty to keep current).
         """
-        vc = VetmanagerClient()
         payload: dict = {}
         if date:
             payload["date"] = date
@@ -146,4 +135,4 @@ def register(mcp: FastMCP) -> None:
             payload["clinic_id"] = clinic_id
         if type:
             payload["type"] = type
-        return await vc.put(f"/rest/api/admission/{admission_id}", json=payload)
+        return await crud_update("/rest/api/admission", admission_id, payload)

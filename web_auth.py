@@ -8,7 +8,7 @@ import hmac
 import os
 import re
 from datetime import datetime, timedelta, timezone
-from secrets import token_bytes
+from secrets import token_bytes, token_urlsafe
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,18 +66,30 @@ def hash_account_password(password: str) -> str:
 
 
 def verify_account_password(password: str, password_hash: str | None) -> bool:
-    """Verify plaintext password against stored PBKDF2 digest."""
+    """Verify plaintext password against stored PBKDF2 digest.
+
+    Always performs a full PBKDF2 computation to prevent timing-based
+    account enumeration (constant-time regardless of hash validity).
+    """
+    dummy_salt = b"\x00" * 16
+    valid = True
+    iterations = PASSWORD_ITERATIONS
+    salt = dummy_salt
+    expected = b""
+
     if not password_hash:
-        return False
-    try:
-        scheme, iterations_raw, salt_raw, digest_raw = password_hash.split("$", 3)
-        if scheme != PASSWORD_SCHEME:
-            return False
-        iterations = int(iterations_raw)
-        salt = base64.urlsafe_b64decode(salt_raw.encode("ascii"))
-        expected = base64.urlsafe_b64decode(digest_raw.encode("ascii"))
-    except (ValueError, TypeError):
-        return False
+        valid = False
+    else:
+        try:
+            scheme, iterations_raw, salt_raw, digest_raw = password_hash.split("$", 3)
+            if scheme != PASSWORD_SCHEME:
+                valid = False
+            else:
+                iterations = int(iterations_raw)
+                salt = base64.urlsafe_b64decode(salt_raw.encode("ascii"))
+                expected = base64.urlsafe_b64decode(digest_raw.encode("ascii"))
+        except (ValueError, TypeError):
+            valid = False
 
     actual = hashlib.pbkdf2_hmac(
         "sha256",
@@ -85,7 +97,7 @@ def verify_account_password(password: str, password_hash: str | None) -> bool:
         salt,
         iterations,
     )
-    return hmac.compare_digest(actual, expected)
+    return valid and hmac.compare_digest(actual, expected)
 
 
 def get_web_session_secret() -> str:
@@ -123,10 +135,11 @@ def create_account_session_token(
     now: datetime | None = None,
     secret: str | None = None,
 ) -> str:
-    """Create signed cookie payload storing account id and issue time."""
+    """Create signed cookie payload storing account id, issue time, and nonce."""
     current = now or datetime.now(timezone.utc)
     issued_at = int(current.timestamp())
-    payload = f"{account_id}.{issued_at}"
+    nonce = token_urlsafe(8)
+    payload = f"{account_id}.{issued_at}.{nonce}"
     signature = _session_signature(payload, secret=secret)
     return f"{payload}.{signature}"
 
@@ -137,15 +150,25 @@ def read_account_session_token(
     now: datetime | None = None,
     secret: str | None = None,
 ) -> int | None:
-    """Validate signed session token and return account id if valid."""
+    """Validate signed session token and return account id if valid.
+
+    Supports both legacy 3-part (id.ts.sig) and current 4-part (id.ts.nonce.sig) tokens.
+    """
     if not raw_token:
         return None
     try:
-        account_id_raw, issued_at_raw, signature = raw_token.split(".", 2)
-        payload = f"{account_id_raw}.{issued_at_raw}"
+        parts = raw_token.rsplit(".", 1)
+        if len(parts) != 2:
+            return None
+        payload, signature = parts
         expected = _session_signature(payload, secret=secret)
         if not hmac.compare_digest(signature, expected):
             return None
+        payload_parts = payload.split(".")
+        if len(payload_parts) < 2:
+            return None
+        account_id_raw = payload_parts[0]
+        issued_at_raw = payload_parts[1]
         issued_at = datetime.fromtimestamp(int(issued_at_raw), tz=timezone.utc)
     except (TypeError, ValueError):
         return None

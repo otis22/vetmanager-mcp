@@ -12,6 +12,7 @@ import bearer_rate_limiter
 from auth_audit import (
     TOKEN_EVENT_AUTH_FAILED_EXPIRED,
     TOKEN_EVENT_AUTH_FAILED_NO_CONNECTION,
+    TOKEN_EVENT_AUTH_FAILED_NO_SCOPES,
     TOKEN_EVENT_AUTH_FAILED_REVOKED,
     TOKEN_EVENT_AUTH_RATE_LIMITED,
     TOKEN_EVENT_AUTH_SUCCEEDED,
@@ -84,7 +85,7 @@ async def resolve_bearer_auth_context(
     token_row = token_result.first()
     if token_row is None:
         record_auth_failure(source="bearer_runtime", reason="invalid_token")
-        raise AuthError("Invalid bearer token.", status_code=401)
+        raise AuthError("Invalid authorization.", status_code=401)
 
     token, account = token_row
     if token.is_revoked():
@@ -100,7 +101,7 @@ async def resolve_bearer_auth_context(
             ),
         )
         await session.commit()
-        raise AuthError("Revoked bearer token.", status_code=401)
+        raise AuthError("Invalid authorization.", status_code=401)
     if token.is_expired(now=now):
         record_auth_failure(source="bearer_runtime", reason="expired")
         token.sync_status(now=now)
@@ -115,10 +116,10 @@ async def resolve_bearer_auth_context(
             ),
         )
         await session.commit()
-        raise AuthError("Expired bearer token.", status_code=401)
+        raise AuthError("Invalid authorization.", status_code=401)
     if token.status == TOKEN_STATUS_DISABLED or account.status != "active":
         record_auth_failure(source="bearer_runtime", reason="disabled")
-        raise AuthError("Invalid bearer token.", status_code=401)
+        raise AuthError("Invalid authorization.", status_code=401)
     try:
         await bearer_rate_limiter.BEARER_RATE_LIMITER.check_or_raise(token.id, now=now)
     except RateLimitError as exc:
@@ -136,6 +137,22 @@ async def resolve_bearer_auth_context(
         )
         await session.commit()
         raise
+
+    scopes = tuple(token.get_scopes())
+    if not scopes:
+        record_auth_failure(source="bearer_runtime", reason="no_scopes")
+        add_token_usage_log(
+            session,
+            bearer_token_id=token.id,
+            event_type=TOKEN_EVENT_AUTH_FAILED_NO_SCOPES,
+            details=_base_auth_details(
+                account_id=account.id,
+                token=token,
+                reason="no_scopes",
+            ),
+        )
+        await session.commit()
+        raise AuthError("Bearer token has no authorized scopes.", status_code=403)
 
     connection_result = await session.execute(
         select(VetmanagerConnection)
@@ -158,7 +175,7 @@ async def resolve_bearer_auth_context(
             ),
         )
         await session.commit()
-        raise AuthError("Account connection not configured.", status_code=401)
+        raise AuthError("Invalid authorization.", status_code=401)
 
     resolved = resolve_vetmanager_credentials(
         connection,
@@ -199,5 +216,5 @@ async def resolve_bearer_auth_context(
         domain=resolved.domain,
         api_key=resolved.api_key,
         vetmanager_auth=resolved,
-        scopes=tuple(token.get_scopes()),
+        scopes=scopes,
     )

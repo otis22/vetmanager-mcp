@@ -19,6 +19,7 @@ TOKEN_EVENT_AUTH_SUCCEEDED = "token_auth_succeeded"
 TOKEN_EVENT_AUTH_FAILED_REVOKED = "token_auth_failed_revoked"
 TOKEN_EVENT_AUTH_FAILED_EXPIRED = "token_auth_failed_expired"
 TOKEN_EVENT_AUTH_FAILED_NO_CONNECTION = "token_auth_failed_no_connection"
+TOKEN_EVENT_AUTH_FAILED_NO_SCOPES = "token_auth_failed_no_scopes"
 TOKEN_EVENT_AUTH_RATE_LIMITED = "token_auth_rate_limited"
 
 _SENSITIVE_DETAIL_KEY_TOKENS = (

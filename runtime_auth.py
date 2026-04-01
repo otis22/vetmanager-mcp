@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass
 
 from bearer_auth import resolve_bearer_auth_context
+from domain_validation import validate_domain as _validate_domain
 from exceptions import AuthError, VetmanagerError
 from request_auth import get_bearer_token
+from secret_manager import get_storage_encryption_key
 from storage import get_session_factory
 from vetmanager_auth import VetmanagerAuthContext
-
-DOMAIN_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 
 
 @dataclass(slots=True)
@@ -35,14 +34,6 @@ class RuntimeCredentials:
         return self.vetmanager_auth.api_key
 
 
-def _validate_domain(domain: str) -> str:
-    if not DOMAIN_PATTERN.fullmatch(domain):
-        raise VetmanagerError(
-            "Invalid Vetmanager domain format. Use clinic subdomain like 'myclinic'."
-        )
-    return domain
-
-
 async def resolve_runtime_credentials() -> RuntimeCredentials:
     """Resolve runtime credentials strictly from bearer auth."""
     bearer_token = get_bearer_token()
@@ -50,7 +41,7 @@ async def resolve_runtime_credentials() -> RuntimeCredentials:
         context = await resolve_bearer_auth_context(
             bearer_token,
             session,
-            encryption_key=os.environ.get("STORAGE_ENCRYPTION_KEY"),
+            encryption_key=get_storage_encryption_key(),
         )
     return RuntimeCredentials(
         vetmanager_auth=VetmanagerAuthContext(

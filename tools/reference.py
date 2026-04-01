@@ -2,8 +2,8 @@
 Role, UserPosition, ComboManualName, ComboManualItem."""
 
 from fastmcp import FastMCP
-from validators import LimitParam, build_list_query_params
-from vetmanager_client import VetmanagerClient
+from tools.crud_helpers import crud_list, crud_get_by_id
+from validators import LimitParam
 
 
 def register(mcp: FastMCP) -> None:
@@ -23,15 +23,10 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             pet_type_id: Filter by animal type ID (0 = no filter).
         """
-        vc = VetmanagerClient()
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
-            extra={"petTypeId": pet_type_id},
+        return await crud_list(
+            "/rest/api/breed", limit=limit, offset=offset,
+            sort=sort, filters=filter, extra={"petTypeId": pet_type_id},
         )
-        return await vc.get("/rest/api/breed", params=params)
 
     @mcp.tool
     async def get_breed_by_id(breed_id: int) -> dict:
@@ -40,7 +35,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             breed_id: Unique numeric ID of the breed.
         """
-        return await VetmanagerClient().get(f"/rest/api/breed/{breed_id}")
+        return await crud_get_by_id("/rest/api/breed", breed_id)
 
     @mcp.tool
     async def get_pet_types(
@@ -55,8 +50,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
-        return await VetmanagerClient().get("/rest/api/petType", params=params)
+        return await crud_list(
+            "/rest/api/petType", limit=limit, offset=offset, sort=sort, filters=filter,
+        )
 
     @mcp.tool
     async def get_pet_type_by_id(pet_type_id: int) -> dict:
@@ -65,7 +61,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             pet_type_id: Unique numeric ID of the animal type.
         """
-        return await VetmanagerClient().get(f"/rest/api/petType/{pet_type_id}")
+        return await crud_get_by_id("/rest/api/petType", pet_type_id)
 
     @mcp.tool
     async def get_cities(
@@ -82,15 +78,10 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             title: Filter by city name (partial match, optional).
         """
-        vc = VetmanagerClient()
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
-            extra={"title": title},
+        return await crud_list(
+            "/rest/api/city", limit=limit, offset=offset,
+            sort=sort, filters=filter, extra={"title": title},
         )
-        return await vc.get("/rest/api/city", params=params)
 
     @mcp.tool
     async def get_city_by_id(city_id: int) -> dict:
@@ -99,7 +90,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             city_id: Unique numeric ID of the city.
         """
-        return await VetmanagerClient().get(f"/rest/api/city/{city_id}")
+        return await crud_get_by_id("/rest/api/city", city_id)
 
     @mcp.tool
     async def get_city_types(
@@ -114,8 +105,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
-        return await VetmanagerClient().get("/rest/api/cityType", params=params)
+        return await crud_list(
+            "/rest/api/cityType", limit=limit, offset=offset, sort=sort, filters=filter,
+        )
 
     @mcp.tool
     async def get_streets(
@@ -132,15 +124,10 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             city_id: Filter by city ID (0 = no filter).
         """
-        vc = VetmanagerClient()
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
-            extra={"cityId": city_id},
+        return await crud_list(
+            "/rest/api/street", limit=limit, offset=offset,
+            sort=sort, filters=filter, extra={"cityId": city_id},
         )
-        return await vc.get("/rest/api/street", params=params)
 
     @mcp.tool
     async def get_street_by_id(street_id: int) -> dict:
@@ -149,7 +136,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             street_id: Unique numeric ID of the street.
         """
-        return await VetmanagerClient().get(f"/rest/api/street/{street_id}")
+        return await crud_get_by_id("/rest/api/street", street_id)
 
     @mcp.tool
     async def get_units(
@@ -164,8 +151,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
-        return await VetmanagerClient().get("/rest/api/unit", params=params)
+        return await crud_list(
+            "/rest/api/unit", limit=limit, offset=offset, sort=sort, filters=filter,
+        )
 
     @mcp.tool
     async def get_unit_by_id(unit_id: int) -> dict:
@@ -174,7 +162,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             unit_id: Unique numeric ID of the unit.
         """
-        return await VetmanagerClient().get(f"/rest/api/unit/{unit_id}")
+        return await crud_get_by_id("/rest/api/unit", unit_id)
 
     @mcp.tool
     async def get_roles(
@@ -189,8 +177,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
-        return await VetmanagerClient().get("/rest/api/role", params=params)
+        return await crud_list(
+            "/rest/api/role", limit=limit, offset=offset, sort=sort, filters=filter,
+        )
 
     @mcp.tool
     async def get_role_by_id(role_id: int) -> dict:
@@ -199,7 +188,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             role_id: Unique numeric ID of the role.
         """
-        return await VetmanagerClient().get(f"/rest/api/role/{role_id}")
+        return await crud_get_by_id("/rest/api/role", role_id)
 
     @mcp.tool
     async def get_user_positions(
@@ -214,8 +203,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
-        return await VetmanagerClient().get("/rest/api/userPosition", params=params)
+        return await crud_list(
+            "/rest/api/userPosition", limit=limit, offset=offset, sort=sort, filters=filter,
+        )
 
     @mcp.tool
     async def get_user_position_by_id(position_id: int) -> dict:
@@ -224,7 +214,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             position_id: Unique numeric ID of the position.
         """
-        return await VetmanagerClient().get(f"/rest/api/userPosition/{position_id}")
+        return await crud_get_by_id("/rest/api/userPosition", position_id)
 
     @mcp.tool
     async def get_combo_manual_names(
@@ -239,8 +229,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(limit=limit, offset=offset, sort=sort, filters=filter)
-        return await VetmanagerClient().get("/rest/api/ComboManualName", params=params)
+        return await crud_list(
+            "/rest/api/ComboManualName", limit=limit, offset=offset, sort=sort, filters=filter,
+        )
 
     @mcp.tool
     async def get_combo_manual_name_by_id(name_id: int) -> dict:
@@ -249,7 +240,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             name_id: Unique numeric ID of the catalog name.
         """
-        return await VetmanagerClient().get(f"/rest/api/ComboManualName/{name_id}")
+        return await crud_get_by_id("/rest/api/ComboManualName", name_id)
 
     @mcp.tool
     async def get_combo_manual_items(
@@ -266,15 +257,10 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        vc = VetmanagerClient()
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
-            extra={"comboManualNameId": combo_manual_name_id},
+        return await crud_list(
+            "/rest/api/ComboManualItem", limit=limit, offset=offset,
+            sort=sort, filters=filter, extra={"comboManualNameId": combo_manual_name_id},
         )
-        return await vc.get("/rest/api/ComboManualItem", params=params)
 
     @mcp.tool
     async def get_combo_manual_item_by_id(item_id: int) -> dict:
@@ -283,4 +269,4 @@ def register(mcp: FastMCP) -> None:
         Args:
             item_id: Unique numeric ID of the catalog item.
         """
-        return await VetmanagerClient().get(f"/rest/api/ComboManualItem/{item_id}")
+        return await crud_get_by_id("/rest/api/ComboManualItem", item_id)

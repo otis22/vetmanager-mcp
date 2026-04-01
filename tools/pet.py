@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 
-from validators import LimitParam, build_list_query_params
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
+from validators import LimitParam
 from vetmanager_client import VetmanagerClient
 
 
@@ -21,15 +22,10 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset (0–10000).
             client_id: Filter pets by owner's client ID (0 = no filter).
         """
-        vc = VetmanagerClient()
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
-            extra={"client_id": client_id},
+        return await crud_list(
+            "/rest/api/pet", limit=limit, offset=offset,
+            sort=sort, filters=filter, extra={"client_id": client_id},
         )
-        return await vc.get("/rest/api/pet", params=params)
 
     @mcp.tool
     async def get_pet_by_id(
@@ -40,8 +36,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             pet_id: Unique numeric ID of the pet.
         """
-        vc = VetmanagerClient()
-        return await vc.get(f"/rest/api/pet/{pet_id}")
+        return await crud_get_by_id("/rest/api/pet", pet_id)
 
     @mcp.tool
     async def create_pet(
@@ -62,7 +57,6 @@ def register(mcp: FastMCP) -> None:
             birthday: Date of birth in YYYY-MM-DD format (optional).
             note: Additional notes about the pet.
         """
-        vc = VetmanagerClient()
         payload: dict = {"alias": alias, "client_id": client_id}
         if type_id:
             payload["type_id"] = type_id
@@ -72,7 +66,7 @@ def register(mcp: FastMCP) -> None:
             payload["birthday"] = birthday
         if note:
             payload["note"] = note
-        return await vc.post("/rest/api/pet", json=payload)
+        return await crud_create("/rest/api/pet", payload)
 
     @mcp.tool
     async def update_pet(
@@ -105,7 +99,6 @@ def register(mcp: FastMCP) -> None:
             weight: Pet weight as string, e.g. '5.2' (leave empty to keep current).
             status: New status (leave empty to keep current).
         """
-        vc = VetmanagerClient()
         payload: dict = {}
         if alias:
             payload["alias"] = alias
@@ -129,7 +122,7 @@ def register(mcp: FastMCP) -> None:
             payload["weight"] = weight
         if status:
             payload["status"] = status
-        return await vc.put(f"/rest/api/pet/{pet_id}", json=payload)
+        return await crud_update("/rest/api/pet", pet_id, payload)
 
     @mcp.tool
     async def delete_pet(
@@ -142,8 +135,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             pet_id: ID of the pet to delete.
         """
-        vc = VetmanagerClient()
-        return await vc.delete(f"/rest/api/pet/{pet_id}")
+        return await crud_delete("/rest/api/pet", pet_id)
 
     @mcp.tool
     async def get_pet_profile(
@@ -160,12 +152,10 @@ def register(mcp: FastMCP) -> None:
         Args:
             pet_id: Unique numeric ID of the pet.
         """
+        import asyncio as _asyncio
         import json as _json
 
         vc = VetmanagerClient()
-
-        pet_resp = await vc.get(f"/rest/api/pet/{pet_id}")
-        pet_data = pet_resp.get("data", {}).get("pet", {})
 
         mc_filter = _json.dumps(
             [{"property": "patient_id", "value": str(pet_id), "operator": "="}],
@@ -175,10 +165,14 @@ def register(mcp: FastMCP) -> None:
             [{"property": "id", "direction": "DESC"}],
             separators=(",", ":"),
         )
-        mc_resp = await vc.get(
-            "/rest/api/MedicalCards",
-            params={"filter": mc_filter, "sort": mc_sort, "limit": 5},
+
+        pet_resp, mc_resp, vacc_resp = await _asyncio.gather(
+            vc.get(f"/rest/api/pet/{pet_id}"),
+            vc.get("/rest/api/MedicalCards", params={"filter": mc_filter, "sort": mc_sort, "limit": 5}),
+            vc.get("/rest/api/MedicalCards/Vaccinations", params={"pet_id": pet_id, "limit": 100}),
         )
+
+        pet_data = pet_resp.get("data", {}).get("pet", {})
         mc_data = mc_resp.get("data", {})
         medical_cards = (
             mc_data.get("medicalCards")
@@ -186,10 +180,6 @@ def register(mcp: FastMCP) -> None:
             or []
         ) if isinstance(mc_data, dict) else []
 
-        vacc_resp = await vc.get(
-            "/rest/api/MedicalCards/Vaccinations",
-            params={"pet_id": pet_id, "limit": 100},
-        )
         vaccinations_raw = vacc_resp.get("data", {}).get("medicalcards", [])
         vaccinations = [
             {

@@ -1,8 +1,8 @@
 """Clinical entity tools: Hospital, HospitalBlock, Diagnoses."""
 
 from fastmcp import FastMCP
-from validators import LimitParam, build_list_query_params
-from vetmanager_client import VetmanagerClient
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
+from validators import LimitParam
 
 
 def register(mcp: FastMCP) -> None:
@@ -22,15 +22,10 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             pet_id: Filter by pet ID (0 = no filter).
         """
-        vc = VetmanagerClient()
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
-            extra={"petId": pet_id},
+        return await crud_list(
+            "/rest/api/hospital", limit=limit, offset=offset,
+            sort=sort, filters=filter, extra={"petId": pet_id},
         )
-        return await vc.get("/rest/api/hospital", params=params)
 
     @mcp.tool
     async def get_hospitalization_by_id(hospital_id: int) -> dict:
@@ -39,7 +34,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             hospital_id: Unique numeric ID of the hospitalization record.
         """
-        return await VetmanagerClient().get(f"/rest/api/hospital/{hospital_id}")
+        return await crud_get_by_id("/rest/api/hospital", hospital_id)
 
     @mcp.tool
     async def create_hospitalization(pet_id: int, doctor_id: int, date_in: str, block_id: int = 0, description: str = "") -> dict:
@@ -52,13 +47,12 @@ def register(mcp: FastMCP) -> None:
             block_id: ID of the hospital block/ward (0 if not specified).
             description: Clinical notes or reason for hospitalization.
         """
-        vc = VetmanagerClient()
         payload: dict = {"petId": pet_id, "doctorId": doctor_id, "dateIn": date_in}
         if block_id:
             payload["blockId"] = block_id
         if description:
             payload["description"] = description
-        return await vc.post("/rest/api/hospital", json=payload)
+        return await crud_create("/rest/api/hospital", payload)
 
     @mcp.tool
     async def update_hospitalization(
@@ -79,7 +73,6 @@ def register(mcp: FastMCP) -> None:
             status: Updated status (leave empty to keep current).
             block_id: New hospital block/ward ID (0 = no change).
         """
-        vc = VetmanagerClient()
         payload: dict = {}
         if date_out:
             payload["dateOut"] = date_out
@@ -89,7 +82,7 @@ def register(mcp: FastMCP) -> None:
             payload["status"] = status
         if block_id:
             payload["blockId"] = block_id
-        return await vc.put(f"/rest/api/hospital/{hospital_id}", json=payload)
+        return await crud_update("/rest/api/hospital", hospital_id, payload)
 
     @mcp.tool
     async def get_hospital_blocks(
@@ -104,13 +97,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
+        return await crud_list(
+            "/rest/api/HospitalBlock", limit=limit, offset=offset, sort=sort, filters=filter,
         )
-        return await VetmanagerClient().get("/rest/api/HospitalBlock", params=params)
 
     @mcp.tool
     async def get_hospital_block_by_id(block_id: int) -> dict:
@@ -119,7 +108,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             block_id: Unique numeric ID of the hospital block.
         """
-        return await VetmanagerClient().get(f"/rest/api/HospitalBlock/{block_id}")
+        return await crud_get_by_id("/rest/api/HospitalBlock", block_id)
 
     @mcp.tool
     async def get_diagnoses(
@@ -134,10 +123,6 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
+        return await crud_list(
+            "/rest/api/MedicalCards/AllDiagnoses", limit=limit, offset=offset, sort=sort, filters=filter,
         )
-        return await VetmanagerClient().get("/rest/api/MedicalCards/AllDiagnoses", params=params)

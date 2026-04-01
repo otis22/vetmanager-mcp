@@ -165,4 +165,4 @@ async def test_footer_has_links_and_copyright():
     assert "/login" in footer_html
     assert "Поддержка" in footer_html
     assert "Политика конфиденциальности" in footer_html
-    assert "2025" in footer_html
+    assert "2026" in footer_html

@@ -271,7 +271,7 @@ async def test_resolve_bearer_auth_context_rejects_revoked_token(session_factory
         await session.commit()
 
     async with session_factory() as session:
-        with pytest.raises(AuthError, match="Revoked bearer"):
+        with pytest.raises(AuthError, match="Invalid authorization"):
             await resolve_bearer_auth_context(
                 raw_token,
                 session,
@@ -294,7 +294,7 @@ async def test_resolve_bearer_auth_context_rejects_revoked_token(session_factory
 async def test_resolve_bearer_auth_context_rejects_invalid_token(session_factory):
     """Lookup should fail safely for unknown bearer token."""
     async with session_factory() as session:
-        with pytest.raises(AuthError, match="Invalid bearer"):
+        with pytest.raises(AuthError, match="Invalid authorization"):
             await resolve_bearer_auth_context(
                 "vm_st_nonexistent_token",
                 session,
@@ -333,7 +333,7 @@ async def test_resolve_bearer_auth_context_rejects_expired_token(session_factory
         await session.commit()
 
     async with session_factory() as session:
-        with pytest.raises(AuthError, match="Expired bearer"):
+        with pytest.raises(AuthError, match="Invalid authorization"):
             await resolve_bearer_auth_context(
                 raw_token,
                 session,
@@ -377,7 +377,7 @@ async def test_resolve_bearer_auth_context_requires_active_connection(session_fa
         await session.commit()
 
     async with session_factory() as session:
-        with pytest.raises(AuthError, match="Account connection not configured"):
+        with pytest.raises(AuthError, match="Invalid authorization"):
             await resolve_bearer_auth_context(
                 raw_token,
                 session,

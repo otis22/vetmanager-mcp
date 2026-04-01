@@ -1,7 +1,7 @@
 from fastmcp import FastMCP
 
-from validators import LimitParam, build_list_query_params
-from vetmanager_client import VetmanagerClient
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
+from validators import LimitParam
 
 
 def register(mcp: FastMCP) -> None:
@@ -21,15 +21,10 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset (0–10000).
             name: Filter by good name (partial match, optional).
         """
-        vc = VetmanagerClient()
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
-            extra={"name": name},
+        return await crud_list(
+            "/rest/api/good", limit=limit, offset=offset,
+            sort=sort, filters=filter, extra={"name": name},
         )
-        return await vc.get("/rest/api/good", params=params)
 
     @mcp.tool
     async def get_good_by_id(
@@ -40,8 +35,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             good_id: Unique numeric ID of the good.
         """
-        vc = VetmanagerClient()
-        return await vc.get(f"/rest/api/good/{good_id}")
+        return await crud_get_by_id("/rest/api/good", good_id)
 
     @mcp.tool
     async def create_good(
@@ -66,7 +60,6 @@ def register(mcp: FastMCP) -> None:
             prime_cost: Cost price (0 = not set).
             description: Product description (optional).
         """
-        vc = VetmanagerClient()
         payload: dict = {"title": title, "is_active": is_active, "is_for_sale": is_for_sale}
         if group_id:
             payload["group_id"] = group_id
@@ -78,7 +71,7 @@ def register(mcp: FastMCP) -> None:
             payload["prime_cost"] = prime_cost
         if description:
             payload["description"] = description
-        return await vc.post("/rest/api/good", json=payload)
+        return await crud_create("/rest/api/good", payload)
 
     @mcp.tool
     async def update_good(
@@ -105,7 +98,6 @@ def register(mcp: FastMCP) -> None:
             prime_cost: Updated cost price (0 = no change).
             description: Updated description.
         """
-        vc = VetmanagerClient()
         payload: dict = {}
         if title:
             payload["title"] = title
@@ -123,4 +115,4 @@ def register(mcp: FastMCP) -> None:
             payload["prime_cost"] = prime_cost
         if description:
             payload["description"] = description
-        return await vc.put(f"/rest/api/good/{good_id}", json=payload)
+        return await crud_update("/rest/api/good", good_id, payload)

@@ -4,7 +4,8 @@ from typing import Annotated
 
 from fastmcp import FastMCP
 from pydantic import Field
-from validators import LimitParam, build_list_query_params
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_create
+from validators import LimitParam
 from vetmanager_client import VetmanagerClient
 
 UserIdsParam = Annotated[
@@ -33,13 +34,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
+        return await crud_list(
+            "/rest/api/clinics", limit=limit, offset=offset, sort=sort, filters=filter,
         )
-        return await VetmanagerClient().get("/rest/api/clinics", params=params)
 
     @mcp.tool
     async def get_clinic_by_id(clinic_id: int) -> dict:
@@ -48,7 +45,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             clinic_id: Unique numeric ID of the clinic.
         """
-        return await VetmanagerClient().get(f"/rest/api/clinics/{clinic_id}")
+        return await crud_get_by_id("/rest/api/clinics", clinic_id)
 
     @mcp.tool
     async def get_timesheets(
@@ -67,15 +64,10 @@ def register(mcp: FastMCP) -> None:
             user_id: Filter by staff user ID (0 = no filter).
             date: Filter by date in YYYY-MM-DD format (optional).
         """
-        vc = VetmanagerClient()
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
-            extra={"userId": user_id, "date": date},
+        return await crud_list(
+            "/rest/api/timesheet", limit=limit, offset=offset,
+            sort=sort, filters=filter, extra={"userId": user_id, "date": date},
         )
-        return await vc.get("/rest/api/timesheet", params=params)
 
     @mcp.tool
     async def get_timesheet_by_id(timesheet_id: int) -> dict:
@@ -84,7 +76,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             timesheet_id: Unique numeric ID of the timesheet entry.
         """
-        return await VetmanagerClient().get(f"/rest/api/timesheet/{timesheet_id}")
+        return await crud_get_by_id("/rest/api/timesheet", timesheet_id)
 
     @mcp.tool
     async def create_timesheet(
@@ -105,7 +97,6 @@ def register(mcp: FastMCP) -> None:
             title: Schedule entry title/label (optional).
             type: Schedule type (optional).
         """
-        vc = VetmanagerClient()
         payload: dict = {
             "doctor_id": doctor_id,
             "begin_datetime": begin_datetime,
@@ -116,7 +107,7 @@ def register(mcp: FastMCP) -> None:
             payload["title"] = title
         if type:
             payload["type"] = type
-        return await vc.post("/rest/api/timesheet", json=payload)
+        return await crud_create("/rest/api/timesheet", payload)
 
     @mcp.tool
     async def get_properties(
@@ -131,13 +122,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
+        return await crud_list(
+            "/rest/api/properties", limit=limit, offset=offset, sort=sort, filters=filter,
         )
-        return await VetmanagerClient().get("/rest/api/properties", params=params)
 
     @mcp.tool
     async def get_anonymous_clients(
@@ -152,13 +139,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
+        return await crud_list(
+            "/rest/api/user/anonymousList", limit=limit, offset=offset, sort=sort, filters=filter,
         )
-        return await VetmanagerClient().get("/rest/api/user/anonymousList", params=params)
 
     @mcp.tool
     async def send_message_to_all(
@@ -192,14 +175,10 @@ def register(mcp: FastMCP) -> None:
         filter: list[dict] | None = None,
     ) -> dict:
         """List in-app notification delivery reports and campaign stats."""
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=filter,
-            extra={"campaign": campaign},
+        return await crud_list(
+            "/rest/api/messages/reports", limit=limit, offset=offset,
+            sort=sort, filters=filter, extra={"campaign": campaign},
         )
-        return await VetmanagerClient().get("/rest/api/messages/reports", params=params)
 
     @mcp.tool
     async def send_message_to_roles(

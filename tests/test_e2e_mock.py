@@ -1885,3 +1885,135 @@ async def test_update_admission_extended_fields():
     assert b'"pet_id"' in body
     assert b'"clinic_id"' in body
     assert b'"type"' in body
+
+
+# ── 68.1 Missing tool coverage ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_invoice_by_id():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/invoice/99").mock(
+        return_value=httpx.Response(200, json={"data": {"id": 99, "client_id": 1}})
+    )
+    result = await client().get("/rest/api/invoice/99")
+    assert result["data"]["id"] == 99
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_medical_card_by_id():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/MedicalCards/42").mock(
+        return_value=httpx.Response(200, json={"data": {"id": 42, "patient_id": 5}})
+    )
+    result = await client().get("/rest/api/MedicalCards/42")
+    assert result["data"]["id"] == 42
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_update_medical_card():
+    billing_mock()
+    route = respx.put(f"{BASE}/rest/api/MedicalCards/42").mock(
+        return_value=httpx.Response(200, json={"data": {"id": 42}})
+    )
+    result = await client().put("/rest/api/MedicalCards/42", json={"description": "Updated"})
+    assert route.called
+    assert result["data"]["id"] == 42
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_medical_cards_normalizes_response_key():
+    """get_medical_cards tool normalizes both 'medicalCards' and 'medicalcards' keys."""
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(200, json={
+            "data": {"totalCount": 1, "medicalCards": [{"id": 1}]}
+        })
+    )
+    result = await client().get(
+        "/rest/api/MedicalCards",
+        params={"filter": '[{"property":"patient_id","value":"5","operator":"="}]', "limit": 20, "offset": 0},
+    )
+    data = result["data"]
+    assert "medicalCards" in data
+    assert data["medicalCards"][0]["id"] == 1
+
+
+# ── 68.2 Error scenario tests ───────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_400_raises_vetmanager_error():
+    from exceptions import VetmanagerError
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/client").mock(return_value=httpx.Response(400, text="Bad request"))
+    with pytest.raises(VetmanagerError):
+        await client().get("/rest/api/client")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_401_raises_auth_error():
+    from exceptions import AuthError
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/client").mock(return_value=httpx.Response(401))
+    with pytest.raises(AuthError):
+        await client().get("/rest/api/client")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_404_raises_not_found_error():
+    from exceptions import NotFoundError
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/client/999").mock(return_value=httpx.Response(404))
+    with pytest.raises(NotFoundError):
+        await client().get("/rest/api/client/999")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_422_raises_vetmanager_error():
+    from exceptions import VetmanagerError
+    billing_mock()
+    respx.post(f"{BASE}/rest/api/client").mock(
+        return_value=httpx.Response(422, text="Unprocessable")
+    )
+    with pytest.raises(VetmanagerError):
+        await client().post("/rest/api/client", json={"bad": "data"})
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_429_raises_vetmanager_error():
+    from exceptions import VetmanagerError
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/client").mock(return_value=httpx.Response(429, text="Too many"))
+    with pytest.raises(VetmanagerError):
+        await client().get("/rest/api/client")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_timeout_raises_vetmanager_timeout_error():
+    from exceptions import VetmanagerTimeoutError
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/client").mock(side_effect=httpx.ReadTimeout("timeout"))
+    with pytest.raises(VetmanagerTimeoutError):
+        await client().get("/rest/api/client")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_malformed_json_raises_error():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/client").mock(
+        return_value=httpx.Response(200, text="not json at all")
+    )
+    with pytest.raises(Exception):
+        await client().get("/rest/api/client")

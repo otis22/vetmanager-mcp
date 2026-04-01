@@ -14,17 +14,16 @@ from exceptions import (
     VetmanagerError,
     VetmanagerTimeoutError,
 )
-from host_validation import validate_resolved_vetmanager_origin
+from host_resolver import resolve_vetmanager_host
 from observability_logging import RUNTIME_LOGGER
 from request_cache import REQUEST_CACHE
 from request_auth import get_bearer_token
-from runtime_auth import _validate_domain as validate_runtime_domain
+from domain_validation import validate_domain as validate_runtime_domain
 from runtime_auth import resolve_runtime_credentials
 from service_metrics import record_upstream_failure
 from token_scopes import required_scope_for_request
 from vetmanager_auth import VetmanagerAuthContext
 
-BILLING_API = "https://billing-api.vetmanager.cloud/host/{domain}"
 REQUEST_TIMEOUT = 30.0
 REQUEST_GAP_SECONDS = 0.05
 MAX_RETRIES = 1
@@ -144,65 +143,15 @@ class VetmanagerClient:
                 await asyncio.sleep(REQUEST_GAP_SECONDS - gap)
             self._last_request_started_at = time.monotonic()
 
-    def _validate_resolved_host(self, host: str) -> str:
-        return validate_resolved_vetmanager_origin(host, domain=self._domain or "unknown")
-
     async def _resolve_host(self) -> str:
         await self._ensure_runtime_credentials()
         if self._base_url is not None:
             return self._base_url
-
         if not self._domain:
             raise VetmanagerError("Missing Vetmanager domain in runtime credentials.")
-        url = BILLING_API.format(domain=self._domain)
-        for attempt in range(MAX_RETRIES + 1):
-            try:
-                await self._pace_requests()
-                timeout = httpx.Timeout(REQUEST_TIMEOUT)
-                async with httpx.AsyncClient(timeout=timeout) as http:
-                    response = await http.get(url)
-                    response.raise_for_status()
-                    data = response.json()
-                    host = data.get("data", {}).get("url") or data.get("url")
-                    if not host:
-                        raise HostResolutionError(
-                            f"Unexpected billing API response for domain '{self._domain}'."
-                        )
-                    host = host.rstrip("/")
-                    if not host.startswith("http"):
-                        host = f"https://{host}"
-                    self._base_url = self._validate_resolved_host(host)
-                    RUNTIME_LOGGER.debug(
-                        "Resolved billing host.",
-                        extra={
-                            "event_name": "billing_host_resolved",
-                            "domain": self._domain,
-                            "resolved_host": self._base_url,
-                        },
-                    )
-                    return self._base_url
-            except httpx.TimeoutException as exc:
-                if attempt < MAX_RETRIES:
-                    await asyncio.sleep(0.1 * (attempt + 1))
-                    continue
-                record_upstream_failure(target="billing_api", reason="timeout")
-                raise VetmanagerTimeoutError(f"Timeout resolving host for domain '{self._domain}'") from exc
-            except httpx.HTTPStatusError as exc:
-                record_upstream_failure(
-                    target="billing_api",
-                    reason=f"http_{exc.response.status_code}",
-                )
-                raise HostResolutionError(
-                    f"Billing API returned {exc.response.status_code} for domain '{self._domain}'."
-                ) from exc
-            except httpx.RequestError as exc:
-                if attempt < MAX_RETRIES:
-                    await asyncio.sleep(0.1 * (attempt + 1))
-                    continue
-                record_upstream_failure(target="billing_api", reason="network_error")
-                raise VetmanagerError(
-                    f"Network error resolving host for domain '{self._domain}': {exc}"
-                ) from exc
+        await self._pace_requests()
+        self._base_url = await resolve_vetmanager_host(self._domain)
+        return self._base_url
 
     def _headers(self) -> dict[str, str]:
         if not self._vetmanager_auth:

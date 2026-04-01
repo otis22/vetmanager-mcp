@@ -768,7 +768,7 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
     assert raw_token_match is not None
     raw_token = raw_token_match.group(0)
     assert "копируйте его сейчас" in response.text.lower()
-    assert response.text.index('id="issued-token-panel"') < response.text.index("Bearer token issuance")
+    assert response.text.index('id="issued-token-panel"') < response.text.index("Выпуск Bearer-токенов")
 
     used_at = datetime(2026, 3, 21, 14, 30, tzinfo=timezone.utc)
     async with storage.get_session_factory()() as session:
@@ -795,7 +795,7 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
     assert raw_token not in follow_up.text
     assert "Cursor prod" in follow_up.text
     assert "active" in follow_up.text
-    assert "Current tokens" in follow_up.text
+    assert "Текущие токены" in follow_up.text
     assert "2026-03-21 14:30 UTC" in follow_up.text
 
     async with storage.get_session_factory()() as session:

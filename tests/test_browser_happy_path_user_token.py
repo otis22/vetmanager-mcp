@@ -36,7 +36,7 @@ def test_browser_user_token_flow_can_issue_bearer_and_call_mcp(
 
     integration_form = page.locator('form[data-auth-wizard="true"]')
     integration_form.locator('input[name="auth_mode"][value="user_token"]').check()
-    page.wait_for_timeout(50)
+    page.locator('[data-mode-panel="user_token"]').wait_for(state="visible")
 
     assert page.locator('[data-mode-panel="user_token"]').is_visible()
     assert page.locator('[data-mode-panel="domain_api_key"]').is_hidden()

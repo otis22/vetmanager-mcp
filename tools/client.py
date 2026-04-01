@@ -1,7 +1,7 @@
-import json
 from fastmcp import FastMCP
 
-from validators import LimitParam, build_list_query_params
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete, paginate_all
+from validators import LimitParam
 from vetmanager_client import VetmanagerClient
 
 
@@ -28,22 +28,17 @@ def register(mcp: FastMCP) -> None:
             status: Filter by client status: 'ACTIVE' (default), 'DELETED',
                     'INACTIVE', or '' for all.
         """
-        client = VetmanagerClient()
-
         combined_filters: list[dict] = list(filter or [])
         if status:
             combined_filters.append(
                 {"property": "status", "value": status, "operator": "="}
             )
 
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            filters=combined_filters if combined_filters else None,
+        return await crud_list(
+            "/rest/api/client", limit=limit, offset=offset,
+            sort=sort, filters=combined_filters if combined_filters else None,
             extra={"name": name},
         )
-        return await client.get("/rest/api/client", params=params)
 
     @mcp.tool
     async def get_debtors(
@@ -60,60 +55,38 @@ def register(mcp: FastMCP) -> None:
             limit: Max clients to fetch per page (1–100, default 100).
             offset: Pagination offset (0–10000).
         """
-        vc = VetmanagerClient()
-        active_filter = json.dumps(
-            [{"property": "status", "value": "ACTIVE", "operator": "="}],
-            separators=(",", ":"),
+        clients, _ = await paginate_all(
+            "/rest/api/client",
+            filters=[{"property": "status", "value": "ACTIVE", "operator": "="}],
+            page_size=limit,
+            entity_key="client",
         )
+
         debtors: list[dict] = []
-        current_offset = offset
-        total_fetched = 0
-
-        while True:
-            params: dict = {
-                "filter": active_filter,
-                "limit": limit,
-                "offset": current_offset,
-            }
-            resp = await vc.get("/rest/api/client", params=params)
-            data = resp.get("data", {})
-            total_count = int(data.get("totalCount", 0)) if isinstance(data, dict) else 0
-            clients = data.get("client", []) if isinstance(data, dict) else []
-
-            if not clients:
-                break
-
-            for c in clients:
-                balance_raw = c.get("balance")
-                try:
-                    balance = float(balance_raw) if balance_raw is not None else None
-                except (TypeError, ValueError):
-                    balance = None
-                if balance is not None and balance < 0:
-                    debtors.append(
-                        {
-                            "id": c.get("id"),
-                            "last_name": c.get("last_name", ""),
-                            "first_name": c.get("first_name", ""),
-                            "middle_name": c.get("middle_name", ""),
-                            "cell_phone": c.get("cell_phone", ""),
-                            "home_phone": c.get("home_phone", ""),
-                            "balance": balance,
-                            "status": c.get("status", ""),
-                        }
-                    )
-
-            total_fetched += len(clients)
-            current_offset += len(clients)
-
-            # Stop when we've fetched all records.
-            if total_fetched >= total_count or len(clients) < limit:
-                break
+        for c in clients:
+            balance_raw = c.get("balance")
+            try:
+                balance = float(balance_raw) if balance_raw is not None else None
+            except (TypeError, ValueError):
+                balance = None
+            if balance is not None and balance < 0:
+                debtors.append(
+                    {
+                        "id": c.get("id"),
+                        "last_name": c.get("last_name", ""),
+                        "first_name": c.get("first_name", ""),
+                        "middle_name": c.get("middle_name", ""),
+                        "cell_phone": c.get("cell_phone", ""),
+                        "home_phone": c.get("home_phone", ""),
+                        "balance": balance,
+                        "status": c.get("status", ""),
+                    }
+                )
 
         return {
             "success": True,
             "debtors_count": len(debtors),
-            "total_active_clients_checked": total_fetched,
+            "total_active_clients_checked": len(clients),
             "debtors": debtors,
         }
 
@@ -126,8 +99,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             client_id: Unique numeric ID of the client.
         """
-        client = VetmanagerClient()
-        return await client.get(f"/rest/api/client/{client_id}")
+        return await crud_get_by_id("/rest/api/client", client_id)
 
     @mcp.tool
     async def create_client(
@@ -144,13 +116,12 @@ def register(mcp: FastMCP) -> None:
             phone: Contact phone number.
             email: Contact email address.
         """
-        client = VetmanagerClient()
         payload: dict = {"firstName": first_name, "lastName": last_name}
         if phone:
             payload["phone"] = phone
         if email:
             payload["email"] = email
-        return await client.post("/rest/api/client", json=payload)
+        return await crud_create("/rest/api/client", payload)
 
     @mcp.tool
     async def update_client(
@@ -183,7 +154,6 @@ def register(mcp: FastMCP) -> None:
             note: Updated notes.
             status: New status: 'ACTIVE', 'DELETED', 'INACTIVE' (leave empty to keep current).
         """
-        client = VetmanagerClient()
         payload: dict = {}
         if first_name:
             payload["first_name"] = first_name
@@ -207,7 +177,7 @@ def register(mcp: FastMCP) -> None:
             payload["note"] = note
         if status:
             payload["status"] = status
-        return await client.put(f"/rest/api/client/{client_id}", json=payload)
+        return await crud_update("/rest/api/client", client_id, payload)
 
     @mcp.tool
     async def delete_client(
@@ -220,8 +190,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             client_id: ID of the client to delete.
         """
-        vc = VetmanagerClient()
-        return await vc.delete(f"/rest/api/client/{client_id}")
+        return await crud_delete("/rest/api/client", client_id)
 
     @mcp.tool
     async def get_client_profile(
@@ -238,60 +207,48 @@ def register(mcp: FastMCP) -> None:
         Args:
             client_id: Unique numeric ID of the client.
         """
+        import asyncio as _asyncio
         import json as _json
 
         vc = VetmanagerClient()
 
-        client_data_resp = await vc.get(f"/rest/api/client/{client_id}")
-        client_data = client_data_resp.get("data", {}).get("client", {})
-
-        invoice_filter = _json.dumps(
-            [{"property": "client_id", "value": str(client_id)}],
+        client_id_str = str(client_id)
+        client_filter = _json.dumps(
+            [{"property": "client_id", "value": client_id_str}],
             separators=(",", ":"),
         )
-        invoice_sort = _json.dumps(
-            [{"property": "id", "direction": "DESC"}],
-            separators=(",", ":"),
-        )
-        invoices_resp = await vc.get(
-            "/rest/api/invoice",
-            params={"filter": invoice_filter, "sort": invoice_sort, "limit": 5},
-        )
-        invoices = invoices_resp.get("data", {}).get("invoice", [])
-
-        admission_filter = _json.dumps(
-            [{"property": "client_id", "value": str(client_id)}],
-            separators=(",", ":"),
-        )
-        admission_sort = _json.dumps(
-            [{"property": "admission_date", "direction": "DESC"}],
-            separators=(",", ":"),
-        )
-        admissions_resp = await vc.get(
-            "/rest/api/admission",
-            params={"filter": admission_filter, "sort": admission_sort, "limit": 5},
-        )
-        admissions = admissions_resp.get("data", {}).get("admission", [])
-
-        next_admission_filter = _json.dumps(
+        next_filter = _json.dumps(
             [
-                {"property": "client_id", "value": str(client_id)},
+                {"property": "client_id", "value": client_id_str},
                 {"property": "status", "value": "active"},
             ],
             separators=(",", ":"),
         )
-        next_admission_sort = _json.dumps(
-            [{"property": "admission_date", "direction": "ASC"}],
-            separators=(",", ":"),
+
+        client_data_resp, invoices_resp, admissions_resp, next_admission_resp = (
+            await _asyncio.gather(
+                vc.get(f"/rest/api/client/{client_id}"),
+                vc.get("/rest/api/invoice", params={
+                    "filter": client_filter,
+                    "sort": _json.dumps([{"property": "id", "direction": "DESC"}], separators=(",", ":")),
+                    "limit": 5,
+                }),
+                vc.get("/rest/api/admission", params={
+                    "filter": client_filter,
+                    "sort": _json.dumps([{"property": "admission_date", "direction": "DESC"}], separators=(",", ":")),
+                    "limit": 5,
+                }),
+                vc.get("/rest/api/admission", params={
+                    "filter": next_filter,
+                    "sort": _json.dumps([{"property": "admission_date", "direction": "ASC"}], separators=(",", ":")),
+                    "limit": 1,
+                }),
+            )
         )
-        next_admission_resp = await vc.get(
-            "/rest/api/admission",
-            params={
-                "filter": next_admission_filter,
-                "sort": next_admission_sort,
-                "limit": 1,
-            },
-        )
+
+        client_data = client_data_resp.get("data", {}).get("client", {})
+        invoices = invoices_resp.get("data", {}).get("invoice", [])
+        admissions = admissions_resp.get("data", {}).get("admission", [])
         next_admissions = next_admission_resp.get("data", {}).get("admission", [])
         next_admission = next_admissions[0] if next_admissions else None
 
