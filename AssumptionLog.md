@@ -3159,3 +3159,14 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - get_pet_profile: 3 sequential API calls → asyncio.gather() (параллельные).
 - get_medical_cards_by_client_id: N+1 оставлен — API не поддерживает filter по client_id.
 - 381 passed, 51 skipped, 0 failed.
+
+## Этап 72. Deploy safety: защита данных PostgreSQL
+
+**Причина потери данных:**
+- deploy_server.sh выполнял `compose down --remove-orphans`, что убивало postgres контейнер. При пересоздании контейнера PostgreSQL мог реинициализировать БД.
+
+**Что сделано:**
+- deploy_server.sh: `compose down` заменён на `compose stop mcp && compose rm -f mcp`. PostgreSQL не пересоздаётся при деплое.
+- Добавлена pre-deploy проверка: если PG_VERSION отсутствует в data dir — деплой прерывается.
+- Создан scripts/backup_daily_cron.sh: ежедневный pg_dump + gzip, ротация 30 дней, symlink latest.sql.gz.
+- Cron установлен на production: `0 3 * * *`.

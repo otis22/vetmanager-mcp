@@ -93,9 +93,14 @@ else
   echo "--> PostgreSQL container not running, skipping pre-deploy backup."
 fi
 
-# ── Start PostgreSQL first, run migrations, then start mcp ────────────────────
-echo "--> Starting PostgreSQL..."
-compose down --remove-orphans
+# ── Ensure PostgreSQL is running, restart only MCP ───────────────────────────
+# IMPORTANT: Never `compose down` postgres — it destroys the container and can
+# cause data loss on reinit.  Only stop/recreate the MCP service.
+echo "--> Stopping MCP service (keeping PostgreSQL)..."
+compose stop mcp 2>/dev/null || true
+compose rm -f mcp 2>/dev/null || true
+
+echo "--> Ensuring PostgreSQL is running..."
 compose up -d postgres
 
 # Wait for PostgreSQL to be healthy
@@ -113,6 +118,17 @@ for i in $(seq 1 30); do
   fi
   sleep 2
 done
+
+# ── Verify PostgreSQL data directory is not empty ────────────────────────────
+PG_DATA="/var/lib/vetmanager-postgres"
+if [ -d "${PG_DATA}" ] && [ -f "${PG_DATA}/PG_VERSION" ]; then
+  echo "--> PostgreSQL data directory verified: ${PG_DATA}/PG_VERSION exists."
+else
+  echo "ERROR: PostgreSQL data directory is missing or empty at ${PG_DATA}."
+  echo "       This likely means data was lost. Aborting deploy to prevent overwrite."
+  echo "       Restore from backup: zcat /var/backups/vetmanager-postgres/latest.sql.gz | psql ..."
+  exit 1
+fi
 
 # ── Run database migrations before starting the app ───────────────────────────
 echo "--> Running database migrations..."

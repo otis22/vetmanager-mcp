@@ -1155,3 +1155,13 @@
 - 71.2.2 get_client_profile, get_pet_profile: параллелизация через asyncio.gather() (R4) — `done`
 
 ### 71.3 Обновить AssumptionLog и tech debt register — `done`
+
+## Этап 72. Deploy safety: защита данных PostgreSQL — `done`
+
+Цель: исключить потерю данных при деплое, добавить ежедневный бекап.
+
+- 72.1 Исправить deploy_server.sh: не пересоздавать postgres контейнер при деплое — `done`
+- 72.2 Добавить pre-deploy проверку наличия PG_VERSION в data dir — `done`
+- 72.3 Создать скрипт ежедневного бекапа с ротацией (30 дней) — `done`
+- 72.4 Установить cron на production сервере — `done`
+- 72.5 Проверить что данные живут при деплое — `done`
