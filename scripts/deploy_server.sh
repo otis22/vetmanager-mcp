@@ -98,7 +98,6 @@ fi
 # cause data loss on reinit.  Only stop/recreate the MCP service.
 echo "--> Stopping MCP service (keeping PostgreSQL)..."
 compose stop mcp 2>/dev/null || true
-compose rm -f mcp 2>/dev/null || true
 
 echo "--> Ensuring PostgreSQL is running..."
 compose up -d postgres
@@ -136,7 +135,7 @@ compose run --rm mcp alembic upgrade head
 
 # ── Start all services ────────────────────────────────────────────────────────
 echo "--> Starting mcp service..."
-compose up -d
+compose up -d --build --force-recreate mcp
 
 # ── Container smoke check ─────────────────────────────────────────────────────
 echo "--> Container smoke check..."
