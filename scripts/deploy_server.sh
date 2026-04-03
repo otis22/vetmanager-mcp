@@ -40,6 +40,21 @@ fi
 POSTGRES_USER="${POSTGRES_USER:-vetmanager}"
 POSTGRES_DB="${POSTGRES_DB:-vetmanager}"
 
+UID_VAL="${DOCKER_UID:-$(id -u)}"
+GID_VAL="${DOCKER_GID:-$(id -g)}"
+if [ "${UID_VAL}" -eq 0 ]; then UID_VAL=1000; fi
+if [ "${GID_VAL}" -eq 0 ]; then GID_VAL=1000; fi
+
+compose() {
+  env UID="${UID_VAL}" GID="${GID_VAL}" docker compose --profile production "$@"
+}
+
+dump_compose_diagnostics() {
+  echo "--> Deploy diagnostics..."
+  compose ps || true
+  compose logs --tail=100 mcp 2>/dev/null || compose logs --tail=100 || true
+}
+
 # ── Pull latest code ──────────────────────────────────────────────────────────
 if [ "${SKIP_GIT_PULL}" = "1" ]; then
   echo "--> SKIP_GIT_PULL=1, skipping git pull."
@@ -50,27 +65,9 @@ else
   echo "WARNING: ${REMOTE_DIR} is not a git repo — skipping git pull."
 fi
 
-# ── Rebuild image ─────────────────────────────────────────────────────────────
+# ── Build image once ─────────────────────────────────────────────────────────
 echo "--> Building Docker image..."
-UID_VAL="${DOCKER_UID:-$(id -u)}"
-GID_VAL="${DOCKER_GID:-$(id -g)}"
-if [ "${UID_VAL}" -eq 0 ]; then UID_VAL=1000; fi
-if [ "${GID_VAL}" -eq 0 ]; then GID_VAL=1000; fi
 docker build --target production --build-arg UID="${UID_VAL}" --build-arg GID="${GID_VAL}" -t vetmanager-mcp .
-
-compose() {
-  env UID="${UID_VAL}" GID="${GID_VAL}" docker compose --profile production "$@"
-}
-
-dump_compose_diagnostics() {
-  echo "--> Deploy diagnostics..."
-  compose ps || true
-  if compose ps -q mcp >/dev/null 2>&1; then
-    compose logs --tail=100 mcp || true
-  else
-    compose logs --tail=100 || true
-  fi
-}
 
 # ── Pre-deploy PostgreSQL backup ─────────────────────────────────────────────
 BACKUP_DIR="/var/backups/vetmanager-postgres"
@@ -87,22 +84,15 @@ if [ -n "${PG_CONTAINER}" ]; then
     echo "WARNING: Pre-deploy backup is empty, removing."
     rm -f "${BACKUP_FILE}"
   fi
-  # Keep only last 20 pre-deploy backups
   ls -t "${BACKUP_DIR}"/pre-deploy-*.sql.gz 2>/dev/null | tail -n +21 | xargs rm -f 2>/dev/null || true
 else
   echo "--> PostgreSQL container not running, skipping pre-deploy backup."
 fi
 
-# ── Ensure PostgreSQL is running, restart only MCP ───────────────────────────
-# IMPORTANT: Never `compose down` postgres — it destroys the container and can
-# cause data loss on reinit.  Only stop/recreate the MCP service.
-echo "--> Stopping MCP service (keeping PostgreSQL)..."
-compose stop mcp 2>/dev/null || true
-
+# ── Ensure PostgreSQL is running ─────────────────────────────────────────────
 echo "--> Ensuring PostgreSQL is running..."
 compose up -d postgres
 
-# Wait for PostgreSQL to be healthy
 echo "--> Waiting for PostgreSQL to be ready..."
 for i in $(seq 1 30); do
   PG_CONTAINER_ID="$(compose ps -q postgres || true)"
@@ -118,45 +108,56 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
-# ── Verify PostgreSQL data directory is not empty ────────────────────────────
+# ── Verify PostgreSQL data directory ─────────────────────────────────────────
 PG_DATA="/var/lib/vetmanager-postgres"
 if [ -d "${PG_DATA}" ] && [ -f "${PG_DATA}/PG_VERSION" ]; then
   echo "--> PostgreSQL data directory verified: ${PG_DATA}/PG_VERSION exists."
 else
   echo "ERROR: PostgreSQL data directory is missing or empty at ${PG_DATA}."
-  echo "       This likely means data was lost. Aborting deploy to prevent overwrite."
   echo "       Restore from backup: zcat /var/backups/vetmanager-postgres/latest.sql.gz | psql ..."
   exit 1
 fi
 
-# ── Run database migrations before starting the app ───────────────────────────
+# ── Run database migrations ──────────────────────────────────────────────────
 echo "--> Running database migrations..."
 compose run --rm mcp alembic upgrade head
 
-# ── Start all services ────────────────────────────────────────────────────────
-echo "--> Starting mcp service..."
-compose up -d --build --force-recreate mcp
+# ── Start MCP service (atomic: force-recreate, no separate stop/rm) ──────────
+echo "--> Starting MCP service..."
+compose up -d --force-recreate --no-build mcp
 
-# ── Container smoke check ─────────────────────────────────────────────────────
-echo "--> Container smoke check..."
-sleep 5
+# ── Wait for MCP to be healthy ───────────────────────────────────────────────
+echo "--> Waiting for MCP to be healthy..."
+for i in $(seq 1 20); do
+  if curl -sf http://127.0.0.1:8000/healthz >/dev/null 2>&1; then
+    echo "--> MCP is healthy."
+    break
+  fi
+  if [ "${i}" -eq 20 ]; then
+    echo "ERROR: MCP did not become healthy in 40 seconds."
+    dump_compose_diagnostics
+    exit 1
+  fi
+  sleep 2
+done
+
+# ── Verify container is running ──────────────────────────────────────────────
 compose ps
-
 MCP_CONTAINER_ID="$(compose ps -q mcp || true)"
 if [ -z "${MCP_CONTAINER_ID}" ]; then
   echo "ERROR: mcp container is missing."
-  compose logs --tail=30
+  dump_compose_diagnostics
   exit 1
 fi
 
 MCP_RUNNING="$(docker inspect -f '{{.State.Running}}' "${MCP_CONTAINER_ID}" 2>/dev/null || echo "false")"
 if [ "${MCP_RUNNING}" != "true" ]; then
   echo "ERROR: mcp container is not running."
-  compose logs --tail=50
+  dump_compose_diagnostics
   exit 1
 fi
 
-# ── TLS certificate renew (<30 days) ──────────────────────────────────────────
+# ── TLS certificate renew (<30 days) ─────────────────────────────────────────
 if [ -f "./scripts/renew_cert_if_needed.sh" ]; then
   echo "--> Checking TLS certificate..."
   bash ./scripts/renew_cert_if_needed.sh "${SSL_DOMAIN}"
@@ -164,7 +165,7 @@ else
   echo "WARNING: scripts/renew_cert_if_needed.sh not found, skipping TLS renew."
 fi
 
-# ── App smoke checks ──────────────────────────────────────────────────────────
+# ── App smoke checks ─────────────────────────────────────────────────────────
 if [ -f "./scripts/post_deploy_smoke_checks.sh" ]; then
   echo "--> Running post-deploy smoke checks..."
   if ! SMOKE_MAX_ATTEMPTS=20 bash ./scripts/post_deploy_smoke_checks.sh "http://127.0.0.1:8000" "${SSL_DOMAIN}"; then
