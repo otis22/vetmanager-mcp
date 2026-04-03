@@ -3184,3 +3184,30 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - 21 тест в test_ip_mask.py (validation + matching).
 - IPv6: при ограничительной маске IPv6 адреса будут отклонены (safe default).
 - 402 passed, 51 skipped, 0 failed.
+
+## Этап 74. Подготовка к публичному релизу репозитория
+
+**Решения:**
+
+- Лицензия: MIT — стандарт для open-source MCP-серверов, максимальная свобода использования.
+- README: обезличены все упоминания конкретного домена и IP в примерах (`342915.simplecloud.ru` → `<your-domain>`, `212.193.59.219` → `<your-server-ip>`). В deploy-скриптах хардкод оставлен — это дефолтные значения для production.
+- SECURITY.md: responsible disclosure через GitHub Security Advisories (preferred) или email.
+- README не переводится целиком на английский — слишком большой объём. Добавлена краткая English note в шапке.
+- Отдельный CONTRIBUTING.md не создаётся — достаточно секции в README.
+- Лендинг: добавлена ссылка на GitHub в topbar и footer, секция "Open Source / Разверните у себя" перед CTA.
+
+**Аудит безопасности перед публикацией:**
+
+- Все Python файлы, Docker, deploy-скрипты, CI workflows проверены: секретов нет.
+- `.gitignore` корректно исключает `.env`.
+- Все credentials передаются через env vars.
+- Шифрование credentials в storage, hash-only хранение bearer-токенов.
+
+**Что сделано:**
+
+- LICENSE (MIT)
+- SECURITY.md (responsible disclosure)
+- README.md: badges (CI, license), English note, обезличенные примеры, секции Self-hosted и Contributing
+- landing_page.py: GitHub ссылка в topbar nav + footer, секция Open Source
+- tests/test_landing_page.py: 3 новых теста (GitHub в footer, GitHub в topbar, Open Source секция)
+- Репозиторий переведён в public, добавлены topics

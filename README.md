@@ -1,5 +1,10 @@
 # vetmanager-mcp
 
+[![Tests](https://github.com/otis22/vetmanager-mcp/actions/workflows/test.yml/badge.svg)](https://github.com/otis22/vetmanager-mcp/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+> **English speakers:** This project is documented in Russian. The API and MCP protocol are language-agnostic and work with any MCP-compatible client. Google Translate handles technical documentation well. See [Quick Start](#быстрый-старт-локально) to get running in 3 commands.
+
 MCP-сервер для интеграции [Vetmanager REST API](https://help.vetmanager.cloud/article/3029) с любым клиентом, поддерживающим [Model Context Protocol](https://modelcontextprotocol.io/). Позволяет управлять операциями ветеринарной клиники через диалоговых AI-агентов на естественном языке.
 
 Сервер берёт на себя bearer-аутентификацию сервиса, хранение Vetmanager credentials на уровне service account, динамическое определение URL API (через `billing-api.vetmanager.cloud`) и форматирование данных. Runtime-контур теперь **bearer-only**: MCP-клиент передаёт только `Authorization: Bearer <service_token>`, а активное Vetmanager-подключение определяется через account context.
@@ -279,7 +284,7 @@ docker compose up -d mcp
 
 Предусловие: `ssh-copy-id user@host` выполнен.
 
-Прод-хост проекта: `342915.simplecloud.ru`.
+Прод-хост проекта: `<your-domain>` (например, `mcp.example.com`).
 
 ```bash
 # Первичная настройка (один раз)
@@ -301,7 +306,7 @@ docker compose up -d mcp
 Если сервер не может делать `git clone/pull` (приватный repo), используйте синхронизацию кода по SSH:
 
 ```bash
-./scripts/sync_and_deploy_server.sh root@212.193.59.219 /opt/vetmanager-mcp
+./scripts/sync_and_deploy_server.sh root@<your-server-ip> /opt/vetmanager-mcp
 ```
 
 Скрипт:
@@ -315,7 +320,7 @@ docker compose up -d mcp
 
 ```bash
 ./scripts/post_deploy_smoke_checks.sh
-./scripts/post_deploy_smoke_checks.sh http://127.0.0.1:8000 342915.simplecloud.ru
+./scripts/post_deploy_smoke_checks.sh http://127.0.0.1:8000 <your-domain>
 ```
 
 ### Полностью автоматический деплой после push в main
@@ -327,10 +332,10 @@ docker compose up -d mcp
 - запуск `deploy_server.sh` в режиме `SKIP_GIT_PULL=1`.
 
 Нужные GitHub Secrets:
-- `PROD_SSH_TARGET` (пример: `root@212.193.59.219`)
+- `PROD_SSH_TARGET` (пример: `root@<your-server-ip>`)
 - `PROD_SSH_PRIVATE_KEY` (приватный ключ для SSH)
 - `PROD_REMOTE_DIR` (опционально, по умолчанию `/opt/vetmanager-mcp`)
-- `PROD_SSL_DOMAIN` (опционально, по умолчанию `342915.simplecloud.ru`)
+- `PROD_SSL_DOMAIN` (опционально, ваш домен)
 - `PROD_CERTBOT_EMAIL` (опционально, email для certbot)
 
 ### TLS (Let's Encrypt) и автообновление
@@ -340,18 +345,18 @@ docker compose up -d mcp
 - если до истечения осталось меньше 30 дней — будет выполнено продление;
 - после обновления сертификата `nginx` перезагружается автоматически.
 
-По умолчанию используется домен `342915.simplecloud.ru`. При необходимости можно переопределить:
+При необходимости можно переопределить домен и email для certbot:
 
 ```bash
-SSL_DOMAIN=342915.simplecloud.ru CERTBOT_EMAIL=ops@example.com \
-./scripts/init_server.sh root@212.193.59.219
+SSL_DOMAIN=mcp.example.com CERTBOT_EMAIL=ops@example.com \
+./scripts/init_server.sh root@<your-server-ip>
 
-SSL_DOMAIN=342915.simplecloud.ru CERTBOT_EMAIL=ops@example.com \
-./scripts/deploy_server.sh root@212.193.59.219
+SSL_DOMAIN=mcp.example.com CERTBOT_EMAIL=ops@example.com \
+./scripts/deploy_server.sh root@<your-server-ip>
 ```
 
 Обязательные внешние условия:
-- DNS A-record `342915.simplecloud.ru` должен указывать на IP сервера;
+- DNS A-record вашего домена должен указывать на IP сервера;
 - на сервере/в облачном firewall должны быть открыты порты `80/tcp` и `443/tcp`.
 
 ### Прод-конфиг Cursor MCP (локально, не в репозиторий)
@@ -364,7 +369,7 @@ SSL_DOMAIN=342915.simplecloud.ru CERTBOT_EMAIL=ops@example.com \
 {
   "mcpServers": {
     "vetmanager-prod": {
-      "url": "https://342915.simplecloud.ru/mcp",
+      "url": "https://<your-domain>/mcp",
       "headers": {
         "Authorization": "Bearer vm_st_prod_service_token"
       }
@@ -385,7 +390,7 @@ SSL_DOMAIN=342915.simplecloud.ru CERTBOT_EMAIL=ops@example.com \
       }
     },
     "vetmanager-prod": {
-      "url": "https://342915.simplecloud.ru/mcp",
+      "url": "https://<your-domain>/mcp",
       "headers": {
         "Authorization": "Bearer vm_st_prod_service_token"
       }
@@ -536,3 +541,34 @@ Prompts работают по тому же bearer-only контракту, чт
 | `artifacts/api_entity_reference-ru.md` | Справочник по сущностям Vetmanager API (35 сущностей) |
 | `artifacts/vetmanager_openapi_v6.json` | Спецификация OpenAPI v6 для Vetmanager REST API |
 | `artifacts/vetmanager_postman_collection.json` | Коллекция Postman для ручного тестирования |
+
+## Self-hosted / Развернуть у себя
+
+Этот проект — **open-source**. Вы можете развернуть собственный экземпляр MCP-сервера для вашей клиники или организации.
+
+Что нужно:
+1. Сервер с Docker (любой VPS/dedicated)
+2. Домен с DNS A-record на IP сервера
+3. SSH-доступ к серверу
+
+```bash
+git clone https://github.com/otis22/vetmanager-mcp.git
+cd vetmanager-mcp
+./scripts/init_server.sh root@<your-server-ip>
+./scripts/deploy_server.sh root@<your-server-ip>
+```
+
+Скрипт `init_server.sh` автоматически настроит Docker, PostgreSQL, Nginx reverse proxy и TLS-сертификат через Let's Encrypt. Подробнее — в секции [Деплой на сервер](#деплой-на-сервер).
+
+## Contributing
+
+Проект открыт для контрибуций. Если вы нашли баг или хотите предложить улучшение:
+
+- [Открыть issue](https://github.com/otis22/vetmanager-mcp/issues)
+- [Security-уязвимости](SECURITY.md) — сообщайте приватно
+
+Перед отправкой PR убедитесь, что тесты проходят: `docker compose run --rm test`.
+
+## License
+
+[MIT](LICENSE)

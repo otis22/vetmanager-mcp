@@ -534,6 +534,7 @@ def render_landing_page() -> str:
         <a class="nav-link" href="#product">Возможности</a>
         <a class="nav-link" href="#audience">Для кого</a>
         <a class="nav-link" href="#examples">Примеры</a>
+        <a class="nav-link" href="https://github.com/otis22/vetmanager-mcp" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: text-bottom; margin-right: 4px;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
         <a class="ghost" href="/login">Войти</a>
         <a class="nav-cta" href="/register">Создать аккаунт</a>
       </nav>
@@ -706,6 +707,21 @@ def render_landing_page() -> str:
       </details>
     </section>
 
+    <section class="panel" style="text-align: center; padding: 40px 24px; margin-top: 22px; border-radius: var(--radius); animation-delay: 0.65s;">
+      <p class="eyebrow">Open Source</p>
+      <h3 class="section-title" style="font-size: 1.6rem; margin-bottom: 12px;">Разверните у себя</h3>
+      <p class="body-copy" style="max-width: 52ch; margin: 0 auto 20px;">
+        Проект полностью открыт. Вы можете развернуть собственный экземпляр MCP-сервера
+        на своём сервере для полного контроля над данными. Docker, три команды — и готово.
+      </p>
+      <div class="cta-row" style="justify-content: center;">
+        <a class="ghost" href="https://github.com/otis22/vetmanager-mcp" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; gap: 6px;">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          Репозиторий на GitHub
+        </a>
+      </div>
+    </section>
+
     <section class="panel" style="text-align: center; padding: 40px 24px; margin-top: 22px; border-radius: var(--radius); animation-delay: 0.7s;">
       <h3 class="section-title" style="font-size: 1.6rem; margin-bottom: 12px;">Готовы начать?</h3>
       <p class="body-copy" style="max-width: 48ch; margin: 0 auto 20px;">Регистрация занимает пару минут. Подключите AI-ассистента к данным вашей клиники уже сегодня.</p>
@@ -724,6 +740,7 @@ def render_landing_page() -> str:
         <a class="ghost" href="/register" style="padding: 8px 16px; font-size: 0.9rem;">Регистрация</a>
         <a class="ghost" href="/login" style="padding: 8px 16px; font-size: 0.9rem;">Вход</a>
         <a class="ghost" href="#faq" style="padding: 8px 16px; font-size: 0.9rem;">FAQ</a>
+        <a class="ghost" href="https://github.com/otis22/vetmanager-mcp" target="_blank" rel="noopener" style="padding: 8px 16px; font-size: 0.9rem;">GitHub</a>
         <a class="ghost" href="mailto:support@vetmanager.cloud" style="padding: 8px 16px; font-size: 0.9rem;">Поддержка</a>
       </nav>
       <div style="text-align: right; font-size: 0.9rem; color: var(--muted);">

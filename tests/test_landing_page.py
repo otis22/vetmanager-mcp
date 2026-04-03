@@ -166,3 +166,37 @@ async def test_footer_has_links_and_copyright():
     assert "Поддержка" in footer_html
     assert "Политика конфиденциальности" in footer_html
     assert "2026" in footer_html
+    assert "GitHub" in footer_html
+    assert "github.com/otis22/vetmanager-mcp" in footer_html
+
+
+@pytest.mark.asyncio
+async def test_topbar_has_github_link():
+    """Topbar navigation must include a GitHub repository link."""
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/")
+
+    html = response.text
+    nav_start = html.find("<nav>")
+    nav_end = html.find("</nav>", nav_start)
+    nav_html = html[nav_start:nav_end]
+    assert "github.com/otis22/vetmanager-mcp" in nav_html
+    assert "GitHub" in nav_html
+
+
+@pytest.mark.asyncio
+async def test_open_source_section():
+    """Landing page must have an Open Source section with self-hosted info."""
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/")
+
+    html = response.text
+    assert "Open Source" in html
+    assert "Разверните у себя" in html
+    assert "github.com/otis22/vetmanager-mcp" in html
