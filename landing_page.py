@@ -19,11 +19,11 @@ def render_landing_page() -> str:
   <meta property="og:title" content="Vetmanager MCP Service">
   <meta property="og:description" content="AI-ассистент для ветклиник. Данные клиники по запросу за секунды через MCP.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://342915.simplecloud.ru/">
-  <link rel="canonical" href="https://342915.simplecloud.ru/">
+  <meta property="og:url" content="https://vetmanager-mcp.vromanichev.ru/">
+  <link rel="canonical" href="https://vetmanager-mcp.vromanichev.ru/">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Vetmanager MCP Service">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90' font-weight='700' fill='%23bb4d24'>VM</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23bb4d24'/><text y='72' x='50' text-anchor='middle' font-size='52' font-weight='700' fill='white' font-family='sans-serif'>VM</text><text y='28' x='72' text-anchor='middle' font-size='22' fill='white'>+</text></svg>">
   <style>
     :root {
       --bg: #f3efe4;
