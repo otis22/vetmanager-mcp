@@ -57,7 +57,7 @@ def test_browser_user_token_flow_can_issue_bearer_and_call_mcp(
     page.locator('form[action="/account/tokens"] button[type="submit"]').click()
     page.wait_for_load_state("networkidle")
 
-    raw_token = page.locator("#issued-token-value").input_value()
+    raw_token = page.locator("#issued-token-value").text_content()
     assert raw_token.startswith("vm_st_")
     assert mocked.password not in page.content()
     assert mocked.user_token not in page.content()

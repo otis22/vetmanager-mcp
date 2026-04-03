@@ -3211,3 +3211,14 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - landing_page.py: GitHub ссылка в topbar nav + footer, секция Open Source
 - tests/test_landing_page.py: 3 новых теста (GitHub в footer, GitHub в topbar, Open Source секция)
 - Репозиторий переведён в public, добавлены topics
+
+## Этап 75. Улучшение отображения нового bearer-токена
+
+**Решения:**
+
+- Raw token теперь показывается в `<code>` блоке с `word-break: break-all` вместо `<input readonly>` — виден полностью.
+- Предупреждение вынесено в отдельный warning-блок с акцентным цветом и иконкой.
+- Добавлен collapsible-блок "Как подключить к Cursor / Claude Code" с готовым JSON.
+- JS для копирования переписан: `textContent` вместо `input.value`, fallback через `Range.selectNodeContents`.
+- Browser-тесты (playwright): `input_value()` → `text_content()` для нового `<code>` элемента.
+- 398 passed, 57 deselected, 0 failed.

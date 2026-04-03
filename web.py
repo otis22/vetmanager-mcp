@@ -355,37 +355,71 @@ def _render_shell(title: str, body: str) -> str:
     }}
     .token-flash {{
       margin-top: 20px;
-      padding: 18px;
+      padding: 24px;
       border-radius: 24px;
-      border: 1px solid rgba(47, 109, 115, 0.22);
-      background: linear-gradient(180deg, rgba(47, 109, 115, 0.18), rgba(255,255,255,0.86));
+      border: 2px solid var(--accent);
+      background: linear-gradient(180deg, rgba(187, 77, 36, 0.08), rgba(255,255,255,0.92));
       scroll-margin-top: 24px;
     }}
-    .copy-row {{
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 10px;
-      align-items: start;
-      margin-top: 12px;
+    .token-flash-warning {{
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 12px 16px;
+      border-radius: 14px;
+      background: rgba(187, 77, 36, 0.12);
+      color: var(--accent-deep, #7d2d14);
+      font-weight: 600;
+      font-size: 0.95rem;
+      margin-bottom: 16px;
     }}
-    .copy-input {{
+    .token-flash-value {{
+      display: block;
       width: 100%;
+      padding: 14px 16px;
+      border-radius: 14px;
       border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 12px 14px;
+      background: rgba(255,255,255,0.96);
       font-family: "JetBrains Mono", Consolas, monospace;
-      font-size: 0.92rem;
-      background: rgba(255,255,255,0.92);
+      font-size: 0.88rem;
+      line-height: 1.5;
+      word-break: break-all;
       color: var(--ink);
+      user-select: all;
+    }}
+    .copy-row {{
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 12px;
     }}
     .copy-button {{
       white-space: nowrap;
+      flex-shrink: 0;
     }}
     .copy-status {{
       min-height: 1.2em;
       margin-top: 10px;
       font-size: 0.92rem;
       color: #1f4b50;
+    }}
+    .token-flash-example {{
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: rgba(29, 35, 33, 0.04);
+      font-size: 0.85rem;
+    }}
+    .token-flash-example summary {{
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--ink);
+    }}
+    .token-flash-example pre {{
+      margin: 10px 0 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-size: 0.82rem;
     }}
     .grid {{
       display: grid;
@@ -589,13 +623,29 @@ def _render_account_page(
     if issued_raw_token:
         issued_token_html = f"""
         <section class="token-flash" id="issued-token-panel">
-          <strong>Новый Bearer token</strong>
-          <p>Скопируйте его сейчас. После этого экран больше не сможет показать raw token повторно.</p>
-          <div class="copy-row">
-            <input class="copy-input" id="issued-token-value" type="text" readonly value="{escape(issued_raw_token)}">
-            <button class="copy-button" id="issued-token-copy-button" type="button" data-copy-target="issued-token-value">Скопировать токен</button>
+          <h2 style="margin: 0 0 12px;">Новый Bearer-токен создан</h2>
+          <div class="token-flash-warning">
+            <span style="font-size: 1.2em;">&#9888;</span>
+            <span>Токен показывается только один раз. После перезагрузки страницы он будет недоступен. Скопируйте его сейчас.</span>
           </div>
-          <div class="copy-status" id="issued-token-copy-status" aria-live="polite"></div>
+          <code class="token-flash-value" id="issued-token-value">{escape(issued_raw_token)}</code>
+          <div class="copy-row">
+            <button class="copy-button" id="issued-token-copy-button" type="button">Скопировать токен</button>
+            <span class="copy-status" id="issued-token-copy-status" aria-live="polite"></span>
+          </div>
+          <details class="token-flash-example">
+            <summary>Как подключить к Cursor / Claude Code</summary>
+            <pre>{{
+  "mcpServers": {{
+    "vetmanager": {{
+      "url": "https://vetmanager-mcp.vromanichev.ru/mcp",
+      "headers": {{
+        "Authorization": "Bearer {escape(issued_raw_token)}"
+      }}
+    }}
+  }}
+}}</pre>
+          </details>
         </section>
         """
     token_disabled = "disabled" if active_connection is None or integration_health_status != INTEGRATION_HEALTH_ACTIVE else ""
@@ -778,17 +828,20 @@ def _render_account_page(
             }}
 
             const copyButton = document.getElementById('issued-token-copy-button');
-            const copyInput = document.getElementById('issued-token-value');
+            const copyEl = document.getElementById('issued-token-value');
             const copyStatus = document.getElementById('issued-token-copy-status');
-            if (copyButton && copyInput) {{
+            if (copyButton && copyEl) {{
               copyButton.addEventListener('click', async () => {{
                 try {{
-                  await navigator.clipboard.writeText(copyInput.value);
+                  await navigator.clipboard.writeText(copyEl.textContent);
                   if (copyStatus) copyStatus.textContent = 'Токен скопирован в буфер обмена.';
                 }} catch (_error) {{
-                  copyInput.focus();
-                  copyInput.select();
-                  if (copyStatus) copyStatus.textContent = 'Автокопирование недоступно. Токен выделен, его можно скопировать вручную.';
+                  const range = document.createRange();
+                  range.selectNodeContents(copyEl);
+                  const sel = window.getSelection();
+                  sel.removeAllRanges();
+                  sel.addRange(range);
+                  if (copyStatus) copyStatus.textContent = 'Автокопирование недоступно. Токен выделен, скопируйте вручную.';
                 }}
               }});
             }}

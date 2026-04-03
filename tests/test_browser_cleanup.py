@@ -41,7 +41,7 @@ def test_browser_cleanup_removes_account_and_related_entities(
     page.locator('form[action="/account/tokens"] button[type="submit"]').click()
     page.wait_for_load_state("networkidle")
 
-    raw_token = page.locator("#issued-token-value").input_value()
+    raw_token = page.locator("#issued-token-value").text_content()
     with patch.object(
         request_credentials,
         "_get_request_headers",

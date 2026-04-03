@@ -68,7 +68,7 @@ def test_real_browser_domain_api_key_flow_can_issue_bearer_and_call_mcp(
     page.locator('form[action="/account/tokens"] button[type="submit"]').click()
     page.wait_for_load_state("networkidle")
 
-    raw_token = page.locator("#issued-token-value").input_value()
+    raw_token = page.locator("#issued-token-value").text_content()
     with patch.object(
         request_credentials,
         "_get_request_headers",
@@ -118,7 +118,7 @@ def test_real_browser_user_token_flow_can_issue_bearer_and_call_mcp(
     page.locator('form[action="/account/tokens"] button[type="submit"]').click()
     page.wait_for_load_state("networkidle")
 
-    raw_token = page.locator("#issued-token-value").input_value()
+    raw_token = page.locator("#issued-token-value").text_content()
     with patch.object(
         request_credentials,
         "_get_request_headers",
