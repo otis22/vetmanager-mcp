@@ -1179,7 +1179,7 @@
 - 73.7 Лендинг: информация об IP ограничении — `done`
 - 73.8 Тесты: 21 тест в test_ip_mask.py — `done`
 
-## Этап 74. Подготовка к публичному релизу репозитория — `in_progress`
+## Этап 74. Подготовка к публичному релизу репозитория — `done`
 
 Цель: сделать репозиторий публичным, причесать README и лендинг для внешней аудитории, добавить ссылку на GitHub и примечание о self-hosted деплое.
 
@@ -1187,5 +1187,5 @@
 - 74.2 Создать SECURITY.md (responsible disclosure) — `done`
 - 74.3 README.md: badges, обезличить домен/IP, секции Self-hosted, Contributing, English note — `done`
 - 74.4 landing_page.py: GitHub ссылка в topbar/footer, секция Open Source — `done`
-- 74.5 Сделать репозиторий публичным (gh repo edit --visibility public, topics) — `in_progress`
+- 74.5 Сделать репозиторий публичным (gh repo edit --visibility public, topics) — `done`
 - 74.6 Обновить AssumptionLog — `done`
