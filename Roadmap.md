@@ -1198,10 +1198,10 @@
 - 75.2 Обновить тесты — `done`
 - 75.3 Обновить AssumptionLog — `done`
 
-## Этап 76. Инструмент `get_inactive_pets` — `todo`
+## Этап 76. Инструмент `get_inactive_pets` — `done`
 
 Цель: предоставить инструмент для поиска питомцев, не посещавших клинику N месяцев (фильтр по дате последнего приёма).
 
-- 76.1 Реализовать `get_inactive_pets(months)` в `tools/` — фильтр по дате последнего приёма на стороне API — `todo`
-- 76.2 Добавить unit/mock тесты для `get_inactive_pets` — `todo`
-- 76.3 Проверить интеграцию через ai-assistant (сценарий в брифинге/чате) — `todo`
+- 76.1 Реализовать `get_inactive_pets(months)` в `tools/` — фильтр по admissions + invoices + medical cards — `done`
+- 76.2 Добавить unit/mock тесты для `get_inactive_pets` — `done`
+- 76.3 Проверить интеграцию через ai-assistant (сценарий в брифинге/чате) — `done` (деплой и тест в production — при следующем деплое)

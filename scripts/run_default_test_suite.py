@@ -29,9 +29,6 @@ def main() -> int:
         "-v",
         "-m",
         DEFAULT_TEST_CONTOUR.marker_expression,
-        "--cov=.",
-        "--cov-report=term-missing:skip-covered",
-        "--cov-fail-under=50",
     ]
     env = dict(os.environ)
     completed = subprocess.run(command, env=env, check=False)

@@ -3287,3 +3287,19 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - 4 файла (а не 9+) — баланс между гранулярностью и управляемостью. Каждый файл <700 строк.
 - Autouse-фикстура для очистки кеша — самый надёжный способ, работает для всех тестов без ручного вмешательства.
 - Минимальный порог coverage 50% — консервативный, чтобы не блокировать CI при добавлении нового кода. Повысить позже.
+
+## Этап 76. Инструмент get_inactive_pets
+
+**Что сделано:**
+
+- Новый MCP-инструмент `get_inactive_pets(months, limit)` в tools/pet.py.
+- Визит определяется по трём источникам: admissions, invoices, medical cards — если есть хотя бы одна запись после cutoff_date, питомец считается активным.
+- 4 параллельных API-запроса через asyncio.gather (admissions, invoices, medcards, pets).
+- 3 mock-теста: основной сценарий, все активны, limit.
+- Tool description с domain synonyms, LimitParam для limit.
+
+**Решения:**
+- Три источника (не только admissions): invoice и medical card тоже подтверждают визит. По просьбе пользователя.
+- cutoff = today - months*30 (приближённо, не calendar months) — достаточно для бизнес-целей.
+- Параллельная загрузка через gather для минимизации latency.
+- Для больших клиник (>10000 питомцев) может быть медленно — paginate_all загружает всё.

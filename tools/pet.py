@@ -1,6 +1,8 @@
+from datetime import date, timedelta
+
 from fastmcp import FastMCP
 
-from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete, paginate_all
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
 
@@ -212,4 +214,77 @@ def register(mcp: FastMCP) -> None:
             "vaccinations": vaccinations,
             "last_vaccination_date": last_vaccination_date,
             "next_vaccination_date": next_vaccination_date,
+        }
+
+    @mcp.tool
+    async def get_inactive_pets(
+        months: int = 6,
+        limit: LimitParam = 50,
+    ) -> dict:
+        """Find pets that have not visited the clinic for N months.
+
+        A "visit" is detected from three sources: admissions, invoices, and
+        medical card records. If a pet has any of these after the cutoff date,
+        it is considered active. Useful for reactivation campaigns.
+
+        Args:
+            months: Number of months without a visit to consider a pet inactive (default 6).
+            limit: Max inactive pets to return (1–100, default 50).
+        """
+        import asyncio as _asyncio
+
+        if months < 1:
+            months = 1
+
+        cutoff_date = (date.today() - timedelta(days=months * 30)).isoformat()
+
+        (recent_admissions, _), (recent_invoices, _), (recent_medcards, _), (all_pets, total_pets) = (
+            await _asyncio.gather(
+                paginate_all(
+                    "/rest/api/admission",
+                    filters=[{"property": "admission_date", "value": cutoff_date, "operator": ">="}],
+                    entity_key="admission",
+                ),
+                paginate_all(
+                    "/rest/api/invoice",
+                    filters=[{"property": "date", "value": cutoff_date, "operator": ">="}],
+                    entity_key="invoice",
+                ),
+                paginate_all(
+                    "/rest/api/MedicalCards",
+                    filters=[{"property": "date_create", "value": cutoff_date, "operator": ">="}],
+                    entity_key="medicalCards",
+                ),
+                paginate_all(
+                    "/rest/api/pet",
+                    entity_key="pet",
+                ),
+            )
+        )
+
+        active_pet_ids: set[int] = set()
+        for adm in recent_admissions:
+            pid = adm.get("patient_id")
+            if pid:
+                active_pet_ids.add(int(pid))
+        for inv in recent_invoices:
+            pid = inv.get("pet_id")
+            if pid:
+                active_pet_ids.add(int(pid))
+        for mc in recent_medcards:
+            pid = mc.get("patient_id")
+            if pid:
+                active_pet_ids.add(int(pid))
+
+        inactive_pets = [
+            pet for pet in all_pets
+            if int(pet.get("id", 0)) not in active_pet_ids
+        ]
+
+        return {
+            "inactive_pets": inactive_pets[:limit],
+            "total_pets": total_pets,
+            "total_inactive": len(inactive_pets),
+            "cutoff_date": cutoff_date,
+            "months": months,
         }

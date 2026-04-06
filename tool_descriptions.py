@@ -550,6 +550,7 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "update_supplier": "supplier",
     "update_hospitalization": "hospital",
     "create_timesheet": "timesheet",
+    "get_inactive_pets": "pet",
 }
 
 
@@ -596,6 +597,13 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "a product or service into an existing bill. Domain synonyms: позиция "
         "счёта, строка счёта, товар в счёте, услуга в счёте, позиция, invoice "
         "document, invoice line."
+    ),
+    "get_inactive_pets": (
+        "Find pets that have not visited the clinic for N months. Checks admissions, "
+        "invoices, and medical card records to determine activity. Use when the user "
+        "asks for inactive animals, lost patients, or reactivation lists. Domain "
+        "synonyms: питомец, пациент, животное, кот, собака, пациент клиники, pet, "
+        "animal."
     ),
     "get_good_stock_balance": (
         "Check current stock balance for goods in warehouse context. Use when the "
