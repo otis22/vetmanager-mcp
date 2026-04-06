@@ -3251,3 +3251,21 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - Upper bounds выбраны по текущим major-версиям: ни одна зависимость не на пороге major-релиза.
 - `upgrade-insecure-requests` привязан к WEB_ENABLE_HSTS — не добавляется для localhost/dev.
 - TD-55-02 (unsafe-inline) остаётся открытым — закрытие возможно только через рефакторинг стилей в external CSS (этап 59 — рефакторинг web.py — подходящее место).
+
+## Этап 59. Рефакторинг web.py (god-module split)
+
+**Что сделано:**
+
+- web.py разбит с 1533 строк на 5 модулей:
+  - `web.py` (~310 строк) — оркестратор: shared helpers + `register_web_routes()`
+  - `web_html.py` (~530 строк) — HTML rendering: `render_shell`, `render_register_page`, `render_login_page`, `render_account_page`
+  - `web_routes_system.py` (~55 строк) — `/`, `/healthz`, `/readyz`, `/metrics`
+  - `web_routes_auth.py` (~230 строк) — `/register`, `/login`, `/logout`
+  - `web_routes_account.py` (~265 строк) — `/account`, `/account/integration`, `/account/tokens`
+- Все 398 тестов проходят без изменений — public API `register_web_routes(mcp)` сохранён.
+
+**Решения:**
+- Route-модули получают shared helpers через keyword arguments, а не через импорт из web.py — избегаем circular imports и делаем зависимости явными.
+- `_load_account_dashboard` и `_render_account_dashboard_response` остались в web.py — они тесно связаны с shared helpers и используются account-маршрутами через callback.
+- HTML rendering вынесен в отдельный модуль — самый крупный блок кода (530 строк CSS + HTML templates).
+- TD-55-02 не закрыт в этом этапе — inline styles в HTML templates остались, рефакторинг в CSS-классы — отдельная задача.

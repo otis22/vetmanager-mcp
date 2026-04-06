@@ -947,16 +947,16 @@
 - 58.3 Добавить `upgrade-insecure-requests` в CSP для production — `done`
 - 58.4 Обновить security threat model по итогам — `done`
 
-## Этап 59. Рефакторинг web.py (god-module split) — `todo`
+## Этап 59. Рефакторинг web.py (god-module split) — `done`
 
-Цель: разбить god-module web.py (1453 строк) на модули с чёткими границами ответственности.
+Цель: разбить god-module web.py (1533 строк) на модули с чёткими границами ответственности.
 
-- 59.1 Выделить route handlers в `web_routes_auth.py` (login, register, logout) — `todo`
-- 59.2 Выделить route handlers в `web_routes_account.py` (account, integration, tokens) — `todo`
-- 59.3 Выделить health/metrics endpoints в `web_routes_system.py` — `todo`
-- 59.4 Выделить HTML rendering helpers в отдельный модуль — `todo`
-- 59.5 Оставить в web.py только оркестрацию (register_web_routes) — `todo`
-- 59.6 Обновить тесты, AssumptionLog, tech debt register — `todo`
+- 59.1 Выделить route handlers в `web_routes_auth.py` (login, register, logout) — `done`
+- 59.2 Выделить route handlers в `web_routes_account.py` (account, integration, tokens) — `done`
+- 59.3 Выделить health/metrics endpoints в `web_routes_system.py` — `done`
+- 59.4 Выделить HTML rendering helpers в `web_html.py` — `done`
+- 59.5 Оставить в web.py только оркестрацию (register_web_routes) — `done`
+- 59.6 Обновить тесты, AssumptionLog, tech debt register — `done`
 
 ## Этап 60. Test suite refactoring — `todo`
 
