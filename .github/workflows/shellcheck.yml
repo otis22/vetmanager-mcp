@@ -1,0 +1,32 @@
+name: ShellCheck
+
+on:
+  push:
+    branches: [main]
+    paths: ['scripts/**/*.sh']
+  pull_request:
+    branches: [main]
+    paths: ['scripts/**/*.sh']
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck on all scripts
+        run: |
+          echo "==> Checking shell scripts..."
+          find scripts/ -name '*.sh' -type f -print0 | xargs -0 shellcheck --severity=warning
+          echo "==> ShellCheck passed."
+
+      - name: Syntax check (bash -n)
+        run: |
+          echo "==> Syntax validation..."
+          find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do
+            bash -n "$f" && echo "  OK: $f" || { echo "  FAIL: $f"; exit 1; }
+          done
+          echo "==> Syntax check passed."

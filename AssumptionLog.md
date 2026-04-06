@@ -3222,3 +3222,18 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - JS для копирования переписан: `textContent` вместо `input.value`, fallback через `Range.selectNodeContents`.
 - Browser-тесты (playwright): `input_value()` → `text_content()` для нового `<code>` элемента.
 - 398 passed, 57 deselected, 0 failed.
+
+## Этап 57. Deploy safety и инфраструктурная надёжность
+
+**Что сделано:**
+
+- **Volumes protection**: в compose() wrapper добавлен guard — `compose down --volumes` / `-v` прерывает деплой с FATAL ошибкой. Защита от случайного удаления PostgreSQL data volume.
+- **Post-deploy DB integrity check**: после старта MCP проверяется наличие критических таблиц (accounts, service_bearer_tokens, alembic_version). При отсутствии — деплой прерывается.
+- **Rollback script** (`scripts/rollback_db.sh`): восстановление БД из бекапа с валидацией имени БД, terminate active connections, trap EXIT для рестарта MCP при ошибке.
+- **CI ShellCheck** (`.github/workflows/shellcheck.yml`): shellcheck --severity=warning + bash -n для всех скриптов. Запускается при изменениях в scripts/.
+- 396 passed, 57 deselected, 0 failed.
+
+**Решения:**
+- Volumes guard реализован в compose() wrapper — все вызовы docker compose в деплое идут через wrapper, защита работает автоматически.
+- `alembic upgrade head` вызывается напрямую (идемпотентен) — хрупкий grep ревизий по Codex-ревью заменён на простой вызов.
+- Rollback script использует DROP/CREATE DATABASE с quoted identifiers и валидацией имени БД (по Codex-ревью).

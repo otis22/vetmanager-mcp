@@ -927,16 +927,16 @@
 - 56.3.4 Обновить `artifacts/security-threat-model-vetmanager-mcp-ru.md`: отметить ремедиацию T4, T5 после stages 44-52 — `done`
 - 56.3.5 Обновить AssumptionLog — `done`
 
-## Этап 57. Deploy safety и инфраструктурная надёжность — `todo`
+## Этап 57. Deploy safety и инфраструктурная надёжность — `done`
 
 Цель: предотвратить повторение потери данных и сбоев деплоя, усилить production safety.
 
-- 57.1 Добавить `--volumes` protection: `docker compose down` без `--volumes` (уже так, но задокументировать) — `todo`
-- 57.2 Добавить pre-deploy database migration check (Alembic `current` vs `heads`) — `todo`
-- 57.3 Добавить post-deploy DB integrity smoke: проверка что таблицы accounts, service_bearer_tokens существуют — `todo`
-- 57.4 Добавить rollback script: восстановление БД из последнего backup — `todo`
-- 57.5 Добавить CI test для deploy script (shellcheck, dry-run) — `todo`
-- 57.6 Обновить AssumptionLog и release checklist — `todo`
+- 57.1 Добавить `--volumes` protection: `docker compose down` без `--volumes` (уже так, но задокументировать) — `done`
+- 57.2 Добавить pre-deploy database migration check (Alembic `current` vs `heads`) — `done`
+- 57.3 Добавить post-deploy DB integrity smoke: проверка что таблицы accounts, service_bearer_tokens существуют — `done`
+- 57.4 Добавить rollback script: восстановление БД из последнего backup — `done`
+- 57.5 Добавить CI test для deploy script (shellcheck, dry-run) — `done`
+- 57.6 Обновить AssumptionLog и release checklist — `done`
 
 ## Этап 58. Dependency pinning и security hardening — `todo`
 
@@ -1197,3 +1197,11 @@
 - 75.1 Переработать token-flash: полный токен виден, кнопка копирования, явное предупреждение — `done`
 - 75.2 Обновить тесты — `done`
 - 75.3 Обновить AssumptionLog — `done`
+
+## Этап 76. Инструмент `get_inactive_pets` — `todo`
+
+Цель: предоставить инструмент для поиска питомцев, не посещавших клинику N месяцев (фильтр по дате последнего приёма).
+
+- 76.1 Реализовать `get_inactive_pets(months)` в `tools/` — фильтр по дате последнего приёма на стороне API — `todo`
+- 76.2 Добавить unit/mock тесты для `get_inactive_pets` — `todo`
+- 76.3 Проверить интеграцию через ai-assistant (сценарий в брифинге/чате) — `todo`

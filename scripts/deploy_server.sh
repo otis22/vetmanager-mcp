@@ -46,6 +46,17 @@ if [ "${UID_VAL}" -eq 0 ]; then UID_VAL=1000; fi
 if [ "${GID_VAL}" -eq 0 ]; then GID_VAL=1000; fi
 
 compose() {
+  # SAFETY: never pass --volumes / -v to 'down' — it destroys PostgreSQL data.
+  if [ "${1:-}" = "down" ]; then
+    for arg in "$@"; do
+      case "${arg}" in
+        --volumes|-v)
+          echo "FATAL: 'compose down --volumes' is FORBIDDEN — it destroys PostgreSQL data."
+          exit 1
+          ;;
+      esac
+    done
+  fi
   env UID="${UID_VAL}" GID="${GID_VAL}" docker compose --profile production "$@"
 }
 
@@ -118,9 +129,10 @@ else
   exit 1
 fi
 
-# ── Run database migrations ──────────────────────────────────────────────────
-echo "--> Running database migrations..."
+# ── Run database migrations (idempotent — noop if already at head) ───────────
+echo "--> Running database migrations (alembic upgrade head)..."
 compose run --rm mcp alembic upgrade head
+echo "--> Migrations complete."
 
 # ── Start MCP service (atomic: force-recreate, no separate stop/rm) ──────────
 echo "--> Starting MCP service..."
@@ -155,6 +167,26 @@ if [ "${MCP_RUNNING}" != "true" ]; then
   echo "ERROR: mcp container is not running."
   dump_compose_diagnostics
   exit 1
+fi
+
+# ── Post-deploy DB integrity check ───────────────────────────────────────────
+echo "--> Verifying critical database tables..."
+PG_CONTAINER_ID="$(compose ps -q postgres || true)"
+if [ -n "${PG_CONTAINER_ID}" ]; then
+  CRITICAL_TABLES="accounts service_bearer_tokens alembic_version"
+  for tbl in ${CRITICAL_TABLES}; do
+    if docker exec "${PG_CONTAINER_ID}" psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -c "SELECT 1 FROM ${tbl} LIMIT 0;" >/dev/null 2>&1; then
+      echo "    OK: table '${tbl}' exists"
+    else
+      echo "ERROR: critical table '${tbl}' is missing! Database may be corrupted or uninitialized."
+      echo "       Consider restoring from backup: scripts/rollback_db.sh"
+      dump_compose_diagnostics
+      exit 1
+    fi
+  done
+  echo "--> DB integrity check passed."
+else
+  echo "WARNING: PostgreSQL container not found, skipping DB integrity check."
 fi
 
 # ── TLS certificate renew (<30 days) ─────────────────────────────────────────
