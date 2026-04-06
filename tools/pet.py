@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date
 
 from fastmcp import FastMCP
 
@@ -236,7 +236,17 @@ def register(mcp: FastMCP) -> None:
         if months < 1:
             months = 1
 
-        cutoff_date = (date.today() - timedelta(days=months * 30)).isoformat()
+        # Calendar-accurate month subtraction
+        today = date.today()
+        year = today.year
+        month = today.month - months
+        while month < 1:
+            month += 12
+            year -= 1
+        # Clamp day to valid range for target month
+        import calendar
+        max_day = calendar.monthrange(year, month)[1]
+        cutoff_date = date(year, month, min(today.day, max_day)).isoformat()
 
         (recent_admissions, _), (recent_invoices, _), (recent_medcards, _), (all_pets, total_pets) = (
             await _asyncio.gather(
@@ -247,7 +257,10 @@ def register(mcp: FastMCP) -> None:
                 ),
                 paginate_all(
                     "/rest/api/invoice",
-                    filters=[{"property": "date", "value": cutoff_date, "operator": ">="}],
+                    filters=[
+                        {"property": "invoice_date", "value": cutoff_date, "operator": ">="},
+                        {"property": "status", "value": "deleted", "operator": "!="},
+                    ],
                     entity_key="invoice",
                 ),
                 paginate_all(
@@ -257,6 +270,7 @@ def register(mcp: FastMCP) -> None:
                 ),
                 paginate_all(
                     "/rest/api/pet",
+                    filters=[{"property": "status", "value": "alive", "operator": "="}],
                     entity_key="pet",
                 ),
             )
