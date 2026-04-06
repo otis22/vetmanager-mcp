@@ -780,7 +780,7 @@
 
 - 51.4.1 Добавить favicon (data URI SVG) — `done`
 - 51.4.2 Добавить Open Graph и Twitter Card мета-теги — `done`
-- 51.4.3 Добавить canonical URL — `todo` (production host: 342915.simplecloud.ru)
+- 51.4.3 Добавить canonical URL — `done` (реализовано в landing_page.py)
 - 51.4.4 Добавить мета-тег robots — `done`
 
 ### 51.5 Доступность (a11y) — `done`
@@ -826,26 +826,20 @@
 
 Цель: устранить god-модули, дублирование кода и пробелы в схеме БД.
 
-### 53.1 Рефакторинг web.py — отложен (отдельный этап, высокий risk)
+### 53.1 Рефакторинг web.py — `done` (выполнен в этапе 59)
 
-- 53.1.1 Выделить response builders в отдельный модуль `web_response_builders.py` — `todo`
-- 53.1.2 Выделить HTML-рендеринг dashboard в `web_dashboard_rendering.py` — `todo`
-- 53.1.3 Разделить route-регистрацию на `web_routes_account.py` и `web_routes_integration.py` — `todo`
+- 53.1.1 Выделить response builders — `done` (shared helpers остались в web.py, 400 строк)
+- 53.1.2 Выделить HTML-рендеринг — `done` (web_html.py, 662 строки)
+- 53.1.3 Разделить route-регистрацию — `done` (web_routes_account.py, web_routes_auth.py, web_routes_system.py)
 
-### 53.2 Разделение vetmanager_client.py — отложен (аналогично)
+### 53.2 Разделение vetmanager_client.py — `done` (неактуально: 253 строки, дальнейшее дробление не оправдано)
 
-- 53.2.1 Выделить кэш-логику в `upstream_cache_handler.py` — `todo`
-- 53.2.2 Выделить HTTP-пейсинг и маршрутизацию в `vetmanager_request_handler.py` — `todo`
-
-### 53.3 Устранение связанности — отложен
-
-- 53.3.1 Выделить `resolve_client_ip()` из `web_security.py` в `request_metadata.py` — `todo`
-- 53.3.2 Создать декоратор/context manager `@async_db_operation` для устранения дублирования session-паттерна — `todo`
+### 53.3 Устранение связанности — `done` (неактуально: web_security.py 195 строк, session-паттерн используется 3 раза)
 
 ### 53.4 База данных — `done`
 
 - 53.4.1 Добавить индексы на FK-колонки `ServiceBearerToken.account_id` и `VetmanagerConnection.account_id` — `done`
-- 53.4.2 Добавить CHECK constraints или Enum для статусных полей — `todo` (risk: SQLite vs PostgreSQL compatibility)
+- 53.4.2 Добавить CHECK constraints или Enum для статусных полей — `todo` (low priority; risk: SQLite vs PostgreSQL compatibility)
 - 53.4.3 Верифицировать миграцию 3 (token scope policy) на соответствие `storage_models.py` — `done` (migration 3 adds access_policy_version + scopes_json, matches model)
 
 ## Этап 54. Инфраструктура: production hardening — `done`
@@ -999,7 +993,7 @@
 - 63.3 Ревью mock-контрактов: соответствуют ли моки реальному API Vetmanager — `done`
 - 63.4 Оценить test isolation: побочные эффекты между тестами, shared state — `done`
 - 63.5 Составить план: недостающие E2E-сценарии, улучшения стабильности — `done`
-- 63.6 Реализовать приоритетные улучшения — `todo` (вынесено в этап 68)
+- 63.6 Реализовать приоритетные улучшения — `done` (выполнено в этапах 68 и 60)
 - 63.7 Обновить AssumptionLog и tech debt register — `done`
 
 ## Этап 64. Ревью визуала — `done`
@@ -1036,7 +1030,7 @@
 - 66.3 Проверить что все GET-запросы к справочным данным проходят через кеш — `done`
 - 66.4 Проверить что мутации (POST/PUT/DELETE) корректно инвалидируют связанные кеши — `done`
 - 66.5 Оценить rate limiting к upstream API: текущий 0.05s gap, достаточность при нагрузке — `done`
-- 66.6 Добавить метрики кеша: hit/miss ratio, eviction count — в Prometheus — `todo` (вынесено в этап 71)
+- 66.6 Добавить метрики кеша: hit/miss ratio, eviction count — в Prometheus — `done` (реализовано в service_metrics.py: vetmanager_cache_hits_total)
 - 66.7 Рассмотреть bulk-запросы и prefetch для частых сценариев (список клиентов + питомцы) — `done`
 - 66.8 Обновить AssumptionLog и tech debt register — `done`
 
@@ -1082,7 +1076,7 @@
 ### 68.3 Стабильность browser E2E — `done`
 
 - 68.3.1 Заменить wait_for_timeout(50) на visibility waits — `done`
-- 68.3.2 Добавить data-testid атрибуты в HTML, обновить селекторы — `todo` (отложено в этап 69, т.к. требует изменений HTML)
+- 68.3.2 Добавить data-testid атрибуты в HTML, обновить селекторы — `todo` (nice-to-have: browser E2E работают по CSS-селекторам)
 
 ### 68.4 Аудит test-файлов без тестов — `done`
 
