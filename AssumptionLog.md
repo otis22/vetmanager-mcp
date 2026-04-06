@@ -3269,3 +3269,21 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - `_load_account_dashboard` и `_render_account_dashboard_response` остались в web.py — они тесно связаны с shared helpers и используются account-маршрутами через callback.
 - HTML rendering вынесен в отдельный модуль — самый крупный блок кода (530 строк CSS + HTML templates).
 - TD-55-02 не закрыт в этом этапе — inline styles в HTML templates остались, рефакторинг в CSS-классы — отдельная задача.
+
+## Этап 60. Test suite refactoring
+
+**Что сделано:**
+
+- **Сплит test_e2e_mock.py** (2019 строк) на 4 файла по доменным группам:
+  - `test_e2e_mock_entities.py` (~670 строк) — Client, Pet, Admission, MedicalCard, Invoice, Good, User, Reference, Errors
+  - `test_e2e_mock_finance_warehouse.py` (~380 строк) — Finance, Warehouse, Stock balance
+  - `test_e2e_mock_clinical_profiles.py` (~560 строк) — Clinical, Operations, Profiles, Messages
+  - `test_e2e_mock_crud.py` (~540 строк) — CRUD operations, Error scenarios
+- **Починен pre-existing баг**: глобальный `REQUEST_CACHE` не очищался между тестами, что вызывало test ordering-зависимые failures. Добавлен autouse-фикстура `_clear_request_cache` в conftest.py.
+- **Coverage reporting**: добавлен pytest-cov в Dockerfile, `--cov` флаги в default test suite runner, минимальный порог 50%.
+- 398 passed, 57 deselected, 0 failed.
+
+**Решения:**
+- 4 файла (а не 9+) — баланс между гранулярностью и управляемостью. Каждый файл <700 строк.
+- Autouse-фикстура для очистки кеша — самый надёжный способ, работает для всех тестов без ручного вмешательства.
+- Минимальный порог coverage 50% — консервативный, чтобы не блокировать CI при добавлении нового кода. Повысить позже.

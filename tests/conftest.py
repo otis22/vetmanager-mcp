@@ -16,10 +16,21 @@ import storage
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 import uvicorn
+from request_cache import REQUEST_CACHE
 from server import mcp
 from storage import Base, create_database_engine, get_session_factory
 from storage_models import Account, ServiceBearerToken, TokenUsageLog, TokenUsageStat, VetmanagerConnection
 from web_security import reset_web_security_state
+
+
+@pytest.fixture(autouse=True)
+def _clear_request_cache():
+    """Clear the global request cache before each test to prevent cross-test contamination."""
+    REQUEST_CACHE._entries.clear()
+    REQUEST_CACHE._tag_index.clear()
+    yield
+    REQUEST_CACHE._entries.clear()
+    REQUEST_CACHE._tag_index.clear()
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
 

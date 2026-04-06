@@ -958,13 +958,13 @@
 - 59.5 Оставить в web.py только оркестрацию (register_web_routes) — `done`
 - 59.6 Обновить тесты, AssumptionLog, tech debt register — `done`
 
-## Этап 60. Test suite refactoring — `todo`
+## Этап 60. Test suite refactoring — `done`
 
 Цель: разбить крупные test-файлы и добавить coverage reporting.
 
-- 60.1 Сплитить test_e2e_mock.py (~1900 строк) по доменным группам — `todo`
-- 60.2 Добавить coverage reporting в CI (pytest-cov, минимальный порог) — `todo`
-- 60.3 Обновить AssumptionLog и tech debt register — `todo`
+- 60.1 Сплитить test_e2e_mock.py (~2019 строк) по доменным группам — `done`
+- 60.2 Добавить coverage reporting в CI (pytest-cov, минимальный порог 50%) — `done`
+- 60.3 Обновить AssumptionLog и tech debt register — `done`
 
 ---
 

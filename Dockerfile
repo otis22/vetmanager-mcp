@@ -49,6 +49,7 @@ RUN pip install --no-cache-dir \
     "playwright>=1.54.0,<2" \
     "pytest>=8.0.0,<9" \
     "pytest-asyncio>=0.23.0,<0.24" \
+    "pytest-cov>=5.0.0,<6" \
     "respx>=0.21.0"
 
 RUN python -m playwright install --with-deps chromium && \
