@@ -86,15 +86,20 @@ def _apply_security_headers(
     script_src = "script-src 'self'"
     if script_nonce:
         script_src += f" 'nonce-{script_nonce}'"
-    response.headers["Content-Security-Policy"] = (
+    csp = (
         "default-src 'self'; "
         f"{script_src}; "
+        # Note: 'unsafe-inline' required for inline style="" attributes in
+        # landing_page.py/web.py (~41 occurrences). Tracked as TD-55-02.
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; "
         "base-uri 'self'; "
         "form-action 'self'; "
         "frame-ancestors 'none'"
     )
+    if os.environ.get("WEB_ENABLE_HSTS", "").strip().lower() in {"1", "true", "yes", "on"}:
+        csp += "; upgrade-insecure-requests"
+    response.headers["Content-Security-Policy"] = csp
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["X-Content-Type-Options"] = "nosniff"

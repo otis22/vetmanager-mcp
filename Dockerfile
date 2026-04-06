@@ -16,15 +16,15 @@ RUN apt-get update && \
 
 # Production dependencies only
 RUN pip install --no-cache-dir \
-    "alembic>=1.13.0" \
-    "cryptography>=46.0.0" \
-    "fastmcp>=2.0.0" \
-    "httpx>=0.27.0" \
-    "sentry-sdk>=2.0.0" \
-    "sqlalchemy>=2.0.0" \
-    "aiosqlite>=0.20.0" \
-    "asyncpg>=0.29.0" \
-    "psycopg2-binary>=2.9.0"
+    "alembic>=1.13.0,<2" \
+    "cryptography>=46.0.0,<47" \
+    "fastmcp>=2.0.0,<3" \
+    "httpx>=0.27.0,<1" \
+    "sentry-sdk>=2.0.0,<3" \
+    "sqlalchemy>=2.0.0,<3" \
+    "aiosqlite>=0.20.0,<1" \
+    "asyncpg>=0.29.0,<1" \
+    "psycopg2-binary>=2.9.0,<3"
 
 # ── Production image ─────────────────────────────────────────────────────────
 FROM base AS production

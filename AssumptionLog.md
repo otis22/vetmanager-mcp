@@ -3237,3 +3237,17 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - Volumes guard реализован в compose() wrapper — все вызовы docker compose в деплое идут через wrapper, защита работает автоматически.
 - `alembic upgrade head` вызывается напрямую (идемпотентен) — хрупкий grep ревизий по Codex-ревью заменён на простой вызов.
 - Rollback script использует DROP/CREATE DATABASE с quoted identifiers и валидацией имени БД (по Codex-ревью).
+
+## Этап 58. Dependency pinning и security hardening
+
+**Что сделано:**
+
+- **Dependency pinning**: все pip-зависимости в Dockerfile получили upper bounds (fastmcp<3, httpx<1, sqlalchemy<3, etc.). Предотвращает breaking changes при rebuild.
+- **CSP upgrade-insecure-requests**: добавлен в CSP при WEB_ENABLE_HSTS=1 (production). Браузер автоматически повышает HTTP→HTTPS для подресурсов.
+- **CSP style-src**: `unsafe-inline` оставлен — 41 inline style="" атрибут в landing_page.py/web.py. Полное удаление требует рефакторинга всех стилей в CSS-классы (трудоёмко, не критично). Добавлен комментарий с ссылкой на TD-55-02.
+- 398 passed, 57 deselected, 0 failed.
+
+**Решения:**
+- Upper bounds выбраны по текущим major-версиям: ни одна зависимость не на пороге major-релиза.
+- `upgrade-insecure-requests` привязан к WEB_ENABLE_HSTS — не добавляется для localhost/dev.
+- TD-55-02 (unsafe-inline) остаётся открытым — закрытие возможно только через рефакторинг стилей в external CSS (этап 59 — рефакторинг web.py — подходящее место).

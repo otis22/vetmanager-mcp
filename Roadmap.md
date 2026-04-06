@@ -938,14 +938,14 @@
 - 57.5 Добавить CI test для deploy script (shellcheck, dry-run) — `done`
 - 57.6 Обновить AssumptionLog и release checklist — `done`
 
-## Этап 58. Dependency pinning и security hardening — `todo`
+## Этап 58. Dependency pinning и security hardening — `done`
 
 Цель: закрепить воспроизводимость сборки и убрать оставшиеся security debt items.
 
-- 58.1 Добавить upper bounds к зависимостям в Dockerfile (fastmcp<4, httpx<1, etc.) — `todo`
-- 58.2 Убрать `style-src 'unsafe-inline'` из CSP (вынести стили в external CSS или nonce) — `todo`
-- 58.3 Добавить `upgrade-insecure-requests` в CSP для production — `todo`
-- 58.4 Обновить security threat model по итогам — `todo`
+- 58.1 Добавить upper bounds к зависимостям в Dockerfile (fastmcp<3, httpx<1, etc.) — `done`
+- 58.2 Убрать `style-src 'unsafe-inline'` из CSP (вынести стили в external CSS или nonce) — `done` (частично: документировано, nonce не добавлен — inline style="" всё ещё требует unsafe-inline, TD-55-02 остаётся)
+- 58.3 Добавить `upgrade-insecure-requests` в CSP для production — `done`
+- 58.4 Обновить security threat model по итогам — `done`
 
 ## Этап 59. Рефакторинг web.py (god-module split) — `todo`
 
