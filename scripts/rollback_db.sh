@@ -24,6 +24,12 @@ fi
 POSTGRES_USER="${POSTGRES_USER:-vetmanager}"
 POSTGRES_DB="${POSTGRES_DB:-vetmanager}"
 
+# Validate database name: only alphanumeric and underscores allowed
+if ! echo "${POSTGRES_DB}" | grep -qE '^[a-zA-Z_][a-zA-Z0-9_]*$'; then
+  echo "ERROR: Invalid database name '${POSTGRES_DB}'. Only [a-zA-Z0-9_] allowed."
+  exit 1
+fi
+
 if [ ! -f "${BACKUP_FILE}" ]; then
   echo "ERROR: Backup file not found: ${BACKUP_FILE}"
   echo "Available backups:"
@@ -47,18 +53,31 @@ if [ -z "${PG_CONTAINER}" ]; then
   exit 1
 fi
 
+# Ensure MCP restarts even on mid-script failure
+restart_mcp() {
+  echo "--> Restarting MCP service (cleanup)..."
+  docker compose --profile production up -d 2>/dev/null || true
+}
+trap restart_mcp EXIT
+
 # Stop MCP to release connections
 echo "--> Stopping MCP service..."
 docker compose --profile production stop mcp 2>/dev/null || true
 
-# Drop and recreate database
+# Terminate active connections before DROP
+echo "--> Terminating active connections to '${POSTGRES_DB}'..."
+docker exec "${PG_CONTAINER}" psql -U "${POSTGRES_USER}" -d postgres \
+  -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${POSTGRES_DB}' AND pid <> pg_backend_pid();" \
+  >/dev/null 2>&1 || true
+
+# Drop and recreate database (using format(%I) for identifier safety)
 echo "--> Dropping database ${POSTGRES_DB}..."
 docker exec "${PG_CONTAINER}" psql -U "${POSTGRES_USER}" -d postgres \
-  -c "DROP DATABASE IF EXISTS ${POSTGRES_DB};"
+  -c "DROP DATABASE IF EXISTS \"${POSTGRES_DB}\";"
 
 echo "--> Creating database ${POSTGRES_DB}..."
 docker exec "${PG_CONTAINER}" psql -U "${POSTGRES_USER}" -d postgres \
-  -c "CREATE DATABASE ${POSTGRES_DB} OWNER ${POSTGRES_USER};"
+  -c "CREATE DATABASE \"${POSTGRES_DB}\" OWNER \"${POSTGRES_USER}\";"
 
 # Restore
 echo "--> Restoring data..."
@@ -70,8 +89,5 @@ TABLE_COUNT="$(docker exec "${PG_CONTAINER}" psql -U "${POSTGRES_USER}" -d "${PO
 TABLE_COUNT="$(echo "${TABLE_COUNT}" | tr -d ' ')"
 echo "--> Restore complete. Tables in database: ${TABLE_COUNT}"
 
-# Restart MCP
-echo "--> Starting MCP service..."
-docker compose --profile production up -d
-
+# trap will restart MCP on EXIT
 echo "==> Rollback complete from ${BACKUP_FILE}"
