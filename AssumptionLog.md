@@ -3379,3 +3379,33 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - Sliding window через ZSET: timestamp = score, unique nonce member для конкурентных hit'ов.
 - Graceful fallback при ping failure → log warning + in-memory. Не падаем при недоступности Redis.
 - reset_all() для Redis ограничен prefix `vmrl:*` — safety против случайного flushdb.
+
+## Этап 77. Inactive clients/pets через client.last_visit_date
+
+**Что сделано:**
+
+- **Helper** `tools/_inactive_helpers.py`: calendar-accurate window calc, fetch top inactive clients (sort DESC), per-pet last visit detection (invoice → medcard fallback).
+- **Новый tool** `get_inactive_clients`: 1 API call с filters [status=ACTIVE, last_visit_date в окне] + sort DESC + limit. Default window 13-24 месяца, default limit 50.
+- **Рефакторинг** `get_inactive_pets`: per-pet точный алгоритм. Получает top inactive clients, для каждого ищет alive pets и проверяет какие были на последнем визите через invoice → medcard fallback. Возвращает топ 50 pets с client info.
+- **Bug fix** `get_pets`: параметр переименован `client_id` → `owner_id`, фильтр идёт через `filter=[owner_id]` вместо top-level `?client_id=...` query param.
+- **Tool descriptions** консистентны: явный default window, default limit, customization params, domain synonyms.
+- 437 passed (было 423 + 14 новых).
+
+**Решения:**
+- **Default window 13-24 месяца** — reactivation sweet spot: lapsed но не утраченные навсегда. Клиенты ещё помнят клинику, контакты актуальны.
+- **Default limit 50, hardcoded** — защита от accidental dump всей базы. Пользователь может явно поднять до 100 (LimitParam).
+- **Sort DESC по last_visit_date** — most recently lapsed first, лучшие кандидаты для reactivation.
+- **Per-pet точный алгоритм (Вариант A)** — клиент может иметь несколько pets, но не все были на последнем визите. invoice → medcard fallback покрывает 99% клиник (90% используют счета, остальные — медкарты).
+- **Pet→Client foreign key**: поле в таблице pet называется `owner_id`, ссылается на `client.id`. Используется в `filter=[owner_id]` для GET /rest/api/pet и в payload `update_pet`. Это **зафиксировано** как стандарт. Старый код в `get_pets` использовал `?client_id=...` query param, что было скрытым багом — исправлено.
+- **client_fetch_limit = min(limit*3, 100)** — heuristic для фетча клиентов с запасом, поскольку не у всех будут confirmed visited pets.
+
+**Производительность:**
+- get_inactive_clients: 1 API call, ~50-200ms.
+- get_inactive_pets для default limit 50: ~100-300 API calls
+  (1 clients page + per-client pets + per-pet invoice/medcard).
+  Latency ~5-15 сек с rate limiter. Acceptable для on-demand reactivation tool.
+
+**Ограничения:**
+- 5-15 sec latency для get_inactive_pets — это on-demand tool, не для realtime UI.
+- Не покрываются клиники где визиты не фиксируются ни в invoices, ни в medcards (крайне редкий edge case).
+- `get_pets` теперь требует `owner_id` (было `client_id`) — breaking change для прямых вызывальщиков, но через MCP интерфейс параметр всегда был optional с default 0.

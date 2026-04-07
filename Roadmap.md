@@ -1199,3 +1199,16 @@
 - 76.1 Реализовать `get_inactive_pets(months)` в `tools/` — фильтр по admissions + invoices + medical cards — `done`
 - 76.2 Добавить unit/mock тесты для `get_inactive_pets` — `done`
 - 76.3 Проверить интеграцию через ai-assistant (сценарий в брифинге/чате) — `done` (деплой и тест в production — при следующем деплое)
+
+## Этап 77. Inactive clients/pets через client.last_visit_date — `done`
+
+Цель: оптимизация поиска неактивных клиентов и питомцев + новый tool get_inactive_clients. Использует серверное поле client.last_visit_date. Default top 50, default window 13-24 месяца.
+
+- 77.1 Helper tools/_inactive_helpers.py: window calc + fetch clients + find pets — `done`
+- 77.2 Новый tool get_inactive_clients (default 13-24м, top 50, sort DESC) — `done`
+- 77.3 Рефакторинг get_inactive_pets: per-pet проверка invoice→medcard — `done`
+- 77.4 Bug fix: client_id → owner_id в tools/pet.py для GET /rest/api/pet — `done`
+- 77.5 Tool descriptions: явно про default window и customization — `done`
+- 77.6 Тесты helper + clients + pets + owner_id consistency — `done`
+- 77.7 Удалить старую реализацию get_inactive_pets (3-source check) — `done`
+- 77.8 Зафиксировать Pet.owner_id в AssumptionLog — `done`

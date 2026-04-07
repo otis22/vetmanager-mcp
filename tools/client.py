@@ -1,5 +1,6 @@
 from fastmcp import FastMCP
 
+from tools._inactive_helpers import fetch_inactive_clients_page
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete, paginate_all
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
@@ -88,6 +89,58 @@ def register(mcp: FastMCP) -> None:
             "debtors_count": len(debtors),
             "total_active_clients_checked": len(clients),
             "debtors": debtors,
+        }
+
+    @mcp.tool
+    async def get_inactive_clients(
+        months_min: int = 13,
+        months_max: int = 24,
+        limit: LimitParam = 50,
+    ) -> dict:
+        """Find lapsed clients who have not visited the clinic recently.
+
+        Uses the server-side `client.last_visit_date` field to identify clients
+        whose last visit falls within a window. Default window is 13–24 months
+        ago — long enough to be lapsed but recent enough to reactivate.
+
+        Returns the top N most recently lapsed clients (sorted by last_visit_date
+        DESC). Default limit is 50 to prevent accidentally fetching the whole
+        client base.
+
+        Args:
+            months_min: Minimum age of last visit in months (default 13).
+            months_max: Maximum age of last visit in months (default 24).
+            limit: Max clients to return (1–100, default 50).
+        """
+        clients, cutoff_oldest, cutoff_newest = await fetch_inactive_clients_page(
+            months_min=months_min,
+            months_max=months_max,
+            limit=limit,
+        )
+
+        result_clients = [
+            {
+                "id": c.get("id"),
+                "last_name": c.get("last_name", ""),
+                "first_name": c.get("first_name", ""),
+                "middle_name": c.get("middle_name", ""),
+                "cell_phone": c.get("cell_phone", ""),
+                "last_visit_date": c.get("last_visit_date", ""),
+            }
+            for c in clients[:limit]
+        ]
+
+        return {
+            "inactive_clients": result_clients,
+            "limit_applied": limit,
+            "cutoff_window": {"from": cutoff_oldest, "to": cutoff_newest},
+            "months_min": months_min,
+            "months_max": months_max,
+            "sort": "last_visit_date DESC",
+            "note": (
+                "Returned top N most recently lapsed clients. "
+                "Pass higher limit (max 100) or different months_min/months_max to customize."
+            ),
         }
 
     @mcp.tool

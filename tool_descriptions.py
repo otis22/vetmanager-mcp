@@ -551,6 +551,7 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "update_hospitalization": "hospital",
     "create_timesheet": "timesheet",
     "get_inactive_pets": "pet",
+    "get_inactive_clients": "client",
 }
 
 
@@ -599,11 +600,24 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "document, invoice line."
     ),
     "get_inactive_pets": (
-        "Find pets that have not visited the clinic for N months. Checks admissions, "
-        "invoices, and medical card records to determine activity. Use when the user "
-        "asks for inactive animals, lost patients, or reactivation lists. Domain "
-        "synonyms: питомец, пациент, животное, кот, собака, пациент клиники, pet, "
-        "animal."
+        "Find pets whose owners have not visited the clinic recently. By default "
+        "returns the top 50 pets whose owner's last visit was 13–24 months ago. "
+        "For each lapsed client, checks invoices first and medical cards as "
+        "fallback to identify which specific pets were at the last visit (a "
+        "client may have multiple pets, but only some were brought). Pass "
+        "months_min, months_max, and limit to customize. Use for reactivation "
+        "campaigns targeting specific patients. Domain synonyms: питомец, "
+        "пациент, животное, кот, собака, pet, animal."
+    ),
+    "get_inactive_clients": (
+        "Find clients who have not visited the clinic recently using "
+        "client.last_visit_date. By default returns the top 50 most recently "
+        "lapsed clients whose last visit was between 13 and 24 months ago — "
+        "long enough to be lapsed but recent enough to reactivate. Pass "
+        "months_min and months_max to customize the window, and limit to change "
+        "the result size. Use when the user asks for lapsed clients, "
+        "reactivation list, or clients to win back. Domain synonyms: клиент, "
+        "владелец, хозяин, контакт, клиентская база, client."
     ),
     "get_good_stock_balance": (
         "Check current stock balance for goods in warehouse context. Use when the "

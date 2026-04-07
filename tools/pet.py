@@ -1,8 +1,6 @@
-from datetime import date
-
 from fastmcp import FastMCP
 
-from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete, paginate_all
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
 
@@ -13,7 +11,7 @@ def register(mcp: FastMCP) -> None:
     async def get_pets(
         limit: LimitParam = 20,
         offset: int = 0,
-        client_id: int = 0,
+        owner_id: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
     ) -> dict:
@@ -22,11 +20,23 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
-            client_id: Filter pets by owner's client ID (0 = no filter).
+            owner_id: Filter pets by owner's client ID (0 = no filter).
+                Note: Vetmanager pet table uses `owner_id` as the foreign key
+                to client.id (not client_id).
+            sort: Optional sort spec (forwarded to API).
+            filter: Optional filter spec (forwarded to API).
         """
+        combined_filters: list[dict] = list(filter or [])
+        if owner_id:
+            combined_filters.append(
+                {"property": "owner_id", "value": owner_id, "operator": "="}
+            )
         return await crud_list(
-            "/rest/api/pet", limit=limit, offset=offset,
-            sort=sort, filters=filter, extra={"client_id": client_id},
+            "/rest/api/pet",
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=combined_filters if combined_filters else None,
         )
 
     @mcp.tool
@@ -218,87 +228,114 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_inactive_pets(
-        months: int = 6,
+        months_min: int = 13,
+        months_max: int = 24,
         limit: LimitParam = 50,
     ) -> dict:
-        """Find pets that have not visited the clinic for N months.
+        """Find pets whose owners have not visited the clinic recently.
 
-        A "visit" is detected from three sources: admissions, invoices, and
-        medical card records. If a pet has any of these after the cutoff date,
-        it is considered active. Useful for reactivation campaigns.
+        Identifies "lapsed" pets via the owner's `client.last_visit_date`.
+        Default window is 13–24 months ago. For each lapsed client, checks
+        invoices first and medical cards as fallback to identify which specific
+        pets were at the last visit (a client may have multiple pets, but only
+        some were brought).
+
+        Returns the top N pets sorted by their owner's last_visit_date DESC
+        (most recently lapsed first). Default limit is 50 to prevent
+        accidentally fetching the whole base.
 
         Args:
-            months: Number of months without a visit to consider a pet inactive (default 6).
-            limit: Max inactive pets to return (1–100, default 50).
+            months_min: Minimum age of owner's last visit in months (default 13).
+            months_max: Maximum age of owner's last visit in months (default 24).
+            limit: Max pets to return (1–100, default 50).
         """
-        import asyncio as _asyncio
-
-        if months < 1:
-            months = 1
-
-        # Calendar-accurate month subtraction
-        today = date.today()
-        year = today.year
-        month = today.month - months
-        while month < 1:
-            month += 12
-            year -= 1
-        # Clamp day to valid range for target month
-        import calendar
-        max_day = calendar.monthrange(year, month)[1]
-        cutoff_date = date(year, month, min(today.day, max_day)).isoformat()
-
-        (recent_admissions, _), (recent_invoices, _), (recent_medcards, _), (all_pets, total_pets) = (
-            await _asyncio.gather(
-                paginate_all(
-                    "/rest/api/admission",
-                    filters=[{"property": "admission_date", "value": cutoff_date, "operator": ">="}],
-                    entity_key="admission",
-                ),
-                paginate_all(
-                    "/rest/api/invoice",
-                    filters=[
-                        {"property": "invoice_date", "value": cutoff_date, "operator": ">="},
-                        {"property": "status", "value": "deleted", "operator": "!="},
-                    ],
-                    entity_key="invoice",
-                ),
-                paginate_all(
-                    "/rest/api/MedicalCards",
-                    filters=[{"property": "date_create", "value": cutoff_date, "operator": ">="}],
-                    entity_key="medicalCards",
-                ),
-                paginate_all(
-                    "/rest/api/pet",
-                    filters=[{"property": "status", "value": "alive", "operator": "="}],
-                    entity_key="pet",
-                ),
-            )
+        from tools._inactive_helpers import (
+            fetch_inactive_clients_page,
+            find_pets_at_client_last_visit,
         )
 
-        active_pet_ids: set[int] = set()
-        for adm in recent_admissions:
-            pid = adm.get("patient_id")
-            if pid:
-                active_pet_ids.add(int(pid))
-        for inv in recent_invoices:
-            pid = inv.get("pet_id")
-            if pid:
-                active_pet_ids.add(int(pid))
-        for mc in recent_medcards:
-            pid = mc.get("patient_id")
-            if pid:
-                active_pet_ids.add(int(pid))
+        # Pagination loop: scan inactive clients page-by-page until we either
+        # accumulate `limit` pets or exhaust the inactive-client window.
+        # This avoids the heuristic underfill where many clients have no
+        # confirmed pets.
+        CLIENT_PAGE_SIZE = 100
+        MAX_CLIENT_PAGES = 20  # safety cap: 20 * 100 = 2000 clients scanned
+        SAFETY_CAP_REACHED = False
 
-        inactive_pets = [
-            pet for pet in all_pets
-            if int(pet.get("id", 0)) not in active_pet_ids
-        ]
+        vc = VetmanagerClient()
+        result_pets: list[dict] = []
+        clients_scanned = 0
+        cutoff_oldest = ""
+        cutoff_newest = ""
+        offset = 0
+
+        for page_num in range(MAX_CLIENT_PAGES):
+            clients, cutoff_oldest, cutoff_newest = await fetch_inactive_clients_page(
+                months_min=months_min,
+                months_max=months_max,
+                limit=CLIENT_PAGE_SIZE,
+                offset=offset,
+            )
+            if not clients:
+                break
+
+            for client in clients:
+                clients_scanned += 1
+                client_id = client.get("id")
+                last_visit = client.get("last_visit_date", "")
+                if client_id is None or not last_visit:
+                    continue
+
+                visited_pets = await find_pets_at_client_last_visit(
+                    vc, client_id=int(client_id), last_visit_date=last_visit
+                )
+
+                client_name_parts = [
+                    client.get("last_name", ""),
+                    client.get("first_name", ""),
+                    client.get("middle_name", ""),
+                ]
+                client_name = " ".join(p for p in client_name_parts if p).strip()
+
+                for pet in visited_pets:
+                    result_pets.append({
+                        "id": pet.get("id"),
+                        "alias": pet.get("alias", ""),
+                        "type_id": pet.get("type_id"),
+                        "owner_id": pet.get("owner_id", client_id),
+                        "owner_name": client_name,
+                        "owner_phone": client.get("cell_phone", ""),
+                        "last_visit_date": last_visit,
+                        "visit_source": pet.get("visit_source"),
+                    })
+                    if len(result_pets) >= limit:
+                        break
+
+                if len(result_pets) >= limit:
+                    break
+
+            if len(result_pets) >= limit:
+                break
+
+            if len(clients) < CLIENT_PAGE_SIZE:
+                # Last page reached; no more clients to scan
+                break
+
+            offset += CLIENT_PAGE_SIZE
+            if page_num + 1 == MAX_CLIENT_PAGES:
+                SAFETY_CAP_REACHED = True
 
         return {
-            "inactive_pets": inactive_pets[:limit],
-            "total_pets": total_pets,
-            "total_inactive": len(inactive_pets),
-            "cutoff_date": cutoff_date,
-            "months": months,
+            "inactive_pets": result_pets,
+            "limit_applied": limit,
+            "clients_scanned": clients_scanned,
+            "cutoff_window": {"from": cutoff_oldest, "to": cutoff_newest},
+            "months_min": months_min,
+            "months_max": months_max,
+            "safety_cap_reached": SAFETY_CAP_REACHED,
+            "note": (
+                "Returned top N pets confirmed at last client visit via invoice "
+                "(or medcard fallback). Pass higher limit or different "
+                "months_min/months_max to customize."
+            ),
         }
