@@ -839,7 +839,7 @@
 ### 53.4 База данных — `done`
 
 - 53.4.1 Добавить индексы на FK-колонки `ServiceBearerToken.account_id` и `VetmanagerConnection.account_id` — `done`
-- 53.4.2 Добавить CHECK constraints или Enum для статусных полей — `todo` (low priority; risk: SQLite vs PostgreSQL compatibility)
+- 53.4.2 Добавить CHECK constraints или Enum для статусных полей — `done`
 - 53.4.3 Верифицировать миграцию 3 (token scope policy) на соответствие `storage_models.py` — `done` (migration 3 adds access_policy_version + scopes_json, matches model)
 
 ## Этап 54. Инфраструктура: production hardening — `done`

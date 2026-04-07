@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from exceptions import AuthError, HostResolutionError, VetmanagerError, VetmanagerTimeoutError
 from host_resolver import resolve_vetmanager_host as _resolve_host_via_billing
 from domain_validation import validate_domain as _validate_domain
-from storage_models import VetmanagerConnection
+from storage_models import CONNECTION_STATUS_ACTIVE, CONNECTION_STATUS_DISABLED, VetmanagerConnection
 from vetmanager_auth import (
     VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
     VETMANAGER_AUTH_MODE_USER_TOKEN,
@@ -201,12 +201,12 @@ async def _disable_existing_active_connections(session: AsyncSession, *, account
         await session.execute(
             select(VetmanagerConnection).where(
                 VetmanagerConnection.account_id == account_id,
-                VetmanagerConnection.status == "active",
+                VetmanagerConnection.status == CONNECTION_STATUS_ACTIVE,
             )
         )
     ).scalars().all()
     for existing in existing_connections:
-        existing.status = "disabled"
+        existing.status = CONNECTION_STATUS_DISABLED
 
 
 async def save_domain_api_key_connection(
@@ -226,7 +226,7 @@ async def save_domain_api_key_connection(
     connection = VetmanagerConnection(
         account_id=account_id,
         auth_mode=VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
-        status="active",
+        status=CONNECTION_STATUS_ACTIVE,
         domain=normalized_domain,
     )
     connection.set_credentials(
@@ -262,7 +262,7 @@ async def save_user_token_connection(
     connection = VetmanagerConnection(
         account_id=account_id,
         auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
-        status="active",
+        status=CONNECTION_STATUS_ACTIVE,
         domain=normalized_domain,
     )
     connection.set_credentials(
@@ -306,7 +306,7 @@ async def save_user_login_password_connection(
     connection = VetmanagerConnection(
         account_id=account_id,
         auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
-        status="active",
+        status=CONNECTION_STATUS_ACTIVE,
         domain=normalized_domain,
     )
     connection.set_credentials(

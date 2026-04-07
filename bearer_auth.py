@@ -25,6 +25,7 @@ from domain_validation import ip_matches_mask
 from exceptions import AuthError, RateLimitError
 from service_metrics import record_auth_failure
 from storage_models import (
+    ACCOUNT_STATUS_ACTIVE,
     Account,
     ServiceBearerToken,
     TOKEN_STATUS_DISABLED,
@@ -120,7 +121,7 @@ async def resolve_bearer_auth_context(
         )
         await session.commit()
         raise AuthError("Invalid authorization.", status_code=401)
-    if token.status == TOKEN_STATUS_DISABLED or account.status != "active":
+    if token.status == TOKEN_STATUS_DISABLED or account.status != ACCOUNT_STATUS_ACTIVE:
         record_auth_failure(source="bearer_runtime", reason="disabled")
         raise AuthError("Invalid authorization.", status_code=401)
 

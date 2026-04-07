@@ -3303,3 +3303,23 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - cutoff = today - months*30 (приближённо, не calendar months) — достаточно для бизнес-целей.
 - Параллельная загрузка через gather для минимизации latency.
 - Для больших клиник (>10000 питомцев) может быть медленно — paginate_all загружает всё.
+
+## Этап 53.4.2. CHECK constraints для статусных полей
+
+**Что сделано:**
+
+- Добавлены константы статусов в storage_models.py: ACCOUNT_STATUSES, CONNECTION_STATUSES, TOKEN_STATUSES.
+- CheckConstraint в __table_args__ для всех 3 моделей: Account, VetmanagerConnection, ServiceBearerToken.
+- Alembic migration 20260407_000006: использует op.batch_alter_table для SQLite-совместимости. Перед добавлением constraints — нормализует существующие невалидные значения (UPDATE WHERE NOT IN ...) с защитой от NULL.
+- Рефакторинг: bearer_auth.py, web_auth.py, vetmanager_connection_service.py, web.py — заменил hardcoded "active" на константы.
+- 2 новых теста: проверка отказа INSERT с invalid status (3 таблицы) + проверка нормализации legacy данных при upgrade.
+- 404 passed.
+
+**Codex review fixes:**
+- NULL handling в migration UPDATE (status IS NULL OR status NOT IN ...) — safety даже для NOT NULL колонок.
+- Тест нормализации расширен на все 3 таблицы (был только accounts).
+
+**Решения:**
+- CHECK constraint вместо Enum: SQLAlchemy Enum плохо работает с SQLite/Alembic ALTER (требует CREATE TYPE в PostgreSQL, отдельный кейс в SQLite). CHECK IN (...) — нативно работает в обеих СУБД.
+- batch_alter_table: SQLite не поддерживает ALTER TABLE ADD CONSTRAINT, batch mode пересоздаёт таблицу.
+- Нормализация легаси: invalid → 'active' для accounts, 'disabled' для остальных (безопасный default).

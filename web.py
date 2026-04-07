@@ -24,7 +24,13 @@ from request_context import attach_request_context_headers
 from secret_manager import get_storage_encryption_key
 from service_metrics import record_http_request
 from storage import get_session_factory
-from storage_models import Account, ServiceBearerToken, TokenUsageStat, VetmanagerConnection
+from storage_models import (
+    CONNECTION_STATUS_ACTIVE,
+    Account,
+    ServiceBearerToken,
+    TokenUsageStat,
+    VetmanagerConnection,
+)
 from token_cleanup import sync_expired_tokens
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
 from vetmanager_connection_service import (
@@ -237,7 +243,7 @@ async def _load_account_dashboard(
             .select_from(VetmanagerConnection)
             .where(
                 VetmanagerConnection.account_id == account.id,
-                VetmanagerConnection.status == "active",
+                VetmanagerConnection.status == CONNECTION_STATUS_ACTIVE,
             )
         )
         bearer_token_count = await session.scalar(
@@ -249,7 +255,7 @@ async def _load_account_dashboard(
             select(VetmanagerConnection)
             .where(
                 VetmanagerConnection.account_id == account.id,
-                VetmanagerConnection.status == "active",
+                VetmanagerConnection.status == CONNECTION_STATUS_ACTIVE,
             )
             .order_by(VetmanagerConnection.id.desc())
         )

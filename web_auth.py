@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
-from storage_models import Account
+from storage_models import ACCOUNT_STATUS_ACTIVE, Account
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PASSWORD_SCHEME = "pbkdf2_sha256"
@@ -221,7 +221,7 @@ async def register_account(
     account = Account(
         email=normalized_email,
         password_hash=hash_account_password(password),
-        status="active",
+        status=ACCOUNT_STATUS_ACTIVE,
     )
     session.add(account)
     await session.commit()
@@ -238,7 +238,7 @@ async def authenticate_account(
     """Return active account for valid credentials, otherwise None."""
     normalized_email = normalize_account_email(email)
     account = await session.scalar(select(Account).where(Account.email == normalized_email))
-    if account is None or account.status != "active":
+    if account is None or account.status != ACCOUNT_STATUS_ACTIVE:
         return None
     if not verify_account_password(password, account.password_hash):
         return None

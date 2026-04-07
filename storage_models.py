@@ -3,7 +3,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from bearer_token_manager import build_token_prefix, hash_bearer_token, verify_bearer_token
@@ -15,16 +15,30 @@ from token_scopes import (
     serialize_token_scopes,
 )
 
+ACCOUNT_STATUS_ACTIVE = "active"
+ACCOUNT_STATUSES = (ACCOUNT_STATUS_ACTIVE,)
+
+CONNECTION_STATUS_ACTIVE = "active"
+CONNECTION_STATUS_DISABLED = "disabled"
+CONNECTION_STATUSES = (CONNECTION_STATUS_ACTIVE, CONNECTION_STATUS_DISABLED)
+
 TOKEN_STATUS_ACTIVE = "active"
 TOKEN_STATUS_REVOKED = "revoked"
 TOKEN_STATUS_EXPIRED = "expired"
 TOKEN_STATUS_DISABLED = "disabled"
+TOKEN_STATUSES = (TOKEN_STATUS_ACTIVE, TOKEN_STATUS_REVOKED, TOKEN_STATUS_EXPIRED, TOKEN_STATUS_DISABLED)
 
 
 class Account(Base):
     """Service account owning a Vetmanager connection and bearer tokens."""
 
     __tablename__ = "accounts"
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN ({', '.join(repr(s) for s in ACCOUNT_STATUSES)})",
+            name="ck_accounts_status",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
@@ -55,6 +69,12 @@ class VetmanagerConnection(Base):
     """Stored Vetmanager auth configuration for one service account."""
 
     __tablename__ = "vetmanager_connections"
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN ({', '.join(repr(s) for s in CONNECTION_STATUSES)})",
+            name="ck_vetmanager_connections_status",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
@@ -93,6 +113,10 @@ class ServiceBearerToken(Base):
     __table_args__ = (
         UniqueConstraint("token_hash", name="uq_service_bearer_tokens_token_hash"),
         UniqueConstraint("token_prefix", name="uq_service_bearer_tokens_token_prefix"),
+        CheckConstraint(
+            f"status IN ({', '.join(repr(s) for s in TOKEN_STATUSES)})",
+            name="ck_service_bearer_tokens_status",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
