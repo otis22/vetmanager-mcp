@@ -318,6 +318,83 @@ async def test_get_cache_isolated_by_api_key_hash():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_get_cache_shared_within_same_account_id():
+    """Two instances with the same explicit account_id should share cache."""
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-acct").mock(
+        return_value=httpx.Response(200, json=make_host_response("https://acct.vetmanager.cloud"))
+    )
+    route = respx.get("https://acct.vetmanager.cloud/rest/api/user").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": 9}]})
+    )
+
+    c1 = make_client_with_resolved_runtime(
+        "clinic-acct", "shared-key", account_id=42, bearer_token_id=1, connection_id=1,
+    )
+    c2 = make_client_with_resolved_runtime(
+        "clinic-acct", "shared-key", account_id=42, bearer_token_id=1, connection_id=1,
+    )
+
+    await c1.get("/rest/api/user", params={"limit": 5, "offset": 0})
+    await c2.get("/rest/api/user", params={"limit": 5, "offset": 0})
+
+    # Same account_id → same cache key → only one upstream call
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_cache_account_id_none_does_not_collide_with_numeric():
+    """Cache key with account_id=None must not collide with numeric account_id."""
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-none").mock(
+        return_value=httpx.Response(200, json=make_host_response("https://none.vetmanager.cloud"))
+    )
+    route = respx.get("https://none.vetmanager.cloud/rest/api/user").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": 1}]})
+    )
+
+    c_none = make_client_with_resolved_runtime(
+        "clinic-none", "k", account_id=1, bearer_token_id=1, connection_id=1,
+    )
+    c_none._account_id = None  # simulate legacy/uninitialized account context
+    c_numeric = make_client_with_resolved_runtime(
+        "clinic-none", "k", account_id=1, bearer_token_id=1, connection_id=1,
+    )
+
+    await c_none.get("/rest/api/user", params={"limit": 5, "offset": 0})
+    await c_numeric.get("/rest/api/user", params={"limit": 5, "offset": 0})
+
+    # Different cache keys (acct:none vs acct:1) → both call upstream
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_cache_isolated_by_account_id():
+    """Two clients with identical credentials but different account_id must not share cache."""
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-shared").mock(
+        return_value=httpx.Response(200, json=make_host_response("https://shared.vetmanager.cloud"))
+    )
+    route = respx.get("https://shared.vetmanager.cloud/rest/api/user").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": 7}]})
+    )
+
+    # Both clients use the SAME domain and api_key but DIFFERENT account_id
+    c_account1 = make_client_with_resolved_runtime(
+        "clinic-shared", "shared-key", account_id=100, bearer_token_id=1, connection_id=1,
+    )
+    c_account2 = make_client_with_resolved_runtime(
+        "clinic-shared", "shared-key", account_id=200, bearer_token_id=2, connection_id=2,
+    )
+
+    await c_account1.get("/rest/api/user", params={"limit": 5, "offset": 0})
+    await c_account2.get("/rest/api/user", params={"limit": 5, "offset": 0})
+
+    # Two distinct cache keys → upstream called twice
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_post_invalidates_domain_entity_tag_cache():
     """Mutation should invalidate cached GET for same domain/entity tag."""
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-invalidate").mock(

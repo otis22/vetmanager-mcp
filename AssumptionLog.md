@@ -3323,3 +3323,16 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - CHECK constraint вместо Enum: SQLAlchemy Enum плохо работает с SQLite/Alembic ALTER (требует CREATE TYPE в PostgreSQL, отдельный кейс в SQLite). CHECK IN (...) — нативно работает в обеих СУБД.
 - batch_alter_table: SQLite не поддерживает ALTER TABLE ADD CONSTRAINT, batch mode пересоздаёт таблицу.
 - Нормализация легаси: invalid → 'active' для accounts, 'disabled' для остальных (безопасный default).
+
+## Этап 54.2.3. account_id в ключ кэша
+
+**Что сделано:**
+
+- vetmanager_client._cache_key() теперь включает `acct:{account_id}` сегмент.
+- 3 новых теста: cache isolation между разными account_id, cache sharing для одного account_id, account_id=None не коллизирует с numeric.
+- 407 passed.
+
+**Решения:**
+- account_id уже доступен в client через resolve_runtime_credentials() — изменение минимальное (1 строка в _cache_key).
+- Fallback `acct:none` для legacy/uninitialized контекста (не должно случаться в проде, но safety).
+- Шаринг кеша внутри одного account сохраняется (тест test_get_cache_shared_within_same_account_id).

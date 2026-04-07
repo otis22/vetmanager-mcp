@@ -120,7 +120,11 @@ class VetmanagerClient:
         return f"{base_url}?{query}"
 
     def _cache_key(self, method: str, full_url: str) -> str:
-        return f"{method.upper()}|{full_url}|{self._api_key_fingerprint()}"
+        # Include account_id for strict isolation between accounts even if they
+        # share identical credentials. Falls back to fingerprint-only key for
+        # legacy callers without account context.
+        account_segment = f"acct:{self._account_id}" if self._account_id is not None else "acct:none"
+        return f"{method.upper()}|{full_url}|{self._api_key_fingerprint()}|{account_segment}"
 
     def _entity_from_path(self, path: str) -> str:
         normalized = path.split("?", 1)[0].strip("/")
