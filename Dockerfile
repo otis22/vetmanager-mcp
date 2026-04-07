@@ -18,7 +18,7 @@ RUN apt-get update && \
 RUN pip install --no-cache-dir \
     "alembic>=1.13.0,<2" \
     "cryptography>=46.0.0,<47" \
-    "fastmcp>=2.0.0,<3" \
+    "fastmcp>=3.1.0,<4" \
     "httpx>=0.27.0,<1" \
     "sentry-sdk>=2.0.0,<3" \
     "sqlalchemy>=2.0.0,<3" \
