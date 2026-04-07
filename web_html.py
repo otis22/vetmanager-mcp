@@ -297,16 +297,16 @@ def render_register_page(*, csrf_token: str, error: str | None = None, email: st
         <h1>Регистрация аккаунта</h1>
         <p>Создайте аккаунт сервиса для подключения клиники и выпуска Bearer-токенов.</p>
         {error_html}
-        <form method="post" action="/register">
+        <form method="post" action="/register" data-testid="register-form">
           {hidden_csrf_input(csrf_token)}
           <label>Email
-            <input type="email" name="email" autocomplete="email" value="{escape(email)}" required>
+            <input type="email" name="email" autocomplete="email" value="{escape(email)}" required data-testid="register-email">
           </label>
           <label>Пароль
-            <input type="password" name="password" autocomplete="new-password" minlength="8" required>
+            <input type="password" name="password" autocomplete="new-password" minlength="8" required data-testid="register-password">
             <small style="color: var(--muted); font-size: 0.85rem;">Минимум 8 символов</small>
           </label>
-          <button type="submit">Создать аккаунт</button>
+          <button type="submit" data-testid="register-submit">Создать аккаунт</button>
         </form>
         <div class="actions">
           <a class="link" href="/login">Уже есть аккаунт</a>
@@ -324,15 +324,15 @@ def render_login_page(*, csrf_token: str, error: str | None = None, email: str =
         <h1>Вход в аккаунт</h1>
         <p>Войдите в аккаунт для управления интеграцией с Vetmanager и Bearer-токенами.</p>
         {error_html}
-        <form method="post" action="/login">
+        <form method="post" action="/login" data-testid="login-form">
           {hidden_csrf_input(csrf_token)}
           <label>Email
-            <input type="email" name="email" autocomplete="email" value="{escape(email)}" required>
+            <input type="email" name="email" autocomplete="email" value="{escape(email)}" required data-testid="login-email">
           </label>
           <label>Пароль
-            <input type="password" name="password" autocomplete="current-password" minlength="8" required>
+            <input type="password" name="password" autocomplete="current-password" minlength="8" required data-testid="login-password">
           </label>
-          <button type="submit">Войти</button>
+          <button type="submit" data-testid="login-submit">Войти</button>
         </form>
         <div class="actions">
           <a class="link" href="/register">Создать аккаунт</a>
@@ -434,7 +434,7 @@ def render_account_page(
             <span style="font-size: 1.2em;">&#9888;</span>
             <span>Токен показывается только один раз. После перезагрузки страницы он будет недоступен. Скопируйте его сейчас.</span>
           </div>
-          <code class="token-flash-value" id="issued-token-value">{escape(issued_raw_token)}</code>
+          <code class="token-flash-value" id="issued-token-value" data-testid="issued-token-value">{escape(issued_raw_token)}</code>
           <div class="copy-row">
             <button class="copy-button" id="issued-token-copy-button" type="button">Скопировать токен</button>
             <span class="copy-status" id="issued-token-copy-status" aria-live="polite"></span>
@@ -527,7 +527,7 @@ def render_account_page(
         {error_html}
         {success_html}
         {active_connection_html}
-        <form method="post" action="/account/integration" data-auth-wizard="true">
+        <form method="post" action="/account/integration" data-auth-wizard="true" data-testid="integration-form">
           {hidden_csrf_input(csrf_token)}
           <div class="panel-card">
             <strong>Выберите способ авторизации Vetmanager</strong>
@@ -535,46 +535,46 @@ def render_account_page(
             <div class="choice-grid">
               <label class="choice-option" id="auth-mode-domain-api-key">
                 <span>
-                  <input type="radio" name="auth_mode" value="{VETMANAGER_AUTH_MODE_DOMAIN_API_KEY}" {"checked" if show_domain_api_key_panel else ""}>
+                  <input type="radio" name="auth_mode" value="{VETMANAGER_AUTH_MODE_DOMAIN_API_KEY}" {"checked" if show_domain_api_key_panel else ""} data-testid="auth-mode-domain-api-key-radio">
                   <strong>Подключить по API key</strong>
                 </span>
                 <p>Подходит, если у вас уже есть рабочий Vetmanager REST API key и нужно быстро подключить клинику.</p>
               </label>
               <label class="choice-option" id="auth-mode-user-token">
                 <span>
-                  <input type="radio" name="auth_mode" value="{VETMANAGER_AUTH_MODE_USER_TOKEN}" {"checked" if show_user_token_panel else ""}>
+                  <input type="radio" name="auth_mode" value="{VETMANAGER_AUTH_MODE_USER_TOKEN}" {"checked" if show_user_token_panel else ""} data-testid="auth-mode-user-token-radio">
                   <strong>Подключить по логину и паролю</strong>
                 </span>
                 <p>Используйте этот вариант, если сервис должен сам получить user token через login/password и дальше хранить только токен.</p>
               </label>
             </div>
           </div>
-          <div class="panel-card field-panel" data-mode-panel="{VETMANAGER_AUTH_MODE_DOMAIN_API_KEY}" {"hidden" if not show_domain_api_key_panel else ""}>
+          <div class="panel-card field-panel" data-mode-panel="{VETMANAGER_AUTH_MODE_DOMAIN_API_KEY}" data-testid="panel-domain-api-key" {"hidden" if not show_domain_api_key_panel else ""}>
             <strong>Шаг 2. Данные клиники для API key</strong>
             <label>Clinic domain
-              <input type="text" name="domain" value="{escape(domain_value)}" placeholder="myclinic" {domain_input_attrs}>
+              <input type="text" name="domain" value="{escape(domain_value)}" placeholder="myclinic" {domain_input_attrs} data-testid="integration-domain">
             </label>
             <label>Vetmanager REST API key
-              <input type="password" name="api_key" autocomplete="off" placeholder="API key" {api_key_input_attrs}>
+              <input type="password" name="api_key" autocomplete="off" placeholder="API key" {api_key_input_attrs} data-testid="integration-api-key">
             </label>
             <p class="hint">Этот вариант не требует логин и пароль пользователя Vetmanager. Достаточно домена клиники и REST API key.</p>
           </div>
-          <div class="panel-card field-panel" data-mode-panel="{VETMANAGER_AUTH_MODE_USER_TOKEN}" {"hidden" if not show_user_token_panel else ""}>
+          <div class="panel-card field-panel" data-mode-panel="{VETMANAGER_AUTH_MODE_USER_TOKEN}" data-testid="panel-user-token" {"hidden" if not show_user_token_panel else ""}>
             <strong>Шаг 2. Данные клиники для логина и пароля</strong>
             <label>Clinic domain
-              <input type="text" name="domain" value="{escape(domain_value)}" placeholder="myclinic" {'' if show_user_token_panel else 'disabled'} data-panel-input="true" data-required-when-active="true">
+              <input type="text" name="domain" value="{escape(domain_value)}" placeholder="myclinic" {'' if show_user_token_panel else 'disabled'} data-panel-input="true" data-required-when-active="true" data-testid="integration-domain-user-token">
             </label>
             <label>Vetmanager login
-              <input type="text" name="vm_login" value="{escape(form_vm_login)}" autocomplete="username" placeholder="user login" {login_input_attrs}>
+              <input type="text" name="vm_login" value="{escape(form_vm_login)}" autocomplete="username" placeholder="user login" {login_input_attrs} data-testid="integration-vm-login">
             </label>
             <label>Vetmanager password
-              <input type="password" name="vm_password" autocomplete="current-password" placeholder="password" {password_input_attrs}>
+              <input type="password" name="vm_password" autocomplete="current-password" placeholder="password" {password_input_attrs} data-testid="integration-vm-password">
             </label>
             <p class="hint">Для этого режима сервис использует логин и пароль только для получения нового user token. Эти данные не сохраняются в storage, логи и audit trail.</p>
           </div>
           <div class="actions">
-            <button type="submit">Сохранить подключение</button>
-            <button type="submit" formaction="/account/integration/reauth">Переавторизоваться и обновить токен</button>
+            <button type="submit" data-testid="integration-submit">Сохранить подключение</button>
+            <button type="submit" formaction="/account/integration/reauth" data-testid="integration-reauth-submit">Переавторизоваться и обновить токен</button>
           </div>
         </form>
         <hr style="border: none; border-top: 1px solid var(--line); margin: 28px 0;">
@@ -582,28 +582,28 @@ def render_account_page(
         {token_error_html}
         {token_success_html}
         {token_note}
-        <form method="post" action="/account/tokens">
+        <form method="post" action="/account/tokens" data-testid="token-form">
           {hidden_csrf_input(csrf_token)}
           <label>Token name
-            <input type="text" name="token_name" value="{escape(token_name)}" placeholder="Cursor production" required {token_disabled}>
+            <input type="text" name="token_name" value="{escape(token_name)}" placeholder="Cursor production" required {token_disabled} data-testid="token-name">
           </label>
           <label>Expires in days
-            <input type="number" name="expires_in_days" value="{escape(token_expiry_days)}" min="1" placeholder="30" {token_disabled}>
+            <input type="number" name="expires_in_days" value="{escape(token_expiry_days)}" min="1" placeholder="30" {token_disabled} data-testid="token-expires-in-days">
           </label>
           <label>Ограничение по IP
-            <input type="text" name="ip_mask" value="{escape(ip_mask)}" placeholder="*.*.*.*" {token_disabled}>
+            <input type="text" name="ip_mask" value="{escape(ip_mask)}" placeholder="*.*.*.*" {token_disabled} data-testid="token-ip-mask">
             <small style="color: var(--muted); font-size: 0.85rem;">Маска IP: *.*.*.* — любой, 85.90.100.* — подсеть, 45.67.89.123 — точный IP</small>
           </label>
-          <button type="submit" {token_disabled}>Выпустить Bearer token</button>
+          <button type="submit" {token_disabled} data-testid="token-submit">Выпустить Bearer token</button>
         </form>
         <hr style="border: none; border-top: 1px solid var(--line); margin: 28px 0;">
         <h2>Текущие токены</h2>
         <p>В списке показываются только безопасные поля. Raw token после создания больше не доступен.</p>
         {token_list_html}
         <p>Текущий MCP runtime использует только <code>Authorization: Bearer &lt;service_token&gt;</code>. Этот web account уже стал источником регистрации, интеграции и выпуска токенов; следующим шагом здесь появится полноценный token list UI.</p>
-        <form method="post" action="/logout">
+        <form method="post" action="/logout" data-testid="logout-form">
           {hidden_csrf_input(csrf_token)}
-          <button type="submit">Выйти</button>
+          <button type="submit" data-testid="logout-submit">Выйти</button>
         </form>
         <div class="actions">
           <a class="link" href="/">На лендинг</a>

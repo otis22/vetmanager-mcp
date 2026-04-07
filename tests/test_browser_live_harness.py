@@ -10,4 +10,4 @@ def test_browser_can_open_live_register_page(page, live_server_url):
 
     assert page.url == f"{live_server_url}/register"
     assert page.locator("h1").inner_text() == "Регистрация аккаунта"
-    assert page.locator('input[name="email"]').count() == 1
+    assert page.get_by_test_id("register-email").count() == 1

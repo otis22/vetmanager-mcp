@@ -49,26 +49,24 @@ def test_real_browser_domain_api_key_flow_can_issue_bearer_and_call_mcp(
     browser_account_cleanup.track_account_email(account_email)
 
     page.goto(f"{live_server_url}/register")
-    page.locator('input[name="email"]').fill(account_email)
-    page.locator('input[name="password"]').fill("Real-Browser-Pass-123")
-    page.locator('form[action="/register"] button[type="submit"]').click()
+    page.get_by_test_id("register-email").fill(account_email)
+    page.get_by_test_id("register-password").fill("Real-Browser-Pass-123")
+    page.get_by_test_id("register-submit").click()
     page.wait_for_load_state("networkidle")
 
-    integration_form = page.locator('form[data-auth-wizard="true"]')
-    api_panel = integration_form.locator('[data-mode-panel="domain_api_key"]')
-    api_panel.locator('input[name="domain"]').fill(TEST_DOMAIN)
-    api_panel.locator('input[name="api_key"]').fill(TEST_API_KEY)
-    integration_form.locator('button[type="submit"]').first.click()
+    page.get_by_test_id("integration-domain").fill(TEST_DOMAIN)
+    page.get_by_test_id("integration-api-key").fill(TEST_API_KEY)
+    page.get_by_test_id("integration-submit").click()
     page.wait_for_load_state("networkidle")
 
     assert "Vetmanager integration saved successfully." in page.content()
 
-    page.locator('form[action="/account/tokens"] input[name="token_name"]').fill("Real browser API token")
-    page.locator('form[action="/account/tokens"] input[name="expires_in_days"]').fill("7")
-    page.locator('form[action="/account/tokens"] button[type="submit"]').click()
+    page.get_by_test_id("token-name").fill("Real browser API token")
+    page.get_by_test_id("token-expires-in-days").fill("7")
+    page.get_by_test_id("token-submit").click()
     page.wait_for_load_state("networkidle")
 
-    raw_token = page.locator("#issued-token-value").text_content()
+    raw_token = page.get_by_test_id("issued-token-value").text_content()
     with patch.object(
         request_credentials,
         "_get_request_headers",
@@ -94,31 +92,29 @@ def test_real_browser_user_token_flow_can_issue_bearer_and_call_mcp(
     browser_account_cleanup.track_account_email(account_email)
 
     page.goto(f"{live_server_url}/register")
-    page.locator('input[name="email"]').fill(account_email)
-    page.locator('input[name="password"]').fill("Real-Browser-Pass-123")
-    page.locator('form[action="/register"] button[type="submit"]').click()
+    page.get_by_test_id("register-email").fill(account_email)
+    page.get_by_test_id("register-password").fill("Real-Browser-Pass-123")
+    page.get_by_test_id("register-submit").click()
     page.wait_for_load_state("networkidle")
 
-    integration_form = page.locator('form[data-auth-wizard="true"]')
-    integration_form.locator('input[name="auth_mode"][value="user_token"]').check()
-    page.locator('[data-mode-panel="user_token"]').wait_for(state="visible")
+    page.get_by_test_id("auth-mode-user-token-radio").check()
+    page.get_by_test_id("panel-user-token").wait_for(state="visible")
 
-    user_panel = integration_form.locator('[data-mode-panel="user_token"]')
     real_domain = TEST_DOMAIN or TEST_USER_TOKEN_BASE_URL.split("//", 1)[-1].split(".", 1)[0]
-    user_panel.locator('input[name="domain"]').fill(real_domain)
-    user_panel.locator('input[name="vm_login"]').fill(TEST_USER_LOGIN)
-    user_panel.locator('input[name="vm_password"]').fill(TEST_USER_PASSWORD)
-    integration_form.locator('button[type="submit"]').first.click()
+    page.get_by_test_id("integration-domain-user-token").fill(real_domain)
+    page.get_by_test_id("integration-vm-login").fill(TEST_USER_LOGIN)
+    page.get_by_test_id("integration-vm-password").fill(TEST_USER_PASSWORD)
+    page.get_by_test_id("integration-submit").click()
     page.wait_for_load_state("networkidle")
 
     assert "Vetmanager integration saved successfully." in page.content()
 
-    page.locator('form[action="/account/tokens"] input[name="token_name"]').fill("Real browser user token")
-    page.locator('form[action="/account/tokens"] input[name="expires_in_days"]').fill("7")
-    page.locator('form[action="/account/tokens"] button[type="submit"]').click()
+    page.get_by_test_id("token-name").fill("Real browser user token")
+    page.get_by_test_id("token-expires-in-days").fill("7")
+    page.get_by_test_id("token-submit").click()
     page.wait_for_load_state("networkidle")
 
-    raw_token = page.locator("#issued-token-value").text_content()
+    raw_token = page.get_by_test_id("issued-token-value").text_content()
     with patch.object(
         request_credentials,
         "_get_request_headers",

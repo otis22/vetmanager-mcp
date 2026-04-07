@@ -26,38 +26,36 @@ def test_browser_user_token_flow_can_issue_bearer_and_call_mcp(
     browser_account_cleanup.track_account_email(account_email)
 
     page.goto(f"{live_server_url}/register")
-    page.locator('input[name="email"]').fill(account_email)
-    page.locator('input[name="password"]').fill("Browser-User-Pass-123")
-    page.locator('form[action="/register"] button[type="submit"]').click()
+    page.get_by_test_id("register-email").fill(account_email)
+    page.get_by_test_id("register-password").fill("Browser-User-Pass-123")
+    page.get_by_test_id("register-submit").click()
     page.wait_for_load_state("networkidle")
 
     assert page.locator("h1").inner_text() == "Личный кабинет"
-    assert page.locator('input[name="api_key"]').count() == 1
+    assert page.get_by_test_id("integration-api-key").count() == 1
 
-    integration_form = page.locator('form[data-auth-wizard="true"]')
-    integration_form.locator('input[name="auth_mode"][value="user_token"]').check()
-    page.locator('[data-mode-panel="user_token"]').wait_for(state="visible")
+    page.get_by_test_id("auth-mode-user-token-radio").check()
+    page.get_by_test_id("panel-user-token").wait_for(state="visible")
 
-    assert page.locator('[data-mode-panel="user_token"]').is_visible()
-    assert page.locator('[data-mode-panel="domain_api_key"]').is_hidden()
+    assert page.get_by_test_id("panel-user-token").is_visible()
+    assert page.get_by_test_id("panel-domain-api-key").is_hidden()
 
-    user_token_panel = integration_form.locator('[data-mode-panel="user_token"]')
-    user_token_panel.locator('input[name="domain"]').fill(mocked.domain)
-    user_token_panel.locator('input[name="vm_login"]').fill(mocked.login)
-    user_token_panel.locator('input[name="vm_password"]').fill(mocked.password)
-    integration_form.locator('button[type="submit"]').first.click()
+    page.get_by_test_id("integration-domain-user-token").fill(mocked.domain)
+    page.get_by_test_id("integration-vm-login").fill(mocked.login)
+    page.get_by_test_id("integration-vm-password").fill(mocked.password)
+    page.get_by_test_id("integration-submit").click()
     page.wait_for_load_state("networkidle")
 
     assert "Vetmanager integration saved successfully." in page.content()
     assert mocked.password not in page.content()
     assert mocked.user_token not in page.content()
 
-    page.locator('form[action="/account/tokens"] input[name="token_name"]').fill("Browser user token")
-    page.locator('form[action="/account/tokens"] input[name="expires_in_days"]').fill("7")
-    page.locator('form[action="/account/tokens"] button[type="submit"]').click()
+    page.get_by_test_id("token-name").fill("Browser user token")
+    page.get_by_test_id("token-expires-in-days").fill("7")
+    page.get_by_test_id("token-submit").click()
     page.wait_for_load_state("networkidle")
 
-    raw_token = page.locator("#issued-token-value").text_content()
+    raw_token = page.get_by_test_id("issued-token-value").text_content()
     assert raw_token.startswith("vm_st_")
     assert mocked.password not in page.content()
     assert mocked.user_token not in page.content()

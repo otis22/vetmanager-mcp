@@ -1076,7 +1076,7 @@
 ### 68.3 Стабильность browser E2E — `done`
 
 - 68.3.1 Заменить wait_for_timeout(50) на visibility waits — `done`
-- 68.3.2 Добавить data-testid атрибуты в HTML, обновить селекторы — `todo` (nice-to-have: browser E2E работают по CSS-селекторам)
+- 68.3.2 Добавить data-testid атрибуты в HTML, обновить селекторы — `done`
 
 ### 68.4 Аудит test-файлов без тестов — `done`
 

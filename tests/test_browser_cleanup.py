@@ -24,24 +24,22 @@ def test_browser_cleanup_removes_account_and_related_entities(
     browser_account_cleanup.track_account_email(account_email)
 
     page.goto(f"{live_server_url}/register")
-    page.locator('input[name="email"]').fill(account_email)
-    page.locator('input[name="password"]').fill("Browser-Cleanup-Pass-123")
-    page.locator('form[action="/register"] button[type="submit"]').click()
+    page.get_by_test_id("register-email").fill(account_email)
+    page.get_by_test_id("register-password").fill("Browser-Cleanup-Pass-123")
+    page.get_by_test_id("register-submit").click()
     page.wait_for_load_state("networkidle")
 
-    integration_form = page.locator('form[data-auth-wizard="true"]')
-    domain_api_key_panel = integration_form.locator('[data-mode-panel="domain_api_key"]')
-    domain_api_key_panel.locator('input[name="domain"]').fill(mocked.domain)
-    domain_api_key_panel.locator('input[name="api_key"]').fill(mocked.api_key)
-    integration_form.locator('button[type="submit"]').first.click()
+    page.get_by_test_id("integration-domain").fill(mocked.domain)
+    page.get_by_test_id("integration-api-key").fill(mocked.api_key)
+    page.get_by_test_id("integration-submit").click()
     page.wait_for_load_state("networkidle")
 
-    page.locator('form[action="/account/tokens"] input[name="token_name"]').fill("Browser cleanup token")
-    page.locator('form[action="/account/tokens"] input[name="expires_in_days"]').fill("7")
-    page.locator('form[action="/account/tokens"] button[type="submit"]').click()
+    page.get_by_test_id("token-name").fill("Browser cleanup token")
+    page.get_by_test_id("token-expires-in-days").fill("7")
+    page.get_by_test_id("token-submit").click()
     page.wait_for_load_state("networkidle")
 
-    raw_token = page.locator("#issued-token-value").text_content()
+    raw_token = page.get_by_test_id("issued-token-value").text_content()
     with patch.object(
         request_credentials,
         "_get_request_headers",

@@ -3336,3 +3336,22 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - account_id уже доступен в client через resolve_runtime_credentials() — изменение минимальное (1 строка в _cache_key).
 - Fallback `acct:none` для legacy/uninitialized контекста (не должно случаться в проде, но safety).
 - Шаринг кеша внутри одного account сохраняется (тест test_get_cache_shared_within_same_account_id).
+
+## Этап 68.3.2. data-testid в HTML
+
+**Что сделано:**
+
+- 22 data-testid атрибута добавлены в web_html.py:
+  - register/login/logout forms (forms + email/password/submit)
+  - integration form: form, panels (domain-api-key, user-token), inputs (domain, api-key, vm-login, vm-password), buttons (submit, reauth)
+  - token form: form, name, expires, ip-mask, submit
+  - issued-token-value (рядом с существующим id)
+- 5 browser-тестов переведены на page.get_by_test_id():
+  test_browser_happy_path_domain_api_key, test_browser_happy_path_user_token,
+  test_browser_cleanup, test_browser_real_opt_in (2 теста), test_browser_live_harness
+- 407 passed.
+
+**Решения:**
+- data-testid добавлены **дополнительно** к существующим селекторам — backwards compatibility с другими тестами/инструментами.
+- Naming convention: kebab-case, по pattern {section}-{element} (e.g. integration-domain, token-submit).
+- Структурные тесты в test_web_auth.py остались работать (используют form actions, не сломаны).

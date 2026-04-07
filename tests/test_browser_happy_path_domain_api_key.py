@@ -23,32 +23,30 @@ def test_browser_domain_api_key_flow_can_issue_bearer_and_call_mcp(
     browser_account_cleanup.track_account_email(account_email)
 
     page.goto(f"{live_server_url}/register")
-    page.locator('input[name="email"]').fill(account_email)
-    page.locator('input[name="password"]').fill("Browser-Domain-Pass-123")
-    page.locator('form[action="/register"] button[type="submit"]').click()
+    page.get_by_test_id("register-email").fill(account_email)
+    page.get_by_test_id("register-password").fill("Browser-Domain-Pass-123")
+    page.get_by_test_id("register-submit").click()
     page.wait_for_load_state("networkidle")
 
     assert page.locator("h1").inner_text() == "Личный кабинет"
-    assert page.locator('input[name="api_key"]').count() == 1
-    assert page.locator('[data-mode-panel="domain_api_key"]').is_visible()
-    assert page.locator('[data-mode-panel="user_token"]').is_hidden()
+    assert page.get_by_test_id("integration-api-key").count() == 1
+    assert page.get_by_test_id("panel-domain-api-key").is_visible()
+    assert page.get_by_test_id("panel-user-token").is_hidden()
 
-    integration_form = page.locator('form[data-auth-wizard="true"]')
-    domain_api_key_panel = integration_form.locator('[data-mode-panel="domain_api_key"]')
-    domain_api_key_panel.locator('input[name="domain"]').fill(mocked.domain)
-    domain_api_key_panel.locator('input[name="api_key"]').fill(mocked.api_key)
-    integration_form.locator('button[type="submit"]').first.click()
+    page.get_by_test_id("integration-domain").fill(mocked.domain)
+    page.get_by_test_id("integration-api-key").fill(mocked.api_key)
+    page.get_by_test_id("integration-submit").click()
     page.wait_for_load_state("networkidle")
 
     assert "Vetmanager integration saved successfully." in page.content()
     assert mocked.api_key not in page.content()
 
-    page.locator('form[action="/account/tokens"] input[name="token_name"]').fill("Browser API token")
-    page.locator('form[action="/account/tokens"] input[name="expires_in_days"]').fill("7")
-    page.locator('form[action="/account/tokens"] button[type="submit"]').click()
+    page.get_by_test_id("token-name").fill("Browser API token")
+    page.get_by_test_id("token-expires-in-days").fill("7")
+    page.get_by_test_id("token-submit").click()
     page.wait_for_load_state("networkidle")
 
-    raw_token = page.locator("#issued-token-value").text_content()
+    raw_token = page.get_by_test_id("issued-token-value").text_content()
     assert raw_token.startswith("vm_st_")
     assert mocked.api_key not in page.content()
 
