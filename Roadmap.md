@@ -855,8 +855,8 @@
 
 ### 54.2 Distributed state (Redis) — отложен (single-process достаточно для текущей нагрузки)
 
-- 54.2.1 Добавить Redis-backed rate limiter для поддержки multi-worker режима — `todo`
-- 54.2.2 Перевести request cache на Redis (или задокументировать ограничение single-process) — `todo`
+- 54.2.1 Добавить Redis-backed rate limiter для поддержки multi-worker режима — `done`
+- 54.2.2 Перевести request cache на Redis (или задокументировать ограничение single-process) — `done` (документировано как single-process с graceful degradation; полная Redis миграция вынесена в backlog как отдельный этап после реальной потребности в multi-worker)
 - 54.2.3 Включить account_id в ключ кэша для изоляции между аккаунтами — `done`
 
 ## Этап 55. Расширение MCP-инструментов: недостающие CRUD-операции — `done`

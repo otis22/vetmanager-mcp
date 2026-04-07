@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
@@ -15,14 +14,13 @@ from starlette.responses import Response
 
 from exceptions import RateLimitError
 from observability_logging import SECURITY_LOGGER
+from rate_limit_backend import get_rate_limit_backend
 from service_metrics import record_auth_failure
 from web_auth import get_web_session_cookie_settings, get_web_session_secret
 
 CSRF_COOKIE_NAME = "vm_csrf"
 CSRF_FIELD_NAME = "csrf_token"
 CSRF_MAX_AGE_SECONDS = 60 * 60 * 2
-
-_RATE_LIMIT_STATE: dict[str, dict[str, deque[float]]] = defaultdict(lambda: defaultdict(deque))
 
 
 def _sign_payload(payload: str, *, secret: str | None = None) -> str:
@@ -140,20 +138,13 @@ def get_request_ip(request: Request) -> str:
     )
 
 
-def _prune_entries(entries: deque[float], *, now_ts: float, window_seconds: int) -> None:
-    lower_bound = now_ts - window_seconds
-    while entries and entries[0] <= lower_bound:
-        entries.popleft()
-
-
 def check_rate_limit(namespace: str, key: str, *, limit: int, window_seconds: int) -> None:
     """Raise 429 when the key already reached the configured number of hits."""
     if limit <= 0:
         return
-    now_ts = datetime.now(timezone.utc).timestamp()
-    entries = _RATE_LIMIT_STATE[namespace][key]
-    _prune_entries(entries, now_ts=now_ts, window_seconds=window_seconds)
-    if len(entries) >= limit:
+    backend = get_rate_limit_backend()
+    count = backend.count_in_window(namespace, key, window_seconds=window_seconds)
+    if count >= limit:
         record_auth_failure(source="web_rate_limit", reason=namespace)
         SECURITY_LOGGER.warning(
             "Rejected request due to rate limit.",
@@ -172,15 +163,12 @@ def check_rate_limit(namespace: str, key: str, *, limit: int, window_seconds: in
 
 def record_rate_limit_hit(namespace: str, key: str, *, window_seconds: int) -> None:
     """Append one hit for the given namespace/key pair."""
-    now_ts = datetime.now(timezone.utc).timestamp()
-    entries = _RATE_LIMIT_STATE[namespace][key]
-    _prune_entries(entries, now_ts=now_ts, window_seconds=window_seconds)
-    entries.append(now_ts)
+    get_rate_limit_backend().record_hit(namespace, key, window_seconds=window_seconds)
 
 
 def clear_rate_limit_key(namespace: str, key: str) -> None:
     """Clear limiter state for a key after successful auth."""
-    _RATE_LIMIT_STATE[namespace].pop(key, None)
+    get_rate_limit_backend().clear(namespace, key)
 
 
 def get_rate_limit_config(prefix: str, *, default_attempts: int, default_window_seconds: int) -> tuple[int, int]:
@@ -192,4 +180,4 @@ def get_rate_limit_config(prefix: str, *, default_attempts: int, default_window_
 
 def reset_web_security_state() -> None:
     """Clear process-local limiter state for tests."""
-    _RATE_LIMIT_STATE.clear()
+    get_rate_limit_backend().reset_all()

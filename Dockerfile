@@ -24,7 +24,8 @@ RUN pip install --no-cache-dir \
     "sqlalchemy>=2.0.0,<3" \
     "aiosqlite>=0.20.0,<1" \
     "asyncpg>=0.29.0,<1" \
-    "psycopg2-binary>=2.9.0,<3"
+    "psycopg2-binary>=2.9.0,<3" \
+    "redis>=5.0.0,<6"
 
 # ── Production image ─────────────────────────────────────────────────────────
 FROM base AS production
@@ -50,7 +51,8 @@ RUN pip install --no-cache-dir \
     "pytest>=8.0.0,<9" \
     "pytest-asyncio>=0.23.0,<0.24" \
     "pytest-cov>=5.0.0,<6" \
-    "respx>=0.21.0"
+    "respx>=0.21.0" \
+    "fakeredis>=2.20.0,<3"
 
 RUN python -m playwright install --with-deps chromium && \
     chmod -R a+rX "${PLAYWRIGHT_BROWSERS_PATH}"

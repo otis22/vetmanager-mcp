@@ -3355,3 +3355,27 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - data-testid добавлены **дополнительно** к существующим селекторам — backwards compatibility с другими тестами/инструментами.
 - Naming convention: kebab-case, по pattern {section}-{element} (e.g. integration-domain, token-submit).
 - Структурные тесты в test_web_auth.py остались работать (используют form actions, не сломаны).
+
+## Этап 54.2.1-54.2.2. Redis backend для rate limiter (и cache — deferred)
+
+**Что сделано (54.2.1):**
+
+- Новый модуль `rate_limit_backend.py` с интерфейсом RateLimitBackend (Protocol).
+- `InMemoryRateLimitBackend` — рефакторинг текущей логики из web_security.py.
+- `RedisRateLimitBackend` — sliding window через Redis ZSET (ZADD/ZCARD/ZREMRANGEBYSCORE), TTL для auto-expire.
+- Factory `get_rate_limit_backend()` — выбор по `REDIS_URL` env var, graceful fallback на in-memory при недоступности Redis.
+- web_security.py делегирует все rate limit операции в backend через factory.
+- 13 новых тестов: in-memory regression (6), Redis backend через fakeredis (5), factory selection (2).
+- Зависимости: redis>=5.0.0,<6 (production), fakeredis>=2.20.0,<3 (test).
+
+**Что сделано (54.2.2):**
+
+- Документировано как single-process ограничение (request_cache.py).
+- Полная миграция cache на Redis отложена: требует переноса async API + serialization + tag index migration. Приоритет — only when actually needed (multi-worker prod deploy).
+- Архитектура rate_limit_backend.py может быть взята за образец для будущей реализации `request_cache_backend.py`.
+
+**Решения:**
+- Опциональный Redis: zero impact на dev/single-process. По умолчанию — in-memory.
+- Sliding window через ZSET: timestamp = score, unique nonce member для конкурентных hit'ов.
+- Graceful fallback при ping failure → log warning + in-memory. Не падаем при недоступности Redis.
+- reset_all() для Redis ограничен prefix `vmrl:*` — safety против случайного flushdb.
