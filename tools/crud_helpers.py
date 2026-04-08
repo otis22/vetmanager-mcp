@@ -58,8 +58,14 @@ async def paginate_all(
     filters: list[dict] | None = None,
     page_size: int = 100,
     entity_key: str,
+    max_rows: int | None = None,
 ) -> tuple[list[dict], int]:
     """Fetch all pages of a list endpoint.
+
+    Args:
+        max_rows: Optional hard cap on total rows fetched. Raises
+            ValueError if totalCount (or collected rows) exceeds the cap —
+            prevents runaway memory use on pathologically large result sets.
 
     Returns:
         Tuple of (all_records, total_count).
@@ -82,11 +88,24 @@ async def paginate_all(
         total_count = int(data.get("totalCount", 0)) if isinstance(data, dict) else 0
         records = data.get(entity_key, []) if isinstance(data, dict) else []
 
+        if max_rows is not None and total_count > max_rows:
+            raise ValueError(
+                f"result set too large for {endpoint}: totalCount={total_count} "
+                f"exceeds max_rows={max_rows}. Narrow your date range or filters."
+            )
+
         if not records:
             break
 
         all_records.extend(records)
         offset += len(records)
+
+        if max_rows is not None and len(all_records) > max_rows:
+            raise ValueError(
+                f"result set too large for {endpoint}: accumulated "
+                f"{len(all_records)} rows exceeds max_rows={max_rows}. "
+                "Narrow your date range or filters."
+            )
 
         if offset >= total_count or len(records) < page_size:
             break

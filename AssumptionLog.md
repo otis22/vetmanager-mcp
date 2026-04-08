@@ -3465,3 +3465,58 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 **Ограничения:**
 - Локализованные слова (`сегодня`, `вчера`) не поддерживаются — LLM переводит сам.
 - Границы ±20 лет: если понадобится запрос на архивные данные старше 20 лет — bypass через абсолютную ISO дату, это всё ещё работает.
+
+## Этап 80. `get_doctor_free_slots` — свободные окна врача
+
+**Что сделано:**
+- `tools/_slots_helpers.py` — pure-функции для расчёта свободных слотов: `merge_intervals`, `subtract_intervals`, `chunk_into_slots`, `compute_free_slots`, `parse_admission_length`, `parse_vm_datetime`. Работают с naive datetime интервалами.
+- `tools/schedule.py::get_doctor_free_slots` — MCP tool: fetch timesheet + admissions для врача, вычет busy из work, нарезка на слоты заданного размера. Per-clinic группировка. Клиппинг к окну [date_from, date_to+1).
+- `tools/crud_helpers.py::paginate_all` получил параметр `max_rows` (hard cap) для защиты от runaway memory.
+- 37 unit-тестов на helper + 14 e2e mock тестов для tool. Real API probe на devtr6 успешен: возвращает корректные слоты включая night-shift.
+
+**Real API probe (devtr6):**
+- `/rest/api/timesheet` поля: `id`, `doctor_id`, `shedule_id`, `begin_datetime` (`YYYY-MM-DD HH:MM:SS`), `end_datetime`, `type`, `shift`, `title`, `all_day`, `night`, `action_id`, `clinic_id`. Фильтры `>=`/`<` по begin/end_datetime работают.
+- Night-shift подтверждён: одна строка timesheet может переходить через полночь (`2026-04-10 22:00:00 → 2026-04-11 08:00:00`).
+- `admission.admission_length` встречается как `"00:00:00"` (sentinel unset) и как реальные значения (`"00:01:00"`, `"00:30:00"`, ...).
+- Admission filter `user_id=X AND admission_date >=/<` работает.
+
+**Решения:**
+- **Имена полей несогласованы между сущностями**: timesheet использует `doctor_id`, admission — `user_id`. Внутри tool мапим оба в публичный параметр `doctor_id`.
+- **Перерывы/обед**: не отдельной сущностью, а как gap между соседними timesheet-строками одного дня. Алгоритм обрабатывает это нативно — `subtract_intervals` работает с абсолютными datetime, не с днями.
+- **Night shifts**: timesheet может переходить через полночь как одна строка. Алгоритм уже работает с абсолютными datetime, ничего специального.
+- **`admission_length="00:00:00"` fallback**: использовать `slot_minutes` как длительность по умолчанию. Не делаем второй запрос к `userPosition` в MVP — добавим если real-API покажет высокий процент unset.
+- **Overlap fetch для timesheet**: `begin_datetime < window_end AND end_datetime > window_start` — классический overlap predicate. Ловит night-shifts и частично перекрывающие интервалы.
+- **Back-slack 24h для admissions** (fix по Codex ревью): admission, начавшийся до окна и продолжающийся внутрь окна (например `23:30 + 2h` с окном только `date+1`) иначе был бы пропущен. Widening `admission_date >= window_start - 24h` + client-side overlap filter. 24h покрывает любые реалистичные процедуры (наблюдаемый max < 8h).
+- **Cross-clinic busy**: если врач забронирован в клинике A в 10:00, он не может принимать в клинике B в 10:00. `busy` интервалы НЕ фильтруются по `clinic_id` — применяются ко всем `work` интервалам врача.
+- **Hard cap `_MAX_ROWS_PER_ENTITY = 3000`** на timesheet + admission (fix по Codex ревью): 31 день × ~20 slots/day ≈ 620 admissions expected, 5× headroom.
+- **Active admission statuses**: `save`, `directed`, `accepted`, `in_treatment`, `delayed`, `not_confirmed`. Исключены `deleted`, `not_approved`.
+- **Default диапазон 7 дней** (`date_from="today"`, `date_to="+7d"`), hard cap 31 день чтобы LLM не запросил год.
+- **Клиппинг к окну**: после compute_free_slots слоты клиппятся к `[window_start, window_end)` чтобы ночная смена из последнего дня не леакала в следующий.
+
+**Codex-ревью:**
+- 1 запуск (лимит 2). Findings: 1 critical + 4 warning. Исправлены:
+  - **critical**: admission starting before window не ловилось → back-slack 24h + client-side overlap filter + 2 теста
+  - **warning**: pagination DoS → max_rows cap в `paginate_all` + тест
+  - **warning**: cross-clinic busy correct — подтверждено, без изменений
+  - **warning**: clipping correct — подтверждено
+  - **warning**: overlap fetch correct — подтверждено
+- Skip: silent skipping malformed rows (nice-to-have в будущем), int truncation duration_min (real API даёт целые минуты).
+
+**Ограничения MVP:**
+- `all_day=1` и `night=1` флаги timesheet берутся как обычные datetime интервалы — special casing не делаем (begin/end datetime всё равно заполнены).
+- Multi-clinic admissions: объединяем по всем клиникам врача; каждый слот в ответе несёт `clinic_id` источника.
+- Malformed timesheet/admission rows (отсутствующие поля, невалидный datetime) silently skipped — не падаем на data-корраптности. Когда начнём видеть такие случаи на проде — добавим counter `skipped_rows` в ответ.
+- `duration_min` — int (truncation долей минут). Real API возвращает целые минуты, проблем не наблюдается.
+
+## Этап 78 deferred: phone search in stored format
+
+**Обнаружено при real API probe (devtr6):**
+- `client.cell_phone` в БД хранится с форматированием: `"(918)414-02-59"`, `"(232)131-23-11"`.
+- Текущая реализация `get_clients.phone` нормализует вход к digits-only (`"79184140259"`) и ищет LIKE. Но стороннее значение содержит `(918)414-02-59`, и LIKE по digits не совпадёт.
+- **Работает для коротких фрагментов**: LIKE `"918"` найдёт `"(918)..."`. LIKE `"79184140259"` — нет.
+
+**Решение — отложено:**
+- В MVP оставляем как есть, документируем ограничение в docstring и в логах.
+- Когда понадобится полноценный поиск — либо заменить LIKE на двухфазный (1. try digits-only LIKE, 2. if empty — fetch all, client-side match по нормализованным формам), либо попросить Vetmanager добавить поле `cell_phone_normalized` на их стороне.
+
+**Влияние:** пользователь `get_clients(phone="+79184140259")` сейчас получит пустой результат на реальной клинике. Нужно либо передавать короткий фрагмент (код региона), либо искать по имени.

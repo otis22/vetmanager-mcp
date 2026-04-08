@@ -15,6 +15,7 @@ def register_all(mcp: FastMCP) -> None:
     from tools.warehouse import register as register_warehouse
     from tools.clinical import register as register_clinical
     from tools.operations import register as register_operations
+    from tools.schedule import register as register_schedule
 
     register_client(mcp)
     register_pet(mcp)
@@ -28,3 +29,4 @@ def register_all(mcp: FastMCP) -> None:
     register_warehouse(mcp)
     register_clinical(mcp)
     register_operations(mcp)
+    register_schedule(mcp)

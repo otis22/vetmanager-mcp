@@ -1233,16 +1233,16 @@
 - 79.2 Применить в `get_admissions`, `get_invoices`, `get_average_invoice` (inactive_clients/pets принимают `months: int`, не date-строки — out of scope) — `done`
 - 79.3 34 unit-теста: абсолютный ISO, keywords, +/-Nd/w/m, end-of-month clamp, високосный год, cross-year, december branch, невалидный формат, too-large reject — `done`
 
-## Этап 80. `get_doctor_free_slots` — свободные окна врача на неделю/2 недели/месяц — `todo`
+## Этап 80. `get_doctor_free_slots` — свободные окна врача на неделю/2 недели/месяц — `done`
 
 Цель: дать LLM прямой ответ на «куда можно записать к доктору X». Серверного эндпоинта у Vetmanager нет — вычисляем на клиенте: `(timesheet intervals) MINUS (active admissions)`, где перерывы/обед представлены как gap между соседними timesheet-строками того же дня.
 
-- 80.1 Real API probe: подтвердить формат timesheet.begin_datetime/end_datetime, поведение admission.admission_length=NULL, поля filter для /rest/api/timesheet — `todo`
-- 80.2 Pure-функция `tools/_slots_helpers.py::compute_free_slots(work_intervals, busy_intervals, slot_minutes, min_slot_minutes)` — `todo`
-- 80.3 Tool `get_doctor_free_slots(doctor_id, date_from, date_to, slot_minutes=30, min_slot_minutes=15, clinic_id=0)` с hard cap 31 день и default диапазоном 7 дней — `todo`
-- 80.4 Unit-тесты compute_free_slots: пустой timesheet, полностью занятый день, перекрывающиеся admissions, admission с NULL длительностью, multi-row timesheet с обедом, admission за границей timesheet — `todo`
-- 80.5 Mock e2e тест полного tool с фикстурами timesheet + admission — `todo`
-- 80.6 Обновить tool description: пример цепочки `get_users(name="Иванова") → get_doctor_free_slots(doctor_id=...)` — `todo`
+- 80.1 Real API probe на devtr6: подтверждён формат `begin_datetime`, night-shifts переходят через полночь как одна строка, admission_length `"00:00:00"` встречается, filter `>=`/`<` работает — `done`
+- 80.2 Pure-функция `tools/_slots_helpers.py` (merge_intervals, subtract_intervals, chunk_into_slots, compute_free_slots, parse_admission_length, parse_vm_datetime) — `done`
+- 80.3 Tool `get_doctor_free_slots` в `tools/schedule.py` с validation, overlap-fetch timesheet, admission back-slack 24h (fix по ревью Codex), per-clinic grouping, clip to window — `done`
+- 80.4 37 unit-тестов `test_slots_helpers.py`: merge/subtract/chunk edge cases, lunch-gap multi-row, night-shift crossing midnight, NULL length — `done`
+- 80.5 14 e2e mock тестов: validation, happy paths, deleted/not_approved ignored, night shift, long admission overlap from previous day, max_rows guard — `done`
+- 80.6 Tool description с цепочкой `get_users → get_doctor_free_slots` + domain synonyms; `paginate_all.max_rows` cap добавлен — `done`
 
 ## Этап 81. Эргономические обёртки для типовых вопросов — `todo`
 
