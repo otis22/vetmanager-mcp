@@ -11,38 +11,94 @@ def register(mcp: FastMCP) -> None:
         limit: LimitParam = 20,
         offset: int = 0,
         date: str = "",
+        date_from: str = "",
+        date_to: str = "",
+        doctor_id: int = 0,
+        pet_id: int = 0,
+        client_id: int = 0,
         status: str = "",
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
     ) -> dict:
         """List clinic admissions (appointments/visits).
 
-        To get today's admissions pass date="YYYY-MM-DD" (e.g. "2026-03-06").
-        The date filter is applied via the Vetmanager API filter parameter so only
-        matching records are returned — no client-side filtering needed.
+        For a date range use date_from/date_to (preferred). For a single day
+        use either date="YYYY-MM-DD" or date_from=date_to="YYYY-MM-DD". Do not
+        combine `date` with `date_from`/`date_to` — it is rejected.
 
         Args:
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
-            date: Filter by exact date in YYYY-MM-DD format (optional).
-                  When provided, only admissions whose admission_date starts with
-                  this date are returned.
-            status: Filter by admission status, e.g. 'assigned', 'accepted',
-                    'booked', 'canceled' (optional).
-            sort: Sort specification, e.g. [{"property": "admission_date", "direction": "ASC"}].
-            filter: Additional filter conditions (merged with date/status filters).
+            date: Filter by a single day in YYYY-MM-DD format (back-compat
+                alias for date_from=date_to=<date>). Prefer date_from/date_to.
+            date_from: Start of admission_date range (YYYY-MM-DD, inclusive).
+            date_to: End of admission_date range (YYYY-MM-DD, inclusive).
+            doctor_id: Filter by doctor ID (internally mapped to `user_id`
+                on the admission entity).
+            pet_id: Filter by pet ID (internally mapped to `patient_id`).
+            client_id: Filter by owner/client ID.
+            status: Filter by admission status. Known enum values:
+                save, directed, accepted, deleted, delayed, not_approved,
+                in_treatment, not_confirmed.
+            sort: Sort specification, e.g. [{"property": "admission_date",
+                "direction": "ASC"}].
+            filter: Additional raw filter conditions (merged with named filters).
         """
+        if date and (date_from or date_to):
+            raise ValueError(
+                "use either `date` or `date_from`/`date_to`, not both"
+            )
+
+        effective_from = date_from or date
+        effective_to = date_to or date
+
         combined_filters: list[dict] = list(filter or [])
-        if date:
+        if effective_from:
             combined_filters.append(
-                {"property": "admission_date", "value": date, "operator": "like"}
+                {
+                    "property": "admission_date",
+                    "value": f"{effective_from} 00:00:00",
+                    "operator": ">=",
+                }
+            )
+        if effective_to:
+            # Use strict `<` against the next day's midnight so records with
+            # fractional seconds at 23:59:59.xxx on the target day are
+            # included (sub-second precision is rare in Vetmanager but cheap
+            # to protect against).
+            try:
+                from datetime import date as _date, timedelta
+                parsed = _date.fromisoformat(effective_to)
+                next_day = (parsed + timedelta(days=1)).isoformat()
+            except ValueError as exc:
+                raise ValueError(
+                    f"date_to must be YYYY-MM-DD, got '{effective_to}'"
+                ) from exc
+            combined_filters.append(
+                {
+                    "property": "admission_date",
+                    "value": f"{next_day} 00:00:00",
+                    "operator": "<",
+                }
+            )
+        if doctor_id:
+            combined_filters.append(
+                {"property": "user_id", "value": doctor_id, "operator": "="}
+            )
+        if pet_id:
+            combined_filters.append(
+                {"property": "patient_id", "value": pet_id, "operator": "="}
+            )
+        if client_id:
+            combined_filters.append(
+                {"property": "client_id", "value": client_id, "operator": "="}
             )
         if status:
             combined_filters.append(
                 {"property": "status", "value": status, "operator": "="}
             )
 
-        if sort is None and date:
+        if sort is None and (effective_from or effective_to):
             sort = [{"property": "admission_date", "direction": "ASC"}]
 
         return await crud_list(

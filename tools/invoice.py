@@ -6,11 +6,15 @@ from validators import LimitParam
 
 def register(mcp: FastMCP) -> None:
 
+    _INVOICE_PAYMENT_STATUSES = {"none", "partial", "full"}
+
     @mcp.tool
     async def get_invoices(
         limit: LimitParam = 20,
         offset: int = 0,
         client_id: int = 0,
+        pet_id: int = 0,
+        payment_status: str = "",
         date_from: str = "",
         date_to: str = "",
         sort: list[dict] | None = None,
@@ -22,9 +26,20 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
             client_id: Filter by client ID (0 = no filter).
-            date_from: Filter invoices created on or after this date (YYYY-MM-DD, optional).
-            date_to: Filter invoices created on or before this date (YYYY-MM-DD, optional).
+            pet_id: Filter by pet ID (0 = no filter).
+            payment_status: Filter by payment status. Valid values: 'none'
+                (unpaid), 'partial' (partially paid), 'full' (fully paid).
+                This is the payment state of the invoice, distinct from the
+                workflow `status` field (exec/save/deleted).
+            date_from: Filter invoices created on or after this date (YYYY-MM-DD).
+            date_to: Filter invoices created on or before this date (YYYY-MM-DD).
         """
+        if payment_status and payment_status not in _INVOICE_PAYMENT_STATUSES:
+            raise ValueError(
+                f"payment_status must be one of {sorted(_INVOICE_PAYMENT_STATUSES)}, "
+                f"got '{payment_status}'"
+            )
+
         combined_filters: list[dict] = list(filter or [])
         if date_from:
             combined_filters.append(
@@ -33,6 +48,14 @@ def register(mcp: FastMCP) -> None:
         if date_to:
             combined_filters.append(
                 {"property": "create_date", "value": date_to, "operator": "<="}
+            )
+        if pet_id:
+            combined_filters.append(
+                {"property": "pet_id", "value": pet_id, "operator": "="}
+            )
+        if payment_status:
+            combined_filters.append(
+                {"property": "payment_status", "value": payment_status, "operator": "="}
             )
 
         return await crud_list(

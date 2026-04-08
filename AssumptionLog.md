@@ -3409,3 +3409,36 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - 5-15 sec latency для get_inactive_pets — это on-demand tool, не для realtime UI.
 - Не покрываются клиники где визиты не фиксируются ни в invoices, ни в medcards (крайне редкий edge case).
 - `get_pets` теперь требует `owner_id` (было `client_id`) — breaking change для прямых вызывальщиков, но через MCP интерфейс параметр всегда был optional с default 0.
+
+## Этап 78. Ergonomic filters для LLM-discoverability
+
+**Что сделано:**
+- 6 list-tools получили именованные параметры-сахар над generic `filter=[...]`:
+  - `get_pets.alias` (paired с `owner_id`, standalone → ValueError)
+  - `get_clients.phone` (min 4 digits, normalized digits-only LIKE на `cell_phone`) + `.email` (LIKE)
+  - `get_users.name` (two-request merge last_name OR first_name с dedupe by id), `.position_id`, `.is_active` (tri-state True/False/None)
+  - `get_admissions.date_from/to` + `doctor_id→user_id` + `pet_id→patient_id` + `client_id`; bugfix: `date` LIKE → `>=/<` pair
+  - `get_goods.title` LIKE, `.group_id`, `.is_active`
+  - `get_invoices.payment_status` (none/partial/full enum), `.pet_id`
+- `validators.normalize_phone_digits()` helper для phone нормализации.
+- 24 новых теста через `mcp.call_tool()` + `respx` с проверкой outgoing filter JSON. 463 total passed.
+
+**Решения:**
+- **admission_date boundary**: MVP использует `>= date 00:00:00 AND < next_day 00:00:00` (не `<= 23:59:59`) для защиты от fractional seconds — чистая арифметика, без дополнительного API-probe. Cost = 1 дата-парсинг на вызов.
+- **`get_users.name`**: two-request merge по last_name + first_name, а не OR в filter. Выбор: Vetmanager filter language не документирует OR across properties, и real-API probe не проведён на этапе 78. Merge дороже на 1 HTTP call, но даёт честный UX и не зависит от недокументированной семантики. При реализации этапа 80 можно провести probe и заменить на OR, если окажется поддержан.
+- **`is_active` tri-state**: `True` (default, only active), `False` (only inactive), `None` (all). Raised as `bool | None = True`. Default сохраняет обратную совместимость — старые вызовы без параметра получают active-only, что чаще всего и нужно.
+- **`get_pets.alias` paired-only**: standalone alias rejected через `ValueError`, потому что клички не уникальны per clinic (много Барсиков/Рексов). Сценарий безопасного поиска: `get_clients(name=...) → get_pets(owner_id=..., alias=...)`. Зафиксировано в docstring.
+- **`phone` min 4 digits**: короче — матч пол-базы. Нормализация убирает `+`, пробелы, скобки, дефисы перед LIKE.
+- **`payment_status` enum валидация**: на клиенте, не на API. Раннее отсечение `"paid"` / `"unpaid"` — типовых LLM-ошибок перед походом в API.
+- **`good.py` back-compat**: legacy `name` параметр сохранён (проходит как separate query param через `extra={"name": name}`, не смешиваясь с filter). Новый `title` — рекомендованный путь. Оба работают независимо.
+
+**Codex-ревью:**
+- 2 запуска (лимит из CLAUDE.md 5.4). Первый sandbox-failed, второй дал 5 findings.
+- Адекватные исправлены: `is_active=False` не фильтровало (fix: tri-state), `23:59:59.xxx` fractional seconds (fix: `<` против next midnight), `name` only last_name misleading (fix: two-request merge).
+- Неадекватное: композиция `good.py extra={name}` с filter — Codex не видел build_list_query_params, `extra` передаётся отдельно от filter, back-compat сохранён.
+- Nit исправлен: добавлены тесты композиции user-supplied filter с named params + тесты is_active tri-state.
+
+**Ограничения:**
+- `get_users.name` с merge — offset игнорируется (всегда offset=0), limit применяется после merge. Если результатов больше limit, пагинация невозможна. Acceptable для staff search (обычно десятки, не тысячи сотрудников).
+- Формат хранения `cell_phone` в Vetmanager не подтверждён (чистые цифры vs форматированная строка). MVP делает LIKE по normalized digits; если прод покажет проблему — нужен отдельный этап на полноценную нормализацию с учётом `phone_prefix`.
+- `get_users.name` merge выполняет 2 HTTP call вместо 1 OR-запроса — latency ~2x для name-search.

@@ -38,6 +38,18 @@ def validate_list_params(limit: int, offset: int) -> None:
         )
 
 
+def normalize_phone_digits(raw: str) -> str:
+    """Strip everything except digits from a phone string.
+
+    Returns only decimal digits. Empty input returns empty string.
+    Used for LIKE-style phone search where we want to ignore formatting
+    (parentheses, spaces, dashes, leading +).
+    """
+    if not raw:
+        return ""
+    return "".join(ch for ch in raw if ch.isdigit())
+
+
 def validate_amount(amount: float) -> None:
     """Validate a monetary amount for payment operations.
 

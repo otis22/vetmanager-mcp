@@ -11,6 +11,9 @@ def register(mcp: FastMCP) -> None:
         limit: LimitParam = 20,
         offset: int = 0,
         name: str = "",
+        title: str = "",
+        group_id: int = 0,
+        is_active: bool | None = None,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
     ) -> dict:
@@ -19,11 +22,33 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
-            name: Filter by good name (partial match, optional).
+            name: Legacy server-side name query param (partial match).
+            title: Filter by good title (LIKE match on the `title` field).
+                Prefer this over `name` — it uses the standard filter API.
+            group_id: Filter by product group ID.
+            is_active: Filter by active status. None = no filter (default),
+                True = only active, False = only inactive.
+            sort: Optional sort spec.
+            filter: Optional extra filter spec.
         """
+        combined_filters: list[dict] = list(filter or [])
+        if title:
+            combined_filters.append(
+                {"property": "title", "value": title, "operator": "LIKE"}
+            )
+        if group_id:
+            combined_filters.append(
+                {"property": "group_id", "value": group_id, "operator": "="}
+            )
+        if is_active is not None:
+            combined_filters.append(
+                {"property": "is_active", "value": 1 if is_active else 0, "operator": "="}
+            )
         return await crud_list(
             "/rest/api/good", limit=limit, offset=offset,
-            sort=sort, filters=filter, extra={"name": name},
+            sort=sort,
+            filters=combined_filters if combined_filters else None,
+            extra={"name": name},
         )
 
     @mcp.tool

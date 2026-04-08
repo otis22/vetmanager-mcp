@@ -12,10 +12,17 @@ def register(mcp: FastMCP) -> None:
         limit: LimitParam = 20,
         offset: int = 0,
         owner_id: int = 0,
+        alias: str = "",
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
     ) -> dict:
-        """List pets in the clinic, optionally filtered by owner.
+        """List pets in the clinic, optionally filtered by owner and/or nickname.
+
+        To find a specific pet by its nickname (кличка / alias): first resolve
+        the owner via `get_clients(name=...)` to obtain the client id, then
+        call `get_pets(owner_id=..., alias=...)`. Searching by alias alone is
+        not supported — pet nicknames are not unique per clinic, so standalone
+        alias search would return a mix of unrelated patients.
 
         Args:
             limit: Max records to return (1–100, default 20).
@@ -23,13 +30,27 @@ def register(mcp: FastMCP) -> None:
             owner_id: Filter pets by owner's client ID (0 = no filter).
                 Note: Vetmanager pet table uses `owner_id` as the foreign key
                 to client.id (not client_id).
+            alias: Filter pets by nickname (partial LIKE match). MUST be
+                combined with owner_id — standalone alias search is rejected
+                to prevent wrong-patient results.
             sort: Optional sort spec (forwarded to API).
             filter: Optional filter spec (forwarded to API).
         """
+        if alias and not owner_id:
+            raise ValueError(
+                "alias filter requires owner_id — pet nicknames are not "
+                "unique per clinic. Resolve the owner first via "
+                "get_clients(name=...), then pass owner_id and alias together."
+            )
+
         combined_filters: list[dict] = list(filter or [])
         if owner_id:
             combined_filters.append(
                 {"property": "owner_id", "value": owner_id, "operator": "="}
+            )
+        if alias:
+            combined_filters.append(
+                {"property": "alias", "value": alias, "operator": "LIKE"}
             )
         return await crud_list(
             "/rest/api/pet",

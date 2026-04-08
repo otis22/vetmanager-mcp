@@ -1212,3 +1212,42 @@
 - 77.6 Тесты helper + clients + pets + owner_id consistency — `done`
 - 77.7 Удалить старую реализацию get_inactive_pets (3-source check) — `done`
 - 77.8 Зафиксировать Pet.owner_id в AssumptionLog — `done`
+
+## Этап 78. Ergonomic filters: именованные параметры для LLM-discoverability — `done`
+
+Цель: устранить класс ошибок, когда LLM не может воспользоваться инструментом потому что нужный фильтр доступен только через generic `filter=[{"property":...}]`. Добавить явные именованные параметры-синтаксический сахар поверх существующего filter-контракта, без расширения поведения API.
+
+- 78.1 `get_pets.alias` (paired с `owner_id`), standalone alias → ValueError, tool description с цепочкой «owner → pet» — `done`
+- 78.2 `get_clients.phone` (с нормализацией через helper) + `get_clients.email`, min 4 цифры для phone — `done`
+- 78.3 `get_users.name` (two-request merge last_name + first_name), `position_id`, `is_active` tri-state — `done`
+- 78.4 `get_admissions`: `date_from`/`date_to`, `doctor_id→user_id`, `pet_id→patient_id`, `client_id`, enum status в docstring + bugfix перевода `date` с LIKE на `>=`/`<` (против next midnight для fractional-seconds safety) — `done`
+- 78.5 `get_goods`: `title` LIKE, `group_id`, `is_active` — `done`
+- 78.6 `get_invoices`: `payment_status` (none/partial/full), `pet_id` — `done`
+- 78.7 24 теста (`test_ergonomic_filters.py`): filter composition с user-supplied filter[], validation errors, tri-state is_active — `done`
+
+## Этап 79. Helper относительных дат для date-параметров — `todo`
+
+Цель: принимать `today`/`yesterday`/`tomorrow`/`+Nd`/`-Nd`/`+Nw`/`-Nw`/`+Nm`/`-Nm` во всех date-параметрах инструментов. API Vetmanager по умолчанию отдаёт данные в часовом поясе клиники — helper работает с локальной датой без TZ-конверсий.
+
+- 79.1 Реализовать `validators/dates.py::parse_date_param(value)` — `todo`
+- 79.2 Применить в `get_admissions`, `get_invoices`, `get_average_invoice`, `get_inactive_clients`, `get_inactive_pets`, `get_doctor_free_slots` — `todo`
+- 79.3 Unit-тесты: граница месяца, високосный год, невалидный формат, пустое значение — `todo`
+
+## Этап 80. `get_doctor_free_slots` — свободные окна врача на неделю/2 недели/месяц — `todo`
+
+Цель: дать LLM прямой ответ на «куда можно записать к доктору X». Серверного эндпоинта у Vetmanager нет — вычисляем на клиенте: `(timesheet intervals) MINUS (active admissions)`, где перерывы/обед представлены как gap между соседними timesheet-строками того же дня.
+
+- 80.1 Real API probe: подтвердить формат timesheet.begin_datetime/end_datetime, поведение admission.admission_length=NULL, поля filter для /rest/api/timesheet — `todo`
+- 80.2 Pure-функция `tools/_slots_helpers.py::compute_free_slots(work_intervals, busy_intervals, slot_minutes, min_slot_minutes)` — `todo`
+- 80.3 Tool `get_doctor_free_slots(doctor_id, date_from, date_to, slot_minutes=30, min_slot_minutes=15, clinic_id=0)` с hard cap 31 день и default диапазоном 7 дней — `todo`
+- 80.4 Unit-тесты compute_free_slots: пустой timesheet, полностью занятый день, перекрывающиеся admissions, admission с NULL длительностью, multi-row timesheet с обедом, admission за границей timesheet — `todo`
+- 80.5 Mock e2e тест полного tool с фикстурами timesheet + admission — `todo`
+- 80.6 Обновить tool description: пример цепочки `get_users(name="Иванова") → get_doctor_free_slots(doctor_id=...)` — `todo`
+
+## Этап 81. Эргономические обёртки для типовых вопросов — `todo`
+
+Цель: выделить в самостоятельные MCP-tools те операции, которые LLM-у трудно собрать из общих инструментов, несмотря на этап 78.
+
+- 81.1 `get_client_upcoming_visits(client_id, pet_id=0, date_from=today, days=90)` — тонкая обёртка над get_admissions с фильтром по активным статусам и sort ASC — `todo`
+- 81.2 `get_daily_schedule(date, doctor_id=0, clinic_id=0)` — все приёмы дня с сортировкой по времени — `todo`
+- 81.3 Unit + mock e2e тесты, tool descriptions с примерами — `todo`

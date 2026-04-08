@@ -2,7 +2,7 @@ from fastmcp import FastMCP
 
 from tools._inactive_helpers import fetch_inactive_clients_page
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete, paginate_all
-from validators import LimitParam
+from validators import LimitParam, normalize_phone_digits
 from vetmanager_client import VetmanagerClient
 
 
@@ -13,6 +13,8 @@ def register(mcp: FastMCP) -> None:
         limit: LimitParam = 20,
         offset: int = 0,
         name: str = "",
+        phone: str = "",
+        email: str = "",
         status: str = "ACTIVE",
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -26,6 +28,10 @@ def register(mcp: FastMCP) -> None:
             limit: Max number of records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
             name: Filter by client name (partial match).
+            phone: Filter by cell phone (LIKE match on digits-only
+                normalized value). Must contain at least 4 digits to avoid
+                matching a large fraction of the database.
+            email: Filter by email address (LIKE match).
             status: Filter by client status: 'ACTIVE' (default), 'DELETED',
                     'INACTIVE', or '' for all.
         """
@@ -33,6 +39,20 @@ def register(mcp: FastMCP) -> None:
         if status:
             combined_filters.append(
                 {"property": "status", "value": status, "operator": "="}
+            )
+        if phone:
+            phone_digits = normalize_phone_digits(phone)
+            if len(phone_digits) < 4:
+                raise ValueError(
+                    "phone filter requires at least 4 digits; shorter values "
+                    "would match too many clients. Provide more of the number."
+                )
+            combined_filters.append(
+                {"property": "cell_phone", "value": phone_digits, "operator": "LIKE"}
+            )
+        if email:
+            combined_filters.append(
+                {"property": "email", "value": email, "operator": "LIKE"}
             )
 
         return await crud_list(
