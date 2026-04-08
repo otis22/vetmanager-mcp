@@ -292,7 +292,7 @@ async def test_get_admissions_invalid_date_rejected():
     with headers_patch, runtime_patch:
         with pytest.raises(Exception) as exc_info:
             await mcp.call_tool("get_admissions", {"date_to": "04/08/2026"})
-    assert "YYYY-MM-DD" in str(exc_info.value)
+    assert "Supported formats" in str(exc_info.value) or "invalid" in str(exc_info.value).lower()
 
 
 @pytest.mark.asyncio
@@ -468,6 +468,74 @@ async def test_get_admissions_user_filter_preserved_with_named_params():
     assert "clinic_id" in props
     assert "user_id" in props
     assert props.count("admission_date") == 2
+
+
+# ── Stage 79: relative dates in date params ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_admissions_relative_dates_resolved():
+    """date_from='today', date_to='+7d' must resolve to absolute dates in filter."""
+    from datetime import date, timedelta
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool(
+            "get_admissions",
+            {"date_from": "today", "date_to": "+7d"},
+        )
+    filters = _filter_from_request(route)
+    date_filters = [f for f in filters if f["property"] == "admission_date"]
+    assert len(date_filters) == 2
+    today = date.today()
+    # Expected: >= today 00:00:00, < (today + 8 days) 00:00:00
+    expected_end = (today + timedelta(days=8)).isoformat()
+    gte = [f for f in date_filters if f["operator"] == ">="][0]
+    lt = [f for f in date_filters if f["operator"] == "<"][0]
+    assert gte["value"].startswith(today.isoformat())
+    assert lt["value"].startswith(expected_end)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_invoices_relative_dates():
+    from datetime import date, timedelta
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool(
+            "get_invoices",
+            {"date_from": "-30d", "date_to": "today"},
+        )
+    filters = _filter_from_request(route)
+    date_filters = [f for f in filters if f["property"] == "create_date"]
+    assert len(date_filters) == 2
+    today = date.today()
+    thirty_ago = (today - timedelta(days=30)).isoformat()
+    by_op = {f["operator"]: f["value"] for f in date_filters}
+    assert by_op[">="] == thirty_ago
+    assert by_op["<="] == today.isoformat()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_admissions_invalid_relative_date_rejected():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(Exception) as exc_info:
+            await mcp.call_tool("get_admissions", {"date_from": "next_week"})
+    assert "Supported formats" in str(exc_info.value) or "invalid" in str(exc_info.value).lower()
 
 
 @pytest.mark.asyncio

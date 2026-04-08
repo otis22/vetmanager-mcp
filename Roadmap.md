@@ -1225,13 +1225,13 @@
 - 78.6 `get_invoices`: `payment_status` (none/partial/full), `pet_id` — `done`
 - 78.7 24 теста (`test_ergonomic_filters.py`): filter composition с user-supplied filter[], validation errors, tri-state is_active — `done`
 
-## Этап 79. Helper относительных дат для date-параметров — `todo`
+## Этап 79. Helper относительных дат для date-параметров — `done`
 
 Цель: принимать `today`/`yesterday`/`tomorrow`/`+Nd`/`-Nd`/`+Nw`/`-Nw`/`+Nm`/`-Nm` во всех date-параметрах инструментов. API Vetmanager по умолчанию отдаёт данные в часовом поясе клиники — helper работает с локальной датой без TZ-конверсий.
 
-- 79.1 Реализовать `validators/dates.py::parse_date_param(value)` — `todo`
-- 79.2 Применить в `get_admissions`, `get_invoices`, `get_average_invoice`, `get_inactive_clients`, `get_inactive_pets`, `get_doctor_free_slots` — `todo`
-- 79.3 Unit-тесты: граница месяца, високосный год, невалидный формат, пустое значение — `todo`
+- 79.1 Реализовать `validators.parse_date_param(value, today=None)` + cap на ±20 лет для защиты от OverflowError — `done`
+- 79.2 Применить в `get_admissions`, `get_invoices`, `get_average_invoice` (inactive_clients/pets принимают `months: int`, не date-строки — out of scope) — `done`
+- 79.3 34 unit-теста: абсолютный ISO, keywords, +/-Nd/w/m, end-of-month clamp, високосный год, cross-year, december branch, невалидный формат, too-large reject — `done`
 
 ## Этап 80. `get_doctor_free_slots` — свободные окна врача на неделю/2 недели/месяц — `todo`
 

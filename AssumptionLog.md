@@ -3442,3 +3442,26 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - `get_users.name` с merge — offset игнорируется (всегда offset=0), limit применяется после merge. Если результатов больше limit, пагинация невозможна. Acceptable для staff search (обычно десятки, не тысячи сотрудников).
 - Формат хранения `cell_phone` в Vetmanager не подтверждён (чистые цифры vs форматированная строка). MVP делает LIKE по normalized digits; если прод покажет проблему — нужен отдельный этап на полноценную нормализацию с учётом `phone_prefix`.
 - `get_users.name` merge выполняет 2 HTTP call вместо 1 OR-запроса — latency ~2x для name-search.
+
+## Этап 79. Helper относительных дат
+
+**Что сделано:**
+- `validators.parse_date_param(value, today=None)` — конвертирует относительные формы (`today`, `yesterday`, `tomorrow`, `+Nd`/`-Nd`, `+Nw`/`-Nw`, `+Nm`/`-Nm`) в ISO `YYYY-MM-DD`.
+- `_add_months()` с end-of-month clamp (Jan 31 + 1m → Feb 28/29).
+- Применён в `get_admissions` (date, date_from, date_to), `get_invoices` (date_from, date_to), `get_average_invoice` (date_from, date_to).
+- 34 unit-теста `test_parse_date_param.py` + 3 интеграционных теста в `test_ergonomic_filters.py`. 497 total passed.
+
+**Решения:**
+- **Годы (`+1y`) не поддерживаются в MVP** — редкий сценарий, можно добавить позже без breaking change.
+- **End-of-month clamp**: `_add_months(2026-01-31, 1)` → `2026-02-28`, не `2026-03-03`. Соответствует человеческому ожиданию «через месяц».
+- **Cap ±20 лет** (`_MAX_REL_DAYS = 20*366`, `_MAX_REL_WEEKS`, `_MAX_REL_MONTHS = 240`): защита от `OverflowError` при `+999999999m` и подобных. Любой реалистичный клинический query укладывается в окно 20 лет.
+- **`get_inactive_clients`/`get_inactive_pets` вне scope**: они принимают `months: int` (не строку), логика расчёта окна уже корректна через `timedelta`, применять parse_date_param нет смысла.
+- **TZ**: helper работает с naive `datetime.date`, потому что Vetmanager API возвращает/принимает даты в локальном часовом поясе клиники. Никаких конверсий не нужно (подтверждено пользователем в этапе планирования).
+- **`get_average_invoice` default date_from/date_to** остаются как `today.isoformat()` и `today - 365d` — это defaults когда параметр пустой. parse_date_param применяется только если пользователь передал non-empty значение.
+
+**Codex-ревью:**
+- 1 запуск (внутри лимита 2). Findings: 1 warning (OverflowError от `+999999999d`) + 1 nit (missing test для `month == 12` branch в `_add_months`). Оба адекватные, исправлены: добавлен cap на offset, 2 новых теста в `TestRelativeMonths` + 2 теста в `TestInvalid` на rejection больших значений.
+
+**Ограничения:**
+- Локализованные слова (`сегодня`, `вчера`) не поддерживаются — LLM переводит сам.
+- Границы ±20 лет: если понадобится запрос на архивные данные старше 20 лет — bypass через абсолютную ISO дату, это всё ещё работает.

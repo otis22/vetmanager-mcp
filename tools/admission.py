@@ -1,7 +1,7 @@
 from fastmcp import FastMCP
 
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
-from validators import LimitParam
+from validators import LimitParam, parse_date_param
 
 
 def register(mcp: FastMCP) -> None:
@@ -29,10 +29,13 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
-            date: Filter by a single day in YYYY-MM-DD format (back-compat
-                alias for date_from=date_to=<date>). Prefer date_from/date_to.
-            date_from: Start of admission_date range (YYYY-MM-DD, inclusive).
-            date_to: End of admission_date range (YYYY-MM-DD, inclusive).
+            date: Filter by a single day. Accepts YYYY-MM-DD or relative
+                forms: today, yesterday, tomorrow, +Nd/-Nd, +Nw/-Nw, +Nm/-Nm.
+                Back-compat alias for date_from=date_to=<date>.
+            date_from: Start of admission_date range (inclusive). Same
+                accepted formats as `date`.
+            date_to: End of admission_date range (inclusive). Same
+                accepted formats as `date`.
             doctor_id: Filter by doctor ID (internally mapped to `user_id`
                 on the admission entity).
             pet_id: Filter by pet ID (internally mapped to `patient_id`).
@@ -49,8 +52,8 @@ def register(mcp: FastMCP) -> None:
                 "use either `date` or `date_from`/`date_to`, not both"
             )
 
-        effective_from = date_from or date
-        effective_to = date_to or date
+        effective_from = parse_date_param(date_from or date)
+        effective_to = parse_date_param(date_to or date)
 
         combined_filters: list[dict] = list(filter or [])
         if effective_from:
@@ -62,18 +65,11 @@ def register(mcp: FastMCP) -> None:
                 }
             )
         if effective_to:
-            # Use strict `<` against the next day's midnight so records with
-            # fractional seconds at 23:59:59.xxx on the target day are
-            # included (sub-second precision is rare in Vetmanager but cheap
-            # to protect against).
-            try:
-                from datetime import date as _date, timedelta
-                parsed = _date.fromisoformat(effective_to)
-                next_day = (parsed + timedelta(days=1)).isoformat()
-            except ValueError as exc:
-                raise ValueError(
-                    f"date_to must be YYYY-MM-DD, got '{effective_to}'"
-                ) from exc
+            # Use strict `<` against next day's midnight so records with
+            # fractional seconds at 23:59:59.xxx on the target day are included.
+            from datetime import date as _date, timedelta
+            parsed = _date.fromisoformat(effective_to)
+            next_day = (parsed + timedelta(days=1)).isoformat()
             combined_filters.append(
                 {
                     "property": "admission_date",

@@ -1,7 +1,7 @@
 from fastmcp import FastMCP
 
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete, paginate_all
-from validators import LimitParam
+from validators import LimitParam, parse_date_param
 
 
 def register(mcp: FastMCP) -> None:
@@ -31,8 +31,11 @@ def register(mcp: FastMCP) -> None:
                 (unpaid), 'partial' (partially paid), 'full' (fully paid).
                 This is the payment state of the invoice, distinct from the
                 workflow `status` field (exec/save/deleted).
-            date_from: Filter invoices created on or after this date (YYYY-MM-DD).
-            date_to: Filter invoices created on or before this date (YYYY-MM-DD).
+            date_from: Filter invoices created on or after this date.
+                Accepts YYYY-MM-DD or relative: today, yesterday, tomorrow,
+                +Nd/-Nd, +Nw/-Nw, +Nm/-Nm.
+            date_to: Filter invoices created on or before this date.
+                Same accepted formats as `date_from`.
         """
         if payment_status and payment_status not in _INVOICE_PAYMENT_STATUSES:
             raise ValueError(
@@ -40,14 +43,17 @@ def register(mcp: FastMCP) -> None:
                 f"got '{payment_status}'"
             )
 
+        resolved_date_from = parse_date_param(date_from)
+        resolved_date_to = parse_date_param(date_to)
+
         combined_filters: list[dict] = list(filter or [])
-        if date_from:
+        if resolved_date_from:
             combined_filters.append(
-                {"property": "create_date", "value": date_from, "operator": ">="}
+                {"property": "create_date", "value": resolved_date_from, "operator": ">="}
             )
-        if date_to:
+        if resolved_date_to:
             combined_filters.append(
-                {"property": "create_date", "value": date_to, "operator": "<="}
+                {"property": "create_date", "value": resolved_date_to, "operator": "<="}
             )
         if pet_id:
             combined_filters.append(
@@ -76,16 +82,21 @@ def register(mcp: FastMCP) -> None:
         last 365 days are used.
 
         Args:
-            date_from: Start date in YYYY-MM-DD format (optional, default: 1 year ago).
-            date_to: End date in YYYY-MM-DD format (optional, default: today).
+            date_from: Start date. Accepts YYYY-MM-DD or relative forms
+                (today, -30d, -1m, ...). Default: 1 year ago.
+            date_to: End date. Same accepted formats. Default: today.
         """
         from datetime import date, timedelta
 
         today = date.today()
         if not date_to:
             date_to = today.isoformat()
+        else:
+            date_to = parse_date_param(date_to)
         if not date_from:
             date_from = (today - timedelta(days=365)).isoformat()
+        else:
+            date_from = parse_date_param(date_from)
 
         combined_filters = [
             {"property": "create_date", "value": date_from, "operator": ">="},
