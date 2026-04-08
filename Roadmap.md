@@ -1244,10 +1244,10 @@
 - 80.5 14 e2e mock тестов: validation, happy paths, deleted/not_approved ignored, night shift, long admission overlap from previous day, max_rows guard — `done`
 - 80.6 Tool description с цепочкой `get_users → get_doctor_free_slots` + domain synonyms; `paginate_all.max_rows` cap добавлен — `done`
 
-## Этап 81. Эргономические обёртки для типовых вопросов — `todo`
+## Этап 81. Эргономические обёртки для типовых вопросов — `done`
 
 Цель: выделить в самостоятельные MCP-tools те операции, которые LLM-у трудно собрать из общих инструментов, несмотря на этап 78.
 
-- 81.1 `get_client_upcoming_visits(client_id, pet_id=0, date_from=today, days=90)` — тонкая обёртка над get_admissions с фильтром по активным статусам и sort ASC — `todo`
-- 81.2 `get_daily_schedule(date, doctor_id=0, clinic_id=0)` — все приёмы дня с сортировкой по времени — `todo`
-- 81.3 Unit + mock e2e тесты, tool descriptions с примерами — `todo`
+- 81.1 `get_client_upcoming_visits(client_id, pet_id=0, date_from=today, days=90, limit=20)` — тонкая обёртка: client_id + date range + sort ASC + client-side filter по активным статусам — `done`
+- 81.2 `get_daily_schedule(date=today, doctor_id=0, clinic_id=0, limit=100)` — все приёмы дня, sort ASC, фильтр по активным статусам — `done`
+- 81.3 9 e2e mock тестов `test_convenience_tools.py` + tool descriptions с domain synonyms + real API smoke на devtr6 — `done`

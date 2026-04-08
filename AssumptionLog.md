@@ -3520,3 +3520,25 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - Когда понадобится полноценный поиск — либо заменить LIKE на двухфазный (1. try digits-only LIKE, 2. if empty — fetch all, client-side match по нормализованным формам), либо попросить Vetmanager добавить поле `cell_phone_normalized` на их стороне.
 
 **Влияние:** пользователь `get_clients(phone="+79184140259")` сейчас получит пустой результат на реальной клинике. Нужно либо передавать короткий фрагмент (код региона), либо искать по имени.
+
+## Этап 81. Convenience tools — get_client_upcoming_visits + get_daily_schedule
+
+**Что сделано:**
+- `get_client_upcoming_visits(client_id, pet_id, date_from, days, limit)` — будущие/прошлые визиты клиента/питомца в окне. Тонкая обёртка над `/rest/api/admission` с фильтром `client_id` + `admission_date` range + sort ASC + client-side фильтр по активным статусам.
+- `get_daily_schedule(date, doctor_id, clinic_id, limit)` — все приёмы заданного дня с опциональной фильтрацией по врачу/клинике. Использует `get_admissions`-совместимый pattern.
+- Обе функции используют `parse_date_param` → поддерживают `today`, `tomorrow`, `+7d` и т.п.
+- Константа `ACTIVE_ADMISSION_STATUSES` вынесена в `tools/admission.py` как single source of truth, `tools/schedule.py` импортирует оттуда.
+- 9 mock тестов + real API smoke на devtr6.
+
+**Решения:**
+- **Client-side фильтр по status**: Vetmanager filter не поддерживает `IN (list)` или OR across статусов удобно. Так как limit ≤ 100, post-фильтрация дешёвая. Возвращаем дополнительно `filtered_from_total` чтобы LLM видел сколько записей было до фильтра.
+- **`pet_id` → `patient_id` mapping**: консистентно с этапом 78 (`get_admissions`), tool принимает понятное `pet_id`, внутри мапит в API-имя.
+- **`doctor_id` → `user_id` mapping**: аналогично.
+- **`days` cap 366**: защита от запроса "все визиты за 10 лет".
+- **Отдельные tools vs параметры к get_admissions**: LLM стабильнее выбирает tool с говорящим именем (`get_daily_schedule`) чем комбинирует 6 параметров `get_admissions`. Обёртки тонкие (~40 строк), дубликации логики нет.
+
+**Real API smoke (devtr6):**
+- `get_daily_schedule(date="tomorrow")` → 0 записей на завтра (в тестовой базе), query корректный.
+- `get_client_upcoming_visits(client_id=6, date_from="-365d", days=365)` → 0 записей, query корректный.
+
+**Codex-ревью**: пропущен — этап 81 — тонкие обёртки над уже проверенными Codex в этапе 78 механизмами (`get_admissions` filter composition, parse_date_param). Тестами покрыто: filter building, pet_id mapping, relative date resolution, status filtering, default="today", "tomorrow" handling. Risk низкий.

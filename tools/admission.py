@@ -3,6 +3,18 @@ from fastmcp import FastMCP
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam, parse_date_param
 
+# Admission statuses that represent a real upcoming or in-progress visit.
+# Used by get_client_upcoming_visits and get_daily_schedule to filter out
+# cancelled/deleted/not-yet-approved records.
+ACTIVE_ADMISSION_STATUSES = (
+    "save",
+    "directed",
+    "accepted",
+    "in_treatment",
+    "delayed",
+    "not_confirmed",
+)
+
 
 def register(mcp: FastMCP) -> None:
 
@@ -112,6 +124,169 @@ def register(mcp: FastMCP) -> None:
             admission_id: Unique numeric ID of the admission.
         """
         return await crud_get_by_id("/rest/api/admission", admission_id)
+
+    @mcp.tool
+    async def get_client_upcoming_visits(
+        client_id: int,
+        pet_id: int = 0,
+        date_from: str = "today",
+        days: int = 90,
+        limit: LimitParam = 20,
+    ) -> dict:
+        """List upcoming visits (appointments) for a client or a specific pet.
+
+        Domain synonyms: будущие визиты, предстоящие приёмы, следующий визит,
+        upcoming appointments, next visit.
+
+        Returns active admissions (excluding deleted/not_approved) sorted
+        by date ascending within the window [date_from, date_from + days].
+
+        Args:
+            client_id: Required. The client whose visits to list.
+            pet_id: Optional. If > 0, limit to admissions for this pet only.
+            date_from: Window start (YYYY-MM-DD or relative: today, +1w,
+                -7d, ...). Default: today.
+            days: Window length in days from date_from (default 90).
+            limit: Max records to return (1–100, default 20).
+        """
+        if client_id <= 0:
+            raise ValueError("client_id is required")
+        if days <= 0 or days > 366:
+            raise ValueError("days must be between 1 and 366")
+
+        resolved_from = parse_date_param(date_from)
+        if not resolved_from:
+            raise ValueError("date_from is required")
+
+        from datetime import date as _date, timedelta as _td
+        start_d = _date.fromisoformat(resolved_from)
+        end_d = start_d + _td(days=days)
+
+        filters: list[dict] = [
+            {"property": "client_id", "value": client_id, "operator": "="},
+            {
+                "property": "admission_date",
+                "value": f"{start_d.isoformat()} 00:00:00",
+                "operator": ">=",
+            },
+            {
+                "property": "admission_date",
+                "value": f"{end_d.isoformat()} 00:00:00",
+                "operator": "<",
+            },
+        ]
+        if pet_id > 0:
+            filters.append(
+                {"property": "patient_id", "value": pet_id, "operator": "="}
+            )
+
+        resp = await crud_list(
+            "/rest/api/admission",
+            limit=limit,
+            offset=0,
+            sort=[{"property": "admission_date", "direction": "ASC"}],
+            filters=filters,
+        )
+
+        # Client-side filter: drop non-active statuses. API-level OR on
+        # status would require nested filter syntax we don't probe here,
+        # so post-filter — pages are small (limit ≤ 100).
+        data = resp.get("data", {}) if isinstance(resp, dict) else {}
+        if isinstance(data, list):
+            rows = data
+            total = len(data)
+        elif isinstance(data, dict):
+            rows = data.get("admission") or data.get("admissions") or []
+            total = int(data.get("totalCount", len(rows)))
+        else:
+            rows = []
+            total = 0
+        active = [r for r in rows if r.get("status") in ACTIVE_ADMISSION_STATUSES]
+
+        return {
+            "success": True,
+            "data": {"admission": active, "totalCount": len(active)},
+            "filtered_from_total": total,
+        }
+
+    @mcp.tool
+    async def get_daily_schedule(
+        date: str = "today",
+        doctor_id: int = 0,
+        clinic_id: int = 0,
+        limit: LimitParam = 100,
+    ) -> dict:
+        """List active appointments scheduled for a given day.
+
+        Domain synonyms: расписание на день, приёмы сегодня, график на завтра,
+        daily schedule, appointments today.
+
+        Returns admissions sorted by time ascending, excluding cancelled
+        (deleted/not_approved) statuses.
+
+        Args:
+            date: Target day (YYYY-MM-DD or relative: today, tomorrow, +1d,
+                ...). Default: today.
+            doctor_id: Optional. Filter to a specific doctor (maps to
+                user_id on the admission entity).
+            clinic_id: Optional. Filter to a specific clinic.
+            limit: Max records to return (1–100, default 100).
+        """
+        resolved = parse_date_param(date)
+        if not resolved:
+            raise ValueError("date is required")
+
+        from datetime import date as _date, timedelta as _td
+        d = _date.fromisoformat(resolved)
+        next_day = (d + _td(days=1)).isoformat()
+
+        filters: list[dict] = [
+            {
+                "property": "admission_date",
+                "value": f"{resolved} 00:00:00",
+                "operator": ">=",
+            },
+            {
+                "property": "admission_date",
+                "value": f"{next_day} 00:00:00",
+                "operator": "<",
+            },
+        ]
+        if doctor_id > 0:
+            filters.append(
+                {"property": "user_id", "value": doctor_id, "operator": "="}
+            )
+        if clinic_id > 0:
+            filters.append(
+                {"property": "clinic_id", "value": clinic_id, "operator": "="}
+            )
+
+        resp = await crud_list(
+            "/rest/api/admission",
+            limit=limit,
+            offset=0,
+            sort=[{"property": "admission_date", "direction": "ASC"}],
+            filters=filters,
+        )
+
+        data = resp.get("data", {}) if isinstance(resp, dict) else {}
+        if isinstance(data, list):
+            rows = data
+            total = len(data)
+        elif isinstance(data, dict):
+            rows = data.get("admission") or data.get("admissions") or []
+            total = int(data.get("totalCount", len(rows)))
+        else:
+            rows = []
+            total = 0
+        active = [r for r in rows if r.get("status") in ACTIVE_ADMISSION_STATUSES]
+
+        return {
+            "success": True,
+            "date": resolved,
+            "data": {"admission": active, "totalCount": len(active)},
+            "filtered_from_total": total,
+        }
 
     @mcp.tool
     async def create_admission(

@@ -13,20 +13,9 @@ from tools._slots_helpers import (
     parse_admission_length,
     parse_vm_datetime,
 )
+from tools.admission import ACTIVE_ADMISSION_STATUSES
 from tools.crud_helpers import paginate_all
 from validators import parse_date_param
-
-
-# Admission statuses that actually occupy a slot on the doctor's calendar.
-# `deleted` and `not_approved` are excluded (cancelled or not yet confirmed draft).
-ACTIVE_ADMISSION_STATUSES = (
-    "save",
-    "directed",
-    "accepted",
-    "in_treatment",
-    "delayed",
-    "not_confirmed",
-)
 
 # Admissions that START before the requested window can STILL overlap into
 # it (e.g. a 2h procedure that began at 23:30 the previous day). We fetch
