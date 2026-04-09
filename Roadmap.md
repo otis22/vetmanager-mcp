@@ -1251,3 +1251,31 @@
 - 81.1 `get_client_upcoming_visits(client_id, pet_id=0, date_from=today, days=90, limit=20)` — тонкая обёртка: client_id + date range + sort ASC + client-side filter по активным статусам — `done`
 - 81.2 `get_daily_schedule(date=today, doctor_id=0, clinic_id=0, limit=100)` — все приёмы дня, sort ASC, фильтр по активным статусам — `done`
 - 81.3 9 e2e mock тестов `test_convenience_tools.py` + tool descriptions с domain synonyms + real API smoke на devtr6 — `done`
+
+## Этап 82. Hot-fix этапа 78: корректный поиск клиента по телефону через `/rest/api/ClientPhone` — `done`
+
+Цель: исправить deferred issue этапа 78 — `get_clients.phone` не работал для полных номеров, потому что в БД `cell_phone` хранится с форматированием (`"(918)414-02-59"`). Обнаружено в legacy PHP: есть отдельная таблица `clients_phones` с `clean_phone` (digits-only), экспонируется в REST как `/rest/api/ClientPhone` (регистр важен).
+
+- 82.1 Helper `_resolve_client_ids_by_phone` с двухпроходным поиском: сначала trailing-10 digits (покрывает RU/US/CA 10-digit national plan), fallback к full digits (покрывает UK/etc non-10 plans) — `done`
+- 82.2 Phase 1 cap: `totalCount > 100` → `ValueError("phone search too broad")` вместо silent truncation — `done`
+- 82.3 Phase 2: batch-fetch клиентов через `id IN [...]`, композируется с `status`/`email`/user-filter — `done`
+- 82.4 7 тестов на двухфазный поиск, fallback, truncation, dedupe по client_id + real API verify на devtr6 для `+7 (918)...`, `8 918...`, `7 918...`, `918414` — все работают — `done`
+
+## Этап 83. Оптимизация `get_inactive_pets` через `IN` оператор (устранение N+1) — `todo`
+
+Цель: устранить N+1 в `get_inactive_pets`. Текущий алгоритм делает 1-2 запроса на каждого питомца клиента (invoice + medcard). Probe подтвердил поддержку `IN` оператора с JSON-list value (`operator:"IN", value:[1,6]`). Можно батчить все invoice/medcard запросы в один на клиента.
+
+Текущая латентность: 5-15 сек для default limit=50 (документировано в AssumptionLog этапа 77). Цель: снизить до 1-3 сек.
+
+- 83.1 Real API probe: подтвердить что `IN` работает на `invoice.pet_id` и `MedicalCards.patient_id` с list value — `todo`
+- 83.2 Refactor `tools/_inactive_helpers.py::find_pets_at_client_last_visit`: один запрос invoice с `pet_id IN [pet_ids]` + один запрос medcard с `patient_id IN [ids_без_invoice]` вместо per-pet цикла — `todo`
+- 83.3 Обновить существующие тесты на batched pattern (mock respx route должен быть вызван O(1) раз на клиента вместо O(N_pets)) — `todo`
+- 83.4 Замерить real API латентность на devtr6 до/после — `todo`
+
+## Этап 84. Использовать `status IN [...]` вместо client-side фильтра в convenience tools — `todo`
+
+Цель: в этапе 81 (`get_client_upcoming_visits`, `get_daily_schedule`) активные статусы фильтруются client-side после `get_admissions` запроса. С оператором `IN` можно делать фильтрацию на стороне API — точнее `totalCount`, меньше данных по сети.
+
+- 84.1 Probe: `admission?filter=[{property:"status","value":["save","directed",...],"operator":"IN"}]` — `todo`
+- 84.2 Если работает — заменить client-side фильтр в `get_client_upcoming_visits` и `get_daily_schedule` на API-level, убрать поле `filtered_from_total` из ответа — `todo`
+- 84.3 Обновить тесты — `todo`

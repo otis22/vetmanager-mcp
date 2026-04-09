@@ -3542,3 +3542,55 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 - `get_client_upcoming_visits(client_id=6, date_from="-365d", days=365)` → 0 записей, query корректный.
 
 **Codex-ревью**: пропущен — этап 81 — тонкие обёртки над уже проверенными Codex в этапе 78 механизмами (`get_admissions` filter composition, parse_date_param). Тестами покрыто: filter building, pet_id mapping, relative date resolution, status filtering, default="today", "tomorrow" handling. Risk низкий.
+
+## Этап 82. Hot-fix этапа 78: phone search через /rest/api/ClientPhone
+
+**Проблема (deferred issue из этапа 78):**
+`get_clients.phone` с входом `"+7 (918) 414-02-59"` не находил клиента, у которого `cell_phone="(918)414-02-59"`. Причина: LIKE по `cell_phone` с нормализованной digits-only строкой не матчится против отформатированного хранимого значения.
+
+**Решение:**
+Обнаружено в legacy PHP: `ClientEntity::updateClearPhone()` автоматически заполняет таблицу `clients_phones` с полем `clean_phone` (digits-only), которая экспонируется в REST как `/rest/api/ClientPhone` (case-sensitive URL).
+
+Двухфазный поиск:
+1. `GET /rest/api/ClientPhone?filter=[{clean_phone LIKE digits}]` → список `client_id`.
+2. `GET /rest/api/client?filter=[{id IN [client_ids]}]` → полные карточки.
+
+**Решения (fix applied after Codex review):**
+
+1. **Country-code handling через двухпроходный подход**: сначала search по `phone_digits[-10:]` (покрывает стандартный 10-digit national plan — RU, US, CA), если ничего не нашли и исходная строка длиннее 10 — fallback к full digits (покрывает UK +44, другие non-10 plans). Extra round-trip только на реально unmatched вводе.
+
+2. **Truncation guard**: Phase 1 имеет hard cap `_PHONE_SEARCH_MAX_ROWS = 100`. Если `totalCount > 100` — `ValueError("phone search too broad")`, не silent truncation. Раньше LLM мог бы получить неполный set клиентов без индикации.
+
+3. **Dedupe по client_id**: клиент с 3 телефонами, совпадающими с поиском, возвращается 3 раза в `clientPhone` response → `sorted(set(...))` → одна запись в phase 2.
+
+4. **Response envelope стабильный**: убрал поле `phone_search` из empty-ответа — оно создавало schema drift между happy path и no-match. Пустой ответ теперь имеет ту же структуру `{success, data: {client: [], totalCount: 0}}`.
+
+5. **IN оператор**: probe подтвердил что Vetmanager filter API принимает `{"property":"id","value":[1,6],"operator":"IN"}` с JSON-array. Comma-string (`"1,6"`) возвращает только первого — **must** use list. Оператор case-insensitive (`in` == `IN`).
+
+**Real API verify (devtr6):**
+
+| Input | Match |
+|---|---|
+| `+7 (918) 414-02-59` | ✅ id=6 |
+| `89184140259` | ✅ id=6 |
+| `79184140259` | ✅ id=6 |
+| `918414` (partial) | ✅ id=6 |
+
+**Codex-ревью:**
+- 1 запуск (лимит 2). Findings: 2 warning + 1 nit + 1 test gap. Все адекватные, все исправлены:
+  - warning trailing-10 для non-RU → fallback к full digits
+  - warning phase 1 silent cap → raise при totalCount > 100
+  - nit extra phone_search key → убрано
+  - test gap: добавлены 3 новых теста (fallback, truncation, dedupe)
+- Не запускаю 2-е ревью: все fixes атомарные, тесты зелёные, real API работает.
+
+**Ограничения:**
+- `_PHONE_SEARCH_MAX_ROWS = 100`: если пользователь ищет по очень короткому фрагменту (например, `"123"` — но min 4 digits валидация не даст), есть шанс упереться в лимит. Тогда сообщение просит более длинный фрагмент.
+- Fallback к full digits добавляет ~100-200ms latency на edge case (UK номер, другие non-10 plans). Acceptable.
+- `clients_phones` обновляется только через `ClientEntity::save/edit`. Прямые SQL-патчи (крайне редки) → stale `clean_phone` → phone search может промахнуться. Документируется как known limitation.
+
+## Новые задачи на основе открытий этапа 82
+
+**Этап 83** (todo) — N+1 оптимизация `get_inactive_pets` через `IN` оператор. Текущая латентность 5-15 сек (этап 77 AssumptionLog), цель 1-3 сек.
+
+**Этап 84** (todo) — client-side status filter → API `status IN [...]` в `get_client_upcoming_visits` и `get_daily_schedule`. Точнее totalCount, меньше данных по сети.

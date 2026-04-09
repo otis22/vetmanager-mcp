@@ -6,6 +6,72 @@
 
 ---
 
+## 2026-04-08 — ClientPhone endpoint для нормализованного поиска по телефону
+
+**Источник:** `../vetmanager-extjs/rest/protected/models/ClientPhone.php`, `rest/protected/controllers/ClientPhoneController.php`, `application/src/Entity/ClientEntity.php::updateClearPhone()`. Real API probe на devtr6.
+
+### Endpoint: `/rest/api/ClientPhone` (регистр важен)
+
+- **Имя в URL**: `ClientPhone` с заглавными C/P. Варианты `clientPhone`, `client_phone`, `clientphone` возвращают 404.
+- **Entity key в data**: `clientPhone` (camelCase) — вот так: `data.clientPhone: [...]`.
+- **Поля**:
+  - `client_id` (integer) — FK к client
+  - `type` (enum): `"home"`, `"work"`, `"cell"`
+  - `original_phone` (string) — как хранится в `client.home_phone`/`work_phone`/`cell_phone` со всем форматированием (например `"(918)414-02-59"`)
+  - `clean_phone` (string) — **digits-only**, полученный через SQL `replace(replace(replace(replace(X, '-', ''), '(', ''), ')', ''), ' ', '')`
+- **Доступен только `restList`** (filterRestAccessRules в контроллере режет всё кроме GET list). То есть можно фильтровать и получать, CRUD через этот endpoint нельзя.
+- **Таблица-источник**: `clients_phones`. Заполняется автоматически через `ClientEntity::updateClearPhone($client_id)` на каждом create/edit клиента.
+
+### Verified probe: фильтр `clean_phone LIKE`
+
+```python
+filter=[{"property": "clean_phone", "value": "9184140259", "operator": "LIKE"}]
+# → {"client_id": 6, "type": "cell", "original_phone": "(918)414-02-59", "clean_phone": "9184140259"}
+```
+
+Работает корректно. Это решает deferred issue этапа 78 (поиск клиента по полному номеру телефона).
+
+### Как использовать для поиска клиента по телефону
+
+Двухфазный запрос:
+1. `GET /rest/api/ClientPhone?filter=[{clean_phone LIKE digits}]` → список `client_id`.
+2. `GET /rest/api/client?filter=[{id IN [ids]}]` → полные карточки клиентов.
+
+### Ограничения
+
+- Данные `clients_phones` ЖИВУТ на write-операциях через `ClientEntity::save/edit`. Если клиент правился через прямое SQL-обновление (не через entity), `clean_phone` может быть stale. На практике — в клиниках все апдейты идут через UI → ClientEntity, так что риск низкий.
+- Не содержит исторических телефонов: только текущие `home_phone`/`work_phone`/`cell_phone`. Старый номер клиента после смены не найдётся.
+
+---
+
+## 2026-04-08 — Filter operator `IN` с list value
+
+**Источник:** real API probe на devtr6.
+
+`/rest/api/client?filter=[{"property":"id","value":[1,6],"operator":"IN"}]` возвращает клиентов с id=1 и id=6.
+
+### Подтверждённые формы
+
+| Форма value | Результат |
+|---|---|
+| `[1, 6]` (JSON list) | ✅ работает — возвращает 2 клиента |
+| `[1, 6]` с `operator: "in"` (lowercase) | ✅ работает |
+| `"1,6"` (comma-string) | ❌ возвращает только первого |
+
+**Правило**: передавать value как JSON-array, не строку. Оператор регистр-независим.
+
+### Потенциальные применения
+
+- **Batch-fetch по ID**: `id IN [...]` заменяет N последовательных `GET /rest/api/entity/{id}` одним запросом. Экономит в случаях N+1 циклов.
+- **Двухфазный поиск**: Phase 1 резолвит идентификаторы (например, `ClientPhone` → `client_id`), Phase 2 батчит `client?filter=[id IN [ids]]`.
+- **Фильтр по множеству статусов**: `status IN ["save","accepted","directed"]` вместо клиентского пост-фильтра (см. этап 81, где сейчас это реализовано client-side).
+
+### Ограничения
+
+- Vetmanager limit на `limit` — 100 записей на страницу. Если резолвленных ID больше 100, нужна пагинация (или chunked IN запросы по 100).
+
+---
+
 ## 2026-04-08 — Timesheet и свободные окна врача
 
 **Источник:** OpenAPI v6 + `../vetmanager-extjs/ajax_calendar.php`, `Timesheet.php`, `UserRow.php` (research в рамках этапа 80).

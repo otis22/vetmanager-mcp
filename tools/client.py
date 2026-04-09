@@ -6,6 +6,70 @@ from validators import LimitParam, normalize_phone_digits
 from vetmanager_client import VetmanagerClient
 
 
+# Hard cap on phase-1 ClientPhone fetch. If more rows exist we refuse the
+# search rather than silently return a truncated set of clients.
+_PHONE_SEARCH_MAX_ROWS = 100
+
+
+async def _search_client_phones(search_digits: str) -> list[int]:
+    """Phase-1 helper: return client_ids whose clean_phone LIKE search_digits.
+
+    Raises ValueError if the result set is too broad to be useful.
+    """
+    resp = await crud_list(
+        "/rest/api/ClientPhone",
+        limit=_PHONE_SEARCH_MAX_ROWS,
+        offset=0,
+        filters=[
+            {
+                "property": "clean_phone",
+                "value": search_digits,
+                "operator": "LIKE",
+            }
+        ],
+    )
+    data = resp.get("data", {}) if isinstance(resp, dict) else {}
+    if isinstance(data, dict):
+        total = int(data.get("totalCount", 0) or 0)
+        rows = data.get("clientPhone") or []
+    else:
+        total = 0
+        rows = []
+    if total > _PHONE_SEARCH_MAX_ROWS:
+        raise ValueError(
+            f"phone search too broad: matches {total} phone rows "
+            f"(> {_PHONE_SEARCH_MAX_ROWS}). Provide more digits to narrow "
+            "the search."
+        )
+    return sorted(
+        {
+            row.get("client_id")
+            for row in rows
+            if isinstance(row, dict) and row.get("client_id")
+        }
+    )
+
+
+async def _resolve_client_ids_by_phone(phone_digits: str) -> list[int]:
+    """Two-pass phone resolution: trailing 10 digits first, then full.
+
+    The trailing-10 pass covers the common national 10-digit numbering
+    plan (RU/US/CA/many others) regardless of country-code prefix in the
+    user's input. If that yields nothing, we retry with the full
+    normalized digits to handle non-10-digit plans (e.g. UK +44 XX).
+    """
+    if len(phone_digits) >= 11:
+        primary = phone_digits[-10:]
+        ids = await _search_client_phones(primary)
+        if ids:
+            return ids
+        # Fallback: try the full normalized digits for non-10-digit plans.
+        if phone_digits != primary:
+            return await _search_client_phones(phone_digits)
+        return ids
+    return await _search_client_phones(phone_digits)
+
+
 def register(mcp: FastMCP) -> None:
 
     @mcp.tool
@@ -28,9 +92,11 @@ def register(mcp: FastMCP) -> None:
             limit: Max number of records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
             name: Filter by client name (partial match).
-            phone: Filter by cell phone (LIKE match on digits-only
-                normalized value). Must contain at least 4 digits to avoid
-                matching a large fraction of the database.
+            phone: Filter by phone number (any of cell/home/work). The
+                input is normalized to digits-only before matching against
+                the `clients_phones.clean_phone` index, so formatted input
+                like "+7 (918) 414-02-59" correctly finds the stored
+                "(918)414-02-59". Must contain at least 4 digits.
             email: Filter by email address (LIKE match).
             status: Filter by client status: 'ACTIVE' (default), 'DELETED',
                     'INACTIVE', or '' for all.
@@ -47,8 +113,30 @@ def register(mcp: FastMCP) -> None:
                     "phone filter requires at least 4 digits; shorter values "
                     "would match too many clients. Provide more of the number."
                 )
+            # Phase 1: search normalized phone index.
+            #
+            # Vetmanager stores phones with formatting in client.cell_phone/
+            # home_phone/work_phone and maintains a parallel `clients_phones`
+            # table with a digits-only `clean_phone` column, exposed via the
+            # /rest/api/ClientPhone (case-sensitive) list endpoint.
+            #
+            # Country-code handling: `clean_phone` in the DB usually stores
+            # local numbers without a country code (e.g. "9184140259"), but
+            # LLMs often pass full international forms ("+7 918...", "8 918...").
+            # We try the trailing 10 digits FIRST (covers the common 10-digit
+            # national numbering plan used in RU/US/CA/etc), and if that
+            # returns nothing, fall back to the full normalized digits. This
+            # costs one extra round-trip only on genuinely unmatched inputs
+            # and handles non-10-digit numbering plans (e.g. UK +44).
+            client_ids = await _resolve_client_ids_by_phone(phone_digits)
+            if not client_ids:
+                return {
+                    "success": True,
+                    "data": {"client": [], "totalCount": 0},
+                }
+            # Phase 2: batch-fetch clients by id IN [...].
             combined_filters.append(
-                {"property": "cell_phone", "value": phone_digits, "operator": "LIKE"}
+                {"property": "id", "value": client_ids, "operator": "IN"}
             )
         if email:
             combined_filters.append(

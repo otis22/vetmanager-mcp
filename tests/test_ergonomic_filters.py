@@ -101,19 +101,225 @@ async def test_get_pets_owner_only_unchanged():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_get_clients_phone_normalized():
+async def test_get_clients_phone_normalized_two_phase_search():
+    """Phone search: phase 1 hits ClientPhone, phase 2 batch-fetches by id IN [...]."""
     billing_mock()
-    route = respx.get(f"{BASE}/rest/api/client").mock(
-        return_value=httpx.Response(200, json={"data": []})
+    # Phase 1: ClientPhone endpoint returns the client_id(s) whose
+    # clean_phone matches the normalized digits.
+    phone_route = respx.get(f"{BASE}/rest/api/ClientPhone").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 1,
+                    "clientPhone": [
+                        {
+                            "client_id": 42,
+                            "type": "cell",
+                            "original_phone": "(916)123-45-67",
+                            "clean_phone": "9161234567",
+                        }
+                    ],
+                },
+            },
+        )
+    )
+    # Phase 2: clients endpoint batch-fetched by id IN [42].
+    client_route = respx.get(f"{BASE}/rest/api/client").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 1,
+                    "client": [{"id": 42, "last_name": "Иванов"}],
+                },
+            },
+        )
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
         await mcp.call_tool("get_clients", {"phone": "+7 (916) 123-45-67"})
-    filters = _filter_from_request(route)
-    phone_filters = [f for f in filters if f["property"] == "cell_phone"]
-    assert len(phone_filters) == 1
-    assert phone_filters[0]["value"] == "79161234567"
+
+    # Verify phase 1 filter uses clean_phone LIKE with trailing 10 digits
+    # (country code "7" stripped because the input had 11 digits total).
+    assert phone_route.called
+    phone_filters = _filter_from_request(phone_route)
+    assert phone_filters[0]["property"] == "clean_phone"
+    assert phone_filters[0]["value"] == "9161234567"
     assert phone_filters[0]["operator"].upper() == "LIKE"
+
+    # Verify phase 2 filter uses id IN [...] with the collected client_ids.
+    assert client_route.called
+    client_filters = _filter_from_request(client_route)
+    id_filters = [f for f in client_filters if f["property"] == "id"]
+    assert id_filters and id_filters[0]["operator"].upper() == "IN"
+    assert id_filters[0]["value"] == [42]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_clients_phone_short_input_not_trimmed():
+    """Input with 10 or fewer digits is searched as-is (no country-code trim)."""
+    billing_mock()
+    phone_route = respx.get(f"{BASE}/rest/api/ClientPhone").mock(
+        return_value=httpx.Response(
+            200,
+            json={"success": True, "data": {"totalCount": 0, "clientPhone": []}},
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("get_clients", {"phone": "918414"})
+    phone_filters = _filter_from_request(phone_route)
+    assert phone_filters[0]["value"] == "918414"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_clients_phone_no_match_short_circuits():
+    """If ClientPhone returns nothing (both passes), don't hit /rest/api/client."""
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/ClientPhone").mock(
+        return_value=httpx.Response(
+            200,
+            json={"success": True, "data": {"totalCount": 0, "clientPhone": []}},
+        )
+    )
+    client_route = respx.get(f"{BASE}/rest/api/client").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_clients", {"phone": "+1 555 000 9999"})
+
+    data = result.structured_content
+    # Second phase should NOT be called — short-circuit on empty phone result.
+    assert not client_route.called
+    assert data["data"]["client"] == []
+    assert data["data"]["totalCount"] == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_clients_phone_falls_back_to_full_digits():
+    """If trailing-10 pass returns nothing, retry with full normalized digits."""
+    billing_mock()
+    # First call (trailing 10 digits, "0079460958") — empty.
+    # Second call (full 12 digits, "442079460958") — finds client 77.
+    # respx returns mocks in FIFO when multiple match the same route.
+    responses = [
+        httpx.Response(
+            200,
+            json={"success": True, "data": {"totalCount": 0, "clientPhone": []}},
+        ),
+        httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 1,
+                    "clientPhone": [
+                        {
+                            "client_id": 77,
+                            "type": "cell",
+                            "original_phone": "+44 20 7946 0958",
+                            "clean_phone": "442079460958",
+                        }
+                    ],
+                },
+            },
+        ),
+    ]
+    phone_route = respx.get(f"{BASE}/rest/api/ClientPhone").mock(side_effect=responses)
+    client_route = respx.get(f"{BASE}/rest/api/client").mock(
+        return_value=httpx.Response(
+            200,
+            json={"success": True, "data": {"totalCount": 1, "client": [{"id": 77}]}},
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_clients", {"phone": "+442079460958"})
+
+    # Phase 1 called twice (trailing-10 miss → full digits hit).
+    assert phone_route.call_count == 2
+    # First call used trailing 10 digits.
+    q1 = parse_qs(urlparse(str(phone_route.calls[0].request.url)).query)
+    f1 = json.loads(q1["filter"][0])
+    assert f1[0]["value"] == "2079460958"
+    # Second call used full 12 digits as fallback.
+    q2 = parse_qs(urlparse(str(phone_route.calls[1].request.url)).query)
+    f2 = json.loads(q2["filter"][0])
+    assert f2[0]["value"] == "442079460958"
+    # Phase 2 fetched the client by id IN [77].
+    assert client_route.called
+    client_filters = _filter_from_request(client_route)
+    id_filters = [f for f in client_filters if f["property"] == "id"]
+    assert id_filters and id_filters[0]["value"] == [77]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_clients_phone_too_broad_rejected():
+    """Phase 1 totalCount > 100 raises a clear error."""
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/ClientPhone").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 500,
+                    "clientPhone": [
+                        {"client_id": i, "clean_phone": "1234567"}
+                        for i in range(100)
+                    ],
+                },
+            },
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(Exception) as exc_info:
+            await mcp.call_tool("get_clients", {"phone": "1234567"})
+    assert "too broad" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_clients_phone_dedupes_multiple_rows_per_client():
+    """Client with 3 matching phones → phase 2 id IN [single_id]."""
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/ClientPhone").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 3,
+                    "clientPhone": [
+                        {"client_id": 42, "type": "home", "clean_phone": "9184140259"},
+                        {"client_id": 42, "type": "work", "clean_phone": "9184140260"},
+                        {"client_id": 42, "type": "cell", "clean_phone": "9184140259"},
+                    ],
+                },
+            },
+        )
+    )
+    client_route = respx.get(f"{BASE}/rest/api/client").mock(
+        return_value=httpx.Response(
+            200,
+            json={"success": True, "data": {"totalCount": 1, "client": [{"id": 42}]}},
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("get_clients", {"phone": "+79184140259"})
+    client_filters = _filter_from_request(client_route)
+    id_filters = [f for f in client_filters if f["property"] == "id"]
+    assert id_filters[0]["value"] == [42]
 
 
 @pytest.mark.asyncio
