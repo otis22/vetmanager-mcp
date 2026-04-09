@@ -174,6 +174,13 @@ def register(mcp: FastMCP) -> None:
                 "value": f"{end_d.isoformat()} 00:00:00",
                 "operator": "<",
             },
+            # API-level active status filter via IN operator
+            # (verified during Stage 83 probe on devtr6).
+            {
+                "property": "status",
+                "value": list(ACTIVE_ADMISSION_STATUSES),
+                "operator": "IN",
+            },
         ]
         if pet_id > 0:
             filters.append(
@@ -188,9 +195,6 @@ def register(mcp: FastMCP) -> None:
             filters=filters,
         )
 
-        # Client-side filter: drop non-active statuses. API-level OR on
-        # status would require nested filter syntax we don't probe here,
-        # so post-filter — pages are small (limit ≤ 100).
         data = resp.get("data", {}) if isinstance(resp, dict) else {}
         if isinstance(data, list):
             rows = data
@@ -201,12 +205,10 @@ def register(mcp: FastMCP) -> None:
         else:
             rows = []
             total = 0
-        active = [r for r in rows if r.get("status") in ACTIVE_ADMISSION_STATUSES]
 
         return {
             "success": True,
-            "data": {"admission": active, "totalCount": len(active)},
-            "filtered_from_total": total,
+            "data": {"admission": rows, "totalCount": total},
         }
 
     @mcp.tool
@@ -251,6 +253,13 @@ def register(mcp: FastMCP) -> None:
                 "value": f"{next_day} 00:00:00",
                 "operator": "<",
             },
+            # API-level active status filter via IN operator
+            # (verified during Stage 83 probe on devtr6).
+            {
+                "property": "status",
+                "value": list(ACTIVE_ADMISSION_STATUSES),
+                "operator": "IN",
+            },
         ]
         if doctor_id > 0:
             filters.append(
@@ -279,13 +288,11 @@ def register(mcp: FastMCP) -> None:
         else:
             rows = []
             total = 0
-        active = [r for r in rows if r.get("status") in ACTIVE_ADMISSION_STATUSES]
 
         return {
             "success": True,
             "date": resolved,
-            "data": {"admission": active, "totalCount": len(active)},
-            "filtered_from_total": total,
+            "data": {"admission": rows, "totalCount": total},
         }
 
     @mcp.tool

@@ -3628,3 +3628,22 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 **Ограничения:**
 - Если у клиента >100 питомцев → одна страница invoice response (100 limit) может обрезать результаты. Клиенты с 100+ питомцами в ветклинике — экзотика (заводчики, питомники). Не блокер для MVP.
 - `batched medcard` запрос также limit=100. Та же оговорка.
+
+## Этап 84. API-level status IN в convenience tools
+
+**Что сделано:**
+Заменил client-side фильтр в `get_client_upcoming_visits` и `get_daily_schedule` на API-level `status IN ACTIVE_ADMISSION_STATUSES`. Убрал поле `filtered_from_total` из ответа — envelope теперь стабильный между happy и empty path.
+
+**Выгоды:**
+- Точный `totalCount`: раньше API возвращал `totalCount` включая deleted/not_approved, который потом обрезался client-side. Теперь `totalCount` = число активных.
+- Меньше данных по сети: API не возвращает строки, которые мы всё равно отбросим.
+- Правильная пагинация: раньше если `limit=20` и из них 5 было deleted, клиент получал 15 активных вместо 20. Теперь limit честно считает только активные.
+- Стабильный response envelope: нет поля `filtered_from_total`, одна схема для всех случаев.
+
+**Real API verify (devtr6):**
+- `get_daily_schedule(date="2024-10-31")` → filter URL содержит `status IN ["save","directed","accepted","in_treatment","delayed","not_confirmed"]`, ответ: 1 запись статус `delayed`.
+- API корректно принимает list в filter value.
+
+**Codex-ревью**: пропущен — тривиальное перекладывание фильтра с клиента на API, покрыто обновлёнными тестами (2 теста проверяют filter содержит `status IN` и правильный value). Risk низкий.
+
+**Breaking change**: поле `filtered_from_total` убрано из ответа. Если кто-то (LLM или другой клиент) на него полагался — сломается. На момент этапа 84 вероятность нулевая: stage 81 был коммичен всего 2 commita назад, вне production.

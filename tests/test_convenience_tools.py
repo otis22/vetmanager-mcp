@@ -71,10 +71,9 @@ async def test_upcoming_visits_builds_filter_with_date_range_and_client():
             json={
                 "success": True,
                 "data": {
-                    "totalCount": 3,
+                    "totalCount": 2,
                     "admission": [
                         {"id": 1, "status": "accepted", "admission_date": "2026-04-10 10:00:00"},
-                        {"id": 2, "status": "deleted", "admission_date": "2026-04-11 11:00:00"},
                         {"id": 3, "status": "directed", "admission_date": "2026-04-12 09:00:00"},
                     ],
                 },
@@ -88,15 +87,17 @@ async def test_upcoming_visits_builds_filter_with_date_range_and_client():
             {"client_id": 42, "date_from": "2026-04-08", "days": 30},
         )
     data = result.structured_content
-    # 1 deleted dropped → 2 active
     assert data["data"]["totalCount"] == 2
     assert {a["id"] for a in data["data"]["admission"]} == {1, 3}
-    assert data["filtered_from_total"] == 3
 
     filters = _filter_from(route)
     props = {f["property"] for f in filters}
     assert "client_id" in props
-    assert props.count("admission_date") if isinstance(props, list) else True
+    assert "status" in props  # API-level status IN filter
+    status_filter = next(f for f in filters if f["property"] == "status")
+    assert status_filter["operator"].upper() == "IN"
+    assert "accepted" in status_filter["value"]
+    assert "deleted" not in status_filter["value"]
     date_filters = [f for f in filters if f["property"] == "admission_date"]
     assert {f["operator"] for f in date_filters} == {">=", "<"}
 
@@ -211,19 +212,18 @@ async def test_daily_schedule_doctor_filter():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_daily_schedule_filters_inactive_statuses():
+async def test_daily_schedule_filters_inactive_statuses_via_api():
+    """API-level status IN filter means the response already excludes inactive."""
     billing_mock()
-    respx.get(f"{BASE}/rest/api/admission").mock(
+    route = respx.get(f"{BASE}/rest/api/admission").mock(
         return_value=httpx.Response(
             200,
             json={
                 "success": True,
                 "data": {
-                    "totalCount": 4,
+                    "totalCount": 2,
                     "admission": [
                         {"id": 1, "status": "accepted"},
-                        {"id": 2, "status": "deleted"},
-                        {"id": 3, "status": "not_approved"},
                         {"id": 4, "status": "save"},
                     ],
                 },
@@ -236,7 +236,14 @@ async def test_daily_schedule_filters_inactive_statuses():
     data = result.structured_content
     ids = {a["id"] for a in data["data"]["admission"]}
     assert ids == {1, 4}
-    assert data["filtered_from_total"] == 4
+
+    # Verify the outgoing filter contains status IN [active statuses].
+    filters = _filter_from(route)
+    status_filter = next(f for f in filters if f["property"] == "status")
+    assert status_filter["operator"].upper() == "IN"
+    assert set(status_filter["value"]) >= {"save", "accepted", "directed"}
+    assert "deleted" not in status_filter["value"]
+    assert "not_approved" not in status_filter["value"]
 
 
 @pytest.mark.asyncio

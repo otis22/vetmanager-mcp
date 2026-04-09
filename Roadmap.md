@@ -1270,10 +1270,11 @@
 - 83.3 Новый тест `test_get_inactive_pets_batches_invoice_and_medcard_via_in_operator` (проверяет call_count=1 для invoice и medcard routes + корректное разбиение на visited/fallback) — `done`
 - 83.4 Real API замер на devtr6: latency=1.71s для 2 клиентов (раньше ~5-15s на 50) — `done`
 
-## Этап 84. Использовать `status IN [...]` вместо client-side фильтра в convenience tools — `todo`
+## Этап 84. API-level `status IN [...]` в convenience tools — `done`
 
-Цель: в этапе 81 (`get_client_upcoming_visits`, `get_daily_schedule`) активные статусы фильтруются client-side после `get_admissions` запроса. С оператором `IN` можно делать фильтрацию на стороне API — точнее `totalCount`, меньше данных по сети.
+Цель: в этапе 81 (`get_client_upcoming_visits`, `get_daily_schedule`) активные статусы фильтруются client-side после `get_admissions` запроса. С подтверждённой в этапе 83 поддержкой `status IN [list]` — переходим на API-level фильтрацию: точнее `totalCount`, меньше данных по сети, стабильный envelope без `filtered_from_total`.
 
-- 84.1 Probe: `admission?filter=[{property:"status","value":["save","directed",...],"operator":"IN"}]` — `todo`
-- 84.2 Если работает — заменить client-side фильтр в `get_client_upcoming_visits` и `get_daily_schedule` на API-level, убрать поле `filtered_from_total` из ответа — `todo`
-- 84.3 Обновить тесты — `todo`
+- 84.1 Probe: `admission?filter=[status IN ["save","accepted","directed"]]` работает (подтверждено в этапе 83) — `done`
+- 84.2 Заменить client-side post-filter на API-level `status IN ACTIVE_ADMISSION_STATUSES` в `get_client_upcoming_visits` и `get_daily_schedule`, убрать `filtered_from_total` — `done`
+- 84.3 Обновить тесты: `test_daily_schedule_filters_inactive_statuses_via_api` проверяет что filter содержит `status IN`, а response не содержит deleted/not_approved — `done`
+- 84.4 Real API verify: `get_daily_schedule(date="2024-10-31")` возвращает 1 запись со статусом `delayed`, filter содержит `status IN [...]` — `done`
