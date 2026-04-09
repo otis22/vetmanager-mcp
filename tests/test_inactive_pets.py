@@ -260,6 +260,82 @@ async def test_get_inactive_pets_default_metadata():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_get_inactive_pets_batches_invoice_and_medcard_via_in_operator():
+    """Stage 83: a client with 5 pets must trigger exactly 1 invoice call
+    (IN operator), and at most 1 medcard call for pets missing invoices."""
+    billing_mock()
+
+    respx.get(f"{BASE}/rest/api/client").mock(
+        return_value=_client_response([
+            {
+                "id": 8,
+                "last_name": "Batch",
+                "first_name": "Test",
+                "middle_name": "",
+                "cell_phone": "",
+                "last_visit_date": "2024-09-10 10:00:00",
+            }
+        ])
+    )
+    # 5 alive pets for this client
+    respx.get(f"{BASE}/rest/api/pet").mock(
+        return_value=_pet_response([
+            {"id": 800 + i, "alias": f"P{i}", "owner_id": 8, "status": "alive"}
+            for i in range(5)
+        ])
+    )
+    # One batched invoice response containing records for pets 800 and 801 only
+    invoice_route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=_invoice_response([
+            {"id": 1, "pet_id": 800, "invoice_date": "2024-09-10 11:00:00"},
+            {"id": 2, "pet_id": 801, "invoice_date": "2024-09-10 12:00:00"},
+        ])
+    )
+    # One batched medcard response for remaining pets — returns card for pet 802
+    medcard_route = respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=_medcards_response([
+            {"id": 500, "patient_id": 802, "date_create": "2024-09-10 13:00:00"},
+        ])
+    )
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_inactive_pets", {})
+
+    # Exactly 1 invoice call + 1 medcard call (batching via IN).
+    assert invoice_route.call_count == 1
+    assert medcard_route.call_count == 1
+
+    # Invoice filter must use IN operator with a list of pet_ids.
+    inv_filter = invoice_route.calls.last.request.url.params.get("filter", "")
+    assert '"IN"' in inv_filter
+    assert '"pet_id"' in inv_filter
+
+    # Medcard filter must use IN on patient_id only for pets 802, 803, 804
+    # (pets 800, 801 already matched via invoices).
+    mc_filter = medcard_route.calls.last.request.url.params.get("filter", "")
+    assert '"IN"' in mc_filter
+    assert '"patient_id"' in mc_filter
+    assert "802" in mc_filter
+    assert "803" in mc_filter
+    assert "804" in mc_filter
+    # 800 and 801 should NOT be in the remaining list
+    mc_filter_data = json.loads(mc_filter)
+    patient_in = next(f for f in mc_filter_data if f["property"] == "patient_id")
+    assert 800 not in patient_in["value"]
+    assert 801 not in patient_in["value"]
+
+    # Result: pets 800, 801 (invoice), 802 (medcard) = 3 visited
+    data = json.loads(result.content[0].text)
+    assert len(data["inactive_pets"]) == 3
+    sources = {p["id"]: p["visit_source"] for p in data["inactive_pets"]}
+    assert sources[800] == "invoice"
+    assert sources[801] == "invoice"
+    assert sources[802] == "medcard"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_get_inactive_pets_invoice_filter_uses_strict_day_window():
     """Invoice filter must include both >= start_of_day AND < next_day_midnight."""
     billing_mock()

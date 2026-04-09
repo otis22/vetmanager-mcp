@@ -171,50 +171,79 @@ async def find_pets_at_client_last_visit(
     pet_data = pet_resp.get("data", {}) if isinstance(pet_resp, dict) else {}
     pets = pet_data.get("pet", []) if isinstance(pet_data, dict) else []
 
+    pet_ids = [pet.get("id") for pet in pets if pet.get("id") is not None]
+    if not pet_ids:
+        return []
+    pet_by_id = {pet["id"]: pet for pet in pets if pet.get("id") is not None}
+
+    # Step 2: batch-check invoices for ALL pets in a single request using
+    # IN operator on pet_id. Same strict day-bounded window avoids false
+    # positives from later backfilled records.
+    inv_filters = [
+        {"property": "pet_id", "value": pet_ids, "operator": "IN"},
+        {"property": "invoice_date", "value": cutoff_start, "operator": ">="},
+        {"property": "invoice_date", "value": cutoff_end, "operator": "<"},
+    ]
+    inv_params = {
+        "limit": 100,
+        "offset": 0,
+        "filter": json.dumps(inv_filters, separators=(",", ":"), ensure_ascii=False),
+    }
+    inv_resp = await vc.get("/rest/api/invoice", params=inv_params)
+    inv_data = inv_resp.get("data", {}) if isinstance(inv_resp, dict) else {}
+    invoices = inv_data.get("invoice", []) if isinstance(inv_data, dict) else []
+
     visited: list[dict] = []
-    for pet in pets:
-        pet_id = pet.get("id")
-        if pet_id is None:
+    pets_with_invoice: set = set()
+    for inv in invoices:
+        pid = inv.get("pet_id")
+        try:
+            pid_int = int(pid) if pid is not None else None
+        except (TypeError, ValueError):
+            pid_int = None
+        if pid_int is None or pid_int in pets_with_invoice:
             continue
-
-        # Step 2: check invoice — strict day-bounded window to avoid false
-        # positives from later backfilled records.
-        inv_filters = [
-            {"property": "pet_id", "value": pet_id, "operator": "="},
-            {"property": "invoice_date", "value": cutoff_start, "operator": ">="},
-            {"property": "invoice_date", "value": cutoff_end, "operator": "<"},
-        ]
-        inv_params = {
-            "limit": 1,
-            "offset": 0,
-            "filter": json.dumps(inv_filters, separators=(",", ":"), ensure_ascii=False),
-        }
-        inv_resp = await vc.get("/rest/api/invoice", params=inv_params)
-        inv_data = inv_resp.get("data", {}) if isinstance(inv_resp, dict) else {}
-        invoices = inv_data.get("invoice", []) if isinstance(inv_data, dict) else []
-
-        if invoices:
-            visited.append({**pet, "visit_source": "invoice"})
+        pet = pet_by_id.get(pid_int)
+        if pet is None:
             continue
+        pets_with_invoice.add(pid_int)
+        visited.append({**pet, "visit_source": "invoice"})
 
-        # Step 3: fallback to medical card — same strict day window.
-        mc_filters = [
-            {"property": "patient_id", "value": pet_id, "operator": "="},
-            {"property": "date_create", "value": cutoff_start, "operator": ">="},
-            {"property": "date_create", "value": cutoff_end, "operator": "<"},
-        ]
-        mc_params = {
-            "limit": 1,
-            "offset": 0,
-            "filter": json.dumps(mc_filters, separators=(",", ":"), ensure_ascii=False),
-        }
-        mc_resp = await vc.get("/rest/api/MedicalCards", params=mc_params)
-        mc_data = mc_resp.get("data", {}) if isinstance(mc_resp, dict) else {}
-        medcards = mc_data.get("medicalCards", []) if isinstance(mc_data, dict) else []
-        if not medcards and isinstance(mc_data, dict):
-            medcards = mc_data.get("medicalcards", []) or []
+    # Step 3: fallback to medical cards for pets WITHOUT an invoice match.
+    # Batched with IN operator, same window.
+    remaining_ids = [pid for pid in pet_ids if pid not in pets_with_invoice]
+    if not remaining_ids:
+        return visited
 
-        if medcards:
-            visited.append({**pet, "visit_source": "medcard"})
+    mc_filters = [
+        {"property": "patient_id", "value": remaining_ids, "operator": "IN"},
+        {"property": "date_create", "value": cutoff_start, "operator": ">="},
+        {"property": "date_create", "value": cutoff_end, "operator": "<"},
+    ]
+    mc_params = {
+        "limit": 100,
+        "offset": 0,
+        "filter": json.dumps(mc_filters, separators=(",", ":"), ensure_ascii=False),
+    }
+    mc_resp = await vc.get("/rest/api/MedicalCards", params=mc_params)
+    mc_data = mc_resp.get("data", {}) if isinstance(mc_resp, dict) else {}
+    medcards = mc_data.get("medicalCards", []) if isinstance(mc_data, dict) else []
+    if not medcards and isinstance(mc_data, dict):
+        medcards = mc_data.get("medicalcards", []) or []
+
+    pets_with_medcard: set = set()
+    for mc in medcards:
+        pid = mc.get("patient_id")
+        try:
+            pid_int = int(pid) if pid is not None else None
+        except (TypeError, ValueError):
+            pid_int = None
+        if pid_int is None or pid_int in pets_with_medcard:
+            continue
+        pet = pet_by_id.get(pid_int)
+        if pet is None:
+            continue
+        pets_with_medcard.add(pid_int)
+        visited.append({**pet, "visit_source": "medcard"})
 
     return visited

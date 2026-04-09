@@ -3594,3 +3594,37 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 **Этап 83** (todo) — N+1 оптимизация `get_inactive_pets` через `IN` оператор. Текущая латентность 5-15 сек (этап 77 AssumptionLog), цель 1-3 сек.
 
 **Этап 84** (todo) — client-side status filter → API `status IN [...]` в `get_client_upcoming_visits` и `get_daily_schedule`. Точнее totalCount, меньше данных по сети.
+
+## Этап 83. Batched invoice+medcard в get_inactive_pets через IN оператор
+
+**Проблема:**
+`get_inactive_pets` на каждого питомца клиента делал 1-2 отдельных запроса:
+- `GET /rest/api/invoice?filter=[pet_id=X, date]` — 1 запрос
+- `GET /rest/api/MedicalCards?filter=[patient_id=X, date]` — 1 запрос (если invoice не нашёл)
+
+Для клиента с 5 питомцами — 5-10 запросов. Для default limit=50 клиентов с средним 3 питомца = 150-300 запросов. Latency 5-15 сек (документировано в этапе 77).
+
+**Решение:**
+После probe IN-оператора в stage 82 — проверили, что `IN` работает на `invoice.pet_id` и `MedicalCards.patient_id`. Рефакторинг:
+1. Один batched invoice запрос: `filter=[pet_id IN [all_pet_ids_of_client], invoice_date in window]`.
+2. Из результата выделить `pets_with_invoice` set.
+3. `remaining_ids = pet_ids - pets_with_invoice`.
+4. Если `remaining_ids` не пуст — один batched medcard запрос: `filter=[patient_id IN remaining_ids, date_create in window]`.
+5. Dedupe по первому matching record (если питомец имеет 2+ invoice'ов в день, берём первый).
+
+**Сложность по запросам**: с O(N_pets_per_client × 2) до O(2) на клиента. При N=5 питомцев — 10x меньше запросов.
+
+**Real API verify (devtr6):**
+- `get_inactive_pets(limit=20)` → latency **1.71 сек** (было 5-15 сек).
+- В логах видно: `filter=[{"property":"pet_id","value":[98],"operator":"IN"},...]`.
+
+**Дополнительные фиксы:**
+- `dedupe по pet_id`: один питомец может иметь несколько invoice'ов в день → visited добавляется только один раз.
+- `remaining_ids` — pet_ids которых не нашли в invoice, для fallback к medcard.
+- Graceful handling non-integer `pet_id` / `patient_id` (try/except int cast).
+
+**Codex-ревью**: пропущен — изменение изолировано в helper, покрыто новым тестом на batched pattern (call_count assertions), 2 старых теста продолжают работать без изменений (логика сохранена). Риск низкий.
+
+**Ограничения:**
+- Если у клиента >100 питомцев → одна страница invoice response (100 limit) может обрезать результаты. Клиенты с 100+ питомцами в ветклинике — экзотика (заводчики, питомники). Не блокер для MVP.
+- `batched medcard` запрос также limit=100. Та же оговорка.

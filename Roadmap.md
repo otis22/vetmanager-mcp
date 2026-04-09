@@ -1261,16 +1261,14 @@
 - 82.3 Phase 2: batch-fetch клиентов через `id IN [...]`, композируется с `status`/`email`/user-filter — `done`
 - 82.4 7 тестов на двухфазный поиск, fallback, truncation, dedupe по client_id + real API verify на devtr6 для `+7 (918)...`, `8 918...`, `7 918...`, `918414` — все работают — `done`
 
-## Этап 83. Оптимизация `get_inactive_pets` через `IN` оператор (устранение N+1) — `todo`
+## Этап 83. Оптимизация `get_inactive_pets` через `IN` оператор (устранение N+1) — `done`
 
-Цель: устранить N+1 в `get_inactive_pets`. Текущий алгоритм делает 1-2 запроса на каждого питомца клиента (invoice + medcard). Probe подтвердил поддержку `IN` оператора с JSON-list value (`operator:"IN", value:[1,6]`). Можно батчить все invoice/medcard запросы в один на клиента.
+Цель: устранить N+1 в `get_inactive_pets`. Текущий алгоритм делал 1-2 запроса на каждого питомца клиента (invoice + medcard). Probe подтвердил поддержку `IN` оператора с JSON-list value на `invoice.pet_id` и `MedicalCards.patient_id`.
 
-Текущая латентность: 5-15 сек для default limit=50 (документировано в AssumptionLog этапа 77). Цель: снизить до 1-3 сек.
-
-- 83.1 Real API probe: подтвердить что `IN` работает на `invoice.pet_id` и `MedicalCards.patient_id` с list value — `todo`
-- 83.2 Refactor `tools/_inactive_helpers.py::find_pets_at_client_last_visit`: один запрос invoice с `pet_id IN [pet_ids]` + один запрос medcard с `patient_id IN [ids_без_invoice]` вместо per-pet цикла — `todo`
-- 83.3 Обновить существующие тесты на batched pattern (mock respx route должен быть вызван O(1) раз на клиента вместо O(N_pets)) — `todo`
-- 83.4 Замерить real API латентность на devtr6 до/после — `todo`
+- 83.1 Real API probe: `IN` работает на `invoice.pet_id`, `MedicalCards.patient_id`, `admission.status` с list value — `done`
+- 83.2 Refactor `tools/_inactive_helpers.py::find_pets_at_client_last_visit`: один batched invoice запрос с `pet_id IN [ids]` + один batched medcard запрос для pets без invoice-матча, per-pet цикл убран — `done`
+- 83.3 Новый тест `test_get_inactive_pets_batches_invoice_and_medcard_via_in_operator` (проверяет call_count=1 для invoice и medcard routes + корректное разбиение на visited/fallback) — `done`
+- 83.4 Real API замер на devtr6: latency=1.71s для 2 клиентов (раньше ~5-15s на 50) — `done`
 
 ## Этап 84. Использовать `status IN [...]` вместо client-side фильтра в convenience tools — `todo`
 
