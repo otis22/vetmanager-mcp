@@ -8,7 +8,13 @@ from service_metrics import record_auth_failure
 
 
 def get_bearer_token() -> str:
-    """Return bearer token from Authorization header."""
+    """Return bearer token from Authorization header.
+
+    Routes through `request_credentials._get_request_headers` (a re-export
+    of the local `_get_request_headers`) so existing test monkeypatches
+    targeting `request_credentials._get_request_headers` still intercept
+    this call site.
+    """
     headers = request_credentials._get_request_headers()
     authorization = headers.get("authorization", "").strip()
     if not authorization:

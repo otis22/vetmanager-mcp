@@ -88,6 +88,38 @@ def record_upstream_request(
         _UPSTREAM_LATENCY_SECONDS[(target, status)].observe(duration_seconds)
 
 
+async def instrument_call(
+    endpoint: str,
+    method: str,
+    coro_factory,
+    *,
+    operation: str = "",
+):
+    """Wrap a coroutine with latency + outcome metric recording.
+
+    Stage 103.6: moved from tools.crud_helpers so non-CRUD callers (web
+    handlers, future gateway layer) can use the same instrumentation
+    without importing crud_helpers.
+    """
+    import time as _time
+    started = _time.monotonic()
+    outcome = "success"
+    endpoint_label = f"{endpoint}#{operation}" if operation else endpoint
+    try:
+        return await coro_factory()
+    except BaseException:
+        outcome = "error"
+        raise
+    finally:
+        elapsed = _time.monotonic() - started
+        record_tool_call(
+            endpoint=endpoint_label,
+            method=method,
+            outcome=outcome,
+            duration_seconds=elapsed,
+        )
+
+
 def record_tool_call(
     *,
     endpoint: str,

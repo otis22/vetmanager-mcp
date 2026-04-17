@@ -4171,3 +4171,22 @@ Rationale: wide test refactor зависит от 94.1 base. Отдельной 
 **Тесты**: `test_stage87_post_migration::test_unconfirmed_appointments_uses_status_filter` обновлён на новую форму (`date_to=` без literal суффикса, так как ISO строки теперь генерируются из f-string). Full suite 646 passed.
 
 **Codex review**: пропущен per CLAUDE.md §5.5 (product copy tweaks + partial-gather copy-paste из get_client_profile — well-tested pattern).
+
+## Этап 103. Architecture consolidation (low-risk subset)
+
+**Что сделано:**
+
+1. **103.5** `request_credentials.py` — упрощён до standalone 10-line shim с собственной копией `_get_request_headers()`. Больше не зависит от `request_auth` (избежание circular import). 11 test-call-sites продолжают работать через `patch.object(request_credentials, "_get_request_headers", ...)`. `request_auth.get_bearer_token` продолжает routing через `request_credentials._get_request_headers` — чтобы существующие monkeypatches сразу перехватывали.
+2. **103.6** `service_metrics.instrument_call` — canonical location для latency+outcome метрики wrapper'а. `tools/crud_helpers._instrumented_call` теперь re-export (один import из service_metrics). Aggregator tools и web handlers могут использовать `instrument_call` без import crud_helpers.
+3. **103.7** `tools/_aggregation.py::gather_sections` — shared helper для partial-gather паттерна: принимает `tool_name`, `context` dict, list of `(section_name, coro, fallback_shape)` triples. Handles explicit CancelledError re-raise + section_errors + `aggregator_partial` structured warning. Существующие `get_client_profile` и `get_pet_profile` оставлены на inline-версии (no-op refactor) — helper доступен для будущих aggregator'ов.
+
+**Не сделано (high-risk / out-of-scope):**
+- 103.1 `auth/` package — critical path; отдельный focused stage с собственным PRD и Codex review.
+- 103.2 FilterBuilder migration 7 files — gradual path уже работает через `as_dict_list` (accepts mixed Filter | dict). Bulk migration — low ROI прямо сейчас.
+- 103.3 `resources/<entity>.py` gateway — architectural shift; отдельный этап с обсуждением product/performance impact.
+- 103.4 `vetmanager_client.py` split (574 LOC → modules) — orthogonal refactor; текущая форма тестируется и проходит 646 tests без проблем.
+- 103.8 `build_list_query_params` → filters.py — lazy import в validators.py работает; circular dep risk реален; не стоит переносить без concrete benefit.
+
+**Тесты**: 646 passed (unchanged). Регрессия на первой попытке (249 failed из-за circular import request_auth ↔ request_credentials) исправлена: shim получил свою собственную копию helper'а.
+
+**Codex review**: пропущен per CLAUDE.md §5.5 — refactor-only, behaviour-preserving.

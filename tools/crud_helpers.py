@@ -10,51 +10,17 @@ proxy label for `vetmanager_tool_call_latency_seconds` and
 """
 
 import json
-import time
 from typing import Any, Awaitable, Callable, TypeVar
 
-from service_metrics import record_tool_call
+from service_metrics import instrument_call as _instrumented_call
 from validators import build_list_query_params
 from vetmanager_client import VetmanagerClient
 
 T = TypeVar("T")
 
-
-async def _instrumented_call(
-    endpoint: str,
-    method: str,
-    coro_factory: Callable[[], Awaitable[T]],
-    *,
-    operation: str = "",
-) -> T:
-    """Wrap a single tool call, record latency + outcome metric.
-
-    Stage 98.7: `operation` label differentiates `list` vs `get_by_id` vs
-    `create` / `update` / `delete` even when they share the same endpoint
-    base path. Without it, `crud_list("/rest/api/client")` and
-    `crud_get_by_id("/rest/api/client")` would bucket together and their
-    p95 latencies couldn't be separated.
-    """
-    started = time.monotonic()
-    outcome = "success"
-    # Compose endpoint+operation label so dashboards can filter per-op.
-    endpoint_label = f"{endpoint}#{operation}" if operation else endpoint
-    try:
-        return await coro_factory()
-    except BaseException:
-        # BaseException (not Exception) so asyncio.CancelledError also marks
-        # the call as non-success — a cancelled tool call is not a completed
-        # successful call and should not skew outcome metrics.
-        outcome = "error"
-        raise
-    finally:
-        elapsed = time.monotonic() - started
-        record_tool_call(
-            endpoint=endpoint_label,
-            method=method,
-            outcome=outcome,
-            duration_seconds=elapsed,
-        )
+# Stage 103.6: _instrumented_call is now canonical in service_metrics.
+# This re-export preserves backward compatibility for any future caller
+# (and for tests that may import _instrumented_call from crud_helpers).
 
 
 async def crud_list(
