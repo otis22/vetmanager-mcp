@@ -1334,15 +1334,17 @@
 
 **Отложено:** breadcrumbs / stacktrace vars / user / contexts в Sentry sanitizer (W1 Codex) + SITE_BASE_URL scheme validation (W5) — отдельные hardening этапы.
 
-## Этап 90. Docs sync: README / tech-reqs / AssumptionLog (F3) — `todo`
+## Этап 90. Docs sync: README / tech-reqs / AssumptionLog (F3) — `done`
 
 Цель: синхронизировать документацию с реальностью кодовой базы.
 
-- 90.1 README: Schedule row в таблицу tools, счётчик 101→107 (или пересчитать) по 12→13 групп; убрать противоречие `create_payment` vs запрет Payment CREATE — `todo`
-- 90.2 `technical-requirements-vetmanager-mcp-ru.md`: fastmcp `>=2.0.0` → `>=3.1.0,<4`; обновить «эволюция по roadmap» до 84 — `todo`
-- 90.3 AssumptionLog: добавить записи для этапов 82, 83, 84 (отмечены workflow-check как missing); пометить легаси разделы Этап 1-2 и Этап 11 как `[УСТАРЕЛО после этапа 22 — bearer-only]` — `todo`
-- 90.4 README cache key описание: добавить `account_id` (stage 54.2.3); обновить таблицу Артефактов (6 недостающих файлов); задокументировать `WEB_SESSION_MAX_AGE_SECONDS`; fast contour команда с `--profile test` — `todo`
-- 90.5 PRD-добор для этапов 82, 83, 84 (workflow-check high finding: CLAUDE.md §3 требует PRD) — `todo`
+- 90.1 README: Schedule row в таблицу tools, счётчик 101→106 по 12→13 групп; create_payment помечен ⚠️ + сверка с таблицей CRUD-restrictions — `done`
+- 90.2 `technical-requirements-vetmanager-mcp-ru.md`: fastmcp `>=2.0.0` → `>=3.1.0,<4`; эволюция 20-49 → 20-89 + перечисление convenience-tools/ergonomic filters/observability/security — `done`
+- 90.3 AssumptionLog: Этап 1-2 и Этап 11 помечены `[УСТАРЕЛО после этапа 22 — bearer-only]`; stage 7 "75 tools" аннотирован актуальным счётом 106 — `done`
+- 90.4 README cache key с `account_id`; таблица Артефактов расширена (api_crud_permissions, api-research-notes, review/, и др.); `WEB_SESSION_MAX_AGE_SECONDS` и `SITE_BASE_URL` задокументированы; fast contour команда с `--profile test` — `done`
+- 90.5 PRD-добор для этапов 82, 83, 84 (`PRD/этап-{82,83,84}-*.md`) — retroactive, ссылки на AssumptionLog — `done`
+
+**Skip:** CLAUDE.md §5.4 2-vs-3 iteration contradiction — текущий текст (2 итерации) актуален; commit f507fc1 с текстом "3 per task" был откатом, явного callout не требуется.
 
 ## Этап 91. VM client overhaul: singleton + retry + circuit breaker (F8) — `todo`
 

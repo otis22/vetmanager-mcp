@@ -17,13 +17,23 @@
 - поддерживает мультитенантность, базовое кеширование, pacing запросов и
   security hardening.
 
-Текущая эволюция проекта по roadmap этапам 20–49:
+Текущая эволюция проекта по roadmap этапам 20–89:
 - bearer-only runtime-контракт уже реализован;
 - web-контур с лендингом, регистрацией и кабинетом аккаунта;
 - хранение Vetmanager-интеграции на уровне аккаунта;
 - выпуск нескольких Bearer-токенов с TTL, revoke и учётом использования;
 - поддержка двух Vetmanager auth modes: `domain + rest_api_key` и
-  `user login/password -> user token`.
+  `user login/password -> user token`;
+- convenience-инструменты: `get_inactive_clients`, `get_inactive_pets`,
+  `get_client_upcoming_visits`, `get_daily_schedule`, `get_doctor_free_slots`;
+- ergonomic filters: нормализованный поиск по телефону через
+  `/rest/api/ClientPhone`, `payment_status` параметр `get_invoices`,
+  `status IN` batch-фильтры;
+- observability core (этап 88): correlation_id в upstream headers,
+  per-tool latency+outcome метрики, upstream latency histogram,
+  structured warnings на timeout/network error;
+- security hot-fix (этап 89): pattern-based Sentry sanitizer,
+  SITE_BASE_URL env для self-hosted deployments.
 
 ## 2. Технологический стек
 
@@ -31,7 +41,7 @@
 |---|---|---|---|
 | Язык | Python | 3.11+ | Основной язык сервера и инструментов |
 | Базовый образ | `python:3.12-slim` | используется в `Dockerfile` | Сборка и запуск контейнера |
-| MCP framework | `fastmcp` | `>=2.0.0` | Регистрация tools/prompts и запуск MCP HTTP server |
+| MCP framework | `fastmcp` | `>=3.1.0,<4` | Регистрация tools/prompts и запуск MCP HTTP server. Мажор 3.x несовместим с 2.x (убран public `call_tool` в 2.14.x). |
 | HTTP client | `httpx` | `>=0.27.0` | Запросы к billing API и Vetmanager API |
 | Тесты | `pytest`, `pytest-asyncio`, `respx` | через Docker test profile | Unit, mock e2e, real e2e |
 | Контейнеризация | Docker + Compose | обязательный runtime | Локальный запуск, тесты, деплой |

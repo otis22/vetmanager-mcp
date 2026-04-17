@@ -6,6 +6,9 @@
 
 ## Этап 1–2: Каркас и MCP-инструменты
 
+> **[УСТАРЕЛО после этапа 22 — bearer-only runtime]**
+> Ранее `domain` и `api_key` принимались как параметры каждого MCP-инструмента и/или заголовки `X-VM-Domain`/`X-VM-Api-Key`. Этот контракт полностью убран в этапе 22.4. Актуальный runtime-контракт — только `Authorization: Bearer <service_token>`. Ниже — история для контекста; не использовать как руководство к текущей реализации.
+
 **Допущения:**
 - `domain` и `api_key` передаются как параметры каждого MCP-инструмента (мультитенантность), а не из глобального env на старте сервера. Это соответствует требованию PRD 4.2.5.
 - `VetmanagerClient` кэширует base URL в пределах одного экземпляра (одного запроса), но не в глобальном состоянии — каждый вызов инструмента создаёт новый экземпляр клиента.
@@ -128,7 +131,9 @@
 | Properties | ✅ | — | — | — | — |
 | AnonymousClient | ✅ | — | — | — | — |
 
-**Итого:** 75 MCP-инструментов + 20 MCP-промптов.
+**Итого:** 75 MCP-инструментов + 20 MCP-промптов на момент этапа 7.
+
+> **Актуально на 2026-04-17:** 106 инструментов по 13 группам (включая Schedule, добавлен на этапе 80) + 20 промптов. Эта запись зафиксирована как baseline этапа 7; актуальный счёт см. в README и на последних этапах AssumptionLog.
 
 **Пробелы (задокументированные, не критичные):**
 - DELETE не реализован ни для одной сущности — API Vetmanager редко допускает удаление данных через REST; при необходимости добавляется тем же паттерном через `vc.delete(...)`.
@@ -159,6 +164,9 @@
 ---
 
 ## Этап 11: Реализация Variant A — credentials через HTTP headers
+
+> **[УСТАРЕЛО после этапа 22 — bearer-only runtime]**
+> `X-VM-Domain` / `X-VM-Api-Key` headers полностью убраны в stage 22.4. Актуальный runtime-контракт описан в README разделе «Использование: bearer-only runtime».
 
 **Архитектурные решения:**
 - `VetmanagerClient.__init__` больше не читает `VETMANAGER_DOMAIN`/`VETMANAGER_API_KEY` из `os.environ`.
@@ -3825,3 +3833,38 @@ Full suite: 596 passed.
 - Deep Sentry event coverage (breadcrumbs/stacktrace vars) — W1 follow-up
 - SITE_BASE_URL url-scheme validation — W5 follow-up
 - Оставшиеся observability subtasks 88.5-88.8 (будут в отдельных этапах под крупным зонтиком «auth audit + business metrics»)
+
+## Этап 90. Docs sync
+
+**Что сделано:**
+
+1. **README**:
+   - «101 инструмент по 12 группам» → «106 инструментов по 13 группам». Добавлен Schedule row (get_doctor_free_slots), обновлены ряды Client/Pet/Admission с новыми convenience tools (get_inactive_clients/pets, get_client_upcoming_visits, get_daily_schedule).
+   - `create_payment` помечен ⚠️ с пометкой о противоречии с CRUD-restrictions таблицей (payment API разрешает только restList/restView) — инструмент может быть помечен deprecated в будущем.
+   - Cache key описание: добавлен `account_id` (stage 54.2.3) для строгой multi-tenant изоляции.
+   - Fast contour команда: `docker compose` → `docker compose --profile test` (профиль обязателен).
+   - Таблица «Артефакты» расширена: добавлены api_crud_permissions, api-research-notes, review/, optional deployment/observability runbooks.
+   - Задокументированы env vars: `WEB_SESSION_MAX_AGE_SECONDS` (24h default), `SITE_BASE_URL` (prod default, override для self-hosted).
+
+2. **`artifacts/technical-requirements-vetmanager-mcp-ru.md`**:
+   - fastmcp `>=2.0.0` → `>=3.1.0,<4` с примечанием о несовместимости мажоров (2.x убрал public `call_tool`).
+   - Раздел «Текущая эволюция проекта по roadmap» расширен с диапазона 20-49 до 20-89, перечислены ключевые достижения поздних этапов (convenience tools, ergonomic filters, observability core, security hot-fix).
+
+3. **AssumptionLog**:
+   - «Этап 1-2» и «Этап 11» помечены `[УСТАРЕЛО после этапа 22 — bearer-only runtime]` с указанием где искать актуальный контракт.
+   - «Этап 7: Аудит» с устаревшим счётом «75 MCP-инструментов» аннотирован актуальным «106 инструментов по 13 группам на 2026-04-17».
+
+4. **Ретроактивные PRD**:
+   - `PRD/этап-82-clientphone-hotfix.md`
+   - `PRD/этап-83-in-operator-batch.md`
+   - `PRD/этап-84-api-level-status-filter.md`
+   - Закрыт high-finding от `scripts/review_workflow_check.sh` (CLAUDE.md §3 требует PRD перед реализацией). PRD краткие, ссылаются на AssumptionLog для деталей.
+
+**Что пропущено:**
+- CLAUDE.md §5.4 contradiction (2 vs 3 Codex iterations) — текущий текст «2 итерации» актуален, git log упоминает «3 per task» единожды (commit f507fc1 — откачен). Явного callout не требуется.
+
+**Codex review**: пропущен — изменения только в документации (CLAUDE.md §5.5).
+
+**Тесты**: документация без unit-тестов; `scripts/review_workflow_check.sh` теперь выдаёт только low `tests_reminder` (раньше high `missing_prd` для этапов 82-84 из-за отсутствия PRD файлов).
+
+Full suite: 596 passed (без изменений, docs-only).
