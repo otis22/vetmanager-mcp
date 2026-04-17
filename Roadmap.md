@@ -1508,7 +1508,7 @@ Full suite 642 → **646 passed** (+4 new regressions).
 
 Full suite 646 passed.
 
-## Этап 103. Architecture consolidation (92b/93b/93c/94b/95b зонтик) — `todo`
+## Этап 103. Architecture consolidation (92b/93b/93c/94b/95b зонтик) — частично `done`
 
 Источник: super-review medium architecture + deferred Xb stages.
 
@@ -1525,7 +1525,7 @@ Full suite 646 passed.
 
 **Rationale для stop**: каждая sub-stage — high-risk рефактор критичного пути. Декомпозиция в 103a/b/c/d с отдельными PRD — отдельным сессиями.
 
-## Этап 104. Workflow discipline improvements — `todo`
+## Этап 104. Workflow discipline improvements — `done`
 
 Цель: устранить root causes пропусков, которые проявились в super-review stages 85-95 (update_admission, phantom enum, AssumptionLog missing, baseline review unresolved).
 
