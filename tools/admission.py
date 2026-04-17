@@ -1,5 +1,6 @@
 from fastmcp import FastMCP
 
+from filters import eq as _filter_eq, gte as _filter_gte, in_ as _filter_in, lt as _filter_lt
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam, parse_date_param
 
@@ -67,14 +68,10 @@ def register(mcp: FastMCP) -> None:
         effective_from = parse_date_param(date_from or date)
         effective_to = parse_date_param(date_to or date)
 
-        combined_filters: list[dict] = list(filter or [])
+        combined_filters: list = list(filter or [])
         if effective_from:
             combined_filters.append(
-                {
-                    "property": "admission_date",
-                    "value": f"{effective_from} 00:00:00",
-                    "operator": ">=",
-                }
+                _filter_gte("admission_date", f"{effective_from} 00:00:00")
             )
         if effective_to:
             # Use strict `<` against next day's midnight so records with
@@ -83,28 +80,16 @@ def register(mcp: FastMCP) -> None:
             parsed = _date.fromisoformat(effective_to)
             next_day = (parsed + timedelta(days=1)).isoformat()
             combined_filters.append(
-                {
-                    "property": "admission_date",
-                    "value": f"{next_day} 00:00:00",
-                    "operator": "<",
-                }
+                _filter_lt("admission_date", f"{next_day} 00:00:00")
             )
         if doctor_id:
-            combined_filters.append(
-                {"property": "user_id", "value": doctor_id, "operator": "="}
-            )
+            combined_filters.append(_filter_eq("user_id", doctor_id))
         if pet_id:
-            combined_filters.append(
-                {"property": "patient_id", "value": pet_id, "operator": "="}
-            )
+            combined_filters.append(_filter_eq("patient_id", pet_id))
         if client_id:
-            combined_filters.append(
-                {"property": "client_id", "value": client_id, "operator": "="}
-            )
+            combined_filters.append(_filter_eq("client_id", client_id))
         if status:
-            combined_filters.append(
-                {"property": "status", "value": status, "operator": "="}
-            )
+            combined_filters.append(_filter_eq("status", status))
 
         if sort is None and (effective_from or effective_to):
             sort = [{"property": "admission_date", "direction": "ASC"}]
@@ -162,30 +147,16 @@ def register(mcp: FastMCP) -> None:
         start_d = _date.fromisoformat(resolved_from)
         end_d = start_d + _td(days=days)
 
-        filters: list[dict] = [
-            {"property": "client_id", "value": client_id, "operator": "="},
-            {
-                "property": "admission_date",
-                "value": f"{start_d.isoformat()} 00:00:00",
-                "operator": ">=",
-            },
-            {
-                "property": "admission_date",
-                "value": f"{end_d.isoformat()} 00:00:00",
-                "operator": "<",
-            },
+        filters: list = [
+            _filter_eq("client_id", client_id),
+            _filter_gte("admission_date", f"{start_d.isoformat()} 00:00:00"),
+            _filter_lt("admission_date", f"{end_d.isoformat()} 00:00:00"),
             # API-level active status filter via IN operator
             # (verified during Stage 83 probe on devtr6).
-            {
-                "property": "status",
-                "value": list(ACTIVE_ADMISSION_STATUSES),
-                "operator": "IN",
-            },
+            _filter_in("status", list(ACTIVE_ADMISSION_STATUSES)),
         ]
         if pet_id > 0:
-            filters.append(
-                {"property": "patient_id", "value": pet_id, "operator": "="}
-            )
+            filters.append(_filter_eq("patient_id", pet_id))
 
         resp = await crud_list(
             "/rest/api/admission",
@@ -242,33 +213,17 @@ def register(mcp: FastMCP) -> None:
         d = _date.fromisoformat(resolved)
         next_day = (d + _td(days=1)).isoformat()
 
-        filters: list[dict] = [
-            {
-                "property": "admission_date",
-                "value": f"{resolved} 00:00:00",
-                "operator": ">=",
-            },
-            {
-                "property": "admission_date",
-                "value": f"{next_day} 00:00:00",
-                "operator": "<",
-            },
+        filters: list = [
+            _filter_gte("admission_date", f"{resolved} 00:00:00"),
+            _filter_lt("admission_date", f"{next_day} 00:00:00"),
             # API-level active status filter via IN operator
             # (verified during Stage 83 probe on devtr6).
-            {
-                "property": "status",
-                "value": list(ACTIVE_ADMISSION_STATUSES),
-                "operator": "IN",
-            },
+            _filter_in("status", list(ACTIVE_ADMISSION_STATUSES)),
         ]
         if doctor_id > 0:
-            filters.append(
-                {"property": "user_id", "value": doctor_id, "operator": "="}
-            )
+            filters.append(_filter_eq("user_id", doctor_id))
         if clinic_id > 0:
-            filters.append(
-                {"property": "clinic_id", "value": clinic_id, "operator": "="}
-            )
+            filters.append(_filter_eq("clinic_id", clinic_id))
 
         resp = await crud_list(
             "/rest/api/admission",

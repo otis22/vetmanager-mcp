@@ -1,5 +1,6 @@
 from fastmcp import FastMCP
 
+from filters import eq as _filter_eq, like as _filter_like
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
@@ -43,15 +44,11 @@ def register(mcp: FastMCP) -> None:
                 "get_clients(name=...), then pass owner_id and alias together."
             )
 
-        combined_filters: list[dict] = list(filter or [])
+        combined_filters: list = list(filter or [])
         if owner_id:
-            combined_filters.append(
-                {"property": "owner_id", "value": owner_id, "operator": "="}
-            )
+            combined_filters.append(_filter_eq("owner_id", owner_id))
         if alias:
-            combined_filters.append(
-                {"property": "alias", "value": alias, "operator": "LIKE"}
-            )
+            combined_filters.append(_filter_like("alias", alias))
         return await crud_list(
             "/rest/api/pet",
             limit=limit,
@@ -202,13 +199,13 @@ def register(mcp: FastMCP) -> None:
         )
 
     async def _get_pet_profile_impl(pet_id: int) -> dict:
-        import asyncio as _asyncio
         import json as _json
+        from filters import eq as _filter_eq
 
         vc = VetmanagerClient()
 
         mc_filter = _json.dumps(
-            [{"property": "patient_id", "value": str(pet_id), "operator": "="}],
+            [_filter_eq("patient_id", str(pet_id)).to_dict()],
             separators=(",", ":"),
         )
         mc_sort = _json.dumps(

@@ -9,9 +9,10 @@ Provides:
 from __future__ import annotations
 
 import calendar
-import json
 from datetime import date, datetime, timedelta
 
+from filters import eq as _filter_eq, gte as _filter_gte, lte as _filter_lte, lt as _filter_lt, in_ as _filter_in
+from validators import build_list_query_params
 from vetmanager_client import VetmanagerClient
 
 
@@ -88,18 +89,18 @@ async def fetch_inactive_clients_page(
     )
 
     filters = [
-        {"property": "status", "value": "ACTIVE", "operator": "="},
-        {"property": "last_visit_date", "value": cutoff_oldest, "operator": ">="},
-        {"property": "last_visit_date", "value": cutoff_newest, "operator": "<="},
+        _filter_eq("status", "ACTIVE"),
+        _filter_gte("last_visit_date", cutoff_oldest),
+        _filter_lte("last_visit_date", cutoff_newest),
     ]
     sort = [{"property": "last_visit_date", "direction": "DESC"}]
 
-    params = {
-        "limit": limit,
-        "offset": offset,
-        "filter": json.dumps(filters, separators=(",", ":"), ensure_ascii=False),
-        "sort": json.dumps(sort, separators=(",", ":"), ensure_ascii=False),
-    }
+    params = build_list_query_params(
+        limit=limit,
+        offset=offset,
+        sort=sort,
+        filters=filters,
+    )
     resp = await VetmanagerClient().get("/rest/api/client", params=params)
     data = resp.get("data", {}) if isinstance(resp, dict) else {}
     if isinstance(data, dict):
@@ -159,14 +160,14 @@ async def find_pets_at_client_last_visit(
 
     # Step 1: get all alive pets of this client
     pet_filters = [
-        {"property": "owner_id", "value": client_id, "operator": "="},
-        {"property": "status", "value": "alive", "operator": "="},
+        _filter_eq("owner_id", client_id),
+        _filter_eq("status", "alive"),
     ]
-    pet_params = {
-        "limit": 100,
-        "offset": 0,
-        "filter": json.dumps(pet_filters, separators=(",", ":"), ensure_ascii=False),
-    }
+    pet_params = build_list_query_params(
+        limit=100,
+        offset=0,
+        filters=pet_filters,
+    )
     pet_resp = await vc.get("/rest/api/pet", params=pet_params)
     pet_data = pet_resp.get("data", {}) if isinstance(pet_resp, dict) else {}
     pets = pet_data.get("pet", []) if isinstance(pet_data, dict) else []
@@ -180,15 +181,15 @@ async def find_pets_at_client_last_visit(
     # IN operator on pet_id. Same strict day-bounded window avoids false
     # positives from later backfilled records.
     inv_filters = [
-        {"property": "pet_id", "value": pet_ids, "operator": "IN"},
-        {"property": "invoice_date", "value": cutoff_start, "operator": ">="},
-        {"property": "invoice_date", "value": cutoff_end, "operator": "<"},
+        _filter_in("pet_id", pet_ids),
+        _filter_gte("invoice_date", cutoff_start),
+        _filter_lt("invoice_date", cutoff_end),
     ]
-    inv_params = {
-        "limit": 100,
-        "offset": 0,
-        "filter": json.dumps(inv_filters, separators=(",", ":"), ensure_ascii=False),
-    }
+    inv_params = build_list_query_params(
+        limit=100,
+        offset=0,
+        filters=inv_filters,
+    )
     inv_resp = await vc.get("/rest/api/invoice", params=inv_params)
     inv_data = inv_resp.get("data", {}) if isinstance(inv_resp, dict) else {}
     invoices = inv_data.get("invoice", []) if isinstance(inv_data, dict) else []
@@ -216,15 +217,15 @@ async def find_pets_at_client_last_visit(
         return visited
 
     mc_filters = [
-        {"property": "patient_id", "value": remaining_ids, "operator": "IN"},
-        {"property": "date_create", "value": cutoff_start, "operator": ">="},
-        {"property": "date_create", "value": cutoff_end, "operator": "<"},
+        _filter_in("patient_id", remaining_ids),
+        _filter_gte("date_create", cutoff_start),
+        _filter_lt("date_create", cutoff_end),
     ]
-    mc_params = {
-        "limit": 100,
-        "offset": 0,
-        "filter": json.dumps(mc_filters, separators=(",", ":"), ensure_ascii=False),
-    }
+    mc_params = build_list_query_params(
+        limit=100,
+        offset=0,
+        filters=mc_filters,
+    )
     mc_resp = await vc.get("/rest/api/MedicalCards", params=mc_params)
     mc_data = mc_resp.get("data", {}) if isinstance(mc_resp, dict) else {}
     medcards = mc_data.get("medicalCards", []) if isinstance(mc_data, dict) else []

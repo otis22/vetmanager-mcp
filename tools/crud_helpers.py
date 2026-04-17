@@ -91,7 +91,7 @@ async def crud_delete(endpoint: str, entity_id: int) -> dict:
 async def paginate_all(
     endpoint: str,
     *,
-    filters: list[dict] | None = None,
+    filters: list | None = None,
     page_size: int = 100,
     entity_key: str,
     max_rows: int | None = 10_000,
@@ -114,7 +114,10 @@ async def paginate_all(
 
     filter_str: str | None = None
     if filters:
-        filter_str = json.dumps(filters, separators=(",", ":"))
+        from filters import as_dict_list
+        normalized = as_dict_list(filters)
+        if normalized:
+            filter_str = json.dumps(normalized, separators=(",", ":"))
 
     while True:
         params: dict[str, Any] = {"limit": page_size, "offset": offset}

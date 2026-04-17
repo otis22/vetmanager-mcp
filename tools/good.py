@@ -1,5 +1,6 @@
 from fastmcp import FastMCP
 
+from filters import eq as _filter_eq, like as _filter_like
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam
 
@@ -32,19 +33,13 @@ def register(mcp: FastMCP) -> None:
             sort: Optional sort spec.
             filter: Optional extra filter spec.
         """
-        combined_filters: list[dict] = list(filter or [])
+        combined_filters: list = list(filter or [])
         if title:
-            combined_filters.append(
-                {"property": "title", "value": title, "operator": "LIKE"}
-            )
+            combined_filters.append(_filter_like("title", title))
         if group_id:
-            combined_filters.append(
-                {"property": "group_id", "value": group_id, "operator": "="}
-            )
+            combined_filters.append(_filter_eq("group_id", group_id))
         if is_active is not None:
-            combined_filters.append(
-                {"property": "is_active", "value": 1 if is_active else 0, "operator": "="}
-            )
+            combined_filters.append(_filter_eq("is_active", 1 if is_active else 0))
         return await crud_list(
             "/rest/api/good", limit=limit, offset=offset,
             sort=sort,

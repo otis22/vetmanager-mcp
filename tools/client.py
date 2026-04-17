@@ -1,5 +1,6 @@
 from fastmcp import FastMCP
 
+from filters import eq as _filter_eq, in_ as _filter_in, like as _filter_like
 from tools._inactive_helpers import fetch_inactive_clients_page
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete, paginate_all
 from validators import LimitParam, normalize_phone_digits
@@ -20,13 +21,7 @@ async def _search_client_phones(search_digits: str) -> list[int]:
         "/rest/api/ClientPhone",
         limit=_PHONE_SEARCH_MAX_ROWS,
         offset=0,
-        filters=[
-            {
-                "property": "clean_phone",
-                "value": search_digits,
-                "operator": "LIKE",
-            }
-        ],
+        filters=[_filter_like("clean_phone", search_digits)],
     )
     data = resp.get("data", {}) if isinstance(resp, dict) else {}
     if isinstance(data, dict):
@@ -101,11 +96,9 @@ def register(mcp: FastMCP) -> None:
             status: Filter by client status: 'ACTIVE' (default), 'DELETED',
                     'INACTIVE', or '' for all.
         """
-        combined_filters: list[dict] = list(filter or [])
+        combined_filters: list = list(filter or [])
         if status:
-            combined_filters.append(
-                {"property": "status", "value": status, "operator": "="}
-            )
+            combined_filters.append(_filter_eq("status", status))
         if phone:
             phone_digits = normalize_phone_digits(phone)
             if len(phone_digits) < 4:
@@ -135,13 +128,9 @@ def register(mcp: FastMCP) -> None:
                     "data": {"client": [], "totalCount": 0},
                 }
             # Phase 2: batch-fetch clients by id IN [...].
-            combined_filters.append(
-                {"property": "id", "value": client_ids, "operator": "IN"}
-            )
+            combined_filters.append(_filter_in("id", client_ids))
         if email:
-            combined_filters.append(
-                {"property": "email", "value": email, "operator": "LIKE"}
-            )
+            combined_filters.append(_filter_like("email", email))
 
         return await crud_list(
             "/rest/api/client", limit=limit, offset=offset,
@@ -166,7 +155,7 @@ def register(mcp: FastMCP) -> None:
         """
         clients, _ = await paginate_all(
             "/rest/api/client",
-            filters=[{"property": "status", "value": "ACTIVE", "operator": "="}],
+            filters=[_filter_eq("status", "ACTIVE")],
             page_size=limit,
             entity_key="client",
         )
@@ -385,7 +374,6 @@ def register(mcp: FastMCP) -> None:
         )
 
     async def _get_client_profile_impl(client_id: int) -> dict:
-        import asyncio as _asyncio
         import json as _json
 
         vc = VetmanagerClient()
@@ -397,7 +385,7 @@ def register(mcp: FastMCP) -> None:
 
         client_id_str = str(client_id)
         client_filter = _json.dumps(
-            [{"property": "client_id", "value": client_id_str}],
+            [_filter_eq("client_id", client_id_str).to_dict()],
             separators=(",", ":"),
         )
         # Stage 96.2: 'active' was a phantom enum value — admission.status has no
@@ -405,12 +393,8 @@ def register(mcp: FastMCP) -> None:
         # next_admission returns real upcoming visits instead of always None.
         next_filter = _json.dumps(
             [
-                {"property": "client_id", "value": client_id_str},
-                {
-                    "property": "status",
-                    "value": list(ACTIVE_ADMISSION_STATUSES),
-                    "operator": "IN",
-                },
+                _filter_eq("client_id", client_id_str).to_dict(),
+                _filter_in("status", list(ACTIVE_ADMISSION_STATUSES)).to_dict(),
             ],
             separators=(",", ":"),
         )

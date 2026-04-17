@@ -1,5 +1,6 @@
 from fastmcp import FastMCP
 
+from filters import eq as _filter_eq, gte as _filter_gte, lte as _filter_lte
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete, paginate_all
 from validators import LimitParam, parse_date_param
 
@@ -46,23 +47,15 @@ def register(mcp: FastMCP) -> None:
         resolved_date_from = parse_date_param(date_from)
         resolved_date_to = parse_date_param(date_to)
 
-        combined_filters: list[dict] = list(filter or [])
+        combined_filters: list = list(filter or [])
         if resolved_date_from:
-            combined_filters.append(
-                {"property": "create_date", "value": resolved_date_from, "operator": ">="}
-            )
+            combined_filters.append(_filter_gte("create_date", resolved_date_from))
         if resolved_date_to:
-            combined_filters.append(
-                {"property": "create_date", "value": resolved_date_to, "operator": "<="}
-            )
+            combined_filters.append(_filter_lte("create_date", resolved_date_to))
         if pet_id:
-            combined_filters.append(
-                {"property": "pet_id", "value": pet_id, "operator": "="}
-            )
+            combined_filters.append(_filter_eq("pet_id", pet_id))
         if payment_status:
-            combined_filters.append(
-                {"property": "payment_status", "value": payment_status, "operator": "="}
-            )
+            combined_filters.append(_filter_eq("payment_status", payment_status))
 
         return await crud_list(
             "/rest/api/invoice", limit=limit, offset=offset,
@@ -99,8 +92,8 @@ def register(mcp: FastMCP) -> None:
             date_from = parse_date_param(date_from)
 
         combined_filters = [
-            {"property": "create_date", "value": date_from, "operator": ">="},
-            {"property": "create_date", "value": date_to, "operator": "<="},
+            _filter_gte("create_date", date_from),
+            _filter_lte("create_date", date_to),
         ]
 
         invoices, _ = await paginate_all(

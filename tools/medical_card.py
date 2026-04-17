@@ -31,21 +31,20 @@ def register(mcp: FastMCP) -> None:
         """
         vc = VetmanagerClient()
         # patient_id filter is required — pet_id param alone is ignored by the API
-        extra_filters: list[dict] = []
+        from filters import eq as _filter_eq
+        extra_filters: list = []
         if filter:
             extra_filters = filter if isinstance(filter, list) else []
-        combined_filter = json.dumps(
-            [{"property": "patient_id", "value": str(pet_id), "operator": "="}]
-            + extra_filters,
-            separators=(",", ":"),
-        )
+        combined_filters = [
+            _filter_eq("patient_id", str(pet_id)),
+            *extra_filters,
+        ]
         params = build_list_query_params(
             limit=limit,
             offset=offset,
             sort=sort,
-            filters=None,  # handled manually above
+            filters=combined_filters,
         )
-        params["filter"] = combined_filter
         result = await vc.get(_MC_ENDPOINT, params=params)
         # Normalise response: expose records under both "medicalCards" and "medicalcards"
         # so that existing assistant code that checks either key keeps working.
@@ -74,12 +73,13 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset (0–10000).
         """
         vc = VetmanagerClient()
+        from filters import eq as _filter_eq, in_ as _filter_in
 
         # Step 1: get all pets of the client.
         # Pet entity FK to client is `owner_id` (migrated stage 77.4;
         # legacy `client_id` filter returns empty silently).
         pet_filter = json.dumps(
-            [{"property": "owner_id", "value": str(client_id), "operator": "="}],
+            [_filter_eq("owner_id", str(client_id)).to_dict()],
             separators=(",", ":"),
         )
         pets_resp = await vc.get("/rest/api/pet", params={"filter": pet_filter, "limit": 100})
@@ -110,7 +110,7 @@ def register(mcp: FastMCP) -> None:
             }
 
         mc_filter = json.dumps(
-            [{"property": "patient_id", "value": pet_ids, "operator": "IN"}],
+            [_filter_in("patient_id", pet_ids).to_dict()],
             separators=(",", ":"),
         )
         params = build_list_query_params(

@@ -1,5 +1,6 @@
 from fastmcp import FastMCP
 
+from filters import eq as _filter_eq, like as _filter_like
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_update
 from validators import LimitParam
 
@@ -37,19 +38,11 @@ def register(mcp: FastMCP) -> None:
             sort: Optional sort spec.
             filter: Optional extra filter spec (merged with named filters).
         """
-        base_filters: list[dict] = list(filter or [])
+        base_filters: list = list(filter or [])
         if position_id:
-            base_filters.append(
-                {"property": "position_id", "value": position_id, "operator": "="}
-            )
+            base_filters.append(_filter_eq("position_id", position_id))
         if is_active is not None:
-            base_filters.append(
-                {
-                    "property": "is_active",
-                    "value": 1 if is_active else 0,
-                    "operator": "=",
-                }
-            )
+            base_filters.append(_filter_eq("is_active", 1 if is_active else 0))
 
         if not name:
             return await crud_list(
@@ -61,12 +54,8 @@ def register(mcp: FastMCP) -> None:
             )
 
         # Name search: issue two parallel filter variants and merge by id.
-        last_name_filters = base_filters + [
-            {"property": "last_name", "value": name, "operator": "LIKE"}
-        ]
-        first_name_filters = base_filters + [
-            {"property": "first_name", "value": name, "operator": "LIKE"}
-        ]
+        last_name_filters = base_filters + [_filter_like("last_name", name)]
+        first_name_filters = base_filters + [_filter_like("first_name", name)]
 
         last_name_resp = await crud_list(
             "/rest/api/user",

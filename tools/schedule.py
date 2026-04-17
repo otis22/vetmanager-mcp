@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta
 
 from fastmcp import FastMCP
 
+from filters import eq as _filter_eq, gt as _filter_gt, gte as _filter_gte, lt as _filter_lt
 from tools._slots_helpers import (
     compute_free_slots,
     parse_admission_length,
@@ -107,23 +108,13 @@ def register(mcp: FastMCP) -> None:
         fetch_start_str = window_start.strftime("%Y-%m-%d %H:%M:%S")
 
         # --- Fetch timesheet rows for this doctor overlapping the window ---
-        ts_filters: list[dict] = [
-            {"property": "doctor_id", "value": doctor_id, "operator": "="},
-            {
-                "property": "begin_datetime",
-                "value": fetch_end_str,
-                "operator": "<",
-            },
-            {
-                "property": "end_datetime",
-                "value": fetch_start_str,
-                "operator": ">",
-            },
+        ts_filters: list = [
+            _filter_eq("doctor_id", doctor_id),
+            _filter_lt("begin_datetime", fetch_end_str),
+            _filter_gt("end_datetime", fetch_start_str),
         ]
         if clinic_id:
-            ts_filters.append(
-                {"property": "clinic_id", "value": clinic_id, "operator": "="}
-            )
+            ts_filters.append(_filter_eq("clinic_id", clinic_id))
 
         timesheet_rows, _ = await paginate_all(
             "/rest/api/timesheet",
@@ -140,23 +131,13 @@ def register(mcp: FastMCP) -> None:
         adm_fetch_lower = window_start - _ADMISSION_BACK_SLACK
         adm_fetch_lower_str = adm_fetch_lower.strftime("%Y-%m-%d %H:%M:%S")
 
-        adm_filters: list[dict] = [
-            {"property": "user_id", "value": doctor_id, "operator": "="},
-            {
-                "property": "admission_date",
-                "value": adm_fetch_lower_str,
-                "operator": ">=",
-            },
-            {
-                "property": "admission_date",
-                "value": fetch_end_str,
-                "operator": "<",
-            },
+        adm_filters: list = [
+            _filter_eq("user_id", doctor_id),
+            _filter_gte("admission_date", adm_fetch_lower_str),
+            _filter_lt("admission_date", fetch_end_str),
         ]
         if clinic_id:
-            adm_filters.append(
-                {"property": "clinic_id", "value": clinic_id, "operator": "="}
-            )
+            adm_filters.append(_filter_eq("clinic_id", clinic_id))
 
         admission_rows, _ = await paginate_all(
             "/rest/api/admission",

@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastmcp import FastMCP
 from pydantic import Field
+from filters import eq as _filter_eq
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
@@ -65,11 +66,9 @@ def register(mcp: FastMCP) -> None:
                 timesheet entity uses `doctor_id` as FK to user.id.
             date: Filter by date in YYYY-MM-DD format (optional).
         """
-        combined_filters: list[dict] = list(filter or [])
+        combined_filters: list = list(filter or [])
         if doctor_id:
-            combined_filters.append(
-                {"property": "doctor_id", "value": doctor_id, "operator": "="}
-            )
+            combined_filters.append(_filter_eq("doctor_id", doctor_id))
         extra = {"date": date} if date else None
         return await crud_list(
             "/rest/api/timesheet", limit=limit, offset=offset,
