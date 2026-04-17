@@ -3724,3 +3724,61 @@ Full suite: 577 passed.
 **Отложено в отдельные этапы:**
 - 87.3 CI lint на known-wrong pairs (pre-commit + GHA инфра) — отдельная задача.
 - `low_stock` prompt — требует bulk-tool `get_goods_with_low_stock(threshold)` или смягчения копирайта; отдельный этап.
+
+## Этап 88. Observability core — correlation_id + per-tool + upstream metrics
+
+**Что сделано:**
+
+Закрыты 2 observability-blocker (B2, B3) и 1 high (F6) из baseline-ревью.
+
+1. **B2 / correlation_id в VM API headers** (`vetmanager_client.py::_headers()`):
+   - Достаёт `correlation_id` из `get_current_request_context()` (HTTP транспорт).
+   - Fallback: `uuid.uuid4().hex` при отсутствии контекста (stdio/тесты) — VM-side логи всё равно distinguishable per outgoing call.
+2. **B3 / per-tool latency+outcome метрика** (`tools/crud_helpers.py::_instrumented_call`):
+   - Обёртка вокруг caller coroutine factory, `time.monotonic()` start/elapsed.
+   - Labels: (endpoint, method, outcome). Endpoint+method — cheap proxy за per-tool identity без передачи tool_name через каждый каллер.
+   - Применено к crud_list/get_by_id/create/update/delete.
+3. **F6 / upstream latency + structured log** (`vetmanager_client.py::_request()`):
+   - `record_upstream_request(target, status=f"http_{code}"|"timeout"|"network_error", duration_seconds)` на каждом attempt (success И failure).
+   - `started = time.monotonic()` **после** `_pace_requests` — чтобы в latency не входила наша собственная 50ms pacing-задержка (Codex feedback W2).
+   - `RUNTIME_LOGGER.warning` с `event_name/domain/method/url_path/elapsed_ms/attempt/error_class` на terminal timeout/network error.
+
+Новые метрики в `service_metrics.py`: `_UPSTREAM_REQUESTS_TOTAL`, `_UPSTREAM_LATENCY_SECONDS`, `_TOOL_CALLS_TOTAL`, `_TOOL_CALL_LATENCY_SECONDS` с Prometheus-экспозицией и TYPE/HELP блоками.
+
+**Архитектурные решения:**
+- **record_upstream_request vs record_upstream_failure — раздельные counters**. Первый отвечает на «сколько запросов прошло, с каким latency-распределением, к какой target». Второй — «какие были failure-reasons». Дублирование интенциональное, разные вопросы.
+- **Per-endpoint, не per-tool-name** в tool_calls_total: cheap, bounded по cardinality (set of MCP endpoints ≤ 50), достаточно для SRE-вопросов «какой CRUD-surface тормозит/падает». Full per-tool granularity потребовала бы передачу tool_name через ContextVar — отложено.
+- **`_instrumented_call` ловит `BaseException`, не `Exception`** — чтобы `asyncio.CancelledError` тоже маркировал outcome='error' (Codex feedback W1). Cancelled tool call не должен записываться как успешный.
+
+**Codex-ревью (1 итерация, 2 warnings):**
+- W1 (`except Exception` пропускает CancelledError) — **адекватно**, исправлено на `except BaseException`.
+- W2 (latency замер до `_pace_requests` включает pacing-delay) — **адекватно**, `started = time.monotonic()` перенесён ПОСЛЕ `_pace_requests`.
+
+Дополнительные вопросы от Codex (non-critical):
+- Correlation ID fallback на fresh UUID per request: acceptable для per-HTTP-call traceability; cross-call grouping inside single MCP invocation — next iteration если понадобится (через ContextVar cache).
+- Per-endpoint tool metric granularity: acceptable как bounded proxy; full per-tool — отдельной фичей.
+- Double-counting http_500 в request_total + failures_total: **intentional**, два разных counter'а для разных вопросов.
+- Cardinality explosion: bounded, все labels из enum-like sets (target, status codes, code-defined endpoints).
+
+**Тесты**: 8 новых в `tests/test_stage88_observability_core.py`:
+- record_upstream_request аккумулирует count+latency для success/error
+- record_tool_call success+error outcomes
+- X-Correlation-ID в outgoing VM headers
+- upstream metric на success
+- timeout → structured warning (через monkeypatched RUNTIME_LOGGER stub — caplog в полном suite пропускает записи из-за configure_logging force=True) + timeout status counter
+- crud_list instrumentation success
+- crud_create error instrumentation (500 response)
+- Prometheus output содержит все 4 новых метрик-family
+
+Full suite: 585 passed.
+
+**Test isolation gotcha:**
+caplog не перехватывает `RUNTIME_LOGGER.warning(...)` в full-suite прогоне — где-то в предшествующих тестах `configure_logging()` или `logging.basicConfig(force=True)` сбрасывает handlers таким образом, что `vetmanager.runtime` logger не propagate'ит к pytest LogCaptureHandler. Workaround: monkeypatch RUNTIME_LOGGER на stub-объект, собирающий вызовы. В isolation работает и caplog-подход (проверено). Тест документирует это комментарием.
+
+**Breaking changes**: нет. Новые метрики — additive. Изменение в `_headers` добавляет заголовок, существующие headers не трогает. `_instrumented_call` прозрачен для caller'ов crud_*.
+
+**Отложено в этап 89:**
+- 88.5 auth_audit extra{ip_address, user_agent}
+- 88.6 auth_successes counter
+- 88.7 /logout + /register business metrics/audit
+- 88.8 process_start_time gauge

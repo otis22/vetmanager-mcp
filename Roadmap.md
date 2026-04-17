@@ -1310,18 +1310,18 @@
 - 87.3 CI lint / pre-commit на known-wrong pairs — `stop` (отложено, требует отдельной инфраструктуры pre-commit/GHA)
 - 87.4 Regression тесты: 8 новых в `tests/test_stage87_post_migration.py` (create_pet owner_id payload, get_timesheets doctor_id filter без legacy userId query, 5 prompt sweep checks через text search) — `done`
 
-## Этап 88. Observability core: correlation_id + per-tool metrics + upstream metric (F4, F5, F6) — `todo`
+## Этап 88. Observability core: correlation_id + per-tool metrics + upstream metric (F4, F5, F6) — `done`
 
 Цель: закрыть три observability-blocker/high из baseline. Без этого прод-инциденты неотлаживаемы.
 
-- 88.1 Пробросить `correlation_id` из `request_context.get_current_request_context()` в исходящие VM API headers (`vetmanager_client.py::_headers()`) — fallback UUID4 при отсутствии контекста + debug-log — `todo`
-- 88.2 Декоратор `@instrument_tool(name)` в `tools/crud_helpers.py` — histogram `tool_latency_seconds{tool, outcome}` + counter `tool_calls_total{tool, status}`; применить ко всем crud_* + вручную к специализированным tools — `todo`
-- 88.3 Upstream метрика: `record_upstream_request(target, status, duration_ms)` в `vetmanager_client.py::_request()` — для success И failure; обернуть httpx-вызов в `time.monotonic()` — `todo`
-- 88.4 Structured logs на timeout/network error: `RUNTIME_LOGGER.warning` с `domain/url/method/attempt/elapsed` перед raise — `todo`
-- 88.5 `auth_audit.py`: добавить `ip_address`/`user_agent` в extra{} лог stream (не только в DB) — `todo`
-- 88.6 Bearer auth: counter `auth_successes_total` для расчёта failure rate — `todo`
-- 88.7 `/logout` и `/register`: business-metric + audit-log event — `todo`
-- 88.8 Process start timestamp gauge в /metrics — `todo`
+- 88.1 Пробросить `correlation_id` из `request_context.get_current_request_context()` в исходящие VM API headers (`vetmanager_client.py::_headers()`) — fallback UUID4 при отсутствии контекста — `done`
+- 88.2 `_instrumented_call` обёртка в `tools/crud_helpers.py` — counter `tool_calls_total{endpoint,method,outcome}` + summary `tool_call_latency_seconds{endpoint,method}`; применено ко всем crud_list/get_by_id/create/update/delete — `done`
+- 88.3 Upstream метрика: `record_upstream_request(target, status, duration_seconds)` в `vetmanager_client.py::_request()` — success И failure; замер через `time.monotonic()` ПОСЛЕ `_pace_requests` (чтобы не включать pacing-delay в upstream latency) — `done`
+- 88.4 Structured logs на timeout/network error: `RUNTIME_LOGGER.warning` с `event_name/domain/method/url_path/elapsed_ms/attempt` перед raise — `done`
+- 88.5 `auth_audit.py` ip_address/user_agent в лог stream — `stop` (отложено в этап 89)
+- 88.6 Bearer auth `auth_successes_total` counter — `stop` (отложено в этап 89)
+- 88.7 `/logout` и `/register` business-metric + audit event — `stop` (отложено в этап 89)
+- 88.8 Process start timestamp gauge — `stop` (отложено в этап 89)
 
 ## Этап 89. Security hot-fix: Sentry sanitizer + deploy defaults (B4, F7) — `todo`
 

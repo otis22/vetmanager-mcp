@@ -3,13 +3,47 @@
 Each helper encapsulates VetmanagerClient instantiation and the HTTP call.
 Tool functions keep their own @mcp.tool decorators, docstrings, signatures,
 and payload-building logic — only the final HTTP invocation is delegated here.
+
+All CRUD calls are instrumented — endpoint+method serve as a per-tool
+proxy label for `vetmanager_tool_call_latency_seconds` and
+`vetmanager_tool_calls_total{outcome=success|error}`.
 """
 
 import json
-from typing import Any
+import time
+from typing import Any, Awaitable, Callable, TypeVar
 
+from service_metrics import record_tool_call
 from validators import build_list_query_params
 from vetmanager_client import VetmanagerClient
+
+T = TypeVar("T")
+
+
+async def _instrumented_call(
+    endpoint: str,
+    method: str,
+    coro_factory: Callable[[], Awaitable[T]],
+) -> T:
+    """Wrap a single tool call, record latency + outcome metric."""
+    started = time.monotonic()
+    outcome = "success"
+    try:
+        return await coro_factory()
+    except BaseException:
+        # BaseException (not Exception) so asyncio.CancelledError also marks
+        # the call as non-success — a cancelled tool call is not a completed
+        # successful call and should not skew outcome metrics.
+        outcome = "error"
+        raise
+    finally:
+        elapsed = time.monotonic() - started
+        record_tool_call(
+            endpoint=endpoint,
+            method=method,
+            outcome=outcome,
+            duration_seconds=elapsed,
+        )
 
 
 async def crud_list(
@@ -29,27 +63,47 @@ async def crud_list(
         filters=filters,
         extra=extra,
     )
-    return await VetmanagerClient().get(endpoint, params=params)
+    return await _instrumented_call(
+        endpoint,
+        "GET",
+        lambda: VetmanagerClient().get(endpoint, params=params),
+    )
 
 
 async def crud_get_by_id(endpoint: str, entity_id: int) -> dict:
     """GET a single entity by ID."""
-    return await VetmanagerClient().get(f"{endpoint}/{entity_id}")
+    return await _instrumented_call(
+        endpoint,
+        "GET",
+        lambda: VetmanagerClient().get(f"{endpoint}/{entity_id}"),
+    )
 
 
 async def crud_create(endpoint: str, payload: dict) -> dict:
     """POST a new entity."""
-    return await VetmanagerClient().post(endpoint, json=payload)
+    return await _instrumented_call(
+        endpoint,
+        "POST",
+        lambda: VetmanagerClient().post(endpoint, json=payload),
+    )
 
 
 async def crud_update(endpoint: str, entity_id: int, payload: dict) -> dict:
     """PUT an updated entity."""
-    return await VetmanagerClient().put(f"{endpoint}/{entity_id}", json=payload)
+    return await _instrumented_call(
+        endpoint,
+        "PUT",
+        lambda: VetmanagerClient().put(f"{endpoint}/{entity_id}", json=payload),
+    )
 
 
 async def crud_delete(endpoint: str, entity_id: int) -> dict:
     """DELETE an entity by ID."""
-    return await VetmanagerClient().delete(f"{endpoint}/{entity_id}")
+    return await _instrumented_call(
+        endpoint,
+        "DELETE",
+        lambda: VetmanagerClient().delete(f"{endpoint}/{entity_id}"),
+    )
 
 
 async def paginate_all(

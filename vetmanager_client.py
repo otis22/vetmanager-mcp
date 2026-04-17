@@ -2,6 +2,7 @@ import logging
 import asyncio
 import hashlib
 import time
+import uuid
 from typing import Any
 from urllib.parse import urlencode
 
@@ -18,9 +19,10 @@ from host_resolver import resolve_vetmanager_host
 from observability_logging import RUNTIME_LOGGER
 from request_cache import REQUEST_CACHE
 from request_auth import get_bearer_token
+from request_context import get_current_request_context
 from domain_validation import validate_domain as validate_runtime_domain
 from runtime_auth import resolve_runtime_credentials
-from service_metrics import record_upstream_failure
+from service_metrics import record_upstream_failure, record_upstream_request
 from token_scopes import required_scope_for_request
 from vetmanager_auth import VetmanagerAuthContext
 
@@ -160,7 +162,15 @@ class VetmanagerClient:
     def _headers(self) -> dict[str, str]:
         if not self._vetmanager_auth:
             raise AuthError("Runtime credentials are not initialized.", status_code=401)
-        return self._vetmanager_auth.build_headers()
+        headers = self._vetmanager_auth.build_headers()
+        # Propagate correlation id to upstream so VM-side logs can be
+        # joined with our incoming request logs. For non-HTTP transports
+        # (stdio, tests) get_current_request_context() returns {} — fall
+        # back to a fresh UUID so upstream logs are still distinguishable.
+        ctx = get_current_request_context()
+        correlation_id = ctx.get("correlation_id") if ctx else None
+        headers["X-Correlation-ID"] = correlation_id or uuid.uuid4().hex
+        return headers
 
     def _require_scope(self, method: str, path: str) -> None:
         required_scope = required_scope_for_request(method, path)
@@ -190,9 +200,19 @@ class VetmanagerClient:
         for attempt in range(MAX_RETRIES + 1):
             try:
                 await self._pace_requests()
+                # Started AFTER pace_requests so the upstream latency metric
+                # reflects only the httpx round-trip, not our own client-side
+                # pacing delay (REQUEST_GAP_SECONDS serialization).
+                started = time.monotonic()
                 timeout = httpx.Timeout(REQUEST_TIMEOUT)
                 async with httpx.AsyncClient(timeout=timeout) as http:
                     response = await http.request(method, url, headers=self._headers(), **kwargs)
+                    elapsed = time.monotonic() - started
+                    record_upstream_request(
+                        target="vetmanager_api",
+                        status=f"http_{response.status_code}",
+                        duration_seconds=elapsed,
+                    )
                     self._raise_for_status(response)
                     payload = response.json()
                     upper_method = method.upper()
@@ -213,18 +233,53 @@ class VetmanagerClient:
                         await REQUEST_CACHE.invalidate_tag(entity_tag)
                     return payload
             except httpx.TimeoutException as exc:
+                elapsed = time.monotonic() - started
                 if attempt < MAX_RETRIES:
                     await asyncio.sleep(0.1 * (attempt + 1))
                     continue
                 record_upstream_failure(target="vetmanager_api", reason="timeout")
+                record_upstream_request(
+                    target="vetmanager_api",
+                    status="timeout",
+                    duration_seconds=elapsed,
+                )
+                RUNTIME_LOGGER.warning(
+                    "VM upstream timeout",
+                    extra={
+                        "event_name": "vm_upstream_timeout",
+                        "domain": self._domain,
+                        "method": method.upper(),
+                        "url_path": path,
+                        "elapsed_ms": round(elapsed * 1000, 2),
+                        "attempt": attempt + 1,
+                    },
+                )
                 raise VetmanagerTimeoutError(f"Request to {url} timed out") from exc
             except (AuthError, NotFoundError, VetmanagerError):
                 raise
             except httpx.RequestError as exc:
+                elapsed = time.monotonic() - started
                 if attempt < MAX_RETRIES:
                     await asyncio.sleep(0.1 * (attempt + 1))
                     continue
                 record_upstream_failure(target="vetmanager_api", reason="network_error")
+                record_upstream_request(
+                    target="vetmanager_api",
+                    status="network_error",
+                    duration_seconds=elapsed,
+                )
+                RUNTIME_LOGGER.warning(
+                    "VM upstream network error",
+                    extra={
+                        "event_name": "vm_upstream_network_error",
+                        "domain": self._domain,
+                        "method": method.upper(),
+                        "url_path": path,
+                        "elapsed_ms": round(elapsed * 1000, 2),
+                        "attempt": attempt + 1,
+                        "error_class": exc.__class__.__name__,
+                    },
+                )
                 raise VetmanagerError(f"Network error requesting {url}: {exc}") from exc
 
     def _raise_for_status(self, response: httpx.Response) -> None:

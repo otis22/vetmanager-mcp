@@ -31,6 +31,14 @@ _HTTP_REQUEST_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = 
 )
 _AUTH_FAILURES_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
 _UPSTREAM_FAILURES_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
+_UPSTREAM_REQUESTS_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
+_UPSTREAM_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = defaultdict(
+    LatencyAggregate
+)
+_TOOL_CALLS_TOTAL: DefaultDict[tuple[str, str, str], int] = defaultdict(int)
+_TOOL_CALL_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = defaultdict(
+    LatencyAggregate
+)
 
 
 def reset_service_metrics() -> None:
@@ -40,6 +48,10 @@ def reset_service_metrics() -> None:
         _HTTP_REQUEST_LATENCY_SECONDS.clear()
         _AUTH_FAILURES_TOTAL.clear()
         _UPSTREAM_FAILURES_TOTAL.clear()
+        _UPSTREAM_REQUESTS_TOTAL.clear()
+        _UPSTREAM_LATENCY_SECONDS.clear()
+        _TOOL_CALLS_TOTAL.clear()
+        _TOOL_CALL_LATENCY_SECONDS.clear()
 
 
 def record_http_request(*, route: str, method: str, status_code: int, duration_seconds: float) -> None:
@@ -62,6 +74,42 @@ def record_upstream_failure(*, target: str, reason: str) -> None:
         _UPSTREAM_FAILURES_TOTAL[(target, reason)] += 1
 
 
+def record_upstream_request(
+    *, target: str, status: str, duration_seconds: float
+) -> None:
+    """Record one upstream (external API) interaction with its latency.
+
+    Unlike record_upstream_failure (counters for failures by reason),
+    this captures BOTH success and failure outcomes with duration so
+    SRE can compute p95 / error rate on external calls.
+    """
+    with _LOCK:
+        _UPSTREAM_REQUESTS_TOTAL[(target, status)] += 1
+        _UPSTREAM_LATENCY_SECONDS[(target, status)].observe(duration_seconds)
+
+
+def record_tool_call(
+    *,
+    endpoint: str,
+    method: str,
+    outcome: str,
+    duration_seconds: float,
+) -> None:
+    """Record one MCP tool invocation with its outcome and latency.
+
+    `endpoint` is the VM REST path (e.g. `/rest/api/client`), `method` is
+    the HTTP verb, `outcome` is `"success"` or `"error"`. Labels by
+    endpoint+method are a cheap proxy for per-tool identity without
+    requiring every tool to pass its own name.
+    """
+    normalized_method = method.upper()
+    with _LOCK:
+        _TOOL_CALLS_TOTAL[(endpoint, normalized_method, outcome)] += 1
+        _TOOL_CALL_LATENCY_SECONDS[(endpoint, normalized_method)].observe(
+            duration_seconds
+        )
+
+
 def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, int | float]]]:
     """Return a stable JSON-serializable snapshot of current service metrics."""
     with _LOCK:
@@ -81,6 +129,22 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
             "upstream_failures_total": {
                 f"{target}|{reason}": count
                 for (target, reason), count in sorted(_UPSTREAM_FAILURES_TOTAL.items())
+            },
+            "upstream_requests_total": {
+                f"{target}|{status}": count
+                for (target, status), count in sorted(_UPSTREAM_REQUESTS_TOTAL.items())
+            },
+            "upstream_request_latency_seconds": {
+                f"{target}|{status}": asdict(aggregate)
+                for (target, status), aggregate in sorted(_UPSTREAM_LATENCY_SECONDS.items())
+            },
+            "tool_calls_total": {
+                f"{endpoint}|{method}|{outcome}": count
+                for (endpoint, method, outcome), count in sorted(_TOOL_CALLS_TOTAL.items())
+            },
+            "tool_call_latency_seconds": {
+                f"{endpoint}|{method}": asdict(aggregate)
+                for (endpoint, method), aggregate in sorted(_TOOL_CALL_LATENCY_SECONDS.items())
             },
         }
 
@@ -151,6 +215,58 @@ def render_prometheus_metrics() -> str:
             f"vetmanager_upstream_failures_total"
             f"{_labels_text(target=target, reason=reason)} {value}"
         )
+
+    lines.extend(
+        [
+            "# HELP vetmanager_upstream_requests_total Total upstream requests by target and status.",
+            "# TYPE vetmanager_upstream_requests_total counter",
+        ]
+    )
+    for key, value in snapshot["upstream_requests_total"].items():
+        target, status = key.split("|", 1)
+        lines.append(
+            f"vetmanager_upstream_requests_total"
+            f"{_labels_text(target=target, status=status)} {value}"
+        )
+
+    lines.extend(
+        [
+            "# HELP vetmanager_upstream_request_latency_seconds Upstream request latency by target and status.",
+            "# TYPE vetmanager_upstream_request_latency_seconds summary",
+        ]
+    )
+    for key, value in snapshot["upstream_request_latency_seconds"].items():
+        target, status = key.split("|", 1)
+        labels = _labels_text(target=target, status=status)
+        lines.append(f"vetmanager_upstream_request_latency_seconds_count{labels} {value['count']}")
+        lines.append(f"vetmanager_upstream_request_latency_seconds_sum{labels} {value['sum_seconds']}")
+        lines.append(f"vetmanager_upstream_request_latency_seconds_max{labels} {value['max_seconds']}")
+
+    lines.extend(
+        [
+            "# HELP vetmanager_tool_calls_total Total MCP tool invocations by endpoint, method, outcome.",
+            "# TYPE vetmanager_tool_calls_total counter",
+        ]
+    )
+    for key, value in snapshot["tool_calls_total"].items():
+        endpoint, method, outcome = key.split("|", 2)
+        lines.append(
+            f"vetmanager_tool_calls_total"
+            f"{_labels_text(endpoint=endpoint, method=method, outcome=outcome)} {value}"
+        )
+
+    lines.extend(
+        [
+            "# HELP vetmanager_tool_call_latency_seconds MCP tool latency by endpoint and method.",
+            "# TYPE vetmanager_tool_call_latency_seconds summary",
+        ]
+    )
+    for key, value in snapshot["tool_call_latency_seconds"].items():
+        endpoint, method = key.split("|", 1)
+        labels = _labels_text(endpoint=endpoint, method=method)
+        lines.append(f"vetmanager_tool_call_latency_seconds_count{labels} {value['count']}")
+        lines.append(f"vetmanager_tool_call_latency_seconds_sum{labels} {value['sum_seconds']}")
+        lines.append(f"vetmanager_tool_call_latency_seconds_max{labels} {value['max_seconds']}")
 
     # Cache metrics (from request_cache singleton).
     from request_cache import REQUEST_CACHE
