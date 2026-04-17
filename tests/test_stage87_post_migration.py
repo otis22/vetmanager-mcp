@@ -150,8 +150,10 @@ class TestStage87PromptSweep:
         assert "status='not_confirmed'" in PROMPTS_SRC
         # Must use date_from/date_to range; must NOT use pseudocode `date+2d`
         # literal (non-executable math that LLM might emit verbatim).
+        # Stage 102.3 computes end_date in Python; prompt contains
+        # `date_from='{start_iso}'` and `date_to='{end_date}'` f-string template.
         assert "date_from=" in PROMPTS_SRC
-        assert "date_to=end_date" in PROMPTS_SRC
+        assert "date_to=" in PROMPTS_SRC
         assert "date+2d" not in PROMPTS_SRC
 
     def test_unpaid_invoices_uses_payment_status_param(self):

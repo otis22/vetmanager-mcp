@@ -1495,20 +1495,18 @@ Full suite 642 passed.
 
 Full suite 642 → **646 passed** (+4 new regressions).
 
-## Этап 102. Product consistency sweep — `todo`
+## Этап 102. Product consistency sweep — частично `done`
 
-Источник: super-review H11-H13 + medium product.
+- 102.1 `get_pet_profile` partial-gather parity — `done`
+- 102.2 `get_pet_profile` `_instrumented_call` wrap — `stop` (aggregator делает 3 parallel `vc.get()` минуя crud_helpers; proper instrumentation требует refactor на уровне VetmanagerClient, не просто wrap)
+- 102.3 `unconfirmed_appointments` компьютит end_date в Python, `days_ahead: int = 2` param — `done`
+- 102.4 `low_stock` prompt — `clinic_id` param + prominent ⚠️ warning в prompt text — `done`
+- 102.5 Landing softening — убраны «товары заканчиваются» и «выручка» bullet'ы и tile-текст — `done`
+- 102.6 `get_goods.name` + `create_timesheet.user_id`-style deprecation — `[DEPRECATED — use title=]` в docstring — `done`
+- 102.7 Structured `section_errors` shape `{error_type, retryable, message}` — `stop` (current free-text работает для LLM; refactor на structured value-добавление cost vs benefit низкий)
+- 102.8 Schedule группа decision — `stop` (non-blocker, решение продукта)
 
-- 102.1 `tools/pet.py::get_pet_profile`: применить partial-gather pattern (`return_exceptions=True` + `section_errors` + `partial: True`) как в `get_client_profile` — envelope consistency — `todo`
-- 102.2 `get_pet_profile` wrap в `_instrumented_call` (пересекается с 98.3) — `todo`
-- 102.3 `prompts.py::unconfirmed_appointments`: добавить `days_ahead: int = 2` параметр, вычислять `end_date` в Python (не переводить LLM на date math) — `todo`
-- 102.4 `prompts.py::low_stock`: либо (a) убрать prompt из регистрации до появления bulk-tool `get_goods_with_low_stock`, либо (b) добавить warning в prompt text + параметризовать `clinic_id` (сейчас hardcoded=1) — `todo`
-- 102.5 `landing_page.py`: убрать строки overpromising `Какие товары заканчиваются`/`выручка` (lines 660-661) + смягчить tile text на line 580, пока bulk-tools не реализованы — `todo`
-- 102.6 `tools/good.py::get_goods`: `name=` param пометить `[DEPRECATED — use title=]` в docstring + emit structured log на использование (для трекинга кто ещё вызывает) — `todo`
-- 102.7 `tools/client.py::get_client_profile` (и после 102.1 — pet_profile): structured `section_errors` shape — `{section: {error_type: str, retryable: bool, message: str}}` вместо free-text `f"{type}: {msg}"`. Позволяет LLM программно решать retry vs surface — `todo`
-- 102.8 `Roadmap.md` Schedule группа: либо добавить timeline для расширения Schedule tools (copy-day, slot-reservation), либо fold в Operations группу — `todo` (nit-level, decision call)
-
-Acceptance: aggregator envelopes identical между tools; landing promises match actual capability; structured section_errors contract documented.
+Full suite 646 passed.
 
 ## Этап 103. Architecture consolidation (92b/93b/93c/94b/95b зонтик) — `todo`
 

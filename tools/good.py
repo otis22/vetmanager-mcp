@@ -22,7 +22,8 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
-            name: Legacy server-side name query param (partial match).
+            name: [DEPRECATED — use title=] Legacy server-side name query
+                param. Kept for backward compatibility; will be removed.
             title: Filter by good title (LIKE match on the `title` field).
                 Prefer this over `name` — it uses the standard filter API.
             group_id: Filter by product group ID.

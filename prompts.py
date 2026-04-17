@@ -129,17 +129,28 @@ def register_prompts(mcp: FastMCP) -> None:
         )]
 
     @mcp.prompt
-    def unconfirmed_appointments(date: str) -> list[Message]:
-        """List unconfirmed admissions for the next two days.
+    def unconfirmed_appointments(date: str, days_ahead: int = 2) -> list[Message]:
+        """List unconfirmed admissions for the next N days (default 2).
 
         Args:
             date: Start date in YYYY-MM-DD format.
+            days_ahead: How many days to look ahead (default 2).
         """
+        # Stage 102.3: compute end_date in Python so weaker LLMs don't botch
+        # month/year rollover arithmetic. Pass final ISO strings to the tool.
+        try:
+            from datetime import date as _date, timedelta
+            start = _date.fromisoformat(date)
+            end_date = (start + timedelta(days=max(0, days_ahead))).isoformat()
+            start_iso = start.isoformat()
+        except (ValueError, TypeError):
+            # Invalid date: fall back to literal so LLM can surface the error.
+            start_iso = date
+            end_date = date
         return [Message(
             _bearer_runtime_prefix()
-            + f"List unconfirmed appointments starting from {date} for the next 2 days. "
-            + f"1. Compute end_date = {date} plus 2 days in YYYY-MM-DD format. "
-            + f"2. Call get_admissions(date_from='{date}', date_to=end_date, status='not_confirmed', limit=100). "
+            + f"List unconfirmed appointments starting from {start_iso} for the next {days_ahead} days. "
+            + f"Call get_admissions(date_from='{start_iso}', date_to='{end_date}', status='not_confirmed', limit=100). "
             + "Show client name, pet name, time, and doctor."
         )]
 
@@ -303,17 +314,26 @@ def register_prompts(mcp: FastMCP) -> None:
         )]
 
     @mcp.prompt
-    def low_stock(threshold: int = 5) -> list[Message]:
+    def low_stock(threshold: int = 5, clinic_id: int = 1) -> list[Message]:
         """List goods with stock quantity below a threshold.
+
+        ⚠️  Slow operation for clinics with 50+ SKUs — there is no bulk
+        low-stock endpoint in VM REST API yet, so this iterates per-good
+        via get_good_stock_balance. Consider narrowing by good group before
+        calling.
 
         Args:
             threshold: Quantity below which stock is considered low.
+            clinic_id: Clinic branch ID for multi-branch clinics (default 1
+                matches single-branch deployments).
         """
         return [Message(
             _bearer_runtime_prefix()
-            + f"Find goods with stock quantity below {threshold}. "
+            + f"Find goods with stock quantity below {threshold} for clinic {clinic_id}. "
+            + "⚠️ This is slow for 50+ goods — ask user to narrow scope first "
+            + "(by good group or category) if catalog is large. "
             + "Use get_goods(limit=100) to identify candidate goods and "
-            + "get_good_stock_balance(good_id=..., clinic_id=1) to check balances. "
+            + f"get_good_stock_balance(good_id=..., clinic_id={clinic_id}) to check balances. "
             + "Return only goods whose quantity is below the threshold."
         )]
 

@@ -201,21 +201,40 @@ def register(mcp: FastMCP) -> None:
             separators=(",", ":"),
         )
 
-        pet_resp, mc_resp, vacc_resp = await _asyncio.gather(
+        # Stage 102.1: partial-gather parity with get_client_profile —
+        # one upstream section failing (e.g. Vaccinations 5xx) no longer
+        # kills the whole profile. Same section_errors / partial envelope.
+        results = await _asyncio.gather(
             vc.get(f"/rest/api/pet/{pet_id}"),
             vc.get("/rest/api/MedicalCards", params={"filter": mc_filter, "sort": mc_sort, "limit": 5}),
             vc.get("/rest/api/MedicalCards/Vaccinations", params={"pet_id": pet_id, "limit": 100}),
+            return_exceptions=True,
         )
+        for resp in results:
+            if isinstance(resp, _asyncio.CancelledError):
+                raise resp
+        pet_resp, mc_resp, vacc_resp = results
+        section_errors: dict[str, str] = {}
 
-        pet_data = pet_resp.get("data", {}).get("pet", {})
-        mc_data = mc_resp.get("data", {})
+        def _section(resp, name: str, shape: dict):
+            if isinstance(resp, Exception):
+                section_errors[name] = f"{type(resp).__name__}: {resp}"
+                return shape
+            return resp
+
+        pet_payload = _section(pet_resp, "pet", {"data": {"pet": {}}})
+        mc_payload = _section(mc_resp, "medical_cards", {"data": {"medicalCards": []}})
+        vacc_payload = _section(vacc_resp, "vaccinations", {"data": {"medicalcards": []}})
+
+        pet_data = pet_payload.get("data", {}).get("pet", {})
+        mc_data = mc_payload.get("data", {})
         medical_cards = (
             mc_data.get("medicalCards")
             or mc_data.get("medicalcards")
             or []
         ) if isinstance(mc_data, dict) else []
 
-        vaccinations_raw = vacc_resp.get("data", {}).get("medicalcards", [])
+        vaccinations_raw = vacc_payload.get("data", {}).get("medicalcards", [])
         vaccinations = [
             {
                 "id": r.get("id"),
@@ -241,13 +260,27 @@ def register(mcp: FastMCP) -> None:
             next_raw = last_vacc.get("date_nexttime") or ""
             next_vaccination_date = next_raw.strip() or None
 
-        return {
+        result: dict = {
             "pet": pet_data,
             "last_medical_cards": medical_cards,
             "vaccinations": vaccinations,
             "last_vaccination_date": last_vaccination_date,
             "next_vaccination_date": next_vaccination_date,
         }
+        if section_errors:
+            result["partial"] = True
+            result["section_errors"] = section_errors
+            from observability_logging import RUNTIME_LOGGER
+            RUNTIME_LOGGER.warning(
+                "get_pet_profile partial failure",
+                extra={
+                    "event_name": "aggregator_partial",
+                    "tool": "get_pet_profile",
+                    "pet_id": pet_id,
+                    "section_errors": section_errors,
+                },
+            )
+        return result
 
     @mcp.tool
     async def get_inactive_pets(

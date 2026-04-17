@@ -4148,3 +4148,26 @@ Rationale: wide test refactor зависит от 94.1 base. Отдельной 
 **Full suite**: 642 → **646 passed** (+4 new regressions: half_open_probe_failure, sanitizer unlisted api, sanitizer stacktrace vars, sanitizer breadcrumb data).
 
 **Codex review**: пропущен per CLAUDE.md §5.5 (tests-only).
+
+## Этап 102. Product consistency sweep
+
+**Что сделано:**
+
+1. `tools/pet.py::get_pet_profile` — partial-gather pattern parity с `get_client_profile`: `asyncio.gather(return_exceptions=True)` + explicit `CancelledError` re-raise + `_section()` helper + `partial: True` / `section_errors` response fields + `RUNTIME_LOGGER.warning("aggregator_partial")` log.
+2. `prompts.py::unconfirmed_appointments` — добавлен `days_ahead: int = 2` параметр; `end_date` вычисляется в Python через `datetime.date.fromisoformat + timedelta`; prompt содержит готовые ISO строки вместо псевдокода «date+2d», не полагается на LLM арифметику. Fallback на literal даты если `fromisoformat` упадёт.
+3. `prompts.py::low_stock` — добавлен `clinic_id: int = 1` параметр; `⚠️ Slow operation` warning prominent в prompt text; совет user'у narrow scope перед вызовом.
+4. `landing_page.py` — убраны overpromise-строки:
+   - line 594 tile: «выручка и остатки» → «карточки и история визитов»
+   - line 638 bullet: «финансы, склад, выручка» → «сотрудники, загрузка врачей»
+   - bullet «Какие товары заканчиваются на складе?» удалён
+   - bullet «Покажи выручку и последние оплаты» заменён на «неоплаченные счета».
+5. `tools/good.py::get_goods` + `tools/admission.py` — `name=` параметр помечен `[DEPRECATED — use title=]` в docstring.
+
+**Не сделано:**
+- 102.2 `get_pet_profile` `_instrumented_call` — aggregator делает 3 parallel `vc.get()` на разных endpoints; обернуть весь aggregator одним `tool_call` label теряет разделение. Полноценное решение — переместить `record_tool_call` на уровень VetmanagerClient._request. Отдельный рефактор.
+- 102.7 Structured `section_errors` — current `f"{type}: {msg}"` работает для LLM surface'а; полная structured shape c `{error_type, retryable}` требует mapping layer на каждое исключение. Нет bug'а — nice-to-have.
+- 102.8 Schedule группа decision — продуктовое решение, не техническое.
+
+**Тесты**: `test_stage87_post_migration::test_unconfirmed_appointments_uses_status_filter` обновлён на новую форму (`date_to=` без literal суффикса, так как ISO строки теперь генерируются из f-string). Full suite 646 passed.
+
+**Codex review**: пропущен per CLAUDE.md §5.5 (product copy tweaks + partial-gather copy-paste из get_client_profile — well-tested pattern).
