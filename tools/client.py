@@ -363,11 +363,28 @@ def register(mcp: FastMCP) -> None:
         - Full client record
         - Last 5 invoices with line items (invoiceDocuments) and payment status
         - Last 5 admissions (visits)
-        - Next scheduled admission (status=active, earliest date)
+        - Next scheduled admission (earliest active-status date)
+
+        Stage 102.2: tool-level latency + outcome metric via instrument_call
+        wrapping the whole aggregator (sub-request latency is already covered
+        by crud_helpers — this label buckets aggregator p95 separately).
 
         Args:
             client_id: Unique numeric ID of the client.
         """
+        from service_metrics import instrument_call as _instrument_call
+
+        async def _impl():
+            return await _get_client_profile_impl(client_id)
+
+        return await _instrument_call(
+            "/rest/api/client",
+            "GET",
+            _impl,
+            operation="aggregate_profile",
+        )
+
+    async def _get_client_profile_impl(client_id: int) -> dict:
         import asyncio as _asyncio
         import json as _json
 
@@ -398,52 +415,33 @@ def register(mcp: FastMCP) -> None:
             separators=(",", ":"),
         )
 
-        # Partial-failure tolerance: if one section (e.g. /admission) returns
-        # 5xx, the other 3 still populate. return_exceptions keeps results
-        # positional and lets us inspect each slot independently.
-        results = await _asyncio.gather(
-            vc.get(f"/rest/api/client/{client_id}"),
-            vc.get("/rest/api/invoice", params={
+        # Stage 103.7: reuse shared `gather_sections` helper.
+        from tools._aggregation import gather_sections
+        sections = [
+            ("client", vc.get(f"/rest/api/client/{client_id}"),
+             {"data": {"client": {}}}),
+            ("invoices", vc.get("/rest/api/invoice", params={
                 "filter": client_filter,
                 "sort": _json.dumps([{"property": "id", "direction": "DESC"}], separators=(",", ":")),
                 "limit": 5,
-            }),
-            vc.get("/rest/api/admission", params={
+            }), {"data": {"invoice": []}}),
+            ("recent_admissions", vc.get("/rest/api/admission", params={
                 "filter": client_filter,
                 "sort": _json.dumps([{"property": "admission_date", "direction": "DESC"}], separators=(",", ":")),
                 "limit": 5,
-            }),
-            vc.get("/rest/api/admission", params={
+            }), {"data": {"admission": []}}),
+            ("next_admission", vc.get("/rest/api/admission", params={
                 "filter": next_filter,
                 "sort": _json.dumps([{"property": "admission_date", "direction": "ASC"}], separators=(",", ":")),
                 "limit": 1,
-            }),
-            return_exceptions=True,
+            }), {"data": {"admission": []}}),
+        ]
+        payloads, section_errors = await gather_sections(
+            tool_name="get_client_profile",
+            context={"client_id": client_id},
+            sections=sections,
         )
-        client_data_resp, invoices_resp, admissions_resp, next_admission_resp = results
-        section_errors: dict[str, str] = {}
-
-        # Stage 96.3: CancelledError is BaseException, not Exception. When a
-        # client disconnects or the server shuts down, gather(return_exceptions=
-        # True) surfaces CancelledError in results — converting it to partial:
-        # True instead of re-raising breaks cooperative cancellation.
-        for resp in results:
-            if isinstance(resp, _asyncio.CancelledError):
-                raise resp
-
-        def _section(resp, section_name: str, shape: dict):
-            # Only Exception subclasses (not BaseException) are swallowed
-            # as section failures — keeps CancelledError / KeyboardInterrupt
-            # propagating as intended.
-            if isinstance(resp, Exception):
-                section_errors[section_name] = f"{type(resp).__name__}: {resp}"
-                return shape
-            return resp
-
-        client_payload = _section(client_data_resp, "client", {"data": {"client": {}}})
-        invoices_payload = _section(invoices_resp, "invoices", {"data": {"invoice": []}})
-        admissions_payload = _section(admissions_resp, "recent_admissions", {"data": {"admission": []}})
-        next_payload = _section(next_admission_resp, "next_admission", {"data": {"admission": []}})
+        client_payload, invoices_payload, admissions_payload, next_payload = payloads
 
         client_data = client_payload.get("data", {}).get("client", {})
         invoices = invoices_payload.get("data", {}).get("invoice", [])
@@ -460,17 +458,4 @@ def register(mcp: FastMCP) -> None:
         if section_errors:
             result["partial"] = True
             result["section_errors"] = section_errors
-            # Stage 98.4: partial failures are payload-level; surface them
-            # to logs too so SRE tailing sees degradation instead of only
-            # MCP caller.
-            from observability_logging import RUNTIME_LOGGER
-            RUNTIME_LOGGER.warning(
-                "get_client_profile partial failure",
-                extra={
-                    "event_name": "aggregator_partial",
-                    "tool": "get_client_profile",
-                    "client_id": client_id,
-                    "section_errors": section_errors,
-                },
-            )
         return result

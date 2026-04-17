@@ -66,17 +66,28 @@ def test_parse_retry_after_rejects_empty_or_none():
     assert _parse_retry_after("   ") is None
 
 
-def test_parse_retry_after_http_date_form():
-    # 60 seconds from now. Stage 96.6 clamps Retry-After at 300s max to
-    # prevent DoS via 'Retry-After: 1e9', so we use a sub-clamp value.
-    import email.utils
+def test_parse_retry_after_http_date_form(monkeypatch):
+    """Stage 101.6: monkeypatch datetime.now so the assertion is
+    deterministic instead of relying on CI scheduling tolerance."""
     import datetime as dt
-    future = dt.datetime.now(tz=dt.timezone.utc) + dt.timedelta(seconds=60)
+    import email.utils
+    import vetmanager_client as _vm
+
+    fixed_now = dt.datetime(2026, 4, 17, 12, 0, 0, tzinfo=dt.timezone.utc)
+    future = fixed_now + dt.timedelta(seconds=60)
     header = email.utils.format_datetime(future)
-    parsed = _parse_retry_after(header)
-    assert parsed is not None
-    # Allow ±5 seconds for scheduling drift on loaded CI hosts.
-    assert 55 <= parsed <= 65
+
+    class _FrozenDatetime(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now if tz is None else fixed_now.astimezone(tz)
+
+    # _parse_retry_after imports datetime locally inside the function.
+    # Patch via sys.modules trick: replace the module-level `datetime` class
+    # the function will see by monkeypatching datetime.datetime globally.
+    monkeypatch.setattr(dt, "datetime", _FrozenDatetime)
+    parsed = _vm._parse_retry_after(header)
+    assert parsed == pytest.approx(60.0, abs=0.01)
 
 
 # ── _backoff_seconds ────────────────────────────────────────────────────────
@@ -116,9 +127,12 @@ async def test_shared_http_client_is_reused_across_requests():
     with headers_patch, runtime_patch:
         vc = VetmanagerClient()
         await vc.get("/rest/api/client/1")
-        client_first = vm_client_module._shared_http_client
+        # Stage 99.4: per-loop dict — same loop → same instance.
+        assert len(vm_client_module._shared_http_clients) == 1
+        client_first = next(iter(vm_client_module._shared_http_clients.values()))
         await vc.get("/rest/api/client/1")
-        client_second = vm_client_module._shared_http_client
+        assert len(vm_client_module._shared_http_clients) == 1
+        client_second = next(iter(vm_client_module._shared_http_clients.values()))
 
     assert client_first is client_second, "shared client must not be recreated"
     assert not client_first.is_closed

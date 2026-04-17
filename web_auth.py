@@ -168,6 +168,16 @@ def read_account_session_token(
         payload_parts = payload.split(".")
         if len(payload_parts) < 2:
             return None
+        # Stage 100.7: log deprecation warning for legacy 2-part payload
+        # (id.ts without per-session nonce). Operators can plan cutoff
+        # after all live legacy tokens expire (SESSION_MAX_AGE_SECONDS window).
+        if len(payload_parts) == 2:
+            import logging
+            logging.getLogger("vetmanager.security").warning(
+                "Legacy 2-part session token accepted — schedule cutoff "
+                "after SESSION_MAX_AGE_SECONDS window",
+                extra={"event_name": "legacy_session_token_accepted"},
+            )
         account_id_raw = payload_parts[0]
         issued_at_raw = payload_parts[1]
         issued_at = datetime.fromtimestamp(int(issued_at_raw), tz=timezone.utc)

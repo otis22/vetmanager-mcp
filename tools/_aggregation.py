@@ -56,17 +56,49 @@ async def gather_sections(
         if isinstance(r, asyncio.CancelledError):
             raise r
 
-    section_errors: dict[str, str] = {}
+    # Stage 102.7: structured section_errors shape for programmatic
+    # consumption by LLM clients:
+    #   {section_name: {"error_type": str, "retryable": bool, "message": str}}
+    # Free-text flat string form is kept as `.str` rendering for log field.
+    from exceptions import (
+        AuthError, HostResolutionError, NotFoundError,
+        RateLimitError, VetmanagerError, VetmanagerTimeoutError,
+        VetmanagerUpstreamUnavailable,
+    )
+
+    def _classify(exc: Exception) -> tuple[str, bool]:
+        if isinstance(exc, VetmanagerUpstreamUnavailable):
+            return ("upstream_unavailable", True)
+        if isinstance(exc, VetmanagerTimeoutError):
+            return ("timeout", True)
+        if isinstance(exc, RateLimitError):
+            return ("rate_limit", True)
+        if isinstance(exc, HostResolutionError):
+            return ("host_resolution", True)
+        if isinstance(exc, AuthError):
+            return ("auth", False)
+        if isinstance(exc, NotFoundError):
+            return ("not_found", False)
+        if isinstance(exc, VetmanagerError):
+            # Generic VM error (incl. 5xx wrap) — usually retryable.
+            return ("vetmanager_error", True)
+        return ("unexpected", False)
+
+    section_errors: dict[str, dict] = {}
     payloads: list[dict] = []
     for (name, _, fallback), result in zip(sections, results):
         if isinstance(result, Exception):
-            section_errors[name] = f"{type(result).__name__}: {result}"
+            error_type, retryable = _classify(result)
+            section_errors[name] = {
+                "error_type": error_type,
+                "retryable": retryable,
+                "message": f"{type(result).__name__}: {result}",
+            }
             payloads.append(fallback)
         else:
             payloads.append(result)
 
     if section_errors:
-        # Emit structured warning so SRE tailing logs sees degradation.
         from observability_logging import RUNTIME_LOGGER
         RUNTIME_LOGGER.warning(
             f"{tool_name} partial failure",

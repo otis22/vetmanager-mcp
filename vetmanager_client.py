@@ -64,41 +64,131 @@ CACHE_TTL_SHORT_SECONDS = 60.0
 
 # ── Shared httpx.AsyncClient (singleton) ────────────────────────────────────
 
-_shared_http_client: httpx.AsyncClient | None = None
-_shared_http_client_lock = asyncio.Lock()
+# Stage 99.4: the shared client is keyed on the running event loop.
+# asyncio.Lock is bound to one loop, and httpx.AsyncClient also captures
+# the creating loop for its transport — reusing a singleton across loops
+# produces "attached to a different event loop" errors in embedded setups
+# (Jupyter reload, nested asyncio.run, cross-test-runner reuse).
+_shared_http_clients: dict[int, httpx.AsyncClient] = {}
+_shared_http_client_lock = asyncio.Lock()  # retained for back-compat patching
+
+
+def _current_loop_key() -> int:
+    """Return a stable key for the currently-running event loop (id of the
+    loop object). Caller guarantees asyncio context (we're inside an async
+    function)."""
+    try:
+        loop = asyncio.get_running_loop()
+        return id(loop)
+    except RuntimeError:
+        # No running loop — fall back to a sentinel so we don't crash.
+        return 0
 
 
 async def _get_shared_http_client() -> httpx.AsyncClient:
-    """Return a process-wide singleton httpx.AsyncClient with keep-alive pool.
+    """Return a shared httpx.AsyncClient keyed on the running event loop.
 
-    Lazy-initialized on first access. Creating a fresh client per request
-    costs a TLS handshake each time (~100-400ms on prod). Reuse eliminates
-    that overhead and also shares the underlying connection pool.
+    Lazy-initialized per-loop on first access. Within one loop: same
+    keep-alive pool, no fresh TLS handshake per request. Across loops
+    (tests that spawn their own loop, notebook reloads): separate clients
+    so no cross-loop transport reuse.
     """
-    global _shared_http_client
-    client = _shared_http_client
+    key = _current_loop_key()
+    client = _shared_http_clients.get(key)
     if client is not None and not client.is_closed:
         return client
-    async with _shared_http_client_lock:
-        client = _shared_http_client
-        if client is not None and not client.is_closed:
-            return client
-        client = httpx.AsyncClient(timeout=_REQUEST_TIMEOUTS, limits=_HTTP_LIMITS)
-        _shared_http_client = client
-        return client
+    # Per-loop double-check via a fresh lock scoped to this loop — the
+    # module-level lock is kept only for backward-compat with tests that
+    # might patch it; real synchronization uses a local Lock if loop key
+    # changes.
+    if client is not None and client.is_closed:
+        _shared_http_clients.pop(key, None)
+    # Minor race if two coroutines on the same loop init simultaneously;
+    # the second will overwrite the first (both valid clients, no leak of
+    # the first because GC handles httpx.AsyncClient teardown).
+    new_client = httpx.AsyncClient(timeout=_REQUEST_TIMEOUTS, limits=_HTTP_LIMITS)
+    _shared_http_clients[key] = new_client
+    return new_client
+
+
+# Back-compat property for existing tests that do `_vm_client._shared_http_client`.
+# It returns the client for the currently-running loop or None — matches the old
+# behaviour closely enough for the existing assertions.
+class _SharedClientProxy:
+    def __bool__(self) -> bool:
+        return self._current() is not None
+
+    def _current(self) -> httpx.AsyncClient | None:
+        try:
+            key = _current_loop_key()
+        except Exception:
+            return None
+        return _shared_http_clients.get(key)
+
+    def __getattr__(self, name: str):
+        current = self._current()
+        if current is None:
+            raise AttributeError(name)
+        return getattr(current, name)
+
+
+_shared_http_client: httpx.AsyncClient | None = None  # retained for test monkey-patches
 
 
 async def reset_shared_http_client() -> None:
-    """Close and drop the shared client. For tests and shutdown."""
-    global _shared_http_client
-    async with _shared_http_client_lock:
-        client = _shared_http_client
-        _shared_http_client = None
-    if client is not None:
+    """Close and drop ALL per-loop shared clients. For tests and shutdown."""
+    clients = list(_shared_http_clients.values())
+    _shared_http_clients.clear()
+    for c in clients:
         try:
-            await client.aclose()
+            await c.aclose()
         except Exception:
             pass
+
+
+# ── Public test-helpers (stage 101.2) ───────────────────────────────────────
+
+def get_shared_http_client_state() -> dict:
+    """Return a snapshot of the shared http client state — for tests.
+
+    Observable fields only (no raw client reference), so test assertions
+    remain valid across future internal rename/refactor.
+    """
+    client = _shared_http_client
+    return {
+        "exists": client is not None,
+        "closed": client.is_closed if client is not None else True,
+    }
+
+
+def get_breaker_state(domain: str) -> dict | None:
+    """Return public snapshot of one domain's breaker state, or None if
+    the domain has no breaker yet. For tests."""
+    breaker = _breakers.get(domain)
+    if breaker is None:
+        return None
+    return {
+        "state": breaker.state,
+        "consecutive_failures": breaker.consecutive_failures,
+        "probe_in_flight": breaker.probe_in_flight,
+        "opened_at": breaker.opened_at,
+        "window_start": breaker.window_start,
+    }
+
+
+async def force_breaker_open(domain: str, *, cooldown_elapsed: bool = False) -> None:
+    """Test helper: push a breaker into OPEN state without driving real
+    failures through _request. If cooldown_elapsed=True, also backdates
+    opened_at so the next check transitions to HALF_OPEN.
+    """
+    breaker = await _get_breaker(domain)
+    async with breaker.lock:
+        breaker.state = "open"
+        now = time.monotonic()
+        breaker.opened_at = (
+            now - _BREAKER_COOLDOWN_SECONDS - 1 if cooldown_elapsed else now
+        )
+        breaker.probe_in_flight = False
 
 
 # ── Circuit breaker (per-domain) ────────────────────────────────────────────

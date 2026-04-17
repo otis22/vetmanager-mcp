@@ -49,7 +49,9 @@ def _reset_vm_client_state():
     import vetmanager_client as _vm_client
 
     def _drop() -> None:
-        _vm_client._shared_http_client = None
+        # Stage 99.4: per-loop client dict — clear all entries.
+        _vm_client._shared_http_clients.clear()
+        _vm_client._shared_http_client = None  # BC sentinel
         _vm_client._breakers.clear()
 
     _drop()

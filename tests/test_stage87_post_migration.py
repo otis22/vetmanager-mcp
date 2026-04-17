@@ -137,48 +137,63 @@ async def test_get_timesheets_without_doctor_id_sends_no_filter():
 # ── prompts.py: sweep verification ──────────────────────────────────────────
 
 
+async def _render_prompt_body(prompt_name: str, **kwargs) -> str:
+    """Stage 101.9: render a registered prompt to plain text via FastMCP's
+    registry so tests survive refactors of the prompt-source file layout.
+    Async helper — uses caller's event loop (pytest-asyncio)."""
+    from server import mcp
+
+    prompt_obj = await mcp.get_prompt(prompt_name)
+    assert prompt_obj is not None, f"prompt {prompt_name} not registered"
+    rendered = await prompt_obj.render(arguments=kwargs)
+    messages: list = []
+    for tpl in rendered:
+        if isinstance(tpl, tuple) and len(tpl) == 2 and tpl[0] == "messages":
+            messages = tpl[1]
+            break
+    return "\n".join(
+        m.content.text for m in messages
+        if hasattr(m, "content") and hasattr(m.content, "text")
+    )
+
+
 class TestStage87PromptSweep:
-    def test_book_appointment_uses_owner_id(self):
-        """book_appointment must instruct get_pets(owner_id=...), not client_id=..."""
-        assert "get_pets(owner_id=client_id" in PROMPTS_SRC
-        assert "get_pets(client_id=client_id" not in PROMPTS_SRC
+    """Stage 101.9: prompt bodies asserted via rendered MCP Message content,
+    not via substring-match on module source."""
 
-    def test_unconfirmed_appointments_uses_status_filter(self):
-        """unconfirmed_appointments must pass status='not_confirmed' at API level
-        and use a date range, not client-side filtering."""
-        # Find the prompt body
-        assert "status='not_confirmed'" in PROMPTS_SRC
-        # Must use date_from/date_to range; must NOT use pseudocode `date+2d`
-        # literal (non-executable math that LLM might emit verbatim).
-        # Stage 102.3 computes end_date in Python; prompt contains
-        # `date_from='{start_iso}'` and `date_to='{end_date}'` f-string template.
-        assert "date_from=" in PROMPTS_SRC
-        assert "date_to=" in PROMPTS_SRC
-        assert "date+2d" not in PROMPTS_SRC
+    @pytest.mark.asyncio
+    async def test_book_appointment_uses_owner_id(self):
+        body = await _render_prompt_body(
+            "book_appointment",
+            client_name="X", pet_name="Y", doctor_id=1, date="2026-01-01",
+        )
+        assert "get_pets(owner_id=client_id" in body
+        assert "get_pets(client_id=client_id" not in body
 
-    def test_unpaid_invoices_uses_payment_status_param(self):
-        """unpaid_invoices must call get_invoices(payment_status='none'/'partial')
-        instead of client-side filtering."""
-        assert "payment_status='none'" in PROMPTS_SRC
-        assert "payment_status='partial'" in PROMPTS_SRC
+    @pytest.mark.asyncio
+    async def test_unconfirmed_appointments_uses_status_filter(self):
+        body = await _render_prompt_body(
+            "unconfirmed_appointments", date="2026-01-01",
+        )
+        assert "status='not_confirmed'" in body
+        assert "date_from=" in body
+        assert "date_to=" in body
+        assert "date+2d" not in body
 
-    def test_client_no_visit_uses_get_inactive_clients(self):
-        """client_no_visit must use the specialized get_inactive_clients tool,
-        not manual post-processing of get_admissions."""
-        assert "get_inactive_clients(" in PROMPTS_SRC
-        # The old body called get_admissions and walked the list manually;
-        # verify the new prompt text replaced it.
-        client_no_visit_snippet_start = PROMPTS_SRC.index("def client_no_visit")
-        client_no_visit_body = PROMPTS_SRC[
-            client_no_visit_snippet_start : client_no_visit_snippet_start + 700
-        ]
-        assert "get_admissions" not in client_no_visit_body
-        assert "get_inactive_clients" in client_no_visit_body
+    @pytest.mark.asyncio
+    async def test_unpaid_invoices_uses_payment_status_param(self):
+        body = await _render_prompt_body("unpaid_invoices")
+        assert "payment_status='none'" in body
+        assert "payment_status='partial'" in body
 
-    def test_search_good_uses_title_param(self):
-        """search_good prompt must call get_goods(title=...) — the `name` param
-        is legacy and less accurate."""
-        search_good_start = PROMPTS_SRC.index("def search_good")
-        search_good_body = PROMPTS_SRC[search_good_start : search_good_start + 500]
-        assert "get_goods(title=query" in search_good_body
-        assert "get_goods(name=query" not in search_good_body
+    @pytest.mark.asyncio
+    async def test_client_no_visit_uses_get_inactive_clients(self):
+        body = await _render_prompt_body("client_no_visit")
+        assert "get_inactive_clients(" in body
+        assert "get_admissions" not in body
+
+    @pytest.mark.asyncio
+    async def test_search_good_uses_title_param(self):
+        body = await _render_prompt_body("search_good", query="vaccine")
+        assert "get_goods(title=" in body
+        assert "get_goods(name=" not in body

@@ -184,9 +184,24 @@ def register(mcp: FastMCP) -> None:
         - All vaccination records (date, next vaccination date, vaccine name)
         - Computed last_vaccination_date and next_vaccination_date
 
+        Stage 102.2: tool-level instrumentation wraps the aggregator.
+
         Args:
             pet_id: Unique numeric ID of the pet.
         """
+        from service_metrics import instrument_call as _instrument_call
+
+        async def _impl():
+            return await _get_pet_profile_impl(pet_id)
+
+        return await _instrument_call(
+            "/rest/api/pet",
+            "GET",
+            _impl,
+            operation="aggregate_profile",
+        )
+
+    async def _get_pet_profile_impl(pet_id: int) -> dict:
         import asyncio as _asyncio
         import json as _json
 
@@ -201,30 +216,25 @@ def register(mcp: FastMCP) -> None:
             separators=(",", ":"),
         )
 
-        # Stage 102.1: partial-gather parity with get_client_profile —
-        # one upstream section failing (e.g. Vaccinations 5xx) no longer
-        # kills the whole profile. Same section_errors / partial envelope.
-        results = await _asyncio.gather(
-            vc.get(f"/rest/api/pet/{pet_id}"),
-            vc.get("/rest/api/MedicalCards", params={"filter": mc_filter, "sort": mc_sort, "limit": 5}),
-            vc.get("/rest/api/MedicalCards/Vaccinations", params={"pet_id": pet_id, "limit": 100}),
-            return_exceptions=True,
+        # Stage 103.7: shared partial-gather helper.
+        from tools._aggregation import gather_sections
+        payloads, section_errors = await gather_sections(
+            tool_name="get_pet_profile",
+            context={"pet_id": pet_id},
+            sections=[
+                ("pet", vc.get(f"/rest/api/pet/{pet_id}"),
+                 {"data": {"pet": {}}}),
+                ("medical_cards", vc.get(
+                    "/rest/api/MedicalCards",
+                    params={"filter": mc_filter, "sort": mc_sort, "limit": 5},
+                ), {"data": {"medicalCards": []}}),
+                ("vaccinations", vc.get(
+                    "/rest/api/MedicalCards/Vaccinations",
+                    params={"pet_id": pet_id, "limit": 100},
+                ), {"data": {"medicalcards": []}}),
+            ],
         )
-        for resp in results:
-            if isinstance(resp, _asyncio.CancelledError):
-                raise resp
-        pet_resp, mc_resp, vacc_resp = results
-        section_errors: dict[str, str] = {}
-
-        def _section(resp, name: str, shape: dict):
-            if isinstance(resp, Exception):
-                section_errors[name] = f"{type(resp).__name__}: {resp}"
-                return shape
-            return resp
-
-        pet_payload = _section(pet_resp, "pet", {"data": {"pet": {}}})
-        mc_payload = _section(mc_resp, "medical_cards", {"data": {"medicalCards": []}})
-        vacc_payload = _section(vacc_resp, "vaccinations", {"data": {"medicalcards": []}})
+        pet_payload, mc_payload, vacc_payload = payloads
 
         pet_data = pet_payload.get("data", {}).get("pet", {})
         mc_data = mc_payload.get("data", {})
@@ -270,16 +280,6 @@ def register(mcp: FastMCP) -> None:
         if section_errors:
             result["partial"] = True
             result["section_errors"] = section_errors
-            from observability_logging import RUNTIME_LOGGER
-            RUNTIME_LOGGER.warning(
-                "get_pet_profile partial failure",
-                extra={
-                    "event_name": "aggregator_partial",
-                    "tool": "get_pet_profile",
-                    "pet_id": pet_id,
-                    "section_errors": section_errors,
-                },
-            )
         return result
 
     @mcp.tool
