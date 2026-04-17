@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from secrets import token_hex
 
 from starlette.requests import Request
@@ -12,10 +13,20 @@ CORRELATION_ID_HEADER = "X-Correlation-ID"
 _REQUEST_ID_STATE_KEY = "_request_id"
 _CORRELATION_ID_STATE_KEY = "_correlation_id"
 
+# Stage 100.2: constrain inbound correlation/request ids to a safe character
+# set and length so an attacker can't smuggle control chars, newlines, or
+# poison logs with another tenant's id. Anything not matching — treat as
+# absent and mint a fresh token_hex(8).
+_ID_VALIDATION_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
 
 def _normalize_header_value(value: str | None) -> str | None:
     normalized = (value or "").strip()
-    return normalized or None
+    if not normalized:
+        return None
+    if not _ID_VALIDATION_RE.match(normalized):
+        return None
+    return normalized
 
 
 def _ensure_request_state(request: Request, *, key: str, value_factory) -> str:

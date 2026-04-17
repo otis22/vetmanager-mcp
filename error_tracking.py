@@ -19,6 +19,8 @@ _SENSITIVE_KEY_PATTERNS = (
     "credential", "session", "csrf",
     # Webhook/HMAC/JWT ecosystem (Stripe, GitHub, Slack webhooks etc.)
     "signature", "jwt", "hmac", "otp", "passphrase",
+    # Stage 100.4: OAuth2 DPoP proof-of-possession + generic "signed" prefix
+    "dpop", "signed",
 )
 
 # Exact allowlist of keys that would match a sensitive pattern but are
@@ -97,9 +99,63 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
         if isinstance(data, dict):
             request["data"] = _redact_mapping(data)
 
+        # Stage 100.1: WSGI/ASGI env often contains HTTP_AUTHORIZATION /
+        # HTTP_COOKIE / HTTP_X_VM_API_KEY copies of headers.
+        env = request.get("env")
+        if isinstance(env, dict):
+            request["env"] = _redact_mapping(env)
+
     extra = event.get("extra")
     if isinstance(extra, dict):
         event["extra"] = _redact_mapping(extra)
+
+    # Stage 100.1: breadcrumbs[*].data often carry auth-flow payloads.
+    breadcrumbs = event.get("breadcrumbs")
+    if isinstance(breadcrumbs, dict):
+        values = breadcrumbs.get("values")
+        if isinstance(values, list):
+            for bc in values:
+                if isinstance(bc, dict):
+                    bc_data = bc.get("data")
+                    if isinstance(bc_data, dict):
+                        bc["data"] = _redact_mapping(bc_data)
+
+    # Stage 100.1: exception.values[*].stacktrace.frames[*].vars — local
+    # variables captured on exception often contain bearer tokens, passwords,
+    # api keys assigned to local vars before the raise.
+    exception = event.get("exception")
+    if isinstance(exception, dict):
+        exc_values = exception.get("values")
+        if isinstance(exc_values, list):
+            for exc_v in exc_values:
+                if not isinstance(exc_v, dict):
+                    continue
+                st = exc_v.get("stacktrace")
+                if not isinstance(st, dict):
+                    continue
+                frames = st.get("frames")
+                if not isinstance(frames, list):
+                    continue
+                for frame in frames:
+                    if isinstance(frame, dict):
+                        f_vars = frame.get("vars")
+                        if isinstance(f_vars, dict):
+                            frame["vars"] = _redact_mapping(f_vars)
+
+    # Stage 100.1: contexts and user scope carry runtime metadata.
+    contexts = event.get("contexts")
+    if isinstance(contexts, dict):
+        for ctx_name, ctx_val in list(contexts.items()):
+            if isinstance(ctx_val, dict):
+                contexts[ctx_name] = _redact_mapping(ctx_val)
+
+    user = event.get("user")
+    if isinstance(user, dict):
+        event["user"] = _redact_mapping(user)
+
+    tags = event.get("tags")
+    if isinstance(tags, dict):
+        event["tags"] = _redact_mapping(tags)
 
     return event
 

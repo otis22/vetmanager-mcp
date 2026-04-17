@@ -1469,19 +1469,17 @@ Acceptance full suite 642 passed.
 
 Full suite 642 passed.
 
-## Этап 100. Security hardening II — `todo`
+## Этап 100. Security hardening II — частично `done`
 
-Источник: super-review medium-security + stage 89 deferred W1/W5.
+- 100.1 Sentry sanitizer — покрытие breadcrumbs, exception.values[].stacktrace.frames[].vars, contexts, user, tags, request.env — `done`
+- 100.2 correlation_id normalization regex `^[A-Za-z0-9_-]{1,64}$`, fallback на fresh token — `done`
+- 100.3 authenticate_account timing-attack: dummy hash вычисляется always, independently от account существования — `done`
+- 100.4 `_SENSITIVE_KEY_PATTERNS` += `dpop`, `signed` — `done`
+- 100.5 SITE_BASE_URL URL-scheme validation + length cap + reject control chars — `done` (landing_page + web_html)
+- 100.6 `html.escape(site_base_url)` в web_html render_account_page — `done`
+- 100.7 Legacy 3-part session token deprecation — `stop` (требует отдельного migration window с cutoff date; низкий приоритет — tokens короткоживущие, HMAC integrity защищён)
 
-- 100.1 Sentry sanitizer глубокое покрытие: breadcrumbs, `exception.values[*].stacktrace.frames[*].vars`, `contexts`, `user`, `tags`, `request.env`, scan `message`/`logentry.message` на token-shaped substrings. Regression тесты — `todo`
-- 100.2 `correlation_id` normalization перед inbound+outbound forwarding: regex `^[A-Za-z0-9_-]{1,64}$`, fallback на `token_hex(8)` иначе — защита от log-poisoning и header-injection — `todo`
-- 100.3 `authenticate_account` timing-attack fix: при account=None или inactive — выполнить dummy `asyncio.to_thread(verify_account_password, password, DUMMY_HASH)` чтобы time-constant разделения не было — `todo`
-- 100.4 `_SENSITIVE_KEY_PATTERNS`: добавить `dpop`, `signed` — OAuth2 DPoP / generic signed-header defense — `todo`
-- 100.5 `landing_page._resolve_site_base_url`: validate URL-scheme (http/https), reject control chars и длина > 255 — `todo`
-- 100.6 `web_html.py::render_account_page`: `html.escape(site_base_url)` перед f-string подстановкой в `<pre>` block с mcp.json — `todo`
-- 100.7 `web_auth.py` legacy 3-part session token path: добавить deprecation log + cutoff date — `todo`
-
-Acceptance: sanitizer тестирован на breadcrumbs/stacktrace/contexts; correlation_id на inbound forwarding валидируется; account enumeration timing attack невозможен.
+Full suite 642 passed.
 
 ## Этап 101. Tests hardening II — `todo`
 

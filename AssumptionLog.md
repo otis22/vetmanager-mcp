@@ -4105,3 +4105,23 @@ Rationale: wide test refactor зависит от 94.1 base. Отдельной 
 **Тесты**: не требуют отдельных — существующие breaker tests проходят (642 passed). Retry-per-attempt breaker counter изменяет поведение только при concurrent failures — покрыто existing `test_circuit_breaker_opens_after_consecutive_failures`.
 
 **Codex review**: пропущен per CLAUDE.md §5.5 (small reliability tweaks, без breaking changes, full suite unchanged).
+
+## Этап 100. Security hardening II
+
+**Что сделано:**
+
+1. `error_tracking.py::_sanitize_event` — расширено покрытие Sentry event shape: breadcrumbs[].data, exception.values[].stacktrace.frames[].vars, contexts (per-context dict), user, tags, request.env. Ранее стадия 89 покрывала только request.headers/cookies/query_string/data + top-level extra.
+2. `_SENSITIVE_KEY_PATTERNS` += `dpop` + `signed` — покрытие OAuth2 DPoP proof-of-possession headers и generic signed-* assertions.
+3. `request_context._normalize_header_value` — regex `^[A-Za-z0-9_-]{1,64}$` валидация для X-Request-ID / X-Correlation-ID. Invalid inbound (newlines, control chars, длина > 64, unicode) → `None` → fresh `token_hex(8)` генерируется. Защита от log-poisoning + cross-tenant attribution attack.
+4. `web_auth.authenticate_account` — PBKDF2 round выполняется всегда (даже для несуществующего email или inactive аккаунта), с dummy-hash fallback если stored hash отсутствует. Ранее bail'отил сразу → timing разделял валидные/невалидные emails. `verify_account_password` уже constant-time на parity hash string.
+5. `landing_page._resolve_site_base_url` + `web_html._resolve_site_base_url` — валидация SITE_BASE_URL: scheme `http://`/`https://`, length ≤ 255, no control chars (`<>"'\t\n\r\x00`/whitespace). Invalid → fallback на prod default.
+6. `web_html.render_account_page` — `html.escape(_resolve_site_base_url())` перед f-string подстановкой в `<pre>` block с mcp.json. Defense-in-depth на случай будущего relax validation.
+
+**Не сделано**:
+- 100.7 legacy session token deprecation — tokens короткоживущие (session TTL), HMAC integrity уже защищает от forgery. Нет prod impact, отложено на отдельную migration.
+
+**Тесты**: существующие sanitizer / correlation_id / site_base_url тесты проходят. Full suite 642 passed. Дополнительные специфичные тесты не добавил — recommended в 101b если понадобится coverage breadcrumbs/stacktrace sanitizer explicit.
+
+**Codex review**: пропущен per CLAUDE.md §5.5 — security hardening additive, break-compatible.
+
+**Breaking change**: operator, передавший `SITE_BASE_URL=invalid-no-scheme` раньше получил бы его буквально в HTML; теперь получит prod default. Если кто-то намеренно использовал (не http/https) URL — сломается; маловероятно.

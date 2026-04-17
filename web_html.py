@@ -12,8 +12,18 @@ _DEFAULT_SITE_BASE_URL = "https://vetmanager-mcp.vromanichev.ru"
 
 
 def _resolve_site_base_url() -> str:
+    """Stage 100.5: same validation as landing_page._resolve_site_base_url —
+    reject invalid operator input and fall back to prod default.
+    """
     raw = (os.environ.get("SITE_BASE_URL") or _DEFAULT_SITE_BASE_URL).strip()
-    return raw.rstrip("/") or _DEFAULT_SITE_BASE_URL
+    raw = raw.rstrip("/")
+    if not raw or len(raw) > 255:
+        return _DEFAULT_SITE_BASE_URL
+    if not (raw.startswith("http://") or raw.startswith("https://")):
+        return _DEFAULT_SITE_BASE_URL
+    if any(c in raw for c in ('"', "'", "<", ">", " ", "\t", "\n", "\r", "\x00")):
+        return _DEFAULT_SITE_BASE_URL
+    return raw
 from vetmanager_auth import (
     VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
     VETMANAGER_AUTH_MODE_USER_TOKEN,
@@ -374,7 +384,10 @@ def render_account_page(
     token_expiry_days: str = "",
     ip_mask: str = "*.*.*.*",
 ) -> str:
-    site_base_url = _resolve_site_base_url()
+    # Stage 100.6: escape even though _resolve_site_base_url validates —
+    # defense-in-depth against future misconfig where validation may be
+    # relaxed. html.escape is cheap and idempotent on safe strings.
+    site_base_url = escape(_resolve_site_base_url())
     selected_auth_mode = form_auth_mode or (
         active_connection.auth_mode if active_connection else VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
     )

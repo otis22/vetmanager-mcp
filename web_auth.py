@@ -240,15 +240,26 @@ async def authenticate_account(
     email: str,
     password: str,
 ) -> Account | None:
-    """Return active account for valid credentials, otherwise None."""
+    """Return active account for valid credentials, otherwise None.
+
+    Stage 100.3: timing-attack mitigation — always performs a PBKDF2 round
+    (via asyncio.to_thread) regardless of whether the account exists or is
+    active. Without this, a remote attacker could enumerate valid emails
+    by timing the /login endpoint (unknown email returns in DB-lookup time,
+    valid email takes ~100ms for the hash). verify_account_password already
+    constant-times on hash string parity; this wrapper equalises the
+    no-account path.
+    """
     normalized_email = normalize_account_email(email)
     account = await session.scalar(select(Account).where(Account.email == normalized_email))
+    # Compute hash either against real stored hash or a throw-away dummy —
+    # constant wall time regardless of account state.
+    stored_hash = account.password_hash if account is not None else None
+    password_valid = await asyncio.to_thread(
+        verify_account_password, password, stored_hash
+    )
     if account is None or account.status != ACCOUNT_STATUS_ACTIVE:
         return None
-    # Offload PBKDF2 from the event loop for the same reason as creation.
-    password_valid = await asyncio.to_thread(
-        verify_account_password, password, account.password_hash
-    )
     if not password_valid:
         return None
     return account

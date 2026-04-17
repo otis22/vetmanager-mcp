@@ -10,8 +10,22 @@ _DEFAULT_SITE_BASE_URL = "https://vetmanager-mcp.vromanichev.ru"
 
 
 def _resolve_site_base_url() -> str:
+    """Stage 100.5: validate SITE_BASE_URL env — must start with http(s),
+    contain no control chars / quotes / whitespace, length ≤ 255. Invalid
+    input falls back to the prod default so an operator typo doesn't
+    inject markup into landing template."""
     raw = (os.environ.get("SITE_BASE_URL") or _DEFAULT_SITE_BASE_URL).strip()
-    return raw.rstrip("/") or _DEFAULT_SITE_BASE_URL
+    raw = raw.rstrip("/")
+    if not raw:
+        return _DEFAULT_SITE_BASE_URL
+    if len(raw) > 255:
+        return _DEFAULT_SITE_BASE_URL
+    if not (raw.startswith("http://") or raw.startswith("https://")):
+        return _DEFAULT_SITE_BASE_URL
+    # Reject any whitespace / quote / angle bracket / control char.
+    if any(c in raw for c in ('"', "'", "<", ">", " ", "\t", "\n", "\r", "\x00")):
+        return _DEFAULT_SITE_BASE_URL
+    return raw
 
 
 def render_landing_page() -> str:
