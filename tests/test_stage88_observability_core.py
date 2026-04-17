@@ -183,9 +183,10 @@ async def test_timeout_emits_structured_warning_and_records_latency(monkeypatch)
     respx.get(f"{BASE}/rest/api/client").mock(
         side_effect=httpx.TimeoutException("boom")
     )
+    from exceptions import VetmanagerTimeoutError
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
-        with pytest.raises(Exception):
+        with pytest.raises(VetmanagerTimeoutError):
             await VetmanagerClient().get("/rest/api/client", params={"limit": 1})
 
     timeout_records = [
@@ -233,9 +234,10 @@ async def test_crud_create_instrumented_with_error_outcome_on_failure():
     respx.post(f"{BASE}/rest/api/client").mock(
         return_value=httpx.Response(500, json={"error": "boom"})
     )
+    from exceptions import VetmanagerError
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
-        with pytest.raises(Exception):
+        with pytest.raises(VetmanagerError):
             await crud_create("/rest/api/client", {"firstName": "X"})
 
     snap = snapshot_service_metrics()

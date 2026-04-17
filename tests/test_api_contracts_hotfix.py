@@ -232,9 +232,9 @@ async def test_get_medical_cards_by_client_id_batches_medcards_via_in_operator()
     assert in_filter.get("operator", "").lower() == "in", (
         f"expected IN operator, got {in_filter}"
     )
-    assert sorted(in_filter.get("value", [])) == [1, 2, 3] or sorted(
-        str(v) for v in in_filter.get("value", [])
-    ) == ["1", "2", "3"]
+    # Stage 101.4: pin canonical int-typed wire format. VM API expects
+    # integer IDs in IN-list; string-form may silently fail server-side.
+    assert sorted(in_filter.get("value", [])) == [1, 2, 3]
 
     structured = result.structured_content or {}
     assert structured.get("pets_count") == 3

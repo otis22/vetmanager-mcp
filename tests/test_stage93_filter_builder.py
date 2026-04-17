@@ -150,8 +150,9 @@ def test_build_list_query_params_empty_filter_list_omits_param():
 
 
 def test_filter_is_immutable():
+    import dataclasses
     f = eq("x", 1)
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         f.property = "y"  # type: ignore[misc]
 
 

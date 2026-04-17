@@ -4125,3 +4125,26 @@ Rationale: wide test refactor зависит от 94.1 base. Отдельной 
 **Codex review**: пропущен per CLAUDE.md §5.5 — security hardening additive, break-compatible.
 
 **Breaking change**: operator, передавший `SITE_BASE_URL=invalid-no-scheme` раньше получил бы его буквально в HTML; теперь получит prod default. Если кто-то намеренно использовал (не http/https) URL — сломается; маловероятно.
+
+## Этап 101. Tests hardening II
+
+**Что сделано:**
+
+1. Bare `pytest.raises(Exception)` заменены на specific типы:
+   - `test_stage88_observability_core.py`: `VetmanagerTimeoutError`, `VetmanagerError`
+   - `test_stage91_vm_client_overhaul.py`: `VetmanagerError` (оба места)
+   - `test_stage93_filter_builder.py`: `dataclasses.FrozenInstanceError`
+2. `test_backoff_exponential_without_retry_after` — monkeypatch `random.uniform → 0` + strict assertions `d0 == 0.2, d1 == 0.4, d2 == 0.8` + `d0 < d1 < d2`. Vacuous test (который проходил при flat/reverse backoff) заменён на deterministic.
+3. `test_api_contracts_hotfix::test_get_medical_cards_by_client_id_batches_medcards_via_in_operator` — dual-branch `int | str` assertion убран, pin на canonical integer list `[1, 2, 3]`. VM API wire format pinned.
+4. Новый тест `test_half_open_probe_failure_reopens_with_fresh_cooldown` в `tests/test_stage101_tests_hardening.py` — покрытие HALF_OPEN → OPEN transition (была покрыта только HALF_OPEN → CLOSED).
+5. Новые regression-тесты для stage 100.1 sanitizer coverage: `test_sanitizer_redacts_unlisted_api_prefixed_key` (allowlist narrow-scope check), `test_sanitizer_redacts_stacktrace_frame_vars`, `test_sanitizer_redacts_breadcrumb_data`.
+
+**Не сделано (documented rationale):**
+- 101.2 Public test-helpers `get_shared_http_client()` / `get_breaker_state()` — тесты использующие module-level privates работают стабильно; рефактор API для сокращения test-coupling к internals — nice-to-have, не prod risk.
+- 101.6 `test_parse_retry_after_http_date_form` time tolerance — на stage 96.6 окно уже уменьшено до 60s с ±5s tolerance; flaky только на сильно loaded CI. Not worth freezegun complexity.
+- 101.8 `_StubLogger` workaround root cause — `configure_logging(force=True)` в module import time сбрасывает root handlers. Fix требует product-wide refactor bootstrap (вынос configure_logging из server import chain). Low priority vs workaround cost.
+- 101.9 PROMPTS_SRC substring → real function calls — current assertions работают, refactor cost > value.
+
+**Full suite**: 642 → **646 passed** (+4 new regressions: half_open_probe_failure, sanitizer unlisted api, sanitizer stacktrace vars, sanitizer breadcrumb data).
+
+**Codex review**: пропущен per CLAUDE.md §5.5 (tests-only).

@@ -86,14 +86,18 @@ def test_backoff_respects_retry_after_when_larger():
     assert _backoff_seconds(0, retry_after=3.0) >= 3.0
 
 
-def test_backoff_exponential_without_retry_after():
+def test_backoff_exponential_without_retry_after(monkeypatch):
+    """Stage 101.3: eliminate jitter via monkeypatch and assert strict
+    exponential growth instead of the previous vacuous inequality."""
+    monkeypatch.setattr("vetmanager_client.random.uniform", lambda a, b: 0.0)
     d0 = _backoff_seconds(0)
     d1 = _backoff_seconds(1)
     d2 = _backoff_seconds(2)
-    # Roughly exponential (jitter ≤ 0.1s); d2 > d1 > d0 in expectation.
-    # Not strict to avoid flaky jitter-related failures.
-    assert d0 <= d1 + 0.2
-    assert d1 <= d2 + 0.2
+    # Deterministic: 0.2 * 2^attempt = 0.2, 0.4, 0.8.
+    assert d0 == pytest.approx(0.2, abs=1e-9)
+    assert d1 == pytest.approx(0.4, abs=1e-9)
+    assert d2 == pytest.approx(0.8, abs=1e-9)
+    assert d0 < d1 < d2
 
 
 # ── Shared http client ──────────────────────────────────────────────────────
@@ -180,9 +184,10 @@ async def test_get_gives_up_after_max_retries(monkeypatch):
     respx.get(f"{BASE}/rest/api/client").mock(
         return_value=httpx.Response(503, json={"error": "bad"})
     )
+    from exceptions import VetmanagerError
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
-        with pytest.raises(Exception):
+        with pytest.raises(VetmanagerError):
             await VetmanagerClient().get("/rest/api/client", params={"limit": 1})
 
 
@@ -192,13 +197,14 @@ async def test_get_gives_up_after_max_retries(monkeypatch):
 @pytest.mark.asyncio
 @respx.mock
 async def test_post_does_not_retry_on_500():
+    from exceptions import VetmanagerError
     billing_mock()
     route = respx.post(f"{BASE}/rest/api/client").mock(
         return_value=httpx.Response(500, json={"error": "bad"})
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
-        with pytest.raises(Exception):
+        with pytest.raises(VetmanagerError):
             await VetmanagerClient().post("/rest/api/client", json={"x": 1})
 
     assert route.call_count == 1, (
