@@ -3689,3 +3689,38 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 **Перенесено в этап 87:**
 - `tools/pet.py::create_pet` payload использует `client_id` вместо `owner_id` (аналогичный баг, найден при аудите).
 - `prompts.py` prompts ссылаются на legacy параметры (`book-appointment`, `unconfirmed_appointments`, `unpaid_invoices`, `client_no_visit`).
+
+## Этап 87. Post-migration consistency sweep
+
+**Что сделано:**
+
+1. `tools/pet.py::create_pet`: параметр `client_id` → `owner_id`, payload `{"owner_id": ...}`. Согласовано с `get_pets`/`update_pet` (оба уже на `owner_id`).
+2. `tools/operations.py::get_timesheets`: параметр `user_id` → `doctor_id`; фильтр через `filter=[{"property":"doctor_id",...}]` вместо broken `extra={"userId":...}` (top-level query, который VM API для timesheet игнорирует — stage 80 PRD явно зафиксировал `doctor_id` как единое внешнее имя).
+3. `prompts.py` sweep — 5 prompts:
+   - `book_appointment`: `get_pets(client_id=...)` → `get_pets(owner_id=...)`
+   - `unconfirmed_appointments`: переписан с client-side фильтра на API-level `status='not_confirmed'` + date range через explicit end_date (instruction "compute end_date = date plus 2 days in YYYY-MM-DD")
+   - `unpaid_invoices`: два явных вызова `get_invoices(payment_status='none')` + `get_invoices(payment_status='partial')`
+   - `client_no_visit`: теперь использует специализированный `get_inactive_clients(months_min=ceil(days/30), months_max=9999)` вместо ручной агрегации `get_admissions`
+   - `search_good`: `get_goods(name=query)` → `get_goods(title=query)` (title — primary поле, name — legacy)
+
+**Codex-ревью (1 итерация, 4 warnings):**
+- W1 (create_pet rename breaking) — **accept**: старый `client_id` параметр строил payload который VM API не признавал (FK — owner_id). Любой caller, полагавшийся на `client_id`, фактически получал pet'а без владельца или с ошибкой. Rename — замена broken surface на working, net loss нулевой. Документировано.
+- W2 (get_timesheets rename breaking) — **accept**: старый `user_id` шёл в `extra={"userId":...}` top-level query, VM API timesheet entity это игнорирует (filter FK — doctor_id). Bug-fix. Документировано.
+- W3 (client_no_visit months_min floor → under-filter) — **адекватно**, исправлено: `(days + 29) // 30` (ceiling) вместо `days // 30` (floor). Для days=365 даёт 13 months (≥365d окно), было 12 months (~360d).
+- W4 (unconfirmed_appointments `date+2d` pseudocode) — **адекватно**, исправлено: prompt теперь инструктирует LLM сначала вычислить `end_date = date plus 2 days in YYYY-MM-DD format`, потом передать как `date_to=end_date`.
+
+**Тесты**: 8 новых в `tests/test_stage87_post_migration.py`:
+- `test_create_pet_payload_uses_owner_id`
+- `test_get_timesheets_uses_doctor_id_filter` (+ no legacy `userId` query)
+- `test_get_timesheets_without_doctor_id_sends_no_filter`
+- 5 text-assert'ов на prompts.py (book_appointment owner_id, unconfirmed status='not_confirmed' + explicit date_to=end_date, unpaid_invoices payment_status='none'+'partial', client_no_visit использует get_inactive_clients, search_good title).
+
+Full suite: 577 passed.
+
+**Breaking changes — документированные:**
+- `create_pet(client_id=X)` → больше не работает, использовать `create_pet(owner_id=X)`. Старый контракт был broken (pet создавался без владельца).
+- `get_timesheets(user_id=X)` → больше не работает, использовать `get_timesheets(doctor_id=X)`. Старый параметр игнорировался API.
+
+**Отложено в отдельные этапы:**
+- 87.3 CI lint на known-wrong pairs (pre-commit + GHA инфра) — отдельная задача.
+- `low_stock` prompt — требует bulk-tool `get_goods_with_low_stock(threshold)` или смягчения копирайта; отдельный этап.

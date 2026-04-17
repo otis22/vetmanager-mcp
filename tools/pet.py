@@ -74,7 +74,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool
     async def create_pet(
         alias: str,
-        client_id: int,
+        owner_id: int,
         type_id: int = 0,
         breed_id: int = 0,
         birthday: str = "",
@@ -84,13 +84,15 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             alias: Pet's name/alias.
-            client_id: ID of the owner (client).
+            owner_id: ID of the owning client. The Vetmanager Pet table uses
+                `owner_id` as the FK to client.id (not `client_id`); this name
+                is consistent with get_pets/update_pet.
             type_id: Animal type ID (species). Use 0 if unknown.
             breed_id: Breed ID. Use 0 if unknown.
             birthday: Date of birth in YYYY-MM-DD format (optional).
             note: Additional notes about the pet.
         """
-        payload: dict = {"alias": alias, "client_id": client_id}
+        payload: dict = {"alias": alias, "owner_id": owner_id}
         if type_id:
             payload["type_id"] = type_id
         if breed_id:

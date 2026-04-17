@@ -1301,14 +1301,14 @@
 - 86.5 Real API verify на devtr6 — отложено (mock-тесты покрывают контракт, real API probe — отдельной сессией) — `stop`
 - 86.6 PRD `PRD/этап-86-hotfix-api-contracts.md` + AssumptionLog + Codex review — `done`
 
-## Этап 87. Post-migration consistency sweep — `todo`
+## Этап 87. Post-migration consistency sweep — `done`
 
 Цель: закрыть сквозную тему baseline-ревью «drift после миграций». Найти и пофиксить все места, где старые имена полей (`client_id` у pet, `pet_id` у admission/medical_card, legacy prompts) пережили миграции stage 77.4 / 82-83.
 
-- 87.1 `prompts.py` audit: `book-appointment` (get_pets client_id→owner_id, create_admission mapping), `unconfirmed_appointments` (date range + status filter), `unpaid_invoices` (payment_status parameter), `client_no_visit` (→ get_inactive_clients), `search_good` (name→title), `low_stock` — `todo`
-- 87.2 `tools/operations.py::get_timesheets`: `user_id` → `doctor_id` (поле + param) с deprecation-alias на 1 версию — `todo`
-- 87.3 CI lint / pre-commit: grep по known-wrong pairs (`{"property":"client_id".*pet`, `{"property":"pet_id".*admission`, `{"property":"pet_id".*MedicalCards` filter context) — fail если найдено — `todo`
-- 87.4 Regression тесты на все prompt'ы (pytest check что tool-params из prompt'а существуют) — `todo`
+- 87.1 `prompts.py` audit: `book-appointment` (get_pets client_id→owner_id), `unconfirmed_appointments` (range dates + status='not_confirmed' API-level), `unpaid_invoices` (payment_status='none'/'partial'), `client_no_visit` (→ get_inactive_clients с ceiling months_min), `search_good` (title), `low_stock` — отложен, требует bulk-tool — `done`
+- 87.2 `tools/operations.py::get_timesheets`: `user_id` → `doctor_id` (param + filter[] вместо broken extra{userId}); `tools/pet.py::create_pet` payload: `client_id` → `owner_id` — `done`
+- 87.3 CI lint / pre-commit на known-wrong pairs — `stop` (отложено, требует отдельной инфраструктуры pre-commit/GHA)
+- 87.4 Regression тесты: 8 новых в `tests/test_stage87_post_migration.py` (create_pet owner_id payload, get_timesheets doctor_id filter без legacy userId query, 5 prompt sweep checks через text search) — `done`
 
 ## Этап 88. Observability core: correlation_id + per-tool metrics + upstream metric (F4, F5, F6) — `todo`
 

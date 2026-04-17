@@ -51,7 +51,7 @@ def register(mcp: FastMCP) -> None:
     async def get_timesheets(
         limit: LimitParam = 20,
         offset: int = 0,
-        user_id: int = 0,
+        doctor_id: int = 0,
         date: str = "",
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
@@ -61,12 +61,21 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
-            user_id: Filter by staff user ID (0 = no filter).
+            doctor_id: Filter by staff doctor ID (0 = no filter). Vetmanager
+                timesheet entity uses `doctor_id` as FK to user.id.
             date: Filter by date in YYYY-MM-DD format (optional).
         """
+        combined_filters: list[dict] = list(filter or [])
+        if doctor_id:
+            combined_filters.append(
+                {"property": "doctor_id", "value": doctor_id, "operator": "="}
+            )
+        extra = {"date": date} if date else None
         return await crud_list(
             "/rest/api/timesheet", limit=limit, offset=offset,
-            sort=sort, filters=filter, extra={"userId": user_id, "date": date},
+            sort=sort,
+            filters=combined_filters if combined_filters else None,
+            extra=extra,
         )
 
     @mcp.tool

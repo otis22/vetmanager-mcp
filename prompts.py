@@ -83,7 +83,7 @@ def register_prompts(mcp: FastMCP) -> None:
             + f"Book an appointment for client '{client_name}', pet '{pet_name}', "
             + f"doctor ID {doctor_id}, date {date}. "
             + "1. Call get_clients(name=client_name, limit=20). "
-            + "2. From the chosen client, call get_pets(client_id=client_id, limit=100) and find the pet by alias/name. "
+            + "2. From the chosen client, call get_pets(owner_id=client_id, limit=100) and find the pet by alias/name. "
             + "3. Call create_admission(pet_id=pet_id, client_id=client_id, doctor_id=doctor_id, date=date). "
             + "Confirm the created admission ID."
         )]
@@ -138,8 +138,8 @@ def register_prompts(mcp: FastMCP) -> None:
         return [Message(
             _bearer_runtime_prefix()
             + f"List unconfirmed appointments starting from {date} for the next 2 days. "
-            + "Call get_admissions(date=date, limit=100). "
-            + "From the returned records, keep appointments whose status is not confirmed/accepted. "
+            + f"1. Compute end_date = {date} plus 2 days in YYYY-MM-DD format. "
+            + f"2. Call get_admissions(date_from='{date}', date_to=end_date, status='not_confirmed', limit=100). "
             + "Show client name, pet name, time, and doctor."
         )]
 
@@ -266,9 +266,9 @@ def register_prompts(mcp: FastMCP) -> None:
         return [Message(
             _bearer_runtime_prefix()
             + "List unpaid or partially paid invoices. "
-            + f"Call get_invoices(limit={limit}, sort=[{{'property':'create_date','direction':'DESC'}}]). "
-            + "Keep invoices whose payment status indicates unpaid or partial. "
-            + "Show client name, pet name, invoice date, total amount, and amount due."
+            + f"1. Call get_invoices(payment_status='none', limit={limit}, sort=[{{'property':'create_date','direction':'DESC'}}]). "
+            + f"2. Call get_invoices(payment_status='partial', limit={limit}, sort=[{{'property':'create_date','direction':'DESC'}}]). "
+            + "Merge both lists. Show client name, pet name, invoice date, total amount, and amount due."
         )]
 
     @mcp.prompt
@@ -298,7 +298,7 @@ def register_prompts(mcp: FastMCP) -> None:
         return [Message(
             _bearer_runtime_prefix()
             + f"Search for goods or services matching '{query}'. "
-            + "Call get_goods(name=query, limit=20). "
+            + "Call get_goods(title=query, limit=20). "
             + "Show good ID, name, group, price, and unit when available."
         )]
 
@@ -339,10 +339,12 @@ def register_prompts(mcp: FastMCP) -> None:
         Args:
             days_without_visit: Number of days without a visit.
         """
+        # Ceiling division so that days=365 → 13 months (≥365d window).
+        # Floor would give 12 months (~360d) and under-filter the threshold.
+        months_min = max(1, (days_without_visit + 29) // 30)
         return [Message(
             _bearer_runtime_prefix()
             + f"Find clients who have not visited in {days_without_visit}+ days. "
-            + "Call get_admissions(limit=100, sort=[{'property':'admission_date','direction':'DESC'}]). "
-            + "Determine each client's latest visit and return clients whose last visit is older than the threshold. "
+            + f"Call get_inactive_clients(months_min={months_min}, months_max=9999, limit=100). "
             + "Show client name, phone, last visit date, and pets."
         )]
