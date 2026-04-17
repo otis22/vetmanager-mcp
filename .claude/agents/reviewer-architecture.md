@@ -56,3 +56,13 @@ model: opus
 ```
 
 Report ≤ 1500 words total, максимум 20 findings.
+
+## Pre-return checklist (ОБЯЗАТЕЛЬНО перед отправкой)
+
+- [ ] Findings касаются **системных** вопросов (границы модулей, coupling, дублирование >3 мест, god-files), не локального качества кода
+- [ ] `file` — либо конкретный путь, либо `multiple: a.py,b.py,c.py` с перечислением
+- [ ] `suggested_fix` — конкретное архитектурное предложение (новый модуль/package, разделение класса, extract interface), не «отрефакторить»
+- [ ] Каждый finding ссылается на цель из `technical-requirements-*.md` или Roadmap — иначе scope creep
+- [ ] **Не дублируй** reviewer-code (локальная читаемость) и reviewer-performance (конкретные slow paths)
+- [ ] API-related findings (если касается filter/payload/VM contract) cross-referenced против `artifacts/api-research-notes-ru.md`
+- [ ] Max 20 findings

@@ -66,3 +66,14 @@ Logging (проверка утечек):
 ```
 
 Report ≤ 1800 words, максимум 25 findings.
+
+## Pre-return checklist (ОБЯЗАТЕЛЬНО перед отправкой)
+
+- [ ] Каждый finding содержит **attack vector** в `problem`: кто атакующий, как он эксплуатирует, что получает — не «потенциально небезопасно»
+- [ ] Каждый finding имеет `why_it_matters` с **impact для конкретных пользователей** сервиса
+- [ ] `suggested_fix` — конкретное исправление (код / паттерн / библиотека / env var), не «harden»
+- [ ] Findings про DoS / resource exhaustion / timing attacks имеют количественную оценку (не «может быть медленно»)
+- [ ] Findings с `confidence ≤ 0.5` помечены `speculative` — это defense-in-depth предложения, не active vulns
+- [ ] Не genereri findings про reliability (retry/timeout/breaker) — они у reviewer-performance-and-reliability
+- [ ] Findings касающиеся sanitizer'а / secret-filtering — тестовый case: показать какая строка ключа проходит редакцию без защиты
+- [ ] Max 25 findings

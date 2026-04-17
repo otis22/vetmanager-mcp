@@ -63,3 +63,14 @@ model: sonnet
 ```
 
 Report ≤ 1800 words, максимум 25 findings.
+
+## Pre-return checklist (ОБЯЗАТЕЛЬНО перед отправкой)
+
+- [ ] Каждый finding указывает на **конкретный тест** (`file:lines` или «whole file» только когда весь файл пронизан одним паттерном)
+- [ ] Для implementation-detail coupling: указать какой приватный атрибут/модульный global используется + какой refactor его сломает
+- [ ] Для missing unhappy-path: указать какой error path НЕ покрыт + какой real bug он пропустит
+- [ ] Для fragile asserts: показать какой безобидный refactor (rename, inline, extract) сломает тест несмотря на сохранение контракта
+- [ ] Для over-mocking: указать какая INTERNAL функция мокается (не external API — это ок)
+- [ ] Не genereri findings про тесты отсутствующие для отложенных в Roadmap subtask'ов (scope creep)
+- [ ] Не давай findings про тесты которые есть и проходят — только fragile/fake/incomplete
+- [ ] Max 25 findings

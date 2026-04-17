@@ -1632,6 +1632,22 @@ Acceptance: все 4 rooted причины (update_admission missed, phantom enu
 
 ---
 
+**Статус этапа 104 (2026-04-17):** частично `done` / остаток `stop`
+
+- 104.1 `scripts/check_stage_completion.sh` — `done`
+- 104.2 Pre-commit hook для AssumptionLog — `stop` (отложено в 104b, нужен `pre-commit` framework setup)
+- 104.3 Field-mapping CI lint — `stop` (отложено в 104b, нужна infra для parsing authoritative field dict)
+- 104.4 Phantom enum value lint — `stop` (отложено в 104b, similar infrastructure)
+- 104.5 Baseline/super-review resolution tracker — `stop` (отложено в 104b, Python tooling для автоматизации)
+- 104.6 Subagent pre-return checklists (8 reviewer файлов + aggregator already had adequacy eval) — `done`
+- 104.7 Extended `review_workflow_check.sh` (bulk AssumptionLog, PRD sections, unresolved review) — `done`
+- 104.8 `docs/stage-workflow-template.md` — `done`
+- 97.7 CLAUDE.md §5a count fix (8 → 10 subagents) — `done`
+
+Deferred 104.2/3/4/5 — high impact, требуют отдельного focused этапа. Приоритет: 104.3 (больше всего root-cause bugs).
+
+---
+
 ## Источник этапов 96-104
 
 Super-review 2026-04-17 (`artifacts/review/2026-04-17-post-stages-85-95.md`) — 111 findings от 9 параллельных ревьюеров + codex-blindspot. Оценка адекватности: `artifacts/review/inadequate-findings-index.md` (15 findings dismiss'нуто). Адекватные findings сгруппированы в стадии 96-104.

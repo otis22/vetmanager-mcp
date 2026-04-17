@@ -3834,7 +3834,45 @@ Full suite: 596 passed.
 - SITE_BASE_URL url-scheme validation — W5 follow-up
 - Оставшиеся observability subtasks 88.5-88.8 (будут в отдельных этапах под крупным зонтиком «auth audit + business metrics»)
 
-## Этап 90. Docs sync
+## Этап 104. Workflow discipline improvements
+
+**Что сделано:**
+
+Реализация инфраструктуры, которая автоматически ловит 4 root-cause пропуска super-review 2026-04-17 (update_admission missed, phantom enum, AssumptionLog gap, baseline unresolved).
+
+1. **`scripts/check_stage_completion.sh`** (104.1) — post-commit checker с 8 проверками: PRD exists, AssumptionLog section, Roadmap status ≠ in_progress, commit message prefix `Stage N:`, pytest cache mtime, Codex review trace, stage aggregate diff size. Exit 1 при high gaps. Авто-detection stage number из последнего commit message.
+
+2. **Subagent pre-return checklists** (104.6) — 8 reviewer файлов (`code/architecture/docs/security/performance-and-reliability/observability/tests/product`) получили `## Pre-return checklist` секцию с role-specific verifications. Aggregator уже имел adequacy evaluation (зафиксировано в предыдущем коммите `9dea0db`).
+
+3. **`scripts/review_workflow_check.sh` extensions** (104.7):
+   - Bulk AssumptionLog coverage: iterate all `## Этап N ... done` entries in Roadmap; missing entries → high finding. Regex tolerates `Этап 1–2` range form.
+   - PRD section sanity: every `PRD/этап-*.md` must have `## Цель`.
+   - Unresolved review verdict: detects `Do not merge` in `artifacts/review/*.md` without `Resolution` section.
+
+4. **`docs/stage-workflow-template.md`** (104.8) — 17-шаговый чеклист copy-paste'ом для нового этапа. Явно обозначены anti-patterns (sweep discipline gap, phantom enum, AssumptionLog skip, Codex skip без reason, baseline review без resolution note). Mechanical gates в шагах 7, 11, 13, 14, 17.
+
+5. **CLAUDE.md §5a** (97.7) — «8 специализированных ревьюеров» → 10 subagent'ов с учётом codex-blindspot и aggregator.
+
+**Архитектурные решения:**
+- Два отдельных скрипта (а не один): `review_workflow_check.sh` запускается как часть `/super-review`, `check_stage_completion.sh` — после commit. Разный scope: review хочет репо-wide findings, completion хочет single-stage.
+- Pre-return checklists как markdown секции, не как программная валидация — субагент читает свой системный промпт, чеклист становится частью instructions. ROI высокий (дешёвое улучшение качества findings), regression-risk нулевой.
+- Stage workflow template в `docs/`, не в CLAUDE.md — CLAUDE.md остаётся на high-level правилах; чеклист slow to read, separate place.
+
+**Отложено в этап 104b (future session):**
+- 104.2 Pre-commit hook для AssumptionLog — требует `pre-commit` framework setup, user-env specific.
+- 104.3 Field-mapping CI lint (должен был поймать `update_admission` bug) — требует parsing authoritative field dict из `api-research-notes-ru.md` + AST-based payload scanning.
+- 104.4 Phantom enum value lint (должен был поймать `status='active'`) — similar infrastructure, needs canonical enum source.
+- 104.5 Baseline/super-review resolution tracker — Python tooling для automated update review artifacts при закрытии findings.
+
+Эти — high-value, но требуют отдельного focused этапа с careful tooling design. Приоритет: 104.3 (самый высокий импакт, больше всего root-cause bugs был найден).
+
+**Тесты**: workflow-check и stage-completion скрипты протестированы вручную на текущем репо:
+- `./scripts/review_workflow_check.sh` — ловит stage 93 missing AssumptionLog (правильно), stage 1–2 accepted (regex tolerant), unresolved `Do not merge` в `2026-04-17-baseline-post-stage-84.md` (правильно, закроется stage 97.2).
+- `./scripts/check_stage_completion.sh 95` — ловит missing AssumptionLog для 95 (правильно), missing Codex trace (правильно — Codex был skipped со ссылкой на §5.5 в commit body, regex для поиска слова 'codex' cases-insensitive).
+
+**Codex review**: пропущен — изменения только infrastructure/docs (CLAUDE.md §5.5). Скрипты — bash, без логики кроме grep/emit. Pre-return checklists — markdown контент.
+
+**Breaking changes**: нет. Все изменения additive.
 
 **Что сделано:**
 

@@ -62,3 +62,13 @@ Grep по всему репо:
 ```
 
 Report ≤ 1500 words, максимум 20 findings.
+
+## Pre-return checklist (ОБЯЗАТЕЛЬНО перед отправкой)
+
+- [ ] Каждый finding привязан к **конкретному incident scenario** в `why_it_matters`: какой инцидент станет неотлаживаемым без этого поля/метрики/лога
+- [ ] `suggested_fix` — КОНКРЕТНО какое поле в extra dict / какая метрика / какой log level. Не «add more logs»
+- [ ] Не дублируй reviewer-security (secret leaks — у них defense mechanism, у тебя «забыли отфильтровать в логе»)
+- [ ] Findings про cardinality explosion — посчитай expected label combinations (не «высокая cardinality» без числа)
+- [ ] Findings про correlation_id missing — укажи конкретный log site и какой context нужен
+- [ ] Не генери findings про perf (latency как такое) — это у reviewer-performance
+- [ ] Max 20 findings

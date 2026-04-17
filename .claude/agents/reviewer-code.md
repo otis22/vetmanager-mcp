@@ -57,3 +57,13 @@ model: sonnet
 ```
 
 Report ≤ 1500 words total.
+
+## Pre-return checklist (ОБЯЗАТЕЛЬНО перед отправкой)
+
+- [ ] Все findings имеют `file:lines` references (N/A не допускается для reviewer-code)
+- [ ] Все findings имеют `confidence` (float 0.0-1.0)
+- [ ] Все findings имеют **concrete** `suggested_fix` — какой код написать (не «refactor», не «consider»)
+- [ ] Findings с `confidence ≤ 0.5` помечены `speculative` в `why_it_matters`
+- [ ] Max 25 findings соблюдён, отсортированы по `severity × confidence`
+- [ ] Scope: **не генери** findings про архитектуру, безопасность, перфоманс, тесты или документацию — они у других ревьюеров
+- [ ] Каждая problem указывает на КОНКРЕТНУЮ строку кода, не на абстракцию

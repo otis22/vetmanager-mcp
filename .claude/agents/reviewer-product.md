@@ -61,3 +61,14 @@ model: opus
 ```
 
 Report ≤ 1800 words, максимум 20 findings.
+
+## Pre-return checklist (ОБЯЗАТЕЛЬНО перед отправкой)
+
+- [ ] Каждый finding привязан к **конкретной PRD цели или персоне** в `why_it_matters` (Мария-администратор, Алексей-ветеринар, руководитель, self-hosted operator, LLM-client)
+- [ ] Для `missing_acceptance`: цитируй строку PRD (этап-N-*.md) и укажи какой элемент отсутствует в коде
+- [ ] Для `poor_ux`: опиши конкретный пользовательский путь который ломается + какой запрос LLM получит
+- [ ] Для `hidden_breaking_change`: укажи какой существующий caller ломается + предоставь старую и новую сигнатуру
+- [ ] API-related findings cross-referenced против `artifacts/api-research-notes-ru.md` чеклист полей — **обязательно** чтобы не повторить F1 ошибку (pet_id vs patient_id)
+- [ ] Не genereri findings про code quality / architecture — product scope только
+- [ ] `suggested_fix` — либо конкретный tool parameter / prompt text / API change, либо «обсудить с продуктом» с уточнением вопроса
+- [ ] Max 20 findings

@@ -110,4 +110,57 @@ if [ "$TOTAL_LOC" -gt 0 ]; then
     0.5
 fi
 
+# 8. AssumptionLog coverage for ALL done stages (не только current)
+# Parses Roadmap for every "## Этап N. ... — `done`" and verifies AssumptionLog
+# has a matching section. Catches bulk gaps like stages 92-95 that review-
+# workflow missed previously.
+DONE_STAGES=$(grep -oE '^## Этап [0-9]+\.[^\n]*`done`' Roadmap.md 2>/dev/null | grep -oE '^## Этап [0-9]+' | grep -oE '[0-9]+' | sort -nu || true)
+if [ -n "$DONE_STAGES" ]; then
+  MISSING_LOG_STAGES=""
+  for S in $DONE_STAGES; do
+    # Accept: "## Этап N " / "## Этап N." / "## Этап N:" / "## Этап N-M" / "## Этап N–M" (em-dash)
+    # The trick: N must be either at-line-end or followed by non-digit, to avoid "1" matching "13".
+    if ! grep -qE "^## Этап ${S}([^0-9]|\$)" AssumptionLog.md 2>/dev/null; then
+      MISSING_LOG_STAGES="${MISSING_LOG_STAGES}${S},"
+    fi
+  done
+  MISSING_LOG_STAGES="${MISSING_LOG_STAGES%,}"
+  if [ -n "$MISSING_LOG_STAGES" ]; then
+    emit high missing_assumption_bulk "AssumptionLog.md" "N/A" \
+      "Done stages without AssumptionLog entries: ${MISSING_LOG_STAGES}" \
+      "CLAUDE.md § 6 mandates AssumptionLog entry per stage; bulk gaps mean review auditability broken" \
+      "Backfill '## Этап N' sections for each listed stage" \
+      0.95
+  fi
+fi
+
+# 9. PRD section sanity — every PRD/этап-N-*.md должен иметь разделы Цель + Scope
+for PRD in PRD/этап-*.md; do
+  [ -f "$PRD" ] || continue
+  if ! grep -qiE '^## Цель' "$PRD" 2>/dev/null; then
+    BASENAME=$(basename "$PRD")
+    emit low prd_missing_section "$PRD" "N/A" \
+      "PRD ${BASENAME} has no '## Цель' section" \
+      "CLAUDE.md § 3 mandates PRD with goal + decomposition" \
+      "Add '## Цель' section (or '## Context' if retroactive)" \
+      0.65
+  fi
+done
+
+# 10. Review artifacts with active "Do not merge" verdict
+#     — ищет baseline/super-review документы с активным блокирующим verdict
+ACTIVE_VERDICTS=$(grep -lE '\*\*[Dd]o not merge\*\*' artifacts/review/*.md 2>/dev/null || true)
+if [ -n "$ACTIVE_VERDICTS" ]; then
+  for V in $ACTIVE_VERDICTS; do
+    # Skip если уже есть "Resolution" section или superseded note
+    if ! grep -qiE 'Resolution|superseded|resolved' "$V" 2>/dev/null; then
+      emit medium unresolved_review "$V" "N/A" \
+        "Review artifact carries active 'Do not merge' verdict without resolution note" \
+        "Blocker-level verdict on merged code misleads future readers and tooling" \
+        "Add '## Resolution' section listing which stages closed which findings, mark as superseded" \
+        0.85
+    fi
+  done
+fi
+
 exit 0

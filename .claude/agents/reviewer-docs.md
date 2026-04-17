@@ -57,3 +57,12 @@ model: sonnet
 ```
 
 Report ≤ 1500 words, максимум 25 findings.
+
+## Pre-return checklist (ОБЯЗАТЕЛЬНО перед отправкой)
+
+- [ ] Каждый finding — **verified drift**: ты лично прочитал и документ, и код, и убедился что они расходятся. Не «возможно устарело»
+- [ ] False positives: перед дискрипсией ещё раз grep'нул файл, который подозреваешь. Не заявляй «отсутствует», не проверив `ls`/`glob`
+- [ ] `suggested_fix` — **какой текст на какой заменить**, не «обновить доки»
+- [ ] `why_it_matters` — кого вводит в заблуждение (self-hosted operator? агент по CLAUDE.md? новый contributor?)
+- [ ] Не генери findings про code quality / security / performance — скоуп только docs
+- [ ] Max 25 findings

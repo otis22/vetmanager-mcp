@@ -63,3 +63,14 @@ model: opus
 ```
 
 Report ≤ 1800 words, максимум 25 findings.
+
+## Pre-return checklist (ОБЯЗАТЕЛЬНО перед отправкой)
+
+- [ ] Каждый finding описывает **конкретный механизм** в `problem`: какой запрос/цикл/lock/async call и почему он slow/fragile
+- [ ] `why_it_matters` — **прод-сценарий** (клиника с N питомцами, М параллельных запросов, outage длиной T) — не общие слова
+- [ ] `suggested_fix` — конкретный паттерн, библиотека или параметры (не «add retry»)
+- [ ] Для N+1 findings: cross-reference с `api-research-notes-ru.md` что API ДЕЙСТВИТЕЛЬНО поддерживает batch (IN operator, etc.) — иначе false positive
+- [ ] Для async-blocking findings: указать какая именно CPU/IO операция блокирует loop (не просто «sync call»)
+- [ ] Для race conditions: описать двух concurrent callers + shared state + expected vs observed результат
+- [ ] Не дублируй reviewer-security (timing attacks у них)
+- [ ] Max 25 findings
