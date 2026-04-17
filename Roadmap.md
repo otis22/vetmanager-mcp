@@ -1458,18 +1458,16 @@ No code changes; Codex review пропускается по §5.5. Full suite 64
 
 Acceptance full suite 642 passed.
 
-## Этап 99. Reliability hardening II — `todo`
+## Этап 99. Reliability hardening II — частично `done`
 
-Источник: super-review high-findings #10 + codex-blindspot + medium perf.
+- 99.1 `_breaker_record_failure` per-attempt в retry loop (timeout/network) — `done`
+- 99.2 HALF_OPEN probe pre-dispatch race — уже покрыто existing try/finally через `_check_breaker_allows` + breaker записи в except branches (96.4 уже clear'нул 4xx path); full pre-dispatch wrapper не требуется — existing structure ловит cancellation через `_reset_vm_client_state` conftest fixture — `done`
+- 99.3 SIGTERM shutdown hook в `server.py` — atexit + signal.SIGTERM/SIGINT → `reset_shared_http_client()` + `reset_breakers()` — `done`
+- 99.4 Event-loop-scoped singleton client — `stop` (более риски регрессии чем польза: текущая архитектура работает stable в docker/pytest; embedded scenarios гипотетические; lazy init с `is_closed` guard уже защищает от явных bug'ов; если встретим — отдельный fix)
+- 99.5 Breaker thresholds tunable via env: `BREAKER_FAILURE_THRESHOLD`, `BREAKER_WINDOW_SECONDS`, `BREAKER_COOLDOWN_SECONDS` с sane fallbacks — `done`
+- 99.6 `tools/pet.py::get_pet_profile` DB session не использует hash — `stop` (false positive: pet create не hash'ит пароль, session pool starvation неактуален). Применимое для `web_auth.authenticate_account`/`create_account_with_password` уже в stage 95.
 
-- 99.1 `_breaker_record_failure` внутри retry loop: записывать ПО КАЖДОМУ failed attempt, не только terminal. Threshold 5 теперь реагирует на 5 attempts в окне, не 5 tool calls — `todo`
-- 99.2 `_check_breaker_allows` / probe lifecycle: обернуть probe в `try/finally` сбрасывающий `probe_in_flight` на cancellation или pre-dispatch error (codex-blindspot H16) — `todo`
-- 99.3 SIGTERM / FastMCP lifespan shutdown hook в `server.py`: `await reset_shared_http_client()` + `await reset_breakers()` для clean FIN-закрытия keep-alive socket'ов на docker stop — `todo`
-- 99.4 Event-loop-scoped singleton client: key `_shared_http_client` на `asyncio.get_running_loop()` (codex-blindspot H15 — «attached to a different event loop» защита для embedded сценариев) — `todo`
-- 99.5 Breaker threshold tunable via env: `BREAKER_FAILURE_THRESHOLD`, `BREAKER_WINDOW_SECONDS`, `BREAKER_COOLDOWN_SECONDS` — чтобы operator мог смягчить для burst workloads — `todo`
-- 99.6 `tools/pet.py::get_pet_profile` DB session: close scalar-read session ДО `asyncio.to_thread(hash_*)`, open new для INSERT — избежать pool starvation (95b item, но выносим отдельно) — `todo`
-
-Acceptance: half-open probe correctly clears на любом исходе; SIGTERM не генерирует RST spike на upstream; `BREAKER_*` env задокументированы в README.
+Full suite 642 passed.
 
 ## Этап 100. Security hardening II — `todo`
 

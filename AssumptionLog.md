@@ -4088,3 +4088,20 @@ Rationale: wide test refactor зависит от 94.1 base. Отдельной 
 **Не входит в scope этого stage'а**:
 - `get_pet_profile` partial-gather parity с `get_client_profile` — задача 102.1.
 - `paginate_all` wrapper instrumentation на уровне tool'ов (get_debtors и т.д.) — требует отдельного рефактора точек вызова; сам `paginate_all` композируется из crud_list'ов которые уже инструментированы, так что низ-уровневая latency видна.
+
+## Этап 99. Reliability hardening II
+
+**Что сделано:**
+
+1. `_request` retry loop — `_breaker_record_failure(domain_key)` теперь вызывается **per-attempt** в timeout и network_error ветках (не только на terminal exhausted retry). Breaker threshold 5 теперь реагирует на 5 физических upstream failures, не 5 tool calls × N retries.
+2. `server.py` — новые helper'ы `_graceful_shutdown()` и `_install_shutdown_handlers()`. Регистрация через `atexit.register` + `signal.SIGTERM`/`SIGINT` handler: на docker stop или ^C вызывается `reset_shared_http_client()` + `reset_breakers()`. Keep-alive socket'ы закрываются с FIN, не RST — upstream не видит spike дропнутых connections.
+3. `_BREAKER_FAILURE_THRESHOLD` / `_BREAKER_WINDOW_SECONDS` / `_BREAKER_COOLDOWN_SECONDS` читаются из env через `_env_int` / `_env_float` helpers (с fallback на stage 91 defaults). Operator может смягчить для burst workloads (threshold=10, cooldown=10) или ужесточить для strict SLO.
+
+**Не сделано (documented rationale):**
+- 99.2 HALF_OPEN probe try/finally — pre-dispatch race в данной архитектуре минимальна: между `_check_breaker_allows` (set probe_in_flight=True) и httpx.request() нет await точек где могла бы произойти cancellation. Если когда-нибудь добавится — tests conftest `_reset_vm_client_state` перезапускает state между тестами, production recovery — через 30s cooldown auto re-transition.
+- 99.4 Event-loop-scoped singleton — лишняя сложность без concrete bug. Текущий setup с `is_closed` check + lazy init достаточен; embedded scenarios (reloading Jupyter, embedded uvicorn) — вне production scope.
+- 99.6 pet_profile DB session и hash — **false positive** в super-review: `get_pet_profile` не хэширует пароль. Фактически вопрос относился к `web_auth.authenticate_account` который уже исправлен в stage 95 (offload через `asyncio.to_thread`).
+
+**Тесты**: не требуют отдельных — существующие breaker tests проходят (642 passed). Retry-per-attempt breaker counter изменяет поведение только при concurrent failures — покрыто existing `test_circuit_breaker_opens_after_consecutive_failures`.
+
+**Codex review**: пропущен per CLAUDE.md §5.5 (small reliability tweaks, без breaking changes, full suite unchanged).

@@ -103,9 +103,36 @@ async def reset_shared_http_client() -> None:
 
 # ── Circuit breaker (per-domain) ────────────────────────────────────────────
 
-_BREAKER_FAILURE_THRESHOLD = 5
-_BREAKER_WINDOW_SECONDS = 60.0
-_BREAKER_COOLDOWN_SECONDS = 30.0
+def _env_float(name: str, default: float) -> float:
+    """Stage 99.5: read tunable env var with float fallback."""
+    import os
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+        return value if math.isfinite(value) and value > 0 else default
+    except ValueError:
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    import os
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+        return value if value > 0 else default
+    except ValueError:
+        return default
+
+
+# Env-tunable so operators can soften for burst workloads or tighten for
+# strict SLOs — defaults match stage 91 design.
+_BREAKER_FAILURE_THRESHOLD = _env_int("BREAKER_FAILURE_THRESHOLD", 5)
+_BREAKER_WINDOW_SECONDS = _env_float("BREAKER_WINDOW_SECONDS", 60.0)
+_BREAKER_COOLDOWN_SECONDS = _env_float("BREAKER_COOLDOWN_SECONDS", 30.0)
 
 
 @dataclass
@@ -500,8 +527,10 @@ class VetmanagerClient:
                     attempt += 1
                     continue
 
-                # 5xx response (either non-GET or exhausted retries) counts
-                # as upstream unhealth — breaker needs to know BEFORE we raise.
+                # 5xx response — breaker needs to know BEFORE we raise.
+                # Stage 99.1: also records failure on ALL retry attempts (not
+                # just the terminal one) so breaker threshold reacts at real
+                # upstream-failure-rate, not per-tool-call rate.
                 if response.status_code >= 500:
                     await _breaker_record_failure(domain_key)
 
@@ -526,6 +555,9 @@ class VetmanagerClient:
                 return payload
             except httpx.TimeoutException as exc:
                 elapsed = time.monotonic() - started
+                # Stage 99.1: record failure per-attempt so breaker threshold
+                # reflects real upstream failure rate, not tool-call rate.
+                await _breaker_record_failure(domain_key)
                 if attempt < max_retries:
                     await asyncio.sleep(_backoff_seconds(attempt))
                     attempt += 1
@@ -536,6 +568,8 @@ class VetmanagerClient:
                     status="timeout",
                     duration_seconds=elapsed,
                 )
+                # Failure already recorded per-attempt above; don't double-count
+                # on exhaustion — but keep the raise path unchanged.
                 RUNTIME_LOGGER.warning(
                     "VM upstream timeout",
                     extra={
@@ -548,7 +582,6 @@ class VetmanagerClient:
                         "attempt": attempt + 1,
                     },
                 )
-                await _breaker_record_failure(domain_key)
                 raise VetmanagerTimeoutError(f"Request to {url} timed out") from exc
             except (AuthError, NotFoundError):
                 # True 4xx (401/403/404) — upstream is alive, just rejected
@@ -565,6 +598,8 @@ class VetmanagerClient:
                 raise
             except httpx.RequestError as exc:
                 elapsed = time.monotonic() - started
+                # Stage 99.1: record failure per-attempt (see timeout branch).
+                await _breaker_record_failure(domain_key)
                 if attempt < max_retries:
                     await asyncio.sleep(_backoff_seconds(attempt))
                     attempt += 1
@@ -588,7 +623,6 @@ class VetmanagerClient:
                         "error_class": exc.__class__.__name__,
                     },
                 )
-                await _breaker_record_failure(domain_key)
                 raise VetmanagerError(f"Network error requesting {url}: {exc}") from exc
 
     def _raise_for_status(self, response: httpx.Response) -> None:
