@@ -97,19 +97,33 @@ def in_(property: str, values: list[Any]) -> Filter:
     Values list is preserved as-is — the VM API parses JSON array directly
     without further coercion. Callers should pre-stringify if the entity
     expects string-typed ids.
+
+    Empty lists are rejected (stage 96.5): VM API semantics for `IN []` are
+    undefined — some endpoints return 500, some treat as match-all. Callers
+    must explicitly handle the no-matches short-circuit before building the
+    filter.
     """
     if not isinstance(values, (list, tuple)):
         raise TypeError(
             f"in_ requires a list/tuple of values, got {type(values).__name__}"
         )
+    if not values:
+        raise ValueError(
+            "in_ requires at least one value; VM API behavior on IN [] is undefined. "
+            "Short-circuit the no-matches case in the caller."
+        )
     return Filter(property=property, value=list(values), operator=FilterOp.IN)
 
 
 def not_in(property: str, values: list[Any]) -> Filter:
-    """property NOT IN (v1, v2, ...)."""
+    """property NOT IN (v1, v2, ...). Empty lists rejected (see in_)."""
     if not isinstance(values, (list, tuple)):
         raise TypeError(
             f"not_in requires a list/tuple of values, got {type(values).__name__}"
+        )
+    if not values:
+        raise ValueError(
+            "not_in requires at least one value; VM API behavior on NOT IN [] is undefined."
         )
     return Filter(property=property, value=list(values), operator=FilterOp.NOT_IN)
 

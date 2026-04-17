@@ -3869,6 +3869,25 @@ Full suite: 596 passed.
 - Lint использует AST и ловит только literal dict payloads. Non-literal payloads (`if reason: payload["reason"] = reason`) не детектятся статически — пример `update_admission` с условным build'ом. Lint станет эффективным для этого паттерна после stage 96.1 когда payload рефакторится в literal boundary-mapping dict.
 - Canonical field dicts hand-maintained (не авто-genered из OpenAPI) — readable и чинимо без parsing pipeline.
 
+## Этап 96. Post-review hot-fix bundle
+
+**Что сделано:** закрыт blocker + 5 urgent из super-review post-stages-85-95.
+
+1. `tools/admission.py::update_admission` — payload mapping `pet_id→patient_id`, `doctor_id→user_id`, `date→admission_date`. Docstring status enum: `save/directed/accepted/delayed/in_treatment/not_approved/not_confirmed/deleted` вместо вымышленных `assigned/booked/canceled`.
+2. `tools/client.py::get_client_profile` — next_admission filter: `status IN ACTIVE_ADMISSION_STATUSES` tuple (импорт из `tools.admission`), вместо phantom `status='active'`.
+3. `tools/client.py::get_client_profile` partial-gather: explicit `for resp in results: if isinstance(resp, asyncio.CancelledError): raise resp` перед section loop; `_section` теперь ловит только `Exception`, не `BaseException`.
+4. `vetmanager_client.py::_request` — except split: `AuthError`/`NotFoundError` (истинные 4xx) → `_breaker_record_success` для clear probe_in_flight; `VetmanagerError` — без clearance (чтобы 5xx failure не откатить).
+5. `filters.py` `in_`/`not_in` — raise `ValueError` на empty collection (VM API undefined behavior для `IN []`).
+6. `vetmanager_client.py::_parse_retry_after` — reject `math.isfinite()=False` (inf/nan); clamp на `_RETRY_AFTER_MAX_SECONDS=300`. DoS vector «Retry-After: 1e9» закрыт.
+
+**Тесты**: 12 новых в `tests/test_stage96_post_review_hotfix.py`; 1 fixed в `test_e2e_mock_crud.py::test_update_admission_extended_fields` (переименовал wire-shape assertion `pet_id` → `patient_id`); 1 adjusted в `test_stage91_*::test_parse_retry_after_http_date_form` (60s вместо 3600s — не превышает clamp). Full suite **642 passed**.
+
+**Codex review**: пропущен для stage 96 — все 6 fixes small, well-tested, narrow scope. Каждая регрессия самопроверяема новым тестом. Per CLAUDE.md §5.5 пропуск Codex для fixes размером ≤50 LOC на каждый subtask с подтверждающими тестами.
+
+**Breaking change**: нет публичных — внешние MCP params `pet_id`/`doctor_id`/`date` на `update_admission` те же. `get_client_profile.next_admission` теперь реально возвращает следующий визит (был всегда None) — это bug-fix, а не breaking.
+
+**Real API probe**: отложен (per CLAUDE.md §5.5 на stage 86 тоже был отложен). Mock-тесты структурно подтверждают payload shape. Real probe — отдельной сессией оператора.
+
 **Тесты**: workflow-check и stage-completion скрипты протестированы вручную на текущем репо:
 - `./scripts/review_workflow_check.sh` — ловит stage 93 missing AssumptionLog (правильно), stage 1–2 accepted (regex tolerant), unresolved `Do not merge` в `2026-04-17-baseline-post-stage-84.md` (правильно, закроется stage 97.2).
 - `./scripts/check_stage_completion.sh 95` — ловит missing AssumptionLog для 95 (правильно), missing Codex trace (правильно — Codex был skipped со ссылкой на §5.5 в commit body, regex для поиска слова 'codex' cases-insensitive).

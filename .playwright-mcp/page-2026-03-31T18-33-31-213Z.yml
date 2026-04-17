@@ -1,0 +1,124 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - generic "Vetmanager MCP" [ref=e5]: VM
+      - generic [ref=e6]:
+        - heading "Vetmanager MCP Service" [level=1] [ref=e7]
+        - paragraph [ref=e8]: Bearer-only gateway for clinic operations through AI clients
+    - generic "Открыть меню" [ref=e9] [cursor=pointer]
+  - generic [ref=e11]:
+    - generic [ref=e12]:
+      - paragraph [ref=e13]: Для ветклиник и врачей
+      - heading "Данные клиники и команды по запросу за секунды." [level=2] [ref=e14]
+      - paragraph [ref=e15]: "Сервис для ветврачей, администраторов и руководителей клиник помогает быстрее получать данные из Vetmanager через AI-ассистента: по клиентам, пациентам, приёмам, финансам и складу. Без ручного поиска по разделам и без передачи секретов клиники в каждое подключение."
+      - paragraph [ref=e16]: Сервис не сохраняет бизнес-данные из Vetmanager для постоянного хранения. Он хранит только технические данные интеграции и сервисные bearer-метаданные, необходимые для авторизации и работы MCP runtime.
+      - paragraph [ref=e17]: "Если выбран режим авторизации через Vetmanager login/password, логин и пароль Vetmanager не сохраняются: они нужны только для получения user token. При смене пароля в Vetmanager такой token может стать невалидным, и потребуется повторная авторизация."
+      - generic [ref=e18]:
+        - link "Зарегистрироваться" [ref=e19] [cursor=pointer]:
+          - /url: /register
+        - link "Посмотреть примеры" [ref=e20] [cursor=pointer]:
+          - /url: "#examples"
+      - paragraph [ref=e21]:
+        - text: Уже зарегистрированы?
+        - link "Войти в кабинет" [ref=e22] [cursor=pointer]:
+          - /url: /login
+    - generic [ref=e23]:
+      - generic [ref=e24]:
+        - strong [ref=e25]: Клиенты и пациенты
+        - generic [ref=e26]: Быстрый доступ к карточкам, истории и последним обращениям без ручной навигации по системе.
+      - generic [ref=e27]:
+        - strong [ref=e28]: Приёмы, финансы, склад
+        - generic [ref=e29]: Записи на сегодня, долги клиентов, выручка и остатки доступны через один AI-интерфейс.
+      - generic [ref=e30]:
+        - strong [ref=e31]: Безопасное подключение
+        - generic [ref=e32]: Интеграция подключается один раз на уровне аккаунта клиники, а доступ выдаётся через service token.
+  - generic [ref=e33]:
+    - heading "Что такое MCP?" [level=3] [ref=e34]
+    - paragraph [ref=e35]: "MCP (Model Context Protocol) — открытый стандарт, который позволяет AI-ассистентам безопасно подключаться к внешним системам. Этот сервис — MCP-мост к Vetmanager: ваша клиника подключается один раз, а дальше команда получает данные через привычный AI-интерфейс, без необходимости переключаться между экранами Vetmanager."
+  - generic [ref=e36]:
+    - article [ref=e37]:
+      - heading "Что получает клиника" [level=3] [ref=e38]
+      - paragraph [ref=e39]: "Сервис помогает быстрее отвечать на ежедневные вопросы клиники: кто записан на сегодня, какая история у пациента, есть ли долг у клиента, что осталось на складе и какие сотрудники свободны или загружены."
+      - list [ref=e40]:
+        - listitem [ref=e41]: Врач быстрее получает историю пациента, прививки, назначения и последние приёмы.
+        - listitem [ref=e42]: Администратор быстрее проверяет записи, клиентов, задолженности и расписание.
+        - listitem [ref=e43]: Руководитель быстрее смотрит финансы, склад и общую картину по клинике.
+        - listitem [ref=e44]: Доступ настраивается один раз, а дальше команда работает через AI-ассистента и service token.
+    - article [ref=e45]:
+      - heading "Для кого сервис" [level=3] [ref=e46]
+      - paragraph [ref=e47]: Сервис сделан для ветврачей, администраторов и руководителей клиник, которым нужен быстрый доступ к данным Vetmanager через AI-ассистента.
+      - list [ref=e48]:
+        - listitem [ref=e49]:
+          - strong [ref=e50]: "Ветврач:"
+          - text: история пациента, прививки, медицинские карты, последние визиты.
+        - listitem [ref=e51]:
+          - strong [ref=e52]: "Администратор:"
+          - text: записи, клиенты, контакты, сотрудники, задолженности.
+        - listitem [ref=e53]:
+          - strong [ref=e54]: "Руководитель:"
+          - text: финансы, склад, выручка, сотрудники и общая операционная картина.
+    - article [ref=e55]:
+      - heading "Как начать работу" [level=3] [ref=e56]
+      - generic [ref=e57]:
+        - paragraph [ref=e60]:
+          - strong [ref=e61]: Зарегистрироваться
+          - text: Создать аккаунт клиники и открыть личный кабинет.
+        - paragraph [ref=e64]:
+          - strong [ref=e65]: Подключить Vetmanager
+          - text: Указать домен клиники и настроить безопасную авторизацию один раз.
+        - paragraph [ref=e68]:
+          - strong [ref=e69]: Работать через AI-ассистента
+          - text: Задавать вопросы по клиентам, пациентам, приёмам, финансам и складу в одном интерфейсе.
+    - article [ref=e70]:
+      - heading "Какие вопросы можно задавать" [level=3] [ref=e71]
+      - paragraph [ref=e72]: Сервис рассчитан на повседневные вопросы, которые обычно требуют нескольких переходов по Vetmanager или помощи администратора.
+      - list [ref=e73]:
+        - listitem [ref=e74]: Покажи записи на сегодня и ближайшие приёмы по врачам.
+        - listitem [ref=e75]: Найди клиента и покажи историю обращений его питомца.
+        - listitem [ref=e76]: Какие пациенты давно не приходили на повторный приём?
+        - listitem [ref=e77]: Покажи должников и суммы задолженности.
+        - listitem [ref=e78]: Какие товары заканчиваются на складе?
+        - listitem [ref=e79]: Покажи выручку и последние оплаты.
+      - paragraph [ref=e80]: Регистрация вынесена в главный сценарий страницы, потому что именно с неё начинается настройка клиники и безопасного доступа команды.
+    - article [ref=e81]:
+      - heading "Технический блок" [level=3] [ref=e82]
+      - paragraph [ref=e83]: Для технической команды сервис остаётся совместимым с MCP-клиентами и использует bearer-only runtime, но эти детали не нужны для старта работы клиники и спрятаны ниже как вторичный слой страницы.
+      - paragraph [ref=e84]:
+        - text: "Формат подключения:"
+        - code [ref=e85]: "Authorization: Bearer <service_token>"
+        - text: .
+      - generic [ref=e86]: "{ \"mcpServers\": { \"vetmanager\": { \"url\": \"http://localhost:8000/mcp\", \"headers\": { \"Authorization\": \"Bearer vm_st_your_service_token\" } } } }"
+  - generic [ref=e87]:
+    - heading "Часто задаваемые вопросы" [level=3] [ref=e88]
+    - group [ref=e89]:
+      - generic "Какие данные сохраняются на сервисе?" [ref=e90] [cursor=pointer]
+    - group [ref=e91]:
+      - generic "Чем это отличается от прямого использования Vetmanager API?" [ref=e92] [cursor=pointer]
+    - group [ref=e93]:
+      - generic "Безопасно ли это?" [ref=e94] [cursor=pointer]
+  - generic [ref=e95]:
+    - heading "Готовы начать?" [level=3] [ref=e96]
+    - paragraph [ref=e97]: Регистрация занимает пару минут. Подключите AI-ассистента к данным вашей клиники уже сегодня.
+    - generic [ref=e98]:
+      - link "Создать аккаунт" [ref=e99] [cursor=pointer]:
+        - /url: /register
+      - link "Войти" [ref=e100] [cursor=pointer]:
+        - /url: /login
+  - contentinfo [ref=e101]:
+    - generic [ref=e102]:
+      - strong [ref=e103]: Vetmanager MCP Service
+      - paragraph [ref=e104]: AI-ассистент для ветеринарных клиник
+    - navigation [ref=e105]:
+      - link "Регистрация" [ref=e106] [cursor=pointer]:
+        - /url: /register
+      - link "Вход" [ref=e107] [cursor=pointer]:
+        - /url: /login
+      - link "FAQ" [ref=e108] [cursor=pointer]:
+        - /url: "#faq"
+      - link "Поддержка" [ref=e109] [cursor=pointer]:
+        - /url: mailto:support@vetmanager.cloud
+    - generic [ref=e110]:
+      - paragraph [ref=e111]: © 2025 Vetmanager MCP
+      - paragraph [ref=e112]:
+        - link "Политика конфиденциальности" [ref=e113] [cursor=pointer]:
+          - /url: "#"

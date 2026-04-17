@@ -1418,20 +1418,21 @@ Baseline super-review 2026-04-17 (`artifacts/review/2026-04-17-baseline-post-sta
 
 ---
 
-## Этап 96. Post-review hot-fix bundle (blocker + urgent) — `todo`
+## Этап 96. Post-review hot-fix bundle (blocker + urgent) — `done`
 
 Источник: `artifacts/review/2026-04-17-post-stages-85-95.md` top-10.
 
 Цель: закрыть blocker + 5 urgent findings, которые не требуют широкого рефактора.
 
-- 96.1 `update_admission` payload mapping: `doctor_id`→`user_id`, `date`→`admission_date`, `pet_id`→`patient_id` (то же что stage 86 сделал для create_admission); docstring status enum — `save/directed/accepted/delayed/in_treatment/not_approved/not_confirmed/deleted` вместо вымышленных `assigned/booked/canceled`; regression тест `test_update_admission_maps_fields_to_api_contract` — `todo` (blocker)
-- 96.2 `tools/client.py::get_client_profile` next_admission filter: заменить `{"property": "status", "value": "active"}` на IN-tuple `ACTIVE_ADMISSION_STATUSES` (вынести константу в shared module); regression тест на URL-filter — `todo`
-- 96.3 `tools/client.py::get_client_profile` partial-gather: заменить `isinstance(resp, BaseException)` на `isinstance(resp, Exception)` чтобы не глотать `asyncio.CancelledError` (или explicit re-raise для CancelledError перед общей веткой); test на cancellation propagation — `todo`
-- 96.4 `vetmanager_client.py::_request`: в `except (AuthError, NotFoundError, VetmanagerError)` ветке вызвать `_breaker_record_success(domain_key)` — 4xx/non-5xx VetmanagerError означает upstream жив, probe_in_flight не должен залипнуть; regression тест `test_half_open_probe_with_404_clears_probe_in_flight` — `todo`
-- 96.5 `filters.py::in_` и `not_in`: reject empty list/tuple с `ValueError` (сейчас шлёт `IN []` — undefined behavior на VM) — `todo`
-- 96.6 `vetmanager_client.py::_parse_retry_after`: reject non-finite floats через `math.isfinite()` + clamp на max (например 300s); regression тест `test_retry_after_inf_rejected` — `todo`
+- 96.1 `update_admission` payload mapping + docstring enum fix — `done`
+- 96.2 `get_client_profile` next_admission `status IN ACTIVE_ADMISSION_STATUSES` — `done`
+- 96.3 Partial-gather `isinstance(..., Exception)` + explicit `CancelledError` re-raise — `done`
+- 96.4 Breaker 4xx (AuthError/NotFoundError) → `_breaker_record_success` для clearance `probe_in_flight`; VetmanagerError не undo'ит 5xx failure — `done`
+- 96.5 `filters.in_`/`not_in` reject empty list с `ValueError` — `done`
+- 96.6 `_parse_retry_after` reject non-finite + clamp на 300s — `done`
+- 96.7 12 новых тестов в `tests/test_stage96_post_review_hotfix.py` + 1 fixed test в `test_e2e_mock_crud.py` (patient_id wire shape) — `done`
 
-Acceptance: full suite зелёный; update_admission проверен на real API в devtr6 (+ get_medical_cards_by_client_id для 3-питомцевого клиента закрытием stage 86 deferred probe).
+Full suite: 611 → **642 passed** (+31).
 
 ## Этап 97. Docs + workflow compliance backfill — `todo`
 

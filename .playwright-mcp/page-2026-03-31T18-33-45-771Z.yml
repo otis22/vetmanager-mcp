@@ -1,0 +1,75 @@
+- main [ref=e2]:
+  - heading "Личный кабинет" [level=1] [ref=e3]
+  - paragraph [ref=e4]:
+    - text: Вы вошли как
+    - strong [ref=e5]: review-test@example.com
+    - text: . Здесь вы подключаете Vetmanager клиники, проверяете статус интеграции и выпускаете Bearer-токены для работы AI-ассистента.
+  - generic [ref=e6]:
+    - strong [ref=e7]: Сначала подключите Vetmanager
+    - paragraph [ref=e8]: "После регистрации следующий шаг один: выбрать способ авторизации, подключить клинику и только потом выпускать Bearer-токены для AI-ассистента."
+  - generic [ref=e9]:
+    - text: Privacy и auth transparency
+    - paragraph [ref=e10]: Сервис не сохраняет бизнес-данные Vetmanager для постоянного хранения. Хранятся только технические данные интеграции и service bearer metadata, необходимые для авторизации и работы MCP runtime.
+    - paragraph [ref=e11]: "логин и пароль Vetmanager не сохраняются: они используются только для получения user token. при смене пароля в Vetmanager сохранённый user token может стать невалидным, и тогда потребуется повторная авторизация."
+  - generic [ref=e12]:
+    - generic [ref=e13]:
+      - text: Статус аккаунта
+      - strong [ref=e14]: active
+    - generic [ref=e15]:
+      - text: Активные интеграции
+      - strong [ref=e16]: "0"
+    - generic [ref=e17]:
+      - text: Bearer-токены
+      - strong [ref=e18]: "0"
+  - heading "Vetmanager integration" [level=2] [ref=e19]
+  - paragraph [ref=e20]: Активная Vetmanager integration ещё не настроена. Следующий Bearer-токен этого account пока не сможет резолвить clinic credentials.
+  - generic [ref=e21]:
+    - generic [ref=e22]:
+      - strong [ref=e23]: Выберите способ авторизации Vetmanager
+      - paragraph [ref=e24]: Сначала выберите удобный способ подключения. Мы покажем только нужные поля для следующего шага.
+      - generic [ref=e25]:
+        - generic [ref=e26]:
+          - generic [ref=e27]:
+            - radio "Подключить по API key Подходит, если у вас уже есть рабочий Vetmanager REST API key и нужно быстро подключить клинику." [checked] [ref=e28]
+            - strong [ref=e29]: Подключить по API key
+          - paragraph [ref=e30]: Подходит, если у вас уже есть рабочий Vetmanager REST API key и нужно быстро подключить клинику.
+        - generic [ref=e31]:
+          - generic [ref=e32]:
+            - radio "Подключить по логину и паролю Используйте этот вариант, если сервис должен сам получить user token через login/password и дальше хранить только токен." [ref=e33]
+            - strong [ref=e34]: Подключить по логину и паролю
+          - paragraph [ref=e35]: Используйте этот вариант, если сервис должен сам получить user token через login/password и дальше хранить только токен.
+    - generic [ref=e36]:
+      - strong [ref=e37]: Шаг 2. Данные клиники для API key
+      - generic [ref=e38]:
+        - text: Clinic domain
+        - textbox "Clinic domain" [ref=e39]:
+          - /placeholder: myclinic
+      - generic [ref=e40]:
+        - text: Vetmanager REST API key
+        - textbox "Vetmanager REST API key" [ref=e41]:
+          - /placeholder: API key
+      - paragraph [ref=e42]: Этот вариант не требует логин и пароль пользователя Vetmanager. Достаточно домена клиники и REST API key.
+    - generic [ref=e43]:
+      - button "Сохранить подключение" [ref=e44] [cursor=pointer]
+      - button "Переавторизоваться и обновить токен" [ref=e45] [cursor=pointer]
+  - heading "Bearer token issuance" [level=2] [ref=e46]
+  - paragraph [ref=e47]: Сначала сохраните активную Vetmanager integration, затем можно выпускать Bearer-токены.
+  - generic [ref=e48]:
+    - generic [ref=e49]:
+      - text: Token name
+      - textbox "Token name" [disabled] [ref=e50]:
+        - /placeholder: Cursor production
+    - generic [ref=e51]:
+      - text: Expires in days
+      - spinbutton "Expires in days" [disabled] [ref=e52]
+    - button "Выпустить Bearer token" [disabled] [ref=e53] [cursor=pointer]
+  - heading "Current tokens" [level=2] [ref=e54]
+  - paragraph [ref=e55]: В списке показываются только безопасные поля. Raw token после создания больше не доступен.
+  - paragraph [ref=e56]: Токенов пока нет.
+  - paragraph [ref=e57]:
+    - text: Текущий MCP runtime использует только
+    - code [ref=e58]: "Authorization: Bearer <service_token>"
+    - text: . Этот web account уже стал источником регистрации, интеграции и выпуска токенов; следующим шагом здесь появится полноценный token list UI.
+  - button "Выйти" [ref=e60] [cursor=pointer]
+  - link "На лендинг" [ref=e62] [cursor=pointer]:
+    - /url: /

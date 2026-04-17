@@ -345,6 +345,10 @@ def register(mcp: FastMCP) -> None:
     ) -> dict:
         """Update an existing admission (appointment) record.
 
+        External param names follow MCP conventions; payload fields are mapped
+        to Vetmanager API names (user_id / admission_date / patient_id) at the
+        boundary. Same pattern as create_admission (stage 86).
+
         Note: Vetmanager API does not allow deleting admissions via REST.
 
         Args:
@@ -354,19 +358,20 @@ def register(mcp: FastMCP) -> None:
             client_id: New client ID (0 = no change).
             pet_id: New pet ID (0 = no change).
             reason: Updated reason for the visit.
-            status: New status value (e.g. 'assigned', 'accepted', 'booked', 'canceled').
+            status: New status (one of: save, directed, accepted, delayed,
+                in_treatment, not_approved, not_confirmed, deleted).
             clinic_id: New clinic ID (0 = no change).
             type: Admission type (leave empty to keep current).
         """
         payload: dict = {}
         if date:
-            payload["date"] = date
+            payload["admission_date"] = date
         if doctor_id:
-            payload["doctor_id"] = doctor_id
+            payload["user_id"] = doctor_id
         if client_id:
             payload["client_id"] = client_id
         if pet_id:
-            payload["pet_id"] = pet_id
+            payload["patient_id"] = pet_id
         if reason:
             payload["reason"] = reason
         if status:

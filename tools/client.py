@@ -373,15 +373,27 @@ def register(mcp: FastMCP) -> None:
 
         vc = VetmanagerClient()
 
+        # Lazy import to avoid circular dep (tools.admission imports client
+        # transitively via schedule). ACTIVE_ADMISSION_STATUSES is the canonical
+        # tuple of enum values that represent a real upcoming/in-progress visit.
+        from tools.admission import ACTIVE_ADMISSION_STATUSES
+
         client_id_str = str(client_id)
         client_filter = _json.dumps(
             [{"property": "client_id", "value": client_id_str}],
             separators=(",", ":"),
         )
+        # Stage 96.2: 'active' was a phantom enum value — admission.status has no
+        # such value. Use IN-filter with the canonical active-status tuple so
+        # next_admission returns real upcoming visits instead of always None.
         next_filter = _json.dumps(
             [
                 {"property": "client_id", "value": client_id_str},
-                {"property": "status", "value": "active"},
+                {
+                    "property": "status",
+                    "value": list(ACTIVE_ADMISSION_STATUSES),
+                    "operator": "IN",
+                },
             ],
             separators=(",", ":"),
         )
@@ -411,8 +423,19 @@ def register(mcp: FastMCP) -> None:
         client_data_resp, invoices_resp, admissions_resp, next_admission_resp = results
         section_errors: dict[str, str] = {}
 
+        # Stage 96.3: CancelledError is BaseException, not Exception. When a
+        # client disconnects or the server shuts down, gather(return_exceptions=
+        # True) surfaces CancelledError in results — converting it to partial:
+        # True instead of re-raising breaks cooperative cancellation.
+        for resp in results:
+            if isinstance(resp, _asyncio.CancelledError):
+                raise resp
+
         def _section(resp, section_name: str, shape: dict):
-            if isinstance(resp, BaseException):
+            # Only Exception subclasses (not BaseException) are swallowed
+            # as section failures — keeps CancelledError / KeyboardInterrupt
+            # propagating as intended.
+            if isinstance(resp, Exception):
                 section_errors[section_name] = f"{type(resp).__name__}: {resp}"
                 return shape
             return resp

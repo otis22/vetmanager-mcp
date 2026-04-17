@@ -67,15 +67,16 @@ def test_parse_retry_after_rejects_empty_or_none():
 
 
 def test_parse_retry_after_http_date_form():
-    # One hour from now.
+    # 60 seconds from now. Stage 96.6 clamps Retry-After at 300s max to
+    # prevent DoS via 'Retry-After: 1e9', so we use a sub-clamp value.
     import email.utils
     import datetime as dt
-    future = dt.datetime.now(tz=dt.timezone.utc) + dt.timedelta(hours=1)
+    future = dt.datetime.now(tz=dt.timezone.utc) + dt.timedelta(seconds=60)
     header = email.utils.format_datetime(future)
     parsed = _parse_retry_after(header)
     assert parsed is not None
-    # Allow ±2 seconds for scheduling drift.
-    assert 3598 <= parsed <= 3602
+    # Allow ±5 seconds for scheduling drift on loaded CI hosts.
+    assert 55 <= parsed <= 65
 
 
 # ── _backoff_seconds ────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ import logging
 import asyncio
 import email.utils
 import hashlib
+import math
 import random
 import time
 import uuid
@@ -221,6 +222,9 @@ async def _breaker_record_failure(domain: str) -> None:
 # ── Backoff helpers ─────────────────────────────────────────────────────────
 
 
+_RETRY_AFTER_MAX_SECONDS = 300.0  # hard cap to prevent DoS via 'Retry-After: 1e9'
+
+
 def _parse_retry_after(header_value: str | None) -> float | None:
     if not header_value:
         return None
@@ -228,7 +232,10 @@ def _parse_retry_after(header_value: str | None) -> float | None:
     # Integer seconds form.
     try:
         seconds = float(header_value)
-        return max(0.0, seconds)
+        # Stage 96.6: reject non-finite (inf/nan) and clamp to sane max.
+        if not math.isfinite(seconds):
+            return None
+        return max(0.0, min(seconds, _RETRY_AFTER_MAX_SECONDS))
     except ValueError:
         pass
     # HTTP-date form (RFC 7231).
@@ -239,7 +246,9 @@ def _parse_retry_after(header_value: str | None) -> float | None:
         import datetime as _dt
         now = _dt.datetime.now(tz=parsed_dt.tzinfo or _dt.timezone.utc)
         delta = (parsed_dt - now).total_seconds()
-        return max(0.0, delta)
+        if not math.isfinite(delta):
+            return None
+        return max(0.0, min(delta, _RETRY_AFTER_MAX_SECONDS))
     except Exception:
         return None
 
@@ -512,9 +521,18 @@ class VetmanagerClient:
                 )
                 await _breaker_record_failure(domain_key)
                 raise VetmanagerTimeoutError(f"Request to {url} timed out") from exc
-            except (AuthError, NotFoundError, VetmanagerError):
-                # Upstream 4xx and VetmanagerError do not count as breaker
-                # failures — they reflect client-side issues, not upstream health.
+            except (AuthError, NotFoundError):
+                # True 4xx (401/403/404) — upstream is alive, just rejected
+                # the request. During HALF_OPEN probe this MUST clear
+                # probe_in_flight, otherwise the breaker wedges (stage 96.4).
+                # Also records success in CLOSED state — harmless (counter
+                # was already zero).
+                await _breaker_record_success(domain_key)
+                raise
+            except VetmanagerError:
+                # VetmanagerError covers both 5xx (upstream unhealthy — already
+                # recorded as failure above) and non-HTTP VM errors. Do NOT
+                # undo the failure counter by recording success here.
                 raise
             except httpx.RequestError as exc:
                 elapsed = time.monotonic() - started

@@ -394,20 +394,24 @@ async def test_update_pet_extended_fields():
 @pytest.mark.asyncio
 @respx.mock
 async def test_update_admission_extended_fields():
+    # Stage 96.1: update_admission now maps external pet_id/doctor_id/date
+    # to canonical VM API names (patient_id/user_id/admission_date). Only
+    # client_id and clinic_id keep their literal keys; pet_id is translated.
     billing_mock()
     route = respx.put(f"{BASE}/rest/api/admission/1").mock(
         return_value=httpx.Response(200, json={"data": {"id": 1}})
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
-        result = await mcp.call_tool("update_admission", {
+        await mcp.call_tool("update_admission", {
             "admission_id": 1, "client_id": 10, "pet_id": 5,
             "clinic_id": 2, "type": "first_visit",
         })
     assert route.called
     body = route.calls.last.request.content
     assert b'"client_id"' in body
-    assert b'"pet_id"' in body
+    assert b'"patient_id"' in body  # was "pet_id" before stage 96.1
+    assert b'"pet_id"' not in body
     assert b'"clinic_id"' in body
     assert b'"type"' in body
 
