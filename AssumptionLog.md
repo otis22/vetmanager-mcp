@@ -3858,13 +3858,16 @@ Full suite: 596 passed.
 - Pre-return checklists как markdown секции, не как программная валидация — субагент читает свой системный промпт, чеклист становится частью instructions. ROI высокий (дешёвое улучшение качества findings), regression-risk нулевой.
 - Stage workflow template в `docs/`, не в CLAUDE.md — CLAUDE.md остаётся на high-level правилах; чеклист slow to read, separate place.
 
-**Отложено в этап 104b (future session):**
-- 104.2 Pre-commit hook для AssumptionLog — требует `pre-commit` framework setup, user-env specific.
-- 104.3 Field-mapping CI lint (должен был поймать `update_admission` bug) — требует parsing authoritative field dict из `api-research-notes-ru.md` + AST-based payload scanning.
-- 104.4 Phantom enum value lint (должен был поймать `status='active'`) — similar infrastructure, needs canonical enum source.
-- 104.5 Baseline/super-review resolution tracker — Python tooling для automated update review artifacts при закрытии findings.
+**Все ранее отложенные подзадачи 104.2/3/4/5 выполнены в том же этапе (2026-04-17 follow-up commit):**
 
-Эти — high-value, но требуют отдельного focused этапа с careful tooling design. Приоритет: 104.3 (самый высокий импакт, больше всего root-cause bugs был найден).
+- **104.2 git hooks** (`scripts/install_git_hooks.sh`): commit-msg блокирует commits с prefix'ом `Stage N:` без `## Этап N` в AssumptionLog (точно тот пропуск который случился на stages 92-95); pre-commit запускает `lint_api_contracts.py` на staged `tools/*.py` + `prompts.py`, блокирует high/blocker. Операторский opt-in — run installer один раз после clone.
+- **104.3 field-mapping lint** (`scripts/lint_api_contracts.py`): AST-сканирование, canonical field dicts per entity (admission/pet/client/invoice/medicalcards/timesheet), phantom field registry per-entity (pet.client_id → owner_id, admission.pet_id → patient_id, admission.doctor_id → user_id, admission.date → admission_date, medicalcards.pet_id → patient_id for CRUD filter, timesheet.user_id → doctor_id). Ловит payload keys в `crud_create/update/post/put` и filter properties в `vc.get(params={"filter": json.dumps([...])})`. Exit 1 на high/blocker. Synthetic test: 5/5 known-bad patterns детектится.
+- **104.4 phantom enum lint** — часть 104.3 (`STATUS_ENUMS` per entity). `{"property": "status", "value": "X"}` с X вне enum'а → high finding.
+- **104.5 resolution tracker** (`scripts/update_review_status.py`): сканирует `artifacts/review/*.md` на активный `Do not merge` без `## Resolution` или `Verdict superseded`; `--yaml` emits workflow-check-compatible findings; `--auto-stub` вставляет skeleton; парсит `@resolves review:path[#finding-id]` trailers. Применён к baseline-review-2026-04-17 — заполнена таблица на 19 findings (14 resolved / 4 partial / 5 deferred с ссылками на closing commits).
+
+**Архитектурные ограничения**:
+- Lint использует AST и ловит только literal dict payloads. Non-literal payloads (`if reason: payload["reason"] = reason`) не детектятся статически — пример `update_admission` с условным build'ом. Lint станет эффективным для этого паттерна после stage 96.1 когда payload рефакторится в literal boundary-mapping dict.
+- Canonical field dicts hand-maintained (не авто-genered из OpenAPI) — readable и чинимо без parsing pipeline.
 
 **Тесты**: workflow-check и stage-completion скрипты протестированы вручную на текущем репо:
 - `./scripts/review_workflow_check.sh` — ловит stage 93 missing AssumptionLog (правильно), stage 1–2 accepted (regex tolerant), unresolved `Do not merge` в `2026-04-17-baseline-post-stage-84.md` (правильно, закроется stage 97.2).
