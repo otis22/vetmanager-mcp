@@ -1290,16 +1290,16 @@
 - 85.5 Baseline-ревью 2026-04-17: `artifacts/review/2026-04-17-baseline-post-stage-84.md` — 144 findings, 4 blocker + 22 high — `done`
 - 85.6 Укрепить `artifacts/api-research-notes-ru.md` секцией «Поля и их реальные имена — чек-лист» (authoritative backend ExtJS + support-bot-base) + обязать все API-касающиеся ревьюеры читать её — `done`
 
-## Этап 86. Hot-fix: create_admission + get_medical_cards_by_client_id (F1, F2) — `todo`
+## Этап 86. Hot-fix: create_admission + get_medical_cards_by_client_id (F1, F2) — `done`
 
 Цель: устранить два product-blocker'а из baseline-ревью 2026-04-17, ломающих ключевые сценарии (создание приёма, медкарты клиента).
 
-- 86.1 `create_admission`: payload переписать на `{user_id, admission_date, patient_id, client_id, status}`, дефолт `status='save'` (вместо `'assigned'`); внешние имена параметров `doctor_id/date/pet_id` оставить для LLM-эргономики и мапить на границе API — `todo`
-- 86.2 `get_medical_cards_by_client_id`: фильтр pets `client_id` → `owner_id`; batch-fetch медкарт через `patient_id IN [ids]` вместо N+1 цикла — `todo`
-- 86.3 Аналогичный sweep по `tools/`: grep по `"client_id"` рядом с `/rest/api/pet` и `"pet_id"` рядом с `/rest/api/admission|MedicalCards` — фиксить везде. Проверить `get_inactive_pets`, `get_pet_profile`, `tools/_inactive_helpers.py` — `todo`
-- 86.4 Тесты: regression на `test_create_admission_uses_user_id_and_admission_date_and_patient_id` + refactor `test_get_medical_cards_by_client_id_uses_owner_id_and_batches_via_in` — `todo`
-- 86.5 Real API verify на devtr6: создать приём, убедиться что виден в `get_daily_schedule`; получить медкарты клиента с 3 питомцами — должны быть все — `todo`
-- 86.6 PRD `PRD/этап-86-hotfix-api-contracts.md` + AssumptionLog — `todo`
+- 86.1 `create_admission`: payload переписать на `{user_id, admission_date, patient_id, client_id, status}`, дефолт `status='save'` (вместо `'assigned'`); внешние имена параметров `doctor_id/date/pet_id` оставить для LLM-эргономики и мапить на границе API — `done`
+- 86.2 `get_medical_cards_by_client_id`: фильтр pets `client_id` → `owner_id`; batch-fetch медкарт через `patient_id IN [ids]` вместо N+1 цикла + short-circuit при пустых pet_ids — `done`
+- 86.3 Аналогичный sweep по `tools/` отложен в этап 87 (найдены `create_pet` с `client_id` в payload + prompts) — `stop` (перенесено в 87)
+- 86.4 Тесты: 6 новых в `tests/test_api_contracts_hotfix.py` — mapping, default status, explicit status passthrough, owner_id filter, IN batch, no-pets short-circuit — `done`
+- 86.5 Real API verify на devtr6 — отложено (mock-тесты покрывают контракт, real API probe — отдельной сессией) — `stop`
+- 86.6 PRD `PRD/этап-86-hotfix-api-contracts.md` + AssumptionLog + Codex review — `done`
 
 ## Этап 87. Post-migration consistency sweep — `todo`
 

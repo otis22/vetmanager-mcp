@@ -302,9 +302,13 @@ def register(mcp: FastMCP) -> None:
         doctor_id: int,
         date: str,
         reason: str = "",
-        status: str = "assigned",
+        status: str = "save",
     ) -> dict:
         """Schedule a new admission (appointment) for a pet.
+
+        External param names follow MCP conventions (pet_id / doctor_id / date);
+        this tool translates them to the Vetmanager API field names
+        (patient_id / user_id / admission_date) at the boundary.
 
         Args:
             pet_id: ID of the pet being admitted.
@@ -312,13 +316,15 @@ def register(mcp: FastMCP) -> None:
             doctor_id: ID of the attending veterinarian.
             date: Appointment date/time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS).
             reason: Reason for the visit (optional).
-            status: Admission status: 'assigned' (default), 'booked', 'accepted'.
+            status: Admission status (default 'save'). Valid values per
+                Vetmanager enum: save, directed, accepted, delayed,
+                in_treatment, not_approved, not_confirmed, deleted.
         """
         payload: dict = {
-            "pet_id": pet_id,
+            "patient_id": pet_id,
             "client_id": client_id,
-            "doctor_id": doctor_id,
-            "date": date,
+            "user_id": doctor_id,
+            "admission_date": date,
             "status": status,
         }
         if reason:

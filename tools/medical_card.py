@@ -76,8 +76,10 @@ def register(mcp: FastMCP) -> None:
         vc = VetmanagerClient()
 
         # Step 1: get all pets of the client.
+        # Pet entity FK to client is `owner_id` (migrated stage 77.4;
+        # legacy `client_id` filter returns empty silently).
         pet_filter = json.dumps(
-            [{"property": "client_id", "value": str(client_id), "operator": "="}],
+            [{"property": "owner_id", "value": str(client_id), "operator": "="}],
             separators=(",", ":"),
         )
         pets_resp = await vc.get("/rest/api/pet", params={"filter": pet_filter, "limit": 100})
@@ -93,37 +95,47 @@ def register(mcp: FastMCP) -> None:
                 "message": "No pets found for this client.",
             }
 
-        # Step 2: for each pet get medical cards via patient_id filter.
-        all_cards: list[dict] = []
-        for pet in pets:
-            pet_id = pet.get("id")
-            if not pet_id:
-                continue
-            mc_filter = json.dumps(
-                [{"property": "patient_id", "value": str(pet_id), "operator": "="}],
-                separators=(",", ":"),
+        # Step 2: fetch medical cards for ALL pets in a single IN-batched call.
+        pet_ids = [pet.get("id") for pet in pets if pet.get("id")]
+        pet_by_id = {pet.get("id"): pet for pet in pets if pet.get("id")}
+
+        if not pet_ids:
+            # Pets returned without usable ids — treat as no medical cards.
+            return {
+                "success": True,
+                "client_id": client_id,
+                "pets_count": len(pets),
+                "medical_cards_count": 0,
+                "medical_cards": [],
+            }
+
+        mc_filter = json.dumps(
+            [{"property": "patient_id", "value": pet_ids, "operator": "IN"}],
+            separators=(",", ":"),
+        )
+        params = build_list_query_params(
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=None,
+        )
+        params["filter"] = mc_filter
+        cards_resp = await vc.get(_MC_ENDPOINT, params=params)
+        cards_data = cards_resp.get("data", {})
+        if isinstance(cards_data, dict):
+            all_cards = (
+                cards_data.get(_MC_KEY)
+                or cards_data.get("medicalcards")
+                or []
             )
-            params = build_list_query_params(
-                limit=limit,
-                offset=offset,
-                sort=sort,
-                filters=None,
-            )
-            params["filter"] = mc_filter
-            cards_resp = await vc.get(_MC_ENDPOINT, params=params)
-            cards_data = cards_resp.get("data", {})
-            if isinstance(cards_data, dict):
-                cards = (
-                    cards_data.get(_MC_KEY)
-                    or cards_data.get("medicalcards")
-                    or []
-                )
-            else:
-                cards = []
-            for card in cards:
-                card["_pet_alias"] = pet.get("alias") or pet.get("name") or str(pet_id)
-                card["_pet_id"] = pet_id
-            all_cards.extend(cards)
+        else:
+            all_cards = []
+        for card in all_cards:
+            pid = card.get("patient_id")
+            pet = pet_by_id.get(pid) or pet_by_id.get(int(pid) if isinstance(pid, str) and pid.isdigit() else pid)
+            if pet:
+                card["_pet_alias"] = pet.get("alias") or pet.get("name") or str(pid)
+                card["_pet_id"] = pid
 
         return {
             "success": True,

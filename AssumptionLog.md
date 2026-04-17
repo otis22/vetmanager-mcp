@@ -3647,3 +3647,45 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 **Codex-ревью**: пропущен — тривиальное перекладывание фильтра с клиента на API, покрыто обновлёнными тестами (2 теста проверяют filter содержит `status IN` и правильный value). Risk низкий.
 
 **Breaking change**: поле `filtered_from_total` убрано из ответа. Если кто-то (LLM или другой клиент) на него полагался — сломается. На момент этапа 84 вероятность нулевая: stage 81 был коммичен всего 2 commita назад, вне production.
+
+## Этап 85. Super-review infrastructure (deep-review skill)
+
+**Что сделано:**
+Создана инфраструктура для периодического многопланового ревью: 10 subagent'ов (code, architecture, docs, security, performance-and-reliability, observability, tests, product, codex-blindspot, aggregator) в `.claude/agents/`, skill `/super-review` в `.claude/commands/super-review.md`, `scripts/review_workflow_check.sh` для механических проверок. Baseline-ревью post-stage-84 (`artifacts/review/2026-04-17-baseline-post-stage-84.md`) — 144 findings, 4 blocker + 22 high, сформировал бэклог этапов 86-95.
+
+**Архитектурные решения:**
+- Codex-интеграция на трёх уровнях: (1) opt-in escalation у каждого reviewer'а для спорных findings (confidence 0.4-0.7), до 2 вызовов на агента; (2) `reviewer-codex-blindspot` — один параллельный Codex-пробег с анти-correlation промптом; (3) финальный arbitration на top-10. Снижает sandbox-failure rate по сравнению с «Codex везде».
+- Aggregator как отдельный subagent — дедуплицирует, ранжирует, выдаёт Verdict.
+- Scope: `changed` (default), `related`, `full`, `stage:N`.
+- `scripts/review_workflow_check.sh` — bash для механических проверок (PRD, Roadmap, AssumptionLog, diff size ≤150 LOC). YAML-формат findings того же contract'а.
+
+**Lesson learned — baseline ревью пропустил `pet_id → patient_id` в suggested_fix:**
+- Reviewer `product` и Codex arbitration согласованно предложили неверный payload для `create_admission` (с `pet_id`, должно быть `patient_id`). Причина: в промпте Codex'у это было задекларировано как «verified API fact» без cross-check с authoritative backend.
+- Mitigation: добавлена секция «Поля и их реальные имена — чек-лист» в `artifacts/api-research-notes-ru.md` с таблицей real API field names и canonical payload. Все API-касающиеся агенты обязаны читать чеклист; skill передаёт полный блок inline в промпт каждого агента И Codex-arbitration.
+
+## Этап 86. Hot-fix create_admission + get_medical_cards_by_client_id
+
+**Что сделано:**
+Починил два product-blocker'а F1/F2 из baseline-ревью:
+
+1. `tools/admission.py::create_admission` — payload мапится с MCP-имён (pet_id/doctor_id/date) на API-имена (patient_id/user_id/admission_date). Default `status='save'` (был `'assigned'` — нет в enum `save/directed/accepted/delayed/in_treatment/not_approved/not_confirmed/deleted`).
+2. `tools/medical_card.py::get_medical_cards_by_client_id` — фильтр pets `client_id` → `owner_id` (Pet FK с stage 77.4). Медкарты через `patient_id IN [pet_ids]` вместо N+1 цикла (паттерн stage 82/83).
+
+**Архитектурные решения:**
+- **Boundary mapping стратегия**: внешние MCP-параметры остались `pet_id`/`doctor_id`/`date` — для LLM-эргономики (миграция имён наружу — breaking change для клиентов, которые могут знать их по устоявшейся семантике). Мэппинг на API-поля — в одном месте, на границе API.
+- **Short-circuit для пустого pet_ids**: если после фильтра pet_ids пуст — возвращаем сразу `medical_cards_count=0` без запроса `IN []` (undefined behavior по документации API).
+
+**Codex-ревью (1 итерация, 3 warnings):**
+- W1 `payload[reason] = reason` как dynamic key → **false positive**: синтаксис `payload["reason"] = reason` — string-литерал. Тест `test_create_admission_maps_fields_to_api_contract` проверяет `body["reason"] == "checkup"` и проходит. Отклонено.
+- W2 `limit: 100` на pet-запросе обрезает пет'ов для 100+ питомцев → **out of scope**: pre-existing поведение (было до этапа 86). Клиент с 100+ питомцами в ветклинике — экзотика. Отклонено с документированием.
+- W3 `patient_id IN []` при empty pet_ids → **адекватно**, исправлено (short-circuit).
+
+**Тесты**: 6 новых в `tests/test_api_contracts_hotfix.py`: mapping полей, default 'save', explicit status passthrough, owner_id filter, IN-batch на 3 питомцах (ровно 1 запрос), no-pets short-circuit. Full suite: 569 passed.
+
+**Real API verify**: отложено в отдельную сессию — mock-тесты покрывают контрактные утверждения; реальный probe на devtr6 желателен, но не блокер merge (API-поля авторитативно подтверждены против `vetmanager-extjs/application/src/Entity/Admission.php:57-74`).
+
+**Breaking change**: нет — внешний контракт tools не изменился. Поведение (корректное создание приёма, корректные медкарты) исправлено — bug-fix.
+
+**Перенесено в этап 87:**
+- `tools/pet.py::create_pet` payload использует `client_id` вместо `owner_id` (аналогичный баг, найден при аудите).
+- `prompts.py` prompts ссылаются на legacy параметры (`book-appointment`, `unconfirmed_appointments`, `unpaid_invoices`, `client_no_visit`).
