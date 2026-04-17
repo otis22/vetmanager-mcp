@@ -386,36 +386,55 @@ def register(mcp: FastMCP) -> None:
             separators=(",", ":"),
         )
 
-        client_data_resp, invoices_resp, admissions_resp, next_admission_resp = (
-            await _asyncio.gather(
-                vc.get(f"/rest/api/client/{client_id}"),
-                vc.get("/rest/api/invoice", params={
-                    "filter": client_filter,
-                    "sort": _json.dumps([{"property": "id", "direction": "DESC"}], separators=(",", ":")),
-                    "limit": 5,
-                }),
-                vc.get("/rest/api/admission", params={
-                    "filter": client_filter,
-                    "sort": _json.dumps([{"property": "admission_date", "direction": "DESC"}], separators=(",", ":")),
-                    "limit": 5,
-                }),
-                vc.get("/rest/api/admission", params={
-                    "filter": next_filter,
-                    "sort": _json.dumps([{"property": "admission_date", "direction": "ASC"}], separators=(",", ":")),
-                    "limit": 1,
-                }),
-            )
+        # Partial-failure tolerance: if one section (e.g. /admission) returns
+        # 5xx, the other 3 still populate. return_exceptions keeps results
+        # positional and lets us inspect each slot independently.
+        results = await _asyncio.gather(
+            vc.get(f"/rest/api/client/{client_id}"),
+            vc.get("/rest/api/invoice", params={
+                "filter": client_filter,
+                "sort": _json.dumps([{"property": "id", "direction": "DESC"}], separators=(",", ":")),
+                "limit": 5,
+            }),
+            vc.get("/rest/api/admission", params={
+                "filter": client_filter,
+                "sort": _json.dumps([{"property": "admission_date", "direction": "DESC"}], separators=(",", ":")),
+                "limit": 5,
+            }),
+            vc.get("/rest/api/admission", params={
+                "filter": next_filter,
+                "sort": _json.dumps([{"property": "admission_date", "direction": "ASC"}], separators=(",", ":")),
+                "limit": 1,
+            }),
+            return_exceptions=True,
         )
+        client_data_resp, invoices_resp, admissions_resp, next_admission_resp = results
+        section_errors: dict[str, str] = {}
 
-        client_data = client_data_resp.get("data", {}).get("client", {})
-        invoices = invoices_resp.get("data", {}).get("invoice", [])
-        admissions = admissions_resp.get("data", {}).get("admission", [])
-        next_admissions = next_admission_resp.get("data", {}).get("admission", [])
+        def _section(resp, section_name: str, shape: dict):
+            if isinstance(resp, BaseException):
+                section_errors[section_name] = f"{type(resp).__name__}: {resp}"
+                return shape
+            return resp
+
+        client_payload = _section(client_data_resp, "client", {"data": {"client": {}}})
+        invoices_payload = _section(invoices_resp, "invoices", {"data": {"invoice": []}})
+        admissions_payload = _section(admissions_resp, "recent_admissions", {"data": {"admission": []}})
+        next_payload = _section(next_admission_resp, "next_admission", {"data": {"admission": []}})
+
+        client_data = client_payload.get("data", {}).get("client", {})
+        invoices = invoices_payload.get("data", {}).get("invoice", [])
+        admissions = admissions_payload.get("data", {}).get("admission", [])
+        next_admissions = next_payload.get("data", {}).get("admission", [])
         next_admission = next_admissions[0] if next_admissions else None
 
-        return {
+        result: dict = {
             "client": client_data,
             "last_invoices": invoices,
             "last_admissions": admissions,
             "next_admission": next_admission,
         }
+        if section_errors:
+            result["partial"] = True
+            result["section_errors"] = section_errors
+        return result

@@ -112,14 +112,16 @@ async def paginate_all(
     filters: list[dict] | None = None,
     page_size: int = 100,
     entity_key: str,
-    max_rows: int | None = None,
+    max_rows: int | None = 10_000,
 ) -> tuple[list[dict], int]:
     """Fetch all pages of a list endpoint.
 
     Args:
-        max_rows: Optional hard cap on total rows fetched. Raises
+        max_rows: Hard cap on total rows fetched (default 10_000). Raises
             ValueError if totalCount (or collected rows) exceeds the cap —
             prevents runaway memory use on pathologically large result sets.
+            Pass `None` to disable the cap (only for operationally-bounded
+            callers that know the result set is limited by other constraints).
 
     Returns:
         Tuple of (all_records, total_count).

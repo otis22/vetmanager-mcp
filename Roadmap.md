@@ -1396,17 +1396,19 @@ Ship: builder доступен для новых callers, миграция exist
 
 Ship: главные хрупкие assertions структурированы; недостающее billing error-path coverage закрыто.
 
-## Этап 95. Performance polish (cache / pool / memory / race) — `todo`
+## Этап 95. Performance polish (cache / pool / memory / race) — частично `done` / остаток `stop`
 
 Цель: закрыть medium-performance findings из baseline, которые не попали в overhaul (этап 91).
 
-- 95.1 `web_auth.py::hash_account_password`/`verify_account_password` → `asyncio.to_thread` (390k PBKDF2 iterations блокируют event loop на 80-150ms на каждый login) — `todo`
-- 95.2 `rate_limit_backend.py` + sync-redis вызовы → `redis.asyncio` или `asyncio.to_thread` обёртки — `todo`
-- 95.3 `request_cache.py` deepcopy оптимизация: либо store as JSON string (fast path), либо frozen/read-only marker; deepcopy — только для больших значений через `asyncio.to_thread` — `todo`
-- 95.4 `bearer_auth.py::usage_stats` race condition: ON CONFLICT upsert (Postgres/SQLite dialect-aware) вместо lookup-then-insert — `todo`
-- 95.5 `paginate_all`: default `max_rows` (например 10_000) — защита от OOM; callers опционально override — `todo`
-- 95.6 Alembic миграция: индекс `(bearer_token_id, event_at DESC)` на `token_usage_logs`; composite `(account_id, created_at)` на `service_bearer_tokens` — `todo`
-- 95.7 `asyncio.gather(..., return_exceptions=True)` в `get_client_profile` / `get_pet_profile` + `partial:true` flag вместо total fail — `todo`
+- 95.1 `web_auth.py::hash_account_password` и `verify_account_password` → `asyncio.to_thread` в `create_account_with_password` и `authenticate_account` — `done`
+- 95.2 Async Redis client — `stop` (отложено в 95b, wide refactor с dependency + tests)
+- 95.3 `request_cache.py` deepcopy оптимизация — `stop` (отложено в 95b, требует benchmarking)
+- 95.4 `bearer_auth.py::usage_stats` ON CONFLICT upsert — `stop` (отложено в 95b, dialect-aware SQL)
+- 95.5 `paginate_all` default `max_rows=10_000` — `done`
+- 95.6 Alembic миграция индексов — `stop` (отложено в 95b, deploy-risk)
+- 95.7 `get_client_profile` → `asyncio.gather(return_exceptions=True)` + `partial:true` + `section_errors` поле — `done` (для get_client_profile; get_pet_profile отложен в 95b)
+
+Ship: критичные event-loop blockers и OOM-защита закрыты; остаток — оптимизации с более широким deploy-риском.
 
 ---
 

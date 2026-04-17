@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -218,9 +219,13 @@ async def register_account(
     if existing is not None:
         raise ValueError("Account with this email already exists.")
 
+    # PBKDF2 with 390k iterations takes ~80-150ms of pure CPU. Offload to
+    # the default thread pool so the event loop stays responsive to other
+    # requests during account creation bursts.
+    password_hash = await asyncio.to_thread(hash_account_password, password)
     account = Account(
         email=normalized_email,
-        password_hash=hash_account_password(password),
+        password_hash=password_hash,
         status=ACCOUNT_STATUS_ACTIVE,
     )
     session.add(account)
@@ -240,6 +245,10 @@ async def authenticate_account(
     account = await session.scalar(select(Account).where(Account.email == normalized_email))
     if account is None or account.status != ACCOUNT_STATUS_ACTIVE:
         return None
-    if not verify_account_password(password, account.password_hash):
+    # Offload PBKDF2 from the event loop for the same reason as creation.
+    password_valid = await asyncio.to_thread(
+        verify_account_password, password, account.password_hash
+    )
+    if not password_valid:
         return None
     return account
