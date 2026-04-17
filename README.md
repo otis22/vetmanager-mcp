@@ -130,16 +130,28 @@ HTTP probes и scrape endpoints:
 - structured logs c `request_id`, `correlation_id`, `event_category`, `event_name`;
 - `runtime` / `audit` / `security` logger taxonomy;
 - service metrics:
-  - `vetmanager_http_requests_total`;
-  - `vetmanager_http_request_latency_seconds_count/sum/max`;
-  - `vetmanager_auth_failures_total`;
-  - `vetmanager_upstream_failures_total`;
+  - `vetmanager_http_requests_total` + `vetmanager_http_request_latency_seconds_{count,sum,max}` — inbound HTTP web routes;
+  - `vetmanager_auth_failures_total{source,reason}` — bearer/web auth failures grouped by reason;
+  - `vetmanager_upstream_failures_total{target,reason}` — failures to VM/billing upstream (timeout / network_error / http_5xx / circuit_open);
+  - `vetmanager_upstream_requests_total{target,status}` + `vetmanager_upstream_request_latency_seconds_{count,sum,max}` — all VM API requests with their outcome (stage 88);
+  - `vetmanager_tool_calls_total{endpoint,method,outcome}` + `vetmanager_tool_call_latency_seconds_{count,sum,max}` — per-tool (endpoint+method) latency and success/error rate via crud_helpers instrumentation (stage 88);
+  - `vetmanager_cache_{hits,misses,invalidations,evictions}_total` + `vetmanager_cache_entries`;
 - opt-in Sentry bootstrap для unhandled exceptions.
+
+### Exceptions raised by VM tools
+
+Все клиенты MCP tools ловят исключения наследники `VetmanagerError`:
+- `AuthError` — 401/403 от Vetmanager (неверный токен/доступ запрещён);
+- `NotFoundError` — 404 (ресурс не существует);
+- `VetmanagerTimeoutError` — истёк timeout upstream запроса;
+- `VetmanagerUpstreamUnavailable` (stage 91) — circuit breaker OPEN для domain, fast-fail без вызова upstream. Наследует `VetmanagerError`, поэтому existing `except VetmanagerError:` ловят его без изменений;
+- `RateLimitError` — срабатывание локального rate limiter'а;
+- `HostResolutionError` — сбой резолва VM-хоста через billing API;
+- `VetmanagerError` — база для upstream 5xx и протокольных ошибок.
 
 Error tracking:
 - без `ERROR_TRACKING_DSN`/`SENTRY_DSN` integration не активируется;
-- перед отправкой в Sentry редактируются `Authorization`, `Cookie`,
-  `Set-Cookie`, `X-REST-API-KEY`, `X-API-KEY`.
+- pattern-based sanitizer (stage 89) редактирует заголовки/cookies/query/body по substring'ам `token|key|secret|auth|api|cookie|bearer|password|credential|session|csrf|signature|jwt|hmac|otp|passphrase`, с whitelist для observability headers (`x-request-id`, `x-correlation-id`, `x-api-version` и т.д.).
 
 Отдельный runbook по эксплуатации observability-контура:
 - `artifacts/observability-runbook-vetmanager-mcp-ru.md`

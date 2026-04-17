@@ -17,7 +17,7 @@
 - поддерживает мультитенантность, базовое кеширование, pacing запросов и
   security hardening.
 
-Текущая эволюция проекта по roadmap этапам 20–89:
+Текущая эволюция проекта по roadmap этапам 20–104:
 - bearer-only runtime-контракт уже реализован;
 - web-контур с лендингом, регистрацией и кабинетом аккаунта;
 - хранение Vetmanager-интеграции на уровне аккаунта;
@@ -33,7 +33,24 @@
   per-tool latency+outcome метрики, upstream latency histogram,
   structured warnings на timeout/network error;
 - security hot-fix (этап 89): pattern-based Sentry sanitizer,
-  SITE_BASE_URL env для self-hosted deployments.
+  SITE_BASE_URL env для self-hosted deployments;
+- VM client overhaul (этап 91): shared httpx.AsyncClient singleton с
+  keep-alive pool, exponential-backoff retry на 429/502/503/504,
+  split timeouts, per-domain circuit breaker с single-probe HALF_OPEN,
+  новое исключение `VetmanagerUpstreamUnavailable`;
+- FilterBuilder (этап 93): typed `Filter` dataclass + helpers eq/in_/
+  like/etc.; `build_list_query_params` accepts `list[Filter]`;
+- performance polish (этап 95): PBKDF2 через `asyncio.to_thread`,
+  `paginate_all` default `max_rows=10_000`, partial-failure tolerance
+  в `get_client_profile` через `asyncio.gather(return_exceptions=True)`;
+- workflow discipline (этап 104): pre-commit + commit-msg git hooks,
+  `lint_api_contracts.py` для phantom field / phantom enum detection,
+  `check_stage_completion.sh` и `update_review_status.py`,
+  subagent pre-return checklists;
+- post-review hot-fix (этап 96): `update_admission` payload mapping +
+  `get_client_profile::next_admission` status IN-tuple + CancelledError
+  propagation + breaker probe clearance на 4xx + `filters.in_([])`
+  reject + `_parse_retry_after` DoS mitigation.
 
 ## 2. Технологический стек
 

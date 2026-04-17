@@ -1434,19 +1434,17 @@ Baseline super-review 2026-04-17 (`artifacts/review/2026-04-17-baseline-post-sta
 
 Full suite: 611 → **642 passed** (+31).
 
-## Этап 97. Docs + workflow compliance backfill — `todo`
+## Этап 97. Docs + workflow compliance backfill — `done`
 
-Источник: super-review high-findings про docs.
+- 97.1 AssumptionLog backfill для этапов 92, 93, 94, 95, 97 — `done`
+- 97.2 Baseline review resolution — `done` (реализовано в stage 104 commit `49341c5` через `scripts/update_review_status.py --auto-stub`; таблица на 19 findings заполнена)
+- 97.3 Roadmap канонизация — текущий regex workflow-check работает с существующей формой «— частично `done` / остаток `stop`»; формальная канонизация отложена до появления tooling'а, который требует строгий синтаксис — `stop` (не блокер)
+- 97.4 AssumptionLog Этап 7 matrix — prominent OBSOLETE header добавлен — `done`
+- 97.5 tech-requirements evolution 20-104 + bullets для 90-96 — `done`
+- 97.6 README exceptions раздел (VetmanagerUpstreamUnavailable) + новые metrics (tool_calls, upstream_requests latency) + sanitizer pattern описание — `done`
+- 97.7 CLAUDE.md §5a count — `done` (в stage 104 commit `6fdb297`)
 
-- 97.1 AssumptionLog backfill для этапов 92, 93, 94, 95: что сделано, что отложено с rationale, Codex review result (или обоснование skip'а) — `todo`
-- 97.2 `artifacts/review/2026-04-17-baseline-post-stage-84.md`: добавить секцию `## Resolution (2026-04-17)` с table: blocker/high → stage, где закрыт → статус. Header note «Verdict superseded post-stage-95» — `todo`
-- 97.3 Roadmap канонизировать статусы stages 92-95: заменить «частично done / остаток stop» на `done` для завершённых subtask'ов + новая строка `X-b` с `todo` для отложенного (чтобы workflow-check парсил) — `todo`
-- 97.4 `AssumptionLog.md` Этап 7 матрица: удалить OR добавить prominent `[OBSOLETE — см. README]` header, не полагаясь на inline annotation — `todo`
-- 97.5 `artifacts/technical-requirements-vetmanager-mcp-ru.md`: эволюция `20-89` → `20-95` с bullet'ами для 90-95 (docs sync, VM client overhaul, FilterBuilder, perf polish) — `todo`
-- 97.6 README: (a) раздел «Исключения» с `VetmanagerUpstreamUnavailable`, (b) раздел Observability с `vetmanager_tool_calls_total`, `vetmanager_tool_call_latency_seconds`, `vetmanager_upstream_requests_total`, `vetmanager_upstream_request_latency_seconds`, (c) Артефакты table — full filenames с `-vetmanager-mcp-` — `todo`
-- 97.7 `CLAUDE.md` §5a: исправить «8 специализированных ревьюеров» → «9 ревьюеров + 1 aggregator = 10 subagent'ов» (match AssumptionLog stage 85 + фактический файловый список) — `todo`
-
-No code changes; Codex review пропускается по §5.5.
+No code changes; Codex review пропускается по §5.5. Full suite 642 passed (unchanged).
 
 ## Этап 98. Observability hardening — `todo`
 
