@@ -1415,3 +1415,225 @@ Ship: критичные event-loop blockers и OOM-защита закрыты;
 ## Источник этапов 86-95
 
 Baseline super-review 2026-04-17 (`artifacts/review/2026-04-17-baseline-post-stage-84.md`) — 144 findings от 8 специализированных ревьюеров + Codex arbitration. После исправления pet_id→patient_id в F1 (2026-04-17, подтверждено против `vetmanager-extjs` и `support-bot-base` docs).
+
+---
+
+## Этап 96. Post-review hot-fix bundle (blocker + urgent) — `todo`
+
+Источник: `artifacts/review/2026-04-17-post-stages-85-95.md` top-10.
+
+Цель: закрыть blocker + 5 urgent findings, которые не требуют широкого рефактора.
+
+- 96.1 `update_admission` payload mapping: `doctor_id`→`user_id`, `date`→`admission_date`, `pet_id`→`patient_id` (то же что stage 86 сделал для create_admission); docstring status enum — `save/directed/accepted/delayed/in_treatment/not_approved/not_confirmed/deleted` вместо вымышленных `assigned/booked/canceled`; regression тест `test_update_admission_maps_fields_to_api_contract` — `todo` (blocker)
+- 96.2 `tools/client.py::get_client_profile` next_admission filter: заменить `{"property": "status", "value": "active"}` на IN-tuple `ACTIVE_ADMISSION_STATUSES` (вынести константу в shared module); regression тест на URL-filter — `todo`
+- 96.3 `tools/client.py::get_client_profile` partial-gather: заменить `isinstance(resp, BaseException)` на `isinstance(resp, Exception)` чтобы не глотать `asyncio.CancelledError` (или explicit re-raise для CancelledError перед общей веткой); test на cancellation propagation — `todo`
+- 96.4 `vetmanager_client.py::_request`: в `except (AuthError, NotFoundError, VetmanagerError)` ветке вызвать `_breaker_record_success(domain_key)` — 4xx/non-5xx VetmanagerError означает upstream жив, probe_in_flight не должен залипнуть; regression тест `test_half_open_probe_with_404_clears_probe_in_flight` — `todo`
+- 96.5 `filters.py::in_` и `not_in`: reject empty list/tuple с `ValueError` (сейчас шлёт `IN []` — undefined behavior на VM) — `todo`
+- 96.6 `vetmanager_client.py::_parse_retry_after`: reject non-finite floats через `math.isfinite()` + clamp на max (например 300s); regression тест `test_retry_after_inf_rejected` — `todo`
+
+Acceptance: full suite зелёный; update_admission проверен на real API в devtr6 (+ get_medical_cards_by_client_id для 3-питомцевого клиента закрытием stage 86 deferred probe).
+
+## Этап 97. Docs + workflow compliance backfill — `todo`
+
+Источник: super-review high-findings про docs.
+
+- 97.1 AssumptionLog backfill для этапов 92, 93, 94, 95: что сделано, что отложено с rationale, Codex review result (или обоснование skip'а) — `todo`
+- 97.2 `artifacts/review/2026-04-17-baseline-post-stage-84.md`: добавить секцию `## Resolution (2026-04-17)` с table: blocker/high → stage, где закрыт → статус. Header note «Verdict superseded post-stage-95» — `todo`
+- 97.3 Roadmap канонизировать статусы stages 92-95: заменить «частично done / остаток stop» на `done` для завершённых subtask'ов + новая строка `X-b` с `todo` для отложенного (чтобы workflow-check парсил) — `todo`
+- 97.4 `AssumptionLog.md` Этап 7 матрица: удалить OR добавить prominent `[OBSOLETE — см. README]` header, не полагаясь на inline annotation — `todo`
+- 97.5 `artifacts/technical-requirements-vetmanager-mcp-ru.md`: эволюция `20-89` → `20-95` с bullet'ами для 90-95 (docs sync, VM client overhaul, FilterBuilder, perf polish) — `todo`
+- 97.6 README: (a) раздел «Исключения» с `VetmanagerUpstreamUnavailable`, (b) раздел Observability с `vetmanager_tool_calls_total`, `vetmanager_tool_call_latency_seconds`, `vetmanager_upstream_requests_total`, `vetmanager_upstream_request_latency_seconds`, (c) Артефакты table — full filenames с `-vetmanager-mcp-` — `todo`
+- 97.7 `CLAUDE.md` §5a: исправить «8 специализированных ревьюеров» → «9 ревьюеров + 1 aggregator = 10 subagent'ов» (match AssumptionLog stage 85 + фактический файловый список) — `todo`
+
+No code changes; Codex review пропускается по §5.5.
+
+## Этап 98. Observability hardening — `todo`
+
+Источник: super-review high-findings #7-9 и medium observability.
+
+- 98.1 `correlation_id` в structured warnings `vm_upstream_timeout`, `vm_upstream_network_error`, `vm_upstream_retry`: capture из `get_current_request_context()` до retry loop, добавить в extra dict — `todo`
+- 98.2 `circuit_open` + `circuit_half_open_busy` в unified counter: добавить `record_upstream_request(target, status="circuit_open", duration_seconds=0.0)` параллельно `record_upstream_failure` — чтобы дашборды считали total error rate через одну metric family — `todo`
+- 98.3 Обернуть `get_client_profile`, `get_pet_profile`, и wrapper-callers `paginate_all` (в tools/client.py::get_debtors, tools/invoice.py::get_average_invoice, etc.) в `_instrumented_call` — `todo`
+- 98.4 Partial failures в `get_client_profile` (и `get_pet_profile` после 102.1) — `RUNTIME_LOGGER.warning` с `event_name="aggregator_partial"` + `section_errors` в extra — `todo`
+- 98.5 `_raise_for_status`: 4xx НЕ считать как `record_upstream_failure` — только 5xx. 4xx — client-side issue, не signal upstream health — `todo`
+- 98.6 `vm_upstream_retry` log: понизить INFO → DEBUG для промежуточных attempt, INFO только на последнем attempt (или добавить aggregate counter `vm_retries_total`) — `todo`
+- 98.7 `_instrumented_call`: crud_get_by_id/crud_update/crud_delete должны иметь отдельный label от crud_list — добавить `operation` label (list/get_by_id/create/update/delete) чтобы per-op latency не конфлатился — `todo`
+
+Acceptance: все structured warnings содержат correlation_id; /metrics exposes circuit_open в upstream_requests_total; aggregator tools видны в tool_calls_total.
+
+## Этап 99. Reliability hardening II — `todo`
+
+Источник: super-review high-findings #10 + codex-blindspot + medium perf.
+
+- 99.1 `_breaker_record_failure` внутри retry loop: записывать ПО КАЖДОМУ failed attempt, не только terminal. Threshold 5 теперь реагирует на 5 attempts в окне, не 5 tool calls — `todo`
+- 99.2 `_check_breaker_allows` / probe lifecycle: обернуть probe в `try/finally` сбрасывающий `probe_in_flight` на cancellation или pre-dispatch error (codex-blindspot H16) — `todo`
+- 99.3 SIGTERM / FastMCP lifespan shutdown hook в `server.py`: `await reset_shared_http_client()` + `await reset_breakers()` для clean FIN-закрытия keep-alive socket'ов на docker stop — `todo`
+- 99.4 Event-loop-scoped singleton client: key `_shared_http_client` на `asyncio.get_running_loop()` (codex-blindspot H15 — «attached to a different event loop» защита для embedded сценариев) — `todo`
+- 99.5 Breaker threshold tunable via env: `BREAKER_FAILURE_THRESHOLD`, `BREAKER_WINDOW_SECONDS`, `BREAKER_COOLDOWN_SECONDS` — чтобы operator мог смягчить для burst workloads — `todo`
+- 99.6 `tools/pet.py::get_pet_profile` DB session: close scalar-read session ДО `asyncio.to_thread(hash_*)`, open new для INSERT — избежать pool starvation (95b item, но выносим отдельно) — `todo`
+
+Acceptance: half-open probe correctly clears на любом исходе; SIGTERM не генерирует RST spike на upstream; `BREAKER_*` env задокументированы в README.
+
+## Этап 100. Security hardening II — `todo`
+
+Источник: super-review medium-security + stage 89 deferred W1/W5.
+
+- 100.1 Sentry sanitizer глубокое покрытие: breadcrumbs, `exception.values[*].stacktrace.frames[*].vars`, `contexts`, `user`, `tags`, `request.env`, scan `message`/`logentry.message` на token-shaped substrings. Regression тесты — `todo`
+- 100.2 `correlation_id` normalization перед inbound+outbound forwarding: regex `^[A-Za-z0-9_-]{1,64}$`, fallback на `token_hex(8)` иначе — защита от log-poisoning и header-injection — `todo`
+- 100.3 `authenticate_account` timing-attack fix: при account=None или inactive — выполнить dummy `asyncio.to_thread(verify_account_password, password, DUMMY_HASH)` чтобы time-constant разделения не было — `todo`
+- 100.4 `_SENSITIVE_KEY_PATTERNS`: добавить `dpop`, `signed` — OAuth2 DPoP / generic signed-header defense — `todo`
+- 100.5 `landing_page._resolve_site_base_url`: validate URL-scheme (http/https), reject control chars и длина > 255 — `todo`
+- 100.6 `web_html.py::render_account_page`: `html.escape(site_base_url)` перед f-string подстановкой в `<pre>` block с mcp.json — `todo`
+- 100.7 `web_auth.py` legacy 3-part session token path: добавить deprecation log + cutoff date — `todo`
+
+Acceptance: sanitizer тестирован на breadcrumbs/stacktrace/contexts; correlation_id на inbound forwarding валидируется; account enumeration timing attack невозможен.
+
+## Этап 101. Tests hardening II — `todo`
+
+Источник: super-review high tests H18 + medium tests findings.
+
+- 101.1 Заменить bare `pytest.raises(Exception)` на specific types: `VetmanagerUpstreamUnavailable` / `VetmanagerError` / `ValueError` в `test_stage91_*.py:184,200` и `test_stage88_*.py:236` — `todo`
+- 101.2 Ввести публичные test-helpers в `vetmanager_client.py`: `get_shared_http_client()` (возвращает singleton или None), `get_breaker_state(domain)` (возвращает state string + вспомогательную инфу). Мигрировать `test_stage91_*.py` с private `_shared_http_client`, `_breakers[DOMAIN]`, `breaker.opened_at` на public API — `todo`
+- 101.3 Исправить vacuous `test_backoff_exponential_without_retry_after`: monkeypatch `random.uniform` на 0, assert strict монотонность `d0 < d1 < d2` — `todo`
+- 101.4 `test_api_contracts_hotfix.py::test_get_medical_cards_by_client_id_batches_medcards_via_in_operator`: убрать dual-branch int|string assertion, pin на int только (canonical wire format) — `todo`
+- 101.5 Добавить `test_half_open_probe_failure_reopens_breaker_with_fresh_cooldown` (не покрыт в stage 91) — `todo`
+- 101.6 `test_parse_retry_after_http_date_form`: убрать time-sensitive tolerance (±4s flaky), freezeguns или monkeypatch `datetime.now` — `todo`
+- 101.7 `test_stage89_security_hotfix`: добавить тест что unlisted `api-*` ключ (например `x-api-client-id`) IS redacted (проверка что allowlist не overextends) — `todo`
+- 101.8 `_StubLogger` workaround в `test_stage88`: починить root cause — `configure_logging()` или `basicConfig(force=True)` сбрасывает root handler посреди suite. Ввести pytest fixture который восстанавливает root handlers после таких тестов — `todo`
+- 101.9 `tests/test_stage87_post_migration.py::TestStage87PromptSweep`: substring searches на `PROMPTS_SRC` заменить на импорт и вызов реальных prompt функций + assert on returned string content — `todo`
+
+Acceptance: нет `pytest.raises(Exception)` bare в stage-тестах; нет direct reads of `_shared_http_client`/`_breakers[...]`.
+
+## Этап 102. Product consistency sweep — `todo`
+
+Источник: super-review H11-H13 + medium product.
+
+- 102.1 `tools/pet.py::get_pet_profile`: применить partial-gather pattern (`return_exceptions=True` + `section_errors` + `partial: True`) как в `get_client_profile` — envelope consistency — `todo`
+- 102.2 `get_pet_profile` wrap в `_instrumented_call` (пересекается с 98.3) — `todo`
+- 102.3 `prompts.py::unconfirmed_appointments`: добавить `days_ahead: int = 2` параметр, вычислять `end_date` в Python (не переводить LLM на date math) — `todo`
+- 102.4 `prompts.py::low_stock`: либо (a) убрать prompt из регистрации до появления bulk-tool `get_goods_with_low_stock`, либо (b) добавить warning в prompt text + параметризовать `clinic_id` (сейчас hardcoded=1) — `todo`
+- 102.5 `landing_page.py`: убрать строки overpromising `Какие товары заканчиваются`/`выручка` (lines 660-661) + смягчить tile text на line 580, пока bulk-tools не реализованы — `todo`
+- 102.6 `tools/good.py::get_goods`: `name=` param пометить `[DEPRECATED — use title=]` в docstring + emit structured log на использование (для трекинга кто ещё вызывает) — `todo`
+- 102.7 `tools/client.py::get_client_profile` (и после 102.1 — pet_profile): structured `section_errors` shape — `{section: {error_type: str, retryable: bool, message: str}}` вместо free-text `f"{type}: {msg}"`. Позволяет LLM программно решать retry vs surface — `todo`
+- 102.8 `Roadmap.md` Schedule группа: либо добавить timeline для расширения Schedule tools (copy-day, slot-reservation), либо fold в Operations группу — `todo` (nit-level, decision call)
+
+Acceptance: aggregator envelopes identical между tools; landing promises match actual capability; structured section_errors contract documented.
+
+## Этап 103. Architecture consolidation (92b/93b/93c/94b/95b зонтик) — `todo`
+
+Источник: super-review medium architecture + deferred Xb stages.
+
+**Декомпозиция на sub-stages перед реализацией — слишком большой scope для одного этапа.**
+
+- 103.1 [92b] `auth/` package: extract `auth/bearer.py` (header + DB lookup), `auth/vetmanager.py` (auth modes), `auth/context.py` (credentials dataclasses). Split `resolve_bearer_auth_context` на pipeline validators. Rate-limiter consolidation (удалить `bearer_rate_limiter.py`, namespace="bearer_token" на rate_limit_backend). **Регрессионный риск**: критический auth path — требует свежей сессии — `stop` (вынести в 103a)
+- 103.2 [93b] Мигрировать tool callers на `FilterBuilder`: `tools/{client,pet,medical_card,admission,_inactive_helpers,operations}.py` — убрать raw `json.dumps([{"property"...}])` — `stop` (103b)
+- 103.3 [93c] Introduce `resources/<entity>.py` gateway layer (ClientsGateway, MedicalCards, Pets, Admissions) — tools/* делегируют, не вызывают VetmanagerClient напрямую — `stop` (103c)
+- 103.4 Split `vetmanager_client.py` (574 LOC → 6 subsystems): `vm_transport/pool.py` (shared client), `vm_transport/breaker.py`, `vm_transport/retry.py` (backoff + Retry-After), `vm_transport/cache_policy.py` (TTL + entity_from_path). VetmanagerClient остаётся thin orchestrator — `stop` (103d)
+- 103.5 Inline `request_credentials._get_request_headers()` в `request_auth.py`, удалить `request_credentials.py` полностью — `stop` (часть 103a)
+- 103.6 Move `_instrumented_call` из `tools/crud_helpers.py` в `service_metrics.py` как public context manager `instrument_call(endpoint, method)` — чтобы aggregators могли использовать без импорта crud_helpers — `stop` (103b)
+- 103.7 Extract `tools/_aggregation.py::gather_sections(**named_coros)` helper для partial-gather pattern; мигрировать client_profile + pet_profile — `stop` (102.1 pre-requisite)
+- 103.8 Move `build_list_query_params` из `validators.py` в `filters.py` (или новый `query_params.py`); убрать lazy import — `stop` (103b)
+
+**Rationale для stop**: каждая sub-stage — high-risk рефактор критичного пути. Декомпозиция в 103a/b/c/d с отдельными PRD — отдельным сессиями.
+
+## Этап 104. Workflow discipline improvements — `todo`
+
+Цель: устранить root causes пропусков, которые проявились в super-review stages 85-95 (update_admission, phantom enum, AssumptionLog missing, baseline review unresolved).
+
+### 104.1 Stage completion checklist
+
+Создать `scripts/check_stage_completion.sh` — расширение существующего `review_workflow_check.sh`:
+- AssumptionLog section `## Этап N` exists (hard требование CLAUDE.md §6)
+- Roadmap статус этапа `done` или `stop` (не `todo`/`in_progress`)
+- PRD `PRD/этап-N-*.md` exists (включая retroactive допустимость)
+- Все subtask'и `N.x` имеют status marker
+- Commit message содержит `Stage N:` prefix
+
+Выход — в YAML findings формате для super-review агрегации.
+
+### 104.2 Pre-commit hook для AssumptionLog
+
+`.git/hooks/pre-commit` (или через `pre-commit` framework): если commit message матчит `Stage N:`, reject'ить если `AssumptionLog.md` не содержит новой секции `## Этап N`.
+
+### 104.3 Field-mapping CI lint
+
+Grep-based lint в `scripts/lint_api_contracts.sh`:
+- Scan all `tools/*.py` payload-build patterns `payload[...] = X` и `{"...": X,}`
+- Cross-reference с canonical field dict из `artifacts/api-research-notes-ru.md`
+- Reject unknown keys для известных endpoints (admission, pet, medical_cards, etc.)
+
+Должен был поймать `update_admission` bug в stage 86.
+
+### 104.4 Phantom enum value lint
+
+Same style lint для `{"property": "status", "value": "X"}` паттернов:
+- Status literals cross-referenced с `ACTIVE_ADMISSION_STATUSES` и authoritative enums.
+- `status="active"` → fail (не в admission enum).
+
+Должен был поймать `get_client_profile` phantom enum.
+
+### 104.5 Baseline/super-review resolution tracker
+
+Когда merge'ится этап который закрывает blocker/high из baseline-review, обязательно:
+- Добавить resolution note в сам review artifact
+- Update review document header: active → superseded
+- Tracker таблица в Roadmap: `review-artifact-path → status (open/partial/resolved)`
+
+Mechanism: `scripts/update_review_status.py` + `@resolves review:path[#finding-id]` таг в commit message.
+
+### 104.6 Subagent review checklists
+
+Каждый `.claude/agents/reviewer-*.md` дополнить секцией **«Pre-return checklist»** перед форматом ответа:
+
+```markdown
+## Pre-return checklist (verify before submitting findings)
+
+- [ ] Все findings имеют `file:lines` references (no N/A кроме workflow-check)
+- [ ] Все findings имеют `confidence` float
+- [ ] Все findings имеют concrete `suggested_fix` (не «refactor», не «consider»)
+- [ ] Findings с `confidence ≤ 0.5` явно помечены «speculative» в `why_it_matters`
+- [ ] API-related findings cross-referenced против `api-research-notes-ru.md` чеклиста полей
+- [ ] Max count (per role spec) соблюдён
+- [ ] Нет дубликатов с другими reviewer ролями (проверить scope определение)
+```
+
+Aggregator получает больше confidence в findings, меньше false positives.
+
+### 104.7 Расширение `review_workflow_check.sh`
+
+Дополнить текущий bash:
+- Check что `AssumptionLog.md` содержит секцию для каждого `done`-этапа (парсить Roadmap)
+- Check что все PRD файлы `PRD/этап-N-*.md` имеют секции: Цель, Scope, Подзадачи, Acceptance
+- Check что commit message последнего `Stage N:` коммита содержит Codex review outcome (или обоснование skip)
+
+### 104.8 Documentation: stage workflow template
+
+Добавить `docs/stage-workflow-template.md` с step-by-step checklist для нового этапа:
+1. Pick task из Roadmap
+2. Research (grep artifacts, api-research-notes)
+3. Create PRD
+4. Write tests (test-first)
+5. Implement
+6. Run tests
+7. Audit (grep для sibling patterns!)
+8. Codex review
+9. Adequacy assessment (document inadequate)
+10. Fix critical adequate
+11. Run tests again
+12. **Update AssumptionLog** (ОБЯЗАТЕЛЬНО)
+13. **Update Roadmap status** (ОБЯЗАТЕЛЬНО)
+14. **If closes baseline/review finding: add resolution note**
+15. Commit + push
+16. Run `scripts/check_stage_completion.sh`
+
+Ссылка из CLAUDE.md §4.
+
+Acceptance: все 4 rooted причины (update_admission missed, phantom enum, AssumptionLog gap, baseline unresolved) становятся механически detectable.
+
+---
+
+## Источник этапов 96-104
+
+Super-review 2026-04-17 (`artifacts/review/2026-04-17-post-stages-85-95.md`) — 111 findings от 9 параллельных ревьюеров + codex-blindspot. Оценка адекватности: `artifacts/review/inadequate-findings-index.md` (15 findings dismiss'нуто). Адекватные findings сгруппированы в стадии 96-104.
+
+Приоритет: 96 (blocker + urgent) → 97 (docs backfill, zero-risk) → 98-99 (observability + reliability) → 100-102 (security + tests + product) → 103 (big architecture rework, per sub-stage) → 104 (workflow discipline, blocks future regressions).
