@@ -1278,3 +1278,127 @@
 - 84.2 Заменить client-side post-filter на API-level `status IN ACTIVE_ADMISSION_STATUSES` в `get_client_upcoming_visits` и `get_daily_schedule`, убрать `filtered_from_total` — `done`
 - 84.3 Обновить тесты: `test_daily_schedule_filters_inactive_statuses_via_api` проверяет что filter содержит `status IN`, а response не содержит deleted/not_approved — `done`
 - 84.4 Real API verify: `get_daily_schedule(date="2024-10-31")` возвращает 1 запись со статусом `delayed`, filter содержит `status IN [...]` — `done`
+
+## Этап 85. Инфраструктура super-review (deep-review skill) — `done`
+
+Цель: периодическое многоплановое ревью проекта через skill `/super-review` — 8 специализированных ревьюеров + codex-blindspot + aggregator + Codex arbitration. Baseline-ревью 2026-04-17 на scope=full зафиксировал системные темы и сформировал бэклог этапов 86-95.
+
+- 85.1 Создать 10 subagent'ов в `.claude/agents/reviewer-*.md` (code, architecture, docs, security, performance-and-reliability, observability, tests, product, codex-blindspot, aggregator) — `done`
+- 85.2 Skill `/super-review` в `.claude/commands/super-review.md` — параллельный запуск 9 ревьюеров + workflow-check + aggregator + Codex arbitration — `done`
+- 85.3 `scripts/review_workflow_check.sh` — механические проверки (PRD/Roadmap/AssumptionLog/diff size) в YAML-формате findings — `done`
+- 85.4 Раздел §5a «Post-stage Deep Review» в `CLAUDE.md` — `done`
+- 85.5 Baseline-ревью 2026-04-17: `artifacts/review/2026-04-17-baseline-post-stage-84.md` — 144 findings, 4 blocker + 22 high — `done`
+- 85.6 Укрепить `artifacts/api-research-notes-ru.md` секцией «Поля и их реальные имена — чек-лист» (authoritative backend ExtJS + support-bot-base) + обязать все API-касающиеся ревьюеры читать её — `done`
+
+## Этап 86. Hot-fix: create_admission + get_medical_cards_by_client_id (F1, F2) — `todo`
+
+Цель: устранить два product-blocker'а из baseline-ревью 2026-04-17, ломающих ключевые сценарии (создание приёма, медкарты клиента).
+
+- 86.1 `create_admission`: payload переписать на `{user_id, admission_date, patient_id, client_id, status}`, дефолт `status='save'` (вместо `'assigned'`); внешние имена параметров `doctor_id/date/pet_id` оставить для LLM-эргономики и мапить на границе API — `todo`
+- 86.2 `get_medical_cards_by_client_id`: фильтр pets `client_id` → `owner_id`; batch-fetch медкарт через `patient_id IN [ids]` вместо N+1 цикла — `todo`
+- 86.3 Аналогичный sweep по `tools/`: grep по `"client_id"` рядом с `/rest/api/pet` и `"pet_id"` рядом с `/rest/api/admission|MedicalCards` — фиксить везде. Проверить `get_inactive_pets`, `get_pet_profile`, `tools/_inactive_helpers.py` — `todo`
+- 86.4 Тесты: regression на `test_create_admission_uses_user_id_and_admission_date_and_patient_id` + refactor `test_get_medical_cards_by_client_id_uses_owner_id_and_batches_via_in` — `todo`
+- 86.5 Real API verify на devtr6: создать приём, убедиться что виден в `get_daily_schedule`; получить медкарты клиента с 3 питомцами — должны быть все — `todo`
+- 86.6 PRD `PRD/этап-86-hotfix-api-contracts.md` + AssumptionLog — `todo`
+
+## Этап 87. Post-migration consistency sweep — `todo`
+
+Цель: закрыть сквозную тему baseline-ревью «drift после миграций». Найти и пофиксить все места, где старые имена полей (`client_id` у pet, `pet_id` у admission/medical_card, legacy prompts) пережили миграции stage 77.4 / 82-83.
+
+- 87.1 `prompts.py` audit: `book-appointment` (get_pets client_id→owner_id, create_admission mapping), `unconfirmed_appointments` (date range + status filter), `unpaid_invoices` (payment_status parameter), `client_no_visit` (→ get_inactive_clients), `search_good` (name→title), `low_stock` — `todo`
+- 87.2 `tools/operations.py::get_timesheets`: `user_id` → `doctor_id` (поле + param) с deprecation-alias на 1 версию — `todo`
+- 87.3 CI lint / pre-commit: grep по known-wrong pairs (`{"property":"client_id".*pet`, `{"property":"pet_id".*admission`, `{"property":"pet_id".*MedicalCards` filter context) — fail если найдено — `todo`
+- 87.4 Regression тесты на все prompt'ы (pytest check что tool-params из prompt'а существуют) — `todo`
+
+## Этап 88. Observability core: correlation_id + per-tool metrics + upstream metric (F4, F5, F6) — `todo`
+
+Цель: закрыть три observability-blocker/high из baseline. Без этого прод-инциденты неотлаживаемы.
+
+- 88.1 Пробросить `correlation_id` из `request_context.get_current_request_context()` в исходящие VM API headers (`vetmanager_client.py::_headers()`) — fallback UUID4 при отсутствии контекста + debug-log — `todo`
+- 88.2 Декоратор `@instrument_tool(name)` в `tools/crud_helpers.py` — histogram `tool_latency_seconds{tool, outcome}` + counter `tool_calls_total{tool, status}`; применить ко всем crud_* + вручную к специализированным tools — `todo`
+- 88.3 Upstream метрика: `record_upstream_request(target, status, duration_ms)` в `vetmanager_client.py::_request()` — для success И failure; обернуть httpx-вызов в `time.monotonic()` — `todo`
+- 88.4 Structured logs на timeout/network error: `RUNTIME_LOGGER.warning` с `domain/url/method/attempt/elapsed` перед raise — `todo`
+- 88.5 `auth_audit.py`: добавить `ip_address`/`user_agent` в extra{} лог stream (не только в DB) — `todo`
+- 88.6 Bearer auth: counter `auth_successes_total` для расчёта failure rate — `todo`
+- 88.7 `/logout` и `/register`: business-metric + audit-log event — `todo`
+- 88.8 Process start timestamp gauge в /metrics — `todo`
+
+## Этап 89. Security hot-fix: Sentry sanitizer + deploy defaults (B4, F7) — `todo`
+
+Цель: закрыть security high из baseline и устранить operational risk от hardcoded старого домена.
+
+- 89.1 `error_tracking.py::_sanitize_event`: перейти с allowlist на **pattern-based** deny (имена содержат `token|key|secret|auth|api|domain|cookie`); дополнительно чистить request body, query params, cookies, extra context — `todo`
+- 89.2 Regression test: Sentry event с заголовком `x-user-token` → должен быть `[Filtered]` — `todo`
+- 89.3 Deploy-скрипты: заменить дефолт `342915.simplecloud.ru` → `vetmanager-mcp.vromanichev.ru` в `scripts/{init,deploy,sync_and_deploy,renew_cert_if_needed}_server.sh` и `.github/workflows/deploy-prod.yml`; или сделать `SSL_DOMAIN` обязательным — `todo`
+- 89.4 `landing_page.py` + `web_html.py`: хардкод `vetmanager-mcp.vromanichev.ru` в canonical/og:url → env-переменная `SITE_BASE_URL` (дефолт пустой с placeholder для self-hosted) — `todo`
+
+## Этап 90. Docs sync: README / tech-reqs / AssumptionLog (F3) — `todo`
+
+Цель: синхронизировать документацию с реальностью кодовой базы.
+
+- 90.1 README: Schedule row в таблицу tools, счётчик 101→107 (или пересчитать) по 12→13 групп; убрать противоречие `create_payment` vs запрет Payment CREATE — `todo`
+- 90.2 `technical-requirements-vetmanager-mcp-ru.md`: fastmcp `>=2.0.0` → `>=3.1.0,<4`; обновить «эволюция по roadmap» до 84 — `todo`
+- 90.3 AssumptionLog: добавить записи для этапов 82, 83, 84 (отмечены workflow-check как missing); пометить легаси разделы Этап 1-2 и Этап 11 как `[УСТАРЕЛО после этапа 22 — bearer-only]` — `todo`
+- 90.4 README cache key описание: добавить `account_id` (stage 54.2.3); обновить таблицу Артефактов (6 недостающих файлов); задокументировать `WEB_SESSION_MAX_AGE_SECONDS`; fast contour команда с `--profile test` — `todo`
+- 90.5 PRD-добор для этапов 82, 83, 84 (workflow-check high finding: CLAUDE.md §3 требует PRD) — `todo`
+
+## Этап 91. VM client overhaul: singleton + retry + circuit breaker (F8) — `todo`
+
+Цель: устранить главный performance-high из baseline. Сейчас каждый `_request` открывает новый `httpx.AsyncClient` → fresh TLS handshake. Плюс retry только на network-error без 5xx/429 поддержки, нет circuit breaker.
+
+- 91.1 Process-wide `httpx.AsyncClient` с `Limits(max_keepalive_connections=50, max_connections=100)`, startup/shutdown hooks в `server.py` — `todo`
+- 91.2 Retry policy: exponential backoff с jitter на 429/502/503/504 + honor `Retry-After`; MAX_RETRIES=3 для GET, 0 для POST/PUT/DELETE (non-idempotent) — `todo`
+- 91.3 Timeouts split: `httpx.Timeout(connect=5.0, read=20.0, write=10.0, pool=2.0)` — `todo`
+- 91.4 Circuit breaker keyed на `domain` (pybreaker или ~40-line custom): N failures в окне M → open на T сек → fail-fast — `todo`
+- 91.5 `_pace_requests`: убрать serialize через lock (сейчас `asyncio.gather` эффективно sequential) — перейти на token bucket per-domain без сериализации отдельных вызовов — `todo`
+- 91.6 Process-level TTL cache для `resolve_vetmanager_host(domain)` — 1 час, чтобы не дёргать billing API на каждый tool call — `todo`
+- 91.7 Load test: до/после замер на devtr6 на 10 parallel tool calls — `todo`
+
+## Этап 92. Auth consolidation (F10) — `todo`
+
+Цель: свернуть 7 фрагментированных auth-модулей в `auth/` package; закрыть dead-code в `request_credentials.py`; разобраться с rate-limiter split.
+
+- 92.1 `auth/` package: `auth/bearer.py` (header extract + DB lookup), `auth/vetmanager.py` (auth-mode strategies), `auth/context.py` (RuntimeCredentials / BearerAuthContext) — `todo`
+- 92.2 Удалить `request_credentials.py` (legacy X-VM-* API из stage 22.4, осталась только приватная функция `_get_request_headers` — inline в `request_auth.py`) — `todo`
+- 92.3 Split `resolve_bearer_auth_context` (170 строк, 7+ обязанностей) на pipeline валидаторов + audit sink в конце — `todo`
+- 92.4 Rate-limiter consolidation: удалить `bearer_rate_limiter.py`, перевести bearer-traffic на общий `rate_limit_backend` с `namespace="bearer_token"` → shared-Redis при `REDIS_URL` (закрывает bypass через multi-worker deployment) — `todo`
+- 92.5 Regression-тесты: auth path + bearer rate limit через Redis backend — `todo`
+
+## Этап 93. Architecture: FilterBuilder + service/repository layer (H11, H21) — `todo`
+
+Цель: убрать 15+ ручных `json.dumps` фильтров и миксование транспортного слоя с бизнес-логикой в `tools/`.
+
+- 93.1 `filters.py` модуль: типизированный `Filter` dataclass + helpers (eq, like, gte, lte, in_, between); `build_list_query_params` принимает `list[Filter] | list[dict]` — `todo`
+- 93.2 Мигрировать на FilterBuilder: `tools/client.py::get_client_profile`, `tools/_inactive_helpers.py`, `tools/medical_card.py`, `tools/pet.py`, `tools/operations.py`, `tools/admission.py` — `todo`
+- 93.3 Lint/test contract: ban `json.dumps([{"property"...}])` вне `filters.py` — `todo`
+- 93.4 `resources/<entity>.py` (ClientsGateway, MedicalCardsGateway, PetsGateway и т.д.) — владеют endpoint path, filter сериализацией, response unwrapping; `tools/*` зовут gateway-методы вместо `VetmanagerClient()` напрямую — `todo`
+- 93.5 Мигрировать 3-5 горячих tools на gateway; остальные постепенно — `todo`
+
+## Этап 94. Tests hardening (H18, H19 + boundary gaps) — `todo`
+
+Цель: устранить основную хрупкость тестов (asserts на приватные поля, substring-match фильтров) и закрыть unhappy-path пробелы.
+
+- 94.1 `tests/runtime_factories.py`: ввести `make_client_with_resolved_runtime` через публичный test-mode конструктор VetmanagerClient (credentials object), убрать 8+ приватных полей — `todo`
+- 94.2 `tests/test_client_multitenancy.py`: asserts на `_auth_source`/`_domain`/`_api_key` → checks на outgoing headers через respx — `todo`
+- 94.3 Substring-match в `test_inactive_clients.py` / `test_inactive_pets.py` → `json.loads(filter_param)` и структурные asserts — `todo`
+- 94.4 Unhappy path в `test_e2e_mock_entities.py`: billing API 404/500, VM timeout, malformed JSON, 429 rate limit; переписать error-tests через `mcp.call_tool` вместо raw `client().get()` — `todo`
+- 94.5 Boundary tests: `test_inactive_pets` (last_visit_date=None), `test_inactive_clients` (months_min>max), `test_get_doctor_free_slots` (zero-length timesheet, 31-day boundary) — `todo`
+- 94.6 Concurrency test: 2 параллельных `mcp.call_tool` с shared bearer token — `todo`
+
+## Этап 95. Performance polish (cache / pool / memory / race) — `todo`
+
+Цель: закрыть medium-performance findings из baseline, которые не попали в overhaul (этап 91).
+
+- 95.1 `web_auth.py::hash_account_password`/`verify_account_password` → `asyncio.to_thread` (390k PBKDF2 iterations блокируют event loop на 80-150ms на каждый login) — `todo`
+- 95.2 `rate_limit_backend.py` + sync-redis вызовы → `redis.asyncio` или `asyncio.to_thread` обёртки — `todo`
+- 95.3 `request_cache.py` deepcopy оптимизация: либо store as JSON string (fast path), либо frozen/read-only marker; deepcopy — только для больших значений через `asyncio.to_thread` — `todo`
+- 95.4 `bearer_auth.py::usage_stats` race condition: ON CONFLICT upsert (Postgres/SQLite dialect-aware) вместо lookup-then-insert — `todo`
+- 95.5 `paginate_all`: default `max_rows` (например 10_000) — защита от OOM; callers опционально override — `todo`
+- 95.6 Alembic миграция: индекс `(bearer_token_id, event_at DESC)` на `token_usage_logs`; composite `(account_id, created_at)` на `service_bearer_tokens` — `todo`
+- 95.7 `asyncio.gather(..., return_exceptions=True)` в `get_client_profile` / `get_pet_profile` + `partial:true` flag вместо total fail — `todo`
+
+---
+
+## Источник этапов 86-95
+
+Baseline super-review 2026-04-17 (`artifacts/review/2026-04-17-baseline-post-stage-84.md`) — 144 findings от 8 специализированных ревьюеров + Codex arbitration. После исправления pet_id→patient_id в F1 (2026-04-17, подтверждено против `vetmanager-extjs` и `support-bot-base` docs).

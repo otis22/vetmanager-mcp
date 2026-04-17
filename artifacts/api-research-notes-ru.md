@@ -6,6 +6,48 @@
 
 ---
 
+## ⚠️ Поля и их реальные имена — чек-лист (читать ПЕРЕД ревью / правкой tools)
+
+**Authoritative источники:**
+1. `../vetmanager-extjs/application/src/Entity/*.php` и `rest/protected/models/*.php` — настоящий backend
+2. `../support-bot-base/base/vetmanager_help/REST_API/*.md` — официальная публичная документация API
+3. `artifacts/vetmanager_openapi_v6.json` — OpenAPI spec
+4. Этот файл — накопленный опыт
+
+**Путаница, на которой ловятся и люди, и LLM-ревьюеры:**
+
+| Операция | Внешнее/интуитивное имя | **Реальное имя в API** | Источник |
+|---|---|---|---|
+| Admission → врач | `doctor_id` | **`user_id`** | `Entity/Admission.php:57-74`, `Dostup_k_priemam.md:10,63,73` |
+| Admission → дата | `date` | **`admission_date`** (формат `Y-m-d H:i:s`) | `Dostup_k_priemam.md:6,68` |
+| Admission → питомец | `pet_id` | **`patient_id`** | `Entity/Admission.php:57-74` |
+| Admission → клиент | `client_id` | `client_id` ✓ | там же |
+| Admission → status | `assigned` (нет такого!) | **enum:** `save`, `directed`, `accepted`, `deleted`, `delayed`, `not_approved`, `in_treatment`, `not_confirmed`. Дефолт при create в ORM — **`save`** | migration `m190218_081130_add_admission_not_confirmed_status.php` |
+| Pet → владелец | `client_id` | **`owner_id`** | `models/Pet.php:18,32`, `Dostup_k_pitomtsam.md:6,47` |
+| MedicalCards → питомец (CRUD filter) | `pet_id` | **`patient_id`** | `models/MedicalCards.php:9,55,75` |
+| MedicalCards → питомец (specialized actions `MedicalcardsDataByClient`, `AddVaccination`) | — | **`pet_id`** (query-param, не filter) | `Dostup_k_medkartam.md:204,259,514` |
+| Timesheet → врач | — | **`doctor_id`** ✓ | там же |
+
+### Полный payload `POST /rest/api/admission` (canonical)
+
+```json
+{
+  "admission_date": "2026-04-17 10:00:00",
+  "client_id": 6,
+  "patient_id": 42,
+  "user_id": 1,
+  "status": "save"
+}
+```
+
+Поля `doctor_id`, `date`, `pet_id` в payload **молча игнорируются** — запись создаётся с NULL/дефолтами и исчезает из всех schedule-фильтров.
+
+### Урок ревью 2026-04-17
+
+Baseline deep-review пропустил `pet_id` → `patient_id` в suggested_fix F1 потому что в inline-контексте Codex'у это было задекларировано неверно. Mitigation: все ревьюеры обязаны **читать этот раздел** при работе с tools, касающимися admission/medical_card/pet, и передавать его в промпт при Codex-эскалации.
+
+---
+
 ## 2026-04-08 — ClientPhone endpoint для нормализованного поиска по телефону
 
 **Источник:** `../vetmanager-extjs/rest/protected/models/ClientPhone.php`, `rest/protected/controllers/ClientPhoneController.php`, `application/src/Entity/ClientEntity.php::updateClearPhone()`. Real API probe на devtr6.
