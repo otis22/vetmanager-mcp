@@ -1371,15 +1371,17 @@
 
 **Rationale для отложенного остатка**: 92.1/92.3/92.4 — high-risk рефакторы критичного auth-path, требуют свежей сессии с фокусом и осторожным Codex review. Dead-public-API в 92.2 — zero-risk cleanup, сделан сразу.
 
-## Этап 93. Architecture: FilterBuilder + service/repository layer (H11, H21) — `todo`
+## Этап 93. Architecture: FilterBuilder + service/repository layer (H11, H21) — частично `done` / остаток `stop`
 
 Цель: убрать 15+ ручных `json.dumps` фильтров и миксование транспортного слоя с бизнес-логикой в `tools/`.
 
-- 93.1 `filters.py` модуль: типизированный `Filter` dataclass + helpers (eq, like, gte, lte, in_, between); `build_list_query_params` принимает `list[Filter] | list[dict]` — `todo`
-- 93.2 Мигрировать на FilterBuilder: `tools/client.py::get_client_profile`, `tools/_inactive_helpers.py`, `tools/medical_card.py`, `tools/pet.py`, `tools/operations.py`, `tools/admission.py` — `todo`
-- 93.3 Lint/test contract: ban `json.dumps([{"property"...}])` вне `filters.py` — `todo`
-- 93.4 `resources/<entity>.py` (ClientsGateway, MedicalCardsGateway, PetsGateway и т.д.) — владеют endpoint path, filter сериализацией, response unwrapping; `tools/*` зовут gateway-методы вместо `VetmanagerClient()` напрямую — `todo`
-- 93.5 Мигрировать 3-5 горячих tools на gateway; остальные постепенно — `todo`
+- 93.1 `filters.py` модуль: `Filter` dataclass + helpers (eq, ne, lt, lte, gt, gte, in_, not_in, like); `as_dict_list` для mixed list[Filter|dict]; `build_list_query_params` accepts Filter objects — `done`
+- 93.2 Миграция `tools/*.py` callers на FilterBuilder — `stop` (отложено в 93b, сквозной рефактор 7 модулей)
+- 93.3 Lint/test contract на raw json.dumps вне filters.py — `stop` (отложено в 93b, нужна infra)
+- 93.4 `resources/<entity>.py` gateway layer — `stop` (отложено в 93c, более крупный architectural shift)
+- 93.5 Миграция tools на gateway — `stop` (привязано к 93.4)
+
+Ship: builder доступен для новых callers, миграция existing — gradual.
 
 ## Этап 94. Tests hardening (H18, H19 + boundary gaps) — `todo`
 

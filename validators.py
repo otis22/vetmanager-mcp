@@ -174,17 +174,28 @@ def build_list_query_params(
     limit: int,
     offset: int,
     sort: list[dict[str, Any]] | None = None,
-    filters: list[dict[str, Any]] | None = None,
+    filters: list[dict[str, Any]] | list[Any] | None = None,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build common list-query params with optional sort/filter blocks."""
+    """Build common list-query params with optional sort/filter blocks.
+
+    `filters` may be a list of raw dicts (legacy callers) OR a list of
+    `filters.Filter` objects (typed builder). Mixed lists are also accepted.
+    """
     validate_list_params(limit, offset)
     params: dict[str, Any] = {"limit": limit, "offset": offset}
 
     if sort:
         params["sort"] = json.dumps(sort, separators=(",", ":"), ensure_ascii=False)
     if filters:
-        params["filter"] = json.dumps(filters, separators=(",", ":"), ensure_ascii=False)
+        # Lazy import avoids circular dependency (filters.py is a leaf module).
+        from filters import as_dict_list
+
+        normalized = as_dict_list(filters)
+        if normalized:
+            params["filter"] = json.dumps(
+                normalized, separators=(",", ":"), ensure_ascii=False
+            )
 
     if extra:
         for key, value in extra.items():
