@@ -102,11 +102,25 @@ async def test_get_inactive_clients_sends_status_active_and_last_visit_date_filt
 
     request = route.calls.last.request
     filter_param = request.url.params.get("filter", "")
-    assert '"status"' in filter_param
-    assert '"ACTIVE"' in filter_param
-    assert '"last_visit_date"' in filter_param
-    assert '">="' in filter_param
-    assert '"<="' in filter_param
+    # Parse as JSON and assert structurally — substring match would pass
+    # for any occurrence of '"ACTIVE"' regardless of which property owns it.
+    import json as _json
+    filter_list = _json.loads(filter_param)
+    status_filter = next(
+        (f for f in filter_list if f.get("property") == "status"), None
+    )
+    assert status_filter is not None
+    assert status_filter["value"] == "ACTIVE"
+    assert status_filter["operator"] == "="
+
+    last_visit_filters = [
+        f for f in filter_list if f.get("property") == "last_visit_date"
+    ]
+    assert len(last_visit_filters) == 2, (
+        f"expected two last_visit_date clauses (>= and <=), got {last_visit_filters}"
+    )
+    operators = sorted(f.get("operator") for f in last_visit_filters)
+    assert operators == ["<=", ">="]
 
 
 @pytest.mark.asyncio

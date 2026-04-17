@@ -86,6 +86,25 @@ async def test_http_error_raises_host_resolution_error():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_billing_api_500_raises_host_resolution_error():
+    """Stage 94 regression: billing-API 500 must surface as HostResolutionError
+    so callers see a consistent error shape instead of a raw httpx exception."""
+    respx.get(BILLING_URL).mock(return_value=httpx.Response(500))
+    with pytest.raises(HostResolutionError, match="500"):
+        await resolve_vetmanager_host(DOMAIN)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_billing_api_503_raises_host_resolution_error():
+    """503 from billing-API (maintenance / overload) also funneled to HostResolutionError."""
+    respx.get(BILLING_URL).mock(return_value=httpx.Response(503))
+    with pytest.raises(HostResolutionError, match="503"):
+        await resolve_vetmanager_host(DOMAIN)
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_empty_response_raises_host_resolution_error():
     respx.get(BILLING_URL).mock(
         return_value=httpx.Response(200, json={"data": {}})

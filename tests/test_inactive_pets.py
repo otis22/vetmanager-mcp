@@ -204,7 +204,15 @@ async def test_get_inactive_pets_filters_alive_status_only():
 
     request = pet_route.calls.last.request
     filter_param = request.url.params.get("filter", "")
-    assert '"alive"' in filter_param
+    import json as _json
+    filter_list = _json.loads(filter_param)
+    status_filter = next(
+        (f for f in filter_list if f.get("property") == "status"), None
+    )
+    assert status_filter is not None, (
+        f"expected status filter on pet, got {filter_list}"
+    )
+    assert status_filter["value"] == "alive"
 
 
 @pytest.mark.asyncio
@@ -235,8 +243,20 @@ async def test_get_inactive_pets_filters_by_owner_id_not_client_id():
 
     request = pet_route.calls.last.request
     filter_param = request.url.params.get("filter", "")
-    assert '"owner_id"' in filter_param
-    assert '"client_id"' not in filter_param
+    import json as _json
+    filter_list = _json.loads(filter_param)
+    owner_filter = next(
+        (f for f in filter_list if f.get("property") == "owner_id"), None
+    )
+    assert owner_filter is not None, (
+        f"expected owner_id filter, got {filter_list}"
+    )
+    client_id_filter = next(
+        (f for f in filter_list if f.get("property") == "client_id"), None
+    )
+    assert client_id_filter is None, (
+        f"pet filter must not use legacy client_id property: {filter_list}"
+    )
 
 
 @pytest.mark.asyncio

@@ -1383,16 +1383,18 @@
 
 Ship: builder доступен для новых callers, миграция existing — gradual.
 
-## Этап 94. Tests hardening (H18, H19 + boundary gaps) — `todo`
+## Этап 94. Tests hardening (H18, H19 + boundary gaps) — частично `done` / остаток `stop`
 
-Цель: устранить основную хрупкость тестов (asserts на приватные поля, substring-match фильтров) и закрыть unhappy-path пробелы.
+Цель: устранить основную хрупкость тестов и закрыть unhappy-path пробелы.
 
-- 94.1 `tests/runtime_factories.py`: ввести `make_client_with_resolved_runtime` через публичный test-mode конструктор VetmanagerClient (credentials object), убрать 8+ приватных полей — `todo`
-- 94.2 `tests/test_client_multitenancy.py`: asserts на `_auth_source`/`_domain`/`_api_key` → checks на outgoing headers через respx — `todo`
-- 94.3 Substring-match в `test_inactive_clients.py` / `test_inactive_pets.py` → `json.loads(filter_param)` и структурные asserts — `todo`
-- 94.4 Unhappy path в `test_e2e_mock_entities.py`: billing API 404/500, VM timeout, malformed JSON, 429 rate limit; переписать error-tests через `mcp.call_tool` вместо raw `client().get()` — `todo`
-- 94.5 Boundary tests: `test_inactive_pets` (last_visit_date=None), `test_inactive_clients` (months_min>max), `test_get_doctor_free_slots` (zero-length timesheet, 31-day boundary) — `todo`
-- 94.6 Concurrency test: 2 параллельных `mcp.call_tool` с shared bearer token — `todo`
+- 94.1 runtime_factories refactor — `stop` (отложено в 94b, wide test refactor)
+- 94.2 test_client_multitenancy private-attr asserts → outgoing headers check — `stop` (зависит от 94.1)
+- 94.3 Substring-match → structural JSON assertions в test_inactive_clients/pets — `done`
+- 94.4 billing-API 500/503 → HostResolutionError regression тесты — `done` (404 уже было)
+- 94.5 Boundary tests (last_visit_date=None, months_min>max, zero-length timesheet) — `stop` (отложено в 94b)
+- 94.6 Concurrency test — `stop` (отложено в 94b)
+
+Ship: главные хрупкие assertions структурированы; недостающее billing error-path coverage закрыто.
 
 ## Этап 95. Performance polish (cache / pool / memory / race) — `todo`
 
