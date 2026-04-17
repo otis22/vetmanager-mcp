@@ -460,4 +460,17 @@ def register(mcp: FastMCP) -> None:
         if section_errors:
             result["partial"] = True
             result["section_errors"] = section_errors
+            # Stage 98.4: partial failures are payload-level; surface them
+            # to logs too so SRE tailing sees degradation instead of only
+            # MCP caller.
+            from observability_logging import RUNTIME_LOGGER
+            RUNTIME_LOGGER.warning(
+                "get_client_profile partial failure",
+                extra={
+                    "event_name": "aggregator_partial",
+                    "tool": "get_client_profile",
+                    "client_id": client_id,
+                    "section_errors": section_errors,
+                },
+            )
         return result

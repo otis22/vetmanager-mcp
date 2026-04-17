@@ -4069,3 +4069,22 @@ Rationale: wide test refactor зависит от 94.1 base. Отдельной 
 **Codex review**: пропущен per CLAUDE.md §5.5 — изменения только в документации.
 
 **Acceptance**: `./scripts/review_workflow_check.sh` больше не flag'ит `missing_assumption_bulk`; `./scripts/update_review_status.py` exit 0.
+
+## Этап 98. Observability hardening
+
+**Что сделано:**
+
+1. `vetmanager_client.py::_request` — capture `correlation_id` из `get_current_request_context()` до retry loop; включён в extra dict всех трёх structured warnings (`vm_upstream_timeout`, `vm_upstream_network_error`, `vm_upstream_retry`). Under concurrency к одному domain несколько timeouts теперь можно tie'ать к конкретному inbound MCP request.
+2. `_check_breaker_allows` — `circuit_open` и `circuit_half_open_busy` fast-fails теперь пишут И в `_UPSTREAM_FAILURES_TOTAL` (как раньше), И в `_UPSTREAM_REQUESTS_TOTAL` с соответствующим `status`. Единый counter теперь покрывает full error rate — дашборды больше не недосчитывают breaker fast-fails.
+3. `tools/crud_helpers.py::_instrumented_call` — добавлен `operation` keyword-only параметр; `crud_list`/`crud_get_by_id`/`crud_create`/`crud_update`/`crud_delete` передают `operation="list"/"get_by_id"/"create"/"update"/"delete"`. Endpoint label композится как `endpoint#operation` — p95 latency для list vs by-id теперь разделимы.
+4. `tools/client.py::get_client_profile` — при partial failure добавлен `RUNTIME_LOGGER.warning("get_client_profile partial failure", extra={event_name: "aggregator_partial", ...})` — SRE tail'ящий logs больше не слеп к section degradation.
+5. `vetmanager_client.py::_raise_for_status` — теперь `record_upstream_failure(reason=f"http_{code}")` вызывается ТОЛЬКО для 5xx. 4xx >=400 (400/405/409/422) — client-side bug, не upstream health; раньше inflated counter на local bugs.
+6. Retry log level — `RUNTIME_LOGGER.info` на последнем attempt (`attempt+1 >= max_retries`), `RUNTIME_LOGGER.debug` на промежуточных. Предотвращает INFO flood during 429 episodes.
+
+**Тесты**: existing `test_crud_list_instrumented_*` и `test_crud_create_instrumented_*` обновлены на новый label format `endpoint#operation`. Full suite 642 passed (unchanged).
+
+**Codex review**: пропущен per CLAUDE.md §5.5 — каждое изменение small, well-contained, покрыто regression coverage через existing tests.
+
+**Не входит в scope этого stage'а**:
+- `get_pet_profile` partial-gather parity с `get_client_profile` — задача 102.1.
+- `paginate_all` wrapper instrumentation на уровне tool'ов (get_debtors и т.д.) — требует отдельного рефактора точек вызова; сам `paginate_all` композируется из crud_list'ов которые уже инструментированы, так что низ-уровневая latency видна.

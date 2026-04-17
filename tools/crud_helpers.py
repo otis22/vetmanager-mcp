@@ -24,10 +24,21 @@ async def _instrumented_call(
     endpoint: str,
     method: str,
     coro_factory: Callable[[], Awaitable[T]],
+    *,
+    operation: str = "",
 ) -> T:
-    """Wrap a single tool call, record latency + outcome metric."""
+    """Wrap a single tool call, record latency + outcome metric.
+
+    Stage 98.7: `operation` label differentiates `list` vs `get_by_id` vs
+    `create` / `update` / `delete` even when they share the same endpoint
+    base path. Without it, `crud_list("/rest/api/client")` and
+    `crud_get_by_id("/rest/api/client")` would bucket together and their
+    p95 latencies couldn't be separated.
+    """
     started = time.monotonic()
     outcome = "success"
+    # Compose endpoint+operation label so dashboards can filter per-op.
+    endpoint_label = f"{endpoint}#{operation}" if operation else endpoint
     try:
         return await coro_factory()
     except BaseException:
@@ -39,7 +50,7 @@ async def _instrumented_call(
     finally:
         elapsed = time.monotonic() - started
         record_tool_call(
-            endpoint=endpoint,
+            endpoint=endpoint_label,
             method=method,
             outcome=outcome,
             duration_seconds=elapsed,
@@ -67,6 +78,7 @@ async def crud_list(
         endpoint,
         "GET",
         lambda: VetmanagerClient().get(endpoint, params=params),
+        operation="list",
     )
 
 
@@ -76,6 +88,7 @@ async def crud_get_by_id(endpoint: str, entity_id: int) -> dict:
         endpoint,
         "GET",
         lambda: VetmanagerClient().get(f"{endpoint}/{entity_id}"),
+        operation="get_by_id",
     )
 
 
@@ -85,6 +98,7 @@ async def crud_create(endpoint: str, payload: dict) -> dict:
         endpoint,
         "POST",
         lambda: VetmanagerClient().post(endpoint, json=payload),
+        operation="create",
     )
 
 
@@ -94,6 +108,7 @@ async def crud_update(endpoint: str, entity_id: int, payload: dict) -> dict:
         endpoint,
         "PUT",
         lambda: VetmanagerClient().put(f"{endpoint}/{entity_id}", json=payload),
+        operation="update",
     )
 
 
@@ -103,6 +118,7 @@ async def crud_delete(endpoint: str, entity_id: int) -> dict:
         endpoint,
         "DELETE",
         lambda: VetmanagerClient().delete(f"{endpoint}/{entity_id}"),
+        operation="delete",
     )
 
 

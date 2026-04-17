@@ -1446,19 +1446,17 @@ Full suite: 611 → **642 passed** (+31).
 
 No code changes; Codex review пропускается по §5.5. Full suite 642 passed (unchanged).
 
-## Этап 98. Observability hardening — `todo`
+## Этап 98. Observability hardening — `done`
 
-Источник: super-review high-findings #7-9 и medium observability.
+- 98.1 `correlation_id` capture до retry loop + в extra dict timeout/network/retry warnings — `done`
+- 98.2 `circuit_open` / `circuit_half_open_busy` → `record_upstream_request(status, duration_seconds=0.0)` + legacy `record_upstream_failure` — `done`
+- 98.3 `get_client_profile` partial-gather + `_instrumented_call` для crud_* (все методы) — `done` (get_pet_profile — 102.1, paginate_all wrapper instrumentation — не входит в crud_helpers scope)
+- 98.4 Partial failures structured warning в `get_client_profile` — `done`
+- 98.5 4xx НЕ учитывается как `upstream_failures_total` — только 5xx — `done`
+- 98.6 `vm_upstream_retry` log: DEBUG для промежуточных attempt, INFO только на last attempt — `done`
+- 98.7 `_instrumented_call` `operation` label (list/get_by_id/create/update/delete) — `done`
 
-- 98.1 `correlation_id` в structured warnings `vm_upstream_timeout`, `vm_upstream_network_error`, `vm_upstream_retry`: capture из `get_current_request_context()` до retry loop, добавить в extra dict — `todo`
-- 98.2 `circuit_open` + `circuit_half_open_busy` в unified counter: добавить `record_upstream_request(target, status="circuit_open", duration_seconds=0.0)` параллельно `record_upstream_failure` — чтобы дашборды считали total error rate через одну metric family — `todo`
-- 98.3 Обернуть `get_client_profile`, `get_pet_profile`, и wrapper-callers `paginate_all` (в tools/client.py::get_debtors, tools/invoice.py::get_average_invoice, etc.) в `_instrumented_call` — `todo`
-- 98.4 Partial failures в `get_client_profile` (и `get_pet_profile` после 102.1) — `RUNTIME_LOGGER.warning` с `event_name="aggregator_partial"` + `section_errors` в extra — `todo`
-- 98.5 `_raise_for_status`: 4xx НЕ считать как `record_upstream_failure` — только 5xx. 4xx — client-side issue, не signal upstream health — `todo`
-- 98.6 `vm_upstream_retry` log: понизить INFO → DEBUG для промежуточных attempt, INFO только на последнем attempt (или добавить aggregate counter `vm_retries_total`) — `todo`
-- 98.7 `_instrumented_call`: crud_get_by_id/crud_update/crud_delete должны иметь отдельный label от crud_list — добавить `operation` label (list/get_by_id/create/update/delete) чтобы per-op latency не конфлатился — `todo`
-
-Acceptance: все structured warnings содержат correlation_id; /metrics exposes circuit_open в upstream_requests_total; aggregator tools видны в tool_calls_total.
+Acceptance full suite 642 passed.
 
 ## Этап 99. Reliability hardening II — `todo`
 

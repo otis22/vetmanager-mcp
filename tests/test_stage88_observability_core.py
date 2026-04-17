@@ -218,8 +218,10 @@ async def test_crud_list_instrumented_with_tool_metric_on_success():
         await crud_list("/rest/api/client", limit=20, offset=0)
 
     snap = snapshot_service_metrics()
-    assert snap["tool_calls_total"].get("/rest/api/client|GET|success") == 1
-    latency = snap["tool_call_latency_seconds"].get("/rest/api/client|GET")
+    # Stage 98.7: _instrumented_call composes endpoint#operation label so
+    # list vs get_by_id vs create can be told apart on the same REST path.
+    assert snap["tool_calls_total"].get("/rest/api/client#list|GET|success") == 1
+    latency = snap["tool_call_latency_seconds"].get("/rest/api/client#list|GET")
     assert latency and latency["count"] == 1
 
 
@@ -237,7 +239,7 @@ async def test_crud_create_instrumented_with_error_outcome_on_failure():
             await crud_create("/rest/api/client", {"firstName": "X"})
 
     snap = snapshot_service_metrics()
-    assert snap["tool_calls_total"].get("/rest/api/client|POST|error") == 1
+    assert snap["tool_calls_total"].get("/rest/api/client#create|POST|error") == 1
 
 
 # ── Prometheus exposition ───────────────────────────────────────────────────

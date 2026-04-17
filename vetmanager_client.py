@@ -156,7 +156,15 @@ async def _check_breaker_allows(domain: str) -> None:
     """Raise VetmanagerUpstreamUnavailable if breaker is OPEN and cooldown
     has not elapsed, OR if already HALF_OPEN with a probe in flight (strict
     single-probe semantics under concurrency). Transitions OPEN → HALF_OPEN
-    and marks probe_in_flight when admitting the first probe after cooldown."""
+    and marks probe_in_flight when admitting the first probe after cooldown.
+
+    Stage 98.2: circuit_open / circuit_half_open_busy fast-fails are also
+    recorded in `record_upstream_request` (status="circuit_open") so a single
+    query on `vetmanager_upstream_requests_total` sees the full error rate
+    including breaker fast-fails — the previous split between
+    upstream_failures_total and upstream_requests_total made dashboards
+    under-count during outages.
+    """
     breaker = await _get_breaker(domain)
     async with breaker.lock:
         if breaker.state == "open":
@@ -164,6 +172,11 @@ async def _check_breaker_allows(domain: str) -> None:
             if elapsed < _BREAKER_COOLDOWN_SECONDS:
                 record_upstream_failure(
                     target="vetmanager_api", reason="circuit_open"
+                )
+                record_upstream_request(
+                    target="vetmanager_api",
+                    status="circuit_open",
+                    duration_seconds=0.0,
                 )
                 raise VetmanagerUpstreamUnavailable(
                     f"VM API circuit breaker open for {domain}; "
@@ -178,6 +191,11 @@ async def _check_breaker_allows(domain: str) -> None:
             if breaker.probe_in_flight:
                 record_upstream_failure(
                     target="vetmanager_api", reason="circuit_half_open_busy"
+                )
+                record_upstream_request(
+                    target="vetmanager_api",
+                    status="circuit_half_open_busy",
+                    duration_seconds=0.0,
                 )
                 raise VetmanagerUpstreamUnavailable(
                     f"VM API circuit breaker half-open for {domain}; "
@@ -431,6 +449,11 @@ class VetmanagerClient:
         domain_key = self._domain or "unknown"
         await _check_breaker_allows(domain_key)
 
+        # Stage 98.1: capture correlation_id once so structured warnings on
+        # timeout / network / retry can tie back to the inbound MCP request.
+        _corr_ctx = get_current_request_context()
+        outbound_correlation_id = _corr_ctx.get("correlation_id") if _corr_ctx else None
+
         max_retries = MAX_RETRIES_READ if upper_method == "GET" else MAX_RETRIES_WRITE
         attempt = 0
         while True:
@@ -456,10 +479,15 @@ class VetmanagerClient:
                 ):
                     retry_after = _parse_retry_after(response.headers.get("Retry-After"))
                     delay = _backoff_seconds(attempt, retry_after)
-                    RUNTIME_LOGGER.info(
+                    # Stage 98.6: intermediate retries at DEBUG to avoid INFO
+                    # floods during 429 episodes; only the last attempt escalates.
+                    is_last_attempt = attempt + 1 >= max_retries
+                    _retry_logger = RUNTIME_LOGGER.info if is_last_attempt else RUNTIME_LOGGER.debug
+                    _retry_logger(
                         "VM upstream retryable status",
                         extra={
                             "event_name": "vm_upstream_retry",
+                            "correlation_id": outbound_correlation_id,
                             "domain": self._domain,
                             "method": upper_method,
                             "url_path": path,
@@ -512,6 +540,7 @@ class VetmanagerClient:
                     "VM upstream timeout",
                     extra={
                         "event_name": "vm_upstream_timeout",
+                        "correlation_id": outbound_correlation_id,
                         "domain": self._domain,
                         "method": upper_method,
                         "url_path": path,
@@ -550,6 +579,7 @@ class VetmanagerClient:
                     "VM upstream network error",
                     extra={
                         "event_name": "vm_upstream_network_error",
+                        "correlation_id": outbound_correlation_id,
                         "domain": self._domain,
                         "method": upper_method,
                         "url_path": path,
@@ -572,7 +602,14 @@ class VetmanagerClient:
         if response.status_code == 404:
             raise NotFoundError("Resource not found", status_code=404)
         if response.status_code >= 400:
-            record_upstream_failure(target="vetmanager_api", reason=f"http_{response.status_code}")
+            # Stage 98.5: only 5xx counts as upstream failure (upstream health
+            # signal). 4xx >=400 (400/405/409/422 etc.) is a client-side issue
+            # — surfacing it as upstream_failures_total inflates the counter
+            # on local bugs and wakes SRE on-call with false positives.
+            if response.status_code >= 500:
+                record_upstream_failure(
+                    target="vetmanager_api", reason=f"http_{response.status_code}"
+                )
             raise VetmanagerError(
                 f"Upstream API error (HTTP {response.status_code})",
                 status_code=response.status_code,
