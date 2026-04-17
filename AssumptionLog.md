@@ -3868,3 +3868,46 @@ Full suite: 596 passed.
 **Тесты**: документация без unit-тестов; `scripts/review_workflow_check.sh` теперь выдаёт только low `tests_reminder` (раньше high `missing_prd` для этапов 82-84 из-за отсутствия PRD файлов).
 
 Full suite: 596 passed (без изменений, docs-only).
+
+## Этап 91. VM client overhaul — singleton + retry + timeouts + breaker
+
+**Что сделано:**
+
+Устранён performance-high F8 из baseline. Три связанных дефекта в `vetmanager_client.py` исправлены одним рефактором:
+
+1. **Singleton httpx.AsyncClient** (91.1): раньше `async with httpx.AsyncClient()` на каждый `_request` → fresh TLS handshake (100-400ms overhead). Теперь lazy `_get_shared_http_client()` с double-check locking; module-level ref переиспользуется между всеми tool calls; Limits(max_keepalive=50, max_connections=100, keepalive_expiry=30s) даёт пул.
+2. **Retry policy** (91.2): для GET — до 3 retry на `_RETRY_STATUS_CODES = {429, 502, 503, 504}` + transport-level timeout/network errors. Backoff: `min(0.2 * 2^attempt + jitter, 5s)`. `Retry-After` header (seconds + HTTP-date) честно honored. POST/PUT/DELETE — `MAX_RETRIES_WRITE=0`, retry только на transport errors (не на 5xx — чтобы сохранить идемпотентность в отсутствии idempotency keys VM API).
+3. **Timeouts split** (91.3): `httpx.Timeout(connect=5.0, read=20.0, write=10.0, pool=2.0)` — раньше было одно 30s total, медленный DNS/TCP путь тянулся до 30s fallback.
+4. **Circuit breaker per-domain** (91.4): state machine CLOSED → (5 failures in 60s window) → OPEN → (30s cooldown) → HALF_OPEN → success/failure → CLOSED/OPEN. Новое исключение `VetmanagerUpstreamUnavailable(VetmanagerError)` позволяет caller'ам отличить fast-fail от обычной ошибки upstream'а — но tools, ловящие `VetmanagerError`, backwards-compatible.
+
+**Архитектурные решения:**
+- **Breaker ловит только 5xx и network/timeout**, не 4xx (AuthError/NotFoundError — client-side issues, не upstream health).
+- **Breaker ловит isolated по domain** (мульти-тенант; падение одной клиники не закрывает breaker для других).
+- **Retry backoff с jitter** предотвращает thundering herd при восстановлении upstream.
+- **Lazy singleton** (не eager в `server.py` startup): упрощает test isolation — conftest сбрасывает ref к None перед каждым тестом, следующий `_request` создаёт свежий client, который видит текущий respx mock.
+
+**Test isolation**: добавил `_reset_vm_client_state` autouse-фикстуру в `tests/conftest.py` — синхронно дропает `_shared_http_client` и `_breakers.clear()`. НЕ await close() — default suite работает с `-W error`, ResourceWarning из asyncio cleanup поднимается в test failure. GC разбирается с dropped client.
+
+**Тесты**: 14 новых в `tests/test_stage91_vm_client_overhaul.py`:
+- `_parse_retry_after` (seconds/empty/HTTP-date)
+- `_backoff_seconds` monotonic
+- Shared client reuse across requests (identity assertion)
+- GET 503→503→200 retry chain (call_count=3)
+- Retry-After header respected (sleep invoked)
+- GET max retries exhaustion raises
+- POST 500 → call_count=1 (no retry)
+- Breaker opens after 5 failures → 6th fast-fails
+- Breaker half-open probe → success → closed, counter reset
+- Timeouts split configured correctly
+- Limits enable keep-alive pool
+
+Full suite: 596 → **610 passed** (+14).
+
+**Codex review**: планируется перед commit.
+
+**Вне scope (→ этап 91b или отдельно):**
+- 91.5 `_pace_requests` refactor (серializует asyncio.gather через lock). Без этого fix'а latency benefit от singleton частично теряется в aggregator tools. Отложено — рефакторится через token bucket, требует карантина на rate-limit impact.
+- 91.6 Process-level TTL cache для `resolve_vetmanager_host(domain)`. Billing API dependency снижается только с этой оптимизацией. Отложено.
+- 91.7 Real load test на devtr6 — вручную после деплоя.
+
+**Breaking changes**: нет. Новое `VetmanagerUpstreamUnavailable` наследует `VetmanagerError` — существующие `except VetmanagerError:` ловят его.

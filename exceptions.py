@@ -34,3 +34,14 @@ class VetmanagerTimeoutError(VetmanagerError):
 
 class HostResolutionError(VetmanagerError):
     """Failed to resolve Vetmanager host for the given domain."""
+
+
+class VetmanagerUpstreamUnavailable(VetmanagerError):
+    """Circuit breaker is open for this domain — upstream considered unhealthy.
+
+    Tools catching VetmanagerError continue to catch this too (backwards-compatible).
+    """
+
+    def __init__(self, message: str, *, retry_after_seconds: float | None = None):
+        super().__init__(message, status_code=503)
+        self.retry_after_seconds = retry_after_seconds

@@ -32,6 +32,30 @@ def _clear_request_cache():
     REQUEST_CACHE._entries.clear()
     REQUEST_CACHE._tag_index.clear()
 
+
+@pytest.fixture(autouse=True)
+def _reset_vm_client_state():
+    """Reset shared httpx.AsyncClient and per-domain circuit breakers between tests.
+
+    Stage 91 introduced module-level shared state (singleton client + breaker
+    registry). respx patches httpx globally, but shared client state carries
+    open-breaker flags or keep-alive connections across tests unless reset.
+
+    We drop references synchronously instead of awaiting close() — the default
+    test suite runs with `-W error`, which would promote any ResourceWarning
+    from asyncio bookkeeping into a test failure. Dropping the ref lets GC
+    handle the cleanup and avoids creating an extra event loop here.
+    """
+    import vetmanager_client as _vm_client
+
+    def _drop() -> None:
+        _vm_client._shared_http_client = None
+        _vm_client._breakers.clear()
+
+    _drop()
+    yield
+    _drop()
+
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
 
 

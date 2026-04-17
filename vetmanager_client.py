@@ -1,8 +1,11 @@
 import logging
 import asyncio
+import email.utils
 import hashlib
+import random
 import time
 import uuid
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlencode
 
@@ -14,6 +17,7 @@ from exceptions import (
     NotFoundError,
     VetmanagerError,
     VetmanagerTimeoutError,
+    VetmanagerUpstreamUnavailable,
 )
 from host_resolver import resolve_vetmanager_host
 from observability_logging import RUNTIME_LOGGER
@@ -26,14 +30,229 @@ from service_metrics import record_upstream_failure, record_upstream_request
 from token_scopes import required_scope_for_request
 from vetmanager_auth import VetmanagerAuthContext
 
+# Legacy single timeout kept for BC — new code uses _REQUEST_TIMEOUTS split.
 REQUEST_TIMEOUT = 30.0
 REQUEST_GAP_SECONDS = 0.05
-MAX_RETRIES = 1
+
+# Retries for idempotent reads (GET). POST/PUT/DELETE do not retry on 5xx/429
+# to preserve idempotency (VM API has no idempotency keys).
+MAX_RETRIES_READ = 3
+MAX_RETRIES_WRITE = 0
+
+# Statuses worth retrying for GET. 401/403/404/400 are not transient.
+_RETRY_STATUS_CODES = frozenset({429, 502, 503, 504})
+
+_BACKOFF_BASE_SECONDS = 0.2
+_BACKOFF_MAX_SECONDS = 5.0
+
+# Split timeouts so a fast-failing DNS/TCP path does not wait the full 30s.
+_REQUEST_TIMEOUTS = httpx.Timeout(connect=5.0, read=20.0, write=10.0, pool=2.0)
+
+_HTTP_LIMITS = httpx.Limits(
+    max_keepalive_connections=50,
+    max_connections=100,
+    keepalive_expiry=30.0,
+)
+
 # Default cache TTL for stable reference data (breeds, cities, goods, etc.).
 CACHE_TTL_SECONDS = 900.0
 # Short TTL for frequently-updated entities: admissions, medical cards, invoices, clients.
 # Keeps data fresh while still reducing redundant API calls within a single session.
 CACHE_TTL_SHORT_SECONDS = 60.0
+
+
+# ── Shared httpx.AsyncClient (singleton) ────────────────────────────────────
+
+_shared_http_client: httpx.AsyncClient | None = None
+_shared_http_client_lock = asyncio.Lock()
+
+
+async def _get_shared_http_client() -> httpx.AsyncClient:
+    """Return a process-wide singleton httpx.AsyncClient with keep-alive pool.
+
+    Lazy-initialized on first access. Creating a fresh client per request
+    costs a TLS handshake each time (~100-400ms on prod). Reuse eliminates
+    that overhead and also shares the underlying connection pool.
+    """
+    global _shared_http_client
+    client = _shared_http_client
+    if client is not None and not client.is_closed:
+        return client
+    async with _shared_http_client_lock:
+        client = _shared_http_client
+        if client is not None and not client.is_closed:
+            return client
+        client = httpx.AsyncClient(timeout=_REQUEST_TIMEOUTS, limits=_HTTP_LIMITS)
+        _shared_http_client = client
+        return client
+
+
+async def reset_shared_http_client() -> None:
+    """Close and drop the shared client. For tests and shutdown."""
+    global _shared_http_client
+    async with _shared_http_client_lock:
+        client = _shared_http_client
+        _shared_http_client = None
+    if client is not None:
+        try:
+            await client.aclose()
+        except Exception:
+            pass
+
+
+# ── Circuit breaker (per-domain) ────────────────────────────────────────────
+
+_BREAKER_FAILURE_THRESHOLD = 5
+_BREAKER_WINDOW_SECONDS = 60.0
+_BREAKER_COOLDOWN_SECONDS = 30.0
+
+
+@dataclass
+class _DomainBreaker:
+    """Per-domain circuit breaker state.
+
+    CLOSED → (N failures in window) → OPEN → (cooldown) → HALF_OPEN → (success) → CLOSED
+                                                                    ↓ (fail)
+                                                                  → OPEN (new cooldown)
+
+    `probe_in_flight` enforces strict single-probe semantics in HALF_OPEN:
+    under concurrency, only one request is admitted to test the upstream;
+    the rest fast-fail until the probe completes (success → CLOSED and other
+    callers proceed normally; failure → OPEN with fresh cooldown).
+    """
+
+    state: str = "closed"  # closed | open | half_open
+    consecutive_failures: int = 0
+    window_start: float = 0.0
+    opened_at: float = 0.0
+    probe_in_flight: bool = False
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+
+_breakers: dict[str, _DomainBreaker] = {}
+_breakers_global_lock = asyncio.Lock()
+
+
+async def _get_breaker(domain: str) -> _DomainBreaker:
+    breaker = _breakers.get(domain)
+    if breaker is not None:
+        return breaker
+    async with _breakers_global_lock:
+        breaker = _breakers.get(domain)
+        if breaker is None:
+            breaker = _DomainBreaker()
+            _breakers[domain] = breaker
+        return breaker
+
+
+async def reset_breakers() -> None:
+    """Clear all breaker state. For tests."""
+    async with _breakers_global_lock:
+        _breakers.clear()
+
+
+async def _check_breaker_allows(domain: str) -> None:
+    """Raise VetmanagerUpstreamUnavailable if breaker is OPEN and cooldown
+    has not elapsed, OR if already HALF_OPEN with a probe in flight (strict
+    single-probe semantics under concurrency). Transitions OPEN → HALF_OPEN
+    and marks probe_in_flight when admitting the first probe after cooldown."""
+    breaker = await _get_breaker(domain)
+    async with breaker.lock:
+        if breaker.state == "open":
+            elapsed = time.monotonic() - breaker.opened_at
+            if elapsed < _BREAKER_COOLDOWN_SECONDS:
+                record_upstream_failure(
+                    target="vetmanager_api", reason="circuit_open"
+                )
+                raise VetmanagerUpstreamUnavailable(
+                    f"VM API circuit breaker open for {domain}; "
+                    f"retry after {_BREAKER_COOLDOWN_SECONDS - elapsed:.0f}s",
+                    retry_after_seconds=_BREAKER_COOLDOWN_SECONDS - elapsed,
+                )
+            # Cooldown elapsed — transition to HALF_OPEN and admit one probe.
+            breaker.state = "half_open"
+            breaker.probe_in_flight = True
+            return
+        if breaker.state == "half_open":
+            if breaker.probe_in_flight:
+                record_upstream_failure(
+                    target="vetmanager_api", reason="circuit_half_open_busy"
+                )
+                raise VetmanagerUpstreamUnavailable(
+                    f"VM API circuit breaker half-open for {domain}; "
+                    "probe already in flight",
+                    retry_after_seconds=1.0,
+                )
+            # First caller after a previous probe cleared — admit as new probe.
+            breaker.probe_in_flight = True
+
+
+async def _breaker_record_success(domain: str) -> None:
+    breaker = await _get_breaker(domain)
+    async with breaker.lock:
+        breaker.consecutive_failures = 0
+        breaker.window_start = 0.0
+        breaker.probe_in_flight = False
+        if breaker.state in ("half_open", "open"):
+            breaker.state = "closed"
+
+
+async def _breaker_record_failure(domain: str) -> None:
+    breaker = await _get_breaker(domain)
+    async with breaker.lock:
+        now = time.monotonic()
+        if breaker.state == "half_open":
+            # Probe failed — back to OPEN with fresh cooldown.
+            breaker.state = "open"
+            breaker.opened_at = now
+            breaker.probe_in_flight = False
+            return
+        # CLOSED state: increment within sliding window.
+        if breaker.window_start == 0.0 or (now - breaker.window_start) > _BREAKER_WINDOW_SECONDS:
+            breaker.window_start = now
+            breaker.consecutive_failures = 1
+        else:
+            breaker.consecutive_failures += 1
+        if breaker.consecutive_failures >= _BREAKER_FAILURE_THRESHOLD:
+            breaker.state = "open"
+            breaker.opened_at = now
+
+
+# ── Backoff helpers ─────────────────────────────────────────────────────────
+
+
+def _parse_retry_after(header_value: str | None) -> float | None:
+    if not header_value:
+        return None
+    header_value = header_value.strip()
+    # Integer seconds form.
+    try:
+        seconds = float(header_value)
+        return max(0.0, seconds)
+    except ValueError:
+        pass
+    # HTTP-date form (RFC 7231).
+    try:
+        parsed_dt = email.utils.parsedate_to_datetime(header_value)
+        if parsed_dt is None:
+            return None
+        import datetime as _dt
+        now = _dt.datetime.now(tz=parsed_dt.tzinfo or _dt.timezone.utc)
+        delta = (parsed_dt - now).total_seconds()
+        return max(0.0, delta)
+    except Exception:
+        return None
+
+
+def _backoff_seconds(attempt: int, retry_after: float | None = None) -> float:
+    """Compute backoff delay. attempt starts at 0 for the first retry."""
+    computed = min(
+        _BACKOFF_BASE_SECONDS * (2 ** attempt) + random.uniform(0, 0.1),
+        _BACKOFF_MAX_SECONDS,
+    )
+    if retry_after is not None:
+        return max(computed, retry_after)
+    return computed
 
 # Entities that change often and should use the short TTL.
 _SHORT_TTL_ENTITIES = frozenset({
@@ -190,52 +409,89 @@ class VetmanagerClient:
         params = kwargs.get("params")
         cache_key = ""
         entity_tag = self._entity_tag(path)
-        if method.upper() == "GET":
+        upper_method = method.upper()
+        if upper_method == "GET":
             full_url = self._canonical_url(url, params if isinstance(params, dict) else None)
             cache_key = self._cache_key(method, full_url)
             cached = await REQUEST_CACHE.get(cache_key)
             if cached is not None:
                 return cached
 
-        for attempt in range(MAX_RETRIES + 1):
+        # Circuit breaker fast-path: if domain is currently OPEN and cooldown
+        # has not elapsed, fail fast instead of waiting the full timeout.
+        domain_key = self._domain or "unknown"
+        await _check_breaker_allows(domain_key)
+
+        max_retries = MAX_RETRIES_READ if upper_method == "GET" else MAX_RETRIES_WRITE
+        attempt = 0
+        while True:
             try:
                 await self._pace_requests()
-                # Started AFTER pace_requests so the upstream latency metric
-                # reflects only the httpx round-trip, not our own client-side
-                # pacing delay (REQUEST_GAP_SECONDS serialization).
+                # Started AFTER pace_requests so upstream latency metric
+                # reflects only the httpx round-trip, not client-side pacing.
                 started = time.monotonic()
-                timeout = httpx.Timeout(REQUEST_TIMEOUT)
-                async with httpx.AsyncClient(timeout=timeout) as http:
-                    response = await http.request(method, url, headers=self._headers(), **kwargs)
-                    elapsed = time.monotonic() - started
-                    record_upstream_request(
-                        target="vetmanager_api",
-                        status=f"http_{response.status_code}",
-                        duration_seconds=elapsed,
+                client = await _get_shared_http_client()
+                response = await client.request(method, url, headers=self._headers(), **kwargs)
+                elapsed = time.monotonic() - started
+                record_upstream_request(
+                    target="vetmanager_api",
+                    status=f"http_{response.status_code}",
+                    duration_seconds=elapsed,
+                )
+
+                # Retryable HTTP status for idempotent reads only.
+                if (
+                    upper_method == "GET"
+                    and response.status_code in _RETRY_STATUS_CODES
+                    and attempt < max_retries
+                ):
+                    retry_after = _parse_retry_after(response.headers.get("Retry-After"))
+                    delay = _backoff_seconds(attempt, retry_after)
+                    RUNTIME_LOGGER.info(
+                        "VM upstream retryable status",
+                        extra={
+                            "event_name": "vm_upstream_retry",
+                            "domain": self._domain,
+                            "method": upper_method,
+                            "url_path": path,
+                            "status_code": response.status_code,
+                            "attempt": attempt + 1,
+                            "backoff_seconds": round(delay, 3),
+                        },
                     )
-                    self._raise_for_status(response)
-                    payload = response.json()
-                    upper_method = method.upper()
-                    if upper_method == "GET":
-                        entity_name = self._entity_from_path(path)
-                        ttl = (
-                            CACHE_TTL_SHORT_SECONDS
-                            if entity_name in _SHORT_TTL_ENTITIES
-                            else CACHE_TTL_SECONDS
-                        )
-                        await REQUEST_CACHE.set(
-                            key=cache_key,
-                            value=payload,
-                            ttl_seconds=ttl,
-                            tags=(entity_tag,),
-                        )
-                    elif upper_method in {"POST", "PUT", "DELETE"}:
-                        await REQUEST_CACHE.invalidate_tag(entity_tag)
-                    return payload
+                    await asyncio.sleep(delay)
+                    attempt += 1
+                    continue
+
+                # 5xx response (either non-GET or exhausted retries) counts
+                # as upstream unhealth — breaker needs to know BEFORE we raise.
+                if response.status_code >= 500:
+                    await _breaker_record_failure(domain_key)
+
+                self._raise_for_status(response)
+                payload = response.json()
+                await _breaker_record_success(domain_key)
+                if upper_method == "GET":
+                    entity_name = self._entity_from_path(path)
+                    ttl = (
+                        CACHE_TTL_SHORT_SECONDS
+                        if entity_name in _SHORT_TTL_ENTITIES
+                        else CACHE_TTL_SECONDS
+                    )
+                    await REQUEST_CACHE.set(
+                        key=cache_key,
+                        value=payload,
+                        ttl_seconds=ttl,
+                        tags=(entity_tag,),
+                    )
+                elif upper_method in {"POST", "PUT", "DELETE"}:
+                    await REQUEST_CACHE.invalidate_tag(entity_tag)
+                return payload
             except httpx.TimeoutException as exc:
                 elapsed = time.monotonic() - started
-                if attempt < MAX_RETRIES:
-                    await asyncio.sleep(0.1 * (attempt + 1))
+                if attempt < max_retries:
+                    await asyncio.sleep(_backoff_seconds(attempt))
+                    attempt += 1
                     continue
                 record_upstream_failure(target="vetmanager_api", reason="timeout")
                 record_upstream_request(
@@ -248,19 +504,23 @@ class VetmanagerClient:
                     extra={
                         "event_name": "vm_upstream_timeout",
                         "domain": self._domain,
-                        "method": method.upper(),
+                        "method": upper_method,
                         "url_path": path,
                         "elapsed_ms": round(elapsed * 1000, 2),
                         "attempt": attempt + 1,
                     },
                 )
+                await _breaker_record_failure(domain_key)
                 raise VetmanagerTimeoutError(f"Request to {url} timed out") from exc
             except (AuthError, NotFoundError, VetmanagerError):
+                # Upstream 4xx and VetmanagerError do not count as breaker
+                # failures — they reflect client-side issues, not upstream health.
                 raise
             except httpx.RequestError as exc:
                 elapsed = time.monotonic() - started
-                if attempt < MAX_RETRIES:
-                    await asyncio.sleep(0.1 * (attempt + 1))
+                if attempt < max_retries:
+                    await asyncio.sleep(_backoff_seconds(attempt))
+                    attempt += 1
                     continue
                 record_upstream_failure(target="vetmanager_api", reason="network_error")
                 record_upstream_request(
@@ -273,13 +533,14 @@ class VetmanagerClient:
                     extra={
                         "event_name": "vm_upstream_network_error",
                         "domain": self._domain,
-                        "method": method.upper(),
+                        "method": upper_method,
                         "url_path": path,
                         "elapsed_ms": round(elapsed * 1000, 2),
                         "attempt": attempt + 1,
                         "error_class": exc.__class__.__name__,
                     },
                 )
+                await _breaker_record_failure(domain_key)
                 raise VetmanagerError(f"Network error requesting {url}: {exc}") from exc
 
     def _raise_for_status(self, response: httpx.Response) -> None:

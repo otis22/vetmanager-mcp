@@ -1346,17 +1346,18 @@
 
 **Skip:** CLAUDE.md §5.4 2-vs-3 iteration contradiction — текущий текст (2 итерации) актуален; commit f507fc1 с текстом "3 per task" был откатом, явного callout не требуется.
 
-## Этап 91. VM client overhaul: singleton + retry + circuit breaker (F8) — `todo`
+## Этап 91. VM client overhaul: singleton + retry + timeouts + breaker (F8) — `done`
 
 Цель: устранить главный performance-high из baseline. Сейчас каждый `_request` открывает новый `httpx.AsyncClient` → fresh TLS handshake. Плюс retry только на network-error без 5xx/429 поддержки, нет circuit breaker.
 
-- 91.1 Process-wide `httpx.AsyncClient` с `Limits(max_keepalive_connections=50, max_connections=100)`, startup/shutdown hooks в `server.py` — `todo`
-- 91.2 Retry policy: exponential backoff с jitter на 429/502/503/504 + honor `Retry-After`; MAX_RETRIES=3 для GET, 0 для POST/PUT/DELETE (non-idempotent) — `todo`
-- 91.3 Timeouts split: `httpx.Timeout(connect=5.0, read=20.0, write=10.0, pool=2.0)` — `todo`
-- 91.4 Circuit breaker keyed на `domain` (pybreaker или ~40-line custom): N failures в окне M → open на T сек → fail-fast — `todo`
-- 91.5 `_pace_requests`: убрать serialize через lock (сейчас `asyncio.gather` эффективно sequential) — перейти на token bucket per-domain без сериализации отдельных вызовов — `todo`
-- 91.6 Process-level TTL cache для `resolve_vetmanager_host(domain)` — 1 час, чтобы не дёргать billing API на каждый tool call — `todo`
-- 91.7 Load test: до/после замер на devtr6 на 10 parallel tool calls — `todo`
+- 91.1 Module-level lazy singleton `httpx.AsyncClient` с `Limits(max_keepalive=50, max_connections=100, keepalive_expiry=30s)`; `_get_shared_http_client()` с double-check locking — `done`
+- 91.2 Retry policy: exponential backoff (0.2 * 2^attempt + jitter, max 5s) на 429/502/503/504 для GET; honor `Retry-After` header (seconds + HTTP-date); MAX_RETRIES_READ=3, MAX_RETRIES_WRITE=0 — `done`
+- 91.3 Timeouts split: `httpx.Timeout(connect=5, read=20, write=10, pool=2)` — `done`
+- 91.4 Circuit breaker per-domain (custom ~100 LOC): 5 failures в окне 60s → OPEN на 30s → HALF_OPEN probe → CLOSED/re-OPEN. Новое исключение `VetmanagerUpstreamUnavailable` в `exceptions.py` — `done`
+- 91.5 `_pace_requests` refactor (убрать serialize на gather) — `stop` (отложено в 91b)
+- 91.6 Process-level TTL cache для `resolve_vetmanager_host` — `stop` (отложено в 91b)
+- 91.7 Load test на devtr6 — `stop` (вручную после деплоя)
+- 91.8 14 новых тестов в `tests/test_stage91_vm_client_overhaul.py`: parse_retry_after (seconds/HTTP-date), backoff monotonicity, shared client reuse, GET retry на 503→503→200, Retry-After respect, max-retries exhaustion, POST no-retry на 500, breaker opens/closes; conftest reset fixture — `done`
 
 ## Этап 92. Auth consolidation (F10) — `todo`
 
