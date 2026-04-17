@@ -1359,15 +1359,17 @@
 - 91.7 Load test на devtr6 — `stop` (вручную после деплоя)
 - 91.8 14 новых тестов в `tests/test_stage91_vm_client_overhaul.py`: parse_retry_after (seconds/HTTP-date), backoff monotonicity, shared client reuse, GET retry на 503→503→200, Retry-After respect, max-retries exhaustion, POST no-retry на 500, breaker opens/closes; conftest reset fixture — `done`
 
-## Этап 92. Auth consolidation (F10) — `todo`
+## Этап 92. Auth consolidation (F10) — частично `done` / остаток `stop`
 
 Цель: свернуть 7 фрагментированных auth-модулей в `auth/` package; закрыть dead-code в `request_credentials.py`; разобраться с rate-limiter split.
 
-- 92.1 `auth/` package: `auth/bearer.py` (header extract + DB lookup), `auth/vetmanager.py` (auth-mode strategies), `auth/context.py` (RuntimeCredentials / BearerAuthContext) — `todo`
-- 92.2 Удалить `request_credentials.py` (legacy X-VM-* API из stage 22.4, осталась только приватная функция `_get_request_headers` — inline в `request_auth.py`) — `todo`
-- 92.3 Split `resolve_bearer_auth_context` (170 строк, 7+ обязанностей) на pipeline валидаторов + audit sink в конце — `todo`
-- 92.4 Rate-limiter consolidation: удалить `bearer_rate_limiter.py`, перевести bearer-traffic на общий `rate_limit_backend` с `namespace="bearer_token"` → shared-Redis при `REDIS_URL` (закрывает bypass через multi-worker deployment) — `todo`
-- 92.5 Regression-тесты: auth path + bearer rate limit через Redis backend — `todo`
+- 92.1 `auth/` package — `stop` (отложено в этап 92b, отдельная сессия)
+- 92.2 Удалить dead public API `get_request_credentials()` из `request_credentials.py`; оставить только internal helper `_get_request_headers()` — `done`
+- 92.3 Split `resolve_bearer_auth_context` на pipeline валидаторов — `stop` (отложено в 92b, требует осторожного рефактора критичного пути)
+- 92.4 Rate-limiter consolidation — `stop` (отложено в 92b, регрессионный риск bearer auth path)
+- 92.5 Regression-тесты новых структур — `stop` (привязано к 92a/92b)
+
+**Rationale для отложенного остатка**: 92.1/92.3/92.4 — high-risk рефакторы критичного auth-path, требуют свежей сессии с фокусом и осторожным Codex review. Dead-public-API в 92.2 — zero-risk cleanup, сделан сразу.
 
 ## Этап 93. Architecture: FilterBuilder + service/repository layer (H11, H21) — `todo`
 
