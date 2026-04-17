@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-DOMAIN="${1:-${SSL_DOMAIN:-342915.simplecloud.ru}}"
+DOMAIN="${1:-${SSL_DOMAIN:-vetmanager-mcp.vromanichev.ru}}"
 CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
 RENEW_DAYS="${RENEW_DAYS:-30}"
 CERT_PATH="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"

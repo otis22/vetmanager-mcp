@@ -11,13 +11,60 @@ from sentry_sdk.integrations.starlette import StarletteIntegration
 
 SUPPORTED_ERROR_TRACKING_BACKENDS = {"sentry"}
 _REDACTED = "[Filtered]"
-_SENSITIVE_HEADER_NAMES = {
-    "authorization",
-    "cookie",
-    "set-cookie",
-    "x-rest-api-key",
-    "x-api-key",
-}
+
+# Substrings matched case-insensitively against header/cookie/body keys.
+# Any key containing one of these is replaced with _REDACTED.
+_SENSITIVE_KEY_PATTERNS = (
+    "token", "key", "secret", "auth", "api", "cookie", "bearer", "password",
+    "credential", "session", "csrf",
+    # Webhook/HMAC/JWT ecosystem (Stripe, GitHub, Slack webhooks etc.)
+    "signature", "jwt", "hmac", "otp", "passphrase",
+)
+
+# Exact allowlist of keys that would match a sensitive pattern but are
+# actually safe to keep (observability metadata, not credentials).
+# Lowered before comparison.
+_SAFE_KEY_WHITELIST = frozenset({
+    "x-request-id",
+    "x-correlation-id",
+    "x-request-ip",
+    "user-agent",
+    "content-type",
+    "content-length",
+    "accept",
+    "accept-encoding",
+    "accept-language",
+    "host",
+    "referer",
+    # `api`-substring false positives: version/protocol metadata, not creds.
+    "api-version",
+    "x-api-version",
+    "api_version",
+    # Generic HTTP response metadata occasionally echoed into events.
+    "retry-after",
+    "location",
+    "date",
+    "server",
+    "etag",
+    "if-none-match",
+    "if-modified-since",
+})
+
+
+def _is_sensitive_key(name: object) -> bool:
+    if not isinstance(name, str):
+        return False
+    lowered = name.lower()
+    if lowered in _SAFE_KEY_WHITELIST:
+        return False
+    return any(pattern in lowered for pattern in _SENSITIVE_KEY_PATTERNS)
+
+
+def _redact_mapping(mapping: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: (_REDACTED if _is_sensitive_key(key) else value)
+        for key, value in mapping.items()
+    }
 
 
 def _resolve_release() -> str:
@@ -36,10 +83,24 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
     if isinstance(request, dict):
         headers = request.get("headers")
         if isinstance(headers, dict):
-            request["headers"] = {
-                key: (_REDACTED if key.lower() in _SENSITIVE_HEADER_NAMES else value)
-                for key, value in headers.items()
-            }
+            request["headers"] = _redact_mapping(headers)
+
+        cookies = request.get("cookies")
+        if isinstance(cookies, dict):
+            request["cookies"] = _redact_mapping(cookies)
+
+        query_string = request.get("query_string")
+        if isinstance(query_string, dict):
+            request["query_string"] = _redact_mapping(query_string)
+
+        data = request.get("data")
+        if isinstance(data, dict):
+            request["data"] = _redact_mapping(data)
+
+    extra = event.get("extra")
+    if isinstance(extra, dict):
+        event["extra"] = _redact_mapping(extra)
+
     return event
 
 

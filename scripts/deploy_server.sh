@@ -9,7 +9,7 @@ set -euo pipefail
 
 SSH_TARGET="${1:?Usage: $0 user@host [/server/path]}"
 REMOTE_DIR="${2:-/opt/vetmanager-mcp}"
-SSL_DOMAIN="${SSL_DOMAIN:-342915.simplecloud.ru}"
+SSL_DOMAIN="${SSL_DOMAIN:-vetmanager-mcp.vromanichev.ru}"
 SKIP_GIT_PULL="${SKIP_GIT_PULL:-0}"
 CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
 

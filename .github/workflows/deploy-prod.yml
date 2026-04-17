@@ -64,6 +64,6 @@ jobs:
           PROD_CERTBOT_EMAIL: ${{ secrets.PROD_CERTBOT_EMAIL }}
         run: |
           REMOTE_DIR="${PROD_REMOTE_DIR:-/opt/vetmanager-mcp}"
-          SSL_DOMAIN="${PROD_SSL_DOMAIN:-342915.simplecloud.ru}"
+          SSL_DOMAIN="${PROD_SSL_DOMAIN:-vetmanager-mcp.vromanichev.ru}"
           SKIP_GIT_PULL=1 SSL_DOMAIN="${SSL_DOMAIN}" CERTBOT_EMAIL="${PROD_CERTBOT_EMAIL}" \
             ./scripts/deploy_server.sh "${PROD_SSH_TARGET}" "${REMOTE_DIR}"

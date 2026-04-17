@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+import os
 from html import escape
 
 from storage_models import Account, VetmanagerConnection
+
+
+_DEFAULT_SITE_BASE_URL = "https://vetmanager-mcp.vromanichev.ru"
+
+
+def _resolve_site_base_url() -> str:
+    raw = (os.environ.get("SITE_BASE_URL") or _DEFAULT_SITE_BASE_URL).strip()
+    return raw.rstrip("/") or _DEFAULT_SITE_BASE_URL
 from vetmanager_auth import (
     VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
     VETMANAGER_AUTH_MODE_USER_TOKEN,
@@ -365,6 +374,7 @@ def render_account_page(
     token_expiry_days: str = "",
     ip_mask: str = "*.*.*.*",
 ) -> str:
+    site_base_url = _resolve_site_base_url()
     selected_auth_mode = form_auth_mode or (
         active_connection.auth_mode if active_connection else VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
     )
@@ -444,7 +454,7 @@ def render_account_page(
             <pre>{{
   "mcpServers": {{
     "vetmanager": {{
-      "url": "https://vetmanager-mcp.vromanichev.ru/mcp",
+      "url": "{site_base_url}/mcp",
       "headers": {{
         "Authorization": "Bearer {escape(issued_raw_token)}"
       }}

@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+import os
+
+# Default to the production host so existing deployments render correctly.
+# Self-hosted operators override via SITE_BASE_URL env (no trailing slash).
+_DEFAULT_SITE_BASE_URL = "https://vetmanager-mcp.vromanichev.ru"
+
+
+def _resolve_site_base_url() -> str:
+    raw = (os.environ.get("SITE_BASE_URL") or _DEFAULT_SITE_BASE_URL).strip()
+    return raw.rstrip("/") or _DEFAULT_SITE_BASE_URL
+
 
 def render_landing_page() -> str:
     """Return the public landing page HTML."""
-    return """<!doctype html>
+    html = """<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
@@ -749,3 +760,7 @@ def render_landing_page() -> str:
 </body>
 </html>
 """
+    base_url = _resolve_site_base_url()
+    if base_url != _DEFAULT_SITE_BASE_URL:
+        html = html.replace(_DEFAULT_SITE_BASE_URL, base_url)
+    return html

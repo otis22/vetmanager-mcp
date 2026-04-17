@@ -1323,14 +1323,16 @@
 - 88.7 `/logout` и `/register` business-metric + audit event — `stop` (отложено в этап 89)
 - 88.8 Process start timestamp gauge — `stop` (отложено в этап 89)
 
-## Этап 89. Security hot-fix: Sentry sanitizer + deploy defaults (B4, F7) — `todo`
+## Этап 89. Security hot-fix: Sentry sanitizer + deploy defaults (B4, F7) — `done`
 
 Цель: закрыть security high из baseline и устранить operational risk от hardcoded старого домена.
 
-- 89.1 `error_tracking.py::_sanitize_event`: перейти с allowlist на **pattern-based** deny (имена содержат `token|key|secret|auth|api|domain|cookie`); дополнительно чистить request body, query params, cookies, extra context — `todo`
-- 89.2 Regression test: Sentry event с заголовком `x-user-token` → должен быть `[Filtered]` — `todo`
-- 89.3 Deploy-скрипты: заменить дефолт `342915.simplecloud.ru` → `vetmanager-mcp.vromanichev.ru` в `scripts/{init,deploy,sync_and_deploy,renew_cert_if_needed}_server.sh` и `.github/workflows/deploy-prod.yml`; или сделать `SSL_DOMAIN` обязательным — `todo`
-- 89.4 `landing_page.py` + `web_html.py`: хардкод `vetmanager-mcp.vromanichev.ru` в canonical/og:url → env-переменная `SITE_BASE_URL` (дефолт пустой с placeholder для self-hosted) — `todo`
+- 89.1 `error_tracking.py::_sanitize_event`: pattern-based deny (16 substr patterns вкл. token/key/secret/auth/api/cookie/bearer/password/credential/session/csrf/signature/jwt/hmac/otp/passphrase) + safe whitelist (api-version/retry-after/etag/etc); redact headers + cookies + query_string + data + extra — `done`
+- 89.2 Deploy-скрипты + GHA workflow: `342915.simplecloud.ru` → `vetmanager-mcp.vromanichev.ru` — `done`
+- 89.3 `landing_page.py` + `web_html.py` SITE_BASE_URL env var — `done`
+- 89.4 Тесты (11 новых в `tests/test_stage89_security_hotfix.py`) — `done`
+
+**Отложено:** breadcrumbs / stacktrace vars / user / contexts в Sentry sanitizer (W1 Codex) + SITE_BASE_URL scheme validation (W5) — отдельные hardening этапы.
 
 ## Этап 90. Docs sync: README / tech-reqs / AssumptionLog (F3) — `todo`
 

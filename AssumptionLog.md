@@ -3782,3 +3782,46 @@ caplog не перехватывает `RUNTIME_LOGGER.warning(...)` в full-sui
 - 88.6 auth_successes counter
 - 88.7 /logout + /register business metrics/audit
 - 88.8 process_start_time gauge
+
+## Этап 89. Security hot-fix — Sentry sanitizer + deploy defaults + SITE_BASE_URL
+
+**Что сделано:**
+
+1. **Sentry sanitizer pattern-based** (`error_tracking.py::_sanitize_event`):
+   - Переход с allowlist из 5 имён на pattern-based deny. Substring match против 16 паттернов: `token, key, secret, auth, api, cookie, bearer, password, credential, session, csrf, signature, jwt, hmac, otp, passphrase`.
+   - Safe allowlist для observability metadata (x-request-id, x-correlation-id), HTTP-метаданных (content-type, accept-*, host, etag, retry-after, date, location, server) и api-version/x-api-version (чтобы substring `api` не съел протокольную версию).
+   - Покрыто не только `request.headers` (baseline coverage) но и `request.cookies`, `request.query_string`, `request.data`, top-level `extra`.
+2. **Deploy-defaults** (B4): `342915.simplecloud.ru` → `vetmanager-mcp.vromanichev.ru` в 4 deploy-скриптах + `.github/workflows/deploy-prod.yml`.
+3. **`SITE_BASE_URL` env var** для landing и account-page mcp.json snippet. Дефолт `https://vetmanager-mcp.vromanichev.ru` сохраняет текущее prod-поведение; self-hosted operator overrides через env без кодовых правок.
+
+**Архитектурные решения:**
+- **Pattern-based vs allowlist** в sanitizer: allowlist хрупкий (забыли x-user-token/x-vm-api-key — leaked). Pattern-based deny с whitelist для исключений — более устойчив к добавлению новых headers.
+- **`SITE_BASE_URL` через `str.replace` в landing** (не f-string): landing_page.py — один большой triple-quoted блок с JSON-скобками `{...}` для curl-примера. Конвертировать в f-string → экранировать все `{{`/`}}`. Проще оставить template'ом и сделать одну целевую замену в итоговой строке.
+- **В web_html.py — f-string**: там уже f-string, добавили переменную `site_base_url` и подстановку `{site_base_url}/mcp`.
+
+**Codex-ревью (1 итерация, 5 findings):**
+- W1 (breadcrumbs/stacktrace vars/user/contexts в Sentry events) — **адекватно, отложено**: baseline F7 был про request headers — закрыто. Глубокое покрытие остальных Sentry-полей — отдельным hardening этапом (не расширять scope 89 на hot-fix).
+- W2 (webhook signature family missing: x-signature, stripe-signature, jwt) — **адекватно**, добавил патterns `signature, jwt, hmac, otp, passphrase`.
+- W3 (`api` substring false-positive на `x-api-version`) — **адекватно**, добавил `api-version`, `x-api-version`, `api_version` в whitelist + стандартные HTTP-метаданные (retry-after, location, etag, date, server, if-none-match, if-modified-since).
+- W4 (str.replace brittleness если default URL появится в неожиданном контексте template) — **nit, accept**: в текущем template дефолтный URL встречается только в 3 намеренных местах (canonical, og:url, mcp.json URL). Добавление future-нестандартных появлений — ответственность reviewer'а правок landing_page.
+- W5 (SITE_BASE_URL не валидируется) — **nit, accept**: operator-controlled env, XSS невозможен от внешнего attacker'а. Валидация `http/https` схемы — оптимизация, отдельный мини-этап.
+
+**Тесты**: 11 новых в `tests/test_stage89_security_hotfix.py`:
+- x-user-token, authorization, cookie, x-vm-api-key, x-app-secret, x-session-id, x-password, csrf-token redacted
+- x-correlation-id, x-request-id, user-agent preserved
+- cookies/query_string/data body redacted
+- extra context: bearer_token redacted, domain (not sensitive) preserved
+- webhook family: x-signature, stripe-signature, x-hub-signature-256, jwt-token, x-hmac, x-otp-code, passphrase redacted
+- api-version/x-api-version/retry-after/etag preserved
+- deploy scripts grep — no 342915.simplecloud.ru hits
+- landing page honors SITE_BASE_URL env (set → custom URL; unset → prod default)
+- web_html account page with SITE_BASE_URL set uses it
+
+Full suite: 596 passed.
+
+**Breaking changes**: нет. Sanitizer теперь **строже** (редактирует больше ключей) — безопасное направление изменения. SITE_BASE_URL опционален, дефолт сохраняет prod.
+
+**Отложено в отдельные этапы:**
+- Deep Sentry event coverage (breadcrumbs/stacktrace vars) — W1 follow-up
+- SITE_BASE_URL url-scheme validation — W5 follow-up
+- Оставшиеся observability subtasks 88.5-88.8 (будут в отдельных этапах под крупным зонтиком «auth audit + business metrics»)
