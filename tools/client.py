@@ -4,7 +4,6 @@ from filters import eq as _filter_eq, in_ as _filter_in, like as _filter_like
 from tools._inactive_helpers import fetch_inactive_clients_page
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete, paginate_all
 from validators import LimitParam, normalize_phone_digits
-from vetmanager_client import VetmanagerClient
 
 
 # Hard cap on phase-1 ClientPhone fetch. If more rows exist we refuse the
@@ -374,72 +373,7 @@ def register(mcp: FastMCP) -> None:
         )
 
     async def _get_client_profile_impl(client_id: int) -> dict:
-        import json as _json
-
-        vc = VetmanagerClient()
-
-        # Lazy import to avoid circular dep (tools.admission imports client
-        # transitively via schedule). ACTIVE_ADMISSION_STATUSES is the canonical
-        # tuple of enum values that represent a real upcoming/in-progress visit.
-        from tools.admission import ACTIVE_ADMISSION_STATUSES
-
-        client_id_str = str(client_id)
-        client_filter = _json.dumps(
-            [_filter_eq("client_id", client_id_str).to_dict()],
-            separators=(",", ":"),
-        )
-        # Stage 96.2: 'active' was a phantom enum value — admission.status has no
-        # such value. Use IN-filter with the canonical active-status tuple so
-        # next_admission returns real upcoming visits instead of always None.
-        next_filter = _json.dumps(
-            [
-                _filter_eq("client_id", client_id_str).to_dict(),
-                _filter_in("status", list(ACTIVE_ADMISSION_STATUSES)).to_dict(),
-            ],
-            separators=(",", ":"),
-        )
-
-        # Stage 103.7: reuse shared `gather_sections` helper.
-        from tools._aggregation import gather_sections
-        sections = [
-            ("client", vc.get(f"/rest/api/client/{client_id}"),
-             {"data": {"client": {}}}),
-            ("invoices", vc.get("/rest/api/invoice", params={
-                "filter": client_filter,
-                "sort": _json.dumps([{"property": "id", "direction": "DESC"}], separators=(",", ":")),
-                "limit": 5,
-            }), {"data": {"invoice": []}}),
-            ("recent_admissions", vc.get("/rest/api/admission", params={
-                "filter": client_filter,
-                "sort": _json.dumps([{"property": "admission_date", "direction": "DESC"}], separators=(",", ":")),
-                "limit": 5,
-            }), {"data": {"admission": []}}),
-            ("next_admission", vc.get("/rest/api/admission", params={
-                "filter": next_filter,
-                "sort": _json.dumps([{"property": "admission_date", "direction": "ASC"}], separators=(",", ":")),
-                "limit": 1,
-            }), {"data": {"admission": []}}),
-        ]
-        payloads, section_errors = await gather_sections(
-            tool_name="get_client_profile",
-            context={"client_id": client_id},
-            sections=sections,
-        )
-        client_payload, invoices_payload, admissions_payload, next_payload = payloads
-
-        client_data = client_payload.get("data", {}).get("client", {})
-        invoices = invoices_payload.get("data", {}).get("invoice", [])
-        admissions = admissions_payload.get("data", {}).get("admission", [])
-        next_admissions = next_payload.get("data", {}).get("admission", [])
-        next_admission = next_admissions[0] if next_admissions else None
-
-        result: dict = {
-            "client": client_data,
-            "last_invoices": invoices,
-            "last_admissions": admissions,
-            "next_admission": next_admission,
-        }
-        if section_errors:
-            result["partial"] = True
-            result["section_errors"] = section_errors
-        return result
+        # Stage 103c: entity-specific composition lives in `resources/`.
+        # This tool wrapper only adds `instrument_call` around the resource.
+        from resources.client_profile import fetch as _fetch_client_profile
+        return await _fetch_client_profile(client_id)

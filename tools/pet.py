@@ -199,85 +199,9 @@ def register(mcp: FastMCP) -> None:
         )
 
     async def _get_pet_profile_impl(pet_id: int) -> dict:
-        import json as _json
-        from filters import eq as _filter_eq
-
-        vc = VetmanagerClient()
-
-        mc_filter = _json.dumps(
-            [_filter_eq("patient_id", str(pet_id)).to_dict()],
-            separators=(",", ":"),
-        )
-        mc_sort = _json.dumps(
-            [{"property": "id", "direction": "DESC"}],
-            separators=(",", ":"),
-        )
-
-        # Stage 103.7: shared partial-gather helper.
-        from tools._aggregation import gather_sections
-        payloads, section_errors = await gather_sections(
-            tool_name="get_pet_profile",
-            context={"pet_id": pet_id},
-            sections=[
-                ("pet", vc.get(f"/rest/api/pet/{pet_id}"),
-                 {"data": {"pet": {}}}),
-                ("medical_cards", vc.get(
-                    "/rest/api/MedicalCards",
-                    params={"filter": mc_filter, "sort": mc_sort, "limit": 5},
-                ), {"data": {"medicalCards": []}}),
-                ("vaccinations", vc.get(
-                    "/rest/api/MedicalCards/Vaccinations",
-                    params={"pet_id": pet_id, "limit": 100},
-                ), {"data": {"medicalcards": []}}),
-            ],
-        )
-        pet_payload, mc_payload, vacc_payload = payloads
-
-        pet_data = pet_payload.get("data", {}).get("pet", {})
-        mc_data = mc_payload.get("data", {})
-        medical_cards = (
-            mc_data.get("medicalCards")
-            or mc_data.get("medicalcards")
-            or []
-        ) if isinstance(mc_data, dict) else []
-
-        vaccinations_raw = vacc_payload.get("data", {}).get("medicalcards", [])
-        vaccinations = [
-            {
-                "id": r.get("id"),
-                "name": r.get("name"),
-                "date": r.get("date"),
-                "date_nexttime": r.get("date_nexttime"),
-                "vaccine_id": r.get("vaccine_id"),
-                "medcard_id": r.get("medcard_id"),
-            }
-            for r in vaccinations_raw
-        ]
-
-        sorted_vacc = sorted(
-            vaccinations,
-            key=lambda r: r.get("date") or "",
-            reverse=True,
-        )
-        last_vaccination_date: str | None = None
-        next_vaccination_date: str | None = None
-        if sorted_vacc:
-            last_vacc = sorted_vacc[0]
-            last_vaccination_date = (last_vacc.get("date") or "").split(" ")[0] or None
-            next_raw = last_vacc.get("date_nexttime") or ""
-            next_vaccination_date = next_raw.strip() or None
-
-        result: dict = {
-            "pet": pet_data,
-            "last_medical_cards": medical_cards,
-            "vaccinations": vaccinations,
-            "last_vaccination_date": last_vaccination_date,
-            "next_vaccination_date": next_vaccination_date,
-        }
-        if section_errors:
-            result["partial"] = True
-            result["section_errors"] = section_errors
-        return result
+        # Stage 103c: entity-specific composition lives in `resources/`.
+        from resources.pet_profile import fetch as _fetch_pet_profile
+        return await _fetch_pet_profile(pet_id)
 
     @mcp.tool
     async def get_inactive_pets(
