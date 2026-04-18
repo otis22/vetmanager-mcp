@@ -1,12 +1,6 @@
-import logging
 import asyncio
-import email.utils
-import hashlib
-import math
-import random
 import time
 import uuid
-from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlencode
 
@@ -14,11 +8,9 @@ import httpx
 
 from exceptions import (
     AuthError,
-    HostResolutionError,
     NotFoundError,
     VetmanagerError,
     VetmanagerTimeoutError,
-    VetmanagerUpstreamUnavailable,
 )
 from host_resolver import resolve_vetmanager_host
 from observability_logging import RUNTIME_LOGGER
@@ -30,120 +22,63 @@ from runtime_auth import resolve_runtime_credentials
 from service_metrics import record_upstream_failure, record_upstream_request
 from token_scopes import required_scope_for_request
 from vetmanager_auth import VetmanagerAuthContext
+# Stage 103d BC note: the `_BREAKER_*` names below are re-exports of the
+# canonical constants in `vm_transport.breaker`. They are snapshots — the
+# breaker logic itself reads `vm_transport.breaker.BREAKER_*` at call time,
+# so tests that want to override thresholds must patch those module
+# attributes directly (`monkeypatch.setattr("vm_transport.breaker.BREAKER_COOLDOWN_SECONDS", ...)`),
+# not the re-exported underscore names here.
+from vm_transport.breaker import (
+    BREAKER_COOLDOWN_SECONDS as _BREAKER_COOLDOWN_SECONDS,
+    BREAKER_FAILURE_THRESHOLD as _BREAKER_FAILURE_THRESHOLD,
+    BREAKER_WINDOW_SECONDS as _BREAKER_WINDOW_SECONDS,
+    DomainBreaker as _DomainBreaker,
+    _breakers,
+    _breakers_global_lock,
+    breaker_record_failure as _breaker_record_failure,
+    breaker_record_success as _breaker_record_success,
+    check_breaker_allows as _check_breaker_allows,
+    force_breaker_open,
+    get_breaker as _get_breaker,
+    get_breaker_state,
+    reset_breakers,
+)
+from vm_transport.cache_policy import (
+    CACHE_TTL_SECONDS,
+    CACHE_TTL_SHORT_SECONDS,
+    SHORT_TTL_ENTITIES as _SHORT_TTL_ENTITIES,
+    entity_from_path as _entity_from_path_fn,
+    ttl_for_entity,
+)
+from vm_transport.pool import (
+    HTTP_LIMITS as _HTTP_LIMITS,
+    REQUEST_TIMEOUTS as _REQUEST_TIMEOUTS,
+    _shared_http_client_lock,
+    _shared_http_clients,
+    current_loop_key as _current_loop_key,
+    get_shared_http_client as _get_shared_http_client,
+    reset_shared_http_client,
+)
+from vm_transport.retry import (
+    BACKOFF_BASE_SECONDS as _BACKOFF_BASE_SECONDS,
+    BACKOFF_MAX_SECONDS as _BACKOFF_MAX_SECONDS,
+    MAX_RETRIES_READ,
+    MAX_RETRIES_WRITE,
+    RETRY_AFTER_MAX_SECONDS as _RETRY_AFTER_MAX_SECONDS,
+    RETRY_STATUS_CODES as _RETRY_STATUS_CODES,
+    backoff_seconds as _backoff_seconds,
+    parse_retry_after as _parse_retry_after,
+)
 
 # Legacy single timeout kept for BC — new code uses _REQUEST_TIMEOUTS split.
 REQUEST_TIMEOUT = 30.0
 REQUEST_GAP_SECONDS = 0.05
 
-# Retries for idempotent reads (GET). POST/PUT/DELETE do not retry on 5xx/429
-# to preserve idempotency (VM API has no idempotency keys).
-MAX_RETRIES_READ = 3
-MAX_RETRIES_WRITE = 0
-
-# Statuses worth retrying for GET. 401/403/404/400 are not transient.
-_RETRY_STATUS_CODES = frozenset({429, 502, 503, 504})
-
-_BACKOFF_BASE_SECONDS = 0.2
-_BACKOFF_MAX_SECONDS = 5.0
-
-# Split timeouts so a fast-failing DNS/TCP path does not wait the full 30s.
-_REQUEST_TIMEOUTS = httpx.Timeout(connect=5.0, read=20.0, write=10.0, pool=2.0)
-
-_HTTP_LIMITS = httpx.Limits(
-    max_keepalive_connections=50,
-    max_connections=100,
-    keepalive_expiry=30.0,
-)
-
-# Default cache TTL for stable reference data (breeds, cities, goods, etc.).
-CACHE_TTL_SECONDS = 900.0
-# Short TTL for frequently-updated entities: admissions, medical cards, invoices, clients.
-# Keeps data fresh while still reducing redundant API calls within a single session.
-CACHE_TTL_SHORT_SECONDS = 60.0
-
-
-# ── Shared httpx.AsyncClient (singleton) ────────────────────────────────────
-
-# Stage 99.4: the shared client is keyed on the running event loop.
-# asyncio.Lock is bound to one loop, and httpx.AsyncClient also captures
-# the creating loop for its transport — reusing a singleton across loops
-# produces "attached to a different event loop" errors in embedded setups
-# (Jupyter reload, nested asyncio.run, cross-test-runner reuse).
-_shared_http_clients: dict[int, httpx.AsyncClient] = {}
-_shared_http_client_lock = asyncio.Lock()  # retained for back-compat patching
-
-
-def _current_loop_key() -> int:
-    """Return a stable key for the currently-running event loop (id of the
-    loop object). Caller guarantees asyncio context (we're inside an async
-    function)."""
-    try:
-        loop = asyncio.get_running_loop()
-        return id(loop)
-    except RuntimeError:
-        # No running loop — fall back to a sentinel so we don't crash.
-        return 0
-
-
-async def _get_shared_http_client() -> httpx.AsyncClient:
-    """Return a shared httpx.AsyncClient keyed on the running event loop.
-
-    Lazy-initialized per-loop on first access. Within one loop: same
-    keep-alive pool, no fresh TLS handshake per request. Across loops
-    (tests that spawn their own loop, notebook reloads): separate clients
-    so no cross-loop transport reuse.
-    """
-    key = _current_loop_key()
-    client = _shared_http_clients.get(key)
-    if client is not None and not client.is_closed:
-        return client
-    # Per-loop double-check via a fresh lock scoped to this loop — the
-    # module-level lock is kept only for backward-compat with tests that
-    # might patch it; real synchronization uses a local Lock if loop key
-    # changes.
-    if client is not None and client.is_closed:
-        _shared_http_clients.pop(key, None)
-    # Minor race if two coroutines on the same loop init simultaneously;
-    # the second will overwrite the first (both valid clients, no leak of
-    # the first because GC handles httpx.AsyncClient teardown).
-    new_client = httpx.AsyncClient(timeout=_REQUEST_TIMEOUTS, limits=_HTTP_LIMITS)
-    _shared_http_clients[key] = new_client
-    return new_client
-
-
-# Back-compat property for existing tests that do `_vm_client._shared_http_client`.
-# It returns the client for the currently-running loop or None — matches the old
-# behaviour closely enough for the existing assertions.
-class _SharedClientProxy:
-    def __bool__(self) -> bool:
-        return self._current() is not None
-
-    def _current(self) -> httpx.AsyncClient | None:
-        try:
-            key = _current_loop_key()
-        except Exception:
-            return None
-        return _shared_http_clients.get(key)
-
-    def __getattr__(self, name: str):
-        current = self._current()
-        if current is None:
-            raise AttributeError(name)
-        return getattr(current, name)
-
-
-_shared_http_client: httpx.AsyncClient | None = None  # retained for test monkey-patches
-
-
-async def reset_shared_http_client() -> None:
-    """Close and drop ALL per-loop shared clients. For tests and shutdown."""
-    clients = list(_shared_http_clients.values())
-    _shared_http_clients.clear()
-    for c in clients:
-        try:
-            await c.aclose()
-        except Exception:
-            pass
+# Shared httpx.AsyncClient pool (stage 99.4) lives in vm_transport.pool —
+# re-exported above. `_shared_http_client` sentinel retained here so
+# legacy tests that do `vetmanager_client._shared_http_client = None`
+# keep rebinding a valid attribute.
+_shared_http_client: httpx.AsyncClient | None = None
 
 
 # ── Public test-helpers (stage 101.2) ───────────────────────────────────────
@@ -161,252 +96,11 @@ def get_shared_http_client_state() -> dict:
     }
 
 
-def get_breaker_state(domain: str) -> dict | None:
-    """Return public snapshot of one domain's breaker state, or None if
-    the domain has no breaker yet. For tests."""
-    breaker = _breakers.get(domain)
-    if breaker is None:
-        return None
-    return {
-        "state": breaker.state,
-        "consecutive_failures": breaker.consecutive_failures,
-        "probe_in_flight": breaker.probe_in_flight,
-        "opened_at": breaker.opened_at,
-        "window_start": breaker.window_start,
-    }
-
-
-async def force_breaker_open(domain: str, *, cooldown_elapsed: bool = False) -> None:
-    """Test helper: push a breaker into OPEN state without driving real
-    failures through _request. If cooldown_elapsed=True, also backdates
-    opened_at so the next check transitions to HALF_OPEN.
-    """
-    breaker = await _get_breaker(domain)
-    async with breaker.lock:
-        breaker.state = "open"
-        now = time.monotonic()
-        breaker.opened_at = (
-            now - _BREAKER_COOLDOWN_SECONDS - 1 if cooldown_elapsed else now
-        )
-        breaker.probe_in_flight = False
-
-
-# ── Circuit breaker (per-domain) ────────────────────────────────────────────
-
-def _env_float(name: str, default: float) -> float:
-    """Stage 99.5: read tunable env var with float fallback."""
-    import os
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return default
-    try:
-        value = float(raw)
-        return value if math.isfinite(value) and value > 0 else default
-    except ValueError:
-        return default
-
-
-def _env_int(name: str, default: int) -> int:
-    import os
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return default
-    try:
-        value = int(raw)
-        return value if value > 0 else default
-    except ValueError:
-        return default
-
-
-# Env-tunable so operators can soften for burst workloads or tighten for
-# strict SLOs — defaults match stage 91 design.
-_BREAKER_FAILURE_THRESHOLD = _env_int("BREAKER_FAILURE_THRESHOLD", 5)
-_BREAKER_WINDOW_SECONDS = _env_float("BREAKER_WINDOW_SECONDS", 60.0)
-_BREAKER_COOLDOWN_SECONDS = _env_float("BREAKER_COOLDOWN_SECONDS", 30.0)
-
-
-@dataclass
-class _DomainBreaker:
-    """Per-domain circuit breaker state.
-
-    CLOSED → (N failures in window) → OPEN → (cooldown) → HALF_OPEN → (success) → CLOSED
-                                                                    ↓ (fail)
-                                                                  → OPEN (new cooldown)
-
-    `probe_in_flight` enforces strict single-probe semantics in HALF_OPEN:
-    under concurrency, only one request is admitted to test the upstream;
-    the rest fast-fail until the probe completes (success → CLOSED and other
-    callers proceed normally; failure → OPEN with fresh cooldown).
-    """
-
-    state: str = "closed"  # closed | open | half_open
-    consecutive_failures: int = 0
-    window_start: float = 0.0
-    opened_at: float = 0.0
-    probe_in_flight: bool = False
-    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-
-
-_breakers: dict[str, _DomainBreaker] = {}
-_breakers_global_lock = asyncio.Lock()
-
-
-async def _get_breaker(domain: str) -> _DomainBreaker:
-    breaker = _breakers.get(domain)
-    if breaker is not None:
-        return breaker
-    async with _breakers_global_lock:
-        breaker = _breakers.get(domain)
-        if breaker is None:
-            breaker = _DomainBreaker()
-            _breakers[domain] = breaker
-        return breaker
-
-
-async def reset_breakers() -> None:
-    """Clear all breaker state. For tests."""
-    async with _breakers_global_lock:
-        _breakers.clear()
-
-
-async def _check_breaker_allows(domain: str) -> None:
-    """Raise VetmanagerUpstreamUnavailable if breaker is OPEN and cooldown
-    has not elapsed, OR if already HALF_OPEN with a probe in flight (strict
-    single-probe semantics under concurrency). Transitions OPEN → HALF_OPEN
-    and marks probe_in_flight when admitting the first probe after cooldown.
-
-    Stage 98.2: circuit_open / circuit_half_open_busy fast-fails are also
-    recorded in `record_upstream_request` (status="circuit_open") so a single
-    query on `vetmanager_upstream_requests_total` sees the full error rate
-    including breaker fast-fails — the previous split between
-    upstream_failures_total and upstream_requests_total made dashboards
-    under-count during outages.
-    """
-    breaker = await _get_breaker(domain)
-    async with breaker.lock:
-        if breaker.state == "open":
-            elapsed = time.monotonic() - breaker.opened_at
-            if elapsed < _BREAKER_COOLDOWN_SECONDS:
-                record_upstream_failure(
-                    target="vetmanager_api", reason="circuit_open"
-                )
-                record_upstream_request(
-                    target="vetmanager_api",
-                    status="circuit_open",
-                    duration_seconds=0.0,
-                )
-                raise VetmanagerUpstreamUnavailable(
-                    f"VM API circuit breaker open for {domain}; "
-                    f"retry after {_BREAKER_COOLDOWN_SECONDS - elapsed:.0f}s",
-                    retry_after_seconds=_BREAKER_COOLDOWN_SECONDS - elapsed,
-                )
-            # Cooldown elapsed — transition to HALF_OPEN and admit one probe.
-            breaker.state = "half_open"
-            breaker.probe_in_flight = True
-            return
-        if breaker.state == "half_open":
-            if breaker.probe_in_flight:
-                record_upstream_failure(
-                    target="vetmanager_api", reason="circuit_half_open_busy"
-                )
-                record_upstream_request(
-                    target="vetmanager_api",
-                    status="circuit_half_open_busy",
-                    duration_seconds=0.0,
-                )
-                raise VetmanagerUpstreamUnavailable(
-                    f"VM API circuit breaker half-open for {domain}; "
-                    "probe already in flight",
-                    retry_after_seconds=1.0,
-                )
-            # First caller after a previous probe cleared — admit as new probe.
-            breaker.probe_in_flight = True
-
-
-async def _breaker_record_success(domain: str) -> None:
-    breaker = await _get_breaker(domain)
-    async with breaker.lock:
-        breaker.consecutive_failures = 0
-        breaker.window_start = 0.0
-        breaker.probe_in_flight = False
-        if breaker.state in ("half_open", "open"):
-            breaker.state = "closed"
-
-
-async def _breaker_record_failure(domain: str) -> None:
-    breaker = await _get_breaker(domain)
-    async with breaker.lock:
-        now = time.monotonic()
-        if breaker.state == "half_open":
-            # Probe failed — back to OPEN with fresh cooldown.
-            breaker.state = "open"
-            breaker.opened_at = now
-            breaker.probe_in_flight = False
-            return
-        # CLOSED state: increment within sliding window.
-        if breaker.window_start == 0.0 or (now - breaker.window_start) > _BREAKER_WINDOW_SECONDS:
-            breaker.window_start = now
-            breaker.consecutive_failures = 1
-        else:
-            breaker.consecutive_failures += 1
-        if breaker.consecutive_failures >= _BREAKER_FAILURE_THRESHOLD:
-            breaker.state = "open"
-            breaker.opened_at = now
-
-
-# ── Backoff helpers ─────────────────────────────────────────────────────────
-
-
-_RETRY_AFTER_MAX_SECONDS = 300.0  # hard cap to prevent DoS via 'Retry-After: 1e9'
-
-
-def _parse_retry_after(header_value: str | None) -> float | None:
-    if not header_value:
-        return None
-    header_value = header_value.strip()
-    # Integer seconds form.
-    try:
-        seconds = float(header_value)
-        # Stage 96.6: reject non-finite (inf/nan) and clamp to sane max.
-        if not math.isfinite(seconds):
-            return None
-        return max(0.0, min(seconds, _RETRY_AFTER_MAX_SECONDS))
-    except ValueError:
-        pass
-    # HTTP-date form (RFC 7231).
-    try:
-        parsed_dt = email.utils.parsedate_to_datetime(header_value)
-        if parsed_dt is None:
-            return None
-        import datetime as _dt
-        now = _dt.datetime.now(tz=parsed_dt.tzinfo or _dt.timezone.utc)
-        delta = (parsed_dt - now).total_seconds()
-        if not math.isfinite(delta):
-            return None
-        return max(0.0, min(delta, _RETRY_AFTER_MAX_SECONDS))
-    except Exception:
-        return None
-
-
-def _backoff_seconds(attempt: int, retry_after: float | None = None) -> float:
-    """Compute backoff delay. attempt starts at 0 for the first retry."""
-    computed = min(
-        _BACKOFF_BASE_SECONDS * (2 ** attempt) + random.uniform(0, 0.1),
-        _BACKOFF_MAX_SECONDS,
-    )
-    if retry_after is not None:
-        return max(computed, retry_after)
-    return computed
-
-# Entities that change often and should use the short TTL.
-_SHORT_TTL_ENTITIES = frozenset({
-    "admission",
-    "medicalcard",
-    "invoice",
-    "client",
-    "pet",
-    "payment",
-})
+# Circuit breaker (per-domain) lives in vm_transport.breaker — see
+# import block above. Re-exports cover: _DomainBreaker, _breakers,
+# _breakers_global_lock, _get_breaker, _check_breaker_allows,
+# _breaker_record_success, _breaker_record_failure, get_breaker_state,
+# force_breaker_open, reset_breakers, _BREAKER_* constants.
 
 
 def _masked_secret(value: str) -> str:
@@ -492,11 +186,10 @@ class VetmanagerClient:
         return f"{method.upper()}|{full_url}|{self._api_key_fingerprint()}|{account_segment}"
 
     def _entity_from_path(self, path: str) -> str:
-        normalized = path.split("?", 1)[0].strip("/")
-        parts = normalized.split("/")
-        if len(parts) >= 3 and parts[0].lower() == "rest" and parts[1].lower() == "api":
-            return parts[2].lower()
-        return "unknown"
+        # Stage 103d: thin wrapper over vm_transport.cache_policy.entity_from_path
+        # kept as an instance method for back-compat with tests that call it via
+        # the client; the free function is the canonical location.
+        return _entity_from_path_fn(path)
 
     def _entity_tag(self, path: str) -> str:
         if not self._domain:
@@ -628,6 +321,11 @@ class VetmanagerClient:
                 payload = response.json()
                 await _breaker_record_success(domain_key)
                 if upper_method == "GET":
+                    # TTLs read through module-level names so existing tests
+                    # that monkey-patch `vetmanager_client.CACHE_TTL_*` keep
+                    # working. Stage 103d: cache_policy.ttl_for_entity is
+                    # the canonical location, but we don't route through it
+                    # here to preserve the patch surface.
                     entity_name = self._entity_from_path(path)
                     ttl = (
                         CACHE_TTL_SHORT_SECONDS

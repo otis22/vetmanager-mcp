@@ -100,7 +100,8 @@ def test_backoff_respects_retry_after_when_larger():
 def test_backoff_exponential_without_retry_after(monkeypatch):
     """Stage 101.3: eliminate jitter via monkeypatch and assert strict
     exponential growth instead of the previous vacuous inequality."""
-    monkeypatch.setattr("vetmanager_client.random.uniform", lambda a, b: 0.0)
+    # Stage 103d: backoff math moved to vm_transport.retry; patch it there.
+    monkeypatch.setattr("vm_transport.retry.random.uniform", lambda a, b: 0.0)
     d0 = _backoff_seconds(0)
     d1 = _backoff_seconds(1)
     d2 = _backoff_seconds(2)
