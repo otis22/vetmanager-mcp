@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import NoReturn
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,6 +72,44 @@ def _base_auth_details(
     return details
 
 
+async def _reject(
+    session: AsyncSession,
+    *,
+    token: ServiceBearerToken,
+    account: Account,
+    metric_reason: str,
+    log_event: str,
+    log_reason: str,
+    message: str,
+    status_code: int,
+    retry_after_seconds: int | None = None,
+) -> NoReturn:
+    """Record failure metric + audit log + commit, then raise AuthError.
+
+    Stage 103.1: consolidates the repeated reject-and-log pattern across
+    every validation branch of `resolve_bearer_auth_context`. Each branch
+    used to duplicate 8-10 lines of `record_auth_failure` / `add_token_usage_log`
+    / `await session.commit()` / `raise AuthError(...)`. This helper makes
+    the pipeline read as a linear sequence of checks with a single uniform
+    failure path, reducing the surface for "forgot to commit the audit log"
+    regressions.
+    """
+    record_auth_failure(source="bearer_runtime", reason=metric_reason)
+    add_token_usage_log(
+        session,
+        bearer_token_id=token.id,
+        event_type=log_event,
+        details=_base_auth_details(
+            account_id=account.id,
+            token=token,
+            reason=log_reason,
+            retry_after_seconds=retry_after_seconds,
+        ),
+    )
+    await session.commit()
+    raise AuthError(message, status_code=status_code)
+
+
 async def resolve_bearer_auth_context(
     raw_token: str,
     session: AsyncSession,
@@ -93,35 +132,31 @@ async def resolve_bearer_auth_context(
 
     token, account = token_row
     if token.is_revoked():
-        record_auth_failure(source="bearer_runtime", reason="revoked")
-        add_token_usage_log(
+        await _reject(
             session,
-            bearer_token_id=token.id,
-            event_type=TOKEN_EVENT_AUTH_FAILED_REVOKED,
-            details=_base_auth_details(
-                account_id=account.id,
-                token=token,
-                reason="revoked",
-            ),
+            token=token,
+            account=account,
+            metric_reason="revoked",
+            log_event=TOKEN_EVENT_AUTH_FAILED_REVOKED,
+            log_reason="revoked",
+            message="Invalid authorization.",
+            status_code=401,
         )
-        await session.commit()
-        raise AuthError("Invalid authorization.", status_code=401)
     if token.is_expired(now=now):
-        record_auth_failure(source="bearer_runtime", reason="expired")
         token.sync_status(now=now)
-        add_token_usage_log(
+        await _reject(
             session,
-            bearer_token_id=token.id,
-            event_type=TOKEN_EVENT_AUTH_FAILED_EXPIRED,
-            details=_base_auth_details(
-                account_id=account.id,
-                token=token,
-                reason="expired",
-            ),
+            token=token,
+            account=account,
+            metric_reason="expired",
+            log_event=TOKEN_EVENT_AUTH_FAILED_EXPIRED,
+            log_reason="expired",
+            message="Invalid authorization.",
+            status_code=401,
         )
-        await session.commit()
-        raise AuthError("Invalid authorization.", status_code=401)
     if token.status == TOKEN_STATUS_DISABLED or account.status != ACCOUNT_STATUS_ACTIVE:
+        # Disabled token / account — no audit log per existing contract
+        # (validated by tests: only the metric counter increments).
         record_auth_failure(source="bearer_runtime", reason="disabled")
         raise AuthError("Invalid authorization.", status_code=401)
 
@@ -130,23 +165,22 @@ async def resolve_bearer_auth_context(
     if effective_mask != "*.*.*.*":
         client_ip, _ = get_request_audit_metadata()
         if client_ip is None or not ip_matches_mask(client_ip, effective_mask):
-            record_auth_failure(source="bearer_runtime", reason="ip_denied")
-            add_token_usage_log(
+            await _reject(
                 session,
-                bearer_token_id=token.id,
-                event_type=TOKEN_EVENT_AUTH_FAILED_IP_DENIED,
-                details=_base_auth_details(
-                    account_id=account.id,
-                    token=token,
-                    reason="ip_denied",
-                ),
+                token=token,
+                account=account,
+                metric_reason="ip_denied",
+                log_event=TOKEN_EVENT_AUTH_FAILED_IP_DENIED,
+                log_reason="ip_denied",
+                message="Invalid authorization.",
+                status_code=403,
             )
-            await session.commit()
-            raise AuthError("Invalid authorization.", status_code=403)
 
     try:
         await bearer_rate_limiter.BEARER_RATE_LIMITER.check_or_raise(token.id, now=now)
     except RateLimitError as exc:
+        # Rate-limit branch re-raises RateLimitError (not AuthError), so it
+        # has its own log+commit sequence rather than using _reject.
         record_auth_failure(source="bearer_runtime", reason="rate_limited")
         add_token_usage_log(
             session,
@@ -164,19 +198,16 @@ async def resolve_bearer_auth_context(
 
     scopes = tuple(token.get_scopes())
     if not scopes:
-        record_auth_failure(source="bearer_runtime", reason="no_scopes")
-        add_token_usage_log(
+        await _reject(
             session,
-            bearer_token_id=token.id,
-            event_type=TOKEN_EVENT_AUTH_FAILED_NO_SCOPES,
-            details=_base_auth_details(
-                account_id=account.id,
-                token=token,
-                reason="no_scopes",
-            ),
+            token=token,
+            account=account,
+            metric_reason="no_scopes",
+            log_event=TOKEN_EVENT_AUTH_FAILED_NO_SCOPES,
+            log_reason="no_scopes",
+            message="Bearer token has no authorized scopes.",
+            status_code=403,
         )
-        await session.commit()
-        raise AuthError("Bearer token has no authorized scopes.", status_code=403)
 
     connection_result = await session.execute(
         select(VetmanagerConnection)
@@ -187,19 +218,16 @@ async def resolve_bearer_auth_context(
     )
     connection = connection_result.scalar_one_or_none()
     if connection is None:
-        record_auth_failure(source="bearer_runtime", reason="no_connection")
-        add_token_usage_log(
+        await _reject(
             session,
-            bearer_token_id=token.id,
-            event_type=TOKEN_EVENT_AUTH_FAILED_NO_CONNECTION,
-            details=_base_auth_details(
-                account_id=account.id,
-                token=token,
-                reason="no_connection",
-            ),
+            token=token,
+            account=account,
+            metric_reason="no_connection",
+            log_event=TOKEN_EVENT_AUTH_FAILED_NO_CONNECTION,
+            log_reason="no_connection",
+            message="Invalid authorization.",
+            status_code=401,
         )
-        await session.commit()
-        raise AuthError("Invalid authorization.", status_code=401)
 
     resolved = resolve_vetmanager_credentials(
         connection,
