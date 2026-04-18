@@ -1,5 +1,5 @@
 ---
-description: Полное ревью проекта в 9 разрезов (code/architecture/docs/security/perf+reliability/observability/tests/product + codex-blindspot) + workflow check + aggregator + Codex arbitration. Результат — md-отчёт в artifacts/review/.
+description: Полное ревью проекта в 10 разрезов (code/architecture/simplicity/docs/security/perf+reliability/observability/tests/product + codex-blindspot) + workflow check + aggregator + Codex arbitration. Результат — md-отчёт в artifacts/review/.
 argument-hint: "[scope] — changed (default) | related | full | stage:N"
 ---
 
@@ -29,21 +29,22 @@ Args: `$ARGUMENTS`.
 
 Получи список файлов (`git diff --name-only` или аналог по scope). Если scope=full — не перечисляй все, агенты сами сделают Glob.
 
-## Шаг 3. Запуск 9 специализированных ревьюеров параллельно
+## Шаг 3. Запуск 10 специализированных ревьюеров параллельно
 
-**В ОДНОМ сообщении, 9 tool-calls Agent**, параллельно:
+**В ОДНОМ сообщении, 10 tool-calls Agent**, параллельно:
 
 1. `reviewer-code` (sonnet) — user prompt: scope, file list, brief PRD summary
 2. `reviewer-architecture` (opus) — user prompt: scope (system/local mode), file list
-3. `reviewer-docs` (sonnet) — user prompt: scope
-4. `reviewer-security` (opus) — user prompt: scope, file list
-5. `reviewer-performance-and-reliability` (opus) — user prompt: scope, file list
-6. `reviewer-observability` (sonnet) — user prompt: scope, file list
-7. `reviewer-tests` (sonnet) — user prompt: scope
-8. `reviewer-product` (opus) — user prompt: scope, current stage number
-9. `reviewer-codex-blindspot` (sonnet) — user prompt: scope + file list + PRD + API facts (он передаст их Codex'у inline)
+3. `reviewer-simplicity` (opus) — user prompt: scope, file list, PRD. Ищет чрезмерное усложнение и предлагает более простые альтернативы; evaluates читаемость, поддерживаемость, очевидность.
+4. `reviewer-docs` (sonnet) — user prompt: scope
+5. `reviewer-security` (opus) — user prompt: scope, file list
+6. `reviewer-performance-and-reliability` (opus) — user prompt: scope, file list
+7. `reviewer-observability` (sonnet) — user prompt: scope, file list
+8. `reviewer-tests` (sonnet) — user prompt: scope
+9. `reviewer-product` (opus) — user prompt: scope, current stage number
+10. `reviewer-codex-blindspot` (sonnet) — user prompt: scope + file list + PRD + API facts (он передаст их Codex'у inline)
 
-**Шаблон user prompt для первых 8:**
+**Шаблон user prompt для первых 9 (всех кроме codex-blindspot):**
 ```
 Scope: {scope}
 Current stage: {stage_number} ({PRD file path if exists})
