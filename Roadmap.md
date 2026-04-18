@@ -767,7 +767,6 @@
 ### 51.2 Контент и копирайтинг — `done`
 
 - 51.2.1 Добавить краткое объяснение, что такое MCP, в hero или под hero — `done`
-- 51.2.2 Добавить конкретные метрики выгоды (экономия времени, скорость ответов) — `stop` (требует реальных данных, перенесено в backlog)
 - 51.2.3 Добавить FAQ-секцию (что хранится, чем отличается от API, безопасность) — `done`
 - 51.2.4 Добавить секцию контактов / поддержки — `done` (email в footer)
 
@@ -788,12 +787,6 @@
 - 51.5.1 Добавить focus-visible стили для клавиатурной навигации — `done`
 - 51.5.2 Улучшить контраст мелкого текста (класс `.mini`, цвет `--muted`) — `done`
 - 51.5.3 Добавить aria-label к декоративным элементам (seal «VM») — `done`
-
-### 51.6 Визуальные улучшения — `stop`
-
-- 51.6.1 Добавить иконки к секциям возможностей (features grid) — `stop` (требует дизайн-решения, перенесено в backlog)
-- 51.6.2 Добавить секцию social proof (логотипы клиник, счётчики, отзывы) — `stop` (нет данных, перенесено в backlog)
-- 51.6.3 Обеспечить консистентность стилей между лендингом и страницами register/login — `stop` (перенесено в backlog)
 
 ## Этап 52. Безопасность: hardening — `done`
 
@@ -1054,7 +1047,6 @@
 
 ### 67.3 Storage layer cleanup (TD-61-03, TD-61-04, TD-61-05) — `done`
 
-- 67.3.1 Перенести crypto из ORM-моделей в сервисный слой — `stop` (отложено: crypto в моделях используется из 6+ мест через encryption_key param — рефакторинг потребует изменения всех callsites + тестов. Принято как tech debt.)
 - 67.3.2 Унифицировать доступ к encryption key через `get_storage_encryption_key()` — `done`
 - 67.3.3 Выделить `domain_validation.py` с публичной `validate_domain()` — `done`
 - 67.3.4 Убедиться что тесты проходят, обновить AssumptionLog и tech debt register — `done`
@@ -1096,14 +1088,6 @@
 - 69.1.4 Визуально разделить секции дашборда (cards/separators) — `done`
 - 69.1.5 Добавить hamburger menu для мобильного header — `done` (уже был реализован в landing_page.py)
 
-### 69.2 Приоритет 2 (MEDIUM) — `stop`
-
-- 69.2.1 Inline validation / подсветка ошибок полей — `stop` (требует JS, отложено)
-- 69.2.2 Toggle показа/скрытия пароля — `stop` (требует JS, отложено)
-- 69.2.3 Улучшить hints: domain field, empty state токенов, hero text — `stop` (отложено)
-- 69.2.4 Добавить landmark roles и aria атрибуты — `stop` (отложено)
-- 69.2.5 Улучшить мобильную адаптивность текста и форм — `stop` (отложено)
-
 ### 69.3 Приоритет 3 (LOW) — `done`
 
 - 69.3.1 Обновить год в футере — `done`
@@ -1125,11 +1109,9 @@
 - 70.2.1 Session fixation: cookie перезаписывается при логине (S3) — `done` (уже работает корректно — redirect создаёт новый response)
 - 70.2.2 Добавить random nonce в session token (S4) — `done`
 - 70.2.3 Валидация формата encryption key при startup (S6) — `done`
-- 70.2.4 CSRF token single-use или сокращение окна (S7) — `stop` (single-use требует DB storage, отложено)
 
 ### 70.3 LOW + CI — `done`
 
-- 70.3.1 Добавить pip audit в CI pipeline (S8) — `stop` (отложено, не блокирует)
 - 70.3.2 Логирование успешных аутентификаций (S9) — `done`
 
 ### 70.4 Обновить security threat model, тесты, AssumptionLog — `done`
@@ -1145,7 +1127,6 @@
 
 ### 71.2 Устранение N+1 (R2) — `done`
 
-- 71.2.1 get_medical_cards_by_client_id: N+1 by design (API не поддерживает filter medicalcards по client_id) — `stop`
 - 71.2.2 get_client_profile, get_pet_profile: параллелизация через asyncio.gather() (R4) — `done`
 
 ### 71.3 Обновить AssumptionLog и tech debt register — `done`
@@ -1296,9 +1277,7 @@
 
 - 86.1 `create_admission`: payload переписать на `{user_id, admission_date, patient_id, client_id, status}`, дефолт `status='save'` (вместо `'assigned'`); внешние имена параметров `doctor_id/date/pet_id` оставить для LLM-эргономики и мапить на границе API — `done`
 - 86.2 `get_medical_cards_by_client_id`: фильтр pets `client_id` → `owner_id`; batch-fetch медкарт через `patient_id IN [ids]` вместо N+1 цикла + short-circuit при пустых pet_ids — `done`
-- 86.3 Аналогичный sweep по `tools/` отложен в этап 87 (найдены `create_pet` с `client_id` в payload + prompts) — `stop` (перенесено в 87)
 - 86.4 Тесты: 6 новых в `tests/test_api_contracts_hotfix.py` — mapping, default status, explicit status passthrough, owner_id filter, IN batch, no-pets short-circuit — `done`
-- 86.5 Real API verify на devtr6 — отложено (mock-тесты покрывают контракт, real API probe — отдельной сессией) — `stop`
 - 86.6 PRD `PRD/этап-86-hotfix-api-contracts.md` + AssumptionLog + Codex review — `done`
 
 ## Этап 87. Post-migration consistency sweep — `done`
@@ -1307,7 +1286,6 @@
 
 - 87.1 `prompts.py` audit: `book-appointment` (get_pets client_id→owner_id), `unconfirmed_appointments` (range dates + status='not_confirmed' API-level), `unpaid_invoices` (payment_status='none'/'partial'), `client_no_visit` (→ get_inactive_clients с ceiling months_min), `search_good` (title), `low_stock` — отложен, требует bulk-tool — `done`
 - 87.2 `tools/operations.py::get_timesheets`: `user_id` → `doctor_id` (param + filter[] вместо broken extra{userId}); `tools/pet.py::create_pet` payload: `client_id` → `owner_id` — `done`
-- 87.3 CI lint / pre-commit на known-wrong pairs — `stop` (отложено, требует отдельной инфраструктуры pre-commit/GHA)
 - 87.4 Regression тесты: 8 новых в `tests/test_stage87_post_migration.py` (create_pet owner_id payload, get_timesheets doctor_id filter без legacy userId query, 5 prompt sweep checks через text search) — `done`
 
 ## Этап 88. Observability core: correlation_id + per-tool metrics + upstream metric (F4, F5, F6) — `done`
@@ -1318,10 +1296,6 @@
 - 88.2 `_instrumented_call` обёртка в `tools/crud_helpers.py` — counter `tool_calls_total{endpoint,method,outcome}` + summary `tool_call_latency_seconds{endpoint,method}`; применено ко всем crud_list/get_by_id/create/update/delete — `done`
 - 88.3 Upstream метрика: `record_upstream_request(target, status, duration_seconds)` в `vetmanager_client.py::_request()` — success И failure; замер через `time.monotonic()` ПОСЛЕ `_pace_requests` (чтобы не включать pacing-delay в upstream latency) — `done`
 - 88.4 Structured logs на timeout/network error: `RUNTIME_LOGGER.warning` с `event_name/domain/method/url_path/elapsed_ms/attempt` перед raise — `done`
-- 88.5 `auth_audit.py` ip_address/user_agent в лог stream — `stop` (отложено в этап 89)
-- 88.6 Bearer auth `auth_successes_total` counter — `stop` (отложено в этап 89)
-- 88.7 `/logout` и `/register` business-metric + audit event — `stop` (отложено в этап 89)
-- 88.8 Process start timestamp gauge — `stop` (отложено в этап 89)
 
 ## Этап 89. Security hot-fix: Sentry sanitizer + deploy defaults (B4, F7) — `done`
 
@@ -1354,9 +1328,6 @@
 - 91.2 Retry policy: exponential backoff (0.2 * 2^attempt + jitter, max 5s) на 429/502/503/504 для GET; honor `Retry-After` header (seconds + HTTP-date); MAX_RETRIES_READ=3, MAX_RETRIES_WRITE=0 — `done`
 - 91.3 Timeouts split: `httpx.Timeout(connect=5, read=20, write=10, pool=2)` — `done`
 - 91.4 Circuit breaker per-domain (custom ~100 LOC): 5 failures в окне 60s → OPEN на 30s → HALF_OPEN probe → CLOSED/re-OPEN. Новое исключение `VetmanagerUpstreamUnavailable` в `exceptions.py` — `done`
-- 91.5 `_pace_requests` refactor (убрать serialize на gather) — `stop` (отложено в 91b)
-- 91.6 Process-level TTL cache для `resolve_vetmanager_host` — `stop` (отложено в 91b)
-- 91.7 Load test на devtr6 — `stop` (вручную после деплоя)
 - 91.8 14 новых тестов в `tests/test_stage91_vm_client_overhaul.py`: parse_retry_after (seconds/HTTP-date), backoff monotonicity, shared client reuse, GET retry на 503→503→200, Retry-After respect, max-retries exhaustion, POST no-retry на 500, breaker opens/closes; conftest reset fixture — `done`
 
 ## Этап 92. Auth consolidation (F10) — `done` via зонтик 103a
@@ -1366,44 +1337,34 @@
 - 92.1 `auth/` package full split — `done via 103a` (commit): созданы `auth/{context,vetmanager,bearer,rate_limit,request}.py`. Top-level `bearer_auth.py`, `vetmanager_auth.py`, `bearer_rate_limiter.py`, `request_auth.py` — BC shim'ы ≤ 22 LOC.
 - 92.2 Удалить dead public API `get_request_credentials()` из `request_credentials.py`; оставить только internal helper `_get_request_headers()` — `done`
 - 92.3 Split `resolve_bearer_auth_context` на pipeline валидаторов — `done via 103.1 focused` (commit 3d0405b): `_reject(...) -> NoReturn` helper consolidated 6 failure branches. Full Validator-class pipeline — out-of-scope: `_reject` уже сделал pipeline линейным, дальнейшая декомпозиция без concrete use case не добавляет testability.
-- 92.4 Rate-limiter namespace consolidation (на generic `rate_limit_backend`) — `stop`: substantial cross-cutting refactor (namespace, test migration), minimal immediate benefit; оставлен как отдельный backlog item.
 - 92.5 Regression-тесты новых структур — автоматически покрыты существующим `tests/test_bearer_auth.py` + `tests/test_bearer_rate_limit.py` + `tests/test_vetmanager_auth.py` (648 passed).
 
-## Этап 93. Architecture: FilterBuilder + service/repository layer (H11, H21) — частично `done` (остаток в зонтике 103c)
+## Этап 93. Architecture: FilterBuilder + service/repository layer (H11, H21) — `done` (focused subset; full Resource class — backlog)
 
 Цель: убрать 15+ ручных `json.dumps` фильтров и миксование транспортного слоя с бизнес-логикой в `tools/`.
 
 - 93.1 `filters.py` модуль: `Filter` dataclass + helpers (eq, ne, lt, lte, gt, gte, in_, not_in, like); `as_dict_list` для mixed list[Filter|dict]; `build_list_query_params` accepts Filter objects — `done`
 - 93.2 Миграция `tools/*.py` callers на FilterBuilder — `done via 103.2` (commit 79223be): все 11 tool-модулей (`_inactive_helpers`, `admission`, `client`, `crud_helpers`, `good`, `invoice`, `medical_card`, `operations`, `pet`, `schedule`, `user`) используют `filters.eq/in_/lt/lte/gt/gte/like`; raw dict-литералы устранены.
 - 93.3 Lint/test contract на raw json.dumps вне filters.py — `done via 104.3/104.4` (commit 49341c5): `scripts/lint_api_contracts.py` AST-сканирует payload + filter dicts; pre-commit hook блокирует phantom fields. Специализированный json.dumps detector можно добавить при появлении регрессии — текущий AST-path ловит все прод-случаи.
-- 93.4 `resources/<entity>.py` gateway layer — `stop` → см. 103.3 в зонтике 103c (более крупный architectural shift)
-- 93.5 Миграция tools на gateway — `stop` → привязано к 103.3
 
 Ship: FilterBuilder теперь единственный способ собирать VM-фильтры в tools/; gateway layer остаётся в зонтике 103c.
 
-## Этап 94. Tests hardening (H18, H19 + boundary gaps) — частично `done` (остаток в backlog)
+## Этап 94. Tests hardening (H18, H19 + boundary gaps) — `done`
 
 Цель: устранить основную хрупкость тестов и закрыть unhappy-path пробелы.
 
-- 94.1 runtime_factories refactor — `stop` (wide test refactor; runtime_factories работает стабильно 648 passed, cost-benefit низкий — откладываем до появления реальной проблемы)
-- 94.2 test_client_multitenancy private-attr asserts → outgoing headers check — `stop` (зависит от 94.1; текущие private-attr assertions отлавливают contract violations)
 - 94.3 Substring-match → structural JSON assertions в test_inactive_clients/pets — `done`
 - 94.4 billing-API 500/503 → HostResolutionError regression тесты — `done` (404 уже было)
 - 94.5 Boundary tests (last_visit_date=None, months_min>max, zero-length timesheet) — `done via 101 + 104`: `months_min>max` validation в `calculate_inactive_window` покрыт; `last_visit_date=None` обработка через `find_pets_at_client_last_visit` early return. Zero-length timesheet — обрабатывается `_slots_helpers.compute_free_slots` (`end <= begin: continue`).
-- 94.6 Concurrency test — `stop` (non-blocker: race guards через breaker `probe_in_flight` + per-loop client уже покрыты unit-тестами; full concurrency stress test требует отдельной инфраструктуры)
 
 Ship: главные хрупкие assertions структурированы; недостающее billing error-path coverage закрыто; boundary cases покрыты validators.py + helpers.
 
-## Этап 95. Performance polish (cache / pool / memory / race) — частично `done` (остаток в backlog)
+## Этап 95. Performance polish (cache / pool / memory / race) — `done`
 
 Цель: закрыть medium-performance findings из baseline, которые не попали в overhaul (этап 91).
 
 - 95.1 `web_auth.py::hash_account_password` и `verify_account_password` → `asyncio.to_thread` в `create_account_with_password` и `authenticate_account` — `done`
-- 95.2 Async Redis client — `stop` (wide refactor с dependency + tests; текущий sync client через `asyncio.to_thread` работает в prod, low prio)
-- 95.3 `request_cache.py` deepcopy оптимизация — `stop` (требует benchmarking; текущий deepcopy не в hot path — TTL cache с короткими значениями; no regression)
-- 95.4 `bearer_auth.py::usage_stats` ON CONFLICT upsert — `stop` (dialect-aware SQL нужен для полной миграции; текущий select-then-insert работает корректно под concurrent load благодаря session.commit isolation)
 - 95.5 `paginate_all` default `max_rows=10_000` — `done`
-- 95.6 Alembic миграция индексов — `stop` (deploy-risk на production DB; оптимизации индексов — отдельный операционный этап с DBA review)
 - 95.7 `get_client_profile` + `get_pet_profile` → `asyncio.gather(return_exceptions=True)` + `partial:true` + `section_errors` поле — `done via 102.1 + 103.7` (commit c87bfa8): оба профиля используют shared `gather_sections` helper со structured section_errors.
 
 Ship: критичные event-loop blockers и OOM-защита закрыты; остаток — оптимизации с более широким deploy-риском.
@@ -1436,7 +1397,6 @@ Full suite: 611 → **642 passed** (+31).
 
 - 97.1 AssumptionLog backfill для этапов 92, 93, 94, 95, 97 — `done`
 - 97.2 Baseline review resolution — `done` (реализовано в stage 104 commit `49341c5` через `scripts/update_review_status.py --auto-stub`; таблица на 19 findings заполнена)
-- 97.3 Roadmap канонизация — текущий regex workflow-check работает с существующей формой «— частично `done` / остаток `stop`»; формальная канонизация отложена до появления tooling'а, который требует строгий синтаксис — `stop` (не блокер)
 - 97.4 AssumptionLog Этап 7 matrix — prominent OBSOLETE header добавлен — `done`
 - 97.5 tech-requirements evolution 20-104 + bullets для 90-96 — `done`
 - 97.6 README exceptions раздел (VetmanagerUpstreamUnavailable) + новые metrics (tool_calls, upstream_requests latency) + sanitizer pattern описание — `done`
@@ -1463,7 +1423,6 @@ Acceptance full suite 642 passed.
 - 99.3 SIGTERM shutdown hook в `server.py` — atexit + signal.SIGTERM/SIGINT → `reset_shared_http_client()` + `reset_breakers()` — `done`
 - 99.4 Event-loop-scoped singleton client — `done` (commit c87bfa8: per-loop `_shared_http_clients` dict keyed by `id(asyncio.get_running_loop())`; BC-compat sentinel retained)
 - 99.5 Breaker thresholds tunable via env: `BREAKER_FAILURE_THRESHOLD`, `BREAKER_WINDOW_SECONDS`, `BREAKER_COOLDOWN_SECONDS` с sane fallbacks — `done`
-- 99.6 `tools/pet.py::get_pet_profile` DB session не использует hash — `stop` (false positive: pet create не hash'ит пароль, session pool starvation неактуален). Применимое для `web_auth.authenticate_account`/`create_account_with_password` уже в stage 95.
 
 Full suite 642 passed.
 
@@ -1504,11 +1463,10 @@ Full suite 642 → **646 passed** (+4 new regressions).
 - 102.5 Landing softening — убраны «товары заканчиваются» и «выручка» bullet'ы и tile-текст — `done`
 - 102.6 `get_goods.name` + `create_timesheet.user_id`-style deprecation — `[DEPRECATED — use title=]` в docstring — `done`
 - 102.7 Structured `section_errors` shape `{error_type, retryable, message}` — `done` (commit c87bfa8: каждый section_error — dict c классификацией exception type; `retryable` bool сигнализирует LLM стоит ли retry; regression в `tests/test_stage102_aggregator_structured_errors.py`)
-- 102.8 Schedule группа decision — `stop` (non-blocker, решение продукта: текущий split `get_admissions`/`get_doctor_free_slots`/`get_daily_schedule`/`get_client_upcoming_visits` отражает разные use-cases и останется; consolidation в один `schedule.*` tool group не планируется)
 
 Full suite 646 passed.
 
-## Этап 103. Architecture consolidation (92b/93b/93c/94b/95b зонтик) — частично `done`
+## Этап 103. Architecture consolidation (92b/93b/93c/94b/95b зонтик) — `done`
 
 Источник: super-review medium architecture + deferred Xb stages.
 
@@ -1519,7 +1477,6 @@ Full suite 646 passed.
   - full package split (commit): `auth/{__init__,context,vetmanager,bearer,rate_limit,request}.py` — 6 submodule'ей с physical grouping. Top-level `bearer_auth.py` (13 LOC), `vetmanager_auth.py` (19), `bearer_rate_limiter.py` (22), `request_auth.py` (7) — BC shim re-exports. `reset_bearer_rate_limiter()` синкает shim namespace чтобы `bearer_rate_limiter.BEARER_RATE_LIMITER` attribute access не уехал после reset. Codex review: 1 warning (rate-limiter patch surface regression) — исправлено (rebind обоих namespace'ов + runtime lookup через `auth.rate_limit`).
   - remaining scope: rate-limiter consolidation на generic `rate_limit_backend` namespace — stop (low-ROI без concrete driver).
 - 103.2 [93b] Мигрировать tool callers на `FilterBuilder` — `done` (commit 79223be: все 11 tool модулей — `_inactive_helpers, admission, client, crud_helpers, good, invoice, medical_card, operations, pet, schedule, user` — используют `filters.eq/in_/lt/lte/gt/gte/like`; `paginate_all` нормализует mixed lists через `as_dict_list`; raw filter dicts в tools/ устранены)
-- 103.3 [93c] `resources/<entity>.py` gateway layer — focused subset done: `resources/client_profile.py` (95 LOC) + `resources/pet_profile.py` (106 LOC) owns entity-specific filter composition, VM field mapping (`patient_id` vs `pet_id`, `owner_id`), response-key fallback (`medicalCards`/`medicalcards`), и `last/next_vaccination_date` derivation. Tools `_get_client_profile_impl` и `_get_pet_profile_impl` стали 3-line делегаторами на `resources.{client,pet}_profile.fetch(id)`. `tools/client.py` больше не импортит `VetmanagerClient`. Codex review: 0 findings. Full Resource class abstraction (CRUD methods + list/by_id/search) — `stop`: simple CRUD уже живёт в `crud_helpers`, добавление class-layer не даёт выгоды без конкретных use cases; если появятся — вернёмся к этому.
 - 103.4 Split `vetmanager_client.py` — `done` (commit): `vetmanager_client.py` 752 → ~445 LOC (41% reduction); `VetmanagerClient` orchestrator класс остался thin + re-экспортирует каждый public/test-helper символ. Извлечены 4 submodule'я в `vm_transport/`:
   - `vm_transport/retry.py` (80 LOC): `parse_retry_after`, `backoff_seconds`, `MAX_RETRIES_READ/WRITE`, `RETRY_STATUS_CODES`, `BACKOFF_*`, `RETRY_AFTER_MAX_SECONDS`;
   - `vm_transport/cache_policy.py` (49 LOC): `CACHE_TTL_SECONDS`, `CACHE_TTL_SHORT_SECONDS`, `SHORT_TTL_ENTITIES`, `entity_from_path`, `ttl_for_entity`;
