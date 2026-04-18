@@ -3,10 +3,9 @@
 Guards against accidental bulk operations caused by malformed prompts.
 """
 
-import json
 import re
 from datetime import date, timedelta
-from typing import Annotated, Any
+from typing import Annotated
 
 from pydantic import Field
 
@@ -170,39 +169,7 @@ def validate_amount(amount: float) -> None:
         )
 
 
-def build_list_query_params(
-    limit: int,
-    offset: int,
-    sort: list[dict[str, Any]] | None = None,
-    filters: list[dict[str, Any]] | list[Any] | None = None,
-    extra: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Build common list-query params with optional sort/filter blocks.
-
-    `filters` may be a list of raw dicts (legacy callers) OR a list of
-    `filters.Filter` objects (typed builder). Mixed lists are also accepted.
-    """
-    validate_list_params(limit, offset)
-    params: dict[str, Any] = {"limit": limit, "offset": offset}
-
-    if sort:
-        params["sort"] = json.dumps(sort, separators=(",", ":"), ensure_ascii=False)
-    if filters:
-        # Lazy import avoids circular dependency (filters.py is a leaf module).
-        from filters import as_dict_list
-
-        normalized = as_dict_list(filters)
-        if normalized:
-            params["filter"] = json.dumps(
-                normalized, separators=(",", ":"), ensure_ascii=False
-            )
-
-    if extra:
-        for key, value in extra.items():
-            if value is None or value == "":
-                continue
-            if isinstance(value, (int, float)) and not isinstance(value, bool) and value == 0:
-                continue
-            params[key] = value
-
-    return params
+# Stage 103.8: `build_list_query_params` moved to filters.py (co-located with
+# the Filter primitives it serializes). Re-exported here for BC — drop when
+# all external callers migrate.
+from filters import build_list_query_params  # noqa: E402,F401

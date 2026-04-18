@@ -12,8 +12,8 @@ proxy label for `vetmanager_tool_call_latency_seconds` and
 import json
 from typing import Any, Awaitable, Callable, TypeVar
 
+from filters import build_list_query_params
 from service_metrics import instrument_call as _instrumented_call
-from validators import build_list_query_params
 from vetmanager_client import VetmanagerClient
 
 T = TypeVar("T")

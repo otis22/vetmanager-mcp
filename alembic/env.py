@@ -12,7 +12,11 @@ from storage_models import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Stage 101.8: disable_existing_loggers=False so alembic's log setup
+    # (run e.g. from tests/test_migrations.py) doesn't disable
+    # `vetmanager.runtime` / `vetmanager.security` loggers that subsequent
+    # tests depend on via caplog / direct handler attachment.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 configured_url = os.environ.get("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
 config.set_main_option(

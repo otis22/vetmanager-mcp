@@ -148,56 +148,65 @@ async def test_upstream_request_metric_recorded_on_success():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_timeout_emits_structured_warning_and_records_latency(monkeypatch):
+async def test_timeout_emits_structured_warning_and_records_latency():
     """Verify timeout path: structured warning is emitted AND latency metric
-    is recorded with status='timeout'. Log capture patches RUNTIME_LOGGER
-    directly because earlier tests in the full suite may have reset the
-    logging root handler via configure_logging()/basicConfig(force=True)."""
-    import observability_logging as _obs
-    import vetmanager_client as _vm_client
+    is recorded with status='timeout'.
 
-    records: list[dict] = []
+    Stage 101.8: the old `_StubLogger` workaround — patching RUNTIME_LOGGER
+    directly — was necessary because `configure_logging()` called
+    `basicConfig(force=True)` at server.py import, wiping pytest's caplog
+    handler. That root cause is fixed (configure_logging no longer resets
+    root handlers). This test now uses a dedicated handler attached
+    directly to the `vetmanager.runtime` logger, which is resilient to
+    cross-test fixture interactions regardless of caplog state.
+    """
+    runtime_logger = logging.getLogger("vetmanager.runtime")
+    collected: list[logging.LogRecord] = []
 
-    class _StubLogger:
-        def warning(self, msg, *args, **kwargs):
-            records.append({
-                "msg": msg,
-                "extra": kwargs.get("extra", {}),
-            })
+    class _ListHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            collected.append(record)
 
-        def info(self, *a, **kw):
-            pass
-
-        def debug(self, *a, **kw):
-            pass
-
-        def error(self, *a, **kw):
-            pass
-
-    stub = _StubLogger()
-    monkeypatch.setattr(_vm_client, "RUNTIME_LOGGER", stub)
-    monkeypatch.setattr(_obs, "RUNTIME_LOGGER", stub)
-
-    reset_service_metrics()
-    billing_mock()
-    respx.get(f"{BASE}/rest/api/client").mock(
-        side_effect=httpx.TimeoutException("boom")
-    )
-    from exceptions import VetmanagerTimeoutError
-    headers_patch, runtime_patch = bearer_runtime_patch()
-    with headers_patch, runtime_patch:
-        with pytest.raises(VetmanagerTimeoutError):
-            await VetmanagerClient().get("/rest/api/client", params={"limit": 1})
+    handler = _ListHandler(level=logging.DEBUG)
+    runtime_logger.addHandler(handler)
+    # Stage 101.8: alembic test earlier in the suite calls
+    # logging.config.fileConfig which defaults to
+    # `disable_existing_loggers=True`, flipping `vetmanager.runtime.disabled`
+    # to True. Revive it defensively (alembic/env.py now passes
+    # `disable_existing_loggers=False`, but keep this re-enable as belt-and-
+    # suspenders for any other dictConfig caller).
+    prev_disabled = runtime_logger.disabled
+    runtime_logger.disabled = False
+    try:
+        reset_service_metrics()
+        billing_mock()
+        respx.get(f"{BASE}/rest/api/client").mock(
+            side_effect=httpx.TimeoutException("boom")
+        )
+        from exceptions import VetmanagerTimeoutError
+        headers_patch, runtime_patch = bearer_runtime_patch()
+        with headers_patch, runtime_patch:
+            with pytest.raises(VetmanagerTimeoutError):
+                await VetmanagerClient().get(
+                    "/rest/api/client", params={"limit": 1}
+                )
+    finally:
+        runtime_logger.removeHandler(handler)
+        runtime_logger.disabled = prev_disabled
 
     timeout_records = [
-        r for r in records if r["extra"].get("event_name") == "vm_upstream_timeout"
+        r for r in collected
+        if getattr(r, "event_name", None) == "vm_upstream_timeout"
     ]
-    assert timeout_records, f"expected structured warning, got {records}"
-    extra = timeout_records[0]["extra"]
-    assert extra["domain"] == DOMAIN
-    assert extra["method"] == "GET"
-    assert extra["url_path"] == "/rest/api/client"
-    assert isinstance(extra["elapsed_ms"], (int, float))
+    assert timeout_records, (
+        f"expected structured warning vm_upstream_timeout, "
+        f"got {[r.getMessage() for r in collected]}"
+    )
+    record = timeout_records[0]
+    assert record.domain == DOMAIN
+    assert record.method == "GET"
+    assert record.url_path == "/rest/api/client"
+    assert isinstance(record.elapsed_ms, (int, float))
 
     snap = snapshot_service_metrics()
     assert snap["upstream_requests_total"].get("vetmanager_api|timeout") == 1

@@ -124,15 +124,42 @@ def build_log_formatter(*, log_format: str | None = None) -> logging.Formatter:
     return TextLogFormatter()
 
 
+_HANDLER_MARKER = "_vm_structured_logging_handler"
+
+
+def _is_our_handler(handler: logging.Handler) -> bool:
+    return getattr(handler, _HANDLER_MARKER, False) is True
+
+
 def configure_logging() -> None:
-    """Initialize root logging with the configured structured formatter."""
+    """Initialize root logging with the configured structured formatter.
+
+    Stage 101.8: never reset root handlers (`basicConfig(force=True)` was
+    clobbering pytest's `caplog` handler — tests then needed `_StubLogger`
+    workarounds to assert on structured log records). Instead, we add our
+    own stream handler, tagged with a marker attribute, alongside any
+    pre-existing handlers so test fixtures and third-party bootstrap keep
+    working.
+
+    Idempotent: checked by scanning root handlers for our marker. Using
+    a handler-based check (rather than a module-level boolean) means that
+    if some later code clears root handlers (`basicConfig(force=True)`,
+    `dictConfig(...)`, manual `removeHandler`), the next call will correctly
+    re-install ours. Avoids double-install when the host process pre-set
+    its own handler — we only install ours if it isn't already there.
+    """
+    root = logging.getLogger()
     level = (os.environ.get("LOG_LEVEL") or "INFO").strip().upper()
-    logging.basicConfig(
-        level=level,
-        handlers=[logging.StreamHandler()],
-        force=True,
-    )
+    root.setLevel(level)
+
+    if any(_is_our_handler(h) for h in root.handlers):
+        return
+
     formatter = build_log_formatter()
-    for handler in logging.getLogger().handlers:
-        handler.addFilter(RequestContextLogFilter())
-        handler.setFormatter(formatter)
+    context_filter = RequestContextLogFilter()
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    stream_handler.addFilter(context_filter)
+    setattr(stream_handler, _HANDLER_MARKER, True)
+    root.addHandler(stream_handler)

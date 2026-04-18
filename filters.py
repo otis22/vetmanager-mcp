@@ -18,6 +18,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -152,3 +153,45 @@ def as_dict_list(filters: list[Filter] | list[dict] | None) -> list[dict] | None
                 f"filter items must be Filter or dict, got {type(item).__name__}"
             )
     return result
+
+
+def build_list_query_params(
+    limit: int,
+    offset: int,
+    sort: list[dict[str, Any]] | None = None,
+    filters: list[dict[str, Any]] | list[Any] | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build common list-query params with optional sort/filter blocks.
+
+    `filters` may be a list of raw dicts (legacy callers) OR a list of
+    `Filter` objects (typed builder). Mixed lists are also accepted.
+
+    Stage 103.8: moved from `validators.py` — sits next to the filter
+    primitives it serializes, eliminates the previous lazy import back to
+    `filters.as_dict_list`.
+    """
+    # Lazy import avoids pulling pydantic at filter-module import time.
+    from validators import validate_list_params
+
+    validate_list_params(limit, offset)
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+
+    if sort:
+        params["sort"] = json.dumps(sort, separators=(",", ":"), ensure_ascii=False)
+    if filters:
+        normalized = as_dict_list(filters)
+        if normalized:
+            params["filter"] = json.dumps(
+                normalized, separators=(",", ":"), ensure_ascii=False
+            )
+
+    if extra:
+        for key, value in extra.items():
+            if value is None or value == "":
+                continue
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value == 0:
+                continue
+            params[key] = value
+
+    return params

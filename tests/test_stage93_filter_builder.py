@@ -10,6 +10,7 @@ from filters import (
     Filter,
     FilterOp,
     as_dict_list,
+    build_list_query_params,
     eq,
     gt,
     gte,
@@ -20,7 +21,6 @@ from filters import (
     ne,
     not_in,
 )
-from validators import build_list_query_params
 
 
 # ── Individual helpers ──────────────────────────────────────────────────────

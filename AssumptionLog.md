@@ -4142,12 +4142,26 @@ Rationale: wide test refactor зависит от 94.1 base. Отдельной 
 **Не сделано (documented rationale):**
 - 101.2 Public test-helpers `get_shared_http_client()` / `get_breaker_state()` — тесты использующие module-level privates работают стабильно; рефактор API для сокращения test-coupling к internals — nice-to-have, не prod risk.
 - 101.6 `test_parse_retry_after_http_date_form` time tolerance — на stage 96.6 окно уже уменьшено до 60s с ±5s tolerance; flaky только на сильно loaded CI. Not worth freezegun complexity.
-- 101.8 `_StubLogger` workaround root cause — `configure_logging(force=True)` в module import time сбрасывает root handlers. Fix требует product-wide refactor bootstrap (вынос configure_logging из server import chain). Low priority vs workaround cost.
-- 101.9 PROMPTS_SRC substring → real function calls — current assertions работают, refactor cost > value.
+- 101.9 PROMPTS_SRC substring → real function calls — закрыто в stage c87bfa8 (TestStage87PromptSweep использует `await mcp.get_prompt(name)` + `render`, async tests на pytest-asyncio).
 
-**Full suite**: 642 → **646 passed** (+4 new regressions: half_open_probe_failure, sanitizer unlisted api, sanitizer stacktrace vars, sanitizer breadcrumb data).
+**Stage 101 follow-up (2026-04-18):** 101.8 закрыт на этом проходе.
 
-**Codex review**: пропущен per CLAUDE.md §5.5 (tests-only).
+Два root cause'а подавляли caplog/direct-handler capture в full suite runs:
+
+1. `structured_logging.configure_logging()` раньше делал `logging.basicConfig(..., force=True)` на import server.py — это удаляло все root handlers (включая pytest caplog). Переписано: модуль создаёт собственный StreamHandler, помеченный атрибутом `_vm_structured_logging_handler=True`, и добавляет его только если такого ещё нет. Это:
+   - coexist'ит с pre-existing handlers (host process, caplog) без дубликатов;
+   - idempotent (проверка — есть ли наш marker-handler, вместо module-level bool-флага, который не восстанавливается после внешних `dictConfig`/`removeHandler` событий);
+   - не мутирует formatter/filter чужих handlers (убрал over-reach, выявленный Codex review'ом).
+
+2. `alembic/env.py` вызывал `logging.config.fileConfig(...)` с default `disable_existing_loggers=True`. Когда `tests/test_migrations.py` запускался раньше `test_stage88_observability_core.py::test_timeout_emits_structured_warning_and_records_latency`, он флипал `vetmanager.runtime.disabled=True`, и все warning'и оттуда уходили в void. Fix: `fileConfig(..., disable_existing_loggers=False)`.
+
+Test `test_timeout_emits_structured_warning_and_records_latency` переписан под реальные `LogRecord`'ы через handler напрямую на `vetmanager.runtime` (без `_StubLogger`). Belt-and-suspenders: runtime_logger.disabled=False reset внутри теста на случай новых `dictConfig` callers в будущем.
+
+Codex review (2-й проход): 0 findings после применения первой volны замечаний.
+
+**Full suite**: 648 passed.
+
+**Codex review**: закрыто с 0 findings после 1 iteration'а (первые замечания про handler dedup + `_CONFIGURED` brittleness адекватные, исправлены; остальные nit — задокументированы).
 
 ## Этап 102. Product consistency sweep
 
@@ -4182,11 +4196,14 @@ Rationale: wide test refactor зависит от 94.1 base. Отдельной 
 
 **Не сделано (high-risk / out-of-scope):**
 - 103.1 `auth/` package — critical path; отдельный focused stage с собственным PRD и Codex review.
-- 103.2 FilterBuilder migration 7 files — gradual path уже работает через `as_dict_list` (accepts mixed Filter | dict). Bulk migration — low ROI прямо сейчас.
 - 103.3 `resources/<entity>.py` gateway — architectural shift; отдельный этап с обсуждением product/performance impact.
-- 103.4 `vetmanager_client.py` split (574 LOC → modules) — orthogonal refactor; текущая форма тестируется и проходит 646 tests без проблем.
-- 103.8 `build_list_query_params` → filters.py — lazy import в validators.py работает; circular dep risk реален; не стоит переносить без concrete benefit.
+- 103.4 `vetmanager_client.py` split (574 LOC → modules) — orthogonal refactor; текущая форма тестируется и проходит 648 tests без проблем.
 
-**Тесты**: 646 passed (unchanged). Регрессия на первой попытке (249 failed из-за circular import request_auth ↔ request_credentials) исправлена: shim получил свою собственную копию helper'а.
+**Stage 103 follow-up (2026-04-18):**
 
-**Codex review**: пропущен per CLAUDE.md §5.5 — refactor-only, behaviour-preserving.
+- **103.2** `FilterBuilder` caller migration — закрыто (commit 79223be): все 11 tool-модулей используют `filters.eq/in_/lt/lte/gt/gte/like` вместо raw dict-литералов. `paginate_all` нормализует mixed Filter/dict списки через `as_dict_list` перед сериализацией.
+- **103.8** `build_list_query_params` → filters.py — закрыто: функция перенесена к Filter-примитивам, которые она сериализует. `validators.py` re-export'ит её для BC. Lazy import `validate_list_params` внутри filters (validators.py в остальном не зависит от filters). Все 3 tool-модуля (`crud_helpers`, `_inactive_helpers`, `medical_card`) + `tests/test_stage93_filter_builder.py` импортят напрямую из filters; `tests/test_validators.py` остался на BC-импорте как проверка контракта re-export'а.
+
+**Тесты**: 646 → 648 passed (+2: 103.7 aggregator structured errors тесты).
+
+**Codex review**: для 103.2 — 0 findings; для 103.8 — 0 findings в секции filter/validators.

@@ -1458,18 +1458,18 @@ No code changes; Codex review пропускается по §5.5. Full suite 64
 
 Acceptance full suite 642 passed.
 
-## Этап 99. Reliability hardening II — частично `done`
+## Этап 99. Reliability hardening II — `done`
 
 - 99.1 `_breaker_record_failure` per-attempt в retry loop (timeout/network) — `done`
 - 99.2 HALF_OPEN probe pre-dispatch race — уже покрыто existing try/finally через `_check_breaker_allows` + breaker записи в except branches (96.4 уже clear'нул 4xx path); full pre-dispatch wrapper не требуется — existing structure ловит cancellation через `_reset_vm_client_state` conftest fixture — `done`
 - 99.3 SIGTERM shutdown hook в `server.py` — atexit + signal.SIGTERM/SIGINT → `reset_shared_http_client()` + `reset_breakers()` — `done`
-- 99.4 Event-loop-scoped singleton client — `stop` (более риски регрессии чем польза: текущая архитектура работает stable в docker/pytest; embedded scenarios гипотетические; lazy init с `is_closed` guard уже защищает от явных bug'ов; если встретим — отдельный fix)
+- 99.4 Event-loop-scoped singleton client — `done` (commit c87bfa8: per-loop `_shared_http_clients` dict keyed by `id(asyncio.get_running_loop())`; BC-compat sentinel retained)
 - 99.5 Breaker thresholds tunable via env: `BREAKER_FAILURE_THRESHOLD`, `BREAKER_WINDOW_SECONDS`, `BREAKER_COOLDOWN_SECONDS` с sane fallbacks — `done`
 - 99.6 `tools/pet.py::get_pet_profile` DB session не использует hash — `stop` (false positive: pet create не hash'ит пароль, session pool starvation неактуален). Применимое для `web_auth.authenticate_account`/`create_account_with_password` уже в stage 95.
 
 Full suite 642 passed.
 
-## Этап 100. Security hardening II — частично `done`
+## Этап 100. Security hardening II — `done`
 
 - 100.1 Sentry sanitizer — покрытие breadcrumbs, exception.values[].stacktrace.frames[].vars, contexts, user, tags, request.env — `done`
 - 100.2 correlation_id normalization regex `^[A-Za-z0-9_-]{1,64}$`, fallback на fresh token — `done`
@@ -1477,34 +1477,36 @@ Full suite 642 passed.
 - 100.4 `_SENSITIVE_KEY_PATTERNS` += `dpop`, `signed` — `done`
 - 100.5 SITE_BASE_URL URL-scheme validation + length cap + reject control chars — `done` (landing_page + web_html)
 - 100.6 `html.escape(site_base_url)` в web_html render_account_page — `done`
-- 100.7 Legacy 3-part session token deprecation — `stop` (требует отдельного migration window с cutoff date; низкий приоритет — tokens короткоживущие, HMAC integrity защищён)
+- 100.7 Legacy 2-part session token deprecation — `done` (commit c87bfa8: deprecation warning logged via `vetmanager.security` logger with `event_name=legacy_session_token_accepted`; operator can plan cutoff once metric confirms no legacy tokens in flight)
 
 Full suite 642 passed.
 
-## Этап 101. Tests hardening II — частично `done`
+## Этап 101. Tests hardening II — `done`
 
 - 101.1 Bare `pytest.raises(Exception)` заменены на specific types (`VetmanagerError`, `VetmanagerTimeoutError`) в stage 88/91 + `dataclasses.FrozenInstanceError` в stage 93 — `done`
-- 101.2 Public test-helpers (`get_shared_http_client()`, `get_breaker_state(domain)`) — `stop` (текущие тесты используют module-level globals но это не production risk; public API проектируем если понадобится в будущем)
+- 101.2 Public test-helpers — `done` (commit c87bfa8: `get_shared_http_client_state()`, `get_breaker_state(domain)`, `force_breaker_open(domain, cooldown_elapsed=bool)` в `vetmanager_client`)
 - 101.3 Vacuous `test_backoff_exponential_without_retry_after` — replace with monkeypatched `random.uniform = 0` + strict `d0 < d1 < d2` assertions — `done`
 - 101.4 IN-batch fixture assertion — pin на integer list `[1, 2, 3]`, убран dual-branch str/int — `done`
 - 101.5 HALF_OPEN probe failure → OPEN с fresh cooldown regression test — `done` (в `tests/test_stage101_tests_hardening.py`)
-- 101.6 `test_parse_retry_after_http_date_form` time tolerance — `stop` (на stage 96.6 уменьшена до 60s + ±5s; flaky только на сильно loaded CI)
+- 101.6 `test_parse_retry_after_http_date_form` time tolerance — `done` (commit c87bfa8: monkeypatch `datetime.now` к фиксированному значению, strict `pytest.approx(60.0)`; flakiness устранён)
 - 101.7 Sanitizer unlisted api-* key redacted test + breadcrumb/stacktrace vars regression — `done`
-- 101.8 `_StubLogger` workaround в test_stage88 — `stop` (symptomatic fix уже работает; root cause — `configure_logging(force=True)` side effect в module import — требует product-wide refactor logging bootstrap)
-- 101.9 PROMPTS_SRC substring searches → импорт + вызов real prompt functions — `stop` (test value низкий vs test refactor cost; current assertions работают)
+- 101.8 `_StubLogger` workaround root cause — `done`. Исправлены два источника:
+  (1) `structured_logging.configure_logging()` больше не делает `basicConfig(force=True)` — создаёт собственный StreamHandler с marker-атрибутом и idempotent-check'ом `_is_our_handler` (если наш handler уже есть — пропуск; если нет — добавляется, coexisting с любыми pre-existing handlers без дубликатов). Handler-based проверка вместо module-boolean флага позволяет пере-инициализацию после `dictConfig`/`removeHandler` событий;
+  (2) `alembic/env.py` зовёт `fileConfig(..., disable_existing_loggers=False)`, чтобы `test_migrations.py` не выставлял `vetmanager.runtime.disabled=True` для последующих тестов. Test `test_timeout_emits_structured_warning_and_records_latency` теперь проверяет реальные LogRecord'ы через прямой handler на `vetmanager.runtime` — без StubLogger'а.
+- 101.9 PROMPTS_SRC substring searches → импорт + вызов real prompt functions — `done` (commit c87bfa8: TestStage87PromptSweep использует `await mcp.get_prompt(name)` + `prompt.render`; async tests на pytest-asyncio; побочный эффект — устранена flaky `test_record_upstream_request` из-за leaked event loops)
 
 Full suite 642 → **646 passed** (+4 new regressions).
 
-## Этап 102. Product consistency sweep — частично `done`
+## Этап 102. Product consistency sweep — `done`
 
 - 102.1 `get_pet_profile` partial-gather parity — `done`
-- 102.2 `get_pet_profile` `_instrumented_call` wrap — `stop` (aggregator делает 3 parallel `vc.get()` минуя crud_helpers; proper instrumentation требует refactor на уровне VetmanagerClient, не просто wrap)
+- 102.2 `get_pet_profile` + `get_client_profile` instrumented — `done` (commit c87bfa8: оба wrapped в `instrument_call(..., operation="aggregate_profile")`; дашборды видят aggregator-level p95 отдельно от sub-request CRUD bucket)
 - 102.3 `unconfirmed_appointments` компьютит end_date в Python, `days_ahead: int = 2` param — `done`
 - 102.4 `low_stock` prompt — `clinic_id` param + prominent ⚠️ warning в prompt text — `done`
 - 102.5 Landing softening — убраны «товары заканчиваются» и «выручка» bullet'ы и tile-текст — `done`
 - 102.6 `get_goods.name` + `create_timesheet.user_id`-style deprecation — `[DEPRECATED — use title=]` в docstring — `done`
-- 102.7 Structured `section_errors` shape `{error_type, retryable, message}` — `stop` (current free-text работает для LLM; refactor на structured value-добавление cost vs benefit низкий)
-- 102.8 Schedule группа decision — `stop` (non-blocker, решение продукта)
+- 102.7 Structured `section_errors` shape `{error_type, retryable, message}` — `done` (commit c87bfa8: каждый section_error — dict c классификацией exception type; `retryable` bool сигнализирует LLM стоит ли retry; regression в `tests/test_stage102_aggregator_structured_errors.py`)
+- 102.8 Schedule группа decision — `stop` (non-blocker, решение продукта: текущий split `get_admissions`/`get_doctor_free_slots`/`get_daily_schedule`/`get_client_upcoming_visits` отражает разные use-cases и останется; consolidation в один `schedule.*` tool group не планируется)
 
 Full suite 646 passed.
 
@@ -1515,13 +1517,13 @@ Full suite 646 passed.
 **Декомпозиция на sub-stages перед реализацией — слишком большой scope для одного этапа.**
 
 - 103.1 [92b] `auth/` package: extract `auth/bearer.py` (header + DB lookup), `auth/vetmanager.py` (auth modes), `auth/context.py` (credentials dataclasses). Split `resolve_bearer_auth_context` на pipeline validators. Rate-limiter consolidation (удалить `bearer_rate_limiter.py`, namespace="bearer_token" на rate_limit_backend). **Регрессионный риск**: критический auth path — требует свежей сессии — `stop` (вынести в 103a)
-- 103.2 [93b] Мигрировать tool callers на `FilterBuilder`: `tools/{client,pet,medical_card,admission,_inactive_helpers,operations}.py` — убрать raw `json.dumps([{"property"...}])` — `stop` (103b)
+- 103.2 [93b] Мигрировать tool callers на `FilterBuilder` — `done` (commit 79223be: все 11 tool модулей — `_inactive_helpers, admission, client, crud_helpers, good, invoice, medical_card, operations, pet, schedule, user` — используют `filters.eq/in_/lt/lte/gt/gte/like`; `paginate_all` нормализует mixed lists через `as_dict_list`; raw filter dicts в tools/ устранены)
 - 103.3 [93c] Introduce `resources/<entity>.py` gateway layer (ClientsGateway, MedicalCards, Pets, Admissions) — tools/* делегируют, не вызывают VetmanagerClient напрямую — `stop` (103c)
 - 103.4 Split `vetmanager_client.py` (574 LOC → 6 subsystems): `vm_transport/pool.py` (shared client), `vm_transport/breaker.py`, `vm_transport/retry.py` (backoff + Retry-After), `vm_transport/cache_policy.py` (TTL + entity_from_path). VetmanagerClient остаётся thin orchestrator — `stop` (103d)
 - 103.5 Inline `request_credentials._get_request_headers()` в `request_auth.py`, удалить `request_credentials.py` полностью — `stop` (часть 103a)
 - 103.6 Move `_instrumented_call` из `tools/crud_helpers.py` в `service_metrics.py` как public context manager `instrument_call(endpoint, method)` — чтобы aggregators могли использовать без импорта crud_helpers — `stop` (103b)
-- 103.7 Extract `tools/_aggregation.py::gather_sections(**named_coros)` helper для partial-gather pattern; мигрировать client_profile + pet_profile — `stop` (102.1 pre-requisite)
-- 103.8 Move `build_list_query_params` из `validators.py` в `filters.py` (или новый `query_params.py`); убрать lazy import — `stop` (103b)
+- 103.7 Extract `tools/_aggregation.py::gather_sections` helper — `done` (commit c87bfa8: оба профиля мигрированы; CancelledError re-raise + structured errors + `aggregator_partial` warning log; будущие aggregator'ы наследуют контракт автоматически)
+- 103.8 Move `build_list_query_params` из `validators.py` в `filters.py` — `done`. Canonical location теперь `filters.build_list_query_params`; `validators.py` re-export'ит функцию для BC (тест `tests/test_validators.py` продолжает импортить оттуда). Lazy import `as_dict_list` удалён — теперь direct call внутри filters.py. Все tool-модули (crud_helpers, _inactive_helpers, medical_card) мигрированы на новый импорт.
 
 **Rationale для stop**: каждая sub-stage — high-risk рефактор критичного пути. Декомпозиция в 103a/b/c/d с отдельными PRD — отдельным сессиями.
 
