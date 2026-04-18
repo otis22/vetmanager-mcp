@@ -267,6 +267,13 @@ class VetmanagerClient:
         max_retries = MAX_RETRIES_READ if upper_method == "GET" else MAX_RETRIES_WRITE
         attempt = 0
         while True:
+            # Stage 105.2 (B2 fix): re-check breaker before each retry attempt.
+            # If a concurrent request tripped the breaker between our initial
+            # check (above the while loop) and this retry, abort immediately
+            # with VetmanagerUpstreamUnavailable instead of wasting more
+            # round-trips against a known-dead upstream.
+            if attempt > 0:
+                await _check_breaker_allows(domain_key)
             try:
                 await self._pace_requests()
                 # Started AFTER pace_requests so upstream latency metric
@@ -343,21 +350,22 @@ class VetmanagerClient:
                 return payload
             except httpx.TimeoutException as exc:
                 elapsed = time.monotonic() - started
-                # Stage 99.1: record failure per-attempt so breaker threshold
-                # reflects real upstream failure rate, not tool-call rate.
-                await _breaker_record_failure(domain_key)
                 if attempt < max_retries:
                     await asyncio.sleep(_backoff_seconds(attempt))
                     attempt += 1
                     continue
+                # Stage 105.2 (B2 fix): breaker records ONE failure per logical
+                # call, after retry exhaustion. Stage 99.1 per-attempt counting
+                # was causing breaker amplification (1 failing GET = 4 failures
+                # with MAX_RETRIES_READ=3), tripping circuit after 1 real call
+                # instead of 4.
+                await _breaker_record_failure(domain_key)
                 record_upstream_failure(target="vetmanager_api", reason="timeout")
                 record_upstream_request(
                     target="vetmanager_api",
                     status="timeout",
                     duration_seconds=elapsed,
                 )
-                # Failure already recorded per-attempt above; don't double-count
-                # on exhaustion — but keep the raise path unchanged.
                 RUNTIME_LOGGER.warning(
                     "VM upstream timeout",
                     extra={
@@ -386,12 +394,12 @@ class VetmanagerClient:
                 raise
             except httpx.RequestError as exc:
                 elapsed = time.monotonic() - started
-                # Stage 99.1: record failure per-attempt (see timeout branch).
-                await _breaker_record_failure(domain_key)
                 if attempt < max_retries:
                     await asyncio.sleep(_backoff_seconds(attempt))
                     attempt += 1
                     continue
+                # Stage 105.2 (B2 fix): one breaker failure per logical call after retries exhausted.
+                await _breaker_record_failure(domain_key)
                 record_upstream_failure(target="vetmanager_api", reason="network_error")
                 record_upstream_request(
                     target="vetmanager_api",

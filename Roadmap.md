@@ -1477,7 +1477,8 @@ Full suite 646 passed.
   - full package split (commit): `auth/{__init__,context,vetmanager,bearer,rate_limit,request}.py` — 6 submodule'ей с physical grouping. Top-level `bearer_auth.py` (13 LOC), `vetmanager_auth.py` (19), `bearer_rate_limiter.py` (22), `request_auth.py` (7) — BC shim re-exports. `reset_bearer_rate_limiter()` синкает shim namespace чтобы `bearer_rate_limiter.BEARER_RATE_LIMITER` attribute access не уехал после reset. Codex review: 1 warning (rate-limiter patch surface regression) — исправлено (rebind обоих namespace'ов + runtime lookup через `auth.rate_limit`).
   - remaining scope: rate-limiter consolidation на generic `rate_limit_backend` namespace — stop (low-ROI без concrete driver).
 - 103.2 [93b] Мигрировать tool callers на `FilterBuilder` — `done` (commit 79223be: все 11 tool модулей — `_inactive_helpers, admission, client, crud_helpers, good, invoice, medical_card, operations, pet, schedule, user` — используют `filters.eq/in_/lt/lte/gt/gte/like`; `paginate_all` нормализует mixed lists через `as_dict_list`; raw filter dicts в tools/ устранены)
-- 103.4 Split `vetmanager_client.py` — `done` (commit): `vetmanager_client.py` 752 → ~445 LOC (41% reduction); `VetmanagerClient` orchestrator класс остался thin + re-экспортирует каждый public/test-helper символ. Извлечены 4 submodule'я в `vm_transport/`:
+- 103.3 [93c] `resources/<entity>.py` gateway layer (focused subset) — `done` (commit dffe240): `resources/client_profile.py` (95 LOC) + `resources/pet_profile.py` (106 LOC) owns entity-specific filter composition, VM field mapping, response-key fallback, last/next_vaccination_date derivation. Tools `_get_client_profile_impl` и `_get_pet_profile_impl` — 3-line делегаторы. Полный Resource class abstraction для CRUD (list/by_id/search) отложен — simple CRUD уже в `crud_helpers`.
+- 103.4 Split `vetmanager_client.py` — `done` (commit ce3dd67): `vetmanager_client.py` 752 → ~445 LOC (41% reduction); `VetmanagerClient` orchestrator класс остался thin + re-экспортирует каждый public/test-helper символ. Извлечены 4 submodule'я в `vm_transport/`:
   - `vm_transport/retry.py` (80 LOC): `parse_retry_after`, `backoff_seconds`, `MAX_RETRIES_READ/WRITE`, `RETRY_STATUS_CODES`, `BACKOFF_*`, `RETRY_AFTER_MAX_SECONDS`;
   - `vm_transport/cache_policy.py` (49 LOC): `CACHE_TTL_SECONDS`, `CACHE_TTL_SHORT_SECONDS`, `SHORT_TTL_ENTITIES`, `entity_from_path`, `ttl_for_entity`;
   - `vm_transport/pool.py` (117 LOC): per-loop shared `httpx.AsyncClient` dict `_shared_http_clients`, `get_shared_http_client`, `reset_shared_http_client`, `current_loop_key`, `REQUEST_TIMEOUTS`, `HTTP_LIMITS`;
@@ -1489,7 +1490,38 @@ Full suite 646 passed.
 - 103.7 Extract `tools/_aggregation.py::gather_sections` helper — `done` (commit c87bfa8: оба профиля мигрированы; CancelledError re-raise + structured errors + `aggregator_partial` warning log; будущие aggregator'ы наследуют контракт автоматически)
 - 103.8 Move `build_list_query_params` из `validators.py` в `filters.py` — `done`. Canonical location теперь `filters.build_list_query_params`; `validators.py` re-export'ит функцию для BC (тест `tests/test_validators.py` продолжает импортить оттуда). Lazy import `as_dict_list` удалён — теперь direct call внутри filters.py. Все tool-модули (crud_helpers, _inactive_helpers, medical_card) мигрированы на новый импорт.
 
-**Status после cleanup sweep (2026-04-18):** 6 из 8 sub-stages закрыто (103.1 focused / 103.2 / 103.5 / 103.6 / 103.7 / 103.8). Остаются 2 крупных архитектурных рефактора — 103.3 gateway layer (зонтик 103c) и 103.4 vm_transport split (зонтик 103d) — каждый требует свежей сессии с PRD и Codex review из-за регрессионного риска на critical path. Полный 103.1 auth package split — в зонтике 103a.
+**Status после shipping зонтиков (2026-04-18):** все 8 sub-stages закрыты: 103.1 (via 103a commit 7185ac5 — full auth package split) / 103.2 (commit 79223be — FilterBuilder migration) / 103.3 (via 103c commit dffe240 — resources/ gateway focused subset) / 103.4 (via 103d commit ce3dd67 — vm_transport split) / 103.5 / 103.6 (commit 0326c6c) / 103.7 (commit c87bfa8) / 103.8 (commit 9734477).
+
+## Этап 103a. Auth package split (full) — `done`
+
+Источник: super-review `artifacts/review/2026-04-17-post-stages-85-95.md` + зонтик 103.1.
+Commit: 7185ac5.
+
+- 103a.1 `auth/{context,vetmanager,bearer,rate_limit,request}.py` — 5 submodule'ей физической группировки; BC shims `bearer_auth.py` (13 LOC), `vetmanager_auth.py` (19), `bearer_rate_limiter.py` (22), `request_auth.py` (7) сохранены — `done`
+- 103a.2 `reset_bearer_rate_limiter()` sync обоих namespace'ов (auth.rate_limit + sys.modules["bearer_rate_limiter"]) для test isolation — `done`
+- 103a.3 Codex review: 1 warning (rate-limiter patch surface) → addressed runtime lookup через `auth.rate_limit` + sync — `done`
+
+## Этап 103c. Resources gateway layer (focused subset) — `done`
+
+Источник: зонтик 103.3.
+Commit: dffe240.
+
+- 103c.1 `resources/client_profile.py::fetch(client_id)` — вынос 4-section composition из `tools/client.py::_get_client_profile_impl` — `done`
+- 103c.2 `resources/pet_profile.py::fetch(pet_id)` — вынос 3-section composition + last/next_vaccination_date derivation — `done`
+- 103c.3 Tools `_get_client_profile_impl`/`_get_pet_profile_impl` — 3-line делегаторы; instrument_call остаётся на tool boundary — `done`
+- 103c.4 Полный Resource class для CRUD (list/by_id/search) — `done` (out-of-scope; simple CRUD остаётся в `crud_helpers`; ROI низкий без concrete use case)
+
+## Этап 103d. vm_transport split — `done`
+
+Источник: зонтик 103.4.
+Commit: ce3dd67.
+
+- 103d.1 `vm_transport/retry.py` (80 LOC): `parse_retry_after`, `backoff_seconds`, retry constants — `done`
+- 103d.2 `vm_transport/cache_policy.py` (49 LOC): TTL constants + `entity_from_path` + `ttl_for_entity` — `done`
+- 103d.3 `vm_transport/pool.py` (117 LOC): per-loop `_shared_http_clients` + pool helpers — `done`
+- 103d.4 `vm_transport/breaker.py` (205 LOC): `DomainBreaker` + registry + `check_breaker_allows` + `breaker_record_*` + env-tunable thresholds — `done`
+- 103d.5 `vetmanager_client.py` 752 → 445 LOC (41% reduction); VetmanagerClient orchestrator остался thin; все re-exports для BC — `done`
+- 103d.6 Codex review: 3 warnings → 2 addressed (dead proxy removed, BC doc comment), 1 pre-existing out of scope (pool race — заплан в 106.2) — `done`
 
 ## Этап 104. Workflow discipline improvements — `done`
 
@@ -1627,20 +1659,20 @@ Super-review 2026-04-18 (`artifacts/review/2026-04-18-changed-stage-104.md`) —
 
 ---
 
-## Этап 105. Blocker hotfix (super-review 2026-04-18) — `todo`
+## Этап 105. Blocker hotfix (super-review 2026-04-18) — `done`
 
 **Source**: super-review `artifacts/review/2026-04-18-changed-stage-104.md`. Blocker findings B1 + B2. Must ship before next feature merge.
 
-- 105.1 **B1 Roadmap doc sync** — обновить `Roadmap.md:1469,1492`: заменить «103.3/103.4 остаются в зонтике 103c/103d» на фактический статус (done, commits dffe240/ce3dd67/7185ac5). Добавить `## Этап 103a`, `## Этап 103c`, `## Этап 103d` заголовки (для `check_stage_completion.sh`). `todo`
+- 105.1 **B1 Roadmap doc sync** (done) — обновить `Roadmap.md:1469,1492`: заменить «103.3/103.4 остаются в зонтике 103c/103d» на фактический статус (done, commits dffe240/ce3dd67/7185ac5). Добавить `## Этап 103a`, `## Этап 103c`, `## Этап 103d` заголовки (для `check_stage_completion.sh`). `done`
 
 - 105.2 **B2 Breaker amplification + retry re-check** — `vetmanager_client.py:344-414`. Изменения:
   - Считать breaker failure **один раз per logical call** (после exhaustion retries), не per-attempt. Убрать per-attempt `_breaker_record_failure` из 5xx / timeout / RequestError branches; добавить один `_breaker_record_failure` в терминальной точке.
   - Re-check `_check_breaker_allows` **перед каждым retry** — если breaker OPEN во время retry loop, сразу raise `VetmanagerUpstreamUnavailable` без дальнейших попыток.
   - Test: `test_breaker_one_failure_per_logical_call` — один failing GET с max_retries=3 увеличивает breaker counter на 1, не 4.
   - Test: `test_retry_aborts_when_breaker_trips_mid_loop` — если breaker trips между первым и вторым retry, второй retry не выполняется.
-  `todo`
+  `done`
 
-- 105.3 **AssumptionLog sections** — добавить `## Этап 103a`, `## Этап 103c`, `## Этап 103d` dedicated sections (используя существующий Stage 103 follow-up контент). Без этого `scripts/check_stage_completion.sh` false-fail'ит. `todo`
+- 105.3 **AssumptionLog sections** — добавить `## Этап 103a`, `## Этап 103c`, `## Этап 103d` dedicated sections (используя существующий Stage 103 follow-up контент). Без этого `scripts/check_stage_completion.sh` false-fail'ит. `done`
 
 **Acceptance**: 105 закрыт когда Roadmap+AssumptionLog синхронизированы с git history, breaker test matrix демонстрирует 1-failure-per-call, 648+2 tests passed, super-review B1+B2 перечёркнуты в resolution tracker.
 
