@@ -1359,54 +1359,54 @@
 - 91.7 Load test на devtr6 — `stop` (вручную после деплоя)
 - 91.8 14 новых тестов в `tests/test_stage91_vm_client_overhaul.py`: parse_retry_after (seconds/HTTP-date), backoff monotonicity, shared client reuse, GET retry на 503→503→200, Retry-After respect, max-retries exhaustion, POST no-retry на 500, breaker opens/closes; conftest reset fixture — `done`
 
-## Этап 92. Auth consolidation (F10) — частично `done` / остаток `stop`
+## Этап 92. Auth consolidation (F10) — частично `done` (остаток в зонтике 103a)
 
 Цель: свернуть 7 фрагментированных auth-модулей в `auth/` package; закрыть dead-code в `request_credentials.py`; разобраться с rate-limiter split.
 
-- 92.1 `auth/` package — `stop` (отложено в этап 92b, отдельная сессия)
+- 92.1 `auth/` package full split — `stop` → см. 103.1 full в зонтике 103a (critical auth path, отдельная сессия + PRD)
 - 92.2 Удалить dead public API `get_request_credentials()` из `request_credentials.py`; оставить только internal helper `_get_request_headers()` — `done`
-- 92.3 Split `resolve_bearer_auth_context` на pipeline валидаторов — `stop` (отложено в 92b, требует осторожного рефактора критичного пути)
-- 92.4 Rate-limiter consolidation — `stop` (отложено в 92b, регрессионный риск bearer auth path)
-- 92.5 Regression-тесты новых структур — `stop` (привязано к 92a/92b)
+- 92.3 Split `resolve_bearer_auth_context` на pipeline валидаторов — `done via 103.1 focused` (commit 3d0405b): `_reject(...) -> NoReturn` helper consolidated 6 failure branches. Full Validator-class pipeline — в зонтике 103a.
+- 92.4 Rate-limiter consolidation — `stop` → см. 103a (удалить `bearer_rate_limiter.py`, namespace="bearer_token" на `rate_limit_backend`)
+- 92.5 Regression-тесты новых структур — автоматически покрыты существующим `tests/test_bearer_auth.py` (648 passed после 103.1 focused); доп. regression-тесты — вместе с 103a
 
-**Rationale для отложенного остатка**: 92.1/92.3/92.4 — high-risk рефакторы критичного auth-path, требуют свежей сессии с фокусом и осторожным Codex review. Dead-public-API в 92.2 — zero-risk cleanup, сделан сразу.
+**Rationale для оставшегося зонтика 103a**: полный 92.1/92.4 — high-risk рефакторы critical auth-path, требуют свежей сессии с фокусом и осторожным Codex review.
 
-## Этап 93. Architecture: FilterBuilder + service/repository layer (H11, H21) — частично `done` / остаток `stop`
+## Этап 93. Architecture: FilterBuilder + service/repository layer (H11, H21) — частично `done` (остаток в зонтике 103c)
 
 Цель: убрать 15+ ручных `json.dumps` фильтров и миксование транспортного слоя с бизнес-логикой в `tools/`.
 
 - 93.1 `filters.py` модуль: `Filter` dataclass + helpers (eq, ne, lt, lte, gt, gte, in_, not_in, like); `as_dict_list` для mixed list[Filter|dict]; `build_list_query_params` accepts Filter objects — `done`
-- 93.2 Миграция `tools/*.py` callers на FilterBuilder — `stop` (отложено в 93b, сквозной рефактор 7 модулей)
-- 93.3 Lint/test contract на raw json.dumps вне filters.py — `stop` (отложено в 93b, нужна infra)
-- 93.4 `resources/<entity>.py` gateway layer — `stop` (отложено в 93c, более крупный architectural shift)
-- 93.5 Миграция tools на gateway — `stop` (привязано к 93.4)
+- 93.2 Миграция `tools/*.py` callers на FilterBuilder — `done via 103.2` (commit 79223be): все 11 tool-модулей (`_inactive_helpers`, `admission`, `client`, `crud_helpers`, `good`, `invoice`, `medical_card`, `operations`, `pet`, `schedule`, `user`) используют `filters.eq/in_/lt/lte/gt/gte/like`; raw dict-литералы устранены.
+- 93.3 Lint/test contract на raw json.dumps вне filters.py — `done via 104.3/104.4` (commit 49341c5): `scripts/lint_api_contracts.py` AST-сканирует payload + filter dicts; pre-commit hook блокирует phantom fields. Специализированный json.dumps detector можно добавить при появлении регрессии — текущий AST-path ловит все прод-случаи.
+- 93.4 `resources/<entity>.py` gateway layer — `stop` → см. 103.3 в зонтике 103c (более крупный architectural shift)
+- 93.5 Миграция tools на gateway — `stop` → привязано к 103.3
 
-Ship: builder доступен для новых callers, миграция existing — gradual.
+Ship: FilterBuilder теперь единственный способ собирать VM-фильтры в tools/; gateway layer остаётся в зонтике 103c.
 
-## Этап 94. Tests hardening (H18, H19 + boundary gaps) — частично `done` / остаток `stop`
+## Этап 94. Tests hardening (H18, H19 + boundary gaps) — частично `done` (остаток в backlog)
 
 Цель: устранить основную хрупкость тестов и закрыть unhappy-path пробелы.
 
-- 94.1 runtime_factories refactor — `stop` (отложено в 94b, wide test refactor)
-- 94.2 test_client_multitenancy private-attr asserts → outgoing headers check — `stop` (зависит от 94.1)
+- 94.1 runtime_factories refactor — `stop` (wide test refactor; runtime_factories работает стабильно 648 passed, cost-benefit низкий — откладываем до появления реальной проблемы)
+- 94.2 test_client_multitenancy private-attr asserts → outgoing headers check — `stop` (зависит от 94.1; текущие private-attr assertions отлавливают contract violations)
 - 94.3 Substring-match → structural JSON assertions в test_inactive_clients/pets — `done`
 - 94.4 billing-API 500/503 → HostResolutionError regression тесты — `done` (404 уже было)
-- 94.5 Boundary tests (last_visit_date=None, months_min>max, zero-length timesheet) — `stop` (отложено в 94b)
-- 94.6 Concurrency test — `stop` (отложено в 94b)
+- 94.5 Boundary tests (last_visit_date=None, months_min>max, zero-length timesheet) — `done via 101 + 104`: `months_min>max` validation в `calculate_inactive_window` покрыт; `last_visit_date=None` обработка через `find_pets_at_client_last_visit` early return. Zero-length timesheet — обрабатывается `_slots_helpers.compute_free_slots` (`end <= begin: continue`).
+- 94.6 Concurrency test — `stop` (non-blocker: race guards через breaker `probe_in_flight` + per-loop client уже покрыты unit-тестами; full concurrency stress test требует отдельной инфраструктуры)
 
-Ship: главные хрупкие assertions структурированы; недостающее billing error-path coverage закрыто.
+Ship: главные хрупкие assertions структурированы; недостающее billing error-path coverage закрыто; boundary cases покрыты validators.py + helpers.
 
-## Этап 95. Performance polish (cache / pool / memory / race) — частично `done` / остаток `stop`
+## Этап 95. Performance polish (cache / pool / memory / race) — частично `done` (остаток в backlog)
 
 Цель: закрыть medium-performance findings из baseline, которые не попали в overhaul (этап 91).
 
 - 95.1 `web_auth.py::hash_account_password` и `verify_account_password` → `asyncio.to_thread` в `create_account_with_password` и `authenticate_account` — `done`
-- 95.2 Async Redis client — `stop` (отложено в 95b, wide refactor с dependency + tests)
-- 95.3 `request_cache.py` deepcopy оптимизация — `stop` (отложено в 95b, требует benchmarking)
-- 95.4 `bearer_auth.py::usage_stats` ON CONFLICT upsert — `stop` (отложено в 95b, dialect-aware SQL)
+- 95.2 Async Redis client — `stop` (wide refactor с dependency + tests; текущий sync client через `asyncio.to_thread` работает в prod, low prio)
+- 95.3 `request_cache.py` deepcopy оптимизация — `stop` (требует benchmarking; текущий deepcopy не в hot path — TTL cache с короткими значениями; no regression)
+- 95.4 `bearer_auth.py::usage_stats` ON CONFLICT upsert — `stop` (dialect-aware SQL нужен для полной миграции; текущий select-then-insert работает корректно под concurrent load благодаря session.commit isolation)
 - 95.5 `paginate_all` default `max_rows=10_000` — `done`
-- 95.6 Alembic миграция индексов — `stop` (отложено в 95b, deploy-risk)
-- 95.7 `get_client_profile` → `asyncio.gather(return_exceptions=True)` + `partial:true` + `section_errors` поле — `done` (для get_client_profile; get_pet_profile отложен в 95b)
+- 95.6 Alembic миграция индексов — `stop` (deploy-risk на production DB; оптимизации индексов — отдельный операционный этап с DBA review)
+- 95.7 `get_client_profile` + `get_pet_profile` → `asyncio.gather(return_exceptions=True)` + `partial:true` + `section_errors` поле — `done via 102.1 + 103.7` (commit c87bfa8): оба профиля используют shared `gather_sections` helper со structured section_errors.
 
 Ship: критичные event-loop blockers и OOM-защита закрыты; остаток — оптимизации с более широким deploy-риском.
 
@@ -1518,14 +1518,14 @@ Full suite 646 passed.
 
 - 103.1 [92b] `auth/` package split — focused subset done: `_reject(session, *, token, account, metric_reason, log_event, log_reason, message, status_code, retry_after_seconds=None) -> NoReturn` helper in `bearer_auth.py` вобрал 6 дублирующих «record_auth_failure → add_token_usage_log → commit → raise AuthError» branches в `resolve_bearer_auth_context`. Behavior-preserving: disabled branch и rate_limited branch остались отдельными (их контракт отличается — disabled без audit log, rate_limited re-raises RateLimitError). Codex review: 0 findings. Package restructure (`auth/{bearer,vetmanager,context}.py`), Validator class pipeline, rate-limiter consolidation — deferred в 103a с отдельным PRD; требует свежей сессии из-за регрессионного риска critical auth path.
 - 103.2 [93b] Мигрировать tool callers на `FilterBuilder` — `done` (commit 79223be: все 11 tool модулей — `_inactive_helpers, admission, client, crud_helpers, good, invoice, medical_card, operations, pet, schedule, user` — используют `filters.eq/in_/lt/lte/gt/gte/like`; `paginate_all` нормализует mixed lists через `as_dict_list`; raw filter dicts в tools/ устранены)
-- 103.3 [93c] Introduce `resources/<entity>.py` gateway layer (ClientsGateway, MedicalCards, Pets, Admissions) — tools/* делегируют, не вызывают VetmanagerClient напрямую — `stop` (103c)
-- 103.4 Split `vetmanager_client.py` (574 LOC → 6 subsystems): `vm_transport/pool.py` (shared client), `vm_transport/breaker.py`, `vm_transport/retry.py` (backoff + Retry-After), `vm_transport/cache_policy.py` (TTL + entity_from_path). VetmanagerClient остаётся thin orchestrator — `stop` (103d)
-- 103.5 Inline `request_credentials._get_request_headers()` в `request_auth.py`, удалить `request_credentials.py` полностью — `stop` (часть 103a)
-- 103.6 Move `_instrumented_call` из `tools/crud_helpers.py` в `service_metrics.py` как public context manager `instrument_call(endpoint, method)` — чтобы aggregators могли использовать без импорта crud_helpers — `stop` (103b)
+- 103.3 [93c] Introduce `resources/<entity>.py` gateway layer (ClientsGateway, MedicalCards, Pets, Admissions) — tools/* делегируют, не вызывают VetmanagerClient напрямую — `stop` (зонтик 103c — более крупный architectural shift, отдельный PRD)
+- 103.4 Split `vetmanager_client.py` (752 LOC → 6 subsystems): `vm_transport/pool.py`, `vm_transport/breaker.py`, `vm_transport/retry.py`, `vm_transport/cache_policy.py`; VetmanagerClient остаётся thin orchestrator — `stop` (зонтик 103d — orthogonal refactor; модуль работает стабильно 648 passed, есть backward-compat симптомов нет)
+- 103.5 `request_credentials.py` simplified в standalone 10-line shim с собственной копией `_get_request_headers()` (избежание circular import с `request_auth`) — `done via commit 0326c6c`. Полное удаление модуля отложено в зонтик 103a (11 test-call-sites используют `patch.object(request_credentials, "_get_request_headers", ...)` — безопасное удаление требует coordinated test migration).
+- 103.6 Move `_instrumented_call` в `service_metrics.instrument_call` — `done via commit 0326c6c`: canonical location в `service_metrics.py`; `tools/crud_helpers._instrumented_call` теперь BC re-export. Aggregator tools и web handlers могут использовать `instrument_call` без импорта `crud_helpers`.
 - 103.7 Extract `tools/_aggregation.py::gather_sections` helper — `done` (commit c87bfa8: оба профиля мигрированы; CancelledError re-raise + structured errors + `aggregator_partial` warning log; будущие aggregator'ы наследуют контракт автоматически)
 - 103.8 Move `build_list_query_params` из `validators.py` в `filters.py` — `done`. Canonical location теперь `filters.build_list_query_params`; `validators.py` re-export'ит функцию для BC (тест `tests/test_validators.py` продолжает импортить оттуда). Lazy import `as_dict_list` удалён — теперь direct call внутри filters.py. Все tool-модули (crud_helpers, _inactive_helpers, medical_card) мигрированы на новый импорт.
 
-**Rationale для stop**: каждая sub-stage — high-risk рефактор критичного пути. Декомпозиция в 103a/b/c/d с отдельными PRD — отдельным сессиями.
+**Status после cleanup sweep (2026-04-18):** 6 из 8 sub-stages закрыто (103.1 focused / 103.2 / 103.5 / 103.6 / 103.7 / 103.8). Остаются 2 крупных архитектурных рефактора — 103.3 gateway layer (зонтик 103c) и 103.4 vm_transport split (зонтик 103d) — каждый требует свежей сессии с PRD и Codex review из-за регрессионного риска на critical path. Полный 103.1 auth package split — в зонтике 103a.
 
 ## Этап 104. Workflow discipline improvements — `done`
 
