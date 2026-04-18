@@ -1608,3 +1608,165 @@ Acceptance: все 4 rooted причины (update_admission missed, phantom enu
 Super-review 2026-04-17 (`artifacts/review/2026-04-17-post-stages-85-95.md`) — 111 findings от 9 параллельных ревьюеров + codex-blindspot. Оценка адекватности: `artifacts/review/inadequate-findings-index.md` (15 findings dismiss'нуто). Адекватные findings сгруппированы в стадии 96-104.
 
 Приоритет: 96 (blocker + urgent) → 97 (docs backfill, zero-risk) → 98-99 (observability + reliability) → 100-102 (security + tests + product) → 103 (big architecture rework, per sub-stage) → 104 (workflow discipline, blocks future regressions).
+
+---
+
+## Источник этапов 105-109
+
+Super-review 2026-04-18 (`artifacts/review/2026-04-18-changed-stage-104.md`) — 130 findings от 10 параллельных ревьюеров + workflow-check + Codex arbitration. Adequacy: 110+ адекватных; dismissed 4 speculative security + 22 pre-existing workflow-check PRD issues + 4 borderline (см. `artifacts/review/inadequate-findings-index.md`).
+
+**Verdict**: do not merge — 2 блокера (B1 Roadmap drift, B2 breaker amplification). Codex promoted F4 → blocker. Адекватные findings сгруппированы в стадии 105-109 по приоритету.
+
+**Стратегия release**:
+- Stage 105 (blocker hotfix) должен быть merged ДО любых новых feature-этапов. Поскольку B1/B2 уже в prod (commit 15dcd0a + ранние 103d/103a) — fix as hotfix-on-main, не в отдельной ветке.
+- Stage 106 (high-severity reliability + docs) — в течение 1-2 сессий после 105.
+- Stage 107-108 (observability + code quality) — следом, без регрессионного давления.
+- Stage 109 (test brittleness) — когда появится пейн от fragile test refactor.
+
+Приоритет: 105 (blockers, must ship before merge) → 106 (reliability + docs, high) → 107 (observability gaps) → 108 (code quality) → 109 (test brittleness).
+
+---
+
+## Этап 105. Blocker hotfix (super-review 2026-04-18) — `todo`
+
+**Source**: super-review `artifacts/review/2026-04-18-changed-stage-104.md`. Blocker findings B1 + B2. Must ship before next feature merge.
+
+- 105.1 **B1 Roadmap doc sync** — обновить `Roadmap.md:1469,1492`: заменить «103.3/103.4 остаются в зонтике 103c/103d» на фактический статус (done, commits dffe240/ce3dd67/7185ac5). Добавить `## Этап 103a`, `## Этап 103c`, `## Этап 103d` заголовки (для `check_stage_completion.sh`). `todo`
+
+- 105.2 **B2 Breaker amplification + retry re-check** — `vetmanager_client.py:344-414`. Изменения:
+  - Считать breaker failure **один раз per logical call** (после exhaustion retries), не per-attempt. Убрать per-attempt `_breaker_record_failure` из 5xx / timeout / RequestError branches; добавить один `_breaker_record_failure` в терминальной точке.
+  - Re-check `_check_breaker_allows` **перед каждым retry** — если breaker OPEN во время retry loop, сразу raise `VetmanagerUpstreamUnavailable` без дальнейших попыток.
+  - Test: `test_breaker_one_failure_per_logical_call` — один failing GET с max_retries=3 увеличивает breaker counter на 1, не 4.
+  - Test: `test_retry_aborts_when_breaker_trips_mid_loop` — если breaker trips между первым и вторым retry, второй retry не выполняется.
+  `todo`
+
+- 105.3 **AssumptionLog sections** — добавить `## Этап 103a`, `## Этап 103c`, `## Этап 103d` dedicated sections (используя существующий Stage 103 follow-up контент). Без этого `scripts/check_stage_completion.sh` false-fail'ит. `todo`
+
+**Acceptance**: 105 закрыт когда Roadmap+AssumptionLog синхронизированы с git history, breaker test matrix демонстрирует 1-failure-per-call, 648+2 tests passed, super-review B1+B2 перечёркнуты в resolution tracker.
+
+---
+
+## Этап 106. High-severity reliability + docs — `todo`
+
+**Source**: super-review findings F2, F3, F5, F6, F9 (уже в 105.3), F10 + related.
+
+- 106.1 **F2 CancelledError wedges HALF_OPEN** — `vetmanager_client.py:261-400`. Обернуть retry loop в `try/finally`; в finally проверить `probe_in_flight` для domain breaker — если True после исключения (включая CancelledError), вызвать `_breaker_record_failure(domain_key)` для сброса. Test: `test_cancelled_probe_clears_breaker_state`. `todo`
+
+- 106.2 **F3 Pool race на concurrent first-init** — `vm_transport/pool.py:49-69`. Использовать существующий `_shared_http_client_lock` (сейчас dead): double-check pattern — check dict → acquire lock → re-check → create. Test: `test_concurrent_first_init_creates_single_client`. Убрать "BC patch surface" комментарий у lock'а. `todo`
+
+- 106.3 **F5 Layering violation resources → tools** — `resources/client_profile.py`, `resources/pet_profile.py`. Переместить `gather_sections` из `tools/_aggregation.py` в `resources/_aggregation.py` (или `shared/aggregation.py`). Переместить `ACTIVE_ADMISSION_STATUSES` из `tools/admission.py` в `resources/admission_status.py`. Tools начинают импортить оттуда. `resources/` больше не импортит из `tools/`. `todo`
+
+- 106.4 **F6 filters.py zero-filter privacy** — `filters.py:188-196`. Удалить ветку `if isinstance(value, (int, float)) and ... value == 0: continue`; оставить только `if value is None or value == "": continue`. Test: `test_build_list_query_params_preserves_int_zero_in_extra` — `extra={"client_id": 0}` попадает в params. `todo`
+
+- 106.5 **F10 technical-requirements rewrite** — `artifacts/technical-requirements-vetmanager-mcp-ru.md`:
+  - §3.3 Структура: добавить `auth/`, `vm_transport/`, `resources/` с submodule'ями.
+  - §3.2 `bearer_auth.py` / `vetmanager_auth.py` / `bearer_rate_limiter.py` / `request_auth.py` пометить как BC shims; canonical location → `auth/*`.
+  - §3.2 `validators.build_list_query_params` → `filters.build_list_query_params`.
+  - §3.2 `vetmanager_client.py` → thin orchestrator, делегирует в `vm_transport/`.
+  `todo`
+
+- 106.6 **H19 obsolete prod URL в Roadmap** — `Roadmap.md:902` (56.1.4 отсылка к `342915.simplecloud.ru`) → явно отметить как obsolete, актуальный — `vetmanager-mcp.vromanichev.ru`. `todo`
+
+- 106.7 **H21 `_shared_http_client` dead sentinel + misleading state** — `vetmanager_client.py:81-96`. Удалить `_shared_http_client: httpx.AsyncClient | None = None` sentinel (не используется реально, `conftest` ставит None просто по инерции). Переписать `get_shared_http_client_state()` чтобы читать реальный dict `_shared_http_clients`: `{"loop_keys": list(...), "open_count": sum(1 for c in values() if not c.is_closed)}`. Обновить тест, использующий старый state. `todo`
+
+**Acceptance**: 5 reliability fixes + 2 docs sync. Tests 648+4 passed. Layering assertion — `grep -r "from tools" resources/` возвращает 0 строк.
+
+---
+
+## Этап 107. Observability gaps — `todo`
+
+**Source**: super-review observability findings H10, H11, H12, Medium-cluster "Observability gaps for new paths".
+
+- 107.1 **H10 Rate-limit log inside check_or_raise** — `auth/rate_limit.py:64-94`. Перед `raise RateLimitError` добавить `RUNTIME_LOGGER.warning("Bearer rate limit triggered", extra={"event_name": "bearer_rate_limit_triggered", "token_id": bearer_token_id, "retry_after_seconds": ...})`. `todo`
+
+- 107.2 **H11 Token issuance/revocation log** — `web_routes_account.py:157-234`. На success в `issue_service_bearer_token` → `RUNTIME_LOGGER.info("Bearer token issued", extra={event_name, account_id, token_name})`. На `revoke_service_bearer_token` → `event_name=bearer_token_revoked`. `todo`
+
+- 107.3 **H12 Account register log+metric** — `web_routes_auth.py:51-128`. На success — `event_name=account_registered`. На rate-limit / validation fail — `record_auth_failure(source="web_register", reason="rate_limited"|"validation_error")`. `todo`
+
+- 107.4 **aggregator_partial correlation_id** — `tools/_aggregation.py:100-112`. В warning extra добавить `**get_current_request_context()` так чтобы correlation_id/request_id попадали в лог. `todo`
+
+- 107.5 **section_errors secret scrubber** — `tools/_aggregation.py:95`. Заменить `f"{type(result).__name__}: {result}"` на `type(result).__name__` если `result is AuthError` (может содержать masked API key fragment); для остальных exception types оставить полное сообщение. `todo`
+
+- 107.6 **tool_name label в instrument_call** — `service_metrics.py:91-120`. Добавить параметр `tool_name: str | None = None`; пробросить в `record_tool_call` как label. Callers `tools/client.py`, `tools/pet.py` передают `tool_name="get_client_profile"` / `"get_pet_profile"`. Иначе `endpoint="/rest/api/client"` пересекается с list-операциями в метрике. `todo`
+
+- 107.7 **billing_api latency metric** — `host_resolver.py:58-90`. Обернуть httpx call в `started = time.monotonic()` + `record_upstream_request(target="billing_api", status, duration_seconds=elapsed)` на всех путях (success, timeout, network_error). `todo`
+
+- 107.8 **graceful_shutdown structured** — `server.py:43-50`. Заменить `logging.getLogger("vetmanager.runtime").warning(...)` на `RUNTIME_LOGGER.warning("Graceful shutdown error", extra={event_name: "shutdown_error", step: "reset_shared_http_client"}, exc_info=True)`; добавить зеркальный log для `reset_breakers` branch. `todo`
+
+- 107.9 **Breaker HALF_OPEN → CLOSED recovery log** — `vm_transport/breaker.py:148-155`. В `breaker_record_success` при `state in ("half_open", "open")` — `RUNTIME_LOGGER.info("Circuit breaker recovered", extra={event_name: "circuit_breaker_closed", domain, previous_state})`. `todo`
+
+- 107.10 **Intermediate retry log** — `vetmanager_client.py:344-373`. В `except httpx.TimeoutException` перед `if attempt < max_retries: continue` добавить DEBUG log `vm_upstream_timeout_retry` с attempt, correlation_id, elapsed. `todo`
+
+**Acceptance**: покрытие auth-path observability — каждое критичное business-событие имеет event_name + metric. Dashboard query для auth может различить register/login/issue/revoke/rate_limit без DB join'а.
+
+---
+
+## Этап 108. Code quality cleanup — `todo`
+
+**Source**: super-review code findings F7, F8, H14, H15 + medium cluster "Inline imports".
+
+- 108.1 **F7 type builtin shadow** — `tools/admission.py:299`. Переименовать `type: str = ""` в `admission_type: str = ""` в `update_admission`. Обновить payload mapping + call sites в тестах. `todo`
+
+- 108.2 **F8 duplicated admission response unwrap** — `tools/admission.py:169-183, 236-251`. Вынести в `_normalize_admission_list_response(resp) -> dict` helper; оба call-site используют. `todo`
+
+- 108.3 **H14 inline datetime imports** — `tools/admission.py:79,146,212`. Поднять `from datetime import date as _date, timedelta` в module-level imports; убрать 3 inline копии. `todo`
+
+- 108.4 **H15 inline filters imports** — `tools/medical_card.py:35,77`. Поднять `from filters import eq as _filter_eq, in_ as _filter_in` в module-level import block. `todo`
+
+- 108.5 **Inline imports sweep в `tools/_aggregation.py`** — `tools/_aggregation.py:63-67, 102`. Поднять `from exceptions import ...` + `from observability_logging import RUNTIME_LOGGER` на module-level. `todo`
+
+- 108.6 **`tools/client.py` inline imports** — `tools/client.py:363-364` (или текущие строки после 103c). Проверить и поднять `service_metrics.instrument_call` + `resources.client_profile.fetch` в module-level. `todo`
+
+- 108.7 **medical_card.py nested ternary** — `tools/medical_card.py:136`. Разложить `pet_by_id.get(pid) or pet_by_id.get(int(pid) if isinstance(pid, str) and pid.isdigit() else pid)` на 2-3 читаемые строки с именованной переменной `int_pid`. `todo`
+
+- 108.8 **duplicated Stage-83 comment** — `tools/admission.py:154-155, 220-221`. Удалить дубль; оставить один комментарий у `ACTIVE_ADMISSION_STATUSES` definition. `todo`
+
+- 108.9 **REQUEST_TIMEOUT dead constant** — `vetmanager_client.py:74`. Удалить `REQUEST_TIMEOUT = 30.0` (не используется после stage 103d; актуальные timeouts — в `vm_transport/pool.py::REQUEST_TIMEOUTS`). `todo`
+
+- 108.10 **_env_int/_env_float 3x duplication** — `auth/rate_limit.py`, `vm_transport/breaker.py`, `rate_limit_backend.py` (если существует). Создать `config/env.py` (или `env_utils.py`) с `env_int(name, default, *, positive_only=True)` и `env_float(...)`. 3 call-sites переключить. `todo`
+
+**Acceptance**: ruff/pylint clean на изменённых файлах (если есть lint config), tests passed, no behaviour changes.
+
+---
+
+## Этап 109. Test brittleness & coverage gaps — `todo`
+
+**Source**: super-review tests findings H16, H17, H18, H19 + medium cluster "Test brittleness".
+
+- 109.1 **H16 runtime_factories private attr coupling** — `tests/runtime_factories.py:70-79`. Добавить `VetmanagerClient.inject_test_credentials(...)` или `@classmethod from_test_credentials(...)` — factory идёт через public API. Мигрировать 10+ call-sites в tests. `todo`
+
+- 109.2 **H17 test_stage102 manual sleep patch** — `tests/test_stage102_aggregator_structured_errors.py:50-60`. Заменить manual `vm.asyncio.sleep = _no_sleep` + finally restore на `monkeypatch.setattr("vetmanager_client.asyncio.sleep", _no_sleep)`. `todo`
+
+- 109.3 **H18 test_stage91 breaker private field access** — `tests/test_stage91_vm_client_overhaul.py:292-308`. Использовать `get_breaker_state(domain)` как observable API для state assertions. Для форсинга OPEN — `force_breaker_open(domain)` вместо прямого mutation. Аналогично в `test_stage96_post_review_hotfix.py:192-200` и `test_stage101_tests_hardening.py:46-58`. `todo`
+
+- 109.4 **H19 test_stage87 dead PROMPTS_SRC read** — `tests/test_stage87_post_migration.py:32-34`. Удалить `PROMPTS_SRC = Path(__file__).../read_text(...)` (никогда не используется, ломает collection если prompts.py переместить). `todo`
+
+- 109.5 **test_request_auth patches shim not canonical** — `tests/test_request_auth.py`. Мигрировать `patch.object(request_credentials, "_get_request_headers", ...)` на `patch.object(auth.request, "_get_request_headers", ...)` (добавив его в `auth/request.py` как private helper). `todo`
+
+- 109.6 **conftest dict identity invariant test** — `tests/conftest.py`. Добавить новый `tests/test_stage105_invariants.py`: `assert vetmanager_client._shared_http_clients is vm_transport.pool._shared_http_clients` и `assert vetmanager_client._breakers is vm_transport.breaker._breakers`. Ловит регрессию где re-export создаст copy вместо reference. `todo`
+
+- 109.7 **test_stage91 magic-number pool/timeout asserts** — `tests/test_stage91_vm_client_overhaul.py:341-355`. Заменить `assert _HTTP_LIMITS.max_keepalive_connections == 50` на behavioural `assert _HTTP_LIMITS.max_connections >= _HTTP_LIMITS.max_keepalive_connections`. Цифры станут SLO-constants с комментарием. `todo`
+
+- 109.8 **test_wait_50ms deterministic** — `tests/test_client_multitenancy.py:229-241`. Монкипатчить `asyncio.sleep` recording stub; assert что sleep был вызван с значением близким к `REQUEST_GAP_SECONDS` (>= 0.04). Убрать wall-clock dependency. `todo`
+
+- 109.9 **_parse_retry_after boundary tests** — `tests/test_stage91_vm_client_overhaul.py`. Добавить `test_parse_retry_after_clamps_above_300`, `test_parse_retry_after_clamps_negative_to_zero`, `test_parse_retry_after_accepts_float`. `todo`
+
+- 109.10 **vm_upstream_network_error parallel test** — `tests/test_stage88_observability_core.py`. Зеркальный тест к timeout-test, но с `httpx.ConnectError` side_effect. Assert `event_name=vm_upstream_network_error`, `upstream_requests_total["vetmanager_api|network_error"] == 1`. `todo`
+
+- 109.11 **upstream_unavailable error_type test** — `tests/test_stage102_aggregator_structured_errors.py`. Добавить тест где section raises `VetmanagerUpstreamUnavailable` (breaker open для domain); assert `error_type == "upstream_unavailable"`, `retryable is True`. `todo`
+
+**Acceptance**: 648 + ~10 new tests passed, 0 flaky (test_wait_50ms — deterministic), patch targets указывают на canonical locations, private-attr couplings устранены.
+
+---
+
+## Запланированный порядок execution
+
+| Stage | Type | Blocks merge? | Estimated session count | Depends on |
+|---|---|---|---|---|
+| 105 | blocker hotfix | **YES** — merge-blocking | 1 (focused) | — |
+| 106 | high-severity reliability + docs | recommended before next feature | 2 | 105 |
+| 107 | observability gaps | no, but before next observability change | 1-2 | — |
+| 108 | code quality cleanup | no | 1 | — |
+| 109 | test brittleness | no, но раньше 105.2 reduces cost | 2 | — |
+
+**Recommended sequence**: 105 (today/next session) → 106 (within a week) → 109 reliability-test subset at same time as 106 (109.6 dict identity; 109.10 network_error test) → 107 (next observability-focused work) → 108 + 109-remainder (cleanup window).
