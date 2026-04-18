@@ -94,12 +94,19 @@ async def instrument_call(
     coro_factory,
     *,
     operation: str = "",
+    tool_name: str | None = None,
 ):
     """Wrap a coroutine with latency + outcome metric recording.
 
     Stage 103.6: moved from tools.crud_helpers so non-CRUD callers (web
     handlers, future gateway layer) can use the same instrumentation
     without importing crud_helpers.
+
+    Stage 107.6 (obs F6 fix): optional `tool_name` label. Without it,
+    all `/rest/api/client` calls collide in Prometheus — aggregator
+    `get_client_profile` p95 mixes with CRUD `get_clients` list p95.
+    Pass `tool_name="get_client_profile"` at the aggregator boundary
+    to get a distinct time series.
     """
     import time as _time
     started = _time.monotonic()
@@ -117,6 +124,7 @@ async def instrument_call(
             method=method,
             outcome=outcome,
             duration_seconds=elapsed,
+            tool_name=tool_name,
         )
 
 
@@ -126,18 +134,22 @@ def record_tool_call(
     method: str,
     outcome: str,
     duration_seconds: float,
+    tool_name: str | None = None,
 ) -> None:
     """Record one MCP tool invocation with its outcome and latency.
 
     `endpoint` is the VM REST path (e.g. `/rest/api/client`), `method` is
-    the HTTP verb, `outcome` is `"success"` or `"error"`. Labels by
-    endpoint+method are a cheap proxy for per-tool identity without
-    requiring every tool to pass its own name.
+    the HTTP verb, `outcome` is `"success"` or `"error"`.
+
+    Stage 107.6: optional `tool_name` label. If present, appended to the
+    endpoint key as `endpoint:tool_name` so aggregator tools get a
+    distinct series vs CRUD tools on the same VM endpoint.
     """
     normalized_method = method.upper()
+    labeled_endpoint = f"{endpoint}:{tool_name}" if tool_name else endpoint
     with _LOCK:
-        _TOOL_CALLS_TOTAL[(endpoint, normalized_method, outcome)] += 1
-        _TOOL_CALL_LATENCY_SECONDS[(endpoint, normalized_method)].observe(
+        _TOOL_CALLS_TOTAL[(labeled_endpoint, normalized_method, outcome)] += 1
+        _TOOL_CALL_LATENCY_SECONDS[(labeled_endpoint, normalized_method)].observe(
             duration_seconds
         )
 

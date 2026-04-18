@@ -6,6 +6,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
 
 from exceptions import AuthError, HostResolutionError, VetmanagerError
+from observability_logging import RUNTIME_LOGGER
 from secret_manager import get_storage_encryption_key
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
 from storage import get_session_factory
@@ -208,7 +209,7 @@ def register_account_routes(
         try:
             expires_in_days = int(expiry_raw) if expiry_raw else None
             async with get_session_factory()() as session:
-                _, raw_token = await issue_service_bearer_token(
+                token_row, raw_token = await issue_service_bearer_token(
                     session,
                     account_id=account_id,
                     name=token_name,
@@ -225,6 +226,19 @@ def register_account_routes(
                 token_expiry_days=expiry_raw,
                 ip_mask=ip_mask_raw,
             )
+
+        # Stage 107.2 (obs H11): structured business-event log for token issuance
+        # so operators can grep when/which account acquired new bearer access.
+        RUNTIME_LOGGER.info(
+            "Bearer token issued",
+            extra={
+                "event_name": "bearer_token_issued",
+                "account_id": account_id,
+                "token_id": getattr(token_row, "id", None),
+                "token_name": token_name,
+                "expires_in_days": expires_in_days,
+            },
+        )
 
         return await render_account_dashboard_response(
             request,
@@ -271,6 +285,16 @@ def register_account_routes(
                 status_code=400,
                 token_error=str(exc),
             )
+
+        # Stage 107.2 (obs H11): structured log for token revocation.
+        RUNTIME_LOGGER.info(
+            "Bearer token revoked",
+            extra={
+                "event_name": "bearer_token_revoked",
+                "account_id": account_id,
+                "token_id": token_id,
+            },
+        )
 
         return await render_account_dashboard_response(
             request,

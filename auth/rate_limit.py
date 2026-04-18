@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from weakref import WeakKeyDictionary
 
 from exceptions import RateLimitError
+from observability_logging import RUNTIME_LOGGER
 
 DEFAULT_BEARER_RATE_LIMIT_REQUESTS = 1000
 DEFAULT_BEARER_RATE_LIMIT_WINDOW_SECONDS = 60
@@ -85,6 +86,19 @@ class InMemoryBearerRateLimiter:
                 retry_after_seconds = max(
                     1,
                     math.ceil(bucket[0] + window_seconds - current_ts),
+                )
+                # Stage 107.1 (H10 fix): log at raise site so throttling
+                # leaves a searchable event even if the caller's metric path
+                # changes. Token id only — не логируем raw token.
+                RUNTIME_LOGGER.warning(
+                    "Bearer rate limit triggered",
+                    extra={
+                        "event_name": "bearer_rate_limit_triggered",
+                        "token_id": bearer_token_id,
+                        "retry_after_seconds": retry_after_seconds,
+                        "request_limit": request_limit,
+                        "window_seconds": window_seconds,
+                    },
                 )
                 raise RateLimitError(
                     "Bearer token rate limit exceeded. Retry later.",

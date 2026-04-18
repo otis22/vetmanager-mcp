@@ -196,6 +196,7 @@ def register(mcp: FastMCP) -> None:
             "GET",
             _impl,
             operation="aggregate_profile",
+            tool_name="get_pet_profile",
         )
 
     async def _get_pet_profile_impl(pet_id: int) -> dict:

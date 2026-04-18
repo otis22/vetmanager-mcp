@@ -1705,29 +1705,29 @@ Super-review 2026-04-18 (`artifacts/review/2026-04-18-changed-stage-104.md`) —
 
 ---
 
-## Этап 107. Observability gaps — `todo`
+## Этап 107. Observability gaps — `done`
 
 **Source**: super-review observability findings H10, H11, H12, Medium-cluster "Observability gaps for new paths".
 
-- 107.1 **H10 Rate-limit log inside check_or_raise** — `auth/rate_limit.py:64-94`. Перед `raise RateLimitError` добавить `RUNTIME_LOGGER.warning("Bearer rate limit triggered", extra={"event_name": "bearer_rate_limit_triggered", "token_id": bearer_token_id, "retry_after_seconds": ...})`. `todo`
+- 107.1 **H10 Rate-limit log inside check_or_raise** — `auth/rate_limit.py:64-94`. Перед `raise RateLimitError` добавить `RUNTIME_LOGGER.warning("Bearer rate limit triggered", extra={"event_name": "bearer_rate_limit_triggered", "token_id": bearer_token_id, "retry_after_seconds": ...})`. `done`
 
-- 107.2 **H11 Token issuance/revocation log** — `web_routes_account.py:157-234`. На success в `issue_service_bearer_token` → `RUNTIME_LOGGER.info("Bearer token issued", extra={event_name, account_id, token_name})`. На `revoke_service_bearer_token` → `event_name=bearer_token_revoked`. `todo`
+- 107.2 **H11 Token issuance/revocation log** — `web_routes_account.py:157-234`. На success в `issue_service_bearer_token` → `RUNTIME_LOGGER.info("Bearer token issued", extra={event_name, account_id, token_name})`. На `revoke_service_bearer_token` → `event_name=bearer_token_revoked`. `done`
 
-- 107.3 **H12 Account register log+metric** — `web_routes_auth.py:51-128`. На success — `event_name=account_registered`. На rate-limit / validation fail — `record_auth_failure(source="web_register", reason="rate_limited"|"validation_error")`. `todo`
+- 107.3 **H12 Account register log+metric** — `web_routes_auth.py:51-128`. На success — `event_name=account_registered`. На rate-limit / validation fail — `record_auth_failure(source="web_register", reason="rate_limited"|"validation_error")`. `done`
 
-- 107.4 **aggregator_partial correlation_id** — `tools/_aggregation.py:100-112`. В warning extra добавить `**get_current_request_context()` так чтобы correlation_id/request_id попадали в лог. `todo`
+- 107.4 **aggregator_partial correlation_id** — `tools/_aggregation.py:100-112`. В warning extra добавить `**get_current_request_context()` так чтобы correlation_id/request_id попадали в лог. `done`
 
-- 107.5 **section_errors secret scrubber** — `tools/_aggregation.py:95`. Заменить `f"{type(result).__name__}: {result}"` на `type(result).__name__` если `result is AuthError` (может содержать masked API key fragment); для остальных exception types оставить полное сообщение. `todo`
+- 107.5 **section_errors secret scrubber** — `tools/_aggregation.py:95`. Заменить `f"{type(result).__name__}: {result}"` на `type(result).__name__` если `result is AuthError` (может содержать masked API key fragment); для остальных exception types оставить полное сообщение. `done`
 
-- 107.6 **tool_name label в instrument_call** — `service_metrics.py:91-120`. Добавить параметр `tool_name: str | None = None`; пробросить в `record_tool_call` как label. Callers `tools/client.py`, `tools/pet.py` передают `tool_name="get_client_profile"` / `"get_pet_profile"`. Иначе `endpoint="/rest/api/client"` пересекается с list-операциями в метрике. `todo`
+- 107.6 **tool_name label в instrument_call** — `service_metrics.py:91-120`. Добавить параметр `tool_name: str | None = None`; пробросить в `record_tool_call` как label. Callers `tools/client.py`, `tools/pet.py` передают `tool_name="get_client_profile"` / `"get_pet_profile"`. Иначе `endpoint="/rest/api/client"` пересекается с list-операциями в метрике. `done`
 
-- 107.7 **billing_api latency metric** — `host_resolver.py:58-90`. Обернуть httpx call в `started = time.monotonic()` + `record_upstream_request(target="billing_api", status, duration_seconds=elapsed)` на всех путях (success, timeout, network_error). `todo`
+- 107.7 **billing_api latency metric** — `host_resolver.py:58-90`. Обернуть httpx call в `started = time.monotonic()` + `record_upstream_request(target="billing_api", status, duration_seconds=elapsed)` на всех путях (success, timeout, network_error). `done`
 
-- 107.8 **graceful_shutdown structured** — `server.py:43-50`. Заменить `logging.getLogger("vetmanager.runtime").warning(...)` на `RUNTIME_LOGGER.warning("Graceful shutdown error", extra={event_name: "shutdown_error", step: "reset_shared_http_client"}, exc_info=True)`; добавить зеркальный log для `reset_breakers` branch. `todo`
+- 107.8 **graceful_shutdown structured** — `server.py:43-50`. Заменить `logging.getLogger("vetmanager.runtime").warning(...)` на `RUNTIME_LOGGER.warning("Graceful shutdown error", extra={event_name: "shutdown_error", step: "reset_shared_http_client"}, exc_info=True)`; добавить зеркальный log для `reset_breakers` branch. `done`
 
-- 107.9 **Breaker HALF_OPEN → CLOSED recovery log** — `vm_transport/breaker.py:148-155`. В `breaker_record_success` при `state in ("half_open", "open")` — `RUNTIME_LOGGER.info("Circuit breaker recovered", extra={event_name: "circuit_breaker_closed", domain, previous_state})`. `todo`
+- 107.9 **Breaker HALF_OPEN → CLOSED recovery log** — `vm_transport/breaker.py:148-155`. В `breaker_record_success` при `state in ("half_open", "open")` — `RUNTIME_LOGGER.info("Circuit breaker recovered", extra={event_name: "circuit_breaker_closed", domain, previous_state})`. `done`
 
-- 107.10 **Intermediate retry log** — `vetmanager_client.py:344-373`. В `except httpx.TimeoutException` перед `if attempt < max_retries: continue` добавить DEBUG log `vm_upstream_timeout_retry` с attempt, correlation_id, elapsed. `todo`
+- 107.10 **Intermediate retry log** — `vetmanager_client.py:344-373`. В `except httpx.TimeoutException` перед `if attempt < max_retries: continue` добавить DEBUG log `vm_upstream_timeout_retry` с attempt, correlation_id, elapsed. `done`
 
 **Acceptance**: покрытие auth-path observability — каждое критичное business-событие имеет event_name + metric. Dashboard query для auth может различить register/login/issue/revoke/rate_limit без DB join'а.
 

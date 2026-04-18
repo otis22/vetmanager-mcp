@@ -87,6 +87,10 @@ def register_auth_routes(
                 window_seconds=3600,
             )
         except RateLimitError:
+            # Stage 107.3 (obs H12): rate-limited registration gets a failure
+            # metric so SRE can alert on registration spikes (credential
+            # stuffing, bot signup).
+            record_auth_failure(source="web_register", reason="rate_limited")
             csrf_token = resolve_csrf_token(request)
             return html_response(
                 request,
@@ -110,6 +114,9 @@ def register_auth_routes(
                     password=form.get("password", ""),
                 )
             except ValueError as exc:
+                # Stage 107.3: validation error (duplicate email, weak
+                # password) gets its own failure metric label.
+                record_auth_failure(source="web_register", reason="validation_error")
                 csrf_token = resolve_csrf_token(request)
                 return html_response(
                     request,
@@ -122,6 +129,16 @@ def register_auth_routes(
                     with_csrf_cookie=True,
                     csrf_token=csrf_token,
                 )
+
+        # Stage 107.3: structured business-event log for successful
+        # registration so audit can answer "when did account X appear".
+        RUNTIME_LOGGER.info(
+            "Account registered",
+            extra={
+                "event_name": "account_registered",
+                "account_id": account.id,
+            },
+        )
 
         response = redirect_response(request, url="/account", status_code=303)
         set_account_session_cookie(response, account.id)

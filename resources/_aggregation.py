@@ -88,15 +88,27 @@ async def gather_sections(
             return ("vetmanager_error", True)
         return ("unexpected", False)
 
+    # Stage 107.5 (F9 fix): AuthError messages may embed a masked API key
+    # fragment (e.g. `"Invalid or missing API key (ab***yz)"`). Logging
+    # that fragment to section_errors[name].message ships it to the log
+    # aggregator. Scrub AuthError to exception-class-name only; other
+    # exception types log their full message (useful operational context).
+    from exceptions import AuthError
+
     section_errors: dict[str, dict] = {}
     payloads: list[dict] = []
     for (name, _, fallback), result in zip(sections, results):
         if isinstance(result, Exception):
             error_type, retryable = _classify(result)
+            message = (
+                type(result).__name__
+                if isinstance(result, AuthError)
+                else f"{type(result).__name__}: {result}"
+            )
             section_errors[name] = {
                 "error_type": error_type,
                 "retryable": retryable,
-                "message": f"{type(result).__name__}: {result}",
+                "message": message,
             }
             payloads.append(fallback)
         else:
@@ -104,12 +116,19 @@ async def gather_sections(
 
     if section_errors:
         from observability_logging import RUNTIME_LOGGER
+        from request_context import get_current_request_context
+        # Stage 107.4 (obs F4 fix): propagate correlation_id / request_id
+        # into the aggregator_partial log so SREs can join it with the
+        # upstream vm_upstream_timeout / vm_upstream_network_error events
+        # from the same request chain.
+        _ctx = get_current_request_context() or {}
         RUNTIME_LOGGER.warning(
             f"{tool_name} partial failure",
             extra={
                 "event_name": "aggregator_partial",
                 "tool": tool_name,
                 "section_errors": section_errors,
+                **_ctx,
                 **context,
             },
         )

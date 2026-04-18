@@ -37,17 +37,29 @@ enhance_tool_descriptions(mcp)
 async def _graceful_shutdown() -> None:
     """Stage 99.3: close shared httpx.AsyncClient keep-alive sockets with
     FIN instead of RST on SIGTERM / process exit. Also drop breaker state
-    so a future in-process restart starts clean."""
+    so a future in-process restart starts clean.
+
+    Stage 107.8 (obs): structured logs via RUNTIME_LOGGER with event_name
+    so operators can grep shutdown paths; the `reset_breakers` branch
+    was previously silent on failure.
+    """
+    from observability_logging import RUNTIME_LOGGER
     try:
         await reset_shared_http_client()
     except Exception:
-        logging.getLogger("vetmanager.runtime").warning(
-            "reset_shared_http_client failed at shutdown", exc_info=True
+        RUNTIME_LOGGER.warning(
+            "Graceful shutdown error",
+            extra={"event_name": "shutdown_error", "step": "reset_shared_http_client"},
+            exc_info=True,
         )
     try:
         await reset_breakers()
     except Exception:
-        pass
+        RUNTIME_LOGGER.warning(
+            "Graceful shutdown error",
+            extra={"event_name": "shutdown_error", "step": "reset_breakers"},
+            exc_info=True,
+        )
 
 
 def _install_shutdown_handlers() -> None:

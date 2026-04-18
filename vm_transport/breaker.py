@@ -148,11 +148,24 @@ async def check_breaker_allows(domain: str) -> None:
 async def breaker_record_success(domain: str) -> None:
     breaker = await get_breaker(domain)
     async with breaker.lock:
+        previous_state = breaker.state
         breaker.consecutive_failures = 0
         breaker.window_start = 0.0
         breaker.probe_in_flight = False
         if breaker.state in ("half_open", "open"):
             breaker.state = "closed"
+            # Stage 107.9 (obs): log recovery transition so incidents have
+            # a clear "circuit closed at T" marker in logs; dashboards
+            # also see the transition via upstream_requests counter.
+            from observability_logging import RUNTIME_LOGGER
+            RUNTIME_LOGGER.info(
+                "Circuit breaker recovered",
+                extra={
+                    "event_name": "circuit_breaker_closed",
+                    "domain": domain,
+                    "previous_state": previous_state,
+                },
+            )
 
 
 async def breaker_record_failure(domain: str) -> None:

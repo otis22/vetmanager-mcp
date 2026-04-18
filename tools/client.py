@@ -370,6 +370,7 @@ def register(mcp: FastMCP) -> None:
             "GET",
             _impl,
             operation="aggregate_profile",
+            tool_name="get_client_profile",
         )
 
     async def _get_client_profile_impl(client_id: int) -> dict:

@@ -365,6 +365,21 @@ class VetmanagerClient:
                 except httpx.TimeoutException as exc:
                     elapsed = time.monotonic() - started
                     if attempt < max_retries:
+                        # Stage 107.10: DEBUG log for intermediate retries so
+                        # latency investigations can see how many attempts
+                        # timed out and at which backoff each.
+                        RUNTIME_LOGGER.debug(
+                            "VM upstream timeout on retry attempt",
+                            extra={
+                                "event_name": "vm_upstream_timeout_retry",
+                                "correlation_id": outbound_correlation_id,
+                                "domain": self._domain,
+                                "method": upper_method,
+                                "url_path": path,
+                                "attempt": attempt + 1,
+                                "elapsed_ms": round(elapsed * 1000, 2),
+                            },
+                        )
                         await asyncio.sleep(_backoff_seconds(attempt))
                         attempt += 1
                         continue
