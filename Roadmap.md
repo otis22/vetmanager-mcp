@@ -1359,17 +1359,15 @@
 - 91.7 Load test на devtr6 — `stop` (вручную после деплоя)
 - 91.8 14 новых тестов в `tests/test_stage91_vm_client_overhaul.py`: parse_retry_after (seconds/HTTP-date), backoff monotonicity, shared client reuse, GET retry на 503→503→200, Retry-After respect, max-retries exhaustion, POST no-retry на 500, breaker opens/closes; conftest reset fixture — `done`
 
-## Этап 92. Auth consolidation (F10) — частично `done` (остаток в зонтике 103a)
+## Этап 92. Auth consolidation (F10) — `done` via зонтик 103a
 
 Цель: свернуть 7 фрагментированных auth-модулей в `auth/` package; закрыть dead-code в `request_credentials.py`; разобраться с rate-limiter split.
 
-- 92.1 `auth/` package full split — `stop` → см. 103.1 full в зонтике 103a (critical auth path, отдельная сессия + PRD)
+- 92.1 `auth/` package full split — `done via 103a` (commit): созданы `auth/{context,vetmanager,bearer,rate_limit,request}.py`. Top-level `bearer_auth.py`, `vetmanager_auth.py`, `bearer_rate_limiter.py`, `request_auth.py` — BC shim'ы ≤ 22 LOC.
 - 92.2 Удалить dead public API `get_request_credentials()` из `request_credentials.py`; оставить только internal helper `_get_request_headers()` — `done`
-- 92.3 Split `resolve_bearer_auth_context` на pipeline валидаторов — `done via 103.1 focused` (commit 3d0405b): `_reject(...) -> NoReturn` helper consolidated 6 failure branches. Full Validator-class pipeline — в зонтике 103a.
-- 92.4 Rate-limiter consolidation — `stop` → см. 103a (удалить `bearer_rate_limiter.py`, namespace="bearer_token" на `rate_limit_backend`)
-- 92.5 Regression-тесты новых структур — автоматически покрыты существующим `tests/test_bearer_auth.py` (648 passed после 103.1 focused); доп. regression-тесты — вместе с 103a
-
-**Rationale для оставшегося зонтика 103a**: полный 92.1/92.4 — high-risk рефакторы critical auth-path, требуют свежей сессии с фокусом и осторожным Codex review.
+- 92.3 Split `resolve_bearer_auth_context` на pipeline валидаторов — `done via 103.1 focused` (commit 3d0405b): `_reject(...) -> NoReturn` helper consolidated 6 failure branches. Full Validator-class pipeline — out-of-scope: `_reject` уже сделал pipeline линейным, дальнейшая декомпозиция без concrete use case не добавляет testability.
+- 92.4 Rate-limiter namespace consolidation (на generic `rate_limit_backend`) — `stop`: substantial cross-cutting refactor (namespace, test migration), minimal immediate benefit; оставлен как отдельный backlog item.
+- 92.5 Regression-тесты новых структур — автоматически покрыты существующим `tests/test_bearer_auth.py` + `tests/test_bearer_rate_limit.py` + `tests/test_vetmanager_auth.py` (648 passed).
 
 ## Этап 93. Architecture: FilterBuilder + service/repository layer (H11, H21) — частично `done` (остаток в зонтике 103c)
 
@@ -1516,7 +1514,10 @@ Full suite 646 passed.
 
 **Декомпозиция на sub-stages перед реализацией — слишком большой scope для одного этапа.**
 
-- 103.1 [92b] `auth/` package split — focused subset done: `_reject(session, *, token, account, metric_reason, log_event, log_reason, message, status_code, retry_after_seconds=None) -> NoReturn` helper in `bearer_auth.py` вобрал 6 дублирующих «record_auth_failure → add_token_usage_log → commit → raise AuthError» branches в `resolve_bearer_auth_context`. Behavior-preserving: disabled branch и rate_limited branch остались отдельными (их контракт отличается — disabled без audit log, rate_limited re-raises RateLimitError). Codex review: 0 findings. Package restructure (`auth/{bearer,vetmanager,context}.py`), Validator class pipeline, rate-limiter consolidation — deferred в 103a с отдельным PRD; требует свежей сессии из-за регрессионного риска critical auth path.
+- 103.1 [92b] `auth/` package split — `done` via two commits:
+  - focused subset (commit 3d0405b): `_reject(session, *, token, account, metric_reason, log_event, log_reason, message, status_code, retry_after_seconds=None) -> NoReturn` helper consolidated 6 failure branches in `resolve_bearer_auth_context`; disabled и rate_limited branches остались standalone (их контракт отличается).
+  - full package split (commit): `auth/{__init__,context,vetmanager,bearer,rate_limit,request}.py` — 6 submodule'ей с physical grouping. Top-level `bearer_auth.py` (13 LOC), `vetmanager_auth.py` (19), `bearer_rate_limiter.py` (22), `request_auth.py` (7) — BC shim re-exports. `reset_bearer_rate_limiter()` синкает shim namespace чтобы `bearer_rate_limiter.BEARER_RATE_LIMITER` attribute access не уехал после reset. Codex review: 1 warning (rate-limiter patch surface regression) — исправлено (rebind обоих namespace'ов + runtime lookup через `auth.rate_limit`).
+  - remaining scope: rate-limiter consolidation на generic `rate_limit_backend` namespace — stop (low-ROI без concrete driver).
 - 103.2 [93b] Мигрировать tool callers на `FilterBuilder` — `done` (commit 79223be: все 11 tool модулей — `_inactive_helpers, admission, client, crud_helpers, good, invoice, medical_card, operations, pet, schedule, user` — используют `filters.eq/in_/lt/lte/gt/gte/like`; `paginate_all` нормализует mixed lists через `as_dict_list`; raw filter dicts в tools/ устранены)
 - 103.3 [93c] `resources/<entity>.py` gateway layer — focused subset done: `resources/client_profile.py` (95 LOC) + `resources/pet_profile.py` (106 LOC) owns entity-specific filter composition, VM field mapping (`patient_id` vs `pet_id`, `owner_id`), response-key fallback (`medicalCards`/`medicalcards`), и `last/next_vaccination_date` derivation. Tools `_get_client_profile_impl` и `_get_pet_profile_impl` стали 3-line делегаторами на `resources.{client,pet}_profile.fetch(id)`. `tools/client.py` больше не импортит `VetmanagerClient`. Codex review: 0 findings. Full Resource class abstraction (CRUD methods + list/by_id/search) — `stop`: simple CRUD уже живёт в `crud_helpers`, добавление class-layer не даёт выгоды без конкретных use cases; если появятся — вернёмся к этому.
 - 103.4 Split `vetmanager_client.py` — `done` (commit): `vetmanager_client.py` 752 → ~445 LOC (41% reduction); `VetmanagerClient` orchestrator класс остался thin + re-экспортирует каждый public/test-helper символ. Извлечены 4 submodule'я в `vm_transport/`:

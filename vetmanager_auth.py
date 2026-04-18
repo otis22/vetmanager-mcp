@@ -1,95 +1,19 @@
-"""Vetmanager account connection auth modes."""
+"""Backward-compat shim — canonical location is `auth.context` / `auth.vetmanager`.
 
-from __future__ import annotations
+Stage 103a: `vetmanager_auth` moved under the `auth` package. This shim
+re-exports the public surface so existing `from vetmanager_auth import
+X` callers and test monkey-patches targeting `vetmanager_auth.X` keep
+working. New code should import from `auth.context` (dataclass +
+constants) or `auth.vetmanager` (resolver) directly.
+"""
 
-import hashlib
-from dataclasses import dataclass
-
-from exceptions import AuthError, VetmanagerError
-from storage_models import VetmanagerConnection
-
-VETMANAGER_AUTH_MODE_DOMAIN_API_KEY = "domain_api_key"
-VETMANAGER_AUTH_MODE_USER_TOKEN = "user_token"
-VETMANAGER_AUTH_HEADER = "X-REST-API-KEY"
-VETMANAGER_USER_TOKEN_HEADER = "X-USER-TOKEN"
-VETMANAGER_APP_NAME_HEADER = "X-APP-NAME"
-DEFAULT_USER_TOKEN_APP_NAME = "vetmanager-mcp"
-
-
-@dataclass(slots=True)
-class VetmanagerAuthContext:
-    """Normalized Vetmanager auth context for runtime HTTP client usage."""
-
-    auth_mode: str
-    domain: str
-    credential: str
-    credential_header: str = VETMANAGER_AUTH_HEADER
-    app_name: str | None = None
-
-    def build_headers(self) -> dict[str, str]:
-        """Build outgoing Vetmanager API headers for this auth mode."""
-        headers = {
-            self.credential_header: self.credential,
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-        if self.app_name:
-            headers[VETMANAGER_APP_NAME_HEADER] = self.app_name
-        return headers
-
-    @property
-    def api_key(self) -> str:
-        """Backward-compatible alias for runtime secret value."""
-        return self.credential
-
-    def credential_fingerprint(self) -> str:
-        """Return short stable fingerprint for cache key isolation."""
-        return hashlib.sha256(self.credential.encode("utf-8")).hexdigest()[:16]
-
-    def api_key_fingerprint(self) -> str:
-        """Backward-compatible alias for cache key isolation."""
-        return self.credential_fingerprint()
-
-
-def resolve_vetmanager_credentials(
-    connection: VetmanagerConnection,
-    *,
-    encryption_key: str | None = None,
-) -> VetmanagerAuthContext:
-    """Resolve account connection into normalized Vetmanager credentials."""
-    payload = connection.get_credentials(encryption_key=encryption_key) or {}
-
-    domain = (payload.get("domain") or "").strip()
-    if not domain:
-        raise VetmanagerError("Account connection is missing Vetmanager domain.")
-
-    if connection.auth_mode == VETMANAGER_AUTH_MODE_DOMAIN_API_KEY:
-        api_key = (payload.get("api_key") or "").strip()
-        if not api_key:
-            raise AuthError(
-                "Account connection is missing Vetmanager API key.",
-                status_code=401,
-            )
-        return VetmanagerAuthContext(
-            auth_mode=connection.auth_mode,
-            domain=domain,
-            credential=api_key,
-        )
-
-    if connection.auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN:
-        user_token = (payload.get("user_token") or "").strip()
-        app_name = (payload.get("app_name") or DEFAULT_USER_TOKEN_APP_NAME).strip()
-        if not user_token:
-            raise AuthError(
-                "Account connection is missing Vetmanager user token.",
-                status_code=401,
-            )
-        return VetmanagerAuthContext(
-            auth_mode=connection.auth_mode,
-            domain=domain,
-            credential=user_token,
-            credential_header=VETMANAGER_USER_TOKEN_HEADER,
-            app_name=app_name,
-        )
-
-    raise VetmanagerError(f"Unsupported Vetmanager auth mode: {connection.auth_mode}")
+from auth.context import (  # noqa: F401
+    DEFAULT_USER_TOKEN_APP_NAME,
+    VETMANAGER_APP_NAME_HEADER,
+    VETMANAGER_AUTH_HEADER,
+    VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
+    VETMANAGER_AUTH_MODE_USER_TOKEN,
+    VETMANAGER_USER_TOKEN_HEADER,
+    VetmanagerAuthContext,
+)
+from auth.vetmanager import resolve_vetmanager_credentials  # noqa: F401
