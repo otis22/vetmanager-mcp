@@ -1,9 +1,29 @@
+from datetime import date as _date, timedelta as _td
+
 from fastmcp import FastMCP
 
 from filters import eq as _filter_eq, gte as _filter_gte, in_ as _filter_in, lt as _filter_lt
 from resources.admission_status import ACTIVE_ADMISSION_STATUSES  # noqa: F401 — BC re-export
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam, parse_date_param
+
+
+def _unwrap_admission_list_response(resp: dict | list | None) -> tuple[list[dict], int]:
+    """Normalize `/rest/api/admission` list response into `(rows, totalCount)`.
+
+    Stage 108.2 (F8 fix): was duplicated verbatim in
+    `get_client_upcoming_visits` and `get_daily_schedule`. API can return
+    either `{"data": {"admission": [...], "totalCount": N}}` or
+    `{"data": [...]}` depending on query shape, plus the `admissions`
+    plural key on some endpoints.
+    """
+    data = resp.get("data", {}) if isinstance(resp, dict) else {}
+    if isinstance(data, list):
+        return data, len(data)
+    if isinstance(data, dict):
+        rows = data.get("admission") or data.get("admissions") or []
+        return rows, int(data.get("totalCount", len(rows)))
+    return [], 0
 
 # Stage 106.3: ACTIVE_ADMISSION_STATUSES lives in `resources.admission_status`
 # so that `resources/` aggregators can import without reaching up into
@@ -70,9 +90,8 @@ def register(mcp: FastMCP) -> None:
         if effective_to:
             # Use strict `<` against next day's midnight so records with
             # fractional seconds at 23:59:59.xxx on the target day are included.
-            from datetime import date as _date, timedelta
             parsed = _date.fromisoformat(effective_to)
-            next_day = (parsed + timedelta(days=1)).isoformat()
+            next_day = (parsed + _td(days=1)).isoformat()
             combined_filters.append(
                 _filter_lt("admission_date", f"{next_day} 00:00:00")
             )
@@ -137,7 +156,6 @@ def register(mcp: FastMCP) -> None:
         if not resolved_from:
             raise ValueError("date_from is required")
 
-        from datetime import date as _date, timedelta as _td
         start_d = _date.fromisoformat(resolved_from)
         end_d = start_d + _td(days=days)
 
@@ -159,18 +177,7 @@ def register(mcp: FastMCP) -> None:
             sort=[{"property": "admission_date", "direction": "ASC"}],
             filters=filters,
         )
-
-        data = resp.get("data", {}) if isinstance(resp, dict) else {}
-        if isinstance(data, list):
-            rows = data
-            total = len(data)
-        elif isinstance(data, dict):
-            rows = data.get("admission") or data.get("admissions") or []
-            total = int(data.get("totalCount", len(rows)))
-        else:
-            rows = []
-            total = 0
-
+        rows, total = _unwrap_admission_list_response(resp)
         return {
             "success": True,
             "data": {"admission": rows, "totalCount": total},
@@ -203,15 +210,12 @@ def register(mcp: FastMCP) -> None:
         if not resolved:
             raise ValueError("date is required")
 
-        from datetime import date as _date, timedelta as _td
         d = _date.fromisoformat(resolved)
         next_day = (d + _td(days=1)).isoformat()
 
         filters: list = [
             _filter_gte("admission_date", f"{resolved} 00:00:00"),
             _filter_lt("admission_date", f"{next_day} 00:00:00"),
-            # API-level active status filter via IN operator
-            # (verified during Stage 83 probe on devtr6).
             _filter_in("status", list(ACTIVE_ADMISSION_STATUSES)),
         ]
         if doctor_id > 0:
@@ -226,18 +230,7 @@ def register(mcp: FastMCP) -> None:
             sort=[{"property": "admission_date", "direction": "ASC"}],
             filters=filters,
         )
-
-        data = resp.get("data", {}) if isinstance(resp, dict) else {}
-        if isinstance(data, list):
-            rows = data
-            total = len(data)
-        elif isinstance(data, dict):
-            rows = data.get("admission") or data.get("admissions") or []
-            total = int(data.get("totalCount", len(rows)))
-        else:
-            rows = []
-            total = 0
-
+        rows, total = _unwrap_admission_list_response(resp)
         return {
             "success": True,
             "date": resolved,
@@ -290,7 +283,7 @@ def register(mcp: FastMCP) -> None:
         reason: str = "",
         status: str = "",
         clinic_id: int = 0,
-        type: str = "",
+        admission_type: str = "",
     ) -> dict:
         """Update an existing admission (appointment) record.
 
@@ -310,7 +303,7 @@ def register(mcp: FastMCP) -> None:
             status: New status (one of: save, directed, accepted, delayed,
                 in_treatment, not_approved, not_confirmed, deleted).
             clinic_id: New clinic ID (0 = no change).
-            type: Admission type (leave empty to keep current).
+            admission_type: Admission type (leave empty to keep current).
         """
         payload: dict = {}
         if date:
@@ -327,6 +320,6 @@ def register(mcp: FastMCP) -> None:
             payload["status"] = status
         if clinic_id:
             payload["clinic_id"] = clinic_id
-        if type:
-            payload["type"] = type
+        if admission_type:
+            payload["type"] = admission_type
         return await crud_update("/rest/api/admission", admission_id, payload)

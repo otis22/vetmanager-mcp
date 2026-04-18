@@ -1,7 +1,7 @@
 import json
 from fastmcp import FastMCP
 
-from filters import build_list_query_params
+from filters import build_list_query_params, eq as _filter_eq, in_ as _filter_in
 from tools.crud_helpers import crud_get_by_id, crud_create, crud_update
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
@@ -32,7 +32,6 @@ def register(mcp: FastMCP) -> None:
         """
         vc = VetmanagerClient()
         # patient_id filter is required — pet_id param alone is ignored by the API
-        from filters import eq as _filter_eq
         extra_filters: list = []
         if filter:
             extra_filters = filter if isinstance(filter, list) else []
@@ -74,7 +73,6 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset (0–10000).
         """
         vc = VetmanagerClient()
-        from filters import eq as _filter_eq, in_ as _filter_in
 
         # Step 1: get all pets of the client.
         # Pet entity FK to client is `owner_id` (migrated stage 77.4;
@@ -133,7 +131,10 @@ def register(mcp: FastMCP) -> None:
             all_cards = []
         for card in all_cards:
             pid = card.get("patient_id")
-            pet = pet_by_id.get(pid) or pet_by_id.get(int(pid) if isinstance(pid, str) and pid.isdigit() else pid)
+            # VM API can return patient_id as int or as digit-string
+            # depending on endpoint; normalize for dict lookup.
+            int_pid = int(pid) if isinstance(pid, str) and pid.isdigit() else pid
+            pet = pet_by_id.get(pid) or pet_by_id.get(int_pid)
             if pet:
                 card["_pet_alias"] = pet.get("alias") or pet.get("name") or str(pid)
                 card["_pet_id"] = pid

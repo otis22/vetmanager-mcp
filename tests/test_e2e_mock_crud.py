@@ -403,9 +403,11 @@ async def test_update_admission_extended_fields():
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
+        # Stage 108.1: `type` renamed to `admission_type` (builtin shadow fix);
+        # payload field name stays `type` at the VM API boundary.
         await mcp.call_tool("update_admission", {
             "admission_id": 1, "client_id": 10, "pet_id": 5,
-            "clinic_id": 2, "type": "first_visit",
+            "clinic_id": 2, "admission_type": "first_visit",
         })
     assert route.called
     body = route.calls.last.request.content

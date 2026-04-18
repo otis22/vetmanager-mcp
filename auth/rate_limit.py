@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import math
-import os
 from collections import deque
 from datetime import datetime, timezone
 from weakref import WeakKeyDictionary
 
+from env_utils import env_int
 from exceptions import RateLimitError
 from observability_logging import RUNTIME_LOGGER
 
@@ -21,25 +21,14 @@ DEFAULT_BEARER_RATE_LIMIT_REQUESTS = 1000
 DEFAULT_BEARER_RATE_LIMIT_WINDOW_SECONDS = 60
 
 
-def _env_int(name: str, default: int) -> int:
-    raw_value = os.environ.get(name)
-    if raw_value is None:
-        return default
-    try:
-        parsed = int(raw_value)
-    except ValueError:
-        return default
-    return parsed if parsed > 0 else default
-
-
 def get_bearer_rate_limit_requests() -> int:
     """Return max admitted requests per sliding window for one bearer token."""
-    return _env_int("BEARER_RATE_LIMIT_REQUESTS", DEFAULT_BEARER_RATE_LIMIT_REQUESTS)
+    return env_int("BEARER_RATE_LIMIT_REQUESTS", DEFAULT_BEARER_RATE_LIMIT_REQUESTS)
 
 
 def get_bearer_rate_limit_window_seconds() -> int:
     """Return sliding-window length in seconds for bearer-token rate limiting."""
-    return _env_int(
+    return env_int(
         "BEARER_RATE_LIMIT_WINDOW_SECONDS",
         DEFAULT_BEARER_RATE_LIMIT_WINDOW_SECONDS,
     )

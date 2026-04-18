@@ -1733,29 +1733,29 @@ Super-review 2026-04-18 (`artifacts/review/2026-04-18-changed-stage-104.md`) —
 
 ---
 
-## Этап 108. Code quality cleanup — `todo`
+## Этап 108. Code quality cleanup — `done`
 
 **Source**: super-review code findings F7, F8, H14, H15 + medium cluster "Inline imports".
 
-- 108.1 **F7 type builtin shadow** — `tools/admission.py:299`. Переименовать `type: str = ""` в `admission_type: str = ""` в `update_admission`. Обновить payload mapping + call sites в тестах. `todo`
+- 108.1 **F7 type builtin shadow** — `tools/admission.py:299`. Переименовать `type: str = ""` в `admission_type: str = ""` в `update_admission`. Обновить payload mapping + call sites в тестах. `done`
 
-- 108.2 **F8 duplicated admission response unwrap** — `tools/admission.py:169-183, 236-251`. Вынести в `_normalize_admission_list_response(resp) -> dict` helper; оба call-site используют. `todo`
+- 108.2 **F8 duplicated admission response unwrap** — `tools/admission.py:169-183, 236-251`. Вынести в `_normalize_admission_list_response(resp) -> dict` helper; оба call-site используют. `done`
 
-- 108.3 **H14 inline datetime imports** — `tools/admission.py:79,146,212`. Поднять `from datetime import date as _date, timedelta` в module-level imports; убрать 3 inline копии. `todo`
+- 108.3 **H14 inline datetime imports** — `tools/admission.py:79,146,212`. Поднять `from datetime import date as _date, timedelta` в module-level imports; убрать 3 inline копии. `done`
 
-- 108.4 **H15 inline filters imports** — `tools/medical_card.py:35,77`. Поднять `from filters import eq as _filter_eq, in_ as _filter_in` в module-level import block. `todo`
+- 108.4 **H15 inline filters imports** — `tools/medical_card.py:35,77`. Поднять `from filters import eq as _filter_eq, in_ as _filter_in` в module-level import block. `done`
 
-- 108.5 **Inline imports sweep в `tools/_aggregation.py`** — `tools/_aggregation.py:63-67, 102`. Поднять `from exceptions import ...` + `from observability_logging import RUNTIME_LOGGER` на module-level. `todo`
+- 108.5 **Inline imports sweep в `tools/_aggregation.py`** — `tools/_aggregation.py:63-67, 102`. Поднять `from exceptions import ...` + `from observability_logging import RUNTIME_LOGGER` на module-level. `done`
 
-- 108.6 **`tools/client.py` inline imports** — `tools/client.py:363-364` (или текущие строки после 103c). Проверить и поднять `service_metrics.instrument_call` + `resources.client_profile.fetch` в module-level. `todo`
+- 108.6 **`tools/client.py` inline imports** — `tools/client.py:363-364` (или текущие строки после 103c). Проверить и поднять `service_metrics.instrument_call` + `resources.client_profile.fetch` в module-level. `done`
 
-- 108.7 **medical_card.py nested ternary** — `tools/medical_card.py:136`. Разложить `pet_by_id.get(pid) or pet_by_id.get(int(pid) if isinstance(pid, str) and pid.isdigit() else pid)` на 2-3 читаемые строки с именованной переменной `int_pid`. `todo`
+- 108.7 **medical_card.py nested ternary** — `tools/medical_card.py:136`. Разложить `pet_by_id.get(pid) or pet_by_id.get(int(pid) if isinstance(pid, str) and pid.isdigit() else pid)` на 2-3 читаемые строки с именованной переменной `int_pid`. `done`
 
-- 108.8 **duplicated Stage-83 comment** — `tools/admission.py:154-155, 220-221`. Удалить дубль; оставить один комментарий у `ACTIVE_ADMISSION_STATUSES` definition. `todo`
+- 108.8 **duplicated Stage-83 comment** — `tools/admission.py:154-155, 220-221`. Удалить дубль; оставить один комментарий у `ACTIVE_ADMISSION_STATUSES` definition. `done`
 
-- 108.9 **REQUEST_TIMEOUT dead constant** — `vetmanager_client.py:74`. Удалить `REQUEST_TIMEOUT = 30.0` (не используется после stage 103d; актуальные timeouts — в `vm_transport/pool.py::REQUEST_TIMEOUTS`). `todo`
+- 108.9 **REQUEST_TIMEOUT dead constant** — `vetmanager_client.py:74`. Удалить `REQUEST_TIMEOUT = 30.0` (не используется после stage 103d; актуальные timeouts — в `vm_transport/pool.py::REQUEST_TIMEOUTS`). `done`
 
-- 108.10 **_env_int/_env_float 3x duplication** — `auth/rate_limit.py`, `vm_transport/breaker.py`, `rate_limit_backend.py` (если существует). Создать `config/env.py` (или `env_utils.py`) с `env_int(name, default, *, positive_only=True)` и `env_float(...)`. 3 call-sites переключить. `todo`
+- 108.10 **_env_int/_env_float 3x duplication** — `auth/rate_limit.py`, `vm_transport/breaker.py`, `rate_limit_backend.py` (если существует). Создать `config/env.py` (или `env_utils.py`) с `env_int(name, default, *, positive_only=True)` и `env_float(...)`. 3 call-sites переключить. `done`
 
 **Acceptance**: ruff/pylint clean на изменённых файлах (если есть lint config), tests passed, no behaviour changes.
 

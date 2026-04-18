@@ -70,8 +70,8 @@ from vm_transport.retry import (
     parse_retry_after as _parse_retry_after,
 )
 
-# Legacy single timeout kept for BC — new code uses _REQUEST_TIMEOUTS split.
-REQUEST_TIMEOUT = 30.0
+# Stage 108.9: legacy REQUEST_TIMEOUT removed — actual timeouts live in
+# vm_transport/pool.py::REQUEST_TIMEOUTS (connect=5, read=20, write=10, pool=2).
 REQUEST_GAP_SECONDS = 0.05
 
 # Shared httpx.AsyncClient pool (stage 99.4) lives in vm_transport.pool —

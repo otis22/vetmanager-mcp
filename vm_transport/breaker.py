@@ -21,41 +21,16 @@ Env-tunable thresholds (stage 99.5):
 from __future__ import annotations
 
 import asyncio
-import math
-import os
 import time
 from dataclasses import dataclass, field
 
+from env_utils import env_float, env_int
 from exceptions import VetmanagerUpstreamUnavailable
 from service_metrics import record_upstream_failure, record_upstream_request
 
-
-def _env_float(name: str, default: float) -> float:
-    """Read a tunable env var with float fallback."""
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return default
-    try:
-        value = float(raw)
-        return value if math.isfinite(value) and value > 0 else default
-    except ValueError:
-        return default
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return default
-    try:
-        value = int(raw)
-        return value if value > 0 else default
-    except ValueError:
-        return default
-
-
-BREAKER_FAILURE_THRESHOLD = _env_int("BREAKER_FAILURE_THRESHOLD", 5)
-BREAKER_WINDOW_SECONDS = _env_float("BREAKER_WINDOW_SECONDS", 60.0)
-BREAKER_COOLDOWN_SECONDS = _env_float("BREAKER_COOLDOWN_SECONDS", 30.0)
+BREAKER_FAILURE_THRESHOLD = env_int("BREAKER_FAILURE_THRESHOLD", 5)
+BREAKER_WINDOW_SECONDS = env_float("BREAKER_WINDOW_SECONDS", 60.0)
+BREAKER_COOLDOWN_SECONDS = env_float("BREAKER_COOLDOWN_SECONDS", 30.0)
 
 
 @dataclass
