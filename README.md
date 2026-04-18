@@ -538,6 +538,25 @@ Prompts работают по тому же bearer-only контракту, чт
 | Финансы | `daily_revenue`, `unpaid_invoices`, `popular_services` |
 | Склад и клиентская база | `search_good`, `low_stock`, `new_clients`, `client_no_visit` |
 
+## Product metrics (ad-hoc report)
+
+Для быстрого ответа на «сколько живых аккаунтов, кто мёртв, сколько токенов выдано, какие failures» — `/product-metrics` skill + `scripts/product_metrics_report.py`. Запускается on-demand через SSH → `docker compose exec mcp`.
+
+Примеры:
+```
+/product-metrics                              # default 30-day window, top-10
+/product-metrics --window-days=7 --top-n=5    # последние 7 дней
+/product-metrics --format=json                # машинно-читаемый
+```
+
+Метрики (не покидают prod-сервер при обычном просмотре; email маскируются `al***@ex***.com` — маскирование снижает случайный disclosure, но это не анонимизация: в небольшой customer base и при characteristic доменах результат остаётся частично re-identifiable. Отчёт предназначен для owner-local просмотра):
+- **Accounts**: total / new 24h-7d-30d / live (req within 7d) / dead (reg>30d, 0 req in 30d) / no tokens / no active connection + dead-accounts table.
+- **Tokens**: active / expiring in 7d / issued 24h / revoked 24h-7d.
+- **Requests**: total 24h-7d-30d + top-N accounts by 30d request count.
+- **Failures** (24h / 7d / 30d breakdown): rate_limited, revoked, expired, ip_denied, no_scopes, no_connection.
+
+Параллельно в Prometheus-expose'е `/metrics` копится `vetmanager_business_events_total{event=...}` counter для будущих Grafana-дашбордов без изменения кода.
+
 ## CI/CD
 
 | Воркфлоу | Триггер | Что делает |

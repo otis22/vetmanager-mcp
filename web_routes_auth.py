@@ -7,7 +7,7 @@ from starlette.responses import HTMLResponse, RedirectResponse
 
 from exceptions import RateLimitError
 from observability_logging import RUNTIME_LOGGER
-from service_metrics import record_auth_failure
+from service_metrics import record_auth_failure, record_business_event
 from storage import get_session_factory
 from web_auth import (
     authenticate_account,
@@ -132,6 +132,7 @@ def register_auth_routes(
 
         # Stage 107.3: structured business-event log for successful
         # registration so audit can answer "when did account X appear".
+        # Stage 110.2: also bump the process-local Prometheus counter.
         RUNTIME_LOGGER.info(
             "Account registered",
             extra={
@@ -139,6 +140,7 @@ def register_auth_routes(
                 "account_id": account.id,
             },
         )
+        record_business_event("account_registered")
 
         response = redirect_response(request, url="/account", status_code=303)
         set_account_session_cookie(response, account.id)
@@ -237,6 +239,7 @@ def register_auth_routes(
             "Web login succeeded",
             extra={"event_name": "web_login_succeeded", "account_id": account.id},
         )
+        record_business_event("web_login_succeeded")
         response = redirect_response(request, url="/account", status_code=303)
         set_account_session_cookie(response, account.id)
         return response

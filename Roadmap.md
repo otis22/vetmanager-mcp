@@ -1802,3 +1802,17 @@ Super-review 2026-04-18 (`artifacts/review/2026-04-18-changed-stage-104.md`) —
 | 109 | test brittleness | no, но раньше 105.2 reduces cost | 2 | — |
 
 **Recommended sequence**: 105 (today/next session) → 106 (within a week) → 109 reliability-test subset at same time as 106 (109.6 dict identity; 109.10 network_error test) → 107 (next observability-focused work) → 108 + 109-remainder (cleanup window).
+
+---
+
+## Этап 110. Product metrics — ad-hoc report + business events counter — `done`
+
+Цель: дать owner'у быстрый ответ на "сколько живых аккаунтов / кто мёртв / сколько токенов / какие failures" без Grafana, без cron'а, без новых контейнеров.
+
+- 110.1 `scripts/product_metrics_report.py` — SQL aggregations over existing tables (Account / ServiceBearerToken / TokenUsageStat / TokenUsageLog / VetmanagerConnection). CLI `--window-days`, `--top-n`, `--format=markdown|json`. `_mask_email` для PII. — `done`
+- 110.2 `service_metrics.record_business_event(event_name)` с allowlist `{account_registered, web_login_succeeded, bearer_token_issued, bearer_token_revoked}`. Counter в `snapshot_service_metrics()["business_events_total"]` + экспорт в Prometheus `vetmanager_business_events_total{event=...}`. 4 call-sites wired в `web_routes_auth` и `web_routes_account`. — `done`
+- 110.3 `tests/test_stage110_product_metrics.py` — 13 тестов. — `done`
+- 110.4 `.claude/commands/product-metrics.md` skill — wraps `ssh + docker compose exec` call; whitelist args validation (`--window-days=<1..365>`, `--top-n=<1..100>`, `--format=markdown|json`) для shell-safety. — `done`
+- 110.5 README section "Product metrics" — примеры вызова skill, список метрик, PII-disclaimer. — `done`
+
+Codex review: 5 findings (1 label escape / 2 IN-list scale / 3 tz invariant / 4 mask PII / 5 shell injection). (1)+(3)+(5) fixed; (2)+(4) документированы как known limitations acceptable для текущего scale. Тесты: 665 → 678 passed (+13).

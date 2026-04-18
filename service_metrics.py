@@ -39,6 +39,12 @@ _TOOL_CALLS_TOTAL: DefaultDict[tuple[str, str, str], int] = defaultdict(int)
 _TOOL_CALL_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = defaultdict(
     LatencyAggregate
 )
+# Stage 110.2: business events counter — `account_registered`, `bearer_token_issued`,
+# `bearer_token_revoked`, `web_login_succeeded`. Accumulated in-process since last
+# reset; reset_service_metrics() zeros it. Persistent counts live in the DB
+# (TokenUsageLog + Account); this metric is the hook for future Grafana panels
+# without touching the call sites again.
+_BUSINESS_EVENTS_TOTAL: DefaultDict[str, int] = defaultdict(int)
 
 
 def reset_service_metrics() -> None:
@@ -52,6 +58,32 @@ def reset_service_metrics() -> None:
         _UPSTREAM_LATENCY_SECONDS.clear()
         _TOOL_CALLS_TOTAL.clear()
         _TOOL_CALL_LATENCY_SECONDS.clear()
+        _BUSINESS_EVENTS_TOTAL.clear()
+
+
+_ALLOWED_BUSINESS_EVENTS = frozenset({
+    "account_registered",
+    "web_login_succeeded",
+    "bearer_token_issued",
+    "bearer_token_revoked",
+})
+
+
+def record_business_event(event_name: str) -> None:
+    """Increment the business-event counter (stage 110.2).
+
+    Called from registration, token issuance/revocation, and login success
+    handlers. Snapshot is exposed via `snapshot_service_metrics()["business_events_total"]`
+    and the Prometheus `/metrics` endpoint for future dashboards.
+
+    Strict allowlist: unexpected `event_name` values are silently dropped
+    rather than silently added to the metric (prevents cardinality blow-ups
+    from typos or dynamic strings leaking in from request payloads).
+    """
+    if event_name not in _ALLOWED_BUSINESS_EVENTS:
+        return
+    with _LOCK:
+        _BUSINESS_EVENTS_TOTAL[event_name] += 1
 
 
 def record_http_request(*, route: str, method: str, status_code: int, duration_seconds: float) -> None:
@@ -190,6 +222,7 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 f"{endpoint}|{method}": asdict(aggregate)
                 for (endpoint, method), aggregate in sorted(_TOOL_CALL_LATENCY_SECONDS.items())
             },
+            "business_events_total": dict(sorted(_BUSINESS_EVENTS_TOTAL.items())),
         }
 
 
@@ -311,6 +344,22 @@ def render_prometheus_metrics() -> str:
         lines.append(f"vetmanager_tool_call_latency_seconds_count{labels} {value['count']}")
         lines.append(f"vetmanager_tool_call_latency_seconds_sum{labels} {value['sum_seconds']}")
         lines.append(f"vetmanager_tool_call_latency_seconds_max{labels} {value['max_seconds']}")
+
+    # Stage 110.2: business events counter for product dashboard.
+    # `_labels_text` escapes backslash + double-quote per Prometheus text
+    # format — safe even if a future caller passes an event_name with
+    # unusual characters. Newline injection is not possible because we
+    # do not include newlines in event_name values ourselves.
+    lines.extend(
+        [
+            "# HELP vetmanager_business_events_total Business lifecycle events (account_registered, bearer_token_issued, bearer_token_revoked, web_login_succeeded).",
+            "# TYPE vetmanager_business_events_total counter",
+        ]
+    )
+    for event_name, count in snapshot.get("business_events_total", {}).items():
+        lines.append(
+            f"vetmanager_business_events_total{_labels_text(event=event_name)} {count}"
+        )
 
     # Cache metrics (from request_cache singleton).
     from request_cache import REQUEST_CACHE

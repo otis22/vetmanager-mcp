@@ -8,6 +8,7 @@ from starlette.responses import HTMLResponse, RedirectResponse
 from exceptions import AuthError, HostResolutionError, VetmanagerError
 from observability_logging import RUNTIME_LOGGER
 from secret_manager import get_storage_encryption_key
+from service_metrics import record_business_event
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
 from storage import get_session_factory
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY, VETMANAGER_AUTH_MODE_USER_TOKEN
@@ -239,6 +240,7 @@ def register_account_routes(
                 "expires_in_days": expires_in_days,
             },
         )
+        record_business_event("bearer_token_issued")
 
         return await render_account_dashboard_response(
             request,
@@ -295,6 +297,7 @@ def register_account_routes(
                 "token_id": token_id,
             },
         )
+        record_business_event("bearer_token_revoked")
 
         return await render_account_dashboard_response(
             request,
