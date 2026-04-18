@@ -50,8 +50,9 @@ def _reset_vm_client_state():
 
     def _drop() -> None:
         # Stage 99.4: per-loop client dict — clear all entries.
+        # Stage 106.7: `_shared_http_client` sentinel removed; dict clear is
+        # the only state reset needed.
         _vm_client._shared_http_clients.clear()
-        _vm_client._shared_http_client = None  # BC sentinel
         _vm_client._breakers.clear()
 
     _drop()

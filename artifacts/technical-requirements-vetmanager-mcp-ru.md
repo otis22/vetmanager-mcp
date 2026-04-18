@@ -113,9 +113,10 @@
 - делает `tools/list` более полезным для LLM без изменения бизнес-логики
   инструментов и без ручного редактирования десятков docstrings.
 
-#### Vetmanager API client (`vetmanager_client.py`)
+#### Vetmanager API client (`vetmanager_client.py` + `vm_transport/*`)
 
-`VetmanagerClient` создаётся на каждый MCP request context и инкапсулирует:
+`VetmanagerClient` — thin orchestrator (создаётся на каждый MCP request
+context), делегирующий в `vm_transport/` package (stage 103d). Инкапсулирует:
 - чтение уже резолвленных Vetmanager credentials из bearer auth context;
 - валидацию `domain` как subdomain;
 - резолв базового host через billing API:
@@ -123,16 +124,38 @@
 - allowlist-проверку резолвленного host;
 - автоматическую подстановку `X-REST-API-KEY`;
 - request pacing: минимум 50ms между последовательными исходящими запросами;
-- retry/timeout поведение;
-- нормализацию ошибок в исключения уровня приложения;
-- in-memory tagged cache для GET-запросов.
+- нормализацию ошибок в исключения уровня приложения.
 
-#### Bearer auth resolution (`bearer_auth.py`)
+Структура `vm_transport/` (stage 103d):
+- `pool.py` — per-loop shared `httpx.AsyncClient`, keep-alive pool (50/100,
+  30s expiry), double-check locking на first-init;
+- `breaker.py` — per-domain circuit breaker (closed/open/half_open),
+  env-tunable thresholds (`BREAKER_FAILURE_THRESHOLD=5`, `WINDOW=60s`,
+  `COOLDOWN=30s`);
+- `retry.py` — retry policy: `MAX_RETRIES_READ=3`, `WRITE=0`, exponential
+  backoff 0.2s×2^attempt с jitter, honours `Retry-After` (clamped к 300s);
+- `cache_policy.py` — TTL tiering (`CACHE_TTL_SECONDS=900`, `SHORT=60`),
+  entity-from-path routing.
 
-Модуль резолвит `Authorization: Bearer <service_token>` в account-specific
-runtime context.
+#### Bearer auth resolution (`auth/*`, с BC shims на top-level)
 
-Контракт:
+Canonical location — `auth/` package (stage 103a). Top-level модули
+`bearer_auth.py`, `vetmanager_auth.py`, `bearer_rate_limiter.py`,
+`request_auth.py` — BC shim re-exports (≤22 LOC each).
+
+Структура `auth/` package:
+- `context.py` — `VetmanagerAuthContext` dataclass + auth-mode constants
+  (`VETMANAGER_AUTH_MODE_*`, headers).
+- `vetmanager.py` — `resolve_vetmanager_credentials(connection)` — connection →
+  нормализованный auth context.
+- `bearer.py` — `BearerAuthContext` + `_reject` helper + pipeline
+  `resolve_bearer_auth_context` (6 failure branches, один audit-log-and-raise
+  helper).
+- `rate_limit.py` — `InMemoryBearerRateLimiter` + sliding-window limiter
+  (default 1000 req/60s, env-tunable).
+- `request.py` — `get_bearer_token()` header parser.
+
+Контракт bearer auth:
 - tools и prompts не принимают runtime credentials как аргументы;
 - raw Bearer token используется только для lookup/hash-verify и не сохраняется в
   audit details или пользовательских ошибках;
@@ -140,6 +163,27 @@ runtime context.
   request headers;
 - при отсутствии/некорректности Bearer токена сервер возвращает явную безопасную
   auth error.
+
+#### Resource gateway (`resources/*`)
+
+Stage 103c: entity-specific aggregate-profile composition вынесена в
+`resources/` layer. Tools делегируют; resources владеют VM field names,
+filter composition, response unwrapping.
+
+- `resources/client_profile.py::fetch(client_id)` — 4-section композиция:
+  client + invoices + admissions + next_admission (IN-filter с
+  `ACTIVE_ADMISSION_STATUSES`).
+- `resources/pet_profile.py::fetch(pet_id)` — 3-section: pet + MedicalCards
+  (filter=patient_id) + vaccinations; плюс `last/next_vaccination_date`
+  derivation.
+- `resources/_aggregation.py::gather_sections` — shared partial-gather
+  helper (structured section_errors, CancelledError re-raise,
+  `aggregator_partial` warning log).
+- `resources/admission_status.py::ACTIVE_ADMISSION_STATUSES` — canonical
+  location (stage 106.3). `tools.admission` re-экспортит для BC.
+
+Layering invariant: `resources/` НЕ импортит из `tools/`. Tools импортят
+из resources/ вниз.
 
 #### MCP tools (`tools/*.py`)
 
@@ -189,8 +233,23 @@ Prompts регистрируются отдельно от tools и:
 Содержит:
 - валидацию безопасных лимитов массовых выборок;
 - валидацию суммы платежа;
-- helper построения query params для list GET;
 - экспорт `LimitParam` для корректной генерации `inputSchema`.
+
+Stage 103.8: `build_list_query_params` переехал в `filters.py` (co-located с
+Filter primitives); `validators.py` re-экспортит его для BC.
+
+#### FilterBuilder (`filters.py`)
+
+Canonical location для:
+- `Filter` dataclass + helpers `eq/ne/lt/lte/gt/gte/in_/not_in/like`;
+- `as_dict_list` для mixed `list[Filter | dict]`;
+- `build_list_query_params(limit, offset, sort, filters, extra)` — builder
+  для VM REST list-query params.
+
+Stage 103.2: все 11 tool модулей используют `filters.*` вместо raw dict
+literal'ов. Stage 106.4 (F6 fix): `extra` dict drops только None/empty
+string; numeric zero сохраняется (privacy-safe — `client_id=0` не silently
+драпается в full-scan).
 
 #### Cache layer (`request_cache.py`)
 
@@ -216,32 +275,64 @@ Prompts регистрируются отдельно от tools и:
 
 ### 3.3. Структура проекта
 
-Актуальная структура репозитория:
+Актуальная структура репозитория (после stages 103a/c/d):
 
 ```text
 vetmanager-mcp/
 ├── AGENTS.md
+├── CLAUDE.md
 ├── Roadmap.md
 ├── AssumptionLog.md
 ├── PRD/
 ├── artifacts/
-├── tools/
+│   └── review/                 # super-review reports + dismissed-findings index
+├── auth/                       # auth package (stage 103a)
+│   ├── __init__.py
+│   ├── context.py              # VetmanagerAuthContext + mode constants
+│   ├── vetmanager.py           # resolve_vetmanager_credentials
+│   ├── bearer.py               # BearerAuthContext + resolve_bearer_auth_context + _reject
+│   ├── rate_limit.py           # InMemoryBearerRateLimiter + BEARER_RATE_LIMITER
+│   └── request.py              # get_bearer_token header parser
+├── vm_transport/               # transport layer (stage 103d)
+│   ├── __init__.py
+│   ├── pool.py                 # per-loop shared httpx.AsyncClient
+│   ├── breaker.py              # per-domain circuit breaker
+│   ├── retry.py                # parse_retry_after + backoff_seconds
+│   └── cache_policy.py         # TTL tiering + entity_from_path
+├── resources/                  # entity gateways (stage 103c / 106.3)
+│   ├── __init__.py
+│   ├── _aggregation.py         # gather_sections partial-gather helper
+│   ├── admission_status.py     # ACTIVE_ADMISSION_STATUSES canonical
+│   ├── client_profile.py       # get_client_profile fetch impl
+│   └── pet_profile.py          # get_pet_profile fetch impl
+├── tools/                      # MCP tool registrations
 ├── tests/
 ├── scripts/
+├── alembic/
 ├── server.py
-├── vetmanager_client.py
-├── request_credentials.py
+├── vetmanager_client.py        # thin orchestrator over vm_transport/*
+├── bearer_auth.py              # BC shim (13 LOC) — re-exports auth.bearer
+├── vetmanager_auth.py          # BC shim (19 LOC) — re-exports auth.context + auth.vetmanager
+├── bearer_rate_limiter.py      # BC shim (22 LOC) — re-exports auth.rate_limit
+├── request_auth.py             # BC shim (7 LOC) — re-exports auth.request
+├── request_credentials.py      # legacy shim (11 tests still patch it here)
 ├── request_cache.py
-├── validators.py
+├── filters.py                  # FilterBuilder + build_list_query_params
+├── validators.py               # validators + build_list_query_params BC re-export
 ├── prompts.py
 ├── tool_descriptions.py
 ├── exceptions.py
+├── service_metrics.py          # Prometheus metrics + instrument_call
+├── observability_logging.py
+├── structured_logging.py
 ├── Dockerfile
 ├── docker-compose.yml
 ├── pyproject.toml
 ├── pytest.ini
 └── README.md
 ```
+
+**Layering invariant (stage 106.3):** `tools/` → `resources/` → `vm_transport/` + `auth/` → storage. Вверх импортировать запрещено.
 
 ### 3.4. Аутентификация и конфигурация
 

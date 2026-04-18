@@ -899,7 +899,7 @@
 - 56.1.1 Исправить счётчик инструментов (87 → актуальное число) и таблицу по группам — `done`
 - 56.1.2 Добавить в таблицу недостающие инструменты: profiles, analytics, messages, stock balance — `done`
 - 56.1.3 Добавить deploy-prod.yml в секцию CI/CD — `done`
-- 56.1.4 Добавить canonical URL на лендинг (production host: 342915.simplecloud.ru) — `done`
+- 56.1.4 Добавить canonical URL на лендинг (исторически production host был `342915.simplecloud.ru`; заменён на `vetmanager-mcp.vromanichev.ru` в этапе 89.2) — `done`
 
 ### 56.2 PRD и tech requirements — `done`
 
@@ -1678,28 +1678,28 @@ Super-review 2026-04-18 (`artifacts/review/2026-04-18-changed-stage-104.md`) —
 
 ---
 
-## Этап 106. High-severity reliability + docs — `todo`
+## Этап 106. High-severity reliability + docs — `done`
 
 **Source**: super-review findings F2, F3, F5, F6, F9 (уже в 105.3), F10 + related.
 
-- 106.1 **F2 CancelledError wedges HALF_OPEN** — `vetmanager_client.py:261-400`. Обернуть retry loop в `try/finally`; в finally проверить `probe_in_flight` для domain breaker — если True после исключения (включая CancelledError), вызвать `_breaker_record_failure(domain_key)` для сброса. Test: `test_cancelled_probe_clears_breaker_state`. `todo`
+- 106.1 **F2 CancelledError wedges HALF_OPEN** — `vetmanager_client.py:261-400`. Обернуть retry loop в `try/finally`; в finally проверить `probe_in_flight` для domain breaker — если True после исключения (включая CancelledError), вызвать `_breaker_record_failure(domain_key)` для сброса. Test: `test_cancelled_probe_clears_breaker_state`. `done`
 
-- 106.2 **F3 Pool race на concurrent first-init** — `vm_transport/pool.py:49-69`. Использовать существующий `_shared_http_client_lock` (сейчас dead): double-check pattern — check dict → acquire lock → re-check → create. Test: `test_concurrent_first_init_creates_single_client`. Убрать "BC patch surface" комментарий у lock'а. `todo`
+- 106.2 **F3 Pool race на concurrent first-init** — `vm_transport/pool.py:49-69`. Использовать существующий `_shared_http_client_lock` (сейчас dead): double-check pattern — check dict → acquire lock → re-check → create. Test: `test_concurrent_first_init_creates_single_client`. Убрать "BC patch surface" комментарий у lock'а. `done`
 
-- 106.3 **F5 Layering violation resources → tools** — `resources/client_profile.py`, `resources/pet_profile.py`. Переместить `gather_sections` из `tools/_aggregation.py` в `resources/_aggregation.py` (или `shared/aggregation.py`). Переместить `ACTIVE_ADMISSION_STATUSES` из `tools/admission.py` в `resources/admission_status.py`. Tools начинают импортить оттуда. `resources/` больше не импортит из `tools/`. `todo`
+- 106.3 **F5 Layering violation resources → tools** — `resources/client_profile.py`, `resources/pet_profile.py`. Переместить `gather_sections` из `tools/_aggregation.py` в `resources/_aggregation.py` (или `shared/aggregation.py`). Переместить `ACTIVE_ADMISSION_STATUSES` из `tools/admission.py` в `resources/admission_status.py`. Tools начинают импортить оттуда. `resources/` больше не импортит из `tools/`. `done`
 
-- 106.4 **F6 filters.py zero-filter privacy** — `filters.py:188-196`. Удалить ветку `if isinstance(value, (int, float)) and ... value == 0: continue`; оставить только `if value is None or value == "": continue`. Test: `test_build_list_query_params_preserves_int_zero_in_extra` — `extra={"client_id": 0}` попадает в params. `todo`
+- 106.4 **F6 filters.py zero-filter privacy** — `filters.py:188-196`. Удалить ветку `if isinstance(value, (int, float)) and ... value == 0: continue`; оставить только `if value is None or value == "": continue`. Test: `test_build_list_query_params_preserves_int_zero_in_extra` — `extra={"client_id": 0}` попадает в params. `done`
 
 - 106.5 **F10 technical-requirements rewrite** — `artifacts/technical-requirements-vetmanager-mcp-ru.md`:
   - §3.3 Структура: добавить `auth/`, `vm_transport/`, `resources/` с submodule'ями.
   - §3.2 `bearer_auth.py` / `vetmanager_auth.py` / `bearer_rate_limiter.py` / `request_auth.py` пометить как BC shims; canonical location → `auth/*`.
   - §3.2 `validators.build_list_query_params` → `filters.build_list_query_params`.
   - §3.2 `vetmanager_client.py` → thin orchestrator, делегирует в `vm_transport/`.
-  `todo`
+  `done`
 
-- 106.6 **H19 obsolete prod URL в Roadmap** — `Roadmap.md:902` (56.1.4 отсылка к `342915.simplecloud.ru`) → явно отметить как obsolete, актуальный — `vetmanager-mcp.vromanichev.ru`. `todo`
+- 106.6 **H19 obsolete prod URL в Roadmap** — `Roadmap.md:902` (56.1.4 отсылка к `342915.simplecloud.ru`) → явно отметить как obsolete, актуальный — `vetmanager-mcp.vromanichev.ru`. `done`
 
-- 106.7 **H21 `_shared_http_client` dead sentinel + misleading state** — `vetmanager_client.py:81-96`. Удалить `_shared_http_client: httpx.AsyncClient | None = None` sentinel (не используется реально, `conftest` ставит None просто по инерции). Переписать `get_shared_http_client_state()` чтобы читать реальный dict `_shared_http_clients`: `{"loop_keys": list(...), "open_count": sum(1 for c in values() if not c.is_closed)}`. Обновить тест, использующий старый state. `todo`
+- 106.7 **H21 `_shared_http_client` dead sentinel + misleading state** — `vetmanager_client.py:81-96`. Удалить `_shared_http_client: httpx.AsyncClient | None = None` sentinel (не используется реально, `conftest` ставит None просто по инерции). Переписать `get_shared_http_client_state()` чтобы читать реальный dict `_shared_http_clients`: `{"loop_keys": list(...), "open_count": sum(1 for c in values() if not c.is_closed)}`. Обновить тест, использующий старый state. `done`
 
 **Acceptance**: 5 reliability fixes + 2 docs sync. Tests 648+4 passed. Layering assertion — `grep -r "from tools" resources/` возвращает 0 строк.
 

@@ -115,15 +115,32 @@ class TestBuildListQueryParams:
         assert params["client_id"] == 16
 
     def test_skips_empty_extra_values(self):
+        """Stage 106.4 (F6 fix): extra dict drops ONLY None and empty string.
+
+        Zero used to be dropped too, but that silently converted
+        `extra={"client_id": 0}` into an UNFILTERED query (privacy risk —
+        full-table scan). Callers omitting a default should filter at the
+        call site.
+        """
         params = build_list_query_params(
             limit=10,
             offset=0,
             extra={"name": "", "client_id": 0, "date": None, "active": False},
         )
         assert "name" not in params
-        assert "client_id" not in params
+        assert params["client_id"] == 0
         assert "date" not in params
         assert params["active"] is False
+
+    def test_preserves_int_zero_in_extra(self):
+        """F6 regression: int 0 must pass through as valid filter value."""
+        params = build_list_query_params(
+            limit=10,
+            offset=0,
+            extra={"client_id": 0, "pet_id": 0},
+        )
+        assert params["client_id"] == 0
+        assert params["pet_id"] == 0
 
 
 class TestLimitParamSchema:

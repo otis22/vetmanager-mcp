@@ -1,20 +1,14 @@
 from fastmcp import FastMCP
 
 from filters import eq as _filter_eq, gte as _filter_gte, in_ as _filter_in, lt as _filter_lt
+from resources.admission_status import ACTIVE_ADMISSION_STATUSES  # noqa: F401 — BC re-export
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam, parse_date_param
 
-# Admission statuses that represent a real upcoming or in-progress visit.
-# Used by get_client_upcoming_visits and get_daily_schedule to filter out
-# cancelled/deleted/not-yet-approved records.
-ACTIVE_ADMISSION_STATUSES = (
-    "save",
-    "directed",
-    "accepted",
-    "in_treatment",
-    "delayed",
-    "not_confirmed",
-)
+# Stage 106.3: ACTIVE_ADMISSION_STATUSES lives in `resources.admission_status`
+# so that `resources/` aggregators can import without reaching up into
+# `tools/`. Re-exported here for existing callers (`tools.schedule`,
+# tests) via the import above.
 
 
 def register(mcp: FastMCP) -> None:

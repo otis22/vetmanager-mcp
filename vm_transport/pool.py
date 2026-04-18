@@ -31,8 +31,10 @@ HTTP_LIMITS = httpx.Limits(
 # bind to this same object rather than copy it.
 _shared_http_clients: dict[int, httpx.AsyncClient] = {}
 
-# Legacy module-level lock — retained so any test that patches it still
-# resolves. Real per-loop init races are handled below via last-writer-wins.
+# Module-level lock guarding `_shared_http_clients` dict mutations. One
+# `asyncio.Lock` is fine because dict mutation is cheap and happens only on
+# first-init per loop. Stage 106.2: lock is now actively used by
+# `get_shared_http_client` (previously dead code reserved "for BC").
 _shared_http_client_lock = asyncio.Lock()
 
 
@@ -54,19 +56,24 @@ async def get_shared_http_client() -> httpx.AsyncClient:
     (tests that spawn their own loop, notebook reloads): separate clients
     so no cross-loop transport reuse.
 
-    Race: if two coroutines on the same loop init concurrently, the
-    second overwrites the first. Both clients are valid; the first is
-    garbage-collected (httpx.AsyncClient has proper `__del__` teardown).
+    Stage 106.2 (F3 fix): concurrent first-init uses double-check locking
+    pattern so N concurrent callers produce ONE AsyncClient (not N, with
+    N-1 orphaned and leaking sockets until GC).
     """
     key = current_loop_key()
     client = _shared_http_clients.get(key)
     if client is not None and not client.is_closed:
         return client
-    if client is not None and client.is_closed:
-        _shared_http_clients.pop(key, None)
-    new_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUTS, limits=HTTP_LIMITS)
-    _shared_http_clients[key] = new_client
-    return new_client
+    # Slow path: acquire lock, re-check, construct if still needed.
+    async with _shared_http_client_lock:
+        client = _shared_http_clients.get(key)
+        if client is not None and not client.is_closed:
+            return client
+        if client is not None and client.is_closed:
+            _shared_http_clients.pop(key, None)
+        new_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUTS, limits=HTTP_LIMITS)
+        _shared_http_clients[key] = new_client
+        return new_client
 
 
 async def reset_shared_http_client() -> None:

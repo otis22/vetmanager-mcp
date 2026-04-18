@@ -188,9 +188,12 @@ def build_list_query_params(
 
     if extra:
         for key, value in extra.items():
+            # Stage 106.4 (F6 fix): skip only None and empty string.
+            # Previously also dropped numeric zero, which silently converted
+            # `extra={"client_id": 0}` into an UNFILTERED query (full-table
+            # scan, privacy risk). Callers wanting to omit a default value
+            # should filter at the call site explicitly.
             if value is None or value == "":
-                continue
-            if isinstance(value, (int, float)) and not isinstance(value, bool) and value == 0:
                 continue
             params[key] = value
 

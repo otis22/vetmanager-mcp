@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 
 from filters import eq as _filter_eq
-from tools._aggregation import gather_sections
+from resources._aggregation import gather_sections
 from vetmanager_client import VetmanagerClient
 
 

@@ -15,7 +15,8 @@ from __future__ import annotations
 import json
 
 from filters import eq as _filter_eq, in_ as _filter_in
-from tools._aggregation import gather_sections
+from resources._aggregation import gather_sections
+from resources.admission_status import ACTIVE_ADMISSION_STATUSES
 from vetmanager_client import VetmanagerClient
 
 
@@ -29,10 +30,6 @@ async def fetch(client_id: int) -> dict:
     - Next scheduled admission (filter=client_id + status IN active tuple,
       sort admission_date ASC, limit 1).
     """
-    # Lazy import avoids circular dependency (tools.admission imports
-    # tools.client transitively via the schedule module).
-    from tools.admission import ACTIVE_ADMISSION_STATUSES
-
     vc = VetmanagerClient()
 
     client_id_str = str(client_id)
