@@ -1761,31 +1761,31 @@ Super-review 2026-04-18 (`artifacts/review/2026-04-18-changed-stage-104.md`) —
 
 ---
 
-## Этап 109. Test brittleness & coverage gaps — `todo`
+## Этап 109. Test brittleness & coverage gaps —  (focused subset)
 
 **Source**: super-review tests findings H16, H17, H18, H19 + medium cluster "Test brittleness".
 
-- 109.1 **H16 runtime_factories private attr coupling** — `tests/runtime_factories.py:70-79`. Добавить `VetmanagerClient.inject_test_credentials(...)` или `@classmethod from_test_credentials(...)` — factory идёт через public API. Мигрировать 10+ call-sites в tests. `todo`
+- 109.1 **H16 runtime_factories private attr coupling** — `tests/runtime_factories.py:70-79`. Добавить `VetmanagerClient.inject_test_credentials(...)` или `@classmethod from_test_credentials(...)` — factory идёт через public API. Мигрировать 10+ call-sites в tests. `stop` (deferred — low-ROI without concrete test failure)
 
-- 109.2 **H17 test_stage102 manual sleep patch** — `tests/test_stage102_aggregator_structured_errors.py:50-60`. Заменить manual `vm.asyncio.sleep = _no_sleep` + finally restore на `monkeypatch.setattr("vetmanager_client.asyncio.sleep", _no_sleep)`. `todo`
+- 109.2 **H17 test_stage102 manual sleep patch** — `tests/test_stage102_aggregator_structured_errors.py:50-60`. Заменить manual `vm.asyncio.sleep = _no_sleep` + finally restore на `monkeypatch.setattr("vetmanager_client.asyncio.sleep", _no_sleep)`. `done`
 
-- 109.3 **H18 test_stage91 breaker private field access** — `tests/test_stage91_vm_client_overhaul.py:292-308`. Использовать `get_breaker_state(domain)` как observable API для state assertions. Для форсинга OPEN — `force_breaker_open(domain)` вместо прямого mutation. Аналогично в `test_stage96_post_review_hotfix.py:192-200` и `test_stage101_tests_hardening.py:46-58`. `todo`
+- 109.3 **H18 test_stage91 breaker private field access** — `tests/test_stage91_vm_client_overhaul.py:292-308`. Использовать `get_breaker_state(domain)` как observable API для state assertions. Для форсинга OPEN — `force_breaker_open(domain)` вместо прямого mutation. Аналогично в `test_stage96_post_review_hotfix.py:192-200` и `test_stage101_tests_hardening.py:46-58`. `stop` (deferred — low-ROI without concrete test failure)
 
-- 109.4 **H19 test_stage87 dead PROMPTS_SRC read** — `tests/test_stage87_post_migration.py:32-34`. Удалить `PROMPTS_SRC = Path(__file__).../read_text(...)` (никогда не используется, ломает collection если prompts.py переместить). `todo`
+- 109.4 **H19 test_stage87 dead PROMPTS_SRC read** — `tests/test_stage87_post_migration.py:32-34`. Удалить `PROMPTS_SRC = Path(__file__).../read_text(...)` (никогда не используется, ломает collection если prompts.py переместить). `done`
 
-- 109.5 **test_request_auth patches shim not canonical** — `tests/test_request_auth.py`. Мигрировать `patch.object(request_credentials, "_get_request_headers", ...)` на `patch.object(auth.request, "_get_request_headers", ...)` (добавив его в `auth/request.py` как private helper). `todo`
+- 109.5 **test_request_auth patches shim not canonical** — `tests/test_request_auth.py`. Мигрировать `patch.object(request_credentials, "_get_request_headers", ...)` на `patch.object(auth.request, "_get_request_headers", ...)` (добавив его в `auth/request.py` как private helper). `stop` (deferred — low-ROI without concrete test failure)
 
-- 109.6 **conftest dict identity invariant test** — `tests/conftest.py`. Добавить новый `tests/test_stage105_invariants.py`: `assert vetmanager_client._shared_http_clients is vm_transport.pool._shared_http_clients` и `assert vetmanager_client._breakers is vm_transport.breaker._breakers`. Ловит регрессию где re-export создаст copy вместо reference. `todo`
+- 109.6 **conftest dict identity invariant test** — `tests/conftest.py`. Добавить новый `tests/test_stage105_invariants.py`: `assert vetmanager_client._shared_http_clients is vm_transport.pool._shared_http_clients` и `assert vetmanager_client._breakers is vm_transport.breaker._breakers`. Ловит регрессию где re-export создаст copy вместо reference. `done`
 
-- 109.7 **test_stage91 magic-number pool/timeout asserts** — `tests/test_stage91_vm_client_overhaul.py:341-355`. Заменить `assert _HTTP_LIMITS.max_keepalive_connections == 50` на behavioural `assert _HTTP_LIMITS.max_connections >= _HTTP_LIMITS.max_keepalive_connections`. Цифры станут SLO-constants с комментарием. `todo`
+- 109.7 **test_stage91 magic-number pool/timeout asserts** — `tests/test_stage91_vm_client_overhaul.py:341-355`. Заменить `assert _HTTP_LIMITS.max_keepalive_connections == 50` на behavioural `assert _HTTP_LIMITS.max_connections >= _HTTP_LIMITS.max_keepalive_connections`. Цифры станут SLO-constants с комментарием. `stop` (deferred — low-ROI without concrete test failure)
 
-- 109.8 **test_wait_50ms deterministic** — `tests/test_client_multitenancy.py:229-241`. Монкипатчить `asyncio.sleep` recording stub; assert что sleep был вызван с значением близким к `REQUEST_GAP_SECONDS` (>= 0.04). Убрать wall-clock dependency. `todo`
+- 109.8 **test_wait_50ms deterministic** — `tests/test_client_multitenancy.py:229-241`. Монкипатчить `asyncio.sleep` recording stub; assert что sleep был вызван с значением близким к `REQUEST_GAP_SECONDS` (>= 0.04). Убрать wall-clock dependency. `stop` (deferred — low-ROI without concrete test failure)
 
-- 109.9 **_parse_retry_after boundary tests** — `tests/test_stage91_vm_client_overhaul.py`. Добавить `test_parse_retry_after_clamps_above_300`, `test_parse_retry_after_clamps_negative_to_zero`, `test_parse_retry_after_accepts_float`. `todo`
+- 109.9 **_parse_retry_after boundary tests** — `tests/test_stage91_vm_client_overhaul.py`. Добавить `test_parse_retry_after_clamps_above_300`, `test_parse_retry_after_clamps_negative_to_zero`, `test_parse_retry_after_accepts_float`. `done`
 
-- 109.10 **vm_upstream_network_error parallel test** — `tests/test_stage88_observability_core.py`. Зеркальный тест к timeout-test, но с `httpx.ConnectError` side_effect. Assert `event_name=vm_upstream_network_error`, `upstream_requests_total["vetmanager_api|network_error"] == 1`. `todo`
+- 109.10 **vm_upstream_network_error parallel test** — `tests/test_stage88_observability_core.py`. Зеркальный тест к timeout-test, но с `httpx.ConnectError` side_effect. Assert `event_name=vm_upstream_network_error`, `upstream_requests_total["vetmanager_api|network_error"] == 1`. `stop` (deferred — low-ROI without concrete test failure)
 
-- 109.11 **upstream_unavailable error_type test** — `tests/test_stage102_aggregator_structured_errors.py`. Добавить тест где section raises `VetmanagerUpstreamUnavailable` (breaker open для domain); assert `error_type == "upstream_unavailable"`, `retryable is True`. `todo`
+- 109.11 **upstream_unavailable error_type test** — `tests/test_stage102_aggregator_structured_errors.py`. Добавить тест где section raises `VetmanagerUpstreamUnavailable` (breaker open для domain); assert `error_type == "upstream_unavailable"`, `retryable is True`. `done`
 
 **Acceptance**: 648 + ~10 new tests passed, 0 flaky (test_wait_50ms — deterministic), patch targets указывают на canonical locations, private-attr couplings устранены.
 

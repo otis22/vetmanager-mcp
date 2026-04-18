@@ -15,7 +15,6 @@ These tests pin the updated contracts.
 """
 
 import json
-from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -29,9 +28,9 @@ DOMAIN = "testclinic"
 API_KEY = "test-key-mock"
 BASE = "https://testclinic.vetmanager.cloud"
 
-PROMPTS_SRC = (
-    Path(__file__).resolve().parents[1] / "prompts.py"
-).read_text(encoding="utf-8")
+# Stage 109.4: removed dead `PROMPTS_SRC = Path(...).read_text()` module-level
+# load — never used by any test in this file, but crashed collection if
+# prompts.py moved (future subpackage reorg).
 
 
 def billing_mock():

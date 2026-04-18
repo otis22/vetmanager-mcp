@@ -47,17 +47,20 @@ async def test_get_client_profile_section_errors_have_structured_shape():
         return_value=httpx.Response(200, json={"data": {"admission": []}})
     )
 
+    # Stage 109.2 (H17 fix): use pytest MonkeyPatch for safe auto-restore
+    # even on unexpected exceptions; also xdist-safe (no module-level
+    # mutation race between parallel workers).
     async def _no_sleep(_):
         return None
-    import vetmanager_client as vm
-    original_sleep = vm.asyncio.sleep
-    vm.asyncio.sleep = _no_sleep
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr("vetmanager_client.asyncio.sleep", _no_sleep)
     try:
         headers_patch, runtime_patch = bearer_runtime_patch()
         with headers_patch, runtime_patch:
             result = await mcp.call_tool("get_client_profile", {"client_id": 7})
     finally:
-        vm.asyncio.sleep = original_sleep
+        mp.undo()
 
     structured = result.structured_content or {}
     assert structured.get("partial") is True
@@ -98,3 +101,47 @@ async def test_get_pet_profile_section_errors_have_structured_shape():
     vacc_err = errors["vaccinations"]
     assert vacc_err["error_type"] == "not_found"
     assert vacc_err["retryable"] is False
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_section_errors_classify_upstream_unavailable_as_retryable():
+    """Stage 109.11: if a section raises VetmanagerUpstreamUnavailable
+    (circuit breaker open for the domain), classifier maps it to
+    error_type='upstream_unavailable' with retryable=True so LLM clients
+    know to retry later rather than surface a hard failure."""
+    from vetmanager_client import force_breaker_open, reset_breakers
+
+    billing_mock()
+    # Pet record succeeds; MedicalCards section will be blocked by the
+    # breaker we force-open below (for the same domain).
+    respx.get(f"{BASE}/rest/api/pet/8").mock(
+        return_value=httpx.Response(200, json={"data": {"pet": {"id": 8, "alias": "Buddy"}}})
+    )
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(200, json={"data": {"medicalCards": []}})
+    )
+    respx.get(f"{BASE}/rest/api/MedicalCards/Vaccinations").mock(
+        return_value=httpx.Response(200, json={"data": {"medicalcards": []}})
+    )
+
+    await reset_breakers()
+    await force_breaker_open(DOMAIN)
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_pet_profile", {"pet_id": 8})
+
+    structured = result.structured_content or {}
+    errors = structured.get("section_errors", {})
+    # All 3 sections hit the OPEN breaker → all 3 classified as
+    # upstream_unavailable with retryable=True.
+    assert structured.get("partial") is True
+    assert errors, f"expected section_errors, got {structured!r}"
+    for name, err in errors.items():
+        assert err["error_type"] == "upstream_unavailable", (
+            f"section {name!r}: expected upstream_unavailable, got {err}"
+        )
+        assert err["retryable"] is True
+
+    await reset_breakers()

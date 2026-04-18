@@ -66,6 +66,33 @@ def test_parse_retry_after_rejects_empty_or_none():
     assert _parse_retry_after("   ") is None
 
 
+def test_parse_retry_after_clamps_to_300s_max():
+    """Stage 109.9: DoS protection — honour upstream hint but cap at 300s."""
+    assert _parse_retry_after("301") == 300.0
+    assert _parse_retry_after("999999") == 300.0
+    assert _parse_retry_after("1000000000.5") == 300.0
+
+
+def test_parse_retry_after_clamps_negative_to_zero():
+    """Stage 109.9: negative/zero Retry-After coerces to 0 (no delay)."""
+    assert _parse_retry_after("-5") == 0.0
+    assert _parse_retry_after("-0.01") == 0.0
+
+
+def test_parse_retry_after_accepts_float_seconds():
+    """Stage 109.9: Retry-After is spec'd as integer, but some upstreams
+    send floats; accept them (HTTP-level strictness not our job)."""
+    assert _parse_retry_after("1.5") == 1.5
+    assert _parse_retry_after("0.25") == 0.25
+
+
+def test_parse_retry_after_rejects_inf_nan():
+    """Stage 109.9: inf/nan (malicious / malformed) must reject, not crash."""
+    assert _parse_retry_after("inf") is None
+    assert _parse_retry_after("nan") is None
+    assert _parse_retry_after("-inf") is None
+
+
 def test_parse_retry_after_http_date_form(monkeypatch):
     """Stage 101.6: monkeypatch datetime.now so the assertion is
     deterministic instead of relying on CI scheduling tolerance."""
