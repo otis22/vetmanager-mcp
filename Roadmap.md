@@ -1895,7 +1895,7 @@ Acceptance: `test_stage105_breaker_amplification.py` ловит амплифик
 
 ---
 
-## Этап 116. PRD 110 completion (F4 medium) — `todo`
+## Этап 116. PRD 110 completion (F4 medium) — `done`
 
 Цель: закрыть F4 + оставшиеся product findings. ~2 часа.
 

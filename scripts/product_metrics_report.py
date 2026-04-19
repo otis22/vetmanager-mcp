@@ -5,7 +5,7 @@ Designed to run on prod via `docker compose exec mcp`:
 
     docker compose exec -T mcp python scripts/product_metrics_report.py
 
-Exits 0 on success. Windowed by `--window=30d`.
+Exits 0 on success. 30-day window hardcoded (stage 116.1).
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from auth_audit import (
     TOKEN_EVENT_AUTH_RATE_LIMITED,
     TOKEN_EVENT_AUTH_SUCCEEDED,
     TOKEN_EVENT_CREATED,
+    TOKEN_EVENT_EXPIRED,
     TOKEN_EVENT_REVOKED,
 )
 from storage_models import (
@@ -294,7 +295,6 @@ async def collect_metrics(
     session_factory: async_sessionmaker,
     *,
     now: datetime,
-    window_days: int = 30,
     top_n: int = 10,
 ) -> dict[str, Any]:
     """Collect all product-metrics counters in one read-only pass."""
@@ -325,6 +325,13 @@ async def collect_metrics(
             session, event_type=TOKEN_EVENT_REVOKED,
             since=now - timedelta(days=7),
         )
+        # Stage 116.2 (PRD 110 acceptance): auto-expired tokens (detected
+        # by token_cleanup sweep). Separate from auth_failed_expired —
+        # which fires on client retry with a dead token.
+        expired_auto_24h = await _count_events(
+            session, event_type=TOKEN_EVENT_EXPIRED,
+            since=now - timedelta(hours=24),
+        )
 
         # Requests
         succeeded_24h = await _count_events(
@@ -337,7 +344,7 @@ async def collect_metrics(
         )
         succeeded_30d = await _count_events(
             session, event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
-            since=now - timedelta(days=window_days),
+            since=now - timedelta(days=30),
         )
         top_accounts = await _top_accounts_by_requests(session, top_n=top_n)
 
@@ -364,6 +371,7 @@ async def collect_metrics(
             "issued_24h": issued_24h,
             "revoked_24h": revoked_24h,
             "revoked_7d": revoked_7d,
+            "expired_auto_24h": expired_auto_24h,
         },
         "requests": {
             "total_24h": succeeded_24h,
@@ -382,11 +390,11 @@ async def collect_metrics(
 # ── formatters ─────────────────────────────────────────────────────────────
 
 
-def format_markdown(m: dict[str, Any], *, now: datetime, window_days: int) -> str:
+def format_markdown(m: dict[str, Any], *, now: datetime) -> str:
     a, t, r, f = m["accounts"], m["tokens"], m["requests"], m["failures"]
     out: list[str] = []
     out.append("# Product metrics")
-    out.append(f"_generated at {now.isoformat()} UTC, window {window_days}d_")
+    out.append(f"_generated at {now.isoformat()} UTC, window 30d (hardcoded)_")
     out.append("")
 
     out.append("## Accounts")
@@ -403,6 +411,7 @@ def format_markdown(m: dict[str, Any], *, now: datetime, window_days: int) -> st
     out.append(f"- expiring in 7d: {t['expiring_in_7d']}")
     out.append(f"- issued (24h): {t['issued_24h']}")
     out.append(f"- revoked (24h / 7d): {t['revoked_24h']} / {t['revoked_7d']}")
+    out.append(f"- expired auto (24h): {t['expired_auto_24h']}")
     out.append("")
 
     out.append("## Requests")
@@ -443,11 +452,11 @@ def format_markdown(m: dict[str, Any], *, now: datetime, window_days: int) -> st
     return "\n".join(out)
 
 
-def format_json(m: dict[str, Any], *, now: datetime, window_days: int) -> str:
+def format_json(m: dict[str, Any], *, now: datetime) -> str:
     return json.dumps(
         {
             "generated_at": now.isoformat(),
-            "window_days": window_days,
+            "window_days": 30,
             "accounts": m["accounts"],
             "tokens": m["tokens"],
             "requests": m["requests"],
@@ -471,19 +480,19 @@ async def _async_main(args: argparse.Namespace) -> int:
         else datetime.now(timezone.utc)
     )
     factory = get_session_factory()
-    m = await collect_metrics(
-        factory, now=now, window_days=args.window_days, top_n=args.top_n
-    )
+    m = await collect_metrics(factory, now=now, top_n=args.top_n)
     if args.format == "json":
-        print(format_json(m, now=now, window_days=args.window_days))
+        print(format_json(m, now=now))
     else:
-        print(format_markdown(m, now=now, window_days=args.window_days))
+        print(format_markdown(m, now=now))
     return 0
 
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Product metrics report for vetmanager-mcp.")
-    p.add_argument("--window-days", type=int, default=30, help="Window in days for live/dead classification and aggregate request count.")
+    # Stage 116.1: --window-days flag removed — it only affected total_30d
+    # while live/dead/new/failures remained hardcoded, producing silent
+    # mislabel. 30-day window is now fixed across all counters.
     p.add_argument("--format", choices=["markdown", "json"], default="markdown")
     p.add_argument("--top-n", type=int, default=10, help="Top-N accounts by request count.")
     p.add_argument("--now-override", type=str, default=None, help="ISO timestamp for deterministic testing only.")

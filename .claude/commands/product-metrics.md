@@ -1,6 +1,6 @@
 ---
 description: Читает product metrics с prod vetmanager-mcp (accounts / tokens / requests / failures / dead accounts) — ad-hoc отчёт через SSH + docker exec + `scripts/product_metrics_report.py`. Форматирует вывод в Markdown в чат.
-argument-hint: "[--window-days=N] [--top-n=M] [--format=markdown|json]"
+argument-hint: "[--top-n=M] [--format=markdown|json]"
 ---
 
 # Product metrics — ad-hoc snapshot
@@ -12,10 +12,10 @@ argument-hint: "[--window-days=N] [--top-n=M] [--format=markdown|json]"
 ## Как
 
 1. Args из user-prompt пробрасываем в команду **только из whitelist**, чтобы не пропустить шелл-инъекцию в `ssh "..."`:
-   - `--window-days=<N>` где N — целое, 1..365
    - `--top-n=<N>` где N — целое, 1..100
    - `--format=markdown` или `--format=json`
    Любой другой аргумент — отказать пользователю, не передавать в shell.
+   (Stage 116.1: `--window-days` флаг удалён из скрипта; 30-дневное окно hardcoded.)
 
 2. Выполни через Bash:
    ```
@@ -34,12 +34,12 @@ argument-hint: "[--window-days=N] [--top-n=M] [--format=markdown|json]"
 
 ## Пример
 
-User: `/product-metrics --window-days=7 --top-n=5`
+User: `/product-metrics --top-n=5`
 → SSH command with those args
 → вывод:
 ```
 # Product metrics
-_generated at 2026-04-19T... UTC, window 7d_
+_generated at 2026-04-19T... UTC, window 30d (hardcoded)_
 ## Accounts
 ...
 ```

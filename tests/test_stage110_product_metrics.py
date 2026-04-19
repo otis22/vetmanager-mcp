@@ -158,7 +158,7 @@ async def seeded_session(tmp_path: Path, sqlite_session_factory_builder, now_utc
 
 @pytest.mark.asyncio
 async def test_accounts_counters(seeded_session, now_utc):
-    m = await collect_metrics(seeded_session, now=now_utc, window_days=30, top_n=10)
+    m = await collect_metrics(seeded_session, now=now_utc, top_n=10)
     a = m["accounts"]
     assert a["total"] == 5
     assert a["new_24h"] == 1          # A4
@@ -168,7 +168,7 @@ async def test_accounts_counters(seeded_session, now_utc):
 
 @pytest.mark.asyncio
 async def test_live_dead_classification(seeded_session, now_utc):
-    m = await collect_metrics(seeded_session, now=now_utc, window_days=30, top_n=10)
+    m = await collect_metrics(seeded_session, now=now_utc, top_n=10)
     a = m["accounts"]
     # live = request within 7d: A1 (3d) + A2 (1d)
     assert a["live_7d"] == 2
@@ -187,7 +187,7 @@ async def test_live_dead_classification(seeded_session, now_utc):
 
 @pytest.mark.asyncio
 async def test_tokens_counters(seeded_session, now_utc):
-    m = await collect_metrics(seeded_session, now=now_utc, window_days=30, top_n=10)
+    m = await collect_metrics(seeded_session, now=now_utc, top_n=10)
     t = m["tokens"]
     # active = status=active AND (no expiry OR expiry > now): T1, T2, T3, T4
     assert t["total_active"] == 4
@@ -199,6 +199,8 @@ async def test_tokens_counters(seeded_session, now_utc):
     assert t["revoked_24h"] == 0
     # revoked 7d: T5
     assert t["revoked_7d"] == 1
+    # Stage 116.2: expired_auto_24h present in schema; 0 events seeded.
+    assert t["expired_auto_24h"] == 0
 
 
 # ── requests + top accounts ────────────────────────────────────────────────
@@ -206,7 +208,7 @@ async def test_tokens_counters(seeded_session, now_utc):
 
 @pytest.mark.asyncio
 async def test_requests_counters(seeded_session, now_utc):
-    m = await collect_metrics(seeded_session, now=now_utc, window_days=30, top_n=10)
+    m = await collect_metrics(seeded_session, now=now_utc, top_n=10)
     r = m["requests"]
     # SUCCEEDED events: 2h, 5h (24h) + 30h, 50h (7d) + 250h, 500h (30d)
     assert r["total_24h"] == 2
@@ -216,7 +218,7 @@ async def test_requests_counters(seeded_session, now_utc):
 
 @pytest.mark.asyncio
 async def test_top_accounts_ranked(seeded_session, now_utc):
-    m = await collect_metrics(seeded_session, now=now_utc, window_days=30, top_n=3)
+    m = await collect_metrics(seeded_session, now=now_utc, top_n=3)
     top = m["requests"]["top_accounts"]
     # Based on TokenUsageStat.request_count: A2=120, A1=50, A3=10
     assert len(top) == 3
@@ -231,7 +233,7 @@ async def test_top_accounts_ranked(seeded_session, now_utc):
 
 @pytest.mark.asyncio
 async def test_failures_breakdown(seeded_session, now_utc):
-    m = await collect_metrics(seeded_session, now=now_utc, window_days=30, top_n=10)
+    m = await collect_metrics(seeded_session, now=now_utc, top_n=10)
     f = m["failures"]
     assert f["by_event_24h"].get(TOKEN_EVENT_AUTH_RATE_LIMITED, 0) == 1
     assert f["by_event_24h"].get(TOKEN_EVENT_AUTH_FAILED_IP_DENIED, 0) == 0
@@ -245,7 +247,7 @@ async def test_failures_breakdown(seeded_session, now_utc):
 
 @pytest.mark.asyncio
 async def test_dead_accounts_listed_with_masked_email(seeded_session, now_utc):
-    m = await collect_metrics(seeded_session, now=now_utc, window_days=30, top_n=10)
+    m = await collect_metrics(seeded_session, now=now_utc, top_n=10)
     dead = m["accounts"]["dead_list"]
     emails = {d["email"] for d in dead}
     # Every email must be masked
@@ -274,8 +276,8 @@ def test_mask_email_none():
 
 @pytest.mark.asyncio
 async def test_markdown_output_has_all_sections(seeded_session, now_utc):
-    m = await collect_metrics(seeded_session, now=now_utc, window_days=30, top_n=5)
-    md = format_markdown(m, now=now_utc, window_days=30)
+    m = await collect_metrics(seeded_session, now=now_utc, top_n=5)
+    md = format_markdown(m, now=now_utc)
     for header in (
         "# Product metrics",
         "## Accounts",
@@ -290,8 +292,8 @@ async def test_markdown_output_has_all_sections(seeded_session, now_utc):
 
 @pytest.mark.asyncio
 async def test_json_output_stable_schema(seeded_session, now_utc):
-    m = await collect_metrics(seeded_session, now=now_utc, window_days=30, top_n=5)
-    out = format_json(m, now=now_utc, window_days=30)
+    m = await collect_metrics(seeded_session, now=now_utc, top_n=5)
+    out = format_json(m, now=now_utc)
     parsed = json.loads(out)
     assert set(parsed.keys()) >= {"accounts", "tokens", "requests", "failures",
                                   "generated_at", "window_days"}
@@ -301,10 +303,20 @@ async def test_json_output_stable_schema(seeded_session, now_utc):
 
 
 def test_record_business_event_increments_counter():
+    """Stage 116.4: verify ALL 4 PRD 110 acceptance #4 event_names are
+    wired, not a cherry-picked subset. A missing call-site doesn't slip
+    through review unnoticed.
+    """
     reset_service_metrics()
     record_business_event("account_registered")
     record_business_event("account_registered")
+    record_business_event("web_login_succeeded")
     record_business_event("bearer_token_issued")
+    record_business_event("bearer_token_revoked")
+
     snap = snapshot_service_metrics()
-    assert snap["business_events_total"]["account_registered"] == 2
-    assert snap["business_events_total"]["bearer_token_issued"] == 1
+    events = snap["business_events_total"]
+    assert events["account_registered"] == 2
+    assert events["web_login_succeeded"] == 1
+    assert events["bearer_token_issued"] == 1
+    assert events["bearer_token_revoked"] == 1
