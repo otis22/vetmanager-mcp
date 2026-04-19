@@ -50,3 +50,4 @@ _generated at 2026-04-19T... UTC, window 30d (hardcoded)_
 - НЕ пиши код / не меняй файлы — это read-only наблюдательный skill
 - НЕ придумывай метрики которых нет в скрипте — если пользователь спросит что-то сверх, скажи что нужно расширить скрипт (отдельный этап)
 - НЕ кешируй данные между вызовами — каждый зов это fresh snapshot
+- **НИКОГДА не обходи email masking** через ad-hoc SELECT / прямой SQL / `docker exec mcp python -c "SELECT Account.email ..."`. Скрипт маскирует через `_mask_email` сознательно — chat-transcript может быть pasted в Slack, ticket, screenshot. Если пользователь спросит "какие реальные аккаунты" — показать masked email + account_id + стадию onboarding (no-tokens / no-connection / active), НЕ raw адрес. Incident 2026-04-19: bypass-SELECT вывел 2 gmail-адреса живых пользователей в чат.
