@@ -32,30 +32,39 @@ async def test_half_open_probe_failure_reopens_with_fresh_cooldown():
     """Stage 91 had only HALF_OPEN → CLOSED (success) test. This covers the
     HALF_OPEN → OPEN (failure) transition: when probe fails, breaker must
     flip back to OPEN with freshly-reset opened_at so subsequent callers
-    wait the full cooldown again, not zero seconds."""
+    wait the full cooldown again, not zero seconds.
+
+    Stage 109.3: uses public `force_breaker_open(cooldown_elapsed=True)` +
+    `get_breaker_state(domain)` instead of reaching into
+    `_breakers[domain]`/`breaker.state` private attributes. Survives
+    future renames of DomainBreaker fields.
+    """
+    from vetmanager_client import force_breaker_open, get_breaker_state
+
     await reset_breakers()
-    breaker = await vm_client_module._get_breaker(DOMAIN)
 
     # Force into OPEN state, elapsed past cooldown so next check admits a probe.
-    async with breaker.lock:
-        breaker.state = "open"
-        breaker.opened_at = time.monotonic() - _BREAKER_COOLDOWN_SECONDS - 1
+    await force_breaker_open(DOMAIN, cooldown_elapsed=True)
 
     # Admit probe.
     await vm_client_module._check_breaker_allows(DOMAIN)
-    assert breaker.state == "half_open"
-    assert breaker.probe_in_flight is True
+    state = get_breaker_state(DOMAIN)
+    assert state is not None
+    assert state["state"] == "half_open"
+    assert state["probe_in_flight"] is True
 
     t_before_failure = time.monotonic()
 
     # Probe failed.
     await vm_client_module._breaker_record_failure(DOMAIN)
 
+    state = get_breaker_state(DOMAIN)
+    assert state is not None
     # Must transition back to OPEN with fresh cooldown.
-    assert breaker.state == "open"
-    assert breaker.probe_in_flight is False
+    assert state["state"] == "open"
+    assert state["probe_in_flight"] is False
     # opened_at should be approximately 'now' (after t_before_failure).
-    assert breaker.opened_at >= t_before_failure - 0.01
+    assert state["opened_at"] >= t_before_failure - 0.01
 
 
 # ── 101.7 Sanitizer redacts unlisted api-* key ──────────────────────────────

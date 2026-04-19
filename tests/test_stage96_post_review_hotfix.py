@@ -179,25 +179,31 @@ async def test_get_client_profile_reraises_cancelled_error(monkeypatch):
 @pytest.mark.asyncio
 async def test_half_open_probe_404_clears_probe_in_flight():
     """4xx response during HALF_OPEN means upstream is alive — breaker must
-    NOT stay wedged with probe_in_flight=True."""
+    NOT stay wedged with probe_in_flight=True.
+
+    Stage 109.3: uses public `force_breaker_open` + `get_breaker_state`.
+    """
+    from vetmanager_client import force_breaker_open, get_breaker_state
+
     await vm_client_module.reset_breakers()
-    breaker = await vm_client_module._get_breaker(DOMAIN)
-    # Force HALF_OPEN state with probe ready to fire.
-    async with breaker.lock:
-        breaker.state = "open"
-        breaker.opened_at = time.monotonic() - _BREAKER_COOLDOWN_SECONDS - 1
+    # Force OPEN with elapsed cooldown → next check admits probe.
+    await force_breaker_open(DOMAIN, cooldown_elapsed=True)
 
     # Admit the probe — sets state=half_open, probe_in_flight=True.
     await vm_client_module._check_breaker_allows(DOMAIN)
-    assert breaker.state == "half_open"
-    assert breaker.probe_in_flight is True
+    snap = get_breaker_state(DOMAIN)
+    assert snap is not None
+    assert snap["state"] == "half_open"
+    assert snap["probe_in_flight"] is True
 
     # Simulate 4xx handling path in _request: calls _breaker_record_success.
     await vm_client_module._breaker_record_success(DOMAIN)
 
     # Breaker must now be closed and probe_in_flight cleared.
-    assert breaker.state == "closed"
-    assert breaker.probe_in_flight is False
+    snap = get_breaker_state(DOMAIN)
+    assert snap is not None
+    assert snap["state"] == "closed"
+    assert snap["probe_in_flight"] is False
 
 
 # ── 96.5 in_/not_in reject empty list ────────────────────────────────────────

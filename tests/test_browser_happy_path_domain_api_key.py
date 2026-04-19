@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-import request_credentials
+import auth.request as auth_request
 from server import mcp
 
 
@@ -51,7 +51,7 @@ def test_browser_domain_api_key_flow_can_issue_bearer_and_call_mcp(
     assert mocked.api_key not in page.content()
 
     with patch.object(
-        request_credentials,
+        auth_request,
         "_get_request_headers",
         return_value={"authorization": f"Bearer {raw_token}"},
     ):

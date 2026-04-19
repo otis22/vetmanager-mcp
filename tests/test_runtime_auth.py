@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 import pytest_asyncio
 
-import request_credentials
+import auth.request as auth_request
 import runtime_auth
 from bearer_token_manager import generate_bearer_token
 from exceptions import AuthError
@@ -52,7 +52,7 @@ async def test_resolve_runtime_credentials_prefers_bearer_context(session_factor
 
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
     headers = {"authorization": f"Bearer {raw_token}"}
-    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
+    with patch.object(auth_request, "_get_request_headers", return_value=headers):
         with patch.object(runtime_auth, "get_session_factory", return_value=session_factory):
             resolved = await runtime_auth.resolve_runtime_credentials()
 
@@ -93,7 +93,7 @@ async def test_resolve_runtime_credentials_normalizes_user_token_mode(session_fa
 
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
     headers = {"authorization": f"Bearer {raw_token}"}
-    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
+    with patch.object(auth_request, "_get_request_headers", return_value=headers):
         with patch.object(runtime_auth, "get_session_factory", return_value=session_factory):
             resolved = await runtime_auth.resolve_runtime_credentials()
 
@@ -108,7 +108,7 @@ async def test_resolve_runtime_credentials_normalizes_user_token_mode(session_fa
 @pytest.mark.asyncio
 async def test_resolve_runtime_credentials_requires_bearer_header():
     """Runtime auth is bearer-only once legacy header fallback is removed."""
-    with patch.object(request_credentials, "_get_request_headers", return_value={}):
+    with patch.object(auth_request, "_get_request_headers", return_value={}):
         with pytest.raises(AuthError, match="Missing Authorization"):
             await runtime_auth.resolve_runtime_credentials()
 
@@ -143,7 +143,7 @@ async def test_vetmanager_client_uses_bearer_runtime_credentials(session_factory
 
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
     headers = {"authorization": f"Bearer {raw_token}"}
-    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
+    with patch.object(auth_request, "_get_request_headers", return_value=headers):
         with patch.object(runtime_auth, "get_session_factory", return_value=session_factory):
             captured_request = None
 
@@ -201,7 +201,7 @@ async def test_vetmanager_client_rejects_request_without_required_scope(session_
 
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
     headers = {"authorization": f"Bearer {raw_token}"}
-    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
+    with patch.object(auth_request, "_get_request_headers", return_value=headers):
         with patch.object(runtime_auth, "get_session_factory", return_value=session_factory):
             client = VetmanagerClient()
             with pytest.raises(AuthError, match="finance.read"):
@@ -242,7 +242,7 @@ async def test_vetmanager_client_uses_user_token_runtime_credentials(session_fac
 
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
     headers = {"authorization": f"Bearer {raw_token}"}
-    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
+    with patch.object(auth_request, "_get_request_headers", return_value=headers):
         with patch.object(runtime_auth, "get_session_factory", return_value=session_factory):
             captured_request = None
 

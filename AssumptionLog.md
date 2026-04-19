@@ -4550,3 +4550,46 @@ Guards против регрессии drift'а между timeout-branch и net
 **Тесты**: 678 → 679 passed (+1).
 
 Остаются 5 deferred 109-subtask'ов (109.1, 109.3, 109.5, 109.7, 109.8) — документированы в Roadmap как low-ROI без concrete pain.
+
+## Этап 109 full-subset follow-up — 2026-04-19
+
+**Commit**: (pending).
+
+Закрыты все 5 оставшихся 109-deferred subtask'ов («делай все фичи»). Stage 109 header → `done` (full subset).
+
+### 109.1 runtime_factories private-attr coupling
+
+- `make_vetmanager_auth_context` расширен: автоматически подставляет `credential_header=VETMANAGER_USER_TOKEN_HEADER` + `app_name=DEFAULT_USER_TOKEN_APP_NAME` для auth_mode=USER_TOKEN (раньше звалось inline в test_e2e_real).
+- `make_client_with_resolved_runtime` теперь ЕДИНСТВЕННАЯ точка, пишущая VetmanagerClient private attributes. Docstring явно фиксирует инвариант — rename `_domain` и co требует правки одного места.
+- `test_e2e_real.py::vc()` и `test_real_get_users_with_user_token_mode()` — 2 inline-клона factory заменены на вызов `make_client_with_resolved_runtime(... auth_mode=USER_TOKEN)`.
+- Private-attr **readers** в asserts (`assert client._domain == ...`) оставил — renaming такого read surface легко ловится loud failure'ом; подменять их proxy-property бесполезно.
+
+### 109.3 breaker private-field asserts → public API
+
+Мигрированы 3 теста (`test_stage91`, `test_stage96`, `test_stage101`):
+- `breaker.state` / `breaker.probe_in_flight` / `breaker.opened_at` reads → `get_breaker_state(domain)` dict snapshot.
+- Прямое писание `breaker.state = "open"; breaker.opened_at = monotonic - cooldown - 1` под lock'ом → `force_breaker_open(domain, cooldown_elapsed=True)`.
+
+### 109.5 patch targets migrate shim → canonical
+
+- `auth/request.py` получил свою копию `_get_request_headers` как canonical location; `get_bearer_token()` переключён на локальную версию.
+- `request_credentials.py` упрощён: `from auth.request import _get_request_headers` re-export (-25 LOC → -15 LOC).
+- 17 patch-target'ов в 10 test-файлах мигрированы:
+  - `tests/test_service_metrics.py`, `tests/runtime_factories.py`, `tests/test_request_auth.py`, `tests/test_e2e_real.py`, `tests/test_client_multitenancy.py`, `tests/test_runtime_auth.py`, `tests/test_browser_cleanup.py`, `tests/test_browser_happy_path_domain_api_key.py`, `tests/test_browser_happy_path_user_token.py`, `tests/test_browser_real_opt_in.py`.
+  - Замена: `import request_credentials` → `import auth.request as auth_request`; `patch.object(request_credentials, "_get_request_headers", ...)` → `patch.object(auth_request, "_get_request_headers", ...)`.
+- Shim `request_credentials.py` остаётся жить (1 import `from auth.request import`) — полное удаление модуля = отдельный future stage когда захочется.
+
+### 109.7 magic-number asserts → behavioural
+
+- `test_split_timeouts_are_configured`: вместо `assert connect == 5.0 AND read == 20.0` — `assert connect > 0 AND connect < read AND pool < read` (инвариант: fast-fail paths tighter than slow ones).
+- `test_http_limits_enable_keep_alive_pool`: вместо `assert max_keepalive == 50 AND max_connections == 100` — `max_connections >= max_keepalive > 0 AND keepalive_expiry > 0` (инвариант: pool enabled и vmem'ed).
+- Тюнинг pool-size 50→75 или timeout read 20→25 больше не false-fail тесты.
+
+### 109.8 test_wait_50ms deterministic
+
+- Монкипатчу `vetmanager_client.asyncio.sleep` recording-stub'ом — каждый вызов pace-logic собирается в list. Внутри test'а ждать по часам не нужно (sleep(0) на замене).
+- Assert: `any(s > 0 for s in sleeps)` + `all(s <= REQUEST_GAP_SECONDS for s in sleeps)`. Отвязано от wall-clock jitter'а CI runner'а.
+
+**Тесты**: 679 → 679 (no regression; +0 — 109.3/5/7/8/1 — рефакторы existing tests, не новые покрытия; 109.10 уже был).
+
+**Roadmap state после commit'а**: 0 `todo` / 0 `in_progress` / 0 `stop` / 0 `deferred`. Все 879+ subtask'ов `done`.

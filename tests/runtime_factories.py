@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-import request_credentials
+import auth.request as auth_request
 import runtime_auth
 from token_scopes import SUPPORTED_TOKEN_SCOPES
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY, VetmanagerAuthContext
@@ -18,11 +18,31 @@ def make_vetmanager_auth_context(
     *,
     auth_mode: str = VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
 ) -> VetmanagerAuthContext:
-    """Build normalized Vetmanager auth context for runtime tests."""
+    """Build normalized Vetmanager auth context for runtime tests.
+
+    Stage 109.1: automatically fills `credential_header` + `app_name`
+    for `user_token` mode so callers don't have to hand-build these
+    overrides at each test site (previously inlined in test_e2e_real).
+    """
+    from auth.context import (
+        DEFAULT_USER_TOKEN_APP_NAME,
+        VETMANAGER_AUTH_HEADER,
+        VETMANAGER_AUTH_MODE_USER_TOKEN,
+        VETMANAGER_USER_TOKEN_HEADER,
+    )
+    if auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN:
+        return VetmanagerAuthContext(
+            auth_mode=auth_mode,
+            domain=domain,
+            credential=credential,
+            credential_header=VETMANAGER_USER_TOKEN_HEADER,
+            app_name=DEFAULT_USER_TOKEN_APP_NAME,
+        )
     return VetmanagerAuthContext(
         auth_mode=auth_mode,
         domain=domain,
         credential=credential,
+        credential_header=VETMANAGER_AUTH_HEADER,
     )
 
 
@@ -62,9 +82,19 @@ def make_client_with_resolved_runtime(
     connection_id: int = 1,
     scopes: tuple[str, ...] = SUPPORTED_TOKEN_SCOPES,
 ) -> VetmanagerClient:
-    """Build a client with resolved runtime auth state, bypassing DB lookup."""
+    """Build a client with resolved runtime auth state, bypassing DB lookup.
+
+    **Stage 109.1 invariant**: this is the ONLY place that directly mutates
+    VetmanagerClient private attributes. If those names ever get renamed
+    (e.g. `_domain` → `_vm_domain`), update the block below and callers
+    of this factory keep working unchanged.
+
+    Tests that read private attributes for inspection (`client._domain` in
+    asserts) are OK — renaming surfaces those as loud failures immediately,
+    unlike silent drift in a writer copy.
+    """
     headers = {"authorization": f"Bearer {bearer_token}"}
-    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
+    with patch.object(auth_request, "_get_request_headers", return_value=headers):
         client = VetmanagerClient()
     auth_context = make_vetmanager_auth_context(domain, credential, auth_mode=auth_mode)
     client._vetmanager_auth = auth_context
@@ -93,7 +123,7 @@ def patch_runtime_credentials(
 ) -> tuple:
     """Return patches for bearer header extraction and runtime credential resolve."""
     headers_patch = patch.object(
-        request_credentials,
+        auth_request,
         "_get_request_headers",
         return_value={"authorization": f"Bearer {bearer_token}"},
     )

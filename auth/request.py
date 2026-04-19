@@ -1,22 +1,34 @@
 """Extract bearer auth data from current HTTP request headers.
 
-Stage 103a: extracted from `request_auth.py`. Routes through
-`request_credentials._get_request_headers` (a legacy shim) so existing
-test monkey-patches targeting `request_credentials._get_request_headers`
-keep intercepting this call site. New callers should invoke this
-function from the `auth.request` path directly.
+Stage 103a: extracted from `request_auth.py`.
+Stage 109.5: `_get_request_headers` is now the canonical location here;
+`request_credentials.py` keeps a shim re-export for legacy call sites.
+New test monkey-patches should target `auth.request._get_request_headers`.
 """
 
 from __future__ import annotations
 
 from exceptions import AuthError
-import request_credentials
 from service_metrics import record_auth_failure
+
+
+def _get_request_headers() -> dict[str, str]:
+    """Return current HTTP request headers, or empty dict outside HTTP context.
+
+    Canonical location as of stage 109.5. `request_credentials._get_request_headers`
+    re-exports this for backward compatibility.
+    """
+    try:
+        from fastmcp.server.dependencies import get_http_request
+        request = get_http_request()
+        return dict(request.headers)
+    except Exception:
+        return {}
 
 
 def get_bearer_token() -> str:
     """Return bearer token from Authorization header."""
-    headers = request_credentials._get_request_headers()
+    headers = _get_request_headers()
     authorization = headers.get("authorization", "").strip()
     if not authorization:
         record_auth_failure(source="bearer_header", reason="missing_authorization")

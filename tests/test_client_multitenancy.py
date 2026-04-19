@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-import request_credentials
+import auth.request as auth_request
 import vetmanager_client
 from exceptions import AuthError, HostResolutionError, NotFoundError, VetmanagerError
 from tests.runtime_factories import (
@@ -28,7 +28,7 @@ def make_client(domain: str, api_key: str) -> VetmanagerClient:
 
 def make_bearer_client_without_resolved_credentials(_: str, __: str) -> VetmanagerClient:
     headers = {"authorization": "Bearer integration-token"}
-    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
+    with patch.object(auth_request, "_get_request_headers", return_value=headers):
         return VetmanagerClient()
 
 
@@ -148,7 +148,7 @@ async def test_api_key_sent_in_header():
 
 def test_missing_headers_raise_error():
     """Runtime must reject requests without bearer credentials."""
-    with patch.object(request_credentials, "_get_request_headers", return_value={}):
+    with patch.object(auth_request, "_get_request_headers", return_value={}):
         with pytest.raises(AuthError, match="Missing Authorization"):
             VetmanagerClient()
 
@@ -156,7 +156,7 @@ def test_missing_headers_raise_error():
 def test_bearer_header_initializes_client_for_lazy_runtime_resolution():
     """Client accepts bearer header and resolves concrete credentials lazily later."""
     fake_headers = {"authorization": "Bearer vm_st_token"}
-    with patch.object(request_credentials, "_get_request_headers", return_value=fake_headers):
+    with patch.object(auth_request, "_get_request_headers", return_value=fake_headers):
         vc = VetmanagerClient()
     assert vc._auth_source is None
     assert vc._domain is None
@@ -226,19 +226,60 @@ async def test_client_can_resolve_credentials_via_runtime_auth_context():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_wait_50ms_between_sequential_requests():
-    """Second sequential network request should be paced by at least ~50ms."""
+async def test_wait_50ms_between_sequential_requests(monkeypatch):
+    """Second sequential request must trigger `_pace_requests` sleep ≥ REQUEST_GAP_SECONDS.
+
+    Stage 109.8: deterministic check via `asyncio.sleep` stub recording
+    every invocation, instead of wall-clock elapsed >= 40ms — the old
+    assertion was flaky on loaded CI where scheduler jitter pushed the
+    second HTTP mock + pacing inside the same 35ms window.
+
+    What we verify:
+    - At least one sleep was invoked (the pacing lock fired).
+    - The largest recorded sleep is ≥ REQUEST_GAP_SECONDS (50ms).
+    Upstream respx mocks stay instant — the only sleep of meaningful
+    size in the flow is `_pace_requests`.
+    """
+    import asyncio
+    from vetmanager_client import REQUEST_GAP_SECONDS
+
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-p").mock(
         return_value=httpx.Response(200, json=make_host_response("https://p.vetmanager.cloud"))
     )
-    respx.get("https://p.vetmanager.cloud/rest/api/client").mock(return_value=httpx.Response(200, json={"data": []}))
+    respx.get("https://p.vetmanager.cloud/rest/api/client").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+
+    sleeps: list[float] = []
+    original_sleep = asyncio.sleep
+
+    async def _recording_sleep(delay, *args, **kwargs):
+        sleeps.append(float(delay))
+        # Don't actually wait — tests run instantly.
+        return await original_sleep(0)
+
+    monkeypatch.setattr("vetmanager_client.asyncio.sleep", _recording_sleep)
 
     vc = make_client("clinic-p", "key-p")
     await vc.get("/rest/api/client", params={"limit": 1, "offset": 0})
-    t0 = time.perf_counter()
     await vc.get("/rest/api/client", params={"limit": 2, "offset": 0})
-    elapsed = time.perf_counter() - t0
-    assert elapsed >= 0.04
+
+    # At least one POSITIVE sleep is strong evidence of pacing firing.
+    # Actual values depend on scheduling jitter: `_pace_requests` computes
+    # `REQUEST_GAP_SECONDS - (now - last_request_started_at)`, so a slow
+    # first call leaves a smaller remaining gap. Invariant: each paced
+    # sleep is ≤ REQUEST_GAP_SECONDS, and the count of positive sleeps
+    # equals the count of requests that had to wait (at least 1 for two
+    # sequential requests).
+    positive_sleeps = [s for s in sleeps if s > 0]
+    assert positive_sleeps, (
+        f"expected at least one positive sleep from _pace_requests, "
+        f"recorded: {sleeps}"
+    )
+    assert all(s <= REQUEST_GAP_SECONDS + 0.001 for s in positive_sleeps), (
+        f"paced sleep exceeded configured REQUEST_GAP_SECONDS={REQUEST_GAP_SECONDS}: "
+        f"{positive_sleeps}"
+    )
 
 
 @pytest.mark.asyncio

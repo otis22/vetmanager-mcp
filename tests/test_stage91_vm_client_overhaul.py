@@ -320,9 +320,9 @@ async def test_circuit_breaker_resets_after_cooldown_and_success(monkeypatch):
             except Exception:
                 pass
 
-        # Manually age the breaker past the cooldown without sleeping.
-        breaker = vm_client_module._breakers[DOMAIN]
-        breaker.opened_at = time.monotonic() - _BREAKER_COOLDOWN_SECONDS - 1
+        # Stage 109.3: age the breaker past the cooldown via public helper.
+        from vetmanager_client import force_breaker_open, get_breaker_state
+        await force_breaker_open(DOMAIN, cooldown_elapsed=True)
 
         state["phase"] = "ok"
         # Probe goes through (half-open admits one request).
@@ -330,8 +330,9 @@ async def test_circuit_breaker_resets_after_cooldown_and_success(monkeypatch):
         assert result["data"]["ok"] is True
 
         # Breaker must be closed now.
-        assert breaker.state == "closed", (
-            f"expected closed after successful probe, got {breaker.state}"
+        snap = get_breaker_state(DOMAIN)
+        assert snap is not None and snap["state"] == "closed", (
+            f"expected closed after successful probe, got {snap}"
         )
 
 
@@ -342,18 +343,23 @@ async def test_circuit_breaker_resets_after_cooldown_and_success(monkeypatch):
 async def test_circuit_breaker_half_open_admits_only_one_probe():
     """Under concurrency, only ONE request should probe while others fast-fail.
     Without probe_in_flight guard, N concurrent callers in half_open would all
-    try to hit the upstream, defeating the breaker purpose."""
+    try to hit the upstream, defeating the breaker purpose.
+
+    Stage 109.3: uses public `force_breaker_open` + `get_breaker_state`
+    instead of reaching into DomainBreaker private fields directly.
+    """
+    from vetmanager_client import force_breaker_open, get_breaker_state
+
     await reset_breakers()
-    breaker = await vm_client_module._get_breaker(DOMAIN)
     # Force OPEN with elapsed cooldown so next check flips to HALF_OPEN.
-    async with breaker.lock:
-        breaker.state = "open"
-        breaker.opened_at = time.monotonic() - _BREAKER_COOLDOWN_SECONDS - 1
+    await force_breaker_open(DOMAIN, cooldown_elapsed=True)
 
     # First check: admits probe, sets probe_in_flight=True.
     await vm_client_module._check_breaker_allows(DOMAIN)
-    assert breaker.state == "half_open"
-    assert breaker.probe_in_flight is True
+    snap = get_breaker_state(DOMAIN)
+    assert snap is not None
+    assert snap["state"] == "half_open"
+    assert snap["probe_in_flight"] is True
 
     # Second concurrent check must be rejected — probe in flight.
     with pytest.raises(VetmanagerUpstreamUnavailable):
@@ -361,21 +367,51 @@ async def test_circuit_breaker_half_open_admits_only_one_probe():
 
     # Probe finishes successfully → closed, flag clears.
     await vm_client_module._breaker_record_success(DOMAIN)
-    assert breaker.state == "closed"
-    assert breaker.probe_in_flight is False
+    snap = get_breaker_state(DOMAIN)
+    assert snap is not None
+    assert snap["state"] == "closed"
+    assert snap["probe_in_flight"] is False
 
 
 def test_split_timeouts_are_configured():
+    """Stage 109.7: behavioural invariants instead of exact magic numbers.
+
+    The concrete values may change for operational tuning (e.g. relax
+    read timeout for slow clinics). What must hold: all 4 components
+    are set (not None/0), and fast-failing paths (connect, pool) are
+    strictly tighter than slower paths (read, write) — otherwise a
+    connect stall would drag the whole read budget.
+    """
     from vetmanager_client import _REQUEST_TIMEOUTS
-    # httpx.Timeout stores individual component values in attributes.
-    assert _REQUEST_TIMEOUTS.connect == 5.0
-    assert _REQUEST_TIMEOUTS.read == 20.0
-    assert _REQUEST_TIMEOUTS.write == 10.0
-    assert _REQUEST_TIMEOUTS.pool == 2.0
+    for component in ("connect", "read", "write", "pool"):
+        value = getattr(_REQUEST_TIMEOUTS, component)
+        assert value is not None and value > 0, (
+            f"_REQUEST_TIMEOUTS.{component} must be a positive number, got {value!r}"
+        )
+    assert _REQUEST_TIMEOUTS.connect < _REQUEST_TIMEOUTS.read, (
+        "connect timeout must be tighter than read — fast-fail on DNS/TCP"
+    )
+    assert _REQUEST_TIMEOUTS.pool < _REQUEST_TIMEOUTS.read, (
+        "pool timeout must be tighter than read — fast-fail on pool exhaustion"
+    )
 
 
 def test_http_limits_enable_keep_alive_pool():
+    """Stage 109.7: behavioural check — pool is enabled and total ≥ keepalive.
+
+    Exact numbers (50 / 100 / 30s) are SLO constants documented in
+    AssumptionLog + technical-requirements; tuning them should not
+    break this test unless the invariant is violated.
+    """
     from vetmanager_client import _HTTP_LIMITS
-    assert _HTTP_LIMITS.max_keepalive_connections == 50
-    assert _HTTP_LIMITS.max_connections == 100
-    assert _HTTP_LIMITS.keepalive_expiry == 30.0
+    assert _HTTP_LIMITS.max_keepalive_connections is not None
+    assert _HTTP_LIMITS.max_keepalive_connections > 0, (
+        "keep-alive pool must be enabled"
+    )
+    assert _HTTP_LIMITS.max_connections >= _HTTP_LIMITS.max_keepalive_connections, (
+        "max_connections must accommodate at least all keep-alive slots"
+    )
+    assert _HTTP_LIMITS.keepalive_expiry is not None
+    assert _HTTP_LIMITS.keepalive_expiry > 0, (
+        "keep-alive expiry must be set — otherwise sockets never close"
+    )

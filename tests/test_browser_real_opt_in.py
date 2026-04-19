@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-import request_credentials
+import auth.request as auth_request
 from server import mcp
 
 
@@ -68,7 +68,7 @@ def test_real_browser_domain_api_key_flow_can_issue_bearer_and_call_mcp(
 
     raw_token = page.get_by_test_id("issued-token-value").text_content()
     with patch.object(
-        request_credentials,
+        auth_request,
         "_get_request_headers",
         return_value={"authorization": f"Bearer {raw_token}"},
     ):
@@ -116,7 +116,7 @@ def test_real_browser_user_token_flow_can_issue_bearer_and_call_mcp(
 
     raw_token = page.get_by_test_id("issued-token-value").text_content()
     with patch.object(
-        request_credentials,
+        auth_request,
         "_get_request_headers",
         return_value={"authorization": f"Bearer {raw_token}"},
     ):

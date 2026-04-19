@@ -8,7 +8,7 @@ import pytest
 import respx
 
 import request_auth
-import request_credentials
+import auth.request as auth_request
 import storage
 from exceptions import AuthError, VetmanagerTimeoutError
 from server import mcp
@@ -56,11 +56,11 @@ async def test_health_and_readiness_requests_update_http_metrics(tmp_path: Path,
 def test_bearer_header_failures_update_auth_metrics():
     reset_service_metrics()
 
-    with patch.object(request_credentials, "_get_request_headers", return_value={}):
+    with patch.object(auth_request, "_get_request_headers", return_value={}):
         with pytest.raises(AuthError):
             request_auth.get_bearer_token()
 
-    with patch.object(request_credentials, "_get_request_headers", return_value={"authorization": "Basic abc"}):
+    with patch.object(auth_request, "_get_request_headers", return_value={"authorization": "Basic abc"}):
         with pytest.raises(AuthError):
             request_auth.get_bearer_token()
 

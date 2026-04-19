@@ -21,7 +21,7 @@ import re
 from unittest.mock import AsyncMock, patch
 
 import httpx
-import request_credentials
+import auth.request as auth_request
 import runtime_auth
 from server import mcp
 from tests.conftest import TEST_ENCRYPTION_KEY
@@ -80,22 +80,11 @@ def cleanup_orphaned_default_loop():
 
 
 def vc() -> VetmanagerClient:
-    headers = {"authorization": "Bearer real-test-token"}
-    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
-        client = VetmanagerClient()
-    client._vetmanager_auth = VetmanagerAuthContext(
-        auth_mode="domain_api_key",
-        domain=TEST_DOMAIN,
-        credential=TEST_API_KEY,
-    )
-    client._auth_source = "bearer"
-    client._domain = TEST_DOMAIN
-    client._api_key = TEST_API_KEY
-    client._account_id = 1
-    client._bearer_token_id = 1
-    client._connection_id = 1
-    client._ensure_runtime_credentials = AsyncMock(return_value=None)
-    return client
+    # Stage 109.1: use canonical factory so private-attr access is centralised
+    # in runtime_factories. Renames of VetmanagerClient internals need only
+    # one edit instead of three test-file copies.
+    from tests.runtime_factories import make_client_with_resolved_runtime
+    return make_client_with_resolved_runtime(TEST_DOMAIN, TEST_API_KEY)
 
 
 async def resolve_real_user_token() -> str:
@@ -145,7 +134,7 @@ async def resolve_real_user_token() -> str:
 
 def vc_user_token() -> VetmanagerClient:
     headers = {"authorization": "Bearer real-test-token"}
-    with patch.object(request_credentials, "_get_request_headers", return_value=headers):
+    with patch.object(auth_request, "_get_request_headers", return_value=headers):
         client = VetmanagerClient()
     return client
 
@@ -246,21 +235,12 @@ async def test_real_get_users():
 async def test_real_get_users_with_user_token_mode():
     """User-token mode should pass the same runtime/client path as API-key mode."""
     user_token = await resolve_real_user_token()
-    client = vc_user_token()
-    client._vetmanager_auth = VetmanagerAuthContext(
-        auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
-        domain=TEST_DOMAIN,
-        credential=user_token,
-        credential_header="X-USER-TOKEN",
-        app_name=DEFAULT_USER_TOKEN_APP_NAME,
+    # Stage 109.1: single factory call handles user_token header +
+    # app_name automatically via make_vetmanager_auth_context.
+    from tests.runtime_factories import make_client_with_resolved_runtime
+    client = make_client_with_resolved_runtime(
+        TEST_DOMAIN, user_token, auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
     )
-    client._auth_source = "bearer"
-    client._domain = TEST_DOMAIN
-    client._api_key = user_token
-    client._account_id = 1
-    client._bearer_token_id = 1
-    client._connection_id = 1
-    client._ensure_runtime_credentials = AsyncMock(return_value=None)
     result = await call(client.get("/rest/api/user", params={"limit": 5, "offset": 0}))
     assert "data" in result
 
@@ -300,7 +280,7 @@ def test_real_web_account_can_issue_bearer_and_call_tool(live_server_url: str, r
         raw_token = token_match.group(0)
 
     with patch.object(
-        request_credentials,
+        auth_request,
         "_get_request_headers",
         return_value={"authorization": f"Bearer {raw_token}"},
     ):
