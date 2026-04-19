@@ -4853,3 +4853,74 @@ Guards против регрессии drift'а между timeout-branch и net
 
 - Targeted: `docker compose --profile test run --rm test pytest -q tests/test_stage113b_concurrency.py tests/test_stage106_reliability.py tests/test_stage105_breaker_amplification.py tests/test_stage115_concurrency.py tests/test_stage91_vm_client_overhaul.py tests/test_host_resolver.py tests/test_stage113_resilience.py tests/test_stage109_bc_invariants.py` → `57 passed`
 - Full: `docker compose --profile test run --rm test` → `707 passed, 57 deselected`
+
+## Этап 114b. Simplicity debt follow-up — 2026-04-20
+
+**Commit**: `259201a`.
+
+Закрыл deferred simplicity хвост из super-review: repeatable audit inline imports, collapse лишней indirection в profile tools и финальная FilterBuilder migration для оставшихся call-sites.
+
+### Что сделано
+
+1. Добавлен `scripts/inline_imports_audit.py` с allowlist только для легитимных runtime inline imports: cycle break, optional Redis dependency, lazy tool registration и CLI-only bootstrap.
+2. Убраны лишние inline imports в runtime-модулях (`prompts.py`, `auth/request.py`, `auth_audit.py`, `request_context.py`, `service_token_service.py`, `rate_limit_backend.py`, `vm_transport/retry.py`, `tools/invoice.py`, `tools/crud_helpers.py`, `tools/pet.py`, `tools/client.py`, `server.py`, `web_auth.py`, `auth/bearer.py`, `auth/rate_limit.py`).
+3. `tools/client.py:get_client_profile` и `tools/pet.py:get_pet_profile` больше не идут через `_impl` closure + `_get_*_profile_impl`; остался прямой `instrument_call(..., lambda: fetch(...))`.
+4. `resources/client_profile.py`, `resources/pet_profile.py` и `tools/medical_card.py:get_medical_cards_by_client_id` переведены на `build_list_query_params(...)` вместо hand-rolled JSON filter assembly.
+5. Добавлены regression tests `tests/test_stage114b_simplicity_followup.py` на inline-import audit, отсутствие wrapper hops и сохранение `sort/limit/offset` в `get_medical_cards_by_client_id`.
+
+### Решения и обоснования
+
+- **Audit script вместо разового grep**: acceptance для stage 114b требовал повторяемый механизм, иначе следующий review снова сведётся к ручной проверке.
+- **Allowlist минимальный**: оставлены только case'ы с явной причиной. `secret_manager.py` держит локальный import из-за cycle `storage_models -> secret_manager -> web_auth`; Redis import остаётся optional; `tools/__init__.py` сохраняет lazy registration.
+- **BC shims не удалялись**: policy `KEEP` из stage 114b подтверждена; tests на identity invariants остаются зелёными.
+- **Module import вместо function snapshot** для FastMCP dependencies: сохраняет patchability тестов, но убирает per-call inline import.
+
+### Тесты
+
+- Targeted: `docker compose --profile test run --rm test pytest -q tests/test_stage114_simplicity.py tests/test_stage114b_simplicity_followup.py tests/test_api_contracts_hotfix.py tests/test_stage96_post_review_hotfix.py tests/test_e2e_mock_clinical_profiles.py tests/test_stage102_aggregator_structured_errors.py` → `49 passed`
+- Cross-check after patchability fix: `docker compose --profile test run --rm test pytest -q tests/test_web_security.py tests/test_request_auth.py tests/test_request_context.py tests/test_stage114b_simplicity_followup.py` → `21 passed`
+
+## Этап 118. Product metrics correctness follow-up — 2026-04-20
+
+**Commit**: `259201a`.
+
+Закрыл semantic drift в `scripts/product_metrics_report.py`: timezone-aware `--now-override` и UTC-consistent serialization для `dead_list.last_request_at`.
+
+### Что сделано
+
+1. `_to_aware()` теперь нормализует aware timestamps через `.astimezone(timezone.utc)`, а не просто возвращает исходную timezone.
+2. `_async_main()` обрабатывает `--now-override` через `_to_aware(datetime.fromisoformat(...))`, поэтому aware input вроде `2026-04-18T12:00:00+03:00` превращается в `2026-04-18T09:00:00+00:00`.
+3. `_fetch_dead_account_rows()` сериализует `last_request_at` из `last_used_aware`; заодно `created_at` тоже нормализуется в UTC-consistent ISO form.
+4. `tests/test_stage110_product_metrics.py` расширен тестами на aware `--now-override` и UTC suffix у `dead_list.last_request_at`.
+
+### Решения и обоснования
+
+- **Naive timestamps по-прежнему трактуются как UTC**: это уже существующий invariant отчёта и storage layer; stage 118 не меняет этот contract, только чинит aware case.
+- **`created_at` тоже нормализован**: finding был про `last_request_at`, но mixed naive/aware timestamps в одном отчёте бессмысленны. Симметричная нормализация безопаснее и честнее для operator output.
+
+### Тесты
+
+- Targeted: `docker compose --profile test run --rm test pytest -q tests/test_stage110_product_metrics.py tests/test_stage114_simplicity.py tests/test_stage114b_simplicity_followup.py` → `22 passed`
+
+## Этап 119. Test isolation + workflow/docs cleanup — 2026-04-20
+
+**Commit**: `259201a`.
+
+Закрыл хвосты reviewer-tests / workflow-check / reviewer-docs после повторного full-review.
+
+### Что сделано
+
+1. `tests/conftest.py` теперь сбрасывает `REQUEST_CACHE.metrics.{hits,misses,invalidations,evictions}` вместе с `_entries` и `_tag_index`.
+2. Добавлен regression file `tests/test_stage119_test_isolation.py`, который пинует reset cache metrics между тестами.
+3. Для этапов 116 и 117 backfill'нуты реальные commit SHA (`bd51a40`, `bcc42ba`) в `AssumptionLog.md`.
+4. `artifacts/release-checklist-vetmanager-mcp-ru.md` обновлён под текущий `/metrics` contract с optional `METRICS_AUTH_TOKEN`.
+
+### Решения и обоснования
+
+- **Reset в fixture, а не helper внутри cache**: проблема была именно в test isolation. Добавлять новый runtime API ради тестового сброса не нужно.
+- **Release checklist синхронизирован с README, а не с текущим operator habit**: truth source здесь runtime/documented contract, а не "как обычно проверяли раньше".
+
+### Тесты
+
+- Targeted: `docker compose --profile test run --rm test pytest -q tests/test_stage119_test_isolation.py tests/test_stage110_product_metrics.py tests/test_stage114_simplicity.py tests/test_stage114b_simplicity_followup.py` → `24 passed`
+- Full re-run after audit/refactor fixes: `docker compose --profile test run --rm test` → `716 passed, 57 deselected`
