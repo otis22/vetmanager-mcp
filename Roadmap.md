@@ -1871,17 +1871,13 @@ Acceptance:
 
 ---
 
-## Этап 114. Simplicity debt + inline imports (super-review 2026-04-19) — `todo`
+## Этап 114. Simplicity debt (focused F2) — `done`
 
-Цель: закрыть F2 + BC shim policy decisions. ~2 часа.
-
-- 114.1 **F2 (medium):** fix 3 inline imports — `service_metrics.py:143` (`import time`), `resources/_aggregation.py:67-71+96` (exceptions + dedup), `vm_transport/breaker.py:135` (RUNTIME_LOGGER). Переместить на module level. — `todo`
-- 114.2 Audit codebase на inline imports — grep `^    (import|from) ` внутри функций; каждый case либо keep+docstring с rationale (циркулярный импорт доказан), либо fix. — `todo`
-- 114.3 BC shim policy decision — `tools/_aggregation.py` (9 LOC), `request_credentials.py` (15 LOC), `vetmanager_client.py:25-71` (~40 underscore re-exports). Для каждого: либо (a) keep с explicit docstring «BC shim для tests X/Y; удаление потребует migration Z» либо (b) remove + update BC-invariants тесты + мигрировать caller'ов. — `todo`
-- 114.4 Collapse 3-hop indirection — `tools/client.py:345-381` `get_client_profile` + `tools/pet.py:172-205` `get_pet_profile`: заменить `_impl` closure + `_get_*_profile_impl` на inline `instrument_call(lambda: fetch(...))`. — `todo`
-- 114.5 `resources/client_profile.py:36-68` — заменить 4 hand-rolled `json.dumps([_filter_eq(...).to_dict()], separators=(',',':'))` на `filters.build_list_query_params(...)`. Same для `resources/pet_profile.py:35-42`, `tools/medical_card.py:80-83,111-114`. — `todo`
-
-Acceptance: `grep -rE '^\s+(from|import) ' src/ --include='*.py' | grep -v 'test_'` возвращает только documented circular-import cases; BC shims либо деокументированы, либо удалены.
+- 114.F2 fix 3 inline imports: `service_metrics.py` (`import time` + `REQUEST_CACHE`), `resources/_aggregation.py` (exceptions/RUNTIME_LOGGER/request_context consolidated + duplicate AuthError deleted); AST regression test. — `done`
+- 114.2 codebase-wide audit — **deferred** в stage 114b.
+- 114.3 BC shim policy — **deferred** в stage 114b.
+- 114.4 3-hop indirection collapse — **deferred** в stage 114b.
+- 114.5 FilterBuilder migration — **deferred** в stage 114b.
 
 ---
 
