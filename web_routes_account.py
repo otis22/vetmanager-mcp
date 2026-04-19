@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import re
+
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
 
 from exceptions import AuthError, HostResolutionError, VetmanagerError
 from observability_logging import RUNTIME_LOGGER
 from secret_manager import get_storage_encryption_key
-from service_metrics import record_business_event
+from service_metrics import record_auth_failure, record_business_event
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
 from storage import get_session_factory
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY, VETMANAGER_AUTH_MODE_USER_TOKEN
@@ -19,6 +21,19 @@ from vetmanager_connection_service import (
 )
 from web_auth import clear_account_session_cookie
 from web_security import CSRF_FIELD_NAME, validate_csrf_request
+
+
+_CAMEL_BOUNDARY = re.compile(r"(?<!^)(?=[A-Z])")
+
+
+def _camel_to_snake(name: str) -> str:
+    """Convert CamelCase exception class name to snake_case metric label.
+
+    Stage 112.2: `AuthError` → `auth_error`, `HostResolutionError` →
+    `host_resolution_error`, `ValueError` → `value_error`. Produces
+    human-queryable Prometheus label values.
+    """
+    return _CAMEL_BOUNDARY.sub("_", name).lower()
 
 
 def register_account_routes(
@@ -83,6 +98,23 @@ def register_account_routes(
                         encryption_key=get_storage_encryption_key(),
                     )
         except (ValueError, AuthError, HostResolutionError, VetmanagerError) as exc:
+            # Stage 112.2 (super-review 2026-04-19): structured log + metric
+            # so support can find the event by account_id and SRE can alert
+            # on integration_save_failed spikes. Do NOT include str(exc) —
+            # AuthError.message may embed masked API-key fragments.
+            RUNTIME_LOGGER.warning(
+                "Integration save failed",
+                extra={
+                    "event_name": "integration_save_failed",
+                    "account_id": account_id,
+                    "auth_mode": auth_mode,
+                    "error_class": exc.__class__.__name__,
+                },
+            )
+            record_auth_failure(
+                source="web_integration",
+                reason=_camel_to_snake(exc.__class__.__name__),
+            )
             return await render_account_dashboard_response(
                 request,
                 account_id,
@@ -141,6 +173,21 @@ def register_account_routes(
                         encryption_key=get_storage_encryption_key(),
                     )
         except (ValueError, AuthError, HostResolutionError, VetmanagerError) as exc:
+            # Stage 112.2: same pattern as account_integration_submit above.
+            RUNTIME_LOGGER.warning(
+                "Integration reauth failed",
+                extra={
+                    "event_name": "integration_save_failed",
+                    "account_id": account_id,
+                    "auth_mode": auth_mode,
+                    "error_class": exc.__class__.__name__,
+                    "flow": "reauth",
+                },
+            )
+            record_auth_failure(
+                source="web_integration_reauth",
+                reason=_camel_to_snake(exc.__class__.__name__),
+            )
             return await render_account_dashboard_response(
                 request,
                 account_id,

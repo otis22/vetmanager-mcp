@@ -4633,3 +4633,38 @@ Guards против регрессии drift'а между timeout-branch и net
 - 1 × composite index presence (SQLAlchemy inspect)
 - 1 × login lockout → record_auth_failure call
 - 2 × record_business_event (unknown ERROR log / known still increments)
+
+## Этап 112. Observability integrity — 2026-04-19
+
+**Commit**: (pending).
+
+Закрыл observability-findings medium/low из super-review 2026-04-19 (section T2).
+
+### Что сделано
+
+1. **112.1 breaker_opened log** — `vm_transport/breaker.py::breaker_record_failure` эмитит `circuit_breaker_opened` warning на CLOSED→OPEN threshold crossing + на HALF_OPEN→OPEN probe-fail. Codex flagged: race under concurrent sustained failures (state уже OPEN, но CLOSED-branch fall-through) → fix `if previous_state != "open":` guard. `RUNTIME_LOGGER` import вынесен на module level (F2 pattern prevention).
+2. **112.2 integration_save_failed** — в обоих `account_integration_submit` + `_reauth_submit` except-blocks добавлен structured warning log (`account_id`, `auth_mode`, `error_class`, опционально `flow`) + `record_auth_failure(source="web_integration[_reauth]", reason=<snake_case>)`. `_camel_to_snake` helper для читаемых Prometheus label values (`auth_error`, `host_resolution_error`). `str(exc)` НЕ включён в extra — `AuthError.message` может embed'ить masked API key fragments.
+3. **112.3 url_path → entity** — все 4 лог-сайта в `vetmanager_client._request` (retryable status, timeout-retry, timeout-final, network-error) используют `_entity_from_path_fn(path)` вместо `path` verbatim. Existing stage-88 тесты обновлены (2 asserts: `record.url_path` → `record.entity == "client"`).
+4. **112.4 correlation_id explicit** — `account_registered` + `web_login_succeeded` extra теперь включает `correlation_id` из `get_current_request_context()`. Устойчиво к edge cases where `RequestContextLogFilter` silently drops field (non-HTTP context).
+5. **112.5 retry log DEBUG** — убран INFO/DEBUG conditional (`is_last_attempt`); все retry decisions теперь DEBUG. Terminal failure по-прежнему эмитит WARNING на raise-site (`vm_upstream_timeout` / `vm_upstream_network_error`).
+6. **112.6 skipped** — false positive, `started` уже per-attempt (line 296 перед каждым `client.request`).
+
+### Решения и обоснования
+
+- **`previous_state` guard**: Codex warning — под sustained failures state остаётся OPEN, но код продолжает инкрементировать counter и re-setting `opened_at` (pre-existing behavior) и новым логом создавал бы duplicate emission. Guard фиксирует: лог на реальной transition, counter/opened_at обновляются как раньше (extending cooldown window).
+- **`error_class` без `str(exc)`**: защита от утечки masked API-key fragments в `AuthError.message`. Class name достаточен для querying.
+- **`_camel_to_snake` helper**: 2 call-sites в scope — single responsibility + testability. Если появятся ещё use-cases, можно вынести в отдельный utils module.
+- **Entity вместо url_path**: privacy-safe; reconstructability via `correlation_id` join с access log.
+- **`LOG_INCLUDE_URL_IDS` env gate отклонён**: premature flexibility, нет concrete ops request.
+
+### Codex review
+
+1 warning (адекватный): duplicate log race на sustained failures → fixed с `previous_state` guard.
+1 nit (адекватный): CamelCase → snake_case reason → fixed с `_camel_to_snake`.
+4 × comment/confirmation: dismiss.
+
+Одна итерация Codex. Второй проход не нужен.
+
+### Тесты
+
+687 → 690 (+3 в stage 112): breaker threshold log emission, breaker probe-fail log, breaker recovery log (verifies stage 107.9 regression boundary). Существующие stage-88 timeout/network-error тесты обновлены под `entity` contract.

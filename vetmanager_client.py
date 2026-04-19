@@ -311,18 +311,21 @@ class VetmanagerClient:
                     ):
                         retry_after = _parse_retry_after(response.headers.get("Retry-After"))
                         delay = _backoff_seconds(attempt, retry_after)
-                        # Stage 98.6: intermediate retries at DEBUG to avoid INFO
-                        # floods during 429 episodes; only the last attempt escalates.
-                        is_last_attempt = attempt + 1 >= max_retries
-                        _retry_logger = RUNTIME_LOGGER.info if is_last_attempt else RUNTIME_LOGGER.debug
-                        _retry_logger(
+                        # Stage 112.5 (super-review 2026-04-19): all retry
+                        # decisions at DEBUG to avoid false alert noise for
+                        # self-healing retries. Terminal failure still
+                        # escalates at WARNING via vm_upstream_timeout /
+                        # vm_upstream_network_error at the raise site.
+                        # Stage 112.3: emit entity instead of full path to
+                        # avoid leaking customer IDs into log aggregation.
+                        RUNTIME_LOGGER.debug(
                             "VM upstream retryable status",
                             extra={
                                 "event_name": "vm_upstream_retry",
                                 "correlation_id": outbound_correlation_id,
                                 "domain": self._domain,
                                 "method": upper_method,
-                                "url_path": path,
+                                "entity": _entity_from_path_fn(path),
                                 "status_code": response.status_code,
                                 "attempt": attempt + 1,
                                 "backoff_seconds": round(delay, 3),
@@ -368,6 +371,11 @@ class VetmanagerClient:
                         # Stage 107.10: DEBUG log for intermediate retries so
                         # latency investigations can see how many attempts
                         # timed out and at which backoff each.
+                        # Stage 112.3 (super-review 2026-04-19): emit entity
+                        # name instead of full path to avoid leaking customer
+                        # IDs (e.g. /rest/api/client/12345 → "client") into
+                        # log aggregation. Full path is reconstructable via
+                        # correlation_id join if debugging needs it.
                         RUNTIME_LOGGER.debug(
                             "VM upstream timeout on retry attempt",
                             extra={
@@ -375,7 +383,7 @@ class VetmanagerClient:
                                 "correlation_id": outbound_correlation_id,
                                 "domain": self._domain,
                                 "method": upper_method,
-                                "url_path": path,
+                                "entity": _entity_from_path_fn(path),
                                 "attempt": attempt + 1,
                                 "elapsed_ms": round(elapsed * 1000, 2),
                             },
@@ -399,7 +407,7 @@ class VetmanagerClient:
                             "correlation_id": outbound_correlation_id,
                             "domain": self._domain,
                             "method": upper_method,
-                            "url_path": path,
+                            "entity": _entity_from_path_fn(path),
                             "elapsed_ms": round(elapsed * 1000, 2),
                             "attempt": attempt + 1,
                         },
@@ -438,7 +446,7 @@ class VetmanagerClient:
                             "correlation_id": outbound_correlation_id,
                             "domain": self._domain,
                             "method": upper_method,
-                            "url_path": path,
+                            "entity": _entity_from_path_fn(path),
                             "elapsed_ms": round(elapsed * 1000, 2),
                             "attempt": attempt + 1,
                             "error_class": exc.__class__.__name__,

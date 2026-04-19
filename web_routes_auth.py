@@ -7,6 +7,7 @@ from starlette.responses import HTMLResponse, RedirectResponse
 
 from exceptions import RateLimitError
 from observability_logging import RUNTIME_LOGGER
+from request_context import get_current_request_context
 from service_metrics import record_auth_failure, record_business_event
 from storage import get_session_factory
 from web_auth import (
@@ -133,11 +134,16 @@ def register_auth_routes(
         # Stage 107.3: structured business-event log for successful
         # registration so audit can answer "when did account X appear".
         # Stage 110.2: also bump the process-local Prometheus counter.
+        # Stage 112.4 (super-review 2026-04-19): explicit correlation_id
+        # so log aggregator can join event to inbound HTTP request even
+        # when RequestContextLogFilter silently omits the field.
+        _ctx = get_current_request_context() or {}
         RUNTIME_LOGGER.info(
             "Account registered",
             extra={
                 "event_name": "account_registered",
                 "account_id": account.id,
+                "correlation_id": _ctx.get("correlation_id"),
             },
         )
         record_business_event("account_registered")
@@ -240,9 +246,15 @@ def register_auth_routes(
 
         clear_rate_limit_key("login", login_key)
         clear_rate_limit_key("login_lockout", lockout_email_key)
+        # Stage 112.4: explicit correlation_id (see register-path above).
+        _ctx = get_current_request_context() or {}
         RUNTIME_LOGGER.info(
             "Web login succeeded",
-            extra={"event_name": "web_login_succeeded", "account_id": account.id},
+            extra={
+                "event_name": "web_login_succeeded",
+                "account_id": account.id,
+                "correlation_id": _ctx.get("correlation_id"),
+            },
         )
         record_business_event("web_login_succeeded")
         response = redirect_response(request, url="/account", status_code=303)

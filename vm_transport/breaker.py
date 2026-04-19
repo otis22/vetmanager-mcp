@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 
 from env_utils import env_float, env_int
 from exceptions import VetmanagerUpstreamUnavailable
+from observability_logging import RUNTIME_LOGGER
 from service_metrics import record_upstream_failure, record_upstream_request
 
 BREAKER_FAILURE_THRESHOLD = env_int("BREAKER_FAILURE_THRESHOLD", 5)
@@ -132,7 +133,6 @@ async def breaker_record_success(domain: str) -> None:
             # Stage 107.9 (obs): log recovery transition so incidents have
             # a clear "circuit closed at T" marker in logs; dashboards
             # also see the transition via upstream_requests counter.
-            from observability_logging import RUNTIME_LOGGER
             RUNTIME_LOGGER.info(
                 "Circuit breaker recovered",
                 extra={
@@ -147,13 +147,24 @@ async def breaker_record_failure(domain: str) -> None:
     breaker = await get_breaker(domain)
     async with breaker.lock:
         now = time.monotonic()
-        if breaker.state == "half_open":
+        previous_state = breaker.state
+        if previous_state == "half_open":
             # Probe failed — back to OPEN with fresh cooldown.
             breaker.state = "open"
             breaker.opened_at = now
             breaker.probe_in_flight = False
+            # Stage 112.1 (super-review 2026-04-19): symmetric log for probe-fail
+            # transition; pairs with recovery log on success path.
+            RUNTIME_LOGGER.warning(
+                "Circuit breaker re-opened after failed probe",
+                extra={
+                    "event_name": "circuit_breaker_opened",
+                    "domain": domain,
+                    "cause": "probe_failed",
+                },
+            )
             return
-        # CLOSED state: increment within sliding window.
+        # Increment within sliding window (covers CLOSED and OPEN sustained-failure paths).
         if breaker.window_start == 0.0 or (now - breaker.window_start) > BREAKER_WINDOW_SECONDS:
             breaker.window_start = now
             breaker.consecutive_failures = 1
@@ -162,6 +173,20 @@ async def breaker_record_failure(domain: str) -> None:
         if breaker.consecutive_failures >= BREAKER_FAILURE_THRESHOLD:
             breaker.state = "open"
             breaker.opened_at = now
+            # Stage 112.1: log ONLY on actual CLOSED→OPEN transition (not
+            # on every sustained failure while already OPEN). Codex review
+            # flagged duplicate emission under concurrent in-flight failures.
+            if previous_state != "open":
+                RUNTIME_LOGGER.warning(
+                    "Circuit breaker opened",
+                    extra={
+                        "event_name": "circuit_breaker_opened",
+                        "domain": domain,
+                        "consecutive_failures": breaker.consecutive_failures,
+                        "threshold": BREAKER_FAILURE_THRESHOLD,
+                        "cause": "threshold_reached",
+                    },
+                )
 
 
 def get_breaker_state(domain: str) -> dict | None:

@@ -1847,18 +1847,14 @@ Acceptance:
 
 ---
 
-## Этап 112. Observability integrity (super-review 2026-04-19) — `todo`
+## Этап 112. Observability integrity (super-review 2026-04-19) — `done`
 
-Цель: закрыть observability-findings уровня medium/low, которые не попали в stage 111 priority. ~2 часа.
-
-- 112.1 Breaker state transition logging — `vm_transport/breaker.py:146-164` добавить `RUNTIME_LOGGER.warning("Circuit breaker opened", extra={"event_name": "circuit_breaker_opened", "domain": domain, "consecutive_failures": N, "threshold": T})` симметрично к existing `circuit_breaker_closed` (stage 107.9). — `todo`
-- 112.2 Integration save failure logs — `web_routes_account.py:85-93, 143-151` добавить `RUNTIME_LOGGER.warning("Integration save failed", extra={"event_name": "integration_save_failed", "account_id": ..., "error_class": ...})` + `record_auth_failure(source="web_integration", reason=...)`. — `todo`
-- 112.3 URL path scrubbing в retry/timeout logs — `vetmanager_client.py:371-382, 395-406, 434-446` заменить `"url_path": path` на `"entity": _entity_from_path_fn(path)`; опционально gate full path через `LOG_INCLUDE_URL_IDS=1` env. Устраняет privacy-leak в log aggregation (security medium). — `todo`
-- 112.4 `correlation_id` explicit в business-event logs — `web_routes_auth.py:238-242` (Web login succeeded) + `136` (Account registered): explicit pass `correlation_id` через `extra` вместо неявной зависимости от `RequestContextLogFilter`. — `todo`
-- 112.5 Retry log hygiene — `vetmanager_client.py:316-317` убрать INFO-уровень для success-after-retry (создаёт false alert noise); оставить WARNING только на final VetmanagerTimeoutError raise-site. — `todo`
-- 112.6 Per-attempt `elapsed_ms` в retry logs — `vetmanager_client.py:365-385` reset `started = time.monotonic()` внутри каждой итерации retry loop; текущее поведение (накопленное время) неверно для диагностики per-attempt timeout configuration. — `todo`
-
-Acceptance: каждый structured log эмитится с event_name; grep `circuit_breaker_opened` и `integration_save_failed` в log aggregator возвращает реальные события; retry log elapsed_ms = attempt duration, не cumulative.
+- 112.1 `circuit_breaker_opened` log на CLOSED→OPEN threshold + HALF_OPEN→OPEN probe-fail; guard `previous_state != "open"` против duplicate под concurrent sustained failures. — `done`
+- 112.2 `integration_save_failed` log + `record_auth_failure(source="web_integration[_reauth]", reason=<snake_case error class>)` в обоих handler'ах. — `done`
+- 112.3 `url_path` → `entity` во всех 4 лог-сайтах `vetmanager_client._request` (retry/timeout-retry/timeout-final/network_error). — `done`
+- 112.4 Explicit `correlation_id` в `account_registered` + `web_login_succeeded` extra. — `done`
+- 112.5 Retry log уровень DEBUG для всех attempts (last included); terminal WARNING остаётся на raise-site. — `done`
+- 112.6 N/A — false positive, `started` уже per-attempt (line 296 reset).
 
 ---
 

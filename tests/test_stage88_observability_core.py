@@ -205,7 +205,9 @@ async def test_timeout_emits_structured_warning_and_records_latency():
     record = timeout_records[0]
     assert record.domain == DOMAIN
     assert record.method == "GET"
-    assert record.url_path == "/rest/api/client"
+    # Stage 112.3 (super-review 2026-04-19): url_path replaced with entity
+    # name to avoid leaking customer IDs into log aggregation.
+    assert record.entity == "client"
     assert isinstance(record.elapsed_ms, (int, float))
 
     snap = snapshot_service_metrics()
@@ -272,7 +274,8 @@ async def test_network_error_emits_structured_warning_and_records_latency(monkey
     record = network_records[0]
     assert record.domain == DOMAIN
     assert record.method == "GET"
-    assert record.url_path == "/rest/api/client"
+    # Stage 112.3: entity replaces url_path (privacy-safe).
+    assert record.entity == "client"
     assert isinstance(record.elapsed_ms, (int, float))
     # error_class preserved for debugging the underlying httpx exception type.
     assert record.error_class == "ConnectError"
