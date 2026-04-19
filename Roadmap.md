@@ -1881,7 +1881,7 @@ Acceptance:
 
 ---
 
-## Этап 115. Real concurrency tests (super-review 2026-04-19) — `todo`
+## Этап 115. Real concurrency tests (super-review 2026-04-19) — `done`
 
 Цель: заменить sequential-mock concurrency theatre на real tests. ~2 часа.
 

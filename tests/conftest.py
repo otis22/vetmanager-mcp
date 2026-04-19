@@ -33,6 +33,19 @@ def _clear_request_cache():
     REQUEST_CACHE._tag_index.clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_service_metrics_state():
+    """Stage 115.3: clear process-global service_metrics counters before
+    each test to prevent leakage (business_events_total, auth_failures,
+    upstream requests etc.). Stage 110 tests called this manually; this
+    autouse fixture makes it impossible to forget.
+    """
+    from service_metrics import reset_service_metrics
+    reset_service_metrics()
+    yield
+    reset_service_metrics()
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def _reset_billing_resolver_state():
     """Stage 113.F7: drop billing-api resolver cache + shared client between

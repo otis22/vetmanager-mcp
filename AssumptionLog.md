@@ -4738,3 +4738,33 @@ Guards против регрессии drift'а между timeout-branch и net
 ### Тесты
 
 699 → 701 (+2 AST regression tests).
+
+## Этап 115. Real concurrency tests — 2026-04-19
+
+**Commit**: (pending).
+
+Закрыл T3 (concurrency theatre) из super-review 2026-04-19 — два behavioral теста + autouse service_metrics reset fixture.
+
+### Что сделано
+
+1. **`test_breaker_opens_under_concurrent_failures_without_amplification`** — 8 concurrent VetmanagerClient.get() → timeout. Assert `consecutive_failures ≤ N_CONCURRENT+2`, `state == "open"`. Barrier (`asyncio.Event`) синхронизирует старт всех coroutines — admission races происходят на upstream boundary, не на task scheduling.
+2. **`test_get_shared_http_client_returns_same_instance_under_concurrency`** — 8 concurrent `get_shared_http_client()` → все identical. Behavioral check вместо inspection `_shared_http_clients` dict.
+3. **Autouse `_reset_service_metrics_state`** fixture в `tests/conftest.py` — `reset_service_metrics()` перед/после каждого теста. Устраняет cross-test contamination.
+
+### Решения и обоснования
+
+- **Barrier synchronization (Codex warning)**: без `start_barrier.wait()` + `asyncio.sleep(0)` + `.set()` — coroutines запускаются с staggered scheduling, admission race не воспроизводится. С barrier — все входят в `client.request()` одновременно.
+- **state == "open" strict** (Codex warning): `"half_open"` возможен только если cooldown elapsed mid-test. Test runtime < 1s, BREAKER_COOLDOWN=30s. Strict assert ловит regression если breaker не открылся.
+- **N_CONCURRENT + 2 buffer**: threshold=5, stage 105 regression дал бы ~24 (8 × 3 retries). Buffer 2 — probe admission race.
+- **Autouse reset**: не ломает стадии, которые вручную reset'ят — idempotent. Stage 110 тесты теперь могут убрать manual reset (defer to stage 114b/117 docs sweep).
+
+### Codex review
+
+2 warnings — оба адекватные, оба зафиксированы (barrier + strict state).
+2 nits — dismiss (inline context не видел).
+
+Одна итерация Codex + fixup. Full suite re-verified 703 green.
+
+### Тесты
+
+701 → 703 (+2). Autouse fixture не ломает existing stage 105/106 concurrency tests — они продолжают работать.
