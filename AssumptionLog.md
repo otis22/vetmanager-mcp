@@ -4712,3 +4712,29 @@ Guards против регрессии drift'а между timeout-branch и net
 - 1 × integration: monkeypatch.setenv + breaker opens at threshold=2
 
 Все 11 существующих host_resolver тестов зелёные (reset_billing_resolver autouse fixture обеспечивает isolation).
+
+## Этап 114. Simplicity debt (focused: F2) — 2026-04-19
+
+**Commit**: (pending).
+
+Закрыл F2 (inline imports) из super-review 2026-04-19 Codex arbitration. BC shim policy decision и 3-hop indirection collapse отложены в stage 114b (требуют explicit policy decision, не механический fix).
+
+### Что сделано
+
+1. **`service_metrics.py`**: `import time` + `from request_cache import REQUEST_CACHE` на module level. Удалены inline в `instrument_call` (hot path) + `render_prometheus_metrics`.
+2. **`resources/_aggregation.py`**: `from exceptions import (...)` + `RUNTIME_LOGGER` + `get_current_request_context` вынесены на module level. Удалён дубликат line 96 `from exceptions import AuthError`.
+3. **Regression test** `tests/test_stage114_simplicity.py` — AST walk фиксирует что `service_metrics.py` и `resources/_aggregation.py` не имеют Import/ImportFrom внутри function bodies (`FunctionDef` + `AsyncFunctionDef`).
+
+### Решения и обоснования
+
+- **Circular verification**: `request_cache.py`, `exceptions.py`, `observability_logging.py`, `request_context.py` не импортируют ни `service_metrics`, ни `resources._aggregation`. Безопасно.
+- **AST test handles both FunctionDef and AsyncFunctionDef**: Codex medium finding — уже обработано в `isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))`.
+- **Codebase-wide audit deferred**: 27 inline imports во всём src/. Большинство — legitimate (bootstrap в `server.py`, tools/__init__.py lazy register, validators.py optional deps). Mass fix без case-by-case review — риск регрессии.
+
+### Codex review
+
+1 medium — false alarm (Codex не видел тестового кода, _walk уже handle AsyncFunctionDef). Dismiss with rationale.
+
+### Тесты
+
+699 → 701 (+2 AST regression tests).

@@ -31,6 +31,18 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from exceptions import (
+    AuthError,
+    HostResolutionError,
+    NotFoundError,
+    RateLimitError,
+    VetmanagerError,
+    VetmanagerTimeoutError,
+    VetmanagerUpstreamUnavailable,
+)
+from observability_logging import RUNTIME_LOGGER
+from request_context import get_current_request_context
+
 
 async def gather_sections(
     *,
@@ -64,12 +76,6 @@ async def gather_sections(
     # consumption by LLM clients:
     #   {section_name: {"error_type": str, "retryable": bool, "message": str}}
     # Free-text flat string form is kept as `.str` rendering for log field.
-    from exceptions import (
-        AuthError, HostResolutionError, NotFoundError,
-        RateLimitError, VetmanagerError, VetmanagerTimeoutError,
-        VetmanagerUpstreamUnavailable,
-    )
-
     def _classify(exc: Exception) -> tuple[str, bool]:
         if isinstance(exc, VetmanagerUpstreamUnavailable):
             return ("upstream_unavailable", True)
@@ -93,8 +99,6 @@ async def gather_sections(
     # that fragment to section_errors[name].message ships it to the log
     # aggregator. Scrub AuthError to exception-class-name only; other
     # exception types log their full message (useful operational context).
-    from exceptions import AuthError
-
     section_errors: dict[str, dict] = {}
     payloads: list[dict] = []
     for (name, _, fallback), result in zip(sections, results):
@@ -115,8 +119,6 @@ async def gather_sections(
             payloads.append(result)
 
     if section_errors:
-        from observability_logging import RUNTIME_LOGGER
-        from request_context import get_current_request_context
         # Stage 107.4 (obs F4 fix): propagate correlation_id / request_id
         # into the aggregator_partial log so SREs can join it with the
         # upstream vm_upstream_timeout / vm_upstream_network_error events

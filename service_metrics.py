@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from threading import Lock
 from typing import DefaultDict
 
 from observability_logging import RUNTIME_LOGGER
+from request_cache import REQUEST_CACHE
 
 PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
@@ -151,8 +153,7 @@ async def instrument_call(
     Pass `tool_name="get_client_profile"` at the aggregator boundary
     to get a distinct time series.
     """
-    import time as _time
-    started = _time.monotonic()
+    started = time.monotonic()
     outcome = "success"
     endpoint_label = f"{endpoint}#{operation}" if operation else endpoint
     try:
@@ -161,7 +162,7 @@ async def instrument_call(
         outcome = "error"
         raise
     finally:
-        elapsed = _time.monotonic() - started
+        elapsed = time.monotonic() - started
         record_tool_call(
             endpoint=endpoint_label,
             method=method,
@@ -373,8 +374,6 @@ def render_prometheus_metrics() -> str:
         )
 
     # Cache metrics (from request_cache singleton).
-    from request_cache import REQUEST_CACHE
-
     m = REQUEST_CACHE.metrics
     lines.extend([
         "# HELP vetmanager_cache_hits_total Total cache hits.",
