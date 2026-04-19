@@ -1939,3 +1939,29 @@ Acceptance: `grep '(pending)' AssumptionLog.md` пусто; technical-requiremen
 | 117 | no | ~1h | — |
 
 **Recommended sequence:** 111 (next session) → 112 + 114 parallel (cheap cleanup) → 113 → 115 → 116 → 117. Всего ~14 часов работы, ~5-7 сессий.
+
+---
+
+## Этап 113b. Breaker/pool concurrency hardening (deferred from 113) — `todo`
+
+Дизайн-сложные items из super-review 2026-04-19 F7/concurrency, требующие careful architecture, не покрытые focused subset stage 113. ~3-4 часа.
+
+- 113b.1 probe_in_flight TOCTOU fix — wrap `_check_breaker_allows` в outer try/finally в `vetmanager_client._request` так что CancelledError между `_check_breaker_allows` и `try:` block всегда clears probe_in_flight. Альтернатива: stale-probe timeout (force-clear если `opened_at > 2×read_timeout` назад). — `todo`
+- 113b.2 Breaker per-retry 5xx accounting — `vetmanager_client.py:335-343` записывать breaker failure на каждой retry iteration для 502/503/504 subset (не только terminal). Design decision: "per-retry vs per-call" document в AssumptionLog (sustained upstream degradation должна opens breaker в 3× быстрее). — `todo`
+- 113b.3 `id(loop)` → `WeakKeyDictionary` — `vm_transport/pool.py:41-48` заменить `dict[int, ...]` на `WeakKeyDictionary[asyncio.AbstractEventLoop, ...]`. Устраняет id-reuse flakes, auto-eviction закрытых loops. Требует migrate 2-3 теста, которые читают `_shared_http_clients` by id. — `todo`
+- 113b.4 `asyncio.Lock` module-scope refactor — `vm_transport/breaker.py:50`, `vm_transport/pool.py:38`: lazy construction или per-loop registry. Zero regression на Python 3.10+, но устраняет Py3.9 binding-to-loop-at-construction. Связано scope с 113b.3. — `todo`
+
+Acceptance: concurrency stress-test с cancellation не оставляет probe_in_flight=True; breaker opens после 5 retry-503 при threshold=5; test suite зелёный на Python 3.9/3.10/3.11/3.12.
+
+---
+
+## Этап 114b. Simplicity debt follow-up (deferred from 114) — `todo`
+
+Дизайн-сложные simplicity findings, требующие policy decisions или codebase-wide audit. ~2-3 часа.
+
+- 114b.1 Codebase-wide inline imports audit — grep `^\s+(from|import) ` в function bodies; для каждого case (≤27 total в src) либо keep+docstring с rationale (доказанный циркулярный импорт), либо fix. — `todo`
+- 114b.2 3-hop indirection collapse — `tools/client.py:345-381` `get_client_profile` + `tools/pet.py:172-205` `get_pet_profile`: заменить `_impl` closure + `_get_*_profile_impl` на direct `instrument_call(lambda: fetch(...))`. — `todo`
+- 114b.3 FilterBuilder migration в resources — `resources/client_profile.py:36-68` + `resources/pet_profile.py:35-42` + `tools/medical_card.py:80-83,111-114`: заменить 4 hand-rolled `json.dumps([_filter_eq(...).to_dict()], separators=(',',':'))` на `filters.build_list_query_params(...)`. — `todo`
+- 114b.4 BC shim follow-up review — если grep подтверждает 0 callers для `tools/_aggregation.py` / `request_credentials.py`, удалить + update `test_stage109_bc_invariants.py`. Stage 114 decided **keep all** для current cycle; re-visit через 3-6 месяцев или при migration trigger. — `todo`
+
+Acceptance: `scripts/inline_imports_audit.sh` (если написан) возвращает 0 undocumented imports; `filters.build_list_query_params` — single JSON-filter entrypoint в resources/tools; 3-hop indirection collapsed или задокументирован rationale.

@@ -28,6 +28,15 @@ from vetmanager_auth import VetmanagerAuthContext
 # so tests that want to override thresholds must patch those module
 # attributes directly (`monkeypatch.setattr("vm_transport.breaker.BREAKER_COOLDOWN_SECONDS", ...)`),
 # not the re-exported underscore names here.
+#
+# Stage 114b policy (2026-04-19): **KEEP** — explicit owner decision.
+# Rationale: these underscore re-exports serve an active test-patch
+# surface (stage91/96/101/105 tests read them as reference values).
+# Stage 113.1 migrated runtime to `breaker_failure_threshold()` accessor
+# so the snapshot-vs-live divergence is documented + tested.
+# Stage 113.1 also documents that runtime reads go through accessors,
+# not through these re-exports. Removal would touch 5+ test files;
+# ROI low until a next-generation refactor.
 from vm_transport.breaker import (
     BREAKER_COOLDOWN_SECONDS as _BREAKER_COOLDOWN_SECONDS,
     BREAKER_FAILURE_THRESHOLD as _BREAKER_FAILURE_THRESHOLD,
