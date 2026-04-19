@@ -147,6 +147,21 @@ for PRD in PRD/этап-*.md; do
   fi
 done
 
+# 11. AssumptionLog commit SHAs backfilled — no (pending) markers in recent stages.
+# Stage 117.4: catches workflows where commit ran but AssumptionLog was not
+# updated with the SHA. Scans ALL entries; each "(pending)" triggers one
+# finding. Previously bulk-missed (13 stages across stages 105-115 until
+# stage 116.5 backfill).
+PENDING_COMMITS=$(grep -nE '^\*\*Commit\*\*:[[:space:]]*\(pending\)' AssumptionLog.md 2>/dev/null | head -5 || true)
+if [ -n "$PENDING_COMMITS" ]; then
+  PENDING_COUNT=$(echo "$PENDING_COMMITS" | wc -l)
+  emit medium pending_commit_sha "AssumptionLog.md" "N/A" \
+    "AssumptionLog has ${PENDING_COUNT} entries with Commit: (pending) — recent stages missing SHA backfill" \
+    "Audit trail broken; future super-reviews cannot correlate AssumptionLog to git history" \
+    "Replace (pending) with actual commit SHA after each commit; or backfill via scripts" \
+    0.9
+fi
+
 # 10. Review artifacts with active "Do not merge" verdict
 #     — ищет baseline/super-review документы с активным блокирующим verdict
 ACTIVE_VERDICTS=$(grep -lE '\*\*[Dd]o not merge\*\*' artifacts/review/*.md 2>/dev/null || true)

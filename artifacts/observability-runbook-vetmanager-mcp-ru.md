@@ -1,5 +1,13 @@
 # Runbook: observability и расследование инцидентов для vetmanager-mcp
 
+> **Last updated:** stage 45 baseline. Метрики, добавленные после:
+> - **Stage 88**: `vetmanager_upstream_requests_total{target,status}`, `vetmanager_upstream_request_latency_seconds_{count,sum,max}`, `vetmanager_tool_calls_total{endpoint,method,outcome}`, `vetmanager_tool_call_latency_seconds_*`.
+> - **Stage 110**: `vetmanager_business_events_total{event=...}` — 4 lifecycle events (account_registered, web_login_succeeded, bearer_token_issued, bearer_token_revoked).
+> - **Stage 111.1**: `/metrics` endpoint теперь требует `Authorization: Bearer $METRICS_AUTH_TOKEN` когда env задан (иначе 403). Без env — backward-compat open.
+> - **Stage 112**: `circuit_breaker_opened` structured log на CLOSED→OPEN + HALF_OPEN→OPEN; `integration_save_failed` log + `auth_failures_total{source="web_integration[_reauth]"}`; `entity` вместо `url_path` в retry/timeout/network-error логах (privacy).
+>
+> Полная ревизия runbook — отдельным этапом.
+
 ## 1. Быстрая проверка состояния
 
 Минимальный smoke-check:

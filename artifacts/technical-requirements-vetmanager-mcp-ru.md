@@ -595,6 +595,45 @@ docker compose up -d
 - Поведение Vetmanager API не домысливается и должно сверяться по OpenAPI и
   `api_entity_reference-ru.md`.
 
+## 7.1. Журнал этапов 97-116 (stage 117.1 backfill)
+
+Компактный changelog пропущенных в §2 этапов:
+- **97** — Docs + workflow compliance backfill.
+- **98** — Observability hardening (structured logs, correlation_id propagation).
+- **99** — Reliability hardening II: breaker env-tunable thresholds, shared httpx pool per-loop.
+- **100** — Security hardening II: timing-safe auth, dummy hash verify.
+- **101** — Tests hardening II: stage91/96 private-attr reads via public API.
+- **102** — Product consistency sweep: aggregator section_errors structured shape.
+- **103a/c/d** — Architecture consolidation: auth package split, resources/ gateway layer, vm_transport/* split из `vetmanager_client.py`.
+- **104** — Workflow discipline (self-attestation checklist rule).
+- **105** — Blocker hotfix: breaker amplification fix (1 failure per logical call, not per retry).
+- **106** — High-severity reliability + docs hardening (probe_in_flight finally cleanup; test-patch stability).
+- **107** — Observability gaps: auth-path logs, billing metric, retry trace, aggregator correlation_id.
+- **108** — Code quality cleanup: builtin shadow, duplication, inline imports.
+- **109** — Test brittleness + BC invariants (closed 5 deferred subtasks; stage 109 full subset `done`).
+- **109.10** — parallel vm_upstream_network_error test.
+- **110** — Product metrics: ad-hoc CLI `scripts/product_metrics_report.py` + business events counter + `/product-metrics` skill.
+- **111** — Blocker cleanup (super-review 2026-04-19): `/metrics` auth gate via `METRICS_AUTH_TOKEN` + nginx allow/deny, composite index на `token_usage_logs(event_type, event_at)`, login lockout metric, `record_business_event` ERROR log on unknown event_name.
+- **112** — Observability integrity: `circuit_breaker_opened` log, integration save failure log+metric, url_path → entity scrub, correlation_id explicit in business-event logs, retry log DEBUG.
+- **113** — Resilience completeness (focused): billing-api per-loop AsyncClient + TTL cache + integrated shutdown hook; breaker env accessors. 113.2-113.5 deferred to stage 113b.
+- **114** — Simplicity debt (focused F2): inline imports cleanup в `service_metrics.py` + `resources/_aggregation.py`; AST regression test.
+- **115** — Real concurrency tests: breaker amplification (gather + Event barrier), pool singleton identity; autouse `reset_service_metrics` fixture.
+- **116** — PRD 110 completion: `--window-days` CLI flag removed (half-wired), `tokens.expired_auto_24h` counter added, PRD 110 docs drift fixed, AssumptionLog commit SHAs backfilled.
+
+### Дополнительная структура
+- `scripts/` — операционные + ad-hoc: `init_server.sh`, `deploy_server.sh`, `sync_and_deploy_server.sh`, `backup_postgres.sh`, `review_workflow_check.sh`, `product_metrics_report.py`.
+- `.claude/commands/` — skill-файлы (`product-metrics`, `super-review`).
+- `artifacts/review/` — накопленные super-review отчёты + `inadequate-findings-index.md`.
+
+### Резидентные upstream'ы
+- `vm_transport/breaker.py` — per-domain breaker для `*.vetmanager.cloud` clinics.
+- `host_resolver.py` (stage 113.F7) — shared per-loop `httpx.AsyncClient` + TTL cache для billing-api.
+
+### Observability metrics (stage 88 + 110)
+- `vetmanager_upstream_requests_total{target,status}` + latency histogram;
+- `vetmanager_tool_calls_total{endpoint,method,outcome}` + latency histogram;
+- `vetmanager_business_events_total{event}` — 4 allowed events.
+
 ## 8. Ссылки
 
 1. [Документация Vetmanager REST API](https://help.vetmanager.cloud/article/3029)

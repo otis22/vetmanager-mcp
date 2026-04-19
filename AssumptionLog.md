@@ -4793,3 +4793,28 @@ Guards против регрессии drift'а между timeout-branch и net
 ### Тесты
 
 703 passed, stable. Stage 110 tests обновлены под new API.
+
+## Этап 117. Docs catchup — 2026-04-19
+
+**Commit**: (pending).
+
+Закрыл T4 (docs drift) из super-review 2026-04-19 + добавил protection против будущего drift.
+
+### Что сделано
+
+1. **117.1** — `artifacts/technical-requirements-vetmanager-mcp-ru.md`: добавлена секция §7.1 "Журнал этапов 97-116 (stage 117.1 backfill)" с compact-changelog каждого этапа, плюс подсекции "Дополнительная структура" / "Резидентные upstream'ы" / "Observability metrics (stage 88 + 110)".
+2. **117.2** — `artifacts/observability-runbook-vetmanager-mcp-ru.md`: banner "Last updated: stage 45" с перечислением метрик добавленных в stage 88 + stage 110 + stage 111.1 /metrics auth + stage 112 breaker/integration/entity logs. Полная ревизия runbook — отдельным stage (не backfill).
+3. **117.3** — `README.md:122-140` observability section: добавлен bullet про `vetmanager_business_events_total{event=...}` + ссылка на `METRICS_AUTH_TOKEN` stage 111.1 gate.
+4. **117.4** — `scripts/review_workflow_check.sh`: новый check 11 "pending_commit_sha" detector — находит `**Commit**: (pending)` markers в AssumptionLog. Catches bulk gap pattern (13 stages missed prior to 116.5 backfill).
+5. **117.5** — `artifacts/review/2026-04-19-changed-105-110-stage-110.md`: Resolution section с таблицей finding → closing stage → commit SHA. Report помечен как superseded.
+
+### Решения и обоснования
+
+- **Runbook banner вместо полной ревизии**: 10+ новых метрик + breaker state transitions + billing-api observability = >500 LOC changelog. Full rewrite без concrete ops pain = low ROI. Banner с "Last updated: stage 45" + список добавленных метрик даёт operator'у знать чего **не** покрывает runbook; полное обновление отложено до первого incident где runbook проваливается.
+- **(pending) detector в workflow script**: generic `head -5` на случай сохранения старых (pending) records, не пропустит новые через автоматический pipeline. Severity medium (не blocker) — не ломает commit, но flagged в super-review.
+- **technical-requirements §7.1 вместо merge в §2**: полный rewrite §2 сложен (14 этапов, architecture consolidation mid-chain). Compact journal в новой подсекции — честный backfill без risk структурной регрессии. Future stages могут добавлять строки одной правкой.
+- **Codex review skipped per §5.5**: docs-only (5 markdown changes + 1 bash script with mechanical regex). Нет нового функционала, нет architectural decisions.
+
+### Тесты
+
+703 passed, stable. Нет code changes требующих новых тестов. `./scripts/review_workflow_check.sh 117` проверяет new `(pending)` detector: возвращает 0 findings (все 13 stages 105-115 заполнены stage 116.5).

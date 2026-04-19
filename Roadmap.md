@@ -1911,7 +1911,7 @@ Acceptance: `--window-days=7` даёт consistent 7d snapshot (не смесь);
 
 ---
 
-## Этап 117. Docs catchup (super-review 2026-04-19) — `todo`
+## Этап 117. Docs catchup (super-review 2026-04-19) — `done`
 
 Цель: закрыть 14-stage документационный drift. ~1 час.
 

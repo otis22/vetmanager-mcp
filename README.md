@@ -136,6 +136,8 @@ HTTP probes и scrape endpoints:
   - `vetmanager_upstream_requests_total{target,status}` + `vetmanager_upstream_request_latency_seconds_{count,sum,max}` — all VM API requests with their outcome (stage 88);
   - `vetmanager_tool_calls_total{endpoint,method,outcome}` + `vetmanager_tool_call_latency_seconds_{count,sum,max}` — per-tool (endpoint+method) latency and success/error rate via crud_helpers instrumentation (stage 88);
   - `vetmanager_cache_{hits,misses,invalidations,evictions}_total` + `vetmanager_cache_entries`;
+  - `vetmanager_business_events_total{event=...}` — lifecycle business events (`account_registered`, `web_login_succeeded`, `bearer_token_issued`, `bearer_token_revoked`) (stage 110);
+  - `/metrics` endpoint gated by optional `METRICS_AUTH_TOKEN` env (stage 111.1): when set, requires `Authorization: Bearer <token>` or returns 403;
 - opt-in Sentry bootstrap для unhandled exceptions.
 
 ### Exceptions raised by VM tools
