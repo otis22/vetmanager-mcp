@@ -212,6 +212,75 @@ async def test_timeout_emits_structured_warning_and_records_latency():
     assert snap["upstream_requests_total"].get("vetmanager_api|timeout") == 1
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_network_error_emits_structured_warning_and_records_latency(monkeypatch):
+    """Stage 109.10: parallel to the timeout test — verify the network-error
+    branch of _request also emits a structured warning + latency metric.
+
+    httpx.ConnectError is a subclass of httpx.RequestError, so it flows
+    through the `except httpx.RequestError` branch in vetmanager_client._request
+    and produces event_name='vm_upstream_network_error' plus the
+    upstream_requests_total{status='network_error'} counter bump.
+
+    Guards against regression where the two branches drift (e.g. wrong
+    event_name, missing field, latency not recorded).
+    """
+    # No real sleep between retries — otherwise 3 retries eat ~ whatever
+    # backoff_seconds yields; monkeypatch keeps the test fast & stable.
+    async def _no_sleep(_):
+        return None
+    monkeypatch.setattr("vetmanager_client.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("vm_transport.retry.random.uniform", lambda a, b: 0.0)
+
+    runtime_logger = logging.getLogger("vetmanager.runtime")
+    collected: list[logging.LogRecord] = []
+
+    class _ListHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            collected.append(record)
+
+    handler = _ListHandler(level=logging.DEBUG)
+    runtime_logger.addHandler(handler)
+    prev_disabled = runtime_logger.disabled
+    runtime_logger.disabled = False
+    try:
+        reset_service_metrics()
+        billing_mock()
+        respx.get(f"{BASE}/rest/api/client").mock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
+        from exceptions import VetmanagerError
+        headers_patch, runtime_patch = bearer_runtime_patch()
+        with headers_patch, runtime_patch:
+            with pytest.raises(VetmanagerError):
+                await VetmanagerClient().get(
+                    "/rest/api/client", params={"limit": 1}
+                )
+    finally:
+        runtime_logger.removeHandler(handler)
+        runtime_logger.disabled = prev_disabled
+
+    network_records = [
+        r for r in collected
+        if getattr(r, "event_name", None) == "vm_upstream_network_error"
+    ]
+    assert network_records, (
+        f"expected structured warning vm_upstream_network_error, "
+        f"got {[(r.getMessage(), getattr(r, 'event_name', None)) for r in collected]}"
+    )
+    record = network_records[0]
+    assert record.domain == DOMAIN
+    assert record.method == "GET"
+    assert record.url_path == "/rest/api/client"
+    assert isinstance(record.elapsed_ms, (int, float))
+    # error_class preserved for debugging the underlying httpx exception type.
+    assert record.error_class == "ConnectError"
+
+    snap = snapshot_service_metrics()
+    assert snap["upstream_requests_total"].get("vetmanager_api|network_error") == 1
+
+
 # ── per-tool metric via crud_helpers ────────────────────────────────────────
 
 

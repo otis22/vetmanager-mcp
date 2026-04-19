@@ -1783,7 +1783,7 @@ Super-review 2026-04-18 (`artifacts/review/2026-04-18-changed-stage-104.md`) —
 
 - 109.9 **_parse_retry_after boundary tests** — `tests/test_stage91_vm_client_overhaul.py`. Добавить `test_parse_retry_after_clamps_above_300`, `test_parse_retry_after_clamps_negative_to_zero`, `test_parse_retry_after_accepts_float`. `done`
 
-- 109.10 **vm_upstream_network_error parallel test** — `tests/test_stage88_observability_core.py`. Зеркальный тест к timeout-test, но с `httpx.ConnectError` side_effect. Assert `event_name=vm_upstream_network_error`, `upstream_requests_total["vetmanager_api|network_error"] == 1`. `stop` (deferred — low-ROI without concrete test failure)
+- 109.10 **vm_upstream_network_error parallel test** — `tests/test_stage88_observability_core.py`. Зеркальный тест к timeout-test, но с `httpx.ConnectError` side_effect. Assert `event_name=vm_upstream_network_error`, `upstream_requests_total["vetmanager_api|network_error"] == 1`. `done`
 
 - 109.11 **upstream_unavailable error_type test** — `tests/test_stage102_aggregator_structured_errors.py`. Добавить тест где section raises `VetmanagerUpstreamUnavailable` (breaker open для domain); assert `error_type == "upstream_unavailable"`, `retryable is True`. `done`
 

@@ -4533,3 +4533,20 @@ Codex review (2-й проход): 0 findings после применения п�
 - #5 addressed: skill whitelist-validates args перед shell-call, uses single-quote quoting.
 
 **Тесты**: 665 → 678 passed (+13).
+
+## Этап 109.10 (follow-up) — vm_upstream_network_error parallel test
+
+**Commit**: (pending).
+
+Закрыт один из 6 deferred 109-subtask'ов. Новый тест `test_network_error_emits_structured_warning_and_records_latency` в `tests/test_stage88_observability_core.py` — зеркальный к `test_timeout_emits_structured_warning_and_records_latency`:
+
+- httpx mock raises `httpx.ConnectError("connection refused")` (subclass of `httpx.RequestError`).
+- monkeypatch `asyncio.sleep` → no-op + `vm_transport.retry.random.uniform` → 0 — чтобы retry-path в `_request` не занимал время и был deterministic.
+- Attaches `_ListHandler` на `vetmanager.runtime` logger (same pattern что в timeout-test).
+- Asserts: `event_name == "vm_upstream_network_error"`, record fields (domain/method/url_path/elapsed_ms/error_class=="ConnectError"), `upstream_requests_total["vetmanager_api|network_error"] == 1`.
+
+Guards против регрессии drift'а между timeout-branch и network-error-branch в `vetmanager_client._request`: обе ветки эмитят разный event_name + status, но структурно близки — смена одной без другой осталась бы невидимой.
+
+**Тесты**: 678 → 679 passed (+1).
+
+Остаются 5 deferred 109-subtask'ов (109.1, 109.3, 109.5, 109.7, 109.8) — документированы в Roadmap как low-ROI без concrete pain.

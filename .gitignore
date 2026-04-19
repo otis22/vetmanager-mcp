@@ -12,3 +12,4 @@ htmlcov/
 # Dev artifacts (screenshots, playwright cache)
 *.png
 .playwright-mcp/
+.claude/scheduled_tasks.lock
