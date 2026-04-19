@@ -1816,3 +1816,135 @@ Super-review 2026-04-18 (`artifacts/review/2026-04-18-changed-stage-104.md`) —
 - 110.5 README section "Product metrics" — примеры вызова skill, список метрик, PII-disclaimer. — `done`
 
 Codex review: 5 findings (1 label escape / 2 IN-list scale / 3 tz invariant / 4 mask PII / 5 shell injection). (1)+(3)+(5) fixed; (2)+(4) документированы как known limitations acceptable для текущего scale. Тесты: 665 → 678 passed (+13).
+
+---
+
+## Источник этапов 111-117
+
+Super-review 2026-04-19 (post-stages-105-110, scope=changed): 10 ревьюеров + aggregator + Codex arbitration на top-7 findings. Все 7 confirmed, F2/F4 снижены до medium. Детали: `artifacts/review/2026-04-19-changed-105-110-stage-110.md`.
+
+Codex 2-hour priority (quote): «F1, F3, F7 — user impact + exploitability + blast radius. Then F5, F6 cheap high-signal.»
+
+---
+
+## Этап 111. Blocker cleanup + metric gaps (super-review 2026-04-19) — `done`
+
+Цель: закрыть 2 blocker + 2 small high из super-review 2026-04-19. ~2 часа focused work. F7 (billing hardening) перенесён в stage 113 как logically belonging to "Resilience completeness".
+
+- 111.1 **F1 (BLOCKER):** `/metrics` auth gate — `METRICS_AUTH_TOKEN` env + nginx `allow 127.0.0.1; allow ::1; deny all;`. — `done`
+- 111.2 **F3 (BLOCKER):** composite index `token_usage_logs(event_type, event_at)` — alembic migration + `__table_args__` в model. Query-collapse отложен в stage 112. — `done`
+- 111.3 **F5 (HIGH):** `record_auth_failure(source="web_login", reason="rate_limited")` в login lockout branch. — `done`
+- 111.4 **F6 (HIGH):** `record_business_event` → `RUNTIME_LOGGER.error` на unknown event_name. — `done`
+
+Acceptance:
+- `/metrics` возвращает 403 без `Authorization: Bearer <METRICS_AUTH_TOKEN>`, 200 с корректным token; если `METRICS_AUTH_TOKEN` не задан — endpoint возвращает 200 (backward compat для dev/self-hosted).
+- Миграция применилась; `EXPLAIN QUERY PLAN` на SQLite подтверждает index usage для `event_type + event_at` WHERE.
+- `scripts/product_metrics_report.py::_count_events` + `_failure_breakdown` используют GROUP BY вместо loop; число queries уменьшено с 10 до ~3.
+- Login lockout test инкрементирует `vetmanager_auth_failures_total{source="web_login",reason="rate_limited"}`.
+- Typo в `record_business_event("accont_registered")` → ERROR log visible; counter не инкрементируется.
+
+Зависимости: none. Codex-ревью обязательно.
+
+---
+
+## Этап 112. Observability integrity (super-review 2026-04-19) — `todo`
+
+Цель: закрыть observability-findings уровня medium/low, которые не попали в stage 111 priority. ~2 часа.
+
+- 112.1 Breaker state transition logging — `vm_transport/breaker.py:146-164` добавить `RUNTIME_LOGGER.warning("Circuit breaker opened", extra={"event_name": "circuit_breaker_opened", "domain": domain, "consecutive_failures": N, "threshold": T})` симметрично к existing `circuit_breaker_closed` (stage 107.9). — `todo`
+- 112.2 Integration save failure logs — `web_routes_account.py:85-93, 143-151` добавить `RUNTIME_LOGGER.warning("Integration save failed", extra={"event_name": "integration_save_failed", "account_id": ..., "error_class": ...})` + `record_auth_failure(source="web_integration", reason=...)`. — `todo`
+- 112.3 URL path scrubbing в retry/timeout logs — `vetmanager_client.py:371-382, 395-406, 434-446` заменить `"url_path": path` на `"entity": _entity_from_path_fn(path)`; опционально gate full path через `LOG_INCLUDE_URL_IDS=1` env. Устраняет privacy-leak в log aggregation (security medium). — `todo`
+- 112.4 `correlation_id` explicit в business-event logs — `web_routes_auth.py:238-242` (Web login succeeded) + `136` (Account registered): explicit pass `correlation_id` через `extra` вместо неявной зависимости от `RequestContextLogFilter`. — `todo`
+- 112.5 Retry log hygiene — `vetmanager_client.py:316-317` убрать INFO-уровень для success-after-retry (создаёт false alert noise); оставить WARNING только на final VetmanagerTimeoutError raise-site. — `todo`
+- 112.6 Per-attempt `elapsed_ms` в retry logs — `vetmanager_client.py:365-385` reset `started = time.monotonic()` внутри каждой итерации retry loop; текущее поведение (накопленное время) неверно для диагностики per-attempt timeout configuration. — `todo`
+
+Acceptance: каждый structured log эмитится с event_name; grep `circuit_breaker_opened` и `integration_save_failed` в log aggregator возвращает реальные события; retry log elapsed_ms = attempt duration, не cumulative.
+
+---
+
+## Этап 113. Resilience completeness (super-review 2026-04-19) — `todo`
+
+Цель: закрыть оставшиеся concurrency / reliability findings (H-level). ~3 часа.
+
+- 113.1 Module-import env eval fix — `vm_transport/breaker.py:31-33` BREAKER_* constants читать через accessor (`get_breaker_threshold()`, ...) вместо eval at import. Тесты с `monkeypatch.setenv` начнут работать. — `todo`
+- 113.2 `probe_in_flight` TOCTOU — `vm_transport/breaker.py:100-121` + `vetmanager_client.py:282-454`: wrap `_check_breaker_allows` в outer try/finally так что probe_in_flight всегда cleared при CancelledError/exception до entry в try block. Альтернатива: stale-probe timeout (force-clear если `opened_at > 2×read_timeout` назад). — `todo`
+- 113.3 Breaker 5xx retry accounting — `vetmanager_client.py:335-343`: записывать breaker failure на каждой retry iteration для 502/503/504 (а не только terminal), бюджет = retryable-5xx subset без 429. Без этого breaker opens 3× медленнее на sustained upstream degradation. — `todo`
+- 113.4 `id(loop)` → `WeakKeyDictionary` в pool — `vm_transport/pool.py:41-48`: заменить `dict[int, ...]` keyed by `id(loop)` на `WeakKeyDictionary[asyncio.AbstractEventLoop, ...]`. Устраняет id-reuse flakes в tests и orphan AsyncClient'ы. — `todo`
+- 113.5 `asyncio.Lock` module-scope fix — `vm_transport/breaker.py:50`, `vm_transport/pool.py:38`: lazy construction inside first async use или per-loop registry. На Python 3.9 текущий код binds к loop at construction. — `todo`
+
+Acceptance: unit-test с `monkeypatch.setenv` правильно overrides breaker threshold; concurrency stress-test с cancellation не оставляет probe_in_flight=True; breaker opens после 5 retries on sustained 503 (при threshold=5).
+
+---
+
+## Этап 114. Simplicity debt + inline imports (super-review 2026-04-19) — `todo`
+
+Цель: закрыть F2 + BC shim policy decisions. ~2 часа.
+
+- 114.1 **F2 (medium):** fix 3 inline imports — `service_metrics.py:143` (`import time`), `resources/_aggregation.py:67-71+96` (exceptions + dedup), `vm_transport/breaker.py:135` (RUNTIME_LOGGER). Переместить на module level. — `todo`
+- 114.2 Audit codebase на inline imports — grep `^    (import|from) ` внутри функций; каждый case либо keep+docstring с rationale (циркулярный импорт доказан), либо fix. — `todo`
+- 114.3 BC shim policy decision — `tools/_aggregation.py` (9 LOC), `request_credentials.py` (15 LOC), `vetmanager_client.py:25-71` (~40 underscore re-exports). Для каждого: либо (a) keep с explicit docstring «BC shim для tests X/Y; удаление потребует migration Z» либо (b) remove + update BC-invariants тесты + мигрировать caller'ов. — `todo`
+- 114.4 Collapse 3-hop indirection — `tools/client.py:345-381` `get_client_profile` + `tools/pet.py:172-205` `get_pet_profile`: заменить `_impl` closure + `_get_*_profile_impl` на inline `instrument_call(lambda: fetch(...))`. — `todo`
+- 114.5 `resources/client_profile.py:36-68` — заменить 4 hand-rolled `json.dumps([_filter_eq(...).to_dict()], separators=(',',':'))` на `filters.build_list_query_params(...)`. Same для `resources/pet_profile.py:35-42`, `tools/medical_card.py:80-83,111-114`. — `todo`
+
+Acceptance: `grep -rE '^\s+(from|import) ' src/ --include='*.py' | grep -v 'test_'` возвращает только documented circular-import cases; BC shims либо деокументированы, либо удалены.
+
+---
+
+## Этап 115. Real concurrency tests (super-review 2026-04-19) — `todo`
+
+Цель: заменить sequential-mock concurrency theatre на real tests. ~2 часа.
+
+- 115.1 `tests/test_stage105_breaker_amplification.py` — добавить test с 2+ concurrent `VetmanagerClient.get()` calls через `asyncio.gather`, mock timeout через `transport=httpx.MockTransport`, assert `consecutive_failures <= threshold` после burst. — `todo`
+- 115.2 `tests/test_stage106_reliability.py:99-120` — переписать `test_concurrent_first_init_creates_single_pool_client` на behavioral (8× concurrent `get_shared_http_client()` assert all identical) вместо inspection `_shared_http_clients` dict. — `todo`
+- 115.3 Autouse `reset_service_metrics()` fixture в `tests/conftest.py` — устраняет state leak между тестами (business_events_total, auth_failures, etc.). — `todo`
+- 115.4 BC-invariant дополнения — `tests/test_stage109_bc_invariants.py` добавить identity check для `force_breaker_open` и `get_breaker_state` re-exports. — `todo`
+- 115.5 Property-based test на breaker state machine (опционально, если останется время). — `todo`
+
+Acceptance: `test_stage105_breaker_amplification.py` ловит амплификацию без `monkeypatch(asyncio.sleep)`; test pollution между `test_service_metrics.py` и `test_stage110_*` устранён.
+
+---
+
+## Этап 116. PRD 110 completion (F4 medium) — `todo`
+
+Цель: закрыть F4 + оставшиеся product findings. ~2 часа.
+
+- 116.1 **F4a:** Full `--window-days` propagation — `scripts/product_metrics_report.py` прокинуть `window_days` во все `_count_events`, `_count_live_accounts`, `_count_dead_accounts`, failures breakdowns. Renamed keys: `live_Nd`, `dead_Nd`, `total_Nd`. Label в Markdown header = f"window: {window_days}d". Либо **F4b:** убрать `--window-days` CLI флаг, хардкодить 30d с явным docstring «fixed 30-day window». — `todo`
+- 116.2 Implement `tokens.expired_auto_24h` counter (PRD 110.1 acceptance) — query `TOKEN_EVENT_EXPIRED` events за 24h; добавить в tokens section. Либо удалить из PRD если не нужно. — `todo`
+- 116.3 `disabled` failure reason — либо добавить `TOKEN_EVENT_AUTH_FAILED_DISABLED` constant в `auth_audit.py` и emit на disabled-token path, либо удалить из PRD 110 (строка 54). — `todo`
+- 116.4 PRD sync: `--window=30d` → `--window-days=30` (PRD 110 lines 23, 102); example SSH command добавить `--profile production`. — `todo`
+- 116.5 `test_record_business_event` extended — проверяет все 4 required events (`account_registered`, `web_login_succeeded`, `bearer_token_issued`, `bearer_token_revoked`), не 2. — `todo`
+- 116.6 Boundary tests для `_mask_email` — empty string, no `@`, multi-`@`, unicode domain, 2-char local. — `todo`
+- 116.7 Off-by-one в dead-account cutoff — `scripts/product_metrics_report.py:106-120` `Account.created_at < cutoff` → `<= cutoff` (или задокументировать strict behavior). — `todo`
+
+Acceptance: `--window-days=7` даёт consistent 7d snapshot (не смесь); `tokens.expired_auto_24h` present либо в коде, либо удалён из PRD; PRD test matrix = 8/8.
+
+---
+
+## Этап 117. Docs catchup (super-review 2026-04-19) — `todo`
+
+Цель: закрыть 14-stage документационный drift. ~1 час.
+
+- 117.1 `artifacts/technical-requirements-vetmanager-mcp-ru.md` — append §2 changelog для этапов 97-116 (1-line each); обновить §3.3 structure tree (`scripts/`, `.claude/commands/`); добавить в §3.2 секции про breaker, probes, business_events, metrics_registry. — `todo`
+- 117.2 Backfill AssumptionLog commit SHAs — `AssumptionLog.md:4499, 4539, 4554` заменить `(pending)` на `778cddc` (110), `3d4f75f` (109.10), `3234e09` (109 full subset). — `todo`
+- 117.3 `artifacts/observability-runbook-vetmanager-mcp-ru.md` — добавить секцию для stage-88 (`vetmanager_upstream_requests_total`, `vetmanager_tool_calls_total`) и stage-110 (`vetmanager_business_events_total`) метрик с example PromQL. — `todo`
+- 117.4 README Observability section — добавить bullet про `vetmanager_business_events_total{event=...}` (строка 138). — `todo`
+- 117.5 `scripts/review_workflow_check.sh` — добавить check на `(pending)` в AssumptionLog последних 3-5 этапов; игнорировать PRD этапов `done` старше N месяцев (убирает 22 workflow-check noise findings). — `todo`
+- 117.6 Self-attestation checklist (CLAUDE.md §4.2) — добавить строку "PRD ↔ код синхронизированы" в чеклист. — `todo`
+
+Acceptance: `grep '(pending)' AssumptionLog.md` пусто; technical-requirements упоминает stage 110 business_events; `./scripts/review_workflow_check.sh 111` не возвращает historical PRD findings.
+
+---
+
+## Запланированный порядок execution 111-117
+
+| Stage | Blocks merge? | Est. time | Depends on |
+|---|---|---|---|
+| 111 | YES — 2 blocker + 3 high | 2-4h | — |
+| 112 | no, but before next obs work | ~2h | 111 (reuses F6 allowlist/log hygiene pattern) |
+| 113 | no, recommended before next reliability change | ~3h | 111 F7 (breaker infrastructure extended) |
+| 114 | no | ~2h | — |
+| 115 | no | ~2h | 113 (new breaker semantics to test) |
+| 116 | no (но Roadmap 110 честно only after this) | ~2h | — |
+| 117 | no | ~1h | — |
+
+**Recommended sequence:** 111 (next session) → 112 + 114 parallel (cheap cleanup) → 113 → 115 → 116 → 117. Всего ~14 часов работы, ~5-7 сессий.

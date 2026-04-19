@@ -3,7 +3,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from bearer_token_manager import build_token_prefix, hash_bearer_token, verify_bearer_token
@@ -244,6 +244,13 @@ class TokenUsageLog(Base):
     """Detailed audit log of bearer-token lifecycle and usage events."""
 
     __tablename__ = "token_usage_logs"
+    __table_args__ = (
+        Index(
+            "ix_token_usage_logs_event_type_event_at",
+            "event_type",
+            "event_at",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     bearer_token_id: Mapped[int] = mapped_column(

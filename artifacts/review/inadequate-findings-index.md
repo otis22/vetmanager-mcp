@@ -151,3 +151,44 @@ Source: `artifacts/review/2026-04-18-changed-stage-104.md`
 10. Roadmap 93/94 masked as "done (focused subset)" with implicit stop subtasks
     - reviewer: product, confidence: 0.80
     - **Причина dismiss (borderline)**: convention "focused subset done" соответствует shipped state; формализация `done (focused subset)` vs `stop` — улучшение notation, а не блокер
+
+---
+
+## 2026-04-19 super-review changed (post-stages-105-110) — full rerun
+
+Source: `artifacts/review/2026-04-19-changed-105-110-stage-110.md`
+
+**Note:** partial run на первом запуске (9/10 ревьюеров упёрлись в rate-limit),
+rerun выполнен позже в тот же день — все 10 ревьюеров + aggregator отработали.
+
+### 1-22. workflow-check: PRD этапов 32/36-41/51-55/61-66/89/94-95/99-100/103-104 без `## Цель`
+
+- reviewer: workflow-check, confidence: 0.65 (×22 findings)
+- **Причина dismiss**: исторические PRD вне scope 105-110. Bash-скрипт
+  `scripts/review_workflow_check.sh` не отличает активные этапы от legacy-документов.
+  Ретроактивное добавление `## Цель` — грязная работа с нулевой продуктовой ценностью.
+  Улучшение: добавить в скрипт игнорирование PRD этапов со статусом `done` старше N месяцев.
+
+### 23. Dedup: `_mask_email` short-email handling
+
+- **reviewer-security (low)** vs **reviewer-codex-blindspot (medium)** — same root issue
+- **Причина dismiss**: same finding, оставлен codex-blindspot version с более высокой severity (multi-part TLD + unicode).
+
+### 24. Borderline: BC-invariant tests conflict with simplicity shim-removal
+
+- reviewer-simplicity (medium, ~0.85): удалить `tools/_aggregation.py`, `request_credentials.py` BC shims
+- reviewer-tests (medium, ~0.7): BC-invariant тесты фиксируют shim'ы как protected
+- **Причина dismiss (borderline)**: прямой конфликт между ревьюерами — не dismiss, а **meta-finding** для stage 111/114 (explicit policy decision). Сохранено в отчёте как T1 systemic theme; stage 111 должен явно решить политику (keep+document или remove+update BC tests) перед механической правкой.
+
+### 25. Borderline: core/settings.py env var naming inconsistent (reviewer-docs low)
+
+- **Причина dismiss (borderline)**: частично касается stage 110 (new `BUSINESS_EVENTS_ENABLED`), частично legacy. Ретроактивное naming normalization — низкий ROI vs. риск регрессии. Отложено до stage 117 (docs catchup).
+
+### 26. Speculative: weak crypto / timing attack / log injection (reviewer-security 5×low speculative)
+
+- `bearer_token_manager.py:24-31` — plain sha256 vs HMAC (conf 0.5)
+- `auth/bearer.py:126-136` — timing side-channel (conf 0.4)
+- `resources/_aggregation.py:116-135` — log correlation_id poisoning (conf 0.45)
+- `scripts/product_metrics_report.py:468-472` — --now-override traceback leak (conf 0.45)
+- `auth/rate_limit.py:37-105` — multi-worker rate limit bypass (conf 0.5)
+- **Причина dismiss (speculative)**: все 5 — defense-in-depth без конкретного exploit, confidence 0.4-0.5. Ревьюер помечает `speculative: true`. Добавить в backlog stage 118+ если security focus возобновится.

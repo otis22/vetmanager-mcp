@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass
 from threading import Lock
 from typing import DefaultDict
 
+from observability_logging import RUNTIME_LOGGER
+
 PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
 
@@ -76,11 +78,20 @@ def record_business_event(event_name: str) -> None:
     handlers. Snapshot is exposed via `snapshot_service_metrics()["business_events_total"]`
     and the Prometheus `/metrics` endpoint for future dashboards.
 
-    Strict allowlist: unexpected `event_name` values are silently dropped
-    rather than silently added to the metric (prevents cardinality blow-ups
-    from typos or dynamic strings leaking in from request payloads).
+    Strict allowlist: unexpected `event_name` values are rejected (prevents
+    cardinality blow-ups from typos or dynamic strings). Stage 111.4 (F6
+    super-review 2026-04-19): rejection now emits an ERROR log so typos
+    in new call-sites surface immediately instead of silently flat-lining
+    the metric.
     """
     if event_name not in _ALLOWED_BUSINESS_EVENTS:
+        RUNTIME_LOGGER.error(
+            "record_business_event: unknown event_name dropped",
+            extra={
+                "event_name": "business_event_unknown",
+                "dropped_name": event_name,
+            },
+        )
         return
     with _LOCK:
         _BUSINESS_EVENTS_TOTAL[event_name] += 1

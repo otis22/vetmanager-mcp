@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hmac
+import os
+
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
@@ -46,6 +49,19 @@ def register_system_routes(mcp, *, observed_route, html_response, json_response,
 
     @observed_route(mcp, "/metrics", methods=["GET"], include_in_schema=False)
     async def metrics_export(request: Request) -> PlainTextResponse:
+        # Stage 111.1 (F1 super-review 2026-04-19): gate /metrics behind
+        # optional METRICS_AUTH_TOKEN. When env var is set, require matching
+        # `Authorization: Bearer <token>` header; otherwise 403. When env is
+        # unset, endpoint stays open (backward compat for self-hosted dev).
+        # Production deploys MUST set the token — see README security section.
+        expected = (os.environ.get("METRICS_AUTH_TOKEN") or "").strip()
+        if expected:
+            header = request.headers.get("authorization", "")
+            scheme, _, supplied = header.partition(" ")
+            if scheme.lower() != "bearer" or not hmac.compare_digest(
+                supplied.strip(), expected
+            ):
+                return plain_text_response(request, "forbidden", status_code=403)
         return plain_text_response(
             request,
             render_prometheus_metrics(),

@@ -196,6 +196,11 @@ def register_auth_routes(
                 window_seconds=900,
             )
         except RateLimitError:
+            # Stage 111.3 (F5 super-review 2026-04-19): emit auth-failure
+            # metric symmetrically with the register path (stage 107.3)
+            # so credential-stuffing that trips login lockout is visible
+            # in Grafana instead of silently invisible.
+            record_auth_failure(source="web_login", reason="rate_limited")
             csrf_token = resolve_csrf_token(request)
             return html_response(
                 request,

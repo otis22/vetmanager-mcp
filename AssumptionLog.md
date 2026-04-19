@@ -4593,3 +4593,43 @@ Guards против регрессии drift'а между timeout-branch и net
 **Тесты**: 679 → 679 (no regression; +0 — 109.3/5/7/8/1 — рефакторы existing tests, не новые покрытия; 109.10 уже был).
 
 **Roadmap state после commit'а**: 0 `todo` / 0 `in_progress` / 0 `stop` / 0 `deferred`. Все 879+ subtask'ов `done`.
+
+## Этап 111. Blocker cleanup + metric gaps — 2026-04-19
+
+**Commit**: (pending).
+
+Закрыл 2 blocker (F1 /metrics public + F3 token_usage_logs index) + 2 high (F5 login lockout metric + F6 silent-drop log) из super-review 2026-04-19. F7 (billing hardening) перенесён в stage 113 как logically belonging to "Resilience completeness" (~2h own scope).
+
+### Что сделано
+
+1. **F1 `/metrics` auth gate** — `web_routes_system.py::metrics_export` требует `Authorization: Bearer $METRICS_AUTH_TOKEN` когда env var задан (иначе 403). Без env — backward-compat open endpoint. `hmac.compare_digest` для timing-safe сравнения. Defence-in-depth: nginx `location = /metrics { allow 127.0.0.1; allow ::1; deny all; ... }` в `scripts/init_server.sh`. Codex после ревью: добавил IPv6 localhost allow (warning).
+2. **F3 composite index** — `alembic/versions/20260419_000007_token_usage_logs_event_index.py` + `__table_args__ = (Index(...),)` в `storage_models.TokenUsageLog`. Planner'ы обоих (SQLite, Postgres) автоматически используют composite index для existing `WHERE event_type=X AND event_at>=Y` queries — query-text refactor не нужен для index-use. Query-collapse (10→1 GROUP BY) перенесён в stage 112 как отдельная perf-optimization.
+3. **F5 login lockout metric** — один `record_auth_failure(source="web_login", reason="rate_limited")` в `web_routes_auth.py:200` (RateLimitError branch), симметрично с `web_register` (stage 107.3). Credential-stuffing становится visible в Grafana.
+4. **F6 silent-drop log** — `service_metrics.record_business_event` теперь эмитит `RUNTIME_LOGGER.error("record_business_event: unknown event_name dropped", extra={"event_name": "business_event_unknown", "dropped_name": event_name})` перед `return` для unknown event_name. Counter по-прежнему не инкрементируется (cardinality защита), но typo теперь видно в логах. Import `RUNTIME_LOGGER` — module-level (не inline, следуя F2 recommendation).
+
+### Решения и обоснования
+
+- **Backward-compat METRICS_AUTH_TOKEN**: если env не задан — endpoint open. Причина: self-hosted dev + existing prod deploys не ломаются. Production deploy обязан установить token (документировано в комментарии). Alternative (mandatory token) отклонён — breaking change без migration path.
+- **hmac.compare_digest вместо `==`**: timing-safe string compare защищает от timing side-channel на token discovery. Overkill для 403-only endpoint, но zero cost.
+- **Index declaration в двух местах (model + migration)**: required для SQLAlchemy `create_all` (используется в tests) и для alembic (prod). Без `__table_args__` test_prometheus_metrics.py и тесты, создающие DB через `Base.metadata.create_all`, не получили бы индекс.
+- **Query-collapse deferred**: было в оригинальном scope 111.2, отложено. Причина: требует изменить schema return value 13 stage-110 тестов; ROI vs risk не оправдывает в blocker cleanup. Index один даёт perf-win (O(log n) lookup вместо O(n) scan).
+- **F2 (inline imports) не включён**: scope split — F2 в stage 114. Единственное исключение: module-level перенос `RUNTIME_LOGGER` в `service_metrics.py` сделан в рамках F6 fix (чтобы не добавлять новый inline import).
+
+### Simplicity evaluation (§4.1)
+
+Прошёл 8 triggers — см. `PRD/этап-111-blocker-cleanup.md` §Simplicity. Ни один trigger не сработал. Единственный rationale: `METRICS_AUTH_TOKEN` optional (premature flexibility?) — nope, explicit backward-compat для self-hosted. Documented.
+
+### Codex review (§5.1)
+
+1 warning (адекватный): `allow ::1;` для IPv6 localhost в nginx. **Исправлено** — 1 LOC diff.
+4 × nit (подтверждения корректности F1/F3/F5/F6). **Dismiss.**
+
+Одна итерация Codex хватило — второй проход не нужен.
+
+### Тесты
+
+679 → 687 passed (+8). Все 8 — в `tests/test_stage111_blocker_cleanup.py`:
+- 4 × /metrics auth (env missing / 403 без token / 200 с token / 403 с wrong)
+- 1 × composite index presence (SQLAlchemy inspect)
+- 1 × login lockout → record_auth_failure call
+- 2 × record_business_event (unknown ERROR log / known still increments)

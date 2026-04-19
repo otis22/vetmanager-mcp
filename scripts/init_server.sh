@@ -146,6 +146,24 @@ server {
     listen 80;
     server_name ${SSL_DOMAIN};
 
+    # Stage 111.1 (F1 super-review 2026-04-19): restrict /metrics to
+    # localhost by default (monitoring scrapes from the same host).
+    # Defence-in-depth layered on top of METRICS_AUTH_TOKEN bearer check
+    # in web_routes_system.py. Add explicit `allow <monitoring-ip>;`
+    # lines for any external Prometheus scrapers.
+    location = /metrics {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        proxy_pass http://mcp_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Authorization \$http_authorization;
+    }
+
     location / {
         proxy_pass http://mcp_backend;
         proxy_http_version 1.1;
