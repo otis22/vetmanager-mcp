@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from weakref import WeakKeyDictionary
 
 import httpx
 
@@ -53,15 +54,19 @@ _resolved_host_cache: dict[str, tuple[str, float]] = {}
 # per-loop pattern in `vm_transport/pool.py`. Each loop gets its own
 # AsyncClient + lock, resolving the residual correctness risk that would
 # otherwise require full 113c-scope refactor.
-_shared_clients_by_loop: dict[int, httpx.AsyncClient] = {}
-_shared_clients_locks: dict[int, asyncio.Lock] = {}
+_shared_clients_by_loop: WeakKeyDictionary[asyncio.AbstractEventLoop, httpx.AsyncClient] = (
+    WeakKeyDictionary()
+)
+_shared_clients_locks: WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
+    WeakKeyDictionary()
+)
 
 
-def _current_loop_key() -> int:
+def _current_loop_key() -> asyncio.AbstractEventLoop | None:
     try:
-        return id(asyncio.get_running_loop())
+        return asyncio.get_running_loop()
     except RuntimeError:
-        return 0
+        return None
 
 
 async def _get_shared_client() -> httpx.AsyncClient:
@@ -72,10 +77,15 @@ async def _get_shared_client() -> httpx.AsyncClient:
     cross-loop transport reuse that bites under `asyncio.run()` re-entry.
     """
     key = _current_loop_key()
+    if key is None:
+        raise RuntimeError("_get_shared_client() requires a running event loop")
     client = _shared_clients_by_loop.get(key)
     if client is not None and not client.is_closed:
         return client
-    lock = _shared_clients_locks.setdefault(key, asyncio.Lock())
+    lock = _shared_clients_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _shared_clients_locks[key] = lock
     async with lock:
         client = _shared_clients_by_loop.get(key)
         if client is not None and not client.is_closed:

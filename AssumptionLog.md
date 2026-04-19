@@ -4818,3 +4818,38 @@ Guards против регрессии drift'а между timeout-branch и net
 ### Тесты
 
 703 passed, stable. Нет code changes требующих новых тестов. `./scripts/review_workflow_check.sh 117` проверяет new `(pending)` detector: возвращает 0 findings (все 13 stages 105-115 заполнены stage 116.5).
+
+## Этап 113b. Breaker/pool concurrency hardening — 2026-04-19
+
+Закрыл deferred concurrency/reliability items из super-review 2026-04-19 и существующего Roadmap stage 113b.
+
+### Что сделано
+
+1. `vm_transport/pool.py`: registry shared HTTP clients переведён с `dict[id(loop), client]` на `WeakKeyDictionary[loop, client]`. `current_loop_key()` теперь возвращает loop object, а `get_shared_http_client_state()` сериализует наружу `id(loop)` только для debug snapshot.
+2. `vm_transport/pool.py`: import-time `asyncio.Lock()` убран; lock создаётся lazy через `_get_pool_lock()` при первом реальном use.
+3. `host_resolver.py`: per-loop shared clients и locks переведены на `WeakKeyDictionary`; локальный lock создаётся lazy per-loop instead of `setdefault(..., asyncio.Lock())` on an int-key dict.
+4. `vetmanager_client.py`: retryable `GET` statuses `502/503/504` теперь записывают breaker failure per attempt. `429` исключён из breaker accounting как rate-limit signal, не upstream health signal.
+5. `vetmanager_client.py`: terminal 4xx path (`VetmanagerError` with 4xx status, включая exhausted `429`) теперь закрывает breaker success-path, чтобы final coherent 4xx response не считался failure по finally-fallback.
+6. Добавлен regression suite `tests/test_stage113b_concurrency.py` на:
+   - per-attempt opening breaker on retryable `503`;
+   - no-breaker-amplification on `429`;
+   - `WeakKeyDictionary` registries;
+   - отсутствие import-time `asyncio.Lock()` в `vm_transport/pool.py` и `host_resolver.py`.
+
+### Решения и обоснования
+
+- **Per-attempt only for 502/503/504, not 429**: `429` обозначает throttling / backpressure, но не "upstream unhealthy". Если считать его breaker failure, self-healing rate-limit responses преждевременно открывают circuit и делают продукт менее доступным.
+- **WeakKeyDictionary вместо `id(loop)`**: это минимальный fix без лишней абстракции. Убирает residual correctness risk при reuse object id и auto-evict'ит closed loops без отдельного cleanup registry.
+- **Lazy lock только в реально затронутых registries**: `vm_transport.pool` и `host_resolver` покрывают замечание Roadmap напрямую. `vm_transport.breaker` в этом проходе не трогался, потому что новый acceptance был полностью закрыт без дополнительного churn в breaker state machine.
+- **BC surface сохранён**: re-export identity tests (`stage109_bc_invariants`) остались зелёными; helper `get_shared_http_client_state()` не меняет внешний shape, хотя внутри registry теперь keyed by loop object.
+
+### Аудит
+
+- Изменения ограничены hot paths stage 113b (`vm_transport/pool.py`, `host_resolver.py`, `vetmanager_client.py`) без расширения public API.
+- Проверен regression perimeter: stage 91 / 96 / 105 / 106 / 109 / 113 / 115 tests зелёные вместе с новыми stage 113b tests.
+- Новые follow-up findings из full-review вынесены в Roadmap stages 118 и 119, без смешения scope текущего stage.
+
+### Тесты
+
+- Targeted: `docker compose --profile test run --rm test pytest -q tests/test_stage113b_concurrency.py tests/test_stage106_reliability.py tests/test_stage105_breaker_amplification.py tests/test_stage115_concurrency.py tests/test_stage91_vm_client_overhaul.py tests/test_host_resolver.py tests/test_stage113_resilience.py tests/test_stage109_bc_invariants.py` → `57 passed`
+- Full: `docker compose --profile test run --rm test` → `707 passed, 57 deselected`

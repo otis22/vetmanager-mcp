@@ -14,6 +14,7 @@ dict reference must be stable across `vetmanager_client` re-exports.
 from __future__ import annotations
 
 import asyncio
+from weakref import WeakKeyDictionary
 
 import httpx
 
@@ -26,26 +27,32 @@ HTTP_LIMITS = httpx.Limits(
     keepalive_expiry=30.0,
 )
 
-# Per-loop shared clients, keyed by id(running_loop). Mutated in-place
-# (dict.clear / dict.pop), so re-exports from `vetmanager_client` MUST
-# bind to this same object rather than copy it.
-_shared_http_clients: dict[int, httpx.AsyncClient] = {}
+# Per-loop shared clients, keyed by the loop object itself so closed loops
+# auto-evict via weak refs. Mutated in-place, so re-exports from
+# `vetmanager_client` MUST bind to this same object rather than copy it.
+_shared_http_clients: WeakKeyDictionary[asyncio.AbstractEventLoop, httpx.AsyncClient] = (
+    WeakKeyDictionary()
+)
 
-# Module-level lock guarding `_shared_http_clients` dict mutations. One
-# `asyncio.Lock` is fine because dict mutation is cheap and happens only on
-# first-init per loop. Stage 106.2: lock is now actively used by
-# `get_shared_http_client` (previously dead code reserved "for BC").
-_shared_http_client_lock = asyncio.Lock()
+# Lazy lock: avoid import-time asyncio.Lock() bound to whichever loop imports
+# the module first. One lock is enough because mutation happens only on
+# first-init/reset, not on the hot request path.
+_shared_http_client_lock: asyncio.Lock | None = None
 
 
-def current_loop_key() -> int:
-    """Return a stable key for the currently-running event loop (id of the
-    loop object). Falls back to 0 if called outside any loop."""
+def current_loop_key() -> asyncio.AbstractEventLoop | None:
+    """Return the currently-running event loop object, else None."""
     try:
-        loop = asyncio.get_running_loop()
-        return id(loop)
+        return asyncio.get_running_loop()
     except RuntimeError:
-        return 0
+        return None
+
+
+def _get_pool_lock() -> asyncio.Lock:
+    global _shared_http_client_lock
+    if _shared_http_client_lock is None:
+        _shared_http_client_lock = asyncio.Lock()
+    return _shared_http_client_lock
 
 
 async def get_shared_http_client() -> httpx.AsyncClient:
@@ -61,11 +68,13 @@ async def get_shared_http_client() -> httpx.AsyncClient:
     N-1 orphaned and leaking sockets until GC).
     """
     key = current_loop_key()
+    if key is None:
+        raise RuntimeError("get_shared_http_client() requires a running event loop")
     client = _shared_http_clients.get(key)
     if client is not None and not client.is_closed:
         return client
     # Slow path: acquire lock, re-check, construct if still needed.
-    async with _shared_http_client_lock:
+    async with _get_pool_lock():
         client = _shared_http_clients.get(key)
         if client is not None and not client.is_closed:
             return client

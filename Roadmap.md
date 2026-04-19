@@ -1942,14 +1942,14 @@ Acceptance: `grep '(pending)' AssumptionLog.md` пусто; technical-requiremen
 
 ---
 
-## Этап 113b. Breaker/pool concurrency hardening (deferred from 113) — `todo`
+## Этап 113b. Breaker/pool concurrency hardening (deferred from 113) — `done`
 
 Дизайн-сложные items из super-review 2026-04-19 F7/concurrency, требующие careful architecture, не покрытые focused subset stage 113. ~3-4 часа.
 
-- 113b.1 probe_in_flight TOCTOU fix — wrap `_check_breaker_allows` в outer try/finally в `vetmanager_client._request` так что CancelledError между `_check_breaker_allows` и `try:` block всегда clears probe_in_flight. Альтернатива: stale-probe timeout (force-clear если `opened_at > 2×read_timeout` назад). — `todo`
-- 113b.2 Breaker per-retry 5xx accounting — `vetmanager_client.py:335-343` записывать breaker failure на каждой retry iteration для 502/503/504 subset (не только terminal). Design decision: "per-retry vs per-call" document в AssumptionLog (sustained upstream degradation должна opens breaker в 3× быстрее). — `todo`
-- 113b.3 `id(loop)` → `WeakKeyDictionary` — `vm_transport/pool.py:41-48` заменить `dict[int, ...]` на `WeakKeyDictionary[asyncio.AbstractEventLoop, ...]`. Устраняет id-reuse flakes, auto-eviction закрытых loops. Требует migrate 2-3 теста, которые читают `_shared_http_clients` by id. — `todo`
-- 113b.4 `asyncio.Lock` module-scope refactor — `vm_transport/breaker.py:50`, `vm_transport/pool.py:38`: lazy construction или per-loop registry. Zero regression на Python 3.10+, но устраняет Py3.9 binding-to-loop-at-construction. Связано scope с 113b.3. — `todo`
+- 113b.1 probe_in_flight TOCTOU fix — wrap `_check_breaker_allows` в outer try/finally в `vetmanager_client._request` так что CancelledError между `_check_breaker_allows` и `try:` block всегда clears probe_in_flight. Альтернатива: stale-probe timeout (force-clear если `opened_at > 2×read_timeout` назад). — `done`
+- 113b.2 Breaker per-retry 5xx accounting — `vetmanager_client.py:335-343` записывать breaker failure на каждой retry iteration для 502/503/504 subset (не только terminal). Design decision: "per-retry vs per-call" document в AssumptionLog (sustained upstream degradation должна opens breaker в 3× быстрее). — `done`
+- 113b.3 `id(loop)` → `WeakKeyDictionary` — `vm_transport/pool.py:41-48` заменить `dict[int, ...]` на `WeakKeyDictionary[asyncio.AbstractEventLoop, ...]`. Устраняет id-reuse flakes, auto-eviction закрытых loops. Требует migrate 2-3 теста, которые читают `_shared_http_clients` by id. — `done`
+- 113b.4 `asyncio.Lock` module-scope refactor — `vm_transport/breaker.py:50`, `vm_transport/pool.py:38`: lazy construction или per-loop registry. Zero regression на Python 3.10+, но устраняет Py3.9 binding-to-loop-at-construction. Связано scope с 113b.3. — `done`
 
 Acceptance: concurrency stress-test с cancellation не оставляет probe_in_flight=True; breaker opens после 5 retry-503 при threshold=5; test suite зелёный на Python 3.9/3.10/3.11/3.12.
 
@@ -1965,3 +1965,27 @@ Acceptance: concurrency stress-test с cancellation не оставляет prob
 - 114b.4 BC shim follow-up review — если grep подтверждает 0 callers для `tools/_aggregation.py` / `request_credentials.py`, удалить + update `test_stage109_bc_invariants.py`. Stage 114 decided **keep all** для current cycle; re-visit через 3-6 месяцев или при migration trigger. — `todo`
 
 Acceptance: `scripts/inline_imports_audit.sh` (если написан) возвращает 0 undocumented imports; `filters.build_list_query_params` — single JSON-filter entrypoint в resources/tools; 3-hop indirection collapsed или задокументирован rationale.
+
+---
+
+## Этап 118. Product metrics correctness follow-up (post super-review rerun) — `todo`
+
+Исправления semantic/product drift в `scripts/product_metrics_report.py`, найденные при повторном full-review после этапов 116-117.
+
+- 118.1 Корректно обрабатывать timezone-aware `--now-override`: convert в UTC через `astimezone(timezone.utc)`, а не `replace(tzinfo=...)`. — `todo`
+- 118.2 Нормализовать `dead_list.last_request_at` через `_to_aware(...)` перед сериализацией, чтобы Markdown/JSON не смешивали naive и UTC timestamps. — `todo`
+- 118.3 Добавить тесты на `--now-override` (aware input) и на UTC-формат `dead_list.last_request_at`. — `todo`
+
+Acceptance: timezone-aware `--now-override` anchor даёт корректные 24h/7d/30d окна; `dead_list.last_request_at` сериализуется в UTC-consistent форме; test suite зелёный.
+
+---
+
+## Этап 119. Test isolation + workflow/docs cleanup (post super-review rerun) — `todo`
+
+Follow-up по findings reviewer-tests / workflow-check / reviewer-docs после full-review текущего `HEAD`.
+
+- 119.1 Сбрасывать `REQUEST_CACHE.metrics` в `tests/conftest.py` вместе с `_entries` / `_tag_index`, чтобы cache counters не текли между тестами. — `todo`
+- 119.2 Backfill commit SHA для этапов 116 и 117 в `AssumptionLog.md`; `scripts/review_workflow_check.sh` должен перестать возвращать `pending_commit_sha`. — `todo`
+- 119.3 Обновить `artifacts/release-checklist-vetmanager-mcp-ru.md` под текущий `/metrics` контракт (`METRICS_AUTH_TOKEN`). — `todo`
+
+Acceptance: metrics-related tests order-independent; workflow-check не находит `(pending)` для последних этапов; release checklist согласован с README и runtime.

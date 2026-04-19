@@ -104,9 +104,9 @@ def get_shared_http_client_state() -> dict:
     """
     current_key = _current_loop_key()
     return {
-        "loop_keys": list(_shared_http_clients.keys()),
+        "loop_keys": [id(loop) for loop in _shared_http_clients.keys()],
         "open_count": sum(1 for c in _shared_http_clients.values() if not c.is_closed),
-        "current_loop_registered": current_key in _shared_http_clients,
+        "current_loop_registered": current_key is not None and current_key in _shared_http_clients,
     }
 
 
@@ -318,6 +318,12 @@ class VetmanagerClient:
                         and response.status_code in _RETRY_STATUS_CODES
                         and attempt < max_retries
                     ):
+                        # Stage 113b.2: sustained 502/503/504 should pressure the
+                        # breaker per ATTEMPT, not per logical GET call.
+                        # Keep 429 out of breaker accounting — rate limiting is
+                        # not an upstream health signal.
+                        if response.status_code in {502, 503, 504}:
+                            await _breaker_record_failure(domain_key)
                         retry_after = _parse_retry_after(response.headers.get("Retry-After"))
                         delay = _backoff_seconds(attempt, retry_after)
                         # Stage 112.5 (super-review 2026-04-19): all retry
@@ -429,9 +435,14 @@ class VetmanagerClient:
                     await _breaker_record_success(domain_key)
                     _breaker_resolved = True
                     raise
-                except VetmanagerError:
-                    # 5xx / non-HTTP VM errors already recorded failure above;
-                    # _breaker_resolved was set there.
+                except VetmanagerError as exc:
+                    # Final 4xx (including exhausted 429 retries) means the
+                    # upstream is reachable and replied coherently; do not
+                    # count it as breaker failure. 5xx / transport-like VM
+                    # errors were already recorded above.
+                    if exc.status_code is not None and 400 <= exc.status_code < 500:
+                        await _breaker_record_success(domain_key)
+                        _breaker_resolved = True
                     raise
                 except httpx.RequestError as exc:
                     elapsed = time.monotonic() - started
