@@ -12,7 +12,7 @@ proxy label for `vetmanager_tool_call_latency_seconds` and
 import json
 from typing import Any, Awaitable, Callable, TypeVar
 
-from filters import build_list_query_params
+from filters import as_dict_list, build_list_query_params
 from service_metrics import instrument_call as _instrumented_call
 from vetmanager_client import VetmanagerClient
 
@@ -114,7 +114,6 @@ async def paginate_all(
 
     filter_str: str | None = None
     if filters:
-        from filters import as_dict_list
         normalized = as_dict_list(filters)
         if normalized:
             filter_str = json.dumps(normalized, separators=(",", ":"))

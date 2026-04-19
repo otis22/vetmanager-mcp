@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from secrets import token_hex
 
+from fastmcp.server import dependencies as _fastmcp_dependencies
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -63,9 +64,7 @@ def get_request_context(request: Request) -> dict[str, str]:
 def get_current_request_context() -> dict[str, str]:
     """Return current FastMCP HTTP request context when available."""
     try:
-        from fastmcp.server.dependencies import get_http_request
-
-        request = get_http_request()
+        request = _fastmcp_dependencies.get_http_request()
     except Exception:
         return {}
     return get_request_context(request)

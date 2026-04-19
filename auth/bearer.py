@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import NoReturn
 
+from auth import rate_limit
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -186,7 +187,6 @@ async def resolve_bearer_auth_context(
         # (not via a `from ... import` that would snapshot the object at
         # import time) so `reset_bearer_rate_limiter()` — which rebinds
         # the module-level singleton — takes effect on subsequent calls.
-        from auth import rate_limit
         await rate_limit.BEARER_RATE_LIMITER.check_or_raise(token.id, now=now)
     except RateLimitError as exc:
         # Rate-limit branch re-raises RateLimitError (not AuthError), so it

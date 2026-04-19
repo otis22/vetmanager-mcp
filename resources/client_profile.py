@@ -12,9 +12,7 @@ and the caller sees `partial: True` plus `section_errors`.
 
 from __future__ import annotations
 
-import json
-
-from filters import eq as _filter_eq, in_ as _filter_in
+from filters import build_list_query_params, eq as _filter_eq, in_ as _filter_in
 from resources._aggregation import gather_sections
 from resources.admission_status import ACTIVE_ADMISSION_STATUSES
 from vetmanager_client import VetmanagerClient
@@ -33,39 +31,41 @@ async def fetch(client_id: int) -> dict:
     vc = VetmanagerClient()
 
     client_id_str = str(client_id)
-    client_filter = json.dumps(
-        [_filter_eq("client_id", client_id_str).to_dict()],
-        separators=(",", ":"),
+    common_filters = [_filter_eq("client_id", client_id_str)]
+    invoices_params = build_list_query_params(
+        limit=5,
+        offset=0,
+        sort=[{"property": "id", "direction": "DESC"}],
+        filters=common_filters,
+    )
+    recent_admissions_params = build_list_query_params(
+        limit=5,
+        offset=0,
+        sort=[{"property": "admission_date", "direction": "DESC"}],
+        filters=common_filters,
     )
     # Stage 96.2: `status="active"` was a phantom enum value — admission.status
     # has no such literal. Use IN-filter with the canonical active-status
     # tuple so next_admission returns real upcoming visits instead of None.
-    next_filter = json.dumps(
-        [
-            _filter_eq("client_id", client_id_str).to_dict(),
-            _filter_in("status", list(ACTIVE_ADMISSION_STATUSES)).to_dict(),
+    next_admission_params = build_list_query_params(
+        limit=1,
+        offset=0,
+        sort=[{"property": "admission_date", "direction": "ASC"}],
+        filters=[
+            _filter_eq("client_id", client_id_str),
+            _filter_in("status", list(ACTIVE_ADMISSION_STATUSES)),
         ],
-        separators=(",", ":"),
     )
 
     sections = [
         ("client", vc.get(f"/rest/api/client/{client_id}"),
          {"data": {"client": {}}}),
-        ("invoices", vc.get("/rest/api/invoice", params={
-            "filter": client_filter,
-            "sort": json.dumps([{"property": "id", "direction": "DESC"}], separators=(",", ":")),
-            "limit": 5,
-        }), {"data": {"invoice": []}}),
-        ("recent_admissions", vc.get("/rest/api/admission", params={
-            "filter": client_filter,
-            "sort": json.dumps([{"property": "admission_date", "direction": "DESC"}], separators=(",", ":")),
-            "limit": 5,
-        }), {"data": {"admission": []}}),
-        ("next_admission", vc.get("/rest/api/admission", params={
-            "filter": next_filter,
-            "sort": json.dumps([{"property": "admission_date", "direction": "ASC"}], separators=(",", ":")),
-            "limit": 1,
-        }), {"data": {"admission": []}}),
+        ("invoices", vc.get("/rest/api/invoice", params=invoices_params),
+         {"data": {"invoice": []}}),
+        ("recent_admissions", vc.get("/rest/api/admission", params=recent_admissions_params),
+         {"data": {"admission": []}}),
+        ("next_admission", vc.get("/rest/api/admission", params=next_admission_params),
+         {"data": {"admission": []}}),
     ]
     payloads, section_errors = await gather_sections(
         tool_name="get_client_profile",

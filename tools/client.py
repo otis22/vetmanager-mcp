@@ -1,6 +1,8 @@
 from fastmcp import FastMCP
 
 from filters import eq as _filter_eq, in_ as _filter_in, like as _filter_like
+from resources.client_profile import fetch as _fetch_client_profile
+from service_metrics import instrument_call as _instrument_call
 from tools._inactive_helpers import fetch_inactive_clients_page
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete, paginate_all
 from validators import LimitParam, normalize_phone_digits
@@ -360,21 +362,10 @@ def register(mcp: FastMCP) -> None:
         Args:
             client_id: Unique numeric ID of the client.
         """
-        from service_metrics import instrument_call as _instrument_call
-
-        async def _impl():
-            return await _get_client_profile_impl(client_id)
-
         return await _instrument_call(
             "/rest/api/client",
             "GET",
-            _impl,
+            lambda: _fetch_client_profile(client_id),
             operation="aggregate_profile",
             tool_name="get_client_profile",
         )
-
-    async def _get_client_profile_impl(client_id: int) -> dict:
-        # Stage 103c: entity-specific composition lives in `resources/`.
-        # This tool wrapper only adds `instrument_call` around the resource.
-        from resources.client_profile import fetch as _fetch_client_profile
-        return await _fetch_client_profile(client_id)

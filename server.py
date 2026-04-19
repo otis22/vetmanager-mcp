@@ -1,12 +1,14 @@
 import atexit
+import asyncio
 import logging
 import os
-import asyncio
 import signal
 
 from fastmcp import FastMCP
 
 from error_tracking import configure_error_tracking
+from host_resolver import reset_billing_resolver
+from observability_logging import RUNTIME_LOGGER
 from storage import bootstrap_storage_schema, get_database_url, initialize_storage
 from structured_logging import configure_logging
 from tool_descriptions import enhance_tool_descriptions
@@ -43,8 +45,6 @@ async def _graceful_shutdown() -> None:
     so operators can grep shutdown paths; the `reset_breakers` branch
     was previously silent on failure.
     """
-    from observability_logging import RUNTIME_LOGGER
-    from host_resolver import reset_billing_resolver
     try:
         await reset_shared_http_client()
     except Exception:

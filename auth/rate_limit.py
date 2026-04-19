@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import sys
 from collections import deque
 from datetime import datetime, timezone
 from weakref import WeakKeyDictionary
@@ -120,7 +121,6 @@ def reset_bearer_rate_limiter() -> None:
     # that still reads it by attribute (import-time snapshots would
     # otherwise go stale after reset).
     try:
-        import sys
         shim = sys.modules.get("bearer_rate_limiter")
         if shim is not None:
             shim.BEARER_RATE_LIMITER = fresh

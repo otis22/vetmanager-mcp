@@ -26,9 +26,17 @@ from web_security import reset_web_security_state
 @pytest.fixture(autouse=True)
 def _clear_request_cache():
     """Clear the global request cache before each test to prevent cross-test contamination."""
+    REQUEST_CACHE.metrics.hits = 0
+    REQUEST_CACHE.metrics.misses = 0
+    REQUEST_CACHE.metrics.invalidations = 0
+    REQUEST_CACHE.metrics.evictions = 0
     REQUEST_CACHE._entries.clear()
     REQUEST_CACHE._tag_index.clear()
     yield
+    REQUEST_CACHE.metrics.hits = 0
+    REQUEST_CACHE.metrics.misses = 0
+    REQUEST_CACHE.metrics.invalidations = 0
+    REQUEST_CACHE.metrics.evictions = 0
     REQUEST_CACHE._entries.clear()
     REQUEST_CACHE._tag_index.clear()
 

@@ -1,6 +1,12 @@
 from fastmcp import FastMCP
 
 from filters import eq as _filter_eq, like as _filter_like
+from resources.pet_profile import fetch as _fetch_pet_profile
+from service_metrics import instrument_call as _instrument_call
+from tools._inactive_helpers import (
+    fetch_inactive_clients_page,
+    find_pets_at_client_last_visit,
+)
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
@@ -186,23 +192,13 @@ def register(mcp: FastMCP) -> None:
         Args:
             pet_id: Unique numeric ID of the pet.
         """
-        from service_metrics import instrument_call as _instrument_call
-
-        async def _impl():
-            return await _get_pet_profile_impl(pet_id)
-
         return await _instrument_call(
             "/rest/api/pet",
             "GET",
-            _impl,
+            lambda: _fetch_pet_profile(pet_id),
             operation="aggregate_profile",
             tool_name="get_pet_profile",
         )
-
-    async def _get_pet_profile_impl(pet_id: int) -> dict:
-        # Stage 103c: entity-specific composition lives in `resources/`.
-        from resources.pet_profile import fetch as _fetch_pet_profile
-        return await _fetch_pet_profile(pet_id)
 
     @mcp.tool
     async def get_inactive_pets(
@@ -227,11 +223,6 @@ def register(mcp: FastMCP) -> None:
             months_max: Maximum age of owner's last visit in months (default 24).
             limit: Max pets to return (1–100, default 50).
         """
-        from tools._inactive_helpers import (
-            fetch_inactive_clients_page,
-            find_pets_at_client_last_visit,
-        )
-
         # Pagination loop: scan inactive clients page-by-page until we either
         # accumulate `limit` pets or exhaust the inactive-client window.
         # This avoids the heuristic underfill where many clients have no

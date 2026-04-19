@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from argparse import Namespace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 import pytest_asyncio
 
 from scripts.product_metrics_report import (
+    _async_main,
     _mask_email,
     collect_metrics,
     format_json,
@@ -256,6 +258,15 @@ async def test_dead_accounts_listed_with_masked_email(seeded_session, now_utc):
     assert len(dead) == 2  # A3 + A5
 
 
+@pytest.mark.asyncio
+async def test_dead_accounts_last_request_at_is_utc_aware(seeded_session, now_utc):
+    m = await collect_metrics(seeded_session, now=now_utc, top_n=10)
+    dead = m["accounts"]["dead_list"]
+    with_last_request = [row for row in dead if row["last_request_at"] is not None]
+    assert with_last_request
+    assert all(row["last_request_at"].endswith("+00:00") for row in with_last_request)
+
+
 # ── email masking helper ───────────────────────────────────────────────────
 
 
@@ -297,6 +308,43 @@ async def test_json_output_stable_schema(seeded_session, now_utc):
     parsed = json.loads(out)
     assert set(parsed.keys()) >= {"accounts", "tokens", "requests", "failures",
                                   "generated_at", "window_days"}
+
+
+@pytest.mark.asyncio
+async def test_async_main_converts_aware_now_override_to_utc(monkeypatch, capsys):
+    captured: dict[str, object] = {}
+
+    async def fake_collect_metrics(factory, *, now, top_n):
+        captured["factory"] = factory
+        captured["now"] = now
+        captured["top_n"] = top_n
+        return {
+            "accounts": {},
+            "tokens": {},
+            "requests": {},
+            "failures": {},
+        }
+
+    def fake_get_session_factory():
+        return "fake-factory"
+
+    monkeypatch.setattr("scripts.product_metrics_report.collect_metrics", fake_collect_metrics)
+    monkeypatch.setattr("storage.get_session_factory", fake_get_session_factory)
+
+    rc = await _async_main(
+        Namespace(
+            format="json",
+            top_n=5,
+            now_override="2026-04-18T12:00:00+03:00",
+        )
+    )
+
+    assert rc == 0
+    assert captured["factory"] == "fake-factory"
+    assert captured["top_n"] == 5
+    assert captured["now"] == datetime(2026, 4, 18, 9, 0, 0, tzinfo=timezone.utc)
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["generated_at"] == "2026-04-18T09:00:00+00:00"
 
 
 # ── business events counter ────────────────────────────────────────────────

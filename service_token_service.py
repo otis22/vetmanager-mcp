@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from domain_validation import validate_ip_mask
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +25,7 @@ def _token_expiry_string(expires_at: datetime | None) -> str | None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     return expires_at.astimezone(timezone.utc).isoformat()
 
+
 async def issue_service_bearer_token(
     session: AsyncSession,
     *,
@@ -33,8 +35,6 @@ async def issue_service_bearer_token(
     ip_mask: str | None = None,
 ) -> tuple[ServiceBearerToken, str]:
     """Create a new bearer token record and return it with the raw one-time value."""
-    from domain_validation import validate_ip_mask
-
     normalized_name = name.strip()
     if not normalized_name:
         raise ValueError("Token name is required.")

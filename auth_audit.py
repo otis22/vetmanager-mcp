@@ -6,6 +6,7 @@ import json
 import re
 from typing import Any
 
+from fastmcp.server import dependencies as _fastmcp_dependencies
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from observability_logging import AUDIT_LOGGER
@@ -75,9 +76,7 @@ def _serialize_details(details: dict[str, Any]) -> str:
 def get_request_audit_metadata() -> tuple[str | None, str | None]:
     """Return best-effort (ip_address, user_agent) for current HTTP request."""
     try:
-        from fastmcp.server.dependencies import get_http_request
-
-        request = get_http_request()
+        request = _fastmcp_dependencies.get_http_request()
     except Exception:
         return None, None
 

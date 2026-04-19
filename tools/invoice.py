@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from fastmcp import FastMCP
 
 from filters import eq as _filter_eq, gte as _filter_gte, lte as _filter_lte
@@ -79,8 +81,6 @@ def register(mcp: FastMCP) -> None:
                 (today, -30d, -1m, ...). Default: 1 year ago.
             date_to: End date. Same accepted formats. Default: today.
         """
-        from datetime import date, timedelta
-
         today = date.today()
         if not date_to:
             date_to = today.isoformat()

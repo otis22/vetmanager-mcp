@@ -10,9 +10,7 @@ derivation from the latest vaccination record.
 
 from __future__ import annotations
 
-import json
-
-from filters import eq as _filter_eq
+from filters import build_list_query_params, eq as _filter_eq
 from resources._aggregation import gather_sections
 from vetmanager_client import VetmanagerClient
 
@@ -31,14 +29,11 @@ async def fetch(pet_id: int) -> dict:
     list to answer "when is the next vaccination due".
     """
     vc = VetmanagerClient()
-
-    mc_filter = json.dumps(
-        [_filter_eq("patient_id", str(pet_id)).to_dict()],
-        separators=(",", ":"),
-    )
-    mc_sort = json.dumps(
-        [{"property": "id", "direction": "DESC"}],
-        separators=(",", ":"),
+    medical_cards_params = build_list_query_params(
+        limit=5,
+        offset=0,
+        sort=[{"property": "id", "direction": "DESC"}],
+        filters=[_filter_eq("patient_id", str(pet_id))],
     )
 
     payloads, section_errors = await gather_sections(
@@ -49,7 +44,7 @@ async def fetch(pet_id: int) -> dict:
              {"data": {"pet": {}}}),
             ("medical_cards", vc.get(
                 "/rest/api/MedicalCards",
-                params={"filter": mc_filter, "sort": mc_sort, "limit": 5},
+                params=medical_cards_params,
             ), {"data": {"medicalCards": []}}),
             ("vaccinations", vc.get(
                 "/rest/api/MedicalCards/Vaccinations",

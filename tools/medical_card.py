@@ -77,11 +77,12 @@ def register(mcp: FastMCP) -> None:
         # Step 1: get all pets of the client.
         # Pet entity FK to client is `owner_id` (migrated stage 77.4;
         # legacy `client_id` filter returns empty silently).
-        pet_filter = json.dumps(
-            [_filter_eq("owner_id", str(client_id)).to_dict()],
-            separators=(",", ":"),
+        pet_params = build_list_query_params(
+            limit=100,
+            offset=0,
+            filters=[_filter_eq("owner_id", str(client_id))],
         )
-        pets_resp = await vc.get("/rest/api/pet", params={"filter": pet_filter, "limit": 100})
+        pets_resp = await vc.get("/rest/api/pet", params=pet_params)
         pets_data = pets_resp.get("data", {})
         pets = pets_data.get("pet", []) if isinstance(pets_data, dict) else []
 
@@ -108,17 +109,12 @@ def register(mcp: FastMCP) -> None:
                 "medical_cards": [],
             }
 
-        mc_filter = json.dumps(
-            [_filter_in("patient_id", pet_ids).to_dict()],
-            separators=(",", ":"),
-        )
         params = build_list_query_params(
             limit=limit,
             offset=offset,
             sort=sort,
-            filters=None,
+            filters=[_filter_in("patient_id", pet_ids)],
         )
-        params["filter"] = mc_filter
         cards_resp = await vc.get(_MC_ENDPOINT, params=params)
         cards_data = cards_resp.get("data", {})
         if isinstance(cards_data, dict):

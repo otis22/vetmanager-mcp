@@ -8,6 +8,7 @@ time; override them with `monkeypatch.setattr(vetmanager_client, ...)`
 
 from __future__ import annotations
 
+import datetime as _dt
 import email.utils
 import math
 import random
@@ -50,7 +51,6 @@ def parse_retry_after(header_value: str | None) -> float | None:
         parsed_dt = email.utils.parsedate_to_datetime(header_value)
         if parsed_dt is None:
             return None
-        import datetime as _dt
         now = _dt.datetime.now(tz=parsed_dt.tzinfo or _dt.timezone.utc)
         delta = (parsed_dt - now).total_seconds()
         if not math.isfinite(delta):

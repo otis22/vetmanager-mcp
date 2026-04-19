@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import logging
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -35,7 +36,6 @@ def _validate_password_strength(password: str) -> None:
         raise ValueError(
             f"Пароль должен быть не менее {PASSWORD_MIN_LENGTH} символов."
         )
-    import re
 
     if not re.search(r"[A-ZА-ЯЁ]", password):
         raise ValueError("Пароль должен содержать хотя бы одну заглавную букву.")
@@ -172,7 +172,6 @@ def read_account_session_token(
         # (id.ts without per-session nonce). Operators can plan cutoff
         # after all live legacy tokens expire (SESSION_MAX_AGE_SECONDS window).
         if len(payload_parts) == 2:
-            import logging
             logging.getLogger("vetmanager.security").warning(
                 "Legacy 2-part session token accepted — schedule cutoff "
                 "after SESSION_MAX_AGE_SECONDS window",

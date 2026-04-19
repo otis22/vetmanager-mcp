@@ -7,6 +7,7 @@ a Redis-backed backend is used so multiple workers share rate limit state.
 from __future__ import annotations
 
 import os
+import secrets
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 from typing import Protocol
@@ -83,10 +84,9 @@ class RedisRateLimitBackend:
         return int(self._redis.zcard(rkey))
 
     def record_hit(self, namespace: str, key: str, *, window_seconds: int) -> None:
-        import secrets as _secrets
         rkey = self._redis_key(namespace, key)
         now_ts = datetime.now(timezone.utc).timestamp()
-        member = f"{now_ts}:{_secrets.token_hex(4)}"
+        member = f"{now_ts}:{secrets.token_hex(4)}"
         pipe = self._redis.pipeline()
         pipe.zadd(rkey, {member: now_ts})
         pipe.expire(rkey, window_seconds + 1)

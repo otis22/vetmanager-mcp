@@ -1,5 +1,7 @@
 """MCP Prompts for Vetmanager — ready-made templates for typical clinic workflows."""
 
+from datetime import date as _date, timedelta
+
 from fastmcp import FastMCP
 from fastmcp.prompts import Message
 
@@ -139,7 +141,6 @@ def register_prompts(mcp: FastMCP) -> None:
         # Stage 102.3: compute end_date in Python so weaker LLMs don't botch
         # month/year rollover arithmetic. Pass final ISO strings to the tool.
         try:
-            from datetime import date as _date, timedelta
             start = _date.fromisoformat(date)
             end_date = (start + timedelta(days=max(0, days_ahead))).isoformat()
             start_iso = start.isoformat()

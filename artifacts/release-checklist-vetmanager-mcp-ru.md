@@ -24,7 +24,7 @@
 - [ ] `scripts/post_deploy_smoke_checks.sh` прошёл успешно
 - [ ] `/healthz` отвечает 200
 - [ ] `/readyz` стабильно 200
-- [ ] `/metrics` scrape доступен
+- [ ] `/metrics` scrape проверен по текущему контракту: без auth при пустом `METRICS_AUTH_TOKEN`, либо с `Authorization: Bearer <METRICS_AUTH_TOKEN>` когда gate включён
 - [ ] БД файл существует и не пустой (integrity check в deploy script)
 - [ ] error tracking bootstrap ведёт себя ожидаемо
 

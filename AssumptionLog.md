@@ -4771,7 +4771,7 @@ Guards против регрессии drift'а между timeout-branch и net
 
 ## Этап 116. PRD 110 completion — 2026-04-19
 
-**Commit**: (pending).
+**Commit**: `bd51a40`.
 
 Закрыл F4 + product-drift findings из super-review 2026-04-19.
 
@@ -4796,7 +4796,7 @@ Guards против регрессии drift'а между timeout-branch и net
 
 ## Этап 117. Docs catchup — 2026-04-19
 
-**Commit**: (pending).
+**Commit**: `bcc42ba`.
 
 Закрыл T4 (docs drift) из super-review 2026-04-19 + добавил protection против будущего drift.
 

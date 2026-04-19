@@ -76,7 +76,7 @@ def _to_aware(dt: datetime | None) -> datetime | None:
         return None
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
-    return dt
+    return dt.astimezone(timezone.utc)
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -173,14 +173,15 @@ async def _fetch_dead_account_rows(session, *, now: datetime, limit: int = 50) -
     )
     out: list[dict[str, Any]] = []
     for acc_id, email, created, last_used, token_count in rows.all():
+        created_aware = _to_aware(created)
         last_used_aware = _to_aware(last_used)
         if last_used_aware is not None and last_used_aware >= cutoff:
             continue
         out.append({
             "account_id": acc_id,
             "email": _mask_email(email),
-            "created_at": created.isoformat() if created else None,
-            "last_request_at": last_used.isoformat() if last_used else None,
+            "created_at": created_aware.isoformat() if created_aware else None,
+            "last_request_at": last_used_aware.isoformat() if last_used_aware else None,
             "token_count": int(token_count or 0),
         })
     out.sort(key=lambda r: r["created_at"] or "")
@@ -474,11 +475,12 @@ def format_json(m: dict[str, Any], *, now: datetime) -> str:
 async def _async_main(args: argparse.Namespace) -> int:
     from storage import get_session_factory
 
-    now = (
-        datetime.fromisoformat(args.now_override).replace(tzinfo=timezone.utc)
-        if args.now_override
-        else datetime.now(timezone.utc)
-    )
+    if args.now_override:
+        now_raw = datetime.fromisoformat(args.now_override)
+        now = _to_aware(now_raw)
+        assert now is not None
+    else:
+        now = datetime.now(timezone.utc)
     factory = get_session_factory()
     m = await collect_metrics(factory, now=now, top_n=args.top_n)
     if args.format == "json":

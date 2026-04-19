@@ -1955,7 +1955,7 @@ Acceptance: concurrency stress-test с cancellation не оставляет prob
 
 ---
 
-## Этап 114b. Simplicity debt follow-up (deferred from 114) — `todo`
+## Этап 114b. Simplicity debt follow-up (deferred from 114) — `done`
 
 Дизайн-сложные simplicity findings, требующие policy decisions или codebase-wide audit. ~2-3 часа.
 
@@ -1968,7 +1968,7 @@ Acceptance: `scripts/inline_imports_audit.sh` (если написан) возв
 
 ---
 
-## Этап 118. Product metrics correctness follow-up (post super-review rerun) — `todo`
+## Этап 118. Product metrics correctness follow-up (post super-review rerun) — `done`
 
 Исправления semantic/product drift в `scripts/product_metrics_report.py`, найденные при повторном full-review после этапов 116-117.
 
@@ -1980,7 +1980,7 @@ Acceptance: timezone-aware `--now-override` anchor даёт корректные
 
 ---
 
-## Этап 119. Test isolation + workflow/docs cleanup (post super-review rerun) — `todo`
+## Этап 119. Test isolation + workflow/docs cleanup (post super-review rerun) — `done`
 
 Follow-up по findings reviewer-tests / workflow-check / reviewer-docs после full-review текущего `HEAD`.
 

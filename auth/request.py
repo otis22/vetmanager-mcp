@@ -8,6 +8,8 @@ New test monkey-patches should target `auth.request._get_request_headers`.
 
 from __future__ import annotations
 
+from fastmcp.server import dependencies as _fastmcp_dependencies
+
 from exceptions import AuthError
 from service_metrics import record_auth_failure
 
@@ -19,8 +21,7 @@ def _get_request_headers() -> dict[str, str]:
     re-exports this for backward compatibility.
     """
     try:
-        from fastmcp.server.dependencies import get_http_request
-        request = get_http_request()
+        request = _fastmcp_dependencies.get_http_request()
         return dict(request.headers)
     except Exception:
         return {}
