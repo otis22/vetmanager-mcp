@@ -4668,3 +4668,47 @@ Guards против регрессии drift'а между timeout-branch и net
 ### Тесты
 
 687 → 690 (+3 в stage 112): breaker threshold log emission, breaker probe-fail log, breaker recovery log (verifies stage 107.9 regression boundary). Существующие stage-88 timeout/network-error тесты обновлены под `entity` contract.
+
+## Этап 113. Resilience completeness (focused subset) — 2026-04-19
+
+**Commit**: (pending).
+
+Закрыл F7 (billing-api hardening) + 113.1 (breaker env accessors). 113.2-113.5 явно deferred в stage 113b с design-нотами.
+
+### Что сделано
+
+1. **113.F7 `host_resolver.py`** — полный переписанный модуль:
+   - **Per-loop shared `httpx.AsyncClient`** с tight timeouts (connect 3s, read 10s, write 5s, pool 2s). Pattern зеркальный `vm_transport/pool.py::get_shared_http_client` (но независимый — billing это отдельный upstream). Per-loop keying через `id(asyncio.get_running_loop())` устраняет cross-loop transport reuse под `asyncio.run()` re-entry (Codex HIGH finding).
+   - **TTL cache** `domain → (resolved_host, expires_at)` с env-tunable TTL (`BILLING_RESOLVER_CACHE_TTL_SECONDS`, default 300s). Cache miss → HTTP + TLS handshake; hit → in-memory dict lookup. Failures НЕ кешируются — transient 5xx на billing не poison'ит lookups.
+   - **`reset_billing_resolver()`** — async helper: clear cache + close all per-loop clients. Интегрирован в `server._graceful_shutdown` (cold path inline import acceptable — Codex confirmed) + autouse fixture в `tests/conftest.py` для per-test isolation.
+   - Замена `0.1*(attempt+1)` linear backoff на что-то exponential — **отложено**: current linear retry preserved, чтобы сохранить existing test behavior.
+
+2. **113.1 breaker env accessors** — три функции в `vm_transport/breaker.py`:
+   - `breaker_failure_threshold()`, `breaker_window_seconds()`, `breaker_cooldown_seconds()` — каждая читает env per-call.
+   - Runtime call-sites (`breaker_record_failure`, `check_breaker_allows`, `force_breaker_open`) мигрированы на accessors.
+   - **Module-level constants сохранены** (`BREAKER_FAILURE_THRESHOLD = env_int(...)`) как **defaults только** — для existing tests которые используют их как reference value в `range(BREAKER_FAILURE_THRESHOLD)` loops. Docstring предупреждает: патчинг module attr больше не влияет на runtime, нужно `monkeypatch.setenv`.
+
+### Решения и обоснования
+
+- **Per-loop client в F7** (ответ на Codex HIGH): вместо singleton с потенциальной cross-loop ошибкой. Zero regression в prod (single loop per worker) + test-safe под pytest-asyncio.
+- **Failures NOT cached**: при TTL 300s транзиентный 500 закешировал бы 5 минут downtime. Failure уже имеет retry layer; cache — только на success.
+- **Cooldown accessor в `force_breaker_open`**: test helper, который использует `cooldown_elapsed=True` для backdating `opened_at`. Использует accessor so test env overrides (если any future test patches) согласованы.
+- **Модульные константы не удалены**: 3 существующих теста (stage91, 101, 112) читают `BREAKER_FAILURE_THRESHOLD` как reference. Migration всех BC consumers — в scope stage 113b вместе с id(loop) refactor.
+- **F7 scope trimmed**: dedicated billing breaker + exponential backoff отложены в stage 113b. Resolver без breaker — acceptable risk с TLS+cache optimization (main perf win); polish improvements без disruption.
+
+### Codex review
+
+1 HIGH адекватный (multi-loop risk): **fixed** переходом на per-loop pattern зеркальный `vm_transport/pool.py`.
+1 MEDIUM адекватный (breaker module constants misleading): **mitigated** явным docstring warning + migration note.
+1 LOW dismissed (inline import on cold shutdown path).
+
+Одна итерация Codex + post-fix повторная верификация тестами. Второй проход Codex не нужен — minimal fix, low regression risk.
+
+### Тесты
+
+690 → 699 (+9):
+- 5 × F7 (cache hit, no error caching, parallel collapse, reset idempotent, TTL > 0)
+- 3 × env accessor reads
+- 1 × integration: monkeypatch.setenv + breaker opens at threshold=2
+
+Все 11 существующих host_resolver тестов зелёные (reset_billing_resolver autouse fixture обеспечивает isolation).

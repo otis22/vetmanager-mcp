@@ -29,9 +29,41 @@ from exceptions import VetmanagerUpstreamUnavailable
 from observability_logging import RUNTIME_LOGGER
 from service_metrics import record_upstream_failure, record_upstream_request
 
+# Module-level constants — evaluated at import. These are kept for existing
+# tests that reference them as **default values** (e.g. `range(BREAKER_FAILURE_THRESHOLD)`
+# loop count). Stage 113.1: runtime no longer reads these directly —
+# `breaker_record_failure` / `check_breaker_allows` go through the
+# accessor functions below so `monkeypatch.setenv` takes effect.
+#
+# WARNING: patching these module attributes (e.g. `monkeypatch.setattr(...,
+# "BREAKER_FAILURE_THRESHOLD", 2)`) does NOT change runtime behavior any more.
+# Use `monkeypatch.setenv("BREAKER_FAILURE_THRESHOLD", "2")` instead. Listed as
+# a migration follow-up in stage 113 AssumptionLog.
 BREAKER_FAILURE_THRESHOLD = env_int("BREAKER_FAILURE_THRESHOLD", 5)
 BREAKER_WINDOW_SECONDS = env_float("BREAKER_WINDOW_SECONDS", 60.0)
 BREAKER_COOLDOWN_SECONDS = env_float("BREAKER_COOLDOWN_SECONDS", 30.0)
+
+
+def breaker_failure_threshold() -> int:
+    """Current breaker failure threshold from env (per-call read).
+
+    Stage 113.1 (super-review 2026-04-19, codex-blindspot H10): the
+    module-level constants above are evaluated at import time, so tests
+    using `monkeypatch.setenv("BREAKER_FAILURE_THRESHOLD", ...)` after
+    import have no effect. Callers inside this module read through this
+    accessor instead so env overrides take effect immediately.
+    """
+    return env_int("BREAKER_FAILURE_THRESHOLD", 5)
+
+
+def breaker_window_seconds() -> float:
+    """Current breaker sliding-window size from env (per-call read)."""
+    return env_float("BREAKER_WINDOW_SECONDS", 60.0)
+
+
+def breaker_cooldown_seconds() -> float:
+    """Current breaker OPEN→HALF_OPEN cooldown from env (per-call read)."""
+    return env_float("BREAKER_COOLDOWN_SECONDS", 30.0)
 
 
 @dataclass
@@ -84,7 +116,8 @@ async def check_breaker_allows(domain: str) -> None:
     async with breaker.lock:
         if breaker.state == "open":
             elapsed = time.monotonic() - breaker.opened_at
-            if elapsed < BREAKER_COOLDOWN_SECONDS:
+            cooldown = breaker_cooldown_seconds()
+            if elapsed < cooldown:
                 record_upstream_failure(
                     target="vetmanager_api", reason="circuit_open"
                 )
@@ -95,8 +128,8 @@ async def check_breaker_allows(domain: str) -> None:
                 )
                 raise VetmanagerUpstreamUnavailable(
                     f"VM API circuit breaker open for {domain}; "
-                    f"retry after {BREAKER_COOLDOWN_SECONDS - elapsed:.0f}s",
-                    retry_after_seconds=BREAKER_COOLDOWN_SECONDS - elapsed,
+                    f"retry after {cooldown - elapsed:.0f}s",
+                    retry_after_seconds=cooldown - elapsed,
                 )
             # Cooldown elapsed — transition to HALF_OPEN and admit one probe.
             breaker.state = "half_open"
@@ -164,13 +197,16 @@ async def breaker_record_failure(domain: str) -> None:
                 },
             )
             return
+        # Stage 113.1: read env via accessor so test overrides take effect.
+        window = breaker_window_seconds()
+        threshold = breaker_failure_threshold()
         # Increment within sliding window (covers CLOSED and OPEN sustained-failure paths).
-        if breaker.window_start == 0.0 or (now - breaker.window_start) > BREAKER_WINDOW_SECONDS:
+        if breaker.window_start == 0.0 or (now - breaker.window_start) > window:
             breaker.window_start = now
             breaker.consecutive_failures = 1
         else:
             breaker.consecutive_failures += 1
-        if breaker.consecutive_failures >= BREAKER_FAILURE_THRESHOLD:
+        if breaker.consecutive_failures >= threshold:
             breaker.state = "open"
             breaker.opened_at = now
             # Stage 112.1: log ONLY on actual CLOSED→OPEN transition (not
@@ -183,7 +219,7 @@ async def breaker_record_failure(domain: str) -> None:
                         "event_name": "circuit_breaker_opened",
                         "domain": domain,
                         "consecutive_failures": breaker.consecutive_failures,
-                        "threshold": BREAKER_FAILURE_THRESHOLD,
+                        "threshold": threshold,
                         "cause": "threshold_reached",
                     },
                 )
@@ -213,6 +249,6 @@ async def force_breaker_open(domain: str, *, cooldown_elapsed: bool = False) -> 
         breaker.state = "open"
         now = time.monotonic()
         breaker.opened_at = (
-            now - BREAKER_COOLDOWN_SECONDS - 1 if cooldown_elapsed else now
+            now - breaker_cooldown_seconds() - 1 if cooldown_elapsed else now
         )
         breaker.probe_in_flight = False

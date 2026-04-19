@@ -44,6 +44,7 @@ async def _graceful_shutdown() -> None:
     was previously silent on failure.
     """
     from observability_logging import RUNTIME_LOGGER
+    from host_resolver import reset_billing_resolver
     try:
         await reset_shared_http_client()
     except Exception:
@@ -58,6 +59,15 @@ async def _graceful_shutdown() -> None:
         RUNTIME_LOGGER.warning(
             "Graceful shutdown error",
             extra={"event_name": "shutdown_error", "step": "reset_breakers"},
+            exc_info=True,
+        )
+    # Stage 113.F7: close billing-api resolver client + drop TTL cache.
+    try:
+        await reset_billing_resolver()
+    except Exception:
+        RUNTIME_LOGGER.warning(
+            "Graceful shutdown error",
+            extra={"event_name": "shutdown_error", "step": "reset_billing_resolver"},
             exc_info=True,
         )
 

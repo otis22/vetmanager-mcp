@@ -1,22 +1,105 @@
 """Billing API host resolution for Vetmanager domains.
 
 Resolves a clinic subdomain (e.g. "myclinic") to a validated HTTPS origin
-(e.g. "https://myclinic.vetmanager.cloud") by querying the Vetmanager billing API.
+(e.g. "https://myclinic.vetmanager.cloud") by querying the Vetmanager
+billing API.
+
+Stage 113.F7 (super-review 2026-04-19): resilience hardening.
+
+- **Shared `httpx.AsyncClient`**: one instance per-loop (not per-call) so
+  TLS handshakes amortize over repeated lookups.
+- **TTL cache** on successful resolutions (default 300s) keyed by domain.
+  Failures are NOT cached so transient 5xx don't poison the cache.
+- **Graceful shutdown** via `reset_billing_resolver()` integrates with
+  `server._graceful_shutdown`.
+
+Non-scope (deferred to stage 113b/c):
+- Dedicated circuit breaker for billing-api (independent of per-clinic
+  breakers in `vm_transport.breaker`). Requires extending breaker module
+  for arbitrary upstream targets.
+- Exponential backoff with jitter. Current linear retry preserved.
 """
+
+from __future__ import annotations
 
 import asyncio
 import time
 
 import httpx
 
+from env_utils import env_float
 from exceptions import HostResolutionError, VetmanagerError, VetmanagerTimeoutError
 from host_validation import validate_resolved_vetmanager_origin
 from observability_logging import RUNTIME_LOGGER
 from service_metrics import record_upstream_failure, record_upstream_request
 
+
 BILLING_API = "https://billing-api.vetmanager.cloud/host/{domain}"
-REQUEST_TIMEOUT = 30.0
+# Stage 113.F7: tighter timeouts on billing-api — simple JSON lookup should
+# complete sub-second. 10s read is generous; 3s connect catches DNS hangs.
+_REQUEST_TIMEOUT = httpx.Timeout(connect=3.0, read=10.0, write=5.0, pool=2.0)
 _DEFAULT_MAX_RETRIES = 1
+
+BILLING_RESOLVER_CACHE_TTL_SECONDS = env_float(
+    "BILLING_RESOLVER_CACHE_TTL_SECONDS", 300.0
+)
+
+
+_resolved_host_cache: dict[str, tuple[str, float]] = {}
+
+# Stage 113.F7 (Codex arbitration follow-up): per-loop shared client to
+# avoid "attached to different event loop" errors when callers run under
+# `asyncio.run()` (tests, notebook reloads, future scripts). Mirrors the
+# per-loop pattern in `vm_transport/pool.py`. Each loop gets its own
+# AsyncClient + lock, resolving the residual correctness risk that would
+# otherwise require full 113c-scope refactor.
+_shared_clients_by_loop: dict[int, httpx.AsyncClient] = {}
+_shared_clients_locks: dict[int, asyncio.Lock] = {}
+
+
+def _current_loop_key() -> int:
+    try:
+        return id(asyncio.get_running_loop())
+    except RuntimeError:
+        return 0
+
+
+async def _get_shared_client() -> httpx.AsyncClient:
+    """Lazy-init a per-loop `httpx.AsyncClient` with tight timeouts.
+
+    Shared across all `resolve_vetmanager_host` calls within one event
+    loop so TLS handshakes amortize. Per-loop keying avoids
+    cross-loop transport reuse that bites under `asyncio.run()` re-entry.
+    """
+    key = _current_loop_key()
+    client = _shared_clients_by_loop.get(key)
+    if client is not None and not client.is_closed:
+        return client
+    lock = _shared_clients_locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        client = _shared_clients_by_loop.get(key)
+        if client is not None and not client.is_closed:
+            return client
+        client = httpx.AsyncClient(timeout=_REQUEST_TIMEOUT)
+        _shared_clients_by_loop[key] = client
+        return client
+
+
+async def reset_billing_resolver() -> None:
+    """Close all per-loop billing clients and clear the resolver cache.
+
+    Called from tests (per-test isolation) and `server._graceful_shutdown`.
+    Safe to call repeatedly.
+    """
+    _resolved_host_cache.clear()
+    clients = list(_shared_clients_by_loop.values())
+    _shared_clients_by_loop.clear()
+    _shared_clients_locks.clear()
+    for client in clients:
+        try:
+            await client.aclose()
+        except Exception:
+            pass
 
 
 async def resolve_vetmanager_host(
@@ -38,43 +121,53 @@ async def resolve_vetmanager_host(
         VetmanagerTimeoutError: All attempts timed out.
         VetmanagerError: Network error after all retries.
     """
+    # Stage 113.F7: cache fast-path. Hit skips HTTP + TLS entirely.
+    cached = _resolved_host_cache.get(domain)
+    if cached is not None:
+        value, expires_at = cached
+        if time.monotonic() < expires_at:
+            return value
+
     url = BILLING_API.format(domain=domain)
+    client = await _get_shared_client()
 
     for attempt in range(max_retries + 1):
         started = time.monotonic()
         try:
-            timeout = httpx.Timeout(REQUEST_TIMEOUT)
-            async with httpx.AsyncClient(timeout=timeout) as http:
-                response = await http.get(url)
-                # Stage 107.7: latency metric for billing_api — previously
-                # only failure counters recorded. Now SRE can see slow
-                # host-resolution via `upstream_request_latency_seconds{target="billing_api"}`.
-                elapsed = time.monotonic() - started
-                record_upstream_request(
-                    target="billing_api",
-                    status=f"http_{response.status_code}",
-                    duration_seconds=elapsed,
+            response = await client.get(url)
+            elapsed = time.monotonic() - started
+            # Stage 107.7: latency metric for billing_api.
+            record_upstream_request(
+                target="billing_api",
+                status=f"http_{response.status_code}",
+                duration_seconds=elapsed,
+            )
+            response.raise_for_status()
+            data = response.json()
+            host = data.get("data", {}).get("url") or data.get("url")
+            if not host:
+                raise HostResolutionError(
+                    f"Unexpected billing API response for domain '{domain}'."
                 )
-                response.raise_for_status()
-                data = response.json()
-                host = data.get("data", {}).get("url") or data.get("url")
-                if not host:
-                    raise HostResolutionError(
-                        f"Unexpected billing API response for domain '{domain}'."
-                    )
-                host = host.rstrip("/")
-                if not host.startswith("http"):
-                    host = f"https://{host}"
-                validated = validate_resolved_vetmanager_origin(host, domain=domain)
-                RUNTIME_LOGGER.debug(
-                    "Resolved billing host.",
-                    extra={
-                        "event_name": "billing_host_resolved",
-                        "domain": domain,
-                        "resolved_host": validated,
-                    },
-                )
-                return validated
+            host = host.rstrip("/")
+            if not host.startswith("http"):
+                host = f"https://{host}"
+            validated = validate_resolved_vetmanager_origin(host, domain=domain)
+            RUNTIME_LOGGER.debug(
+                "Resolved billing host.",
+                extra={
+                    "event_name": "billing_host_resolved",
+                    "domain": domain,
+                    "resolved_host": validated,
+                },
+            )
+            # Stage 113.F7: cache on success only. Failures NOT cached so
+            # transient 5xx on billing-api don't poison lookups.
+            _resolved_host_cache[domain] = (
+                validated,
+                time.monotonic() + BILLING_RESOLVER_CACHE_TTL_SECONDS,
+            )
+            return validated
         except httpx.TimeoutException as exc:
             elapsed = time.monotonic() - started
             if attempt < max_retries:

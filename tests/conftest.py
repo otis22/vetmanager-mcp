@@ -33,6 +33,18 @@ def _clear_request_cache():
     REQUEST_CACHE._tag_index.clear()
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_billing_resolver_state():
+    """Stage 113.F7: drop billing-api resolver cache + shared client between
+    tests. Without this, the first test to successfully resolve a domain
+    poisons subsequent tests expecting respx mocks to be hit.
+    """
+    from host_resolver import reset_billing_resolver
+    await reset_billing_resolver()
+    yield
+    await reset_billing_resolver()
+
+
 @pytest.fixture(autouse=True)
 def _reset_vm_client_state():
     """Reset shared httpx.AsyncClient and per-domain circuit breakers between tests.

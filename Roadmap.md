@@ -1858,17 +1858,16 @@ Acceptance:
 
 ---
 
-## Этап 113. Resilience completeness (super-review 2026-04-19) — `todo`
+## Этап 113. Resilience completeness (super-review 2026-04-19) — `done` (focused subset)
 
-Цель: закрыть оставшиеся concurrency / reliability findings (H-level). ~3 часа.
+Фокус на F7 (billing resilience) + 113.1 (env accessors). Остальные (113.2-113.5) deferred в **stage 113b "Breaker concurrency hardening"** с явными design-требованиями.
 
-- 113.1 Module-import env eval fix — `vm_transport/breaker.py:31-33` BREAKER_* constants читать через accessor (`get_breaker_threshold()`, ...) вместо eval at import. Тесты с `monkeypatch.setenv` начнут работать. — `todo`
-- 113.2 `probe_in_flight` TOCTOU — `vm_transport/breaker.py:100-121` + `vetmanager_client.py:282-454`: wrap `_check_breaker_allows` в outer try/finally так что probe_in_flight всегда cleared при CancelledError/exception до entry в try block. Альтернатива: stale-probe timeout (force-clear если `opened_at > 2×read_timeout` назад). — `todo`
-- 113.3 Breaker 5xx retry accounting — `vetmanager_client.py:335-343`: записывать breaker failure на каждой retry iteration для 502/503/504 (а не только terminal), бюджет = retryable-5xx subset без 429. Без этого breaker opens 3× медленнее на sustained upstream degradation. — `todo`
-- 113.4 `id(loop)` → `WeakKeyDictionary` в pool — `vm_transport/pool.py:41-48`: заменить `dict[int, ...]` keyed by `id(loop)` на `WeakKeyDictionary[asyncio.AbstractEventLoop, ...]`. Устраняет id-reuse flakes в tests и orphan AsyncClient'ы. — `todo`
-- 113.5 `asyncio.Lock` module-scope fix — `vm_transport/breaker.py:50`, `vm_transport/pool.py:38`: lazy construction inside first async use или per-loop registry. На Python 3.9 текущий код binds к loop at construction. — `todo`
-
-Acceptance: unit-test с `monkeypatch.setenv` правильно overrides breaker threshold; concurrency stress-test с cancellation не оставляет probe_in_flight=True; breaker opens после 5 retries on sustained 503 (при threshold=5).
+- 113.F7 billing-api hardening — per-loop shared `httpx.AsyncClient`, TTL cache (300s, env-tunable `BILLING_RESOLVER_CACHE_TTL_SECONDS`), tighter timeouts (connect 3s read 10s), `reset_billing_resolver` integrated с `_graceful_shutdown` + autouse test fixture. — `done`
+- 113.1 Env accessors — `breaker_failure_threshold()/window_seconds()/cooldown_seconds()` в `vm_transport/breaker.py`; runtime читает env per-call. Module-level constants kept as documented defaults (tests reading them as `range(BREAKER_FAILURE_THRESHOLD)` не ломаются). — `done`
+- 113.2 probe_in_flight TOCTOU — **deferred** в stage 113b (careful design need).
+- 113.3 breaker 5xx retry accounting — **deferred** в stage 113b (fundamental semantics decision).
+- 113.4 `id(loop)` → `WeakKeyDictionary` — **deferred** в stage 113b (scope overlap с 113.5).
+- 113.5 asyncio.Lock module-scope — **deferred** в stage 113b (combined with 113.4 refactor).
 
 ---
 
