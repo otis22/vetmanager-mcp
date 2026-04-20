@@ -1,5 +1,9 @@
 # Этап 100. Security hardening II
 
+## Цель
+
+Закрыть следующий слой security hardening после baseline super-review: усилить sanitizer, нормализовать request identifiers, ужесточить auth/session edges и убрать небезопасные URL/defaults.
+
 ## Scope
 
 - 100.1 Sentry sanitizer — breadcrumbs, stacktrace vars, contexts, user, tags

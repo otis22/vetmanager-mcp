@@ -1,5 +1,9 @@
 # Этап 99. Reliability hardening II
 
+## Цель
+
+Усилить reliability в retry/breaker/shutdown путях и убрать оставшиеся lifecycle/state risks без полного redesign runtime.
+
 ## Scope
 
 - 99.1 `_breaker_record_failure` внутри retry loop per-attempt (не только terminal)

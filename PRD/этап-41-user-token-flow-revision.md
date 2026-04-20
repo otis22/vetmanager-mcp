@@ -1,5 +1,9 @@
 # PRD: Этап 41. Исправление user-token flow и ревизия e2e
 
+## Цель
+
+Синхронизировать backend, web UI, тесты и документацию с реальным Vetmanager contract для `login/password -> user token` exchange.
+
 ## Контекст
 
 Этапы 26, 30 и 38 ввели рабочий `login/password -> user token` flow, но в

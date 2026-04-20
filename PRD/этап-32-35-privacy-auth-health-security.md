@@ -1,5 +1,9 @@
 # PRD: Этапы 32–35. Privacy messaging, auth transparency, token health и security audit
 
+## Цель
+
+Усилить trust/security слой продукта: прозрачно объяснить privacy/auth model, довести user-token UX до рабочего login/password flow, показывать integration health и зафиксировать security backlog.
+
 ## Контекст
 
 После этапов 24–31 у проекта уже есть:

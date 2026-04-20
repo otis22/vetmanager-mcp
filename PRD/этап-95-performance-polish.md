@@ -1,5 +1,9 @@
 # Этап 95. Performance polish — PBKDF2 to_thread + paginate_all max_rows + partial gather
 
+## Цель
+
+Закрыть несколько medium-performance findings с высоким ROI и низким regression risk: event-loop friendly password hashing, bounded pagination и partial-failure aggregation.
+
 ## Контекст
 
 Baseline medium-performance findings. Выбираю 3 highest-ROI, наименее рискованных для финализации большого цикла 85-95.

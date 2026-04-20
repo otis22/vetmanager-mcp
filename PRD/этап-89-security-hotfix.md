@@ -1,5 +1,9 @@
 # Этап 89. Security hot-fix — Sentry sanitizer + deploy defaults + landing URL
 
+## Цель
+
+Закрыть срочные security/docs findings baseline review: усилить Sentry sanitizer, исправить deploy defaults и убрать hardcoded canonical URLs из публичного web-surface.
+
 ## Контекст
 
 Baseline super-review 2026-04-17:

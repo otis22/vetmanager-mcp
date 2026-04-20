@@ -1,5 +1,9 @@
 # Этап 103. Architecture consolidation (low-risk subset)
 
+## Цель
+
+Сделать low-risk архитектурную консолидацию без широкого redesign: убрать локальные structural smells, вынести общие helpers и сократить связность в самых безопасных местах.
+
 ## Scope (103 — this commit, low-risk parts only)
 
 - 103.5 Inline `_get_request_headers` → `request_auth.py`, удалить `request_credentials.py`

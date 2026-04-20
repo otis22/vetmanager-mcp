@@ -1989,3 +1989,15 @@ Follow-up по findings reviewer-tests / workflow-check / reviewer-docs посл
 - 119.3 Обновить `artifacts/release-checklist-vetmanager-mcp-ru.md` под текущий `/metrics` контракт (`METRICS_AUTH_TOKEN`). — `todo`
 
 Acceptance: metrics-related tests order-independent; workflow-check не находит `(pending)` для последних этапов; release checklist согласован с README и runtime.
+
+---
+
+## Этап 120. Historical PRD goal-section backfill (workflow-check cleanup) — `done`
+
+Технический cleanup исторических PRD, чтобы `scripts/review_workflow_check.sh` не шумел на старые документы без явной секции `## Цель`.
+
+- 120.1 Добавить `## Цель` в исторические PRD, которые сейчас имеют только `## Контекст`, `## Scope`, `## Цели` или prose intro. Scope/решения не менять. — `todo`
+- 120.2 Прогнать `scripts/review_workflow_check.sh` и убедиться, что finding `prd_missing_section` для этих файлов исчез. — `todo`
+- 120.3 Зафиксировать cleanup в `AssumptionLog.md`. — `todo`
+
+Acceptance: workflow-check больше не репортит `prd_missing_section` для backfill-списка этапов 32-35, 36-37, 38-40, 41, 51-55, 61-66, 89, 94, 95, 99, 100, 103, 104.

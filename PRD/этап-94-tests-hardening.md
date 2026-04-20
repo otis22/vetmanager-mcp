@@ -1,5 +1,9 @@
 # Этап 94. Tests hardening — structural filter assertions + billing API coverage
 
+## Цель
+
+Сделать тесты менее хрупкими и закрыть недостающие billing-api error paths без широкого тестового рефакторинга.
+
 ## Контекст
 
 Baseline findings:

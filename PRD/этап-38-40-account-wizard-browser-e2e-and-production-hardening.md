@@ -1,5 +1,9 @@
 # PRD: Этапы 38–40. Account wizard, browser E2E и production hardening
 
+## Цель
+
+Сделать кабинет и onboarding достаточно понятными для нетехнического пользователя, подтвердить главный browser happy-path и зафиксировать production hardening для текущей архитектуры.
+
 ## Контекст
 
 После этапов 36–37 у проекта уже есть:

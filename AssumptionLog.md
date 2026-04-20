@@ -4924,3 +4924,25 @@ Guards против регрессии drift'а между timeout-branch и net
 
 - Targeted: `docker compose --profile test run --rm test pytest -q tests/test_stage119_test_isolation.py tests/test_stage110_product_metrics.py tests/test_stage114_simplicity.py tests/test_stage114b_simplicity_followup.py` → `24 passed`
 - Full re-run after audit/refactor fixes: `docker compose --profile test run --rm test` → `716 passed, 57 deselected`
+
+## Этап 120. Historical PRD goal-section backfill — 2026-04-20
+
+**Commit**: (pending).
+
+Закрыл остаточный workflow noise по историческим PRD без явной секции `## Цель`.
+
+### Что сделано
+
+1. Добавлен PRD этапа 120 для самого cleanup pass.
+2. В исторические PRD из workflow-check списка добавлена короткая секция `## Цель` без изменения scope, решений или backlog.
+3. `Roadmap.md` обновлён: stage 120 добавлен и завершён как docs/workflow cleanup.
+
+### Решения и обоснования
+
+- **Backfill только структуры, не содержания**: задача была убрать workflow-noise, а не переписывать исторические решения задним числом.
+- **Сохранил существующие `## Цели`/`## Контекст`/`## Scope`**: новый `## Цель` выступает как совместимый header для текущего workflow-check contract.
+
+### Тесты
+
+- `bash scripts/review_workflow_check.sh` — `prd_missing_section` для backfill-списка исчез.
+- `docker compose --profile test run --rm test` → `716 passed, 57 deselected`

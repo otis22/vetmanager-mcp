@@ -1,5 +1,9 @@
 # Этап 104. Workflow discipline improvements
 
+## Цель
+
+Добавить механические workflow-gates, которые ловят пропуски stage-completion, review-resolution и artifact drift до того, как они накопятся в следующих этапах.
+
 ## Контекст
 
 Super-review 2026-04-17 (`artifacts/review/2026-04-17-post-stages-85-95.md`) выявил 4 root-cause пропуска в workflow stages 85-95:

@@ -1,5 +1,9 @@
 # PRD: Этап 52. Безопасность: hardening
 
+## Цель
+
+Закрыть зафиксированные security gaps вокруг startup secrets, form abuse, password/session policy и безопасного surface web-контура.
+
 ## Контекст
 
 Security ревью выявило уязвимости CRITICAL/HIGH/MEDIUM. Основные проблемы:
