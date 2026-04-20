@@ -4949,7 +4949,7 @@ Guards против регрессии drift'а между timeout-branch и net
 
 ## Этап 121. Roadmap status sync cleanup — 2026-04-20
 
-**Commit**: (pending).
+**Commit**: `04a4570`.
 
 Финальный docs-only cleanup `Roadmap.md`: синхронизировал внутренние подпункты уже завершённых этапов с фактическим статусом `done`.
 
