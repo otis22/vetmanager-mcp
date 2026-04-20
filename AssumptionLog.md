@@ -4927,7 +4927,7 @@ Guards против регрессии drift'а между timeout-branch и net
 
 ## Этап 120. Historical PRD goal-section backfill — 2026-04-20
 
-**Commit**: (pending).
+**Commit**: `bd1b755`.
 
 Закрыл остаточный workflow noise по историческим PRD без явной секции `## Цель`.
 
