@@ -4946,3 +4946,24 @@ Guards против регрессии drift'а между timeout-branch и net
 
 - `bash scripts/review_workflow_check.sh` — `prd_missing_section` для backfill-списка исчез.
 - `docker compose --profile test run --rm test` → `716 passed, 57 deselected`
+
+## Этап 121. Roadmap status sync cleanup — 2026-04-20
+
+**Commit**: (pending).
+
+Финальный docs-only cleanup `Roadmap.md`: синхронизировал внутренние подпункты уже завершённых этапов с фактическим статусом `done`.
+
+### Что сделано
+
+1. Приведены к `done` подпункты в закрытых этапах `115`, `116`, `117`.
+2. Приведены к `done` подпункты в закрытых follow-up этапах `114b`, `118`, `119`, `120`.
+3. Добавлен отдельный PRD stage 121, чтобы cleanup сам соответствовал workflow contract.
+
+### Решения и обоснования
+
+- **Это отдельный docs stage, а не silent edit**: иначе Roadmap cleanup сам бы нарушил правило "PRD before implementation".
+- **Не переписывал historical rationale**: только статусы подпунктов, чтобы backlog отражал уже совершённую работу.
+
+### Тесты
+
+- `bash scripts/review_workflow_check.sh` — ожидается зелёный после записи stage 121.
