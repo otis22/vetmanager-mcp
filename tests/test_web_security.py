@@ -139,7 +139,7 @@ async def test_login_lockout_per_email_rate_limit_unit():
     """Per-email login lockout must trigger after 10 hits in login_lockout namespace."""
     from web_security import (
         check_rate_limit,
-        record_rate_limit_hit,
+        consume_rate_limit,
         reset_web_security_state,
     )
     from exceptions import RateLimitError
@@ -148,7 +148,7 @@ async def test_login_lockout_per_email_rate_limit_unit():
 
     lockout_key = "email:lockout@example.com"
     for _ in range(10):
-        await record_rate_limit_hit("login_lockout", lockout_key, window_seconds=900)
+        await consume_rate_limit("login_lockout", lockout_key, limit=10, window_seconds=900)
 
     with pytest.raises(RateLimitError):
         await check_rate_limit("login_lockout", lockout_key, limit=10, window_seconds=900)

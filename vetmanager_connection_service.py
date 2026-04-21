@@ -466,6 +466,48 @@ async def _find_matching_active_connection(
     return None
 
 
+async def _save_connection(
+    session: AsyncSession,
+    *,
+    account_id: int,
+    auth_mode: str,
+    domain: str,
+    credentials: dict[str, str],
+    encryption_key: str | None = None,
+    reuse_existing: bool = False,
+) -> VetmanagerConnection:
+    lock = await _get_account_save_lock(account_id)
+    async with lock:
+        async with session.begin():
+            existing = None
+            if reuse_existing:
+                existing = await _find_matching_active_connection(
+                    session,
+                    account_id=account_id,
+                    auth_mode=auth_mode,
+                    domain=domain,
+                    expected_credentials=credentials,
+                    encryption_key=encryption_key,
+                )
+            if existing is not None:
+                connection = existing
+            else:
+                await _disable_existing_active_connections(session, account_id=account_id)
+                connection = VetmanagerConnection(
+                    account_id=account_id,
+                    auth_mode=auth_mode,
+                    status=CONNECTION_STATUS_ACTIVE,
+                    domain=domain,
+                )
+                connection.set_credentials(
+                    credentials,
+                    encryption_key=encryption_key,
+                )
+                session.add(connection)
+    await session.refresh(connection)
+    return connection
+
+
 async def save_domain_api_key_connection(
     session: AsyncSession,
     *,
@@ -478,23 +520,14 @@ async def save_domain_api_key_connection(
     normalized_domain = _validate_domain(domain.strip())
     normalized_api_key = api_key.strip()
     await validate_domain_api_key_connection(normalized_domain, normalized_api_key)
-    lock = await _get_account_save_lock(account_id)
-    async with lock:
-        async with session.begin():
-            await _disable_existing_active_connections(session, account_id=account_id)
-            connection = VetmanagerConnection(
-                account_id=account_id,
-                auth_mode=VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
-                status=CONNECTION_STATUS_ACTIVE,
-                domain=normalized_domain,
-            )
-            connection.set_credentials(
-                {"domain": normalized_domain, "api_key": normalized_api_key},
-                encryption_key=encryption_key,
-            )
-            session.add(connection)
-    await session.refresh(connection)
-    return connection
+    return await _save_connection(
+        session,
+        account_id=account_id,
+        auth_mode=VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
+        domain=normalized_domain,
+        credentials={"domain": normalized_domain, "api_key": normalized_api_key},
+        encryption_key=encryption_key,
+    )
 
 
 async def save_user_token_connection(
@@ -515,27 +548,18 @@ async def save_user_token_connection(
         normalized_user_token,
         app_name=normalized_app_name,
     )
-    lock = await _get_account_save_lock(account_id)
-    async with lock:
-        async with session.begin():
-            await _disable_existing_active_connections(session, account_id=account_id)
-            connection = VetmanagerConnection(
-                account_id=account_id,
-                auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
-                status=CONNECTION_STATUS_ACTIVE,
-                domain=normalized_domain,
-            )
-            connection.set_credentials(
-                {
-                    "domain": normalized_domain,
-                    "user_token": normalized_user_token,
-                    "app_name": normalized_app_name,
-                },
-                encryption_key=encryption_key,
-            )
-            session.add(connection)
-    await session.refresh(connection)
-    return connection
+    return await _save_connection(
+        session,
+        account_id=account_id,
+        auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
+        domain=normalized_domain,
+        credentials={
+            "domain": normalized_domain,
+            "user_token": normalized_user_token,
+            "app_name": normalized_app_name,
+        },
+        encryption_key=encryption_key,
+    )
 
 
 async def save_user_login_password_connection(
@@ -565,42 +589,19 @@ async def save_user_login_password_connection(
         return resolved_host, user_token
 
     _, user_token = await _run_login_prepare_once(account_id, _prepare_login_credentials)
-    lock = await _get_account_save_lock(account_id)
-    async with lock:
-        async with session.begin():
-            existing = await _find_matching_active_connection(
-                session,
-                account_id=account_id,
-                auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
-                domain=normalized_domain,
-                expected_credentials={
-                    "domain": normalized_domain,
-                    "user_token": user_token,
-                    "app_name": TOKEN_AUTH_APP_NAME,
-                },
-                encryption_key=encryption_key,
-            )
-            if existing is not None:
-                connection = existing
-            else:
-                await _disable_existing_active_connections(session, account_id=account_id)
-                connection = VetmanagerConnection(
-                    account_id=account_id,
-                    auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
-                    status=CONNECTION_STATUS_ACTIVE,
-                    domain=normalized_domain,
-                )
-                connection.set_credentials(
-                    {
-                        "domain": normalized_domain,
-                        "user_token": user_token,
-                        "app_name": TOKEN_AUTH_APP_NAME,
-                    },
-                    encryption_key=encryption_key,
-                )
-                session.add(connection)
-    await session.refresh(connection)
-    return connection
+    return await _save_connection(
+        session,
+        account_id=account_id,
+        auth_mode=VETMANAGER_AUTH_MODE_USER_TOKEN,
+        domain=normalized_domain,
+        credentials={
+            "domain": normalized_domain,
+            "user_token": user_token,
+            "app_name": TOKEN_AUTH_APP_NAME,
+        },
+        encryption_key=encryption_key,
+        reuse_existing=True,
+    )
 
 
 async def evaluate_connection_health(

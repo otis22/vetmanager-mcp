@@ -189,12 +189,6 @@ async def consume_rate_limit(namespace: str, key: str, *, limit: int, window_sec
         )
 
 
-async def record_rate_limit_hit(namespace: str, key: str, *, window_seconds: int) -> None:
-    """Append one hit for the given namespace/key pair."""
-    backend = await get_rate_limit_backend()
-    await backend.record_hit(namespace, key, window_seconds=window_seconds)
-
-
 async def clear_rate_limit_key(namespace: str, key: str) -> None:
     """Clear limiter state for a key after successful auth."""
     backend = await get_rate_limit_backend()

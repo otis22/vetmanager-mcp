@@ -78,6 +78,33 @@ async def _fetch_all_entity_pages(
     return records
 
 
+async def _fetch_day_batched_entities(
+    vc: VetmanagerClient,
+    *,
+    endpoint: str,
+    entity_keys: tuple[str, ...],
+    id_property: str,
+    date_property: str,
+    entity_ids: list[int],
+    day_start: str,
+    day_end: str,
+) -> list[dict]:
+    async def _fetch_chunk(chunk: list[int]) -> list[dict]:
+        return await _fetch_all_entity_pages(
+            vc,
+            endpoint=endpoint,
+            entity_keys=entity_keys,
+            filters=[
+                _filter_in(id_property, chunk),
+                _filter_gte(date_property, day_start),
+                _filter_lt(date_property, day_end),
+            ],
+        )
+
+    pages = await _gather_bounded(*[_fetch_chunk(chunk) for chunk in _chunked(entity_ids)])
+    return [record for page in pages for record in page]
+
+
 def calculate_inactive_window(
     months_min: int,
     months_max: int,
@@ -248,24 +275,16 @@ async def find_pets_at_client_last_visit(
     # Step 2: batch-check invoices for ALL pets in a single request using
     # IN operator on pet_id. Same strict day-bounded window avoids false
     # positives from later backfilled records.
-    async def _fetch_invoice_chunk(chunk: list[int]) -> list[dict]:
-        inv_filters = [
-            _filter_in("pet_id", chunk),
-            _filter_gte("invoice_date", cutoff_start),
-            _filter_lt("invoice_date", cutoff_end),
-        ]
-        return await _fetch_all_entity_pages(
-            vc,
-            endpoint="/rest/api/invoice",
-            entity_keys=("invoice",),
-            filters=inv_filters,
-        )
-
-    invoice_chunks = _chunked([int(pid) for pid in pet_ids])
-    invoice_pages = await _gather_bounded(
-        *[_fetch_invoice_chunk(chunk) for chunk in invoice_chunks]
+    invoices = await _fetch_day_batched_entities(
+        vc,
+        endpoint="/rest/api/invoice",
+        entity_keys=("invoice",),
+        id_property="pet_id",
+        date_property="invoice_date",
+        entity_ids=[int(pid) for pid in pet_ids],
+        day_start=cutoff_start,
+        day_end=cutoff_end,
     )
-    invoices = [invoice for page in invoice_pages for invoice in page]
 
     visited: list[dict] = []
     pets_with_invoice: set = set()
@@ -289,23 +308,16 @@ async def find_pets_at_client_last_visit(
     if not remaining_ids:
         return visited
 
-    async def _fetch_medcard_chunk(chunk: list[int]) -> list[dict]:
-        mc_filters = [
-            _filter_in("patient_id", chunk),
-            _filter_gte("date_create", cutoff_start),
-            _filter_lt("date_create", cutoff_end),
-        ]
-        return await _fetch_all_entity_pages(
-            vc,
-            endpoint="/rest/api/MedicalCards",
-            entity_keys=("medicalCards", "medicalcards"),
-            filters=mc_filters,
-        )
-
-    medcard_pages = await _gather_bounded(
-        *[_fetch_medcard_chunk(chunk) for chunk in _chunked([int(pid) for pid in remaining_ids])]
+    medcards = await _fetch_day_batched_entities(
+        vc,
+        endpoint="/rest/api/MedicalCards",
+        entity_keys=("medicalCards", "medicalcards"),
+        id_property="patient_id",
+        date_property="date_create",
+        entity_ids=[int(pid) for pid in remaining_ids],
+        day_start=cutoff_start,
+        day_end=cutoff_end,
     )
-    medcards = [medcard for page in medcard_pages for medcard in page]
 
     pets_with_medcard: set = set()
     for mc in medcards:
@@ -373,30 +385,6 @@ async def find_pets_for_clients_last_visit(
             offset += len(page_pets)
         return pets
 
-    async def _fetch_invoice_chunk(day_start: str, day_end: str, pet_ids: list[int]) -> list[dict]:
-        return await _fetch_all_entity_pages(
-            vc,
-            endpoint="/rest/api/invoice",
-            entity_keys=("invoice",),
-            filters=[
-                _filter_in("pet_id", pet_ids),
-                _filter_gte("invoice_date", day_start),
-                _filter_lt("invoice_date", day_end),
-            ],
-        )
-
-    async def _fetch_medcard_chunk(day_start: str, day_end: str, pet_ids: list[int]) -> list[dict]:
-        return await _fetch_all_entity_pages(
-            vc,
-            endpoint="/rest/api/MedicalCards",
-            entity_keys=("medicalCards", "medicalcards"),
-            filters=[
-                _filter_in("patient_id", pet_ids),
-                _filter_gte("date_create", day_start),
-                _filter_lt("date_create", day_end),
-            ],
-        )
-
     for day_clients in clients_by_day.values():
         owner_ids = [int(client["id"]) for client in day_clients]
         pet_pages = await _gather_bounded(
@@ -410,10 +398,16 @@ async def find_pets_for_clients_last_visit(
 
         day_start = _normalize_to_midnight(day_clients[0]["last_visit_date"])
         day_end = _next_day_midnight(day_clients[0]["last_visit_date"])
-        invoice_pages = await _gather_bounded(
-            *[_fetch_invoice_chunk(day_start, day_end, chunk) for chunk in _chunked(pet_ids)]
+        invoices = await _fetch_day_batched_entities(
+            vc,
+            endpoint="/rest/api/invoice",
+            entity_keys=("invoice",),
+            id_property="pet_id",
+            date_property="invoice_date",
+            entity_ids=pet_ids,
+            day_start=day_start,
+            day_end=day_end,
         )
-        invoices = [invoice for page in invoice_pages for invoice in page]
 
         pets_with_invoice: set[int] = set()
         visited_by_client: dict[int, list[dict]] = {}
@@ -443,13 +437,16 @@ async def find_pets_for_clients_last_visit(
 
         remaining_ids = [pid for pid in pet_ids if pid not in pets_with_invoice]
         if remaining_ids:
-            medcard_pages = await _gather_bounded(
-                *[
-                    _fetch_medcard_chunk(day_start, day_end, chunk)
-                    for chunk in _chunked(remaining_ids)
-                ]
+            medcards = await _fetch_day_batched_entities(
+                vc,
+                endpoint="/rest/api/MedicalCards",
+                entity_keys=("medicalCards", "medicalcards"),
+                id_property="patient_id",
+                date_property="date_create",
+                entity_ids=remaining_ids,
+                day_start=day_start,
+                day_end=day_end,
             )
-            medcards = [medcard for page in medcard_pages for medcard in page]
             pets_with_medcard: set[int] = set()
             for mc in medcards:
                 pid = mc.get("patient_id")

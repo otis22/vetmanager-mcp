@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import inspect
 import os
 import secrets
 from collections import defaultdict, deque
@@ -38,6 +39,9 @@ class RateLimitBackend(Protocol):
         ...
 
     async def reset_all(self) -> None:
+        ...
+
+    async def close(self) -> None:
         ...
 
 
@@ -87,6 +91,9 @@ class InMemoryRateLimitBackend:
     async def reset_all(self) -> None:
         self._state.clear()
 
+    async def close(self) -> None:
+        return None
+
 
 class RedisRateLimitBackend:
     """Redis-backed rate limiter using sliding window via ZSET.
@@ -108,6 +115,26 @@ class RedisRateLimitBackend:
     def _redis_key(namespace: str, key: str) -> str:
         return f"vmrl:{namespace}:{key}"
 
+    @staticmethod
+    def _ttl_seconds(window_seconds: int) -> int:
+        return window_seconds + 1
+
+    async def _append_hit_transaction(
+        self,
+        pipe,
+        *,
+        rkey: str,
+        member: str,
+        now_ts: float,
+        window_seconds: int,
+    ) -> None:
+        zadd_result = pipe.zadd(rkey, {member: now_ts})
+        if inspect.isawaitable(zadd_result):
+            await zadd_result
+        expire_result = pipe.expire(rkey, self._ttl_seconds(window_seconds))
+        if inspect.isawaitable(expire_result):
+            await expire_result
+
     async def count_in_window(self, namespace: str, key: str, *, window_seconds: int) -> int:
         rkey = self._redis_key(namespace, key)
         now_ts = datetime.now(timezone.utc).timestamp()
@@ -119,8 +146,25 @@ class RedisRateLimitBackend:
         rkey = self._redis_key(namespace, key)
         now_ts = datetime.now(timezone.utc).timestamp()
         member = f"{now_ts}:{secrets.token_hex(4)}"
-        await self._redis.zadd(rkey, {member: now_ts})
-        await self._redis.expire(rkey, window_seconds + 1)
+        pipe = self._redis.pipeline()
+        try:
+            multi = getattr(pipe, "multi", None)
+            if callable(multi):
+                multi()
+            await self._append_hit_transaction(
+                pipe,
+                rkey=rkey,
+                member=member,
+                now_ts=now_ts,
+                window_seconds=window_seconds,
+            )
+            await pipe.execute()
+        finally:
+            reset = getattr(pipe, "reset", None)
+            if callable(reset):
+                reset_result = reset()
+                if inspect.isawaitable(reset_result):
+                    await reset_result
 
     async def consume_hit(
         self,
@@ -142,15 +186,26 @@ class RedisRateLimitBackend:
                 current = int(await pipe.zcard(rkey))
                 if current >= limit:
                     return current, False
-                pipe.multi()
-                pipe.zadd(rkey, {member: now_ts})
-                pipe.expire(rkey, window_seconds + 1)
+                multi = getattr(pipe, "multi", None)
+                if callable(multi):
+                    multi()
+                await self._append_hit_transaction(
+                    pipe,
+                    rkey=rkey,
+                    member=member,
+                    now_ts=now_ts,
+                    window_seconds=window_seconds,
+                )
                 await pipe.execute()
                 return current + 1, True
             except self._watch_error:
                 continue
             finally:
-                await pipe.reset()
+                reset = getattr(pipe, "reset", None)
+                if callable(reset):
+                    reset_result = reset()
+                    if inspect.isawaitable(reset_result):
+                        await reset_result
         raise RuntimeError("rate limit consume conflict after retries")
 
     async def clear(self, namespace: str, key: str) -> None:
@@ -160,6 +215,11 @@ class RedisRateLimitBackend:
         # Production safety: only delete keys with our prefix
         async for key in self._redis.scan_iter(match="vmrl:*"):
             await self._redis.delete(key)
+
+    async def close(self) -> None:
+        aclose = getattr(self._redis, "aclose", None)
+        if callable(aclose):
+            await aclose()
 
 
 class _ResilientRedisBackend:
@@ -261,6 +321,10 @@ class _ResilientRedisBackend:
         await self._safe("reset_all", self._redis_backend.reset_all)
         await self._fallback.reset_all()
 
+    async def close(self) -> None:
+        await self._redis_backend.close()
+        await self._fallback.close()
+
 
 _BACKEND: RateLimitBackend | None = None
 _BACKEND_INIT_LOCK: asyncio.Lock | None = None
@@ -275,6 +339,17 @@ def _get_backend_init_lock() -> asyncio.Lock:
     if _BACKEND_INIT_LOCK is None:
         _BACKEND_INIT_LOCK = asyncio.Lock()
     return _BACKEND_INIT_LOCK
+
+
+async def _close_backend_instance(backend: RateLimitBackend | None) -> None:
+    if backend is None:
+        return
+    close_method = getattr(backend, "close", None)
+    if close_method is None:
+        return
+    result = close_method()
+    if inspect.isawaitable(result):
+        await result
 
 
 async def get_rate_limit_backend() -> RateLimitBackend:
@@ -322,8 +397,26 @@ async def get_rate_limit_backend() -> RateLimitBackend:
         return _BACKEND
 
 
+async def shutdown_rate_limit_backend() -> None:
+    """Explicitly close the active backend instance and clear singleton state."""
+    global _BACKEND, _BACKEND_INIT_LOCK
+    backend = _BACKEND
+    _BACKEND = None
+    _BACKEND_INIT_LOCK = None
+    await _close_backend_instance(backend)
+
+
 def reset_rate_limit_backend() -> None:
     """Force re-initialization on next get_rate_limit_backend() call (test only)."""
     global _BACKEND, _BACKEND_INIT_LOCK
+    backend = _BACKEND
     _BACKEND = None
     _BACKEND_INIT_LOCK = None
+    if backend is None:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(_close_backend_instance(backend))
+    else:
+        loop.create_task(_close_backend_instance(backend))

@@ -14,6 +14,7 @@ from rate_limit_backend import (
     RedisRateLimitBackend,
     get_rate_limit_backend,
     reset_rate_limit_backend,
+    shutdown_rate_limit_backend,
 )
 from web_security import check_rate_limit
 
@@ -97,6 +98,8 @@ async def test_redis_backend_record_and_count():
     await backend.record_hit("ns", "key", window_seconds=60)
     await backend.record_hit("ns", "key", window_seconds=60)
     assert await backend.count_in_window("ns", "key", window_seconds=60) == 3
+    ttl = await client.ttl("vmrl:ns:key")
+    assert ttl > 0
 
 
 @pytest.mark.asyncio
@@ -183,6 +186,9 @@ async def test_factory_uses_redis_asyncio_client(monkeypatch):
         async def ping(self):
             calls.append(("ping", None))
 
+        async def aclose(self):
+            calls.append(("aclose", None))
+
     class _FakeRedisClass:
         @staticmethod
         def from_url(url, decode_responses=True):
@@ -206,6 +212,42 @@ async def test_factory_uses_redis_asyncio_client(monkeypatch):
         ("ping", None),
     ]
     reset_rate_limit_backend()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_rate_limit_backend_closes_redis_client(monkeypatch):
+    calls: list[tuple[str, object]] = []
+
+    class _FakeRedisClient:
+        async def ping(self):
+            calls.append(("ping", None))
+
+        async def aclose(self):
+            calls.append(("aclose", None))
+
+    class _FakeRedisClass:
+        @staticmethod
+        def from_url(url, decode_responses=True):
+            calls.append(("from_url", url, decode_responses))
+            return _FakeRedisClient()
+
+    fake_asyncio_module = types.SimpleNamespace(Redis=_FakeRedisClass)
+    fake_redis_module = types.SimpleNamespace(asyncio=fake_asyncio_module)
+
+    monkeypatch.setenv("REDIS_URL", "redis://example.test:6379/0")
+    monkeypatch.delenv("RATE_LIMIT_REQUIRE_REDIS", raising=False)
+    monkeypatch.setitem(sys.modules, "redis", fake_redis_module)
+    monkeypatch.setitem(sys.modules, "redis.asyncio", fake_asyncio_module)
+    reset_rate_limit_backend()
+
+    await get_rate_limit_backend()
+    await shutdown_rate_limit_backend()
+
+    assert calls == [
+        ("from_url", "redis://example.test:6379/0", True),
+        ("ping", None),
+        ("aclose", None),
+    ]
 
 
 # ── Resilient Redis backend (mid-operation fallback) ────────────────────────
@@ -293,6 +335,9 @@ async def test_check_rate_limit_calls_backend_interleaved(monkeypatch):
             return None
 
         async def reset_all(self) -> None:
+            return None
+
+        async def close(self) -> None:
             return None
 
     backend = _SlowBackend()
