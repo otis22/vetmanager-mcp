@@ -6,7 +6,9 @@ Each new filter param must:
 - reject invalid inputs with ValueError.
 """
 
+import asyncio
 import json
+import time
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -441,6 +443,31 @@ async def test_get_users_position_id_filter():
     filters = _filter_from_request(route)
     pos = [f for f in filters if f["property"] == "position_id"]
     assert pos and pos[0]["value"] == 7
+
+
+@pytest.mark.asyncio
+async def test_get_users_name_search_runs_last_and_first_name_in_parallel(monkeypatch):
+    import tools.user as user_module
+
+    async def fake_crud_list(endpoint, *, limit, offset, sort=None, filters=None, extra=None):
+        await asyncio.sleep(0.05)
+        props = {
+            f["property"] if isinstance(f, dict) else getattr(f, "property", None)
+            for f in (filters or [])
+        }
+        if "last_name" in props:
+            return {"data": {"user": [{"id": 7, "last_name": "Иванова"}]}}
+        return {"data": {"user": [{"id": 8, "first_name": "Иванова"}]}}
+
+    monkeypatch.setattr(user_module, "crud_list", fake_crud_list)
+
+    started = time.perf_counter()
+    result = await mcp.call_tool("get_users", {"name": "Иванова"})
+    elapsed = time.perf_counter() - started
+
+    data = result.structured_content["data"]["user"]
+    assert {user["id"] for user in data} == {7, 8}
+    assert elapsed < 0.09, f"expected parallel lookups, got serial latency {elapsed:.3f}s"
 
 
 # ── get_admissions date_from/to, doctor_id, pet_id, client_id ────────────────

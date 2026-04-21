@@ -4967,3 +4967,463 @@ Guards против регрессии drift'а между timeout-branch и net
 ### Тесты
 
 - `bash scripts/review_workflow_check.sh` — ожидается зелёный после записи stage 121.
+
+## Этап 122. VM API payload contract hotfix — 2026-04-21
+
+**Commit**: `(pending)`.
+
+Закрыл code/test часть blocker-а B1 из super-review 2026-04-20: целевые tools больше не отправляют camelCase/legacy query-поля в VM API для hospital/payment/invoiceDocument/client/breed/timesheet.
+
+### Что сделано
+
+1. Создан PRD `PRD/этап-122-vm-api-payload-contract-hotfix.md`.
+2. `tools/clinical.py`:
+   - `create_hospitalization` теперь отправляет `patient_id`, `doctor_id`, `date_in`, `hospital_block_id`;
+   - `update_hospitalization` теперь отправляет `date_out`, `hospital_block_id`;
+   - `get_hospitalizations(pet_id=...)` переведён на filter `patient_id`, а не legacy top-level query param.
+3. `tools/finance.py`:
+   - `create_payment` теперь отправляет `client_id`, `cassa_id`;
+   - `get_payments(client_id=...)` строит filter по `client_id`, не `clientId` query param;
+   - `add_invoice_document` теперь отправляет `invoice_id`, `good_id`;
+   - `get_invoice_documents(invoice_id=...)` строит filter по `invoice_id`, не `invoiceId` query param.
+4. `tools/client.py::create_client` переведён на `first_name`, `last_name`, `cell_phone`.
+5. `tools/reference.py::get_breeds` переведён на filter `pet_type_id`.
+6. `tools/operations.py::get_timesheets(date=...)` больше не использует top-level `date`; вместо этого строит filters `begin_datetime >= YYYY-MM-DD 00:00:00` и `end_datetime <= YYYY-MM-DD 23:59:59`.
+7. `tests/test_api_contracts_hotfix.py` расширен 9 regression tests на фактический HTTP body/query для всех перечисленных инструментов.
+8. `artifacts/api-research-notes-ru.md` дополнен canonical mappings для Hospital / Payment / InvoiceDocument / Client create / Breed / Timesheet date filter.
+
+### Архитектурные решения
+
+- **Внешние MCP-имена сохранены**, если это уже устоявшийся публичный контракт (`pet_id`, `doctor_id`, `date_in`, `block_id`, `phone`). Маппинг делается только на outbound VM wire contract.
+- **Для list-инструментов использован filter, а не extra query**, когда review зафиксировал реальное имя поля в VM entity. Это делает контракт единообразным и предотвращает silent ignore со стороны API.
+- **`create_client.phone` мапится в `cell_phone`**. Это выбранный operational default для stage 122; если later real API probe докажет необходимость `home_phone`, нужен отдельный follow-up, а не молчаливый rollback.
+
+### Тесты
+
+- Targeted red/green: `docker compose --profile test run --rm test pytest tests/test_api_contracts_hotfix.py` → `15 passed`.
+- Full: `docker compose --profile test run --rm test` → `725 passed, 57 deselected`.
+
+### Real API probe
+
+- Выполнен manual probe на `devtr6` через MCP tool-path внутри test-контейнера:
+  `create_client(first_name="Stage122", last_name="stage122-20260421052549", phone="+79991234567", email="stage122-20260421052549@example.invalid")`
+  → `get_client_by_id(458)`
+  → `delete_client(458)`.
+- Live API подтвердил, что после stage 122 запись создаётся с заполненными:
+  - `first_name="Stage122"`
+  - `last_name="stage122-20260421052549"`
+  - `cell_phone="+79991234567"`
+  - `email="stage122-20260421052549@example.invalid"`
+- Cleanup подтверждён тем же контуром: `DELETE /rest/api/client/458` → `200 OK`.
+
+### Дополнительные наблюдения
+
+- `create_client` real response shape не стабилен в одну форму: `data.client` может приходить и как `list[dict]`, и как `dict`. Для stage 122 это использовалось только в ad-hoc probe; production fix от этого не зависит, но факт полезен для будущих real-test helper'ов.
+- Read-only real smoke на `breed`, `payment`, `invoiceDocument`, `hospital`, `timesheet` отрабатывал с `HTTP 200`, но `tests/test_e2e_real.py -k ...` показал существующую teardown-проблему `RuntimeError: Event loop is closed` в real-test infrastructure. Это не блокировало закрытие stage 122 после успешного write-side probe с cleanup.
+
+## Этап 123. Contract tests rewrite + mutation unhappy-path coverage — 2026-04-21
+
+**Статус**: `done`.
+
+Stage 123 закрыт полностью: broken create fixtures переписаны на `mcp.call_tool(...)`, invalid admission status валидируется до HTTP вызова, mutation tests закрепляют wire contract точными body assertions, а error paths покрыты по всем mutation tools из `tests/test_e2e_mock_crud.py`.
+
+### Что сделано
+
+1. Создан PRD `PRD/этап-123-contract-tests-and-mutation-unhappy-path.md`.
+2. `tests/test_e2e_mock_entities.py`:
+   - `test_create_pet` теперь идёт через `mcp.call_tool("create_pet", ...)` и пинует payload `owner_id`;
+   - `test_create_admission` теперь идёт через `mcp.call_tool("create_admission", ...)` и пинует `patient_id`, `user_id`, `admission_date`, `status="save"`;
+   - response fixtures для admission синхронизированы с актуальным `patient_id`.
+3. `tools/admission.py` получил минимальный runtime guard `_validate_admission_status(...)` для enum значений `save|directed|accepted|deleted|delayed|not_approved|in_treatment|not_confirmed`.
+4. `tests/test_api_contracts_hotfix.py` расширен тестом `test_create_admission_invalid_status_rejected`; при вызове через `mcp.call_tool(...)` invalid status поднимается как `ToolError` до HTTP вызова.
+5. `tests/test_e2e_mock_crud.py` tightened до exact wire assertions:
+   - все mutation tools в этом файле теперь проверяют `method + url + parsed JSON body` там, где body существует;
+   - удалены оставшиеся loose-проверки `route.called` из stage 123 scope.
+6. `tests/test_api_contracts_hotfix.py` дополнен contract tests для дополнительных mutation tools:
+   - `create_client`
+   - `create_payment`
+   - `add_invoice_document`
+   - `create_hospitalization`
+   - `create_medical_card`
+   - `update_medical_card`
+7. `tests/test_e2e_mock_crud.py` получил parametrized unhappy-path coverage для всех mutation tools, находящихся в scope этого файла:
+   - create: `create_good`, `create_supplier`, `create_timesheet`
+   - update: `update_invoice`, `update_user`, `update_hospitalization`, `update_supplier`, `update_good`
+   - delete: `delete_client`, `delete_pet`, `delete_invoice`, `delete_invoice_document`
+
+### Решения и обоснования
+
+- **Для tool-level unhappy paths truth source — `ToolError`, не raw domain exception.** `FastMCP` оборачивает внутренние исключения на публичной границе `mcp.call_tool(...)`, поэтому stage 123 должен пиновать именно этот внешний контракт.
+- **Invalid admission status валидируется в tool layer**, а не оставляется на усмотрение upstream API. Это дешевле, даёт детерминированный CI signal и предотвращает silent drop на стороне Vetmanager.
+- **Public contract на границе `mcp.call_tool(...)` закрепляется через `ToolError`.** Для 4xx/5xx unhappy paths тестировать внутренние exception-классы было бы ложной целью, потому что наружу FastMCP всё равно отдаёт `ToolError`.
+- **`create_good` intentionally posts default flags** `is_active=1` и `is_for_sale=1`. Stage 123 зафиксировал это как часть wire contract, чтобы последующие refactor'ы не срезали defaults случайно.
+
+### Тесты
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_e2e_mock_entities.py tests/test_e2e_mock_crud.py tests/test_api_contracts_hotfix.py` → `119 passed`.
+- Full: `docker compose --profile test run --rm test` → `747 passed, 57 deselected`.
+
+### Workflow audit
+
+- `bash scripts/review_workflow_check.sh 123` не нашёл новых содержательных проблем; остались только служебные reminders `oversize_diff` и `tests_reminder`.
+- Требование `tests_reminder` закрыто фактическим полным прогоном suite.
+
+## Этап 124. Async Redis rate-limit backend — 2026-04-21
+
+**Статус**: `done`.
+
+Stage 124 перевёл web rate-limit hot-path на async backend: `rate_limit_backend.py` больше не использует sync `redis.Redis`, web auth routes ждут limiter через `await`, а тесты закрепляют interleaving и strict/fallback semantics.
+
+### Что сделано
+
+1. Создан PRD `PRD/этап-124-async-redis-rate-limit-backend.md`.
+2. `rate_limit_backend.py`:
+   - `RateLimitBackend` protocol переведён на async methods;
+   - `InMemoryRateLimitBackend`, `RedisRateLimitBackend`, `_ResilientRedisBackend` переведены на async API;
+   - Redis factory теперь использует `importlib.import_module("redis.asyncio")` и `Redis.from_url(...)`;
+   - `await client.ping()` добавлен в init-path;
+   - добавлен lazy init lock для race-safe первого получения backend;
+   - sync imports `import redis` / `redis.Redis` удалены.
+3. `RedisRateLimitBackend.record_hit` больше не использует pipeline; вместо этого делает последовательные `await zadd(...)` + `await expire(...)`, что упрощает совместимость с async Redis/fakeredis и убирает не-awaited coroutine риск.
+4. `web_security.py`:
+   - `check_rate_limit`, `record_rate_limit_hit`, `clear_rate_limit_key` переведены на async;
+   - `reset_web_security_state()` оставлен sync test-helper'ом, который сбрасывает cached backend через `reset_rate_limit_backend()`.
+5. `web_routes_auth.py`:
+   - register/login flow теперь делает `await check_rate_limit(...)`;
+   - invalid login path делает `await record_rate_limit_hit(...)`;
+   - successful login path делает `await clear_rate_limit_key(...)`.
+6. `tests/test_rate_limit_backend.py` полностью переписан под async:
+   - in-memory backend checks;
+   - fakeredis async backend checks;
+   - factory fallback/fail-fast checks;
+   - explicit integration test на `redis.asyncio`;
+   - resilient fallback/strict tests;
+   - concurrency test на `check_rate_limit(...)` с interleaving assertion.
+7. `tests/test_web_security.py` адаптирован под async helper calls.
+
+### Архитектурные решения
+
+- **Factory остался lazy, но стал race-safe.** Для первого обращения используется async init lock с double-check, чтобы параллельные HTTP requests не создавали несколько backend instances одновременно.
+- **`reset_web_security_state()` сохранён sync намеренно.** Большая часть test fixtures вызывает его вне async context; для test isolation достаточно rebinding cached backend, без обязательного `await reset_all()`.
+- **Fallback semantics `_ResilientRedisBackend` сохранены.** В non-strict mode Redis runtime failures деградируют в process-local in-memory limiter, в strict mode ошибки пропагируются и request path fail-closed.
+- **Interleaving закреплён на уровне web helper, не только backend.** Это гарантирует, что async propagation реально дошла до `check_rate_limit(...)`, а не осталась локальной внутри backend implementation.
+
+### Тесты
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_rate_limit_backend.py tests/test_web_security.py tests/test_web_auth.py -q` → `49 passed`.
+- Full: `docker compose --profile test run --rm test` → `749 passed, 57 deselected`.
+
+### Workflow audit
+
+- `bash scripts/review_workflow_check.sh 124` после реализации репортил только:
+  - `oversize_diff`
+  - `missing_assumption`
+  - `tests_reminder`
+- `missing_assumption` закрыт этой записью.
+- `tests_reminder` закрыт фактическим полным прогоном suite.
+
+## Этап 125. Perf N+1 + free-slot correctness — 2026-04-21
+
+**Статус**: `done`.
+
+Stage 125 закрыл сразу три user-facing дефекта: pagination TOCTOU в `paginate_all`, false blocking в `get_doctor_free_slots` для multi-clinic расписания и остаточный N+1/underfetch в `get_inactive_pets`.
+
+### Что сделано
+
+1. Создан PRD `PRD/этап-125-perf-nplus1-and-free-slot-correctness.md`.
+2. `tools/crud_helpers.py::paginate_all` теперь фиксирует `totalCount` только с первой страницы и не даёт поздним страницам перезаписать итоговое значение.
+3. `tools/user.py::get_users` переведён на `asyncio.gather(...)` для `last_name`/`first_name` search path; docstring и фактическое поведение снова совпадают.
+4. `tools/schedule.py::get_doctor_free_slots`:
+   - timesheet и admission fetch теперь идут через `asyncio.gather(...)`;
+   - busy intervals разделены на `busy_by_clinic` и `shared_busy`;
+   - admission без `clinic_id` продолжает блокировать все клиники врача, admission с `clinic_id` блокирует только свою клинику.
+5. `tools/_inactive_helpers.py`:
+   - добавлен batched page-level resolver `find_pets_for_clients_last_visit(...)`;
+   - pet lookup по странице клиентов делается через `owner_id IN [...]` с pagination;
+   - invoice/medcard lookup идёт batch'ами по дню визита и `pet_id/patient_id IN [...]`;
+   - для single-owner path pagination pets больше не ломается на ложном `totalCount=100`;
+   - medcard fallback short-circuit'ится, если invoice-ветка уже набрала нужный page limit.
+6. `tools/pet.py::get_inactive_pets` переведён с per-client serial scan на page-level batched resolver при сохранении исходного порядка клиентов в выдаче.
+7. Тестовый слой расширен:
+   - `tests/test_inactive_pets.py` покрывает large-client-page batching, underfilled first page и owner с `>100` pets;
+   - `tests/test_get_doctor_free_slots.py` покрывает multi-clinic blocking и параллельный fetch;
+   - `tests/test_crud_helpers.py` закрепляет boundary 100/101;
+   - `tests/test_ergonomic_filters.py` закрепляет реальный parallel path в `get_users(name=...)`.
+
+### Архитектурные решения
+
+- **Для batched inactive-pets truth source — день последнего визита клиента, а не просто client_id.** Это позволило агрегировать invoice/medcard запросы без потери корректности day-bounded window.
+- **`clinic_id=None/0` в admission трактуется как shared busy interval.** Иначе старые записи без clinic binding перестали бы блокировать слоты вообще, что ломает back-compat и существующие сценарии.
+- **В batched pet lookup pagination strategy зависит от cardinality owner batch.** Для single-owner case нельзя доверять `totalCount`, потому что upstream/mock может вернуть page-sized `totalCount`; для multi-owner batched case first-page `totalCount` безопасно использовать как stop-signal.
+- **Medcard fallback теперь conditional по remaining demand.** Если invoice branch уже закрывает текущий `limit`, дальнейший fallback только жжёт latency без user-visible выигрыша.
+
+### Тесты
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_inactive_pets.py tests/test_get_doctor_free_slots.py tests/test_crud_helpers.py tests/test_ergonomic_filters.py -q` → `73 passed`.
+- Full: `docker compose --profile test run --rm test` → `756 passed, 57 deselected`.
+
+### Workflow audit
+
+- Этап выполнен через red → green: сначала добавлены failing regression tests, затем реализованы fixes.
+- После рефакторинга выполнен повторный полный прогон suite.
+
+## Этап 126. Auth-probe service hardening — 2026-04-21
+
+**Статус**: `done`.
+
+Stage 126 закрыл hot-path проблемы в `vetmanager_connection_service.py`: whitespace-sensitive password trimming, per-call `httpx.AsyncClient`, отсутствие probe metrics/retries и race при concurrent save одного account.
+
+### Что сделано
+
+1. Создан PRD `PRD/этап-126-auth-probe-service-hardening.md`.
+2. `vetmanager_connection_service.py`:
+   - `exchange_user_token` больше не делает `password.strip()`, а проверяет только `if not password`;
+   - добавлен общий helper `_request_with_retry(...)` для auth-probe/token-auth запросов;
+   - helper использует shared pool из `vm_transport.pool.get_shared_http_client()`;
+   - transient `502/503/504` и `httpx.ConnectTimeout` ретраятся до 3 попыток с exponential backoff и `Retry-After`;
+   - `validate_domain_api_key_connection`, `validate_user_token_connection`, `exchange_user_token` больше не создают локальный `httpx.AsyncClient`;
+   - каждый upstream attempt пишет `record_upstream_request(...)`, а failure attempts пишут `record_upstream_failure(...)`;
+   - success/failure branches теперь оставляют structured runtime logs по probe path.
+3. Save path:
+   - добавлен per-account async lock registry;
+   - disable + insert теперь выполняются внутри одной транзакции;
+   - выборка active connections делает `SELECT ... FOR UPDATE` перед disable.
+4. `evaluate_connection_health(...)`:
+   - больше не молчит на `HostResolutionError` / `VetmanagerTimeoutError` / `VetmanagerError`;
+   - пишет `RUNTIME_LOGGER.warning(..., event_name="connection_health_failed")`.
+5. `tests/test_vetmanager_connection_service.py` расширен:
+   - whitespace password passthrough;
+   - shared pool + retry path;
+   - structured warning на health-check failure;
+   - concurrent save оставляет ровно один `ACTIVE`.
+
+### Архитектурные решения
+
+- **Сериализация save path сделана в приложении, не только в БД.** `SELECT ... FOR UPDATE` на SQLite фактически no-op, поэтому для test/dev и single-process deployment нужен process-local per-account lock; row lock остаётся полезным для PostgreSQL path.
+- **Shared pool reused и для `token_auth.php`, и для probe GET'ов.** Это убирает лишние TCP/TLS handshakes именно в onboarding path, не только в основном `VetmanagerClient`.
+- **Retry scope намеренно узкий.** Ретраятся только `502/503/504` и `ConnectTimeout`; `401/403` fail-fast остаются признаком плохих credential'ов, а не transient upstream noise.
+- **Upstream metrics пишутся per attempt, не per logical operation.** Это даёт честный error-rate на probe hot-path и позволяет видеть hidden retry storms вместо ложно-зелёного агрегата.
+
+### Тесты
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_vetmanager_connection_service.py tests/test_web_auth.py tests/test_service_metrics.py -q` → `39 passed`.
+- Full: `docker compose --profile test run --rm test` → `760 passed, 57 deselected`.
+
+### Workflow audit
+
+- Этап выполнен через red → green: сначала добавлены failing service tests, затем выполнен refactor helper/save path.
+- После hardening выполнен повторный полный прогон suite.
+
+## Этап 127. Docs drift cleanup — 2026-04-21
+
+**Статус**: `done`.
+
+Stage 127 закрыл чисто документационный drift перед release gate: README снова ссылается на реальные artifact paths, technical requirements описывает текущую backup/cache/structure модель, а `CLAUDE.md` синхронизирован с фактическим набором review subagents.
+
+### Что сделано
+
+1. Создан PRD `PRD/этап-127-docs-drift-cleanup.md`.
+2. `README.md`:
+   - исправлены 4 пути на `artifacts/*-vetmanager-mcp-ru.md`;
+   - количество сущностей обновлено `35` → `38`;
+   - test command обновлён на `docker compose --profile test run --rm test`;
+   - аналогичная команда обновлена и в секции с default contour.
+3. `artifacts/technical-requirements-vetmanager-mcp-ru.md`:
+   - backup section переведён с legacy SQLite wording на PostgreSQL `pg_dump` через `scripts/backup_postgres.sh`;
+   - в tool list и structure tree добавлены `schedule.py`, `_inactive_helpers.py`, `_slots_helpers.py`;
+   - cache key description обновлён с учётом `account_id`;
+   - §7.1 changelog расширен до stages `117-121` и заголовок синхронизирован на `97-121`.
+4. `CLAUDE.md`:
+   - `10 subagent'ов` → `11 subagent'ов`;
+   - в список review agents добавлен `simplicity`, что соответствует реальному `.claude/agents/reviewer-simplicity.md`.
+
+### Решения и обоснования
+
+- **Это docs-only stage без code path changes.** Нужна была синхронизация release artifacts и workflow instructions перед stage 128, а не функциональные правки.
+- **Truth source для entity count — `artifacts/api_entity_reference-ru.md`.** README должен ссылаться на фактический справочник, а не на историческую цифру.
+- **README и technical requirements синхронизированы с canonical production artifacts.** Сокращённые имена `*-ru.md` оставляли ложные ссылки именно перед финальным release/deploy gate.
+
+### Проверки
+
+- `test -f artifacts/security-deployment-notes-vetmanager-mcp-ru.md && test -f artifacts/observability-runbook-vetmanager-mcp-ru.md && test -f artifacts/operations-readiness-vetmanager-mcp-ru.md && test -f artifacts/release-checklist-vetmanager-mcp-ru.md` → `paths_ok`
+- grep на старые broken paths / старую test command / `35 сущностей` / `10 subagent` не вернул совпадений.
+
+### Workflow audit
+
+- Этап docs-only, поэтому отдельный прогон test suite не требовался.
+- Содержательные workflow artifacts (`Roadmap.md`, `PRD/`, `AssumptionLog.md`) синхронизированы.
+
+## Этап 128. Final release gate + production deploy — 2026-04-21
+
+**Статус**: `in_progress` (deploy blocked by missing production target in local context).
+
+Stage 128 доведён до release gate readiness, но не до фактического rollout: хвост 122-127 синхронизирован, полный regression run снова зелёный, release checklist очищен от устаревшего SQLite backup wording. Физический deploy не выполнен, потому что локально отсутствует production SSH target / `PROD_SSH_TARGET`; в репозитории есть только ссылка на GitHub Actions secret, без доступного значения в env или `~/.ssh/config`.
+
+### Что сделано
+
+1. Перепроверена синхронность хвоста `122-127` в `Roadmap.md`, `PRD/` и `AssumptionLog.md`.
+2. Выполнен полный regression run:
+   - `docker compose --profile test run --rm test` → `760 passed, 57 deselected`.
+3. Перепроверен canonical deploy path:
+   - локальный rollout для незакоммиченного дерева должен идти через `scripts/sync_and_deploy_server.sh <ssh-target> <remote-dir>` и `SKIP_GIT_PULL=1`;
+   - `.github/workflows/deploy-prod.yml` использует тот же path, но читает `PROD_SSH_TARGET` из secrets.
+4. Обновлён `artifacts/release-checklist-vetmanager-mcp-ru.md`:
+   - pre-deploy backup приведён к PostgreSQL/rollback point wording;
+   - post-deploy DB check приведён к PostgreSQL/migration health wording.
+
+### Решения и ограничения
+
+- **Deploy не делается по домену вслепую.** Домен `vetmanager-mcp.vromanichev.ru` не является достаточным основанием считать, что SSH target равен этому же host; script требует явный `user@host`.
+- **Для локального незакоммиченного дерева canonical путь — `sync_and_deploy_server.sh`.** Прямой `deploy_server.sh` без sync рискован, потому что remote `git pull` не гарантирует наличие локальных незакоммиченных stage 122-127 изменений.
+- **Stage 128 нельзя закрывать частично как `done`.** Без backup, deploy, smoke checks и post-release observation acceptance этапа не выполнен.
+
+### Проверки
+
+- Full suite: `docker compose --profile test run --rm test` → `760 passed, 57 deselected`.
+- `bash scripts/review_workflow_check.sh 128`:
+  - ожидаемо оставляет `oversize_diff` на общее незакоммиченное дерево;
+  - после этой записи закрыт `missing_assumption`;
+  - `tests_reminder` формально устаревает, потому что full suite уже прогнан.
+
+## Этап 129.2. Atomic web rate-limit consume — 2026-04-21
+
+**Статус**: `done`.
+
+Закрыл race из post-review fix plan: web auth limiter больше не собирает split `check + record_hit` в register path и invalid-login path. Для лимитера появился атомарный backend primitive `consume_hit(...)`, а HTTP regression test подтверждает, что параллельные invalid login attempts больше не проходят все как `401`.
+
+### Что сделано
+
+1. Создан PRD `PRD/этап-129.2-atomic-web-rate-limit-consume.md`.
+2. `rate_limit_backend.py`:
+   - `RateLimitBackend` protocol расширен методом `consume_hit(namespace, key, *, limit, window_seconds) -> (count_after, allowed)`;
+   - `InMemoryRateLimitBackend` получил atomic consume path без split helper calls;
+   - `RedisRateLimitBackend` получил optimistic transaction path через `WATCH`/`MULTI`/`EXEC` c bounded retry loop;
+   - `_ResilientRedisBackend` проксирует `consume_hit(...)` и сохраняет strict/fallback semantics.
+3. `web_security.py`:
+   - добавлен `consume_rate_limit(...)`, который делает atomic check+record и поднимает `RateLimitError` только если лимит уже достигнут;
+   - старые `check_rate_limit(...)` / `record_rate_limit_hit(...)` сохранены для test/backcompat usage.
+4. `web_routes_auth.py`:
+   - `/register` переведён со split `check + record` на `consume_rate_limit(...)` для `register` и `register_email`;
+   - `/login` сохраняет fast-fail precheck на уже заблокированных ключах, но invalid-credentials branch теперь делает atomic consume для `login` и `login_lockout`;
+   - если invalid login attempt упирается в лимит именно на consume step, route возвращает `429`, а не лишний `401`.
+5. Тесты:
+   - `tests/test_rate_limit_backend.py`: in-memory/redis `consume_hit` contract + concurrent in-memory consume regression;
+   - `tests/test_web_security.py`: `consume_rate_limit` block test;
+   - `tests/test_web_auth.py`: concurrent invalid login regression (`<= limit` ответов `401`, минимум один `429`).
+
+### Решения и ограничения
+
+- **Login path оставил fast-fail precheck как отдельный шаг.** Это сохраняет текущую UX/operational semantics для уже заблокированных ключей, но authoritative anti-race guard теперь живёт в atomic consume на invalid-credentials branch.
+- **Cross-key atomicity не добавлялась.** `login` и `login_lockout`, как и `register` и `register_email`, по-прежнему учитываются раздельно; целью stage 129.2 была атомарность per-key, чтобы over-limit request не проходил как success/401 из-за split check/record race.
+- **Redis atomicity реализована без Lua.** `WATCH`/`MULTI` достаточно для текущего масштаба и проходит под test stack; если в будущем появится contention hotspot, можно перейти на Lua script как perf follow-up.
+
+### Тесты
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_rate_limit_backend.py tests/test_web_security.py tests/test_web_auth.py -q` → `54 passed`.
+- Full: `docker compose --profile test run --rm test` → `765 passed, 57 deselected`.
+
+### Workflow audit
+
+- Этап выполнен через PRD → code changes → targeted regression → full suite.
+- `Roadmap.md` синхронизирован: stage `129` переведён в `in_progress`, subtask `129.2` закрыт как `done`.
+
+## Этап 129.3. Dedupe onboarding side effects — 2026-04-21
+
+**Статус**: `done`.
+
+Закрыл race в onboarding service path: параллельные `save_user_login_password_connection(...)` для одного `account_id` больше не выпускают два user token во внешнем Vetmanager. Теперь login/password onboarding использует per-account in-flight prepare registry и повторно использует уже сохранённую active connection, если первый caller успел её записать.
+
+### Что сделано
+
+1. Создан PRD `PRD/этап-129.3-dedupe-onboarding-side-effects.md`.
+2. `vetmanager_connection_service.py`:
+   - добавлен per-account registry `_ACCOUNT_LOGIN_PREPARE_TASKS` с helper ` _run_login_prepare_once(...)`;
+   - `save_user_login_password_connection(...)` теперь дедупит upstream `exchange_user_token(...) + validate_user_token_connection(...)` для параллельных вызовов одного `account_id`;
+   - добавлен `_find_matching_active_connection(...)`: если первый caller уже сохранил идентичную active connection с тем же `domain/user_token/app_name`, второй caller возвращает её без disable/insert дубля;
+   - process-local asyncio locks сделаны loop-safe: если lock привязан к старому event loop, helper пересоздаёт его вместо cross-loop reuse.
+3. `tests/test_vetmanager_connection_service.py`:
+   - добавлен regression test `test_save_user_login_password_connection_concurrent_calls_dedupe_token_issue`;
+   - test пинует ровно один `POST /token_auth.php`, один active row и одинаковый returned connection id у обоих concurrent callers.
+
+### Решения и ограничения
+
+- **Dedupe введён только для login/password onboarding path.** Именно `token_auth.php` создаёт настоящий внешний side effect; `domain_api_key` и `user_token` validation paths делают только probe GET'ы и не выпускают новый секрет.
+- **Reuse existing active connection выбран вместо повторного disable/insert.** Это удерживает DB state чистым: при гонке не появляется лишний disabled row с тем же token.
+- **Lock registry пришлось сделать loop-safe.** Process-global `asyncio.Lock` без проверки loop binding падал на test runner'е с `bound to a different event loop`; helper теперь лениво пересоздаёт такие lock'и.
+
+### Тесты
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_vetmanager_connection_service.py tests/test_web_auth.py tests/test_service_metrics.py -q` → `41 passed`.
+- Full: `docker compose --profile test run --rm test` → `766 passed, 57 deselected`.
+
+### Workflow audit
+
+- Этап выполнен через PRD → targeted regression → full suite.
+- `Roadmap.md` синхронизирован: subtask `129.3` закрыт как `done`.
+
+## Этап 129.1. Inactive pets batched pagination — 2026-04-21
+
+**Статус**: `done`.
+
+Закрыл silent truncation в inactive-pets batched lookup: invoice и medcard checks больше не останавливаются на первой странице `limit=100`, если Vetmanager возвращает `totalCount > 100` внутри одного `pet_id IN [...]` chunk-а.
+
+### Что сделано
+
+1. Создан PRD `PRD/этап-129.1-inactive-pets-batched-pagination.md`.
+2. `tools/_inactive_helpers.py`:
+   - добавлен `_fetch_all_entity_pages(...)` для paginated batched entity lookup с учётом `totalCount` и short-page stop condition;
+   - `find_pets_at_client_last_visit(...)` переведён на этот helper для `/rest/api/invoice` и `/rest/api/MedicalCards`;
+   - pet scan для одного owner по-прежнему листает `/rest/api/pet` постранично, так что path покрывает одновременно `>100` pets и `>100` related rows на invoice/medcard chunk.
+3. `tests/test_inactive_pets.py`:
+   - добавлены regression tests на invoice overflow path и medcard overflow path;
+   - mock fixtures явно возвращают `totalCount > 100`, а единственная запись для одного из pets лежит только на второй странице, чтобы зафиксировать старый bug contract.
+
+### Решения и ограничения
+
+- **Pagination helper пока используется только для entity batched lookup.** Это сознательно узкий fix для `129.1`; более широкое dedupe/упрощение общей day-window logic остаётся отдельным follow-up в `129.7`.
+- **Останов по `totalCount` и short page объединён.** Это сохраняет совместимость с endpoint-ами, где `totalCount` может быть нулевым/отсутствовать, но короткая страница всё равно означает конец выборки.
+- **Regression tests не опираются на случайный порядок.** Overflow fixture построен так, что одна из visited pets появляется только после offset `100`; это проверяет именно second-page fetch, а не случайную дедупликацию.
+
+### Тесты
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_inactive_pets.py tests/test_inactive_helpers.py tests/test_ergonomic_filters.py -q` → `53 passed`.
+- Full: `docker compose --profile test run --rm test` → `768 passed, 57 deselected`.
+
+### Workflow audit
+
+- Этап выполнен через PRD → code changes → targeted regression → full suite.
+- `Roadmap.md` синхронизирован: subtask `129.1` закрыт как `done`.
+
+## Этап 129.4. Bounded concurrency for inactive pets lookup — 2026-04-21
+
+**Статус**: `done`.
+
+Закрыл performance-risk из post-review fix plan: `_inactive_helpers.py` больше не создаёт неограниченный burst на batched owner/day lookup. Все chunked pet/invoice/medcard requests теперь проходят через локальный bounded gather helper с semaphore cap.
+
+### Что сделано
+
+1. Создан PRD `PRD/этап-129.4-bounded-concurrency-inactive-pets.md`.
+2. `tools/_inactive_helpers.py`:
+   - добавлен `_BATCH_CONCURRENCY = 4`;
+   - добавлен `_gather_bounded(*coroutines, limit=None)` с runtime-resolved semaphore cap;
+   - все `asyncio.gather(...)` в `find_pets_at_client_last_visit(...)` и `find_pets_for_clients_last_visit(...)` переведены на `_gather_bounded(...)`.
+3. `tests/test_inactive_helpers.py`:
+   - добавлен regression test для single-owner path с `>1` invoice chunks и проверкой `max_in_flight <= 2` при monkeypatched cap;
+   - добавлен regression test для multi-client owner/day batching с проверкой bounded concurrency;
+   - добавлен helper-level test, что `_gather_bounded(...)` сохраняет порядок результатов и корректно обрабатывает пустой input.
+
+### Решения и ограничения
+
+- **Cap оставлен локальной константой файла.** Для `129.4` нужен был именно safety rail без расширения surface area через env/config; если потребуется runtime tuning, это уже отдельный follow-up.
+- **Default cap читается в runtime, а не в default-аргументе.** Это важно для тестов и для предсказуемости monkeypatch/override поведения.
+- **Порядок результатов сохранён как у обычного `asyncio.gather(...)`.** Это удерживает совместимость с существующей логикой flatten/filter без дополнительных сортировок.
+
+### Тесты
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_inactive_helpers.py tests/test_inactive_pets.py tests/test_ergonomic_filters.py -q` → `56 passed`.
+- Full: `docker compose --profile test run --rm test` → `771 passed, 57 deselected`.
+
+### Workflow audit
+
+- Этап выполнен через PRD → code changes → targeted regression → full suite.
+- `Roadmap.md` синхронизирован: subtask `129.4` закрыт как `done`.

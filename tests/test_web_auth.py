@@ -1,5 +1,6 @@
 """HTTP tests for account registration and login/logout web flow."""
 
+import asyncio
 from datetime import datetime, timezone
 import re
 from pathlib import Path
@@ -298,6 +299,49 @@ async def test_login_rate_limit_returns_429_after_repeated_failures(tmp_path: Pa
     assert second.status_code == 401
     assert third.status_code == 429
     assert "Too many login attempts." in third.text
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_login_rate_limit_concurrent_invalid_attempts_do_not_all_pass(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("WEB_LOGIN_RATE_LIMIT_ATTEMPTS", "2")
+    monkeypatch.setenv("WEB_LOGIN_RATE_LIMIT_WINDOW_SECONDS", "60")
+    async with storage.get_session_factory()() as session:
+        await register_account(
+            session,
+            email="doctor@example.com",
+            password="Correct-Horse-Bat1",
+        )
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        login_page = await client.get("/login")
+        token = _extract_csrf_token(login_page.text)
+
+        async def _attempt() -> int:
+            response = await client.post(
+                "/login",
+                data={
+                    "email": "doctor@example.com",
+                    "password": "wrong-pass",
+                    "csrf_token": token,
+                },
+            )
+            return response.status_code
+
+        statuses = await asyncio.gather(*[_attempt() for _ in range(4)])
+
+    assert statuses.count(401) <= 2
+    assert statuses.count(429) >= 1
 
     await engine.dispose()
     storage.reset_storage_state()

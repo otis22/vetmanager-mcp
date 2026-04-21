@@ -111,7 +111,7 @@ Safe workflow для real/browser verification:
 - для production browser checks использовать временный account и удалять его
   после ручной верификации, чтобы не копить тестовые сущности в production.
 
-Что входит в default `docker compose run --rm test`:
+Что входит в default `docker compose --profile test run --rm test`:
 - unit tests;
 - mock/e2e tests;
 - live localhost browser tests через Playwright;
@@ -579,16 +579,16 @@ Prompts работают по тому же bearer-only контракту, чт
 |------|------------|
 | `artifacts/prd-vetmanager-mcp-ru.md` | Требования к продукту: видение, цели, персоны, функциональные и нефункциональные требования |
 | `artifacts/technical-requirements-vetmanager-mcp-ru.md` | Технические требования: архитектура, стек, структура проекта |
-| `artifacts/api_entity_reference-ru.md` | Справочник по сущностям Vetmanager API (35 сущностей) |
+| `artifacts/api_entity_reference-ru.md` | Справочник по сущностям Vetmanager API (38 сущностей) |
 | `artifacts/api_crud_permissions-ru.md` | Матрица разрешённых CRUD-операций по Vetmanager REST API |
 | `artifacts/api-research-notes-ru.md` | Накопленные неочевидные знания об API (чеклист полей, filter operators, edge cases) — читать перед work with admission/pet/medical_card/timesheet |
 | `artifacts/vetmanager_openapi_v6.json` | Спецификация OpenAPI v6 для Vetmanager REST API |
 | `artifacts/vetmanager_postman_collection.json` | Коллекция Postman для ручного тестирования |
 | `artifacts/review/*.md` | Периодические deep-review (super-review) отчёты с findings + Codex arbitration |
-| `artifacts/security-deployment-notes-ru.md` | Чек-лист для production deploy'я (если присутствует) |
-| `artifacts/observability-runbook-ru.md` | Runbook для операций с метриками и логами (если присутствует) |
-| `artifacts/operations-readiness-ru.md` | Go/No-Go чеклист готовности к прод (если присутствует) |
-| `artifacts/release-checklist-ru.md` | Регламент релиза (если присутствует) |
+| `artifacts/security-deployment-notes-vetmanager-mcp-ru.md` | Чек-лист для production deploy'я (если присутствует) |
+| `artifacts/observability-runbook-vetmanager-mcp-ru.md` | Runbook для операций с метриками и логами (если присутствует) |
+| `artifacts/operations-readiness-vetmanager-mcp-ru.md` | Go/No-Go чеклист готовности к прод (если присутствует) |
+| `artifacts/release-checklist-vetmanager-mcp-ru.md` | Регламент релиза (если присутствует) |
 
 ## Self-hosted / Развернуть у себя
 
@@ -615,7 +615,7 @@ cd vetmanager-mcp
 - [Открыть issue](https://github.com/otis22/vetmanager-mcp/issues)
 - [Security-уязвимости](SECURITY.md) — сообщайте приватно
 
-Перед отправкой PR убедитесь, что тесты проходят: `docker compose run --rm test`.
+Перед отправкой PR убедитесь, что тесты проходят: `docker compose --profile test run --rm test`.
 
 ## License
 

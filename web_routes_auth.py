@@ -22,9 +22,9 @@ from web_security import (
     CSRF_FIELD_NAME,
     check_rate_limit,
     clear_rate_limit_key,
+    consume_rate_limit,
     get_rate_limit_config,
     get_request_ip,
-    record_rate_limit_hit,
     validate_csrf_request,
 )
 
@@ -75,13 +75,13 @@ def register_auth_routes(
         register_key = get_request_ip(request)
         register_email_key = f"email:{normalize_account_email(form.get('email', ''))}"
         try:
-            check_rate_limit(
+            await consume_rate_limit(
                 "register",
                 register_key,
                 limit=register_limit,
                 window_seconds=register_window,
             )
-            check_rate_limit(
+            await consume_rate_limit(
                 "register_email",
                 register_email_key,
                 limit=3,
@@ -105,8 +105,6 @@ def register_auth_routes(
                 csrf_token=csrf_token,
             )
 
-        record_rate_limit_hit("register", register_key, window_seconds=register_window)
-        record_rate_limit_hit("register_email", register_email_key, window_seconds=3600)
         async with get_session_factory()() as session:
             try:
                 account = await register_account(
@@ -189,13 +187,13 @@ def register_auth_routes(
         login_key = f"{get_request_ip(request)}:{normalize_account_email(form.get('email', ''))}"
         lockout_email_key = f"email:{normalize_account_email(form.get('email', ''))}"
         try:
-            check_rate_limit(
+            await check_rate_limit(
                 "login",
                 login_key,
                 limit=login_limit,
                 window_seconds=login_window,
             )
-            check_rate_limit(
+            await check_rate_limit(
                 "login_lockout",
                 lockout_email_key,
                 limit=10,
@@ -229,9 +227,33 @@ def register_auth_routes(
 
         if account is None:
             csrf_token = resolve_csrf_token(request)
+            try:
+                await consume_rate_limit(
+                    "login",
+                    login_key,
+                    limit=login_limit,
+                    window_seconds=login_window,
+                )
+                await consume_rate_limit(
+                    "login_lockout",
+                    lockout_email_key,
+                    limit=10,
+                    window_seconds=900,
+                )
+            except RateLimitError:
+                record_auth_failure(source="web_login", reason="rate_limited")
+                return html_response(
+                    request,
+                    render_login_page(
+                        csrf_token=csrf_token,
+                        error="Too many login attempts.",
+                        email=form.get("email", ""),
+                    ),
+                    status_code=429,
+                    with_csrf_cookie=True,
+                    csrf_token=csrf_token,
+                )
             record_auth_failure(source="web_login", reason="invalid_credentials")
-            record_rate_limit_hit("login", login_key, window_seconds=login_window)
-            record_rate_limit_hit("login_lockout", lockout_email_key, window_seconds=900)
             return html_response(
                 request,
                 render_login_page(
@@ -244,8 +266,8 @@ def register_auth_routes(
                 csrf_token=csrf_token,
             )
 
-        clear_rate_limit_key("login", login_key)
-        clear_rate_limit_key("login_lockout", lockout_email_key)
+        await clear_rate_limit_key("login", login_key)
+        await clear_rate_limit_key("login_lockout", lockout_email_key)
         # Stage 112.4: explicit correlation_id (see register-path above).
         _ctx = get_current_request_context() or {}
         RUNTIME_LOGGER.info(

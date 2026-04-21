@@ -8,6 +8,18 @@ from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_upda
 from validators import LimitParam, parse_date_param
 
 
+_VALID_ADMISSION_STATUSES = {
+    "save",
+    "directed",
+    "accepted",
+    "deleted",
+    "delayed",
+    "not_approved",
+    "in_treatment",
+    "not_confirmed",
+}
+
+
 def _unwrap_admission_list_response(resp: dict | list | None) -> tuple[list[dict], int]:
     """Normalize `/rest/api/admission` list response into `(rows, totalCount)`.
 
@@ -111,6 +123,13 @@ def register(mcp: FastMCP) -> None:
             "/rest/api/admission", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,
         )
+
+    def _validate_admission_status(status: str) -> None:
+        if status and status not in _VALID_ADMISSION_STATUSES:
+            allowed = ", ".join(sorted(_VALID_ADMISSION_STATUSES))
+            raise ValueError(
+                f"invalid admission status: {status!r}. Expected one of: {allowed}"
+            )
 
     @mcp.tool
     async def get_admission_by_id(
@@ -262,6 +281,7 @@ def register(mcp: FastMCP) -> None:
                 Vetmanager enum: save, directed, accepted, delayed,
                 in_treatment, not_approved, not_confirmed, deleted.
         """
+        _validate_admission_status(status)
         payload: dict = {
             "patient_id": pet_id,
             "client_id": client_id,
@@ -306,6 +326,7 @@ def register(mcp: FastMCP) -> None:
             admission_type: Admission type (leave empty to keep current).
         """
         payload: dict = {}
+        _validate_admission_status(status)
         if date:
             payload["admission_date"] = date
         if doctor_id:

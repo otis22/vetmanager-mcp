@@ -111,6 +111,8 @@ async def paginate_all(
     vc = VetmanagerClient()
     all_records: list[dict] = []
     offset = 0
+    total_count = 0
+    total_count_initialized = False
 
     filter_str: str | None = None
     if filters:
@@ -125,8 +127,12 @@ async def paginate_all(
 
         resp = await vc.get(endpoint, params=params)
         data = resp.get("data", {})
-        total_count = int(data.get("totalCount", 0)) if isinstance(data, dict) else 0
+        page_total_count = int(data.get("totalCount", 0)) if isinstance(data, dict) else 0
         records = data.get(entity_key, []) if isinstance(data, dict) else []
+
+        if not total_count_initialized:
+            total_count = page_total_count
+            total_count_initialized = True
 
         if max_rows is not None and total_count > max_rows:
             raise ValueError(

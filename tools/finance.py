@@ -1,6 +1,7 @@
 """Financial entity tools: Payment, ClosingOfInvoices, InvoiceDocument, Cassa, CassaClose."""
 
 from fastmcp import FastMCP
+from filters import eq as _filter_eq
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_delete
 from validators import LimitParam, validate_amount
 
@@ -22,9 +23,12 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             client_id: Filter by client ID (0 = no filter).
         """
+        combined_filters: list = list(filter or [])
+        if client_id:
+            combined_filters.append(_filter_eq("client_id", client_id))
         return await crud_list(
             "/rest/api/payment", limit=limit, offset=offset,
-            sort=sort, filters=filter, extra={"clientId": client_id},
+            sort=sort, filters=combined_filters if combined_filters else None,
         )
 
     @mcp.tool
@@ -47,7 +51,7 @@ def register(mcp: FastMCP) -> None:
             description: Optional payment description or note.
         """
         validate_amount(amount)
-        payload: dict = {"clientId": client_id, "amount": amount, "cassaId": cassa_id}
+        payload: dict = {"client_id": client_id, "amount": amount, "cassa_id": cassa_id}
         if description:
             payload["description"] = description
         return await crud_create("/rest/api/payment", payload)
@@ -93,9 +97,11 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        combined_filters: list = list(filter or [])
+        combined_filters.append(_filter_eq("invoice_id", invoice_id))
         return await crud_list(
             "/rest/api/invoiceDocument", limit=limit, offset=offset,
-            sort=sort, filters=filter, extra={"invoiceId": invoice_id},
+            sort=sort, filters=combined_filters,
         )
 
     @mcp.tool
@@ -119,7 +125,12 @@ def register(mcp: FastMCP) -> None:
         """
         return await crud_create(
             "/rest/api/invoiceDocument",
-            {"invoiceId": invoice_id, "goodId": good_id, "quantity": quantity, "price": price},
+            {
+                "invoice_id": invoice_id,
+                "good_id": good_id,
+                "quantity": quantity,
+                "price": price,
+            },
         )
 
     @mcp.tool

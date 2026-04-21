@@ -6,6 +6,8 @@ a Redis-backed backend is used so multiple workers share rate limit state.
 
 from __future__ import annotations
 
+import asyncio
+import importlib
 import os
 import secrets
 from collections import defaultdict, deque
@@ -16,16 +18,26 @@ from observability_logging import RUNTIME_LOGGER
 
 
 class RateLimitBackend(Protocol):
-    def count_in_window(self, namespace: str, key: str, *, window_seconds: int) -> int:
+    async def count_in_window(self, namespace: str, key: str, *, window_seconds: int) -> int:
         ...
 
-    def record_hit(self, namespace: str, key: str, *, window_seconds: int) -> None:
+    async def consume_hit(
+        self,
+        namespace: str,
+        key: str,
+        *,
+        limit: int,
+        window_seconds: int,
+    ) -> tuple[int, bool]:
         ...
 
-    def clear(self, namespace: str, key: str) -> None:
+    async def record_hit(self, namespace: str, key: str, *, window_seconds: int) -> None:
         ...
 
-    def reset_all(self) -> None:
+    async def clear(self, namespace: str, key: str) -> None:
+        ...
+
+    async def reset_all(self) -> None:
         ...
 
 
@@ -41,22 +53,38 @@ class InMemoryRateLimitBackend:
         while entries and entries[0] <= cutoff:
             entries.popleft()
 
-    def count_in_window(self, namespace: str, key: str, *, window_seconds: int) -> int:
+    async def count_in_window(self, namespace: str, key: str, *, window_seconds: int) -> int:
         now_ts = datetime.now(timezone.utc).timestamp()
         entries = self._state[namespace][key]
         self._prune(entries, now_ts=now_ts, window_seconds=window_seconds)
         return len(entries)
 
-    def record_hit(self, namespace: str, key: str, *, window_seconds: int) -> None:
+    async def record_hit(self, namespace: str, key: str, *, window_seconds: int) -> None:
         now_ts = datetime.now(timezone.utc).timestamp()
         entries = self._state[namespace][key]
         self._prune(entries, now_ts=now_ts, window_seconds=window_seconds)
         entries.append(now_ts)
 
-    def clear(self, namespace: str, key: str) -> None:
+    async def consume_hit(
+        self,
+        namespace: str,
+        key: str,
+        *,
+        limit: int,
+        window_seconds: int,
+    ) -> tuple[int, bool]:
+        now_ts = datetime.now(timezone.utc).timestamp()
+        entries = self._state[namespace][key]
+        self._prune(entries, now_ts=now_ts, window_seconds=window_seconds)
+        if len(entries) >= limit:
+            return len(entries), False
+        entries.append(now_ts)
+        return len(entries), True
+
+    async def clear(self, namespace: str, key: str) -> None:
         self._state[namespace].pop(key, None)
 
-    def reset_all(self) -> None:
+    async def reset_all(self) -> None:
         self._state.clear()
 
 
@@ -71,34 +99,67 @@ class RedisRateLimitBackend:
 
     def __init__(self, redis_client) -> None:
         self._redis = redis_client
+        try:
+            self._watch_error = importlib.import_module("redis.exceptions").WatchError
+        except Exception:  # pragma: no cover
+            self._watch_error = RuntimeError
 
     @staticmethod
     def _redis_key(namespace: str, key: str) -> str:
         return f"vmrl:{namespace}:{key}"
 
-    def count_in_window(self, namespace: str, key: str, *, window_seconds: int) -> int:
+    async def count_in_window(self, namespace: str, key: str, *, window_seconds: int) -> int:
         rkey = self._redis_key(namespace, key)
         now_ts = datetime.now(timezone.utc).timestamp()
         cutoff = now_ts - window_seconds
-        self._redis.zremrangebyscore(rkey, 0, cutoff)
-        return int(self._redis.zcard(rkey))
+        await self._redis.zremrangebyscore(rkey, 0, cutoff)
+        return int(await self._redis.zcard(rkey))
 
-    def record_hit(self, namespace: str, key: str, *, window_seconds: int) -> None:
+    async def record_hit(self, namespace: str, key: str, *, window_seconds: int) -> None:
         rkey = self._redis_key(namespace, key)
         now_ts = datetime.now(timezone.utc).timestamp()
         member = f"{now_ts}:{secrets.token_hex(4)}"
-        pipe = self._redis.pipeline()
-        pipe.zadd(rkey, {member: now_ts})
-        pipe.expire(rkey, window_seconds + 1)
-        pipe.execute()
+        await self._redis.zadd(rkey, {member: now_ts})
+        await self._redis.expire(rkey, window_seconds + 1)
 
-    def clear(self, namespace: str, key: str) -> None:
-        self._redis.delete(self._redis_key(namespace, key))
+    async def consume_hit(
+        self,
+        namespace: str,
+        key: str,
+        *,
+        limit: int,
+        window_seconds: int,
+    ) -> tuple[int, bool]:
+        rkey = self._redis_key(namespace, key)
+        for _ in range(8):
+            now_ts = datetime.now(timezone.utc).timestamp()
+            cutoff = now_ts - window_seconds
+            member = f"{now_ts}:{secrets.token_hex(4)}"
+            pipe = self._redis.pipeline()
+            try:
+                await pipe.watch(rkey)
+                await pipe.zremrangebyscore(rkey, 0, cutoff)
+                current = int(await pipe.zcard(rkey))
+                if current >= limit:
+                    return current, False
+                pipe.multi()
+                pipe.zadd(rkey, {member: now_ts})
+                pipe.expire(rkey, window_seconds + 1)
+                await pipe.execute()
+                return current + 1, True
+            except self._watch_error:
+                continue
+            finally:
+                await pipe.reset()
+        raise RuntimeError("rate limit consume conflict after retries")
 
-    def reset_all(self) -> None:
+    async def clear(self, namespace: str, key: str) -> None:
+        await self._redis.delete(self._redis_key(namespace, key))
+
+    async def reset_all(self) -> None:
         # Production safety: only delete keys with our prefix
-        for key in self._redis.scan_iter(match="vmrl:*"):
-            self._redis.delete(key)
+        async for key in self._redis.scan_iter(match="vmrl:*"):
+            await self._redis.delete(key)
 
 
 class _ResilientRedisBackend:
@@ -124,9 +185,9 @@ class _ResilientRedisBackend:
         self._fallback = InMemoryRateLimitBackend()
         self._strict = strict
 
-    def _safe(self, op_name: str, fn, *args, **kwargs):
+    async def _safe(self, op_name: str, fn, *args, **kwargs):
         try:
-            return fn(*args, **kwargs)
+            return await fn(*args, **kwargs)
         except Exception as exc:
             if self._strict:
                 # Strict mode: propagate the error so the request fails closed.
@@ -149,83 +210,120 @@ class _ResilientRedisBackend:
             )
             return None
 
-    def count_in_window(self, namespace: str, key: str, *, window_seconds: int) -> int:
-        result = self._safe(
+    async def count_in_window(self, namespace: str, key: str, *, window_seconds: int) -> int:
+        result = await self._safe(
             "count_in_window",
             self._redis_backend.count_in_window,
             namespace, key, window_seconds=window_seconds,
         )
         if result is None:
-            return self._fallback.count_in_window(namespace, key, window_seconds=window_seconds)
+            return await self._fallback.count_in_window(namespace, key, window_seconds=window_seconds)
         return result
 
-    def record_hit(self, namespace: str, key: str, *, window_seconds: int) -> None:
-        if self._safe(
+    async def record_hit(self, namespace: str, key: str, *, window_seconds: int) -> None:
+        if await self._safe(
             "record_hit",
             self._redis_backend.record_hit,
             namespace, key, window_seconds=window_seconds,
         ) is None:
-            self._fallback.record_hit(namespace, key, window_seconds=window_seconds)
+            await self._fallback.record_hit(namespace, key, window_seconds=window_seconds)
 
-    def clear(self, namespace: str, key: str) -> None:
-        self._safe("clear", self._redis_backend.clear, namespace, key)
-        self._fallback.clear(namespace, key)
+    async def consume_hit(
+        self,
+        namespace: str,
+        key: str,
+        *,
+        limit: int,
+        window_seconds: int,
+    ) -> tuple[int, bool]:
+        result = await self._safe(
+            "consume_hit",
+            self._redis_backend.consume_hit,
+            namespace,
+            key,
+            limit=limit,
+            window_seconds=window_seconds,
+        )
+        if result is None:
+            return await self._fallback.consume_hit(
+                namespace,
+                key,
+                limit=limit,
+                window_seconds=window_seconds,
+            )
+        return result
 
-    def reset_all(self) -> None:
-        self._safe("reset_all", self._redis_backend.reset_all)
-        self._fallback.reset_all()
+    async def clear(self, namespace: str, key: str) -> None:
+        await self._safe("clear", self._redis_backend.clear, namespace, key)
+        await self._fallback.clear(namespace, key)
+
+    async def reset_all(self) -> None:
+        await self._safe("reset_all", self._redis_backend.reset_all)
+        await self._fallback.reset_all()
 
 
 _BACKEND: RateLimitBackend | None = None
+_BACKEND_INIT_LOCK: asyncio.Lock | None = None
 
 
 def _is_truthy_env(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def get_rate_limit_backend() -> RateLimitBackend:
+def _get_backend_init_lock() -> asyncio.Lock:
+    global _BACKEND_INIT_LOCK
+    if _BACKEND_INIT_LOCK is None:
+        _BACKEND_INIT_LOCK = asyncio.Lock()
+    return _BACKEND_INIT_LOCK
+
+
+async def get_rate_limit_backend() -> RateLimitBackend:
     """Return the active rate limit backend, initializing on first call."""
     global _BACKEND
     if _BACKEND is not None:
         return _BACKEND
 
-    redis_url = os.environ.get("REDIS_URL", "").strip()
-    require_redis = _is_truthy_env("RATE_LIMIT_REQUIRE_REDIS")
-    if redis_url:
-        try:
-            import redis as _redis_lib
-            client = _redis_lib.Redis.from_url(redis_url, decode_responses=True)
-            client.ping()
-            redis_backend = RedisRateLimitBackend(client)
-            _BACKEND = _ResilientRedisBackend(redis_backend, strict=require_redis)
-            RUNTIME_LOGGER.info(
-                "Rate limit backend initialized: redis",
-                extra={"event_name": "rate_limit_backend_init", "backend": "redis"},
-            )
+    async with _get_backend_init_lock():
+        if _BACKEND is not None:
             return _BACKEND
-        except Exception as exc:
-            if require_redis:
-                # Production fail-fast: do not silently degrade.
-                raise RuntimeError(
-                    f"RATE_LIMIT_REQUIRE_REDIS=1 but Redis is unavailable: {exc}"
-                ) from exc
-            RUNTIME_LOGGER.warning(
-                "Redis rate limit backend unavailable, falling back to in-memory.",
-                extra={
-                    "event_name": "rate_limit_backend_fallback",
-                    "error": str(exc),
-                },
-            )
 
-    _BACKEND = InMemoryRateLimitBackend()
-    RUNTIME_LOGGER.info(
-        "Rate limit backend initialized: in_memory",
-        extra={"event_name": "rate_limit_backend_init", "backend": "in_memory"},
-    )
-    return _BACKEND
+        redis_url = os.environ.get("REDIS_URL", "").strip()
+        require_redis = _is_truthy_env("RATE_LIMIT_REQUIRE_REDIS")
+        if redis_url:
+            try:
+                redis_asyncio = importlib.import_module("redis.asyncio")
+                client = redis_asyncio.Redis.from_url(redis_url, decode_responses=True)
+                await client.ping()
+                redis_backend = RedisRateLimitBackend(client)
+                _BACKEND = _ResilientRedisBackend(redis_backend, strict=require_redis)
+                RUNTIME_LOGGER.info(
+                    "Rate limit backend initialized: redis",
+                    extra={"event_name": "rate_limit_backend_init", "backend": "redis"},
+                )
+                return _BACKEND
+            except Exception as exc:
+                if require_redis:
+                    raise RuntimeError(
+                        f"RATE_LIMIT_REQUIRE_REDIS=1 but Redis is unavailable: {exc}"
+                    ) from exc
+                RUNTIME_LOGGER.warning(
+                    "Redis rate limit backend unavailable, falling back to in-memory.",
+                    extra={
+                        "event_name": "rate_limit_backend_fallback",
+                        "error": str(exc),
+                    },
+                )
+
+        _BACKEND = InMemoryRateLimitBackend()
+        RUNTIME_LOGGER.info(
+            "Rate limit backend initialized: in_memory",
+            extra={"event_name": "rate_limit_backend_init", "backend": "in_memory"},
+        )
+        return _BACKEND
 
 
 def reset_rate_limit_backend() -> None:
     """Force re-initialization on next get_rate_limit_backend() call (test only)."""
-    global _BACKEND
+    global _BACKEND, _BACKEND_INIT_LOCK
     _BACKEND = None
+    _BACKEND_INIT_LOCK = None

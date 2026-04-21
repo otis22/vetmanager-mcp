@@ -2,6 +2,7 @@
 Role, UserPosition, ComboManualName, ComboManualItem."""
 
 from fastmcp import FastMCP
+from filters import eq as _filter_eq
 from tools.crud_helpers import crud_list, crud_get_by_id
 from validators import LimitParam
 
@@ -23,9 +24,12 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             pet_type_id: Filter by animal type ID (0 = no filter).
         """
+        combined_filters: list = list(filter or [])
+        if pet_type_id:
+            combined_filters.append(_filter_eq("pet_type_id", pet_type_id))
         return await crud_list(
             "/rest/api/breed", limit=limit, offset=offset,
-            sort=sort, filters=filter, extra={"petTypeId": pet_type_id},
+            sort=sort, filters=combined_filters if combined_filters else None,
         )
 
     @mcp.tool

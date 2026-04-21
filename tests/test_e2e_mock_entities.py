@@ -2,6 +2,8 @@
 
 """E2E mock/contract tests for all MCP tools via respx."""
 
+import json
+
 import pytest
 import respx
 import httpx
@@ -39,6 +41,10 @@ def bearer_runtime_patch(domain=DOMAIN, api_key=API_KEY):
         bearer_token_id=1,
         connection_id=1,
     )
+
+
+def _body_of(route) -> dict:
+    return json.loads(route.calls.last.request.content)
 
 
 # ── Client tools ─────────────────────────────────────────────────────────────
@@ -118,11 +124,18 @@ async def test_get_pet_by_id():
 @respx.mock
 async def test_create_pet():
     billing_mock()
-    respx.post(f"{BASE}/rest/api/pet").mock(
+    route = respx.post(f"{BASE}/rest/api/pet").mock(
         return_value=httpx.Response(201, json={"data": {"id": 10, "alias": "Luna"}})
     )
-    result = await client().post("/rest/api/pet", json={"alias": "Luna", "client_id": 1})
-    assert result["data"]["alias"] == "Luna"
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("create_pet", {"alias": "Luna", "owner_id": 1})
+    body = _body_of(route)
+    assert body["alias"] == "Luna"
+    assert body["owner_id"] == 1
+    assert "client_id" not in body
+    structured = result.structured_content or {}
+    assert structured["data"]["id"] == 10
 
 
 # ── Admission tools ───────────────────────────────────────────────────────────
@@ -153,14 +166,31 @@ async def test_get_admission_by_id():
 @respx.mock
 async def test_create_admission():
     billing_mock()
-    respx.post(f"{BASE}/rest/api/admission").mock(
-        return_value=httpx.Response(201, json={"data": {"id": 20, "pet_id": 5}})
+    route = respx.post(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(201, json={"data": {"id": 20, "patient_id": 5}})
     )
-    result = await client().post(
-        "/rest/api/admission",
-        json={"pet_id": 5, "client_id": 1, "doctor_id": 3, "date": "2026-03-01T10:00:00"},
-    )
-    assert result["data"]["id"] == 20
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "create_admission",
+            {
+                "pet_id": 5,
+                "client_id": 1,
+                "doctor_id": 3,
+                "date": "2026-03-01 10:00:00",
+            },
+        )
+    body = _body_of(route)
+    assert body["patient_id"] == 5
+    assert body["client_id"] == 1
+    assert body["user_id"] == 3
+    assert body["admission_date"] == "2026-03-01 10:00:00"
+    assert body["status"] == "save"
+    assert "pet_id" not in body
+    assert "doctor_id" not in body
+    assert "date" not in body
+    structured = result.structured_content or {}
+    assert structured["data"]["id"] == 20
 
 
 @pytest.mark.asyncio
@@ -668,5 +698,4 @@ async def test_get_clients_with_sort_and_filter_params():
     request = route.calls.last.request
     assert request.url.params.get("sort") == params["sort"]
     assert request.url.params.get("filter") == params["filter"]
-
 

@@ -27,6 +27,17 @@
 | MedicalCards → питомец (CRUD filter) | `pet_id` | **`patient_id`** | `models/MedicalCards.php:9,55,75` |
 | MedicalCards → питомец (specialized actions `MedicalcardsDataByClient`, `AddVaccination`) | — | **`pet_id`** (query-param, не filter) | `Dostup_k_medkartam.md:204,259,514` |
 | Timesheet → врач | — | **`doctor_id`** ✓ | там же |
+| Hospital create → питомец | `pet_id` | **`patient_id`** | super-review 2026-04-20 B1 + stage 122 contract fix |
+| Hospital create/update → блок | `block_id` / `blockId` | **`hospital_block_id`** | super-review 2026-04-20 B1 + stage 122 contract fix |
+| Hospital create/update → даты | `dateIn` / `dateOut` | **`date_in` / `date_out`** | super-review 2026-04-20 B1 + stage 122 contract fix |
+| Payment create/list → клиент | `clientId` | **`client_id`** | super-review 2026-04-20 B1 + stage 122 contract fix |
+| Payment create → касса | `cassaId` | **`cassa_id`** | super-review 2026-04-20 B1 + stage 122 contract fix |
+| InvoiceDocument create/list → счёт | `invoiceId` | **`invoice_id`** | super-review 2026-04-20 B1 + stage 122 contract fix |
+| InvoiceDocument create → товар/услуга | `goodId` | **`good_id`** | super-review 2026-04-20 B1 + stage 122 contract fix |
+| Client create → имя/фамилия | `firstName` / `lastName` | **`first_name` / `last_name`** | super-review 2026-04-20 B1 + stage 122 contract fix |
+| Client create → телефон | `phone` | **`cell_phone`** | roadmap 122.3 + stage 122 contract fix |
+| Breed list filter → тип животного | `petTypeId` | **`pet_type_id`** | super-review 2026-04-20 medium finding + stage 122 contract fix |
+| Timesheet date filter | top-level `date` query | **`begin_datetime >= ...` + `end_datetime <= ...`** | super-review 2026-04-20 medium finding + stage 122 contract fix |
 
 ### Полный payload `POST /rest/api/admission` (canonical)
 
@@ -41,6 +52,46 @@
 ```
 
 Поля `doctor_id`, `date`, `pet_id` в payload **молча игнорируются** — запись создаётся с NULL/дефолтами и исчезает из всех schedule-фильтров.
+
+### Дополнительные canonical payload/query примеры (stage 122)
+
+```json
+POST /rest/api/hospital
+{
+  "patient_id": 42,
+  "doctor_id": 1,
+  "date_in": "2026-04-21 09:00:00",
+  "hospital_block_id": 3
+}
+```
+
+```json
+POST /rest/api/payment
+{
+  "client_id": 6,
+  "amount": 1500.0,
+  "cassa_id": 1
+}
+```
+
+```json
+POST /rest/api/invoiceDocument
+{
+  "invoice_id": 50,
+  "good_id": 2,
+  "quantity": 1,
+  "price": 250.0
+}
+```
+
+```json
+POST /rest/api/client
+{
+  "first_name": "Ivan",
+  "last_name": "Petrov",
+  "cell_phone": "+7 999 123-45-67"
+}
+```
 
 ### Урок ревью 2026-04-17
 

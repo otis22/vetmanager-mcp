@@ -1,10 +1,11 @@
 """Operational entity tools: Clinics, Timesheet, Properties, AnonymousClient, Messages."""
 
 from typing import Annotated
+from datetime import datetime
 
 from fastmcp import FastMCP
 from pydantic import Field
-from filters import eq as _filter_eq
+from filters import eq as _filter_eq, gte as _filter_gte, lte as _filter_lte
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
@@ -69,12 +70,18 @@ def register(mcp: FastMCP) -> None:
         combined_filters: list = list(filter or [])
         if doctor_id:
             combined_filters.append(_filter_eq("doctor_id", doctor_id))
-        extra = {"date": date} if date else None
+        if date:
+            day = datetime.strptime(date, "%Y-%m-%d").date()
+            combined_filters.append(
+                _filter_gte("begin_datetime", f"{day.isoformat()} 00:00:00")
+            )
+            combined_filters.append(
+                _filter_lte("end_datetime", f"{day.isoformat()} 23:59:59")
+            )
         return await crud_list(
             "/rest/api/timesheet", limit=limit, offset=offset,
             sort=sort,
             filters=combined_filters if combined_filters else None,
-            extra=extra,
         )
 
     @mcp.tool

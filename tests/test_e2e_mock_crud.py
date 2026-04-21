@@ -2,9 +2,12 @@
 
 """E2E mock/contract tests for all MCP tools via respx."""
 
+import json
+
 import pytest
 import respx
 import httpx
+from fastmcp.exceptions import ToolError
 
 from server import mcp
 from tests.runtime_factories import (
@@ -41,6 +44,10 @@ def bearer_runtime_patch(domain=DOMAIN, api_key=API_KEY):
     )
 
 
+def _body_of(route) -> dict:
+    return json.loads(route.calls.last.request.content)
+
+
 # ── Client tools ─────────────────────────────────────────────────────────────
 
 
@@ -68,8 +75,10 @@ async def test_update_invoice_tool():
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("update_invoice", {"invoice_id": 10, "description": "Updated"})
-    assert route.called
-    assert b'"description"' in route.calls.last.request.content
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "PUT"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/invoice/10"
+    assert _body_of(route) == {"description": "Updated"}
 
 
 @pytest.mark.asyncio
@@ -93,7 +102,10 @@ async def test_update_user_tool():
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("update_user", {"user_id": 5, "last_name": "Ivanov"})
-    assert route.called
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "PUT"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/user/5"
+    assert _body_of(route) == {"last_name": "Ivanov"}
 
 
 @pytest.mark.asyncio
@@ -117,7 +129,10 @@ async def test_update_hospitalization_tool():
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("update_hospitalization", {"hospital_id": 3, "status": "discharged"})
-    assert route.called
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "PUT"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/hospital/3"
+    assert _body_of(route) == {"status": "discharged"}
 
 
 @pytest.mark.asyncio
@@ -141,7 +156,10 @@ async def test_update_supplier_tool():
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("update_supplier", {"supplier_id": 7, "company_name": "NewCo"})
-    assert route.called
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "PUT"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/Suppliers/7"
+    assert _body_of(route) == {"company_name": "NewCo"}
 
 
 @pytest.mark.asyncio
@@ -165,7 +183,10 @@ async def test_update_good_tool():
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("update_good", {"good_id": 15, "title": "Updated Good"})
-    assert route.called
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "PUT"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/good/15"
+    assert _body_of(route) == {"title": "Updated Good"}
 
 
 # -- DELETE tools --
@@ -191,7 +212,9 @@ async def test_delete_client_tool():
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("delete_client", {"client_id": 42})
-    assert route.called
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "DELETE"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/client/42"
 
 
 @pytest.mark.asyncio
@@ -215,7 +238,9 @@ async def test_delete_pet_tool():
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("delete_pet", {"pet_id": 5})
-    assert route.called
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "DELETE"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/pet/5"
 
 
 @pytest.mark.asyncio
@@ -239,7 +264,9 @@ async def test_delete_invoice_tool():
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("delete_invoice", {"invoice_id": 10})
-    assert route.called
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "DELETE"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/invoice/10"
 
 
 @pytest.mark.asyncio
@@ -263,7 +290,9 @@ async def test_delete_invoice_document_tool():
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("delete_invoice_document", {"doc_id": 20})
-    assert route.called
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "DELETE"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/invoiceDocument/20"
 
 
 # -- CREATE tools --
@@ -289,8 +318,14 @@ async def test_create_good_tool():
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("create_good", {"title": "Vaccine X"})
-    assert route.called
-    assert b'"title":"Vaccine X"' in route.calls.last.request.content
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "POST"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/good"
+    assert _body_of(route) == {
+        "title": "Vaccine X",
+        "is_active": 1,
+        "is_for_sale": 1,
+    }
 
 
 @pytest.mark.asyncio
@@ -314,7 +349,10 @@ async def test_create_supplier_tool():
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("create_supplier", {"company_name": "PharmaVet"})
-    assert route.called
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "POST"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/Suppliers"
+    assert _body_of(route) == {"company_name": "PharmaVet"}
 
 
 @pytest.mark.asyncio
@@ -344,7 +382,15 @@ async def test_create_timesheet_tool():
             "doctor_id": 1, "begin_datetime": "2026-03-27T09:00:00",
             "end_datetime": "2026-03-27T18:00:00", "clinic_id": 1,
         })
-    assert route.called
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "POST"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/timesheet"
+    assert _body_of(route) == {
+        "doctor_id": 1,
+        "begin_datetime": "2026-03-27T09:00:00",
+        "end_datetime": "2026-03-27T18:00:00",
+        "clinic_id": 1,
+    }
 
 
 # -- Extended update tools (verify expanded fields) --
@@ -362,12 +408,15 @@ async def test_update_client_extended_fields():
             "client_id": 42, "middle_name": "Петрович", "cell_phone": "+79001234567",
             "note": "VIP клиент", "status": "ACTIVE",
         })
-    assert route.called
-    body = route.calls.last.request.content
-    assert b'"middle_name"' in body
-    assert b'"cell_phone"' in body
-    assert b'"note"' in body
-    assert b'"status"' in body
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "PUT"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/client/42"
+    assert _body_of(route) == {
+        "middle_name": "Петрович",
+        "cell_phone": "+79001234567",
+        "note": "VIP клиент",
+        "status": "ACTIVE",
+    }
 
 
 @pytest.mark.asyncio
@@ -383,12 +432,15 @@ async def test_update_pet_extended_fields():
             "pet_id": 5, "sex": "male", "chip_number": "123456789",
             "weight": "5.2", "color_id": 3,
         })
-    assert route.called
-    body = route.calls.last.request.content
-    assert b'"sex"' in body
-    assert b'"chip_number"' in body
-    assert b'"weight"' in body
-    assert b'"color_id"' in body
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "PUT"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/pet/5"
+    assert _body_of(route) == {
+        "sex": "male",
+        "chip_number": "123456789",
+        "weight": "5.2",
+        "color_id": 3,
+    }
 
 
 @pytest.mark.asyncio
@@ -409,13 +461,123 @@ async def test_update_admission_extended_fields():
             "admission_id": 1, "client_id": 10, "pet_id": 5,
             "clinic_id": 2, "admission_type": "first_visit",
         })
-    assert route.called
-    body = route.calls.last.request.content
-    assert b'"client_id"' in body
-    assert b'"patient_id"' in body  # was "pet_id" before stage 96.1
-    assert b'"pet_id"' not in body
-    assert b'"clinic_id"' in body
-    assert b'"type"' in body
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "PUT"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/admission/1"
+    assert _body_of(route) == {
+        "client_id": 10,
+        "patient_id": 5,
+        "clinic_id": 2,
+        "type": "first_visit",
+    }
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_create_good_tool_422_raises_vetmanager_error():
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/good").mock(
+        return_value=httpx.Response(422, text="Unprocessable")
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="HTTP 422"):
+            await mcp.call_tool("create_good", {"title": "Broken"})
+
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_update_user_tool_500_raises_vetmanager_error():
+    billing_mock()
+    route = respx.put(f"{BASE}/rest/api/user/5").mock(
+        return_value=httpx.Response(500, text="Server error")
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="HTTP 500"):
+            await mcp.call_tool("update_user", {"user_id": 5, "last_name": "Broken"})
+
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_delete_client_tool_404_raises_not_found_error():
+    billing_mock()
+    route = respx.delete(f"{BASE}/rest/api/client/42").mock(
+        return_value=httpx.Response(404)
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="Resource not found"):
+            await mcp.call_tool("delete_client", {"client_id": 42})
+
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_name", "route_method", "path", "payload", "status_code", "match"),
+    [
+        ("create_good", respx.post, "/rest/api/good", {"title": "Broken"}, 422, "HTTP 422"),
+        ("create_supplier", respx.post, "/rest/api/Suppliers", {"company_name": "Broken"}, 422, "HTTP 422"),
+        (
+            "create_timesheet",
+            respx.post,
+            "/rest/api/timesheet",
+            {
+                "doctor_id": 1,
+                "begin_datetime": "2026-03-27T09:00:00",
+                "end_datetime": "2026-03-27T18:00:00",
+                "clinic_id": 1,
+            },
+            422,
+            "HTTP 422",
+        ),
+        ("update_invoice", respx.put, "/rest/api/invoice/10", {"invoice_id": 10, "description": "Broken"}, 500, "HTTP 500"),
+        ("update_user", respx.put, "/rest/api/user/5", {"user_id": 5, "last_name": "Broken"}, 500, "HTTP 500"),
+        (
+            "update_hospitalization",
+            respx.put,
+            "/rest/api/hospital/3",
+            {"hospital_id": 3, "status": "broken"},
+            500,
+            "HTTP 500",
+        ),
+        (
+            "update_supplier",
+            respx.put,
+            "/rest/api/Suppliers/7",
+            {"supplier_id": 7, "company_name": "Broken"},
+            500,
+            "HTTP 500",
+        ),
+        ("update_good", respx.put, "/rest/api/good/15", {"good_id": 15, "title": "Broken"}, 500, "HTTP 500"),
+        ("delete_client", respx.delete, "/rest/api/client/42", {"client_id": 42}, 404, "Resource not found"),
+        ("delete_pet", respx.delete, "/rest/api/pet/5", {"pet_id": 5}, 404, "Resource not found"),
+        ("delete_invoice", respx.delete, "/rest/api/invoice/10", {"invoice_id": 10}, 404, "Resource not found"),
+        ("delete_invoice_document", respx.delete, "/rest/api/invoiceDocument/20", {"doc_id": 20}, 404, "Resource not found"),
+    ],
+)
+@respx.mock
+async def test_mutation_tools_error_paths_raise_toolerror(
+    tool_name,
+    route_method,
+    path,
+    payload,
+    status_code,
+    match,
+):
+    billing_mock()
+    route = route_method(f"{BASE}{path}").mock(return_value=httpx.Response(status_code, text="boom"))
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match=match):
+            await mcp.call_tool(tool_name, payload)
+
+    assert route.call_count == 1
 
 
 # ── 68.1 Missing tool coverage ──────────────────────────────────────────────
@@ -451,7 +613,10 @@ async def test_update_medical_card():
         return_value=httpx.Response(200, json={"data": {"id": 42}})
     )
     result = await client().put("/rest/api/MedicalCards/42", json={"description": "Updated"})
-    assert route.called
+    assert route.call_count == 1
+    assert route.calls.last.request.method == "PUT"
+    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/MedicalCards/42"
+    assert _body_of(route) == {"description": "Updated"}
     assert result["data"]["id"] == 42
 
 

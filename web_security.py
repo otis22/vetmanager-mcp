@@ -14,7 +14,7 @@ from starlette.responses import Response
 
 from exceptions import RateLimitError
 from observability_logging import SECURITY_LOGGER
-from rate_limit_backend import get_rate_limit_backend
+from rate_limit_backend import get_rate_limit_backend, reset_rate_limit_backend
 from service_metrics import record_auth_failure
 from web_auth import get_web_session_cookie_settings, get_web_session_secret
 
@@ -138,12 +138,12 @@ def get_request_ip(request: Request) -> str:
     )
 
 
-def check_rate_limit(namespace: str, key: str, *, limit: int, window_seconds: int) -> None:
+async def check_rate_limit(namespace: str, key: str, *, limit: int, window_seconds: int) -> None:
     """Raise 429 when the key already reached the configured number of hits."""
     if limit <= 0:
         return
-    backend = get_rate_limit_backend()
-    count = backend.count_in_window(namespace, key, window_seconds=window_seconds)
+    backend = await get_rate_limit_backend()
+    count = await backend.count_in_window(namespace, key, window_seconds=window_seconds)
     if count >= limit:
         record_auth_failure(source="web_rate_limit", reason=namespace)
         SECURITY_LOGGER.warning(
@@ -161,14 +161,44 @@ def check_rate_limit(namespace: str, key: str, *, limit: int, window_seconds: in
         )
 
 
-def record_rate_limit_hit(namespace: str, key: str, *, window_seconds: int) -> None:
+async def consume_rate_limit(namespace: str, key: str, *, limit: int, window_seconds: int) -> None:
+    """Atomically check the limiter and record one hit when still under limit."""
+    if limit <= 0:
+        return
+    backend = await get_rate_limit_backend()
+    _, allowed = await backend.consume_hit(
+        namespace,
+        key,
+        limit=limit,
+        window_seconds=window_seconds,
+    )
+    if not allowed:
+        record_auth_failure(source="web_rate_limit", reason=namespace)
+        SECURITY_LOGGER.warning(
+            "Rejected request due to rate limit.",
+            extra={
+                "event_name": "rate_limit_exceeded",
+                "rate_limit_namespace": namespace,
+                "rate_limit_limit": limit,
+                "rate_limit_window_seconds": window_seconds,
+            },
+        )
+        raise RateLimitError(
+            "Too many requests.",
+            retry_after_seconds=window_seconds,
+        )
+
+
+async def record_rate_limit_hit(namespace: str, key: str, *, window_seconds: int) -> None:
     """Append one hit for the given namespace/key pair."""
-    get_rate_limit_backend().record_hit(namespace, key, window_seconds=window_seconds)
+    backend = await get_rate_limit_backend()
+    await backend.record_hit(namespace, key, window_seconds=window_seconds)
 
 
-def clear_rate_limit_key(namespace: str, key: str) -> None:
+async def clear_rate_limit_key(namespace: str, key: str) -> None:
     """Clear limiter state for a key after successful auth."""
-    get_rate_limit_backend().clear(namespace, key)
+    backend = await get_rate_limit_backend()
+    await backend.clear(namespace, key)
 
 
 def get_rate_limit_config(prefix: str, *, default_attempts: int, default_window_seconds: int) -> tuple[int, int]:
@@ -179,5 +209,10 @@ def get_rate_limit_config(prefix: str, *, default_attempts: int, default_window_
 
 
 def reset_web_security_state() -> None:
-    """Clear process-local limiter state for tests."""
-    get_rate_limit_backend().reset_all()
+    """Reset cached limiter backend for tests.
+
+    This stays sync because many test fixtures call it outside an async
+    context; resetting the cached backend instance is sufficient for test
+    isolation.
+    """
+    reset_rate_limit_backend()

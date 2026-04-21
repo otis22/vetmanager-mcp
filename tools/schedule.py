@@ -4,6 +4,7 @@ Stage 80: get_doctor_free_slots — computes free appointment windows for
 a doctor by subtracting active admissions from timesheet work intervals.
 """
 
+import asyncio
 from datetime import date, datetime, timedelta
 
 from fastmcp import FastMCP
@@ -116,14 +117,6 @@ def register(mcp: FastMCP) -> None:
         if clinic_id:
             ts_filters.append(_filter_eq("clinic_id", clinic_id))
 
-        timesheet_rows, _ = await paginate_all(
-            "/rest/api/timesheet",
-            filters=ts_filters,
-            page_size=100,
-            entity_key="timesheet",
-            max_rows=_MAX_ROWS_PER_ENTITY,
-        )
-
         # --- Fetch active admissions, widened backward by _ADMISSION_BACK_SLACK ---
         # This catches long admissions that started just before the window
         # and still overlap into it (e.g. a 23:30 admission with 2h duration
@@ -139,13 +132,24 @@ def register(mcp: FastMCP) -> None:
         if clinic_id:
             adm_filters.append(_filter_eq("clinic_id", clinic_id))
 
-        admission_rows, _ = await paginate_all(
-            "/rest/api/admission",
-            filters=adm_filters,
-            page_size=100,
-            entity_key="admission",
-            max_rows=_MAX_ROWS_PER_ENTITY,
+        timesheet_result, admission_result = await asyncio.gather(
+            paginate_all(
+                "/rest/api/timesheet",
+                filters=ts_filters,
+                page_size=100,
+                entity_key="timesheet",
+                max_rows=_MAX_ROWS_PER_ENTITY,
+            ),
+            paginate_all(
+                "/rest/api/admission",
+                filters=adm_filters,
+                page_size=100,
+                entity_key="admission",
+                max_rows=_MAX_ROWS_PER_ENTITY,
+            ),
         )
+        timesheet_rows, _ = timesheet_result
+        admission_rows, _ = admission_result
 
         # --- Build work intervals from timesheet, grouped by clinic_id ---
         clinics_seen: dict[int, list[tuple[datetime, datetime]]] = {}
@@ -160,11 +164,12 @@ def register(mcp: FastMCP) -> None:
             cid = int(row.get("clinic_id") or 0)
             clinics_seen.setdefault(cid, []).append((begin, end))
 
-        # --- Build busy intervals (shared across clinics for the doctor) ---
+        # --- Build busy intervals partitioned by clinic_id ---
         # Filter client-side: keep only admissions that truly overlap the
         # window. The wider fetch_lower catches long-running admissions that
         # started before the window and still extend into it.
-        busy: list[tuple[datetime, datetime]] = []
+        busy_by_clinic: dict[int, list[tuple[datetime, datetime]]] = {}
+        shared_busy: list[tuple[datetime, datetime]] = []
         for row in admission_rows:
             status = row.get("status")
             if status not in ACTIVE_ADMISSION_STATUSES:
@@ -180,13 +185,19 @@ def register(mcp: FastMCP) -> None:
             # Overlap: [adm_start, adm_end) ∩ [window_start, window_end) ≠ ∅
             if adm_end <= window_start or adm_start >= window_end:
                 continue
-            busy.append((adm_start, adm_end))
+            cid = int(row.get("clinic_id") or 0)
+            if cid:
+                busy_by_clinic.setdefault(cid, []).append((adm_start, adm_end))
+            else:
+                shared_busy.append((adm_start, adm_end))
 
         # --- Compute free slots per clinic, then flatten ---
         all_slots: list[dict] = []
         for cid, work in sorted(clinics_seen.items()):
             free = compute_free_slots(
-                work, busy, slot_minutes=slot_minutes,
+                work,
+                busy_by_clinic.get(cid, []) + shared_busy,
+                slot_minutes=slot_minutes,
                 min_slot_minutes=min_slot_minutes,
             )
             for slot_start, slot_end in free:

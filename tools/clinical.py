@@ -1,6 +1,7 @@
 """Clinical entity tools: Hospital, HospitalBlock, Diagnoses."""
 
 from fastmcp import FastMCP
+from filters import eq as _filter_eq
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam
 
@@ -22,9 +23,12 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             pet_id: Filter by pet ID (0 = no filter).
         """
+        combined_filters: list = list(filter or [])
+        if pet_id:
+            combined_filters.append(_filter_eq("patient_id", pet_id))
         return await crud_list(
             "/rest/api/hospital", limit=limit, offset=offset,
-            sort=sort, filters=filter, extra={"petId": pet_id},
+            sort=sort, filters=combined_filters if combined_filters else None,
         )
 
     @mcp.tool
@@ -47,9 +51,13 @@ def register(mcp: FastMCP) -> None:
             block_id: ID of the hospital block/ward (0 if not specified).
             description: Clinical notes or reason for hospitalization.
         """
-        payload: dict = {"petId": pet_id, "doctorId": doctor_id, "dateIn": date_in}
+        payload: dict = {
+            "patient_id": pet_id,
+            "doctor_id": doctor_id,
+            "date_in": date_in,
+        }
         if block_id:
-            payload["blockId"] = block_id
+            payload["hospital_block_id"] = block_id
         if description:
             payload["description"] = description
         return await crud_create("/rest/api/hospital", payload)
@@ -75,13 +83,13 @@ def register(mcp: FastMCP) -> None:
         """
         payload: dict = {}
         if date_out:
-            payload["dateOut"] = date_out
+            payload["date_out"] = date_out
         if description:
             payload["description"] = description
         if status:
             payload["status"] = status
         if block_id:
-            payload["blockId"] = block_id
+            payload["hospital_block_id"] = block_id
         return await crud_update("/rest/api/hospital", hospital_id, payload)
 
     @mcp.tool

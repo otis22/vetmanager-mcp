@@ -13,7 +13,7 @@
 
 ## Перед deploy
 
-- [ ] автоматический backup SQLite БД (встроен в deploy_server.sh)
+- [ ] pre-deploy backup PostgreSQL выполнен и rollback point зафиксирован (`scripts/backup_postgres.sh` или backup step внутри `deploy_server.sh`)
 - [ ] проверено наличие нужных env secrets (`STORAGE_ENCRYPTION_KEY`, `WEB_SESSION_SECRET`)
 - [ ] если есть schema changes, подтверждён Alembic migration plan
 - [ ] если есть breaking auth/session change, согласовано maintenance window
@@ -25,7 +25,7 @@
 - [ ] `/healthz` отвечает 200
 - [ ] `/readyz` стабильно 200
 - [ ] `/metrics` scrape проверен по текущему контракту: без auth при пустом `METRICS_AUTH_TOKEN`, либо с `Authorization: Bearer <METRICS_AUTH_TOKEN>` когда gate включён
-- [ ] БД файл существует и не пустой (integrity check в deploy script)
+- [ ] PostgreSQL после deploy доступен; backup artifact/rollback point сохранён и миграции применились без ошибок
 - [ ] error tracking bootstrap ведёт себя ожидаемо
 
 ## После release

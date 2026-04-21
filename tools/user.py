@@ -1,3 +1,5 @@
+import asyncio
+
 from fastmcp import FastMCP
 
 from filters import eq as _filter_eq, like as _filter_like
@@ -57,19 +59,21 @@ def register(mcp: FastMCP) -> None:
         last_name_filters = base_filters + [_filter_like("last_name", name)]
         first_name_filters = base_filters + [_filter_like("first_name", name)]
 
-        last_name_resp = await crud_list(
-            "/rest/api/user",
-            limit=limit,
-            offset=0,
-            sort=sort,
-            filters=last_name_filters,
-        )
-        first_name_resp = await crud_list(
-            "/rest/api/user",
-            limit=limit,
-            offset=0,
-            sort=sort,
-            filters=first_name_filters,
+        last_name_resp, first_name_resp = await asyncio.gather(
+            crud_list(
+                "/rest/api/user",
+                limit=limit,
+                offset=0,
+                sort=sort,
+                filters=last_name_filters,
+            ),
+            crud_list(
+                "/rest/api/user",
+                limit=limit,
+                offset=0,
+                sort=sort,
+                filters=first_name_filters,
+            ),
         )
 
         def _extract_users(resp: dict) -> list[dict]:

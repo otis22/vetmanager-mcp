@@ -1,5 +1,6 @@
 """Tests for get_inactive_pets tool — per-pet visit detection algorithm."""
 
+from urllib.parse import parse_qs, urlparse
 import json
 
 import pytest
@@ -432,23 +433,33 @@ async def test_get_inactive_pets_paginates_clients_until_limit_reached():
         ]
     )
 
-    # All page1 clients have NO pets (force underfill)
-    # All page2 clients have 1 pet each with invoice
-    pet_responses = []
-    invoice_responses = []
-    for _ in page1_clients:
-        pet_responses.append(_pet_response([]))
-    for client in page2_clients:
-        cid = client["id"]
-        pet_responses.append(_pet_response([
-            {"id": cid * 10, "alias": f"Pet{cid}", "type_id": 1, "owner_id": cid, "status": "alive"}
-        ]))
-        invoice_responses.append(_invoice_response([
-            {"id": cid * 100, "pet_id": cid * 10, "invoice_date": "2024-09-15 12:00:00"}
-        ]))
-
-    respx.get(f"{BASE}/rest/api/pet").mock(side_effect=pet_responses)
-    respx.get(f"{BASE}/rest/api/invoice").mock(side_effect=invoice_responses)
+    # Batched path:
+    # page 1 owner batch -> no pets, page 2 owner batch -> 5 pets, one invoice batch.
+    respx.get(f"{BASE}/rest/api/pet").mock(
+        side_effect=[
+            _pet_response([]),
+            _pet_response([
+                {
+                    "id": client["id"] * 10,
+                    "alias": f"Pet{client['id']}",
+                    "type_id": 1,
+                    "owner_id": client["id"],
+                    "status": "alive",
+                }
+                for client in page2_clients
+            ]),
+        ]
+    )
+    respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=_invoice_response([
+            {
+                "id": client["id"] * 100,
+                "pet_id": client["id"] * 10,
+                "invoice_date": "2024-09-15 12:00:00",
+            }
+            for client in page2_clients
+        ])
+    )
     respx.get(f"{BASE}/rest/api/MedicalCards").mock(return_value=_medcards_response([]))
 
     headers_patch, runtime_patch = bearer_runtime_patch()
@@ -495,3 +506,284 @@ async def test_get_inactive_pets_normalizes_last_visit_to_midnight_for_invoice_f
     filter_param = request.url.params.get("filter", "")
     assert "2024-09-15 00:00:00" in filter_param
     assert "14:30:00" not in filter_param
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_inactive_pets_batches_lookup_for_large_client_page():
+    """A 100-client page should not trigger client-by-client pet/invoice requests."""
+    billing_mock()
+
+    clients = [
+        {
+            "id": 3000 + i,
+            "last_name": f"C{i}",
+            "first_name": "Batch",
+            "middle_name": "",
+            "cell_phone": "",
+            "last_visit_date": "2024-09-15 10:00:00",
+        }
+        for i in range(100)
+    ]
+    respx.get(f"{BASE}/rest/api/client").mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": {"totalCount": 2000, "client": clients}},
+        )
+    )
+
+    pets_by_owner = {
+        client["id"]: {
+            "id": client["id"] * 10,
+            "alias": f"Pet{client['id']}",
+            "owner_id": client["id"],
+            "status": "alive",
+        }
+        for client in clients
+    }
+
+    def pet_side_effect(request):
+        q = parse_qs(urlparse(str(request.url)).query)
+        filters = json.loads(q["filter"][0])
+        owner_filter = next(f for f in filters if f["property"] == "owner_id")
+        value = owner_filter["value"]
+        owner_ids = value if isinstance(value, list) else [value]
+        pets = [pets_by_owner[int(owner_id)] for owner_id in owner_ids if int(owner_id) in pets_by_owner]
+        return _pet_response(pets)
+
+    pet_route = respx.get(f"{BASE}/rest/api/pet").mock(side_effect=pet_side_effect)
+
+    invoices_by_pet = {
+        pet["id"]: {
+            "id": pet["id"] * 100,
+            "pet_id": pet["id"],
+            "invoice_date": "2024-09-15 12:00:00",
+        }
+        for pet in list(pets_by_owner.values())[:50]
+    }
+
+    def invoice_side_effect(request):
+        q = parse_qs(urlparse(str(request.url)).query)
+        filters = json.loads(q["filter"][0])
+        pet_filter = next(f for f in filters if f["property"] == "pet_id")
+        value = pet_filter["value"]
+        pet_ids = value if isinstance(value, list) else [value]
+        invoices = [
+            invoices_by_pet[int(pet_id)]
+            for pet_id in pet_ids
+            if int(pet_id) in invoices_by_pet
+        ]
+        return _invoice_response(invoices)
+
+    invoice_route = respx.get(f"{BASE}/rest/api/invoice").mock(side_effect=invoice_side_effect)
+    medcard_route = respx.get(f"{BASE}/rest/api/MedicalCards").mock(return_value=_medcards_response([]))
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_inactive_pets", {"limit": 50})
+
+    data = json.loads(result.content[0].text)
+    assert len(data["inactive_pets"]) == 50
+    assert pet_route.call_count < 30
+    assert invoice_route.call_count < 30
+    assert medcard_route.call_count == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_inactive_pets_fetches_pets_beyond_first_100_owner_records():
+    """A client with >100 pets must be scanned across pet/invoice chunks."""
+    billing_mock()
+
+    respx.get(f"{BASE}/rest/api/client").mock(
+        return_value=_client_response([
+            {
+                "id": 99,
+                "last_name": "Large",
+                "first_name": "Owner",
+                "middle_name": "",
+                "cell_phone": "",
+                "last_visit_date": "2024-09-15 10:00:00",
+            }
+        ])
+    )
+
+    all_pets = [
+        {"id": idx, "alias": f"P{idx}", "type_id": 1, "owner_id": 99, "status": "alive"}
+        for idx in range(1, 206)
+    ]
+
+    def pet_side_effect(request):
+        q = parse_qs(urlparse(str(request.url)).query)
+        offset = int(q.get("offset", ["0"])[0])
+        limit = int(q.get("limit", ["100"])[0])
+        page = all_pets[offset:offset + limit]
+        return _pet_response(page)
+
+    pet_route = respx.get(f"{BASE}/rest/api/pet").mock(side_effect=pet_side_effect)
+
+    visited_ids = {201, 202, 203, 204, 205}
+
+    def invoice_side_effect(request):
+        q = parse_qs(urlparse(str(request.url)).query)
+        filters = json.loads(q["filter"][0])
+        pet_filter = next(f for f in filters if f["property"] == "pet_id")
+        pet_ids = pet_filter["value"]
+        invoices = [
+            {"id": pet_id * 100, "pet_id": pet_id, "invoice_date": "2024-09-15 12:00:00"}
+            for pet_id in pet_ids
+            if pet_id in visited_ids
+        ]
+        return _invoice_response(invoices)
+
+    invoice_route = respx.get(f"{BASE}/rest/api/invoice").mock(side_effect=invoice_side_effect)
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(return_value=_medcards_response([]))
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_inactive_pets", {"limit": 10})
+
+    data = json.loads(result.content[0].text)
+    returned_ids = {pet["id"] for pet in data["inactive_pets"]}
+    assert visited_ids.issubset(returned_ids)
+    assert pet_route.call_count >= 3
+    assert invoice_route.call_count >= 3
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_inactive_pets_paginates_invoice_chunk_over_100_rows():
+    """Invoice chunk pagination must not drop visited pets beyond first 100 rows."""
+    billing_mock()
+
+    respx.get(f"{BASE}/rest/api/client").mock(
+        return_value=_client_response([
+            {
+                "id": 55,
+                "last_name": "Invoice",
+                "first_name": "Overflow",
+                "middle_name": "",
+                "cell_phone": "",
+                "last_visit_date": "2024-09-15 10:00:00",
+            }
+        ])
+    )
+
+    pets = [
+        {"id": 1000 + i, "alias": f"P{i}", "type_id": 1, "owner_id": 55, "status": "alive"}
+        for i in range(100)
+    ]
+
+    def pet_side_effect(request):
+        q = parse_qs(urlparse(str(request.url)).query)
+        offset = int(q.get("offset", ["0"])[0])
+        limit = int(q.get("limit", ["100"])[0])
+        page = pets[offset:offset + limit]
+        return httpx.Response(
+            200,
+            json={"data": {"totalCount": len(pets), "pet": page}},
+        )
+
+    respx.get(f"{BASE}/rest/api/pet").mock(side_effect=pet_side_effect)
+
+    overflow_pet_id = pets[-1]["id"]
+    invoice_pet_ids = [pet["id"] for pet in pets[:-1]]
+    invoice_pet_ids.append(pets[0]["id"])
+    invoice_pet_ids.extend([overflow_pet_id] + [pets[1]["id"]] * 49)
+    all_invoices = [
+        {"id": 2000 + idx, "pet_id": pet_id, "invoice_date": "2024-09-15 12:00:00"}
+        for idx, pet_id in enumerate(invoice_pet_ids, start=1)
+    ]
+
+    def invoice_side_effect(request):
+        q = parse_qs(urlparse(str(request.url)).query)
+        offset = int(q.get("offset", ["0"])[0])
+        limit = int(q.get("limit", ["100"])[0])
+        page = all_invoices[offset:offset + limit]
+        return httpx.Response(
+            200,
+            json={"data": {"totalCount": len(all_invoices), "invoice": page}},
+        )
+
+    invoice_route = respx.get(f"{BASE}/rest/api/invoice").mock(side_effect=invoice_side_effect)
+    medcard_route = respx.get(f"{BASE}/rest/api/MedicalCards").mock(return_value=_medcards_response([]))
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_inactive_pets", {"limit": 100})
+
+    data = json.loads(result.content[0].text)
+    returned_ids = {pet["id"] for pet in data["inactive_pets"]}
+    assert len(data["inactive_pets"]) == 100
+    assert pets[-1]["id"] in returned_ids
+    assert invoice_route.call_count == 2
+    assert medcard_route.call_count == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_inactive_pets_paginates_medcard_chunk_over_100_rows():
+    """Medcard fallback pagination must not drop visited pets beyond first 100 rows."""
+    billing_mock()
+
+    respx.get(f"{BASE}/rest/api/client").mock(
+        return_value=_client_response([
+            {
+                "id": 56,
+                "last_name": "Medcard",
+                "first_name": "Overflow",
+                "middle_name": "",
+                "cell_phone": "",
+                "last_visit_date": "2024-09-15 10:00:00",
+            }
+        ])
+    )
+
+    pets = [
+        {"id": 3000 + i, "alias": f"M{i}", "type_id": 1, "owner_id": 56, "status": "alive"}
+        for i in range(100)
+    ]
+
+    def pet_side_effect(request):
+        q = parse_qs(urlparse(str(request.url)).query)
+        offset = int(q.get("offset", ["0"])[0])
+        limit = int(q.get("limit", ["100"])[0])
+        page = pets[offset:offset + limit]
+        return httpx.Response(
+            200,
+            json={"data": {"totalCount": len(pets), "pet": page}},
+        )
+
+    respx.get(f"{BASE}/rest/api/pet").mock(side_effect=pet_side_effect)
+    respx.get(f"{BASE}/rest/api/invoice").mock(return_value=_invoice_response([]))
+
+    overflow_pet_id = pets[-1]["id"]
+    medcard_pet_ids = [pet["id"] for pet in pets[:-1]]
+    medcard_pet_ids.append(pets[0]["id"])
+    medcard_pet_ids.extend([overflow_pet_id] + [pets[1]["id"]] * 49)
+    all_medcards = [
+        {"id": 4000 + idx, "patient_id": pet_id, "date_create": "2024-09-15 12:00:00"}
+        for idx, pet_id in enumerate(medcard_pet_ids, start=1)
+    ]
+
+    def medcard_side_effect(request):
+        q = parse_qs(urlparse(str(request.url)).query)
+        offset = int(q.get("offset", ["0"])[0])
+        limit = int(q.get("limit", ["100"])[0])
+        page = all_medcards[offset:offset + limit]
+        return httpx.Response(
+            200,
+            json={"data": {"totalCount": len(all_medcards), "medicalCards": page}},
+        )
+
+    medcard_route = respx.get(f"{BASE}/rest/api/MedicalCards").mock(side_effect=medcard_side_effect)
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_inactive_pets", {"limit": 100})
+
+    data = json.loads(result.content[0].text)
+    returned_ids = {pet["id"] for pet in data["inactive_pets"]}
+    assert len(data["inactive_pets"]) == 100
+    assert pets[-1]["id"] in returned_ids
+    assert medcard_route.call_count == 2

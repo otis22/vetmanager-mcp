@@ -1,5 +1,6 @@
 """Unit tests for stage 23.2 Vetmanager connection save/validation service."""
 
+import asyncio
 from pathlib import Path
 
 import httpx
@@ -8,14 +9,17 @@ import pytest_asyncio
 import respx
 from sqlalchemy import select
 
-from exceptions import AuthError, HostResolutionError
+from exceptions import AuthError, HostResolutionError, VetmanagerTimeoutError
 from storage_models import VetmanagerConnection
 from vetmanager_connection_service import (
     exchange_user_token,
+    evaluate_connection_health,
     save_domain_api_key_connection,
     save_user_login_password_connection,
     save_user_token_connection,
+    validate_domain_api_key_connection,
 )
+from service_metrics import reset_service_metrics, snapshot_service_metrics
 
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
@@ -220,6 +224,152 @@ async def test_exchange_user_token_uses_multipart_form_and_app_name_without_api_
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_exchange_user_token_preserves_password_whitespace():
+    """Whitespace in password is sent as-is; only emptiness is rejected."""
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-auth-space").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://clinic-auth-space.vetmanager.cloud"}})
+    )
+
+    captured: dict[str, object] = {}
+
+    def _token_auth_response(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content
+        return httpx.Response(200, json={"data": {"token": "fresh-user-token"}})
+
+    respx.post("https://clinic-auth-space.vetmanager.cloud/token_auth.php").mock(
+        side_effect=_token_auth_response
+    )
+
+    _, user_token = await exchange_user_token(
+        "clinic-auth-space",
+        login="doctor",
+        password="  secret-pass  ",
+    )
+
+    assert user_token == "fresh-user-token"
+    assert b"  secret-pass  " in captured["body"]
+
+
+@pytest.mark.asyncio
+async def test_validate_domain_api_key_connection_uses_shared_pool_and_retries_transient_503(monkeypatch):
+    import vetmanager_connection_service as service
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = 0
+
+        async def get(self, url, *, params=None, headers=None):
+            self.calls += 1
+            if self.calls < 3:
+                return httpx.Response(503, json={"error": "unavailable"})
+            return httpx.Response(200, json={"data": []})
+
+    fake_client = FakeClient()
+    sleep_delays: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleep_delays.append(delay)
+
+    async def fake_get_shared_http_client():
+        return fake_client
+
+    monkeypatch.setattr(service, "get_shared_http_client", fake_get_shared_http_client)
+    monkeypatch.setattr(service.asyncio, "sleep", fake_sleep)
+    reset_service_metrics()
+
+    resolved = await validate_domain_api_key_connection(
+        "clinic-a",
+        "secret-key",
+        resolved_host="https://clinic-a.vetmanager.cloud",
+    )
+
+    metrics = snapshot_service_metrics()
+    assert resolved == "https://clinic-a.vetmanager.cloud"
+    assert fake_client.calls == 3
+    assert len(sleep_delays) == 2
+    assert metrics["upstream_requests_total"]["vetmanager_api_probe|error"] == 2
+    assert metrics["upstream_requests_total"]["vetmanager_api_probe|success"] == 1
+    assert metrics["upstream_failures_total"]["vetmanager_api_probe|http_503"] == 2
+
+
+@pytest.mark.asyncio
+async def test_evaluate_connection_health_logs_warning_for_probe_errors(monkeypatch, caplog):
+    import vetmanager_connection_service as service
+
+    connection = VetmanagerConnection(
+        id=77,
+        account_id=1,
+        auth_mode="domain_api_key",
+        status="active",
+        domain="clinic-a",
+    )
+    connection.set_credentials(
+        {"domain": "clinic-a", "api_key": "secret-key"},
+        encryption_key=TEST_ENCRYPTION_KEY,
+    )
+
+    async def fake_validate(*args, **kwargs):
+        raise VetmanagerTimeoutError("probe timeout")
+
+    monkeypatch.setattr(service, "validate_domain_api_key_connection", fake_validate)
+
+    with caplog.at_level("WARNING", logger="vetmanager.runtime"):
+        status, reason = await evaluate_connection_health(
+            connection,
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+
+    assert status == "unknown"
+    assert "could not be verified" in reason
+    assert any(
+        record.levelname == "WARNING"
+        and getattr(record, "event_name", "") == "connection_health_failed"
+        and getattr(record, "account_connection_id", None) == 77
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_save_domain_api_key_connection_concurrent_calls_leave_single_active(session_factory):
+    """Concurrent saves for one account must not leave multiple ACTIVE rows."""
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-race").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://clinic-race.vetmanager.cloud"}})
+    )
+    respx.get("https://clinic-race.vetmanager.cloud/rest/api/client").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+
+    async def _save(api_key: str) -> None:
+        async with session_factory() as session:
+            await save_domain_api_key_connection(
+                session,
+                account_id=1,
+                domain="clinic-race",
+                api_key=api_key,
+                encryption_key=TEST_ENCRYPTION_KEY,
+            )
+
+    await asyncio.gather(_save("key-1"), _save("key-2"))
+
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(VetmanagerConnection)
+                .where(VetmanagerConnection.account_id == 1)
+                .order_by(VetmanagerConnection.id.asc())
+            )
+        ).scalars().all()
+
+    active_rows = [row for row in rows if row.status == "active"]
+    disabled_rows = [row for row in rows if row.status == "disabled"]
+    assert len(rows) == 2
+    assert len(active_rows) == 1
+    assert len(disabled_rows) == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_save_user_login_password_connection_persists_token_without_api_key(session_factory):
     """Saving login/password mode should not require or persist an API key."""
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-login").mock(
@@ -258,6 +408,57 @@ async def test_save_user_login_password_connection_persists_token_without_api_ke
     assert headers["x-user-token"] == "user-token-secret"
     assert headers["x-app-name"] == "vetmanager-mcp"
     assert "x-rest-api-key" not in headers
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_save_user_login_password_connection_concurrent_calls_dedupe_token_issue(session_factory):
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-login-race").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://clinic-login-race.vetmanager.cloud"}})
+    )
+    token_issue_calls = 0
+
+    async def _token_auth_response(request: httpx.Request) -> httpx.Response:
+        nonlocal token_issue_calls
+        token_issue_calls += 1
+        await asyncio.sleep(0.05)
+        return httpx.Response(200, json={"data": {"token": "shared-user-token"}})
+
+    respx.post("https://clinic-login-race.vetmanager.cloud/token_auth.php").mock(
+        side_effect=_token_auth_response
+    )
+    respx.get("https://clinic-login-race.vetmanager.cloud/rest/api/user").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+
+    async def _save() -> VetmanagerConnection:
+        async with session_factory() as session:
+            return await save_user_login_password_connection(
+                session,
+                account_id=1,
+                domain="clinic-login-race",
+                login="doctor",
+                password="doctor-pass-123",
+                encryption_key=TEST_ENCRYPTION_KEY,
+            )
+
+    first, second = await asyncio.gather(_save(), _save())
+
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(VetmanagerConnection)
+                .where(VetmanagerConnection.account_id == 1)
+                .order_by(VetmanagerConnection.id.asc())
+            )
+        ).scalars().all()
+
+    assert token_issue_calls == 1
+    assert first.id == second.id
+    assert len(rows) == 1
+    assert rows[0].status == "active"
+    credentials = rows[0].get_credentials(encryption_key=TEST_ENCRYPTION_KEY)
+    assert credentials["user_token"] == "shared-user-token"
 
 
 @pytest.mark.asyncio

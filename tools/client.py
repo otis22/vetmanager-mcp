@@ -267,9 +267,9 @@ def register(mcp: FastMCP) -> None:
             phone: Contact phone number.
             email: Contact email address.
         """
-        payload: dict = {"firstName": first_name, "lastName": last_name}
+        payload: dict = {"first_name": first_name, "last_name": last_name}
         if phone:
-            payload["phone"] = phone
+            payload["cell_phone"] = phone
         if email:
             payload["email"] = email
         return await crud_create("/rest/api/client", payload)

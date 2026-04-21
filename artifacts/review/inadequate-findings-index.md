@@ -192,3 +192,51 @@ rerun выполнен позже в тот же день — все 10 ревь
 - `scripts/product_metrics_report.py:468-472` — --now-override traceback leak (conf 0.45)
 - `auth/rate_limit.py:37-105` — multi-worker rate limit bypass (conf 0.5)
 - **Причина dismiss (speculative)**: все 5 — defense-in-depth без конкретного exploit, confidence 0.4-0.5. Ревьюер помечает `speculative: true`. Добавить в backlog stage 118+ если security focus возобновится.
+
+---
+
+## 2026-04-20 super-review full
+
+Source: `artifacts/review/2026-04-20-full-stage-121.md`
+
+### Scope / ROI (cosmetic, trivial)
+
+- `tools/medical_card.py:35-41` — 3-line extra_filters build pattern (code/medium, 0.90): cosmetic, no perf/correctness gain
+- `tools/pet.py:262-267` — 5-line client_name build pattern (code/medium, 0.82): cosmetic
+- `tools/_inactive_helpers.py:119-134` — `_normalize_to_midnight`/`_next_day_midnight` split duplication (code/medium, 0.88): <5 LOC savings
+- `filters.py:174-175` — inline lazy import circular-workaround (code/medium, 0.72): pre-existing, module restructure out of scope
+- `tools/medical_card.py:49-50` — comment WHAT-not-WHY for medicalCards/medicalcards dual key (code/medium, 0.80): doc-nit
+- `web.py:83-90` — WEB_ENABLE_HSTS strip() duplicated 2× (code/medium, 0.93): trivial helper, no defect
+
+### Speculative / no concrete failure path
+
+- `web_security.py:30-67` — CSRF not bound to session account_id (security/medium, 0.55): no attack path; SameSite=strict default makes double-submit adequate
+- `web_security.py:95` — CSRF `read_csrf_token` non-uniform compute on empty-input (security/low, 0.30): conf <0.4 autodismiss; timing signal only "is there a cookie"
+- `auth_audit.py:27-45` — substring-based sensitive-key matching (security/medium, 0.60): no false-negative evidence in current keyset
+- `tools/_slots_helpers.py:84-85` — float division may drop 14.999 slot (codex-blindspot/low, 0.38): conf <0.4; VM durations are integer minutes, no repro
+
+### Codex false-positive
+
+- `tools/client.py:79-81` + 30 tool functions — `filter` parameter shadows Python builtin (code/high, 0.95). **Codex verdict: false_positive, lower to low.** Shadowing in function signature doesn't break anything by itself; claimed failure mode (internal call to builtin `filter()` fails with cryptic TypeError) is speculative — no current call-site tries this. Rename to `filters` is stylistic cleanup, not defect.
+  - **Причина dismiss**: Codex arbitration explicitly downgraded this from high to low false_positive.
+
+### Duplicates / consolidated
+
+- `tools/clinical.py:50-55` camelCase (codex-blindspot/low, 0.71): dup of B1 blocker (stronger product finding captures it)
+- `vetmanager_client.py:282-481` — `_request()` 200 LOC nested try/while (simplicity/low, 0.40): folded into god-module theme #2
+- `vetmanager_client.py:1-519` — 518 LOC god module (arch/medium, 0.60): borderline, tracked via systemic theme #3; no blocker
+- 6 BC-shim files bundle (arch/medium, 0.70): consolidated into simplicity findings on specific files (ttl_for_entity, build_list_query_params)
+- `tools/medical_card.py:98-135` — `limit=100` silently truncates pet list (perf/low, 0.60): partial overlap with H5, kept stronger statement there
+
+### PRD scope creep (valid but outside current etap queue)
+
+- `vm_transport/breaker.py:32-66` — dual API: 3 constants + 3 accessors (simplicity/medium, 0.75): no active simplicity-eval stage for vm_transport; will be scheduled when next call-site change hits the module
+- `vetmanager_client.py:202-207` — `_entity_from_path` wrapper around free function (simplicity/low, 0.70): queue for decomposition stage
+- `tools/invoice.py:12` — `_INVOICE_PAYMENT_STATUSES` defined inside register() body (code/low, 0.88): works, stylistic
+
+### Codex over-bundling
+
+- `vetmanager_connection_service.py` bundled finding (5 issues in one) (perf+obs+codex, 0.80): Codex verdict "too broad; split". Split parts:
+  - **adequate**: `password.strip()` RFC 8265 violation (concrete bug)
+  - **adequate**: `_disable_existing_active_connections` missing SELECT FOR UPDATE (race)
+  - **deferred**: pool reuse, retry, metrics — all valid hardening but need explicit requirements + observability targets before fix; schedule as a sweep stage

@@ -5,7 +5,7 @@ from resources.pet_profile import fetch as _fetch_pet_profile
 from service_metrics import instrument_call as _instrument_call
 from tools._inactive_helpers import (
     fetch_inactive_clients_page,
-    find_pets_at_client_last_visit,
+    find_pets_for_clients_last_visit,
 )
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
 from validators import LimitParam
@@ -248,16 +248,18 @@ def register(mcp: FastMCP) -> None:
             if not clients:
                 break
 
-            for client in clients:
+            client_pet_pairs = await find_pets_for_clients_last_visit(
+                vc,
+                clients=clients,
+                limit=limit - len(result_pets),
+            )
+
+            for client, visited_pets in client_pet_pairs:
                 clients_scanned += 1
                 client_id = client.get("id")
                 last_visit = client.get("last_visit_date", "")
                 if client_id is None or not last_visit:
                     continue
-
-                visited_pets = await find_pets_at_client_last_visit(
-                    vc, client_id=int(client_id), last_visit_date=last_visit
-                )
 
                 client_name_parts = [
                     client.get("last_name", ""),

@@ -1,6 +1,8 @@
 """E2E mock tests for get_doctor_free_slots (Stage 80)."""
 
+import asyncio
 import json
+import time
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -629,3 +631,110 @@ async def test_filter_contains_doctor_id_and_date_range():
     # (overlap semantics: fetch any row whose interval touches the window).
     assert any(f["property"] == "begin_datetime" for f in filters)
     assert any(f["property"] == "end_datetime" for f in filters)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_multi_clinic_admission_blocks_only_its_own_clinic():
+    """Admission in clinic 1 must not hide the same slot in clinic 2."""
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/timesheet").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 2,
+                    "timesheet": [
+                        {
+                            "id": 1,
+                            "doctor_id": 1,
+                            "begin_datetime": "2026-04-10 09:00:00",
+                            "end_datetime": "2026-04-10 10:00:00",
+                            "clinic_id": 1,
+                        },
+                        {
+                            "id": 2,
+                            "doctor_id": 1,
+                            "begin_datetime": "2026-04-10 09:00:00",
+                            "end_datetime": "2026-04-10 10:00:00",
+                            "clinic_id": 2,
+                        },
+                    ],
+                },
+            },
+        )
+    )
+    respx.get(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 1,
+                    "admission": [
+                        {
+                            "id": 100,
+                            "admission_date": "2026-04-10 09:00:00",
+                            "admission_length": "01:00:00",
+                            "user_id": 1,
+                            "clinic_id": 1,
+                            "status": "accepted",
+                        }
+                    ],
+                },
+            },
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_doctor_free_slots",
+            {
+                "doctor_id": 1,
+                "date_from": "2026-04-10",
+                "date_to": "2026-04-10",
+                "slot_minutes": 60,
+            },
+        )
+
+    data = result.structured_content
+    assert data["total_slots"] == 1
+    assert data["slots"][0]["clinic_id"] == 2
+    assert data["slots"][0]["start"] == "2026-04-10T09:00:00"
+
+
+@pytest.mark.asyncio
+async def test_schedule_fetches_timesheet_and_admission_in_parallel(monkeypatch):
+    """timesheet/admission fetch should overlap, not run serially."""
+    import tools.schedule as schedule_module
+
+    async def fake_paginate_all(endpoint, **kwargs):
+        await asyncio.sleep(0.05)
+        if endpoint == "/rest/api/timesheet":
+            return ([{
+                "id": 1,
+                "doctor_id": 1,
+                "begin_datetime": "2026-04-10 09:00:00",
+                "end_datetime": "2026-04-10 10:00:00",
+                "clinic_id": 1,
+            }], 1)
+        return ([], 0)
+
+    monkeypatch.setattr(schedule_module, "paginate_all", fake_paginate_all)
+
+    started = time.perf_counter()
+    result = await mcp.call_tool(
+        "get_doctor_free_slots",
+        {
+            "doctor_id": 1,
+            "date_from": "2026-04-10",
+            "date_to": "2026-04-10",
+            "slot_minutes": 30,
+        },
+    )
+    elapsed = time.perf_counter() - started
+
+    assert elapsed < 0.09, f"expected parallel fetch, got serial latency {elapsed:.3f}s"
+    data = result.structured_content
+    assert data["total_slots"] == 2

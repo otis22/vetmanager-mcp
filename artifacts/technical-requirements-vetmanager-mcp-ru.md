@@ -201,6 +201,9 @@ Layering invariant: `resources/` НЕ импортит из `tools/`. Tools им
 - `warehouse.py`
 - `clinical.py`
 - `operations.py`
+- `schedule.py`
+- `_inactive_helpers.py`
+- `_slots_helpers.py`
 
 Каждый tool:
 - регистрируется через `@mcp.tool`;
@@ -256,7 +259,7 @@ string; numeric zero сохраняется (privacy-safe — `client_id=0` не
 Реализует process-local in-memory cache:
 - TTL 900s по умолчанию;
 - короткий TTL для “горячих” сущностей;
-- ключ: `METHOD + canonical_full_url_with_query + api_key_hash`;
+- ключ: `METHOD + canonical_full_url_with_query + api_key_hash + account_id`;
 - теги вида `domain:entity`;
 - инвалидация по тегу после `POST` / `PUT` / `DELETE`.
 
@@ -306,6 +309,9 @@ vetmanager-mcp/
 │   ├── client_profile.py       # get_client_profile fetch impl
 │   └── pet_profile.py          # get_pet_profile fetch impl
 ├── tools/                      # MCP tool registrations
+│   ├── schedule.py             # get_doctor_free_slots
+│   ├── _inactive_helpers.py    # inactive client/pet batching helpers
+│   └── _slots_helpers.py       # free-slot interval math
 ├── tests/
 ├── scripts/
 ├── alembic/
@@ -505,8 +511,10 @@ Storage preparation:
 - CSRF: double-submit cookie с HMAC-SHA256 подписью, TTL 2 часа;
 - future scope policy хранится отдельно от raw token и не требует хранения
   дополнительных секретов;
-- pre-deploy backup SQLite БД с ротацией (хранит последние 10 бэкапов);
-- post-deploy integrity check: проверка наличия и размера файла БД.
+- pre-deploy backup production PostgreSQL через `scripts/backup_postgres.sh`
+  (`pg_dump` + timestamped rollback point);
+- post-deploy integrity check: успешный smoke и readiness после применения
+  миграций/рестарта.
 
 ### 4.4. Производительность и кеширование
 
@@ -595,7 +603,7 @@ docker compose up -d
 - Поведение Vetmanager API не домысливается и должно сверяться по OpenAPI и
   `api_entity_reference-ru.md`.
 
-## 7.1. Журнал этапов 97-116 (stage 117.1 backfill)
+## 7.1. Журнал этапов 97-121 (stage 127 backfill)
 
 Компактный changelog пропущенных в §2 этапов:
 - **97** — Docs + workflow compliance backfill.
@@ -619,6 +627,11 @@ docker compose up -d
 - **114** — Simplicity debt (focused F2): inline imports cleanup в `service_metrics.py` + `resources/_aggregation.py`; AST regression test.
 - **115** — Real concurrency tests: breaker amplification (gather + Event barrier), pool singleton identity; autouse `reset_service_metrics` fixture.
 - **116** — PRD 110 completion: `--window-days` CLI flag removed (half-wired), `tokens.expired_auto_24h` counter added, PRD 110 docs drift fixed, AssumptionLog commit SHAs backfilled.
+- **117** — Docs catchup: compact changelog/backfill, observability runbook banner, README observability drift cleanup, workflow-check `(pending)` detector.
+- **118** — Product metrics correctness follow-up: timezone-aware `--now-override` и UTC-consistent `dead_list.last_request_at`.
+- **119** — Test isolation + workflow/docs cleanup: `REQUEST_CACHE.metrics` reset в fixtures, AssumptionLog SHA backfill, release checklist sync.
+- **120** — Historical PRD goal-section backfill: старые PRD приведены к текущему workflow contract через `## Цель`.
+- **121** — Roadmap status sync cleanup: внутренние подпункты закрытых этапов выровнены к фактическому `done`.
 
 ### Дополнительная структура
 - `scripts/` — операционные + ad-hoc: `init_server.sh`, `deploy_server.sh`, `sync_and_deploy_server.sh`, `backup_postgres.sh`, `review_workflow_check.sh`, `product_metrics_report.py`.
