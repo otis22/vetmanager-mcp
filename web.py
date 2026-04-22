@@ -32,6 +32,7 @@ from storage_models import (
     VetmanagerConnection,
 )
 from token_cleanup import sync_expired_tokens
+from tool_access_registry import infer_token_preset, get_token_preset_label
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
 from vetmanager_connection_service import (
     INTEGRATION_HEALTH_UNKNOWN,
@@ -278,6 +279,12 @@ async def _load_account_dashboard(
         token_view = []
         for token in tokens:
             usage = usage_by_token_id.get(token.id)
+            inferred_preset = infer_token_preset(token.get_scopes())
+            access_label = (
+                get_token_preset_label(inferred_preset)
+                if inferred_preset is not None
+                else "Legacy/custom"
+            )
             token_view.append(
                 {
                     "id": token.id,
@@ -288,6 +295,9 @@ async def _load_account_dashboard(
                     "last_used_at": _format_dt(token.last_used_at or (usage.last_used_at if usage else None)),
                     "request_count": int(usage.request_count if usage else 0),
                     "ip_mask": token.get_allowed_ip_mask(),
+                    "access_preset": inferred_preset or "legacy",
+                    "access_label": access_label,
+                    "privacy_label": "Depersonalized" if token.is_depersonalized else "Standard",
                 }
             )
         integration_health_status = INTEGRATION_HEALTH_UNKNOWN
@@ -324,6 +334,10 @@ async def _render_account_dashboard_response(
     token_name: str = "",
     token_expiry_days: str = "",
     ip_mask: str = "*.*.*.*",
+    token_access_preset: str = "full_access",
+    token_is_depersonalized: bool = False,
+    issued_token_access_label: str | None = None,
+    issued_token_privacy_label: str | None = None,
 ) -> HTMLResponse | RedirectResponse:
     csrf_token = _resolve_csrf_token(request)
     script_nonce = _generate_csp_nonce()
@@ -363,6 +377,10 @@ async def _render_account_dashboard_response(
             token_name=token_name,
             token_expiry_days=token_expiry_days,
             ip_mask=ip_mask,
+            token_access_preset=token_access_preset,
+            token_is_depersonalized=token_is_depersonalized,
+            issued_token_access_label=issued_token_access_label,
+            issued_token_privacy_label=issued_token_privacy_label,
         ),
         status_code=status_code,
         with_csrf_cookie=True,

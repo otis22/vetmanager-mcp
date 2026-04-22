@@ -6,9 +6,19 @@ import os
 from html import escape
 
 from storage_models import Account, VetmanagerConnection
+from tool_access_registry import (
+    PRESET_DOCTOR,
+    PRESET_FINANCE,
+    PRESET_FRONTDESK,
+    PRESET_FULL_ACCESS,
+    PRESET_INVENTORY,
+    PRESET_READ_ONLY,
+    TOKEN_PRESET_LABELS,
+)
 
 
 _DEFAULT_SITE_BASE_URL = "https://vetmanager-mcp.vromanichev.ru"
+_DOCTOR_PRESET_FORM_VALUE = "clinical_staff"
 
 
 def _resolve_site_base_url() -> str:
@@ -383,6 +393,10 @@ def render_account_page(
     token_name: str = "",
     token_expiry_days: str = "",
     ip_mask: str = "*.*.*.*",
+    token_access_preset: str = PRESET_FULL_ACCESS,
+    token_is_depersonalized: bool = False,
+    issued_token_access_label: str | None = None,
+    issued_token_privacy_label: str | None = None,
 ) -> str:
     # Stage 100.6: escape even though _resolve_site_base_url validates —
     # defense-in-depth against future misconfig where validation may be
@@ -448,8 +462,33 @@ def render_account_page(
         if token_success
         else ""
     )
+    preset_options = "".join(
+        (
+            f'<option value="{escape(form_value)}" '
+            f'{"selected" if token_access_preset == preset else ""}>'
+            f"{escape(label)}</option>"
+        )
+        for form_value, preset, label in (
+            (PRESET_FULL_ACCESS, PRESET_FULL_ACCESS, TOKEN_PRESET_LABELS[PRESET_FULL_ACCESS]),
+            (PRESET_READ_ONLY, PRESET_READ_ONLY, TOKEN_PRESET_LABELS[PRESET_READ_ONLY]),
+            (PRESET_FRONTDESK, PRESET_FRONTDESK, TOKEN_PRESET_LABELS[PRESET_FRONTDESK]),
+            (_DOCTOR_PRESET_FORM_VALUE, PRESET_DOCTOR, TOKEN_PRESET_LABELS[PRESET_DOCTOR]),
+            (PRESET_FINANCE, PRESET_FINANCE, TOKEN_PRESET_LABELS[PRESET_FINANCE]),
+            (PRESET_INVENTORY, PRESET_INVENTORY, TOKEN_PRESET_LABELS[PRESET_INVENTORY]),
+        )
+    )
     issued_token_html = ""
     if issued_raw_token:
+        issued_access_html = (
+            f'<p><strong>Access:</strong> {escape(issued_token_access_label)}</p>'
+            if issued_token_access_label
+            else ""
+        )
+        issued_privacy_html = (
+            f'<p><strong>Privacy:</strong> {escape(issued_token_privacy_label)}</p>'
+            if issued_token_privacy_label
+            else ""
+        )
         issued_token_html = f"""
         <section class="token-flash" id="issued-token-panel">
           <h2 style="margin: 0 0 12px;">Новый Bearer-токен создан</h2>
@@ -462,6 +501,8 @@ def render_account_page(
             <button class="copy-button" id="issued-token-copy-button" type="button">Скопировать токен</button>
             <span class="copy-status" id="issued-token-copy-status" aria-live="polite"></span>
           </div>
+          {issued_access_html}
+          {issued_privacy_html}
           <details class="token-flash-example">
             <summary>Как подключить к Cursor / Claude Code</summary>
             <pre>{{
@@ -503,6 +544,8 @@ def render_account_page(
                 "<tr>"
                 f"<td>{escape(str(token['name']))}</td>"
                 f"<td><code>{escape(str(token['token_prefix']))}</code></td>"
+                f"<td>{escape(str(token.get('access_label', 'Legacy/custom')))}</td>"
+                f"<td>{escape(str(token.get('privacy_label', 'Standard')))}</td>"
                 f"<td><code>{escape(str(token['status']))}</code></td>"
                 f"<td><code>{escape(str(token.get('ip_mask', '*.*.*.*')))}</code></td>"
                 f"<td>{escape(str(token['expires_at']))}</td>"
@@ -514,7 +557,7 @@ def render_account_page(
         token_list_html = (
             "<table>"
             "<thead><tr>"
-            "<th>Name</th><th>Prefix</th><th>Status</th><th>IP mask</th><th>Expires</th><th>Last used</th><th>Requests</th><th>Actions</th>"
+            "<th>Name</th><th>Prefix</th><th>Access</th><th>Privacy</th><th>Status</th><th>IP mask</th><th>Expires</th><th>Last used</th><th>Requests</th><th>Actions</th>"
             "</tr></thead>"
             f"<tbody>{''.join(rows)}</tbody>"
             "</table>"
@@ -612,6 +655,19 @@ def render_account_page(
           </label>
           <label>Expires in days
             <input type="number" name="expires_in_days" value="{escape(token_expiry_days)}" min="1" placeholder="30" {token_disabled} data-testid="token-expires-in-days">
+          </label>
+          <label>Access preset
+            <select name="access_preset" {token_disabled} data-testid="token-access-preset">
+              {preset_options}
+            </select>
+            <small style="color: var(--muted); font-size: 0.85rem;">Preset определяет scopes токена: без custom-конструктора и без per-tool ручной настройки.</small>
+          </label>
+          <label style="display: flex; gap: 10px; align-items: start;">
+            <input type="checkbox" name="is_depersonalized" value="1" {"checked" if token_is_depersonalized else ""} {token_disabled} data-testid="token-is-depersonalized" style="width: auto; margin-top: 6px;">
+            <span>
+              <strong style="display: block; color: var(--ink);">Деперсонализировать ответы</strong>
+              <small style="color: var(--muted); font-size: 0.85rem;">Скрывает ФИО, телефоны, email и адреса; позже этот токен будет использовать централизованный sanitizer ответа.</small>
+            </span>
           </label>
           <label>Ограничение по IP
             <input type="text" name="ip_mask" value="{escape(ip_mask)}" placeholder="*.*.*.*" {token_disabled} data-testid="token-ip-mask">

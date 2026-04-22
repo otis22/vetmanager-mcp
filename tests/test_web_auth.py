@@ -13,8 +13,10 @@ from sqlalchemy import select
 import storage
 from bearer_auth import resolve_bearer_auth_context
 from server import mcp
+from service_metrics import snapshot_service_metrics
 from storage import Base, create_database_engine
 from storage_models import Account, ServiceBearerToken, TokenUsageLog, TokenUsageStat, VetmanagerConnection
+from tool_access_registry import PRESET_FRONTDESK
 from web_security import reset_web_security_state
 from web_auth import SESSION_COOKIE_NAME, get_web_session_secret, register_account, set_account_session_cookie
 
@@ -866,6 +868,88 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
     assert [log.event_type for log in logs] == ["token_created", "token_auth_succeeded"]
     assert raw_token not in (logs[0].details_json or "")
     assert raw_token not in (logs[1].details_json or "")
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_account_token_issue_supports_access_preset_and_depersonalized_policy(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    async with storage.get_session_factory()() as session:
+        await register_account(
+            session,
+            email="preset-owner@example.com",
+            password="Integration-Pass-123",
+        )
+
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-preset").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://clinic-preset.vetmanager.cloud"}})
+    )
+    respx.get("https://clinic-preset.vetmanager.cloud/rest/api/client").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await _post_with_csrf(
+            client,
+            "/login",
+            data={"email": "preset-owner@example.com", "password": "Integration-Pass-123"},
+        )
+        account_page = await client.get("/account")
+        assert 'data-testid="token-access-preset"' in account_page.text
+        assert 'data-testid="token-is-depersonalized"' in account_page.text
+        await _post_with_csrf(
+            client,
+            "/account/integration",
+            data={"domain": "clinic-preset", "api_key": "secret-key"},
+            page_path="/account",
+        )
+        response = await _post_with_csrf(
+            client,
+            "/account/tokens",
+            data={
+                "token_name": "Frontdesk private",
+                "expires_in_days": "30",
+                "access_preset": PRESET_FRONTDESK,
+                "is_depersonalized": "1",
+            },
+            page_path="/account",
+        )
+
+    assert response.status_code == 200
+    assert "Access:</strong> Front desk" in response.text
+    assert "Privacy:</strong> Depersonalized" in response.text
+    assert "Front desk" in response.text
+    assert "Depersonalized" in response.text
+
+    async with storage.get_session_factory()() as session:
+        stored = await session.get(ServiceBearerToken, 1)
+
+    assert stored is not None
+    assert stored.is_depersonalized is True
+    assert stored.get_scopes() == [
+        "admissions.read",
+        "admissions.write",
+        "clients.read",
+        "clients.write",
+        "finance.read",
+        "messaging.write",
+        "pets.read",
+        "pets.write",
+        "reference.read",
+        "users.read",
+    ]
+    assert snapshot_service_metrics()["token_preset_issued_total"]["frontdesk"] == 1
 
     await engine.dispose()
     storage.reset_storage_state()

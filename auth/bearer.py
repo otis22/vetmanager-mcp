@@ -54,6 +54,7 @@ class BearerAuthContext:
     api_key: str
     vetmanager_auth: VetmanagerAuthContext
     scopes: tuple[str, ...]
+    is_depersonalized: bool
 
 
 def _base_auth_details(
@@ -279,4 +280,5 @@ async def resolve_bearer_auth_context(
         api_key=resolved.api_key,
         vetmanager_auth=resolved,
         scopes=scopes,
+        is_depersonalized=token.is_depersonalized,
     )

@@ -38,7 +38,42 @@ def test_alembic_upgrade_creates_bearer_service_tables(tmp_path: Path):
     assert "password_hash" in account_columns
     token_columns = {column["name"] for column in inspector.get_columns("service_bearer_tokens")}
     assert "access_policy_version" in token_columns
+    assert "is_depersonalized" in token_columns
     assert "scopes_json" in token_columns
+
+
+def test_depersonalized_flag_migration_defaults_existing_tokens_to_false(tmp_path: Path):
+    """Upgrade must keep legacy tokens standard when adding depersonalization policy."""
+    from sqlalchemy import text as _text
+
+    config = _make_alembic_config(tmp_path)
+    command.upgrade(config, "20260419_000007")
+
+    engine = create_engine(config.get_main_option("sqlalchemy.url"))
+    with engine.connect() as conn:
+        conn.execute(_text(
+            "INSERT INTO accounts (email, password_hash, status, created_at, updated_at) "
+            "VALUES ('legacy@example.com', 'hash', 'active', datetime('now'), datetime('now'))"
+        ))
+        conn.commit()
+        account_id = conn.execute(_text(
+            "SELECT id FROM accounts WHERE email = 'legacy@example.com'"
+        )).fetchone()[0]
+        conn.execute(_text(
+            f"INSERT INTO service_bearer_tokens (account_id, name, token_prefix, token_hash, status, created_at) "
+            f"VALUES ({account_id}, 'legacy', 'sbt_legacy', 'hash999', 'active', datetime('now'))"
+        ))
+        conn.commit()
+
+    command.upgrade(config, "head")
+
+    with engine.connect() as conn:
+        row = conn.execute(_text(
+            "SELECT is_depersonalized FROM service_bearer_tokens WHERE name = 'legacy'"
+        )).fetchone()
+
+    assert row is not None
+    assert row[0] in (0, False)
 
 
 def test_status_check_constraints_reject_invalid_values(tmp_path: Path):

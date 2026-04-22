@@ -15,7 +15,7 @@ from auth_audit import (
 )
 from bearer_token_manager import generate_bearer_token
 from storage_models import ServiceBearerToken
-from token_scopes import SUPPORTED_TOKEN_SCOPES
+from tool_access_registry import PRESET_FULL_ACCESS, get_token_preset_scopes, normalize_token_preset
 
 
 def _token_expiry_string(expires_at: datetime | None) -> str | None:
@@ -33,6 +33,8 @@ async def issue_service_bearer_token(
     name: str,
     expires_in_days: int | None = None,
     ip_mask: str | None = None,
+    is_depersonalized: bool = False,
+    access_preset: str = PRESET_FULL_ACCESS,
 ) -> tuple[ServiceBearerToken, str]:
     """Create a new bearer token record and return it with the raw one-time value."""
     normalized_name = name.strip()
@@ -46,6 +48,7 @@ async def issue_service_bearer_token(
     effective_ip_mask: str | None = None
     if ip_mask is not None and ip_mask.strip() != "*.*.*.*":
         effective_ip_mask = validate_ip_mask(ip_mask)
+    normalized_preset = normalize_token_preset(access_preset)
 
     raw_token = generate_bearer_token()
     expires_at = None
@@ -56,11 +59,12 @@ async def issue_service_bearer_token(
         account_id=account_id,
         name=normalized_name,
         status="active",
+        is_depersonalized=is_depersonalized,
         expires_at=expires_at,
         allowed_ip_mask=effective_ip_mask,
     )
     token.set_raw_token(raw_token)
-    token.set_scopes(SUPPORTED_TOKEN_SCOPES)
+    token.set_scopes(get_token_preset_scopes(normalized_preset))
     session.add(token)
     await session.flush()
     add_token_usage_log(
@@ -72,6 +76,8 @@ async def issue_service_bearer_token(
             "token_prefix": token.token_prefix,
             "expires_at": _token_expiry_string(token.expires_at),
             "ip_mask": token.get_allowed_ip_mask(),
+            "is_depersonalized": token.is_depersonalized,
+            "access_preset": normalized_preset,
         },
     )
     await session.commit()

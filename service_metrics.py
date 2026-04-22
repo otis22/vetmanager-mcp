@@ -43,6 +43,8 @@ _TOOL_CALLS_TOTAL: DefaultDict[tuple[str, str, str], int] = defaultdict(int)
 _TOOL_CALL_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = defaultdict(
     LatencyAggregate
 )
+_TOKEN_PRESET_ISSUED_TOTAL: DefaultDict[str, int] = defaultdict(int)
+_SANITIZER_FAILURES_TOTAL = 0
 # Stage 110.2: business events counter — `account_registered`, `bearer_token_issued`,
 # `bearer_token_revoked`, `web_login_succeeded`. Accumulated in-process since last
 # reset; reset_service_metrics() zeros it. Persistent counts live in the DB
@@ -54,6 +56,7 @@ _BUSINESS_EVENTS_TOTAL: DefaultDict[str, int] = defaultdict(int)
 def reset_service_metrics() -> None:
     """Clear all in-memory metrics. Tests should call this to isolate assertions."""
     with _LOCK:
+        global _SANITIZER_FAILURES_TOTAL
         _HTTP_REQUESTS_TOTAL.clear()
         _HTTP_REQUEST_LATENCY_SECONDS.clear()
         _AUTH_FAILURES_TOTAL.clear()
@@ -62,6 +65,8 @@ def reset_service_metrics() -> None:
         _UPSTREAM_LATENCY_SECONDS.clear()
         _TOOL_CALLS_TOTAL.clear()
         _TOOL_CALL_LATENCY_SECONDS.clear()
+        _TOKEN_PRESET_ISSUED_TOTAL.clear()
+        _SANITIZER_FAILURES_TOTAL = 0
         _BUSINESS_EVENTS_TOTAL.clear()
 
 
@@ -198,6 +203,19 @@ def record_tool_call(
         )
 
 
+def record_token_preset_issued(preset: str) -> None:
+    """Increment token issuance metric for one access preset."""
+    with _LOCK:
+        _TOKEN_PRESET_ISSUED_TOTAL[preset] += 1
+
+
+def record_sanitizer_failure() -> None:
+    """Increment fail-closed depersonalization error counter."""
+    with _LOCK:
+        global _SANITIZER_FAILURES_TOTAL
+        _SANITIZER_FAILURES_TOTAL += 1
+
+
 def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, int | float]]]:
     """Return a stable JSON-serializable snapshot of current service metrics."""
     with _LOCK:
@@ -234,6 +252,8 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 f"{endpoint}|{method}": asdict(aggregate)
                 for (endpoint, method), aggregate in sorted(_TOOL_CALL_LATENCY_SECONDS.items())
             },
+            "token_preset_issued_total": dict(sorted(_TOKEN_PRESET_ISSUED_TOTAL.items())),
+            "sanitizer_failures_total": _SANITIZER_FAILURES_TOTAL,
             "business_events_total": dict(sorted(_BUSINESS_EVENTS_TOTAL.items())),
         }
 
@@ -356,6 +376,25 @@ def render_prometheus_metrics() -> str:
         lines.append(f"vetmanager_tool_call_latency_seconds_count{labels} {value['count']}")
         lines.append(f"vetmanager_tool_call_latency_seconds_sum{labels} {value['sum_seconds']}")
         lines.append(f"vetmanager_tool_call_latency_seconds_max{labels} {value['max_seconds']}")
+
+    lines.extend(
+        [
+            "# HELP vetmanager_token_preset_issued_total Total issued bearer tokens by access preset.",
+            "# TYPE vetmanager_token_preset_issued_total counter",
+        ]
+    )
+    for preset, count in snapshot.get("token_preset_issued_total", {}).items():
+        lines.append(
+            f"vetmanager_token_preset_issued_total{_labels_text(preset=preset)} {count}"
+        )
+
+    lines.extend(
+        [
+            "# HELP vetmanager_sanitizer_failures_total Total fail-closed depersonalization sanitizer errors.",
+            "# TYPE vetmanager_sanitizer_failures_total counter",
+            f"vetmanager_sanitizer_failures_total {snapshot.get('sanitizer_failures_total', 0)}",
+        ]
+    )
 
     # Stage 110.2: business events counter for product dashboard.
     # `_labels_text` escapes backslash + double-quote per Prometheus text

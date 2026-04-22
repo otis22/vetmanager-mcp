@@ -10,8 +10,9 @@ from starlette.responses import HTMLResponse, RedirectResponse
 from exceptions import AuthError, HostResolutionError, VetmanagerError
 from observability_logging import RUNTIME_LOGGER
 from secret_manager import get_storage_encryption_key
-from service_metrics import record_auth_failure, record_business_event
+from service_metrics import record_auth_failure, record_business_event, record_token_preset_issued
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
+from tool_access_registry import get_token_preset_label
 from storage import get_session_factory
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY, VETMANAGER_AUTH_MODE_USER_TOKEN
 from vetmanager_connection_service import (
@@ -20,6 +21,7 @@ from vetmanager_connection_service import (
     save_user_login_password_connection,
 )
 from web_auth import clear_account_session_cookie
+from web_html import _DOCTOR_PRESET_FORM_VALUE
 from web_security import CSRF_FIELD_NAME, validate_csrf_request
 
 
@@ -238,6 +240,10 @@ def register_account_routes(
         token_name = form.get("token_name", "")
         expiry_raw = form.get("expires_in_days", "").strip()
         ip_mask_raw = form.get("ip_mask", "*.*.*.*").strip() or "*.*.*.*"
+        access_preset = form.get("access_preset", "full_access")
+        if access_preset == _DOCTOR_PRESET_FORM_VALUE:
+            access_preset = "doctor"
+        is_depersonalized = form.get("is_depersonalized") == "1"
 
         if active_connection is None or integration_health_status != INTEGRATION_HEALTH_ACTIVE:
             return await render_account_dashboard_response(
@@ -252,6 +258,8 @@ def register_account_routes(
                 token_name=token_name,
                 token_expiry_days=expiry_raw,
                 ip_mask=ip_mask_raw,
+                token_access_preset=access_preset,
+                token_is_depersonalized=is_depersonalized,
             )
 
         try:
@@ -263,6 +271,8 @@ def register_account_routes(
                     name=token_name,
                     expires_in_days=expires_in_days,
                     ip_mask=ip_mask_raw,
+                    access_preset=access_preset,
+                    is_depersonalized=is_depersonalized,
                 )
         except ValueError as exc:
             return await render_account_dashboard_response(
@@ -273,6 +283,8 @@ def register_account_routes(
                 token_name=token_name,
                 token_expiry_days=expiry_raw,
                 ip_mask=ip_mask_raw,
+                token_access_preset=access_preset,
+                token_is_depersonalized=is_depersonalized,
             )
 
         # Stage 107.2 (obs H11): structured business-event log for token issuance
@@ -285,15 +297,20 @@ def register_account_routes(
                 "token_id": getattr(token_row, "id", None),
                 "token_name": token_name,
                 "expires_in_days": expires_in_days,
+                "access_preset": access_preset,
+                "is_depersonalized": is_depersonalized,
             },
         )
         record_business_event("bearer_token_issued")
+        record_token_preset_issued(access_preset)
 
         return await render_account_dashboard_response(
             request,
             account_id,
             token_success="Bearer token issued successfully.",
             issued_raw_token=raw_token,
+            issued_token_access_label=get_token_preset_label(access_preset),
+            issued_token_privacy_label="Depersonalized" if is_depersonalized else "Standard",
         )
 
     @observed_route(

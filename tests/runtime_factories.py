@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import ExitStack
 from unittest.mock import AsyncMock, patch
 
 import auth.request as auth_request
@@ -10,6 +11,22 @@ import runtime_auth
 from token_scopes import SUPPORTED_TOKEN_SCOPES
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY, VetmanagerAuthContext
 from vetmanager_client import VetmanagerClient
+
+
+class _PatchBundle:
+    def __init__(self, *patchers):
+        self._patchers = patchers
+        self._stack: ExitStack | None = None
+
+    def __enter__(self):
+        self._stack = ExitStack()
+        for patcher in self._patchers:
+            self._stack.enter_context(patcher)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        assert self._stack is not None
+        return self._stack.__exit__(exc_type, exc, tb)
 
 
 def make_vetmanager_auth_context(
@@ -55,6 +72,7 @@ def make_runtime_credentials(
     bearer_token_id: int = 1,
     connection_id: int = 1,
     scopes: tuple[str, ...] = SUPPORTED_TOKEN_SCOPES,
+    is_depersonalized: bool = False,
 ) -> runtime_auth.RuntimeCredentials:
     """Build normalized runtime credentials for bearer-auth tests."""
     return runtime_auth.RuntimeCredentials(
@@ -68,6 +86,7 @@ def make_runtime_credentials(
         bearer_token_id=bearer_token_id,
         connection_id=connection_id,
         scopes=tuple(scopes),
+        is_depersonalized=is_depersonalized,
     )
 
 
@@ -81,6 +100,7 @@ def make_client_with_resolved_runtime(
     bearer_token_id: int = 1,
     connection_id: int = 1,
     scopes: tuple[str, ...] = SUPPORTED_TOKEN_SCOPES,
+    is_depersonalized: bool = False,
 ) -> VetmanagerClient:
     """Build a client with resolved runtime auth state, bypassing DB lookup.
 
@@ -105,6 +125,7 @@ def make_client_with_resolved_runtime(
     client._bearer_token_id = bearer_token_id
     client._connection_id = connection_id
     client._scopes = tuple(scopes)
+    client._is_depersonalized = is_depersonalized
     client._credentials_lock = asyncio.Lock()
     client._ensure_runtime_credentials = AsyncMock(return_value=None)
     return client
@@ -120,6 +141,7 @@ def patch_runtime_credentials(
     bearer_token_id: int = 11,
     connection_id: int = 21,
     scopes: tuple[str, ...] = SUPPORTED_TOKEN_SCOPES,
+    is_depersonalized: bool = False,
 ) -> tuple:
     """Return patches for bearer header extraction and runtime credential resolve."""
     headers_patch = patch.object(
@@ -138,7 +160,23 @@ def patch_runtime_credentials(
                 bearer_token_id=bearer_token_id,
                 connection_id=connection_id,
                 scopes=scopes,
+                is_depersonalized=is_depersonalized,
             )
         ),
     )
-    return headers_patch, runtime_patch
+    tools_runtime_patch = patch(
+        "tools.resolve_runtime_credentials",
+        AsyncMock(
+            return_value=make_runtime_credentials(
+                domain,
+                credential,
+                auth_mode=auth_mode,
+                account_id=account_id,
+                bearer_token_id=bearer_token_id,
+                connection_id=connection_id,
+                scopes=scopes,
+                is_depersonalized=is_depersonalized,
+            )
+        ),
+    )
+    return headers_patch, _PatchBundle(runtime_patch, tools_runtime_patch)

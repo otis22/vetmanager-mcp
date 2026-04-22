@@ -24,6 +24,7 @@ class RuntimeCredentials:
     bearer_token_id: int | None = None
     connection_id: int | None = None
     scopes: tuple[str, ...] = ()
+    is_depersonalized: bool = False
 
     @property
     def domain(self) -> str:
@@ -56,4 +57,5 @@ async def resolve_runtime_credentials() -> RuntimeCredentials:
         bearer_token_id=context.bearer_token_id,
         connection_id=context.connection_id,
         scopes=context.scopes,
+        is_depersonalized=context.is_depersonalized,
     )

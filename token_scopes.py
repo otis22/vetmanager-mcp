@@ -20,15 +20,18 @@ SCOPE_FINANCE_WRITE = "finance.write"
 SCOPE_INVENTORY_READ = "inventory.read"
 SCOPE_INVENTORY_WRITE = "inventory.write"
 SCOPE_USERS_READ = "users.read"
+SCOPE_USERS_WRITE = "users.write"
 SCOPE_MESSAGING_READ = "messaging.read"
 SCOPE_MESSAGING_WRITE = "messaging.write"
 SCOPE_REFERENCE_READ = "reference.read"
 SCOPE_ANALYTICS_READ = "analytics.read"
+SCOPE_ANALYTICS_WRITE = "analytics.write"
 
 SUPPORTED_TOKEN_SCOPES = (
     SCOPE_ADMISSIONS_READ,
     SCOPE_ADMISSIONS_WRITE,
     SCOPE_ANALYTICS_READ,
+    SCOPE_ANALYTICS_WRITE,
     SCOPE_CLIENTS_READ,
     SCOPE_CLIENTS_WRITE,
     SCOPE_FINANCE_READ,
@@ -43,6 +46,7 @@ SUPPORTED_TOKEN_SCOPES = (
     SCOPE_PETS_WRITE,
     SCOPE_REFERENCE_READ,
     SCOPE_USERS_READ,
+    SCOPE_USERS_WRITE,
 )
 
 _READ_SCOPE_BY_ENTITY = {
@@ -65,7 +69,7 @@ _READ_SCOPE_BY_ENTITY = {
     "invoicedocument": SCOPE_FINANCE_READ,
     "invoice": SCOPE_FINANCE_READ,
     "medicalcards": SCOPE_MEDICAL_CARDS_READ,
-    "messages": SCOPE_MESSAGING_READ,
+    "messages": SCOPE_ANALYTICS_READ,
     "partyaccount": SCOPE_INVENTORY_READ,
     "partyaccountdoc": SCOPE_INVENTORY_READ,
     "payment": SCOPE_FINANCE_READ,
@@ -94,6 +98,8 @@ _WRITE_SCOPE_BY_ENTITY = {
     "messages": SCOPE_MESSAGING_WRITE,
     "payment": SCOPE_FINANCE_WRITE,
     "pet": SCOPE_PETS_WRITE,
+    "timesheet": SCOPE_ANALYTICS_WRITE,
+    "user": SCOPE_USERS_WRITE,
 }
 
 

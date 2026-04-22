@@ -2209,3 +2209,25 @@ Acceptance:
 ### 129.9 Web security consume API cleanup — `done`
 
 Выполнено: отдельный public helper `record_rate_limit_hit(...)` удалён, тестовый priming лимитера переведён на `consume_rate_limit(...)`, mutation surface web limiter API сузился до consume-based path.
+
+---
+
+## Этап 130. Token presets + depersonalized bearer tokens — `done`
+
+Источник: продуктовая задача на упрощённую настройку прав bearer token и деперсонализацию ответов без `custom`-режима и без per-tool ACL.
+
+- 130.1 Зафиксировать явную матрицу `preset -> scopes` поверх существующего `scopes_json` для preset'ов `full_access`, `read_only`, `frontdesk`, `doctor`, `finance`, `inventory`; `messaging.read` не использовать, а `frontdesk` должен включать операционные write-права для клиентов/питомцев/записей и `messaging.write`. Отдельно закрыть mapping для tool'ов расписания/слотов/нагрузки. — `done`
+- 130.2 Добавить в storage/service token policy новый флаг `is_depersonalized` и backward-compatible migration для существующих токенов (`full_access` legacy, `is_depersonalized=false`). — `done`
+- 130.3 Обновить UI `/account` и issuance flow: выбор preset'а доступа + checkbox деперсонализации при выпуске токена; `custom` не добавлять. — `done`
+- 130.4 Перестать автоматически выдавать все scopes всем новым токенам; новые токены получают scopes строго из выбранного preset'а. — `done`
+- 130.5 Реализовать единый centralized sanitizer для bearer runtime: структурно маскировать ФИО/телефоны/email/адреса/owner-client поля, а free-text scrub применять только к whitelist-полям `description`, `diagnosis`, `treatment`, `comment`, `notes`. — `done`
+- 130.6 В free-text scrubber обрабатывать только явные PII-паттерны: ФИО/инициалы, телефоны, email, конструкции типа `владелец Иванов`, простые адресные маркеры; остальной клинический текст не трогать. — `done`
+- 130.7 Найти и зафиксировать реальную точку post-processing hook в runtime/FastMCP; если глобального hook нет, обернуть все tools единым wrapper при регистрации вместо точечных правок tool'ов. — `done`
+- 130.8 Добавить unit/e2e tests на preset mapping, legacy token compatibility, issuance UI, structured redaction и free-text scrubber с corpus-based проверками на false positive/false negative. — `done`
+
+Acceptance:
+- новые токены выпускаются только через preset'ы без `custom`;
+- существующие токены продолжают работать без изменения прав;
+- depersonalized token редактирует только целевые чувствительные поля и whitelist free-text поля;
+- sanitizer применяется централизованно, а не через точечные правки tool'ов;
+- полный regression suite остаётся зелёным после внедрения preset issuance и centralized depersonalization.

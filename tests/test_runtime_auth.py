@@ -61,6 +61,44 @@ async def test_resolve_runtime_credentials_prefers_bearer_context(session_factor
     assert resolved.api_key == "bearer-key"
     assert resolved.vetmanager_auth.auth_mode == VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
     assert "clients.read" in resolved.scopes
+    assert resolved.is_depersonalized is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_runtime_credentials_propagates_depersonalized_policy(session_factory, monkeypatch):
+    """Runtime credentials should expose bearer depersonalization policy for later sanitizer use."""
+    raw_token = generate_bearer_token()
+
+    async with session_factory() as session:
+        account = Account(email="ops@example.com", status="active")
+        session.add(account)
+        await session.flush()
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+            domain="bearer-clinic",
+        )
+        connection.set_credentials(
+            {"domain": "bearer-clinic", "api_key": "bearer-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        token = ServiceBearerToken(
+            account_id=account.id,
+            name="Depersonalized",
+            is_depersonalized=True,
+        )
+        token.set_raw_token(raw_token)
+        session.add_all([connection, token])
+        await session.commit()
+
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    headers = {"authorization": f"Bearer {raw_token}"}
+    with patch.object(auth_request, "_get_request_headers", return_value=headers):
+        with patch.object(runtime_auth, "get_session_factory", return_value=session_factory):
+            resolved = await runtime_auth.resolve_runtime_credentials()
+
+    assert resolved.is_depersonalized is True
 
 
 @pytest.mark.asyncio

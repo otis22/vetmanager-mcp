@@ -61,6 +61,46 @@ async def test_resolve_bearer_auth_context_returns_active_account_and_connection
     assert context.domain == "clinic-a"
     assert context.api_key == "secret-key"
     assert "clients.read" in context.scopes
+    assert context.is_depersonalized is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_bearer_auth_context_exposes_depersonalized_policy(session_factory):
+    """Resolved bearer context should carry token depersonalization policy."""
+    raw_token = generate_bearer_token()
+
+    async with session_factory() as session:
+        account = Account(email="ops@example.com", status="active")
+        session.add(account)
+        await session.flush()
+
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+            domain="clinic-a",
+        )
+        connection.set_credentials(
+            {"domain": "clinic-a", "api_key": "secret-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        token = ServiceBearerToken(
+            account_id=account.id,
+            name="Depersonalized token",
+            is_depersonalized=True,
+        )
+        token.set_raw_token(raw_token)
+        session.add_all([connection, token])
+        await session.commit()
+
+    async with session_factory() as session:
+        context = await resolve_bearer_auth_context(
+            raw_token,
+            session,
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+
+    assert context.is_depersonalized is True
 
 
 @pytest.mark.asyncio

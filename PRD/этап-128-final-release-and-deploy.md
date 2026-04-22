@@ -2,19 +2,19 @@
 
 ## Цель
 
-Завершить текущий цикл работ после этапов 122-127 формальным release gate и production deploy, не пропуская обязательные проверки, backup, smoke и post-release наблюдение.
+Завершить текущий цикл работ после закрытия всех актуальных pre-release этапов формальным release gate и production deploy, не пропуская обязательные проверки, backup, smoke и post-release наблюдение.
 
 ## Контекст
 
 - Super-review `artifacts/review/2026-04-20-full-stage-121.md` запрещает следующий release до закрытия blocker/high хвоста.
-- В `Roadmap.md` этапы 122-127 фиксируют обязательные исправления перед следующим production rollout.
+- В `Roadmap.md` production rollout должен идти только после закрытия всех актуальных pre-release этапов этого цикла, включая follow-up cleanup после review и token/privacy hardening.
 - `artifacts/release-checklist-vetmanager-mcp-ru.md` и `artifacts/operations-readiness-vetmanager-mcp-ru.md` уже задают pre-release, pre-deploy и post-deploy требования.
 - Пользовательское требование на этот цикл: deploy должен быть в конце, а не как параллельная activity.
 
 ## Scope
 
 Этап включает только release-management и production rollout:
-- подтверждение готовности хвоста 122-127;
+- подтверждение готовности актуального release хвоста в `Roadmap.md`;
 - полный regression run;
 - pre-deploy backup и rollback point;
 - production deploy через canonical scripts;
@@ -28,31 +28,31 @@
 
 ## Декомпозиция
 
-### 128.1 Release readiness sync (≤30 мин, без кодовых изменений)
+### 128.1 Release readiness sync
 
-- Проверить, что этапы 122-127 закрыты в `Roadmap.md`
+- Проверить, что все pre-release этапы перед `128` закрыты в `Roadmap.md`
 - Проверить синхронность `Roadmap.md`, `PRD/`, `AssumptionLog.md`
 - Убедиться, что release/review artifacts не содержат явного drift перед rollout
 
-### 128.2 Regression gate (≤2 ч, без prod-изменений)
+### 128.2 Regression gate
 
 - Прогнать `docker compose --profile test run --rm test`
-- Если в предыдущих этапах затронуты browser/real контуры, прогнать релевантные opt-in проверки
+- Если в предыдущих этапах затронуты browser/real/auth/metrics контуры, прогнать релевантные opt-in проверки
 - Зафиксировать, что release gate зелёный до deploy
 
-### 128.3 Pre-deploy safety checks (≤1 ч, без кодовых изменений)
+### 128.3 Pre-deploy safety checks
 
 - Проверить production secrets/env и migration plan
 - Проверить, что deploy идёт production target/profile
 - Подготовить rollback point согласно operations readiness
 
-### 128.4 Backup и deploy (≤1 ч, ≤20 строк сопроводительных правок при необходимости)
+### 128.4 Backup и deploy
 
 - Выполнить pre-deploy backup PostgreSQL
 - Запустить `scripts/deploy_server.sh` или `scripts/sync_and_deploy_server.sh`
-- Не делать дополнительных code changes в этом подпроцессе без возврата в отдельный stage
+- Не делать code changes в этом подпроцессе; если найден blocker, rollout останавливается и открывается отдельный stage/fix path
 
-### 128.5 Post-deploy smoke и release closeout (≤1 ч, без feature-изменений)
+### 128.5 Post-deploy smoke и release closeout
 
 - Прогнать `scripts/post_deploy_smoke_checks.sh`
 - Проверить `/healthz`, `/readyz`, `/metrics`, `/mcp`
@@ -71,4 +71,4 @@
 
 - Если regression gate не зелёный, deploy откладывается без исключений
 - Если backup/rollback point не подтверждён, deploy не выполняется
-- Если post-deploy smoke падает, этап не закрывается до rollback или исправления с новым полным прогоном проверок
+- Если post-deploy smoke падает, этап не закрывается до rollback или исправления через отдельный fix-stage с новым полным прогоном проверок

@@ -3,7 +3,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from bearer_token_manager import build_token_prefix, hash_bearer_token, verify_bearer_token
@@ -132,6 +132,12 @@ class ServiceBearerToken(Base):
         server_default="1",
     )
     scopes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_depersonalized: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+    )
     allowed_ip_mask: Mapped[str | None] = mapped_column(String(64), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
