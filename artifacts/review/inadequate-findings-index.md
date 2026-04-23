@@ -199,6 +199,27 @@ rerun выполнен позже в тот же день — все 10 ревь
 
 Source: `artifacts/review/2026-04-20-full-stage-121.md`
 
+---
+
+## 2026-04-23 super-review full stage 130
+
+Source: `artifacts/review/2026-04-23-full-stage-130.md`
+
+### 1. `tools/schedule.py` — active admission in clinic A should block clinic B globally
+
+- reviewer: spark-scout, confidence: 0.84
+- **Причина dismiss**: contradicts accepted stage 125 product semantics. Roadmap stage 125.3 and AssumptionLog explicitly fixed multi-clinic behavior so an admission in clinic A does not hide free slots in clinic B. Revisit only if product requirements change.
+
+### 2. Read-only Codex sandbox `bwrap: loopback: Failed RTM_NEWADDR`
+
+- reviewer: codex-blindspot / performance / security meta findings, confidence: 1.0
+- **Причина dismiss**: review-runtime limitation, not project code. The review was rerun with `danger-full-access` and explicit review-only prompt; real findings came from the rerun.
+
+### 3. `gpt-spark` unavailable for ChatGPT account
+
+- source: scout stderr
+- **Причина dismiss**: model availability limitation, not product issue. Scout passes fell back to `gpt-5.4-mini` and were treated as untrusted leads.
+
 ### Scope / ROI (cosmetic, trivial)
 
 - `tools/medical_card.py:35-41` — 3-line extra_filters build pattern (code/medium, 0.90): cosmetic, no perf/correctness gain

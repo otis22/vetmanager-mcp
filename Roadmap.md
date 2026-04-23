@@ -2231,3 +2231,86 @@ Acceptance:
 - depersonalized token редактирует только целевые чувствительные поля и whitelist free-text поля;
 - sanitizer применяется централизованно, а не через точечные правки tool'ов;
 - полный regression suite остаётся зелёным после внедрения preset issuance и centralized depersonalization.
+
+---
+
+## Этап 131. Depersonalized bearer privacy hotfix (post super-review 2026-04-23) — `todo`
+
+Источник: `artifacts/review/2026-04-23-full-stage-130.md`, blocker B1 и high privacy findings H1-H2.
+
+Цель: закрыть fail-open privacy boundary и неполное покрытие PII-полей для depersonalized bearer tokens.
+
+- 131.1 Перенести разрешение bearer/runtime context до выполнения tool: один auth lookup на MCP call, общий context для `VetmanagerClient`, scope preflight и sanitizer; при неизвестном depersonalization state — fail closed. — `todo`
+- 131.2 Убрать fail-open ветку `except AuthError: return result` из depersonalization wrapper и добавить regression test на revoked/expired token между auth и post-processing. — `todo`
+- 131.3 Расширить structured phone redaction на реальные VM поля `home_phone`, `work_phone`, `owner_phone` и normalized aliases; покрыть `get_debtors`, client payload и inactive pets owner payload. — `todo`
+- 131.4 Расширить whitelist free-text keys по OpenAPI/API reference: `diagnos`, `diagnos_text`, `recomendation`, `recommendation`, `note`, `deathnote`, `anamnes`/`anamnez` если подтверждены источниками. — `todo`
+- 131.5 Ужесточить false-positive corpus для free-text scrubber: клинические title-case фразы не должны затираться как ФИО без сильного PII-сигнала. — `todo`
+- 131.6 Добавить unit/e2e tests на sanitizer failure path, depersonalized `get_medical_card_by_id`, pet/admission/client notes и phone fields. — `todo`
+- 131.7 Обновить `AssumptionLog.md` по итоговому fail-closed privacy contract. — `todo`
+
+Acceptance: depersonalized token не получает raw payload при любой ошибке определения policy/sanitizer; реальные phone/note/clinical VM поля маскируются; false-positive corpus зелёный; полный test suite проходит.
+
+## Этап 132. Scope/preset runtime enforcement hardening (после Этапа 131) — `todo`
+
+Источник: `artifacts/review/2026-04-23-full-stage-130.md`, H4-H5/M1/M7.
+
+Цель: сделать tool-level access registry реальным runtime preflight и синхронизировать preset matrix с продуктовым контрактом.
+
+- 132.1 Добавить `ClientPhone`/`clientphone` в `_READ_SCOPE_BY_ENTITY` как `clients.read`; тест: токен без `clients.read` не может выполнить phone search. — `todo`
+- 132.2 Внедрить preflight enforcement `TOOL_REQUIRED_SCOPES[tool_name]` в wrapper регистрации tools до выполнения tool; path-level `_require_scope` оставить defense-in-depth. — `todo`
+- 132.3 Для aggregate tools (`get_client_profile`, `get_pet_profile`, `get_inactive_pets`, `get_doctor_free_slots`) проверять все required scopes до первого upstream вызова, без partial execution. — `todo`
+- 132.4 Синхронизировать `frontdesk` preset с slots workflow: добавить `analytics.read` либо явно изменить PRD/UI; предпочтительно добавить read-only scope. — `todo`
+- 132.5 Добавить preset × marketed tools matrix tests: каждый tool, обещанный preset'ом, должен иметь required scopes subset preset scopes. — `todo`
+- 132.6 Заменить inclusion-only preset tests на exact scope bundle assertions; добавить negative tests для unknown/whitespace preset, `clinical_staff` alias и malformed `ip_mask`. — `todo`
+- 132.7 Обновить `AssumptionLog.md` и PRD stage 130/132 по единому policy source of truth. — `todo`
+
+Acceptance: token without required tool scope is rejected before upstream calls; `frontdesk` can use intended slots workflow; `ClientPhone` requires `clients.read`; preset tests catch accidental extra/missing scopes.
+
+## Этап 133. VM API datetime/list contract correctness (после Этапа 132) — `todo`
+
+Источник: `artifacts/review/2026-04-23-full-stage-130.md`, H3/M6.
+
+Цель: убрать drift между MCP tool inputs, mock tests и реальным VM API contract для дат и list-query edge cases.
+
+- 133.1 Добавить общий helper нормализации VM datetime: принимать ISO input при необходимости, но отправлять в VM `YYYY-MM-DD HH:MM:SS`; не принимать невалидные даты молча. — `todo`
+- 133.2 Применить helper к `create_admission`/`update_admission` (`admission_date`) и обновить contract tests: ISO-in → space-separated payload. — `todo`
+- 133.3 Применить helper к `create_hospitalization`/`update_hospitalization` (`date_in`/`date_out`) и обновить tests stage 122/123. — `todo`
+- 133.4 Добавить real API smoke/probe на devtr6 для одного безопасного datetime create/update сценария, если доступны `TEST_DOMAIN`/`TEST_API_KEY`. — `todo`
+- 133.5 Исправить `get_timesheets(date=...)` на overlap semantics для ночных смен: `begin_datetime < next_day` и `end_datetime > day_start`; добавить night-shift regression. — `todo`
+- 133.6 Проверить контракт `get_message_reports`: если `campaign` обязателен — сделать параметр required/локально валидировать non-empty; если API допускает all-campaign query — обновить docstring/tests. — `todo`
+- 133.7 Обновить `api-research-notes-ru.md` при подтверждении новых datetime/report деталей. — `todo`
+
+Acceptance: mock contract tests падают при возврате `T`-формата в VM payload; night shifts возвращаются в дневном timesheet query; `get_message_reports` не делает молчаливый invalid request.
+
+## Этап 134. Reliability and observability hardening (после Этапа 133) — `todo`
+
+Источник: `artifacts/review/2026-04-23-full-stage-130.md`, M2-M5/M7.
+
+Цель: закрыть эксплуатационные хвосты после stage 130: deterministic shutdown, audit integrity, correlation IDs и cold-cache herd protection.
+
+- 134.1 Вызвать `shutdown_rate_limit_backend()` из `_graceful_shutdown()` с guarded warning pattern; добавить lifecycle test для Redis backend close path. — `todo`
+- 134.2 Перенести success audit log для token usage events на post-commit path либо разделить `attempted`/`committed`; добавить rollback regression. — `todo`
+- 134.3 Добавить `request_id`/`correlation_id` в token audit details/log extra, включая create/revoke/auth events. — `todo`
+- 134.4 В `_observed_custom_route()` логировать generic exceptions структурированно перед re-raise; сохранить HTTP metrics behavior. — `todo`
+- 134.5 Вернуть 413 oversized form response через response helper с `X-Request-ID`/`X-Correlation-ID`. — `todo`
+- 134.6 Логировать unauthorized `/metrics` requests и инкрементить auth/security failure metric. — `todo`
+- 134.7 Перевести startup abort logging на structured `RUNTIME_LOGGER.critical(event_name=\"startup_aborted\")`. — `todo`
+- 134.8 Добавить per-domain in-flight coalescing для `resolve_vetmanager_host()` cold-cache misses; regression: N parallel calls for one domain collapse to one billing request. — `todo`
+- 134.9 Расширить Prometheus exporter tests на `token_preset_issued_total` и `sanitizer_failures_total`. — `todo`
+- 134.10 Обновить `AssumptionLog.md` и observability runbook. — `todo`
+
+Acceptance: graceful shutdown закрывает Redis backend; audit log не заявляет committed event до commit; все security-critical web paths имеют correlation id/log signal; cold-cache host resolve не создаёт thundering herd.
+
+## Этап 135. Technical docs drift cleanup after stage 130 (после Этапа 134) — `todo`
+
+Источник: `artifacts/review/2026-04-23-full-stage-130.md`, M8 и docs scout.
+
+Цель: привести технические артефакты к фактическому stage 130+ runtime contract.
+
+- 135.1 Обновить `artifacts/technical-requirements-vetmanager-mcp-ru.md`: current state до stage 130+, dependency pin `fastmcp>=2.0.0`, preset-based issuance вместо default full-access для новых токенов. — `todo`
+- 135.2 Обновить scope matrix: `messaging.read` как legacy/неиспользуемый active preset scope, `messages/reports` через `analytics.read`, `messaging.write` для send tools. — `todo`
+- 135.3 Синхронизировать PRD/Roadmap формулировки depersonalization free-text policy: address redaction structural-only, без broad address heuristics в clinical free text. — `todo`
+- 135.4 Обновить README/security/operations docs, если stages 131-134 меняют user-visible preset/privacy/metrics behavior. — `todo`
+- 135.5 Зафиксировать docs cleanup в `AssumptionLog.md` и прогнать `scripts/review_workflow_check.sh 135`. — `todo`
+
+Acceptance: technical requirements больше не описывает stage 104 как current state; dependency docs совпадают с `pyproject.toml`; token issuance/scope docs совпадают с runtime and tests.

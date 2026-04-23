@@ -9,7 +9,7 @@ model: sonnet
 
 ## Модельный routing
 
-- `gpt-spark`: только scout/prepass кандидаты. Используй их как `untrusted leads`, не как подтверждённые findings.
+- `gpt-5.3-codex-spark`: только scout/prepass кандидаты. Используй их как `untrusted leads`, не как подтверждённые findings.
 - `gpt-5.5`: желаемый режим для blindspot validation, semantic bugs, concurrency, security-adjacent edge cases и спорных кандидатов Spark.
 - `gpt-5.4`: fallback, если `gpt-5.5` недоступен или контекст слишком тяжёлый.
 - `adapter_default`: используй это значение в output, если `codex:codex-rescue` не позволяет явно выбрать модель. Не утверждай `gpt-5.5`, если модель не была реально выбрана/подтверждена.
@@ -37,18 +37,19 @@ model: sonnet
    2. Если CLI найден, вызови:
 
 ```bash
-codex exec -m gpt-5.5 -s read-only -C "$PWD" -
+timeout 1200 codex exec -m gpt-5.5 -s read-only -C "$PWD" -
 ```
 
    3. Если команда завершилась non-zero или модель недоступна, retry один раз:
 
 ```bash
-codex exec -m gpt-5.4 -s read-only -C "$PWD" -
+timeout 1200 codex exec -m gpt-5.4 -s read-only -C "$PWD" -
 ```
 
-   4. Если `command -v codex` не нашёл CLI или оба CLI-вызова упали, fallback на `codex:codex-rescue` через Agent один раз.
-   5. Если модель нельзя выбрать явно, пометь все findings `model_used: adapter_default`.
-   6. Если и fallback упал, верни special finding про skipped blindspot pass.
+   4. Если Codex CLI падает с `bwrap: loopback: Failed RTM_NEWADDR` до чтения файлов, retry один раз с `-s danger-full-access` и prompt sentence `Review only. Do not edit files. Do not run write commands.`
+   5. Если `command -v codex` не нашёл CLI или оба CLI-вызова упали, fallback на `codex:codex-rescue` через Agent один раз.
+   6. Если модель нельзя выбрать явно, пометь все findings `model_used: adapter_default`.
+   7. Если и fallback упал, верни special finding про skipped blindspot pass.
 
 ```
 Code review for Claude-blindspots. Use the configured Codex/GPT model. If the caller selected a model, record it accurately in model_used; otherwise use adapter_default.
@@ -104,7 +105,7 @@ a category is already covered well by a standard review, skip it.
 Keep response ≤ 1500 words.
 ```
 
-4. Codex вернёт findings. Если ответ содержит ошибки типа `bwrap: Failed RTM_NEWADDR` или пустой результат — это sandbox fail. Повтори ОДИН раз с более компактным контекстом. Если и второй раз fail — верни один special finding:
+4. Codex вернёт findings. Если ответ содержит ошибки типа `bwrap: Failed RTM_NEWADDR` или пустой результат — это sandbox/runtime fail. Повтори ОДИН раз по decision tree выше: сначала тот же prompt с `-s danger-full-access` и review-only/no-write sentence, затем fallback model только при model/runtime error. Если и retry fail — верни один special finding:
 
 ```yaml
 - severity: low

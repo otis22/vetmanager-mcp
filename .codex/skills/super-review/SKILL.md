@@ -23,8 +23,8 @@ If the Claude command and this skill differ, prefer it only for shared review po
 
 Spark/GPT side:
 
-- `gpt-spark`: scout/prepass only. Treat output as untrusted leads.
-- `gpt-5.4-mini` or `gpt-spark`: code/docs/tests candidate mining.
+- `gpt-5.3-codex-spark`: scout/prepass only. Treat output as untrusted leads.
+- `gpt-5.4-mini` or `gpt-5.3-codex-spark`: code/docs/tests candidate mining.
 - `gpt-5.4`: observability and normal validation.
 - `gpt-5.5`: security, architecture, product, hard disputes, and GPT-side aggregation if needed.
 
@@ -35,6 +35,18 @@ Claude side:
 
 Never let Spark decide final severity or merge verdict.
 
+## Runtime Defaults And Fallbacks
+
+Use these defaults when shelling out from Codex:
+
+- Per reviewer/scout command timeout: **1200 seconds**.
+- External arbitration timeout: **900 seconds**.
+- First attempt sandbox: `-s read-only`.
+- If Codex CLI fails before reading files with sandbox/runtime errors such as `bwrap: loopback: Failed RTM_NEWADDR`, retry that exact pass once with `-s danger-full-access` and a prompt that explicitly says: `Review only. Do not edit files. Do not run write commands.`
+- If a model is unavailable, retry once with the documented fallback model and record the fallback in the report header/limitations.
+- If a role returns empty output, non-YAML output, or only a meta runtime error, do not silently treat it as "no findings"; mark that role as `skipped_or_failed` in the report header and continue with available roles.
+- Before finalizing, check that no `codex exec` / `claude -p` processes from this run are still alive.
+
 ## Codex Workflow
 
 1. Parse scope and stage from user args. Read `Roadmap.md`, current PRD, and the API facts block from `artifacts/api-research-notes-ru.md`.
@@ -42,14 +54,22 @@ Never let Spark decide final severity or merge verdict.
 3. Unless `--no-spark`, run Spark scout passes in parallel where available. In Codex runtime, use subagents if available; otherwise run bounded local passes yourself. If shelling out is appropriate, use:
 
 ```bash
-codex exec -m gpt-spark -s read-only -C "$PWD" -
+timeout 1200 codex exec -m gpt-5.3-codex-spark -s read-only -C "$PWD" -
 ```
 
 Fallback once:
 
 ```bash
-codex exec -m gpt-5.4-mini -s read-only -C "$PWD" -
+timeout 1200 codex exec -m gpt-5.4-mini -s read-only -C "$PWD" -
 ```
+
+If the failure is the known read-only sandbox startup error (`bwrap: loopback: Failed RTM_NEWADDR`), first retry the same model with:
+
+```bash
+timeout 1200 codex exec -m gpt-5.3-codex-spark -s danger-full-access -C "$PWD" -
+```
+
+The prompt for any `danger-full-access` retry must include: `Review only. Do not edit files. Do not run write commands.`
 
 Scout tasks:
 
@@ -58,24 +78,25 @@ Scout tasks:
    - docs: verified drift only
    - inadequate index: known false positives and duplicates
    - snippets: `file:lines` and failure scenarios for strong candidates
-4. Run one bounded Codex pass per reviewer role. Use the role briefs below and keep all outputs in the YAML schema. If you cannot run a role separately, say so in the report header; do not pretend parity with the Claude command.
+4. Run one bounded Codex pass per reviewer role. Use the role briefs below and keep all outputs in the YAML schema. Use `timeout 1200` for each role. Start with `-s read-only`; on the known `bwrap` startup failure retry once with `-s danger-full-access` plus the review-only/no-write prompt sentence. If you cannot run a role separately, say so in the report header; do not pretend parity with the Claude command.
 5. Aggregate findings: dedupe, validate Spark leads, dismiss low-confidence/speculative/pre-existing/duplicate findings, sort by severity x confidence.
 6. Unless `--no-arbitration`, perform cross-CLI arbitration with Claude CLI because the orchestrator is Codex:
 
 ```bash
-claude -p --model opus --permission-mode default --tools "" --input-format text
+timeout 900 claude -p --model opus --permission-mode default --tools "" --input-format text
 ```
 
 Pass the arbitration prompt via stdin. If `opus` fails once, retry once:
 
 ```bash
-claude -p --model sonnet --permission-mode default --tools "" --input-format text
+timeout 900 claude -p --model sonnet --permission-mode default --tools "" --input-format text
 ```
 
 `--tools ""` is required: the arbiter must not read the filesystem. Provide all snippets inline.
 
 7. Merge Claude verdicts into the report and finalize `merge` / `do not merge`.
 8. Write the report and append dismissed findings to the inadequate index.
+9. Run `ps -eo pid,ppid,stat,cmd | rg 'codex exec|claude -p' || true`; stop or wait for processes that belong to this review before returning.
 
 ## Codex Reviewer Roles
 
@@ -135,4 +156,6 @@ Keep total <= 900 words.
 - Do not commit reports unless explicitly asked.
 - External arbitration max two calls: primary external model plus fallback.
 - Spark calls can be numerous, but Spark output remains candidate-only.
+- Use the exact model name `gpt-5.3-codex-spark`; do not use older short aliases for Spark.
+- Record runtime limitations explicitly: model fallback, sandbox fallback, timeout, partial role output, skipped arbitration.
 - For VM API fields, trust inline API facts and authoritative repo sources, not model memory.

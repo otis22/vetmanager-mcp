@@ -8,7 +8,7 @@
 
 | Правило | Назначение |
 |--------|------------|
-| [.cursor/rules/agent-workflow.mdc](.cursor/rules/agent-workflow.mdc) | Workplan в Roadmap, выбор задачи, PRD, Core Loop (тесты → Red/Green → проверки → аудит/рефакторинг при необходимости → повторный полный прогон), AssumptionLog, справочные артефакты |
+| [.cursor/rules/agent-workflow.mdc](.cursor/rules/agent-workflow.mdc) | Workplan в Roadmap, выбор задачи, PRD gates (artifacts → PRD-review → ревью сторонней моделью → simplicity), Core Loop (тесты → Red/Green → проверки → аудит → commit → ревью сторонней моделью → push → self-attestation), AssumptionLog, справочные артефакты |
 
 ## Обязательные артефакты
 
@@ -43,3 +43,5 @@
 Дополнение к workflow:
 - Перед `commit`/`push` агент обязан сделать аудит внесённых изменений.
 - Если аудит потребовал рефакторинга, после него обязателен новый полный прогон тестов и проверок.
+- Ревью сторонней моделью: Claude-агент проверяется Codex `gpt-5.5`, Codex-агент проверяется Claude Opus.
+- Бюджет сторонней модели: 2 запуска на PRD-review и 2 запуска на code/diff review; `gpt-5.3-codex-spark` как scout/subagent безлимитен и не расходует бюджет.

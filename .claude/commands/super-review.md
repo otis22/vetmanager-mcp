@@ -13,8 +13,8 @@ argument-hint: "[scope] — changed (default) | related | full | stage:N [--no-a
 
 | Слой | Codex/GPT | Claude | Назначение |
 | --- | --- | --- | --- |
-| Scout/prepass | `gpt-spark` | Haiku/Sonnet light | Массовые кандидаты findings, chunk review, edge cases, docs/tests drift, snippet collection |
-| Code/docs/tests | `gpt-5.4-mini` или `gpt-spark` | Sonnet | Локальное качество, тестовые пробелы, verified docs drift |
+| Scout/prepass | `gpt-5.3-codex-spark` | Haiku/Sonnet light | Массовые кандидаты findings, chunk review, edge cases, docs/tests drift, snippet collection |
+| Code/docs/tests | `gpt-5.4-mini` или `gpt-5.3-codex-spark` | Sonnet | Локальное качество, тестовые пробелы, verified docs drift |
 | Observability | `gpt-5.4` | Sonnet | Логи, метрики, трассировка, пригодность для дебага |
 | Perf/reliability | `gpt-5.4` или `gpt-5.5` | Opus или strong Sonnet | Hot paths, retry/timeout, partial failure, async pitfalls |
 | Security | `gpt-5.5` | Opus | Auth/token/SSRF/SQLi/secrets findings |
@@ -23,7 +23,7 @@ argument-hint: "[scope] — changed (default) | related | full | stage:N [--no-a
 | Aggregator/verdict | `gpt-5.5` | Opus | Dedup, adequacy, severity, финальный verdict |
 | Arbitration/challenge | `gpt-5.5` | Opus | Проверка Top-10 и спорных findings |
 
-Правило: `gpt-spark` findings — **untrusted leads**. Они идут в aggregator только как кандидаты с `source: spark-scout`; финальный verdict, severity и do-not-merge решение не отдавай Spark.
+Правило: `gpt-5.3-codex-spark` findings — **untrusted leads**. Они идут в aggregator только как кандидаты с `source: spark-scout`; финальный verdict, severity и do-not-merge решение не отдавай Spark.
 
 ## Cross-CLI arbitration
 
@@ -37,6 +37,15 @@ argument-hint: "[scope] — changed (default) | related | full | stage:N [--no-a
 - Codex skill / Codex CLI / текущий агент Codex → считаем runtime=`codex`.
 
 Не запускай арбитра той же семьи, что основной orchestrator, кроме аварийного fallback с явной пометкой в отчёте.
+
+## Runtime defaults для CLI-вызовов
+
+- Codex reviewer/scout timeout: `timeout 1200 ...`
+- Cross-CLI arbitration timeout: `timeout 900 ...`
+- Первый Codex CLI sandbox: `-s read-only`.
+- Если Codex CLI падает до чтения файлов с `bwrap: loopback: Failed RTM_NEWADDR` или аналогичной sandbox startup ошибкой, повтори один раз тот же pass с `-s danger-full-access` и добавь в prompt: `Review only. Do not edit files. Do not run write commands.`
+- Если модель недоступна, повтори один раз fallback-моделью из матрицы и запиши fallback в header/limitations отчёта.
+- Пустой, non-YAML или meta-only output от роли не считать "нет findings"; пометь роль как `skipped_or_failed` и продолжай.
 
 ## Шаг 1. Парсинг scope
 
@@ -65,7 +74,7 @@ Args: `$ARGUMENTS`.
 
 ## Шаг 3. Spark/GPT scout layer (default on)
 
-Если пользователь не передал `--no-spark`, запусти параллельный scout/prepass на `gpt-spark` через Codex CLI. Цель — собрать кандидаты, а не вынести решение.
+Если пользователь не передал `--no-spark`, запусти параллельный scout/prepass на `gpt-5.3-codex-spark` через Codex CLI. Цель — собрать кандидаты, а не вынести решение.
 
 Минимальный набор scout-задач:
 
@@ -78,19 +87,19 @@ Args: `$ARGUMENTS`.
 Для каждой scout-задачи собери self-contained prompt и запусти:
 
 ```bash
-codex exec -m gpt-spark -s read-only -C "$PWD" -
+timeout 1200 codex exec -m gpt-5.3-codex-spark -s read-only -C "$PWD" -
 ```
 
-Prompt передавай через stdin. Если `gpt-spark` недоступен или команда падает из-за sandbox/CLI, retry один раз с `gpt-5.4-mini`:
+Prompt передавай через stdin. Если команда падает из-за `bwrap: loopback: Failed RTM_NEWADDR`, retry один раз той же моделью с `-s danger-full-access` и review-only/no-write prompt. Если `gpt-5.3-codex-spark` недоступен или повторно падает из-за model/runtime error, retry один раз с `gpt-5.4-mini`:
 
 ```bash
-codex exec -m gpt-5.4-mini -s read-only -C "$PWD" -
+timeout 1200 codex exec -m gpt-5.4-mini -s read-only -C "$PWD" -
 ```
 
 Prompt template для каждого Spark scout:
 
 ```text
-You are a scout reviewer. Use gpt-spark. Your output is untrusted candidate findings only.
+You are a scout reviewer. Use gpt-5.3-codex-spark where available. Your output is untrusted candidate findings only.
 Do not decide merge/no-merge. Do not inflate severity. Prefer concrete failure scenarios.
 Return YAML findings with:
 - severity: blocker | high | medium | low
@@ -212,13 +221,13 @@ Aggregator вернёт готовый markdown-отчёт.
 Вызови Codex CLI:
 
 ```bash
-codex exec -m gpt-5.5 -s read-only -C "$PWD" -
+timeout 900 codex exec -m gpt-5.5 -s read-only -C "$PWD" -
 ```
 
 Prompt передавай через stdin. Если `gpt-5.5` недоступен — один retry:
 
 ```bash
-codex exec -m gpt-5.4 -s read-only -C "$PWD" -
+timeout 900 codex exec -m gpt-5.4 -s read-only -C "$PWD" -
 ```
 
 ### Если runtime = Codex
@@ -226,13 +235,13 @@ codex exec -m gpt-5.4 -s read-only -C "$PWD" -
 Вызови Claude CLI:
 
 ```bash
-claude -p --model opus --permission-mode default --tools "" --input-format text
+timeout 900 claude -p --model opus --permission-mode default --tools "" --input-format text
 ```
 
 Prompt передавай через stdin. Если `opus` недоступен — один retry:
 
 ```bash
-claude -p --model sonnet --permission-mode default --tools "" --input-format text
+timeout 900 claude -p --model sonnet --permission-mode default --tools "" --input-format text
 ```
 
 `--tools ""` важен: арбитр не должен читать файловую систему, весь контекст уже inline.
