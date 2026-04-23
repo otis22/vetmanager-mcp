@@ -5872,3 +5872,34 @@ UI кабинета и issuance flow переведены на preset-based то
 ### Обратная связь
 
 Пользователь попросил вести Roadmap по новому workflow до конца; stage 132 выполнен с PRD-review сторонней моделью, устранением findings, full suite и обновлением policy документов.
+
+## Stage 133 VM API datetime/list contract correctness — 2026-04-24
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Добавлен общий helper `normalize_vm_datetime`: outbound datetime для VM приводится к `YYYY-MM-DD HH:MM:SS`.
+- `create_admission`/`update_admission` нормализуют `admission_date`; `create_hospitalization`/`update_hospitalization` нормализуют `date_in`/`date_out`.
+- Добавлена локальная валидация: date-only, timezone-aware input, невалидные даты и пустые required datetime отклоняются до HTTP.
+- `get_timesheets(date=...)` переведён с containment predicate на overlap predicate: `begin_datetime < next_day 00:00:00` и `end_datetime > day_start 00:00:00`.
+- `get_message_reports` теперь требует непустой `campaign` после trim и не делает invalid VM request без campaign.
+- Обновлены contract/mock tests, `api-research-notes-ru.md`, PRD stage 133 и Roadmap.
+
+### Решения и обоснования
+
+- VM wire format для `admission_date`/`date_in`/`date_out` зафиксирован как space-separated `YYYY-MM-DD HH:MM:SS`, потому что это подтверждено `api_entity_reference-ru.md` и Postman examples.
+- MCP boundary принимает локальный ISO input без timezone для эргономики, но всегда отправляет VM format; fractional seconds усечены до секунд.
+- Minute-precision accepted только для `T`-ISO формы (`YYYY-MM-DDTHH:MM`) и нормализуется в `:00`; space-separated VM input должен быть полным `YYYY-MM-DD HH:MM:SS`.
+- Strict `<`/`>` для timesheet overlap признан допустимым: операторы есть в `filters.py::FilterOp` и уже применяются в `tools/schedule.py` для аналогичного VM overlap query.
+- `campaign` для reports считается required по ранее подтверждённому real API поведению (`Campaign name cannot be empty`), поэтому local validation дешевле и понятнее, чем upstream error.
+
+### Проблемы
+
+- Real API smoke/probe stage 133.4 не запускался: в окружении отсутствуют `TEST_DOMAIN`/`TEST_API_KEY`.
+- PRD-review сторонней моделью исчерпал бюджет 2/2 до финальной реализации; найденные findings устранены локально и покрыты тестами.
+- Полный suite после реализации прошёл: `838 passed, 57 deselected`.
+
+### Обратная связь
+
+Пользователь попросил продолжать Roadmap до конца по новому workflow; stage 133 выполнен с PRD, двумя PRD-review сторонней моделью, tests-first, full suite и обновлением артефактов.

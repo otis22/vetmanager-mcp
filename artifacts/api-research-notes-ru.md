@@ -37,7 +37,7 @@
 | Client create → имя/фамилия | `firstName` / `lastName` | **`first_name` / `last_name`** | super-review 2026-04-20 B1 + stage 122 contract fix |
 | Client create → телефон | `phone` | **`cell_phone`** | roadmap 122.3 + stage 122 contract fix |
 | Breed list filter → тип животного | `petTypeId` | **`pet_type_id`** | super-review 2026-04-20 medium finding + stage 122 contract fix |
-| Timesheet date filter | top-level `date` query | **`begin_datetime >= ...` + `end_datetime <= ...`** | super-review 2026-04-20 medium finding + stage 122 contract fix |
+| Timesheet date filter | top-level `date` query | **overlap predicate:** `begin_datetime < next_day 00:00:00` + `end_datetime > day_start 00:00:00` | stage 122 contract fix + stage 133 night-shift fix |
 
 ### Полный payload `POST /rest/api/admission` (canonical)
 
@@ -211,7 +211,8 @@ Legacy PHP использует приватный метод `Timesheet::getDat
 ### `all_day` / `night` флаги timesheet
 
 - `all_day=1` означает запись на весь день — `begin_datetime`/`end_datetime` всё равно заполнены (обычно `00:00:00–23:59:59`).
-- `night=1` означает ночную смену; интервал может переходить через полночь (проверить на real API, MVP не делает special casing).
+- `night=1` означает ночную смену; интервал может переходить через полночь одной строкой.
+- Для фильтра конкретного дня нельзя использовать containment `begin_datetime >= day_start AND end_datetime <= day_end`: так теряются ночные смены. Использовать overlap predicate `begin_datetime < next_day 00:00:00 AND end_datetime > day_start 00:00:00`.
 
 ---
 

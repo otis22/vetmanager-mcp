@@ -6,6 +6,7 @@ from filters import eq as _filter_eq, gte as _filter_gte, in_ as _filter_in, lt 
 from resources.admission_status import ACTIVE_ADMISSION_STATUSES  # noqa: F401 — BC re-export
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam, parse_date_param
+from vm_datetime import normalize_vm_datetime
 
 
 _VALID_ADMISSION_STATUSES = {
@@ -275,7 +276,9 @@ def register(mcp: FastMCP) -> None:
             pet_id: ID of the pet being admitted.
             client_id: ID of the pet's owner.
             doctor_id: ID of the attending veterinarian.
-            date: Appointment date/time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS).
+            date: Appointment date/time. Accepts VM datetime
+                (YYYY-MM-DD HH:MM:SS) or local ISO datetime without timezone;
+                sends VM format to the API.
             reason: Reason for the visit (optional).
             status: Admission status (default 'save'). Valid values per
                 Vetmanager enum: save, directed, accepted, delayed,
@@ -286,7 +289,7 @@ def register(mcp: FastMCP) -> None:
             "patient_id": pet_id,
             "client_id": client_id,
             "user_id": doctor_id,
-            "admission_date": date,
+            "admission_date": normalize_vm_datetime(date, field_name="admission_date"),
             "status": status,
         }
         if reason:
@@ -315,7 +318,9 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             admission_id: ID of the admission to update.
-            date: New date/time in ISO 8601 format (leave empty to keep current).
+            date: New date/time. Accepts VM datetime
+                (YYYY-MM-DD HH:MM:SS) or local ISO datetime without timezone;
+                sends VM format to the API. Leave empty to keep current.
             doctor_id: New doctor ID (0 = no change).
             client_id: New client ID (0 = no change).
             pet_id: New pet ID (0 = no change).
@@ -328,7 +333,7 @@ def register(mcp: FastMCP) -> None:
         payload: dict = {}
         _validate_admission_status(status)
         if date:
-            payload["admission_date"] = date
+            payload["admission_date"] = normalize_vm_datetime(date, field_name="admission_date")
         if doctor_id:
             payload["user_id"] = doctor_id
         if client_id:

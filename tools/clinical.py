@@ -4,6 +4,7 @@ from fastmcp import FastMCP
 from filters import eq as _filter_eq
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam
+from vm_datetime import normalize_vm_datetime
 
 
 def register(mcp: FastMCP) -> None:
@@ -47,14 +48,16 @@ def register(mcp: FastMCP) -> None:
         Args:
             pet_id: ID of the pet being hospitalized.
             doctor_id: ID of the responsible veterinarian.
-            date_in: Admission date/time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS).
+            date_in: Admission date/time. Accepts VM datetime
+                (YYYY-MM-DD HH:MM:SS) or local ISO datetime without timezone;
+                sends VM format to the API.
             block_id: ID of the hospital block/ward (0 if not specified).
             description: Clinical notes or reason for hospitalization.
         """
         payload: dict = {
             "patient_id": pet_id,
             "doctor_id": doctor_id,
-            "date_in": date_in,
+            "date_in": normalize_vm_datetime(date_in, field_name="date_in"),
         }
         if block_id:
             payload["hospital_block_id"] = block_id
@@ -76,14 +79,16 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             hospital_id: ID of the hospitalization record to update.
-            date_out: Discharge date/time in ISO 8601 format (leave empty to keep current).
+            date_out: Discharge date/time. Accepts VM datetime
+                (YYYY-MM-DD HH:MM:SS) or local ISO datetime without timezone;
+                sends VM format to the API. Leave empty to keep current.
             description: Updated clinical notes (leave empty to keep current).
             status: Updated status (leave empty to keep current).
             block_id: New hospital block/ward ID (0 = no change).
         """
         payload: dict = {}
         if date_out:
-            payload["date_out"] = date_out
+            payload["date_out"] = normalize_vm_datetime(date_out, field_name="date_out")
         if description:
             payload["description"] = description
         if status:

@@ -2266,19 +2266,19 @@ Acceptance: depersonalized token не получает raw payload при люб
 
 Acceptance: token without required tool scope is rejected before upstream calls; `frontdesk` can use intended slots workflow; `ClientPhone` requires `clients.read`; preset tests catch accidental extra/missing scopes.
 
-## Этап 133. VM API datetime/list contract correctness (после Этапа 132) — `todo`
+## Этап 133. VM API datetime/list contract correctness (после Этапа 132) — `done`
 
 Источник: `artifacts/review/2026-04-23-full-stage-130.md`, H3/M6.
 
 Цель: убрать drift между MCP tool inputs, mock tests и реальным VM API contract для дат и list-query edge cases.
 
-- 133.1 Добавить общий helper нормализации VM datetime: принимать ISO input при необходимости, но отправлять в VM `YYYY-MM-DD HH:MM:SS`; не принимать невалидные даты молча. — `todo`
-- 133.2 Применить helper к `create_admission`/`update_admission` (`admission_date`) и обновить contract tests: ISO-in → space-separated payload. — `todo`
-- 133.3 Применить helper к `create_hospitalization`/`update_hospitalization` (`date_in`/`date_out`) и обновить tests stage 122/123. — `todo`
-- 133.4 Добавить real API smoke/probe на devtr6 для одного безопасного datetime create/update сценария, если доступны `TEST_DOMAIN`/`TEST_API_KEY`. — `todo`
-- 133.5 Исправить `get_timesheets(date=...)` на overlap semantics для ночных смен: `begin_datetime < next_day` и `end_datetime > day_start`; добавить night-shift regression. — `todo`
-- 133.6 Проверить контракт `get_message_reports`: если `campaign` обязателен — сделать параметр required/локально валидировать non-empty; если API допускает all-campaign query — обновить docstring/tests. — `todo`
-- 133.7 Обновить `api-research-notes-ru.md` при подтверждении новых datetime/report деталей. — `todo`
+- 133.1 Добавить общий helper нормализации VM datetime: принимать ISO input при необходимости, но отправлять в VM `YYYY-MM-DD HH:MM:SS`; не принимать невалидные даты молча. — `done`
+- 133.2 Применить helper к `create_admission`/`update_admission` (`admission_date`) и обновить contract tests: ISO-in → space-separated payload. — `done`
+- 133.3 Применить helper к `create_hospitalization`/`update_hospitalization` (`date_in`/`date_out`) и обновить tests stage 122/123. — `done`
+- 133.4 Добавить real API smoke/probe на devtr6 для одного безопасного datetime create/update сценария, если доступны `TEST_DOMAIN`/`TEST_API_KEY`. — `done` (skipped: env credentials отсутствуют)
+- 133.5 Исправить `get_timesheets(date=...)` на overlap semantics для ночных смен: `begin_datetime < next_day` и `end_datetime > day_start`; добавить night-shift regression. — `done`
+- 133.6 Проверить контракт `get_message_reports`: если `campaign` обязателен — сделать параметр required/локально валидировать non-empty; если API допускает all-campaign query — обновить docstring/tests. — `done`
+- 133.7 Обновить `api-research-notes-ru.md` при подтверждении новых datetime/report деталей. — `done`
 
 Acceptance: mock contract tests падают при возврате `T`-формата в VM payload; night shifts возвращаются в дневном timesheet query; `get_message_reports` не делает молчаливый invalid request.
 

@@ -5,6 +5,7 @@
 import pytest
 import respx
 import httpx
+from fastmcp.exceptions import ToolError
 
 from server import mcp
 from tests.runtime_factories import (
@@ -537,6 +538,25 @@ async def test_get_message_reports_tool():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_get_message_reports_rejects_empty_campaign_before_http():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/messages/reports").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {}})
+    )
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="campaign is required"):
+            await mcp.call_tool(
+                "get_message_reports",
+                {"limit": 20, "offset": 0, "campaign": "  "},
+            )
+
+    assert route.call_count == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_send_message_to_roles_tool():
     billing_mock()
     route = respx.post(f"{BASE}/rest/api/messages/roles").mock(
@@ -560,5 +580,3 @@ async def test_send_message_to_roles_tool():
     assert result.structured_content["success"] is True
     assert route.called
     assert "Врач".encode() in route.calls.last.request.content
-
-

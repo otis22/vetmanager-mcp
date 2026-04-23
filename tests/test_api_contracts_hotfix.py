@@ -178,7 +178,7 @@ async def test_create_hospitalization_maps_fields_to_api_contract():
     assert body == {
         "patient_id": 5,
         "doctor_id": 3,
-        "date_in": "2026-04-20T10:00:00",
+        "date_in": "2026-04-20 10:00:00",
         "hospital_block_id": 7,
         "description": "overnight stay",
     }
@@ -282,7 +282,7 @@ async def test_create_admission_maps_fields_to_api_contract():
     assert body["patient_id"] == 5
     assert body["client_id"] == 1
     assert body["user_id"] == 3
-    assert body["admission_date"] == "2026-04-20T10:00:00"
+    assert body["admission_date"] == "2026-04-20 10:00:00"
     assert body["reason"] == "checkup"
     # Must NOT leak external names into the API payload
     assert "pet_id" not in body
@@ -359,6 +359,68 @@ async def test_create_admission_invalid_status_rejected():
                     "doctor_id": 3,
                     "date": "2026-04-20T10:00:00",
                     "status": "assigned",
+                },
+            )
+
+    assert route.call_count == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_create_admission_normalizes_vm_datetime_edge_cases():
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(201, json={"data": {"id": 42}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        for value in (
+            "2026-04-20T10:15",
+            "2026-04-20T10:15:30.987654",
+            "2026-04-20 10:15:30",
+        ):
+            await mcp.call_tool(
+                "create_admission",
+                {
+                    "pet_id": 5,
+                    "client_id": 1,
+                    "doctor_id": 3,
+                    "date": value,
+                },
+            )
+
+    assert json.loads(route.calls[0].request.content)["admission_date"] == "2026-04-20 10:15:00"
+    assert json.loads(route.calls[1].request.content)["admission_date"] == "2026-04-20 10:15:30"
+    assert json.loads(route.calls[2].request.content)["admission_date"] == "2026-04-20 10:15:30"
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(
+    "bad_date",
+    [
+        "2026-04-20",
+        "2026-04-20 10:15",
+        "2026-04-20T10:15:00Z",
+        "2026-04-20T10:15:00+03:00",
+        "not-a-date",
+    ],
+)
+async def test_create_admission_rejects_invalid_vm_datetime_before_http(bad_date):
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(201, json={"data": {"id": 42}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="invalid VM datetime"):
+            await mcp.call_tool(
+                "create_admission",
+                {
+                    "pet_id": 5,
+                    "client_id": 1,
+                    "doctor_id": 3,
+                    "date": bad_date,
                 },
             )
 
@@ -512,7 +574,7 @@ async def test_create_hospitalization_maps_payload_to_snake_case():
     body = _body_of(route)
     assert body["patient_id"] == 5
     assert body["doctor_id"] == 3
-    assert body["date_in"] == "2026-04-21T09:00:00"
+    assert body["date_in"] == "2026-04-21 09:00:00"
     assert body["hospital_block_id"] == 2
     assert body["description"] == "ICU"
     assert "petId" not in body
@@ -541,11 +603,32 @@ async def test_update_hospitalization_maps_payload_to_snake_case():
         )
 
     body = _body_of(route)
-    assert body["date_out"] == "2026-04-22T10:00:00"
+    assert body["date_out"] == "2026-04-22 10:00:00"
     assert body["hospital_block_id"] == 4
     assert body["status"] == "closed"
     assert "dateOut" not in body
     assert "blockId" not in body
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_update_hospitalization_empty_date_out_is_omitted():
+    billing_mock()
+    route = respx.put(f"{BASE}/rest/api/hospital/3").mock(
+        return_value=httpx.Response(200, json={"data": {"id": 3}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool(
+            "update_hospitalization",
+            {
+                "hospital_id": 3,
+                "date_out": "",
+                "status": "open",
+            },
+        )
+
+    assert _body_of(route) == {"status": "open"}
 
 
 @pytest.mark.asyncio
@@ -682,7 +765,18 @@ async def test_get_breeds_uses_pet_type_id_filter_not_legacy_query_param():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_get_timesheets_maps_date_to_datetime_range_filters():
+@pytest.mark.parametrize(
+    ("date", "expected_begin_upper", "expected_end_lower"),
+    [
+        ("2026-04-21", "2026-04-22 00:00:00", "2026-04-21 00:00:00"),
+        ("2026-04-22", "2026-04-23 00:00:00", "2026-04-22 00:00:00"),
+    ],
+)
+async def test_get_timesheets_maps_date_to_overlap_datetime_filters(
+    date: str,
+    expected_begin_upper: str,
+    expected_end_lower: str,
+):
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/timesheet").mock(
         return_value=httpx.Response(200, json={"data": [{"id": 1}]})
@@ -691,7 +785,7 @@ async def test_get_timesheets_maps_date_to_datetime_range_filters():
     with headers_patch, runtime_patch:
         await mcp.call_tool(
             "get_timesheets",
-            {"doctor_id": 7, "date": "2026-04-21", "limit": 20},
+            {"doctor_id": 7, "date": date, "limit": 20},
         )
 
     filters = _filter_of(route)
@@ -701,14 +795,14 @@ async def test_get_timesheets_maps_date_to_datetime_range_filters():
     ), f"expected doctor_id filter, got {filters}"
     assert any(
         f.get("property") == "begin_datetime"
-        and f.get("operator") == ">="
-        and f.get("value") == "2026-04-21 00:00:00"
+        and f.get("operator") == "<"
+        and f.get("value") == expected_begin_upper
         for f in filters
-    ), f"expected begin_datetime lower bound, got {filters}"
+    ), f"expected begin_datetime overlap upper bound, got {filters}"
     assert any(
         f.get("property") == "end_datetime"
-        and f.get("operator") == "<="
-        and f.get("value") == "2026-04-21 23:59:59"
+        and f.get("operator") == ">"
+        and f.get("value") == expected_end_lower
         for f in filters
-    ), f"expected end_datetime upper bound, got {filters}"
+    ), f"expected end_datetime overlap lower bound, got {filters}"
     assert "date" not in _query_of(route)

@@ -85,7 +85,7 @@ async def test_update_admission_maps_fields_to_api_contract():
     body = _body_of(route)
     assert body["patient_id"] == 5
     assert body["user_id"] == 3
-    assert body["admission_date"] == "2026-05-01T10:00:00"
+    assert body["admission_date"] == "2026-05-01 10:00:00"
     assert body["status"] == "accepted"
     assert "pet_id" not in body
     assert "doctor_id" not in body

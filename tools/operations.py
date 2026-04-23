@@ -1,11 +1,11 @@
 """Operational entity tools: Clinics, Timesheet, Properties, AnonymousClient, Messages."""
 
 from typing import Annotated
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastmcp import FastMCP
 from pydantic import Field
-from filters import eq as _filter_eq, gte as _filter_gte, lte as _filter_lte
+from filters import eq as _filter_eq, gt as _filter_gt, lt as _filter_lt
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
@@ -72,11 +72,12 @@ def register(mcp: FastMCP) -> None:
             combined_filters.append(_filter_eq("doctor_id", doctor_id))
         if date:
             day = datetime.strptime(date, "%Y-%m-%d").date()
+            next_day = day + timedelta(days=1)
             combined_filters.append(
-                _filter_gte("begin_datetime", f"{day.isoformat()} 00:00:00")
+                _filter_lt("begin_datetime", f"{next_day.isoformat()} 00:00:00")
             )
             combined_filters.append(
-                _filter_lte("end_datetime", f"{day.isoformat()} 23:59:59")
+                _filter_gt("end_datetime", f"{day.isoformat()} 00:00:00")
             )
         return await crud_list(
             "/rest/api/timesheet", limit=limit, offset=offset,
@@ -190,9 +191,12 @@ def register(mcp: FastMCP) -> None:
         filter: list[dict] | None = None,
     ) -> dict:
         """List in-app notification delivery reports and campaign stats."""
+        campaign_name = campaign.strip()
+        if not campaign_name:
+            raise ValueError("campaign is required")
         return await crud_list(
             "/rest/api/messages/reports", limit=limit, offset=offset,
-            sort=sort, filters=filter, extra={"campaign": campaign},
+            sort=sort, filters=filter, extra={"campaign": campaign_name},
         )
 
     @mcp.tool
