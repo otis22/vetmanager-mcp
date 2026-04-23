@@ -11,6 +11,7 @@ from bearer_auth import resolve_bearer_auth_context
 from bearer_token_manager import generate_bearer_token
 from exceptions import AuthError, RateLimitError
 from storage_models import Account, ServiceBearerToken, TokenUsageLog, TokenUsageStat, VetmanagerConnection
+from token_scopes import SUPPORTED_TOKEN_SCOPES
 from vetmanager_auth import VETMANAGER_AUTH_MODE_USER_TOKEN
 
 
@@ -60,7 +61,7 @@ async def test_resolve_bearer_auth_context_returns_active_account_and_connection
     assert context.auth_mode == "domain_api_key"
     assert context.domain == "clinic-a"
     assert context.api_key == "secret-key"
-    assert "clients.read" in context.scopes
+    assert context.scopes == tuple(SUPPORTED_TOKEN_SCOPES)
     assert context.is_depersonalized is False
 
 

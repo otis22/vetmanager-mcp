@@ -7,16 +7,32 @@ import depersonalization
 from exceptions import AuthError
 from runtime_auth import use_runtime_credentials
 from service_metrics import record_sanitizer_failure
+from tool_access_registry import TOOL_REQUIRED_SCOPES
 from vetmanager_client import resolve_runtime_credentials
 
 
-def _wrap_tool_with_depersonalization(tool_func):
+SCOPE_DENIED_MESSAGE = "Tool is not permitted for this token."
+
+
+def _ensure_tool_scopes_allowed(tool_name: str, credentials) -> None:
+    required_scopes = TOOL_REQUIRED_SCOPES.get(tool_name)
+    token_scopes = tuple(getattr(credentials, "scopes", ()) or ())
+    if not required_scopes or not token_scopes:
+        raise ToolError(SCOPE_DENIED_MESSAGE)
+    if not set(required_scopes).issubset(set(token_scopes)):
+        raise ToolError(SCOPE_DENIED_MESSAGE)
+
+
+def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None):
+    resolved_tool_name = tool_name or tool_func.__name__
+
     @wraps(tool_func)
     async def _wrapped(*args, **kwargs):
         try:
             credentials = await resolve_runtime_credentials()
         except AuthError:
             raise ToolError("Runtime authentication failed.") from None
+        _ensure_tool_scopes_allowed(resolved_tool_name, credentials)
 
         with use_runtime_credentials(credentials):
             result = await tool_func(*args, **kwargs)
@@ -39,10 +55,15 @@ class _ToolRegistrationProxy:
     def tool(self, func=None, **kwargs):
         if func is None:
             def _decorator(actual_func):
-                return self._mcp.tool(_wrap_tool_with_depersonalization(actual_func), **kwargs)
+                tool_name = kwargs.get("name") or actual_func.__name__
+                return self._mcp.tool(
+                    _wrap_tool_with_depersonalization(actual_func, tool_name=tool_name),
+                    **kwargs,
+                )
 
             return _decorator
-        return self._mcp.tool(_wrap_tool_with_depersonalization(func), **kwargs)
+        tool_name = kwargs.get("name") or func.__name__
+        return self._mcp.tool(_wrap_tool_with_depersonalization(func, tool_name=tool_name), **kwargs)
 
     def __getattr__(self, name: str):
         return getattr(self._mcp, name)

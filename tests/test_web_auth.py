@@ -16,7 +16,7 @@ from server import mcp
 from service_metrics import snapshot_service_metrics
 from storage import Base, create_database_engine
 from storage_models import Account, ServiceBearerToken, TokenUsageLog, TokenUsageStat, VetmanagerConnection
-from tool_access_registry import PRESET_FRONTDESK
+from tool_access_registry import PRESET_DOCTOR, PRESET_FRONTDESK, TOKEN_PRESET_SCOPES
 from web_security import reset_web_security_state
 from web_auth import SESSION_COOKIE_NAME, get_web_session_secret, register_account, set_account_session_cookie
 
@@ -940,6 +940,7 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
     assert stored.get_scopes() == [
         "admissions.read",
         "admissions.write",
+        "analytics.read",
         "clients.read",
         "clients.write",
         "finance.read",
@@ -950,6 +951,73 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
         "users.read",
     ]
     assert snapshot_service_metrics()["token_preset_issued_total"]["frontdesk"] == 1
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_account_token_issue_legacy_clinical_staff_alias_maps_to_doctor(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-session-secret")
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+
+    async with storage.get_session_factory()() as session:
+        account = await register_account(
+            session,
+            email="doctor-alias@example.com",
+            password="Integration-Pass-123",
+        )
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+            domain="clinic",
+        )
+        connection.set_credentials(
+            {"domain": "clinic", "api_key": "secret-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        session.add(connection)
+        await session.commit()
+
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://clinic.vetmanager.cloud"}})
+    )
+    respx.get("https://clinic.vetmanager.cloud/rest/api/client").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await _post_with_csrf(
+            client,
+            "/login",
+            data={"email": "doctor-alias@example.com", "password": "Integration-Pass-123"},
+        )
+        response = await _post_with_csrf(
+            client,
+            "/account/tokens",
+            data={
+                "token_name": "Doctor alias",
+                "expires_in_days": "",
+                "access_preset": "clinical_staff",
+            },
+            page_path="/account",
+        )
+
+    assert response.status_code == 200
+    async with storage.get_session_factory()() as session:
+        token = await session.scalar(select(ServiceBearerToken).where(ServiceBearerToken.name == "Doctor alias"))
+    assert token is not None
+    assert token.get_scopes() == list(TOKEN_PRESET_SCOPES[PRESET_DOCTOR])
 
     await engine.dispose()
     storage.reset_storage_state()

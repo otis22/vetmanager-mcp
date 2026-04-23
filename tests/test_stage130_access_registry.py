@@ -11,7 +11,9 @@ from tool_access_registry import (
     PRESET_INVENTORY,
     PRESET_READ_ONLY,
     TOKEN_PRESET_SCOPES,
+    MARKETED_PRESET_TOOLS,
     TOOL_REQUIRED_SCOPES,
+    normalize_token_preset,
 )
 from token_scopes import (
     SCOPE_ADMISSIONS_READ,
@@ -78,6 +80,7 @@ def test_full_access_preset_matches_supported_scopes_snapshot():
             (
                 SCOPE_ADMISSIONS_READ,
                 SCOPE_ADMISSIONS_WRITE,
+                SCOPE_ANALYTICS_READ,
                 SCOPE_CLIENTS_READ,
                 SCOPE_CLIENTS_WRITE,
                 SCOPE_FINANCE_READ,
@@ -92,6 +95,7 @@ def test_full_access_preset_matches_supported_scopes_snapshot():
             PRESET_DOCTOR,
             (
                 SCOPE_ADMISSIONS_READ,
+                SCOPE_ANALYTICS_READ,
                 SCOPE_MEDICAL_CARDS_READ,
                 SCOPE_MEDICAL_CARDS_WRITE,
                 SCOPE_PETS_READ,
@@ -119,8 +123,41 @@ def test_full_access_preset_matches_supported_scopes_snapshot():
     ],
 )
 def test_presets_expose_expected_scope_bundles(preset, expected_scopes):
-    for scope in expected_scopes:
-        assert scope in TOKEN_PRESET_SCOPES[preset]
+    assert TOKEN_PRESET_SCOPES[preset] == tuple(sorted(expected_scopes))
+
+
+def test_marketed_preset_tools_are_covered_by_preset_scopes():
+    for preset, tool_names in MARKETED_PRESET_TOOLS.items():
+        preset_scopes = set(TOKEN_PRESET_SCOPES[preset])
+        for tool_name in tool_names:
+            assert set(TOOL_REQUIRED_SCOPES[tool_name]).issubset(preset_scopes)
+
+
+def test_full_access_preset_covers_every_registered_tool_scope():
+    full_access_scopes = set(TOKEN_PRESET_SCOPES[PRESET_FULL_ACCESS])
+    for tool_name, required_scopes in TOOL_REQUIRED_SCOPES.items():
+        assert set(required_scopes).issubset(full_access_scopes), tool_name
+
+
+def test_frontdesk_accepts_analytics_read_blast_radius_explicitly():
+    analytics_tools = {
+        name
+        for name, scopes in TOOL_REQUIRED_SCOPES.items()
+        if SCOPE_ANALYTICS_READ in scopes
+    }
+    assert analytics_tools == {
+        "get_doctor_free_slots",
+        "get_message_reports",
+        "get_timesheet_by_id",
+        "get_timesheets",
+    }
+    assert SCOPE_ANALYTICS_READ in TOKEN_PRESET_SCOPES[PRESET_FRONTDESK]
+
+
+@pytest.mark.parametrize("preset", ["unknown", " clinical_staff ", "   "])
+def test_normalize_token_preset_rejects_unknown_or_whitespace_values(preset):
+    with pytest.raises(ValueError, match="Unknown token access preset."):
+        normalize_token_preset(preset)
 
 
 @pytest.mark.parametrize(
@@ -144,3 +181,4 @@ def test_request_scope_mapping_covers_missing_write_paths():
     assert required_scope_for_request("PUT", "/rest/api/user/5") == SCOPE_USERS_WRITE
     assert required_scope_for_request("POST", "/rest/api/timesheet") == SCOPE_ANALYTICS_WRITE
     assert required_scope_for_request("GET", "/rest/api/messages/reports") == SCOPE_ANALYTICS_READ
+    assert required_scope_for_request("GET", "/rest/api/ClientPhone") == SCOPE_CLIENTS_READ

@@ -366,7 +366,7 @@ async def test_wrapper_fails_closed_before_tool_when_runtime_auth_fails(monkeypa
         called = True
         return {"data": {"firstName": "Anna"}}
 
-    wrapped = tools._wrap_tool_with_depersonalization(tool_func)
+    wrapped = tools._wrap_tool_with_depersonalization(tool_func, tool_name="get_clients")
 
     with pytest.raises(ToolError) as exc_info:
         await wrapped()
@@ -392,7 +392,7 @@ async def test_wrapper_shares_runtime_credentials_with_vetmanager_client(monkeyp
         await client._ensure_runtime_credentials()
         return {"domain": client._domain}
 
-    wrapped = tools._wrap_tool_with_depersonalization(tool_func)
+    wrapped = tools._wrap_tool_with_depersonalization(tool_func, tool_name="get_clients")
 
     result = await wrapped()
 
@@ -424,7 +424,7 @@ async def test_runtime_credentials_context_is_isolated_between_concurrent_tools(
                 await client._ensure_runtime_credentials()
                 return {"domain": client._domain, "api_key": client._api_key}
 
-            wrapped = tools._wrap_tool_with_depersonalization(tool_func)
+            wrapped = tools._wrap_tool_with_depersonalization(tool_func, tool_name="get_clients")
             return await wrapped()
         finally:
             current_token.reset(token_marker)
@@ -445,7 +445,7 @@ async def test_runtime_credentials_context_resets_after_tool_failure(monkeypatch
     async def failing_tool():
         raise RuntimeError("tool failed")
 
-    wrapped = tools._wrap_tool_with_depersonalization(failing_tool)
+    wrapped = tools._wrap_tool_with_depersonalization(failing_tool, tool_name="get_clients")
 
     with pytest.raises(RuntimeError, match="tool failed"):
         await wrapped()

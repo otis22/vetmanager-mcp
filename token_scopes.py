@@ -57,6 +57,7 @@ _READ_SCOPE_BY_ENTITY = {
     "city": SCOPE_REFERENCE_READ,
     "citytype": SCOPE_REFERENCE_READ,
     "client": SCOPE_CLIENTS_READ,
+    "clientphone": SCOPE_CLIENTS_READ,
     "clinics": SCOPE_REFERENCE_READ,
     "closingofinvoices": SCOPE_FINANCE_READ,
     "combomanualitem": SCOPE_REFERENCE_READ,

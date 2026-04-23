@@ -2250,19 +2250,19 @@ Acceptance:
 
 Acceptance: depersonalized token не получает raw payload при любой ошибке определения policy/sanitizer; реальные phone/note/clinical VM поля маскируются; false-positive corpus зелёный; полный test suite проходит.
 
-## Этап 132. Scope/preset runtime enforcement hardening (после Этапа 131) — `todo`
+## Этап 132. Scope/preset runtime enforcement hardening (после Этапа 131) — `done`
 
 Источник: `artifacts/review/2026-04-23-full-stage-130.md`, H4-H5/M1/M7.
 
 Цель: сделать tool-level access registry реальным runtime preflight и синхронизировать preset matrix с продуктовым контрактом.
 
-- 132.1 Добавить `ClientPhone`/`clientphone` в `_READ_SCOPE_BY_ENTITY` как `clients.read`; тест: токен без `clients.read` не может выполнить phone search. — `todo`
-- 132.2 Внедрить preflight enforcement `TOOL_REQUIRED_SCOPES[tool_name]` в wrapper регистрации tools до выполнения tool; path-level `_require_scope` оставить defense-in-depth. — `todo`
-- 132.3 Для aggregate tools (`get_client_profile`, `get_pet_profile`, `get_inactive_pets`, `get_doctor_free_slots`) проверять все required scopes до первого upstream вызова, без partial execution. — `todo`
-- 132.4 Синхронизировать `frontdesk` preset с slots workflow: добавить `analytics.read` либо явно изменить PRD/UI; предпочтительно добавить read-only scope. — `todo`
-- 132.5 Добавить preset × marketed tools matrix tests: каждый tool, обещанный preset'ом, должен иметь required scopes subset preset scopes. — `todo`
-- 132.6 Заменить inclusion-only preset tests на exact scope bundle assertions; добавить negative tests для unknown/whitespace preset, `clinical_staff` alias и malformed `ip_mask`. — `todo`
-- 132.7 Обновить `AssumptionLog.md` и PRD stage 130/132 по единому policy source of truth. — `todo`
+- 132.1 Добавить `ClientPhone`/`clientphone` в `_READ_SCOPE_BY_ENTITY` как `clients.read`; тест: токен без `clients.read` не может выполнить phone search. — `done`
+- 132.2 Внедрить preflight enforcement `TOOL_REQUIRED_SCOPES[tool_name]` в wrapper регистрации tools до выполнения tool; path-level `_require_scope` оставить defense-in-depth. — `done`
+- 132.3 Для aggregate tools (`get_client_profile`, `get_pet_profile`, `get_inactive_pets`, `get_doctor_free_slots`) проверять все required scopes до первого upstream вызова, без partial execution. — `done`
+- 132.4 Синхронизировать `frontdesk` preset с slots workflow: добавить `analytics.read` либо явно изменить PRD/UI; предпочтительно добавить read-only scope. — `done`
+- 132.5 Добавить preset × marketed tools matrix tests: каждый tool, обещанный preset'ом, должен иметь required scopes subset preset scopes. — `done`
+- 132.6 Заменить inclusion-only preset tests на exact scope bundle assertions; добавить negative tests для unknown/whitespace preset, `clinical_staff` alias и malformed `ip_mask`. — `done`
+- 132.7 Обновить `AssumptionLog.md` и PRD stage 130/132 по единому policy source of truth. — `done`
 
 Acceptance: token without required tool scope is rejected before upstream calls; `frontdesk` can use intended slots workflow; `ClientPhone` requires `clients.read`; preset tests catch accidental extra/missing scopes.
 

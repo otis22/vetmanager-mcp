@@ -76,6 +76,86 @@ def test_depersonalized_flag_migration_defaults_existing_tokens_to_false(tmp_pat
     assert row[0] in (0, False)
 
 
+def test_frontdesk_scope_backfill_adds_analytics_read_to_exact_stage130_bundle(tmp_path: Path):
+    """Upgrade should fix already-issued frontdesk tokens without touching non-exact bundles."""
+    import json
+    from sqlalchemy import text as _text
+
+    old_frontdesk = json.dumps([
+        "admissions.read",
+        "admissions.write",
+        "clients.read",
+        "clients.write",
+        "finance.read",
+        "messaging.write",
+        "pets.read",
+        "pets.write",
+        "reference.read",
+        "users.read",
+    ], separators=(",", ":"))
+    new_frontdesk = json.dumps([
+        "admissions.read",
+        "admissions.write",
+        "analytics.read",
+        "clients.read",
+        "clients.write",
+        "finance.read",
+        "messaging.write",
+        "pets.read",
+        "pets.write",
+        "reference.read",
+        "users.read",
+    ])
+    custom = json.dumps(["clients.read", "pets.read"])
+
+    config = _make_alembic_config(tmp_path)
+    command.upgrade(config, "20260423_000008")
+
+    engine = create_engine(config.get_main_option("sqlalchemy.url"))
+    with engine.connect() as conn:
+        conn.execute(_text(
+            "INSERT INTO accounts (email, password_hash, status, created_at, updated_at) "
+            "VALUES ('frontdesk@example.com', 'hash', 'active', datetime('now'), datetime('now'))"
+        ))
+        account_id = conn.execute(_text(
+            "SELECT id FROM accounts WHERE email = 'frontdesk@example.com'"
+        )).fetchone()[0]
+        conn.execute(
+            _text(
+                "INSERT INTO service_bearer_tokens "
+                "(account_id, name, token_prefix, token_hash, status, scopes_json, created_at) "
+                "VALUES (:account_id, :name, :prefix, :hash, 'active', :scopes_json, datetime('now'))"
+            ),
+            [
+                {
+                    "account_id": account_id,
+                    "name": "frontdesk",
+                    "prefix": "vm_st_front",
+                    "hash": "hash-front",
+                    "scopes_json": old_frontdesk,
+                },
+                {
+                    "account_id": account_id,
+                    "name": "custom",
+                    "prefix": "vm_st_custom",
+                    "hash": "hash-custom",
+                    "scopes_json": custom,
+                },
+            ],
+        )
+        conn.commit()
+
+    command.upgrade(config, "head")
+
+    with engine.connect() as conn:
+        rows = dict(conn.execute(_text(
+            "SELECT name, scopes_json FROM service_bearer_tokens ORDER BY name"
+        )).fetchall())
+
+    assert json.loads(rows["frontdesk"]) == json.loads(new_frontdesk)
+    assert rows["custom"] == custom
+
+
 def test_status_check_constraints_reject_invalid_values(tmp_path: Path):
     """CHECK constraints must reject invalid status values for accounts, connections, tokens."""
     import pytest

@@ -18,12 +18,14 @@
 |---|---|
 | `full_access` | полный `SUPPORTED_TOKEN_SCOPES` на момент выпуска токена |
 | `read_only` | `admissions.read`, `analytics.read`, `clients.read`, `finance.read`, `inventory.read`, `medical_cards.read`, `pets.read`, `reference.read`, `users.read` |
-| `frontdesk` | `admissions.read`, `admissions.write`, `clients.read`, `clients.write`, `finance.read`, `messaging.write`, `pets.read`, `pets.write`, `reference.read`, `users.read` |
-| `doctor` | `admissions.read`, `medical_cards.read`, `medical_cards.write`, `pets.read`, `reference.read`, `users.read` |
+| `frontdesk` | `admissions.read`, `admissions.write`, `analytics.read`, `clients.read`, `clients.write`, `finance.read`, `messaging.write`, `pets.read`, `pets.write`, `reference.read`, `users.read` |
+| `doctor` | `admissions.read`, `analytics.read`, `medical_cards.read`, `medical_cards.write`, `pets.read`, `reference.read`, `users.read` |
 | `finance` | `clients.read`, `finance.read`, `finance.write`, `reference.read` |
 | `inventory` | `inventory.read`, `inventory.write`, `reference.read` |
 
 Отдельно проверить и покрыть тестами спорные tool'ы расписания/слотов/нагрузки: `get_doctor_free_slots`, `daily-schedule`, `doctor-workload` должны опираться только на scopes своего preset mapping, без скрытых per-tool исключений. Базовый expectation v1: `frontdesk` имеет operational доступ к записи/слотам, `doctor` — read-only доступ к расписанию врача/пациента, `read_only` — только read-path.
+
+Stage 132 hardening уточняет источник истины для advertised access: `MARKETED_PRESET_TOOLS` в `tool_access_registry.py` перечисляет tools, обещанные каждым preset'ом, а tests проверяют, что required scopes каждого такого tool являются subset scopes выбранного preset'а. Для `frontdesk` и `doctor` принят read-only `analytics.read` blast radius текущей модели: `get_doctor_free_slots`, `get_message_reports`, `get_timesheets`, `get_timesheet_by_id`.
 
 ## Scope
 

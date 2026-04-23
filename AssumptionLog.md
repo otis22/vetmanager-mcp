@@ -5840,3 +5840,35 @@ UI кабинета и issuance flow переведены на preset-based то
 ### Обратная связь
 
 Пользователь попросил вести Roadmap по новому workflow до конца; stage 131 выполнен через PRD, PRD-review сторонней моделью, tests-first, полный suite, audit и закрывающие артефакты.
+
+## Stage 132 scope/preset runtime enforcement hardening — 2026-04-24
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Добавлен tool-level scope preflight в centralized tool wrapper: `TOOL_REQUIRED_SCOPES[tool_name]` проверяется после bearer runtime resolution и до выполнения body/sanitizer.
+- Unknown tool mapping и пустой token scope set теперь fail-closed с generic `ToolError("Tool is not permitted for this token.")`.
+- `ClientPhone`/`clientphone` в entity scope mapping привязан к `clients.read`.
+- `frontdesk` и `doctor` preset'ы получили `analytics.read` для read-only schedule/slots/report paths.
+- Добавлен source-level `MARKETED_PRESET_TOOLS` и matrix tests: advertised tools каждого preset'а должны покрываться scopes preset'а.
+- Добавлена migration/backfill для exact stage-130 `frontdesk` scope snapshot: существующим exact-token'ам добавляется `analytics.read`, custom/non-exact snapshots не меняются.
+- Добавлены regression tests на runtime preflight, aggregate zero-body execution, exact preset bundles, `clinical_staff` web alias, legacy missing scopes compatibility и migration.
+
+### Решения и обоснования
+
+- Tool-level preflight стоит в wrapper, а path-level `_require_scope` остаётся defense-in-depth: это закрывает aggregate partial execution до первого upstream вызова.
+- `analytics.read` blast radius принят в рамках текущей RBAC модели для `get_doctor_free_slots`, `get_message_reports`, `get_timesheets`, `get_timesheet_by_id`; новый `schedule.read` scope не вводился в hotfix stage.
+- `clinical_staff` является только legacy web-form alias и нормализуется в `doctor` перед выпуском токена; прямой `normalize_token_preset("clinical_staff")` остаётся rejected.
+- `deserialize_token_scopes(None)` сохраняет legacy full-access semantics для старых токенов без `scopes_json`; пустой explicit scope set для runtime credentials fail-closed.
+
+### Проблемы
+
+- Первый полный suite выявил, что старые direct-wrapper tests вызывали wrapper без зарегистрированного tool name; тесты обновлены на явный mapped `tool_name`.
+- Warning policy поймал unclosed sqlite connection в соседнем web-token тесте; добавлен cleanup engine/storage state.
+- Code/diff review сторонней моделью нашёл риск silent no-op в migration из-за string equality по `scopes_json`; migration переписана на JSON parsing + order/whitespace-insensitive bundle compare, тест покрывает compact JSON.
+- Второй code/diff review не нашёл blocker/high, но отметил теоретический риск JSON/JSONB auto-deserialization в migration; хотя production model использует `Text`, добавлена безопасная ветка для already-loaded list. Бюджет стороннего code review исчерпан 2/2.
+
+### Обратная связь
+
+Пользователь попросил вести Roadmap по новому workflow до конца; stage 132 выполнен с PRD-review сторонней моделью, устранением findings, full suite и обновлением policy документов.

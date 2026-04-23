@@ -9,6 +9,7 @@ from storage_models import ServiceBearerToken
 from token_scopes import (
     SCOPE_ADMISSIONS_READ,
     SCOPE_ADMISSIONS_WRITE,
+    SCOPE_ANALYTICS_READ,
     SCOPE_CLIENTS_READ,
     SCOPE_CLIENTS_WRITE,
     SCOPE_FINANCE_READ,
@@ -39,6 +40,10 @@ def test_legacy_token_without_scopes_gets_full_access_defaults():
     token = ServiceBearerToken(account_id=1, name="Legacy token")
 
     assert token.get_scopes() == list(SUPPORTED_TOKEN_SCOPES)
+
+
+def test_deserialize_missing_scopes_preserves_legacy_full_access():
+    assert deserialize_token_scopes(None) == list(SUPPORTED_TOKEN_SCOPES)
 
 
 def test_normalize_token_scopes_rejects_unknown_values():
@@ -150,6 +155,7 @@ async def test_issue_service_bearer_token_uses_selected_access_preset_scopes(tmp
         assert deserialize_token_scopes(token.scopes_json) == [
             SCOPE_ADMISSIONS_READ,
             SCOPE_ADMISSIONS_WRITE,
+            SCOPE_ANALYTICS_READ,
             SCOPE_CLIENTS_READ,
             SCOPE_CLIENTS_WRITE,
             SCOPE_FINANCE_READ,
