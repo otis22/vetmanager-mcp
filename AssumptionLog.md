@@ -5666,3 +5666,53 @@ UI кабинета и issuance flow переведены на preset-based то
 - **При отсутствии bearer runtime context sanitizer не применяется.** Это сохраняет совместимость с внутренними вызовами и существующими unit-tests, где auth context намеренно не поднимается.
 - **Fail-closed применяется только для depersonalized token.** Raw payload не возвращается при ошибке sanitizer; ошибка идёт в safe metric/log path.
 - **Stage 130 закрыт полным regression suite.** Финальный прогон `docker compose --profile test run --rm test` завершился как `802 passed, 57 deselected`.
+
+## Super-review skill. Cross-CLI arbitration и Codex adapter — 2026-04-23
+
+**Статус**: `done`.
+
+Обновлён review workflow без изменения продуктового кода: `/super-review` теперь поддерживает Spark scout layer, явную модельную матрицу и cross-CLI arbitration между Codex и Claude.
+
+### Что сделано
+
+1. `.claude/commands/super-review.md`:
+   - добавлена модельная матрица `gpt-spark` / `gpt-5.4` / `gpt-5.5` / Claude Sonnet / Claude Opus;
+   - добавлен Spark/GPT scout layer как источник untrusted candidate findings;
+   - финальная arbitration переведена на cross-CLI правило: Claude runtime вызывает `codex exec`, Codex runtime вызывает `claude -p`;
+   - добавлены флаги `--no-spark` и `--no-arbitration` (`--no-codex` оставлен как backward-compatible alias).
+2. `.claude/agents/reviewer-aggregator.md`:
+   - aggregator теперь явно валидирует Spark findings как candidate-only leads;
+   - отчёт получил секцию `Spark scout notes` и placeholder `Cross-CLI arbitration`.
+3. `.claude/agents/reviewer-codex-blindspot.md`:
+   - уточнён routing `gpt-spark` → scout, `gpt-5.5` → primary validation, `gpt-5.4` → fallback;
+   - Spark candidates передаются как `UNTRUSTED SPARK LEADS`.
+4. `.codex/skills/super-review/SKILL.md`:
+   - добавлен Codex-side adapter, который использует тот же протокол и для финальной arbitration вызывает Claude CLI (`opus`, fallback `sonnet`).
+
+### Решения и ограничения
+
+- **Spark не принимает финальных решений.** Его роль — повысить recall и собрать кандидаты; severity/verdict остаются за aggregator и внешним арбитром.
+- **Финальный арбитр всегда другой модельной семьи.** Это снижает корреляцию ошибок: Claude-orchestrated review проверяется Codex/GPT, Codex-orchestrated review проверяется Claude.
+- **Арбитр получает inline context и отключённые tools.** Для Claude CLI adapter указан `--tools ""`, чтобы арбитр не читал файловую систему и оценивал только переданные snippets/facts.
+- **Изменение не прогоняло test suite.** Правки документационные/инструкционные; проверены diff и CLI help для `claude -p` / `codex exec`.
+
+### Follow-up: исправление трёх проблем skill — 2026-04-23
+
+После ревью skill исправлены 3 несогласованности:
+
+1. Codex adapter больше не предлагает слепо исполнять Claude-only mechanics из `.claude/commands/super-review.md`; source of truth ограничен shared policy, schema, report format и arbitration contract.
+2. Spark scout layer получил конкретную команду запуска через `codex exec -m gpt-spark -s read-only -C "$PWD" -` и fallback `gpt-5.4-mini`.
+3. `reviewer-codex-blindspot` больше не утверждает, что `codex:codex-rescue` точно работает на `gpt-5.5`; если модель нельзя выбрать явно, findings маркируются `model_used: adapter_default`.
+
+### Follow-up: Claude CLI review skill — 2026-04-23
+
+По запросу пользователя skill был отревьюен через Claude CLI (`claude -p --model opus`). Из 8 findings адекватными признаны и исправлены:
+
+1. Aggregator не учитывал `reviewer-simplicity` в списке ревьюеров и report header.
+2. Placeholder `Cross-CLI arbitration` в aggregator не совпадал со строкой, которую orchestrator должен заменить.
+3. Codex adapter не имел явного набора reviewer roles, из-за чего parity с Claude command была расплывчатой.
+4. `changed` scope на ветке `main` мог молча сводиться к uncommitted-only review.
+5. `reviewer-codex-blindspot` имел два нестрого заданных пути запуска Codex adapter; добавлен явный decision tree.
+6. Aggregator input мог разрастаться без cap; добавлены caps и pre-filter `confidence < 0.4`.
+
+Отклонён finding про `claude -p --tools ""`: текущий `claude --help` прямо документирует, что `""` отключает tools.
