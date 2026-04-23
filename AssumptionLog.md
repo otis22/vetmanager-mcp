@@ -5903,3 +5903,39 @@ UI кабинета и issuance flow переведены на preset-based то
 ### Обратная связь
 
 Пользователь попросил продолжать Roadmap до конца по новому workflow; stage 133 выполнен с PRD, двумя PRD-review сторонней моделью, tests-first, full suite и обновлением артефактов.
+
+## Stage 134 reliability and observability hardening — 2026-04-24
+
+**Статус**: `done`.
+
+### Что сделано
+
+- `server._graceful_shutdown()` теперь вызывает `shutdown_rate_limit_backend()` с guarded `shutdown_error` warning branch.
+- Token usage audit log переведён на post-commit событие `token_audit_log_committed`; `add_token_usage_log()` только stage'ит row.
+- Token audit details и committed log extra enrich'ятся только allowlisted `request_id`/`correlation_id`.
+- `_observed_custom_route()` логирует generic 500 через `custom_route_error`, а oversized form 413 идёт через response helper с correlation headers.
+- `/metrics` unauthorized branch при заданном `METRICS_AUTH_TOKEN` пишет `metrics_auth_failed` security log и `auth_failures_total{source="metrics",reason="invalid_token"}`.
+- Startup secret validation failure логируется через `RUNTIME_LOGGER.critical(event_name="startup_aborted")`.
+- `resolve_vetmanager_host()` получил per-loop/per-domain in-flight coalescing для cold-cache misses.
+- Prometheus exporter tests пинуют `vetmanager_token_preset_issued_total` и `vetmanager_sanitizer_failures_total`.
+- Обновлён observability runbook.
+
+### Решения и обоснования
+
+- Выбран post-commit helper `commit_token_usage_log(session, audit_event)`, а не attempted/committed pair: существующие callers уже владеют transaction boundary, а helper снижает риск забыть committed log.
+- Helper commit'ит всю текущую session transaction: audit row и связанные token/stat mutations должны быть staged до вызова.
+- Request context enrichment строго allowlisted (`request_id`, `correlation_id`), чтобы будущие поля request context не попали в audit details автоматически.
+- Host coalescing scoped per event loop and domain. Leader's `max_retries` wins for the fan-out; follower cancellation не отменяет leader; leader exception/cancellation propagates followers и очищает in-flight map.
+- Negative cache не вводился: failures по billing API остаются uncached, как до stage 134.
+
+### Проблемы
+
+- PRD-review сторонней моделью 1/2 нашёл недоопределённость audit helper и host coalescing edge cases; PRD уточнён.
+- PRD-review 2/2 нашёл leader cancellation, allowlist и metrics correlation gaps; PRD уточнён локально, бюджет PRD-review исчерпан.
+- Code-review сторонней моделью 1/2 нашёл post-commit ORM expiration risk в audit helper; helper стал snapshot'ить log fields до commit.
+- Code-review 2/2 нашёл typed `HTTPException` status metric regression и missing `/metrics` Authorization coverage; оба findings исправлены, бюджет code-review исчерпан.
+- Targeted suite после реализации прошёл: `14 passed`; расширенный suite прошёл: `86 passed`; итоговый полный suite после code-review fixes прошёл: `853 passed, 57 deselected`.
+
+### Обратная связь
+
+Пользователь попросил вести Roadmap до конца по новому workflow; stage 134 выполнен с PRD, двумя PRD-review сторонней моделью, tests-first и обновлением observability артефактов.

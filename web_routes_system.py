@@ -9,7 +9,9 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 from landing_page import render_landing_page
-from service_metrics import PROMETHEUS_CONTENT_TYPE, render_prometheus_metrics
+from observability_logging import SECURITY_LOGGER
+from request_context import get_request_context
+from service_metrics import PROMETHEUS_CONTENT_TYPE, record_auth_failure, render_prometheus_metrics
 
 
 def register_system_routes(mcp, *, observed_route, html_response, json_response, plain_text_response, check_storage_readiness):
@@ -61,6 +63,14 @@ def register_system_routes(mcp, *, observed_route, html_response, json_response,
             if scheme.lower() != "bearer" or not hmac.compare_digest(
                 supplied.strip(), expected
             ):
+                record_auth_failure(source="metrics", reason="invalid_token")
+                SECURITY_LOGGER.warning(
+                    "Metrics authentication failed.",
+                    extra={
+                        "event_name": "metrics_auth_failed",
+                        **get_request_context(request),
+                    },
+                )
                 return plain_text_response(request, "forbidden", status_code=403)
         return plain_text_response(
             request,

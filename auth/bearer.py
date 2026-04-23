@@ -26,6 +26,7 @@ from auth_audit import (
     TOKEN_EVENT_AUTH_RATE_LIMITED,
     TOKEN_EVENT_AUTH_SUCCEEDED,
     add_token_usage_log,
+    commit_token_usage_log,
     get_request_audit_metadata,
 )
 from bearer_token_manager import hash_bearer_token
@@ -102,7 +103,7 @@ async def _reject(
     regressions.
     """
     record_auth_failure(source="bearer_runtime", reason=metric_reason)
-    add_token_usage_log(
+    audit_event = add_token_usage_log(
         session,
         bearer_token_id=token.id,
         event_type=log_event,
@@ -113,7 +114,7 @@ async def _reject(
             retry_after_seconds=retry_after_seconds,
         ),
     )
-    await session.commit()
+    await commit_token_usage_log(session, audit_event)
     raise AuthError(message, status_code=status_code)
 
 
@@ -193,7 +194,7 @@ async def resolve_bearer_auth_context(
         # Rate-limit branch re-raises RateLimitError (not AuthError), so it
         # has its own log+commit sequence rather than using _reject.
         record_auth_failure(source="bearer_runtime", reason="rate_limited")
-        add_token_usage_log(
+        audit_event = add_token_usage_log(
             session,
             bearer_token_id=token.id,
             event_type=TOKEN_EVENT_AUTH_RATE_LIMITED,
@@ -204,7 +205,7 @@ async def resolve_bearer_auth_context(
                 retry_after_seconds=exc.retry_after_seconds,
             ),
         )
-        await session.commit()
+        await commit_token_usage_log(session, audit_event)
         raise
 
     scopes = tuple(token.get_scopes())
@@ -244,7 +245,7 @@ async def resolve_bearer_auth_context(
         connection,
         encryption_key=encryption_key,
     )
-    add_token_usage_log(
+    audit_event = add_token_usage_log(
         session,
         bearer_token_id=token.id,
         event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
@@ -269,7 +270,7 @@ async def resolve_bearer_auth_context(
         session.add(usage_stats)
     usage_stats.request_count += 1
     usage_stats.last_used_at = token.last_used_at
-    await session.commit()
+    await commit_token_usage_log(session, audit_event)
     await session.refresh(token)
     return BearerAuthContext(
         account_id=account.id,

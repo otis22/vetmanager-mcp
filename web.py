@@ -16,11 +16,12 @@ from functools import wraps
 
 from fastmcp import FastMCP
 from sqlalchemy import func, select, text
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 
 from observability_logging import RUNTIME_LOGGER
-from request_context import attach_request_context_headers
+from request_context import attach_request_context_headers, get_request_context
 from secret_manager import get_storage_encryption_key
 from service_metrics import record_http_request
 from storage import get_session_factory
@@ -188,7 +189,28 @@ def _observed_custom_route(
                 return response
             except FormPayloadTooLarge:
                 status_code = 413
-                return PlainTextResponse("Payload too large.", status_code=413)
+                return _plain_text_response(
+                    request,
+                    "Payload too large.",
+                    status_code=413,
+                )
+            except HTTPException as exc:
+                status_code = exc.status_code
+                raise
+            except Exception:
+                status_code = 500
+                RUNTIME_LOGGER.error(
+                    "Custom route error.",
+                    extra={
+                        "event_name": "custom_route_error",
+                        "route": path,
+                        "method": request.method,
+                        "status_code": status_code,
+                        **get_request_context(request),
+                    },
+                    exc_info=True,
+                )
+                raise
             finally:
                 record_http_request(
                     route=path,

@@ -10,6 +10,8 @@ from server import mcp
 from service_metrics import (
     record_auth_failure,
     record_http_request,
+    record_sanitizer_failure,
+    record_token_preset_issued,
     record_upstream_failure,
     render_prometheus_metrics,
     reset_service_metrics,
@@ -37,6 +39,8 @@ def test_render_prometheus_metrics_serializes_registry_snapshot():
     record_http_request(route="/healthz", method="GET", status_code=200, duration_seconds=0.123)
     record_auth_failure(source="bearer_header", reason="missing_authorization")
     record_upstream_failure(target="billing_api", reason="timeout")
+    record_token_preset_issued("frontdesk")
+    record_sanitizer_failure()
 
     metrics_text = render_prometheus_metrics()
 
@@ -45,6 +49,8 @@ def test_render_prometheus_metrics_serializes_registry_snapshot():
     assert 'vetmanager_http_request_latency_seconds_count{route="/healthz",method="GET"} 1' in metrics_text
     assert 'vetmanager_auth_failures_total{source="bearer_header",reason="missing_authorization"} 1' in metrics_text
     assert 'vetmanager_upstream_failures_total{target="billing_api",reason="timeout"} 1' in metrics_text
+    assert 'vetmanager_token_preset_issued_total{preset="frontdesk"} 1' in metrics_text
+    assert "vetmanager_sanitizer_failures_total 1" in metrics_text
 
 
 @pytest.mark.asyncio

@@ -10,6 +10,7 @@ from fastmcp.server import dependencies as _fastmcp_dependencies
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from observability_logging import AUDIT_LOGGER
+from request_context import get_current_request_context
 from storage_models import TokenUsageLog
 from web_security import resolve_client_ip
 
@@ -94,29 +95,55 @@ def get_request_audit_metadata() -> tuple[str | None, str | None]:
     return ip_address, user_agent
 
 
+def _get_request_correlation_metadata() -> dict[str, str]:
+    context = get_current_request_context()
+    return {
+        key: value
+        for key in ("request_id", "correlation_id")
+        if (value := context.get(key))
+    }
+
+
 def add_token_usage_log(
     session: AsyncSession,
     *,
     bearer_token_id: int,
     event_type: str,
     details: dict[str, Any],
-) -> None:
-    """Append a token-centric audit log entry with best-effort request metadata."""
+) -> TokenUsageLog:
+    """Append a token-centric audit row with best-effort request metadata."""
     ip_address, user_agent = get_request_audit_metadata()
+    enriched_details = {
+        **details,
+        **_get_request_correlation_metadata(),
+    }
+    audit_event = TokenUsageLog(
+        bearer_token_id=bearer_token_id,
+        event_type=event_type,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        details_json=_serialize_details(enriched_details),
+    )
+    session.add(audit_event)
+    return audit_event
+
+
+async def commit_token_usage_log(
+    session: AsyncSession,
+    audit_event: TokenUsageLog,
+) -> None:
+    """Commit staged token/audit changes, then log the committed audit event."""
+    event_type = audit_event.event_type
+    bearer_token_id = audit_event.bearer_token_id
+    details = json.loads(audit_event.details_json or "{}")
+    await session.commit()
     AUDIT_LOGGER.info(
-        "Recorded token audit event.",
+        "Committed token audit event.",
         extra={
-            "event_name": "token_audit_log_appended",
+            "event_name": "token_audit_log_committed",
             "token_event_type": event_type,
             "bearer_token_id": bearer_token_id,
+            "request_id": details.get("request_id"),
+            "correlation_id": details.get("correlation_id"),
         },
-    )
-    session.add(
-        TokenUsageLog(
-            bearer_token_id=bearer_token_id,
-            event_type=event_type,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            details_json=_serialize_details(details),
-        )
     )

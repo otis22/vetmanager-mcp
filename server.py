@@ -1,6 +1,5 @@
 import atexit
 import asyncio
-import logging
 import os
 import signal
 
@@ -9,6 +8,7 @@ from fastmcp import FastMCP
 from error_tracking import configure_error_tracking
 from host_resolver import reset_billing_resolver
 from observability_logging import RUNTIME_LOGGER
+from rate_limit_backend import shutdown_rate_limit_backend
 from storage import bootstrap_storage_schema, get_database_url, initialize_storage
 from structured_logging import configure_logging
 from tool_descriptions import enhance_tool_descriptions
@@ -70,6 +70,22 @@ async def _graceful_shutdown() -> None:
             extra={"event_name": "shutdown_error", "step": "reset_billing_resolver"},
             exc_info=True,
         )
+    try:
+        await shutdown_rate_limit_backend()
+    except Exception:
+        RUNTIME_LOGGER.warning(
+            "Graceful shutdown error",
+            extra={"event_name": "shutdown_error", "step": "shutdown_rate_limit_backend"},
+            exc_info=True,
+        )
+
+
+def _log_startup_aborted(exc: Exception) -> None:
+    RUNTIME_LOGGER.critical(
+        "Startup aborted: %s",
+        exc,
+        extra={"event_name": "startup_aborted"},
+    )
 
 
 def _install_shutdown_handlers() -> None:
@@ -106,7 +122,7 @@ if __name__ == "__main__":
     try:
         validate_required_secrets()
     except SecretManagerError as exc:
-        logging.critical("Startup aborted: %s", exc)
+        _log_startup_aborted(exc)
         raise SystemExit(1) from exc
     asyncio.run(initialize_storage())
     if get_database_url().startswith("sqlite"):

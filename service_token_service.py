@@ -12,6 +12,7 @@ from auth_audit import (
     TOKEN_EVENT_CREATED,
     TOKEN_EVENT_REVOKED,
     add_token_usage_log,
+    commit_token_usage_log,
 )
 from bearer_token_manager import generate_bearer_token
 from storage_models import ServiceBearerToken
@@ -67,7 +68,7 @@ async def issue_service_bearer_token(
     token.set_scopes(get_token_preset_scopes(normalized_preset))
     session.add(token)
     await session.flush()
-    add_token_usage_log(
+    audit_event = add_token_usage_log(
         session,
         bearer_token_id=token.id,
         event_type=TOKEN_EVENT_CREATED,
@@ -80,7 +81,7 @@ async def issue_service_bearer_token(
             "access_preset": normalized_preset,
         },
     )
-    await session.commit()
+    await commit_token_usage_log(session, audit_event)
     await session.refresh(token)
     return token, raw_token
 
@@ -106,7 +107,7 @@ async def revoke_service_bearer_token(
 
     effective_revoked_at = revoked_at or datetime.now(timezone.utc)
     token.revoke(revoked_at=effective_revoked_at)
-    add_token_usage_log(
+    audit_event = add_token_usage_log(
         session,
         bearer_token_id=token.id,
         event_type=TOKEN_EVENT_REVOKED,
@@ -116,6 +117,6 @@ async def revoke_service_bearer_token(
             "revoked_at": _token_expiry_string(effective_revoked_at),
         },
     )
-    await session.commit()
+    await commit_token_usage_log(session, audit_event)
     await session.refresh(token)
     return token

@@ -60,6 +60,12 @@ _shared_clients_by_loop: WeakKeyDictionary[asyncio.AbstractEventLoop, httpx.Asyn
 _shared_clients_locks: WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
     WeakKeyDictionary()
 )
+_inflight_resolutions_by_loop: WeakKeyDictionary[
+    asyncio.AbstractEventLoop, dict[str, asyncio.Task[str]]
+] = WeakKeyDictionary()
+_inflight_resolutions_locks: WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
+    WeakKeyDictionary()
+)
 
 
 def _current_loop_key() -> asyncio.AbstractEventLoop | None:
@@ -102,6 +108,8 @@ async def reset_billing_resolver() -> None:
     Safe to call repeatedly.
     """
     _resolved_host_cache.clear()
+    _inflight_resolutions_by_loop.clear()
+    _inflight_resolutions_locks.clear()
     clients = list(_shared_clients_by_loop.values())
     _shared_clients_by_loop.clear()
     _shared_clients_locks.clear()
@@ -137,6 +145,59 @@ async def resolve_vetmanager_host(
         value, expires_at = cached
         if time.monotonic() < expires_at:
             return value
+
+    loop = _current_loop_key()
+    if loop is None:
+        raise RuntimeError("resolve_vetmanager_host() requires a running event loop")
+    lock = _inflight_resolutions_locks.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        _inflight_resolutions_locks[loop] = lock
+    async with lock:
+        cached = _resolved_host_cache.get(domain)
+        if cached is not None:
+            value, expires_at = cached
+            if time.monotonic() < expires_at:
+                return value
+        inflight = _inflight_resolutions_by_loop.get(loop)
+        if inflight is None:
+            inflight = {}
+            _inflight_resolutions_by_loop[loop] = inflight
+        task = inflight.get(domain)
+        if task is None:
+            task = asyncio.create_task(
+                _resolve_vetmanager_host_uncached(domain, max_retries=max_retries)
+            )
+            inflight[domain] = task
+            task.add_done_callback(
+                lambda completed, loop=loop, domain=domain: _clear_inflight_resolution(
+                    loop, domain, completed
+                )
+            )
+
+    return await asyncio.shield(task)
+
+
+def _clear_inflight_resolution(
+    loop: asyncio.AbstractEventLoop,
+    domain: str,
+    completed: asyncio.Task[str],
+) -> None:
+    try:
+        completed.exception()
+    except asyncio.CancelledError:
+        pass
+    inflight = _inflight_resolutions_by_loop.get(loop)
+    if inflight is not None and inflight.get(domain) is completed:
+        inflight.pop(domain, None)
+
+
+async def _resolve_vetmanager_host_uncached(
+    domain: str,
+    *,
+    max_retries: int,
+) -> str:
+    """Resolve host after cache/coalescing fast paths have been handled."""
 
     url = BILLING_API.format(domain=domain)
     client = await _get_shared_client()

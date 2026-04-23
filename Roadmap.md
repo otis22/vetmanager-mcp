@@ -2282,22 +2282,22 @@ Acceptance: token without required tool scope is rejected before upstream calls;
 
 Acceptance: mock contract tests падают при возврате `T`-формата в VM payload; night shifts возвращаются в дневном timesheet query; `get_message_reports` не делает молчаливый invalid request.
 
-## Этап 134. Reliability and observability hardening (после Этапа 133) — `todo`
+## Этап 134. Reliability and observability hardening (после Этапа 133) — `done`
 
 Источник: `artifacts/review/2026-04-23-full-stage-130.md`, M2-M5/M7.
 
 Цель: закрыть эксплуатационные хвосты после stage 130: deterministic shutdown, audit integrity, correlation IDs и cold-cache herd protection.
 
-- 134.1 Вызвать `shutdown_rate_limit_backend()` из `_graceful_shutdown()` с guarded warning pattern; добавить lifecycle test для Redis backend close path. — `todo`
-- 134.2 Перенести success audit log для token usage events на post-commit path либо разделить `attempted`/`committed`; добавить rollback regression. — `todo`
-- 134.3 Добавить `request_id`/`correlation_id` в token audit details/log extra, включая create/revoke/auth events. — `todo`
-- 134.4 В `_observed_custom_route()` логировать generic exceptions структурированно перед re-raise; сохранить HTTP metrics behavior. — `todo`
-- 134.5 Вернуть 413 oversized form response через response helper с `X-Request-ID`/`X-Correlation-ID`. — `todo`
-- 134.6 Логировать unauthorized `/metrics` requests и инкрементить auth/security failure metric. — `todo`
-- 134.7 Перевести startup abort logging на structured `RUNTIME_LOGGER.critical(event_name=\"startup_aborted\")`. — `todo`
-- 134.8 Добавить per-domain in-flight coalescing для `resolve_vetmanager_host()` cold-cache misses; regression: N parallel calls for one domain collapse to one billing request. — `todo`
-- 134.9 Расширить Prometheus exporter tests на `token_preset_issued_total` и `sanitizer_failures_total`. — `todo`
-- 134.10 Обновить `AssumptionLog.md` и observability runbook. — `todo`
+- 134.1 Вызвать `shutdown_rate_limit_backend()` из `_graceful_shutdown()` с guarded warning pattern; добавить lifecycle test для Redis backend close path. — `done`
+- 134.2 Перенести success audit log для token usage events на post-commit path либо разделить `attempted`/`committed`; добавить rollback regression. — `done`
+- 134.3 Добавить `request_id`/`correlation_id` в token audit details/log extra, включая create/revoke/auth events. — `done`
+- 134.4 В `_observed_custom_route()` логировать generic exceptions структурированно перед re-raise; сохранить HTTP metrics behavior. — `done`
+- 134.5 Вернуть 413 oversized form response через response helper с `X-Request-ID`/`X-Correlation-ID`. — `done`
+- 134.6 Логировать unauthorized `/metrics` requests и инкрементить auth/security failure metric. — `done`
+- 134.7 Перевести startup abort logging на structured `RUNTIME_LOGGER.critical(event_name=\"startup_aborted\")`. — `done`
+- 134.8 Добавить per-domain in-flight coalescing для `resolve_vetmanager_host()` cold-cache misses; regression: N parallel calls for one domain collapse to one billing request. — `done`
+- 134.9 Расширить Prometheus exporter tests на `token_preset_issued_total` и `sanitizer_failures_total`. — `done`
+- 134.10 Обновить `AssumptionLog.md` и observability runbook. — `done`
 
 Acceptance: graceful shutdown закрывает Redis backend; audit log не заявляет committed event до commit; все security-critical web paths имеют correlation id/log signal; cold-cache host resolve не создаёт thundering herd.
 

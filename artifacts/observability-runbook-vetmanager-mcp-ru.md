@@ -5,6 +5,7 @@
 > - **Stage 110**: `vetmanager_business_events_total{event=...}` — 4 lifecycle events (account_registered, web_login_succeeded, bearer_token_issued, bearer_token_revoked).
 > - **Stage 111.1**: `/metrics` endpoint теперь требует `Authorization: Bearer $METRICS_AUTH_TOKEN` когда env задан (иначе 403). Без env — backward-compat open.
 > - **Stage 112**: `circuit_breaker_opened` structured log на CLOSED→OPEN + HALF_OPEN→OPEN; `integration_save_failed` log + `auth_failures_total{source="web_integration[_reauth]"}`; `entity` вместо `url_path` в retry/timeout/network-error логах (privacy).
+> - **Stage 134**: token audit committed logs пишутся только после successful DB commit и включают `request_id`/`correlation_id`; `/metrics` auth failures пишут security log + `auth_failures_total{source="metrics",reason="invalid_token"}`; custom web route 500/413 paths сохраняют correlation headers; billing host resolver coalesces concurrent cold-cache requests per domain.
 >
 > Полная ревизия runbook — отдельным этапом.
 
@@ -59,12 +60,17 @@ curl -fsS http://localhost:8000/metrics | head -n 40
 - `vetmanager_http_request_latency_seconds_max`
 - `vetmanager_auth_failures_total`
 - `vetmanager_upstream_failures_total`
+- `vetmanager_token_preset_issued_total`
+- `vetmanager_sanitizer_failures_total`
 
 Типовые симптомы:
 - рост `vetmanager_auth_failures_total{source="bearer_header",...}`
   обычно означает некорректный MCP client config
 - рост `vetmanager_auth_failures_total{source="web_login",reason="invalid_credentials"}`
   может означать brute-force или пользовательские ошибки
+- рост `vetmanager_auth_failures_total{source="metrics",reason="invalid_token"}`
+  означает неверный или отсутствующий bearer для `/metrics` при заданном
+  `METRICS_AUTH_TOKEN`; искать рядом `security` event `metrics_auth_failed`
 - рост `vetmanager_upstream_failures_total{target="billing_api",...}`
   означает проблемы резолва Vetmanager host
 - рост `vetmanager_upstream_failures_total{target="vetmanager_api",...}`
@@ -106,6 +112,9 @@ ERROR_TRACKING_TRACES_SAMPLE_RATE=0
 - проверить `Authorization: Bearer <service_token>` в MCP client config
 - посмотреть `vetmanager_auth_failures_total`
 - сверить audit events по bearer token lifecycle
+- для token usage audit использовать только `token_audit_log_committed`;
+  отсутствие такого event при failed transaction означает, что audit row не был
+  durable committed
 
 ### В web UI растут ошибки входа
 
