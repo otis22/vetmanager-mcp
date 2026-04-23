@@ -18,7 +18,7 @@ from request_cache import REQUEST_CACHE
 from request_auth import get_bearer_token
 from request_context import get_current_request_context
 from domain_validation import validate_domain as validate_runtime_domain
-from runtime_auth import resolve_runtime_credentials
+from runtime_auth import get_current_runtime_credentials, resolve_runtime_credentials
 from service_metrics import record_upstream_failure, record_upstream_request
 from token_scopes import required_scope_for_request
 from vetmanager_auth import VetmanagerAuthContext
@@ -136,7 +136,10 @@ class VetmanagerClient:
     """
 
     def __init__(self) -> None:
-        get_bearer_token()
+        # Bearer is required unless the tool wrapper already resolved and set
+        # request-local credentials for this MCP call.
+        if get_current_runtime_credentials() is None:
+            get_bearer_token()
         self._vetmanager_auth: VetmanagerAuthContext | None = None
         self._domain: str | None = None
         self._api_key: str | None = None

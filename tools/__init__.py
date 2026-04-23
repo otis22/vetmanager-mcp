@@ -5,6 +5,7 @@ from functools import wraps
 
 import depersonalization
 from exceptions import AuthError
+from runtime_auth import use_runtime_credentials
 from service_metrics import record_sanitizer_failure
 from vetmanager_client import resolve_runtime_credentials
 
@@ -12,18 +13,20 @@ from vetmanager_client import resolve_runtime_credentials
 def _wrap_tool_with_depersonalization(tool_func):
     @wraps(tool_func)
     async def _wrapped(*args, **kwargs):
-        result = await tool_func(*args, **kwargs)
         try:
             credentials = await resolve_runtime_credentials()
         except AuthError:
-            return result
-        if not credentials.is_depersonalized:
-            return result
-        try:
-            return depersonalization.sanitize_tool_result(result)
-        except Exception as exc:
-            record_sanitizer_failure()
-            raise ToolError("Depersonalization failed.") from exc
+            raise ToolError("Runtime authentication failed.") from None
+
+        with use_runtime_credentials(credentials):
+            result = await tool_func(*args, **kwargs)
+            if not credentials.is_depersonalized:
+                return result
+            try:
+                return depersonalization.sanitize_tool_result(result)
+            except Exception:
+                record_sanitizer_failure()
+                raise ToolError("Depersonalization failed.") from None
 
     _wrapped.__signature__ = inspect.signature(tool_func)
     return _wrapped

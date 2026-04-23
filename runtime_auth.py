@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 from bearer_auth import resolve_bearer_auth_context
@@ -35,8 +37,33 @@ class RuntimeCredentials:
         return self.vetmanager_auth.api_key
 
 
+_CURRENT_RUNTIME_CREDENTIALS: ContextVar[RuntimeCredentials | None] = ContextVar(
+    "current_runtime_credentials",
+    default=None,
+)
+
+
+def get_current_runtime_credentials() -> RuntimeCredentials | None:
+    """Return request-local resolved credentials, if a tool wrapper set them."""
+    return _CURRENT_RUNTIME_CREDENTIALS.get()
+
+
+@contextmanager
+def use_runtime_credentials(credentials: RuntimeCredentials):
+    """Expose resolved credentials within one MCP tool call and reset reliably."""
+    token = _CURRENT_RUNTIME_CREDENTIALS.set(credentials)
+    try:
+        yield
+    finally:
+        _CURRENT_RUNTIME_CREDENTIALS.reset(token)
+
+
 async def resolve_runtime_credentials() -> RuntimeCredentials:
     """Resolve runtime credentials strictly from bearer auth."""
+    cached = get_current_runtime_credentials()
+    if cached is not None:
+        return cached
+
     bearer_token = get_bearer_token()
     async with get_session_factory()() as session:
         context = await resolve_bearer_auth_context(

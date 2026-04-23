@@ -461,8 +461,10 @@ async def test_get_users_name_search_runs_last_and_first_name_in_parallel(monkey
 
     monkeypatch.setattr(user_module, "crud_list", fake_crud_list)
 
+    headers_patch, runtime_patch = bearer_runtime_patch()
     started = time.perf_counter()
-    result = await mcp.call_tool("get_users", {"name": "Иванова"})
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_users", {"name": "Иванова"})
     elapsed = time.perf_counter() - started
 
     data = result.structured_content["data"]["user"]

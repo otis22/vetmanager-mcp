@@ -5812,3 +5812,31 @@ UI кабинета и issuance flow переведены на preset-based то
 ### Обратная связь
 
 Пользователь попросил убрать work log из нового workflow, сделать budgets по 2 запуска на каждый вид ревью и оставить Spark безлимитным.
+
+## Stage 131 depersonalized bearer privacy hotfix — 2026-04-24
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Закрыт fail-open privacy boundary: tool wrapper теперь разрешает bearer runtime credentials до выполнения tool и при `AuthError` возвращает generic `ToolError`, не выполняя tool.
+- Добавлен request-local `ContextVar` для resolved runtime credentials: wrapper устанавливает context на время вызова, `VetmanagerClient` переиспользует его, затем context сбрасывается через `try/finally`.
+- Sanitizer расширен на VM phone aliases `home_phone`, `work_phone`, `cell_phone`, `owner_phone` и free-text keys `diagnos`, `diagnos_text`, `diagnos_type_text`, `recomendation`, `recommendation`, `note`, `deathnote`.
+- Убран broad full-name regex из free-text sanitizer: без явного PII-сигнала clinical title-case phrases не редактируются.
+- Добавлены regression tests на fail-closed auth, one lookup/shared context, concurrent isolation, cleanup after failure, `get_debtors`, medical-card free-text и false-positive corpus.
+
+### Решения и обоснования
+
+- `ContextVar` выбран вместо передачи credentials в сигнатуры tool'ов, чтобы не менять FastMCP tool contracts и не делать второй auth lookup внутри `VetmanagerClient`.
+- Fail-closed auth error использует generic message `Runtime authentication failed.` и `raise ... from None`, чтобы не раскрывать token/domain/account details в MCP response.
+- `anamnes`/`anamnez` не добавлены в whitelist: в текущих OpenAPI/reference артефактах они не подтверждены.
+- Полный `TOOL_REQUIRED_SCOPES` preflight для aggregate tools оставлен для stage 132; stage 131 закрывает privacy fail-open и sanitizer coverage.
+
+### Проблемы
+
+- Полный suite сначала выявил два теста, которые вызывали `mcp.call_tool` без bearer runtime из-за полностью замоканного tool body. Тесты обновлены: теперь они задают mock runtime credentials, что соответствует новому pre-tool auth contract.
+- Code/diff review сторонней моделью нашёл privacy warning: uppercase owner prefixes (`OWNER`, `ВЛАДЕЛЕЦ`, `ХОЗЯИН`) перестали матчиться после отказа от broad full-name regex. Regex исправлен через scoped case-insensitive prefix, без возврата false-positive на lowercase clinical text.
+
+### Обратная связь
+
+Пользователь попросил вести Roadmap по новому workflow до конца; stage 131 выполнен через PRD, PRD-review сторонней моделью, tests-first, полный suite, audit и закрывающие артефакты.

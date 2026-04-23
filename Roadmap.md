@@ -2234,19 +2234,19 @@ Acceptance:
 
 ---
 
-## Этап 131. Depersonalized bearer privacy hotfix (post super-review 2026-04-23) — `todo`
+## Этап 131. Depersonalized bearer privacy hotfix (post super-review 2026-04-23) — `done`
 
 Источник: `artifacts/review/2026-04-23-full-stage-130.md`, blocker B1 и high privacy findings H1-H2.
 
 Цель: закрыть fail-open privacy boundary и неполное покрытие PII-полей для depersonalized bearer tokens.
 
-- 131.1 Перенести разрешение bearer/runtime context до выполнения tool: один auth lookup на MCP call, общий context для `VetmanagerClient`, scope preflight и sanitizer; при неизвестном depersonalization state — fail closed. — `todo`
-- 131.2 Убрать fail-open ветку `except AuthError: return result` из depersonalization wrapper и добавить regression test на revoked/expired token между auth и post-processing. — `todo`
-- 131.3 Расширить structured phone redaction на реальные VM поля `home_phone`, `work_phone`, `owner_phone` и normalized aliases; покрыть `get_debtors`, client payload и inactive pets owner payload. — `todo`
-- 131.4 Расширить whitelist free-text keys по OpenAPI/API reference: `diagnos`, `diagnos_text`, `recomendation`, `recommendation`, `note`, `deathnote`, `anamnes`/`anamnez` если подтверждены источниками. — `todo`
-- 131.5 Ужесточить false-positive corpus для free-text scrubber: клинические title-case фразы не должны затираться как ФИО без сильного PII-сигнала. — `todo`
-- 131.6 Добавить unit/e2e tests на sanitizer failure path, depersonalized `get_medical_card_by_id`, pet/admission/client notes и phone fields. — `todo`
-- 131.7 Обновить `AssumptionLog.md` по итоговому fail-closed privacy contract. — `todo`
+- 131.1 Перенести разрешение bearer/runtime context до выполнения tool: один auth lookup на MCP call, общий context для `VetmanagerClient` и sanitizer; при неизвестном depersonalization state — fail closed. Полный tool-level scope preflight оставлен для stage 132. — `done`
+- 131.2 Убрать fail-open ветку `except AuthError: return result` из depersonalization wrapper и добавить regression test на revoked/expired token между auth и post-processing. — `done`
+- 131.3 Расширить structured phone redaction на реальные VM поля `home_phone`, `work_phone`, `owner_phone` и normalized aliases; покрыть `get_debtors`, client payload и inactive pets owner payload. — `done`
+- 131.4 Расширить whitelist free-text keys по OpenAPI/API reference: `diagnos`, `diagnos_text`, `recomendation`, `recommendation`, `note`, `deathnote`; `anamnes`/`anamnez` не добавлять без подтверждения источниками. — `done`
+- 131.5 Ужесточить false-positive corpus для free-text scrubber: клинические title-case фразы не должны затираться как ФИО без сильного PII-сигнала. — `done`
+- 131.6 Добавить unit/e2e tests на sanitizer failure path, depersonalized `get_medical_card_by_id`, pet/admission/client notes и phone fields. — `done`
+- 131.7 Обновить `AssumptionLog.md` по итоговому fail-closed privacy contract. — `done`
 
 Acceptance: depersonalized token не получает raw payload при любой ошибке определения policy/sanitizer; реальные phone/note/clinical VM поля маскируются; false-positive corpus зелёный; полный test suite проходит.
 

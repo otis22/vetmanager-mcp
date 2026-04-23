@@ -23,24 +23,38 @@ _NAME_KEYS = frozenset({
     "client",
     "owner",
 })
-_PHONE_KEYS = frozenset({"phone", "cellphone"})
+_PHONE_KEYS = frozenset({
+    "phone",
+    "cellphone",
+    "homephone",
+    "workphone",
+    "ownerphone",
+})
 _EMAIL_KEYS = frozenset({"email"})
 _ADDRESS_KEYS = frozenset({"address"})
-_FREE_TEXT_KEYS = frozenset({"description", "diagnosis", "treatment", "comment", "notes"})
+_FREE_TEXT_KEYS = frozenset({
+    "description",
+    "diagnos",
+    "diagnosis",
+    "diagnostext",
+    "diagnostypetext",
+    "recomendation",
+    "recommendation",
+    "treatment",
+    "comment",
+    "note",
+    "notes",
+    "deathnote",
+})
 
 _EMAIL_RE = re.compile(r"(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b")
 _PHONE_RE = re.compile(r"(?<!\[redacted-phone\])(?:\+?\d[\d\-\s().]{8,}\d)")
 _OWNER_PHRASE_RE = re.compile(
-    r"(?iu)\b(?:владелец|хозяин|owner)\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё.\-]+(?:\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё.\-]+){0,2}"
+    r"(?u)\b(?i:(?:владелец|хозяин|owner))\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё.\-]+(?:\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё.\-]+){0,2}"
 )
 _INITIALS_RE = re.compile(
     r"(?u)\b[A-ZА-ЯЁ][a-zа-яё]{1,30}\s+[A-ZА-ЯЁ]\.[A-ZА-ЯЁ]\."
 )
-_FULL_NAME_RE = re.compile(
-    r"(?u)\b[A-ZА-ЯЁ][a-zа-яё]{1,30}\s+[A-ZА-ЯЁ][a-zа-яё]{1,30}(?:\s+[A-ZА-ЯЁ][a-zа-яё]{1,30})?\b"
-)
-
-
 def _normalize_key(key: str) -> str:
     return "".join(ch for ch in key.lower() if ch.isalnum())
 
@@ -71,7 +85,6 @@ def sanitize_text(text: str) -> str:
     sanitized = _PHONE_RE.sub(REDACTED_PHONE, sanitized)
     sanitized = _OWNER_PHRASE_RE.sub(lambda _m: f"owner {REDACTED_NAME}", sanitized)
     sanitized = _INITIALS_RE.sub(REDACTED_NAME, sanitized)
-    sanitized = _FULL_NAME_RE.sub(REDACTED_NAME, sanitized)
     return sanitized
 
 

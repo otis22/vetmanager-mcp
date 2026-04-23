@@ -723,16 +723,18 @@ async def test_schedule_fetches_timesheet_and_admission_in_parallel(monkeypatch)
 
     monkeypatch.setattr(schedule_module, "paginate_all", fake_paginate_all)
 
+    headers_patch, runtime_patch = bearer_runtime_patch()
     started = time.perf_counter()
-    result = await mcp.call_tool(
-        "get_doctor_free_slots",
-        {
-            "doctor_id": 1,
-            "date_from": "2026-04-10",
-            "date_to": "2026-04-10",
-            "slot_minutes": 30,
-        },
-    )
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_doctor_free_slots",
+            {
+                "doctor_id": 1,
+                "date_from": "2026-04-10",
+                "date_to": "2026-04-10",
+                "slot_minutes": 30,
+            },
+        )
     elapsed = time.perf_counter() - started
 
     assert elapsed < 0.09, f"expected parallel fetch, got serial latency {elapsed:.3f}s"
