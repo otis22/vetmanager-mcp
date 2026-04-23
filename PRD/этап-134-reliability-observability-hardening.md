@@ -14,6 +14,10 @@
 - `host_resolver.resolve_vetmanager_host()` имеет TTL cache, но concurrent cold-cache calls на один domain не coalesce'ятся.
 - Prometheus exporter уже рендерит `vetmanager_token_preset_issued_total` и `vetmanager_sanitizer_failures_total`, но regression coverage не пинует эти families.
 
+## Цель
+
+Закрыть reliability/observability хвосты stage 130 без изменения продуктовой семантики: deterministic shutdown, durable audit signal, request/correlation coverage, `/metrics` auth visibility и cold-cache host-resolution coalescing.
+
 ## Scope
 
 1. Подключить `shutdown_rate_limit_backend()` в `server._graceful_shutdown()` через тот же guarded warning pattern, что `reset_shared_http_client`, `reset_breakers`, `reset_billing_resolver`.

@@ -5939,3 +5939,33 @@ UI кабинета и issuance flow переведены на preset-based то
 ### Обратная связь
 
 Пользователь попросил вести Roadmap до конца по новому workflow; stage 134 выполнен с PRD, двумя PRD-review сторонней моделью, tests-first и обновлением observability артефактов.
+
+## Этап 135 technical docs drift cleanup after stage 130 — 2026-04-24
+
+**Статус**: `done`.
+
+### Что сделано
+
+- PRD-review сторонней моделью: 1/2 дал 4 high + 5 medium + 3 low, адекватные findings устранены; 2/2 вернул `NO FINDINGS`, бюджет PRD-review исчерпан.
+- Technical requirements обновлён до текущего stage 130-134 контракта: preset-based issuance, runtime tool preflight, depersonalization fail-closed, stage 134 observability, dual FastMCP dependency docs.
+- Scope/preset section синхронизирован с `tool_access_registry.py` и `token_scopes.py`: `messaging.read` legacy-only, `ClientPhone -> clients.read`, reports/schedule analytics через `analytics.read`, send tools через `messaging.write`.
+- README, SECURITY и operations readiness обновлены по user-visible changes: token presets, depersonalized fail-closed boundary, sanitizer/preset metrics, `/metrics` auth failure signal, audit `token_audit_log_committed`.
+- Roadmap/PRD stage 130 wording уточнён: broad address heuristics не входят в free-text scrubber, address redaction только structural по ключам.
+- Добавлена `## Цель` в PRD stage 134, потому что `scripts/review_workflow_check.sh 135` поднял старый workflow gap.
+
+### Решения и обоснования
+
+- Source of truth для docs-only cleanup — код: dependency facts сверены с `pyproject.toml`/`Dockerfile`, access policy — с `tool_access_registry.py`/`token_scopes.py`, depersonalization — с `tools/__init__.py`/`depersonalization.py`.
+- FastMCP dependency описан двумя строками: project metadata `fastmcp>=2.0.0`, Docker runtime `fastmcp>=3.1.0,<4`.
+- Observability runbook не дублировался; runtime-код, storage и preset matrix не менялись.
+
+### Проблемы
+
+- Workflow check нашёл отсутствие AssumptionLog stage 135 и старый PRD stage 134 без `## Цель`; оба пункта исправлены.
+- Исторический PRD stage 28 содержал stale full-access wording; заменён на historical note о stage-28 fallback и current stage 130+ override.
+- Code-review сторонней моделью 1/2 нашёл, что эти два retro-doc fixes были недостаточно явно включены в PRD stage 135; PRD scope/non-scope уточнены.
+- Full suite после docs cleanup и после code-review fix прошёл: `853 passed, 57 deselected`.
+
+### Обратная связь
+
+Пользователь попросил вести Roadmap до конца по новому workflow; stage 135 выполнен как docs-only cleanup с двумя PRD-review сторонней моделью и без runtime changes.

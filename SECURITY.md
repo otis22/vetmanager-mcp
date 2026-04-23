@@ -39,6 +39,11 @@ The following are in scope:
 - CSRF bypasses
 - SSRF via host resolution
 
+### Security model highlights
+
+- Service bearer tokens are shown once, stored hash-only, bound to a service account, and issued through fixed access presets with runtime scope preflight.
+- Depersonalized bearer tokens use a centralized response sanitizer and fail closed with a safe error instead of returning raw payload; Vetmanager login/password credentials are used only for token exchange and are not stored after submit.
+
 Out of scope:
 - Vulnerabilities in upstream Vetmanager REST API
 - Issues requiring physical access to the server

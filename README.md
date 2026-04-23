@@ -137,7 +137,10 @@ HTTP probes и scrape endpoints:
   - `vetmanager_tool_calls_total{endpoint,method,outcome}` + `vetmanager_tool_call_latency_seconds_{count,sum,max}` — per-tool (endpoint+method) latency and success/error rate via crud_helpers instrumentation (stage 88);
   - `vetmanager_cache_{hits,misses,invalidations,evictions}_total` + `vetmanager_cache_entries`;
   - `vetmanager_business_events_total{event=...}` — lifecycle business events (`account_registered`, `web_login_succeeded`, `bearer_token_issued`, `bearer_token_revoked`) (stage 110);
+  - `vetmanager_token_preset_issued_total{preset}` — issuance counter by access preset;
+  - `vetmanager_sanitizer_failures_total` — depersonalized response sanitizer failures;
   - `/metrics` endpoint gated by optional `METRICS_AUTH_TOKEN` env (stage 111.1): when set, requires `Authorization: Bearer <token>` or returns 403;
+  - invalid `/metrics` bearer attempts increment `vetmanager_auth_failures_total{source="metrics",reason="invalid_token"}` and emit a `security` log event `metrics_auth_failed`;
 - opt-in Sentry bootstrap для unhandled exceptions.
 
 ### Exceptions raised by VM tools
@@ -189,7 +192,9 @@ Bearer-токен привязан к account сервиса:
 - `/register` и `/login` защищены process-local rate limiting от brute-force / abuse;
 - HTML responses отдают baseline security headers: `CSP`, `X-Frame-Options`, `Referrer-Policy`, `X-Content-Type-Options`;
 - кабинет показывает health активной integration и статус `reauth_required`, если сохранённый user token больше не проходит валидацию;
-- доступен выпуск Bearer-токенов с именем и сроком действия;
+- доступен выпуск Bearer-токенов с именем, сроком действия, preset'ом доступа
+  (`full_access`, `read_only`, `frontdesk`, `doctor`, `finance`, `inventory`)
+  и опциональным режимом деперсонализации ответов;
 - после выпуска raw bearer token показывается в отдельной success-card в верхней части страницы и может быть скопирован кнопкой;
 - доступен список токенов со статусом, сроком действия, `last_used_at`, `request_count` и revoke action.
 
@@ -206,7 +211,10 @@ Bearer-токен привязан к account сервиса:
 - rate limiting для `/register` и `/login`;
 - baseline security headers для HTML-ответов web UI;
 - web-экран сохранения active Vetmanager integration;
-- web-выпуск Bearer-токенов с one-time показом raw значения;
+- web-выпуск Bearer-токенов с preset-based scopes и one-time показом raw значения;
+- централизованная деперсонализация ответов для токенов с включённым флагом:
+  structured PII поля маскируются, free-text scrub ограничен whitelist clinical
+  fields, а при ошибке sanitizer'а raw payload не возвращается;
 - success-card для нового raw bearer token с copy action;
 - список Bearer-токенов с usage metadata;
 - runtime usage accounting (`last_used_at`, `request_count`);

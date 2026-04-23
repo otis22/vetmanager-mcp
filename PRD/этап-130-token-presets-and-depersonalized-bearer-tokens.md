@@ -49,7 +49,7 @@ Stage 132 hardening уточняет источник истины для advert
    - телефоны (включая `+7`, 10-11 digits, common separators)
    - email
    - конструкции `владелец ...`, `хозяин ...`, `owner ...`
-   Адресные маркеры исключить из v1 free-text scrubber как слишком высокий риск false positive; адреса редактируются только структурно по ключам.
+   Broad address heuristics исключить из v1 free-text scrubber как слишком высокий риск false positive; адреса редактируются только структурно по ключам.
 13. Логи и метрики не переписывать этим sanitizer'ом; для них действуют существующие redaction paths. Не допустить появления raw PII в новых audit/log полях этой feature.
 
 ## Не делать

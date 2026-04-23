@@ -73,7 +73,7 @@ presets/roles как слой поверх scopes.
 
 Чтобы не сломать существующие токены и клиентов:
 - enforcement в runtime не включается в этом этапе;
-- новые токены получают default full-access набор всех coarse-grained scopes;
+- исторический stage-28 fallback предполагал full-access manifest для совместимости; текущий stage 130+ контракт переопределяет выпуск новых токенов на preset-based issuance;
 - старые токены без сохранённого scope manifest интерпретируются как
   `legacy full-access` до момента явной миграции UI/API.
 

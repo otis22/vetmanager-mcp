@@ -1,7 +1,7 @@
 # Технические требования: Vetmanager MCP Server
 
 **Автор:** Manus AI  
-**Актуализировано:** 23 марта 2026 г.
+**Актуализировано:** 24 апреля 2026 г.
 
 ## 1. Введение
 
@@ -17,7 +17,7 @@
 - поддерживает мультитенантность, базовое кеширование, pacing запросов и
   security hardening.
 
-Текущая эволюция проекта по roadmap этапам 20–104:
+Текущая эволюция проекта по roadmap этапам 20–134:
 - bearer-only runtime-контракт уже реализован;
 - web-контур с лендингом, регистрацией и кабинетом аккаунта;
 - хранение Vetmanager-интеграции на уровне аккаунта;
@@ -51,6 +51,11 @@
   `get_client_profile::next_admission` status IN-tuple + CancelledError
   propagation + breaker probe clearance на 4xx + `filters.in_([])`
   reject + `_parse_retry_after` DoS mitigation.
+- token presets/depersonalization (этапы 130-132): preset-based issuance,
+  runtime tool preflight и depersonalized fail-closed sanitizer;
+- VM API contract fixes (этап 133): VM datetime/list/report edge cases;
+- reliability/observability hardening (этап 134): durable audit signal,
+  correlation metadata, `/metrics` auth signal и host-resolution coalescing.
 
 ## 2. Технологический стек
 
@@ -58,7 +63,7 @@
 |---|---|---|---|
 | Язык | Python | 3.11+ | Основной язык сервера и инструментов |
 | Базовый образ | `python:3.12-slim` | используется в `Dockerfile` | Сборка и запуск контейнера |
-| MCP framework | `fastmcp` | `>=3.1.0,<4` | Регистрация tools/prompts и запуск MCP HTTP server. Мажор 3.x несовместим с 2.x (убран public `call_tool` в 2.14.x). |
+| MCP framework | `fastmcp` | `pyproject.toml`: `>=2.0.0`; Docker runtime: `>=3.1.0,<4` | Регистрация tools/prompts и запуск MCP HTTP server. Project metadata остаётся broad lower-bound, production/test image pin'ит 3.x runtime через Dockerfile. |
 | HTTP client | `httpx` | `>=0.27.0` | Запросы к billing API и Vetmanager API |
 | Тесты | `pytest`, `pytest-asyncio`, `respx` | через Docker test profile | Unit, mock e2e, real e2e |
 | Контейнеризация | Docker + Compose | обязательный runtime | Локальный запуск, тесты, деплой |
@@ -413,19 +418,29 @@ vetmanager-mcp/
 - Bearer-токены привязываются к аккаунту;
 - у аккаунта один активный Vetmanager auth mode в каждый момент времени;
 - dual-mode MCP runtime не планируется;
-- runtime enforcement scopes пока не включён;
-- scope metadata уже может храниться на токене для будущего ограничения прав.
+- scope metadata хранится на токене и enforcement включён в bearer runtime.
 
-### 3.6. Future token scopes / capability model
+### 3.6. Token scopes / preset capability model
 
-Подготовленная модель прав строится вокруг capability list на уровне токена:
+Текущая модель прав строится вокруг capability list на уровне токена:
 - права принадлежат Bearer-токену, а не аккаунту целиком;
 - scope именуется как `<resource_group>.<action>`;
-- отсутствие scope в будущем трактуется как запрет;
-- legacy токены без scope manifest остаются совместимыми как full-access tokens,
-  пока enforcement не включён.
+- отсутствие required scope трактуется как запрет до выполнения tool;
+- legacy токены без scope manifest остаются совместимыми как full-access tokens
+  через deserialization fallback, без изменения сохранённых исторических строк.
 
-Coarse-grained scopes первого итерационного релиза:
+Новые токены выпускаются только через preset selector:
+
+| Preset | Scope bundle |
+|---|---|
+| `full_access` | полный актуальный `SUPPORTED_TOKEN_SCOPES` на момент выпуска |
+| `read_only` | `admissions.read`, `analytics.read`, `clients.read`, `finance.read`, `inventory.read`, `medical_cards.read`, `pets.read`, `reference.read`, `users.read` |
+| `frontdesk` | `admissions.read`, `admissions.write`, `analytics.read`, `clients.read`, `clients.write`, `finance.read`, `messaging.write`, `pets.read`, `pets.write`, `reference.read`, `users.read` |
+| `doctor` | `admissions.read`, `analytics.read`, `medical_cards.read`, `medical_cards.write`, `pets.read`, `reference.read`, `users.read` |
+| `finance` | `clients.read`, `finance.read`, `finance.write`, `reference.read` |
+| `inventory` | `inventory.read`, `inventory.write`, `reference.read` |
+
+Supported scopes:
 - `clients.read`
 - `clients.write`
 - `pets.read`
@@ -439,15 +454,38 @@ Coarse-grained scopes первого итерационного релиза:
 - `inventory.read`
 - `inventory.write`
 - `users.read`
+- `users.write`
 - `messaging.read`
 - `messaging.write`
 - `reference.read`
 - `analytics.read`
+- `analytics.write`
 
-Storage preparation:
+Scope routing:
+- `tool_access_registry.py::TOOL_REQUIRED_SCOPES` — source of truth для
+  tool-level preflight; aggregate tools проверяют все required scopes до первого
+  upstream вызова.
+- `token_scopes.py::required_scope_for_request` — defense-in-depth на REST path:
+  `ClientPhone` требует `clients.read`, `/messages/reports` и timesheet read
+  paths требуют `analytics.read`, send-message mutation paths требуют
+  `messaging.write`.
+- `messaging.read` остаётся supported legacy scope для совместимости со старыми
+  manifests, но active preset'ы его не используют.
+
+Storage:
 - `service_bearer_tokens.access_policy_version` хранит версию policy schema;
 - `service_bearer_tokens.scopes_json` хранит сериализованный scope manifest;
-- новые токены получают default full-access manifest для обратной совместимости.
+- `service_bearer_tokens.is_depersonalized` включает response sanitizer для
+  конкретного bearer token;
+- новые токены получают scopes строго из выбранного preset'а; только
+  `full_access` разворачивается в полный актуальный набор.
+
+Depersonalization:
+- wrapper resolves bearer context до tool execution и применяет sanitizer только
+  для `is_depersonalized=true`;
+- address redaction structural-only по ключам; free-text scrubber ограничен
+  whitelist clinical/note keys и не использует broad address heuristics;
+- sanitizer failure возвращает `Depersonalization failed.` без raw payload.
 
 ## 4. Детали реализации
 
@@ -642,10 +680,15 @@ docker compose up -d
 - `vm_transport/breaker.py` — per-domain breaker для `*.vetmanager.cloud` clinics.
 - `host_resolver.py` (stage 113.F7) — shared per-loop `httpx.AsyncClient` + TTL cache для billing-api.
 
-### Observability metrics (stage 88 + 110)
+### Observability metrics (stage 88 + 110 + 134)
 - `vetmanager_upstream_requests_total{target,status}` + latency histogram;
 - `vetmanager_tool_calls_total{endpoint,method,outcome}` + latency histogram;
 - `vetmanager_business_events_total{event}` — 4 allowed events.
+- `vetmanager_token_preset_issued_total{preset}`;
+- `vetmanager_sanitizer_failures_total`;
+- `vetmanager_auth_failures_total{source="metrics",reason="invalid_token"}`;
+- token audit committed events include allowlisted `request_id`/`correlation_id`
+  and should be traced through `token_audit_log_committed`.
 
 ## 8. Ссылки
 
