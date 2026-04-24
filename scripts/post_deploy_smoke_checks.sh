@@ -45,7 +45,6 @@ perform_request() {
     SMOKE_LAST_CURL_EXIT=$?
   fi
 
-  SMOKE_LAST_URL="${url}"
   SMOKE_LAST_STATUS="$(cat "${status_file}")"
   SMOKE_LAST_BODY="$(cat "${body_file}")"
   SMOKE_LAST_ERROR="$(cat "${error_file}")"

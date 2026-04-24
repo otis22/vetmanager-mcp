@@ -6303,6 +6303,7 @@ UI кабинета и issuance flow переведены на preset-based то
 - Stage 147 checks before review: targeted deploy script test `1 passed`; full Docker suite `921 passed, 57 deselected`. Regression фиксирует migration run, `compose up -d --force-recreate --no-build mcp` и `post_deploy_smoke_checks.sh`.
 - Claude Opus review Stage 147 нашёл адекватный medium: `-T` отключает pseudo-TTY, но для production-hotfix нужно явно закрыть stdin. Принято: migration command изменён на `compose run -T --rm mcp alembic upgrade head </dev/null`, тест и PRD обновлены.
 - Stage 147 final checks after review-fix: targeted deploy script test `1 passed`; full Docker suite `921 passed, 57 deselected`; Spark review `[]`; Claude Opus review `[]`.
+- После push commit `99a60fc` GitHub `ShellCheck` упал на существующем `SC2034` в `scripts/post_deploy_smoke_checks.sh`: `SMOKE_LAST_URL` присваивался и не использовался. Переменная удалена как dead assignment; targeted deploy script test `1 passed`; full Docker suite `921 passed, 57 deselected`. Локально `shellcheck` отсутствует, финальная проверка будет через GitHub Actions после push.
 
 ### Обратная связь
 
