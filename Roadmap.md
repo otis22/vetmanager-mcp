@@ -2344,19 +2344,19 @@ Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown н
 - 137.5 Обновить UI copy/docs/tests под новые defaults без изменения legacy token compatibility. — `done`
 - 137.6 Пройти full checks, audit, external diff review, commit/push и self-attestation. — `done`
 
-## Этап 138. Rate limiting and deployment smoke reliability (после Этапа 137) — `todo`
+## Этап 138. Rate limiting and deployment smoke reliability (после Этапа 137) — `done`
 
 Источник: `artifacts/review/2026-04-24-full-stage-136.md`, F3-F4/F10/F20-F21.
 
 Цель: закрыть Redis timeout/degradation, bearer distributed limit и token-aware smoke/docs drift.
 
-- 138.1 Создать PRD stage 138 и пройти PRD-review gates по workflow. — `todo`
-- 138.2 Добавить bounded Redis socket/connect timeouts и operation timeout wrapper для rate-limit backend. — `todo`
-- 138.3 Добавить metric/health signal для Redis rate-limit degradation. — `todo`
-- 138.4 Перевести bearer runtime limiter на shared RateLimitBackend или явно require Redis для multi-worker production. — `todo`
-- 138.5 Исправить `scripts/post_deploy_smoke_checks.sh` на METRICS_AUTH_TOKEN-aware `/metrics` probe. — `todo`
-- 138.6 Синхронизировать README/security threat model по web Redis backend vs bearer limiter. — `todo`
-- 138.7 Пройти checks, audit, external diff review, commit/push и self-attestation. — `todo`
+- 138.1 Создать PRD stage 138 и пройти PRD-review gates по workflow. — `done`
+- 138.2 Добавить bounded Redis socket/connect timeouts и operation timeout wrapper для rate-limit backend. — `done`
+- 138.3 Добавить metric/health signal для Redis rate-limit degradation. — `done`
+- 138.4 Перевести bearer runtime limiter на shared RateLimitBackend или явно require Redis для multi-worker production. — `done`
+- 138.5 Исправить `scripts/post_deploy_smoke_checks.sh` на METRICS_AUTH_TOKEN-aware `/metrics` probe. — `done`
+- 138.6 Синхронизировать README/security threat model по web Redis backend vs bearer limiter. — `done`
+- 138.7 Пройти checks, audit, external diff review, commit/push и self-attestation. — `done`
 
 ## Этап 139. Async auth/session and breaker correctness (после Этапа 138) — `todo`
 

@@ -1,22 +1,13 @@
-"""Process-local sliding-window rate limiter for bearer-authenticated requests.
-
-Stage 103a: extracted from `bearer_rate_limiter.py`. Kept as a focused
-submodule; consolidation with the generic `rate_limit_backend` namespace
-is tracked separately — substantial enough to warrant its own stage.
-"""
+"""Bearer-authenticated request rate limiting via the shared backend."""
 
 from __future__ import annotations
 
-import asyncio
-import math
 import sys
-from collections import deque
-from datetime import datetime, timezone
-from weakref import WeakKeyDictionary
 
 from env_utils import env_int
 from exceptions import RateLimitError
 from observability_logging import RUNTIME_LOGGER
+from rate_limit_backend import get_rate_limit_backend, reset_rate_limit_backend
 
 DEFAULT_BEARER_RATE_LIMIT_REQUESTS = 1000
 DEFAULT_BEARER_RATE_LIMIT_WINDOW_SECONDS = 60
@@ -36,71 +27,45 @@ def get_bearer_rate_limit_window_seconds() -> int:
 
 
 class InMemoryBearerRateLimiter:
-    """Track recent request timestamps per bearer token within one process."""
+    """Compatibility adapter backed by the shared rate-limit backend."""
 
-    def __init__(self) -> None:
-        self._requests_by_token: dict[int, deque[float]] = {}
-        self._locks_by_loop: WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
-            WeakKeyDictionary()
-        )
-
-    def _get_lock(self) -> asyncio.Lock:
-        loop = asyncio.get_running_loop()
-        lock = self._locks_by_loop.get(loop)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._locks_by_loop[loop] = lock
-        return lock
-
-    async def check_or_raise(
-        self,
-        bearer_token_id: int,
-        *,
-        now: datetime | None = None,
-    ) -> None:
+    async def check_or_raise(self, bearer_token_id: int) -> None:
         """Reserve one request slot or raise a 429-safe error."""
-        current = now or datetime.now(timezone.utc)
-        if current.tzinfo is None:
-            current = current.replace(tzinfo=timezone.utc)
-        current_ts = current.timestamp()
         request_limit = get_bearer_rate_limit_requests()
         window_seconds = get_bearer_rate_limit_window_seconds()
-        cutoff = current_ts - window_seconds
 
-        async with self._get_lock():
-            bucket = self._requests_by_token.setdefault(bearer_token_id, deque())
-            while bucket and bucket[0] <= cutoff:
-                bucket.popleft()
+        backend = await get_rate_limit_backend()
+        _, allowed = await backend.consume_hit(
+            "bearer",
+            str(bearer_token_id),
+            limit=request_limit,
+            window_seconds=window_seconds,
+        )
 
-            if len(bucket) >= request_limit:
-                retry_after_seconds = max(
-                    1,
-                    math.ceil(bucket[0] + window_seconds - current_ts),
-                )
-                # Stage 107.1 (H10 fix): log at raise site so throttling
-                # leaves a searchable event even if the caller's metric path
-                # changes. Token id only — не логируем raw token.
-                RUNTIME_LOGGER.warning(
-                    "Bearer rate limit triggered",
-                    extra={
-                        "event_name": "bearer_rate_limit_triggered",
-                        "token_id": bearer_token_id,
-                        "retry_after_seconds": retry_after_seconds,
-                        "request_limit": request_limit,
-                        "window_seconds": window_seconds,
-                    },
-                )
-                raise RateLimitError(
-                    "Bearer token rate limit exceeded. Retry later.",
-                    retry_after_seconds=retry_after_seconds,
-                )
-
-            bucket.append(current_ts)
+        if not allowed:
+            retry_after_seconds = max(1, window_seconds)
+            # Stage 107.1 (H10 fix): log at raise site so throttling
+            # leaves a searchable event even if the caller's metric path
+            # changes. Token id only — не логируем raw token.
+            RUNTIME_LOGGER.warning(
+                "Bearer rate limit triggered",
+                extra={
+                    "event_name": "bearer_rate_limit_triggered",
+                    "token_id": bearer_token_id,
+                    "retry_after_seconds": retry_after_seconds,
+                    "request_limit": request_limit,
+                    "window_seconds": window_seconds,
+                },
+            )
+            raise RateLimitError(
+                "Bearer token rate limit exceeded. Retry later.",
+                retry_after_seconds=retry_after_seconds,
+            )
 
     async def reset(self) -> None:
-        """Clear process-local limiter state, mainly for tests."""
-        async with self._get_lock():
-            self._requests_by_token.clear()
+        """Clear shared limiter state, mainly for tests."""
+        backend = await get_rate_limit_backend()
+        await backend.reset_all()
 
 
 BEARER_RATE_LIMITER = InMemoryBearerRateLimiter()
@@ -115,6 +80,7 @@ def reset_bearer_rate_limiter() -> None:
     `bearer_rate_limiter.BEARER_RATE_LIMITER` see the fresh instance.
     """
     global BEARER_RATE_LIMITER
+    reset_rate_limit_backend()
     fresh = InMemoryBearerRateLimiter()
     BEARER_RATE_LIMITER = fresh
     # Keep the shim's module-level name in sync for any legacy caller

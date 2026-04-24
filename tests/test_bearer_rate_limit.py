@@ -8,6 +8,7 @@ import pytest_asyncio
 from sqlalchemy import select
 
 import bearer_rate_limiter
+import rate_limit_backend
 from bearer_auth import resolve_bearer_auth_context
 from bearer_token_manager import generate_bearer_token
 from exceptions import RateLimitError
@@ -96,7 +97,7 @@ async def test_bearer_rate_limit_blocks_request_above_limit(session_factory, mon
         bearer_rate_limiter.reset_bearer_rate_limiter()
 
     assert exc_info.value.status_code == 429
-    assert exc_info.value.retry_after_seconds == 40
+    assert exc_info.value.retry_after_seconds == 60
     assert stats is not None
     assert stats.request_count == 2
 
@@ -159,8 +160,16 @@ async def test_bearer_rate_limit_allows_requests_after_window_expires(session_fa
     )
     monkeypatch.setenv("BEARER_RATE_LIMIT_REQUESTS", "2")
     monkeypatch.setenv("BEARER_RATE_LIMIT_WINDOW_SECONDS", "60")
-    bearer_rate_limiter.reset_bearer_rate_limiter()
     start = datetime(2026, 3, 21, 13, 0, tzinfo=timezone.utc)
+    current_time = start
+
+    class _FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return current_time
+
+    monkeypatch.setattr(rate_limit_backend, "datetime", _FrozenDatetime)
+    bearer_rate_limiter.reset_bearer_rate_limiter()
 
     try:
         async with session_factory() as session:
@@ -170,6 +179,7 @@ async def test_bearer_rate_limit_allows_requests_after_window_expires(session_fa
                 encryption_key=TEST_ENCRYPTION_KEY,
                 now=start,
             )
+        current_time = start + timedelta(seconds=30)
         async with session_factory() as session:
             await resolve_bearer_auth_context(
                 raw_token,
@@ -177,6 +187,7 @@ async def test_bearer_rate_limit_allows_requests_after_window_expires(session_fa
                 encryption_key=TEST_ENCRYPTION_KEY,
                 now=start + timedelta(seconds=30),
             )
+        current_time = start + timedelta(seconds=61)
         async with session_factory() as session:
             context = await resolve_bearer_auth_context(
                 raw_token,
@@ -188,3 +199,29 @@ async def test_bearer_rate_limit_allows_requests_after_window_expires(session_fa
         bearer_rate_limiter.reset_bearer_rate_limiter()
 
     assert context.domain == "clinic-window"
+
+
+@pytest.mark.asyncio
+async def test_bearer_rate_limit_uses_shared_backend_namespace(monkeypatch):
+    """Bearer limiter must use shared backend with token id, never the raw token."""
+    calls: list[tuple[str, str, int, int]] = []
+
+    class _FakeBackend:
+        async def consume_hit(self, namespace, key, *, limit, window_seconds):
+            calls.append((namespace, key, limit, window_seconds))
+            return 1, True
+
+    async def _fake_get_rate_limit_backend():
+        return _FakeBackend()
+
+    monkeypatch.setenv("BEARER_RATE_LIMIT_REQUESTS", "7")
+    monkeypatch.setenv("BEARER_RATE_LIMIT_WINDOW_SECONDS", "13")
+    monkeypatch.setattr(
+        "auth.rate_limit.get_rate_limit_backend",
+        _fake_get_rate_limit_backend,
+    )
+    bearer_rate_limiter.reset_bearer_rate_limiter()
+
+    await bearer_rate_limiter.BEARER_RATE_LIMITER.check_or_raise(123)
+
+    assert calls == [("bearer", "123", 7, 13)]

@@ -12,10 +12,12 @@ import pytest
 from rate_limit_backend import (
     InMemoryRateLimitBackend,
     RedisRateLimitBackend,
+    _ResilientRedisBackend,
     get_rate_limit_backend,
     reset_rate_limit_backend,
     shutdown_rate_limit_backend,
 )
+from service_metrics import render_prometheus_metrics, snapshot_service_metrics
 from web_security import check_rate_limit
 
 
@@ -179,6 +181,42 @@ async def test_factory_fail_fast_when_require_redis_set(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_factory_closes_redis_client_when_ping_fails(monkeypatch):
+    calls: list[tuple[str, object]] = []
+
+    class _FakeRedisClient:
+        async def ping(self):
+            calls.append(("ping", None))
+            raise TimeoutError("slow redis")
+
+        async def aclose(self):
+            calls.append(("aclose", None))
+
+    class _FakeRedisClass:
+        @staticmethod
+        def from_url(url, decode_responses=True, **kwargs):
+            calls.append(("from_url", url, decode_responses, kwargs))
+            return _FakeRedisClient()
+
+    fake_asyncio_module = types.SimpleNamespace(Redis=_FakeRedisClass)
+    fake_redis_module = types.SimpleNamespace(asyncio=fake_asyncio_module)
+
+    monkeypatch.setenv("REDIS_URL", "redis://example.test:6379/0")
+    monkeypatch.setenv("RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS", "0.01")
+    monkeypatch.delenv("RATE_LIMIT_REQUIRE_REDIS", raising=False)
+    monkeypatch.setitem(sys.modules, "redis", fake_redis_module)
+    monkeypatch.setitem(sys.modules, "redis.asyncio", fake_asyncio_module)
+    reset_rate_limit_backend()
+
+    backend = await get_rate_limit_backend()
+
+    assert isinstance(backend, InMemoryRateLimitBackend)
+    assert ("ping", None) in calls
+    assert ("aclose", None) in calls
+    reset_rate_limit_backend()
+
+
+@pytest.mark.asyncio
 async def test_factory_uses_redis_asyncio_client(monkeypatch):
     calls: list[tuple[str, object]] = []
 
@@ -191,8 +229,8 @@ async def test_factory_uses_redis_asyncio_client(monkeypatch):
 
     class _FakeRedisClass:
         @staticmethod
-        def from_url(url, decode_responses=True):
-            calls.append(("from_url", url, decode_responses))
+        def from_url(url, decode_responses=True, **kwargs):
+            calls.append(("from_url", url, decode_responses, kwargs))
             return _FakeRedisClient()
 
     fake_asyncio_module = types.SimpleNamespace(Redis=_FakeRedisClass)
@@ -208,7 +246,16 @@ async def test_factory_uses_redis_asyncio_client(monkeypatch):
 
     assert type(backend).__name__ == "_ResilientRedisBackend"
     assert calls == [
-        ("from_url", "redis://example.test:6379/0", True),
+        (
+            "from_url",
+            "redis://example.test:6379/0",
+            True,
+            {
+                "socket_connect_timeout": 1.0,
+                "socket_timeout": 1.0,
+                "health_check_interval": 30,
+            },
+        ),
         ("ping", None),
     ]
     reset_rate_limit_backend()
@@ -227,8 +274,8 @@ async def test_shutdown_rate_limit_backend_closes_redis_client(monkeypatch):
 
     class _FakeRedisClass:
         @staticmethod
-        def from_url(url, decode_responses=True):
-            calls.append(("from_url", url, decode_responses))
+        def from_url(url, decode_responses=True, **kwargs):
+            calls.append(("from_url", url, decode_responses, kwargs))
             return _FakeRedisClient()
 
     fake_asyncio_module = types.SimpleNamespace(Redis=_FakeRedisClass)
@@ -244,7 +291,16 @@ async def test_shutdown_rate_limit_backend_closes_redis_client(monkeypatch):
     await shutdown_rate_limit_backend()
 
     assert calls == [
-        ("from_url", "redis://example.test:6379/0", True),
+        (
+            "from_url",
+            "redis://example.test:6379/0",
+            True,
+            {
+                "socket_connect_timeout": 1.0,
+                "socket_timeout": 1.0,
+                "health_check_interval": 30,
+            },
+        ),
         ("ping", None),
         ("aclose", None),
     ]
@@ -280,11 +336,17 @@ class _BrokenRedis:
         yield None
 
 
+class _SlowRedis:
+    async def zremrangebyscore(self, *_, **__):
+        await asyncio.sleep(1)
+
+    async def zcard(self, *_, **__):
+        return 0
+
+
 @pytest.mark.asyncio
 async def test_resilient_redis_falls_back_to_in_memory_on_runtime_error():
     """When Redis raises mid-operation in non-strict mode, degrade to in-memory."""
-    from rate_limit_backend import _ResilientRedisBackend
-
     redis_backend = RedisRateLimitBackend(_BrokenRedis())
     resilient = _ResilientRedisBackend(redis_backend, strict=False)
 
@@ -298,8 +360,6 @@ async def test_resilient_redis_falls_back_to_in_memory_on_runtime_error():
 @pytest.mark.asyncio
 async def test_resilient_redis_strict_mode_propagates_errors():
     """In strict mode, Redis errors must propagate (fail closed)."""
-    from rate_limit_backend import _ResilientRedisBackend
-
     redis_backend = RedisRateLimitBackend(_BrokenRedis())
     resilient = _ResilientRedisBackend(redis_backend, strict=True)
 
@@ -307,6 +367,42 @@ async def test_resilient_redis_strict_mode_propagates_errors():
         await resilient.record_hit("ns", "key", window_seconds=60)
     with pytest.raises(RuntimeError, match="connection lost"):
         await resilient.count_in_window("ns", "key", window_seconds=60)
+
+
+@pytest.mark.asyncio
+async def test_resilient_redis_runtime_timeout_falls_back_and_records_metric():
+    redis_backend = RedisRateLimitBackend(_SlowRedis())
+    resilient = _ResilientRedisBackend(
+        redis_backend,
+        strict=False,
+        operation_timeout_seconds=0.01,
+    )
+
+    await resilient.record_hit("ns", "key", window_seconds=60)
+
+    assert await resilient.count_in_window("ns", "key", window_seconds=60) == 1
+    snapshot = snapshot_service_metrics()
+    assert snapshot["rate_limit_backend_degraded_total"]["timeout"] >= 1
+    assert (
+        'vetmanager_rate_limit_backend_degraded_total{reason="timeout"}'
+        in render_prometheus_metrics()
+    )
+
+
+@pytest.mark.asyncio
+async def test_resilient_redis_strict_timeout_propagates_and_records_metric():
+    redis_backend = RedisRateLimitBackend(_SlowRedis())
+    resilient = _ResilientRedisBackend(
+        redis_backend,
+        strict=True,
+        operation_timeout_seconds=0.01,
+    )
+
+    with pytest.raises(TimeoutError):
+        await resilient.count_in_window("ns", "key", window_seconds=60)
+
+    snapshot = snapshot_service_metrics()
+    assert snapshot["rate_limit_backend_degraded_total"]["strict_failure"] >= 1
 
 
 # ── Concurrency / interleaving ──────────────────────────────────────────────

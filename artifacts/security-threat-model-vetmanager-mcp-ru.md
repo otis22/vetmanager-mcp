@@ -137,7 +137,8 @@
 - web session cookie подписана HMAC и `httponly=True`;
 - cookie defaults: `secure=True` и `samesite=strict`, если явно не ослаблены env;
 - signed CSRF double-submit token;
-- process-local rate limiting для `/register`, `/login`, bearer auth;
+- shared rate limiting для `/register`, `/login`, bearer auth: in-memory by
+  default, Redis-backed при `REDIS_URL`;
 - one-time display raw bearer token after issuance;
 - audit trail для token lifecycle и auth events;
 - safe error detail extraction для user-token exchange, без возврата raw upstream body;
@@ -195,10 +196,12 @@
 - service degradation.
 
 Текущие controls:
-- process-local rate limiting.
+- shared rate limiting с Redis-backed режимом для multi-worker deploy.
 
 Открытые вопросы:
-- limiter state process-local и не shared between instances;
+- без `REDIS_URL` limiter state process-local и не shared between instances;
+- Redis backend fail-open по умолчанию деградирует в process-local fallback;
+  для fail-closed enforcement нужен `RATE_LIMIT_REQUIRE_REDIS=1`;
 - доверие к `X-Forwarded-For` может ослабить IP-based protection.
 
 ### T5. Secret disclosure via logs, errors, HTML, audit trail
@@ -295,7 +298,8 @@
 
 ### For 44.5
 
-- process-local rate limiting может быть недостаточен для multi-instance deploy;
+- in-memory rate limiting без `REDIS_URL` может быть недостаточен для
+  multi-instance deploy;
 - direct trust to `X-Forwarded-For` может делать limiter и audit spoofable.
 
 ### For 44.6
@@ -310,7 +314,7 @@
 | 44.2 (secrets coupling, cookie defaults) | Частично закрыто | 44, 52 | Session timeout 24h, CSP headers, fail-fast startup validation. WEB_SESSION_SECRET / STORAGE_ENCRYPTION_KEY coupling остаётся by design. |
 | 44.3 (scope model) | Подготовлено | 28 | Schema/storage готовы, enforcement не включён. Legacy tokens → full access. |
 | 44.4 (audit log leaks) | Закрыто | 44, 52 | Upstream error text stripped, JSON CSP, safe error messages. |
-| 44.5 (rate limiting, XFF) | Частично закрыто | 27, 40, 52 | Per-token, per-email lockout, per-IP limiting реализованы. Process-local only — known limitation для multi-instance. `WEB_TRUSTED_PROXY_IPS` добавлен (stage 52). |
+| 44.5 (rate limiting, XFF) | Частично закрыто | 27, 40, 52, 138 | Per-token, per-email lockout, per-IP limiting реализованы. Web/bearer rate limiting используют shared backend: in-memory default, Redis-backed при `REDIS_URL`; без Redis остаётся process-local limitation. `WEB_TRUSTED_PROXY_IPS` добавлен (stage 52). |
 | 44.6 (SSRF/host validation) | Закрыто | 12, 44 | Domain validation + HTTPS + allowlist суффиксов. Redirect following disabled. |
 
 ## 10. Security Review Output Contract

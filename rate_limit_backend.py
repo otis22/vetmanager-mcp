@@ -15,7 +15,14 @@ from collections import defaultdict, deque
 from datetime import datetime, timezone
 from typing import Protocol
 
+from env_utils import env_float, env_int
 from observability_logging import RUNTIME_LOGGER
+from service_metrics import record_rate_limit_backend_degraded
+
+
+DEFAULT_REDIS_SOCKET_TIMEOUT_SECONDS = 1.0
+DEFAULT_REDIS_OPERATION_TIMEOUT_SECONDS = 1.0
+DEFAULT_REDIS_HEALTH_CHECK_INTERVAL_SECONDS = 30
 
 
 class RateLimitBackend(Protocol):
@@ -240,17 +247,54 @@ class _ResilientRedisBackend:
     a Lua script for consistent server-side timestamps.
     """
 
-    def __init__(self, redis_backend: RedisRateLimitBackend, *, strict: bool = False) -> None:
+    def __init__(
+        self,
+        redis_backend: RedisRateLimitBackend,
+        *,
+        strict: bool = False,
+        operation_timeout_seconds: float | None = None,
+    ) -> None:
         self._redis_backend = redis_backend
         self._fallback = InMemoryRateLimitBackend()
         self._strict = strict
+        self._operation_timeout_seconds = (
+            operation_timeout_seconds
+            if operation_timeout_seconds is not None
+            else _get_redis_operation_timeout_seconds()
+        )
 
     async def _safe(self, op_name: str, fn, *args, **kwargs):
         try:
-            return await fn(*args, **kwargs)
+            return await asyncio.wait_for(
+                fn(*args, **kwargs),
+                timeout=self._operation_timeout_seconds,
+            )
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            reason = "strict_failure" if self._strict else "timeout"
+            record_rate_limit_backend_degraded(reason)
+            if self._strict:
+                RUNTIME_LOGGER.error(
+                    "Redis rate limit operation timed out in strict mode.",
+                    extra={
+                        "event_name": "rate_limit_backend_strict_failure",
+                        "operation": op_name,
+                        "error": str(exc),
+                    },
+                )
+                raise
+            RUNTIME_LOGGER.warning(
+                "Redis rate limit operation timed out, degrading to in-memory.",
+                extra={
+                    "event_name": "rate_limit_backend_runtime_fallback",
+                    "operation": op_name,
+                    "error": str(exc),
+                },
+            )
+            return None
         except Exception as exc:
             if self._strict:
                 # Strict mode: propagate the error so the request fails closed.
+                record_rate_limit_backend_degraded("strict_failure")
                 RUNTIME_LOGGER.error(
                     "Redis rate limit operation failed in strict mode.",
                     extra={
@@ -260,6 +304,7 @@ class _ResilientRedisBackend:
                     },
                 )
                 raise
+            record_rate_limit_backend_degraded("error")
             RUNTIME_LOGGER.warning(
                 "Redis rate limit operation failed, degrading to in-memory.",
                 extra={
@@ -334,6 +379,27 @@ def _is_truthy_env(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _get_redis_socket_timeout_seconds() -> float:
+    return env_float(
+        "RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS",
+        DEFAULT_REDIS_SOCKET_TIMEOUT_SECONDS,
+    )
+
+
+def _get_redis_operation_timeout_seconds() -> float:
+    return env_float(
+        "RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS",
+        DEFAULT_REDIS_OPERATION_TIMEOUT_SECONDS,
+    )
+
+
+def _get_redis_health_check_interval_seconds() -> int:
+    return env_int(
+        "RATE_LIMIT_REDIS_HEALTH_CHECK_INTERVAL_SECONDS",
+        DEFAULT_REDIS_HEALTH_CHECK_INTERVAL_SECONDS,
+    )
+
+
 def _get_backend_init_lock() -> asyncio.Lock:
     global _BACKEND_INIT_LOCK
     if _BACKEND_INIT_LOCK is None:
@@ -365,22 +431,43 @@ async def get_rate_limit_backend() -> RateLimitBackend:
         redis_url = os.environ.get("REDIS_URL", "").strip()
         require_redis = _is_truthy_env("RATE_LIMIT_REQUIRE_REDIS")
         if redis_url:
+            client = None
             try:
                 redis_asyncio = importlib.import_module("redis.asyncio")
-                client = redis_asyncio.Redis.from_url(redis_url, decode_responses=True)
-                await client.ping()
+                socket_timeout_seconds = _get_redis_socket_timeout_seconds()
+                operation_timeout_seconds = _get_redis_operation_timeout_seconds()
+                client = redis_asyncio.Redis.from_url(
+                    redis_url,
+                    decode_responses=True,
+                    socket_connect_timeout=socket_timeout_seconds,
+                    socket_timeout=socket_timeout_seconds,
+                    health_check_interval=_get_redis_health_check_interval_seconds(),
+                )
+                await asyncio.wait_for(client.ping(), timeout=operation_timeout_seconds)
                 redis_backend = RedisRateLimitBackend(client)
-                _BACKEND = _ResilientRedisBackend(redis_backend, strict=require_redis)
+                _BACKEND = _ResilientRedisBackend(
+                    redis_backend,
+                    strict=require_redis,
+                    operation_timeout_seconds=operation_timeout_seconds,
+                )
                 RUNTIME_LOGGER.info(
                     "Rate limit backend initialized: redis",
                     extra={"event_name": "rate_limit_backend_init", "backend": "redis"},
                 )
                 return _BACKEND
             except Exception as exc:
+                if client is not None:
+                    aclose = getattr(client, "aclose", None)
+                    if callable(aclose):
+                        close_result = aclose()
+                        if inspect.isawaitable(close_result):
+                            await close_result
                 if require_redis:
+                    record_rate_limit_backend_degraded("strict_failure")
                     raise RuntimeError(
                         f"RATE_LIMIT_REQUIRE_REDIS=1 but Redis is unavailable: {exc}"
                     ) from exc
+                record_rate_limit_backend_degraded("init_fallback")
                 RUNTIME_LOGGER.warning(
                     "Redis rate limit backend unavailable, falling back to in-memory.",
                     extra={

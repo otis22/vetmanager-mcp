@@ -6029,3 +6029,39 @@ UI кабинета и issuance flow переведены на preset-based то
 ### Обратная связь
 
 Пользователь попросил закоммитить/запушить результаты full review, сформировать Roadmap по итогам review и продолжать выполнять Roadmap по workflow.
+
+## Этап 138 rate limiting and deployment smoke reliability — 2026-04-24
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Stage 138 закрывает findings F3-F4/F10/F20-F21 из `artifacts/review/2026-04-24-full-stage-136.md`.
+- PRD stage 138 создан и прошёл два PRD-review запуска Claude Opus; бюджет PRD-review израсходован, обязательные findings внесены до реализации.
+- Redis rate-limit backend получил explicit socket/connect timeout kwargs, bounded `ping()` и bounded runtime operations через `_ResilientRedisBackend`.
+- Добавлен `vetmanager_rate_limit_backend_degraded_total{reason}` в service metrics snapshot и Prometheus exporter.
+- Bearer runtime limiter переведён на shared `RateLimitBackend.consume_hit(namespace="bearer", key=str(token.id), ...)`; raw bearer token в rate-limit key не используется.
+- `scripts/post_deploy_smoke_checks.sh` передаёт `Authorization: Bearer $METRICS_AUTH_TOKEN` для `/metrics`, когда token задан, и продолжает работать без header при unset env.
+- README и security threat model обновлены по shared backend, Redis degradation fallback и strict mode.
+
+### Решения и обоснования
+
+- Default rate-limit policy остаётся availability-preserving: при runtime Redis timeout/error backend деградирует в process-local in-memory fallback и инкрементит metric.
+- `RATE_LIMIT_REQUIRE_REDIS=1` трактуется как fail-closed contract: init failure и runtime timeout/error не скрываются fallback'ом, а приводят к ошибке rate-limit operation.
+- Bearer key строится из persisted internal `ServiceBearerToken.id`, потому что это non-secret identifier после успешного token lookup; raw token не попадает в Redis key/log.
+- `retry_after_seconds` для bearer limiter теперь conservative full window, потому что generic `RateLimitBackend.consume_hit()` не возвращает oldest-hit timestamp.
+- Diff stage 138 больше 150 LOC из-за совместного закрытия F3-F4/F10/F20-F21 с тестами, PRD, Roadmap и docs. Runtime-изменения оставлены в одном stage, потому что все пункты относятся к одному rate-limit/deploy-smoke reliability surface и имеют общие acceptance checks.
+
+### Проблемы
+
+- PRD-review 1/2 нашёл ambiguity по fail policy, namespace isolation, smoke unset path, metric surface и strict mode; PRD уточнён.
+- PRD-review 2/2 нашёл ambiguity по strict runtime behavior, unverified token-id fact, smoke 401/403 failure acceptance и metric contract; PRD уточнён.
+- Полный host `pytest` по-прежнему не используется из-за отсутствия Playwright в host env; проверки выполнены через Docker test profile.
+- Code/diff review сторонней моделью 1/2 не нашёл high/critical, но поднял warning по устаревшему `now` contract и nits по Redis client close on failed init, лишнему bearer lock, sleep-based test и bash array portability. Все адекватные пункты исправлены.
+- Code/diff review сторонней моделью 2/2 вернул `NO FINDINGS`; бюджет code/diff review stage 138 исчерпан.
+- Codex review trace: текущий агент Codex, поэтому по workflow review сторонней моделью выполнял Claude Opus.
+- Проверки stage 138: targeted до post-review `37 passed`, targeted после post-review `34 passed`; full suite до post-review `865 passed, 57 deselected`; full suite после post-review fixes `866 passed, 57 deselected`.
+
+### Обратная связь
+
+Пользователь попросил закоммитить/запушить все изменения, сформировать Roadmap по итогам review и продолжать выполнять Roadmap до конца по workflow.

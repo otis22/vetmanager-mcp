@@ -17,6 +17,8 @@ def _get_free_port() -> int:
 
 
 class _HealthyHandler(BaseHTTPRequestHandler):
+    expected_metrics_token: str | None = None
+
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/healthz":
             body = b'{"status":"ok"}'
@@ -37,6 +39,14 @@ class _HealthyHandler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/metrics":
+            if (
+                self.expected_metrics_token is not None
+                and self.headers.get("Authorization")
+                != f"Bearer {self.expected_metrics_token}"
+            ):
+                self.send_response(403)
+                self.end_headers()
+                return
             body = b"# HELP vetmanager_http_requests_total\nvetmanager_http_requests_total 1\n"
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; version=0.0.4")
@@ -118,3 +128,56 @@ def test_post_deploy_smoke_checks_fail_with_attempt_context() -> None:
     assert "healthz failed after 2 attempts" in combined_output
     assert f"http://127.0.0.1:{port}/healthz" in combined_output
     assert "curl_exit=" in combined_output
+
+
+def test_post_deploy_smoke_checks_sends_metrics_bearer_token() -> None:
+    port = _get_free_port()
+    _HealthyHandler.expected_metrics_token = "secret-metrics-token"
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), _HealthyHandler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        result = _run_smoke_script(
+            f"http://127.0.0.1:{port}",
+            METRICS_AUTH_TOKEN="secret-metrics-token",
+            SMOKE_MAX_ATTEMPTS="2",
+            SMOKE_SLEEP_SECONDS="0.1",
+            SMOKE_CONNECT_TIMEOUT_SECONDS="1",
+            SMOKE_CURL_MAX_TIME_SECONDS="1",
+        )
+    finally:
+        _HealthyHandler.expected_metrics_token = None
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=2)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_post_deploy_smoke_checks_fails_when_metrics_token_rejected() -> None:
+    port = _get_free_port()
+    _HealthyHandler.expected_metrics_token = "expected-token"
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), _HealthyHandler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        result = _run_smoke_script(
+            f"http://127.0.0.1:{port}",
+            METRICS_AUTH_TOKEN="wrong-token",
+            SMOKE_MAX_ATTEMPTS="1",
+            SMOKE_SLEEP_SECONDS="0.1",
+            SMOKE_CONNECT_TIMEOUT_SECONDS="1",
+            SMOKE_CURL_MAX_TIME_SECONDS="1",
+        )
+    finally:
+        _HealthyHandler.expected_metrics_token = None
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=2)
+
+    combined_output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "metrics failed after 1 attempts" in combined_output
+    assert "http_status=403" in combined_output

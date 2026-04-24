@@ -24,6 +24,7 @@ preview_text() {
 
 perform_request() {
   local url="$1"
+  shift
   local body_file="${TMP_DIR}/body"
   local status_file="${TMP_DIR}/status"
   local error_file="${TMP_DIR}/error"
@@ -37,6 +38,7 @@ perform_request() {
     --max-time "${SMOKE_CURL_MAX_TIME_SECONDS}" \
     -o "${body_file}" \
     -w '%{http_code}' \
+    "$@" \
     "${url}" > "${status_file}" 2> "${error_file}"; then
     SMOKE_LAST_CURL_EXIT=0
   else
@@ -81,10 +83,11 @@ retry_request() {
   local label="$1"
   local url="$2"
   local validator="$3"
+  shift 3
   local attempt=1
 
   while [ "${attempt}" -le "${SMOKE_MAX_ATTEMPTS}" ]; do
-    perform_request "${url}"
+    perform_request "${url}" "$@"
     if "${validator}"; then
       return 0
     fi
@@ -107,7 +110,11 @@ echo "==> Running post-deploy smoke checks against ${BASE_URL}"
 
 retry_request "healthz" "${BASE_URL}/healthz" health_is_ok
 retry_request "readyz" "${BASE_URL}/readyz" ready_is_ok
-retry_request "metrics" "${BASE_URL}/metrics" metrics_is_ok
+METRICS_AUTH_ARGS=()
+if [ -n "${METRICS_AUTH_TOKEN:-}" ]; then
+  METRICS_AUTH_ARGS=(-H "Authorization: Bearer ${METRICS_AUTH_TOKEN}")
+fi
+retry_request "metrics" "${BASE_URL}/metrics" metrics_is_ok "${METRICS_AUTH_ARGS[@]+"${METRICS_AUTH_ARGS[@]}"}"
 retry_request "mcp" "${BASE_URL}/mcp" mcp_status_is_ok
 
 if [ -n "${PUBLIC_DOMAIN}" ]; then

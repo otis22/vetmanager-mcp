@@ -44,6 +44,7 @@ _TOOL_CALL_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = def
     LatencyAggregate
 )
 _TOKEN_PRESET_ISSUED_TOTAL: DefaultDict[str, int] = defaultdict(int)
+_RATE_LIMIT_BACKEND_DEGRADED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _SANITIZER_FAILURES_TOTAL = 0
 # Stage 110.2: business events counter — `account_registered`, `bearer_token_issued`,
 # `bearer_token_revoked`, `web_login_succeeded`. Accumulated in-process since last
@@ -66,6 +67,7 @@ def reset_service_metrics() -> None:
         _TOOL_CALLS_TOTAL.clear()
         _TOOL_CALL_LATENCY_SECONDS.clear()
         _TOKEN_PRESET_ISSUED_TOTAL.clear()
+        _RATE_LIMIT_BACKEND_DEGRADED_TOTAL.clear()
         _SANITIZER_FAILURES_TOTAL = 0
         _BUSINESS_EVENTS_TOTAL.clear()
 
@@ -209,6 +211,12 @@ def record_token_preset_issued(preset: str) -> None:
         _TOKEN_PRESET_ISSUED_TOTAL[preset] += 1
 
 
+def record_rate_limit_backend_degraded(reason: str) -> None:
+    """Increment Redis rate-limit backend degradation counter."""
+    with _LOCK:
+        _RATE_LIMIT_BACKEND_DEGRADED_TOTAL[reason] += 1
+
+
 def record_sanitizer_failure() -> None:
     """Increment fail-closed depersonalization error counter."""
     with _LOCK:
@@ -253,6 +261,9 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 for (endpoint, method), aggregate in sorted(_TOOL_CALL_LATENCY_SECONDS.items())
             },
             "token_preset_issued_total": dict(sorted(_TOKEN_PRESET_ISSUED_TOTAL.items())),
+            "rate_limit_backend_degraded_total": dict(
+                sorted(_RATE_LIMIT_BACKEND_DEGRADED_TOTAL.items())
+            ),
             "sanitizer_failures_total": _SANITIZER_FAILURES_TOTAL,
             "business_events_total": dict(sorted(_BUSINESS_EVENTS_TOTAL.items())),
         }
@@ -386,6 +397,17 @@ def render_prometheus_metrics() -> str:
     for preset, count in snapshot.get("token_preset_issued_total", {}).items():
         lines.append(
             f"vetmanager_token_preset_issued_total{_labels_text(preset=preset)} {count}"
+        )
+
+    lines.extend(
+        [
+            "# HELP vetmanager_rate_limit_backend_degraded_total Redis rate-limit backend failures that caused fallback or strict-mode rejection.",
+            "# TYPE vetmanager_rate_limit_backend_degraded_total counter",
+        ]
+    )
+    for reason, count in snapshot.get("rate_limit_backend_degraded_total", {}).items():
+        lines.append(
+            f"vetmanager_rate_limit_backend_degraded_total{_labels_text(reason=reason)} {count}"
         )
 
     lines.extend(

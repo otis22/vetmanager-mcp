@@ -189,7 +189,7 @@ async def resolve_bearer_auth_context(
         # (not via a `from ... import` that would snapshot the object at
         # import time) so `reset_bearer_rate_limiter()` — which rebinds
         # the module-level singleton — takes effect on subsequent calls.
-        await rate_limit.BEARER_RATE_LIMITER.check_or_raise(token.id, now=now)
+        await rate_limit.BEARER_RATE_LIMITER.check_or_raise(token.id)
     except RateLimitError as exc:
         # Rate-limit branch re-raises RateLimitError (not AuthError), so it
         # has its own log+commit sequence rather than using _reject.

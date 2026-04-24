@@ -138,6 +138,7 @@ HTTP probes и scrape endpoints:
   - `vetmanager_cache_{hits,misses,invalidations,evictions}_total` + `vetmanager_cache_entries`;
   - `vetmanager_business_events_total{event=...}` — lifecycle business events (`account_registered`, `web_login_succeeded`, `bearer_token_issued`, `bearer_token_revoked`) (stage 110);
   - `vetmanager_token_preset_issued_total{preset}` — issuance counter by access preset;
+  - `vetmanager_rate_limit_backend_degraded_total{reason}` — Redis rate-limit backend fallback/strict failure counter;
   - `vetmanager_sanitizer_failures_total` — depersonalized response sanitizer failures;
   - `/metrics` endpoint gated by optional `METRICS_AUTH_TOKEN` env (stage 111.1): when set, requires `Authorization: Bearer <token>` or returns 403;
   - invalid `/metrics` bearer attempts increment `vetmanager_auth_failures_total{source="metrics",reason="invalid_token"}` and emit a `security` log event `metrics_auth_failed`;
@@ -189,7 +190,8 @@ Bearer-токен привязан к account сервиса:
   и фиксированным `app_name=vetmanager-mcp`, без `X-REST-API-KEY`;
 - для нового account кабинет показывает onboarding state с явным следующим шагом;
 - state-changing web forms защищены signed CSRF token layer;
-- `/register` и `/login` защищены process-local rate limiting от brute-force / abuse;
+- `/register`, `/login` и bearer runtime защищены shared rate limiting:
+  in-memory по умолчанию, Redis-backed при `REDIS_URL`;
 - HTML responses отдают baseline security headers: `CSP`, `X-Frame-Options`, `Referrer-Policy`, `X-Content-Type-Options`;
 - кабинет показывает health активной integration и статус `reauth_required`, если сохранённый user token больше не проходит валидацию;
 - доступен выпуск Bearer-токенов с именем, сроком действия, preset'ом доступа
@@ -211,7 +213,7 @@ Bearer-токен привязан к account сервиса:
 - web auth для account через email/password и signed cookie session;
 - account onboarding wizard с выбором `API key` или `login/password`;
 - signed CSRF layer для `/register`, `/login`, `/logout` и `/account/*`;
-- rate limiting для `/register` и `/login`;
+- rate limiting для `/register`, `/login` и bearer runtime через общий backend;
 - baseline security headers для HTML-ответов web UI;
 - web-экран сохранения active Vetmanager integration;
 - web-выпуск Bearer-токенов с preset-based scopes и one-time показом raw значения;
@@ -271,8 +273,13 @@ docker compose up -d mcp
 
 ### Production notes
 
-- Текущий web rate limiting process-local; для multi-instance production нужен
-  shared store или edge enforcement.
+- Rate limiting по умолчанию in-memory и process-local. Для multi-worker /
+  multi-instance production задайте `REDIS_URL`, чтобы web и bearer limit state
+  использовали общий backend.
+- Redis backend задаёт bounded connect/socket/operation timeouts. При временной
+  недоступности Redis default policy fail-open деградирует в process-local
+  fallback и увеличивает `vetmanager_rate_limit_backend_degraded_total{reason}`;
+  `RATE_LIMIT_REQUIRE_REDIS=1` делает init/runtime failures fail-closed.
 - Текущий CSRF/session hardening рассчитан на single-instance deployment с
   общим `WEB_SESSION_SECRET`; при горизонтальном масштабировании нужен единый
   secret и согласованный deployment policy.
@@ -349,6 +356,9 @@ docker compose up -d mcp
 ./scripts/post_deploy_smoke_checks.sh
 ./scripts/post_deploy_smoke_checks.sh http://127.0.0.1:8000 <your-domain>
 ```
+
+Если `/metrics` защищён `METRICS_AUTH_TOKEN`, smoke script автоматически
+передаёт `Authorization: Bearer $METRICS_AUTH_TOKEN`.
 
 ### Полностью автоматический деплой после push в main
 
