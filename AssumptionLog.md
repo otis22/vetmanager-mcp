@@ -6281,6 +6281,8 @@ UI кабинета и issuance flow переведены на preset-based то
 - Code review Claude Opus 1/2 нашёл medium findings по `MCP_PATH`, keyboard navigation tabs, clipboard fallback и screen-reader live region; все приняты и исправлены.
 - Проверки после review-fixes: targeted landing suite `17 passed`; full Docker suite `920 passed, 57 deselected`.
 - Финальные review gates: Spark committed-diff review вернул `[]`; Claude Opus committed-diff review 2/2 вернул `[]`.
+- После пользовательской обратной связи блок инструкций на лендинге сделан явным: добавлены topbar/hero ссылки на `#mcp-agent-instructions`, заголовок «Инструкции для агентов» перед вкладками и regression test. Targeted landing suite после правки: `18 passed`.
+- В post-commit Claude Opus review найден адекватный medium: якорь `#mcp-agent-instructions` был `div`, поэтому `section[id] { scroll-margin-top: 100px; }` не защищал заголовок от sticky topbar. Исправлено расширением CSS на `#mcp-agent-instructions` и regression test на наличие `scroll-margin-top` для якоря.
 
 ### Решения и обоснования
 
@@ -6296,6 +6298,7 @@ UI кабинета и issuance flow переведены на preset-based то
 - Spark read-only review завис на sandbox/bwrap до чтения файлов; запуск остановлен и повторён с `-s danger-full-access` как review-only.
 - Старый тест требовал отсутствия `Cursor` на лендинге; Stage 146 меняет контракт, поэтому тест обновлён на наличие Cursor.
 - GitHub Actions/Deploy Prod проверены после push.
+- Пост-релизная правка явности блока инструкций потребовала отдельного commit/deploy.
 
 ### Обратная связь
 

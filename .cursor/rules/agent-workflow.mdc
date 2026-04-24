@@ -63,12 +63,14 @@ alwaysApply: true
 Бюджеты:
 
 - Spark-review: максимум 3 запуска перед каждым видом review gate; Spark-бюджет отдельный от бюджета сильной модели
+- `gpt-5.3-codex-spark` как обычный scout/subagent для вспомогательных задач можно запускать без лимита; лимит 3 относится только к Spark-review перед конкретным review gate
 - PRD-review сторонней моделью: максимум 2 запуска на задачу
 - code/diff review сторонней моделью: максимум 2 запуска на задачу
 - бюджеты раздельные и не расходуют друг друга
 - правильное имя модели Spark: `gpt-5.3-codex-spark`; имя `gpt-5.3-spark` неполное и не должно использоваться
 - Spark не принимает финальных решений: его вывод является candidate-only и обязан пройти проверку на адекватность
 - принимать после Spark можно только адекватные, важные и проверяемые findings; speculative/low-impact/неподтверждённые замечания отклоняются
+- Spark-review должен иметь узкий prompt: что ревьювить (PRD, staged/uncommitted diff, committed diff), какие severity принимать, какой формат ответа нужен; Spark не должен сам менять файлы
 
 Правильный shell-вызов Spark-review из Codex runtime:
 
@@ -76,7 +78,7 @@ alwaysApply: true
 timeout 1200 codex exec -m gpt-5.3-codex-spark -s read-only -C "$PWD" -
 ```
 
-Если read-only sandbox падает до чтения файлов из-за runtime/sandbox ошибки, повторить тот же `gpt-5.3-codex-spark` один раз с `-s danger-full-access` и prompt: `Review only. Do not edit files. Do not run write commands.` Fallback на другую модель разрешён только при явной model/provider failure.
+Если read-only sandbox падает до чтения файлов из-за runtime/sandbox ошибки (например `bwrap`/user namespace failure), это не считается finding проекта. Нужно остановить зависший запуск, повторить тот же `gpt-5.3-codex-spark` один раз с `-s danger-full-access` и prompt: `Review only. Do not edit files. Do not run write commands.` Fallback на другую модель разрешён только при явной model/provider failure, а не при sandbox/runtime failure. Результат Spark-review фиксируется в AssumptionLog вместе с принятыми/отклонёнными findings или `[]`.
 
 ## 4. Core Loop агента
 

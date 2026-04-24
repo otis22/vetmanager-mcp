@@ -46,7 +46,8 @@
 - Перед `commit`/`push` агент обязан сделать аудит внесённых изменений.
 - Если аудит потребовал рефакторинга, после него обязателен новый полный прогон тестов и проверок.
 - Ревью сторонней моделью: Claude-агент проверяется Codex `gpt-5.5`, Codex-агент проверяется Claude Opus.
-- Бюджет сторонней модели: 2 запуска на PRD-review и 2 запуска на code/diff review; `gpt-5.3-codex-spark` как scout/subagent безлимитен и не расходует бюджет.
-- Перед каждым PRD/code review агент делает Spark-review: максимум 3 запуска `gpt-5.3-codex-spark`, затем более сильное ревью. `gpt-5.3-spark` — неправильное/неполное имя модели; использовать только `gpt-5.3-codex-spark`.
+- Бюджет сторонней модели: 2 запуска на PRD-review и 2 запуска на code/diff review; `gpt-5.3-codex-spark` как обычный scout/subagent безлимитен и не расходует бюджет. Для Spark-review перед конкретным review gate действует отдельный лимит: максимум 3 запуска.
+- Перед каждым PRD/code review агент делает Spark-review `gpt-5.3-codex-spark`, затем более сильное ревью. `gpt-5.3-spark` — неправильное/неполное имя модели; использовать только `gpt-5.3-codex-spark`.
 - Spark findings являются candidate-only: агент обязан проверить адекватность и принимать только важные, проверяемые замечания; speculative/low-impact/неподтверждённые замечания отклоняются.
-- Правильный вызов Spark-review из Codex runtime: `timeout 1200 codex exec -m gpt-5.3-codex-spark -s read-only -C "$PWD" -`. При sandbox/runtime failure повторять ту же модель с `-s danger-full-access` и review-only prompt; fallback на другую модель только при явной model/provider failure.
+- Spark-review prompt должен быть узким: указать объект ревью (PRD, staged/uncommitted diff, committed diff), severity, формат ответа и запрет на правки.
+- Правильный вызов Spark-review из Codex runtime: `timeout 1200 codex exec -m gpt-5.3-codex-spark -s read-only -C "$PWD" -`. Если read-only падает до чтения файлов из-за sandbox/runtime ошибки (`bwrap`, user namespace и т.п.), остановить зависший запуск и один раз повторить ту же модель с `-s danger-full-access` и review-only prompt: `Review only. Do not edit files. Do not run write commands.` Fallback на другую модель разрешён только при явной model/provider failure, не при sandbox/runtime failure. Итог Spark-review (`[]` или принятые/отклонённые findings) фиксируется в AssumptionLog.

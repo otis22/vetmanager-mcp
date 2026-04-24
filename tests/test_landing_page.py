@@ -189,6 +189,23 @@ async def test_topbar_has_github_link():
 
 
 @pytest.mark.asyncio
+async def test_topbar_links_to_agent_instructions():
+    """Topbar navigation must expose the MCP agent instructions block."""
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/")
+
+    html = response.text
+    nav_start = html.find("<nav>")
+    nav_end = html.find("</nav>", nav_start)
+    nav_html = html[nav_start:nav_end]
+    assert "#mcp-agent-instructions" in nav_html
+    assert "Инструкции" in nav_html
+
+
+@pytest.mark.asyncio
 async def test_open_source_section():
     """Landing page must have an Open Source section with self-hosted info."""
     app = mcp.http_app(path="/mcp", transport="streamable-http")
@@ -256,6 +273,10 @@ def test_stage146_agent_tabs_commands_and_real_mcp_url(monkeypatch):
     assert "<MCP_SERVER_URL>" not in html
     assert "__MCP_SERVER_URL__" not in html
     assert "https://vetmanager-mcp.vromanichev.ru/mcp" in section_html
+    assert '#mcp-agent-instructions {\n      scroll-margin-top: 100px;' in html
+    assert '<div id="mcp-agent-instructions">' in section_html
+    assert "Инструкции для агентов" in section_html
+    assert "Скопируйте готовую команду" in section_html
     assert "Рекомендуем для старта" in section_html
 
     for agent in ("Codex", "Claude", "Cursor", "Manus", "Другой агент"):
