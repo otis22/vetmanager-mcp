@@ -165,7 +165,9 @@ async def test_footer_has_links_and_copyright():
     assert "/register" in footer_html
     assert "/login" in footer_html
     assert "Поддержка" in footer_html
-    assert "Политика конфиденциальности" in footer_html
+    # Stage 148: privacy link removed from footer per user request — separate
+    # /privacy stage will reintroduce it once content exists.
+    assert "Политика конфиденциальности" not in footer_html
     assert "2026" in footer_html
     assert "GitHub" in footer_html
     assert "github.com/otis22/vetmanager-mcp" in footer_html

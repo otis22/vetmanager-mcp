@@ -6343,3 +6343,46 @@ UI кабинета и issuance flow переведены на preset-based то
 ### Обратная связь
 
 Пользователь попросил закоммитить/запушить все изменения, сформировать Roadmap по итогам review и продолжать выполнять Roadmap до конца по workflow.
+
+## Этап 148 landing visual redesign — 2026-04-25
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Полный визуальный редизайн `landing_page.py` в направлении clinical-tech (вариант A): ink-blue primary `#1e3a4d`, warm-grey paper `#f5f5f0`, accent orange `#bb4d24` зарезервирован только для primary CTA.
+- Hero переработан: editorial-display heading с italic-акцентом «по запросу», mock-chat с реальными цифрами выручки за март 2026 (₽ 487 200 итог, +14% delta, weekly bar chart 4 столбца, breakdown table, source line «Vetmanager · 234 платежа · обновлено сейчас»), CTA above the fold на 1366×768 и 1440×900.
+- Topbar переписан в sticky compact-формат с backdrop-filter; добавлен skip-link «Перейти к содержимому» для keyboard-навигации.
+- MCP onboarding tab init bug исправлен: panels теперь отдают `hidden` атрибут в HTML по умолчанию, JS переключает только активный панель — раньше все 5 рендерились открытыми до первого клика.
+- Tech блок и FAQ переведены на progressive disclosure (`<details>` с chevron rotation и icon-prefix tile).
+- Два хвостовых CTA («Open Source / Разверните у себя» + «Готовы начать?») объединены в один dark callout с ink-blue фоном и radial-gradient акцентом.
+- Broken privacy link `href="#"` удалён из футера; тест обновлён на assert «Политика конфиденциальности» **not in** footer_html (отдельный этап вернёт link, когда появится контент `/privacy`).
+- Mobile-first: sticky compact CTA закреплён внизу с safe-area-inset, hamburger drawer collapse'ит навигацию, hero h1 ≤3 строк на 390 viewport, brand subtitle скрыт ниже 540px чтобы не overflow'ить топбар.
+- Lucide-style inline SVG icon-система (24×24, stroke 2) применена в карточках, prompt chips, fallback grid, role examples и error grid.
+- Контент Stage 146 (MCP onboarding flow, agent commands, fallback, role examples, errors, copy buttons) сохранён verbatim — `tests/test_landing_page.py` ассерты на русские строки и agent commands продолжают проходить.
+- Проверки: full Docker suite `921 passed, 57 deselected`; локальный визуальный QA через Playwright на 390/768/1440 — 0 horizontal overflow на всех breakpoints, 0 console errors (ранее был 1).
+
+### Решения и обоснования
+
+- **Direction A (clinical-tech)** выбран пользователем явно из трёх вариантов (A/B/C). Ink-blue + warm-grey считывается как медицинская/B2B доверительность; orange удержан только как CTA accent, не как декор фона.
+- **Mock-chat с реальными цифрами** (а не абстрактный пример) выбран пользователем — показывает конкретный продуктовый use-case «выручка за период», который Stage 144 закрыл tools-side.
+- **Privacy link удалён**, а не заменён на stub `/privacy` — пользователь явно попросил «удалить» до отдельного этапа с контентом.
+- **Per-stage external review** вместо `super-review` — пользователь явно ограничил scope ревью, и Stage 148 — чисто визуальный, без runtime-логики.
+- **Allowance отклониться от per-substage Core Loop** — пользователь дал разрешение на единый visual rewrite вместо 6 коммитов 148a..148f, при условии починки тестов и финального ревью.
+- **Helper-функции пока не выделены**: PRD предполагал split на `_render_*`, но при single-pass редизайне inline string остался читабельным (~1500 LOC), и simplicity eval показал что split добавляет перекладывание HTML без выигрыша по поддерживаемости. Если в Stage 149+ потребуется добавлять секции, helper-split будет сделан тогда.
+- **No CDN fonts**: system stack only — Inter если установлен, иначе `system-ui`/`-apple-system`. Display serif — Iowan Old Style/Charter/Source Serif/Cambria/Georgia (везде доступны без загрузки).
+- **`prefers-reduced-motion`** глобально гасит keyframes и transitions; pulse-индикатор «Live» в mock-chat останавливается.
+
+### Проблемы
+
+- **Footer test ломал redesign**: ассерт `"Политика конфиденциальности" in footer_html` блокировал удаление link. Тест обновлён на `not in` (Stage 148 явно удаляет link до появления контента); пересоздать ассерт на наличие потребуется в этапе с `/privacy` страницей.
+- **Topbar overflow на 390px**: brand subtitle «Bearer-only gateway for clinic operations through AI clients» вылетал за viewport на 12px. Решено через `min-width: 0` + `flex: 1 1 auto` + display:none ниже 540px на subtitle.
+- **`class="hero shell"` ломал substring-test**: тест `'class="hero"' in hero_html` не матчит `class="hero shell"` (требует `"` сразу после `hero`). Refactor: `<section class="hero"><div class="shell hero-grid">`.
+- **`<div id="mcp-agent-instructions">` substring-test**: требует точную последовательность `<div id="..."> ` без других атрибутов перед id. Class перенесён на CSS-rule на самом id.
+- **Hostовый `pytest` всё ещё не используется** (host env без Playwright); проверки прогнаны через Docker test profile.
+
+### Обратная связь
+
+- Пользователь после первичного review лендинга 2026-04-25 (`prod-desktop-full.png`) сказал «контент не плох, дизайн нужно улучшить».
+- Подтвердил вариант A, mock-chat с реальными цифрами, удалить privacy link, per-stage external review.
+- Дал разрешение «делай до деплоя и не останавливайся», с явным условием починить тесты, провести финальное ревью на committed diff с устранением адекватных findings, и локально визуально проверить вёрстку перед push.

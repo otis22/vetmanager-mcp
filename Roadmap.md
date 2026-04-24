@@ -2491,3 +2491,54 @@ Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown н
 - 147.2 Исправить `scripts/deploy_server.sh`: запускать миграции через `compose run -T --rm mcp alembic upgrade head </dev/null`. — `done`
 - 147.3 Добавить regression test на `-T`, restart MCP и post-deploy smoke checks. — `done`
 - 147.4 Пройти targeted/full checks, review gates, commit/push, проверить GitHub Actions/деплой и live HTML. — `done`
+
+## Этап 148. Landing visual redesign (после Этапа 147) — `in_progress`
+
+Источник: ревью лендинга 2026-04-25 на `vetmanager-mcp.vromanichev.ru` через Playwright (`prod-desktop-full.png`, `prod-mobile-full.png`). Stage 146 закрыл контентный gap (MCP onboarding, copy-ready команды для Codex/Claude/Cursor/Manus), но визуал не соответствует продукту:
+
+- тёплая «крафтовая» палитра (cream + ржавый orange + bg grid-paper) не считывается как clinical-tech B2B-сервис;
+- hero перегружен: h1 на 4 строки + три «stat»-карточки справа (это features, а не статистика) + lede + два mini-приписки → primary CTA выпадает за above-the-fold на 1366×768;
+- bug: MCP tab panels рендерятся всеми пятью открытыми (JS init после render);
+- технический блок и FAQ навалены одной кучей с promo-копи;
+- два хвостовых CTA дублируют друг друга подряд;
+- мобильный first-screen занят h1 на 7 строк без CTA;
+- broken privacy link `href="#"` в футере;
+- нет иконок ни в одной секции.
+
+Цель: полный визуальный редизайн при сохранении контента Stage 146, новая палитра clinical-tech (направление A), hero с mock-chat и реальными бизнес-цифрами, CTA above fold, исправленный tab init, progressive disclosure, унифицированная card system с inline SVG иконками, mobile-first.
+
+Сторонние ограничения:
+
+- Контент Stage 146 трогаем минимально (тесты `test_landing_page.py` зависят от русских строк).
+- Сервинг не меняется: HTML рендерится из `landing_page.py` как inline string. Можно расщепить на helper-функции, без template engine.
+- `SITE_BASE_URL` / `MCP_PATH` validation остаётся.
+- Никаких runtime-зависимостей и CDN-шрифтов: system stack или inline.
+- Privacy link удалить (отдельная страница вне scope).
+
+Дизайн-решения (направление A, clinical-tech):
+
+- Палитра: ink-blue primary `#1e3a4d`, warm-grey background `#f5f5f0`, accent orange `#bb4d24` только для primary CTA и важных индикаторов.
+- Типографика: sans-serif (Inter / system-ui), serif только для display h1 hero.
+- Hero: mock-chat illustration (inline SVG) с реальным примером — «Какая выручка за март 2026?» → таблица с цифрами; CTA above fold на 1366×768.
+- MCP tabs: panels `hidden` в HTML по умолчанию, JS только переключает.
+- Cards: единая система с inline SVG icons (Lucide-style 24×24).
+- Tech блок и FAQ — `<details>` collapsed by default.
+- Footer-CTA: один блок вместо двух.
+- Mobile: sticky compact CTA, drawer-nav, hero h1 ≤4 строк на 390 viewport.
+
+Workflow allowance (по согласованию с пользователем 2026-04-25): можно отклониться от per-substage Core Loop ради единого визуального переписывания, но обязательно — починка тестов перед push, ревью сторонней моделью на финальный committed diff с устранением адекватных findings, локальная визуальная проверка в браузере перед push.
+
+- 148.1 Создать PRD stage 148 через skill `frontend-design`: clinical-tech tokens, mock-chat composition, structural outline, acceptance criteria. — `todo`
+- 148.2 Изучить artifacts (PRD product, technical-requirements, Stage 146 PRD, скриншоты prod) и обновить PRD проверенными ограничениями. — `todo`
+- 148.3 PRD-review gates (внутренний + simplicity eval + ревью сторонней моделью, бюджет 2). — `todo`
+- 148a Foundation: design tokens, расщепление `landing_page.py` на helper-функции, новая base CSS. — `todo`
+- 148b Top-of-page: topbar v2 + hero v2 с mock-chat SVG (реальные цифры выручки), удаление grid-paper. — `todo`
+- 148c MCP onboarding redesign + tab init bug fix (panels hidden by default in HTML). — `todo`
+- 148d Mid-section panels с unified card-grid и inline SVG icons. — `todo`
+- 148e Tech block + FAQ + footer + tail-CTA cleanup, удаление broken privacy link. — `todo`
+- 148f Mobile + a11y + motion + visual QA (Playwright snapshots 360/768/1440). — `todo`
+- 148.4 Починить тесты под новую структуру, запустить полный test suite зелёным. — `todo`
+- 148.5 Финальное ревью сторонней моделью на committed diff, устранить адекватные findings (бюджет 2). — `todo`
+- 148.6 Локально открыть лендинг в браузере (Playwright + http server) на 390/768/1440 — убедиться, что вёрстка не плывёт. — `todo`
+- 148.7 Commit + push + GitHub Actions Deploy Prod + smoke checks (`/healthz`, `/`, `/readyz`, MCP onboarding section). — `todo`
+- 148.8 AssumptionLog запись + self-attestation. — `todo`
