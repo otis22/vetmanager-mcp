@@ -2480,3 +2480,14 @@ Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown н
 - 146.8 Добавить видимый блок «Частые ошибки»: агент не видит Vetmanager, 401/ключ не подошёл, некуда вставить ключ, инструменты не появились, не перезапустили сессию. — `done`
 - 146.9 Проверить responsive layout, доступность copy controls, отсутствие технического жаргона в основном тексте и отсутствие требований вставлять ключ в чат. — `done`
 - 146.10 Пройти checks, audit, review gates, commit/push и проверить GitHub Actions/деплой. — `done`
+
+## Этап 147. Prod deploy heredoc stdin hotfix (после Этапа 146) — `done`
+
+Источник: проверка после deploy 2026-04-25. GitHub Actions `Deploy Prod` завершался success, но публичный лендинг продолжал отдавать старый HTML без `#mcp-agent-instructions`. Логи deploy показывали остановку после `compose run --rm mcp alembic upgrade head` без `Starting MCP service`, health check и smoke checks.
+
+Цель: исправить deploy script так, чтобы migration container не читал остаток SSH heredoc из stdin и deploy всегда доходил до recreate MCP service и smoke checks.
+
+- 147.1 Создать PRD stage 147 и зафиксировать причину старого лендинга. — `done`
+- 147.2 Исправить `scripts/deploy_server.sh`: запускать миграции через `compose run -T --rm mcp alembic upgrade head </dev/null`. — `done`
+- 147.3 Добавить regression test на `-T`, restart MCP и post-deploy smoke checks. — `done`
+- 147.4 Пройти targeted/full checks, review gates, commit/push, проверить GitHub Actions/деплой и live HTML. — `done`

@@ -131,7 +131,7 @@ fi
 
 # ── Run database migrations (idempotent — noop if already at head) ───────────
 echo "--> Running database migrations (alembic upgrade head)..."
-compose run --rm mcp alembic upgrade head
+compose run -T --rm mcp alembic upgrade head </dev/null
 echo "--> Migrations complete."
 
 # ── Start MCP service (atomic: force-recreate, no separate stop/rm) ──────────

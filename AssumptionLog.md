@@ -6299,6 +6299,10 @@ UI кабинета и issuance flow переведены на preset-based то
 - Старый тест требовал отсутствия `Cursor` на лендинге; Stage 146 меняет контракт, поэтому тест обновлён на наличие Cursor.
 - GitHub Actions/Deploy Prod проверены после push.
 - Пост-релизная правка явности блока инструкций потребовала отдельного commit/deploy.
+- Проверка live HTML после зелёного deploy показала, что прод отдаёт старый лендинг без `#mcp-agent-instructions`. Причина найдена в deploy script: `compose run --rm mcp alembic upgrade head` внутри SSH heredoc мог читать stdin и поглощать оставшуюся часть remote script, поэтому MCP service не пересоздавался, хотя workflow завершался success. Решение Stage 147: запускать migration command с `-T` и покрыть restart/smoke шаги тестом.
+- Stage 147 checks before review: targeted deploy script test `1 passed`; full Docker suite `921 passed, 57 deselected`. Regression фиксирует migration run, `compose up -d --force-recreate --no-build mcp` и `post_deploy_smoke_checks.sh`.
+- Claude Opus review Stage 147 нашёл адекватный medium: `-T` отключает pseudo-TTY, но для production-hotfix нужно явно закрыть stdin. Принято: migration command изменён на `compose run -T --rm mcp alembic upgrade head </dev/null`, тест и PRD обновлены.
+- Stage 147 final checks after review-fix: targeted deploy script test `1 passed`; full Docker suite `921 passed, 57 deselected`; Spark review `[]`; Claude Opus review `[]`.
 
 ### Обратная связь
 
