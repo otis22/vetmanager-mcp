@@ -9,6 +9,7 @@ from filters import eq as _filter_eq, gt as _filter_gt, lt as _filter_lt
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
+from vm_datetime import normalize_vm_datetime
 
 UserIdsParam = Annotated[
     list[int],
@@ -115,8 +116,12 @@ def register(mcp: FastMCP) -> None:
         """
         payload: dict = {
             "doctor_id": doctor_id,
-            "begin_datetime": begin_datetime,
-            "end_datetime": end_datetime,
+            "begin_datetime": normalize_vm_datetime(
+                begin_datetime, field_name="begin_datetime"
+            ),
+            "end_datetime": normalize_vm_datetime(
+                end_datetime, field_name="end_datetime"
+            ),
             "clinic_id": clinic_id,
         }
         if title:

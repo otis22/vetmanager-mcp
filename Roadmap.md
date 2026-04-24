@@ -2374,17 +2374,17 @@ Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown н
 
 ## Этап 140. VM API contract and pagination correctness (после Этапа 139) — `todo`
 
-Источник: `artifacts/review/2026-04-24-full-stage-136.md`, F7-F8/F11-F16.
+Источник: `artifacts/review/2026-04-24-full-stage-136.md`, F7-F8/F11-F14/F16.
 
 Цель: закрыть API contract drift и silent truncation в tools.
 
-- 140.1 Создать PRD stage 140 и пройти PRD-review gates по workflow. — `todo`
-- 140.2 Убрать или feature-gate `create_payment` согласно CRUD permissions. — `todo`
-- 140.3 Перевести подтверждённые top-level list params на filter[] или задокументировать verified special cases. — `todo`
-- 140.4 Добавить pagination/truncated semantics для `get_vaccinations`, `get_daily_schedule`, `get_medical_cards_by_client_id`. — `todo`
-- 140.5 Нормализовать `create_timesheet` datetime payload. — `todo`
-- 140.6 Обновить tests/API notes/docs. — `todo`
-- 140.7 Пройти checks, audit, external diff review, commit/push и self-attestation. — `todo`
+- 140.1 Создать PRD stage 140 и пройти PRD-review gates по workflow. — `done`
+- 140.2 Убрать или feature-gate `create_payment` согласно CRUD permissions. — `done`
+- 140.3 Перевести подтверждённые top-level list params на filter[] или задокументировать verified special cases. — `done`
+- 140.4 Добавить pagination/truncated semantics для `get_vaccinations`, `get_daily_schedule`, `get_medical_cards_by_client_id`. — `done`
+- 140.5 Нормализовать `create_timesheet` datetime payload. — `done`
+- 140.6 Обновить tests/API notes/docs. — `done`
+- 140.7 Пройти checks, audit, external diff review, commit/push и self-attestation. — `done`
 
 ## Этап 141. Auth observability and startup signals (после Этапа 140) — `todo`
 

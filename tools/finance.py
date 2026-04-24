@@ -3,7 +3,7 @@
 from fastmcp import FastMCP
 from filters import eq as _filter_eq
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_delete
-from validators import LimitParam, validate_amount
+from validators import LimitParam
 
 
 def register(mcp: FastMCP) -> None:
@@ -39,22 +39,6 @@ def register(mcp: FastMCP) -> None:
             payment_id: Unique numeric ID of the payment.
         """
         return await crud_get_by_id("/rest/api/payment", payment_id)
-
-    @mcp.tool
-    async def create_payment(client_id: int, amount: float, cassa_id: int, description: str = "") -> dict:
-        """Register a new payment from a client.
-
-        Args:
-            client_id: ID of the paying client.
-            amount: Payment amount.
-            cassa_id: ID of the cash register (cassa) receiving payment.
-            description: Optional payment description or note.
-        """
-        validate_amount(amount)
-        payload: dict = {"client_id": client_id, "amount": amount, "cassa_id": cassa_id}
-        if description:
-            payload["description"] = description
-        return await crud_create("/rest/api/payment", payload)
 
     @mcp.tool
     async def get_closing_of_invoices(

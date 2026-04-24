@@ -2,7 +2,7 @@
 Role, UserPosition, ComboManualName, ComboManualItem."""
 
 from fastmcp import FastMCP
-from filters import eq as _filter_eq
+from filters import eq as _filter_eq, like as _filter_like
 from tools.crud_helpers import crud_list, crud_get_by_id
 from validators import LimitParam
 
@@ -82,9 +82,12 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             title: Filter by city name (partial match, optional).
         """
+        combined_filters: list = list(filter or [])
+        if title:
+            combined_filters.append(_filter_like("title", f"%{title}%"))
         return await crud_list(
             "/rest/api/city", limit=limit, offset=offset,
-            sort=sort, filters=filter, extra={"title": title},
+            sort=sort, filters=combined_filters if combined_filters else None,
         )
 
     @mcp.tool
@@ -128,9 +131,12 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             city_id: Filter by city ID (0 = no filter).
         """
+        combined_filters: list = list(filter or [])
+        if city_id:
+            combined_filters.append(_filter_eq("city_id", city_id))
         return await crud_list(
             "/rest/api/street", limit=limit, offset=offset,
-            sort=sort, filters=filter, extra={"cityId": city_id},
+            sort=sort, filters=combined_filters if combined_filters else None,
         )
 
     @mcp.tool
@@ -261,9 +267,14 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        combined_filters: list = list(filter or [])
+        if combo_manual_name_id:
+            combined_filters.append(
+                _filter_eq("combo_manual_name_id", combo_manual_name_id)
+            )
         return await crud_list(
             "/rest/api/ComboManualItem", limit=limit, offset=offset,
-            sort=sort, filters=filter, extra={"comboManualNameId": combo_manual_name_id},
+            sort=sort, filters=combined_filters if combined_filters else None,
         )
 
     @mcp.tool

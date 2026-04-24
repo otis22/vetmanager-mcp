@@ -248,6 +248,35 @@ async def test_daily_schedule_filters_inactive_statuses_via_api():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_daily_schedule_reports_truncation_when_total_exceeds_returned_rows():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 150,
+                    "admission": [{"id": index} for index in range(100)],
+                },
+            },
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_daily_schedule",
+            {"date": "2026-04-10", "limit": 100},
+        )
+
+    data = result.structured_content
+    assert data["returnedCount"] == 100
+    assert data["totalCount"] == 150
+    assert data["truncated"] is True
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_daily_schedule_tomorrow_relative():
     from datetime import date, timedelta
 

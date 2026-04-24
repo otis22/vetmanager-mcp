@@ -499,7 +499,6 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "get_combo_manual_item_by_id": "combo_manual_item",
     "get_payments": "payment",
     "get_payment_by_id": "payment",
-    "create_payment": "payment",
     "get_closing_of_invoices": "closing_of_invoices",
     "get_closing_of_invoice_by_id": "closing_of_invoices",
     "get_invoice_documents": "invoice_document",
@@ -576,14 +575,16 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "животное, кот, собака, пациент клиники, pet, animal."
     ),
     "get_medical_cards_by_client_id": (
-        "List medical cards for all pets that belong to one client / owner. Use "
-        "when the user asks for the medical history of all animals of one owner. "
+        "List medical cards for pets that belong to one client / owner, including "
+        "pet pagination metadata. Use when the user asks for the medical history "
+        "of animals of one owner. "
         "Domain synonyms: медкарта, медицинская карта, история болезни, история "
         "лечения, клиническая запись, осмотр, medical card, medical record."
     ),
     "get_vaccinations": (
-        "List vaccination records for one pet / patient. Use when the user asks "
-        "about vaccinations, revaccination, vaccine history, or the pet's "
+        "List vaccination records for one pet / patient with returnedCount, "
+        "totalCount when available, and truncated metadata. Use when the user "
+        "asks about vaccinations, revaccination, vaccine history, or the pet's "
         "vaccination card. Domain synonyms: вакцинация, прививка, прививочная "
         "карта, история вакцинаций, vaccination card, vaccine record."
     ),

@@ -67,17 +67,6 @@ async def test_get_payment_by_id():
     assert result["data"]["payment_type"] == "cash"
 
 
-@pytest.mark.asyncio
-@respx.mock
-async def test_create_payment():
-    billing_mock()
-    respx.post(f"{BASE}/rest/api/payment").mock(
-        return_value=httpx.Response(201, json={"data": {"id": 55, "amount": "500.00"}})
-    )
-    result = await client().post("/rest/api/payment", json={"clientId": 42, "amount": 500.0, "cassaId": 1})
-    assert result["data"]["id"] == 55
-
-
 # ── Finance: ClosingOfInvoices ────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -374,5 +363,4 @@ async def test_get_good_stock_balance_zero_for_service():
     )
     qty = float(result["data"]["rest_good_in_warehouse"]["quantity"])
     assert qty == 0.0
-
 

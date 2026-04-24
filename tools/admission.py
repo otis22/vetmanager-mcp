@@ -251,10 +251,15 @@ def register(mcp: FastMCP) -> None:
             filters=filters,
         )
         rows, total = _unwrap_admission_list_response(resp)
+        returned_count = len(rows)
+        total_count = int(total or 0)
         return {
             "success": True,
             "date": resolved,
-            "data": {"admission": rows, "totalCount": total},
+            "returnedCount": returned_count,
+            "totalCount": total_count,
+            "truncated": total_count > returned_count,
+            "data": {"admission": rows, "totalCount": total_count},
         }
 
     @mcp.tool

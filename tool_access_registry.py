@@ -123,7 +123,6 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
     "create_hospitalization": (SCOPE_MEDICAL_CARDS_WRITE,),
     "create_invoice": (SCOPE_FINANCE_WRITE,),
     "create_medical_card": (SCOPE_MEDICAL_CARDS_WRITE,),
-    "create_payment": (SCOPE_FINANCE_WRITE,),
     "create_pet": (SCOPE_PETS_WRITE,),
     "create_supplier": (SCOPE_INVENTORY_WRITE,),
     "create_timesheet": (SCOPE_ANALYTICS_WRITE,),
@@ -359,7 +358,6 @@ MARKETED_PRESET_TOOLS: dict[str, tuple[str, ...]] = {
     ),
     PRESET_FINANCE: (
         "create_invoice",
-        "create_payment",
         "get_average_invoice",
         "get_client_by_id",
         "get_clients",

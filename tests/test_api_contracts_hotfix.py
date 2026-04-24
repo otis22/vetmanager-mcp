@@ -95,33 +95,9 @@ async def test_create_client_maps_fields_to_api_contract():
 
 
 @pytest.mark.asyncio
-@respx.mock
-async def test_create_payment_maps_fields_to_api_contract():
-    billing_mock()
-    route = respx.post(f"{BASE}/rest/api/payment").mock(
-        return_value=httpx.Response(201, json={"data": {"id": 102}})
-    )
-    headers_patch, runtime_patch = bearer_runtime_patch()
-    with headers_patch, runtime_patch:
-        await mcp.call_tool(
-            "create_payment",
-            {
-                "client_id": 1,
-                "amount": 123.45,
-                "cassa_id": 2,
-                "description": "cash payment",
-            },
-        )
-
-    body = _body_of(route)
-    assert body == {
-        "client_id": 1,
-        "amount": 123.45,
-        "cassa_id": 2,
-        "description": "cash payment",
-    }
-    assert "clientId" not in body
-    assert "cassaId" not in body
+async def test_create_payment_is_not_registered_as_mcp_tool():
+    tools = await mcp.list_tools()
+    assert "create_payment" not in {tool.name for tool in tools}
 
 
 @pytest.mark.asyncio
@@ -633,29 +609,6 @@ async def test_update_hospitalization_empty_date_out_is_omitted():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_create_payment_maps_payload_to_snake_case():
-    billing_mock()
-    route = respx.post(f"{BASE}/rest/api/payment").mock(
-        return_value=httpx.Response(201, json={"data": {"id": 55}})
-    )
-    headers_patch, runtime_patch = bearer_runtime_patch()
-    with headers_patch, runtime_patch:
-        await mcp.call_tool(
-            "create_payment",
-            {"client_id": 42, "amount": 500.0, "cassa_id": 1, "description": "Cash"},
-        )
-
-    body = _body_of(route)
-    assert body["client_id"] == 42
-    assert body["amount"] == 500.0
-    assert body["cassa_id"] == 1
-    assert body["description"] == "Cash"
-    assert "clientId" not in body
-    assert "cassaId" not in body
-
-
-@pytest.mark.asyncio
-@respx.mock
 async def test_get_payments_uses_client_id_filter_not_legacy_query_param():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/payment").mock(
@@ -671,6 +624,25 @@ async def test_get_payments_uses_client_id_filter_not_legacy_query_param():
         for f in filters
     ), f"expected client_id filter, got {filters}"
     assert "clientId" not in _query_of(route)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_invoices_uses_client_id_filter_not_legacy_query_param():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "invoice": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("get_invoices", {"client_id": 42, "limit": 20})
+
+    filters = _filter_of(route)
+    assert any(
+        f.get("property") == "client_id" and f.get("value") == 42
+        for f in filters
+    ), f"expected client_id filter, got {filters}"
+    assert "client_id" not in _query_of(route)
 
 
 @pytest.mark.asyncio
@@ -761,6 +733,235 @@ async def test_get_breeds_uses_pet_type_id_filter_not_legacy_query_param():
         for f in filters
     ), f"expected pet_type_id filter, got {filters}"
     assert "petTypeId" not in _query_of(route)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_good_sale_params_uses_good_id_filter_not_legacy_query_param():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/goodSaleParam").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "goodSaleParam": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("get_good_sale_params", {"good_id": 7, "limit": 20})
+
+    filters = _filter_of(route)
+    assert any(
+        f.get("property") == "good_id" and f.get("value") == 7
+        for f in filters
+    ), f"expected good_id filter, got {filters}"
+    assert "goodId" not in _query_of(route)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_cities_uses_title_filter_not_legacy_query_param():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/city").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "city": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("get_cities", {"title": "Москва", "limit": 20})
+
+    filters = _filter_of(route)
+    assert any(
+        f.get("property") == "title" and f.get("value") == "%Москва%"
+        and f.get("operator") == "LIKE"
+        for f in filters
+    ), f"expected title LIKE filter, got {filters}"
+    assert "title" not in _query_of(route)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_streets_uses_city_id_filter_not_legacy_query_param():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/street").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "street": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("get_streets", {"city_id": 5, "limit": 20})
+
+    filters = _filter_of(route)
+    assert any(
+        f.get("property") == "city_id" and f.get("value") == 5
+        for f in filters
+    ), f"expected city_id filter, got {filters}"
+    assert "cityId" not in _query_of(route)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_combo_manual_items_uses_name_id_filter_not_legacy_query_param():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/ComboManualItem").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "comboManualItem": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool(
+            "get_combo_manual_items",
+            {"combo_manual_name_id": 9, "limit": 20},
+        )
+
+    filters = _filter_of(route)
+    assert any(
+        f.get("property") == "combo_manual_name_id" and f.get("value") == 9
+        for f in filters
+    ), f"expected combo_manual_name_id filter, got {filters}"
+    assert "comboManualNameId" not in _query_of(route)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_vaccinations_reports_truncation_metadata():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/MedicalCards/Vaccinations").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "medicalcards": [
+                        {"id": 1, "name": "A", "pet_id": 66},
+                        {"id": 2, "name": "B", "pet_id": 66},
+                        {"id": 3, "name": "C", "pet_id": 66},
+                    ],
+                    "totalCount": 3,
+                },
+                "success": True,
+            },
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_vaccinations", {"pet_id": 66, "limit": 2})
+
+    data = result.structured_content
+    assert data["returnedCount"] == 2
+    assert data["totalCount"] == 3
+    assert data["truncated"] is True
+    assert [row["id"] for row in data["vaccinations"]] == [1, 2]
+    assert _query_of(route)["pet_id"] == ["66"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_medical_cards_by_client_id_paginates_owner_pets():
+    billing_mock()
+    pet_requests: list[dict[str, list[str]]] = []
+    card_route = respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "medicalCards": []}})
+    )
+
+    def _pet_response(request: httpx.Request) -> httpx.Response:
+        query = parse_qs(urlparse(str(request.url)).query)
+        pet_requests.append(query)
+        offset = int(query.get("offset", ["0"])[0])
+        pets = [{"id": 101, "alias": "A"}] if offset == 0 else [{"id": 202, "alias": "B"}]
+        return httpx.Response(
+            200,
+            json={"data": {"totalCount": 2, "pet": pets}},
+        )
+
+    respx.get(f"{BASE}/rest/api/pet").mock(side_effect=_pet_response)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_medical_cards_by_client_id",
+            {"client_id": 42, "limit": 20},
+        )
+
+    assert [request["offset"][0] for request in pet_requests] == ["0", "100"]
+    assert result.structured_content["pets_count"] == 2
+    assert result.structured_content["pets_total"] == 2
+    assert result.structured_content["pets_truncated"] is False
+    card_filters = _filter_of(card_route)
+    patient_filter = next(f for f in card_filters if f.get("property") == "patient_id")
+    assert patient_filter["operator"].upper() == "IN"
+    assert patient_filter["value"] == [101, 202]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_medical_cards_by_client_id_marks_truncated_on_empty_pet_page_before_total():
+    billing_mock()
+    pet_requests: list[dict[str, list[str]]] = []
+
+    def _pet_response(request: httpx.Request) -> httpx.Response:
+        query = parse_qs(urlparse(str(request.url)).query)
+        pet_requests.append(query)
+        offset = int(query.get("offset", ["0"])[0])
+        pets = [{"id": 101, "alias": "A"}] if offset == 0 else []
+        return httpx.Response(
+            200,
+            json={"data": {"totalCount": 300, "pet": pets}},
+        )
+
+    respx.get(f"{BASE}/rest/api/pet").mock(side_effect=_pet_response)
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "medicalCards": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_medical_cards_by_client_id",
+            {"client_id": 42, "limit": 20},
+        )
+
+    assert [request["offset"][0] for request in pet_requests] == ["0", "100"]
+    assert result.structured_content["pets_count"] == 1
+    assert result.structured_content["pets_total"] == 300
+    assert result.structured_content["pets_truncated"] is True
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_create_timesheet_normalizes_datetime_payload():
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/timesheet").mock(
+        return_value=httpx.Response(201, json={"data": {"id": 77}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool(
+            "create_timesheet",
+            {
+                "doctor_id": 7,
+                "begin_datetime": "2026-04-24T09:30:15.123",
+                "end_datetime": "2026-04-24 18:00:00",
+                "clinic_id": 2,
+            },
+        )
+
+    body = _body_of(route)
+    assert body["begin_datetime"] == "2026-04-24 09:30:15"
+    assert body["end_datetime"] == "2026-04-24 18:00:00"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_create_timesheet_rejects_timezone_datetime_before_http():
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/timesheet").mock(
+        return_value=httpx.Response(201, json={"data": {"id": 77}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError):
+            await mcp.call_tool(
+                "create_timesheet",
+                {
+                    "doctor_id": 7,
+                    "begin_datetime": "2026-04-24T09:30:00+03:00",
+                    "end_datetime": "2026-04-24T18:00:00",
+                    "clinic_id": 2,
+                },
+            )
+
+    assert not route.called
 
 
 @pytest.mark.asyncio

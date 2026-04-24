@@ -6066,6 +6066,45 @@ UI кабинета и issuance flow переведены на preset-based то
 
 Пользователь попросил закоммитить/запушить все изменения, сформировать Roadmap по итогам review и продолжать выполнять Roadmap до конца по workflow.
 
+## Этап 140 VM API contract and pagination correctness — 2026-04-24
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Stage 140 закрывает findings F7-F8/F11-F14/F16 из `artifacts/review/2026-04-24-full-stage-136.md`; F15 уже закрыт stage 139.
+- PRD stage 140 создан и прошёл два PRD-review запуска Claude Opus; бюджет PRD-review израсходован, адекватные findings внесены до реализации.
+- `create_payment` удалён из MCP tool surface, access registry и entity descriptions; Payment оставлен read-only (`get_payments`, `get_payment_by_id`).
+- `get_invoices(client_id)`, `get_good_sale_params(good_id)`, `get_cities(title)`, `get_streets(city_id)`, `get_combo_manual_items(combo_manual_name_id)` переведены на `filter[]`.
+- `messages/reports?campaign=...` оставлен как documented custom special-case до real API проверки `filter[]`.
+- `get_vaccinations()` возвращает `returnedCount`, `totalCount` when available и `truncated`, режет результат по caller `limit`.
+- `get_daily_schedule()` возвращает `returnedCount`, `totalCount` и `truncated`.
+- `get_medical_cards_by_client_id()` пагинирует owner pets до `totalCount` или safety cap 2000 pets и возвращает `pets_total`/`pets_truncated`.
+- `create_timesheet()` нормализует naive ISO/VM datetime через `normalize_vm_datetime()` и reject-ит timezone offsets до HTTP.
+- README, AGENTS artifact index, `tool_descriptions.py` и `artifacts/api-research-notes-ru.md` синхронизированы.
+- Проверки: red targeted дал 11 failures; после реализации targeted `190 passed`; после audit cleanup targeted `119 passed`; после code/diff review fixes targeted `120 passed`; final full Docker suite `882 passed, 57 deselected`.
+
+### Решения и обоснования
+
+- `create_payment` удалён, а не feature-gated, потому что CRUD permissions и OpenAPI не подтверждают Payment create endpoint; tenant-specific flag оставил бы неподтверждённый write surface.
+- Для `MedicalCards/Vaccinations` top-level `pet_id` сохранён как special-case по entity reference; universal `filter`/`sort` не используются без real API probe.
+- Для `messages/reports` top-level `campaign` сохранён как safety special-case, потому что endpoint custom, а migration на `filter[]` без real API проверки может расширить query.
+- Pet pagination cap выбран 20 страниц / 2000 pets, чтобы убрать unbounded loop по внешнему API и дать явный `pets_truncated`.
+
+### Проблемы
+
+- PRD-review 1/2 нашёл high по ошибочному scope F15, F11 target ambiguity и unverified `Vaccinations` limit/offset assumption; PRD исправлен.
+- PRD-review 2/2 одобрил PRD, но нашёл medium-уточнения по `get_daily_schedule.truncated`, `messages/reports` special-case и pet pagination cap; PRD исправлен, третий запуск не выполнялся из-за исчерпания бюджета.
+- Первый full suite после реализации упал на legacy expectation в `tests/test_e2e_mock_crud.py::test_create_timesheet_tool`; тест обновлён на VM datetime payload.
+- Audit cleanup удалил устаревший raw mock `test_create_payment`, чтобы тестовый корпус не продолжал закреплять forbidden Payment write path; после этого повторён targeted и full suite.
+- Code/diff review сторонней моделью 1/2 нашёл medium по partial city search regression и incomplete `pets_truncated` при empty page before total, а также low по `None`/non-numeric total handling; адекватные findings исправлены, добавлены regression tests.
+- Code/diff review сторонней моделью 2/2 вернул `NO FINDINGS`; бюджет code/diff review stage 140 исчерпан.
+- Хостовый `pytest` по-прежнему не используется из-за отсутствия Playwright в host env; проверки выполнены через Docker test profile.
+
+### Обратная связь
+
+Пользователь попросил коммит/пуш всех изменений и продолжать выполнять Roadmap до конца по workflow.
+
 ## Этап 139 async auth/session and breaker correctness — 2026-04-24
 
 **Статус**: `done`.

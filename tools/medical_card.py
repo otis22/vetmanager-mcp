@@ -11,6 +11,8 @@ from vetmanager_client import VetmanagerClient
 # The old lowercase /rest/api/medicalcard returns 404 on all known installations.
 _MC_ENDPOINT = "/rest/api/MedicalCards"
 _MC_KEY = "medicalCards"
+_CLIENT_PETS_PAGE_SIZE = 100
+_CLIENT_PETS_MAX_PAGES = 20
 
 
 def register(mcp: FastMCP) -> None:
@@ -77,20 +79,41 @@ def register(mcp: FastMCP) -> None:
         # Step 1: get all pets of the client.
         # Pet entity FK to client is `owner_id` (migrated stage 77.4;
         # legacy `client_id` filter returns empty silently).
-        pet_params = build_list_query_params(
-            limit=100,
-            offset=0,
-            filters=[_filter_eq("owner_id", str(client_id))],
-        )
-        pets_resp = await vc.get("/rest/api/pet", params=pet_params)
-        pets_data = pets_resp.get("data", {})
-        pets = pets_data.get("pet", []) if isinstance(pets_data, dict) else []
+        pets: list[dict] = []
+        pets_total = 0
+        pets_truncated = False
+        for page_index in range(_CLIENT_PETS_MAX_PAGES):
+            pet_params = build_list_query_params(
+                limit=_CLIENT_PETS_PAGE_SIZE,
+                offset=page_index * _CLIENT_PETS_PAGE_SIZE,
+                filters=[_filter_eq("owner_id", str(client_id))],
+            )
+            pets_resp = await vc.get("/rest/api/pet", params=pet_params)
+            pets_data = pets_resp.get("data", {})
+            page_pets = pets_data.get("pet", []) if isinstance(pets_data, dict) else []
+            page_total = (
+                pets_data.get("totalCount", len(page_pets))
+                if isinstance(pets_data, dict)
+                else len(page_pets)
+            )
+            pets_total = max(pets_total, int(page_total or 0))
+            pets.extend(page_pets)
+            if not page_pets:
+                if len(pets) < pets_total:
+                    pets_truncated = True
+                break
+            if len(pets) >= pets_total:
+                break
+        else:
+            pets_truncated = True
 
         if not pets:
             return {
                 "success": True,
                 "client_id": client_id,
                 "pets_count": 0,
+                "pets_total": pets_total,
+                "pets_truncated": pets_truncated,
                 "medical_cards": [],
                 "message": "No pets found for this client.",
             }
@@ -105,6 +128,8 @@ def register(mcp: FastMCP) -> None:
                 "success": True,
                 "client_id": client_id,
                 "pets_count": len(pets),
+                "pets_total": pets_total,
+                "pets_truncated": pets_truncated,
                 "medical_cards_count": 0,
                 "medical_cards": [],
             }
@@ -139,6 +164,8 @@ def register(mcp: FastMCP) -> None:
             "success": True,
             "client_id": client_id,
             "pets_count": len(pets),
+            "pets_total": pets_total,
+            "pets_truncated": pets_truncated,
             "medical_cards_count": len(all_cards),
             "medical_cards": all_cards,
         }
@@ -255,10 +282,10 @@ def register(mcp: FastMCP) -> None:
         pet_id: int,
         limit: LimitParam = 50,
     ) -> dict:
-        """Get all vaccination records for a pet.
+        """Get vaccination records for a pet.
 
-        Returns a list of vaccinations including vaccine name, date administered,
-        and the scheduled next vaccination date.
+        Returns up to `limit` vaccinations plus truncation metadata. The
+        Vetmanager endpoint uses a top-level `pet_id` parameter.
 
         Args:
             pet_id: Unique numeric ID of the pet.
@@ -267,10 +294,25 @@ def register(mcp: FastMCP) -> None:
         vc = VetmanagerClient()
         params: dict = {"pet_id": pet_id, "limit": limit}
         result = await vc.get("/rest/api/MedicalCards/Vaccinations", params=params)
-        records = result.get("data", {}).get("medicalcards", [])
+        data = result.get("data", {})
+        records = data.get("medicalcards", []) if isinstance(data, dict) else []
+        total_count = data.get("totalCount") if isinstance(data, dict) else None
+        returned_records = records[:limit]
+        returned_count = len(returned_records)
+        try:
+            total_count_int = int(total_count) if total_count is not None else None
+        except (TypeError, ValueError):
+            total_count_int = None
+        if total_count_int is None:
+            truncated = len(records) > returned_count or len(records) >= limit
+        else:
+            truncated = total_count_int > returned_count
         return {
             "pet_id": pet_id,
-            "total": len(records),
+            "total": returned_count,
+            "returnedCount": returned_count,
+            "totalCount": total_count,
+            "truncated": truncated,
             "vaccinations": [
                 {
                     "id": r.get("id"),
@@ -283,6 +325,6 @@ def register(mcp: FastMCP) -> None:
                     "next_admission_id": r.get("next_admission_id"),
                     "pet_age_at_time_vaccination": r.get("pet_age_at_time_vaccination"),
                 }
-                for r in records
+                for r in returned_records
             ],
         }

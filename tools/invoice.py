@@ -54,6 +54,8 @@ def register(mcp: FastMCP) -> None:
             combined_filters.append(_filter_gte("create_date", resolved_date_from))
         if resolved_date_to:
             combined_filters.append(_filter_lte("create_date", resolved_date_to))
+        if client_id:
+            combined_filters.append(_filter_eq("client_id", client_id))
         if pet_id:
             combined_filters.append(_filter_eq("pet_id", pet_id))
         if payment_status:
@@ -62,7 +64,6 @@ def register(mcp: FastMCP) -> None:
         return await crud_list(
             "/rest/api/invoice", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,
-            extra={"client_id": client_id},
         )
 
     @mcp.tool

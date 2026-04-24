@@ -6,6 +6,17 @@
 
 ---
 
+## 2026-04-24 — Stage 140 contract notes
+
+**Источник:** `artifacts/vetmanager_openapi_v6.json`, `artifacts/api_crud_permissions-ru.md`, `artifacts/api_entity_reference-ru.md`, super-review stage 136.
+
+- `Payment` REST API поддерживает только чтение (`restList`, `restView`); MCP не публикует `create_payment`.
+- Стандартные list constraints должны идти через `filter[]`: stage 140 закрепляет это для `invoice.client_id`, `goodSaleParam.good_id`, `city.title`, `street.city_id`, `ComboManualItem.combo_manual_name_id`.
+- `MedicalCards/Vaccinations` остаётся special-case endpoint: фильтр питомца передаётся top-level `pet_id`, ответ читается из `data.medicalcards`; универсальные `filter`/`sort` не считаются поддержанными без real API probe.
+- `messages/reports` остаётся custom endpoint с top-level `campaign` до real API проверки `filter[]`, несмотря на generic OpenAPI parameters.
+
+---
+
 ## ⚠️ Поля и их реальные имена — чек-лист (читать ПЕРЕД ревью / правкой tools)
 
 **Authoritative источники:**

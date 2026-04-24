@@ -2,6 +2,7 @@
 PartyAccountDoc, StoreDocument, Suppliers."""
 
 from fastmcp import FastMCP
+from filters import eq as _filter_eq
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
@@ -50,9 +51,12 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
         """
+        combined_filters: list = list(filter or [])
+        if good_id:
+            combined_filters.append(_filter_eq("good_id", good_id))
         return await crud_list(
             "/rest/api/goodSaleParam", limit=limit, offset=offset,
-            sort=sort, filters=filter, extra={"goodId": good_id},
+            sort=sort, filters=combined_filters if combined_filters else None,
         )
 
     @mcp.tool

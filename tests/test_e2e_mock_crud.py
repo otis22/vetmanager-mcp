@@ -387,8 +387,8 @@ async def test_create_timesheet_tool():
     assert str(route.calls.last.request.url) == f"{BASE}/rest/api/timesheet"
     assert _body_of(route) == {
         "doctor_id": 1,
-        "begin_datetime": "2026-03-27T09:00:00",
-        "end_datetime": "2026-03-27T18:00:00",
+        "begin_datetime": "2026-03-27 09:00:00",
+        "end_datetime": "2026-03-27 18:00:00",
         "clinic_id": 1,
     }
 
