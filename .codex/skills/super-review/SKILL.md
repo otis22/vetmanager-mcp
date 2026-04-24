@@ -42,10 +42,30 @@ Use these defaults when shelling out from Codex:
 - Per reviewer/scout command timeout: **1200 seconds**.
 - External arbitration timeout: **900 seconds**.
 - First attempt sandbox: `-s read-only`.
+- Classify failures before retrying:
+  - **Sandbox/runtime failure**: process fails before meaningful file reads due to local execution errors such as `bwrap: loopback: Failed RTM_NEWADDR`, sandbox initialization, PTY/session startup, local timeout wrapper issues, or shell/env problems. Retry the **same model** once with the adjusted runtime settings described below. Do not switch models for these failures.
+  - **Model failure**: stderr/stdout clearly indicates the requested model is unavailable, unknown, unsupported, denied for the account, capacity-limited, quota-limited, or otherwise rejected by the model provider. Only this class may use the documented fallback model.
+  - **Review-output failure**: command ran and read files but returned empty output, malformed YAML, non-findings prose, or a meta runtime error. Do not switch models automatically unless the output itself identifies a model/provider failure; mark the role `skipped_or_failed` or rerun the same model once if the failure is obviously transient.
 - If Codex CLI fails before reading files with sandbox/runtime errors such as `bwrap: loopback: Failed RTM_NEWADDR`, retry that exact pass once with `-s danger-full-access` and a prompt that explicitly says: `Review only. Do not edit files. Do not run write commands.`
-- If a model is unavailable, retry once with the documented fallback model and record the fallback in the report header/limitations.
+- If and only if a model failure is identified, retry once with the documented fallback model and record the fallback in the report header/limitations.
 - If a role returns empty output, non-YAML output, or only a meta runtime error, do not silently treat it as "no findings"; mark that role as `skipped_or_failed` in the report header and continue with available roles.
 - Before finalizing, check that no `codex exec` / `claude -p` processes from this run are still alive.
+
+## Known Runtime Issues Memory
+
+These are known review-runner issues, not project findings. Do not include them in the main findings list, do not send them to arbitration as product defects, and append them to dismissed memory only if they are newly observed in a materially different form:
+
+- `bwrap: loopback: Failed RTM_NEWADDR` on Codex read-only sandbox startup.
+  - Classification: sandbox/runtime failure.
+  - Action: retry the same model once with `-s danger-full-access` plus the mandatory review-only/no-write prompt.
+  - Not allowed: fallback to another model solely because of this error.
+- Spark or reviewer output that repeats the prompt, dumps long command logs, or returns non-YAML after reading files.
+  - Classification: review-output failure.
+  - Action: salvage concrete YAML-like findings only if independently validated; otherwise mark the role/pass `skipped_or_failed` or `partial_output`.
+  - Not allowed: treat this as "no findings" or as a project defect.
+- Old PRDs and historical Roadmap sections that describe retired runtime contracts.
+  - Classification: historical artifact unless the current README, technical requirements, active PRD, or workflow references them as current truth.
+  - Action: do not report historical drift unless it actively misleads current work.
 
 ## Codex Workflow
 
@@ -63,7 +83,9 @@ Fallback once:
 timeout 1200 codex exec -m gpt-5.4-mini -s read-only -C "$PWD" -
 ```
 
-If the failure is the known read-only sandbox startup error (`bwrap: loopback: Failed RTM_NEWADDR`), first retry the same model with:
+Use this fallback command only when the first command failed because the **model** was unavailable/unsupported/denied/quota-limited. Do not use it for sandbox/runtime failures or malformed review output.
+
+If the failure is the known read-only sandbox startup error (`bwrap: loopback: Failed RTM_NEWADDR`), retry the same model with:
 
 ```bash
 timeout 1200 codex exec -m gpt-5.3-codex-spark -s danger-full-access -C "$PWD" -
@@ -78,7 +100,7 @@ Scout tasks:
    - docs: verified drift only
    - inadequate index: known false positives and duplicates
    - snippets: `file:lines` and failure scenarios for strong candidates
-4. Run one bounded Codex pass per reviewer role. Use the role briefs below and keep all outputs in the YAML schema. Use `timeout 1200` for each role. Start with `-s read-only`; on the known `bwrap` startup failure retry once with `-s danger-full-access` plus the review-only/no-write prompt sentence. If you cannot run a role separately, say so in the report header; do not pretend parity with the Claude command.
+4. Run one bounded Codex pass per reviewer role. Use the role briefs below and keep all outputs in the YAML schema. Use `timeout 1200` for each role. Start with `-s read-only`; on the known `bwrap` startup failure retry once with the same model and `-s danger-full-access` plus the review-only/no-write prompt sentence. Use a fallback model only for explicit model/provider failures. If you cannot run a role separately, say so in the report header; do not pretend parity with the Claude command.
 5. Aggregate findings: dedupe, validate Spark leads, dismiss low-confidence/speculative/pre-existing/duplicate findings, sort by severity x confidence.
 6. Unless `--no-arbitration`, perform cross-CLI arbitration with Claude CLI because the orchestrator is Codex:
 
@@ -86,11 +108,13 @@ Scout tasks:
 timeout 900 claude -p --model opus --permission-mode default --tools "" --input-format text
 ```
 
-Pass the arbitration prompt via stdin. If `opus` fails once, retry once:
+Pass the arbitration prompt via stdin. If `opus` fails because the model/provider rejects the model, quota, account access, or capacity, retry once:
 
 ```bash
 timeout 900 claude -p --model sonnet --permission-mode default --tools "" --input-format text
 ```
+
+If `opus` fails due to local CLI/runtime/shell problems, retry `opus` once after fixing the runtime issue instead of switching models.
 
 `--tools ""` is required: the arbiter must not read the filesystem. Provide all snippets inline.
 
@@ -157,5 +181,5 @@ Keep total <= 900 words.
 - External arbitration max two calls: primary external model plus fallback.
 - Spark calls can be numerous, but Spark output remains candidate-only.
 - Use the exact model name `gpt-5.3-codex-spark`; do not use older short aliases for Spark.
-- Record runtime limitations explicitly: model fallback, sandbox fallback, timeout, partial role output, skipped arbitration.
+- Record runtime limitations explicitly: model fallback, sandbox fallback, timeout, partial role output, skipped arbitration. Keep these in the report header/limitations, not in the confirmed findings list.
 - For VM API fields, trust inline API facts and authoritative repo sources, not model memory.

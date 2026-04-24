@@ -270,3 +270,36 @@ Source: `artifacts/review/2026-04-24-changed-stage-135.md`
 
 - PRD stage 135 Scope 7 "legacy workflow gaps" is broad (simplicity/medium, 0.82). **Причина dismiss**: valid process smell, but concrete confirmed findings F1-F6 cover the actionable defects. Revisit only if future stages use this as an open-ended cleanup escape hatch.
 - Operations docs missing correlation/audit guidance (product/medium, 0.78). **Причина dismiss**: consolidated into F3 (wrong sanitizer investigation path) and F5 (metrics/log taxonomy).
+
+---
+
+## 2026-04-24 super-review full stage 136
+
+Source: `artifacts/review/2026-04-24-full-stage-136.md`
+
+### Runtime / reviewer limitations
+
+- Read-only Codex sandbox `bwrap: loopback: Failed RTM_NEWADDR`.
+  - **Причина dismiss**: review-runtime limitation, not project code. Passes were rerun with `danger-full-access` and explicit review-only/no-write prompt.
+- `simplicity` role final YAML was not captured.
+  - **Причина dismiss**: role-output limitation recorded in the report header; overlapping simplicity concerns were covered by other roles and Claude arbitration.
+
+### Spark leads not carried
+
+- Broad "add tests for env_utils/landing_page/cache_policy/contours" findings.
+  - **Причина dismiss**: useful hardening ideas, but no concrete defect or failing behavior was demonstrated in this full-project review.
+- `tools/medical_card.py` stringified owner/patient IDs.
+  - **Причина dismiss**: VM filter JSON commonly accepts scalar string values; no endpoint-specific failure was proven.
+- `tools/_slots_helpers.py` strict `%Y-%m-%d %H:%M:%S` parsing.
+  - **Причина dismiss**: current authoritative API facts use VM datetime format without timezone suffixes; tolerant parsing needs new upstream evidence.
+- `PRD/этап-20-bearer-only-архитектура.md` historical headers-only text.
+  - **Причина dismiss**: old PRDs are historical artifacts unless used as active source of truth; current README/technical requirements carry bearer-only contract.
+
+### Consolidated / downgraded
+
+- `artifacts/observability-runbook-vetmanager-mcp-ru.md` metrics auth examples.
+  - **Причина dismiss**: consolidated into confirmed F22 and deployment-smoke F4.
+- `tools/client.py get_debtors offset unused`.
+  - **Причина dismiss**: valid low-severity UX/API polish, below requested high/medium remediation priority for this super-review.
+- PII log concerns around aggregator context and token_name.
+  - **Причина dismiss**: valid low/medium hardening, but lower confidence and less urgent than confirmed token cache/defaults/auth-audit findings; revisit during logging hardening stage.
