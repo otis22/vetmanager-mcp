@@ -1,9 +1,9 @@
 """Financial entity tools: Payment, ClosingOfInvoices, InvoiceDocument, Cassa, CassaClose."""
 
 from fastmcp import FastMCP
-from filters import eq as _filter_eq
+from filters import eq as _filter_eq, gte as _filter_gte, lte as _filter_lte
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_delete
-from validators import LimitParam
+from validators import LimitParam, parse_date_param
 
 
 def register(mcp: FastMCP) -> None:
@@ -13,6 +13,8 @@ def register(mcp: FastMCP) -> None:
         limit: LimitParam = 20,
         offset: int = 0,
         client_id: int = 0,
+        date_from: str = "",
+        date_to: str = "",
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
     ) -> dict:
@@ -22,8 +24,20 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
             client_id: Filter by client ID (0 = no filter).
+            date_from: Filter payments created on or after this date.
+                Accepts YYYY-MM-DD or relative: today, yesterday, tomorrow,
+                +Nd/-Nd, +Nw/-Nw, +Nm/-Nm.
+            date_to: Filter payments created on or before this date.
+                Same accepted formats as `date_from`.
         """
+        resolved_date_from = parse_date_param(date_from)
+        resolved_date_to = parse_date_param(date_to)
+
         combined_filters: list = list(filter or [])
+        if resolved_date_from:
+            combined_filters.append(_filter_gte("create_date", resolved_date_from))
+        if resolved_date_to:
+            combined_filters.append(_filter_lte("create_date", resolved_date_to))
         if client_id:
             combined_filters.append(_filter_eq("client_id", client_id))
         return await crud_list(

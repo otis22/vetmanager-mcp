@@ -68,3 +68,12 @@ class TestPromptsBearerOnly:
         assert "PROMPT_SCOPE_GUIDANCE" in source
         assert "If a tool is denied because of token scopes" in source
         assert "prompts are dynamically filtered" not in source
+
+    def test_daily_revenue_prompt_does_not_call_undated_payments(self):
+        source, _ = _load_prompt_functions()
+        daily_revenue_section = source.split("def daily_revenue", 1)[1].split(
+            "@mcp.prompt", 1
+        )[0]
+        assert "get_payments(limit=100" not in daily_revenue_section
+        assert "get_payments(date_from=date" in daily_revenue_section
+        assert "date_to=date" in daily_revenue_section

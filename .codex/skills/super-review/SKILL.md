@@ -34,6 +34,7 @@ Claude side:
 - `sonnet`: fallback external arbitration and routine code/docs/tests checks.
 
 Never let Spark decide final severity or merge verdict.
+Use the exact model name `gpt-5.3-codex-spark`. The shorter name `gpt-5.3-spark` is incomplete and must not be used.
 
 ## Runtime Defaults And Fallbacks
 
@@ -71,7 +72,7 @@ These are known review-runner issues, not project findings. Do not include them 
 
 1. Parse scope and stage from user args. Read `Roadmap.md`, current PRD, and the API facts block from `artifacts/api-research-notes-ru.md`.
 2. Build changed/related/full file list.
-3. Unless `--no-spark`, run Spark scout passes in parallel where available. In Codex runtime, use subagents if available; otherwise run bounded local passes yourself. If shelling out is appropriate, use:
+3. Unless `--no-spark`, run up to 3 Spark scout/review passes before stronger review where practical. Spark output is candidate-only: validate adequacy and keep only important, evidence-backed findings before sending anything to stronger review/arbitration. In Codex runtime, use subagents if available; otherwise run bounded local passes yourself. If shelling out is appropriate, use:
 
 ```bash
 timeout 1200 codex exec -m gpt-5.3-codex-spark -s read-only -C "$PWD" -
@@ -180,6 +181,7 @@ Keep total <= 900 words.
 - Do not commit reports unless explicitly asked.
 - External arbitration max two calls: primary external model plus fallback.
 - Spark calls can be numerous, but Spark output remains candidate-only.
+- For ordinary workflow gates outside full super-review, Spark-review budget is 3 calls before the stronger review.
 - Use the exact model name `gpt-5.3-codex-spark`; do not use older short aliases for Spark.
 - Record runtime limitations explicitly: model fallback, sandbox fallback, timeout, partial role output, skipped arbitration. Keep these in the report header/limitations, not in the confirmed findings list.
 - For VM API fields, trust inline API facts and authoritative repo sources, not model memory.

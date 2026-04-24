@@ -270,7 +270,9 @@ def register_prompts(mcp: FastMCP) -> None:
             _bearer_runtime_prefix()
             + f"Calculate the clinic revenue for {date}. "
             + "Call get_invoices(date_from=date, date_to=date, limit=100) and "
-            + "get_payments(limit=100, sort=[{'property':'id','direction':'DESC'}]) if needed. "
+            + "get_payments(date_from=date, date_to=date, limit=100, "
+            + "sort=[{'property':'create_date','direction':'DESC'}]) if needed. "
+            + "Use the same date period for invoices and payments. "
             + "Summarise total invoiced, total received, and any doctor breakdown available in the data."
         )]
 

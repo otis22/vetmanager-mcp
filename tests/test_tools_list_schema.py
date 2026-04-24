@@ -120,6 +120,12 @@ class TestToolsListSchema:
             "Some tools may be missing LimitParam annotation."
         )
 
+    def test_get_payments_exports_date_filter_params(self, all_tool_exports):
+        tool = next(t for t in all_tool_exports if t["name"] == "get_payments")
+        properties = tool["schema"].get("properties", {})
+        assert "date_from" in properties
+        assert "date_to" in properties
+
     def test_limit_has_minimum_when_present(self, all_tool_exports):
         """Every tool with a 'limit' param must declare minimum in its schema."""
         checked_tools = 0

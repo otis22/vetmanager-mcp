@@ -761,6 +761,30 @@ async def test_get_invoices_relative_dates():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_get_payments_relative_dates():
+    from datetime import date, timedelta
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/payment").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "payment": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool(
+            "get_payments",
+            {"date_from": "-30d", "date_to": "today"},
+        )
+    filters = _filter_from_request(route)
+    date_filters = [f for f in filters if f["property"] == "create_date"]
+    assert len(date_filters) == 2
+    today = date.today()
+    thirty_ago = (today - timedelta(days=30)).isoformat()
+    by_op = {f["operator"]: f["value"] for f in date_filters}
+    assert by_op[">="] == thirty_ago
+    assert by_op["<="] == today.isoformat()
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_get_admissions_invalid_relative_date_rejected():
     billing_mock()
     respx.get(f"{BASE}/rest/api/admission").mock(

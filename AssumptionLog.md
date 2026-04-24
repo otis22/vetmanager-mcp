@@ -6168,6 +6168,38 @@ UI кабинета и issuance flow переведены на preset-based то
 
 Пользователь попросил продолжать выполнять Roadmap до конца по workflow.
 
+## Этап 143 payment date filters and revenue prompt hotfix — 2026-04-24
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Создан PRD stage 143 по инциденту: запрос выручки за март 2026 получил платежи за декабрь 2015 из-за отсутствия date filters в `get_payments` и undated payment call в `daily_revenue`.
+- PRD прошёл Spark-review 1/3; адекватные findings по intersection semantics, единому периоду invoices/payments и schema coverage внесены. Spark-review 2/3 вернул `[]`.
+- External PRD-review Claude Opus/Sonnet не выполнен из-за provider/account access failure: `Your organization does not have access to Claude`.
+- `get_payments` получил `date_from`/`date_to` с тем же `parse_date_param()` и `create_date >=` / `create_date <=` pattern, что `get_invoices`.
+- `daily_revenue` больше не предлагает `get_payments(...)` без date filters; payments вызываются за тот же `date_from=date, date_to=date`.
+- Добавлены regression tests на март 2026, merge с `client_id` и caller `filter`, relative dates, schema export `date_from/date_to` и prompt без undated payments.
+- Проверки: targeted red дал 5 failures; targeted green `5 passed`; broader targeted `105 passed`; full Docker suite `898 passed, 57 deselected`; повторный full Docker suite после audit/artifact updates `898 passed, 57 deselected`.
+- Spark-review committed diff вернул `[]`; code/diff review Claude Opus/Sonnet не выполнен из-за provider/account access failure: `Your organization does not have access to Claude`.
+
+### Решения и обоснования
+
+- Для payments выбран `create_date`, потому что `artifacts/api_entity_reference-ru.md` описывает его как дату совершения платежа, а OpenAPI подтверждает generic `filter` для `/rest/api/payment/`.
+- Конфликтующие caller-provided `create_date` filters не валидируются локально: helper filters добавляются как дополнительные constraints, чтобы сохранить parity с `get_invoices` и не домысливать VM API semantics.
+- Новый агрегирующий revenue tool и autopagination оставлены out of scope: hotfix закрывает неправильный tool/prompt contract без расширения product surface.
+- Docs/API notes не обновлялись отдельно: user-facing contract покрыт tool schema/docstring и regression tests, а API facts уже зафиксированы в PRD.
+
+### Проблемы
+
+- Сторонняя PRD-review модель недоступна в текущей организации Claude; это runtime/provider limitation, а не finding проекта.
+- Сторонняя code/diff review модель также недоступна в текущей организации Claude; budget attempts исчерпаны provider failure на Opus и Sonnet.
+- Реальный API e2e не запускался: для задачи достаточно mock contract tests, а `TEST_DOMAIN`/`TEST_API_KEY` в этом workflow не предоставлены.
+
+### Обратная связь
+
+Пользователь попросил решить задачу по новому workflow после добавления Spark-review gates и правил проверки адекватности findings.
+
 ## Этап 139 async auth/session and breaker correctness — 2026-04-24
 
 **Статус**: `done`.

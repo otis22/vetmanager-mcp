@@ -2409,3 +2409,15 @@ Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown н
 - 142.3 Выровнять FastMCP dependency bounds между pyproject и Docker. — `done`
 - 142.4 Улучшить scope denial/prompt UX: missing scopes / allowed presets / preset-aware hints. — `done`
 - 142.5 Пройти checks, audit, external diff review, commit/push и self-attestation. — `done`
+
+## Этап 143. Payment date filters and revenue prompt hotfix (после Этапа 142) — `done`
+
+Источник: обращение пользователя 2026-04-24: агент на запрос «посчитать выручку за март 2026 года» получил платежи за декабрь 2015, потому что `get_payments` не имеет `date_from`/`date_to`, а prompt `daily_revenue` вызывает payments без date filter.
+
+Цель: сделать расчёт кассовой выручки за период корректным и не вводить LLM-клиента в заблуждение старыми payment records.
+
+- 143.1 Создать PRD stage 143 и пройти PRD-review gates по workflow. — `done`
+- 143.2 Добавить `date_from`/`date_to` в `get_payments` через `filter[]` по `create_date`; покрыть relative/absolute date tests. — `done`
+- 143.3 Уточнить `daily_revenue` prompt: для периода использовать dated payments или invoices явно, не вызывать `get_payments` без date filter. — `done`
+- 143.4 Добавить regression tests на запрос выручки за март 2026: платежи не должны уходить без `create_date` filter. — `done`
+- 143.5 Обновить docs/API notes при необходимости и пройти checks, audit, external diff review, commit/push, self-attestation. — `done`

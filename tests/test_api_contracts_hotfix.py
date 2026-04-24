@@ -628,6 +628,67 @@ async def test_get_payments_uses_client_id_filter_not_legacy_query_param():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_get_payments_uses_create_date_filters_for_march_2026_revenue():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/payment").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "payment": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool(
+            "get_payments",
+            {"date_from": "2026-03-01", "date_to": "2026-03-31", "limit": 100},
+        )
+
+    filters = _filter_of(route)
+    by_operator = {
+        f.get("operator"): f.get("value")
+        for f in filters
+        if f.get("property") == "create_date"
+    }
+    assert by_operator[">="] == "2026-03-01"
+    assert by_operator["<="] == "2026-03-31"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_payments_date_filters_merge_with_client_and_caller_filters():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/payment").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "payment": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool(
+            "get_payments",
+            {
+                "client_id": 42,
+                "date_from": "2026-03-01",
+                "filter": [
+                    {"property": "payment_type", "operator": "=", "value": "cash"}
+                ],
+                "limit": 20,
+            },
+        )
+
+    filters = _filter_of(route)
+    assert any(f.get("property") == "client_id" and f.get("value") == 42 for f in filters)
+    assert any(
+        f.get("property") == "create_date"
+        and f.get("operator") == ">="
+        and f.get("value") == "2026-03-01"
+        for f in filters
+    )
+    assert any(
+        f.get("property") == "payment_type"
+        and f.get("operator") == "="
+        and f.get("value") == "cash"
+        for f in filters
+    )
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_get_invoices_uses_client_id_filter_not_legacy_query_param():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/invoice").mock(
