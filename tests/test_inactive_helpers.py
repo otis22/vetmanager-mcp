@@ -175,3 +175,86 @@ async def test_gather_bounded_preserves_order_and_empty_input(monkeypatch):
 
     assert result == ["first", "second", "third"]
     assert await inactive_helpers._gather_bounded() == []
+
+
+@pytest.mark.asyncio
+async def test_gather_bounded_cancels_pending_siblings_on_failure(monkeypatch):
+    monkeypatch.setattr(inactive_helpers, "_BATCH_CONCURRENCY", 2)
+    sibling_started = asyncio.Event()
+    sibling_cancelled = asyncio.Event()
+
+    async def _blocked_sibling():
+        sibling_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            sibling_cancelled.set()
+            raise
+
+    async def _failing():
+        await sibling_started.wait()
+        raise RuntimeError("chunk failed")
+
+    with pytest.raises(RuntimeError, match="chunk failed"):
+        await inactive_helpers._gather_bounded(_blocked_sibling(), _failing())
+
+    assert sibling_cancelled.is_set()
+
+
+@pytest.mark.asyncio
+async def test_find_pets_for_clients_last_visit_stops_after_limit_filled_by_day(monkeypatch):
+    monkeypatch.setattr(inactive_helpers, "_BATCH_CONCURRENCY", 2)
+
+    class LimitedClient(_TrackingClient):
+        def __init__(self):
+            super().__init__(delay=0.0)
+            self.pet_owner_requests: list[list[int]] = []
+            self.medcard_calls = 0
+
+        async def get(self, endpoint, params=None):
+            if endpoint == "/rest/api/pet":
+                owner_filter = next(
+                    item for item in json.loads(params["filter"])
+                    if item["property"] == "owner_id"
+                )
+                owner_ids = owner_filter["value"]
+                owner_ids = owner_ids if isinstance(owner_ids, list) else [owner_ids]
+                self.pet_owner_requests.append([int(owner_id) for owner_id in owner_ids])
+                pets = [
+                    {
+                        "id": int(owner_id) * 10,
+                        "alias": f"Pet{owner_id}",
+                        "type_id": 1,
+                        "owner_id": int(owner_id),
+                        "status": "alive",
+                    }
+                    for owner_id in owner_ids
+                ]
+                return {"data": {"totalCount": len(pets), "pet": pets}}
+            if endpoint == "/rest/api/invoice":
+                return {
+                    "data": {
+                        "totalCount": 1,
+                        "invoice": [{"id": 1, "pet_id": 10, "invoice_date": "2024-09-15 10:00:00"}],
+                    }
+                }
+            if endpoint == "/rest/api/MedicalCards":
+                self.medcard_calls += 1
+                return {"data": {"totalCount": 0, "medicalCards": []}}
+            raise AssertionError(f"unexpected endpoint {endpoint}")
+
+    client = LimitedClient()
+    clients = [
+        {"id": 1, "last_visit_date": "2024-09-15 10:00:00"},
+        {"id": 2, "last_visit_date": "2024-09-16 10:00:00"},
+    ]
+
+    result = await inactive_helpers.find_pets_for_clients_last_visit(
+        client,
+        clients=clients,
+        limit=1,
+    )
+
+    assert client.pet_owner_requests == [[1]]
+    assert client.medcard_calls == 0
+    assert result[0][1][0]["visit_source"] == "invoice"

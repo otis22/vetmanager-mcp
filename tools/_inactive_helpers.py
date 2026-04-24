@@ -36,10 +36,23 @@ async def _gather_bounded(*coroutines, limit: int | None = None) -> list:
     semaphore = asyncio.Semaphore(limit or _BATCH_CONCURRENCY)
 
     async def _run(coroutine):
-        async with semaphore:
-            return await coroutine
+        try:
+            async with semaphore:
+                return await coroutine
+        finally:
+            close = getattr(coroutine, "close", None)
+            if callable(close):
+                close()
 
-    return await asyncio.gather(*[_run(coroutine) for coroutine in coroutines])
+    tasks = [asyncio.create_task(_run(coroutine)) for coroutine in coroutines]
+    try:
+        return await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
 
 async def _fetch_all_entity_pages(
@@ -359,6 +372,21 @@ async def find_pets_for_clients_last_visit(
 
     visited_pets_by_client: dict[int, list[dict]] = {}
 
+    def _visited_total() -> int:
+        return sum(len(pets) for pets in visited_pets_by_client.values())
+
+    def _store_visited(owner_id: int, pets: list[dict]) -> bool:
+        if not pets:
+            return limit is not None and _visited_total() >= limit
+        if limit is None:
+            visited_pets_by_client[owner_id] = pets
+            return False
+        remaining = max(0, limit - _visited_total())
+        if remaining <= 0:
+            return True
+        visited_pets_by_client[owner_id] = pets[:remaining]
+        return _visited_total() >= limit
+
     async def _fetch_pet_chunk(owner_ids: list[int]) -> list[dict]:
         pets: list[dict] = []
         offset = 0
@@ -386,6 +414,8 @@ async def find_pets_for_clients_last_visit(
         return pets
 
     for day_clients in clients_by_day.values():
+        if limit is not None and _visited_total() >= limit:
+            break
         owner_ids = [int(client["id"]) for client in day_clients]
         pet_pages = await _gather_bounded(
             *[_fetch_pet_chunk(chunk) for chunk in _chunked(owner_ids)]
@@ -432,7 +462,8 @@ async def find_pets_for_clients_last_visit(
             invoice_total = sum(len(pets) for pets in visited_by_client.values())
             if invoice_total >= limit:
                 for owner_id, pets in visited_by_client.items():
-                    visited_pets_by_client[owner_id] = pets
+                    if _store_visited(owner_id, pets):
+                        break
                 continue
 
         remaining_ids = [pid for pid in pet_ids if pid not in pets_with_invoice]
@@ -466,7 +497,8 @@ async def find_pets_for_clients_last_visit(
                 )
 
         for owner_id, pets in visited_by_client.items():
-            visited_pets_by_client[owner_id] = pets
+            if _store_visited(owner_id, pets):
+                break
 
     return [
         (client, visited_pets_by_client.get(int(client["id"]), []))

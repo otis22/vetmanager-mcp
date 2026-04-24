@@ -6065,3 +6065,38 @@ UI кабинета и issuance flow переведены на preset-based то
 ### Обратная связь
 
 Пользователь попросил закоммитить/запушить все изменения, сформировать Roadmap по итогам review и продолжать выполнять Roadmap до конца по workflow.
+
+## Этап 139 async auth/session and breaker correctness — 2026-04-24
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Stage 139 закрывает findings F5-F6/F15/F17-F18 из `artifacts/review/2026-04-24-full-stage-136.md`.
+- PRD stage 139 создан и прошёл два PRD-review запуска Claude Opus; бюджет PRD-review израсходован, обязательные findings внесены до реализации.
+- Login/password prepare cache теперь keyed by account id, normalized domain и one-way SHA-256 fingerprint credentials; shared prepare task защищён `asyncio.shield()` от cancellation одного waiter.
+- Retry-time breaker denial больше не учитывается как новая upstream failure.
+- Bearer token usage stats переведены на conflict-ignore insert и atomic `request_count = request_count + 1` update для SQLite/Postgres.
+- `_gather_bounded()` теперь отменяет и await-ит sibling tasks при первой ошибке.
+- `find_pets_for_clients_last_visit()` не планирует последующие дни после заполнения `limit` и пропускает medcard fallback, если invoice pass уже заполнил quota.
+- Проверки: targeted regression `11 passed`; broader targeted suite `65 passed`; post-review bearer targeted `13 passed`; full Docker suite after post-review fix `873 passed, 57 deselected`.
+
+### Решения и обоснования
+
+- Credential fingerprint не хранит raw login/password в task-cache key; SHA-256 digest достаточен для in-memory coalescing key без отдельного secret storage.
+- В stats path поддержаны фактические dialects проекта SQLite/Postgres; generic fallback оставлен только как best-effort для неизвестных dialects.
+- Failure stats update логируется и не должен ломать успешную auth path для поддержанных dialects.
+- Within-day pet chunk fan-out в inactive helper остаётся accepted debt stage 139; закрыто только scheduling subsequent days и medcard fallback после заполнения quota.
+
+### Проблемы
+
+- PRD-review 1/2 нашёл ambiguity по process-local lock для stats, credential fingerprint semantics и F18 acceptance; PRD уточнён.
+- PRD-review 2/2 вернул `NO FINDINGS`; бюджет PRD-review stage 139 исчерпан.
+- Первый full suite после реализации упал только на policy test против undocumented inline imports; imports SQLite/Postgres insert перенесены на module scope, после чего full suite прошёл.
+- Code/diff review сторонней моделью 1/2 нашёл medium: swallowed stats exception мог оставить SQLAlchemy session в aborted state. Исправлено через `session.begin_nested()` savepoint и regression test.
+- Code/diff review сторонней моделью 2/2 нашёл medium: stats savepoint мог откатить autoflush `token.mark_used()`. Исправлено явным `session.flush([token])` до stats savepoint и расширением regression test на persisted `last_used_at`; внешний review budget исчерпан, повторно не запускался.
+- Хостовый `pytest` по-прежнему не используется из-за отсутствия Playwright в host env; проверки выполнены через Docker test profile.
+
+### Обратная связь
+
+Пользователь попросил закоммитить/запушить все изменения, сформировать Roadmap по итогам review и продолжать выполнять Roadmap до конца по workflow.

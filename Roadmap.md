@@ -2358,19 +2358,19 @@ Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown н
 - 138.6 Синхронизировать README/security threat model по web Redis backend vs bearer limiter. — `done`
 - 138.7 Пройти checks, audit, external diff review, commit/push и self-attestation. — `done`
 
-## Этап 139. Async auth/session and breaker correctness (после Этапа 138) — `todo`
+## Этап 139. Async auth/session and breaker correctness (после Этапа 138) — `done`
 
 Источник: `artifacts/review/2026-04-24-full-stage-136.md`, F5-F6/F15/F17-F18.
 
 Цель: закрыть concurrency/cancellation/data-race findings.
 
-- 139.1 Создать PRD stage 139 и пройти PRD-review gates по workflow. — `todo`
-- 139.2 Исправить login/password prepare coalescing key и cancellation shielding. — `todo`
-- 139.3 Исправить breaker denial accounting на retry-time check. — `todo`
-- 139.4 Сделать TokenUsageStat insert/increment atomic или безопасно serialized. — `todo`
-- 139.5 Исправить `_gather_bounded` sibling cancellation cleanup. — `todo`
-- 139.6 Убрать over-fetch в inactive helpers при малом remaining limit. — `todo`
-- 139.7 Пройти checks, audit, external diff review, commit/push и self-attestation. — `todo`
+- 139.1 Создать PRD stage 139 и пройти PRD-review gates по workflow. — `done`
+- 139.2 Исправить login/password prepare coalescing key и cancellation shielding. — `done`
+- 139.3 Исправить breaker denial accounting на retry-time check. — `done`
+- 139.4 Сделать TokenUsageStat insert/increment atomic или безопасно serialized. — `done`
+- 139.5 Исправить `_gather_bounded` sibling cancellation cleanup. — `done`
+- 139.6 Убрать over-fetch в inactive helpers при малом remaining limit. — `done`
+- 139.7 Пройти checks, audit, external diff review, commit/push и self-attestation. — `done`
 
 ## Этап 140. VM API contract and pagination correctness (после Этапа 139) — `todo`
 

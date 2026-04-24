@@ -12,6 +12,7 @@ from sqlalchemy import select
 from exceptions import AuthError, HostResolutionError, VetmanagerTimeoutError
 from storage_models import VetmanagerConnection
 from vetmanager_connection_service import (
+    _login_prepare_fingerprint,
     exchange_user_token,
     evaluate_connection_health,
     save_domain_api_key_connection,
@@ -23,6 +24,22 @@ from service_metrics import reset_service_metrics, snapshot_service_metrics
 
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
+
+
+def test_login_prepare_fingerprint_does_not_expose_raw_password():
+    fingerprint = _login_prepare_fingerprint(
+        normalized_domain="clinic-login",
+        login="doctor",
+        password="doctor-pass-123",
+    )
+
+    assert "doctor" not in fingerprint
+    assert "doctor-pass-123" not in fingerprint
+    assert fingerprint != _login_prepare_fingerprint(
+        normalized_domain="clinic-login",
+        login="doctor",
+        password="other-pass",
+    )
 
 
 @pytest_asyncio.fixture
@@ -459,6 +476,101 @@ async def test_save_user_login_password_connection_concurrent_calls_dedupe_token
     assert rows[0].status == "active"
     credentials = rows[0].get_credentials(encryption_key=TEST_ENCRYPTION_KEY)
     assert credentials["user_token"] == "shared-user-token"
+
+
+@pytest.mark.asyncio
+async def test_save_user_login_password_connection_does_not_coalesce_different_credentials(
+    session_factory,
+    monkeypatch,
+):
+    token_issue_calls: list[tuple[str, str, str]] = []
+
+    async def _fake_exchange(domain: str, *, login: str, password: str):
+        token_issue_calls.append((domain, login, password))
+        await asyncio.sleep(0.05)
+        return f"https://{domain}.vetmanager.cloud", f"{domain}-{login}-token"
+
+    async def _fake_validate(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "vetmanager_connection_service.exchange_user_token",
+        _fake_exchange,
+    )
+    monkeypatch.setattr(
+        "vetmanager_connection_service.validate_user_token_connection",
+        _fake_validate,
+    )
+
+    async def _save(domain: str, login: str, password: str) -> VetmanagerConnection:
+        async with session_factory() as session:
+            return await save_user_login_password_connection(
+                session,
+                account_id=1,
+                domain=domain,
+                login=login,
+                password=password,
+                encryption_key=TEST_ENCRYPTION_KEY,
+            )
+
+    await asyncio.gather(
+        _save("clinic-login-a", "doctor-a", "pass-a"),
+        _save("clinic-login-b", "doctor-b", "pass-b"),
+    )
+
+    assert sorted(token_issue_calls) == [
+        ("clinic-login-a", "doctor-a", "pass-a"),
+        ("clinic-login-b", "doctor-b", "pass-b"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_save_user_login_password_connection_cancelled_waiter_does_not_cancel_shared_prepare(
+    session_factory,
+    monkeypatch,
+):
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _fake_exchange(domain: str, *, login: str, password: str):
+        started.set()
+        await release.wait()
+        return f"https://{domain}.vetmanager.cloud", "shared-user-token"
+
+    async def _fake_validate(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "vetmanager_connection_service.exchange_user_token",
+        _fake_exchange,
+    )
+    monkeypatch.setattr(
+        "vetmanager_connection_service.validate_user_token_connection",
+        _fake_validate,
+    )
+
+    async def _save() -> VetmanagerConnection:
+        async with session_factory() as session:
+            return await save_user_login_password_connection(
+                session,
+                account_id=1,
+                domain="clinic-login-shield",
+                login="doctor",
+                password="doctor-pass-123",
+                encryption_key=TEST_ENCRYPTION_KEY,
+            )
+
+    first = asyncio.create_task(_save())
+    second = asyncio.create_task(_save())
+    await started.wait()
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+
+    release.set()
+    connection = await second
+
+    assert connection.auth_mode == "user_token"
 
 
 @pytest.mark.asyncio

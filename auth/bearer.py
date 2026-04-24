@@ -12,7 +12,9 @@ from datetime import datetime
 from typing import NoReturn
 
 from auth import rate_limit
-from sqlalchemy import select
+from sqlalchemy import insert, select, update
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.context import VetmanagerAuthContext
@@ -32,6 +34,7 @@ from auth_audit import (
 from bearer_token_manager import hash_bearer_token
 from domain_validation import ip_matches_mask
 from exceptions import AuthError, RateLimitError
+from observability_logging import RUNTIME_LOGGER
 from service_metrics import record_auth_failure
 from storage_models import (
     ACCOUNT_STATUS_ACTIVE,
@@ -41,6 +44,55 @@ from storage_models import (
     TokenUsageStat,
     VetmanagerConnection,
 )
+
+
+def _token_usage_stat_insert_statement(token_id: int):
+    values = {"bearer_token_id": token_id, "request_count": 0}
+    return insert(TokenUsageStat).values(**values)
+
+
+def _token_usage_stat_conflict_insert_statement(dialect_name: str, token_id: int):
+    values = {"bearer_token_id": token_id, "request_count": 0}
+    if dialect_name == "sqlite":
+        return sqlite_insert(TokenUsageStat).values(**values).on_conflict_do_nothing(
+            index_elements=["bearer_token_id"]
+        )
+    if dialect_name == "postgresql":
+        return postgresql_insert(TokenUsageStat).values(**values).on_conflict_do_nothing(
+            index_elements=["bearer_token_id"]
+        )
+    return _token_usage_stat_insert_statement(token_id)
+
+
+async def _increment_token_usage_stats(
+    session: AsyncSession,
+    *,
+    token_id: int,
+    used_at: datetime,
+) -> None:
+    try:
+        dialect_name = session.get_bind().dialect.name
+        async with session.begin_nested():
+            await session.execute(
+                _token_usage_stat_conflict_insert_statement(dialect_name, token_id)
+            )
+            await session.execute(
+                update(TokenUsageStat)
+                .where(TokenUsageStat.bearer_token_id == token_id)
+                .values(
+                    request_count=TokenUsageStat.request_count + 1,
+                    last_used_at=used_at,
+                )
+            )
+    except Exception as exc:
+        RUNTIME_LOGGER.warning(
+            "Token usage stats update failed; continuing auth success.",
+            extra={
+                "event_name": "token_usage_stats_update_failed",
+                "token_id": token_id,
+                "error_class": exc.__class__.__name__,
+            },
+        )
 
 
 @dataclass(slots=True)
@@ -259,17 +311,12 @@ async def resolve_bearer_auth_context(
         ),
     )
     token.mark_used(used_at=now)
-    usage_stats = await session.scalar(
-        select(TokenUsageStat).where(TokenUsageStat.bearer_token_id == token.id)
+    await session.flush([token])
+    await _increment_token_usage_stats(
+        session,
+        token_id=token.id,
+        used_at=token.last_used_at,
     )
-    if usage_stats is None:
-        usage_stats = TokenUsageStat(
-            bearer_token_id=token.id,
-            request_count=0,
-        )
-        session.add(usage_stats)
-    usage_stats.request_count += 1
-    usage_stats.last_used_at = token.last_used_at
     await commit_token_usage_log(session, audit_event)
     await session.refresh(token)
     return BearerAuthContext(

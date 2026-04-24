@@ -108,6 +108,11 @@ async def test_retry_aborts_when_breaker_trips_mid_loop(monkeypatch):
         f"got {route.call_count}"
     )
     assert tripped["done"], "breaker trip hook should have fired during backoff"
+    state = get_breaker_state(DOMAIN)
+    assert state is not None
+    assert state["consecutive_failures"] == 0, (
+        "retry-time breaker denial must not be counted as a fresh upstream failure"
+    )
 
 
 async def _no_sleep(_: float) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import time
 
 import httpx
@@ -34,7 +35,7 @@ _PROBE_TARGET = "vetmanager_api_probe"
 _TOKEN_AUTH_TARGET = "vetmanager_token_auth"
 _ACCOUNT_SAVE_LOCKS: dict[int, asyncio.Lock] = {}
 _ACCOUNT_SAVE_LOCKS_GUARD: asyncio.Lock | None = None
-_ACCOUNT_LOGIN_PREPARE_TASKS: dict[int, asyncio.Task[tuple[str, str]]] = {}
+_ACCOUNT_LOGIN_PREPARE_TASKS: dict[tuple[int, str, str], asyncio.Task[tuple[str, str]]] = {}
 _ACCOUNT_LOGIN_PREPARE_GUARD: asyncio.Lock | None = None
 
 
@@ -81,24 +82,40 @@ def _get_account_login_prepare_guard() -> asyncio.Lock:
     return _ACCOUNT_LOGIN_PREPARE_GUARD
 
 
+def _login_prepare_fingerprint(*, normalized_domain: str, login: str, password: str) -> str:
+    digest = hashlib.sha256()
+    digest.update(normalized_domain.encode("utf-8"))
+    digest.update(b"\x1f")
+    digest.update(login.encode("utf-8"))
+    digest.update(b"\x1f")
+    digest.update(password.encode("utf-8"))
+    return digest.hexdigest()
+
+
+async def _cleanup_login_prepare_task(
+    key: tuple[int, str, str],
+    task: asyncio.Task[tuple[str, str]],
+) -> None:
+    async with _get_account_login_prepare_guard():
+        if _ACCOUNT_LOGIN_PREPARE_TASKS.get(key) is task:
+            _ACCOUNT_LOGIN_PREPARE_TASKS.pop(key, None)
+
+
 async def _run_login_prepare_once(
-    account_id: int,
+    key: tuple[int, str, str],
     factory,
 ) -> tuple[str, str]:
-    owner = False
     async with _get_account_login_prepare_guard():
-        task = _ACCOUNT_LOGIN_PREPARE_TASKS.get(account_id)
+        task = _ACCOUNT_LOGIN_PREPARE_TASKS.get(key)
         if task is None:
             task = asyncio.create_task(factory())
-            _ACCOUNT_LOGIN_PREPARE_TASKS[account_id] = task
-            owner = True
-    try:
-        return await task
-    finally:
-        if owner:
-            async with _get_account_login_prepare_guard():
-                if _ACCOUNT_LOGIN_PREPARE_TASKS.get(account_id) is task:
-                    _ACCOUNT_LOGIN_PREPARE_TASKS.pop(account_id, None)
+            _ACCOUNT_LOGIN_PREPARE_TASKS[key] = task
+            task.add_done_callback(
+                lambda completed: asyncio.create_task(
+                    _cleanup_login_prepare_task(key, completed)
+                )
+            )
+    return await asyncio.shield(task)
 
 
 def _record_upstream_attempt(*, target: str, ok: bool, reason: str | None = None, duration_seconds: float) -> None:
@@ -588,7 +605,16 @@ async def save_user_login_password_connection(
         )
         return resolved_host, user_token
 
-    _, user_token = await _run_login_prepare_once(account_id, _prepare_login_credentials)
+    prepare_key = (
+        account_id,
+        normalized_domain,
+        _login_prepare_fingerprint(
+            normalized_domain=normalized_domain,
+            login=login,
+            password=password,
+        ),
+    )
+    _, user_token = await _run_login_prepare_once(prepare_key, _prepare_login_credentials)
     return await _save_connection(
         session,
         account_id=account_id,

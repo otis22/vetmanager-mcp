@@ -10,6 +10,7 @@ from exceptions import (
     AuthError,
     NotFoundError,
     VetmanagerError,
+    VetmanagerUpstreamUnavailable,
     VetmanagerTimeoutError,
 )
 from host_resolver import resolve_vetmanager_host
@@ -300,7 +301,11 @@ class VetmanagerClient:
                 # with VetmanagerUpstreamUnavailable instead of wasting more
                 # round-trips against a known-dead upstream.
                 if attempt > 0:
-                    await _check_breaker_allows(domain_key)
+                    try:
+                        await _check_breaker_allows(domain_key)
+                    except VetmanagerUpstreamUnavailable:
+                        _breaker_resolved = True
+                        raise
                 try:
                     await self._pace_requests()
                     # Started AFTER pace_requests so upstream latency metric

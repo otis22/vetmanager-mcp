@@ -1,12 +1,14 @@
 """Unit tests for stage 22.2 bearer token lookup."""
 
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import select, text
 
+import auth.bearer as bearer_auth_impl
 from bearer_auth import resolve_bearer_auth_context
 from bearer_token_manager import generate_bearer_token
 from exceptions import AuthError, RateLimitError
@@ -238,6 +240,120 @@ async def test_resolve_bearer_auth_context_increments_request_count(session_fact
     assert stats.request_count == 2
     assert stats.last_used_at is not None
     assert stats.last_used_at.replace(tzinfo=timezone.utc) == used_at
+
+
+@pytest.mark.asyncio
+async def test_resolve_bearer_auth_context_concurrent_first_successes_keep_usage_stats(
+    session_factory,
+):
+    raw_token = generate_bearer_token()
+    used_at = datetime(2026, 3, 21, 12, 10, tzinfo=timezone.utc)
+
+    async with session_factory() as session:
+        account = Account(email="ops-concurrent@example.com", status="active")
+        session.add(account)
+        await session.flush()
+
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+            domain="clinic-concurrent",
+        )
+        connection.set_credentials(
+            {"domain": "clinic-concurrent", "api_key": "secret-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        token = ServiceBearerToken(account_id=account.id, name="Concurrent token")
+        token.set_raw_token(raw_token)
+        session.add_all([connection, token])
+        await session.commit()
+
+    async def _resolve_once():
+        async with session_factory() as session:
+            return await resolve_bearer_auth_context(
+                raw_token,
+                session,
+                encryption_key=TEST_ENCRYPTION_KEY,
+                now=used_at,
+            )
+
+    await asyncio.gather(*[_resolve_once() for _ in range(5)])
+
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(TokenUsageStat).where(TokenUsageStat.bearer_token_id == 1)
+            )
+        ).scalars().all()
+
+    assert len(rows) == 1
+    assert rows[0].request_count == 5
+
+
+@pytest.mark.asyncio
+async def test_resolve_bearer_auth_context_keeps_auth_success_when_usage_stats_fail(
+    session_factory,
+    monkeypatch,
+):
+    raw_token = generate_bearer_token()
+    used_at = datetime(2026, 3, 21, 12, 20, tzinfo=timezone.utc)
+
+    async with session_factory() as session:
+        account = Account(email="ops-stats-fail@example.com", status="active")
+        session.add(account)
+        await session.flush()
+
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+            domain="clinic-stats-fail",
+        )
+        connection.set_credentials(
+            {"domain": "clinic-stats-fail", "api_key": "secret-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        token = ServiceBearerToken(account_id=account.id, name="Stats fail token")
+        token.set_raw_token(raw_token)
+        session.add_all([connection, token])
+        await session.commit()
+        token_id = token.id
+
+    def _broken_stats_statement(dialect_name: str, token_id: int):
+        return text("INSERT INTO missing_token_usage_stats_table VALUES (1)")
+
+    monkeypatch.setattr(
+        bearer_auth_impl,
+        "_token_usage_stat_conflict_insert_statement",
+        _broken_stats_statement,
+    )
+
+    async with session_factory() as session:
+        context = await resolve_bearer_auth_context(
+            raw_token,
+            session,
+            encryption_key=TEST_ENCRYPTION_KEY,
+            now=used_at,
+        )
+
+    async with session_factory() as session:
+        audit_rows = (
+            await session.execute(
+                select(TokenUsageLog).where(TokenUsageLog.bearer_token_id == token_id)
+            )
+        ).scalars().all()
+        persisted_token = await session.get(ServiceBearerToken, token_id)
+        stats = await session.scalar(
+            select(TokenUsageStat).where(TokenUsageStat.bearer_token_id == token_id)
+        )
+
+    assert context.bearer_token_id == token_id
+    assert len(audit_rows) == 1
+    assert persisted_token is not None
+    assert persisted_token.last_used_at is not None
+    assert persisted_token.last_used_at.replace(tzinfo=timezone.utc) == used_at
+    assert stats is None
 
 
 @pytest.mark.asyncio
