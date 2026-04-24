@@ -2421,3 +2421,18 @@ Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown н
 - 143.3 Уточнить `daily_revenue` prompt: для периода использовать dated payments или invoices явно, не вызывать `get_payments` без date filter. — `done`
 - 143.4 Добавить regression tests на запрос выручки за март 2026: платежи не должны уходить без `create_date` filter. — `done`
 - 143.5 Обновить docs/API notes при необходимости и пройти checks, audit, external diff review, commit/push, self-attestation. — `done`
+
+## Этап 144. Revenue filters and summary tool (после Этапа 143) — `done`
+
+Источник: обсуждение 2026-04-24 после Stage 143. Для корректной выручки недостаточно date filters: платежи и счета нужно фильтровать по workflow status, счета — по `paid_amount`, а финансовый период по проведённым счетам должен опираться на `invoice_date`, не на `create_date`.
+
+Цель: дать LLM безопасный путь для ответов вроде «выручка за март 2026» через строгие filters и отдельный revenue summary tool, чтобы не смешивать начислено, оплачено по счетам и фактически полученные платежи.
+
+- 144.1 Создать PRD stage 144 и пройти PRD-review gates по workflow. — `done`
+- 144.2 Добавить `status` filters в `get_payments` (`exec/save/deleted`) и `get_invoices` (`exec/save/deleted/closed/archived`) с enum validation. — `done`
+- 144.3 Добавить invoice financial date filters по `invoice_date` и оставить `create_date` semantics явно задокументированными. — `done`
+- 144.4 Добавить invoice amount filters: `paid_amount_min/max` и `amount_min/max` с decimal-safe validation. — `done`
+- 144.5 Добавить `get_revenue_summary(date_from, date_to, mode=received|invoiced|paid_by_executed_invoices, include_breakdown=true)` с half-open date windows, автопагинацией, cap, decimal-string totals и `truncated` metadata. — `done`
+- 144.6 Обновить revenue prompts: предпочитать `get_revenue_summary`, default `received` для cash revenue, различать invoiced / paid_by_executed_invoices и не агрегировать сырые payments/invoices без статусов. — `done`
+- 144.7 Покрыть regressions: статусы, `invoice_date`, `paid_amount`, summary totals, truncation metadata, prompt contract. — `done`
+- 144.8 Пройти checks, audit, Spark-review, external diff review attempt, commit/push, self-attestation. — `done`

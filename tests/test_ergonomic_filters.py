@@ -649,6 +649,143 @@ async def test_get_invoices_payment_status_invalid():
     assert "payment_status" in str(exc_info.value)
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_invoices_status_filter_valid():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("get_invoices", {"status": "exec"})
+    filters = _filter_from_request(route)
+    status_filters = [f for f in filters if f["property"] == "status"]
+    assert status_filters and status_filters[0]["value"] == "exec"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_invoices_status_invalid():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(Exception) as exc_info:
+            await mcp.call_tool("get_invoices", {"status": "active"})
+    assert "status" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_invoices_invoice_date_uses_half_open_day_window():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool(
+            "get_invoices",
+            {
+                "invoice_date_from": "2026-03-01",
+                "invoice_date_to": "2026-03-31",
+            },
+        )
+    filters = _filter_from_request(route)
+    by_op = {
+        f["operator"]: f["value"]
+        for f in filters
+        if f["property"] == "invoice_date"
+    }
+    assert by_op[">="] == "2026-03-01 00:00:00"
+    assert by_op["<"] == "2026-04-01 00:00:00"
+    assert not any(f["property"] == "create_date" for f in filters)
+    assert any(
+        f["property"] == "status" and f["operator"] == "=" and f["value"] == "exec"
+        for f in filters
+    )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_invoices_rejects_mixed_create_and_invoice_dates():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(Exception) as exc_info:
+            await mcp.call_tool(
+                "get_invoices",
+                {"date_from": "2026-03-01", "invoice_date_from": "2026-03-01"},
+            )
+    assert "invoice_date" in str(exc_info.value)
+    assert not route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_invoices_money_filters_use_decimal_strings():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool(
+            "get_invoices",
+            {
+                "paid_amount_min": "0.01",
+                "paid_amount_max": "1000",
+                "amount_min": "10.50",
+                "amount_max": "2000",
+            },
+        )
+    filters = _filter_from_request(route)
+    expected = {
+        ("paid_amount", ">=", "0.01"),
+        ("paid_amount", "<=", "1000"),
+        ("amount", ">=", "10.50"),
+        ("amount", "<=", "2000"),
+    }
+    actual = {(f["property"], f["operator"], f["value"]) for f in filters}
+    assert expected <= actual
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_invoices_money_filter_invalid_rejected_before_http():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(Exception) as exc_info:
+            await mcp.call_tool("get_invoices", {"paid_amount_min": "not-money"})
+    assert "paid_amount_min" in str(exc_info.value)
+    assert not route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_invoices_money_filter_non_finite_rejected_before_http():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(Exception) as exc_info:
+            await mcp.call_tool("get_invoices", {"paid_amount_min": "NaN"})
+    assert "paid_amount_min" in str(exc_info.value)
+    assert not route.called
+
+
 # ── filter composition with user-supplied filter[] ──────────────────────────
 
 

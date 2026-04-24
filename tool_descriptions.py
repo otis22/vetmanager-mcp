@@ -472,6 +472,7 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "get_vaccinations": "vaccination",
     "get_invoices": "invoice",
     "get_average_invoice": "invoice",
+    "get_revenue_summary": "payment",
     "get_invoice_by_id": "invoice",
     "create_invoice": "invoice",
     "get_goods": "good",
@@ -593,6 +594,13 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "when the user asks for average check, average bill, or average revenue per "
         "invoice. Domain synonyms: счёт, счёт-фактура, чек, квитанция, документ "
         "оплаты, invoice, bill."
+    ),
+    "get_revenue_summary": (
+        "Calculate authoritative revenue totals for a date range using executed "
+        "payments by default, with explicit non-cashflow invoice modes for billed "
+        "or currently paid invoice amounts. Use when the user asks for revenue, "
+        "cash received, daily proceeds, or March revenue. Domain synonyms: "
+        "платёж, оплата, поступление, касса, выручка, revenue, payment."
     ),
     "add_invoice_document": (
         "Add a new invoice line item to an invoice. Use when the user wants to add "

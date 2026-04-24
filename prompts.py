@@ -269,11 +269,10 @@ def register_prompts(mcp: FastMCP) -> None:
         return [Message(
             _bearer_runtime_prefix()
             + f"Calculate the clinic revenue for {date}. "
-            + "Call get_invoices(date_from=date, date_to=date, limit=100) and "
-            + "get_payments(date_from=date, date_to=date, limit=100, "
-            + "sort=[{'property':'create_date','direction':'DESC'}]) if needed. "
-            + "Use the same date period for invoices and payments. "
-            + "Summarise total invoiced, total received, and any doctor breakdown available in the data."
+            + 'Call get_revenue_summary(date_from=date, date_to=date, mode="received"). '
+            + "Treat received mode as the cash revenue default. "
+            + "If the result has truncated=true, state that the total is partial and ask to narrow the range. "
+            + "Summarise total received and any breakdown available in the data."
         )]
 
     @mcp.prompt
@@ -303,9 +302,11 @@ def register_prompts(mcp: FastMCP) -> None:
         return [Message(
             _bearer_runtime_prefix()
             + f"Show the top {top_n} services and goods from {date_from} to {date_to}. "
-            + "Call get_invoices(date_from=date_from, date_to=date_to, limit=100). "
-            + "For each invoice, call get_invoice_documents(invoice_id=invoice_id, limit=100). "
-            + "Group by good_id, count occurrences, sum revenue, and return a ranked table."
+            + "Paginate get_invoices(invoice_date_from=date_from, invoice_date_to=date_to, status='exec', "
+            + "limit=100, offset=offset) until all returned totalCount rows are fetched or no more rows return. "
+            + "For each invoice, paginate get_invoice_documents(invoice_id=invoice_id, limit=100, offset=offset) "
+            + "until all returned totalCount rows are fetched or no more rows return. "
+            + "Group by good_id, count occurrences, sum invoiced revenue, and return a ranked table."
         )]
 
     @mcp.prompt

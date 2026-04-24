@@ -195,6 +195,7 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
     "get_party_accounts": (SCOPE_INVENTORY_READ,),
     "get_payment_by_id": (SCOPE_FINANCE_READ,),
     "get_payments": (SCOPE_FINANCE_READ,),
+    "get_revenue_summary": (SCOPE_FINANCE_READ,),
     "get_pet_by_id": (SCOPE_PETS_READ,),
     "get_pet_profile": (SCOPE_MEDICAL_CARDS_READ, SCOPE_PETS_READ),
     "get_pet_type_by_id": (SCOPE_REFERENCE_READ,),
@@ -292,6 +293,7 @@ MARKETED_PRESET_TOOLS: dict[str, tuple[str, ...]] = {
         "get_party_accounts",
         "get_payment_by_id",
         "get_payments",
+        "get_revenue_summary",
         "get_pet_by_id",
         "get_pet_profile",
         "get_pet_type_by_id",
@@ -370,6 +372,7 @@ MARKETED_PRESET_TOOLS: dict[str, tuple[str, ...]] = {
         "get_invoices",
         "get_payment_by_id",
         "get_payments",
+        "get_revenue_summary",
         "update_invoice",
     ),
     PRESET_INVENTORY: (

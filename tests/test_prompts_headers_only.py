@@ -75,5 +75,19 @@ class TestPromptsBearerOnly:
             "@mcp.prompt", 1
         )[0]
         assert "get_payments(limit=100" not in daily_revenue_section
-        assert "get_payments(date_from=date" in daily_revenue_section
-        assert "date_to=date" in daily_revenue_section
+        assert "get_revenue_summary" in daily_revenue_section
+        assert 'mode="received"' in daily_revenue_section
+        assert "truncated" in daily_revenue_section
+
+    def test_popular_services_prompt_uses_financial_invoice_filters(self):
+        source, _ = _load_prompt_functions()
+        popular_services_section = source.split("def popular_services", 1)[1].split(
+            "@mcp.prompt", 1
+        )[0]
+        assert "invoice_date_from=date_from" in popular_services_section
+        assert "invoice_date_to=date_to" in popular_services_section
+        assert "status='exec'" in popular_services_section
+        assert "offset=offset" in popular_services_section
+        assert "totalCount" in popular_services_section
+        assert "paginate get_invoice_documents" in popular_services_section
+        assert "get_invoices(date_from=date_from" not in popular_services_section

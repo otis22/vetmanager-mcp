@@ -8,11 +8,14 @@ from validators import LimitParam, parse_date_param
 
 def register(mcp: FastMCP) -> None:
 
+    _PAYMENT_STATUSES = {"exec", "save", "deleted"}
+
     @mcp.tool
     async def get_payments(
         limit: LimitParam = 20,
         offset: int = 0,
         client_id: int = 0,
+        status: str = "",
         date_from: str = "",
         date_to: str = "",
         sort: list[dict] | None = None,
@@ -24,12 +27,19 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
             client_id: Filter by client ID (0 = no filter).
+            status: Filter by payment workflow status. Valid values:
+                'exec' (posted), 'save' (draft), 'deleted'.
             date_from: Filter payments created on or after this date.
                 Accepts YYYY-MM-DD or relative: today, yesterday, tomorrow,
                 +Nd/-Nd, +Nw/-Nw, +Nm/-Nm.
             date_to: Filter payments created on or before this date.
                 Same accepted formats as `date_from`.
         """
+        if status and status not in _PAYMENT_STATUSES:
+            raise ValueError(
+                f"status must be one of {sorted(_PAYMENT_STATUSES)}, got '{status}'"
+            )
+
         resolved_date_from = parse_date_param(date_from)
         resolved_date_to = parse_date_param(date_to)
 
@@ -40,6 +50,8 @@ def register(mcp: FastMCP) -> None:
             combined_filters.append(_filter_lte("create_date", resolved_date_to))
         if client_id:
             combined_filters.append(_filter_eq("client_id", client_id))
+        if status:
+            combined_filters.append(_filter_eq("status", status))
         return await crud_list(
             "/rest/api/payment", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,
