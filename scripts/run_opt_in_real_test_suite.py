@@ -17,19 +17,35 @@ from warning_policy import build_warning_error_flags
 
 
 def main() -> int:
-    command = [
+    warning_flags = [item for flag in build_warning_error_flags() for item in ("-W", flag)]
+    base_command = [
         sys.executable,
-        *[item for flag in build_warning_error_flags() for item in ("-W", flag)],
+        *warning_flags,
         "-m",
         "pytest",
-        "tests/",
         "-v",
         "-m",
         OPT_IN_REAL_TEST_CONTOUR.marker_expression,
     ]
     env = dict(os.environ)
-    completed = subprocess.run(command, env=env, check=False)
-    return completed.returncode
+    env.setdefault("VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS", "0.5")
+    commands = [
+        [
+            *base_command,
+            "tests/",
+            "-k",
+            "not test_real_web_account_can_issue_bearer_and_call_tool",
+        ],
+        [
+            *base_command,
+            "tests/test_e2e_real.py::test_real_web_account_can_issue_bearer_and_call_tool",
+        ],
+    ]
+    for command in commands:
+        completed = subprocess.run(command, env=env, check=False)
+        if completed.returncode != 0:
+            return completed.returncode
+    return 0
 
 
 if __name__ == "__main__":

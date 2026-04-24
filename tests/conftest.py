@@ -66,31 +66,23 @@ async def _reset_billing_resolver_state():
     await reset_billing_resolver()
 
 
-@pytest.fixture(autouse=True)
-def _reset_vm_client_state():
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_vm_client_state():
     """Reset shared httpx.AsyncClient and per-domain circuit breakers between tests.
 
     Stage 91 introduced module-level shared state (singleton client + breaker
     registry). respx patches httpx globally, but shared client state carries
     open-breaker flags or keep-alive connections across tests unless reset.
-
-    We drop references synchronously instead of awaiting close() — the default
-    test suite runs with `-W error`, which would promote any ResourceWarning
-    from asyncio bookkeeping into a test failure. Dropping the ref lets GC
-    handle the cleanup and avoids creating an extra event loop here.
     """
     import vetmanager_client as _vm_client
 
-    def _drop() -> None:
-        # Stage 99.4: per-loop client dict — clear all entries.
-        # Stage 106.7: `_shared_http_client` sentinel removed; dict clear is
-        # the only state reset needed.
-        _vm_client._shared_http_clients.clear()
+    async def _reset() -> None:
+        await _vm_client.reset_shared_http_client()
         _vm_client._breakers.clear()
 
-    _drop()
+    await _reset()
     yield
-    _drop()
+    await _reset()
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
 

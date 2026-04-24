@@ -14,7 +14,6 @@ Run inside Docker:
     docker compose run --rm -e TEST_DOMAIN=devtr6 -e TEST_API_KEY=<key> test
 """
 
-import asyncio
 import os
 import pytest
 import re
@@ -23,7 +22,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import auth.request as auth_request
 import runtime_auth
-from server import mcp
+from server import _graceful_shutdown, mcp
 from tests.conftest import TEST_ENCRYPTION_KEY
 from vetmanager_client import VetmanagerClient
 from exceptions import AuthError, VetmanagerError
@@ -44,6 +43,7 @@ TEST_USER_TOKEN = os.environ.get("TEST_USER_TOKEN", "")
 TEST_USER_TOKEN_BASE_URL = os.environ.get("TEST_USER_TOKEN_BASE_URL", "")
 TEST_USER_LOGIN = os.environ.get("TEST_USER_LOGIN", "")
 TEST_USER_PASSWORD = os.environ.get("TEST_USER_PASSWORD", "")
+RUN_REAL_WEB_TESTS = os.environ.get("RUN_REAL_WEB_TESTS") == "1"
 CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
 
 skip_if_no_creds = pytest.mark.skipif(
@@ -61,22 +61,12 @@ skip_if_no_user_login_flow = pytest.mark.skipif(
         "not set — skipping login/password real smoke tests"
     ),
 )
+skip_if_real_web_not_enabled = pytest.mark.skipif(
+    not RUN_REAL_WEB_TESTS,
+    reason="Set RUN_REAL_WEB_TESTS=1 to enable opt-in real web flow tests.",
+)
 
 pytestmark = pytest.mark.real_api
-
-
-@pytest.fixture(autouse=True)
-def cleanup_orphaned_default_loop():
-    """Close stray default loops that some sync helpers may leave behind in real E2E runs."""
-    yield
-    try:
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-    except RuntimeError:
-        return
-    if loop.is_running() or loop.is_closed():
-        return
-    loop.close()
-    asyncio.set_event_loop(None)
 
 
 def vc() -> VetmanagerClient:
@@ -246,6 +236,7 @@ async def test_real_get_users_with_user_token_mode():
 
 
 @skip_if_no_creds
+@skip_if_real_web_not_enabled
 def test_real_web_account_can_issue_bearer_and_call_tool(live_server_url: str, run_async):
     """Real happy-path: web account -> real API-key integration -> bearer -> MCP tool."""
     with httpx.Client(
@@ -293,6 +284,7 @@ def test_real_web_account_can_issue_bearer_and_call_tool(live_server_url: str, r
 
     assert result.structured_content is not None
     assert "data" in result.structured_content
+    run_async(_graceful_shutdown())
 
 
 @skip_if_no_creds

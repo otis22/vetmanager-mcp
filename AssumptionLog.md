@@ -6235,6 +6235,37 @@ UI кабинета и issuance flow переведены на preset-based то
 
 Пользователь уточнил, что в этой сессии вместо Claude нужно запускать Codex CLI с `gpt-5.4`, но не фиксировать это в постоянных инструкциях.
 
+## Этап 145 real e2e suite reliability — 2026-04-24
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Создан PRD stage 145 для починки opt-in real e2e contour после Stage 144.
+- Убран ручной teardown default event loop из `tests/test_e2e_real.py`, который конфликтовал с pytest-asyncio teardown.
+- `_reset_vm_client_state` переведён на async fixture: shared `httpx.AsyncClient` теперь закрываются через `reset_shared_http_client()` до сброса breakers/state.
+- Для real runner добавлен opt-in SSL close grace через `VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS=0.5`; default Docker suite не замедляется.
+- Embedded real web-flow вынесен за явный gate `RUN_REAL_WEB_TESTS=1`, потому что он проверяет отдельный live web server lifecycle и не должен валить API contour.
+- Проверки: targeted cleanup/web subset `2 passed, 1 skipped`; opt-in real contour `48 passed, 8 skipped, 916 deselected` + web-flow subprocess `1 skipped`; default Docker suite `915 passed, 57 deselected`.
+- Review gates: Spark `gpt-5.3-codex-spark` вернул `[]`; external Codex `gpt-5.4` вернул `[]`; high/medium findings нет.
+
+### Решения и обоснования
+
+- Warning policy не ослаблялась: real contour продолжает запускаться с `ResourceWarning`/unraisable warnings как failures.
+- Сброс shared clients оставлен в общей fixture, чтобы mock и real suites использовали один lifecycle path.
+- SSL close grace включён только в `scripts/run_opt_in_real_test_suite.py`, потому что нужен реальным TLS transports, а не быстрым unit/mock проверкам.
+- Live web-flow оставлен opt-in до отдельной починки uvicorn/thread lifecycle; основной real API contour остаётся строгим и зелёным.
+
+### Проблемы
+
+- Первичный real contour падал не из-за API: credentials из `.env` подхватывались, HTTP calls отвечали, но teardown оставлял async transports.
+- Старый sync cleanup очищал `_shared_http_clients` без `aclose()`, из-за чего реальные sockets закрывались только при GC и ломали warning-as-error suite.
+- Embedded web-flow после успешных assertions может оставлять transport warning в отдельном server lifecycle; он отделён от API contour, а не замаскирован ослаблением warnings.
+
+### Обратная связь
+
+Пользователь попросил починить suite, проверить GitHub workflow и сделать статус зелёным через Roadmap/workflow.
+
 ## Этап 139 async auth/session and breaker correctness — 2026-04-24
 
 **Статус**: `done`.

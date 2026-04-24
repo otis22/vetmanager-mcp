@@ -14,6 +14,7 @@ dict reference must be stable across `vetmanager_client` re-exports.
 from __future__ import annotations
 
 import asyncio
+import os
 from weakref import WeakKeyDictionary
 
 import httpx
@@ -94,3 +95,8 @@ async def reset_shared_http_client() -> None:
             await c.aclose()
         except Exception:
             pass
+    grace_seconds = float(os.environ.get("VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS", "0"))
+    if grace_seconds > 0:
+        # Give asyncio SSL/socket transports time to run close callbacks before
+        # pytest's unraisable-warning collector runs under `-W error`.
+        await asyncio.sleep(grace_seconds)

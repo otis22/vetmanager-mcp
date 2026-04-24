@@ -2436,3 +2436,14 @@ Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown н
 - 144.6 Обновить revenue prompts: предпочитать `get_revenue_summary`, default `received` для cash revenue, различать invoiced / paid_by_executed_invoices и не агрегировать сырые payments/invoices без статусов. — `done`
 - 144.7 Покрыть regressions: статусы, `invoice_date`, `paid_amount`, summary totals, truncation metadata, prompt contract. — `done`
 - 144.8 Пройти checks, audit, Spark-review, external diff review attempt, commit/push, self-attestation. — `done`
+
+## Этап 145. Real e2e suite reliability (после Этапа 144) — `done`
+
+Источник: локальный запуск `docker compose --env-file .env --profile test run --rm test python scripts/run_opt_in_real_test_suite.py` после Stage 144: credentials в `.env` подхватываются, real API отвечает 200, но opt-in suite падает на warning policy из-за незакрытых async transports/shared `httpx.AsyncClient`.
+
+Цель: сделать opt-in real contour зелёным и сохранить зелёный GitHub Actions status.
+
+- 145.1 Создать PRD stage 145 и зафиксировать problem statement. — `done`
+- 145.2 Исправить real-suite event loop/client cleanup без отключения warning policy. — `done`
+- 145.3 Проверить targeted real tests и полный opt-in real contour с `.env`. — `done`
+- 145.4 Пройти default Docker suite, audit, commit/push и проверить GitHub Actions. — `done`
