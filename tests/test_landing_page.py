@@ -3,6 +3,7 @@
 import httpx
 import pytest
 
+from landing_page import render_landing_page
 from server import mcp
 
 
@@ -24,7 +25,7 @@ async def test_root_landing_page_renders_product_message():
     assert "для ветврачей, администраторов и руководителей клиник" in response.text
     assert "Зарегистрироваться" in response.text
     assert "/register" in response.text
-    assert "Cursor" not in response.text
+    assert "Cursor" in response.text
 
 
 @pytest.mark.asyncio
@@ -200,3 +201,127 @@ async def test_open_source_section():
     assert "Open Source" in html
     assert "Разверните у себя" in html
     assert "github.com/otis22/vetmanager-mcp" in html
+
+
+def _extract_mcp_onboarding(html: str) -> str:
+    start = html.find('id="mcp-onboarding"')
+    assert start != -1
+    section_start = html.rfind("<section", 0, start)
+    section_end = html.find("</section>", start)
+    assert section_start != -1
+    assert section_end != -1
+    return html[section_start : section_end + len("</section>")]
+
+
+def _extract_main_copy(section_html: str) -> str:
+    start = section_html.find('data-testid="mcp-onboarding-main-copy"')
+    assert start != -1
+    container_start = section_html.rfind("<div", 0, start)
+    container_end = section_html.find('data-testid="mcp-agent-tabs"', start)
+    assert container_start != -1
+    assert container_end != -1
+    return section_html[container_start:container_end]
+
+
+def test_stage146_mcp_onboarding_core_copy_and_privacy():
+    html = render_landing_page()
+    section_html = _extract_mcp_onboarding(html)
+    main_copy = _extract_main_copy(section_html)
+
+    assert "Подключите ИИ-агента к вашему Vetmanager за 5 минут" in main_copy
+    assert "MCP — это мост между ИИ-агентом и Vetmanager" in main_copy
+    assert "Какая выручка была за март?" in main_copy
+    assert "Покажи записи врача на завтра" in main_copy
+    assert "Найди клиента по телефону" in main_copy
+    assert "Какие счета оплачены частично?" in main_copy
+    assert "Кому из пациентов пора на прививку?" in main_copy
+    assert "Ключ доступа не нужно отправлять в чат" in main_copy
+    assert "/register" in main_copy
+    assert "/login" in main_copy
+    assert "Настройку удобнее делать с компьютера" in main_copy
+
+    for forbidden in ("JSON-RPC", "stdio", "transport", "schema", "endpoint"):
+        assert forbidden not in main_copy
+    assert "вставьте ключ в чат" not in section_html.lower()
+    assert "отправьте token в чат" not in section_html.lower()
+
+
+def test_stage146_agent_tabs_commands_and_real_mcp_url(monkeypatch):
+    monkeypatch.delenv("SITE_BASE_URL", raising=False)
+    monkeypatch.delenv("MCP_PATH", raising=False)
+
+    html = render_landing_page()
+    section_html = _extract_mcp_onboarding(html)
+
+    assert "<MCP_SERVER_URL>" not in html
+    assert "__MCP_SERVER_URL__" not in html
+    assert "https://vetmanager-mcp.vromanichev.ru/mcp" in section_html
+    assert "Рекомендуем для старта" in section_html
+
+    for agent in ("Codex", "Claude", "Cursor", "Manus", "Другой агент"):
+        assert agent in section_html
+    for prompt in (
+        "Настрой мне MCP-сервер Vetmanager.",
+        "Подключи MCP-сервер Vetmanager.",
+        "Добавь MCP-сервер Vetmanager в настройки Cursor.",
+        "Подключи Vetmanager MCP.",
+    ):
+        assert prompt in section_html
+    assert section_html.count("Ключ доступа / Bearer token я вставлю сам") >= 4
+    assert "Ключ доступа я вставлю сам" in section_html
+
+
+def test_stage146_mcp_url_uses_site_base_url(monkeypatch):
+    monkeypatch.setenv("SITE_BASE_URL", "https://clinic.example.com")
+    monkeypatch.delenv("MCP_PATH", raising=False)
+
+    html = render_landing_page()
+    section_html = _extract_mcp_onboarding(html)
+
+    assert "https://clinic.example.com/mcp" in section_html
+    assert "https://vetmanager-mcp.vromanichev.ru/mcp" not in section_html
+    assert "<MCP_SERVER_URL>" not in html
+    assert "__MCP_SERVER_URL__" not in html
+
+
+def test_stage146_mcp_url_uses_mcp_path(monkeypatch):
+    monkeypatch.setenv("SITE_BASE_URL", "https://clinic.example.com")
+    monkeypatch.setenv("MCP_PATH", "/custom/mcp")
+
+    html = render_landing_page()
+    section_html = _extract_mcp_onboarding(html)
+
+    assert "https://clinic.example.com/custom/mcp" in section_html
+    assert "https://clinic.example.com/mcp" not in section_html
+
+
+def test_stage146_tabs_and_copy_controls_are_structurally_wired():
+    html = render_landing_page()
+    section_html = _extract_mcp_onboarding(html)
+
+    assert 'role="tablist"' in section_html
+    assert section_html.count('role="tab"') == 5
+    assert section_html.count('role="tabpanel"') == 5
+    assert section_html.count('aria-selected="true"') == 1
+    assert 'id="mcp-tab-codex"' in section_html
+    assert 'aria-selected="true" aria-controls="mcp-panel-codex"' in section_html
+
+    for agent in ("codex", "claude", "cursor", "manus", "other"):
+        assert f'id="mcp-tab-{agent}"' in section_html
+        assert f'aria-controls="mcp-panel-{agent}"' in section_html
+        assert f'id="mcp-panel-{agent}"' in section_html
+        assert f'aria-labelledby="mcp-tab-{agent}"' in section_html
+        assert f'id="mcp-command-{agent}"' in section_html
+        assert f'data-copy-target="mcp-command-{agent}"' in section_html
+        assert f'id="mcp-copy-status-{agent}"' in section_html
+        assert f'aria-describedby="mcp-copy-status-{agent}"' in section_html
+
+    assert section_html.count('role="status" aria-live="polite"') == 5
+    assert "navigator.clipboard.writeText" in html
+    assert ".textContent" in html
+    assert "2000" in html
+    assert 'event.key === "ArrowRight"' in html
+    assert 'event.key === "ArrowLeft"' in html
+    assert 'event.key === "Home"' in html
+    assert 'event.key === "End"' in html
+    assert "Выделите текст вручную" in html

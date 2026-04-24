@@ -6266,6 +6266,41 @@ UI кабинета и issuance flow переведены на preset-based то
 
 Пользователь попросил починить suite, проверить GitHub workflow и сделать статус зелёным через Roadmap/workflow.
 
+## Этап 146 landing MCP onboarding — 2026-04-25
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Создан PRD stage 146 для секции лендинга про подключение Vetmanager MCP к Codex, Claude, Cursor, Manus и другим MCP-совместимым агентам.
+- PRD прошёл Spark-review; приняты findings про реальный MCP URL, источник ключа доступа, JS/ARIA contract и границы тестов.
+- PRD прошёл два Claude Opus PRD-review запуска; приняты findings про resolved questions, no-JS fallback, copy contract, URL substitution и scope `mcp-onboarding-main-copy`.
+- Реализована секция `mcp-onboarding` в `landing_page.py`: explanation MCP как мост, payoff-вопросы, 3 шага, вкладки агентов, copy buttons, fallback, role examples и common errors.
+- Добавлены regression/structural tests в `tests/test_landing_page.py`.
+- Проверки до code review: targeted landing suite `16 passed`; full Docker suite `919 passed, 57 deselected`.
+- Code review Claude Opus 1/2 нашёл medium findings по `MCP_PATH`, keyboard navigation tabs, clipboard fallback и screen-reader live region; все приняты и исправлены.
+- Проверки после review-fixes: targeted landing suite `17 passed`; full Docker suite `920 passed, 57 deselected`.
+- Финальные review gates: Spark committed-diff review вернул `[]`; Claude Opus committed-diff review 2/2 вернул `[]`.
+
+### Решения и обоснования
+
+- Секция остаётся inline HTML/CSS/JS в существующем `landing_page.py`, без frontend framework.
+- MCP URL подставляется из `SITE_BASE_URL` + `/mcp`; production placeholder не публикуется.
+- После code review MCP URL подставляется из `SITE_BASE_URL` + `MCP_PATH`, оба значения валидируются для публичного HTML.
+- Ключ доступа в основном UI называется “ключ доступа”, а `Bearer token` оставлен как уточнение внутри copy-ready команд.
+- Copy UX реализуется progressive enhancement: все панели server-rendered, JS скрывает неактивные панели и копирует текст из visible `<pre>` через `data-copy-target`.
+- Лендинг не определяет auth state; CTA остаются `/register` и `/login`.
+
+### Проблемы
+
+- Spark read-only review завис на sandbox/bwrap до чтения файлов; запуск остановлен и повторён с `-s danger-full-access` как review-only.
+- Старый тест требовал отсутствия `Cursor` на лендинге; Stage 146 меняет контракт, поэтому тест обновлён на наличие Cursor.
+- GitHub Actions/Deploy Prod проверены после push.
+
+### Обратная связь
+
+Пользователь попросил делать Stage 146 по workflow после обсуждения текстов и визуала секции MCP onboarding.
+
 ## Этап 139 async auth/session and breaker correctness — 2026-04-24
 
 **Статус**: `done`.

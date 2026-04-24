@@ -28,6 +28,20 @@ def _resolve_site_base_url() -> str:
     return raw
 
 
+def _resolve_mcp_path() -> str:
+    """Validate MCP_PATH for display in public onboarding instructions."""
+    raw = (os.environ.get("MCP_PATH") or "/mcp").strip()
+    if not raw:
+        return "/mcp"
+    if len(raw) > 128:
+        return "/mcp"
+    if not raw.startswith("/"):
+        return "/mcp"
+    if any(c in raw for c in ('"', "'", "<", ">", " ", "\t", "\n", "\r", "\x00")):
+        return "/mcp"
+    return raw
+
+
 def render_landing_page() -> str:
     """Return the public landing page HTML."""
     html = """<!doctype html>
@@ -415,6 +429,201 @@ def render_landing_page() -> str:
       font-weight: 700;
     }
 
+    .onboarding {
+      margin-top: 22px;
+      display: grid;
+      gap: 22px;
+    }
+
+    .onboarding-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 0.74fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .onboarding-head .section-title {
+      font-size: clamp(2rem, 4vw, 3.6rem);
+      max-width: 12ch;
+    }
+
+    .flow-map {
+      display: grid;
+      gap: 10px;
+    }
+
+    .flow-node {
+      display: grid;
+      gap: 4px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid var(--line);
+    }
+
+    .flow-node strong {
+      color: var(--ink);
+    }
+
+    .flow-node span {
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 0.94rem;
+    }
+
+    .flow-arrow {
+      color: var(--accent);
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .prompt-grid,
+    .role-grid,
+    .error-grid,
+    .quick-steps,
+    .fallback-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .prompt-grid {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      margin: 18px 0 0;
+    }
+
+    .prompt-chip,
+    .role-card,
+    .error-card,
+    .fallback-card,
+    .quick-step {
+      border-radius: 18px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.66);
+    }
+
+    .prompt-chip {
+      margin: 0;
+      line-height: 1.45;
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    .quick-steps {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-top: 16px;
+    }
+
+    .quick-step strong,
+    .role-card strong,
+    .error-card strong,
+    .fallback-card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--ink);
+    }
+
+    .agent-tabs {
+      display: grid;
+      gap: 16px;
+    }
+
+    .tab-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .tab-button,
+    .copy-button {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+      padding: 10px 14px;
+      transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+    }
+
+    .tab-button:hover,
+    .copy-button:hover {
+      transform: translateY(-1px);
+    }
+
+    .tab-button[aria-selected="true"] {
+      background: var(--teal);
+      color: #fffaf1;
+      border-color: transparent;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: #e7f1ee;
+      color: var(--teal);
+      font-size: 0.82rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .tab-panel {
+      margin-top: 0;
+    }
+
+    .command-card {
+      display: grid;
+      gap: 12px;
+    }
+
+    .command-card pre {
+      margin-top: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .copy-button {
+      justify-self: start;
+      background: var(--accent);
+      color: #fff9f3;
+      border-color: transparent;
+    }
+
+    .copy-status {
+      min-height: 1.2em;
+      color: var(--teal);
+      font-size: 0.92rem;
+      font-weight: 700;
+    }
+
+    .copy-status:empty {
+      min-height: 0;
+    }
+
+    .privacy-note {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: #fff7e7;
+      border: 1px solid rgba(187, 77, 36, 0.24);
+      color: #6f3b17;
+      line-height: 1.55;
+    }
+
+    .role-grid,
+    .error-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .fallback-grid {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      margin-top: 14px;
+    }
+
     pre {
       margin: 18px 0 0;
       padding: 18px;
@@ -514,7 +723,16 @@ def render_landing_page() -> str:
 
     @media (max-width: 920px) {
       .hero,
+      .onboarding-head,
       .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .prompt-grid,
+      .quick-steps,
+      .role-grid,
+      .error-grid,
+      .fallback-grid {
         grid-template-columns: 1fr;
       }
 
@@ -608,6 +826,166 @@ def render_landing_page() -> str:
         ваша клиника подключается один раз, а дальше команда получает данные через
         привычный AI-интерфейс, без необходимости переключаться между экранами Vetmanager.
       </p>
+    </section>
+
+    <section class="panel onboarding" id="mcp-onboarding" data-testid="mcp-onboarding">
+      <div data-testid="mcp-onboarding-main-copy">
+        <div class="onboarding-head">
+          <div>
+            <p class="eyebrow">Подключение агента</p>
+            <h3 class="section-title">Подключите ИИ-агента к вашему Vetmanager за 5 минут</h3>
+            <p class="body-copy">
+              Работает через MCP: Codex, Claude, Cursor, Manus и другие совместимые агенты смогут находить клиентов,
+              смотреть записи, проверять счета и считать выручку по данным вашей клиники.
+            </p>
+            <p class="body-copy" style="margin-top: 14px;">
+              MCP — это мост между ИИ-агентом и Vetmanager. Вы задаёте вопрос обычным языком, агент обращается
+              к Vetmanager через разрешённые команды и возвращает ответ по вашим данным.
+            </p>
+          </div>
+          <div class="flow-map" aria-label="Как работает подключение">
+            <div class="flow-node"><strong>Вы задаёте вопрос</strong><span>Например, про выручку, записи или клиента.</span></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-node"><strong>ИИ-агент</strong><span>Codex, Claude, Cursor, Manus или другой совместимый агент.</span></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-node"><strong>MCP-мост</strong><span>Передаёт запрос через разрешённые команды.</span></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-node"><strong>Ваш Vetmanager</strong><span>Данные остаются в вашей рабочей системе.</span></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-node"><strong>Ответ по данным клиники</strong><span>Агент возвращает понятный результат.</span></div>
+          </div>
+        </div>
+
+        <div style="margin-top: 22px;">
+          <h4 class="section-title" style="font-size: 1.45rem;">Что можно спросить после подключения</h4>
+          <div class="prompt-grid">
+            <p class="prompt-chip">Какая выручка была за март?</p>
+            <p class="prompt-chip">Покажи записи врача на завтра</p>
+            <p class="prompt-chip">Найди клиента по телефону</p>
+            <p class="prompt-chip">Какие счета оплачены частично?</p>
+            <p class="prompt-chip">Кому из пациентов пора на прививку?</p>
+          </div>
+        </div>
+
+        <div style="margin-top: 22px;">
+          <h4 class="section-title" style="font-size: 1.45rem;">Подключение в 3 шага</h4>
+          <div class="quick-steps">
+            <div class="quick-step"><strong>1. Выберите агента</strong><span>Если сомневаетесь, начните с Codex.</span></div>
+            <div class="quick-step"><strong>2. Отправьте команду</strong><span>Скопируйте готовый текст ниже и дайте его агенту.</span></div>
+            <div class="quick-step"><strong>3. Вставьте ключ</strong><span>Добавьте ключ доступа в настройки и перезапустите сессию.</span></div>
+          </div>
+          <p class="privacy-note">
+            Ключ доступа не нужно отправлять в чат. Он хранится в настройках агента или на вашем компьютере.
+            Настройку удобнее делать с компьютера. Ключ доступа выдаётся в кабинете после регистрации и подключения Vetmanager:
+            <a href="/register">создать аккаунт</a> или <a href="/login">войти в кабинет</a>.
+          </p>
+        </div>
+      </div>
+
+      <div class="agent-tabs" data-testid="mcp-agent-tabs">
+        <div class="tab-list" role="tablist" aria-label="Выберите ИИ-агента">
+          <button class="tab-button" id="mcp-tab-codex" role="tab" aria-selected="true" aria-controls="mcp-panel-codex" tabindex="0" type="button">Codex</button>
+          <button class="tab-button" id="mcp-tab-claude" role="tab" aria-selected="false" aria-controls="mcp-panel-claude" tabindex="-1" type="button">Claude</button>
+          <button class="tab-button" id="mcp-tab-cursor" role="tab" aria-selected="false" aria-controls="mcp-panel-cursor" tabindex="-1" type="button">Cursor</button>
+          <button class="tab-button" id="mcp-tab-manus" role="tab" aria-selected="false" aria-controls="mcp-panel-manus" tabindex="-1" type="button">Manus</button>
+          <button class="tab-button" id="mcp-tab-other" role="tab" aria-selected="false" aria-controls="mcp-panel-other" tabindex="-1" type="button">Другой агент</button>
+        </div>
+
+        <div class="tab-panel command-card" id="mcp-panel-codex" role="tabpanel" aria-labelledby="mcp-tab-codex">
+          <span class="badge">Рекомендуем для старта</span>
+          <pre id="mcp-command-codex">Настрой мне MCP-сервер Vetmanager.
+
+Адрес сервера: __MCP_SERVER_URL__
+
+Ключ доступа / Bearer token я вставлю сам, но покажи путь к файлу или настройке, куда его нужно вставить.
+
+После настройки скажи, как перезапустить сессию Codex и как проверить, что инструменты Vetmanager подключились.</pre>
+          <button class="copy-button" type="button" data-copy-target="mcp-command-codex" aria-describedby="mcp-copy-status-codex">Скопировать</button>
+          <span class="copy-status" id="mcp-copy-status-codex" role="status" aria-live="polite"></span>
+        </div>
+
+        <div class="tab-panel command-card" id="mcp-panel-claude" role="tabpanel" aria-labelledby="mcp-tab-claude">
+          <pre id="mcp-command-claude">Подключи MCP-сервер Vetmanager.
+
+Адрес сервера: __MCP_SERVER_URL__
+
+Ключ доступа / Bearer token я вставлю сам, но покажи путь к файлу или настройке, куда его нужно вставить.
+
+После настройки скажи, как перезапустить Claude и проверить список доступных MCP-инструментов.</pre>
+          <button class="copy-button" type="button" data-copy-target="mcp-command-claude" aria-describedby="mcp-copy-status-claude">Скопировать</button>
+          <span class="copy-status" id="mcp-copy-status-claude" role="status" aria-live="polite"></span>
+        </div>
+
+        <div class="tab-panel command-card" id="mcp-panel-cursor" role="tabpanel" aria-labelledby="mcp-tab-cursor">
+          <pre id="mcp-command-cursor">Добавь MCP-сервер Vetmanager в настройки Cursor.
+
+Адрес сервера: __MCP_SERVER_URL__
+
+Ключ доступа / Bearer token я вставлю сам, но покажи путь к файлу или настройке, куда его нужно вставить.
+
+После настройки покажи, как перезапустить Cursor-сессию и проверить подключение.</pre>
+          <button class="copy-button" type="button" data-copy-target="mcp-command-cursor" aria-describedby="mcp-copy-status-cursor">Скопировать</button>
+          <span class="copy-status" id="mcp-copy-status-cursor" role="status" aria-live="polite"></span>
+        </div>
+
+        <div class="tab-panel command-card" id="mcp-panel-manus" role="tabpanel" aria-labelledby="mcp-tab-manus">
+          <pre id="mcp-command-manus">Подключи Vetmanager MCP.
+
+Адрес сервера: __MCP_SERVER_URL__
+
+Ключ доступа / Bearer token я вставлю сам, но покажи путь к файлу или настройке, куда его нужно вставить.
+
+После подключения проверь, что доступны инструменты Vetmanager.</pre>
+          <button class="copy-button" type="button" data-copy-target="mcp-command-manus" aria-describedby="mcp-copy-status-manus">Скопировать</button>
+          <span class="copy-status" id="mcp-copy-status-manus" role="status" aria-live="polite"></span>
+        </div>
+
+        <div class="tab-panel command-card" id="mcp-panel-other" role="tabpanel" aria-labelledby="mcp-tab-other">
+          <pre id="mcp-command-other">Подключи MCP-сервер Vetmanager.
+
+Адрес сервера: __MCP_SERVER_URL__
+Авторизация: ключ доступа / Bearer token
+
+Ключ доступа я вставлю сам, но покажи путь к файлу или настройке, куда его нужно вставить.
+
+После настройки перезапусти сессию или объясни, как это сделать, и проверь список доступных инструментов.</pre>
+          <button class="copy-button" type="button" data-copy-target="mcp-command-other" aria-describedby="mcp-copy-status-other">Скопировать</button>
+          <span class="copy-status" id="mcp-copy-status-other" role="status" aria-live="polite"></span>
+          <p class="mini">Если ваш агент поддерживает MCP, используйте тот же принцип: адрес сервера, ключ доступа и перезапуск сессии.</p>
+        </div>
+      </div>
+
+      <div>
+        <h4 class="section-title" style="font-size: 1.45rem;">Если агент не открыл файл настроек</h4>
+        <p class="body-copy">
+          Попросите его ещё раз показать путь к конфигурации. Если не получилось, откройте ручную подсказку для вашего агента.
+        </p>
+        <div class="fallback-grid">
+          <div class="fallback-card"><strong>Codex</strong><span>Попросите Codex показать путь к MCP config именно для вашей системы.</span></div>
+          <div class="fallback-card"><strong>Claude</strong><span>Откройте настройки Claude Desktop / MCP servers и перезапустите Claude.</span></div>
+          <div class="fallback-card"><strong>Cursor</strong><span>Откройте MCP settings в Cursor и перезапустите Cursor-сессию.</span></div>
+          <div class="fallback-card"><strong>Manus</strong><span>Проверьте настройки подключений и список доступных tools.</span></div>
+          <div class="fallback-card"><strong>Другой агент</strong><span>Найдите раздел MCP servers, укажите URL и авторизацию через ключ доступа.</span></div>
+        </div>
+      </div>
+
+      <div>
+        <h4 class="section-title" style="font-size: 1.45rem;">Примеры задач по ролям</h4>
+        <div class="role-grid">
+          <div class="role-card"><strong>Администратор</strong><span>Найди клиента по телефону<br>Покажи записи на завтра<br>Какие счета оплачены частично?</span></div>
+          <div class="role-card"><strong>Врач</strong><span>Покажи историю питомца<br>Кому из пациентов пора на прививку?<br>Покажи последние приёмы клиента</span></div>
+          <div class="role-card"><strong>Руководитель клиники</strong><span>Какая выручка была за март?<br>Собери отчёт по оплатам за неделю<br>Найди клиентов с долгом</span></div>
+        </div>
+      </div>
+
+      <div>
+        <h4 class="section-title" style="font-size: 1.45rem;">Частые ошибки</h4>
+        <div class="error-grid">
+          <div class="error-card"><strong>Агент не видит Vetmanager</strong><span>Перезапустите сессию и попросите показать список подключённых MCP-серверов.</span></div>
+          <div class="error-card"><strong>Ошибка 401 / ключ доступа не подошёл</strong><span>Проверьте, что ключ вставлен в настройки и скопирован полностью.</span></div>
+          <div class="error-card"><strong>Инструменты не появились</strong><span>Проверьте адрес MCP-сервера и перезапустите приложение или сессию.</span></div>
+        </div>
+      </div>
     </section>
 
     <section class="grid">
@@ -770,10 +1148,76 @@ def render_landing_page() -> str:
       </div>
     </footer>
   </div>
+  <script>
+    (() => {
+      const root = document.getElementById("mcp-onboarding");
+      if (!root) return;
+
+      const tabs = Array.from(root.querySelectorAll('[role="tab"]'));
+      const panels = Array.from(root.querySelectorAll('[role="tabpanel"]'));
+
+      const activateTab = (activeTab) => {
+        tabs.forEach((tab) => {
+          const isActive = tab === activeTab;
+          tab.setAttribute("aria-selected", isActive ? "true" : "false");
+          tab.setAttribute("tabindex", isActive ? "0" : "-1");
+        });
+        panels.forEach((panel) => {
+          panel.hidden = panel.id !== activeTab.getAttribute("aria-controls");
+        });
+      };
+
+      tabs.forEach((tab) => {
+        tab.addEventListener("click", () => activateTab(tab));
+        tab.addEventListener("keydown", (event) => {
+          const currentIndex = tabs.indexOf(tab);
+          let nextIndex = currentIndex;
+          if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % tabs.length;
+          if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+          if (event.key === "Home") nextIndex = 0;
+          if (event.key === "End") nextIndex = tabs.length - 1;
+          if (nextIndex === currentIndex) return;
+          event.preventDefault();
+          activateTab(tabs[nextIndex]);
+          tabs[nextIndex].focus();
+        });
+      });
+      const initiallyActive = tabs.find((tab) => tab.getAttribute("aria-selected") === "true") || tabs[0];
+      if (initiallyActive) activateTab(initiallyActive);
+
+      root.querySelectorAll("[data-copy-target]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const target = document.getElementById(button.getAttribute("data-copy-target"));
+          const status = document.getElementById(button.getAttribute("aria-describedby"));
+          const showStatus = (message) => {
+            if (!status) return;
+            status.textContent = message;
+            window.setTimeout(() => {
+              status.textContent = "";
+            }, 2000);
+          };
+          if (!target || !navigator.clipboard || !navigator.clipboard.writeText) {
+            showStatus("Выделите текст вручную");
+            return;
+          }
+          try {
+            await navigator.clipboard.writeText(target.textContent);
+            showStatus("Скопировано");
+          } catch (error) {
+            showStatus("Выделите текст вручную");
+          }
+        });
+      });
+    })();
+  </script>
 </body>
 </html>
 """
     base_url = _resolve_site_base_url()
+    mcp_url = f"{base_url}{_resolve_mcp_path()}"
+    html = html.replace("__MCP_SERVER_URL__", mcp_url)
     if base_url != _DEFAULT_SITE_BASE_URL:
         html = html.replace(_DEFAULT_SITE_BASE_URL, base_url)
+    if "__MCP_SERVER_URL__" in html:
+        raise RuntimeError("MCP server URL placeholder was not replaced")
     return html
