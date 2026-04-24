@@ -37,6 +37,7 @@
 
 - Unit + mock e2e: `docker compose --profile test run --rm test`
 - Real API e2e (нужны `TEST_DOMAIN`, `TEST_API_KEY`): `docker compose --profile test run --rm -e TEST_DOMAIN=<домен> -e TEST_API_KEY=<ключ> test`
+- В локальной среде real API credentials могут лежать в `.env`; не печатать секреты в ответах. Для Docker Compose `--env-file` ставится перед subcommand: `docker compose --env-file .env --profile test run --rm test python scripts/run_opt_in_real_test_suite.py`.
 - CI: `.github/workflows/test.yml` (unit + mock); `test-real.yml` — ручной запуск с секретом.
 
 Задача не считается завершённой без прохождения проверок и записи в AssumptionLog.
