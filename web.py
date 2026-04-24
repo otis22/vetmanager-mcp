@@ -33,7 +33,7 @@ from storage_models import (
     VetmanagerConnection,
 )
 from token_cleanup import sync_expired_tokens
-from tool_access_registry import infer_token_preset, get_token_preset_label
+from tool_access_registry import PRESET_READ_ONLY, infer_token_preset, get_token_preset_label
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
 from vetmanager_connection_service import (
     INTEGRATION_HEALTH_UNKNOWN,
@@ -48,6 +48,7 @@ from web_security import (
     CSRF_COOKIE_NAME,
     create_csrf_token,
     ensure_csrf_cookie,
+    get_request_ip,
     read_csrf_token,
 )
 
@@ -92,6 +93,12 @@ def _apply_security_headers(
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
 
+def _apply_no_store_headers(response: HTMLResponse) -> None:
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
+
 def _html_response(
     request: Request,
     content: str,
@@ -100,9 +107,12 @@ def _html_response(
     with_csrf_cookie: bool = False,
     csrf_token: str | None = None,
     script_nonce: str | None = None,
+    no_store: bool = False,
 ) -> HTMLResponse:
     response = HTMLResponse(content, status_code=status_code)
     _apply_security_headers(response, script_nonce=script_nonce)
+    if no_store:
+        _apply_no_store_headers(response)
     attach_request_context_headers(response, request)
     if with_csrf_cookie:
         ensure_csrf_cookie(
@@ -354,9 +364,9 @@ async def _render_account_dashboard_response(
     token_success: str | None = None,
     issued_raw_token: str | None = None,
     token_name: str = "",
-    token_expiry_days: str = "",
-    ip_mask: str = "*.*.*.*",
-    token_access_preset: str = "full_access",
+    token_expiry_days: str = "30",
+    ip_mask: str | None = None,
+    token_access_preset: str = PRESET_READ_ONLY,
     token_is_depersonalized: bool = False,
     issued_token_access_label: str | None = None,
     issued_token_privacy_label: str | None = None,
@@ -376,6 +386,9 @@ async def _render_account_dashboard_response(
         response = _redirect_response(request, url="/login", status_code=303)
         clear_account_session_cookie(response)
         return response
+    default_ip_mask = ip_mask if ip_mask is not None else get_request_ip(request)
+    if default_ip_mask == "unknown":
+        default_ip_mask = ""
     return _html_response(
         request,
         render_account_page(
@@ -398,7 +411,7 @@ async def _render_account_dashboard_response(
             issued_raw_token=issued_raw_token,
             token_name=token_name,
             token_expiry_days=token_expiry_days,
-            ip_mask=ip_mask,
+            ip_mask=default_ip_mask,
             token_access_preset=token_access_preset,
             token_is_depersonalized=token_is_depersonalized,
             issued_token_access_label=issued_token_access_label,
@@ -408,6 +421,7 @@ async def _render_account_dashboard_response(
         with_csrf_cookie=True,
         csrf_token=csrf_token,
         script_nonce=script_nonce,
+        no_store=True,
     )
 
 

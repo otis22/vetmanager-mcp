@@ -271,7 +271,12 @@ def test_real_web_account_can_issue_bearer_and_call_tool(live_server_url: str, r
         issued = _post_with_csrf_sync(
             client,
             "/account/tokens",
-            data={"token_name": "Real E2E token", "expires_in_days": "7"},
+            data={
+                "token_name": "Real E2E token",
+                "expires_in_days": "7",
+                "ip_mask": "*.*.*.*",
+                "confirm_wildcard_ip": "1",
+            },
             page_path="/account",
         )
         assert issued.status_code == 200

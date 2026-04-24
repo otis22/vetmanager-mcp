@@ -5997,3 +5997,35 @@ UI кабинета и issuance flow переведены на preset-based то
 ### Обратная связь
 
 Пользователь попросил добавить все high/medium findings super-review в Roadmap и довести Roadmap до конца по workflow.
+
+## Этап 137 token issuance security defaults — 2026-04-24
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Full review findings F1-F24 из `artifacts/review/2026-04-24-full-stage-136.md` разложены в Roadmap stages 137-142.
+- Stage 137 создан для F1-F2: HTML no-store для account pages и безопасные web defaults при выпуске bearer token.
+- PRD stage 137 создан и прошёл два PRD-review запуска Claude Opus; обязательные findings внесены до реализации.
+- Реализованы targeted tests и runtime changes для no-store HTML, `read_only` + 30 days defaults, explicit confirmation для `full_access` и full-open IP mask.
+- Проверки: targeted suite после post-review fixes `40 passed`; full suite после post-review fixes `860 passed, 57 deselected`.
+
+### Решения и обоснования
+
+- Blank/missing expiry в web issuance path намеренно меняется на 30 days. `0` и negative expiry остаются ошибкой.
+- Default access preset становится `read_only`; legacy tokens и non-web service-layer callers не мигрируются.
+- Full-open IP mask в stage 137 означает только `*.*.*.*`; partial subnet masks вроде `10.*.*.*` остаются обычной валидной mask.
+- Если IP mask в web form пустая, server-side default берётся из proxy-aware request IP. Это сохраняет "можно выпустить token без ручного IP ввода" без silent wildcard.
+- Diff stage 137 больше 150 LOC из-за web/browser regression tests и roadmap decomposition по всем full-review findings. Реализация сохранена в одном stage, потому что изменения закрывают один связанный risk surface F1-F2 и уже покрыты targeted/full suite.
+
+### Проблемы
+
+- Хостовое окружение не содержит Playwright, поэтому прямой `pytest` падает на import `playwright` из `tests/conftest.py`; проверки выполняются через Docker test profile.
+- PRD-review сторонней моделью 1/2 нашёл scope/acceptance gaps; PRD уточнён. PRD-review 2/2 нашёл два обязательных уточнения (`0`/negative expiry test, wildcard predicate); оба внесены, blockers не осталось.
+- Codex audit: проверены runtime defaults, no-store scope, legacy browser/direct MCP tests and workflow artifacts; найденные до commit несоответствия закрыты.
+- Code/diff review сторонней моделью 1/2 нашёл medium по blank IP fallback `unknown`; исправлено clear form error + regression test. Low finding по blanket no-store public HTML исправлен сужением no-store до account dashboard response.
+- Code/diff review сторонней моделью 2/2 вернул `NO FINDINGS` по финальному committed diff.
+
+### Обратная связь
+
+Пользователь попросил закоммитить/запушить результаты full review, сформировать Roadmap по итогам review и продолжать выполнять Roadmap по workflow.

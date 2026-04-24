@@ -391,9 +391,9 @@ def render_account_page(
     token_success: str | None = None,
     issued_raw_token: str | None = None,
     token_name: str = "",
-    token_expiry_days: str = "",
-    ip_mask: str = "*.*.*.*",
-    token_access_preset: str = PRESET_FULL_ACCESS,
+    token_expiry_days: str = "30",
+    ip_mask: str = "",
+    token_access_preset: str = PRESET_READ_ONLY,
     token_is_depersonalized: bool = False,
     issued_token_access_label: str | None = None,
     issued_token_privacy_label: str | None = None,
@@ -670,8 +670,22 @@ def render_account_page(
             </span>
           </label>
           <label>Ограничение по IP
-            <input type="text" name="ip_mask" value="{escape(ip_mask)}" placeholder="*.*.*.*" {token_disabled} data-testid="token-ip-mask">
-            <small style="color: var(--muted); font-size: 0.85rem;">Маска IP: *.*.*.* — любой, 85.90.100.* — подсеть, 45.67.89.123 — точный IP</small>
+            <input type="text" name="ip_mask" value="{escape(ip_mask)}" placeholder="45.67.89.123" {token_disabled} data-testid="token-ip-mask">
+            <small style="color: var(--muted); font-size: 0.85rem;">Маска IP: 45.67.89.123 — точный IP, 85.90.100.* — подсеть, *.*.*.* — любой IP после подтверждения ниже</small>
+          </label>
+          <label style="display: flex; gap: 10px; align-items: start;">
+            <input type="checkbox" name="confirm_full_access" value="1" {token_disabled} data-testid="token-confirm-full-access" style="width: auto; margin-top: 6px;">
+            <span>
+              <strong style="display: block; color: var(--ink);">Подтвердить полный доступ</strong>
+              <small style="color: var(--muted); font-size: 0.85rem;">Нужно только для preset Full access.</small>
+            </span>
+          </label>
+          <label style="display: flex; gap: 10px; align-items: start;">
+            <input type="checkbox" name="confirm_wildcard_ip" value="1" {token_disabled} data-testid="token-confirm-wildcard-ip" style="width: auto; margin-top: 6px;">
+            <span>
+              <strong style="display: block; color: var(--ink);">Подтвердить доступ с любого IP</strong>
+              <small style="color: var(--muted); font-size: 0.85rem;">Нужно только для маски *.*.*.*.</small>
+            </span>
           </label>
           <button type="submit" {token_disabled} data-testid="token-submit">Выпустить Bearer token</button>
         </form>

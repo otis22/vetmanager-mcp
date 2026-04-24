@@ -2330,3 +2330,82 @@ Acceptance: technical requirements больше не описывает stage 10
 - 136.7 Зафиксировать review report, AssumptionLog и work log; прогнать workflow/docs/full checks и review gates. — `done`
 
 Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown не находит stale default-full-access/current-scope/metric-name drift; workflow-check stage 136 зелёный; full suite проходит.
+
+## Этап 137. Token issuance security defaults and no-store HTML (после Этапа 136) — `done`
+
+Источник: `artifacts/review/2026-04-24-full-stage-136.md`, F1-F2.
+
+Цель: закрыть high findings по утечке one-time bearer token через HTML cache и небезопасным default'ам выпуска токена.
+
+- 137.1 Создать PRD stage 137 и пройти PRD-review gates по workflow. — `done`
+- 137.2 Добавить no-store/no-cache headers для authenticated HTML account/token pages; покрыть тестом raw-token response. — `done`
+- 137.3 Перевести web issuance defaults на read-only + 30 days server-side, не полагаясь на placeholder. — `done`
+- 137.4 Сделать full_access и wildcard IP явным opt-in через form confirmation; покрыть negative/positive tests. — `done`
+- 137.5 Обновить UI copy/docs/tests под новые defaults без изменения legacy token compatibility. — `done`
+- 137.6 Пройти full checks, audit, external diff review, commit/push и self-attestation. — `done`
+
+## Этап 138. Rate limiting and deployment smoke reliability (после Этапа 137) — `todo`
+
+Источник: `artifacts/review/2026-04-24-full-stage-136.md`, F3-F4/F10/F20-F21.
+
+Цель: закрыть Redis timeout/degradation, bearer distributed limit и token-aware smoke/docs drift.
+
+- 138.1 Создать PRD stage 138 и пройти PRD-review gates по workflow. — `todo`
+- 138.2 Добавить bounded Redis socket/connect timeouts и operation timeout wrapper для rate-limit backend. — `todo`
+- 138.3 Добавить metric/health signal для Redis rate-limit degradation. — `todo`
+- 138.4 Перевести bearer runtime limiter на shared RateLimitBackend или явно require Redis для multi-worker production. — `todo`
+- 138.5 Исправить `scripts/post_deploy_smoke_checks.sh` на METRICS_AUTH_TOKEN-aware `/metrics` probe. — `todo`
+- 138.6 Синхронизировать README/security threat model по web Redis backend vs bearer limiter. — `todo`
+- 138.7 Пройти checks, audit, external diff review, commit/push и self-attestation. — `todo`
+
+## Этап 139. Async auth/session and breaker correctness (после Этапа 138) — `todo`
+
+Источник: `artifacts/review/2026-04-24-full-stage-136.md`, F5-F6/F15/F17-F18.
+
+Цель: закрыть concurrency/cancellation/data-race findings.
+
+- 139.1 Создать PRD stage 139 и пройти PRD-review gates по workflow. — `todo`
+- 139.2 Исправить login/password prepare coalescing key и cancellation shielding. — `todo`
+- 139.3 Исправить breaker denial accounting на retry-time check. — `todo`
+- 139.4 Сделать TokenUsageStat insert/increment atomic или безопасно serialized. — `todo`
+- 139.5 Исправить `_gather_bounded` sibling cancellation cleanup. — `todo`
+- 139.6 Убрать over-fetch в inactive helpers при малом remaining limit. — `todo`
+- 139.7 Пройти checks, audit, external diff review, commit/push и self-attestation. — `todo`
+
+## Этап 140. VM API contract and pagination correctness (после Этапа 139) — `todo`
+
+Источник: `artifacts/review/2026-04-24-full-stage-136.md`, F7-F8/F11-F16.
+
+Цель: закрыть API contract drift и silent truncation в tools.
+
+- 140.1 Создать PRD stage 140 и пройти PRD-review gates по workflow. — `todo`
+- 140.2 Убрать или feature-gate `create_payment` согласно CRUD permissions. — `todo`
+- 140.3 Перевести подтверждённые top-level list params на filter[] или задокументировать verified special cases. — `todo`
+- 140.4 Добавить pagination/truncated semantics для `get_vaccinations`, `get_daily_schedule`, `get_medical_cards_by_client_id`. — `todo`
+- 140.5 Нормализовать `create_timesheet` datetime payload. — `todo`
+- 140.6 Обновить tests/API notes/docs. — `todo`
+- 140.7 Пройти checks, audit, external diff review, commit/push и self-attestation. — `todo`
+
+## Этап 141. Auth observability and startup signals (после Этапа 140) — `todo`
+
+Источник: `artifacts/review/2026-04-24-full-stage-136.md`, F9/F19/F22.
+
+Цель: закрыть auth audit/log parity и runbook/startup observability drift.
+
+- 141.1 Создать PRD stage 141 и пройти PRD-review gates по workflow. — `todo`
+- 141.2 Добавить structured security/audit signals для missing/invalid/disabled bearer paths. — `todo`
+- 141.3 Унифицировать startup phase failure logging. — `todo`
+- 141.4 Исправить observability runbook для metrics auth и upstream 4xx/5xx semantics. — `todo`
+- 141.5 Пройти checks, audit, external diff review, commit/push и self-attestation. — `todo`
+
+## Этап 142. Packaging and LLM-client UX cleanup (после Этапа 141) — `todo`
+
+Источник: `artifacts/review/2026-04-24-full-stage-136.md`, F23-F24.
+
+Цель: закрыть packaging metadata drift и late-denial UX для scoped tokens.
+
+- 142.1 Создать PRD stage 142 и пройти PRD-review gates по workflow. — `todo`
+- 142.2 Принять и реализовать packaging stance: source/Docker-only или полный wheel package set. — `todo`
+- 142.3 Выровнять FastMCP dependency bounds между pyproject и Docker. — `todo`
+- 142.4 Улучшить scope denial/prompt UX: missing scopes / allowed presets / preset-aware hints. — `todo`
+- 142.5 Пройти checks, audit, external diff review, commit/push и self-attestation. — `todo`

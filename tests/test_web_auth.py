@@ -1,7 +1,7 @@
 """HTTP tests for account registration and login/logout web flow."""
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import re
 from pathlib import Path
 
@@ -11,12 +11,19 @@ import respx
 from sqlalchemy import select
 
 import storage
+import web_routes_account
 from bearer_auth import resolve_bearer_auth_context
 from server import mcp
 from service_metrics import snapshot_service_metrics
 from storage import Base, create_database_engine
 from storage_models import Account, ServiceBearerToken, TokenUsageLog, TokenUsageStat, VetmanagerConnection
-from tool_access_registry import PRESET_DOCTOR, PRESET_FRONTDESK, TOKEN_PRESET_SCOPES
+from tool_access_registry import (
+    PRESET_DOCTOR,
+    PRESET_FRONTDESK,
+    PRESET_FULL_ACCESS,
+    PRESET_READ_ONLY,
+    TOKEN_PRESET_SCOPES,
+)
 from web_security import reset_web_security_state
 from web_auth import SESSION_COOKIE_NAME, get_web_session_secret, register_account, set_account_session_cookie
 
@@ -36,6 +43,49 @@ async def _prepare_web_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     return engine
+
+
+async def _register_account_with_active_connection(
+    *,
+    email: str,
+    domain: str = "clinic",
+) -> None:
+    async with storage.get_session_factory()() as session:
+        account = await register_account(
+            session,
+            email=email,
+            password="Integration-Pass-123",
+        )
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+            domain=domain,
+        )
+        connection.set_credentials(
+            {"domain": domain, "api_key": "secret-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        session.add(connection)
+        await session.commit()
+
+
+def _mock_active_connection_health(domain: str) -> None:
+    respx.get(f"https://billing-api.vetmanager.cloud/host/{domain}").mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": {"url": f"https://{domain}.vetmanager.cloud"}},
+        )
+    )
+    respx.get(f"https://{domain}.vetmanager.cloud/rest/api/client").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+
+
+def _assert_no_store_html(response: httpx.Response) -> None:
+    assert "no-store" in response.headers["cache-control"]
+    assert "no-cache" in response.headers["pragma"]
+    assert response.headers["expires"] == "0"
 
 
 def _extract_csrf_token(html: str) -> str:
@@ -802,11 +852,17 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
         response = await _post_with_csrf(
             client,
             "/account/tokens",
-            data={"token_name": "Cursor prod", "expires_in_days": "30"},
+            data={
+                "token_name": "Cursor prod",
+                "expires_in_days": "30",
+                "ip_mask": "*.*.*.*",
+                "confirm_wildcard_ip": "1",
+            },
             page_path="/account",
         )
 
     assert response.status_code == 200
+    _assert_no_store_html(response)
     assert "Bearer token issued successfully." in response.text
     assert 'id="issued-token-panel"' in response.text
     assert "Скопировать токен" in response.text
@@ -838,6 +894,7 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
         follow_up = await client.get("/account")
 
     assert follow_up.status_code == 200
+    _assert_no_store_html(follow_up)
     assert raw_token not in follow_up.text
     assert "Cursor prod" in follow_up.text
     assert "active" in follow_up.text
@@ -868,6 +925,318 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
     assert [log.event_type for log in logs] == ["token_created", "token_auth_succeeded"]
     assert raw_token not in (logs[0].details_json or "")
     assert raw_token not in (logs[1].details_json or "")
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_account_token_issue_uses_safe_web_defaults(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    domain = "clinic-safe-defaults"
+    await _register_account_with_active_connection(
+        email="safe-defaults@example.com",
+        domain=domain,
+    )
+    _mock_active_connection_health(domain)
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+    before = datetime.now(timezone.utc)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await _post_with_csrf(
+            client,
+            "/login",
+            data={"email": "safe-defaults@example.com", "password": "Integration-Pass-123"},
+        )
+        response = await _post_with_csrf(
+            client,
+            "/account/tokens",
+            data={"token_name": "Safe default token"},
+            page_path="/account",
+        )
+
+    assert response.status_code == 200
+    _assert_no_store_html(response)
+    async with storage.get_session_factory()() as session:
+        token = await session.scalar(
+            select(ServiceBearerToken).where(ServiceBearerToken.name == "Safe default token")
+        )
+
+    assert token is not None
+    assert token.get_scopes() == list(TOKEN_PRESET_SCOPES[PRESET_READ_ONLY])
+    assert token.allowed_ip_mask == "127.0.0.1"
+    assert token.expires_at is not None
+    expires_at = token.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    assert before + timedelta(days=29) < expires_at < before + timedelta(days=31)
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("expiry_value", ["0", "-1"])
+async def test_account_token_issue_rejects_zero_or_negative_expiry(
+    tmp_path: Path,
+    monkeypatch,
+    expiry_value: str,
+):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    domain = f"clinic-bad-expiry-{expiry_value.replace('-', 'neg')}"
+    await _register_account_with_active_connection(
+        email=f"bad-expiry-{expiry_value.replace('-', 'neg')}@example.com",
+        domain=domain,
+    )
+    _mock_active_connection_health(domain)
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await _post_with_csrf(
+            client,
+            "/login",
+            data={
+                "email": f"bad-expiry-{expiry_value.replace('-', 'neg')}@example.com",
+                "password": "Integration-Pass-123",
+            },
+        )
+        response = await _post_with_csrf(
+            client,
+            "/account/tokens",
+            data={
+                "token_name": "Bad expiry token",
+                "expires_in_days": expiry_value,
+                "ip_mask": "127.0.0.1",
+                "access_preset": PRESET_READ_ONLY,
+            },
+            page_path="/account",
+        )
+
+    assert response.status_code == 400
+    assert "Token expiry must be a positive number of days." in response.text
+    async with storage.get_session_factory()() as session:
+        token = await session.scalar(
+            select(ServiceBearerToken).where(ServiceBearerToken.name == "Bad expiry token")
+        )
+    assert token is None
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_account_token_issue_rejects_full_access_without_confirmation(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    domain = "clinic-full-access-denied"
+    await _register_account_with_active_connection(
+        email="full-access-denied@example.com",
+        domain=domain,
+    )
+    _mock_active_connection_health(domain)
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await _post_with_csrf(
+            client,
+            "/login",
+            data={"email": "full-access-denied@example.com", "password": "Integration-Pass-123"},
+        )
+        response = await _post_with_csrf(
+            client,
+            "/account/tokens",
+            data={
+                "token_name": "Full access denied",
+                "expires_in_days": "30",
+                "ip_mask": "127.0.0.1",
+                "access_preset": PRESET_FULL_ACCESS,
+            },
+            page_path="/account",
+        )
+
+    assert response.status_code == 400
+    assert "Confirm full access before issuing this token." in response.text
+    async with storage.get_session_factory()() as session:
+        token = await session.scalar(
+            select(ServiceBearerToken).where(ServiceBearerToken.name == "Full access denied")
+        )
+    assert token is None
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_account_token_issue_rejects_wildcard_ip_without_confirmation(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    domain = "clinic-wildcard-denied"
+    await _register_account_with_active_connection(
+        email="wildcard-denied@example.com",
+        domain=domain,
+    )
+    _mock_active_connection_health(domain)
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await _post_with_csrf(
+            client,
+            "/login",
+            data={"email": "wildcard-denied@example.com", "password": "Integration-Pass-123"},
+        )
+        response = await _post_with_csrf(
+            client,
+            "/account/tokens",
+            data={
+                "token_name": "Wildcard denied",
+                "expires_in_days": "30",
+                "ip_mask": "*.*.*.*",
+                "access_preset": PRESET_READ_ONLY,
+            },
+            page_path="/account",
+        )
+
+    assert response.status_code == 400
+    assert "Confirm unrestricted IP access before issuing this token." in response.text
+    async with storage.get_session_factory()() as session:
+        token = await session.scalar(
+            select(ServiceBearerToken).where(ServiceBearerToken.name == "Wildcard denied")
+        )
+    assert token is None
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_account_token_issue_rejects_blank_ip_when_request_ip_unknown(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    monkeypatch.setattr(web_routes_account, "get_request_ip", lambda _request: "unknown")
+    domain = "clinic-unknown-ip"
+    await _register_account_with_active_connection(
+        email="unknown-ip@example.com",
+        domain=domain,
+    )
+    _mock_active_connection_health(domain)
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await _post_with_csrf(
+            client,
+            "/login",
+            data={"email": "unknown-ip@example.com", "password": "Integration-Pass-123"},
+        )
+        response = await _post_with_csrf(
+            client,
+            "/account/tokens",
+            data={
+                "token_name": "Unknown IP token",
+                "expires_in_days": "30",
+                "access_preset": PRESET_READ_ONLY,
+            },
+            page_path="/account",
+        )
+
+    assert response.status_code == 400
+    assert "IP mask is required when request IP is unavailable." in response.text
+    async with storage.get_session_factory()() as session:
+        token = await session.scalar(
+            select(ServiceBearerToken).where(ServiceBearerToken.name == "Unknown IP token")
+        )
+    assert token is None
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_account_token_issue_allows_confirmed_full_access_and_wildcard_ip(
+    tmp_path: Path,
+    monkeypatch,
+):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    domain = "clinic-confirmed-risk"
+    await _register_account_with_active_connection(
+        email="confirmed-risk@example.com",
+        domain=domain,
+    )
+    _mock_active_connection_health(domain)
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await _post_with_csrf(
+            client,
+            "/login",
+            data={"email": "confirmed-risk@example.com", "password": "Integration-Pass-123"},
+        )
+        response = await _post_with_csrf(
+            client,
+            "/account/tokens",
+            data={
+                "token_name": "Confirmed risky token",
+                "expires_in_days": "30",
+                "ip_mask": "*.*.*.*",
+                "access_preset": PRESET_FULL_ACCESS,
+                "confirm_full_access": "1",
+                "confirm_wildcard_ip": "1",
+            },
+            page_path="/account",
+        )
+
+    assert response.status_code == 200
+    async with storage.get_session_factory()() as session:
+        token = await session.scalar(
+            select(ServiceBearerToken).where(ServiceBearerToken.name == "Confirmed risky token")
+        )
+    assert token is not None
+    assert token.get_scopes() == list(TOKEN_PRESET_SCOPES[PRESET_FULL_ACCESS])
+    assert token.get_allowed_ip_mask() == "*.*.*.*"
 
     await engine.dispose()
     storage.reset_storage_state()

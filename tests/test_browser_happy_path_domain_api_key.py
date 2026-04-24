@@ -43,6 +43,8 @@ def test_browser_domain_api_key_flow_can_issue_bearer_and_call_mcp(
 
     page.get_by_test_id("token-name").fill("Browser API token")
     page.get_by_test_id("token-expires-in-days").fill("7")
+    page.get_by_test_id("token-ip-mask").fill("*.*.*.*")
+    page.get_by_test_id("token-confirm-wildcard-ip").check()
     page.get_by_test_id("token-submit").click()
     page.wait_for_load_state("networkidle")
 

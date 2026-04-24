@@ -12,7 +12,7 @@ from observability_logging import RUNTIME_LOGGER
 from secret_manager import get_storage_encryption_key
 from service_metrics import record_auth_failure, record_business_event, record_token_preset_issued
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
-from tool_access_registry import get_token_preset_label
+from tool_access_registry import PRESET_FULL_ACCESS, PRESET_READ_ONLY, get_token_preset_label
 from storage import get_session_factory
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY, VETMANAGER_AUTH_MODE_USER_TOKEN
 from vetmanager_connection_service import (
@@ -22,7 +22,7 @@ from vetmanager_connection_service import (
 )
 from web_auth import clear_account_session_cookie
 from web_html import _DOCTOR_PRESET_FORM_VALUE
-from web_security import CSRF_FIELD_NAME, validate_csrf_request
+from web_security import CSRF_FIELD_NAME, get_request_ip, validate_csrf_request
 
 
 _CAMEL_BOUNDARY = re.compile(r"(?<!^)(?=[A-Z])")
@@ -239,11 +239,19 @@ def register_account_routes(
 
         token_name = form.get("token_name", "")
         expiry_raw = form.get("expires_in_days", "").strip()
-        ip_mask_raw = form.get("ip_mask", "*.*.*.*").strip() or "*.*.*.*"
-        access_preset = form.get("access_preset", "full_access")
+        request_ip = get_request_ip(request)
+        ip_mask_raw = form.get("ip_mask", "").strip()
+        access_preset = form.get("access_preset", PRESET_READ_ONLY)
         if access_preset == _DOCTOR_PRESET_FORM_VALUE:
             access_preset = "doctor"
         is_depersonalized = form.get("is_depersonalized") == "1"
+        confirm_full_access = form.get("confirm_full_access") == "1"
+        confirm_wildcard_ip = form.get("confirm_wildcard_ip") == "1"
+        if not ip_mask_raw:
+            if request_ip == "unknown":
+                ip_mask_raw = ""
+            else:
+                ip_mask_raw = request_ip
 
         if active_connection is None or integration_health_status != INTEGRATION_HEALTH_ACTIVE:
             return await render_account_dashboard_response(
@@ -263,7 +271,13 @@ def register_account_routes(
             )
 
         try:
-            expires_in_days = int(expiry_raw) if expiry_raw else None
+            expires_in_days = int(expiry_raw) if expiry_raw else 30
+            if not ip_mask_raw:
+                raise ValueError("IP mask is required when request IP is unavailable.")
+            if access_preset == PRESET_FULL_ACCESS and not confirm_full_access:
+                raise ValueError("Confirm full access before issuing this token.")
+            if ip_mask_raw == "*.*.*.*" and not confirm_wildcard_ip:
+                raise ValueError("Confirm unrestricted IP access before issuing this token.")
             async with get_session_factory()() as session:
                 token_row, raw_token = await issue_service_bearer_token(
                     session,

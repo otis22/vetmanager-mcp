@@ -195,6 +195,9 @@ Bearer-токен привязан к account сервиса:
 - доступен выпуск Bearer-токенов с именем, сроком действия, preset'ом доступа
   (`full_access`, `read_only`, `frontdesk`, `doctor`, `finance`, `inventory`)
   и опциональным режимом деперсонализации ответов;
+- web-выпуск безопасен по умолчанию: blank expiry становится 30 days,
+  default preset — `read_only`, а `full_access` и `*.*.*.*` IP mask требуют
+  явного подтверждения в форме;
 - после выпуска raw bearer token показывается в отдельной success-card в верхней части страницы и может быть скопирован кнопкой;
 - доступен список токенов со статусом, сроком действия, `last_used_at`, `request_count` и revoke action.
 
