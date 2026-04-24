@@ -95,13 +95,16 @@ Restore:
 - `/healthz` failed 2 раза подряд: critical
 - `/readyz` failed 2 раза подряд: high
 - любой sustained рост `billing_api` или `vetmanager_api` failures > 5/min 5 минут подряд: high
-- заметный рост `auth_failures_total{source="web_rate_limit",...}`: investigate brute-force/abuse
-- заметный рост `auth_failures_total{source="bearer_header",...}`: investigate client config drift
-- заметный рост `auth_failures_total{source="metrics",reason="invalid_token"}`:
+- заметный рост `vetmanager_auth_failures_total{source="web_rate_limit",...}`: investigate brute-force/abuse
+- заметный рост `vetmanager_auth_failures_total{source="bearer_header",...}`: investigate client config drift
+- заметный рост `vetmanager_auth_failures_total{source="metrics",reason="invalid_token"}`:
   проверить `METRICS_AUTH_TOKEN`, scrape-конфиг и security log
   `metrics_auth_failed`
-- любой рост `vetmanager_sanitizer_failures_total`: high, проверить fail-closed
-  depersonalized path; token usage audit расследовать по `token_audit_log_committed`
+- любой рост `vetmanager_sanitizer_failures_total`: high, это основной сигнал;
+  расследовать fail-closed depersonalized path через
+  `request_id`/`correlation_id` в runtime/security логах и observability
+  runbook; `token_audit_log_committed` — дополнительный token trail, если есть
+  связанный token event
 
 ## 6. Deploy Procedure
 

@@ -5969,3 +5969,31 @@ UI кабинета и issuance flow переведены на preset-based то
 ### Обратная связь
 
 Пользователь попросил вести Roadmap до конца по новому workflow; stage 135 выполнен как docs-only cleanup с двумя PRD-review сторонней моделью и без runtime changes.
+
+## Этап 136 docs hotfix after stage 135 super-review — 2026-04-24
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Все high/medium findings F1-F6 из `artifacts/review/2026-04-24-changed-stage-135.md` добавлены в Roadmap как stage 136 и закрыты.
+- PRD stage 28 помечает full-access default как historical stage-28 storage fallback; текущий stage 130+ contract — preset-based issuance.
+- Operations readiness использует namespaced `vetmanager_auth_failures_total{...}` и направляет sanitizer incidents сначала в `vetmanager_sanitizer_failures_total` + request/correlation runtime/security logs; `token_audit_log_committed` оставлен supplemental.
+- Technical requirements заменил stale future-only scope wording и разделил Prometheus metrics от audit/log event `token_audit_log_committed`.
+- PRD stage 135 verification расширен на current markdown docs через null-delimited `git ls-files -z`/`xargs -0`, включая README и SECURITY.
+- Super-review report получил follow-up block; inadequate findings index сохранён.
+
+### Решения и обоснования
+
+- Runtime-код не менялся: stage 136 закрывает только docs drift.
+- PRD-review сторонней моделью 1/2 нашёл high в verification regex и medium по positive checks; PRD уточнён. PRD-review 2/2 high/blocker не нашёл, оставил medium по machine-check precision; PRD checks уточнены локально, бюджет PRD-review исчерпан.
+- Старая default-full-access acceptance-фраза запрещена в current docs, чтобы historical docs не выглядели current acceptance.
+
+### Проблемы
+
+- До stage 136 super-review report имел verdict `Do not merge as final docs cleanup`; закрытие зафиксировано follow-up note со ссылкой на Roadmap §136 и PRD stage 136 без переписывания исходных findings.
+- Full suite прошёл дважды, включая повтор после post-review фиксов: `853 passed, 57 deselected`. External code/diff review 1/2 нашёл medium по case-sensitive grep и исправлен; review 2/2 подтвердил закрытие F1-F6 и поднял medium по self-referential grep/closure note, оба исправлены локально после исчерпания бюджета.
+
+### Обратная связь
+
+Пользователь попросил добавить все high/medium findings super-review в Roadmap и довести Roadmap до конца по workflow.

@@ -261,3 +261,12 @@ Source: `artifacts/review/2026-04-23-full-stage-130.md`
   - **adequate**: `password.strip()` RFC 8265 violation (concrete bug)
   - **adequate**: `_disable_existing_active_connections` missing SELECT FOR UPDATE (race)
   - **deferred**: pool reuse, retry, metrics — all valid hardening but need explicit requirements + observability targets before fix; schedule as a sweep stage
+
+## 2026-04-24 super-review changed stage 135
+
+Source: `artifacts/review/2026-04-24-changed-stage-135.md`
+
+### Consolidated / not carried as top findings
+
+- PRD stage 135 Scope 7 "legacy workflow gaps" is broad (simplicity/medium, 0.82). **Причина dismiss**: valid process smell, but concrete confirmed findings F1-F6 cover the actionable defects. Revisit only if future stages use this as an open-ended cleanup escape hatch.
+- Operations docs missing correlation/audit guidance (product/medium, 0.78). **Причина dismiss**: consolidated into F3 (wrong sanitizer investigation path) and F5 (metrics/log taxonomy).

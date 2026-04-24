@@ -2314,3 +2314,19 @@ Acceptance: graceful shutdown закрывает Redis backend; audit log не �
 - 135.5 Зафиксировать docs cleanup в `AssumptionLog.md` и прогнать `scripts/review_workflow_check.sh 135`. — `done`
 
 Acceptance: technical requirements больше не описывает stage 104 как current state; dependency docs явно различают `pyproject.toml` и Docker runtime pin; token issuance/scope docs совпадают с runtime and tests.
+
+## Этап 136. Docs hotfix after stage 135 super-review (после Этапа 135) — `done`
+
+Источник: `artifacts/review/2026-04-24-changed-stage-135.md`, confirmed high/medium findings F1-F6.
+
+Цель: закрыть все high и medium findings stage 135 super-review без runtime changes.
+
+- 136.1 F1 high: убрать противоречие в PRD stage 28 Acceptance Criteria про default full-access для новых токенов; явно отметить superseded stage 130+ preset-based issuance. — `done`
+- 136.2 F2 high: исправить metric family в operations readiness на `vetmanager_auth_failures_total{source="metrics",reason="invalid_token"}` и выровнять соседние auth failure metric examples. — `done`
+- 136.3 F3 medium: переписать sanitizer failure incident guidance: primary path через `vetmanager_sanitizer_failures_total`, request/correlation logs и observability runbook; `token_audit_log_committed` только supplemental. — `done`
+- 136.4 F4 medium: заменить stale future-only scope wording в technical requirements на current token scope policy. — `done`
+- 136.5 F5 medium: разделить observability metrics и audit/log events в technical requirements, чтобы `token_audit_log_committed` не был listed как metric. — `done`
+- 136.6 F6 medium: расширить PRD stage 135 verification grep на все markdown docs / modified user-facing docs, включая README и SECURITY. — `done`
+- 136.7 Зафиксировать review report, AssumptionLog и work log; прогнать workflow/docs/full checks и review gates. — `done`
+
+Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown не находит stale default-full-access/current-scope/metric-name drift; workflow-check stage 136 зелёный; full suite проходит.

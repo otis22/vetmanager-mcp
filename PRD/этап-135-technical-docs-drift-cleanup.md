@@ -55,7 +55,8 @@
 - `rg` checks for stale docs wording:
   - `runtime enforcement scopes пока не включён`
   - `новые токены получают default full-access`
-  - `rg -i "address pattern|address heuristic|sanitize address|адресн(ый|ые).*маркер|простые адресные маркеры" artifacts/ PRD/ Roadmap.md`
+  - `! git ls-files -z '*.md' | grep -zvE '^(artifacts/review/|PRD/этап-135-)' | xargs -0 rg -n -i "runtime enforcement scopes пока не включён|новые токены получают default full-access"`
+  - `git ls-files -z '*.md' | xargs -0 rg -n -i "address pattern|address heuristic|sanitize address|адресн(ый|ые).*маркер|простые адресные маркеры"`
   - ожидаемый результат: нет утверждений, что depersonalized free-text scrubber использует broad address heuristics; допускаются упоминания structural address keys и исторический контекст, если рядом указано, что v1 не делает broad free-text address scrub.
 - Full test suite is not required for docs-only edits unless workflow/scripts or executable snippets are changed.
 

@@ -547,7 +547,7 @@ Depersonalization:
   без встроенного dev-secret;
 - password hashing: PBKDF2-HMAC-SHA256 с salt, минимум 10 символов, uppercase + lowercase + цифра;
 - CSRF: double-submit cookie с HMAC-SHA256 подписью, TTL 2 часа;
-- future scope policy хранится отдельно от raw token и не требует хранения
+- token scope policy хранится отдельно от raw token и не требует хранения
   дополнительных секретов;
 - pre-deploy backup production PostgreSQL через `scripts/backup_postgres.sh`
   (`pg_dump` + timestamped rollback point);
@@ -687,8 +687,10 @@ docker compose up -d
 - `vetmanager_token_preset_issued_total{preset}`;
 - `vetmanager_sanitizer_failures_total`;
 - `vetmanager_auth_failures_total{source="metrics",reason="invalid_token"}`;
-- token audit committed events include allowlisted `request_id`/`correlation_id`
-  and should be traced through `token_audit_log_committed`.
+
+### Audit/log events
+- `token_audit_log_committed` includes allowlisted `request_id`/`correlation_id`
+  and is traced in audit logs, not Prometheus metrics.
 
 ## 8. Ссылки
 

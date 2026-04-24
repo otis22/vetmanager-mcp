@@ -112,9 +112,16 @@ presets/roles как слой поверх scopes.
 
 ## Acceptance Criteria
 
+> **Superseded by stage 130+ token presets:** текущий контракт выпуска новых
+> токенов — preset-based scopes; только preset `full_access` разворачивается во
+> все supported scopes. Stage 28 acceptance ниже фиксирует историческую storage
+> preparation и legacy compatibility.
+
 - В кодовой базе есть единый список поддерживаемых coarse-grained scopes.
 - `ServiceBearerToken` умеет хранить и отдавать scope manifest.
-- Новые токены получают default full-access scopes.
+- Исторически stage 28 готовил default full-access manifest для совместимости;
+  в текущем stage 130+ контракте новые токены получают scopes из выбранного
+  preset.
 - Legacy токены без scope manifest остаются совместимыми.
 - Alembic `upgrade head` создаёт/обновляет схему с новой policy metadata.
 - Добавлены unit/migration tests.
