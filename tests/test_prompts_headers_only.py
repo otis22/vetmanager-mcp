@@ -62,3 +62,9 @@ class TestPromptsBearerOnly:
         assert "Bearer token" in source
         assert "Do not ask for a clinic domain or API key" in source
         assert "do not pass them as tool arguments" in source
+
+    def test_prompts_include_static_scope_denial_guidance(self):
+        source, _ = _load_prompt_functions()
+        assert "PROMPT_SCOPE_GUIDANCE" in source
+        assert "If a tool is denied because of token scopes" in source
+        assert "prompts are dynamically filtered" not in source

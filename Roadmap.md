@@ -2398,14 +2398,14 @@ Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown н
 - 141.4 Исправить observability runbook для metrics auth и upstream 4xx/5xx semantics. — `done`
 - 141.5 Пройти checks, audit, external diff review, commit/push и self-attestation. — `done`
 
-## Этап 142. Packaging and LLM-client UX cleanup (после Этапа 141) — `todo`
+## Этап 142. Packaging and LLM-client UX cleanup (после Этапа 141) — `done`
 
 Источник: `artifacts/review/2026-04-24-full-stage-136.md`, F23-F24.
 
 Цель: закрыть packaging metadata drift и late-denial UX для scoped tokens.
 
-- 142.1 Создать PRD stage 142 и пройти PRD-review gates по workflow. — `todo`
-- 142.2 Принять и реализовать packaging stance: source/Docker-only или полный wheel package set. — `todo`
-- 142.3 Выровнять FastMCP dependency bounds между pyproject и Docker. — `todo`
-- 142.4 Улучшить scope denial/prompt UX: missing scopes / allowed presets / preset-aware hints. — `todo`
-- 142.5 Пройти checks, audit, external diff review, commit/push и self-attestation. — `todo`
+- 142.1 Создать PRD stage 142 и пройти PRD-review gates по workflow. — `done`
+- 142.2 Принять и реализовать packaging stance: source/Docker-only или полный wheel package set. — `done`
+- 142.3 Выровнять FastMCP dependency bounds между pyproject и Docker. — `done`
+- 142.4 Улучшить scope denial/prompt UX: missing scopes / allowed presets / preset-aware hints. — `done`
+- 142.5 Пройти checks, audit, external diff review, commit/push и self-attestation. — `done`

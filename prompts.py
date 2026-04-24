@@ -5,11 +5,17 @@ from datetime import date as _date, timedelta
 from fastmcp import FastMCP
 from fastmcp.prompts import Message
 
+PROMPT_SCOPE_GUIDANCE = (
+    "If a tool is denied because of token scopes, use a service token or access "
+    "preset that includes the scopes listed in the denial message. "
+)
+
 
 def _bearer_runtime_prefix() -> str:
     return (
         "Credentials are already available from the MCP Bearer token. "
         "Do not ask for a clinic domain or API key and do not pass them as tool arguments. "
+        + PROMPT_SCOPE_GUIDANCE
     )
 
 

@@ -416,6 +416,20 @@ def get_token_preset_label(preset: str | None) -> str:
     return TOKEN_PRESET_LABELS[normalized]
 
 
+def get_presets_allowing_tool(tool_name: str) -> tuple[str, ...]:
+    """Return user-facing preset labels that advertise access to a tool."""
+    labels: list[str] = []
+    required_scopes = TOOL_REQUIRED_SCOPES.get(tool_name)
+    if required_scopes and set(required_scopes).issubset(TOKEN_PRESET_SCOPES[PRESET_FULL_ACCESS]):
+        labels.append(TOKEN_PRESET_LABELS[PRESET_FULL_ACCESS])
+    labels.extend(
+        TOKEN_PRESET_LABELS[preset]
+        for preset, tools in MARKETED_PRESET_TOOLS.items()
+        if tool_name in tools and preset != PRESET_FULL_ACCESS
+    )
+    return tuple(dict.fromkeys(labels))
+
+
 def infer_token_preset(scopes: tuple[str, ...] | list[str]) -> str | None:
     """Infer preset from an exact scope bundle match."""
     normalized = tuple(sorted(scopes))

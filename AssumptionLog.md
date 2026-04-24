@@ -6137,6 +6137,37 @@ UI кабинета и issuance flow переведены на preset-based то
 
 Пользователь попросил продолжать выполнять Roadmap до конца по workflow.
 
+## Этап 142 packaging and scope-denial UX — 2026-04-24
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Создан PRD stage 142 по findings F23-F24 из `artifacts/review/2026-04-24-full-stage-136.md`.
+- PRD прошёл два PRD-review запуска Claude Opus; первый нашёл 3 medium по wheel consumer rationale, brittle packaging acceptance и prompt guidance ambiguity; PRD исправлен, второй review вернул `NO FINDINGS`.
+- `pyproject.toml` FastMCP dependency выровнен с Docker: `fastmcp>=3.1.0,<4`.
+- Hatch wheel target переведён с `packages=["tools"]` на flat-layout `only-include` для runtime root modules и package dirs.
+- Добавлен packaging metadata regression test для FastMCP bounds и wheel include set.
+- Scope denial message теперь показывает tool name, required scopes, missing scopes, current inferred preset/custom scopes и allowed advertised preset labels; body execution по-прежнему не происходит.
+- Prompt prefix получил static scope-denial guidance без dynamic prompt filtering.
+- Проверки: targeted red дал 5 failures; targeted после реализации `12 passed`; broader targeted `57 passed`; full Docker suite `893 passed, 57 deselected`; отдельный `python3 -m pip wheel --no-deps .` build прошёл и wheel содержит `server.py`, `auth/bearer.py`, `storage.py`, `tool_access_registry.py`, `vm_transport/breaker.py`.
+- Code/diff review сторонней моделью 1/2 и 2/2 вернули `NO FINDINGS`; бюджет code/diff review stage 142 исчерпан.
+
+### Решения и обоснования
+
+- Source/Docker-only вариант рассмотрен и отклонён: project уже exposes installable metadata через `pyproject.toml`, поэтому безопаснее сделать `pip install .` полноценным, чем оставлять incomplete wheel.
+- Dynamic prompt filtering оставлен out of scope: текущая быстрая ценность достигается actionable denial message, а request-aware discovery через FastMCP требует отдельного дизайна.
+- Allowed presets считаются из существующих `MARKETED_PRESET_TOOLS`/`TOKEN_PRESET_LABELS`, без второй матрицы.
+
+### Проблемы
+
+- Первый wheel build audit после `only-include=["*.py"]` показал, что Hatch не включил root `.py` modules; config и test усилены явным списком root modules.
+- Code/diff review 1/2 и 2/2 подтвердили отсутствие high/medium findings.
+
+### Обратная связь
+
+Пользователь попросил продолжать выполнять Roadmap до конца по workflow.
+
 ## Этап 139 async auth/session and breaker correctness — 2026-04-24
 
 **Статус**: `done`.
