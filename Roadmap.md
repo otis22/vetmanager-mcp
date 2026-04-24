@@ -2372,7 +2372,7 @@ Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown н
 - 139.6 Убрать over-fetch в inactive helpers при малом remaining limit. — `done`
 - 139.7 Пройти checks, audit, external diff review, commit/push и self-attestation. — `done`
 
-## Этап 140. VM API contract and pagination correctness (после Этапа 139) — `todo`
+## Этап 140. VM API contract and pagination correctness (после Этапа 139) — `done`
 
 Источник: `artifacts/review/2026-04-24-full-stage-136.md`, F7-F8/F11-F14/F16.
 
