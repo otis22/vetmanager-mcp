@@ -1,6 +1,7 @@
 """Unit tests for stage 22.2 bearer token lookup."""
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from bearer_auth import resolve_bearer_auth_context
 from bearer_token_manager import generate_bearer_token
 from exceptions import AuthError, RateLimitError
 from storage_models import Account, ServiceBearerToken, TokenUsageLog, TokenUsageStat, VetmanagerConnection
+from storage_models import TOKEN_STATUS_DISABLED
 from token_scopes import SUPPORTED_TOKEN_SCOPES
 from vetmanager_auth import VETMANAGER_AUTH_MODE_USER_TOKEN
 
@@ -457,6 +459,134 @@ async def test_resolve_bearer_auth_context_rejects_invalid_token(session_factory
                 session,
                 encryption_key=TEST_ENCRYPTION_KEY,
             )
+
+
+@pytest.mark.asyncio
+async def test_resolve_bearer_auth_context_invalid_token_emits_security_log(
+    session_factory,
+    caplog,
+):
+    raw_token = "vm_st_nonexistent_secret_token"
+    caplog.set_level(logging.WARNING, logger="vetmanager.security")
+
+    async with session_factory() as session:
+        with pytest.raises(AuthError, match="Invalid authorization"):
+            await resolve_bearer_auth_context(
+                raw_token,
+                session,
+                encryption_key=TEST_ENCRYPTION_KEY,
+            )
+
+    records = [
+        record for record in caplog.records
+        if record.__dict__.get("event_name") == "bearer_auth_failed"
+    ]
+    assert len(records) == 1
+    assert records[0].__dict__.get("source") == "bearer_runtime"
+    assert records[0].__dict__.get("reason") == "invalid_token"
+    serialized = "\n".join(str(record.__dict__) for record in records)
+    assert raw_token not in serialized
+    assert "nonexistent_secret_token" not in serialized
+
+
+@pytest.mark.asyncio
+async def test_resolve_bearer_auth_context_disabled_token_writes_audit_log(
+    session_factory,
+):
+    raw_token = generate_bearer_token()
+
+    async with session_factory() as session:
+        account = Account(email="ops@example.com", status="active")
+        session.add(account)
+        await session.flush()
+
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+        )
+        connection.set_credentials(
+            {"domain": "clinic-a", "api_key": "secret-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        token = ServiceBearerToken(account_id=account.id, name="Disabled token")
+        token.set_raw_token(raw_token)
+        token.status = TOKEN_STATUS_DISABLED
+        session.add_all([connection, token])
+        await session.commit()
+
+    async with session_factory() as session:
+        with pytest.raises(AuthError) as exc_info:
+            await resolve_bearer_auth_context(
+                raw_token,
+                session,
+                encryption_key=TEST_ENCRYPTION_KEY,
+            )
+
+    assert exc_info.value.status_code == 401
+    assert str(exc_info.value) == "Invalid authorization."
+
+    async with session_factory() as session:
+        logs = (
+            await session.execute(
+                select(TokenUsageLog)
+                .where(TokenUsageLog.bearer_token_id == 1)
+                .order_by(TokenUsageLog.id.asc())
+            )
+        ).scalars().all()
+
+    assert [log.event_type for log in logs] == ["token_auth_failed_disabled"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_bearer_auth_context_disabled_audit_failure_still_rejects(
+    session_factory,
+    monkeypatch,
+    caplog,
+):
+    raw_token = generate_bearer_token()
+
+    async with session_factory() as session:
+        account = Account(email="ops@example.com", status="active")
+        session.add(account)
+        await session.flush()
+
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+        )
+        connection.set_credentials(
+            {"domain": "clinic-a", "api_key": "secret-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        token = ServiceBearerToken(account_id=account.id, name="Disabled token")
+        token.set_raw_token(raw_token)
+        token.status = TOKEN_STATUS_DISABLED
+        session.add_all([connection, token])
+        await session.commit()
+
+    async def _broken_commit(*_args, **_kwargs):
+        raise RuntimeError("audit storage down")
+
+    monkeypatch.setattr(bearer_auth_impl, "commit_token_usage_log", _broken_commit)
+    caplog.set_level(logging.WARNING, logger="vetmanager.security")
+
+    async with session_factory() as session:
+        with pytest.raises(AuthError) as exc_info:
+            await resolve_bearer_auth_context(
+                raw_token,
+                session,
+                encryption_key=TEST_ENCRYPTION_KEY,
+            )
+
+    assert exc_info.value.status_code == 401
+    assert str(exc_info.value) == "Invalid authorization."
+    assert any(
+        record.__dict__.get("event_name") == "token_audit_log_failed"
+        and record.__dict__.get("token_event_type") == "token_auth_failed_disabled"
+        for record in caplog.records
+    )
 
 
 @pytest.mark.asyncio

@@ -6105,6 +6105,38 @@ UI кабинета и issuance flow переведены на preset-based то
 
 Пользователь попросил коммит/пуш всех изменений и продолжать выполнять Roadmap до конца по workflow.
 
+## Этап 141 auth observability and startup signals — 2026-04-24
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Создан PRD stage 141 по findings F9/F19/F22 из `artifacts/review/2026-04-24-full-stage-136.md`.
+- PRD прошёл внутренний review и два PRD-review запуска Claude Opus; второй запуск вернул `NO FINDINGS`, бюджет PRD-review исчерпан.
+- Missing/invalid Authorization header теперь пишет structured security log `bearer_auth_failed` без raw header/token.
+- Unknown invalid bearer token теперь пишет structured security log `bearer_auth_failed` без raw token/hash.
+- Disabled token/account path теперь пишет `token_auth_failed_disabled` audit event через общий rejection helper, сохраняя `AuthError`/401/`Invalid authorization.`; если audit write падает, request всё равно rejected тем же shape и пишет `token_audit_log_failed`.
+- Startup phases получили `_run_startup_step()` с `startup_aborted` и `step` для `configure_error_tracking`, secrets validation, storage init, schema bootstrap, transport config и `mcp.run`; `SystemExit`/clean shutdown не логируются как startup abort.
+- Observability runbook обновлён: `/metrics` с `METRICS_AUTH_TOKEN`, upstream failures = timeout/network/circuit_open/http_5xx, 4xx смотреть в `vetmanager_upstream_requests_total`.
+- Проверки: red targeted дал 8 failures; targeted после реализации `41 passed`; broader targeted `65 passed`; full Docker suite `889 passed, 57 deselected`.
+- Code/diff review сторонней моделью 1/2 и 2/2 вернули `NO FINDINGS`; бюджет code/diff review stage 141 исчерпан.
+
+### Решения и обоснования
+
+- Unknown invalid token не получает durable `TokenUsageLog`, потому что для него нет `bearer_token_id`; вместо этого используется structured security log без секретов.
+- `configure_logging()` оставлен вне structured startup wrapper: structured logger должен быть сконфигурирован до `startup_aborted`; это явно зафиксировано в PRD как earliest-startup limitation.
+- Для disabled audit выбран best-effort режим, чтобы новый observability write не менял availability/response contract rejection path.
+
+### Проблемы
+
+- PRD-review 1/2 нашёл high по response parity disabled path и medium по DB-write failure semantics, log schema, `configure_logging()` gap, `mcp.run` shutdown false positives и raw token/header negative tests; PRD исправлен.
+- PRD-review 2/2 вернул `NO FINDINGS`; бюджет PRD-review stage 141 исчерпан.
+- Code/diff review 1/2 и 2/2 подтвердили отсутствие high/medium findings.
+
+### Обратная связь
+
+Пользователь попросил продолжать выполнять Roadmap до конца по workflow.
+
 ## Этап 139 async auth/session and breaker correctness — 2026-04-24
 
 **Статус**: `done`.

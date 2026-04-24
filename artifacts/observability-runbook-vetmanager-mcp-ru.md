@@ -19,10 +19,18 @@ curl -fsS http://localhost:8000/readyz
 curl -fsS http://localhost:8000/metrics | head -n 40
 ```
 
+Если задан `METRICS_AUTH_TOKEN`, проверять `/metrics` нужно с bearer header:
+
+```bash
+curl -fsS -H "Authorization: Bearer $METRICS_AUTH_TOKEN" \
+  http://localhost:8000/metrics | head -n 40
+```
+
 Ожидаемое поведение:
 - `/healthz` отвечает `200` и `{"status":"ok","probe":"liveness",...}`
 - `/readyz` отвечает `200`, если storage доступен
-- `/metrics` отвечает plaintext в Prometheus-compatible формате
+- `/metrics` отвечает plaintext в Prometheus-compatible формате; при заданном
+  `METRICS_AUTH_TOKEN` запрос без корректного bearer получает `403`
 
 Если `/healthz` не отвечает:
 - процесс не запущен или недоступен по сети/reverse proxy
@@ -72,9 +80,12 @@ curl -fsS http://localhost:8000/metrics | head -n 40
   означает неверный или отсутствующий bearer для `/metrics` при заданном
   `METRICS_AUTH_TOKEN`; искать рядом `security` event `metrics_auth_failed`
 - рост `vetmanager_upstream_failures_total{target="billing_api",...}`
-  означает проблемы резолва Vetmanager host
+  означает проблемы резолва Vetmanager host: timeout, network error,
+  circuit-open или HTTP 5xx
 - рост `vetmanager_upstream_failures_total{target="vetmanager_api",...}`
-  означает проблемы сети, timeout или API 5xx/4xx со стороны Vetmanager
+  означает timeout, network error, circuit-open или API 5xx со стороны
+  Vetmanager; upstream HTTP 4xx смотрите в
+  `vetmanager_upstream_requests_total{target="vetmanager_api",status="http_4xx"}`
 
 ## 4. Error tracking
 
@@ -126,9 +137,11 @@ ERROR_TRACKING_TRACES_SAMPLE_RATE=0
 ### Ошибки Vetmanager API
 
 Действия:
-- смотреть `vetmanager_upstream_failures_total`
+- смотреть `vetmanager_upstream_failures_total` для timeout/network/circuit-open/5xx
 - различать `billing_api` и `vetmanager_api`
-- проверить, это timeout/network issue или систематический `http_5xx`/`http_4xx`
+- для 4xx смотреть `vetmanager_upstream_requests_total{status="http_4xx"}` и
+  логи конкретного request/correlation id; 4xx обычно означает contract/input
+  problem, а не degradation upstream
 
 ## 6. Связанные артефакты
 

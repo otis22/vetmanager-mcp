@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.context import VetmanagerAuthContext
 from auth.vetmanager import resolve_vetmanager_credentials
 from auth_audit import (
+    TOKEN_EVENT_AUTH_FAILED_DISABLED,
     TOKEN_EVENT_AUTH_FAILED_EXPIRED,
     TOKEN_EVENT_AUTH_FAILED_IP_DENIED,
     TOKEN_EVENT_AUTH_FAILED_NO_CONNECTION,
@@ -34,7 +35,8 @@ from auth_audit import (
 from bearer_token_manager import hash_bearer_token
 from domain_validation import ip_matches_mask
 from exceptions import AuthError, RateLimitError
-from observability_logging import RUNTIME_LOGGER
+from observability_logging import RUNTIME_LOGGER, SECURITY_LOGGER
+from request_context import get_current_request_context
 from service_metrics import record_auth_failure
 from storage_models import (
     ACCOUNT_STATUS_ACTIVE,
@@ -132,6 +134,29 @@ def _base_auth_details(
     return details
 
 
+def _security_log_extra(*, source: str, reason: str) -> dict[str, str]:
+    client_ip, _ = get_request_audit_metadata()
+    context = get_current_request_context()
+    extra = {
+        "event_name": "bearer_auth_failed",
+        "source": source,
+        "reason": reason,
+    }
+    if client_ip is not None:
+        extra["client_ip"] = client_ip
+    for key in ("request_id", "correlation_id"):
+        if value := context.get(key):
+            extra[key] = value
+    return extra
+
+
+def _log_bearer_runtime_failure(reason: str) -> None:
+    SECURITY_LOGGER.warning(
+        "Bearer runtime authorization rejected.",
+        extra=_security_log_extra(source="bearer_runtime", reason=reason),
+    )
+
+
 async def _reject(
     session: AsyncSession,
     *,
@@ -143,6 +168,7 @@ async def _reject(
     message: str,
     status_code: int,
     retry_after_seconds: int | None = None,
+    audit_best_effort: bool = False,
 ) -> NoReturn:
     """Record failure metric + audit log + commit, then raise AuthError.
 
@@ -155,9 +181,10 @@ async def _reject(
     regressions.
     """
     record_auth_failure(source="bearer_runtime", reason=metric_reason)
+    token_id = token.id
     audit_event = add_token_usage_log(
         session,
-        bearer_token_id=token.id,
+        bearer_token_id=token_id,
         event_type=log_event,
         details=_base_auth_details(
             account_id=account.id,
@@ -166,7 +193,25 @@ async def _reject(
             retry_after_seconds=retry_after_seconds,
         ),
     )
-    await commit_token_usage_log(session, audit_event)
+    try:
+        await commit_token_usage_log(session, audit_event)
+    except Exception:
+        if not audit_best_effort:
+            raise
+        try:
+            await session.rollback()
+        except Exception:
+            pass
+        SECURITY_LOGGER.warning(
+            "Failed to persist token audit event.",
+            extra={
+                "event_name": "token_audit_log_failed",
+                "token_event_type": log_event,
+                "bearer_token_id": token_id,
+                "reason": log_reason,
+            },
+            exc_info=True,
+        )
     raise AuthError(message, status_code=status_code)
 
 
@@ -188,6 +233,7 @@ async def resolve_bearer_auth_context(
     token_row = token_result.first()
     if token_row is None:
         record_auth_failure(source="bearer_runtime", reason="invalid_token")
+        _log_bearer_runtime_failure("invalid_token")
         raise AuthError("Invalid authorization.", status_code=401)
 
     token, account = token_row
@@ -215,10 +261,17 @@ async def resolve_bearer_auth_context(
             status_code=401,
         )
     if token.status == TOKEN_STATUS_DISABLED or account.status != ACCOUNT_STATUS_ACTIVE:
-        # Disabled token / account — no audit log per existing contract
-        # (validated by tests: only the metric counter increments).
-        record_auth_failure(source="bearer_runtime", reason="disabled")
-        raise AuthError("Invalid authorization.", status_code=401)
+        await _reject(
+            session,
+            token=token,
+            account=account,
+            metric_reason="disabled",
+            log_event=TOKEN_EVENT_AUTH_FAILED_DISABLED,
+            log_reason="disabled",
+            message="Invalid authorization.",
+            status_code=401,
+            audit_best_effort=True,
+        )
 
     # IP mask enforcement
     effective_mask = token.get_allowed_ip_mask()

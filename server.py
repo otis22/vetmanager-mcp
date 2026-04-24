@@ -15,8 +15,35 @@ from tool_descriptions import enhance_tool_descriptions
 from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
 
+
+def _log_startup_aborted(exc: Exception, *, step: str) -> None:
+    RUNTIME_LOGGER.critical(
+        "Startup aborted during %s: %s",
+        step,
+        exc,
+        extra={"event_name": "startup_aborted", "step": step},
+    )
+
+
+def _run_startup_step(step: str, func):
+    try:
+        return func()
+    except Exception as exc:
+        _log_startup_aborted(exc, step=step)
+        raise
+
+
+def _load_runtime_config() -> tuple[str, str, int, str]:
+    return (
+        os.environ.get("MCP_TRANSPORT", "streamable-http"),
+        os.environ.get("MCP_HOST", "0.0.0.0"),
+        int(os.environ.get("PORT", "8000")),
+        os.environ.get("MCP_PATH", "/mcp"),
+    )
+
+
 configure_logging()
-configure_error_tracking()
+_run_startup_step("configure_error_tracking", configure_error_tracking)
 
 mcp = FastMCP(
     name="vetmanager",
@@ -80,14 +107,6 @@ async def _graceful_shutdown() -> None:
         )
 
 
-def _log_startup_aborted(exc: Exception) -> None:
-    RUNTIME_LOGGER.critical(
-        "Startup aborted: %s",
-        exc,
-        extra={"event_name": "startup_aborted"},
-    )
-
-
 def _install_shutdown_handlers() -> None:
     """Register SIGTERM/SIGINT handlers that drain the http pool cleanly.
 
@@ -120,16 +139,21 @@ if __name__ == "__main__":
     from secret_manager import SecretManagerError, validate_required_secrets
 
     try:
-        validate_required_secrets()
+        _run_startup_step("validate_required_secrets", validate_required_secrets)
     except SecretManagerError as exc:
-        _log_startup_aborted(exc)
         raise SystemExit(1) from exc
-    asyncio.run(initialize_storage())
+    _run_startup_step("initialize_storage", lambda: asyncio.run(initialize_storage()))
     if get_database_url().startswith("sqlite"):
-        asyncio.run(bootstrap_storage_schema())
+        _run_startup_step(
+            "bootstrap_storage_schema",
+            lambda: asyncio.run(bootstrap_storage_schema()),
+        )
     _install_shutdown_handlers()
-    transport = os.environ.get("MCP_TRANSPORT", "streamable-http")
-    host = os.environ.get("MCP_HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", "8000"))
-    path = os.environ.get("MCP_PATH", "/mcp")
-    mcp.run(transport=transport, host=host, port=port, path=path)
+    transport, host, port, path = _run_startup_step(
+        "transport_config",
+        _load_runtime_config,
+    )
+    _run_startup_step(
+        "mcp_run",
+        lambda: mcp.run(transport=transport, host=host, port=port, path=path),
+    )

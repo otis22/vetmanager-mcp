@@ -327,11 +327,46 @@ async def test_typed_http_exception_keeps_status_code_metric():
 def test_log_startup_aborted_uses_runtime_logger(caplog):
     caplog.set_level(logging.CRITICAL, logger="vetmanager.runtime")
 
-    server._log_startup_aborted(RuntimeError("missing secret"))
+    server._log_startup_aborted(
+        RuntimeError("missing secret"),
+        step="validate_required_secrets",
+    )
 
     assert any(
         record.__dict__.get("event_name") == "startup_aborted"
+        and record.__dict__.get("step") == "validate_required_secrets"
         and "missing secret" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+def test_run_startup_step_logs_step_and_reraises(caplog):
+    caplog.set_level(logging.CRITICAL, logger="vetmanager.runtime")
+
+    def _fail():
+        raise RuntimeError("storage unavailable")
+
+    with pytest.raises(RuntimeError, match="storage unavailable"):
+        server._run_startup_step("initialize_storage", _fail)
+
+    assert any(
+        record.__dict__.get("event_name") == "startup_aborted"
+        and record.__dict__.get("step") == "initialize_storage"
+        for record in caplog.records
+    )
+
+
+def test_run_startup_step_does_not_log_system_exit(caplog):
+    caplog.set_level(logging.CRITICAL, logger="vetmanager.runtime")
+
+    def _exit():
+        raise SystemExit(0)
+
+    with pytest.raises(SystemExit):
+        server._run_startup_step("mcp_run", _exit)
+
+    assert not any(
+        record.__dict__.get("event_name") == "startup_aborted"
         for record in caplog.records
     )
 

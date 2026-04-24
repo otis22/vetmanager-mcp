@@ -2386,17 +2386,17 @@ Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown н
 - 140.6 Обновить tests/API notes/docs. — `done`
 - 140.7 Пройти checks, audit, external diff review, commit/push и self-attestation. — `done`
 
-## Этап 141. Auth observability and startup signals (после Этапа 140) — `todo`
+## Этап 141. Auth observability and startup signals (после Этапа 140) — `done`
 
 Источник: `artifacts/review/2026-04-24-full-stage-136.md`, F9/F19/F22.
 
 Цель: закрыть auth audit/log parity и runbook/startup observability drift.
 
-- 141.1 Создать PRD stage 141 и пройти PRD-review gates по workflow. — `todo`
-- 141.2 Добавить structured security/audit signals для missing/invalid/disabled bearer paths. — `todo`
-- 141.3 Унифицировать startup phase failure logging. — `todo`
-- 141.4 Исправить observability runbook для metrics auth и upstream 4xx/5xx semantics. — `todo`
-- 141.5 Пройти checks, audit, external diff review, commit/push и self-attestation. — `todo`
+- 141.1 Создать PRD stage 141 и пройти PRD-review gates по workflow. — `done`
+- 141.2 Добавить structured security/audit signals для missing/invalid/disabled bearer paths. — `done`
+- 141.3 Унифицировать startup phase failure logging. — `done`
+- 141.4 Исправить observability runbook для metrics auth и upstream 4xx/5xx semantics. — `done`
+- 141.5 Пройти checks, audit, external diff review, commit/push и self-attestation. — `done`
 
 ## Этап 142. Packaging and LLM-client UX cleanup (после Этапа 141) — `todo`
 
