@@ -5023,7 +5023,7 @@ Guards против регрессии drift'а между timeout-branch и net
 
 ## Этап 123. Contract tests rewrite + mutation unhappy-path coverage — 2026-04-21
 
-**Статус**: `done`.
+**Статус**: `stop`: реализация, review gates, local full suite и GitHub Tests завершены; production deploy заблокирован нестабильностью SSH/host.
 
 Stage 123 закрыт полностью: broken create fixtures переписаны на `mcp.call_tool(...)`, invalid admission status валидируется до HTTP вызова, mutation tests закрепляют wire contract точными body assertions, а error paths покрыты по всем mutation tools из `tests/test_e2e_mock_crud.py`.
 
@@ -6408,7 +6408,7 @@ UI кабинета и issuance flow переведены на preset-based то
 - Claude Opus committed-diff review 2 нашёл 4 medium findings, все признаны адекватными и исправлены: feedback-hint skip ограничен явными validation prefixes, auto-event write получил bounded timeout, SQLite/dev без pepper сохраняет structured feedback без fingerprint вместо RuntimeError, triage promote валидирует `match_rules_json`/`agent_playbook_json` и санитизирует agent-facing поля known issue.
 - Финальный Spark sanity review на итоговый committed diff вернул `[]`.
 - Проверки: targeted Stage 149 + migration suite `12 passed`; после self-audit targeted Stage 149 `7 passed`; после Claude review 1 fixes targeted Stage 149 + migrations `18 passed`, full Docker suite `934 passed, 57 deselected`; после Claude review 2 fixes targeted Stage 149 + migrations `21 passed`, full Docker suite final `937 passed, 57 deselected`.
-- Первые GitHub Actions deploy retry упали не из-за приложения, а из-за нестабильного SSH-контура: закрытие сессии сервером (`exit 255`) во время rsync/remote deploy, затем non-zero `ssh-keyscan` после частичного ответа. Публичные `/healthz` и `/readyz` при этом отвечали `ok`. Deploy workflow и `deploy_server.sh` получили SSH keepalive, а `ssh-keyscan` — retry/partial-key handling.
+- GitHub Actions deploy retry упали не из-за приложения, а из-за нестабильного SSH/host-контура: закрытие сессии сервером (`exit 255`) во время rsync/remote deploy, non-zero `ssh-keyscan` после частичного ответа, затем SSH timeout. Публичные `/healthz` и `/readyz` сначала отвечали `ok`, позже `/healthz` стал нестабилен/timeouts. Deploy workflow и `deploy_server.sh` получили SSH keepalive, а `ssh-keyscan` — retry/partial-key handling, но production rollout требует восстановления хоста/SSH.
 
 ### Решения и обоснования
 

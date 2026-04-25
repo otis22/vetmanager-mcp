@@ -2543,7 +2543,7 @@ Workflow allowance (по согласованию с пользователем 
 - 148.7 Commit + push + GitHub Actions Deploy Prod + smoke checks (`/healthz`, `/`, `/readyz`, MCP onboarding section). — `done`
 - 148.8 AssumptionLog запись + self-attestation. — `done`
 
-## Этап 149. Agent feedback loop + DB-backed verified KB — `done`
+## Этап 149. Agent feedback loop + DB-backed verified KB — `stop`
 
 Источник: обсуждение 2026-04-25 и `LiveHelperAgent/workspace/2026-04-25/vetmanager-mcp-feedback-tool.md`. Первичная идея JSONL/локальной KB отклонена: source of truth должен быть в существующем storage layer (SQLAlchemy + Alembic, Postgres prod, SQLite local fallback).
 
@@ -2557,4 +2557,4 @@ Workflow allowance (по согласованию с пользователем 
 - 149.6 Добавить offline triage CLI/script: list/group feedback, export markdown evidence, promote verified workaround, mark fixed/wontfix, retention cleanup. — `done`
 - 149.7 Добавить rate limiting и privacy controls: per account/token caps, auto-event cap, payload redaction, no raw Vetmanager secrets/business dumps. — `done`
 - 149.8 Покрыть tests: models/migration, fingerprint, report tool, verified KB lookup, middleware injection, rate limits, redaction. — `done`
-- 149.9 Пройти full checks, review gates, commit/push/deploy и self-attestation. — `done` — после Claude review 2 fixes: targeted Stage 149 + migrations `21 passed`, full Docker suite `937 passed, 57 deselected`; финальный Spark sanity review `[]`; deploy SSH keepalive fix добавлен после `exit 255` на rsync/remote deploy.
+- 149.9 Пройти full checks, review gates, commit/push/deploy и self-attestation. — `stop` — code/review/CI закрыты: targeted Stage 149 + migrations `21 passed`, full Docker suite `937 passed, 57 deselected`, финальный Spark sanity review `[]`, GitHub `Tests` зелёный. Prod deploy заблокирован внешней SSH/host нестабильностью: `Deploy Prod` падает на `ssh-keyscan`/rsync/SSH timeout, публичный `/healthz` стал нестабилен.

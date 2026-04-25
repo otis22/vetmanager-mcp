@@ -2,7 +2,7 @@
 
 ## Статус
 
-`done — full suite passed, committed-diff reviews completed`
+`implemented — full suite and committed-diff reviews completed; production deploy blocked by host/SSH instability`
 
 ## Контекст
 
