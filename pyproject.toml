@@ -21,6 +21,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 only-include = [
     "alembic",
+    "agent_feedback_service.py",
     "auth",
     "auth_audit.py",
     "bearer_auth.py",

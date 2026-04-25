@@ -6386,3 +6386,46 @@ UI кабинета и issuance flow переведены на preset-based то
 - Пользователь после первичного review лендинга 2026-04-25 (`prod-desktop-full.png`) сказал «контент не плох, дизайн нужно улучшить».
 - Подтвердил вариант A, mock-chat с реальными цифрами, удалить privacy link, per-stage external review.
 - Дал разрешение «делай до деплоя и не останавливайся», с явным условием починить тесты, провести финальное ревью на committed diff с устранением адекватных findings, и локально визуально проверить вёрстку перед push.
+
+## Этап 149 agent feedback loop + DB-backed verified KB — 2026-04-25
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Stage 148 закрыт в `Roadmap.md` как `done` по пользовательскому уточнению: дизайн лендинга уже готов в работе Claude design, PRD/AssumptionLog для Stage 148 уже содержали итоговое состояние.
+- Stage 149 оформлен в `Roadmap.md`: JSONL/локальная KB отклонены, source of truth — существующий DB storage layer (SQLAlchemy/Alembic, Postgres prod, SQLite local fallback).
+- Создан `PRD/этап-149-agent-feedback-db-kb.md`.
+- Spark PRD review 1 принял 4 адекватных findings: privacy risk для свободных text/json полей, access-model для `report_problem`, формальная схема `match_rules_json`/`agent_playbook_json`, явные review gates. PRD обновлён.
+- Self-review/simplicity pass: `known_issue_match_events` вынесен из Stage 149 в Stage 150, distributed DB-backed rate limits отложены в пользу per-process best-effort caps, triage CLI в v1 экспортирует markdown summary вместо автоматического создания Roadmap/PRD.
+- Spark PRD review 2 принял 2 адекватных medium: нужен deterministic tie-break при нескольких known issues и non-reversible persisted fingerprint. PRD обновлён: добавлен `priority`, ordering exactness/priority/updated_at/id, ambiguity policy, `error_fingerprint_hash` вместо raw/normalized fingerprint.
+- Claude Opus PRD review 1 вернул high/medium findings, все признаны адекватными и внесены в PRD: safe baseline allowlist вместо нового scope, разделение ingest sanitizer vs KB activation, unified structured fields для `report_problem`, matched-only best-effort auto-events с caps, удаление `client_kind`/arbitrary `metadata_json` из v1, DB-backed report rate limits, HMAC-SHA256 с `FEEDBACK_FINGERPRINT_PEPPER`, composite indexes, разбиение service-layer subtasks, обязательный `version` в playbook example, wrapper ordering/exclusions/timeout.
+- Spark PRD review 3 принял 3 medium: rule-match должен быть agent-facing только при `workaround_available`, auto-event dedup должен быть token-aware, feedback reports требуют retention policy. PRD обновлён.
+- Claude Opus PRD review 2 принял remaining medium findings: explicit baseline allowlist change, wrapper try/except ordering before depersonalization, shared fingerprint normalization, concrete rate caps, known issue counter update points, pepper policy, accepted duplicate auto-event races, отказ от NER/name redaction в v1, workflow wording «ревью сторонней моделью». PRD обновлён.
+- Реализация добавила DB-backed `agent_feedback_reports`/`known_issues`, `report_problem`, service layer для sanitizer/fingerprint/rules/playbook/matching/rate limits, error hint/known issue injection в shared tool wrapper, offline triage CLI и retention cleanup.
+- Self-audit после full suite нашёл несоответствие: auto-events не должны требовать agent-facing playbook для `open/acknowledged` known issue. Исправлено отдельным raw known issue matcher и regression test.
+- Claude Opus committed-diff review 1 нашёл 8 medium findings, все признаны адекватными и исправлены: global auto cap теперь расходуется только перед insert, добавлены DB-backed rate-limit tests, startup pepper tests, wrapper e2e auto-event/dedup test, расширена redaction для bare JWT/hex/base64, error hint больше не добавляется к deterministic validation errors, original ToolError cause сохраняется, retention SLA задокументирован, type annotation async generator исправлен.
+- Claude Opus committed-diff review 2 нашёл 4 medium findings, все признаны адекватными и исправлены: feedback-hint skip ограничен явными validation prefixes, auto-event write получил bounded timeout, SQLite/dev без pepper сохраняет structured feedback без fingerprint вместо RuntimeError, triage promote валидирует `match_rules_json`/`agent_playbook_json` и санитизирует agent-facing поля known issue.
+- Финальный Spark sanity review на итоговый committed diff вернул `[]`.
+- Проверки: targeted Stage 149 + migration suite `12 passed`; после self-audit targeted Stage 149 `7 passed`; после Claude review 1 fixes targeted Stage 149 + migrations `18 passed`, full Docker suite `934 passed, 57 deselected`; после Claude review 2 fixes targeted Stage 149 + migrations `21 passed`, full Docker suite final `937 passed, 57 deselected`.
+
+### Решения и обоснования
+
+- Runtime не делает автоисправлений и не вызывает LLM: агентам возвращаются только verified deterministic playbook-и из `known_issues`.
+- Сырые agent feedback и verified KB разделены: raw feedback не может напрямую учить других агентов.
+- `report_problem` должен быть доступен активным bearer-токенам без привязки к бизнес-скоупам Vetmanager, но revoked/expired/invalid токены остаются denied.
+- `client_name` как raw поле убрано из модели PRD; допускается только безопасный `client_kind`.
+- Stage 149 v1 держим как feedback + verified KB + deterministic runtime advice. Расширенная аналитика match events и полноценная автоматизация Roadmap/PRD относятся к отдельному этапу, чтобы не раздувать первую поставку.
+- Нормализованный текст ошибки не хранится в БД; хранится только hash/HMAC, чтобы feedback storage не стал долговременным хранилищем чувствительных деталей.
+- `report_problem` не вводит новый scope в Stage 149, чтобы не сломать уже выданные токены с frozen `scopes_json`; вместо этого будет safe baseline allowlist после успешной runtime auth.
+- `FEEDBACK_FINGERPRINT_PEPPER` обязателен для production/Postgres startup, чтобы exact fingerprint matching не строился на plain hash; SQLite/local tests инжектят deterministic pepper.
+- Raw feedback details остаются operator-only: runtime advice берётся только из verified `known_issues.agent_playbook_json`, поэтому v1 не пытается делать NER/распознавание имён без словаря или LLM.
+
+### Проблемы
+
+- Основной риск Stage 149 — privacy: модели могут прислать персональные данные/секреты в `summary/details`. PRD теперь требует обязательный sanitizer/truncation pipeline и fail-closed для невалидного JSON.
+- Первичный full suite упал на два contract-регресса: `report_problem` не получал `Domain synonyms:` через `tool_descriptions.py`, а новый lazy import не был внесён в inline-import allowlist. Оба исправлены; финальный full suite зелёный.
+
+### Обратная связь
+
+Пользователь уточнил цель фичи: агенты должны помогать разбирать feedback и советовать другим агентам пути исправления, если проблема известна и может быть обойдена самостоятельно; автоисправлений кода быть не должно.

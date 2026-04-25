@@ -5,6 +5,7 @@ import signal
 
 from fastmcp import FastMCP
 
+from agent_feedback_service import validate_feedback_runtime_config
 from error_tracking import configure_error_tracking
 from host_resolver import reset_billing_resolver
 from observability_logging import RUNTIME_LOGGER
@@ -51,7 +52,8 @@ mcp = FastMCP(
         "Vetmanager MCP Server. "
         "Credentials are provided via Authorization: Bearer <service_token> "
         "configured in your MCP client. "
-        "All tools are bearer-authenticated and do not accept runtime credential arguments."
+        "All tools are bearer-authenticated and do not accept runtime credential arguments. "
+        "If a tool error is unclear, use report_problem without including secrets or raw clinic data."
     ),
 )
 
@@ -143,6 +145,10 @@ if __name__ == "__main__":
     except SecretManagerError as exc:
         raise SystemExit(1) from exc
     _run_startup_step("initialize_storage", lambda: asyncio.run(initialize_storage()))
+    _run_startup_step(
+        "validate_feedback_runtime_config",
+        lambda: validate_feedback_runtime_config(database_url=get_database_url()),
+    )
     if get_database_url().startswith("sqlite"):
         _run_startup_step(
             "bootstrap_storage_schema",

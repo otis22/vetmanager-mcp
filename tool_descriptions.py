@@ -556,6 +556,15 @@ TOOL_ENTITY_MAP: dict[str, str] = {
 
 
 SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "report_problem": (
+        "Report a suspected Vetmanager MCP tool, description, contract, or docs "
+        "problem for developer triage. Use when a tool error is unclear, behavior "
+        "looks suspicious, a reasonable user request lacks a needed tool or "
+        "parameter, or docs/examples mismatch real behavior. Do not include "
+        "secrets or raw clinic payloads. Domain synonyms: feedback, bug report, "
+        "problem report, ошибка инструмента, обратная связь, проблема MCP, "
+        "не хватает инструмента, неверное описание."
+    ),
     "get_debtors": (
         "Find ACTIVE debtors among client / owner records and return those with a "
         "negative balance. Use when the user asks for debtors, balances due, "

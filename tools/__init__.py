@@ -4,6 +4,7 @@ import inspect
 from functools import wraps
 
 import depersonalization
+from agent_feedback_service import augment_tool_error, should_skip_report_hint
 from exceptions import AuthError
 from runtime_auth import use_runtime_credentials
 from service_metrics import record_sanitizer_failure
@@ -17,6 +18,7 @@ from vetmanager_client import resolve_runtime_credentials
 
 
 SCOPE_DENIED_MESSAGE = "Tool is not permitted for this token."
+BASELINE_ALLOWED_TOOLS = {"report_problem"}
 
 
 def _format_scope_denied_message(
@@ -49,8 +51,18 @@ def _format_scope_denied_message(
 
 
 def _ensure_tool_scopes_allowed(tool_name: str, credentials) -> None:
-    required_scopes = TOOL_REQUIRED_SCOPES.get(tool_name)
     token_scopes = tuple(getattr(credentials, "scopes", ()) or ())
+    if tool_name in BASELINE_ALLOWED_TOOLS:
+        if not token_scopes:
+            raise ToolError(
+                _format_scope_denied_message(
+                    tool_name,
+                    required_scopes=(),
+                    token_scopes=token_scopes,
+                )
+            )
+        return
+    required_scopes = TOOL_REQUIRED_SCOPES.get(tool_name)
     if not required_scopes or not token_scopes:
         raise ToolError(
             _format_scope_denied_message(
@@ -81,7 +93,14 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
         _ensure_tool_scopes_allowed(resolved_tool_name, credentials)
 
         with use_runtime_credentials(credentials):
-            result = await tool_func(*args, **kwargs)
+            try:
+                result = await tool_func(*args, **kwargs)
+            except ToolError as exc:
+                if resolved_tool_name in BASELINE_ALLOWED_TOOLS:
+                    raise
+                if should_skip_report_hint(exc):
+                    raise
+                raise await augment_tool_error(resolved_tool_name, credentials, exc) from exc
             if not credentials.is_depersonalized:
                 return result
             try:
@@ -131,7 +150,9 @@ def register_all(mcp: FastMCP) -> None:
     from tools.clinical import register as register_clinical
     from tools.operations import register as register_operations
     from tools.schedule import register as register_schedule
+    from tools.feedback import register as register_feedback
 
+    register_feedback(tool_mcp)
     register_client(tool_mcp)
     register_pet(tool_mcp)
     register_admission(tool_mcp)

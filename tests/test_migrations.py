@@ -34,12 +34,20 @@ def test_alembic_upgrade_creates_bearer_service_tables(tmp_path: Path):
     assert "service_bearer_tokens" in table_names
     assert "token_usage_stats" in table_names
     assert "token_usage_logs" in table_names
+    assert "agent_feedback_reports" in table_names
+    assert "known_issues" in table_names
     account_columns = {column["name"] for column in inspector.get_columns("accounts")}
     assert "password_hash" in account_columns
     token_columns = {column["name"] for column in inspector.get_columns("service_bearer_tokens")}
     assert "access_policy_version" in token_columns
     assert "is_depersonalized" in token_columns
     assert "scopes_json" in token_columns
+    feedback_columns = {column["name"] for column in inspector.get_columns("agent_feedback_reports")}
+    assert "error_fingerprint_hash" in feedback_columns
+    assert "params_shape_json" in feedback_columns
+    known_issue_columns = {column["name"] for column in inspector.get_columns("known_issues")}
+    assert "agent_playbook_json" in known_issue_columns
+    assert "report_count" in known_issue_columns
 
 
 def test_depersonalized_flag_migration_defaults_existing_tokens_to_false(tmp_path: Path):

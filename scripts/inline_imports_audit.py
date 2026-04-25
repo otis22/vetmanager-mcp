@@ -116,6 +116,11 @@ ALLOWLIST: dict[tuple[str, str, str], str] = {
         "register_all",
         "from tools.schedule import register as register_schedule",
     ): "Lazy-register tool modules without importing the full tool graph on package import.",
+    (
+        "tools/__init__.py",
+        "register_all",
+        "from tools.feedback import register as register_feedback",
+    ): "Lazy-register tool modules without importing the full tool graph on package import.",
 }
 
 

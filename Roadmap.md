@@ -2492,7 +2492,7 @@ Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown н
 - 147.3 Добавить regression test на `-T`, restart MCP и post-deploy smoke checks. — `done`
 - 147.4 Пройти targeted/full checks, review gates, commit/push, проверить GitHub Actions/деплой и live HTML. — `done`
 
-## Этап 148. Landing visual redesign (после Этапа 147) — `in_progress`
+## Этап 148. Landing visual redesign (после Этапа 147) — `done`
 
 Источник: ревью лендинга 2026-04-25 на `vetmanager-mcp.vromanichev.ru` через Playwright (`prod-desktop-full.png`, `prod-mobile-full.png`). Stage 146 закрыл контентный gap (MCP onboarding, copy-ready команды для Codex/Claude/Cursor/Manus), но визуал не соответствует продукту:
 
@@ -2528,17 +2528,33 @@ Acceptance: все F1-F6 из super-review закрыты; `rg` по markdown н
 
 Workflow allowance (по согласованию с пользователем 2026-04-25): можно отклониться от per-substage Core Loop ради единого визуального переписывания, но обязательно — починка тестов перед push, ревью сторонней моделью на финальный committed diff с устранением адекватных findings, локальная визуальная проверка в браузере перед push.
 
-- 148.1 Создать PRD stage 148 через skill `frontend-design`: clinical-tech tokens, mock-chat composition, structural outline, acceptance criteria. — `todo`
-- 148.2 Изучить artifacts (PRD product, technical-requirements, Stage 146 PRD, скриншоты prod) и обновить PRD проверенными ограничениями. — `todo`
-- 148.3 PRD-review gates (внутренний + simplicity eval + ревью сторонней моделью, бюджет 2). — `todo`
-- 148a Foundation: design tokens, расщепление `landing_page.py` на helper-функции, новая base CSS. — `todo`
-- 148b Top-of-page: topbar v2 + hero v2 с mock-chat SVG (реальные цифры выручки), удаление grid-paper. — `todo`
-- 148c MCP onboarding redesign + tab init bug fix (panels hidden by default in HTML). — `todo`
-- 148d Mid-section panels с unified card-grid и inline SVG icons. — `todo`
-- 148e Tech block + FAQ + footer + tail-CTA cleanup, удаление broken privacy link. — `todo`
-- 148f Mobile + a11y + motion + visual QA (Playwright snapshots 360/768/1440). — `todo`
-- 148.4 Починить тесты под новую структуру, запустить полный test suite зелёным. — `todo`
-- 148.5 Финальное ревью сторонней моделью на committed diff, устранить адекватные findings (бюджет 2). — `todo`
-- 148.6 Локально открыть лендинг в браузере (Playwright + http server) на 390/768/1440 — убедиться, что вёрстка не плывёт. — `todo`
-- 148.7 Commit + push + GitHub Actions Deploy Prod + smoke checks (`/healthz`, `/`, `/readyz`, MCP onboarding section). — `todo`
-- 148.8 AssumptionLog запись + self-attestation. — `todo`
+- 148.1 Создать PRD stage 148 через skill `frontend-design`: clinical-tech tokens, mock-chat composition, structural outline, acceptance criteria. — `done`
+- 148.2 Изучить artifacts (PRD product, technical-requirements, Stage 146 PRD, скриншоты prod) и обновить PRD проверенными ограничениями. — `done`
+- 148.3 PRD-review gates (внутренний + simplicity eval + ревью сторонней моделью, бюджет 2). — `done`
+- 148a Foundation: design tokens, расщепление `landing_page.py` на helper-функции, новая base CSS. — `done`
+- 148b Top-of-page: topbar v2 + hero v2 с mock-chat SVG (реальные цифры выручки), удаление grid-paper. — `done`
+- 148c MCP onboarding redesign + tab init bug fix (panels hidden by default in HTML). — `done`
+- 148d Mid-section panels с unified card-grid и inline SVG icons. — `done`
+- 148e Tech block + FAQ + footer + tail-CTA cleanup, удаление broken privacy link. — `done`
+- 148f Mobile + a11y + motion + visual QA (Playwright snapshots 360/768/1440). — `done`
+- 148.4 Починить тесты под новую структуру, запустить полный test suite зелёным. — `done`
+- 148.5 Финальное ревью сторонней моделью на committed diff, устранить адекватные findings (бюджет 2). — `done`
+- 148.6 Локально открыть лендинг в браузере (Playwright + http server) на 390/768/1440 — убедиться, что вёрстка не плывёт. — `done`
+- 148.7 Commit + push + GitHub Actions Deploy Prod + smoke checks (`/healthz`, `/`, `/readyz`, MCP onboarding section). — `done`
+- 148.8 AssumptionLog запись + self-attestation. — `done`
+
+## Этап 149. Agent feedback loop + DB-backed verified KB — `done`
+
+Источник: обсуждение 2026-04-25 и `LiveHelperAgent/workspace/2026-04-25/vetmanager-mcp-feedback-tool.md`. Первичная идея JSONL/локальной KB отклонена: source of truth должен быть в существующем storage layer (SQLAlchemy + Alembic, Postgres prod, SQLite local fallback).
+
+Цель: замкнуть цикл «агент заметил проблему → сервер сохранил структурированный feedback → offline agent-triage помогает разобрать и подготовить задачу/PRD → runtime детерминированно подсказывает агентам проверенные workaround-и для известных саморешаемых проблем». Автоисправлений кода нет; runtime не использует LLM для генерации советов.
+
+- 149.1 Создать PRD stage 149: DB schema, deterministic known-issue matching, privacy/redaction, rate limits, no-autofix boundary. — `done`
+- 149.2 Добавить Alembic migration + SQLAlchemy models: `agent_feedback_reports`, `known_issues`; `known_issue_match_events` отложить в Stage 150. — `done`
+- 149.3 Реализовать service layer: create report, normalize/fingerprint, dedup/link report, lookup verified known issue, increment counters. — `done`
+- 149.4 Добавить MCP tool `report_problem` с безопасной схемой входа и response `{feedback_id, known_issue?}`. — `done`
+- 149.5 Добавить deterministic known-issue injection в tool error middleware без LLM: только `known_issues.status=workaround_available` и проверенные `match_rules_json`. — `done`
+- 149.6 Добавить offline triage CLI/script: list/group feedback, export markdown evidence, promote verified workaround, mark fixed/wontfix, retention cleanup. — `done`
+- 149.7 Добавить rate limiting и privacy controls: per account/token caps, auto-event cap, payload redaction, no raw Vetmanager secrets/business dumps. — `done`
+- 149.8 Покрыть tests: models/migration, fingerprint, report tool, verified KB lookup, middleware injection, rate limits, redaction. — `done`
+- 149.9 Пройти full checks, review gates, commit/push/deploy и self-attestation. — `done` — после Claude review 2 fixes: targeted Stage 149 + migrations `21 passed`, full Docker suite `937 passed, 57 deselected`; финальный Spark sanity review `[]`.

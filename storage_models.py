@@ -28,6 +28,67 @@ TOKEN_STATUS_EXPIRED = "expired"
 TOKEN_STATUS_DISABLED = "disabled"
 TOKEN_STATUSES = (TOKEN_STATUS_ACTIVE, TOKEN_STATUS_REVOKED, TOKEN_STATUS_EXPIRED, TOKEN_STATUS_DISABLED)
 
+FEEDBACK_SOURCE_MODEL = "model"
+FEEDBACK_SOURCE_AUTO = "auto"
+FEEDBACK_SOURCE_USER_COMPLAINT = "user_complaint"
+FEEDBACK_SOURCES = (
+    FEEDBACK_SOURCE_MODEL,
+    FEEDBACK_SOURCE_AUTO,
+    FEEDBACK_SOURCE_USER_COMPLAINT,
+)
+
+FEEDBACK_CATEGORY_BUG = "bug"
+FEEDBACK_CATEGORY_MISSING_TOOL = "missing_tool"
+FEEDBACK_CATEGORY_BAD_DESCRIPTION = "bad_description"
+FEEDBACK_CATEGORY_CONTRACT = "contract"
+FEEDBACK_CATEGORY_PERF = "perf"
+FEEDBACK_CATEGORY_DOCS = "docs"
+FEEDBACK_CATEGORY_OTHER = "other"
+FEEDBACK_CATEGORIES = (
+    FEEDBACK_CATEGORY_BUG,
+    FEEDBACK_CATEGORY_MISSING_TOOL,
+    FEEDBACK_CATEGORY_BAD_DESCRIPTION,
+    FEEDBACK_CATEGORY_CONTRACT,
+    FEEDBACK_CATEGORY_PERF,
+    FEEDBACK_CATEGORY_DOCS,
+    FEEDBACK_CATEGORY_OTHER,
+)
+
+FEEDBACK_SEVERITY_LOW = "low"
+FEEDBACK_SEVERITY_MEDIUM = "medium"
+FEEDBACK_SEVERITY_HIGH = "high"
+FEEDBACK_SEVERITIES = (
+    FEEDBACK_SEVERITY_LOW,
+    FEEDBACK_SEVERITY_MEDIUM,
+    FEEDBACK_SEVERITY_HIGH,
+)
+
+FEEDBACK_STATUS_NEW = "new"
+FEEDBACK_STATUS_GROUPED = "grouped"
+FEEDBACK_STATUS_TRIAGED = "triaged"
+FEEDBACK_STATUS_LINKED = "linked"
+FEEDBACK_STATUS_IGNORED = "ignored"
+FEEDBACK_STATUSES = (
+    FEEDBACK_STATUS_NEW,
+    FEEDBACK_STATUS_GROUPED,
+    FEEDBACK_STATUS_TRIAGED,
+    FEEDBACK_STATUS_LINKED,
+    FEEDBACK_STATUS_IGNORED,
+)
+
+KNOWN_ISSUE_STATUS_OPEN = "open"
+KNOWN_ISSUE_STATUS_ACKNOWLEDGED = "acknowledged"
+KNOWN_ISSUE_STATUS_WORKAROUND_AVAILABLE = "workaround_available"
+KNOWN_ISSUE_STATUS_FIXED = "fixed"
+KNOWN_ISSUE_STATUS_WONTFIX = "wontfix"
+KNOWN_ISSUE_STATUSES = (
+    KNOWN_ISSUE_STATUS_OPEN,
+    KNOWN_ISSUE_STATUS_ACKNOWLEDGED,
+    KNOWN_ISSUE_STATUS_WORKAROUND_AVAILABLE,
+    KNOWN_ISSUE_STATUS_FIXED,
+    KNOWN_ISSUE_STATUS_WONTFIX,
+)
+
 
 class Account(Base):
     """Service account owning a Vetmanager connection and bearer tokens."""
@@ -274,3 +335,129 @@ class TokenUsageLog(Base):
     details_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     bearer_token: Mapped[ServiceBearerToken] = relationship(back_populates="usage_logs")
+
+
+class AgentFeedbackReport(Base):
+    """Untrusted agent/user feedback stored after strict redaction."""
+
+    __tablename__ = "agent_feedback_reports"
+    __table_args__ = (
+        CheckConstraint(
+            f"source IN ({', '.join(repr(s) for s in FEEDBACK_SOURCES)})",
+            name="ck_agent_feedback_reports_source",
+        ),
+        CheckConstraint(
+            f"category IN ({', '.join(repr(s) for s in FEEDBACK_CATEGORIES)})",
+            name="ck_agent_feedback_reports_category",
+        ),
+        CheckConstraint(
+            f"severity IN ({', '.join(repr(s) for s in FEEDBACK_SEVERITIES)})",
+            name="ck_agent_feedback_reports_severity",
+        ),
+        CheckConstraint(
+            f"status IN ({', '.join(repr(s) for s in FEEDBACK_STATUSES)})",
+            name="ck_agent_feedback_reports_status",
+        ),
+        Index(
+            "ix_agent_feedback_reports_tool_fingerprint",
+            "related_tool",
+            "error_fingerprint_hash",
+        ),
+        Index(
+            "ix_agent_feedback_reports_status_created",
+            "status",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=FEEDBACK_STATUS_NEW)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    bearer_token_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_bearer_tokens.id"),
+        nullable=True,
+        index=True,
+    )
+    related_tool: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    related_call_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    params_shape_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str] = mapped_column(String(240), nullable=False)
+    details: Mapped[str] = mapped_column(Text, nullable=False)
+    suggested_fix: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reproduce: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_fingerprint_hash: Mapped[str | None] = mapped_column(String(96), nullable=True, index=True)
+    known_issue_id: Mapped[int | None] = mapped_column(ForeignKey("known_issues.id"), nullable=True)
+    duplicate_of_id: Mapped[int | None] = mapped_column(
+        ForeignKey("agent_feedback_reports.id"),
+        nullable=True,
+    )
+    redaction_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+
+
+class KnownIssue(Base):
+    """Operator-verified issue that may expose a deterministic agent playbook."""
+
+    __tablename__ = "known_issues"
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN ({', '.join(repr(s) for s in KNOWN_ISSUE_STATUSES)})",
+            name="ck_known_issues_status",
+        ),
+        CheckConstraint(
+            f"category IN ({', '.join(repr(s) for s in FEEDBACK_CATEGORIES)})",
+            name="ck_known_issues_category",
+        ),
+        CheckConstraint(
+            f"severity IN ({', '.join(repr(s) for s in FEEDBACK_SEVERITIES)})",
+            name="ck_known_issues_severity",
+        ),
+        Index(
+            "ix_known_issues_tool_fingerprint",
+            "related_tool",
+            "error_fingerprint_hash",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100, server_default="100")
+    title: Mapped[str] = mapped_column(String(240), nullable=False)
+    related_tool: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    error_fingerprint_hash: Mapped[str | None] = mapped_column(String(96), nullable=True, index=True)
+    match_rules_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    agent_playbook_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    public_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    workaround: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fixed_in_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    report_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
