@@ -2557,4 +2557,4 @@ Workflow allowance (по согласованию с пользователем 
 - 149.6 Добавить offline triage CLI/script: list/group feedback, export markdown evidence, promote verified workaround, mark fixed/wontfix, retention cleanup. — `done`
 - 149.7 Добавить rate limiting и privacy controls: per account/token caps, auto-event cap, payload redaction, no raw Vetmanager secrets/business dumps. — `done`
 - 149.8 Покрыть tests: models/migration, fingerprint, report tool, verified KB lookup, middleware injection, rate limits, redaction. — `done`
-- 149.9 Пройти full checks, review gates, commit/push/deploy и self-attestation. — `done` — после Claude review 2 fixes: targeted Stage 149 + migrations `21 passed`, full Docker suite `937 passed, 57 deselected`; финальный Spark sanity review `[]`.
+- 149.9 Пройти full checks, review gates, commit/push/deploy и self-attestation. — `done` — после Claude review 2 fixes: targeted Stage 149 + migrations `21 passed`, full Docker suite `937 passed, 57 deselected`; финальный Spark sanity review `[]`; deploy SSH keepalive fix добавлен после `exit 255` на rsync/remote deploy.

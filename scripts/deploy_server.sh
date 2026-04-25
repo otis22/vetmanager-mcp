@@ -16,8 +16,12 @@ CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
 echo "==> Deploying vetmanager-mcp to ${SSH_TARGET}:${REMOTE_DIR} (domain: ${SSL_DOMAIN})"
 
 CERTBOT_EMAIL_ARG="${CERTBOT_EMAIL:-__EMPTY__}"
+SSH_OPTS=()
+if [ "${SSH_KEEPALIVE:-0}" = "1" ]; then
+  SSH_OPTS=(-o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes)
+fi
 
-ssh "${SSH_TARGET}" bash -s "${REMOTE_DIR}" "${SSL_DOMAIN}" "${SKIP_GIT_PULL}" "${CERTBOT_EMAIL_ARG}" << 'REMOTE'
+ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" bash -s "${REMOTE_DIR}" "${SSL_DOMAIN}" "${SKIP_GIT_PULL}" "${CERTBOT_EMAIL_ARG}" << 'REMOTE'
 set -euo pipefail
 REMOTE_DIR="$1"
 SSL_DOMAIN="$2"

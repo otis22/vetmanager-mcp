@@ -46,8 +46,10 @@ jobs:
           PROD_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR }}
         run: |
           REMOTE_DIR="${PROD_REMOTE_DIR:-/opt/vetmanager-mcp}"
-          ssh "${PROD_SSH_TARGET}" "mkdir -p '${REMOTE_DIR}'"
+          SSH_OPTS="-o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes"
+          ssh ${SSH_OPTS} "${PROD_SSH_TARGET}" "mkdir -p '${REMOTE_DIR}'"
           rsync -az --delete \
+            -e "ssh ${SSH_OPTS}" \
             --exclude '.git/' \
             --exclude '.venv/' \
             --exclude '.cursor/' \
@@ -66,4 +68,5 @@ jobs:
           REMOTE_DIR="${PROD_REMOTE_DIR:-/opt/vetmanager-mcp}"
           SSL_DOMAIN="${PROD_SSL_DOMAIN:-vetmanager-mcp.vromanichev.ru}"
           SKIP_GIT_PULL=1 SSL_DOMAIN="${SSL_DOMAIN}" CERTBOT_EMAIL="${PROD_CERTBOT_EMAIL}" \
+          SSH_KEEPALIVE=1 \
             ./scripts/deploy_server.sh "${PROD_SSH_TARGET}" "${REMOTE_DIR}"
