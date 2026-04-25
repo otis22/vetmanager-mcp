@@ -6408,7 +6408,7 @@ UI кабинета и issuance flow переведены на preset-based то
 - Claude Opus committed-diff review 2 нашёл 4 medium findings, все признаны адекватными и исправлены: feedback-hint skip ограничен явными validation prefixes, auto-event write получил bounded timeout, SQLite/dev без pepper сохраняет structured feedback без fingerprint вместо RuntimeError, triage promote валидирует `match_rules_json`/`agent_playbook_json` и санитизирует agent-facing поля known issue.
 - Финальный Spark sanity review на итоговый committed diff вернул `[]`.
 - Проверки: targeted Stage 149 + migration suite `12 passed`; после self-audit targeted Stage 149 `7 passed`; после Claude review 1 fixes targeted Stage 149 + migrations `18 passed`, full Docker suite `934 passed, 57 deselected`; после Claude review 2 fixes targeted Stage 149 + migrations `21 passed`, full Docker suite final `937 passed, 57 deselected`.
-- Первые два GitHub Actions deploy retry упали не из-за приложения, а из-за закрытия SSH-сессии сервером (`exit 255`) во время rsync/remote deploy; публичные `/healthz` и `/readyz` при этом отвечали `ok`. Deploy workflow и `deploy_server.sh` получили SSH keepalive.
+- Первые GitHub Actions deploy retry упали не из-за приложения, а из-за нестабильного SSH-контура: закрытие сессии сервером (`exit 255`) во время rsync/remote deploy, затем non-zero `ssh-keyscan` после частичного ответа. Публичные `/healthz` и `/readyz` при этом отвечали `ok`. Deploy workflow и `deploy_server.sh` получили SSH keepalive, а `ssh-keyscan` — retry/partial-key handling.
 
 ### Решения и обоснования
 
@@ -6426,7 +6426,7 @@ UI кабинета и issuance flow переведены на preset-based то
 
 - Основной риск Stage 149 — privacy: модели могут прислать персональные данные/секреты в `summary/details`. PRD теперь требует обязательный sanitizer/truncation pipeline и fail-closed для невалидного JSON.
 - Первичный full suite упал на два contract-регресса: `report_problem` не получал `Domain synonyms:` через `tool_descriptions.py`, а новый lazy import не был внесён в inline-import allowlist. Оба исправлены; финальный full suite зелёный.
-- Production deploy job падал на SSH `Connection closed`/`rsync code 255` без application traceback. Исправлено добавлением `ServerAliveInterval`, `ServerAliveCountMax` и `TCPKeepAlive` в GitHub workflow и `deploy_server.sh`; локально проверены `tests/test_deploy_server_script.py` и `bash -n`.
+- Production deploy job падал на SSH `Connection closed`/`rsync code 255` и нестабильный `ssh-keyscan` без application traceback. Исправлено добавлением `ServerAliveInterval`, `ServerAliveCountMax`, `TCPKeepAlive`, retry и partial-key handling; локально проверены `tests/test_deploy_server_script.py` и `bash -n`.
 
 ### Обратная связь
 
