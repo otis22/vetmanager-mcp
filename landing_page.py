@@ -50,8 +50,15 @@ def _resolve_mcp_path() -> str:
     return raw
 
 
-def render_landing_page() -> str:
-    """Return the public landing page HTML."""
+def render_landing_page(script_nonce: str = "") -> str:
+    """Return the public landing page HTML.
+
+    ``script_nonce`` is substituted into the inline ``<script>`` tag so the
+    response can satisfy a strict ``script-src 'self' 'nonce-...'`` Content
+    Security Policy. When called without a nonce (e.g. from tests that just
+    inspect rendered markup), the resulting ``nonce=""`` attribute is benign
+    and ignored by browsers.
+    """
     html = """<!doctype html>
 <html lang="ru">
 <head>
@@ -2126,7 +2133,7 @@ def render_landing_page() -> str:
     <a href="/register">Создать</a>
   </div>
 
-  <script>
+  <script nonce="__SCRIPT_NONCE__">
     (() => {
       const root = document.getElementById("mcp-onboarding");
       if (!root) return;
@@ -2194,8 +2201,11 @@ def render_landing_page() -> str:
     base_url = _resolve_site_base_url()
     mcp_url = f"{base_url}{_resolve_mcp_path()}"
     html = html.replace("__MCP_SERVER_URL__", mcp_url)
+    html = html.replace("__SCRIPT_NONCE__", script_nonce)
     if base_url != _DEFAULT_SITE_BASE_URL:
         html = html.replace(_DEFAULT_SITE_BASE_URL, base_url)
     if "__MCP_SERVER_URL__" in html:
         raise RuntimeError("MCP server URL placeholder was not replaced")
+    if "__SCRIPT_NONCE__" in html:
+        raise RuntimeError("Script nonce placeholder was not replaced")
     return html

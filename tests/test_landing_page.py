@@ -321,6 +321,22 @@ def test_stage146_mcp_url_uses_mcp_path(monkeypatch):
     assert "https://clinic.example.com/mcp" not in section_html
 
 
+def test_stage148_landing_inline_script_carries_nonce_attribute():
+    """Inline <script> must accept a per-response nonce so it satisfies the
+    strict CSP `script-src 'self' 'nonce-...'`. Without this the production
+    page silently blocks the tab/copy JS even though the markup is correct.
+    """
+    rendered = render_landing_page(script_nonce="test_nonce_xyz")
+    assert '<script nonce="test_nonce_xyz">' in rendered
+    assert "__SCRIPT_NONCE__" not in rendered
+
+    rendered_default = render_landing_page()
+    # Empty nonce is harmless (browsers ignore nonce="") but the placeholder
+    # must still be substituted so it never leaks to a real response.
+    assert '<script nonce="">' in rendered_default
+    assert "__SCRIPT_NONCE__" not in rendered_default
+
+
 def test_stage146_tabs_and_copy_controls_are_structurally_wired():
     html = render_landing_page()
     section_html = _extract_mcp_onboarding(html)

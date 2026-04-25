@@ -8,6 +8,8 @@ import os
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
+from secrets import token_urlsafe
+
 from landing_page import render_landing_page
 from observability_logging import SECURITY_LOGGER
 from request_context import get_request_context
@@ -17,7 +19,15 @@ from service_metrics import PROMETHEUS_CONTENT_TYPE, record_auth_failure, render
 def register_system_routes(mcp, *, observed_route, html_response, json_response, plain_text_response, check_storage_readiness):
     @observed_route(mcp, "/", methods=["GET"], include_in_schema=False)
     async def landing_page(request: Request) -> HTMLResponse:
-        return html_response(request, render_landing_page())
+        # Stage 148: inline <script> in landing requires per-response nonce so
+        # the strict `script-src 'self' 'nonce-...'` CSP allows it. Without
+        # this, prod CSP blocks the script and tab/copy interaction breaks.
+        nonce = token_urlsafe(16)
+        return html_response(
+            request,
+            render_landing_page(script_nonce=nonce),
+            script_nonce=nonce,
+        )
 
     @observed_route(mcp, "/healthz", methods=["GET"], include_in_schema=False)
     async def healthcheck(request: Request) -> JSONResponse:
