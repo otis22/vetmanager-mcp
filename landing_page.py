@@ -1533,6 +1533,8 @@ def render_landing_page() -> str:
       .hamburger { display: flex; }
       .topbar-wrap { position: static; backdrop-filter: none; }
       .sticky-cta { display: flex; }
+      /* Compensate for fixed sticky CTA so footer/last disclosure aren't hidden under it. */
+      body { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
       footer {
         grid-template-columns: 1fr;
         gap: 20px;
