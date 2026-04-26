@@ -6475,7 +6475,7 @@ UI кабинета и issuance flow переведены на preset-based то
 
 ## Этап 152. Prod deploy pepper secret hardening — 2026-04-26
 
-**Статус**: `in_progress`.
+**Статус**: `done`.
 
 ### Что сделано
 
@@ -6515,6 +6515,9 @@ UI кабинета и issuance flow переведены на preset-based то
 - После Claude Opus committed-diff fix: targeted deploy tests — `6 passed`; full Docker suite — `948 passed, 57 deselected`.
 - После финального Spark sanity fix: targeted deploy tests — `6 passed`; full Docker suite — `948 passed, 57 deselected`.
 - После Claude Opus committed-diff review 2 fix: targeted deploy tests — `6 passed`; full Docker suite — `948 passed, 57 deselected`.
+- GitHub Tests for `faf6ea1` — success; GitHub Deploy Prod from runner failed at rsync with `ssh: connect to host 212.193.59.219 port 22: Connection timed out`, while local TCP/22 and HTTPS health were available.
+- Local production deploy via `scripts/sync_and_deploy_server.sh root@212.193.59.219 /opt/vetmanager-mcp` — passed: backup created, migrations completed, MCP recreated, pepper exact-match verification passed, post-deploy smoke checks passed.
+- Public prod verification after local deploy: `https://vetmanager-mcp.vromanichev.ru/healthz` — `ok`; `https://vetmanager-mcp.vromanichev.ru/readyz` — `ok`, storage `ok`.
 
 ### Обратная связь
 

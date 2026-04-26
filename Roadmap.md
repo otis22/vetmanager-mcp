@@ -2584,7 +2584,7 @@ Workflow allowance (по согласованию с пользователем 
 - 151.5 Покрыть tests: migration, write path, no raw PII, retention, analytics output. — `todo`
 - 151.6 Пройти full checks, review gates, commit/push, AssumptionLog. — `todo`
 
-## Этап 152. Prod deploy pepper secret hardening — `in_progress`
+## Этап 152. Prod deploy pepper secret hardening — `done`
 
 Источник: super-review `artifacts/review/2026-04-26-changed-stage-150-prod.md` по Stage 150 prod deploy. Подтверждены Claude Opus arbitration: 1 high + 2 medium findings вокруг `FEEDBACK_FINGERPRINT_PEPPER`.
 
@@ -2595,4 +2595,4 @@ Workflow allowance (по согласованию с пользователем 
 - 152.3 Исправить `scripts/sync_and_deploy_server.sh`: прокидывать pepper тем же безопасным способом и не расходиться с GitHub Actions deploy path. — `done`
 - 152.4 Обновить README/deploy docs: добавить `FEEDBACK_FINGERPRINT_PEPPER` в required GitHub Secrets и rsync+deploy instructions; указать production/PostgreSQL обязательность и rotation/redeploy note. — `done`
 - 152.5 Добавить regression tests для deploy scripts: secret не передаётся как positional argv, `.env` writer выдерживает `&`, `|`, `\`, `/`, newline-safe policy, rsync path forwards pepper contract. — `done`
-- 152.6 Пройти full checks, Spark committed-diff review, стороннее committed-diff review, commit/push/deploy, prod `/healthz`, обновить AssumptionLog. — `in_progress`
+- 152.6 Пройти full checks, Spark committed-diff review, стороннее committed-diff review, commit/push/deploy, prod `/healthz`, обновить AssumptionLog. — `done`
