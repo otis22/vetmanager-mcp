@@ -65,9 +65,9 @@ jobs:
           PROD_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR }}
         run: |
           REMOTE_DIR="${PROD_REMOTE_DIR:-/opt/vetmanager-mcp}"
-          SSH_OPTS="-o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${HOME}/.ssh/known_hosts"
-          ssh ${SSH_OPTS} "${PROD_SSH_TARGET}" "mkdir -p '${REMOTE_DIR}'"
-          rsync -az --delete \
+          SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=30 -o ConnectionAttempts=3 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${HOME}/.ssh/known_hosts"
+          timeout 180 ssh ${SSH_OPTS} "${PROD_SSH_TARGET}" "mkdir -p '${REMOTE_DIR}'"
+          timeout 420 rsync -az --delete \
             -e "ssh ${SSH_OPTS}" \
             --exclude '.git/' \
             --exclude '.venv/' \
