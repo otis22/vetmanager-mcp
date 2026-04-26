@@ -14,22 +14,54 @@ SKIP_GIT_PULL="${SKIP_GIT_PULL:-0}"
 CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
 FEEDBACK_FINGERPRINT_PEPPER="${FEEDBACK_FINGERPRINT_PEPPER:-}"
 
+if [ -z "${FEEDBACK_FINGERPRINT_PEPPER}" ]; then
+  echo "ERROR: FEEDBACK_FINGERPRINT_PEPPER is required for production/PostgreSQL deploy."
+  exit 1
+fi
+case "${FEEDBACK_FINGERPRINT_PEPPER}" in
+  *$'\n'*|*$'\r'*)
+    echo "ERROR: FEEDBACK_FINGERPRINT_PEPPER must not contain newline characters."
+    exit 1
+    ;;
+esac
+
 echo "==> Deploying vetmanager-mcp to ${SSH_TARGET}:${REMOTE_DIR} (domain: ${SSL_DOMAIN})"
 
 CERTBOT_EMAIL_ARG="${CERTBOT_EMAIL:-__EMPTY__}"
-FEEDBACK_FINGERPRINT_PEPPER_ARG="${FEEDBACK_FINGERPRINT_PEPPER:-__EMPTY__}"
 SSH_OPTS=()
 if [ "${SSH_KEEPALIVE:-0}" = "1" ]; then
   SSH_OPTS=(-o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes)
 fi
 
-ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" bash -s "${REMOTE_DIR}" "${SSL_DOMAIN}" "${SKIP_GIT_PULL}" "${CERTBOT_EMAIL_ARG}" "${FEEDBACK_FINGERPRINT_PEPPER_ARG}" << 'REMOTE'
+REMOTE_DIR_Q="$(printf '%q' "${REMOTE_DIR}")"
+REMOTE_UPLOAD_CMD="set -euo pipefail; umask 077; tmp=''; cleanup_upload_pepper() { if [ -n \"\${tmp}\" ]; then rm -f -- \"\${tmp}\"; fi; }; trap cleanup_upload_pepper EXIT INT TERM; mkdir -p -- ${REMOTE_DIR_Q}; tmp=\$(mktemp ${REMOTE_DIR_Q}/.feedback_fingerprint_pepper.XXXXXX); chmod 600 \"\${tmp}\"; cat > \"\${tmp}\"; printf '__FEEDBACK_PEPPER_FILE__=%s\n' \"\${tmp}\"; trap - EXIT INT TERM"
+REMOTE_PEPPER_FILE=""
+cleanup_remote_pepper() {
+  if [ -n "${REMOTE_PEPPER_FILE:-}" ]; then
+    REMOTE_PEPPER_FILE_Q="$(printf '%q' "${REMOTE_PEPPER_FILE}")"
+    ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" "rm -f -- ${REMOTE_PEPPER_FILE_Q}" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup_remote_pepper EXIT INT TERM
+REMOTE_UPLOAD_OUTPUT="$(
+  printf '%s' "${FEEDBACK_FINGERPRINT_PEPPER}" | ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" \
+    "bash -c $(printf '%q' "${REMOTE_UPLOAD_CMD}")"
+)"
+REMOTE_PEPPER_FILE="$(
+  printf '%s\n' "${REMOTE_UPLOAD_OUTPUT}" | awk -F= '/^__FEEDBACK_PEPPER_FILE__=/{print substr($0, index($0, "=") + 1); exit}'
+)"
+if [ -z "${REMOTE_PEPPER_FILE}" ]; then
+  echo "ERROR: Remote FEEDBACK_FINGERPRINT_PEPPER upload did not return a valid temp file path."
+  exit 1
+fi
+
+ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" bash -s "${REMOTE_DIR}" "${SSL_DOMAIN}" "${SKIP_GIT_PULL}" "${CERTBOT_EMAIL_ARG}" "${REMOTE_PEPPER_FILE}" << 'REMOTE'
 set -euo pipefail
 REMOTE_DIR="$1"
 SSL_DOMAIN="$2"
 SKIP_GIT_PULL="$3"
 CERTBOT_EMAIL="$4"
-DEPLOY_FEEDBACK_FINGERPRINT_PEPPER="$5"
+REMOTE_PEPPER_FILE="$5"
 if [ "${CERTBOT_EMAIL}" = "__EMPTY__" ]; then
   CERTBOT_EMAIL=""
 fi
@@ -37,21 +69,14 @@ export CERTBOT_EMAIL
 
 cd "${REMOTE_DIR}"
 
-if [ "${DEPLOY_FEEDBACK_FINGERPRINT_PEPPER}" != "__EMPTY__" ]; then
-  umask 077
-  touch .env
-  if grep -q '^FEEDBACK_FINGERPRINT_PEPPER=' .env; then
-    sed -i "s|^FEEDBACK_FINGERPRINT_PEPPER=.*|FEEDBACK_FINGERPRINT_PEPPER=${DEPLOY_FEEDBACK_FINGERPRINT_PEPPER}|" .env
-  else
-    printf '\nFEEDBACK_FINGERPRINT_PEPPER=%s\n' "${DEPLOY_FEEDBACK_FINGERPRINT_PEPPER}" >> .env
-  fi
-fi
+cleanup_remote_pepper() {
+  rm -f -- "${REMOTE_PEPPER_FILE}"
+}
+trap cleanup_remote_pepper EXIT INT TERM
 
-# Source .env for POSTGRES_USER etc. (skip UID/GID — readonly in bash)
-if [ -f .env ]; then
-  set -a
-  eval "$(grep -v '^\(UID\|GID\)=' .env | grep -v '^#' | grep -v '^$')"
-  set +a
+if [ -z "${REMOTE_PEPPER_FILE}" ] || [ -L "${REMOTE_PEPPER_FILE}" ] || [ ! -f "${REMOTE_PEPPER_FILE}" ]; then
+  echo "ERROR: Remote FEEDBACK_FINGERPRINT_PEPPER temp file is missing or unsafe."
+  exit 1
 fi
 
 POSTGRES_USER="${POSTGRES_USER:-vetmanager}"
@@ -91,6 +116,15 @@ elif [ -d .git ]; then
   git pull --ff-only
 else
   echo "WARNING: ${REMOTE_DIR} is not a git repo — skipping git pull."
+fi
+
+python3 scripts/update_env_secret.py .env FEEDBACK_FINGERPRINT_PEPPER "${REMOTE_PEPPER_FILE}"
+
+# Source .env for POSTGRES_USER etc. (skip UID/GID — readonly in bash)
+if [ -f .env ]; then
+  set -a
+  eval "$(grep -v '^\(UID\|GID\)=' .env | grep -v '^#' | grep -v '^$')"
+  set +a
 fi
 
 # ── Build image once ─────────────────────────────────────────────────────────
@@ -169,6 +203,13 @@ for i in $(seq 1 20); do
   fi
   sleep 2
 done
+
+echo "--> Verifying feedback fingerprint pepper is present in MCP container..."
+if ! compose exec -T mcp sh -c 'expected="$(cat)"; test -n "${FEEDBACK_FINGERPRINT_PEPPER:-}" && test "${FEEDBACK_FINGERPRINT_PEPPER}" = "${expected}"' < "${REMOTE_PEPPER_FILE}"; then
+  echo "ERROR: MCP container did not receive the deployed feedback fingerprint pepper."
+  dump_compose_diagnostics
+  exit 1
+fi
 
 # ── Verify container is running ──────────────────────────────────────────────
 compose ps

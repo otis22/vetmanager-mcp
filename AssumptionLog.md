@@ -6472,3 +6472,48 @@ UI кабинета и issuance flow переведены на preset-based то
 ### Обратная связь
 
 Пользователь попросил выбрать простой вариант защиты feedback от персональных данных и выполнить задачу по новому workflow до конца.
+
+## Этап 152. Prod deploy pepper secret hardening — 2026-04-26
+
+**Статус**: `in_progress`.
+
+### Что сделано
+
+- Создан `PRD/этап-152-prod-deploy-pepper-secret-hardening.md` по findings super-review `artifacts/review/2026-04-26-changed-stage-150-prod.md`.
+- PRD прошёл Spark PRD review, Codex PRD review, Spark pre-external review, два Claude Opus PRD-review по бюджету и финальный Spark sanity после принятых правок.
+- Добавлен `scripts/update_env_secret.py`: безопасно обновляет один `.env` ключ из temp secret file, запрещает symlink targets, пустые значения и newline/CR, сохраняет mode/owner существующего `.env`, новые `.env` создаёт как `0600`, запись делает через temp+fsync+atomic replace.
+- `scripts/deploy_server.sh` больше не передаёт `FEEDBACK_FINGERPRINT_PEPPER` через remote `bash -s` argv и не использует `sed`; секрет передаётся по stdin в remote temp file `0600`, `.env` обновляется helper-ом после `git pull`, а запущенный контейнер проверяется на exact match с переданным pepper без печати значения.
+- `scripts/sync_and_deploy_server.sh` теперь fail-fast требует `FEEDBACK_FINGERPRINT_PEPPER` и прокидывает его в общий deploy path.
+- README обновлён: production/rsync deploy показывает генерацию pepper, GitHub Secrets включает `FEEDBACK_FINGERPRINT_PEPPER`.
+- Добавлены regression tests для deploy scripts и `.env` writer.
+
+### Решения и обоснования
+
+- Production/PostgreSQL deploy теперь fail-fast без `FEEDBACK_FINGERPRINT_PEPPER`, потому что feedback fingerprints в Stage 149 требуют pepper для non-reversible matching.
+- Секрет допускается только через environment локального процесса и stdin/temp file на remote; argv используется только для non-secret remote temp path.
+- `.env` writer выбран отдельным Python helper-ом вместо shell/sed, чтобы корректно обрабатывать shell-sensitive символы и сохранить atomic update.
+- Обновление `.env` выполняется после `git pull`, иначе первый деплой коммита с новым helper-ом мог бы упасть на старом remote checkout.
+
+### Проблемы
+
+- Read-only review-запуски Spark/Codex для PRD упирались в sandbox/runtime issue; по workflow повторялись теми же моделями в review-only `danger-full-access`.
+- Self-audit нашёл порядок-операций bug: remote helper вызывался до `git pull`. Исправлено и покрыто тестом.
+- Spark committed-diff review нашёл 2 medium: один принят (`pipefail` в pre-upload SSH pre-step без явного bash) и исправлен через `bash -lc`; второй отклонён как неадекватный, потому что verifier `< "${REMOTE_PEPPER_FILE}"` находится внутри remote heredoc и выполняется на remote host, где temp file существует.
+- Claude Opus committed-diff review 1 нашёл 2 medium, оба приняты: `bash -lc` заменён на non-login `bash -c`, чтобы profile/banner stdout не загрязнял captured temp path; README явно предупреждает, что pepper — долгоживущий production secret и его нельзя регенерировать на каждый deploy без migration plan.
+- Финальный Spark sanity нашёл accepted medium: upload pre-step мог оставить remote temp file, если SSH оборвался до возврата path. Исправлено remote-side upload trap `cleanup_upload_pepper` и local cleanup trap теперь ставится до upload как no-op до получения path.
+- Claude Opus committed-diff review 2 нашёл accepted medium: remote stdout chatter до `bash -c` мог загрязнить captured temp path. Исправлено sentinel parsing `__FEEDBACK_PEPPER_FILE__=<path>`; локальный код извлекает только sentinel line и fail-fast падает без path.
+- Финальный Spark sanity после sentinel fix нашёл 2 medium: docs finding принят, quick `deploy_server.sh` examples теперь показывают `FEEDBACK_FINGERPRINT_PEPPER`; env-contract finding для `sync_and_deploy_server.sh` отклонён, потому что wrapper уже получает pepper из parent env и не добавляет argv exposure сверх согласованного local/CI env contract.
+
+### Проверки
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_deploy_server_script.py -q` — `6 passed`.
+- Syntax/static: `bash -n scripts/deploy_server.sh scripts/sync_and_deploy_server.sh`, `python3 -m py_compile scripts/update_env_secret.py`, `git diff --check` — passed.
+- Full: `docker compose --profile test run --rm test` — `948 passed, 57 deselected`.
+- После Spark committed-diff fix: targeted deploy tests — `6 passed`; full Docker suite — `948 passed, 57 deselected`.
+- После Claude Opus committed-diff fix: targeted deploy tests — `6 passed`; full Docker suite — `948 passed, 57 deselected`.
+- После финального Spark sanity fix: targeted deploy tests — `6 passed`; full Docker suite — `948 passed, 57 deselected`.
+- После Claude Opus committed-diff review 2 fix: targeted deploy tests — `6 passed`; full Docker suite — `948 passed, 57 deselected`.
+
+### Обратная связь
+
+Пользователь попросил делать Roadmap до конца по workflow и включить все high/medium findings из super-review.

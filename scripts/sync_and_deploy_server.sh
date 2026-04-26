@@ -9,6 +9,12 @@ set -euo pipefail
 SSH_TARGET="${1:?Usage: $0 user@host [/server/path]}"
 REMOTE_DIR="${2:-/opt/vetmanager-mcp}"
 SSL_DOMAIN="${SSL_DOMAIN:-vetmanager-mcp.vromanichev.ru}"
+FEEDBACK_FINGERPRINT_PEPPER="${FEEDBACK_FINGERPRINT_PEPPER:-}"
+
+if [ -z "${FEEDBACK_FINGERPRINT_PEPPER}" ]; then
+  echo "ERROR: FEEDBACK_FINGERPRINT_PEPPER is required for production/PostgreSQL deploy."
+  exit 1
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -28,4 +34,5 @@ rsync -az --delete \
 
 echo "==> Sync complete. Running deploy_server.sh with SKIP_GIT_PULL=1"
 SKIP_GIT_PULL=1 SSL_DOMAIN="${SSL_DOMAIN}" CERTBOT_EMAIL="${CERTBOT_EMAIL:-}" \
+FEEDBACK_FINGERPRINT_PEPPER="${FEEDBACK_FINGERPRINT_PEPPER}" \
   "${SCRIPT_DIR}/deploy_server.sh" "${SSH_TARGET}" "${REMOTE_DIR}"

@@ -325,6 +325,7 @@ docker compose up -d mcp
 ./scripts/init_server.sh user@host
 
 # Обновление кода и перезапуск
+export FEEDBACK_FINGERPRINT_PEPPER="<stored-production-pepper>"
 ./scripts/deploy_server.sh user@host
 ```
 
@@ -332,16 +333,26 @@ docker compose up -d mcp
 
 ```bash
 ./scripts/init_server.sh user@host /srv/vetmanager-mcp
+export FEEDBACK_FINGERPRINT_PEPPER="<stored-production-pepper>"
 ./scripts/deploy_server.sh user@host /srv/vetmanager-mcp
 ```
+
+Используйте тот же сохранённый `FEEDBACK_FINGERPRINT_PEPPER`, что и для
+автоматического deploy; не генерируйте новое значение для каждого запуска.
 
 ### Режим для приватного репозитория: rsync + deploy
 
 Если сервер не может делать `git clone/pull` (приватный repo), используйте синхронизацию кода по SSH:
 
 ```bash
+export FEEDBACK_FINGERPRINT_PEPPER="$(openssl rand -hex 32)"  # один раз для production, хранить как secret
 ./scripts/sync_and_deploy_server.sh root@<your-server-ip> /opt/vetmanager-mcp
 ```
+
+`FEEDBACK_FINGERPRINT_PEPPER` нужно сгенерировать один раз, сохранить постоянно
+на уровне `STORAGE_ENCRYPTION_KEY` и переиспользовать во всех последующих
+deploy. Не регенерируйте его перед каждым запуском: смена значения ломает
+сопоставление уже сохранённых feedback fingerprints без отдельной миграции.
 
 Скрипт:
 - синхронизирует проект через `rsync` (без `.git`, `.env`, служебных директорий);
@@ -371,9 +382,14 @@ docker compose up -d mcp
 Нужные GitHub Secrets:
 - `PROD_SSH_TARGET` (пример: `root@<your-server-ip>`)
 - `PROD_SSH_PRIVATE_KEY` (приватный ключ для SSH)
+- `FEEDBACK_FINGERPRINT_PEPPER` (обязателен для production/PostgreSQL feedback fingerprints)
 - `PROD_REMOTE_DIR` (опционально, по умолчанию `/opt/vetmanager-mcp`)
 - `PROD_SSL_DOMAIN` (опционально, ваш домен)
 - `PROD_CERTBOT_EMAIL` (опционально, email для certbot)
+
+`FEEDBACK_FINGERPRINT_PEPPER` храните как долгоживущий production secret: он
+должен оставаться тем же между deploy и не ротироваться без плана миграции
+исторических feedback fingerprints.
 
 ### TLS (Let's Encrypt) и автообновление
 
