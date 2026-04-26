@@ -6503,6 +6503,7 @@ UI кабинета и issuance flow переведены на preset-based то
 - Финальный Spark sanity нашёл accepted medium: upload pre-step мог оставить remote temp file, если SSH оборвался до возврата path. Исправлено remote-side upload trap `cleanup_upload_pepper` и local cleanup trap теперь ставится до upload как no-op до получения path.
 - Claude Opus committed-diff review 2 нашёл accepted medium: remote stdout chatter до `bash -c` мог загрязнить captured temp path. Исправлено sentinel parsing `__FEEDBACK_PEPPER_FILE__=<path>`; локальный код извлекает только sentinel line и fail-fast падает без path.
 - Финальный Spark sanity после sentinel fix нашёл 2 medium: docs finding принят, quick `deploy_server.sh` examples теперь показывают `FEEDBACK_FINGERPRINT_PEPPER`; env-contract finding для `sync_and_deploy_server.sh` отклонён, потому что wrapper уже получает pepper из parent env и не добавляет argv exposure сверх согласованного local/CI env contract.
+- После push GitHub `Deploy Prod` дважды упал на `Configure SSH`: `ssh-keyscan` не вернул host keys из GitHub runner, хотя публичный `/healthz`, локальный `ssh-keyscan` и TCP/22 были доступны. Workflow обновлён: `known_hosts` создаётся заранее, `ssh-keyscan` failure больше не hard blocker, rsync SSH использует `StrictHostKeyChecking=accept-new` + `UserKnownHostsFile`.
 
 ### Проверки
 
