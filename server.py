@@ -53,7 +53,9 @@ mcp = FastMCP(
         "Credentials are provided via Authorization: Bearer <service_token> "
         "configured in your MCP client. "
         "All tools are bearer-authenticated and do not accept runtime credential arguments. "
-        "If a tool error is unclear, use report_problem without including secrets or raw clinic data."
+        "If a tool error is unclear, use report_problem, but describe the shape of the problem, "
+        "not raw clinic data. Replace names, patients, phones, and addresses with "
+        "<client>, <owner>, <patient>, <phone>, and <address>."
     ),
 )
 

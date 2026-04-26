@@ -407,7 +407,8 @@ class AgentFeedbackReport(Base):
         ForeignKey("agent_feedback_reports.id"),
         nullable=True,
     )
-    redaction_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    redaction_version: Mapped[int] = mapped_column(Integer, nullable=False, default=2, server_default="2")
+    possible_pii: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
 
 class KnownIssue(Base):

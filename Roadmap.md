@@ -2550,7 +2550,7 @@ Workflow allowance (по согласованию с пользователем 
 Цель: замкнуть цикл «агент заметил проблему → сервер сохранил структурированный feedback → offline agent-triage помогает разобрать и подготовить задачу/PRD → runtime детерминированно подсказывает агентам проверенные workaround-и для известных саморешаемых проблем». Автоисправлений кода нет; runtime не использует LLM для генерации советов.
 
 - 149.1 Создать PRD stage 149: DB schema, deterministic known-issue matching, privacy/redaction, rate limits, no-autofix boundary. — `done`
-- 149.2 Добавить Alembic migration + SQLAlchemy models: `agent_feedback_reports`, `known_issues`; `known_issue_match_events` отложить в Stage 150. — `done`
+- 149.2 Добавить Alembic migration + SQLAlchemy models: `agent_feedback_reports`, `known_issues`; `known_issue_match_events` отложен отдельно, см. Stage 151. — `done`
 - 149.3 Реализовать service layer: create report, normalize/fingerprint, dedup/link report, lookup verified known issue, increment counters. — `done`
 - 149.4 Добавить MCP tool `report_problem` с безопасной схемой входа и response `{feedback_id, known_issue?}`. — `done`
 - 149.5 Добавить deterministic known-issue injection в tool error middleware без LLM: только `known_issues.status=workaround_available` и проверенные `match_rules_json`. — `done`
@@ -2558,3 +2558,28 @@ Workflow allowance (по согласованию с пользователем 
 - 149.7 Добавить rate limiting и privacy controls: per account/token caps, auto-event cap, payload redaction, no raw Vetmanager secrets/business dumps. — `done`
 - 149.8 Покрыть tests: models/migration, fingerprint, report tool, verified KB lookup, middleware injection, rate limits, redaction. — `done`
 - 149.9 Пройти full checks, review gates, commit/push/deploy и self-attestation. — `stop` — code/review/CI закрыты: targeted Stage 149 + migrations `21 passed`, full Docker suite `937 passed, 57 deselected`, финальный Spark sanity review `[]`, GitHub `Tests` зелёный. Prod deploy заблокирован внешней SSH/host нестабильностью: `Deploy Prod` падает на `ssh-keyscan`/rsync/SSH timeout, публичный `/healthz` стал нестабилен.
+
+## Этап 150. Agent feedback PII guardrails — `done`
+
+Источник: обсуждение 2026-04-26 после Stage 149. Цель: простым способом снизить риск попадания персональных данных в `agent_feedback_reports`, не добавляя runtime LLM/NER и не блокируя полезный feedback.
+
+Не используем heuristic «плотность кириллицы»: русские bug reports сами по себе кириллические, поэтому такой сигнал даст много false positives.
+
+- 150.1 Создать PRD stage 150: инструкция агентам «описывай форму проблемы, не данные», deterministic redaction, `possible_pii` operator flag, no hard reject, `known_issue_match_events` явно переотложен. — `done`
+- 150.2 Пройти PRD workflow gates по Core Loop: Spark-review перед PRD-review, PRD-review, Spark-review перед сторонним PRD-review, стороннее PRD-review, simplicity pass; если simplicity меняет PRD — повторить PRD-review gates в пределах бюджета. — `done`
+- 150.3 Обновить FastMCP instructions и `report_problem` description с placeholders `<client>`, `<owner>`, `<patient>`, `<phone>`, `<address>` и примерами before/after. — `done`
+- 150.4 Усилить feedback sanitizer для очевидных PII/secrets в свободном тексте: email/phone/secrets уже покрыты, добавить контекстные ФИО/инициалы/кличка/адрес вокруг client/owner/patient/pet keys и русских аналогов. — `done`
+- 150.5 Добавить минимальный `possible_pii`/privacy flag в storage + triage/export, чтобы оператор видел риск, но report сохранялся после redaction. — `done`
+- 150.6 Покрыть tests: instructions/description, sanitizer redaction, persisted redacted text + flag, migration, triage/export visibility. — `done`
+- 150.7 Пройти full checks, audit/refactor при необходимости, commit, Spark committed-diff review, стороннее committed-diff review, push, self-attestation, обновить Roadmap/AssumptionLog. — `done`
+
+## Этап 151. Known issue match analytics events — `todo`
+
+Источник: Stage 149 отложил `known_issue_match_events`; Stage 150 сознательно не включает этот storage analytics scope, чтобы остаться узким privacy-hardening этапом.
+
+- 151.1 Создать PRD для `known_issue_match_events`: schema, privacy-safe fields, retention, operator analytics, acceptance criteria. — `todo`
+- 151.2 Добавить Alembic migration + SQLAlchemy model для privacy-safe match events. — `todo`
+- 151.3 Интегрировать write path из known-issue lookup/middleware без raw error payload. — `todo`
+- 151.4 Добавить triage/analytics view и retention cleanup. — `todo`
+- 151.5 Покрыть tests: migration, write path, no raw PII, retention, analytics output. — `todo`
+- 151.6 Пройти full checks, review gates, commit/push, AssumptionLog. — `todo`

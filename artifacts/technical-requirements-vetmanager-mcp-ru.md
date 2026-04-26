@@ -282,9 +282,13 @@ string; numeric zero сохраняется (privacy-safe — `client_id=0` не
   для `limit` и ограничения непустых массивов там, где это критично.
 - `report_problem` описывает, когда агенту стоит сообщать о проблеме
   инструмента/description/контракта. Сообщения сохраняются только в БД после
-  redaction; agent-facing советы возвращаются только из проверенной
-  `known_issues` KB по deterministic matching, без runtime LLM и без
-  автоисправления кода. Для production/PostgreSQL обязателен
+  redaction; агент должен описывать форму проблемы, а не данные, используя
+  placeholders `<client>`, `<owner>`, `<patient>`, `<phone>`, `<address>`.
+  `agent_feedback_reports.possible_pii` помогает triage видеть записи с
+  privacy-like redaction/placeholders; legacy model/user reports backfill'ятся
+  консервативно, auto-events остаются `possible_pii=false`. Agent-facing советы
+  возвращаются только из проверенной `known_issues` KB по deterministic matching,
+  без runtime LLM и без автоисправления кода. Для production/PostgreSQL обязателен
   `FEEDBACK_FINGERPRINT_PEPPER`; retention cleanup для разобранных reports
   выполняется оператором не реже одного раза в месяц через
   `scripts/triage_agent_feedback.py retention-cleanup --days 180`.

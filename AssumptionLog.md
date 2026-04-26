@@ -6431,3 +6431,44 @@ UI кабинета и issuance flow переведены на preset-based то
 ### Обратная связь
 
 Пользователь уточнил цель фичи: агенты должны помогать разбирать feedback и советовать другим агентам пути исправления, если проблема известна и может быть обойдена самостоятельно; автоисправлений кода быть не должно.
+
+## Этап 150. Agent feedback PII guardrails — 2026-04-26
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Создан `PRD/этап-150-agent-feedback-pii-guardrails.md` и добавлен Stage 150 в `Roadmap.md`; `known_issue_match_events` явно переотложен в Stage 151.
+- PRD прошёл Spark review, Codex review, Spark перед сторонним review, два Claude Opus PRD-review по бюджету и финальный Spark sanity. Приняты адекватные findings: conservative backfill legacy rows, совместимый sanitizer metadata interface, отрицательные кейсы для domain language, чёткая phone/address/context boundary, auto-event carve-out.
+- Codex review outcome: приняты 3 medium findings до реализации (`client/patient` false positives, `possible_pii` semantics for email/phone/secrets, production-safe migration pattern); PRD обновлён до implementation.
+- Добавлена Alembic migration `20260426_000011_agent_feedback_possible_pii.py`: `agent_feedback_reports.possible_pii` NOT NULL default false; legacy model/user rows backfill `true`, auto rows `false`.
+- `sanitize_text` сохранён совместимым; добавлен `sanitize_text_with_metadata` и `SanitizeResult`.
+- `create_feedback_report` агрегирует privacy redactions по free-text полям и выставляет `possible_pii`; auto-events сохраняются с `possible_pii=false`.
+- FastMCP instructions, `report_problem` docstring и `tool_descriptions.py` теперь явно требуют описывать форму проблемы, а не raw clinic data, и использовать placeholders.
+- Triage CLI `recent` и `export-markdown` показывают `possible_pii`.
+- README и technical requirements обновлены под Stage 150.
+
+### Решения и обоснования
+
+- Description-only недостаточно, поэтому выбран простой слой: instruction + deterministic sanitizer + operator flag.
+- Полный NER/LLM не добавлялся: runtime остаётся deterministic и не создаёт новый privacy surface.
+- Старые model/user feedback rows помечаются `possible_pii=true`, потому что они не проходили новый contextual sanitizer; старые/new auto-events остаются `false`, так как не сохраняют raw error text.
+- `sanitize_text` оставлен с прежней сигнатурой, чтобы не сломать callers вроде triage promote; metadata доступна через новую функцию.
+- Generic numeric IDs/timestamps/version strings не редактируются как phone и не включают `possible_pii`.
+- Stage 150 feedback sanitizer пишет `redaction_version=2`; legacy rows остаются version 1 и отдельно помечаются `possible_pii=true` для operator spot-check.
+- Claude Opus committed-diff review 1 принял 7 medium findings: tightened phone boundary for 7/8-prefixed IDs, case-insensitive labels without making values case-insensitive, `patient` classified as `contextual_patient`, `REDACTION_VERSION=2`, redundant migration update removed, extra tests added.
+
+### Проблемы
+
+- Read-only Spark-review PRD завис на sandbox/runtime issue до чтения файлов; по workflow запуск был остановлен и повторён тем же `gpt-5.3-codex-spark` в `danger-full-access` с review-only prompt.
+- Claude Opus PRD-review 2 исчерпал внешний PRD-review бюджет 2/2, после чего принятые уточнения были внесены и проверены финальным Spark sanity `[]`.
+
+### Проверки
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_stage150_agent_feedback_privacy.py tests/test_migrations.py::test_alembic_upgrade_creates_bearer_service_tables tests/test_migrations.py::test_agent_feedback_possible_pii_migration_backfills_existing_rows tests/test_stage149_agent_feedback.py -q` — `22 passed`.
+- Full: `docker compose --profile test run --rm test` — `943 passed, 57 deselected`.
+- После committed-diff review fixes: targeted Stage 150 + migrations + Stage 149 — `22 passed`; full Docker suite — `943 passed, 57 deselected`.
+
+### Обратная связь
+
+Пользователь попросил выбрать простой вариант защиты feedback от персональных данных и выполнить задачу по новому workflow до конца.

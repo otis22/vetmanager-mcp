@@ -30,7 +30,11 @@ def register(mcp: FastMCP) -> None:
         response shape looks suspicious, or docs/examples conflict with real
         behavior. Do not include bearer tokens, API keys, passwords, raw client
         or patient data, or raw Vetmanager payloads. Use params_shape for safe
-        parameter names only, never parameter values.
+        parameter names only, never parameter values. Describe the shape of the
+        problem, not the data: write "client <client> lookup returns 500" instead
+        of naming the client; write "patient <patient> invoice is missing" instead
+        of naming the patient. Use placeholders <client>, <owner>, <patient>,
+        <phone>, and <address>.
         """
         credentials = get_current_runtime_credentials()
         if credentials is None:

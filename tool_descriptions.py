@@ -561,7 +561,10 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "problem for developer triage. Use when a tool error is unclear, behavior "
         "looks suspicious, a reasonable user request lacks a needed tool or "
         "parameter, or docs/examples mismatch real behavior. Do not include "
-        "secrets or raw clinic payloads. Domain synonyms: feedback, bug report, "
+        "secrets, raw clinic payloads, client names, patient names, phones, or "
+        "addresses. Describe the shape of the problem, not the data. Use "
+        "placeholders <client>, <owner>, <patient>, <phone>, and <address>. "
+        "Domain synonyms: feedback, bug report, "
         "problem report, ошибка инструмента, обратная связь, проблема MCP, "
         "не хватает инструмента, неверное описание."
     ),

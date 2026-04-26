@@ -40,7 +40,7 @@ REPORT_HINT = (
     'If this error is unclear or you suspect a Vetmanager MCP bug, call '
     'report_problem with related_tool="{tool_name}".'
 )
-REDACTION_VERSION = 1
+REDACTION_VERSION = 2
 MAX_AUTO_EVENTS_PER_MINUTE = 60
 AUTO_EVENT_DEDUP_WINDOW = timedelta(minutes=15)
 REPORT_ACCOUNT_LIMIT_PER_HOUR = 60
@@ -54,6 +54,15 @@ AUTO_EVENT_STATUSES = (
     KNOWN_ISSUE_STATUS_ACKNOWLEDGED,
     KNOWN_ISSUE_STATUS_WORKAROUND_AVAILABLE,
 )
+PRIVACY_REDACTIONS = frozenset({
+    "email",
+    "phone",
+    "contextual_name",
+    "contextual_patient",
+    "contextual_address",
+    "placeholder_seen",
+    "sanitizer_error",
+})
 
 _SECRET_PATTERNS = (
     re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
@@ -62,8 +71,25 @@ _SECRET_PATTERNS = (
     re.compile(r"\b[A-Za-z0-9+/]{40,}={0,2}\b"),
     re.compile(r"(X-REST-API-KEY|authorization|cookie)\s*[:=]\s*\S+", re.IGNORECASE),
     re.compile(r"(api[_-]?key|password|token|secret)\s*[:=]\s*\S+", re.IGNORECASE),
-    re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
-    re.compile(r"\+?\d[\d\s().-]{7,}\d"),
+)
+_EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+_PHONE_CANDIDATE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d\s().-]{7,}\d)(?!\w)")
+_PLACEHOLDER_RE = re.compile(r"<(?:client|owner|patient|phone|address)>", re.IGNORECASE)
+_NAME_VALUE = (
+    r"(?:[A-ZА-ЯЁ][a-zа-яё]{2,})(?:\s+[A-ZА-ЯЁ][a-zа-яё]{2,}){0,2}"
+    r"(?:\s+[A-ZА-ЯЁ]\.[A-ZА-ЯЁ]\.)?|[A-ZА-ЯЁ]\.[A-ZА-ЯЁ]\."
+)
+_CONTEXT_NAME_RE = re.compile(
+    rf"\b(?P<label>(?i:client|owner|клиент|владелец))\s*(?P<sep>[:=])?\s+"
+    rf"(?P<value>{_NAME_VALUE})\b"
+)
+_CONTEXT_PATIENT_RE = re.compile(
+    r"\b(?P<label>(?i:pet|patient|питомец|пациент|кличка))\s*(?P<sep>[:=])?\s+"
+    r"(?P<value>[A-ZА-ЯЁ][a-zа-яё]{2,})\b"
+)
+_CONTEXT_ADDRESS_RE = re.compile(
+    r"\b(?P<label>address|адрес)\s*(?P<sep>[:=])\s*(?P<value>[^.;\n]{1,120})",
+    re.IGNORECASE,
 )
 _VOLATILE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?)?\b|\b\d{6,}\b")
 _SAFE_PARAM_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
@@ -86,6 +112,12 @@ class FeedbackIncident:
     error_code: str | None = None
     error_excerpt: str | None = None
     params_shape: list[str] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SanitizeResult:
+    text: str | None
+    redactions: frozenset[str]
 
 
 @dataclass(slots=True)
@@ -112,19 +144,77 @@ def _truncate(value: str, limit: int) -> str:
     return value[:limit]
 
 
+def _is_phone_like(value: str) -> bool:
+    compact = value.strip()
+    digits = re.sub(r"\D", "", value)
+    if len(digits) < 10:
+        return False
+    if compact.startswith("+"):
+        return True
+    if not re.search(r"[\s().-]", compact):
+        return False
+    if digits.startswith(("7", "8")):
+        return bool(re.match(
+            r"^(?:7|8)[\s().-]*\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{2}[\s.-]*\d{2}$",
+            compact,
+        ))
+    return bool(re.match(r"^\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}$", compact))
+
+
+def _redact_context(pattern: re.Pattern[str], text: str, category: str, redactions: set[str]) -> str:
+    def _replace(match: re.Match[str]) -> str:
+        redactions.add(category)
+        sep = match.groupdict().get("sep") or ""
+        separator = sep if sep else " "
+        if separator in {":", "="}:
+            separator = f"{separator} "
+        return f"{match.group('label')}{separator}[REDACTED]"
+
+    return pattern.sub(_replace, text)
+
+
+def sanitize_text_with_metadata(value: str | None, *, limit: int, required: bool = False) -> SanitizeResult:
+    try:
+        text = (value or "").strip()
+        if required and not text:
+            raise ToolError("Feedback field is required.")
+        redactions: set[str] = set()
+        if _PLACEHOLDER_RE.search(text):
+            redactions.add("placeholder_seen")
+        for pattern in _SECRET_PATTERNS:
+            text = pattern.sub("[REDACTED]", text)
+        if "[REDACTED]" in text:
+            redactions.add("secret")
+        if _EMAIL_RE.search(text):
+            redactions.add("email")
+            text = _EMAIL_RE.sub("[REDACTED]", text)
+
+        def _phone_replace(match: re.Match[str]) -> str:
+            candidate = match.group(0)
+            if not _is_phone_like(candidate):
+                return candidate
+            redactions.add("phone")
+            return "[REDACTED]"
+
+        text = _PHONE_CANDIDATE_RE.sub(_phone_replace, text)
+        text = _redact_context(_CONTEXT_ADDRESS_RE, text, "contextual_address", redactions)
+        text = _redact_context(_CONTEXT_NAME_RE, text, "contextual_name", redactions)
+        text = _redact_context(_CONTEXT_PATIENT_RE, text, "contextual_patient", redactions)
+        text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        if required and not text:
+            raise ToolError("Feedback field is empty after sanitization.")
+        if not text:
+            return SanitizeResult(None, frozenset(redactions))
+        return SanitizeResult(_truncate(text, limit), frozenset(redactions))
+    except ToolError:
+        raise
+    except Exception:
+        return SanitizeResult("[REDACTED]", frozenset({"sanitizer_error"}))
+
+
 def sanitize_text(value: str | None, *, limit: int, required: bool = False) -> str | None:
-    text = (value or "").strip()
-    if required and not text:
-        raise ToolError("Feedback field is required.")
-    for pattern in _SECRET_PATTERNS:
-        text = pattern.sub("[REDACTED]", text)
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    if required and not text:
-        raise ToolError("Feedback field is empty after sanitization.")
-    if not text:
-        return None
-    return _truncate(text, limit)
+    return sanitize_text_with_metadata(value, limit=limit, required=required).text
 
 
 def sanitize_params_shape(params_shape: list[str] | None) -> list[str] | None:
@@ -431,7 +521,14 @@ async def create_feedback_report(
     if severity not in FEEDBACK_SEVERITIES:
         raise ToolError("Invalid feedback severity.")
     safe_params_shape = sanitize_params_shape(params_shape)
-    safe_error_excerpt = sanitize_text(error_excerpt, limit=1000)
+    privacy_redactions: set[str] = set()
+
+    def _free_text(value: str | None, *, limit: int, required: bool = False) -> str | None:
+        result = sanitize_text_with_metadata(value, limit=limit, required=required)
+        privacy_redactions.update(result.redactions)
+        return result.text
+
+    safe_error_excerpt = _free_text(error_excerpt, limit=1000)
     incident = FeedbackIncident(
         related_tool=sanitize_text(related_tool, limit=128),
         http_status=http_status,
@@ -468,13 +565,14 @@ async def create_feedback_report(
             http_status=http_status,
             error_code=incident.error_code,
             params_shape_json=json.dumps(safe_params_shape, ensure_ascii=True) if safe_params_shape else None,
-            summary=sanitize_text(summary, limit=240, required=True) or "",
-            details=sanitize_text(details, limit=8000, required=True) or "",
-            suggested_fix=sanitize_text(suggested_fix, limit=4000),
-            reproduce=sanitize_text(reproduce, limit=4000),
+            summary=_free_text(summary, limit=240, required=True) or "",
+            details=_free_text(details, limit=8000, required=True) or "",
+            suggested_fix=_free_text(suggested_fix, limit=4000),
+            reproduce=_free_text(reproduce, limit=4000),
             error_fingerprint_hash=fingerprint_hash,
             known_issue_id=known_issue.id if known_issue else None,
             redaction_version=REDACTION_VERSION,
+            possible_pii=bool(PRIVACY_REDACTIONS.intersection(privacy_redactions)),
         )
         session.add(report)
         await session.commit()
@@ -564,6 +662,7 @@ async def write_auto_feedback_event(*, credentials, tool_name: str, exc: BaseExc
             error_fingerprint_hash=fingerprint_hash,
             known_issue_id=known_issue.id,
             redaction_version=REDACTION_VERSION,
+            possible_pii=False,
         ))
         await session.commit()
 

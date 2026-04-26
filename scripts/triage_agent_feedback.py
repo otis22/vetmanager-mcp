@@ -26,7 +26,7 @@ def _row_summary(report: AgentFeedbackReport) -> str:
     return (
         f"#{report.id} [{report.status}] {report.severity}/{report.category} "
         f"tool={report.related_tool or '-'} fingerprint={report.error_fingerprint_hash or '-'} "
-        f"summary={report.summary}"
+        f"possible_pii={str(report.possible_pii).lower()} summary={report.summary}"
     )
 
 
@@ -149,6 +149,7 @@ async def _export(args: argparse.Namespace) -> None:
         print(f"## {tool or 'unknown tool'} / {fingerprint or 'no fingerprint'}")
         print(f"- count: {len(reports)}")
         print(f"- latest_report_id: {reports[0].id}")
+        print(f"- possible_pii: {str(any(report.possible_pii for report in reports)).lower()}")
         print(f"- sample_summary: {reports[0].summary}\n")
 
 

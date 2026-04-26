@@ -45,9 +45,43 @@ def test_alembic_upgrade_creates_bearer_service_tables(tmp_path: Path):
     feedback_columns = {column["name"] for column in inspector.get_columns("agent_feedback_reports")}
     assert "error_fingerprint_hash" in feedback_columns
     assert "params_shape_json" in feedback_columns
+    assert "possible_pii" in feedback_columns
     known_issue_columns = {column["name"] for column in inspector.get_columns("known_issues")}
     assert "agent_playbook_json" in known_issue_columns
     assert "report_count" in known_issue_columns
+
+
+def test_agent_feedback_possible_pii_migration_backfills_existing_rows(tmp_path: Path):
+    """Stage 150: existing model/user feedback is conservative, auto-events stay safe."""
+    from sqlalchemy import text as _text
+
+    config = _make_alembic_config(tmp_path)
+    command.upgrade(config, "20260425_000010")
+
+    engine = create_engine(config.get_main_option("sqlalchemy.url"))
+    with engine.connect() as conn:
+        conn.execute(_text(
+            "INSERT INTO agent_feedback_reports "
+            "(source, category, severity, status, summary, details, redaction_version) "
+            "VALUES "
+            "('model', 'bug', 'low', 'new', 'model report', 'details', 1), "
+            "('auto', 'bug', 'low', 'new', 'auto report', 'fixed details', 1)"
+        ))
+        conn.commit()
+
+    command.upgrade(config, "head")
+
+    with engine.connect() as conn:
+        rows = conn.execute(_text(
+            "SELECT source, possible_pii FROM agent_feedback_reports ORDER BY id"
+        )).fetchall()
+        columns = {
+            column["name"]: column
+            for column in inspect(engine).get_columns("agent_feedback_reports")
+        }
+
+    assert rows == [("model", True), ("auto", False)]
+    assert columns["possible_pii"]["nullable"] is False
 
 
 def test_depersonalized_flag_migration_defaults_existing_tokens_to_false(tmp_path: Path):
