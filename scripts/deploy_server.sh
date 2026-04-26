@@ -12,27 +12,40 @@ REMOTE_DIR="${2:-/opt/vetmanager-mcp}"
 SSL_DOMAIN="${SSL_DOMAIN:-vetmanager-mcp.vromanichev.ru}"
 SKIP_GIT_PULL="${SKIP_GIT_PULL:-0}"
 CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
+FEEDBACK_FINGERPRINT_PEPPER="${FEEDBACK_FINGERPRINT_PEPPER:-}"
 
 echo "==> Deploying vetmanager-mcp to ${SSH_TARGET}:${REMOTE_DIR} (domain: ${SSL_DOMAIN})"
 
 CERTBOT_EMAIL_ARG="${CERTBOT_EMAIL:-__EMPTY__}"
+FEEDBACK_FINGERPRINT_PEPPER_ARG="${FEEDBACK_FINGERPRINT_PEPPER:-__EMPTY__}"
 SSH_OPTS=()
 if [ "${SSH_KEEPALIVE:-0}" = "1" ]; then
   SSH_OPTS=(-o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes)
 fi
 
-ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" bash -s "${REMOTE_DIR}" "${SSL_DOMAIN}" "${SKIP_GIT_PULL}" "${CERTBOT_EMAIL_ARG}" << 'REMOTE'
+ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" bash -s "${REMOTE_DIR}" "${SSL_DOMAIN}" "${SKIP_GIT_PULL}" "${CERTBOT_EMAIL_ARG}" "${FEEDBACK_FINGERPRINT_PEPPER_ARG}" << 'REMOTE'
 set -euo pipefail
 REMOTE_DIR="$1"
 SSL_DOMAIN="$2"
 SKIP_GIT_PULL="$3"
 CERTBOT_EMAIL="$4"
+DEPLOY_FEEDBACK_FINGERPRINT_PEPPER="$5"
 if [ "${CERTBOT_EMAIL}" = "__EMPTY__" ]; then
   CERTBOT_EMAIL=""
 fi
 export CERTBOT_EMAIL
 
 cd "${REMOTE_DIR}"
+
+if [ "${DEPLOY_FEEDBACK_FINGERPRINT_PEPPER}" != "__EMPTY__" ]; then
+  umask 077
+  touch .env
+  if grep -q '^FEEDBACK_FINGERPRINT_PEPPER=' .env; then
+    sed -i "s|^FEEDBACK_FINGERPRINT_PEPPER=.*|FEEDBACK_FINGERPRINT_PEPPER=${DEPLOY_FEEDBACK_FINGERPRINT_PEPPER}|" .env
+  else
+    printf '\nFEEDBACK_FINGERPRINT_PEPPER=%s\n' "${DEPLOY_FEEDBACK_FINGERPRINT_PEPPER}" >> .env
+  fi
+fi
 
 # Source .env for POSTGRES_USER etc. (skip UID/GID — readonly in bash)
 if [ -f .env ]; then

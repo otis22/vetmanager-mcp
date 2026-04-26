@@ -17,6 +17,7 @@ jobs:
         env:
           PROD_SSH_TARGET: ${{ secrets.PROD_SSH_TARGET }}
           PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          FEEDBACK_FINGERPRINT_PEPPER: ${{ secrets.FEEDBACK_FINGERPRINT_PEPPER }}
         run: |
           if [ -z "${PROD_SSH_TARGET}" ]; then
             echo "Missing required secret: PROD_SSH_TARGET"
@@ -24,6 +25,10 @@ jobs:
           fi
           if [ -z "${PROD_SSH_PRIVATE_KEY}" ]; then
             echo "Missing required secret: PROD_SSH_PRIVATE_KEY"
+            exit 1
+          fi
+          if [ -z "${FEEDBACK_FINGERPRINT_PEPPER}" ]; then
+            echo "Missing required secret: FEEDBACK_FINGERPRINT_PEPPER"
             exit 1
           fi
 
@@ -75,9 +80,11 @@ jobs:
           PROD_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR }}
           PROD_SSL_DOMAIN: ${{ secrets.PROD_SSL_DOMAIN }}
           PROD_CERTBOT_EMAIL: ${{ secrets.PROD_CERTBOT_EMAIL }}
+          FEEDBACK_FINGERPRINT_PEPPER: ${{ secrets.FEEDBACK_FINGERPRINT_PEPPER }}
         run: |
           REMOTE_DIR="${PROD_REMOTE_DIR:-/opt/vetmanager-mcp}"
           SSL_DOMAIN="${PROD_SSL_DOMAIN:-vetmanager-mcp.vromanichev.ru}"
           SKIP_GIT_PULL=1 SSL_DOMAIN="${SSL_DOMAIN}" CERTBOT_EMAIL="${PROD_CERTBOT_EMAIL}" \
+          FEEDBACK_FINGERPRINT_PEPPER="${FEEDBACK_FINGERPRINT_PEPPER}" \
           SSH_KEEPALIVE=1 \
             ./scripts/deploy_server.sh "${PROD_SSH_TARGET}" "${REMOTE_DIR}"
