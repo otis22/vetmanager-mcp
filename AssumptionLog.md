@@ -6559,6 +6559,54 @@ UI кабинета и issuance flow переведены на preset-based то
 - Sonnet code-review нашёл 1 medium + 4 nit на committed diff. Применены: (a) `.execution_options(synchronize_session=False)` на оба UPDATE statements (medium — без флага SQLAlchemy 2.0 пытается evaluate Python-сторону `KnownIssue.report_count + 1`, не может для column expression, identity-map silently stale; в текущем коде стейл не читается, но риск future-bug); (b) `tr -d '\r'` после `cut` на 3 скрипта (CRLF defensive); (c) explicit `RuntimeError` если probe is None в readiness handler (defensive, prevents opaque NoneType TypeError). Отклонены: 2 nit о fragility тестов (current acceptable, regression tests work).
 - Codex gpt-5.5 committed-diff review (1/2 code-diff budget) после applied fixes: "no blockers, push approved".
 
+---
+
+## Этап 151. Known issue match analytics events — 2026-05-02
+
+**Статус**: `done` (pending push + diff review).
+
+### Что сделано
+
+- Создан `PRD/этап-151-known-issue-match-events.md`. Custom review config от пользователя: Sonnet unlimited (PRD + diff), Codex gpt-5.5 budget 1 на PRD-review + 1 на diff-review раздельно (per CLAUDE.md §3.1).
+- PRD прошёл Sonnet review (7 findings: 2 high session-ownership ambiguity для write_auto_feedback_event, 3 medium, 2 low — все применены), Spark scout inline (9 findings: cascade-DELETE audit gap, helper commit-contract docstring, distinct_tokens для anonymous footprint, deterministic ORDER BY, UTC retention semantics, test split helper-vs-caller — все применены), simplicity eval (без изменений — alternatives Prometheus/source=injection_only/log-only уже разобраны), Codex gpt-5.5 PRD-review 1/1: "no blockers".
+- Новая таблица `known_issue_match_events`: 7 колонок (id/created_at/known_issue_id FK CASCADE/related_tool/error_fingerprint_hash/account_id FK SET NULL/bearer_token_id FK SET NULL/source CHECK injection|report|auto), два индекса (`(known_issue_id, created_at)` и `(account_id, created_at)`).
+- Migration `20260502_000012_known_issue_match_events.py` с round-trip-protection через `tests/test_migrations.py::test_known_issue_match_events_migration_round_trip`.
+- SQLAlchemy model `KnownIssueMatchEvent` в `storage_models.py` + константа `KNOWN_ISSUE_MATCH_SOURCES`.
+- Helper `write_known_issue_match_event(session, ...)` в `agent_feedback_service.py`: single `session.add` без commit (caller-owned), `sanitize_text(related_tool, limit=128)` внутри, ValueError на invalid source, non-throwing для нормальных входов.
+- Three integration sites (per Sonnet-fixed S2):
+  - `augment_tool_error` — own session через `_persist_injection_match_event` helper, wrapped в `asyncio.wait_for(AUTO_EVENT_WRITE_TIMEOUT_SECONDS=0.5s)` + best-effort try/except + warn-log `known_issue_match_event_write_failed`. Source-of-truth для injection частоты.
+  - `create_feedback_report` — shared outer session, `session.add(KnownIssueMatchEvent)` атомарно с report+report_count UPDATE.
+  - `write_auto_feedback_event` — **отдельная committed sub-transaction ПЕРЕД** dedup query, чтобы event persist'нул даже если auto-report skipped по `existing != 0` или `_auto_event_global_allowed=False`.
+- CLI subcommands в `scripts/triage_agent_feedback.py`:
+  - `match-events-cleanup --days N` (default 90, UTC strict-`<` boundary).
+  - `match-events-stats --days N --top K` (deterministic `ORDER BY events DESC, known_issue_id ASC, source ASC`; columns include `distinct_accounts` AND `distinct_tokens` для anonymous footprint).
+- 13 targeted тестов в `tests/test_stage151_known_issue_match_events.py` (schema whitelist, helper non-throwing, sanitization, all 3 integration sites, dedup-survival, atomic-with-report, best-effort error path, cleanup, stats output) + 1 миграционный round-trip + обновление generic schema test → итого 14 новых тестов passed.
+
+### Решения и обоснования
+
+- Schema-based store вместо Prometheus counter / log-only / `source="injection_only"` enum: нужен SQL audit trail (compliance), persistent storage без Prometheus retention infra, отдельная таблица сохраняет separation of concerns vs `agent_feedback_reports` dual-purpose.
+- Three different session ownership patterns per call site: `create_feedback_report` (shared, atomic) vs `write_auto_feedback_event` (separate sub-transaction перед dedup) vs `augment_tool_error` (isolated own session, best-effort) — разные responsibilities требуют разной транзакционной семантики; PRD это explicitly документирует.
+- ON DELETE CASCADE на `known_issue_id`: deliberate trade-off vs `RESTRICT`. Operator runbook: использовать `triage_agent_feedback.py mark <id> wontfix` для retire issue вместо `DELETE FROM known_issues`. Иначе `RESTRICT` превращает каждое seed-исправление в multi-step ритуал.
+- ON DELETE SET NULL на `account_id` / `bearer_token_id`: чтобы archive accounts (Stage 158 future) не ломал event history.
+- Helper не делает commit: caller knows transaction boundaries; commit внутри helper'а ломал бы атомарность с outer report insert в `create_feedback_report`.
+- `match_events` vs `report_count` divergence — intentional (broader matches log vs narrower saved-reports counter), задокументировано в Risks.
+- Schema whitelist test #10 фиксирует privacy invariant: `summary`/`details`/`error_excerpt`/`params_shape_json`/`suggested_fix`/`reproduce` — forbidden columns; future-developer-adds-error_excerpt mistake поломает CI test до merge.
+
+### Проблемы
+
+- Codex gpt-5.5 первый запуск с длинным prompt (~2k токенов) timeout'нул (360s) с пустым output (sandbox-fail-equivalent); короткий retry (~500 токенов) дал "no blockers" за ~30s. Бюджет PRD-review: 1/1 использован.
+- Sonnet нашёл реальный self-contradiction в первой версии PRD (Risks said "same session" while AC #5 said "event survives dedup early-return") — требовало явного split session ownership per call site. Без этого имплементация была бы фундаментально wrong.
+
+### Проверки
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_stage151_known_issue_match_events.py tests/test_migrations.py -q` — `21 passed`.
+- Full Docker suite: `docker compose --profile test run --rm test` — `980 passed, 1 skipped, 57 deselected` за 91s.
+- Static: PRD прошёл Sonnet + Spark + Codex gpt-5.5 + simplicity. Все ревью-гейты пройдены до commit'а.
+
+### Обратная связь
+
+Custom review config: Sonnet unlimited, Codex 1 на PRD review + 1 на code-diff review раздельно (уточнено пользователем после initial misinterpretation как 1/stage total).
+
 ### Проверки
 
 - Targeted: `docker compose --profile test run --rm test pytest tests/test_stage153_review_followup.py tests/test_deploy_server_script.py -q` — `24 passed, 1 skipped`.

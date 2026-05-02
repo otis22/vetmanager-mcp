@@ -11,11 +11,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from agent_feedback_service import sanitize_text, validate_agent_playbook, validate_match_rules_json
 from storage import get_session_factory
-from storage_models import AgentFeedbackReport, FEEDBACK_STATUS_LINKED, KnownIssue
+from storage_models import AgentFeedbackReport, FEEDBACK_STATUS_LINKED, KnownIssue, KnownIssueMatchEvent
 
 
 def _now() -> datetime:
@@ -165,6 +165,52 @@ async def _retention(args: argparse.Namespace) -> None:
     print(f"deleted_reports={result.rowcount or 0}")
 
 
+async def _match_events_cleanup(args: argparse.Namespace) -> None:
+    """Stage 151: drop match events older than --days (default 90), strict <."""
+    cutoff = _now() - timedelta(days=args.days)
+    async with get_session_factory()() as session:
+        result = await session.execute(
+            delete(KnownIssueMatchEvent).where(KnownIssueMatchEvent.created_at < cutoff)
+        )
+        await session.commit()
+    print(f"deleted_match_events={result.rowcount or 0}")
+
+
+async def _match_events_stats(args: argparse.Namespace) -> None:
+    """Stage 151: top-K (issue, source) groupings over the last --days window.
+
+    Note: distinct_accounts uses COUNT(DISTINCT account_id) which SQL-skips NULL.
+    Anonymous-token paths show up via distinct_tokens; if both are zero but
+    events>0, the path is fully anonymous — interpret events as the only signal.
+    """
+    cutoff = _now() - timedelta(days=args.days)
+    query = (
+        select(
+            KnownIssueMatchEvent.known_issue_id,
+            KnownIssue.title,
+            KnownIssueMatchEvent.source,
+            func.count().label("events"),
+            func.count(func.distinct(KnownIssueMatchEvent.account_id)).label("distinct_accounts"),
+            func.count(func.distinct(KnownIssueMatchEvent.bearer_token_id)).label("distinct_tokens"),
+        )
+        .join(KnownIssue, KnownIssue.id == KnownIssueMatchEvent.known_issue_id)
+        .where(KnownIssueMatchEvent.created_at >= cutoff)
+        .group_by(KnownIssueMatchEvent.known_issue_id, KnownIssue.title, KnownIssueMatchEvent.source)
+        .order_by(
+            func.count().desc(),
+            KnownIssueMatchEvent.known_issue_id.asc(),
+            KnownIssueMatchEvent.source.asc(),
+        )
+        .limit(args.top)
+    )
+    async with get_session_factory()() as session:
+        rows = (await session.execute(query)).all()
+    print("| known_issue_id | title | source | events | distinct_accounts | distinct_tokens |")
+    print("|---|---|---|---|---|---|")
+    for row in rows:
+        print(f"| {row.known_issue_id} | {row.title} | {row.source} | {row.events} | {row.distinct_accounts} | {row.distinct_tokens} |")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Triage DB-backed agent feedback.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -199,6 +245,25 @@ def _build_parser() -> argparse.ArgumentParser:
     retention = sub.add_parser("retention-cleanup")
     retention.add_argument("--days", type=int, default=180)
     retention.set_defaults(func=_retention)
+
+    match_cleanup = sub.add_parser(
+        "match-events-cleanup",
+        help="Stage 151: drop known_issue_match_events rows older than --days.",
+    )
+    match_cleanup.add_argument("--days", type=int, default=90)
+    match_cleanup.set_defaults(func=_match_events_cleanup)
+
+    match_stats = sub.add_parser(
+        "match-events-stats",
+        help=(
+            "Stage 151: top-K issue/source counts over --days. "
+            "Note: distinct_accounts skips NULL — anonymous footprint via distinct_tokens."
+        ),
+    )
+    match_stats.add_argument("--days", type=int, default=7)
+    match_stats.add_argument("--top", type=int, default=20)
+    match_stats.set_defaults(func=_match_events_stats)
+
     return parser
 
 

@@ -32,7 +32,9 @@ from storage_models import (
     KNOWN_ISSUE_STATUS_ACKNOWLEDGED,
     KNOWN_ISSUE_STATUS_OPEN,
     KNOWN_ISSUE_STATUS_WORKAROUND_AVAILABLE,
+    KNOWN_ISSUE_MATCH_SOURCES,
     KnownIssue,
+    KnownIssueMatchEvent,
 )
 from tool_access_registry import TOOL_REQUIRED_SCOPES
 
@@ -584,6 +586,16 @@ async def create_feedback_report(
                 )
                 .execution_options(synchronize_session=False)
             )
+            # Stage 151: persist match event atomically with report insert.
+            await write_known_issue_match_event(
+                session,
+                known_issue_id=known_issue.id,
+                related_tool=incident.related_tool,
+                error_fingerprint_hash=fingerprint_hash,
+                account_id=getattr(credentials, "account_id", None),
+                bearer_token_id=getattr(credentials, "bearer_token_id", None),
+                source="report",
+            )
         report = AgentFeedbackReport(
             source=FEEDBACK_SOURCE_MODEL,
             category=category,
@@ -615,6 +627,35 @@ async def create_feedback_report(
         "known_issue": known_issue.as_response() if known_issue else None,
         "message": "feedback_saved",
     }
+
+
+async def write_known_issue_match_event(
+    session: AsyncSession,
+    *,
+    known_issue_id: int,
+    related_tool: str | None,
+    error_fingerprint_hash: str | None,
+    account_id: int | None,
+    bearer_token_id: int | None,
+    source: str,
+) -> None:
+    """Stage 151: stage a privacy-safe match-event row.
+
+    Caller MUST commit the session (or roll back) — this helper only stages
+    the row via session.add. It applies sanitize_text(related_tool, limit=128)
+    so the schema invariant cannot be violated by any caller. It does not
+    raise on normal inputs; commit/timeout failures are the caller's problem.
+    """
+    if source not in KNOWN_ISSUE_MATCH_SOURCES:
+        raise ValueError(f"Invalid known_issue match source: {source!r}")
+    session.add(KnownIssueMatchEvent(
+        known_issue_id=known_issue_id,
+        related_tool=sanitize_text(related_tool, limit=128),
+        error_fingerprint_hash=error_fingerprint_hash,
+        account_id=account_id,
+        bearer_token_id=bearer_token_id,
+        source=source,
+    ))
 
 
 def build_incident_from_exception(tool_name: str, exc: BaseException) -> FeedbackIncident:
@@ -656,6 +697,20 @@ async def write_auto_feedback_event(*, credentials, tool_name: str, exc: BaseExc
         known_issue = await find_known_issue_for_auto_event(session, incident)
         if known_issue is None:
             return
+        # Stage 151: persist match event in a SEPARATE committed sub-transaction
+        # BEFORE the dedup query, so the event survives even when the report
+        # is later skipped by dedup window or per-minute global cap.
+        async with get_session_factory()() as event_session:
+            await write_known_issue_match_event(
+                event_session,
+                known_issue_id=known_issue.id,
+                related_tool=tool_name,
+                error_fingerprint_hash=fingerprint_hash,
+                account_id=account_id,
+                bearer_token_id=bearer_token_id,
+                source="auto",
+            )
+            await event_session.commit()
         cutoff = now - AUTO_EVENT_DEDUP_WINDOW
         query = (
             select(func.count())
@@ -707,6 +762,22 @@ async def write_auto_feedback_event(*, credentials, tool_name: str, exc: BaseExc
         await session.commit()
 
 
+async def _persist_injection_match_event(
+    *, tool_name: str, credentials, known_issue_id: int, fingerprint_hash: str | None,
+) -> None:
+    async with get_session_factory()() as session:
+        await write_known_issue_match_event(
+            session,
+            known_issue_id=known_issue_id,
+            related_tool=tool_name,
+            error_fingerprint_hash=fingerprint_hash,
+            account_id=getattr(credentials, "account_id", None),
+            bearer_token_id=getattr(credentials, "bearer_token_id", None),
+            source="injection",
+        )
+        await session.commit()
+
+
 async def augment_tool_error(tool_name: str, credentials, exc: ToolError) -> ToolError:
     hint = REPORT_HINT.format(tool_name=tool_name)
     known_issue: KnownIssueMatch | None = None
@@ -721,6 +792,27 @@ async def augment_tool_error(tool_name: str, credentials, exc: ToolError) -> Too
             extra={"event_name": "known_issue_lookup_failed", "tool_name": tool_name},
             exc_info=True,
         )
+    if known_issue is not None:
+        # Stage 151: best-effort write of injection match event in own session.
+        # Failure must NOT block the ToolError flow — log and continue.
+        try:
+            await asyncio.wait_for(
+                _persist_injection_match_event(
+                    tool_name=tool_name,
+                    credentials=credentials,
+                    known_issue_id=known_issue.id,
+                    fingerprint_hash=build_error_fingerprint_hash(
+                        build_incident_from_exception(tool_name, exc),
+                    ),
+                ),
+                timeout=AUTO_EVENT_WRITE_TIMEOUT_SECONDS,
+            )
+        except Exception:
+            RUNTIME_LOGGER.warning(
+                "known_issue_match_event_write_failed",
+                extra={"event_name": "known_issue_match_event_write_failed", "tool_name": tool_name},
+                exc_info=True,
+            )
     try:
         await asyncio.wait_for(
             write_auto_feedback_event(credentials=credentials, tool_name=tool_name, exc=exc),

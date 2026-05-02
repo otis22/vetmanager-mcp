@@ -462,3 +462,52 @@ class KnownIssue(Base):
     report_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# Stage 151: persistent log of every known-issue match — broader source-of-truth
+# than agent_feedback_reports.known_issue_id (which is gated by dedup/cap).
+KNOWN_ISSUE_MATCH_SOURCES = ("injection", "report", "auto")
+
+
+class KnownIssueMatchEvent(Base):
+    """Privacy-safe analytics row: one per known-issue match (no raw payload)."""
+
+    __tablename__ = "known_issue_match_events"
+    __table_args__ = (
+        CheckConstraint(
+            f"source IN ({', '.join(repr(s) for s in KNOWN_ISSUE_MATCH_SOURCES)})",
+            name="ck_known_issue_match_events_source",
+        ),
+        Index(
+            "ix_known_issue_match_events_known_issue_created",
+            "known_issue_id",
+            "created_at",
+        ),
+        Index(
+            "ix_known_issue_match_events_account_created",
+            "account_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    known_issue_id: Mapped[int] = mapped_column(
+        ForeignKey("known_issues.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    related_tool: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    error_fingerprint_hash: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    bearer_token_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_bearer_tokens.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source: Mapped[str] = mapped_column(String(16), nullable=False)

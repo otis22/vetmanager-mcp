@@ -2573,16 +2573,16 @@ Workflow allowance (по согласованию с пользователем 
 - 150.6 Покрыть tests: instructions/description, sanitizer redaction, persisted redacted text + flag, migration, triage/export visibility. — `done`
 - 150.7 Пройти full checks, audit/refactor при необходимости, commit, Spark committed-diff review, стороннее committed-diff review, push, self-attestation, обновить Roadmap/AssumptionLog. — `done`
 
-## Этап 151. Known issue match analytics events — `todo`
+## Этап 151. Known issue match analytics events — `done`
 
 Источник: Stage 149 отложил `known_issue_match_events`; Stage 150 сознательно не включает этот storage analytics scope, чтобы остаться узким privacy-hardening этапом.
 
-- 151.1 Создать PRD для `known_issue_match_events`: schema, privacy-safe fields, retention, operator analytics, acceptance criteria. — `todo`
-- 151.2 Добавить Alembic migration + SQLAlchemy model для privacy-safe match events. — `todo`
-- 151.3 Интегрировать write path из known-issue lookup/middleware без raw error payload. — `todo`
-- 151.4 Добавить triage/analytics view и retention cleanup. — `todo`
-- 151.5 Покрыть tests: migration, write path, no raw PII, retention, analytics output. — `todo`
-- 151.6 Пройти full checks, review gates, commit/push, AssumptionLog. — `todo`
+- 151.1 Создать PRD для `known_issue_match_events`: schema, privacy-safe fields, retention, operator analytics, acceptance criteria. — `done`
+- 151.2 Добавить Alembic migration + SQLAlchemy model для privacy-safe match events. — `done`
+- 151.3 Интегрировать write path из known-issue lookup/middleware без raw error payload (3 call sites: augment_tool_error own session, create_feedback_report shared session, write_auto_feedback_event separate sub-transaction перед dedup). — `done`
+- 151.4 Добавить triage/analytics view (`match-events-stats`) и retention cleanup (`match-events-cleanup`). — `done`
+- 151.5 Покрыть tests: migration round-trip, schema whitelist (no raw text), write path для всех 3 sources, dedup-survival для auto, atomic для report, best-effort для injection, retention boundary, analytics output. — `done`
+- 151.6 Пройти full checks, review gates (Sonnet PRD/diff unlimited, Codex gpt-5.5 1/1 PRD + 1/1 diff), commit/push, AssumptionLog. — `done`
 
 ## Этап 152. Prod deploy pepper secret hardening — `done`
 

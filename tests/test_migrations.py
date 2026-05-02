@@ -36,6 +36,7 @@ def test_alembic_upgrade_creates_bearer_service_tables(tmp_path: Path):
     assert "token_usage_logs" in table_names
     assert "agent_feedback_reports" in table_names
     assert "known_issues" in table_names
+    assert "known_issue_match_events" in table_names  # Stage 151
     account_columns = {column["name"] for column in inspector.get_columns("accounts")}
     assert "password_hash" in account_columns
     token_columns = {column["name"] for column in inspector.get_columns("service_bearer_tokens")}
@@ -82,6 +83,35 @@ def test_agent_feedback_possible_pii_migration_backfills_existing_rows(tmp_path:
 
     assert rows == [("model", True), ("auto", False)]
     assert columns["possible_pii"]["nullable"] is False
+
+
+def test_known_issue_match_events_migration_round_trip(tmp_path: Path):
+    """Stage 151 (AC #1): known_issue_match_events upgrade/downgrade is reversible."""
+    config = _make_alembic_config(tmp_path)
+    command.upgrade(config, "head")
+
+    engine = create_engine(config.get_main_option("sqlalchemy.url"))
+    inspector = inspect(engine)
+    assert "known_issue_match_events" in set(inspector.get_table_names())
+    cols = {c["name"] for c in inspector.get_columns("known_issue_match_events")}
+    assert cols == {
+        "id",
+        "created_at",
+        "known_issue_id",
+        "related_tool",
+        "error_fingerprint_hash",
+        "account_id",
+        "bearer_token_id",
+        "source",
+    }
+
+    command.downgrade(config, "20260426_000011")
+    inspector = inspect(create_engine(config.get_main_option("sqlalchemy.url")))
+    assert "known_issue_match_events" not in set(inspector.get_table_names())
+
+    command.upgrade(config, "head")
+    inspector = inspect(create_engine(config.get_main_option("sqlalchemy.url")))
+    assert "known_issue_match_events" in set(inspector.get_table_names())
 
 
 def test_depersonalized_flag_migration_defaults_existing_tokens_to_false(tmp_path: Path):
