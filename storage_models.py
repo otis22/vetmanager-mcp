@@ -474,8 +474,10 @@ class KnownIssueMatchEvent(Base):
 
     __tablename__ = "known_issue_match_events"
     __table_args__ = (
+        # Hardcoded literal kept in sync with KNOWN_ISSUE_MATCH_SOURCES via
+        # CHECK definition mirrored in alembic/versions/20260502_000012.
         CheckConstraint(
-            f"source IN ({', '.join(repr(s) for s in KNOWN_ISSUE_MATCH_SOURCES)})",
+            "source IN ('injection', 'report', 'auto')",
             name="ck_known_issue_match_events_source",
         ),
         Index(

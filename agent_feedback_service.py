@@ -128,6 +128,9 @@ class KnownIssueMatch:
     status: str
     title: str
     playbook: dict[str, Any]
+    # Stage 151 review: cache fingerprint computed by lookup so callers (e.g.,
+    # augment_tool_error → match-event write) do not recompute it.
+    fingerprint_hash: str | None = None
 
     def as_response(self) -> dict[str, Any]:
         return {
@@ -486,6 +489,7 @@ async def find_known_issue_match(
             status=issue.status,
             title=issue.title,
             playbook=playbook,
+            fingerprint_hash=build_error_fingerprint_hash(incident),
         )
     return None
 
@@ -693,24 +697,27 @@ async def write_auto_feedback_event(*, credentials, tool_name: str, exc: BaseExc
     bearer_token_id = getattr(credentials, "bearer_token_id", None)
     if account_id is None and bearer_token_id is None:
         return
+    # Stage 151: lookup happens in its own short-lived session so we don't
+    # hold two pool connections at once (avoids pool exhaustion under load).
+    async with get_session_factory()() as lookup_session:
+        known_issue = await find_known_issue_for_auto_event(lookup_session, incident)
+    if known_issue is None:
+        return
+    known_issue_id = known_issue.id
+    # Stage 151: persist match event BEFORE dedup query so the event survives
+    # even when the report is later skipped by dedup window or per-minute cap.
+    async with get_session_factory()() as event_session:
+        await write_known_issue_match_event(
+            event_session,
+            known_issue_id=known_issue_id,
+            related_tool=tool_name,
+            error_fingerprint_hash=fingerprint_hash,
+            account_id=account_id,
+            bearer_token_id=bearer_token_id,
+            source="auto",
+        )
+        await event_session.commit()
     async with get_session_factory()() as session:
-        known_issue = await find_known_issue_for_auto_event(session, incident)
-        if known_issue is None:
-            return
-        # Stage 151: persist match event in a SEPARATE committed sub-transaction
-        # BEFORE the dedup query, so the event survives even when the report
-        # is later skipped by dedup window or per-minute global cap.
-        async with get_session_factory()() as event_session:
-            await write_known_issue_match_event(
-                event_session,
-                known_issue_id=known_issue.id,
-                related_tool=tool_name,
-                error_fingerprint_hash=fingerprint_hash,
-                account_id=account_id,
-                bearer_token_id=bearer_token_id,
-                source="auto",
-            )
-            await event_session.commit()
         cutoff = now - AUTO_EVENT_DEDUP_WINDOW
         query = (
             select(func.count())
@@ -735,7 +742,7 @@ async def write_auto_feedback_event(*, credentials, tool_name: str, exc: BaseExc
         # Stage 153 (F5): atomic UPDATE for auto-event report_count too.
         await session.execute(
             update(KnownIssue)
-            .where(KnownIssue.id == known_issue.id)
+            .where(KnownIssue.id == known_issue_id)
             .values(
                 report_count=KnownIssue.report_count + 1,
                 first_seen_at=func.coalesce(KnownIssue.first_seen_at, now),
@@ -755,7 +762,7 @@ async def write_auto_feedback_event(*, credentials, tool_name: str, exc: BaseExc
             details="Auto-event created for a tool failure matching a verified known issue.",
             error_code=exc.__class__.__name__,
             error_fingerprint_hash=fingerprint_hash,
-            known_issue_id=known_issue.id,
+            known_issue_id=known_issue_id,
             redaction_version=REDACTION_VERSION,
             possible_pii=False,
         ))
@@ -795,15 +802,14 @@ async def augment_tool_error(tool_name: str, credentials, exc: ToolError) -> Too
     if known_issue is not None:
         # Stage 151: best-effort write of injection match event in own session.
         # Failure must NOT block the ToolError flow — log and continue.
+        # Reuse fingerprint already computed by lookup (no double HMAC).
         try:
             await asyncio.wait_for(
                 _persist_injection_match_event(
                     tool_name=tool_name,
                     credentials=credentials,
                     known_issue_id=known_issue.id,
-                    fingerprint_hash=build_error_fingerprint_hash(
-                        build_incident_from_exception(tool_name, exc),
-                    ),
+                    fingerprint_hash=known_issue.fingerprint_hash,
                 ),
                 timeout=AUTO_EVENT_WRITE_TIMEOUT_SECONDS,
             )
