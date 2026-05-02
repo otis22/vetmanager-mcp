@@ -1497,6 +1497,10 @@ async def test_account_token_revoke_updates_status_and_writes_audit_log(tmp_path
             await session.execute(
                 select(TokenUsageLog)
                 .where(TokenUsageLog.bearer_token_id == 1)
+                # Stage 154: exclude pre-expiry warning rows that the dashboard
+                # scanner emits as a side-effect — this assertion targets
+                # lifecycle events only.
+                .where(~TokenUsageLog.event_type.like("token_expiry_warning_%"))
                 .order_by(TokenUsageLog.id.asc())
             )
         ).scalars().all()
@@ -1569,6 +1573,8 @@ async def test_account_token_logs_capture_request_metadata(tmp_path: Path, monke
             await session.execute(
                 select(TokenUsageLog)
                 .where(TokenUsageLog.bearer_token_id == 1)
+                # Stage 154: exclude pre-expiry warning rows (dashboard scanner side-effect).
+                .where(~TokenUsageLog.event_type.like("token_expiry_warning_%"))
                 .order_by(TokenUsageLog.id.asc())
             )
         ).scalars().all()

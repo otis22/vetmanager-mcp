@@ -25,6 +25,11 @@ TOKEN_EVENT_AUTH_FAILED_NO_CONNECTION = "token_auth_failed_no_connection"
 TOKEN_EVENT_AUTH_FAILED_NO_SCOPES = "token_auth_failed_no_scopes"
 TOKEN_EVENT_AUTH_FAILED_IP_DENIED = "token_auth_failed_ip_denied"
 TOKEN_EVENT_AUTH_RATE_LIMITED = "token_auth_rate_limited"
+# Stage 154: pre-expiry warnings (one row per (token, threshold) — distinct
+# event_types make dedup an exact-match query without LIKE/JSON parsing).
+TOKEN_EVENT_EXPIRY_WARNING_1 = "token_expiry_warning_1d"
+TOKEN_EVENT_EXPIRY_WARNING_7 = "token_expiry_warning_7d"
+TOKEN_EVENT_EXPIRY_WARNING_14 = "token_expiry_warning_14d"
 
 _SENSITIVE_DETAIL_KEY_TOKENS = (
     "api_key",

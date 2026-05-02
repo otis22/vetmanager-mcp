@@ -77,6 +77,10 @@ _ALLOWED_BUSINESS_EVENTS = frozenset({
     "web_login_succeeded",
     "bearer_token_issued",
     "bearer_token_revoked",
+    # Stage 154: per-threshold expiry warnings (cardinality 3 — safe).
+    "token_expiry_warning_1d",
+    "token_expiry_warning_7d",
+    "token_expiry_warning_14d",
 })
 
 

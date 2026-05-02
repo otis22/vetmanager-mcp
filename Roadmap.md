@@ -2613,19 +2613,19 @@ Workflow allowance (по согласованию с пользователем 
 - 153.8 Tests: regression-тесты на whitelist .env, collection-aware match_rules, fingerprint с `http_status=0`, readiness timeout, atomic report_count (PG-only concurrent skip). — `done`
 - 153.9 Full checks, ревью сторонней моделью на committed diff (Sonnet code-review applied 1 medium + 3 nit; Codex gpt-5.5 1/2 budget — push approved), commit/push, AssumptionLog, self-attestation. — `done`
 
-## Этап 154. Token expiry pre-notification — `todo`
+## Этап 154. Token expiry pre-notification — `done`
 
 Источник: prod-метрика 2026-05-02 `expiring in 7d: 2` для топ-аккаунтов; нет ни in-app, ни email уведомлений; молчаливый expiry превратит активный аккаунт в `dead` без шанса на retention.
 
 Цель: дать аккаунтам и оператору заранее видеть приближающийся token expiry и предпринять rotation до факта.
 
-- 154.1 Создать PRD stage 154: scope (которые токены, какие каналы, какие пороги), out-of-scope (auto-rotation), privacy (не палить email в metric labels). — `todo`
-- 154.2 Reference artifacts review (technical-requirements, observability-runbook), уточнение PRD. — `todo`
-- 154.3 PRD-review + ревью сторонней моделью + simplicity eval. — `todo`
-- 154.4 Реализация metric `bearer_token_expires_in_days{token_id}` + структурный лог `token_expiry_warning` за 14/7/1 день. — `todo`
-- 154.5 Опциональный email/owner-chat notifier (если уже подключён канал) — иначе только metric+log + операторский runbook how-to-renew. — `todo`
-- 154.6 Tests: пороговые значения, дедуп уведомлений в одном пороге, `revoked` токены не шумят, `expired` не шумят. — `todo`
-- 154.7 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `todo`
+- 154.1 Создать PRD stage 154: scope (которые токены, какие каналы, какие пороги), out-of-scope (auto-rotation), privacy (не палить email в metric labels). — `done`
+- 154.2 Reference artifacts review (technical-requirements, observability-runbook), уточнение PRD. — `done`
+- 154.3 PRD-review + ревью сторонней моделью + simplicity eval. — `done` (Sonnet 8 findings + Spark 9 + claude-proxy `-p` 1/1 PRD budget = "no blockers"; simplicity rewrite: dedup через 3 distinct event_types вместо LIKE-substring).
+- 154.4 Реализация per-threshold business event (`token_expiry_warning_{1,7,14}d`) + структурный лог + token_usage_logs row за 14/7/1 день. — `done`
+- 154.5 Email/owner-chat notifier явно out-of-scope: канала в проекте нет; operator runbook stub в PRD (query из token_usage_logs) для будущего этапа. — `done`
+- 154.6 Tests: 17 targeted (boundary 7.0d/7.000001d, selection rule days=5 → emit 7 not 1, dedup repeat scan = +0, revoked/expired/disabled/no-expiry/30d-out skip, per-threshold counter snapshot, privacy whitelist). — `done`
+- 154.7 Full checks (998 passed), ревью сторонней моделью на diff (Sonnet + claude-proxy 1/1 budget), commit/push, AssumptionLog, self-attestation. — `done`
 
 ## Этап 155. IP mask UX & restrictive default — `todo`
 

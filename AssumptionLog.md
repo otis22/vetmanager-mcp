@@ -6607,6 +6607,57 @@ UI кабинета и issuance flow переведены на preset-based то
 
 Custom review config: Sonnet unlimited, Codex 1 на PRD review + 1 на code-diff review раздельно (уточнено пользователем после initial misinterpretation как 1/stage total).
 
+---
+
+## Этап 154. Token expiry pre-notification — 2026-05-03
+
+**Статус**: `done` (pending push + diff review).
+
+### Что сделано
+
+- Создан `PRD/этап-154-token-expiry-pre-notification.md`. Custom review config: Sonnet unlimited (PRD + diff), claude-proxy `-p` (Sonnet via CLI) заменяет Codex как сторонняя модель — 1/1 PRD + 1/1 diff раздельно.
+- PRD прошёл Sonnet review (8 findings: 2 high — algorithm direction ambiguity + false index coverage claim; 3 medium — LIKE spacing dependency / missing in-between days test / ceil boundary docs; 2 low; 1 nit), Spark inline (9 findings: high race condition + structural LIKE weakness, mediums про detection direction / ceil edge / dashboard-only emission / partial-success consistency, lows про privacy / no threshold label / tz). Все адекватные применены.
+- Simplicity rewrite: dedup переключён с `LIKE %"threshold": N%` на 3 distinct event_types (`token_expiry_warning_1d`/`_7d`/`_14d`) — exact match, без JSON parsing, без race-window от LIKE-substring fragility, существующий index `(event_type, event_at)` сразу seek'нет. Также добавлен per-threshold business event label (cardinality 3 — безопасно).
+- Claude-proxy PRD review (1/1 PRD budget): 1 medium (stale LIKE rationale контрадикция с обновлённым S2) + 2 nit (truncated constants, days_to_expiry vs ceil ambiguity in examples) — все применены. Реальных блокеров нет.
+- 3 новые константы в `auth_audit.py`: `TOKEN_EVENT_EXPIRY_WARNING_1`/`_7`/`_14`.
+- 3 новых allowed business events в `service_metrics._ALLOWED_BUSINESS_EVENTS`.
+- Helper `scan_token_expiry_warnings(session, *, account_id=None, now=None) -> int` в `token_cleanup.py`:
+  - Query: `status='active' AND expires_at IS NOT NULL AND expires_at > now`.
+  - `days_to_expiry = max(1, ceil(delta_seconds / 86400))` — ceil обеспечивает boundary-inclusive сверху.
+  - Selection rule: `crossed = {N for N in (1,7,14) if days_to_expiry <= N}; emit min(crossed - already_emitted)`.
+  - Dedup query: exact match `event_type IN _EXPIRY_WARNING_EVENT_TYPES` per token.
+  - Single commit per scan; business event counter и RUNTIME_LOGGER.warning ВЫЗЫВАЮТСЯ ПОСЛЕ commit (per S3 source-of-truth contract).
+  - Privacy whitelist payload: `{account_id, token_prefix, threshold_days, days_to_expiry, expires_at_utc}` (no email).
+- `web.py` account dashboard route вызывает `scan_token_expiry_warnings` рядом с `sync_expired_tokens` в try/except (best-effort — не блокирует render при ошибке).
+- 17 targeted тестов в `tests/test_stage154_token_expiry_warnings.py`: constants & allowlist, selection rule (days=13/5/exact-7/just-over-7/under-1d), dedup repeat, status filters (revoked/expired/disabled/no-expiry/30d-out), per-threshold business event counter, privacy whitelist + UTC tz round-trip, web.py grep-test.
+- Updated 2 existing `test_web_auth.py` queries чтобы exclude warning event_types из lifecycle audit assertions (`~event_type.like("token_expiry_warning_%")`).
+
+### Решения и обоснования
+
+- **3 distinct event_types вместо LIKE on JSON**: устраняет `json.dumps` whitespace contract risk + race window of substring matching + ambiguity column name (`details` vs `details_json`). Exact match faster и testable on SQLite + PG identically. Cost — 3 константы вместо 1.
+- **Per-threshold business event** (cardinality 3): даёт operator-у sub-second visibility "сколько 1d-warnings за час" в Grafana без необходимости join к token_usage_logs. Альтернатива (single counter без label) — лишает per-threshold analytics, что Spark правильно flagged.
+- **Race condition acknowledged best-effort**: добавление UNIQUE(bearer_token_id, event_type) constraint требует миграции; на текущем prod traffic (0 req/7d) — риск ~0. Документировано как known limitation, mitigation путь описан.
+- **No new index** (composite `(bearer_token_id, event_type)`): existing `ix_token_usage_logs_event_type_event_at` достаточен для текущего объёма (top-аккаунты ≤10 active tokens × 3 thresholds = ≤30 lookup queries per dashboard-open). Если объём вырастет — отдельная migration.
+- **Source-of-truth — token_usage_logs row**: counter и log emit'ятся ПОСЛЕ commit. Если процесс падает между insert+commit и counter+log — на следующем scan dedup увидит row и не повторит, counter инкрементируется на следующий новый warning. Acceptable.
+- **Boundary inclusive сверху** (`ceil` обеспечивает `days_to_expiry=N` для exact `now+Nd`): boundary-inclusive выбор сделан явно для определённости, тест fixates `expires_at = now + 7.0d → emit 7` и `expires_at = now + 7.000001d → emit 14 only`.
+
+### Проблемы
+
+- Initial test fixture использовал hardcoded `token_prefix="sbt_test_prefix"` для всех токенов — UNIQUE constraint failure при создании 2+ токенов в одном тесте. Fixed: counter-based unique prefixes/hashes.
+- 2 existing audit-log assertions в `test_web_auth.py` сравнивали `event_type` lists через `==` без фильтра — наш warning side-effect ломал их. Минимальный invasion: добавил `where(~event_type.like("token_expiry_warning_%"))` в 2 queries (warning rows — orthogonal lifecycle, не должны попадать в "token created/revoked" assertions).
+- Initial inline `from observability_logging import RUNTIME_LOGGER` внутри web.py except clause — поломал `test_inline_import_audit_has_no_undocumented_cases`. Fixed: используется уже-существующий module-level import.
+- claude-proxy `-p` warning "no stdin data received in 3s" — cosmetic, output корректный. Это nit самого CLI, не нашего использования.
+
+### Проверки
+
+- Targeted: `pytest tests/test_stage154_token_expiry_warnings.py -q` — `17 passed`.
+- Full Docker suite: `docker compose --profile test run --rm test` — `998 passed, 1 skipped, 57 deselected` за 92s.
+- Static: PRD прошёл Sonnet + Spark + claude-proxy. Все ревью-гейты до commit'а.
+
+### Обратная связь
+
+Пользователь явно попросил Claude CLI (claude-proxy `-p`) вместо Codex как стороннюю модель в этом этапе. Подтверждено что "1 на каждый ревью PRD и 1 на каждый ревью кода" = раздельные бюджеты per CLAUDE.md §3.1.
+
 ### Проверки
 
 - Targeted: `docker compose --profile test run --rm test pytest tests/test_stage153_review_followup.py tests/test_deploy_server_script.py -q` — `24 passed, 1 skipped`.

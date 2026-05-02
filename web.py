@@ -32,7 +32,7 @@ from storage_models import (
     TokenUsageStat,
     VetmanagerConnection,
 )
-from token_cleanup import sync_expired_tokens
+from token_cleanup import scan_token_expiry_warnings, sync_expired_tokens
 from tool_access_registry import PRESET_READ_ONLY, infer_token_preset, get_token_preset_label
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
 from vetmanager_connection_service import (
@@ -267,6 +267,17 @@ async def _load_account_dashboard(
 ) -> tuple[Account | None, int, int, VetmanagerConnection | None, str, str, list[dict[str, str | int]]]:
     async with get_session_factory()() as session:
         await sync_expired_tokens(session, account_id=account_id)
+        # Stage 154: best-effort pre-expiry warnings emitted on each dashboard
+        # open (token_usage_logs row + per-threshold business event counter).
+        # Failures must not block dashboard render.
+        try:
+            await scan_token_expiry_warnings(session, account_id=account_id)
+        except Exception:
+            RUNTIME_LOGGER.warning(
+                "scan_token_expiry_warnings failed",
+                extra={"event_name": "token_expiry_scan_failed", "account_id": account_id},
+                exc_info=True,
+            )
         account = await session.get(Account, account_id)
         if account is None:
             return None, 0, 0, None, "unknown", "Integration is not configured yet.", []
