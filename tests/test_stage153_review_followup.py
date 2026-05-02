@@ -47,6 +47,42 @@ def test_f1_deploy_scripts_do_not_eval_env_file(script_name: str) -> None:
     )
 
 
+def test_f1_whitelist_extract_survives_env_without_postgres_keys(tmp_path: Path) -> None:
+    """Regression: under `set -euo pipefail`, grep no-match (exit 1) must NOT kill the script.
+    Reproduces the prod-deploy failure observed on commit d548a15 when .env lacked POSTGRES_USER.
+    """
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "LOG_LEVEL=INFO\nFEEDBACK_FINGERPRINT_PEPPER=test\n",
+        encoding="utf-8",
+    )
+
+    script_text = (REPO_ROOT / "scripts" / "deploy_server.sh").read_text(encoding="utf-8")
+    start = script_text.find("# Stage 153 (F1): whitelist-extract")
+    end = script_text.find("# ── Build image once")
+    assert start != -1 and end != -1
+    env_block = script_text[start:end]
+
+    bash_script = (
+        f'set -euo pipefail\n'
+        f'cd "$1"\n'
+        f'POSTGRES_USER=defaultuser\n'
+        f'POSTGRES_DB=defaultdb\n'
+        f'{env_block}\n'
+        f'echo "USER=${{POSTGRES_USER}}"\n'
+        f'echo "DB=${{POSTGRES_DB}}"\n'
+    )
+    result = subprocess.run(
+        ["bash", "-c", bash_script, "_", str(tmp_path)],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    out = result.stdout
+    assert "USER=defaultuser" in out, "F1: defaults must survive when .env lacks POSTGRES_USER"
+    assert "DB=defaultdb" in out, "F1: defaults must survive when .env lacks POSTGRES_DB"
+
+
 def test_f1_deploy_server_whitelist_extracts_only_postgres_keys(tmp_path: Path) -> None:
     """Synthetic test: extract POSTGRES_USER/DB from a metachar-laden .env, prove malicious values do not execute."""
     env_path = tmp_path / ".env"
