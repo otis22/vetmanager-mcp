@@ -114,17 +114,21 @@ async def scan_token_expiry_warnings(
 
     tokens = (await session.execute(query)).scalars().all()
     emitted_count = 0
-    emit_records: list[tuple[int, int, int, str]] = []
+    emit_records: list[tuple[int, int, int, int, str]] = []
 
     for token in tokens:
         expires_at_utc = _normalize_to_utc(token.expires_at)
         delta_seconds = (expires_at_utc - current).total_seconds()
         if delta_seconds <= 0:
             continue
-        days_to_expiry = max(1, ceil(delta_seconds / 86400))
+        # delta_seconds > 0 guarantees ceil(delta/86400) >= 1, so days_to_expiry >= 1.
+        days_to_expiry = ceil(delta_seconds / 86400)
         crossed = {n for n in _EXPIRY_THRESHOLDS_DAYS if days_to_expiry <= n}
         if not crossed:
             continue
+        # N+1 dedup query — acceptable at current scale (≤ ~30 active tokens
+        # per account). Switch to batched `IN (token_ids)` lookup if cardinality
+        # grows materially.
         already = await _emitted_thresholds_for_token(session, bearer_token_id=token.id)
         todo = crossed - already
         if not todo:
@@ -143,7 +147,7 @@ async def scan_token_expiry_warnings(
                 "expires_at_utc": expires_at_utc.isoformat(),
             },
         )
-        emit_records.append((token.id, token.account_id, days_to_expiry, event_type))
+        emit_records.append((token.id, token.account_id, threshold, days_to_expiry, event_type))
         emitted_count += 1
 
     if emitted_count == 0:
@@ -152,10 +156,7 @@ async def scan_token_expiry_warnings(
     await session.commit()
 
     # Best-effort observability AFTER successful commit (per S3 source-of-truth contract).
-    for token_id, acct_id, days, event_type in emit_records:
-        threshold = next(
-            n for n, et in _EXPIRY_EVENT_BY_THRESHOLD.items() if et == event_type
-        )
+    for token_id, acct_id, threshold, days, event_type in emit_records:
         record_business_event(event_type)
         RUNTIME_LOGGER.warning(
             "token_expiry_warning",

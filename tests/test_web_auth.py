@@ -25,6 +25,7 @@ from tool_access_registry import (
     TOKEN_PRESET_SCOPES,
 )
 from web_security import reset_web_security_state
+from token_cleanup import _EXPIRY_WARNING_EVENT_TYPES
 from web_auth import SESSION_COOKIE_NAME, get_web_session_secret, register_account, set_account_session_cookie
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
@@ -1500,7 +1501,7 @@ async def test_account_token_revoke_updates_status_and_writes_audit_log(tmp_path
                 # Stage 154: exclude pre-expiry warning rows that the dashboard
                 # scanner emits as a side-effect — this assertion targets
                 # lifecycle events only.
-                .where(~TokenUsageLog.event_type.like("token_expiry_warning_%"))
+                .where(TokenUsageLog.event_type.notin_(_EXPIRY_WARNING_EVENT_TYPES))
                 .order_by(TokenUsageLog.id.asc())
             )
         ).scalars().all()
@@ -1574,7 +1575,7 @@ async def test_account_token_logs_capture_request_metadata(tmp_path: Path, monke
                 select(TokenUsageLog)
                 .where(TokenUsageLog.bearer_token_id == 1)
                 # Stage 154: exclude pre-expiry warning rows (dashboard scanner side-effect).
-                .where(~TokenUsageLog.event_type.like("token_expiry_warning_%"))
+                .where(TokenUsageLog.event_type.notin_(_EXPIRY_WARNING_EVENT_TYPES))
                 .order_by(TokenUsageLog.id.asc())
             )
         ).scalars().all()

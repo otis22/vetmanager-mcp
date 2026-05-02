@@ -266,6 +266,9 @@ async def _load_account_dashboard(
     account_id: int,
 ) -> tuple[Account | None, int, int, VetmanagerConnection | None, str, str, list[dict[str, str | int]]]:
     async with get_session_factory()() as session:
+        # sync_expired_tokens commits internally when it has work; on return the
+        # session has no pending state, so the subsequent scan_token_expiry_warnings
+        # commit only persists rows it added itself (no phantom-commit coupling).
         await sync_expired_tokens(session, account_id=account_id)
         # Stage 154: best-effort pre-expiry warnings emitted on each dashboard
         # open (token_usage_logs row + per-threshold business event counter).
