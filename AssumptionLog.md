@@ -6556,12 +6556,15 @@ UI кабинета и issuance flow переведены на preset-based то
 - Codex gpt-5.5 первые 2 invocations через codex-proxy зависли с пустым output (sandbox/firewall возможный issue). Третий запуск с упрощённым inline-prompt отработал нормально и дал "no blockers". Бюджет: 1/2 PRD-review использован (две зависших попытки не считаются — sandbox-fail-equivalent).
 - Audit нашёл тот же `eval` паттерн в `backup_daily_cron.sh` и `rollback_db.sh` ПОСЛЕ написания первичного PRD. Scope F1 расширен с одного скрипта на три, тесты parametrized.
 - Kimi CLI оказался непригоден для headless md-review (только TUI/ACP-сервер); fallback на Sonnet subagent. Решение по Kimi отложено до сбора статистики на 2-3 этапах.
+- Sonnet code-review нашёл 1 medium + 4 nit на committed diff. Применены: (a) `.execution_options(synchronize_session=False)` на оба UPDATE statements (medium — без флага SQLAlchemy 2.0 пытается evaluate Python-сторону `KnownIssue.report_count + 1`, не может для column expression, identity-map silently stale; в текущем коде стейл не читается, но риск future-bug); (b) `tr -d '\r'` после `cut` на 3 скрипта (CRLF defensive); (c) explicit `RuntimeError` если probe is None в readiness handler (defensive, prevents opaque NoneType TypeError). Отклонены: 2 nit о fragility тестов (current acceptable, regression tests work).
+- Codex gpt-5.5 committed-diff review (1/2 code-diff budget) после applied fixes: "no blockers, push approved".
 
 ### Проверки
 
 - Targeted: `docker compose --profile test run --rm test pytest tests/test_stage153_review_followup.py tests/test_deploy_server_script.py -q` — `24 passed, 1 skipped`.
 - Full Docker suite: `docker compose --profile test run --rm test` — `964 passed, 1 skipped, 57 deselected` за 105s.
-- Static: PRD прошёл Sonnet + Spark + Codex gpt-5.5 + simplicity. Все ревью-гейты пройдены.
+- Static: PRD прошёл Sonnet + Spark + Codex gpt-5.5 + simplicity. Code committed-diff прошёл Sonnet + Codex gpt-5.5. Все ревью-гейты пройдены.
+- После Sonnet diff fixes: `pytest tests/test_stage153_review_followup.py tests/test_web_observability.py tests/test_stage149_agent_feedback.py -q` — `36 passed, 1 skipped`.
 
 ### Обратная связь
 

@@ -19,8 +19,8 @@ cd "${REMOTE_DIR}"
 POSTGRES_USER="${POSTGRES_USER:-vetmanager}"
 POSTGRES_DB="${POSTGRES_DB:-vetmanager}"
 if [ -f .env ]; then
-  PG_USER_LINE="$(grep -E '^POSTGRES_USER=' .env | head -n 1 | cut -d= -f2-)"
-  PG_DB_LINE="$(grep -E '^POSTGRES_DB=' .env | head -n 1 | cut -d= -f2-)"
+  PG_USER_LINE="$(grep -E '^POSTGRES_USER=' .env | head -n 1 | cut -d= -f2- | tr -d '\r')"
+  PG_DB_LINE="$(grep -E '^POSTGRES_DB=' .env | head -n 1 | cut -d= -f2- | tr -d '\r')"
   if [ -n "${PG_USER_LINE}" ]; then
     POSTGRES_USER="${PG_USER_LINE%\"}"
     POSTGRES_USER="${POSTGRES_USER#\"}"

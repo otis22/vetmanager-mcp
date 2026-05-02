@@ -54,9 +54,12 @@ def register_system_routes(mcp, *, observed_route, html_response, json_response,
     async def readiness_check(request: Request) -> JSONResponse:
         # Read late-bound module attr so tests can monkeypatch the probe.
         # CancelledError must propagate; only TimeoutError becomes 503.
+        probe = globals()["check_storage_readiness"]
+        if probe is None:
+            raise RuntimeError("readiness_check called before register_system_routes installed the probe")
         try:
             is_ready, reason = await asyncio.wait_for(
-                globals()["check_storage_readiness"](),
+                probe(),
                 timeout=READINESS_CHECK_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError:

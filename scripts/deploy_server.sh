@@ -125,8 +125,9 @@ python3 scripts/update_env_secret.py .env FEEDBACK_FINGERPRINT_PEPPER "${REMOTE_
 # values are read inside containers via docker compose env. No eval to avoid
 # RCE if .env contains $(...) command substitution.
 if [ -f .env ]; then
-  PG_USER_LINE="$(grep -E '^POSTGRES_USER=' .env | head -n 1 | cut -d= -f2-)"
-  PG_DB_LINE="$(grep -E '^POSTGRES_DB=' .env | head -n 1 | cut -d= -f2-)"
+  # tr -d '\r' guards against CRLF line endings if .env was edited on Windows.
+  PG_USER_LINE="$(grep -E '^POSTGRES_USER=' .env | head -n 1 | cut -d= -f2- | tr -d '\r')"
+  PG_DB_LINE="$(grep -E '^POSTGRES_DB=' .env | head -n 1 | cut -d= -f2- | tr -d '\r')"
   if [ -n "${PG_USER_LINE}" ]; then
     POSTGRES_USER="${PG_USER_LINE%\"}"
     POSTGRES_USER="${POSTGRES_USER#\"}"

@@ -582,6 +582,7 @@ async def create_feedback_report(
                     first_seen_at=func.coalesce(KnownIssue.first_seen_at, now),
                     last_seen_at=now,
                 )
+                .execution_options(synchronize_session=False)
             )
         report = AgentFeedbackReport(
             source=FEEDBACK_SOURCE_MODEL,
@@ -685,6 +686,7 @@ async def write_auto_feedback_event(*, credentials, tool_name: str, exc: BaseExc
                 first_seen_at=func.coalesce(KnownIssue.first_seen_at, now),
                 last_seen_at=now,
             )
+            .execution_options(synchronize_session=False)
         )
         session.add(AgentFeedbackReport(
             source=FEEDBACK_SOURCE_AUTO,

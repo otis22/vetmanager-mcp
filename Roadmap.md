@@ -2596,3 +2596,88 @@ Workflow allowance (по согласованию с пользователем 
 - 152.4 Обновить README/deploy docs: добавить `FEEDBACK_FINGERPRINT_PEPPER` в required GitHub Secrets и rsync+deploy instructions; указать production/PostgreSQL обязательность и rotation/redeploy note. — `done`
 - 152.5 Добавить regression tests для deploy scripts: secret не передаётся как positional argv, `.env` writer выдерживает `&`, `|`, `\`, `/`, newline-safe policy, rsync path forwards pepper contract. — `done`
 - 152.6 Пройти full checks, Spark committed-diff review, стороннее committed-diff review, commit/push/deploy, prod `/healthz`, обновить AssumptionLog. — `done`
+
+## Этап 153. Review-followup hardening (Kimi 2026-04-30) — `done`
+
+Источник: super-review `artifacts/review/2026-04-30-changed-stage-150-152.md` (Kimi). Адекватные findings, не покрытые отдельными этапами: F1 (deploy_server.sh eval RCE), F4/F5 (`agent_feedback_service.report_count` lost-update), F13 (match_rules `contains_any/all` с `str(set)` false-positive), F14 (`build_error_fingerprint_hash` `any([...])` теряет `http_status=0`), F15 (`/readyz` без `asyncio.wait_for`), F23 (`deploy-prod.yml` deploy step без `timeout-minutes`).
+
+Цель: одним compact-этапом закрыть мелкие реальные дефекты из ревью, не плодя отдельные стадии под каждую правку. Архитектурные findings (F6-F12) — не сюда; запланируем отдельным этапом, если возьмёмся.
+
+- 153.1 Создать PRD stage 153 со списком фиксов и acceptance per finding. — `done`
+- 153.2 F1: заменить `eval "$(grep ... .env)"` на whitelist grep+cut для POSTGRES_USER/DB; audit-extended на `backup_daily_cron.sh` + `rollback_db.sh`. — `done`
+- 153.3 F13: заменить `str(actual or "")` на collection-aware compare для `contains_any/all` (set/frozenset/list/tuple); legacy str-substring path сохранён. — `done`
+- 153.4 F14: заменить `any([...])` на explicit `is not None` checks по полям в `build_error_fingerprint_hash`. — `done`
+- 153.5 F15: обернуть `/readyz` в `asyncio.wait_for(check_storage_readiness(), timeout=3.0)` + 503 с reason=storage_check_timeout; CancelledError пробрасывается. — `done`
+- 153.6 F4/F5: атомарный `update(KnownIssue).values(...).execution_options(synchronize_session=False)` вместо read-modify-write. — `done`
+- 153.7 F23: `timeout-minutes: 10` на deploy step в `.github/workflows/deploy-prod.yml`. — `done`
+- 153.8 Tests: regression-тесты на whitelist .env, collection-aware match_rules, fingerprint с `http_status=0`, readiness timeout, atomic report_count (PG-only concurrent skip). — `done`
+- 153.9 Full checks, ревью сторонней моделью на committed diff (Sonnet code-review applied 1 medium + 3 nit; Codex gpt-5.5 1/2 budget — push approved), commit/push, AssumptionLog, self-attestation. — `done`
+
+## Этап 154. Token expiry pre-notification — `todo`
+
+Источник: prod-метрика 2026-05-02 `expiring in 7d: 2` для топ-аккаунтов; нет ни in-app, ни email уведомлений; молчаливый expiry превратит активный аккаунт в `dead` без шанса на retention.
+
+Цель: дать аккаунтам и оператору заранее видеть приближающийся token expiry и предпринять rotation до факта.
+
+- 154.1 Создать PRD stage 154: scope (которые токены, какие каналы, какие пороги), out-of-scope (auto-rotation), privacy (не палить email в metric labels). — `todo`
+- 154.2 Reference artifacts review (technical-requirements, observability-runbook), уточнение PRD. — `todo`
+- 154.3 PRD-review + ревью сторонней моделью + simplicity eval. — `todo`
+- 154.4 Реализация metric `bearer_token_expires_in_days{token_id}` + структурный лог `token_expiry_warning` за 14/7/1 день. — `todo`
+- 154.5 Опциональный email/owner-chat notifier (если уже подключён канал) — иначе только metric+log + операторский runbook how-to-renew. — `todo`
+- 154.6 Tests: пороговые значения, дедуп уведомлений в одном пороге, `revoked` токены не шумят, `expired` не шумят. — `todo`
+- 154.7 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `todo`
+
+## Этап 155. IP mask UX & restrictive default — `todo`
+
+Источник: prod 2026-05-02 `token_auth_failed_ip_denied: 7 за 7d` (реальные denied-события) + Kimi F21 (`ServiceBearerToken.get_allowed_ip_mask` дефолт `*.*.*.*` оставляет токен открытым при забытом mask).
+
+Цель: убрать «забыл mask = открытый токен» по умолчанию, дать оператору наблюдаемость над denied-событиями и runbook на легитимный rotate IP.
+
+- 155.1 PRD stage 155: новый дефолт (например, no-mask = deny + явный opt-in `*.*.*.*`), миграция существующих null-mask токенов, observability контракт. — `todo`
+- 155.2 Reference artifacts review + PRD-review + ревью сторонней моделью + simplicity eval. — `todo`
+- 155.3 Сменить дефолт + audit log при попытке создать токен без mask. — `todo`
+- 155.4 Структурный лог `token_auth_failed_ip_denied` с masked owner email + token_id + source IP last-octet (privacy). Metric counter. — `todo`
+- 155.5 Operator runbook: «как разблокировать legitimate IP change» (CLI/SQL recipe, без раскрытия pepper/secrets). — `todo`
+- 155.6 Tests: миграция, default deny, valid mask, audit log content, ip_denied event shape. — `todo`
+- 155.7 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `todo`
+
+## Этап 156. Activation telemetry & no-traffic alert — `todo`
+
+Источник: prod 2026-05-02 `0 requests за 7d` при `4467 за 30d` — drop-off от топ-аккаунта прошёл бесшумно; observability построен на ошибках, а не на отсутствии успехов.
+
+Цель: научить систему сигналить «active token есть, requests за N часов нет» вместо ожидания, что drop-off заметят вручную.
+
+- 156.1 PRD stage 156: scope (per-account `last_request_at`, threshold, синтетический probe — да/нет), out-of-scope (auto-remediation). — `todo`
+- 156.2 Reference artifacts + PRD-review + ревью сторонней моделью + simplicity eval. — `todo`
+- 156.3 Metric `account_last_request_age_hours{account_id}` + структурный лог `account_traffic_silent` при пересечении threshold (24h/72h). — `todo`
+- 156.4 Опциональный synthetic probe от runner (cron, hits `/healthz` + `/readyz` + один read-only tool dry-run) — обсудить нужность в PRD. — `todo`
+- 156.5 Tests: метрика обновляется на каждом запросе, alert порог честный, revoked-аккаунт не шумит, dead-аккаунт не шумит. — `todo`
+- 156.6 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `todo`
+
+## Этап 157. Feedback write-path verification + KB seed bootstrap — `todo`
+
+Источник: prod 2026-05-02 `agent_feedback_reports: 0 rows` и `known_issues: 0 rows` при `4467 requests за 30d`. Возможны два варианта: (а) auto-event write-path тихо не пишет; (б) пишет, но 0 значимых ошибок было реально. KB пуст → middleware injection (Stage 149.5) бесполезен.
+
+Цель: подтвердить корректность write-path синтетическим триггером и заполнить KB минимальным seed'ом из накопленных API-quirks (`api-research-notes-ru.md`), чтобы deterministic injection начал давать value.
+
+- 157.1 PRD stage 157: scope (verification + seed размер 5-10), формат seed-фикстур, out-of-scope (LLM-suggestion, авто-naturalization из reports). — `todo`
+- 157.2 Reference artifacts (`api-research-notes-ru.md`, `api_entity_reference-ru.md`) + PRD-review + ревью сторонней моделью + simplicity eval. — `todo`
+- 157.3 Diagnostic: воспроизвести `write_auto_feedback_event` в prod через `docker exec mcp python -c ...`, убедиться что row появляется; зафиксировать в AssumptionLog либо «work as designed», либо bug + fix subtask. — `todo`
+- 157.4 Создать seed-фикстуру `scripts/seed_known_issues.py` (idempotent, can rerun) + 5-10 issues из known API quirks (camelCase quirks, 4xx semantics, datetime drift). — `todo`
+- 157.5 Применить seed на prod через safe deploy-step (или manual `docker exec`), верифицировать через `report_problem` что injection срабатывает на matching incident. — `todo`
+- 157.6 Tests: seed-script idempotency, валидность `match_rules_json`/`agent_playbook_json`, injection middleware подбирает seed-issue по fingerprint. — `todo`
+- 157.7 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `todo`
+
+## Этап 158. Account hygiene — archive zombie test accounts — `todo`
+
+Источник: prod 2026-05-02 — 3 из 7 accounts dead (`pr***@ex***.com` ×2, `ip***@ex***.com`), все registered 2026-04-01, без single request, без active connection. Засоряют top-N и dead-list, искажают метрики adoption.
+
+Цель: ввести soft-archive для zombie accounts (no requests + no active connection >30d) с возможностью восстановления, исключить их из product-metrics по умолчанию.
+
+- 158.1 PRD stage 158: scope (criteria для zombie, soft vs hard delete, restore path), privacy (не удалять audit trail). — `todo`
+- 158.2 Reference artifacts + PRD-review + ревью сторонней моделью + simplicity eval. — `todo`
+- 158.3 Migration: добавить `archived_at` в `accounts` (или статус), не ломая FK на токены. — `todo`
+- 158.4 CLI/script `scripts/archive_zombie_accounts.py --dry-run/--apply` с criteria из PRD. — `todo`
+- 158.5 Обновить `product_metrics_report.py`: исключать archived из total/dead/top-N (или показать отдельной строкой `archived: N`). — `todo`
+- 158.6 Tests: criteria correctness, restore path, dry-run idempotent, FK integrity. — `todo`
+- 158.7 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `todo`
