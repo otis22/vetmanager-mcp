@@ -6522,3 +6522,47 @@ UI кабинета и issuance flow переведены на preset-based то
 ### Обратная связь
 
 Пользователь попросил делать Roadmap до конца по workflow и включить все high/medium findings из super-review.
+
+---
+
+## Этап 153. Review-followup hardening (Kimi 2026-04-30) — 2026-05-02
+
+**Статус**: `done` (pending push + external diff review).
+
+### Что сделано
+
+- Создан `PRD/этап-153-review-followup-hardening.md` для compact follow-up по 6 адекватным findings из super-review `artifacts/review/2026-04-30-changed-stage-150-152.md` (orchestrator Kimi).
+- PRD прошёл ревью Sonnet (5 findings, applied), Spark (9 findings, applied), Codex gpt-5.5 1/2 budget (no blockers), simplicity eval (F1 переписан с 70 LOC general parser на 6 LOC whitelist grep+cut, whitelist > blacklist).
+- F1 (high security): `scripts/deploy_server.sh`, `scripts/backup_daily_cron.sh`, `scripts/rollback_db.sh` больше не используют `eval "$(grep ... .env)"` — заменено на whitelist-extract POSTGRES_USER/POSTGRES_DB через `grep -E ... | cut -d= -f2-`. Audit нашёл тот же copy-paste eval в backup/rollback скриптах — F1 расширен на whole class.
+- F4/F5 (race condition): `agent_feedback_service.create_feedback_report` и `write_auto_feedback_event` используют `session.execute(update(KnownIssue).values(report_count=KnownIssue.report_count + 1, ...))` вместо read-modify-write. Lost-update под параллельными reports/auto-events на одном `known_issue_id` устранён.
+- F13 (logic bug): `match_rules` для `contains_any`/`contains_all` теперь collection-aware — `isinstance(actual, (set, frozenset, list, tuple))` → in-collection membership; `isinstance(actual, str)` → legacy substring (regression-protected). Helper `_contains_any_member`/`_contains_all_members` извлечены.
+- F14 (logic bug): `build_error_fingerprint_hash` использует `incident.http_status is not None or ...` вместо `any([...])` — `http_status=0` (connection reset) теперь даёт fingerprint вместо `None`.
+- F15 (reliability): `web_routes_system.readiness_check` обёрнут в `asyncio.wait_for(check_storage_readiness(), timeout=3.0)` через late-bound module attr (для test monkeypatch). На `TimeoutError` — 503 с `reason="storage_check_timeout"`. `CancelledError` пробрасывается без conversion.
+- F23 (reliability): `.github/workflows/deploy-prod.yml` deploy step получил `timeout-minutes: 10`.
+- Добавлен `tests/test_stage153_review_followup.py` (15 тестов passed + 1 PG-only skip placeholder), full Docker suite — 964 passed.
+- Заведена запись 4-6 в `artifacts/review/inadequate-findings-index.md` для F2/F3 (pool.py race) и F8 (host_resolver duplication) с rationale: deferred как architectural / single-loop production не воспроизводит race.
+- `artifacts/review/kimi-usage-stats.md` фиксирует, что Kimi CLI не имеет non-interactive headless режима — для md-ревью пока fallback на Sonnet subagent. Решение по Kimi после 2-3 этапов сбора стат.
+
+### Решения и обоснования
+
+- F1 simplicity-rewrite: реальный outer-bash usage — только POSTGRES_USER/POSTGRES_DB. Все остальные значения `.env` читаются внутри контейнеров через docker compose env. Whitelist grep+cut (~6 LOC × 3 скрипта) безопаснее (whitelist > blacklist), не требует поддержки парсера для quote/comment/BOM/CRLF, eliminates RCE без введения новой абстракции.
+- F4/F5 без `with_for_update`: single-row atomic UPDATE сериализуется PostgreSQL'ом сам; row-level lock нужен только для multi-statement read-then-update паттерна, который мы как раз убираем.
+- F13 collection-discriminator: `dict_keys`/`dict_values` обрабатываются `(list, tuple)` ветвью только если они тоже instance of list/tuple — иначе попадают в `else False`. Спарковая рекомендация о dict_keys учтена в комментарии теста, но дискриминатор `set/frozenset/list/tuple` достаточен для текущего usage в `params_shape: set`.
+- F15 module-level `check_storage_readiness` slot вместо рефакторинга `register_system_routes` параметра в module-level import: минимальная инвазия, late-binding для test monkeypatch, `register_system_routes` остаётся обратно совместимым.
+- F23 timeout-minutes: 10 — deploy на здоровом хосте укладывается в 3-5 минут; 10 щедрый верхний предел.
+
+### Проблемы
+
+- Codex gpt-5.5 первые 2 invocations через codex-proxy зависли с пустым output (sandbox/firewall возможный issue). Третий запуск с упрощённым inline-prompt отработал нормально и дал "no blockers". Бюджет: 1/2 PRD-review использован (две зависших попытки не считаются — sandbox-fail-equivalent).
+- Audit нашёл тот же `eval` паттерн в `backup_daily_cron.sh` и `rollback_db.sh` ПОСЛЕ написания первичного PRD. Scope F1 расширен с одного скрипта на три, тесты parametrized.
+- Kimi CLI оказался непригоден для headless md-review (только TUI/ACP-сервер); fallback на Sonnet subagent. Решение по Kimi отложено до сбора статистики на 2-3 этапах.
+
+### Проверки
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_stage153_review_followup.py tests/test_deploy_server_script.py -q` — `24 passed, 1 skipped`.
+- Full Docker suite: `docker compose --profile test run --rm test` — `964 passed, 1 skipped, 57 deselected` за 105s.
+- Static: PRD прошёл Sonnet + Spark + Codex gpt-5.5 + simplicity. Все ревью-гейты пройдены.
+
+### Обратная связь
+
+Пользователь задал custom review config: Sonnet unlimited, Codex Spark unlimited, Codex gpt-5.5 budget 2; Kimi для md-ревью с эксперимент-стат. Кими оказался не headless — нужна ACP-обвязка для headless usage. Решено fallback на Sonnet с записью в kimi-usage-stats.md.

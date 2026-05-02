@@ -303,3 +303,37 @@ Source: `artifacts/review/2026-04-24-full-stage-136.md`
   - **Причина dismiss**: valid low-severity UX/API polish, below requested high/medium remediation priority for this super-review.
 - PII log concerns around aggregator context and token_name.
   - **Причина dismiss**: valid low/medium hardening, but lower confidence and less urgent than confirmed token cache/defaults/auth-audit findings; revisit during logging hardening stage.
+
+## 2026-04-30 super-review changed-stage-150-152
+
+Source: `artifacts/review/2026-04-30-changed-stage-150-152.md`
+
+### 1. `scripts/deploy_server.sh` — historical F1 (argv pepper transport / sed .env update)
+
+- reviewer: spark_3 (historical memory validation), confidence: 0.95
+- **Причина dismiss**: Stage 152 заменил argv-транспорт на stdin-to-temp-file и sed на Python quoting-safe writer. Старое замечание больше неактуально.
+
+### 2. `README.md` — historical F2 (отсутствие FEEDBACK_FINGERPRINT_PEPPER в списке секретов)
+
+- reviewer: spark_3 (historical memory validation), confidence: 0.98
+- **Причина dismiss**: Stage 152 добавил pepper в required GitHub Secrets list и в rsync-инструкции.
+
+### 3. `scripts/sync_and_deploy_server.sh` — historical F3 (не перенаправлял pepper)
+
+- reviewer: spark_3 (historical memory validation), confidence: 0.98
+- **Причина dismiss**: Stage 152 добавил fail-fast validation и env forwarding в deploy_server.sh.
+
+### 4. `vm_transport/pool.py:41-56` — F2 cross-loop `_shared_http_client_lock` RuntimeError
+
+- reviewer: codex_blindspot, confidence: 0.95, arbitration_verdict: confirm/keep high
+- **Причина dismiss (deferred)**: спекулятивно для prod-context. Production runs uvicorn single-worker → один shared event loop, lock привязывается к нему один раз и больше не пересоздаётся. Cross-loop RuntimeError возникает только в unit-test setups, пересоздающих loop между тестами; полный test suite (937 passed на 2026-04-30) такого не воспроизводит. Mitigation существует естественно: lazy lock + WeakKeyDictionary дают per-loop separation (см. `host_resolver.py:50-127`). Per-loop locks pattern — отдельный architecture refactor (F8 reuse pool); сделать вместе с F8 или после первого реального воспроизведения.
+
+### 5. `vm_transport/pool.py:89-97` — F3 `reset_shared_http_client` race с concurrent `get_shared_http_client`
+
+- reviewer: codex_blindspot, confidence: 0.9, arbitration_verdict: confirm/keep high
+- **Причина dismiss (deferred)**: `reset_shared_http_client` используется только в test teardown и graceful shutdown — не на hot path. Production не вызывает `reset_*` под нагрузкой; race между reset и get происходит только в искусственных setup'ах. Lock-around-clear (предложенная фиксация) тривиально применим, но требует расширения lock contract (`reset` сейчас не блокирующая). Запланировать вместе с F2 в архитектурном refactor pool.py (если будет браться) или защитить лёгким `async with _get_pool_lock():` вокруг `clear()` если найдётся повод трогать файл.
+
+### 6. `host_resolver.py:50-127` — F8 дублирует pool.py per-loop client pattern
+
+- reviewer: architecture, confidence: 0.95, arbitration_verdict: not arbitrated
+- **Причина dismiss (architectural, deferred)**: дублирование признаётся, но extract shared `per_loop_async_client_factory` — архитектурный refactor, не входит в scope hardening Stage 153. Заводится отдельным этапом, когда будет следующий касающийся `host_resolver` change.

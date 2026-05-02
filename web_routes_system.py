@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import os
 
@@ -15,8 +16,17 @@ from observability_logging import SECURITY_LOGGER
 from request_context import get_request_context
 from service_metrics import PROMETHEUS_CONTENT_TYPE, record_auth_failure, render_prometheus_metrics
 
+# Stage 153 (F15): bounded timeout so /readyz never hangs the orchestrator if
+# the storage probe stalls. Module-level so tests can monkeypatch.
+READINESS_CHECK_TIMEOUT_SECONDS = 3.0
+# Stage 153 (F15): module-level slot so tests can monkeypatch the storage probe.
+# `register_system_routes` writes here at registration time; the handler reads
+# from the module at call time (late binding through closure).
+check_storage_readiness = None
+
 
 def register_system_routes(mcp, *, observed_route, html_response, json_response, plain_text_response, check_storage_readiness):
+    globals()["check_storage_readiness"] = check_storage_readiness
     @observed_route(mcp, "/", methods=["GET"], include_in_schema=False)
     async def landing_page(request: Request) -> HTMLResponse:
         # Stage 148: inline <script> in landing requires per-response nonce so
@@ -42,7 +52,15 @@ def register_system_routes(mcp, *, observed_route, html_response, json_response,
 
     @observed_route(mcp, "/readyz", methods=["GET"], include_in_schema=False)
     async def readiness_check(request: Request) -> JSONResponse:
-        is_ready, reason = await check_storage_readiness()
+        # Read late-bound module attr so tests can monkeypatch the probe.
+        # CancelledError must propagate; only TimeoutError becomes 503.
+        try:
+            is_ready, reason = await asyncio.wait_for(
+                globals()["check_storage_readiness"](),
+                timeout=READINESS_CHECK_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            is_ready, reason = False, "storage_check_timeout"
         return json_response(
             request,
             {

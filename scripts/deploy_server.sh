@@ -120,11 +120,21 @@ fi
 
 python3 scripts/update_env_secret.py .env FEEDBACK_FINGERPRINT_PEPPER "${REMOTE_PEPPER_FILE}"
 
-# Source .env for POSTGRES_USER etc. (skip UID/GID — readonly in bash)
+# Stage 153 (F1): whitelist-extract POSTGRES_USER and POSTGRES_DB from .env.
+# Only these two are needed in outer bash (pg_dump/pg_isready below). All other
+# values are read inside containers via docker compose env. No eval to avoid
+# RCE if .env contains $(...) command substitution.
 if [ -f .env ]; then
-  set -a
-  eval "$(grep -v '^\(UID\|GID\)=' .env | grep -v '^#' | grep -v '^$')"
-  set +a
+  PG_USER_LINE="$(grep -E '^POSTGRES_USER=' .env | head -n 1 | cut -d= -f2-)"
+  PG_DB_LINE="$(grep -E '^POSTGRES_DB=' .env | head -n 1 | cut -d= -f2-)"
+  if [ -n "${PG_USER_LINE}" ]; then
+    POSTGRES_USER="${PG_USER_LINE%\"}"
+    POSTGRES_USER="${POSTGRES_USER#\"}"
+  fi
+  if [ -n "${PG_DB_LINE}" ]; then
+    POSTGRES_DB="${PG_DB_LINE%\"}"
+    POSTGRES_DB="${POSTGRES_DB#\"}"
+  fi
 fi
 
 # ── Build image once ─────────────────────────────────────────────────────────

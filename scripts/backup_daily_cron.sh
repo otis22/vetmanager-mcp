@@ -14,15 +14,22 @@ KEEP_DAYS=30
 
 cd "${REMOTE_DIR}"
 
-# Source .env for POSTGRES_USER
-if [ -f .env ]; then
-  set -a
-  eval "$(grep -v '^\(UID\|GID\)=' .env | grep -v '^#' | grep -v '^$')"
-  set +a
-fi
-
+# Stage 153 (F1): whitelist-extract POSTGRES_USER/DB from .env (no eval).
+# Same pattern as deploy_server.sh — see PRD/этап-153 for rationale.
 POSTGRES_USER="${POSTGRES_USER:-vetmanager}"
 POSTGRES_DB="${POSTGRES_DB:-vetmanager}"
+if [ -f .env ]; then
+  PG_USER_LINE="$(grep -E '^POSTGRES_USER=' .env | head -n 1 | cut -d= -f2-)"
+  PG_DB_LINE="$(grep -E '^POSTGRES_DB=' .env | head -n 1 | cut -d= -f2-)"
+  if [ -n "${PG_USER_LINE}" ]; then
+    POSTGRES_USER="${PG_USER_LINE%\"}"
+    POSTGRES_USER="${POSTGRES_USER#\"}"
+  fi
+  if [ -n "${PG_DB_LINE}" ]; then
+    POSTGRES_DB="${PG_DB_LINE%\"}"
+    POSTGRES_DB="${POSTGRES_DB#\"}"
+  fi
+fi
 
 mkdir -p "${BACKUP_DIR}"
 

@@ -78,6 +78,7 @@ jobs:
             ./ "${PROD_SSH_TARGET}:${REMOTE_DIR}/"
 
       - name: Run remote deploy
+        timeout-minutes: 10
         env:
           PROD_SSH_TARGET: ${{ secrets.PROD_SSH_TARGET }}
           PROD_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR }}

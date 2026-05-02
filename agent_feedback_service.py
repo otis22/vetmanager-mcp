@@ -15,7 +15,7 @@ import re
 from typing import Any
 
 from fastmcp.exceptions import ToolError
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from observability_logging import RUNTIME_LOGGER
@@ -268,12 +268,14 @@ def should_skip_report_hint(exc: BaseException) -> bool:
 
 def build_error_fingerprint_hash(incident: FeedbackIncident) -> str | None:
     normalized_text = normalize_error_text(incident.error_excerpt)
-    if not any([
-        incident.http_status,
-        incident.error_code,
-        normalized_text,
-        incident.params_shape,
-    ]):
+    # Stage 153 (F14): explicit `is not None` for http_status so http_status=0
+    # (connection reset etc.) still produces a fingerprint instead of None.
+    if not (
+        incident.http_status is not None
+        or incident.error_code
+        or normalized_text
+        or incident.params_shape
+    ):
         return None
     payload = {
         "tool": incident.related_tool or "",
@@ -385,6 +387,29 @@ def _incident_value(incident: FeedbackIncident, field: str) -> Any:
     return None
 
 
+def _contains_any_member(actual: Any, expected: list[Any]) -> bool:
+    """Stage 153 (F13): membership check for collections (set/frozenset/list/tuple)
+    + legacy substring match for strings. None / dict / other types → False.
+    """
+    if isinstance(actual, (set, frozenset, list, tuple)):
+        return any(item in actual for item in expected)
+    if isinstance(actual, str):
+        return any(str(item) in actual for item in expected)
+    return False
+
+
+def _contains_all_members(actual: Any, expected: list[Any]) -> bool:
+    """Stage 153 (F13): all-members variant of `_contains_any_member`."""
+    if isinstance(actual, (set, frozenset, list, tuple)):
+        return all(item in actual for item in expected)
+    if isinstance(actual, str):
+        return all(str(item) in actual for item in expected)
+    # Empty `expected` with non-collection actual: preserve `all([]) == True`
+    # semantics for backwards compatibility with rules using contains_all on
+    # absent fields with empty expected list.
+    return not expected
+
+
 def match_rules(raw_json: str | None, incident: FeedbackIncident) -> bool:
     data = validate_match_rules_json(raw_json)
     if data is None:
@@ -402,10 +427,10 @@ def match_rules(raw_json: str | None, incident: FeedbackIncident) -> bool:
             if not isinstance(expected, list) or actual not in expected:
                 return False
         elif op == "contains_any":
-            if not isinstance(expected, list) or not any(str(item) in str(actual or "") for item in expected):
+            if not isinstance(expected, list) or not _contains_any_member(actual, expected):
                 return False
         elif op == "contains_all":
-            if not isinstance(expected, list) or not all(str(item) in str(actual or "") for item in expected):
+            if not isinstance(expected, list) or not _contains_all_members(actual, expected):
                 return False
         elif op == "has_keys":
             if not isinstance(expected, list) or not set(expected).issubset(actual or set()):
@@ -545,13 +570,19 @@ async def create_feedback_report(
         )
         known_issue = await find_known_issue_match(session, incident)
         now = _now()
-        known_issue_row = None
         if known_issue is not None:
-            known_issue_row = await session.get(KnownIssue, known_issue.id)
-            if known_issue_row is not None:
-                known_issue_row.report_count += 1
-                known_issue_row.first_seen_at = known_issue_row.first_seen_at or now
-                known_issue_row.last_seen_at = now
+            # Stage 153 (F4): atomic UPDATE avoids lost-update under concurrent
+            # feedback reports. Row-level serialization is provided by the SQL
+            # engine; no explicit `with_for_update` needed.
+            await session.execute(
+                update(KnownIssue)
+                .where(KnownIssue.id == known_issue.id)
+                .values(
+                    report_count=KnownIssue.report_count + 1,
+                    first_seen_at=func.coalesce(KnownIssue.first_seen_at, now),
+                    last_seen_at=now,
+                )
+            )
         report = AgentFeedbackReport(
             source=FEEDBACK_SOURCE_MODEL,
             category=category,
@@ -645,9 +676,16 @@ async def write_auto_feedback_event(*, credentials, tool_name: str, exc: BaseExc
                 extra={"event_name": "feedback_auto_cap"},
             )
             return
-        known_issue.report_count += 1
-        known_issue.first_seen_at = known_issue.first_seen_at or now
-        known_issue.last_seen_at = now
+        # Stage 153 (F5): atomic UPDATE for auto-event report_count too.
+        await session.execute(
+            update(KnownIssue)
+            .where(KnownIssue.id == known_issue.id)
+            .values(
+                report_count=KnownIssue.report_count + 1,
+                first_seen_at=func.coalesce(KnownIssue.first_seen_at, now),
+                last_seen_at=now,
+            )
+        )
         session.add(AgentFeedbackReport(
             source=FEEDBACK_SOURCE_AUTO,
             category=FEEDBACK_CATEGORY_BUG,
