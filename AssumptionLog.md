@@ -6786,7 +6786,7 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 ## Этап 157. Feedback write-path verification + KB seed bootstrap — 2026-05-03
 
-**Статус**: `stop` — code/test/docs часть выполнена; production seed apply/diagnostic заблокированы отсутствием явного production operator identity/secrets в локальном workspace.
+**Статус**: `done` — code/test/docs часть выполнена; production seed apply/diagnostic выполнены после explicit operator identity от пользователя.
 
 ### Что сделано
 
@@ -6827,7 +6827,18 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Проблемы
 
 - Локальный CLI smoke на пустой SQLite без миграций упал `no such table: known_issues`. Это expected precondition, не runtime bug: script рассчитан на мигрированную DB. README дополнен строкой “Run after DB migrations are applied”.
-- Production diagnostic/apply не выполнены: в workspace нет `PROD_SSH_TARGET`/SSH secret и нет явно выбранных `account_id`/`bearer_token_id`. Команды задокументированы; Roadmap 157.3/157.5 оставлены `stop`.
+- До follow-up production diagnostic/apply были заблокированы: не было явно выбранных `account_id`/`bearer_token_id`. После сообщения пользователя блок снят, результаты ниже.
+- Follow-up 2026-05-03: пользователь указал production account email `vromanichev24@gmail.com`. На prod `root@212.193.59.219` найден `account_id=3`; выбран самый свежий активный `bearer_token_id=8` без вывода raw bearer token/hash (raw token не хранится).
+- Production seed run:
+  - `python scripts/seed_known_issues.py --dry-run` перед apply — `created=6 updated=0 unchanged=0 skipped=0`;
+  - `python scripts/seed_known_issues.py --apply` — `created=6 updated=0 unchanged=0 skipped=0`;
+  - повторный `--dry-run` — `created=0 updated=0 unchanged=6 skipped=0`.
+- Production diagnostic:
+  - `python scripts/seed_known_issues.py diagnostic-auto-event --apply --account-id 3 --bearer-token-id 8` — `status=ok event_created=True report_created=True elapsed_ms=54.589...`;
+  - DB verification before cleanup: run-specific `known_issue_match_events(source=auto)=1`, `agent_feedback_reports(source=auto)=1`;
+  - seeded incident verification: `create_admission` + `admission_date` matched `[seed:admission-create-date-field]` and `safe_to_retry=True`;
+  - synthetic diagnostic cleanup executed per README: deleted 1 event, 1 report, 1 diagnostic known issue; final diagnostic row counts are 0, final real seed known issues count is 6.
+  - Production `/healthz` after cleanup returned `{"status":"ok","probe":"liveness","service":"vetmanager-mcp"}`.
 
 ### Проверки
 
@@ -6842,4 +6853,4 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 ### Обратная связь
 
-Пользователь попросил «делай по очереди». Следующий Roadmap stage 158 не начат, потому что Stage 157 имеет explicit production stop items.
+Пользователь попросил «делай по очереди», затем дал production identity: `vromanichev24@gmail.com`. Stage 157 production stop items закрыты.

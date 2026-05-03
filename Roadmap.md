@@ -2654,7 +2654,7 @@ Workflow allowance (по согласованию с пользователем 
 - 156.5 Tests: метрика обновляется на каждом запросе, alert порог честный, revoked-аккаунт не шумит, dead-аккаунт не шумит. — `done` (9 targeted Stage 156 tests; full default suite `1023 passed, 1 skipped, 57 deselected`).
 - 156.6 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `done`
 
-## Этап 157. Feedback write-path verification + KB seed bootstrap — `stop`
+## Этап 157. Feedback write-path verification + KB seed bootstrap — `done`
 
 Источник: prod 2026-05-02 `agent_feedback_reports: 0 rows` и `known_issues: 0 rows` при `4467 requests за 30d`. Возможны два варианта: (а) auto-event write-path тихо не пишет; (б) пишет, но 0 значимых ошибок было реально. KB пуст → middleware injection (Stage 149.5) бесполезен.
 
@@ -2662,9 +2662,9 @@ Workflow allowance (по согласованию с пользователем 
 
 - 157.1 PRD stage 157: scope (verification + seed размер 5-10), формат seed-фикстур, out-of-scope (LLM-suggestion, авто-naturalization из reports). — `done`
 - 157.2 Reference artifacts (`api-research-notes-ru.md`, `api_entity_reference-ru.md`) + PRD-review + ревью сторонней моделью + simplicity eval. — `done` (Spark PRD: 3 accepted findings + repeat `[]`; Claude Opus PRD 2/2 budget: 7 accepted findings; final Spark sanity accepted 2 medium).
-- 157.3 Diagnostic: воспроизвести `write_auto_feedback_event` в prod через `docker exec mcp python -c ...`, убедиться что row появляется; зафиксировать в AssumptionLog либо «work as designed», либо bug + fix subtask. — `stop` (implemented wrapper-path diagnostic in `scripts/seed_known_issues.py diagnostic-auto-event`; actual prod run requires operator-supplied `account_id`/`bearer_token_id` and production secrets not available in this workspace).
+- 157.3 Diagnostic: воспроизвести `write_auto_feedback_event` в prod через `docker exec mcp python -c ...`, убедиться что row появляется; зафиксировать в AssumptionLog либо «work as designed», либо bug + fix subtask. — `done` (prod `account_id=3`, `bearer_token_id=8`; `diagnostic-auto-event` returned `event_created=True report_created=True elapsed_ms=54.59`; synthetic rows cleaned after verification).
 - 157.4 Создать seed-фикстуру `scripts/seed_known_issues.py` (idempotent, can rerun) + 5-10 issues из known API quirks (camelCase quirks, 4xx semantics, datetime drift). — `done` (6 seed issues; stable `[seed:{slug}]` marker; duplicate guard).
-- 157.5 Применить seed на prod через safe deploy-step (или manual `docker exec`), верифицировать через `report_problem` что injection срабатывает на matching incident. — `stop` (blocked on explicit prod operator action/identity; README documents safe commands).
+- 157.5 Применить seed на prod через safe deploy-step (или manual `docker exec`), верифицировать через `report_problem` что injection срабатывает на matching incident. — `done` (prod seed apply created 6 rows; rerun dry-run `unchanged=6`; seeded `create_admission` incident matched `[seed:admission-create-date-field]` playbook).
 - 157.6 Tests: seed-script idempotency, валидность `match_rules_json`/`agent_playbook_json`, injection middleware подбирает seed-issue по fingerprint. — `done` (10 targeted Stage 157 tests; feedback regression subset `57 passed, 1 skipped`; full suite `1033 passed, 1 skipped, 57 deselected`).
 - 157.7 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `done` (Spark committed-diff `[]`; Claude Opus accepted 3 medium, fixed before amend).
 
