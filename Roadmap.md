@@ -2641,18 +2641,18 @@ Workflow allowance (по согласованию с пользователем 
 - 155.6 Tests: 16 targeted (model schema NOT NULL + helper removal, migration round-trip backfill, service explicit ip_mask TypeError, wildcard persisted explicitly, privacy_utils helpers, ip_denied audit payload privacy, wildcard create warning, runbook exists). — `done`
 - 155.7 Full checks (1014 passed), ревью сторонней моделью на diff (Sonnet + Codex 1/2 + Codex 2/2 если substantial), commit/push, AssumptionLog, self-attestation. — `done`
 
-## Этап 156. Activation telemetry & no-traffic alert — `todo`
+## Этап 156. Activation telemetry & no-traffic alert — `done`
 
 Источник: prod 2026-05-02 `0 requests за 7d` при `4467 за 30d` — drop-off от топ-аккаунта прошёл бесшумно; observability построен на ошибках, а не на отсутствии успехов.
 
 Цель: научить систему сигналить «active token есть, requests за N часов нет» вместо ожидания, что drop-off заметят вручную.
 
-- 156.1 PRD stage 156: scope (per-account `last_request_at`, threshold, синтетический probe — да/нет), out-of-scope (auto-remediation). — `todo`
-- 156.2 Reference artifacts + PRD-review + ревью сторонней моделью + simplicity eval. — `todo`
-- 156.3 Metric `account_last_request_age_hours{account_id}` + структурный лог `account_traffic_silent` при пересечении threshold (24h/72h). — `todo`
-- 156.4 Опциональный synthetic probe от runner (cron, hits `/healthz` + `/readyz` + один read-only tool dry-run) — обсудить нужность в PRD. — `todo`
-- 156.5 Tests: метрика обновляется на каждом запросе, alert порог честный, revoked-аккаунт не шумит, dead-аккаунт не шумит. — `todo`
-- 156.6 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `todo`
+- 156.1 PRD stage 156: scope (per-account `last_request_at`, threshold, синтетический probe — да/нет), out-of-scope (auto-remediation). — `done`
+- 156.2 Reference artifacts + PRD-review + ревью сторонней моделью + simplicity eval. — `done` (Spark PRD: 1 accepted medium, repeat `[]`; Claude Opus PRD 2/2 budget: accepted 5 medium; final external budget exhausted after fixes).
+- 156.3 Metric `account_last_request_age_hours{account_id}` + структурный лог `account_traffic_silent` при пересечении threshold (24h/72h). — `done` (`vetmanager_account_last_request_age_hours{account_id}` + process-local warning dedup).
+- 156.4 Опциональный synthetic probe от runner (cron, hits `/healthz` + `/readyz` + один read-only tool dry-run) — обсудить нужность в PRD. — `done` (отложен: passive telemetry first; synthetic probe out-of-scope).
+- 156.5 Tests: метрика обновляется на каждом запросе, alert порог честный, revoked-аккаунт не шумит, dead-аккаунт не шумит. — `done` (9 targeted Stage 156 tests; full default suite `1023 passed, 1 skipped, 57 deselected`).
+- 156.6 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `done`
 
 ## Этап 157. Feedback write-path verification + KB seed bootstrap — `todo`
 

@@ -138,9 +138,14 @@ HTTP probes и scrape endpoints:
   - `vetmanager_cache_{hits,misses,invalidations,evictions}_total` + `vetmanager_cache_entries`;
   - `vetmanager_business_events_total{event=...}` — lifecycle business events (`account_registered`, `web_login_succeeded`, `bearer_token_issued`, `bearer_token_revoked`) (stage 110);
   - `vetmanager_token_preset_issued_total{preset}` — issuance counter by access preset;
+  - `vetmanager_account_last_request_age_hours{account_id}` — hours since the
+    last successful bearer runtime request for active accounts with active
+    connection and live token; never-used tokens use the earliest live token
+    creation time as the age anchor;
   - `vetmanager_rate_limit_backend_degraded_total{reason}` — Redis rate-limit backend fallback/strict failure counter;
   - `vetmanager_sanitizer_failures_total` — depersonalized response sanitizer failures;
   - `/metrics` endpoint gated by optional `METRICS_AUTH_TOKEN` env (stage 111.1): when set, requires `Authorization: Bearer <token>` or returns 403;
+  - activation telemetry scan on `/metrics` runs only when `METRICS_AUTH_TOKEN` is configured and the request passed bearer auth;
   - invalid `/metrics` bearer attempts increment `vetmanager_auth_failures_total{source="metrics",reason="invalid_token"}` and emit a `security` log event `metrics_auth_failed`;
 - opt-in Sentry bootstrap для unhandled exceptions.
 

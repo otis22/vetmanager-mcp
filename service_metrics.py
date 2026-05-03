@@ -46,6 +46,7 @@ _TOOL_CALL_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = def
 _TOKEN_PRESET_ISSUED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _RATE_LIMIT_BACKEND_DEGRADED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _SANITIZER_FAILURES_TOTAL = 0
+_ACCOUNT_LAST_REQUEST_AGE_HOURS: dict[int, float] = {}
 # Stage 110.2: business events counter — `account_registered`, `bearer_token_issued`,
 # `bearer_token_revoked`, `web_login_succeeded`. Accumulated in-process since last
 # reset; reset_service_metrics() zeros it. Persistent counts live in the DB
@@ -70,6 +71,7 @@ def reset_service_metrics() -> None:
         _RATE_LIMIT_BACKEND_DEGRADED_TOTAL.clear()
         _SANITIZER_FAILURES_TOTAL = 0
         _BUSINESS_EVENTS_TOTAL.clear()
+        _ACCOUNT_LAST_REQUEST_AGE_HOURS.clear()
 
 
 _ALLOWED_BUSINESS_EVENTS = frozenset({
@@ -228,6 +230,16 @@ def record_sanitizer_failure() -> None:
         _SANITIZER_FAILURES_TOTAL += 1
 
 
+def set_account_last_request_age_hours(values: dict[int, float]) -> None:
+    """Replace account-level activation gauges with the latest DB snapshot."""
+    with _LOCK:
+        _ACCOUNT_LAST_REQUEST_AGE_HOURS.clear()
+        _ACCOUNT_LAST_REQUEST_AGE_HOURS.update({
+            int(account_id): float(age_hours)
+            for account_id, age_hours in values.items()
+        })
+
+
 def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, int | float]]]:
     """Return a stable JSON-serializable snapshot of current service metrics."""
     with _LOCK:
@@ -270,6 +282,10 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
             ),
             "sanitizer_failures_total": _SANITIZER_FAILURES_TOTAL,
             "business_events_total": dict(sorted(_BUSINESS_EVENTS_TOTAL.items())),
+            "account_last_request_age_hours": {
+                str(account_id): age_hours
+                for account_id, age_hours in sorted(_ACCOUNT_LAST_REQUEST_AGE_HOURS.items())
+            },
         }
 
 
@@ -436,6 +452,18 @@ def render_prometheus_metrics() -> str:
     for event_name, count in snapshot.get("business_events_total", {}).items():
         lines.append(
             f"vetmanager_business_events_total{_labels_text(event=event_name)} {count}"
+        )
+
+    lines.extend(
+        [
+            "# HELP vetmanager_account_last_request_age_hours Hours since last successful bearer runtime request for active accounts.",
+            "# TYPE vetmanager_account_last_request_age_hours gauge",
+        ]
+    )
+    for account_id, age_hours in snapshot.get("account_last_request_age_hours", {}).items():
+        lines.append(
+            f"vetmanager_account_last_request_age_hours"
+            f"{_labels_text(account_id=account_id)} {age_hours}"
         )
 
     # Cache metrics (from request_cache singleton).

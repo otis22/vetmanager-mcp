@@ -6,19 +6,22 @@ import asyncio
 import hmac
 import os
 
+import activation_telemetry
+import storage
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 from secrets import token_urlsafe
 
 from landing_page import render_landing_page
-from observability_logging import SECURITY_LOGGER
+from observability_logging import RUNTIME_LOGGER, SECURITY_LOGGER
 from request_context import get_request_context
 from service_metrics import PROMETHEUS_CONTENT_TYPE, record_auth_failure, render_prometheus_metrics
 
 # Stage 153 (F15): bounded timeout so /readyz never hangs the orchestrator if
 # the storage probe stalls. Module-level so tests can monkeypatch.
 READINESS_CHECK_TIMEOUT_SECONDS = 3.0
+ACTIVATION_TELEMETRY_SCAN_TIMEOUT_SECONDS = 2.0
 # Stage 153 (F15): module-level slot so tests can monkeypatch the storage probe.
 # `register_system_routes` writes here at registration time; the handler reads
 # from the module at call time (late binding through closure).
@@ -27,6 +30,11 @@ check_storage_readiness = None
 
 def register_system_routes(mcp, *, observed_route, html_response, json_response, plain_text_response, check_storage_readiness):
     globals()["check_storage_readiness"] = check_storage_readiness
+
+    async def _scan_activation_telemetry() -> None:
+        async with storage.get_session_factory()() as session:
+            await activation_telemetry.scan_activation_telemetry(session)
+
     @observed_route(mcp, "/", methods=["GET"], include_in_schema=False)
     async def landing_page(request: Request) -> HTMLResponse:
         # Stage 148: inline <script> in landing requires per-response nonce so
@@ -103,6 +111,20 @@ def register_system_routes(mcp, *, observed_route, html_response, json_response,
                     },
                 )
                 return plain_text_response(request, "forbidden", status_code=403)
+            try:
+                await asyncio.wait_for(
+                    _scan_activation_telemetry(),
+                    timeout=ACTIVATION_TELEMETRY_SCAN_TIMEOUT_SECONDS,
+                )
+            except Exception as exc:
+                RUNTIME_LOGGER.warning(
+                    "Activation telemetry scan failed.",
+                    extra={
+                        "event_name": "activation_telemetry_scan_failed",
+                        "error_class": exc.__class__.__name__,
+                        **get_request_context(request),
+                    },
+                )
         return plain_text_response(
             request,
             render_prometheus_metrics(),

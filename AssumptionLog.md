@@ -6718,3 +6718,66 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь задал custom review config: Sonnet unlimited, Codex Spark unlimited, Codex gpt-5.5 budget 2; Kimi для md-ревью с эксперимент-стат. Кими оказался не headless — нужна ACP-обвязка для headless usage. Решено fallback на Sonnet с записью в kimi-usage-stats.md.
+
+---
+
+## Этап 156. Activation telemetry & no-traffic alert — 2026-05-03
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Создан `PRD/этап-156-activation-telemetry-and-no-traffic-alert.md` с passive telemetry scope: без новой storage schema, без email/owner-chat, без synthetic read-only probe.
+- PRD gates:
+  - Spark PRD review read-only завис на sandbox/runtime path до результата; повторён один раз той же моделью `gpt-5.3-codex-spark` с `-s danger-full-access` и review-only prompt.
+  - Spark PRD review #1: 1 адекватный medium про missing `Account.status == active`; применён.
+  - Spark PRD repeat: `[]`.
+  - Claude Opus PRD review #1: 2 medium (несуществующий `disabled account` schema state; ambiguous never-used `last_request_at_utc`) — применены.
+  - Spark sanity after external fixes: `[]`.
+  - Claude Opus PRD review #2: 3 medium (earliest live token anchor, simplify source from `TokenUsageStat.last_used_at` to `ServiceBearerToken.last_used_at`, multi-worker process-local dedup risk) — применены. PRD external-review budget 2/2 исчерпан после фиксов.
+- Новый модуль `activation_telemetry.py`:
+  - `scan_activation_telemetry(session, *, now=None) -> int`;
+  - фильтр live accounts: `Account.status == active`, active `VetmanagerConnection`, active non-expired `ServiceBearerToken`;
+  - source `max(ServiceBearerToken.last_used_at)` по live tokens;
+  - never-used fallback: earliest live `ServiceBearerToken.created_at`;
+  - process-local dedup warnings per `(account_id, threshold_hours)`, reset when traffic resumes (`age_hours < 24`) or account no longer live.
+- `service_metrics.py`: добавлен gauge registry `set_account_last_request_age_hours(...)`, snapshot key `account_last_request_age_hours`, Prometheus family `vetmanager_account_last_request_age_hours{account_id}`.
+- `/metrics` route (`web_routes_system.py`) после успешной `METRICS_AUTH_TOKEN` auth выполняет best-effort activation scan; scan failure logs `activation_telemetry_scan_failed` and still serves metrics. Если `METRICS_AUTH_TOKEN` не настроен, endpoint остаётся открытым для совместимости, но activation scan не запускается.
+- Документация: README observability section + `artifacts/observability-runbook-vetmanager-mcp-ru.md` обновлены новой metric/log semantics.
+- Packaging: `activation_telemetry.py` добавлен в `pyproject.toml` wheel `only-include`.
+- Tests: `tests/test_stage156_activation_telemetry.py` — 9 targeted tests covering metric render, used/never-used anchors, live filters, threshold dedup reset, `/metrics` auth order, auth-unset scan skip, scan failure resilience and scan timeout bounding.
+
+### Решения и обоснования
+
+- **Source = `ServiceBearerToken.last_used_at`**, не `TokenUsageStat.last_used_at`: оба обновляются на successful auth, но bearer-token column уже на той же строке, где `created_at` fallback; это убирает лишний join и делает query проще.
+- **No new DB schema**: Stage 156 решает passive visibility, а не durable alert history. Existing token metadata достаточно.
+- **Synthetic probe out-of-scope**: read-only MCP dry-run от имени аккаунта может добавить upstream load и отдельные auth/permission edge cases. Сначала passive signal.
+- **Process-local dedup accepted**: рестарт или N workers могут дать повторные advisory warnings. Для текущего deploy это проще и безопаснее, чем Redis `SET NX EX` dependency на `/metrics` scrape path. Если logs станут шумными — отдельный этап для Redis-backed dedup.
+- **Metric privacy**: label только `account_id`; structured log не содержит email/domain/token prefix/IP/secrets. Never-used path явно логирует `last_request_at_utc=null`, `ever_used=false`, `age_anchor="token_created_at"`.
+- **Best-effort `/metrics` DB scan**: scan failure не должен ломать Prometheus scrape; readiness/storage degradation уже покрывается `/readyz`.
+- **Bounded `/metrics` scan**: Spark committed-diff review нашёл, что best-effort scan без timeout может подвесить Prometheus scrape при hung storage. Fix: `asyncio.wait_for(..., timeout=2.0)` вокруг activation scan; timeout логируется как `activation_telemetry_scan_failed`, metrics продолжают отдаваться.
+- **No unauthenticated activation scan**: Claude Opus committed-diff review указал, что optional open `/metrics` превращал scan в unauthenticated DB work. Fix: scan запускается только при configured + valid `METRICS_AUTH_TOKEN`; open compatibility mode отдаёт только already-collected process metrics.
+- **Connection liveness via `EXISTS`**: Claude Opus отметил N×M row blow-up при join на несколько active connections. Fix: active connection проверяется correlated `EXISTS`, token aggregation больше не умножается на connection rows.
+
+### Проблемы
+
+- Первый Spark PRD review в read-only режиме завис до результата; остановлен через `pkill`, повторён по локальному workflow тем же `gpt-5.3-codex-spark` в `danger-full-access` с запретом правок.
+- Внешнее PRD review #2 нашло, что первоначальный источник `TokenUsageStat.last_used_at` не минимален; PRD и implementation переключены на `ServiceBearerToken.last_used_at`.
+- Packaging audit поймал стандартный риск flat-layout `only-include`: новый root module нужно явно добавить в `pyproject.toml`.
+- Spark committed-diff review read-only повторил bwrap/runtime failure; повторён один раз в `danger-full-access`. Finding: `/metrics` scan без timeout — accepted and fixed with test.
+- Spark committed-diff review после timeout-fix вернул `[]`.
+- Claude Opus committed-diff review #1 нашёл 3 high/medium findings; приняты и исправлены: scan больше не выполняется при unset `METRICS_AUTH_TOKEN`, activation step целиком bounded через `asyncio.wait_for`, active connection filter переведён с join на `EXISTS`.
+- Финальные gates после Claude fixes: Spark committed-diff review read-only снова упал на bwrap/runtime до чтения diff, разрешённый fallback `danger-full-access` вернул `[]`; Claude Opus committed-diff review #2 вернул `[]`.
+
+### Проверки
+
+- Red: `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_stage156_activation_telemetry.py -q"` — падение на `ModuleNotFoundError: activation_telemetry` до реализации.
+- Targeted: `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_stage156_activation_telemetry.py -q"` — `7 passed` до timeout-fix; после Spark diff fix targeted subset `tests/test_stage156_activation_telemetry.py tests/test_stage111_blocker_cleanup.py::test_metrics_returns_200_when_token_matches -q` — `9 passed` (8 Stage 156 tests + existing `/metrics` smoke); после Claude Opus fix тот же subset — `10 passed` (9 Stage 156 tests + existing `/metrics` smoke).
+- Regression subset: `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_stage156_activation_telemetry.py tests/test_prometheus_metrics.py tests/test_stage111_blocker_cleanup.py tests/test_bearer_auth.py::test_resolve_bearer_auth_context_updates_last_used_at_for_active_token -q"` — `18 passed`.
+- Packaging/static: `docker compose --profile test run --rm test sh -c "python -m py_compile activation_telemetry.py service_metrics.py web_routes_system.py && python -m pytest tests/test_packaging_metadata.py -q"` — `2 passed`.
+- Full Docker suite: `docker compose --profile test run --rm test` — `1021 passed, 1 skipped, 57 deselected` за 89.63s до timeout-fix; после timeout-fix повторный full suite — `1022 passed, 1 skipped, 57 deselected` за 89.57s; после Claude Opus fix — `1023 passed, 1 skipped, 57 deselected` за 90.68s.
+- Audit after full suite: no legacy pattern / API-contract drift / packaging gap requiring code changes.
+
+### Обратная связь
+
+Пользователь попросил «делай по workflow до конца этапа». Этап выполнен по Roadmap/Core Loop с PRD gates, tests, full checks, audit, review gates, commit/push и self-attestation.

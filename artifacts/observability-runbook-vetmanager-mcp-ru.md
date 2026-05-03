@@ -6,6 +6,7 @@
 > - **Stage 111.1**: `/metrics` endpoint теперь требует `Authorization: Bearer $METRICS_AUTH_TOKEN` когда env задан (иначе 403). Без env — backward-compat open.
 > - **Stage 112**: `circuit_breaker_opened` structured log на CLOSED→OPEN + HALF_OPEN→OPEN; `integration_save_failed` log + `vetmanager_auth_failures_total{source="web_integration[_reauth]"}`; `entity` вместо `url_path` в retry/timeout/network-error логах (privacy).
 > - **Stage 134**: token audit committed logs пишутся только после successful DB commit и включают `request_id`/`correlation_id`; `/metrics` auth failures пишут security log + `vetmanager_auth_failures_total{source="metrics",reason="invalid_token"}`; custom web route 500/413 paths сохраняют correlation headers; billing host resolver coalesces concurrent cold-cache requests per domain.
+> - **Stage 156**: `/metrics` после успешной `METRICS_AUTH_TOKEN` bearer-auth обновляет activation gauge `vetmanager_account_last_request_age_hours{account_id}` и пишет `account_traffic_silent` warning на порогах 24h/72h для active accounts с active connection и live token.
 >
 > Полная ревизия runbook — отдельным этапом.
 
@@ -69,6 +70,7 @@ curl -fsS -H "Authorization: Bearer $METRICS_AUTH_TOKEN" \
 - `vetmanager_auth_failures_total`
 - `vetmanager_upstream_failures_total`
 - `vetmanager_token_preset_issued_total`
+- `vetmanager_account_last_request_age_hours`
 - `vetmanager_sanitizer_failures_total`
 
 Типовые симптомы:
@@ -86,6 +88,11 @@ curl -fsS -H "Authorization: Bearer $METRICS_AUTH_TOKEN" \
   означает timeout, network error, circuit-open или API 5xx со стороны
   Vetmanager; upstream HTTP 4xx смотрите в
   `vetmanager_upstream_requests_total{target="vetmanager_api",status="http_4xx"}`
+- `vetmanager_account_last_request_age_hours{account_id="..."}` выше 24/72
+  означает no-traffic risk для аккаунта с live token и active connection;
+  рядом в runtime logs искать `account_traffic_silent`. Если `ever_used=false`,
+  это activation failure: live token был выпущен, но successful bearer runtime
+  request ещё не проходил.
 
 ## 4. Error tracking
 
