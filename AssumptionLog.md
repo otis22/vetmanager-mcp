@@ -6828,7 +6828,7 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 - Локальный CLI smoke на пустой SQLite без миграций упал `no such table: known_issues`. Это expected precondition, не runtime bug: script рассчитан на мигрированную DB. README дополнен строкой “Run after DB migrations are applied”.
 - До follow-up production diagnostic/apply были заблокированы: не было явно выбранных `account_id`/`bearer_token_id`. После сообщения пользователя блок снят, результаты ниже.
-- Follow-up 2026-05-03: пользователь указал production account email `vromanichev24@gmail.com`. На prod `root@212.193.59.219` найден `account_id=3`; выбран самый свежий активный `bearer_token_id=8` без вывода raw bearer token/hash (raw token не хранится).
+- Follow-up 2026-05-03: пользователь указал production account identity out-of-band; в артефактах фиксируем только non-secret DB ids. На prod `root@212.193.59.219` найден `account_id=3`; выбран самый свежий активный `bearer_token_id=8` без вывода raw bearer token/hash (raw token не хранится).
 - Production seed run:
   - `python scripts/seed_known_issues.py --dry-run` перед apply — `created=6 updated=0 unchanged=0 skipped=0`;
   - `python scripts/seed_known_issues.py --apply` — `created=6 updated=0 unchanged=0 skipped=0`;
@@ -6853,4 +6853,4 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 ### Обратная связь
 
-Пользователь попросил «делай по очереди», затем дал production identity: `vromanichev24@gmail.com`. Stage 157 production stop items закрыты.
+Пользователь попросил «делай по очереди», затем дал production identity out-of-band. Stage 157 production stop items закрыты.
