@@ -6658,6 +6658,56 @@ Custom review config: Sonnet unlimited, Codex 1 на PRD review + 1 на code-di
 
 Пользователь явно попросил Claude CLI (claude-proxy `-p`) вместо Codex как стороннюю модель в этом этапе. Подтверждено что "1 на каждый ревью PRD и 1 на каждый ревью кода" = раздельные бюджеты per CLAUDE.md §3.1.
 
+---
+
+## Этап 155. IP mask UX & restrictive default — 2026-05-03
+
+**Статус**: `done` (pending push + diff review).
+
+### Что сделано
+
+- Создан `PRD/этап-155-ip-mask-ux-restrictive-default.md`. Custom review config: Sonnet unlimited, Spark unlimited, Codex `gpt-5.5` 1/PRD + 2/diff раздельно (per user instruction).
+- PRD прошёл Sonnet review (7 findings: 3 HIGH — SQLite batch_alter required, missed `test_token_scopes.py:76,112,148` callers, `_mask_email` private в scripts/; 2 medium, 1 low, 1 nit), Spark inline (10 findings: PG transaction race, IPv6 segment naming, schema-change additive note, и др.). Все адекватные применены.
+- Codex `gpt-5.5` PRD review (1/1 PRD budget): "no blockers, proceed to implementation".
+- **Migration** `alembic/versions/20260503_000013_allowed_ip_mask_not_null.py`: backfill NULL → `'*.*.*.*'` + `op.batch_alter_table` для SQLite-compat ALTER COLUMN nullable=False (pattern из 20260426_000011).
+- **Model**: удалён `ServiceBearerToken.get_allowed_ip_mask()`. `allowed_ip_mask: Mapped[str]` (без `| None`); Python-side `default="*.*.*.*"` оставлен ТОЛЬКО для test-fixture convenience (40 ORM-direct test instantiations); production write path — `service_token_service.issue_service_bearer_token` — требует explicit `ip_mask` (no Python default), AC #3 проверяет TypeError.
+- **Service layer** `service_token_service.issue_service_bearer_token`: `ip_mask: str` теперь required (без default); удалена ветка "wildcard → NULL" — теперь `validate_ip_mask(ip_mask)` всегда возвращает строку. После refresh: если `effective_ip_mask == WILDCARD_IP_MASK` → `RUNTIME_LOGGER.warning("token_created_with_wildcard_ip", extra={account_id, token_id, token_name})`.
+- **Auth path** `auth/bearer.py`: `effective_mask = token.allowed_ip_mask` (без `get_allowed_ip_mask`); ip_denied reject передаёт `extra_audit_details=build_ip_denied_audit_details(account, token, client_ip=...)` — новый helper.
+- **Audit payload extension**: `_reject` принимает `extra_audit_details: dict | None = None`, мерджит в `_base_auth_details`. `build_ip_denied_audit_details` собирает `{account_email_masked, client_ip_last_segment, expected_mask}`. Backwards-compatible (additive, существующие keys не убираются).
+- **`privacy_utils.py`** (новый shared module): `mask_email(...)` (extracted из `scripts/product_metrics_report.py`), `extract_client_ip_tail(...)` (новый, IPv4 split на `.`, IPv6 split на `:`, unknown → `"unknown"`).
+- `scripts/product_metrics_report.py` теперь импортирует `mask_email as _mask_email from privacy_utils` (BC-alias для `tests/test_stage110_product_metrics.py:15` import).
+- 3 прод call sites + 4 тестовых обновлены: `web.py:343`, `service_token_service.py:79`, `auth/bearer.py:277` → прямой `token.allowed_ip_mask`. `tests/test_token_scopes.py:76,112,148` + `tests/test_web_auth.py:1240` обновлены.
+- `pyproject.toml` wheel `only-include`: добавлен `privacy_utils.py` (без этого packaging test падает — known gotcha по PRD pattern).
+- `web_html.py:550` оставлен с `.get('ip_mask', '*.*.*.*')` defensive default + явный inline-комментарий «Stage 155: model NOT NULL, dict always populates; default kept as defensive guard for future dict-shape changes» (per Sonnet finding 5).
+- 16 targeted тестов в `tests/test_stage155_ip_mask_restrictive_default.py`: model schema (no helper, NOT NULL), grep-test exclude self+migration, migration round-trip + backfill, NOT NULL constraint, service TypeError без ip_mask, wildcard persisted explicitly, specific mask preserved, privacy_utils all branches, product_metrics import path, ip_denied payload + privacy whitelist, wildcard create RUNTIME_LOGGER.warning, specific mask NO warning, runbook exists + secrets-check.
+- Operator runbook `artifacts/runbook-operator-ip-mask.md`: SELECT mask recipe, UPDATE recipe для legitimate IP change, denied-events query, decision matrix «когда выпустить wildcard вместо update», anti-patterns. Не упоминает имена secrets буквально.
+
+### Решения и обоснования
+
+- **Backfill NULL → wildcard вместо deny-by-default**: per Roadmap user decision; backfill сохраняет current operational behavior (legacy NULL означал "unrestricted"), затем NOT NULL запрещает новые NULL. Zero-downtime, никакого user outreach.
+- **Python-side ORM `default="*.*.*.*"`**: pragmatic compromise — 40 test fixtures используют `ServiceBearerToken(...)` напрямую без mask. Bulk-rewrite — 40 call sites tedious; ORM default решает за 1 LOC. Production path не страдает, потому что `service_token_service` имеет required `ip_mask` (test через TypeError). Comment в model явно фиксирует rationale.
+- **Удаление `get_allowed_ip_mask` (3 LOC + 3 callers)** vs «оставить как-deprecated shim»: dual-API-surface = bug class. CLAUDE.md §4.1 trigger «sync mechanisms paired» (model `or "*.*.*.*"` + service `wildcard → NULL`) — обе ветки удалены вместе.
+- **`_mask_email` extract в `privacy_utils.py`** vs «inline duplicate»: Sonnet HIGH 3 — текущая функция script-private, недоступна из `auth/bearer.py`. Extract — single source of truth, BC-alias `_mask_email = mask_email` в product_metrics keeps `from scripts.product_metrics_report import _mask_email` (test_stage110:15) рабочим.
+- **`extract_client_ip_tail` для IPv6** (Sonnet/Spark MEDIUM): split на `:` для IPv6 vs split на `.` для IPv4. Unknown / None → `"unknown"`. Field renamed `_last_octet` → `_last_segment` в audit payload.
+- **`extra_audit_details` в `_reject`** vs «специальный ip_denied helper»: minimal-invasion extension существующего pipeline; сохраняет single audit-write path для всех reject branches.
+
+### Проблемы
+
+- 40 ORM-direct test fixtures без `allowed_ip_mask` сразу падали после ALTER NOT NULL. Решение через Python ORM default (см. выше) вместо bulk test rewrite — saved ~1h tedious work; trade-off задокументирован в model comment.
+- `test_packaging_metadata.py` поймал отсутствие `privacy_utils.py` в wheel `only-include`. Pattern known от Stage 153; fix 1 LOC в pyproject.toml.
+- Initial test_ac9 runbook test слишком строго ловил «FEEDBACK_FINGERPRINT_PEPPER» в негативном упоминании ("none of the recipes need access to ..."). Переформулировал runbook без буквальных имён secrets («application secrets or raw bearer tokens»).
+- Initial test_ac5 grep ловил сам себя (assertion test содержит string literal `"get_allowed_ip_mask"`) и migration comments (historical context). Решено через `--exclude` для test_stage155 file и migration file.
+
+### Проверки
+
+- Targeted: `pytest tests/test_stage155_ip_mask_restrictive_default.py -q` — `16 passed`.
+- Full Docker suite: `docker compose --profile test run --rm test` — `1014 passed, 1 skipped, 57 deselected` за 91s.
+- Static: PRD прошёл Sonnet + Spark + Codex gpt-5.5. Все ревью-гейты до commit'а.
+
+### Обратная связь
+
+Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решение по legacy NULL — пользователь явно сказал backfill `'*.*.*.*'` + удалить лишнюю логику поддержания старого. PRD соответствующим образом spec'нул удаление dual-API.
+
 ### Проверки
 
 - Targeted: `docker compose --profile test run --rm test pytest tests/test_stage153_review_followup.py tests/test_deploy_server_script.py -q` — `24 passed, 1 skipped`.

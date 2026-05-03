@@ -1237,7 +1237,7 @@ async def test_account_token_issue_allows_confirmed_full_access_and_wildcard_ip(
         )
     assert token is not None
     assert token.get_scopes() == list(TOKEN_PRESET_SCOPES[PRESET_FULL_ACCESS])
-    assert token.get_allowed_ip_mask() == "*.*.*.*"
+    assert token.allowed_ip_mask == "*.*.*.*"
 
     await engine.dispose()
     storage.reset_storage_state()

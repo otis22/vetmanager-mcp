@@ -547,6 +547,8 @@ def render_account_page(
                 f"<td>{escape(str(token.get('access_label', 'Legacy/custom')))}</td>"
                 f"<td>{escape(str(token.get('privacy_label', 'Standard')))}</td>"
                 f"<td><code>{escape(str(token['status']))}</code></td>"
+                # Stage 155: model is NOT NULL, web.py always populates ip_mask;
+                # default kept as defensive guard against future render-dict changes.
                 f"<td><code>{escape(str(token.get('ip_mask', '*.*.*.*')))}</code></td>"
                 f"<td>{escape(str(token['expires_at']))}</td>"
                 f"<td>{escape(str(token['last_used_at']))}</td>"

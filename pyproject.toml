@@ -37,6 +37,7 @@ only-include = [
     "host_validation.py",
     "landing_page.py",
     "observability_logging.py",
+    "privacy_utils.py",
     "prompts.py",
     "rate_limit_backend.py",
     "request_auth.py",

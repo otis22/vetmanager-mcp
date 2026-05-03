@@ -78,6 +78,7 @@ async def test_issue_service_bearer_token_persists_default_full_access_scopes(tm
                 account_id=1,
                 name="Default access token",
                 expires_in_days=7,
+                ip_mask="*.*.*.*",
             )
 
         assert token.access_policy_version == TOKEN_ACCESS_POLICY_VERSION
@@ -115,6 +116,7 @@ async def test_issue_service_bearer_token_persists_depersonalized_policy_flag(tm
                 name="Depersonalized token",
                 expires_in_days=7,
                 is_depersonalized=True,
+                ip_mask="*.*.*.*",
             )
 
         assert token.is_depersonalized is True
@@ -150,6 +152,7 @@ async def test_issue_service_bearer_token_uses_selected_access_preset_scopes(tmp
                 account_id=1,
                 name="Frontdesk token",
                 access_preset="frontdesk",
+                ip_mask="*.*.*.*",
             )
 
         assert deserialize_token_scopes(token.scopes_json) == [

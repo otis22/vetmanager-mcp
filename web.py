@@ -340,7 +340,7 @@ async def _load_account_dashboard(
                     "expires_at": _format_dt(token.expires_at) if token.expires_at else "No expiry",
                     "last_used_at": _format_dt(token.last_used_at or (usage.last_used_at if usage else None)),
                     "request_count": int(usage.request_count if usage else 0),
-                    "ip_mask": token.get_allowed_ip_mask(),
+                    "ip_mask": token.allowed_ip_mask,
                     "access_preset": inferred_preset or "legacy",
                     "access_label": access_label,
                     "privacy_label": "Depersonalized" if token.is_depersonalized else "Standard",

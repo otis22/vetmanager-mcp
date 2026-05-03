@@ -36,6 +36,7 @@ from bearer_token_manager import hash_bearer_token
 from domain_validation import ip_matches_mask
 from exceptions import AuthError, RateLimitError
 from observability_logging import RUNTIME_LOGGER, SECURITY_LOGGER
+from privacy_utils import extract_client_ip_tail, mask_email
 from request_context import get_current_request_context
 from service_metrics import record_auth_failure
 from storage_models import (
@@ -157,6 +158,24 @@ def _log_bearer_runtime_failure(reason: str) -> None:
     )
 
 
+def build_ip_denied_audit_details(
+    account: Account,
+    token: ServiceBearerToken,
+    *,
+    client_ip: str | None,
+) -> dict[str, str | int | None]:
+    """Stage 155: privacy-safe extra fields for the ip_denied audit row.
+
+    Operator gets enough to triage (which account, which subnet) without
+    leaking the full email or full client IP.
+    """
+    return {
+        "account_email_masked": mask_email(account.email),
+        "client_ip_last_segment": extract_client_ip_tail(client_ip),
+        "expected_mask": token.allowed_ip_mask,
+    }
+
+
 async def _reject(
     session: AsyncSession,
     *,
@@ -169,6 +188,7 @@ async def _reject(
     status_code: int,
     retry_after_seconds: int | None = None,
     audit_best_effort: bool = False,
+    extra_audit_details: dict[str, str | int | None] | None = None,
 ) -> NoReturn:
     """Record failure metric + audit log + commit, then raise AuthError.
 
@@ -182,16 +202,19 @@ async def _reject(
     """
     record_auth_failure(source="bearer_runtime", reason=metric_reason)
     token_id = token.id
+    base_details = _base_auth_details(
+        account_id=account.id,
+        token=token,
+        reason=log_reason,
+        retry_after_seconds=retry_after_seconds,
+    )
+    if extra_audit_details:
+        base_details.update(extra_audit_details)
     audit_event = add_token_usage_log(
         session,
         bearer_token_id=token_id,
         event_type=log_event,
-        details=_base_auth_details(
-            account_id=account.id,
-            token=token,
-            reason=log_reason,
-            retry_after_seconds=retry_after_seconds,
-        ),
+        details=base_details,
     )
     try:
         await commit_token_usage_log(session, audit_event)
@@ -273,8 +296,8 @@ async def resolve_bearer_auth_context(
             audit_best_effort=True,
         )
 
-    # IP mask enforcement
-    effective_mask = token.get_allowed_ip_mask()
+    # IP mask enforcement (Stage 155: allowed_ip_mask is now NOT NULL).
+    effective_mask = token.allowed_ip_mask
     if effective_mask != "*.*.*.*":
         client_ip, _ = get_request_audit_metadata()
         if client_ip is None or not ip_matches_mask(client_ip, effective_mask):
@@ -287,6 +310,9 @@ async def resolve_bearer_auth_context(
                 log_reason="ip_denied",
                 message="Invalid authorization.",
                 status_code=403,
+                extra_audit_details=build_ip_denied_audit_details(
+                    account, token, client_ip=client_ip,
+                ),
             )
 
     try:

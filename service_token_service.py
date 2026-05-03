@@ -15,8 +15,11 @@ from auth_audit import (
     commit_token_usage_log,
 )
 from bearer_token_manager import generate_bearer_token
+from observability_logging import RUNTIME_LOGGER
 from storage_models import ServiceBearerToken
 from tool_access_registry import PRESET_FULL_ACCESS, get_token_preset_scopes, normalize_token_preset
+
+WILDCARD_IP_MASK = "*.*.*.*"
 
 
 def _token_expiry_string(expires_at: datetime | None) -> str | None:
@@ -32,12 +35,18 @@ async def issue_service_bearer_token(
     *,
     account_id: int,
     name: str,
+    ip_mask: str,
     expires_in_days: int | None = None,
-    ip_mask: str | None = None,
     is_depersonalized: bool = False,
     access_preset: str = PRESET_FULL_ACCESS,
 ) -> tuple[ServiceBearerToken, str]:
-    """Create a new bearer token record and return it with the raw one-time value."""
+    """Create a new bearer token record and return it with the raw one-time value.
+
+    Stage 155: ip_mask is required (no default). Wildcard ('*.*.*.*') is
+    persisted as the literal string — there is no implicit "NULL means
+    unrestricted" fallback. Caller (web layer) is responsible for collecting
+    explicit user confirmation before submitting wildcard.
+    """
     normalized_name = name.strip()
     if not normalized_name:
         raise ValueError("Token name is required.")
@@ -46,9 +55,7 @@ async def issue_service_bearer_token(
     if expires_in_days is not None and expires_in_days <= 0:
         raise ValueError("Token expiry must be a positive number of days.")
 
-    effective_ip_mask: str | None = None
-    if ip_mask is not None and ip_mask.strip() != "*.*.*.*":
-        effective_ip_mask = validate_ip_mask(ip_mask)
+    effective_ip_mask = validate_ip_mask(ip_mask)
     normalized_preset = normalize_token_preset(access_preset)
 
     raw_token = generate_bearer_token()
@@ -76,13 +83,26 @@ async def issue_service_bearer_token(
             "name": token.name,
             "token_prefix": token.token_prefix,
             "expires_at": _token_expiry_string(token.expires_at),
-            "ip_mask": token.get_allowed_ip_mask(),
+            "ip_mask": token.allowed_ip_mask,
             "is_depersonalized": token.is_depersonalized,
             "access_preset": normalized_preset,
         },
     )
     await commit_token_usage_log(session, audit_event)
     await session.refresh(token)
+    if effective_ip_mask == WILDCARD_IP_MASK:
+        # Stage 155: operator-visible signal that an unrestricted token was
+        # issued (web UX requires explicit confirm checkbox; this log makes
+        # the event traceable in centralized logs without parsing the audit DB).
+        RUNTIME_LOGGER.warning(
+            "token_created_with_wildcard_ip",
+            extra={
+                "event_name": "token_created_with_wildcard_ip",
+                "account_id": account_id,
+                "token_id": token.id,
+                "token_name": token.name,
+            },
+        )
     return token, raw_token
 
 

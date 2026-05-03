@@ -2627,19 +2627,19 @@ Workflow allowance (по согласованию с пользователем 
 - 154.6 Tests: 17 targeted (boundary 7.0d/7.000001d, selection rule days=5 → emit 7 not 1, dedup repeat scan = +0, revoked/expired/disabled/no-expiry/30d-out skip, per-threshold counter snapshot, privacy whitelist). — `done`
 - 154.7 Full checks (998 passed), ревью сторонней моделью на diff (Sonnet + claude-proxy 1/1 budget), commit/push, AssumptionLog, self-attestation. — `done`
 
-## Этап 155. IP mask UX & restrictive default — `todo`
+## Этап 155. IP mask UX & restrictive default — `done`
 
 Источник: prod 2026-05-02 `token_auth_failed_ip_denied: 7 за 7d` (реальные denied-события) + Kimi F21 (`ServiceBearerToken.get_allowed_ip_mask` дефолт `*.*.*.*` оставляет токен открытым при забытом mask).
 
-Цель: убрать «забыл mask = открытый токен» по умолчанию, дать оператору наблюдаемость над denied-событиями и runbook на легитимный rotate IP.
+Цель: убрать «забыл mask = открытый токен» по умолчанию, дать оператору наблюдаемость над denied-событиями и runbook на легитимный rotate IP. **Решение по legacy**: backfill всех существующих NULL-mask токенов на explicit `*.*.*.*` одной миграцией; после этого `allowed_ip_mask` всегда NOT NULL и `get_allowed_ip_mask()` плюс прочая «NULL → wildcard» логика **удаляется как dead-code** (никаких legacy-флагов / dual-API поддержки).
 
-- 155.1 PRD stage 155: новый дефолт (например, no-mask = deny + явный opt-in `*.*.*.*`), миграция существующих null-mask токенов, observability контракт. — `todo`
-- 155.2 Reference artifacts review + PRD-review + ревью сторонней моделью + simplicity eval. — `todo`
-- 155.3 Сменить дефолт + audit log при попытке создать токен без mask. — `todo`
-- 155.4 Структурный лог `token_auth_failed_ip_denied` с masked owner email + token_id + source IP last-octet (privacy). Metric counter. — `todo`
-- 155.5 Operator runbook: «как разблокировать legitimate IP change» (CLI/SQL recipe, без раскрытия pepper/secrets). — `todo`
-- 155.6 Tests: миграция, default deny, valid mask, audit log content, ip_denied event shape. — `todo`
-- 155.7 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `todo`
+- 155.1 PRD stage 155 — backfill NULL → `*.*.*.*` + ALTER NOT NULL, удаление `get_allowed_ip_mask`, обязательный `ip_mask` в service signature, расширение ip_denied audit log с masked email + last-segment + expected_mask. — `done`
+- 155.2 Reference artifacts review + PRD-review + ревью сторонней моделью + simplicity eval. — `done` (Sonnet 7 + Spark 10 findings + Codex gpt-5.5 1/1 PRD: "no blockers").
+- 155.3 Migration `20260503_000013_allowed_ip_mask_not_null.py` (batch_alter_table, SQLite-compatible) + dropped `get_allowed_ip_mask` + 3 prod call sites + 4 test callers (`test_token_scopes.py` ×3, `test_web_auth.py` ×1) переписаны на прямой `token.allowed_ip_mask`. — `done`
+- 155.4 `auth/bearer.build_ip_denied_audit_details` payload расширен `account_email_masked` + `client_ip_last_segment` + `expected_mask`; helpers `mask_email`/`extract_client_ip_tail` вынесены в новый `privacy_utils.py` (shared между `auth/bearer.py` и `scripts/product_metrics_report.py`). Wildcard token issuance emit'ит `RUNTIME_LOGGER.warning("token_created_with_wildcard_ip", ...)`. — `done`
+- 155.5 Operator runbook `artifacts/runbook-operator-ip-mask.md`: SELECT mask, UPDATE mask after legitimate IP change, query denied events, when to issue wildcard, anti-patterns. — `done`
+- 155.6 Tests: 16 targeted (model schema NOT NULL + helper removal, migration round-trip backfill, service explicit ip_mask TypeError, wildcard persisted explicitly, privacy_utils helpers, ip_denied audit payload privacy, wildcard create warning, runbook exists). — `done`
+- 155.7 Full checks (1014 passed), ревью сторонней моделью на diff (Sonnet + Codex 1/2 + Codex 2/2 если substantial), commit/push, AssumptionLog, self-attestation. — `done`
 
 ## Этап 156. Activation telemetry & no-traffic alert — `todo`
 

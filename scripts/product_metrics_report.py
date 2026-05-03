@@ -82,17 +82,9 @@ def _to_aware(dt: datetime | None) -> datetime | None:
 # ── helpers ────────────────────────────────────────────────────────────────
 
 
-def _mask_email(email: str | None) -> str:
-    """Return a PII-friendly masked form: `al***@ex***.com`."""
-    if not email or "@" not in email:
-        return "***"
-    local, _, domain = email.partition("@")
-    if "." not in domain:
-        return "***@***"
-    domain_name, _, tld = domain.rpartition(".")
-    if len(local) < 3 or len(domain_name) < 3:
-        return "***@***"
-    return f"{local[:2]}***@{domain_name[:2]}***.{tld}"
+# Stage 155: shared helper extracted to privacy_utils so auth/bearer.py can
+# reuse the same masking when writing IP-denied audit payloads.
+from privacy_utils import mask_email as _mask_email  # noqa: E402
 
 
 async def _count_accounts(session, *, since: datetime | None = None) -> int:

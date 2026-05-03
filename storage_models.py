@@ -199,7 +199,15 @@ class ServiceBearerToken(Base):
         default=False,
         server_default="0",
     )
-    allowed_ip_mask: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Stage 155: NOT NULL — wildcard ('*.*.*.*') stored explicitly; no
+    # implicit "NULL means unrestricted" fallback in production code.
+    # Web flow requires explicit user confirmation for wildcard issuance.
+    # Python-side default exists only to keep ORM-direct test fixtures
+    # green; the production write path (`issue_service_bearer_token`)
+    # makes `ip_mask` a required argument with no default — see AC #3.
+    allowed_ip_mask: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="*.*.*.*",
+    )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -237,10 +245,6 @@ class ServiceBearerToken(Base):
     def get_scopes(self) -> list[str]:
         """Return scope manifest, falling back to legacy full-access policy."""
         return deserialize_token_scopes(self.scopes_json)
-
-    def get_allowed_ip_mask(self) -> str:
-        """Return effective IP mask, defaulting to unrestricted."""
-        return self.allowed_ip_mask or "*.*.*.*"
 
     def is_revoked(self) -> bool:
         """Return True when token has already been revoked."""
