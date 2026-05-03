@@ -6781,3 +6781,65 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь попросил «делай по workflow до конца этапа». Этап выполнен по Roadmap/Core Loop с PRD gates, tests, full checks, audit, review gates, commit/push и self-attestation.
+
+---
+
+## Этап 157. Feedback write-path verification + KB seed bootstrap — 2026-05-03
+
+**Статус**: `stop` — code/test/docs часть выполнена; production seed apply/diagnostic заблокированы отсутствием явного production operator identity/secrets в локальном workspace.
+
+### Что сделано
+
+- Создан `PRD/этап-157-feedback-write-path-verification-and-kb-seed-bootstrap.md`.
+- PRD gates:
+  - Spark PRD read-only снова упал/завис на bwrap/runtime до чтения файла; повторён один раз тем же `gpt-5.3-codex-spark` в `danger-full-access` с review-only prompt.
+  - Spark PRD #1: 3 accepted findings (prod identity ambiguity, unstable seed idempotency by title, diagnostic dedup/cap ambiguity) — внесены.
+  - Spark PRD repeat: `[]`.
+  - Claude Opus PRD #1: 6 accepted findings (missing pepper precondition, upstream wrapper wiring, run_id normalization, duplicate marker rows, opaque title marker, synthetic real-tool pollution) — внесены.
+  - Spark sanity after Opus #1: `[]`.
+  - Claude Opus PRD #2: 2 accepted medium (stable diagnostic rule vs run_id, exercise `augment_tool_error` wrapper path) — внесены. External PRD budget 2/2 исчерпан.
+  - Final Spark sanity: 2 accepted medium (run-specific fingerprint/identity counts, dry-run skipped status) — внесены.
+- Добавлен `scripts/seed_known_issues.py`:
+  - 6 seed issues из verified API quirks (`create_admission`, `create_hospitalization`, `get_vaccinations`, `get_message_reports`, `get_breeds`, `get_timesheets`);
+  - stable marker `[seed:{slug}]` в `KnownIssue.title`;
+  - idempotent `--dry-run` / `--apply`;
+  - duplicate marker guard `duplicate_seed_rows`;
+  - wrapper-path diagnostic `diagnostic-auto-event` через `augment_tool_error("__stage157_diagnostic__", ...)`;
+  - fail-closed preconditions for `FEEDBACK_FINGERPRINT_PEPPER` and explicit identity;
+  - diagnostic `--apply` prevalidates active `accounts`/`service_bearer_tokens` ids before creating synthetic rows.
+- Добавлены targeted tests `tests/test_stage157_feedback_kb_seed.py`.
+- README обновлён командами seed/dry-run/apply/diagnostic, precondition: DB migrations must already be applied, and cleanup SQL for synthetic diagnostic rows.
+- Code diff reviews:
+  - Spark committed-diff read-only снова упал на bwrap/runtime до чтения diff; fallback тем же `gpt-5.3-codex-spark` в `danger-full-access` с review-only prompt вернул `[]`.
+  - Claude Opus committed-diff: 3 accepted medium (diagnostic subcommand required explicit mode, synthetic diagnostic cleanup docs, identity prevalidation before wrapper call) — внесены.
+  - Final Spark committed-diff after amend: read-only снова завис на bwrap/runtime до чтения diff; fallback `danger-full-access` с review-only prompt вернул `[]`.
+  - Final Claude Opus committed-diff after amend: `[]`.
+
+### Решения и обоснования
+
+- **No migration**: seed identity encoded as `[seed:{slug}] ` title prefix. Это менее идеально, чем отдельная колонка, но Stage 157 явно избегает schema changes; duplicate guard снижает риск silent divergence.
+- **Seed rows are `workaround_available`**: нужны agent-facing playbooks for deterministic injection.
+- **Diagnostic row is `acknowledged` and `related_tool="__stage157_diagnostic__"`**: auto-event path видит статус, но `find_known_issue_match` не отдаёт playbook агенту; synthetic row не загрязняет real tool KB.
+- **Diagnostic uses wrapper path**: `augment_tool_error` проверяет тот же `asyncio.wait_for(..., AUTO_EVENT_WRITE_TIMEOUT_SECONDS)` path, что production tools.
+- **Production apply not automated**: по PRD explicit operator action, чтобы не писать production DB без выбранного account/token identity.
+- **No auto cleanup inside diagnostic**: synthetic rows intentionally prove durable write-path. Cleanup documented as explicit SQL so production verification evidence is not silently removed by the script.
+
+### Проблемы
+
+- Локальный CLI smoke на пустой SQLite без миграций упал `no such table: known_issues`. Это expected precondition, не runtime bug: script рассчитан на мигрированную DB. README дополнен строкой “Run after DB migrations are applied”.
+- Production diagnostic/apply не выполнены: в workspace нет `PROD_SSH_TARGET`/SSH secret и нет явно выбранных `account_id`/`bearer_token_id`. Команды задокументированы; Roadmap 157.3/157.5 оставлены `stop`.
+
+### Проверки
+
+- Red: `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_stage157_feedback_kb_seed.py -q"` — 7 failures на `ModuleNotFoundError: scripts.seed_known_issues`.
+- Targeted Stage 157: `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_stage157_feedback_kb_seed.py -q"` — `8 passed`.
+- Feedback regression/static: `docker compose --profile test run --rm test sh -c "python -m py_compile scripts/seed_known_issues.py && python -m pytest tests/test_stage157_feedback_kb_seed.py tests/test_stage149_agent_feedback.py tests/test_stage151_known_issue_match_events.py tests/test_stage153_review_followup.py -q"` — `55 passed, 1 skipped`.
+- CLI help smoke in Docker: `python scripts/seed_known_issues.py --help` and `python scripts/seed_known_issues.py diagnostic-auto-event --help` — passed after root `sys.path` bootstrap.
+- After Claude diff fixes, targeted Stage 157: `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_stage157_feedback_kb_seed.py -q"` — `10 passed`.
+- After Claude diff fixes, feedback regression/static: `docker compose --profile test run --rm test sh -c "python -m py_compile scripts/seed_known_issues.py && python -m pytest tests/test_stage157_feedback_kb_seed.py tests/test_stage149_agent_feedback.py tests/test_stage151_known_issue_match_events.py tests/test_stage153_review_followup.py -q"` — `57 passed, 1 skipped`.
+- Full Docker suite: `docker compose --profile test run --rm test` — `1033 passed, 1 skipped, 57 deselected` за 91.90s.
+- Static audit: `git diff --check` — passed.
+
+### Обратная связь
+
+Пользователь попросил «делай по очереди». Следующий Roadmap stage 158 не начат, потому что Stage 157 имеет explicit production stop items.

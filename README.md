@@ -501,6 +501,44 @@ Feedback хранится в БД в `agent_feedback_reports` после redacti
 делает автоисправления кода. Offline triage выполняется через
 `scripts/triage_agent_feedback.py`.
 
+Known-issue bootstrap and write-path diagnostic:
+
+```bash
+# Run after DB migrations are applied; the script expects known_issues and
+# known_issue_match_events tables to exist.
+python scripts/seed_known_issues.py --dry-run
+python scripts/seed_known_issues.py --apply
+
+# Production-safe diagnostic: pass real non-secret DB ids from an active
+# account/token. Do not pass bearer token strings or Vetmanager credentials.
+python scripts/seed_known_issues.py diagnostic-auto-event --apply \
+  --account-id <account_id> --bearer-token-id <bearer_token_id>
+```
+
+Diagnostic `--apply` requires `FEEDBACK_FINGERPRINT_PEPPER`; without it the
+script fails closed. `diagnostic-auto-event` requires an explicit `--apply` or
+`--dry-run`; a dry-run without identity reports `status=skipped`, not a
+successful write-path validation. `--apply` prevalidates that supplied DB ids
+exist and are active before it writes synthetic diagnostic rows. Before/after
+production runs, check runtime logs for `feedback_auto_event_failed`,
+`known_issue_lookup_failed` and `known_issue_match_event_write_failed`.
+
+Each diagnostic `--apply` intentionally writes one synthetic auto-event/report
+with `related_tool='__stage157_diagnostic__'` to prove the write path. Clean it
+up after production verification if those rows should not remain in analytics:
+
+```sql
+BEGIN;
+DELETE FROM known_issue_match_events
+WHERE related_tool = '__stage157_diagnostic__';
+DELETE FROM agent_feedback_reports
+WHERE source = 'auto' AND related_tool = '__stage157_diagnostic__';
+DELETE FROM known_issues
+WHERE related_tool = '__stage157_diagnostic__'
+  AND title LIKE '[seed:stage157-diagnostic] %';
+COMMIT;
+```
+
 Для production/PostgreSQL обязателен `FEEDBACK_FINGERPRINT_PEPPER`: он нужен,
 чтобы fingerprints ошибок хранились как non-reversible HMAC. Операторы должны
 запускать `python scripts/triage_agent_feedback.py retention-cleanup --days 180`
