@@ -6854,3 +6854,64 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь попросил «делай по очереди», затем дал production identity out-of-band. Stage 157 production stop items закрыты.
+
+---
+
+## Этап 158. Account hygiene — archive zombie test accounts — 2026-05-03
+
+**Статус**: `done`.
+
+### Что сделано
+
+- Создан `PRD/этап-158-account-hygiene-archive-zombie-test-accounts.md` с privacy rule: не писать raw production email/PII в проектные артефакты.
+- PRD gates:
+  - Spark PRD read-only снова упал/завис на bwrap/runtime до чтения файла; повторён один раз тем же `gpt-5.3-codex-spark` в `danger-full-access` с review-only prompt.
+  - Spark PRD passes: accepted findings по filtering token metrics/index policy, lifecycle token events vs request history, and SQLite-safe index downgrade; финальные Spark sanity checks вернули `[]`.
+  - Claude Opus PRD #1: accepted high/medium findings по lifecycle events, event-counter semantics, archive output ids, feedback/match engagement blockers, restore privacy tests, model/index source of truth.
+  - Claude Opus PRD #2: accepted high/medium findings по canonical `token_` event names, `token_auth_failed_disabled`, guarded apply predicate re-evaluation, restore audit trade-off and exact restore output/exit contract. External PRD budget 2/2 исчерпан.
+- Добавлена миграция `20260503_000014_account_archival.py`: nullable `accounts.archived_at` + explicit `ix_accounts_archived_at` через `batch_alter_table`.
+- `Account` model получил `archived_at` и matching SQLAlchemy `Index`.
+- Добавлен `scripts/archive_zombie_accounts.py`:
+  - `--dry-run` reports candidate ids/counts without mutation;
+  - `--apply` archives only old unarchived accounts without active connection, request/auth history, usage stats, feedback reports or known-issue match events;
+  - apply mutation re-evaluates the full predicate at write time and reports skipped candidates if the guarded update archives fewer rows than initially matched;
+  - `restore --account-id <id> --dry-run|--apply` implements restored/already-active/not-found contracts;
+  - output contains DB ids and counters only, no email/domain/token/hash.
+- `scripts/product_metrics_report.py` excludes archived accounts from account/adoption/dead/no-token/no-connection/top-N metrics, adds `accounts.archived`, and intentionally keeps token/request/failure counters global.
+- Added focused tests in `tests/test_stage158_account_hygiene.py` and migration regression in `tests/test_migrations.py`.
+- Code diff reviews:
+  - Spark committed-diff read-only снова упал/завис на bwrap/runtime до чтения diff; остановлен и повторён тем же `gpt-5.3-codex-spark` в `danger-full-access` с review-only prompt — `[]`.
+  - Claude Opus committed-diff: accepted 3 medium findings (restore dry-run output indistinguishable from apply, post-update `archived_ids` depended on exact datetime equality, missing stale-candidate/write-time predicate test). Исправлено до amend.
+  - Final Spark committed-diff after Claude fixes: read-only снова упал на bwrap/runtime до чтения diff; fallback accepted 1 medium (post-select could include rows archived by another actor). Исправлено: `archived_ids` берётся из `UPDATE ... RETURNING Account.id`.
+  - Final Claude Opus sanity: accepted 3 medium findings (duplicate argparse flags before restore subcommand, dry-run `archived_ids` ambiguity, possible `archived > matched` when a new candidate appears between select/update). Исправлено: restore subparser suppresses duplicate defaults, dry-run exposes `candidate_ids` with empty `archived_ids`, apply update is constrained to initial ids plus full predicate recheck.
+  - Final gates after CLI/reporting fixes: Spark read-only снова упал на bwrap/runtime before diff read; same-model fallback returned `[]`. Claude Opus final sanity returned `[]`.
+
+### Решения и обоснования
+
+- **Soft archive via `accounts.archived_at`**, not `status`: current `ACCOUNT_STATUSES` and CHECK constraint allow only `active`; changing auth/lifecycle semantics is out of scope.
+- **No hard delete**: FK-dependent audit/token/feedback rows remain available for investigation and restore.
+- **Lifecycle token events do not block archive**: `token_created`, `token_revoked`, `token_expired` are not request history. Canonical auth/request events with `token_` prefix do block archive, including failed-only auth history.
+- **Feedback/match events block archive**: engagement history is a sign the account may have operational context even without successful requests.
+- **Archived auth behavior unchanged**: tokens are not revoked and archived accounts are not denied by auth in Stage 158. Therefore token/request/failure counters remain global operational signal.
+- **Restore audit is intentionally out of scope**: Stage 158 stores current archive state only; no free-form reason field, to avoid adding operator text that could contain PII.
+- **Restore dry-run reports intent, not mutation**: archived account dry-run returns `restored=0 would_restore=1`, while apply keeps the exact `restored=1` contract.
+- **Archive apply report is based on write result**: `archived_ids` comes from `UPDATE ... RETURNING`, so concurrent or stale candidates are counted as skipped rather than reported as archived by this run.
+- **Archive candidate/report semantics are explicit**: `candidate_ids` is the initial scan result; `archived_ids` is only rows written by this invocation. New candidates that appear after the scan are handled on the next run.
+
+### Проблемы
+
+- PRD review repeatedly hit local Codex read-only sandbox/runtime (`bwrap`) failure before reading files; handled per workflow with one same-model `danger-full-access` review-only fallback.
+- Spark committed-diff review hit the same read-only sandbox/runtime failure before reading diff; handled with the same allowed fallback. Claude Opus findings were concrete and accepted.
+- User explicitly corrected privacy expectations: raw personal production identity must not be written into project artifacts. Stage 158 artifacts use masked context, aggregate facts and non-secret DB ids only.
+
+### Проверки
+
+- Red: `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_stage158_account_hygiene.py tests/test_migrations.py::test_account_archival_migration_round_trip -q"` — initial failures before implementation (`ModuleNotFoundError` / missing schema/metric support).
+- Targeted after implementation: same command — `4 passed`.
+- Regression/static: `docker compose --profile test run --rm test sh -c "python -m py_compile scripts/archive_zombie_accounts.py scripts/product_metrics_report.py storage_models.py && python -m pytest tests/test_stage158_account_hygiene.py tests/test_stage110_product_metrics.py tests/test_migrations.py tests/test_packaging_metadata.py -q"` — `29 passed`; after Claude fixes — `30 passed`; after final Spark fix — `31 passed`; after final Claude fixes — `32 passed`.
+- Full Docker suite after final audit/doc updates: `docker compose --profile test run --rm test` — `1037 passed, 1 skipped, 57 deselected` за 91.76s; after Claude fixes — `1038 passed, 1 skipped, 57 deselected` за 94.06s; after final Spark fix — `1039 passed, 1 skipped, 57 deselected` за 98.69s; after final Claude fixes — `1040 passed, 1 skipped, 57 deselected` за 98.18s.
+- Audit: `git diff --check` passed; explicit search for raw production identity in Roadmap/AssumptionLog/PRD/work logs returned no matches.
+
+### Обратная связь
+
+Пользователь попросил продолжать по Roadmap и отдельно указал не записывать персональные данные в артефакты проекта. Это правило применено к Stage 158 и к follow-up записям Stage 157.

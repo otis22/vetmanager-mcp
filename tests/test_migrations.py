@@ -50,6 +50,25 @@ def test_alembic_upgrade_creates_bearer_service_tables(tmp_path: Path):
     known_issue_columns = {column["name"] for column in inspector.get_columns("known_issues")}
     assert "agent_playbook_json" in known_issue_columns
     assert "report_count" in known_issue_columns
+    account_indexes = {index["name"] for index in inspector.get_indexes("accounts")}
+    assert "archived_at" in account_columns
+    assert "ix_accounts_archived_at" in account_indexes
+
+
+def test_account_archival_migration_round_trip(tmp_path: Path):
+    """Stage 158: account archival column/index are reversible."""
+    config = _make_alembic_config(tmp_path)
+    command.upgrade(config, "head")
+
+    engine = create_engine(config.get_main_option("sqlalchemy.url"))
+    inspector = inspect(engine)
+    assert "archived_at" in {column["name"] for column in inspector.get_columns("accounts")}
+    assert "ix_accounts_archived_at" in {index["name"] for index in inspector.get_indexes("accounts")}
+
+    command.downgrade(config, "20260503_000013")
+    inspector = inspect(create_engine(config.get_main_option("sqlalchemy.url")))
+    assert "archived_at" not in {column["name"] for column in inspector.get_columns("accounts")}
+    assert "ix_accounts_archived_at" not in {index["name"] for index in inspector.get_indexes("accounts")}
 
 
 def test_agent_feedback_possible_pii_migration_backfills_existing_rows(tmp_path: Path):

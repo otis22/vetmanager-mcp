@@ -88,9 +88,14 @@ from privacy_utils import mask_email as _mask_email  # noqa: E402
 
 
 async def _count_accounts(session, *, since: datetime | None = None) -> int:
-    stmt = select(func.count()).select_from(Account)
+    stmt = select(func.count()).select_from(Account).where(Account.archived_at.is_(None))
     if since is not None:
         stmt = stmt.where(Account.created_at >= since)
+    return int(await session.scalar(stmt) or 0)
+
+
+async def _count_archived_accounts(session) -> int:
+    stmt = select(func.count()).select_from(Account).where(Account.archived_at.isnot(None))
     return int(await session.scalar(stmt) or 0)
 
 
@@ -101,6 +106,8 @@ async def _count_live_accounts(session, *, now: datetime, window: timedelta) -> 
         select(func.count(func.distinct(ServiceBearerToken.account_id)))
         .select_from(TokenUsageStat)
         .join(ServiceBearerToken, ServiceBearerToken.id == TokenUsageStat.bearer_token_id)
+        .join(Account, Account.id == ServiceBearerToken.account_id)
+        .where(Account.archived_at.is_(None))
         .where(TokenUsageStat.last_used_at >= cutoff)
     )
     return int(await session.scalar(stmt) or 0)
@@ -121,7 +128,7 @@ async def _count_dead_accounts(session, *, now: datetime) -> int:
     cutoff = now - timedelta(days=30)
     old_accounts = (
         await session.execute(
-            select(Account.id).where(Account.created_at < cutoff)
+            select(Account.id).where(Account.archived_at.is_(None), Account.created_at < cutoff)
         )
     ).scalars().all()
     if not old_accounts:
@@ -136,7 +143,7 @@ async def _count_dead_accounts(session, *, now: datetime) -> int:
         .select_from(Account)
         .outerjoin(ServiceBearerToken, ServiceBearerToken.account_id == Account.id)
         .outerjoin(TokenUsageStat, TokenUsageStat.bearer_token_id == ServiceBearerToken.id)
-        .where(Account.id.in_(old_accounts))
+        .where(Account.archived_at.is_(None), Account.id.in_(old_accounts))
         .group_by(Account.id)
     )
     dead = 0
@@ -160,7 +167,7 @@ async def _fetch_dead_account_rows(session, *, now: datetime, limit: int = 50) -
         .select_from(Account)
         .outerjoin(ServiceBearerToken, ServiceBearerToken.account_id == Account.id)
         .outerjoin(TokenUsageStat, TokenUsageStat.bearer_token_id == ServiceBearerToken.id)
-        .where(Account.created_at < cutoff)
+        .where(Account.archived_at.is_(None), Account.created_at < cutoff)
         .group_by(Account.id, Account.email, Account.created_at)
     )
     out: list[dict[str, Any]] = []
@@ -185,6 +192,7 @@ async def _count_accounts_without_tokens(session) -> int:
         select(func.count())
         .select_from(Account)
         .outerjoin(ServiceBearerToken, ServiceBearerToken.account_id == Account.id)
+        .where(Account.archived_at.is_(None))
         .where(ServiceBearerToken.id.is_(None))
     )
     return int(await session.scalar(stmt) or 0)
@@ -201,6 +209,7 @@ async def _count_accounts_without_active_connection(session) -> int:
                 VetmanagerConnection.status == "active",
             ),
         )
+        .where(Account.archived_at.is_(None))
         .where(VetmanagerConnection.id.is_(None))
     )
     return int(await session.scalar(stmt) or 0)
@@ -267,6 +276,7 @@ async def _top_accounts_by_requests(
         .select_from(Account)
         .join(ServiceBearerToken, ServiceBearerToken.account_id == Account.id)
         .join(TokenUsageStat, TokenUsageStat.bearer_token_id == ServiceBearerToken.id)
+        .where(Account.archived_at.is_(None))
         .group_by(Account.id, Account.email)
         .order_by(func.sum(TokenUsageStat.request_count).desc())
         .limit(top_n)
@@ -294,6 +304,7 @@ async def collect_metrics(
     async with session_factory() as session:
         # Accounts
         total = await _count_accounts(session)
+        archived = await _count_archived_accounts(session)
         new_24h = await _count_accounts(session, since=now - timedelta(hours=24))
         new_7d = await _count_accounts(session, since=now - timedelta(days=7))
         new_30d = await _count_accounts(session, since=now - timedelta(days=30))
@@ -349,6 +360,7 @@ async def collect_metrics(
     return {
         "accounts": {
             "total": total,
+            "archived": archived,
             "new_24h": new_24h,
             "new_7d": new_7d,
             "new_30d": new_30d,
@@ -392,6 +404,7 @@ def format_markdown(m: dict[str, Any], *, now: datetime) -> str:
 
     out.append("## Accounts")
     out.append(f"- total: **{a['total']}**")
+    out.append(f"- archived: **{a['archived']}**")
     out.append(f"- new (24h / 7d / 30d): {a['new_24h']} / {a['new_7d']} / {a['new_30d']}")
     out.append(f"- live (request within 7d): **{a['live_7d']}**")
     out.append(f"- dead (registered >30d, no request in 30d): **{a['dead_30d']}**")

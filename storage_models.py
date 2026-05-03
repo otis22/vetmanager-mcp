@@ -99,6 +99,7 @@ class Account(Base):
             f"status IN ({', '.join(repr(s) for s in ACCOUNT_STATUSES)})",
             name="ck_accounts_status",
         ),
+        Index("ix_accounts_archived_at", "archived_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -115,6 +116,7 @@ class Account(Base):
         nullable=False,
         server_default=func.now(),
     )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     vetmanager_connections: Mapped[list["VetmanagerConnection"]] = relationship(
         back_populates="account",

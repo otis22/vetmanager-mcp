@@ -2668,16 +2668,16 @@ Workflow allowance (по согласованию с пользователем 
 - 157.6 Tests: seed-script idempotency, валидность `match_rules_json`/`agent_playbook_json`, injection middleware подбирает seed-issue по fingerprint. — `done` (10 targeted Stage 157 tests; feedback regression subset `57 passed, 1 skipped`; full suite `1033 passed, 1 skipped, 57 deselected`).
 - 157.7 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `done` (Spark committed-diff `[]`; Claude Opus accepted 3 medium, fixed before amend).
 
-## Этап 158. Account hygiene — archive zombie test accounts — `todo`
+## Этап 158. Account hygiene — archive zombie test accounts — `done`
 
 Источник: prod 2026-05-02 — 3 из 7 accounts dead (`pr***@ex***.com` ×2, `ip***@ex***.com`), все registered 2026-04-01, без single request, без active connection. Засоряют top-N и dead-list, искажают метрики adoption.
 
 Цель: ввести soft-archive для zombie accounts (no requests + no active connection >30d) с возможностью восстановления, исключить их из product-metrics по умолчанию.
 
-- 158.1 PRD stage 158: scope (criteria для zombie, soft vs hard delete, restore path), privacy (не удалять audit trail). — `todo`
-- 158.2 Reference artifacts + PRD-review + ревью сторонней моделью + simplicity eval. — `todo`
-- 158.3 Migration: добавить `archived_at` в `accounts` (или статус), не ломая FK на токены. — `todo`
-- 158.4 CLI/script `scripts/archive_zombie_accounts.py --dry-run/--apply` с criteria из PRD. — `todo`
-- 158.5 Обновить `product_metrics_report.py`: исключать archived из total/dead/top-N (или показать отдельной строкой `archived: N`). — `todo`
-- 158.6 Tests: criteria correctness, restore path, dry-run idempotent, FK integrity. — `todo`
-- 158.7 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `todo`
+- 158.1 PRD stage 158: scope (criteria для zombie, soft vs hard delete, restore path), privacy (не удалять audit trail). — `done`
+- 158.2 Reference artifacts + PRD-review + ревью сторонней моделью + simplicity eval. — `done` (Spark PRD accepted 4 findings across focused passes; Claude Opus PRD 2/2 budget accepted 11 findings; final Spark sanity `[]`).
+- 158.3 Migration: добавить `archived_at` в `accounts` (или статус), не ломая FK на токены. — `done` (`accounts.archived_at` + `ix_accounts_archived_at`; no status/CHECK change).
+- 158.4 CLI/script `scripts/archive_zombie_accounts.py --dry-run/--apply` с criteria из PRD. — `done` (archive + restore, no email/domain/token output, guarded apply re-evaluates criteria).
+- 158.5 Обновить `product_metrics_report.py`: исключать archived из total/dead/top-N (или показать отдельной строкой `archived: N`). — `done` (account/adoption/top-N exclude archived; token/request/failure counters remain global; `accounts.archived` added).
+- 158.6 Tests: criteria correctness, restore path, dry-run idempotent, FK integrity. — `done` (targeted Stage 158 + migration/product-metrics regression; full suite passed).
+- 158.7 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `done`
