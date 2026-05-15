@@ -2682,7 +2682,7 @@ Workflow allowance (по согласованию с пользователем 
 - 158.6 Tests: criteria correctness, restore path, dry-run idempotent, FK integrity. — `done` (targeted Stage 158 + migration/product-metrics regression; full suite passed).
 - 158.7 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `done`
 
-## Этап 159. Feedback metrics in product report — `in_progress`
+## Этап 159. Feedback metrics in product report — `done`
 
 Источник: пользовательская задача 2026-05-15 — «Добавь feedback в метрики, коммит, пуш, деплой и покажи отчет».
 
@@ -2692,4 +2692,4 @@ Workflow allowance (по согласованию с пользователем 
 - 159.2 Reference artifacts + PRD-review + ревью сторонней моделью + simplicity eval. — `done` (Spark PRD accepted 3 medium, Claude Opus PRD accepted 11 medium/high across 2 passes; final Spark sanity `[]`).
 - 159.3 Добавить feedback-блок в `collect_metrics()`, Markdown и JSON output. — `done`
 - 159.4 Tests: collect/format/json/no raw text regression. — `done` (targeted `17 passed`, feedback regression `45 passed`, full suite `1042 passed, 1 skipped, 57 deselected`).
-- 159.5 Full checks, audit, review gates, commit/push/deploy, AssumptionLog/self-attestation. — `in_progress`
+- 159.5 Full checks, audit, review gates, commit/push/deploy, AssumptionLog/self-attestation. — `done` (commit `d534419`, GitHub Tests success, Deploy Prod success, `/healthz` and `/readyz` ok, prod product metrics report shows `## Feedback`).

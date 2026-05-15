@@ -6920,7 +6920,7 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 ## Этап 159. Feedback metrics in product report — 2026-05-15
 
-**Статус**: `in_progress` до push/deploy.
+**Статус**: `done`.
 
 ### Что сделали
 
@@ -6961,6 +6961,24 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Regression/static: `docker compose --profile test run --rm test sh -c "python -m py_compile scripts/product_metrics_report.py && python -m pytest tests/test_stage159_feedback_product_metrics.py tests/test_stage110_product_metrics.py tests/test_stage149_agent_feedback.py tests/test_stage151_known_issue_match_events.py -q"` — `45 passed`.
 - Full suite: `docker compose --profile test run --rm test` — `1042 passed, 1 skipped, 57 deselected`.
 - Audit: `git diff --check` — passed.
+- Committed diff review:
+  - Spark read-only again failed/hung on sandbox/runtime before diff read; same-model `danger-full-access` review-only fallback returned `[]`.
+  - Claude Opus committed-diff review returned `[]`.
+- Commit/push:
+  - `d534419 Add feedback to product metrics report`
+  - `git push origin main` — success.
+- GitHub:
+  - `Tests` run `25941688849` — success (`fast` and `default` jobs).
+  - `Deploy Prod` run `25941784629` — success.
+- Production smoke:
+  - `https://vetmanager-mcp.vromanichev.ru/healthz` — `status=ok`.
+  - `https://vetmanager-mcp.vromanichev.ru/readyz` — `status=ok`, storage `reason=ok`.
+- Production product metrics report after deploy:
+  - feedback reports 24h/7d/30d: `0 / 0 / 0`;
+  - new open 30d: `0`;
+  - possible PII 30d: `0`;
+  - known issue match events 7d/30d: `0 / 0`;
+  - `Feedback top tools` and `Top known issues`: none.
 
 ### Обратная связь
 
