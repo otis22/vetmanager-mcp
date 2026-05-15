@@ -2681,3 +2681,15 @@ Workflow allowance (по согласованию с пользователем 
 - 158.5 Обновить `product_metrics_report.py`: исключать archived из total/dead/top-N (или показать отдельной строкой `archived: N`). — `done` (account/adoption/top-N exclude archived; token/request/failure counters remain global; `accounts.archived` added).
 - 158.6 Tests: criteria correctness, restore path, dry-run idempotent, FK integrity. — `done` (targeted Stage 158 + migration/product-metrics regression; full suite passed).
 - 158.7 Full checks, ревью сторонней моделью на diff, commit/push, AssumptionLog, self-attestation. — `done`
+
+## Этап 159. Feedback metrics in product report — `in_progress`
+
+Источник: пользовательская задача 2026-05-15 — «Добавь feedback в метрики, коммит, пуш, деплой и покажи отчет».
+
+Цель: расширить ad-hoc `scripts/product_metrics_report.py`, чтобы один product metrics report показывал состояние feedback loop без отдельного triage CLI запуска.
+
+- 159.1 Создать PRD stage 159: feedback report counters, known-issue match events, privacy boundary, output schema. — `done`
+- 159.2 Reference artifacts + PRD-review + ревью сторонней моделью + simplicity eval. — `done` (Spark PRD accepted 3 medium, Claude Opus PRD accepted 11 medium/high across 2 passes; final Spark sanity `[]`).
+- 159.3 Добавить feedback-блок в `collect_metrics()`, Markdown и JSON output. — `done`
+- 159.4 Tests: collect/format/json/no raw text regression. — `done` (targeted `17 passed`, feedback regression `45 passed`, full suite `1042 passed, 1 skipped, 57 deselected`).
+- 159.5 Full checks, audit, review gates, commit/push/deploy, AssumptionLog/self-attestation. — `in_progress`

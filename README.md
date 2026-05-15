@@ -653,7 +653,7 @@ Prompts работают по тому же bearer-only контракту, чт
 Примеры:
 ```
 /product-metrics                              # default 30-day window, top-10
-/product-metrics --window-days=7 --top-n=5    # последние 7 дней
+/product-metrics --top-n=5                    # top-5 tables
 /product-metrics --format=json                # машинно-читаемый
 ```
 
@@ -662,6 +662,7 @@ Prompts работают по тому же bearer-only контракту, чт
 - **Tokens**: active / expiring in 7d / issued 24h / revoked 24h-7d.
 - **Requests**: total 24h-7d-30d + top-N accounts by 30d request count.
 - **Failures** (24h / 7d / 30d breakdown): rate_limited, revoked, expired, ip_denied, no_scopes, no_connection.
+- **Feedback**: reports 24h-7d-30d, new/possible-PII 30d, breakdowns by source/status/severity/category, top related tools, known-issue match events 7d-30d and top known issues by 30d match count. Feedback section outputs aggregates only; raw report text, account ids and bearer token ids are not included.
 
 Параллельно в Prometheus-expose'е `/metrics` копится `vetmanager_business_events_total{event=...}` counter для будущих Grafana-дашбордов без изменения кода.
 

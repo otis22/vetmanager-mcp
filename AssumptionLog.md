@@ -6915,3 +6915,53 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь попросил продолжать по Roadmap и отдельно указал не записывать персональные данные в артефакты проекта. Это правило применено к Stage 158 и к follow-up записям Stage 157.
+
+---
+
+## Этап 159. Feedback metrics in product report — 2026-05-15
+
+**Статус**: `in_progress` до push/deploy.
+
+### Что сделали
+
+Добавляем feedback в ad-hoc product metrics report по просьбе пользователя: один запуск `scripts/product_metrics_report.py` должен показывать не только accounts/tokens/requests/failures, но и состояние feedback loop.
+
+### Что сделано
+
+- Создан `PRD/этап-159-feedback-product-metrics.md`.
+- `scripts/product_metrics_report.py` расширен top-level блоком `feedback`:
+  - `reports`: totals 24h/7d/30d, `new_open_30d`, `possible_pii_30d`, breakdowns by source/status/severity/category, `top_tools_30d`;
+  - `match_events`: totals 7d/30d, by-source 7d/30d, `top_known_issues_30d` with sanitized title and aggregate counts only.
+- Markdown и JSON formatters выводят `## Feedback`.
+- README product metrics section обновлён: удалён устаревший `--window-days`, добавлено описание feedback-блока.
+- Добавлены tests `tests/test_stage159_feedback_product_metrics.py`.
+
+### Решения и обоснования
+
+- Feedback не добавлен в Prometheus `/metrics`: это DB-backed product analytics, а не process-local service counter; так не раскрываем report cadence/PII через scrape endpoint.
+- `known_issue_match_events` считаются отдельным сигналом, потому что auto feedback reports могут быть suppressed dedup/cap.
+- `KnownIssue.title` перед выводом повторно проходит `sanitize_text(..., limit=240)`; если sanitizer возвращает empty, выводится `unknown`.
+- `distinct_accounts` / `distinct_tokens` — только integer counts over the same 30d window, raw ids не выводятся.
+- Breakdown dicts включают все known enum labels с default `0`, чтобы JSON schema была стабильной.
+
+### Проблемы
+
+- Spark PRD read-only review снова завис на sandbox/runtime (`bwrap`/MCP) до нормального завершения; по workflow повторён тем же `gpt-5.3-codex-spark` в `danger-full-access` с review-only prompt.
+- Хостовый `python` отсутствует, поэтому py_compile и тесты запускались только через Docker test profile.
+
+### Проверки
+
+- PRD review:
+  - Spark PRD fallback: accepted 3 medium findings, внесены.
+  - Claude Opus PRD #1: accepted 7 findings, внесены.
+  - Spark PRD sanity fallback: `[]`.
+  - Claude Opus PRD #2: accepted 4 medium findings, внесены.
+- Red: targeted Stage 159 + Stage 110 — 2 expected failures (`feedback` absent).
+- Targeted green: `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_stage159_feedback_product_metrics.py tests/test_stage110_product_metrics.py -q"` — `17 passed`.
+- Regression/static: `docker compose --profile test run --rm test sh -c "python -m py_compile scripts/product_metrics_report.py && python -m pytest tests/test_stage159_feedback_product_metrics.py tests/test_stage110_product_metrics.py tests/test_stage149_agent_feedback.py tests/test_stage151_known_issue_match_events.py -q"` — `45 passed`.
+- Full suite: `docker compose --profile test run --rm test` — `1042 passed, 1 skipped, 57 deselected`.
+- Audit: `git diff --check` — passed.
+
+### Обратная связь
+
+Пользователь попросил добавить feedback в метрики, затем сделать commit, push, deploy и показать отчет, с соблюдением workflow.

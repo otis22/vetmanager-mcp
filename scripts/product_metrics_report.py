@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from agent_feedback_service import sanitize_text
 from auth_audit import (
     TOKEN_EVENT_AUTH_FAILED_EXPIRED,
     TOKEN_EVENT_AUTH_FAILED_IP_DENIED,
@@ -39,6 +40,14 @@ from auth_audit import (
 )
 from storage_models import (
     Account,
+    AgentFeedbackReport,
+    FEEDBACK_CATEGORIES,
+    FEEDBACK_SEVERITIES,
+    FEEDBACK_SOURCES,
+    FEEDBACK_STATUSES,
+    KNOWN_ISSUE_MATCH_SOURCES,
+    KnownIssue,
+    KnownIssueMatchEvent,
     ServiceBearerToken,
     TOKEN_STATUS_ACTIVE,
     TokenUsageLog,
@@ -291,6 +300,199 @@ async def _top_accounts_by_requests(
     ]
 
 
+async def _count_feedback_reports(session, *, since: datetime) -> int:
+    stmt = select(func.count()).select_from(AgentFeedbackReport).where(
+        AgentFeedbackReport.created_at >= since,
+    )
+    return int(await session.scalar(stmt) or 0)
+
+
+async def _count_feedback_reports_where(
+    session,
+    *,
+    since: datetime,
+    conditions: tuple[Any, ...],
+) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(AgentFeedbackReport)
+        .where(AgentFeedbackReport.created_at >= since)
+    )
+    for condition in conditions:
+        stmt = stmt.where(condition)
+    return int(await session.scalar(stmt) or 0)
+
+
+async def _feedback_breakdown(
+    session,
+    *,
+    column,
+    labels: tuple[str, ...],
+    since: datetime,
+) -> dict[str, int]:
+    rows = await session.execute(
+        select(column, func.count())
+        .select_from(AgentFeedbackReport)
+        .where(AgentFeedbackReport.created_at >= since)
+        .group_by(column)
+    )
+    out = {label: 0 for label in labels}
+    for label, count in rows.all():
+        if label in out:
+            out[str(label)] = int(count or 0)
+    return out
+
+
+async def _top_feedback_tools(
+    session,
+    *,
+    since: datetime,
+    top_n: int,
+) -> list[dict[str, Any]]:
+    count_label = func.count().label("reports")
+    tool_label = func.coalesce(AgentFeedbackReport.related_tool, "unknown").label("tool")
+    rows = await session.execute(
+        select(tool_label, count_label)
+        .where(AgentFeedbackReport.created_at >= since)
+        .group_by(tool_label)
+        .order_by(count_label.desc(), tool_label.asc())
+        .limit(top_n)
+    )
+    return [
+        {
+            "tool": tool,
+            "reports": int(count or 0),
+        }
+        for tool, count in rows.all()
+    ]
+
+
+async def _count_match_events(session, *, since: datetime) -> int:
+    stmt = select(func.count()).select_from(KnownIssueMatchEvent).where(
+        KnownIssueMatchEvent.created_at >= since,
+    )
+    return int(await session.scalar(stmt) or 0)
+
+
+async def _match_events_by_source(session, *, since: datetime) -> dict[str, int]:
+    rows = await session.execute(
+        select(KnownIssueMatchEvent.source, func.count())
+        .where(KnownIssueMatchEvent.created_at >= since)
+        .group_by(KnownIssueMatchEvent.source)
+    )
+    out = {source: 0 for source in KNOWN_ISSUE_MATCH_SOURCES}
+    for source, count in rows.all():
+        if source in out:
+            out[str(source)] = int(count or 0)
+    return out
+
+
+def _safe_known_issue_title(value: str | None) -> str:
+    return sanitize_text(value, limit=240) or "unknown"
+
+
+async def _top_known_issues_by_match_events(
+    session,
+    *,
+    since: datetime,
+    top_n: int,
+) -> list[dict[str, Any]]:
+    events_label = func.count().label("events")
+    distinct_accounts_label = func.count(
+        func.distinct(KnownIssueMatchEvent.account_id)
+    ).label("distinct_accounts")
+    distinct_tokens_label = func.count(
+        func.distinct(KnownIssueMatchEvent.bearer_token_id)
+    ).label("distinct_tokens")
+    rows = await session.execute(
+        select(
+            KnownIssueMatchEvent.known_issue_id,
+            KnownIssue.title,
+            events_label,
+            distinct_accounts_label,
+            distinct_tokens_label,
+        )
+        .join(KnownIssue, KnownIssue.id == KnownIssueMatchEvent.known_issue_id)
+        .where(KnownIssueMatchEvent.created_at >= since)
+        .group_by(KnownIssueMatchEvent.known_issue_id, KnownIssue.title)
+        .order_by(events_label.desc(), KnownIssueMatchEvent.known_issue_id.asc())
+        .limit(top_n)
+    )
+    return [
+        {
+            "known_issue_id": int(issue_id),
+            "title": _safe_known_issue_title(title),
+            "events": int(events or 0),
+            "distinct_accounts": int(distinct_accounts or 0),
+            "distinct_tokens": int(distinct_tokens or 0),
+        }
+        for issue_id, title, events, distinct_accounts, distinct_tokens in rows.all()
+    ]
+
+
+async def _collect_feedback_metrics(session, *, now: datetime, top_n: int) -> dict[str, Any]:
+    since_24h = now - timedelta(hours=24)
+    since_7d = now - timedelta(days=7)
+    since_30d = now - timedelta(days=30)
+    return {
+        "reports": {
+            "total_24h": await _count_feedback_reports(session, since=since_24h),
+            "total_7d": await _count_feedback_reports(session, since=since_7d),
+            "total_30d": await _count_feedback_reports(session, since=since_30d),
+            "new_open_30d": await _count_feedback_reports_where(
+                session,
+                since=since_30d,
+                conditions=(AgentFeedbackReport.status == "new",),
+            ),
+            "possible_pii_30d": await _count_feedback_reports_where(
+                session,
+                since=since_30d,
+                conditions=(AgentFeedbackReport.possible_pii.is_(True),),
+            ),
+            "by_source_30d": await _feedback_breakdown(
+                session,
+                column=AgentFeedbackReport.source,
+                labels=FEEDBACK_SOURCES,
+                since=since_30d,
+            ),
+            "by_status_30d": await _feedback_breakdown(
+                session,
+                column=AgentFeedbackReport.status,
+                labels=FEEDBACK_STATUSES,
+                since=since_30d,
+            ),
+            "by_severity_30d": await _feedback_breakdown(
+                session,
+                column=AgentFeedbackReport.severity,
+                labels=FEEDBACK_SEVERITIES,
+                since=since_30d,
+            ),
+            "by_category_30d": await _feedback_breakdown(
+                session,
+                column=AgentFeedbackReport.category,
+                labels=FEEDBACK_CATEGORIES,
+                since=since_30d,
+            ),
+            "top_tools_30d": await _top_feedback_tools(
+                session,
+                since=since_30d,
+                top_n=top_n,
+            ),
+        },
+        "match_events": {
+            "total_7d": await _count_match_events(session, since=since_7d),
+            "total_30d": await _count_match_events(session, since=since_30d),
+            "by_source_7d": await _match_events_by_source(session, since=since_7d),
+            "by_source_30d": await _match_events_by_source(session, since=since_30d),
+            "top_known_issues_30d": await _top_known_issues_by_match_events(
+                session,
+                since=since_30d,
+                top_n=top_n,
+            ),
+        },
+    }
+
+
 # ── orchestrator ───────────────────────────────────────────────────────────
 
 
@@ -356,6 +558,7 @@ async def collect_metrics(
         fail_24h = await _failure_breakdown(session, since=now - timedelta(hours=24))
         fail_7d = await _failure_breakdown(session, since=now - timedelta(days=7))
         fail_30d = await _failure_breakdown(session, since=now - timedelta(days=30))
+        feedback = await _collect_feedback_metrics(session, now=now, top_n=top_n)
 
     return {
         "accounts": {
@@ -389,6 +592,7 @@ async def collect_metrics(
             "by_event_7d": fail_7d,
             "by_event_30d": fail_30d,
         },
+        "feedback": feedback,
     }
 
 
@@ -397,6 +601,9 @@ async def collect_metrics(
 
 def format_markdown(m: dict[str, Any], *, now: datetime) -> str:
     a, t, r, f = m["accounts"], m["tokens"], m["requests"], m["failures"]
+    fb = m.get("feedback", {"reports": {}, "match_events": {}})
+    fr = fb["reports"]
+    fm = fb["match_events"]
     out: list[str] = []
     out.append("# Product metrics")
     out.append(f"_generated at {now.isoformat()} UTC, window 30d (hardcoded)_")
@@ -444,6 +651,69 @@ def format_markdown(m: dict[str, Any], *, now: datetime) -> str:
         )
     out.append("")
 
+    out.append("## Feedback")
+    out.append(
+        f"- reports (24h / 7d / 30d): "
+        f"{fr.get('total_24h', 0)} / {fr.get('total_7d', 0)} / {fr.get('total_30d', 0)}"
+    )
+    out.append(f"- new open (30d): {fr.get('new_open_30d', 0)}")
+    out.append(f"- possible PII (30d): {fr.get('possible_pii_30d', 0)}")
+    out.append(
+        f"- known issue match events (7d / 30d): "
+        f"{fm.get('total_7d', 0)} / {fm.get('total_30d', 0)}"
+    )
+    out.append("")
+
+    out.append("### Feedback report breakdowns")
+    out.append("| dimension | value | reports_30d |")
+    out.append("|---|---|---|")
+    for dimension, values in (
+        ("source", fr.get("by_source_30d", {})),
+        ("status", fr.get("by_status_30d", {})),
+        ("severity", fr.get("by_severity_30d", {})),
+        ("category", fr.get("by_category_30d", {})),
+    ):
+        for value, count in values.items():
+            out.append(f"| {dimension} | {value} | {count} |")
+    out.append("")
+
+    out.append("### Feedback top tools")
+    top_tools = fr.get("top_tools_30d", [])
+    if not top_tools:
+        out.append("_none_")
+    else:
+        out.append("| tool | reports_30d |")
+        out.append("|---|---|")
+        for row in top_tools:
+            out.append(f"| {row['tool']} | {row['reports']} |")
+    out.append("")
+
+    out.append("### Known issue matches")
+    out.append("| source | events_7d | events_30d |")
+    out.append("|---|---|---|")
+    by_source_7d = fm.get("by_source_7d", {})
+    by_source_30d = fm.get("by_source_30d", {})
+    for source in KNOWN_ISSUE_MATCH_SOURCES:
+        out.append(
+            f"| {source} | {by_source_7d.get(source, 0)} | "
+            f"{by_source_30d.get(source, 0)} |"
+        )
+    out.append("")
+
+    out.append("### Top known issues")
+    top_issues = fm.get("top_known_issues_30d", [])
+    if not top_issues:
+        out.append("_none_")
+    else:
+        out.append("| known_issue_id | title | events_30d | distinct_accounts | distinct_tokens |")
+        out.append("|---|---|---|---|---|")
+        for row in top_issues:
+            out.append(
+                f"| {row['known_issue_id']} | {row['title']} | {row['events']} "
+                f"| {row['distinct_accounts']} | {row['distinct_tokens']} |"
+            )
+    out.append("")
+
     out.append("## Dead accounts")
     if not a["dead_list"]:
         out.append("_none_")
@@ -467,6 +737,7 @@ def format_json(m: dict[str, Any], *, now: datetime) -> str:
             "tokens": m["tokens"],
             "requests": m["requests"],
             "failures": m["failures"],
+            "feedback": m.get("feedback", {"reports": {}, "match_events": {}}),
         },
         indent=2,
         ensure_ascii=False,
