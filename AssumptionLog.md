@@ -6988,7 +6988,7 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 ## Этап 160. Strong feedback trigger instructions — 2026-05-16
 
-**Статус**: `in_progress`.
+**Статус**: `done`.
 
 ### Что делали
 
@@ -7026,6 +7026,21 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Regression/static after Claude fixes: same command — `40 passed`.
 - Full suite: `docker compose --profile test run --rm test` — `1046 passed, 1 skipped, 57 deselected`; after Claude fixes — `1046 passed, 1 skipped, 57 deselected`.
 - Audit: `git diff --check` — passed.
+- Commit/push/deploy:
+  - `897f691 Strengthen feedback trigger instructions`
+  - `git push origin main` — success.
+  - GitHub Tests run `25943375196` — success (`fast` and `default` jobs).
+  - Deploy Prod run `25943468210` — success.
+- Production smoke:
+  - `https://vetmanager-mcp.vromanichev.ru/healthz` — `status=ok`.
+  - `https://vetmanager-mcp.vromanichev.ru/readyz` — `status=ok`, storage `reason=ok`.
+- Production product metrics report after deploy:
+  - feedback reports 24h/7d/30d: `0 / 0 / 0`;
+  - new open 30d: `0`;
+  - possible PII 30d: `0`;
+  - known issue match events 7d/30d: `0 / 0`;
+  - `Feedback top tools` and `Top known issues`: none.
+- Follow-up: feedback metrics still zero immediately after deploy; adoption depends on real client/agent behavior using the new tool descriptions. T+7 product-metrics re-check scheduled for 2026-05-23.
 
 ### Обратная связь
 

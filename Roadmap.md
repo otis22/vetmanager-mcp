@@ -2694,7 +2694,7 @@ Workflow allowance (по согласованию с пользователем 
 - 159.4 Tests: collect/format/json/no raw text regression. — `done` (targeted `17 passed`, feedback regression `45 passed`, full suite `1042 passed, 1 skipped, 57 deselected`).
 - 159.5 Full checks, audit, review gates, commit/push/deploy, AssumptionLog/self-attestation. — `done` (commit `d534419`, GitHub Tests success, Deploy Prod success, `/healthz` and `/readyz` ok, prod product metrics report shows `## Feedback`).
 
-## Этап 160. Strong feedback trigger instructions — `in_progress`
+## Этап 160. Strong feedback trigger instructions — `done`
 
 Источник: production feedback metrics show zero feedback reports; пользователь попросил подсказать LLM вызывать feedback даже без явной ошибки, если полученные данные не удовлетворяют.
 
@@ -2704,4 +2704,4 @@ Workflow allowance (по согласованию с пользователем 
 - 160.2 PRD review gates + simplicity eval. — `done` (Spark PRD fallback `[]`; Claude Opus PRD accepted 8 findings).
 - 160.3 Tests: strong trigger wording in server instructions, special description and tool docstring. — `done` (red: 4 expected failures; targeted green: `9 passed`).
 - 160.4 Update `server.py`, `tool_descriptions.py`, `tools/feedback.py`, README. — `done`
-- 160.5 Full checks, audit, review gates, commit/push/deploy, AssumptionLog/self-attestation. — `in_progress` (regression subset `40 passed`; full suite `1046 passed, 1 skipped, 57 deselected`; Spark diff fallback `[]`; Claude Opus accepted 4 low fixes; post-fix regression `40 passed`, full suite `1046 passed, 1 skipped, 57 deselected`; final Spark fallback `[]`; final Claude Opus `[]`; `git diff --check` passed).
+- 160.5 Full checks, audit, review gates, commit/push/deploy, AssumptionLog/self-attestation. — `done` (commit `897f691`; regression subset `40 passed`; full suite `1046 passed, 1 skipped, 57 deselected`; Spark diff fallback `[]`; Claude Opus accepted 4 low fixes; post-fix regression `40 passed`, full suite `1046 passed, 1 skipped, 57 deselected`; final Spark fallback `[]`; final Claude Opus `[]`; `git diff --check` passed; GitHub Tests success; Deploy Prod success; `/healthz` and `/readyz` ok; prod product metrics report shows `## Feedback` still `0 / 0 / 0`, T+7 re-check scheduled for 2026-05-23).
