@@ -53,9 +53,19 @@ mcp = FastMCP(
         "Credentials are provided via Authorization: Bearer <service_token> "
         "configured in your MCP client. "
         "All tools are bearer-authenticated and do not accept runtime credential arguments. "
-        "If a tool error is unclear, use report_problem, but describe the shape of the problem, "
-        "not raw clinic data. Replace names, patients, phones, and addresses with "
-        "<client>, <owner>, <patient>, <phone>, and <address>."
+        "Call report_problem when a tool error is unclear or even when the tool call succeeded "
+        "but the result does not let you answer the user well: "
+        "empty result but relevant records were expected; response is missing fields needed to answer; "
+        "tool description/docs promised or implied a capability that the result does not provide; "
+        "missing tool, parameter, filter, sort, pagination, or date semantics blocks a reasonable request; "
+        "workaround was necessary because no direct tool or parameter exists; "
+        "successful response is suspicious, inconsistent, or not enough to answer. "
+        "Do not call report_problem for legitimately empty results, expected pagination endings, "
+        "correct rejections of invalid user input, or normal multi-step composition. "
+        "Do not paste raw tool response bodies, raw record IDs, user's verbatim message, "
+        "or full error payloads. Describe the shape of the problem, not raw clinic data. "
+        "Replace names, patients, phones, and addresses with <client>, <owner>, <patient>, "
+        "<phone>, and <address>."
     ),
 )
 

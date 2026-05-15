@@ -25,16 +25,24 @@ def register(mcp: FastMCP) -> None:
     ) -> dict:
         """Report a suspected Vetmanager MCP problem for developer triage.
 
-        Call this when a tool error is unclear, a tool description mismatches
-        behavior, a reasonable user request lacks a tool or parameter, a tool
-        response shape looks suspicious, or docs/examples conflict with real
-        behavior. Do not include bearer tokens, API keys, passwords, raw client
-        or patient data, or raw Vetmanager payloads. Use params_shape for safe
-        parameter names only, never parameter values. Describe the shape of the
-        problem, not the data: write "client <client> lookup returns 500" instead
-        of naming the client; write "patient <patient> invoice is missing" instead
-        of naming the patient. Use placeholders <client>, <owner>, <patient>,
-        <phone>, and <address>.
+        Call report_problem when a tool error is unclear or even when the tool call succeeded
+        but the result does not let you answer the user well:
+        empty result but relevant records were expected; response is missing fields needed to answer;
+        tool description/docs promised or implied a capability that the result does not provide;
+        missing tool, parameter, filter, sort, pagination, or date semantics blocks a reasonable request;
+        workaround was necessary because no direct tool or parameter exists;
+        successful response is suspicious, inconsistent, or not enough to answer.
+        Do not call report_problem for legitimately empty results, expected
+        pagination endings, correct rejections of invalid user input, or normal
+        multi-step composition.
+
+        Do not paste raw tool response bodies, raw record IDs, user's verbatim message,
+        or full error payloads. Do not include bearer tokens, API keys,
+        passwords, raw client or patient data, or raw Vetmanager payloads. Use
+        params_shape for safe parameter names only, never parameter values.
+        Describe the shape of the problem, not the data: write "client <client> lookup returns 500"
+        instead of naming the client; write "patient <patient> invoice is missing" instead of naming the patient. Use
+        placeholders <client>, <owner>, <patient>, <phone>, and <address>.
         """
         credentials = get_current_runtime_credentials()
         if credentials is None:

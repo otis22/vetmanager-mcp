@@ -6983,3 +6983,50 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь попросил добавить feedback в метрики, затем сделать commit, push, deploy и показать отчет, с соблюдением workflow.
+
+---
+
+## Этап 160. Strong feedback trigger instructions — 2026-05-16
+
+**Статус**: `in_progress`.
+
+### Что делали
+
+Усиливаем инструкции для `report_problem`, чтобы LLM вызывала feedback не только при явной ошибке tool call, но и при успешном, однако непригодном для ответа результате.
+
+### Что сделано
+
+- Создан `PRD/этап-160-feedback-trigger-instructions.md`.
+- В `server.py`, `tool_descriptions.py` и `tools/feedback.py` добавлены imperative triggers: `Call report_problem`, `even when the tool call succeeded`, empty-but-expected, missing-fields, missing tool/parameter/filter/sort/pagination/date semantics, required workaround, suspicious/inconsistent/not enough result.
+- В `SPECIAL_TOOL_DESCRIPTIONS["report_problem"]` добавлен category mapping для `bug`, `missing_tool`, `bad_description`, `contract`, `docs`.
+- README `Agent feedback` дополнен успешными, но неудовлетворительными результатами как отдельным классом feedback trigger.
+- Добавлены regression tests `tests/test_stage160_feedback_trigger_instructions.py`.
+- После committed-diff review усилена test coverage: тест теперь извлекает именно nested `report_problem` docstring через AST, README проверяется на полный trigger set, FastMCP instructions включают description/docs promised-or-implied trigger, category mapping явно связывает promised/implied capability с `bad_description`.
+
+### Решения и обоснования
+
+- Триггеры сформулированы как прямой императив, потому что прежняя формулировка была привязана в основном к unclear error и не стимулировала feedback при successful-but-unsatisfactory result.
+- Privacy boundary повторен во всех surfaces: не вставлять raw tool response bodies, raw record IDs, user's verbatim message, full error payloads, secrets or raw clinic data.
+- Добавлен suppression set, чтобы не превращать feedback в шум: legitimately empty results, expected pagination endings, valid user-input rejections, normal multi-step composition.
+- Category mapping оставлен в tool description, потому что именно она ближе всего к runtime выбору `category`.
+
+### Проблемы
+
+- Spark PRD read-only review снова упал до нормального чтения diff/files из-за sandbox/runtime; по workflow повторён тем же `gpt-5.3-codex-spark` в `danger-full-access` с review-only prompt. Итог Spark PRD fallback: `[]`.
+- Claude Opus PRD review вернул 8 замечаний; все приняты и внесены в PRD до реализации.
+- Spark committed-diff review read-only снова упал/зациклился на sandbox/runtime (`bwrap`); по workflow остановлен и повторён той же моделью в `danger-full-access` с review-only prompt. Итог Spark committed-diff fallback: `[]`.
+- Claude Opus committed-diff review вернул 4 low findings и 1 nit. Приняты 4 low: docstring extraction, README trigger drift, missing FastMCP docs trigger, explicit promised/implied category mapping. Nit про T+7 re-check будет закрыт после deploy/report.
+- Final committed-diff review after fixes: Spark read-only снова упал на sandbox/runtime, same-model `danger-full-access` fallback вернул `[]`; Claude Opus вернул `[]`.
+
+### Проверки
+
+- Red: `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_stage160_feedback_trigger_instructions.py tests/test_stage150_agent_feedback_privacy.py -q"` — expected failures before implementation (`4 failed, 5 passed`).
+- Targeted green: same command — `9 passed`.
+- Regression/static: `docker compose --profile test run --rm test sh -c "python -m py_compile server.py tool_descriptions.py tools/feedback.py && python -m pytest tests/test_stage160_feedback_trigger_instructions.py tests/test_stage150_agent_feedback_privacy.py tests/test_tools_list_schema.py tests/test_prompts_headers_only.py -q"` — `40 passed`.
+- Regression/static after Claude fixes: same command — `40 passed`.
+- Full suite: `docker compose --profile test run --rm test` — `1046 passed, 1 skipped, 57 deselected`; after Claude fixes — `1046 passed, 1 skipped, 57 deselected`.
+- Audit: `git diff --check` — passed.
+
+### Обратная связь
+
+Пользователь спросил, как подсказать LLM вызывать feedback даже без явной ошибки, если полученные данные не удовлетворяют, и попросил делать по workflow через Roadmap с сильными формулировками и конкретными триггерами.
