@@ -7050,7 +7050,7 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 ## Этап 161. InvoiceDocument document_id filter hotfix — 2026-05-16
 
-**Статус**: `in_progress`.
+**Статус**: `done`.
 
 ### Что делали
 
@@ -7129,6 +7129,22 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Final review gates after all fixes:
   - Spark read-only failed because of sandbox/runtime `bwrap`; same-model `danger-full-access` review-only fallback — `[]`;
   - Claude Opus final review — `[]`.
+- Commit/push/deploy:
+  - commit `fdb0d6d Fix invoice document parent filter`;
+  - `git push origin main` — success;
+  - GitHub Tests run `25971994609` — success (`fast`, `default`);
+  - Deploy Prod run `25972046811` — success.
+- Production smoke after deploy:
+  - `https://vetmanager-mcp.vromanichev.ru/healthz` — `status=ok`;
+  - `https://vetmanager-mcp.vromanichev.ru/readyz` — `status=ok`, storage `reason=ok`.
+- Post-deploy boundary: no production/customer Vetmanager API probes were run; real API contract checks were limited to `devtr6` test credentials.
+- Self-attestation:
+  - Roadmap/PRD used: yes (`Roadmap.md`, Stage 161 PRD).
+  - Tests before/after implementation: yes (red, targeted green, regression/static, full suite).
+  - Real API evidence limited to `devtr6` test keys: yes.
+  - Audit/review gates: yes (`git diff --check`, Spark, Claude).
+  - Commit/push/deploy/smoke: yes.
+  - AssumptionLog/work log updated: yes.
 
 ### Обратная связь
 
