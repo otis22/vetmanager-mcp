@@ -43,7 +43,8 @@
 | Hospital create/update → даты | `dateIn` / `dateOut` | **`date_in` / `date_out`** | super-review 2026-04-20 B1 + stage 122 contract fix |
 | Payment create/list → клиент | `clientId` | **`client_id`** | super-review 2026-04-20 B1 + stage 122 contract fix |
 | Payment create → касса | `cassaId` | **`cassa_id`** | super-review 2026-04-20 B1 + stage 122 contract fix |
-| InvoiceDocument create/list → счёт | `invoiceId` | **`invoice_id`** | super-review 2026-04-20 B1 + stage 122 contract fix |
+| InvoiceDocument list → счёт | `invoiceId` / `invoice_id` / `documentId` | **`document_id`** | stage 161 devtr6 read-only probe: only `document_id` filter returns 200; supersedes stage 122 list-filter finding |
+| InvoiceDocument create → счёт | `invoiceId` | **`invoice_id`** | super-review 2026-04-20 B1 + stage 122 contract fix; write-path not changed by stage 161 |
 | InvoiceDocument create → товар/услуга | `goodId` | **`good_id`** | super-review 2026-04-20 B1 + stage 122 contract fix |
 | Client create → имя/фамилия | `firstName` / `lastName` | **`first_name` / `last_name`** | super-review 2026-04-20 B1 + stage 122 contract fix |
 | Client create → телефон | `phone` | **`cell_phone`** | roadmap 122.3 + stage 122 contract fix |

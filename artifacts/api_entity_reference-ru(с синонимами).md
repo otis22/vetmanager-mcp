@@ -516,7 +516,7 @@
 | `default_price` | string | Нет | Цена до скидок. | базовая цена, цена без скидки |
 | `discount_cause` | string | Да | Причина скидки. | причина скидки |
 | `prime_cost` | string | Нет | Себестоимость. | себестоимость |
-| `invoice_id` | integer | Нет | Внешний ключ к сущности `invoice`. | счёт |
+| `document_id` | integer | Нет | ID родительского счёта (`invoice.id`) для строк счёта. Stage 161 `devtr6` probe: list filter принимает `document_id`; `invoice_id` / `invoiceId` / `documentId` дают HTTP 500. | счёт, родительский счёт |
 | `party_info` | array | Нет | Информация о партии. | партия, серия |
 | `good` | object | Да | Вложенный объект товара. | товар, услуга |
 

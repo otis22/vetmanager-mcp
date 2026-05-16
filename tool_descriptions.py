@@ -634,6 +634,13 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "счёта, строка счёта, товар в счёте, услуга в счёте, позиция, invoice "
         "document, invoice line."
     ),
+    "get_invoice_documents": (
+        "List invoice line items for a parent invoice. Pass invoice_id as the "
+        "invoice / bill id and use limit/offset for pagination; do not add an "
+        "extra parent-id filter. Use when the user asks what products or services "
+        "are inside an invoice. Domain synonyms: позиция счёта, строка счёта, "
+        "товар в счёте, услуга в счёте, позиция, invoice document, invoice line."
+    ),
     "get_inactive_pets": (
         "Find pets whose owners have not visited the clinic recently. By default "
         "returns the top 50 pets whose owner's last visit was 13–24 months ago. "

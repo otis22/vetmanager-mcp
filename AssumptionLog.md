@@ -7045,3 +7045,91 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь спросил, как подсказать LLM вызывать feedback даже без явной ошибки, если полученные данные не удовлетворяют, и попросил делать по workflow через Roadmap с сильными формулировками и конкретными триггерами.
+
+---
+
+## Этап 161. InvoiceDocument document_id filter hotfix — 2026-05-16
+
+**Статус**: `in_progress`.
+
+### Что делали
+
+Исправляем feedback report `#2`: `get_invoice_documents(invoice_id=...)` падал на Vetmanager API HTTP 500, потому что list filter для `/rest/api/invoiceDocument` должен использовать `document_id`, а не `invoice_id`.
+
+### Что сделано
+
+- Создан `PRD/этап-161-invoice-document-document-id-hotfix.md`.
+- `tools/finance.py::get_invoice_documents` теперь генерирует filter `document_id = <invoice_id>`.
+- Caller-supplied parent-id filters `invoice_id`, `invoiceId`, `documentId`, `document_id` rejected before HTTP with message to use the public `invoice_id` argument.
+- `tool_descriptions.py` now keeps the public LLM-facing contract explicit: pass `invoice_id`; do not add an extra parent-id filter.
+- Tests updated:
+  - `tests/test_api_contracts_hotfix.py` checks generated `document_id` filter and pre-HTTP rejection of conflicting caller filters;
+  - `tests/test_tools_list_schema.py` checks public schema/text exposes `invoice_id`, not `document_id`;
+  - stale mock direct client test in `tests/test_e2e_mock_finance_warehouse.py` no longer uses top-level `invoiceId`.
+- Reference artifacts updated:
+  - `artifacts/api_entity_reference-ru.md`;
+  - `artifacts/api-research-notes-ru.md`.
+
+### Решения и обоснования
+
+- Stage 161 supersedes the Stage 122 invoiceDocument **list-filter** finding: Stage 122 correctly removed top-level `invoiceId`, but its `invoice_id` list-filter conclusion is now contradicted by `devtr6` evidence.
+- Public MCP contract remains `invoice_id`, because users and agents reason about invoice line items by invoice id.
+- Internal Vetmanager filter uses `document_id`, because `invoiceDocument.document_id` is the parent invoice id accepted by the list endpoint.
+- No fallback through `/rest/api/invoice/{id}`: direct `/rest/api/invoiceDocument` list filter works when the correct field is used.
+- No write-path probe/change for `add_invoice_document`: Stage 161 is read-path only; POST verification would mutate even `devtr6` and needs a separate explicit stage.
+
+### Проблемы
+
+- Spark PRD read-only review again failed before file read because of sandbox/runtime `bwrap`; same-model `danger-full-access` review-only fallback returned 3 accepted findings.
+- Claude Opus PRD review returned several high/medium findings. Accepted: stronger devtr6 evidence, reference artifact updates, caller filter rejection, public schema/text guard, codebase grep, sanitized read-only probe. Deferred: POST write-path probe/change as out of scope for this read-path hotfix.
+- Codebase grep found no other production tool constructing `/rest/api/invoiceDocument` list filters with `invoice_id`; prompts call the public `get_invoice_documents(invoice_id=...)` contract and remain valid.
+
+### Проверки
+
+- Red targeted: `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_api_contracts_hotfix.py::test_get_invoice_documents_uses_document_id_filter_for_invoice_id tests/test_api_contracts_hotfix.py::test_get_invoice_documents_rejects_conflicting_caller_filters tests/test_tools_list_schema.py::TestToolsListSchema::test_get_invoice_documents_keeps_public_invoice_id_contract -q"` — 6 expected failures before implementation.
+- Targeted green: same command — `6 passed`.
+- Regression/static: `docker compose --profile test run --rm test sh -c "python -m py_compile tools/finance.py && python -m pytest tests/test_api_contracts_hotfix.py tests/test_e2e_mock_finance_warehouse.py tests/test_tools_list_schema.py -q"` — `95 passed`.
+- Gated read-only `devtr6` probe via `.env` test credentials:
+  - `/rest/api/invoiceDocument` with `document_id = 2` and `document_id = 4` — HTTP 200, `totalCount=1`, matching embedded `invoiceDocuments` counts;
+  - controls `invoice_id`, `invoiceId`, `documentId` for the same invoice ids — HTTP 500;
+  - recorded only endpoint path, filter property/operator/value, status, counts and field names; no raw body, no secrets, no prices/party data.
+- Full suite: `docker compose --profile test run --rm test` — initially `1051 passed, 1 skipped, 57 deselected`; after accepted Claude fixes and new real guard marker, rerun `1051 passed, 1 skipped, 58 deselected`.
+- Audit: `git diff --check` — passed.
+- Spark committed-diff review:
+  - read-only run failed before reliable diff review because of sandbox/runtime `bwrap`; same-model `danger-full-access` review-only fallback accepted 1 high finding;
+  - fixed stale synonym reference: `artifacts/api_entity_reference-ru(с синонимами).md` now keeps `ClosingOfInvoices.invoice_id` and documents `InvoiceDocument.document_id` only in the invoiceDocument section;
+  - post-fix `git diff --check` — passed; post-fix regression/static subset — `95 passed`.
+- Claude Opus committed-diff review accepted:
+  - medium follow-up risk for `add_invoice_document` POST payload; opened Roadmap Stage 162 for safe `devtr6` write-path probe, no write probe in Stage 161;
+  - medium real-API regression gap; added opt-in `test_real_get_invoice_documents_by_invoice_id_uses_mcp_contract` pinned to `devtr6`;
+  - low clarity/test/docs fixes: clearer parent-filter rejection message, non-positional filter assertion, Stage 122 PRD superseded note.
+- Post-Claude checks:
+  - regression/static subset — `95 passed`;
+  - opt-in devtr6 real guard: `docker compose --env-file .env --profile test run --rm test python -m pytest tests/test_e2e_real.py::test_real_get_invoice_documents_by_invoice_id_uses_mcp_contract -q` — `1 passed`;
+  - `git diff --check` — passed;
+  - full suite — `1051 passed, 1 skipped, 58 deselected`.
+- Final Spark review accepted 3 medium findings:
+  - strengthened the `devtr6` real guard to check invoice ids `2` and `4`, assert every returned row matches `document_id`, and verify legacy controls `invoice_id`/`invoiceId`/`documentId` fail;
+  - updated stale Stage 140 PRD note so it points to Stage 161 `document_id` list-filter contract;
+  - Stage 161 PRD acceptance criteria remain aligned with the stronger two-id + control-probe guard.
+- Post-final-Spark checks:
+  - strengthened opt-in devtr6 real guard — `1 passed`;
+  - regression/static subset — `95 passed`;
+  - `git diff --check` — passed;
+  - full suite — `1051 passed, 1 skipped, 58 deselected`.
+- Final Claude Opus review accepted:
+  - medium source-doc gap; added `get_invoice_documents` docstring guidance that parent invoice filters must go through the `invoice_id` argument;
+  - medium real-test failure clarity gap; added explicit `data` shape assertion before extracting `invoiceDocument`;
+  - workflow status/deploy note remains pending until push/deploy/smoke, then Stage 161 can flip to `done`.
+- Post-final-Claude checks:
+  - opt-in devtr6 real guard — `1 passed`;
+  - regression/static subset — `95 passed`;
+  - `git diff --check` — passed;
+  - full suite — `1051 passed, 1 skipped, 58 deselected`.
+- Final review gates after all fixes:
+  - Spark read-only failed because of sandbox/runtime `bwrap`; same-model `danger-full-access` review-only fallback — `[]`;
+  - Claude Opus final review — `[]`.
+
+### Обратная связь
+
+Пользователь указал, что у `invoiceDocument` поле parent invoice id называется `document_id`, и попросил добавить решение в Roadmap и исправить по workflow.

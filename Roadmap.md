@@ -2705,3 +2705,25 @@ Workflow allowance (по согласованию с пользователем 
 - 160.3 Tests: strong trigger wording in server instructions, special description and tool docstring. — `done` (red: 4 expected failures; targeted green: `9 passed`).
 - 160.4 Update `server.py`, `tool_descriptions.py`, `tools/feedback.py`, README. — `done`
 - 160.5 Full checks, audit, review gates, commit/push/deploy, AssumptionLog/self-attestation. — `done` (commit `897f691`; regression subset `40 passed`; full suite `1046 passed, 1 skipped, 57 deselected`; Spark diff fallback `[]`; Claude Opus accepted 4 low fixes; post-fix regression `40 passed`, full suite `1046 passed, 1 skipped, 57 deselected`; final Spark fallback `[]`; final Claude Opus `[]`; `git diff --check` passed; GitHub Tests success; Deploy Prod success; `/healthz` and `/readyz` ok; prod product metrics report shows `## Feedback` still `0 / 0 / 0`, T+7 re-check scheduled for 2026-05-23).
+
+## Этап 161. InvoiceDocument document_id filter hotfix — `in_progress`
+
+Источник: feedback report `#2` по `vetmanager__get_invoice_documents`; пользователь уточнил, что у строк счета parent invoice id называется `document_id`.
+
+Цель: исправить internal filter `get_invoice_documents(invoice_id=...)` с `invoice_id` на `document_id`, сохранив внешний MCP parameter `invoice_id`.
+
+- 161.1 Создать PRD stage 161 и зафиксировать devtr6 contract evidence. — `done` (Spark PRD accepted 3 findings; Claude PRD accepted: stronger devtr6 evidence, reference artifacts, caller filter rejection, public schema/text guard, codebase grep, sanitized read-only probe; POST write-path probe deferred out of scope).
+- 161.2 Tests: red на старый `invoice_id` filter, public schema `invoice_id`, reject caller conflicting filters, regression на запрет `invoice_id`/`invoiceId`/`documentId` внутри generated filter. — `done` (red: 6 expected failures; targeted green `6 passed`).
+- 161.3 Реализация: `tools/finance.py` фильтрует `/rest/api/invoiceDocument` по `document_id`; reference artifacts updated. — `done` (devtr6 read-only probe: `document_id` 200 for 2 invoice ids, controls `invoice_id`/`invoiceId`/`documentId` 500).
+- 161.4 Full checks, audit, review gates, commit/push/deploy, AssumptionLog/self-attestation. — `in_progress` (regression/static `95 passed`; devtr6 MCP real guard `1 passed`; full suite `1051 passed, 1 skipped, 58 deselected`; `git diff --check` passed; Spark final `[]`; Claude accepted medium/low fixes, applied).
+
+## Этап 162. InvoiceDocument create payload contract probe — `todo`
+
+Источник: Claude Opus code-review Stage 161 — read-path доказал `document_id` для list filter, но `add_invoice_document` write-path всё ещё отправляет `invoice_id`.
+
+Цель: отдельным безопасным этапом проверить на `devtr6` тестовых ключах, какой parent invoice field принимает POST `/rest/api/invoiceDocument`, и исправить `add_invoice_document`, если write contract тоже требует `document_id`.
+
+- 162.1 PRD stage 162: safe write probe plan, rollback/delete strategy, sanitized evidence, mutation boundaries for `devtr6` only. — `todo`
+- 162.2 Tests: contract red/green for `add_invoice_document` payload field after probe result. — `todo`
+- 162.3 Implementation/reference updates if POST requires `document_id`; otherwise document why create/list differ. — `todo`
+- 162.4 Full checks, audit, review gates, commit/push/deploy, AssumptionLog/self-attestation. — `todo`

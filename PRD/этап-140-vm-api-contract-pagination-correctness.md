@@ -19,7 +19,7 @@
 - `tools/finance.py::create_payment()` is currently registered as an MCP tool and calls `crud_create("/rest/api/payment", payload)`.
 - `tools/invoice.py::get_invoices()` still sends `client_id` as top-level `extra={"client_id": client_id}` while OpenAPI `/rest/api/invoice` exposes standard `filter[]`.
 - `get_payments()` already uses `filter[]` for `client_id`; stage 122 fixed this from legacy top-level params.
-- `get_invoice_documents()` already uses `filter[]` for `invoice_id`; this covers part of F12 from earlier fixes.
+- `get_invoice_documents()` uses standard `filter[]`, but Stage 161 supersedes the old `invoice_id` field note: the internal list filter is `document_id` while the public MCP argument remains `invoice_id`.
 - F12 remaining current call sites verified in code: `tools/warehouse.py::get_good_sale_params()` sends top-level `goodId`; `tools/reference.py::get_cities()` sends top-level `title`; `tools/reference.py::get_streets()` sends top-level `cityId`; `tools/reference.py::get_combo_manual_items()` sends top-level `comboManualNameId`; `tools/operations.py::get_message_reports()` sends top-level `campaign`.
 - OpenAPI list endpoints for `/rest/api/invoice`, `/rest/api/goodSaleParam`, `/rest/api/city`, `/rest/api/street`, `/rest/api/ComboManualItem`, `/rest/api/messages/reports`, `/rest/api/payment`, `/rest/api/admission`, `/rest/api/pet`, `/rest/api/MedicalCards`, `/rest/api/timesheet` expose standard `limit`, `offset`, `sort`, `filter` parameters.
 - `/rest/api/messages/reports` is a custom messages endpoint, not a standard REST entity. Even though OpenAPI lists generic `filter[]`, current stage 140 keeps top-level `campaign` as a documented special-case to avoid a silent broad-query regression without real API verification.

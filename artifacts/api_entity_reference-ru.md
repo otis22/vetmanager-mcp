@@ -484,7 +484,7 @@
 | `fixed_increase_id` | integer | Да | ID правила фиксированного повышения цены. |
 | `fixed_increase_percent` | string | Нет | Процент фиксированного повышения. |
 | `prime_cost` | string | Нет | Себестоимость товара. |
-| `invoice_id` | integer | Нет | Внешний ключ к родительской сущности `invoice`. |
+| `document_id` | integer | Нет | ID родительского счёта (`invoice.id`) для строк счёта. Stage 161 `devtr6` probe: list filter принимает `document_id`; `invoice_id` / `invoiceId` / `documentId` дают HTTP 500. |
 | `party_info` | array | Нет | Информация о партии товара. |
 | `good` | object | Да | Вложенный объект `good`. |
 | `doctor` | object | Да | Вложенный объект пользователя (врача). |

@@ -731,7 +731,7 @@ async def test_add_invoice_document_maps_payload_to_snake_case():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_get_invoice_documents_uses_invoice_id_filter_not_legacy_query_param():
+async def test_get_invoice_documents_uses_document_id_filter_for_invoice_id():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/invoiceDocument").mock(
         return_value=httpx.Response(200, json={"data": [{"id": 1}]})
@@ -741,11 +741,36 @@ async def test_get_invoice_documents_uses_invoice_id_filter_not_legacy_query_par
         await mcp.call_tool("get_invoice_documents", {"invoice_id": 50, "limit": 20})
 
     filters = _filter_of(route)
+    generated_properties = {f.get("property") for f in filters}
+    assert generated_properties == {"document_id"}
     assert any(
-        f.get("property") == "invoice_id" and f.get("value") == 50
+        f.get("property") == "document_id" and f.get("value") == 50
         for f in filters
-    ), f"expected invoice_id filter, got {filters}"
+    )
     assert "invoiceId" not in _query_of(route)
+    assert not {"invoice_id", "invoiceId", "documentId"} & generated_properties
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_property", ["invoice_id", "invoiceId", "documentId", "document_id"])
+@respx.mock
+async def test_get_invoice_documents_rejects_conflicting_caller_filters(bad_property):
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/invoiceDocument").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": 1}]})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="Use the invoice_id argument"):
+            await mcp.call_tool(
+                "get_invoice_documents",
+                {
+                    "invoice_id": 50,
+                    "filter": [{"property": bad_property, "value": 50, "operator": "="}],
+                },
+            )
+
+    assert not route.called
 
 
 @pytest.mark.asyncio

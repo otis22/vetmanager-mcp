@@ -9,6 +9,18 @@ from validators import LimitParam, parse_date_param
 def register(mcp: FastMCP) -> None:
 
     _PAYMENT_STATUSES = {"exec", "save", "deleted"}
+    _INVOICE_DOCUMENT_FILTER_FIELDS = {"invoice_id", "invoiceId", "documentId", "document_id"}
+
+    def _reject_invoice_document_parent_filters(filters: list[dict] | None) -> None:
+        for item in filters or []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("property") in _INVOICE_DOCUMENT_FILTER_FIELDS:
+                raise ValueError(
+                    "Use the invoice_id argument for get_invoice_documents; "
+                    "it is converted to document_id internally. Do not also pass "
+                    "invoice_id/invoiceId/documentId/document_id in filter."
+                )
 
     @mcp.tool
     async def get_payments(
@@ -106,9 +118,12 @@ def register(mcp: FastMCP) -> None:
             invoice_id: ID of the parent invoice.
             limit: Max records to return.
             offset: Pagination offset.
+            filter: Extra filters; do not pass invoice_id/invoiceId/documentId/document_id.
+                Use the invoice_id argument for parent invoice filtering.
         """
+        _reject_invoice_document_parent_filters(filter)
         combined_filters: list = list(filter or [])
-        combined_filters.append(_filter_eq("invoice_id", invoice_id))
+        combined_filters.append(_filter_eq("document_id", invoice_id))
         return await crud_list(
             "/rest/api/invoiceDocument", limit=limit, offset=offset,
             sort=sort, filters=combined_filters,

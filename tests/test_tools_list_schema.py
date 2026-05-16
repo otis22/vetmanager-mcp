@@ -126,6 +126,17 @@ class TestToolsListSchema:
         assert "date_from" in properties
         assert "date_to" in properties
 
+    def test_get_invoice_documents_keeps_public_invoice_id_contract(self, all_tool_exports):
+        tool = next(t for t in all_tool_exports if t["name"] == "get_invoice_documents")
+        properties = tool["schema"].get("properties", {})
+        assert "invoice_id" in properties
+        assert "document_id" not in properties
+        assert "documentId" not in properties
+        description = tool["description"]
+        assert "invoice_id" in description
+        assert "document_id" not in description
+        assert "documentId" not in description
+
     def test_limit_has_minimum_when_present(self, all_tool_exports):
         """Every tool with a 'limit' param must declare minimum in its schema."""
         checked_tools = 0

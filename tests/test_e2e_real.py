@@ -26,6 +26,7 @@ from server import _graceful_shutdown, mcp
 from tests.conftest import TEST_ENCRYPTION_KEY
 from vetmanager_client import VetmanagerClient
 from exceptions import AuthError, VetmanagerError
+from tests.runtime_factories import patch_runtime_credentials
 from vetmanager_connection_service import (
     save_user_login_password_connection,
     validate_domain_api_key_connection,
@@ -64,6 +65,10 @@ skip_if_no_user_login_flow = pytest.mark.skipif(
 skip_if_real_web_not_enabled = pytest.mark.skipif(
     not RUN_REAL_WEB_TESTS,
     reason="Set RUN_REAL_WEB_TESTS=1 to enable opt-in real web flow tests.",
+)
+skip_if_not_devtr6 = pytest.mark.skipif(
+    "devtr6" not in TEST_DOMAIN,
+    reason="Stage 161 contract guard is pinned to devtr6 test contour.",
 )
 
 pytestmark = pytest.mark.real_api
@@ -522,6 +527,38 @@ async def test_real_get_closing_of_invoices():
 async def test_real_get_invoice_documents():
     result = await call(vc().get("/rest/api/invoiceDocument", params={"limit": 5, "offset": 0}))
     assert "data" in result
+
+
+@skip_if_no_creds
+@skip_if_not_devtr6
+@pytest.mark.asyncio
+async def test_real_get_invoice_documents_by_invoice_id_uses_mcp_contract():
+    import json as _json
+
+    for invoice_id in (2, 4):
+        headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+        with headers_patch, runtime_patch:
+            result = await call(mcp.call_tool(
+                "get_invoice_documents",
+                {"invoice_id": invoice_id, "limit": 5, "offset": 0},
+            ))
+
+        assert result.structured_content is not None
+        data = result.structured_content.get("data", {})
+        assert isinstance(data, dict), f"unexpected data shape: {type(data).__name__}"
+        rows = data.get("invoiceDocument") or data.get("invoiceDocuments") or data
+        assert isinstance(rows, list)
+        assert rows, f"devtr6 invoice_id={invoice_id} should have invoiceDocument rows"
+        assert all(str(row.get("document_id")) == str(invoice_id) for row in rows if isinstance(row, dict))
+
+    c = vc()
+    for bad_property in ("invoice_id", "invoiceId", "documentId"):
+        bad_filter = _json.dumps(
+            [{"property": bad_property, "value": 2, "operator": "="}],
+            separators=(",", ":"),
+        )
+        with pytest.raises(VetmanagerError):
+            await c.get("/rest/api/invoiceDocument", params={"filter": bad_filter, "limit": 5, "offset": 0})
 
 
 @skip_if_no_creds

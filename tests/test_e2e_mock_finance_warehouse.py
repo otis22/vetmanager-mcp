@@ -98,9 +98,16 @@ async def test_get_closing_of_invoice_by_id():
 async def test_get_invoice_documents_returns_list():
     billing_mock()
     respx.get(f"{BASE}/rest/api/invoiceDocument").mock(
-        return_value=httpx.Response(200, json={"data": [{"id": 1, "invoice_id": 50, "good_id": 2}]})
+        return_value=httpx.Response(200, json={"data": [{"id": 1, "document_id": 50, "good_id": 2}]})
     )
-    result = await client().get("/rest/api/invoiceDocument", params={"invoiceId": 50, "limit": 50, "offset": 0})
+    result = await client().get(
+        "/rest/api/invoiceDocument",
+        params={
+            "filter": '[{"property":"document_id","value":50,"operator":"="}]',
+            "limit": 50,
+            "offset": 0,
+        },
+    )
     assert result["data"][0]["good_id"] == 2
 
 
@@ -363,4 +370,3 @@ async def test_get_good_stock_balance_zero_for_service():
     )
     qty = float(result["data"]["rest_good_in_warehouse"]["quantity"])
     assert qty == 0.0
-

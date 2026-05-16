@@ -52,7 +52,7 @@ Super-review 2026-04-20 (`artifacts/review/2026-04-20-full-stage-121.md`) под
 - `create_payment`: `client_id`, `cassa_id`
 - `get_payments`: filter on `client_id`, не `extra={"clientId": ...}`
 - `add_invoice_document`: `invoice_id`, `good_id`
-- `get_invoice_documents`: filter on `invoice_id`, не `extra={"invoiceId": ...}`
+- `get_invoice_documents`: filter on `invoice_id`, не `extra={"invoiceId": ...}` — superseded by Stage 161 for list filter; use internal `document_id` there.
 
 ### 122.3 client.py / reference.py / operations.py mapping fix (≤2 ч, ≤150 LOC)
 
