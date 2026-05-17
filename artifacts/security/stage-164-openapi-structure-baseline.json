@@ -1,0 +1,20 @@
+{
+  "artifact": "artifacts/vetmanager_openapi_v6.json",
+  "passwd_schema_context": {
+    "example_length": 32,
+    "example_type": "str",
+    "forbidden_constraints_present": [],
+    "path": "components.schemas.user.properties.passwd",
+    "type": "string",
+    "x-db-type": "varchar(32)"
+  },
+  "source_git_sha": "fde31a6ac85c5c4ca05583c388203a47c5670f38",
+  "stage": 164,
+  "structural_fingerprint": {
+    "arrays": 294,
+    "entries": 8562,
+    "objects": 2935,
+    "scalars": 5333,
+    "sha256": "f4e451883060b31d27d229c7efd851a809e4d8df89efb899530dc891b3dc3bfc"
+  }
+}

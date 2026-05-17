@@ -7198,3 +7198,52 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь попросил делать по workflow, не скрывать артефакты/ревью/исправленные security notes, убрать historical API literal и не делать общий cleanup stage.
+
+---
+
+## Этап 164. OpenAPI artifact PII and credential-derived examples sanitization — 2026-05-17
+
+**Статус**: `in_progress` до прохождения full checks, committed-diff review, push/deploy и smoke.
+
+### Что делали
+
+Санитизировали concrete email examples и credential-derived `passwd` hash-like examples в `artifacts/vetmanager_openapi_v6.json`, не скрывая OpenAPI artifact, review/security notes и исправленные замечания.
+
+### Что сделано
+
+- Создан PRD `PRD/этап-164-openapi-artifact-pii-sanitization.md`.
+- Добавлен `scripts/check_reference_artifact_privacy.py`: deny-list проверка по SHA-256 fingerprint'ам, без raw concrete literals в source и без печати значений при fail.
+- Добавлен `scripts/check_openapi_artifact_contract_preserved.py`: structural fingerprint check против pre-sanitization baseline.
+- Создан baseline `artifacts/security/stage-164-openapi-structure-baseline.json` из pre-sanitization `HEAD:artifacts/vetmanager_openapi_v6.json`.
+- В `artifacts/vetmanager_openapi_v6.json` concrete email/hash-like example values заменены на reserved placeholders и neutral 32-character `passwd` placeholder.
+- Создан `artifacts/security/stage-164-openapi-privacy-audit.md` с JSON paths, fingerprints, classification/schema decisions и neighbor audit result без raw values.
+
+### Решения и обоснования
+
+- OpenAPI artifact не удалялся и не прятался: менялись только scalar example values, schema/field names/types сохранены.
+- Privacy check сканирует весь Stage 164 reference scope: OpenAPI, Postman collection, API entity reference и API research notes.
+- Contract check намеренно structural: affected `passwd` schema имеет `type: string`, `x-db-type: varchar(32)` и не имеет стандартных OpenAPI `pattern`/`format`/`minLength`/`maxLength`; placeholder сохраняет 32-character shape.
+- Git history rewrite не выполнялся. Current-tree sanitization не удаляет прежние значения из git history/blame/forks/caches. External mitigation для реального PII/credential exposure остаётся operator responsibility или отдельным narrow follow-up при отдельном решении.
+- Происхождение значений не подтверждено как synthetic/expired/non-production; Stage 164 фиксирует residual exposure честно, не скрывая fixed security note.
+
+### Проблемы
+
+- PRD review несколько раз возвращал полезные high/medium замечания по enforceable checks: neighbor scope, baseline origin, deterministic placeholder mapping, contract check deliverable, Roadmap/test-first alignment. Все принятые замечания внесены в PRD/Roadmap до implementation.
+- Первичный local `pytest` на host не дошёл до Stage 164 tests из-за отсутствующего `playwright` в host окружении; финальные проверки выполняются через docker workflow проекта.
+- Claude Opus committed-diff review accepted 1 medium finding: `passwd` hash-like regression check был привязан к ключу `passwd` и не покрывал schema-level `example`. Исправлено: checker сканирует все hex-like string tokens по deny-list fingerprint, audit artifact добавил schema-level path, contract check проверяет `passwd.example` type/length.
+- Spark committed-diff review after Claude hardening accepted 2 medium findings: live Stage 164 reference artifacts were not covered by pytest, and missing scoped artifacts were skipped. Fixed with real-artifact pytest coverage and fail-fast missing artifact handling.
+
+### Проверки
+
+- Red privacy check до sanitization: initial `python3 scripts/check_reference_artifact_privacy.py` — fail, 13 location-only matches in OpenAPI, без печати raw values; после Claude committed-diff finding checker hardened to scan all hex-like string tokens, covering the schema-level `passwd.example` occurrence too.
+- Green privacy check после sanitization: `python3 scripts/check_reference_artifact_privacy.py` — deny-list not found.
+- Contract check: `python3 scripts/check_openapi_artifact_contract_preserved.py` — OpenAPI contract preserved.
+- JSON validity: `python3 -m json.tool artifacts/vetmanager_openapi_v6.json >/dev/null` — passed.
+- Broad triage regex after sanitization matched only reserved placeholders and neutral `passwd` placeholder in OpenAPI; neighbor artifacts had no matches.
+- Static/audit: `python3 -m py_compile scripts/check_reference_artifact_privacy.py scripts/check_openapi_artifact_contract_preserved.py` — passed; `git diff --check` — passed; raw-value grep for Stage 164 concrete values — no matches.
+- Targeted docker tests: `docker compose --profile test run --rm test pytest tests/test_stage164_reference_artifact_privacy.py tests/test_stage164_openapi_contract_preserved.py -q` — `4 passed`; repeated after accepted Spark findings — `6 passed`.
+- Full suite: `docker compose --profile test run --rm test` — `1057 passed, 1 skipped, 58 deselected`; repeated after accepted Claude committed-diff hardening — `1057 passed, 1 skipped, 58 deselected`; repeated after accepted Spark committed-diff hardening — `1059 passed, 1 skipped, 58 deselected`.
+
+### Обратная связь
+
+Пользователь попросил планировать Roadmap по критичным замечаниям, не скрывать artifacts/reviews/fixed security notes, убрать historical API exposure и дальше делать следующий этап строго по workflow.
