@@ -2740,7 +2740,7 @@ Workflow allowance (по согласованию с пользователем 
 - 163.4 Если ключ мог оставаться валидным: зафиксировать operator confirmation/invalid evidence либо вынести rotate/revoke `devtr6` key как explicit follow-up; если уже невалиден — зафиксировать это как assumption с основанием. — `done` (historical evidence says invalid/missing; current-tree redaction does not remove git-history residual exposure; effective mitigation for any still-valid copy is external rotate/revoke).
 - 163.5 Full checks where applicable, audit, Spark + strong diff review, commit/push, AssumptionLog/self-attestation. — `done`
 
-## Этап 164. OpenAPI artifact PII and credential-derived examples sanitization — `in_progress`
+## Этап 164. OpenAPI artifact PII and credential-derived examples sanitization — `done`
 
 Источник: security/privacy audit 2026-05-17 — `artifacts/vetmanager_openapi_v6.json` содержит real-looking emails и `passwd` hash-like example values. Артефакт нужен проекту, но конкретные персональные/credential-derived examples не нужны для API contract.
 
@@ -2752,7 +2752,7 @@ Workflow allowance (по согласованию с пользователем 
 - 164.4 Санитизировать `artifacts/vetmanager_openapi_v6.json`: заменить concrete emails на reserved/example domains и `passwd` example hashes на neutral placeholders; при `passwd` context mismatch abort + follow-up. — `done`
 - 164.5 Аудит соседних reference artifacts (`vetmanager_postman_collection.json`, `api_entity_reference-ru.md`, `api-research-notes-ru.md`) на те же классы данных; findings того же класса санитизировать в Stage 164, иные вынести в отдельный Roadmap stage. — `done`
 - 164.6 Создать `artifacts/security/stage-164-openapi-privacy-audit.md` с JSON paths/fingerprints/classification/schema decisions без raw values. — `done`
-- 164.7 Full checks where applicable, audit, Spark + strong diff review, commit/push, AssumptionLog/self-attestation. — `in_progress`
+- 164.7 Full checks where applicable, audit, Spark + strong diff review, commit/push, AssumptionLog/self-attestation. — `done`
 
 ## Этап 165. Critical security findings inventory without hiding fixed notes — `todo`
 

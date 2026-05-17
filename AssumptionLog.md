@@ -7203,7 +7203,7 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 ## Этап 164. OpenAPI artifact PII and credential-derived examples sanitization — 2026-05-17
 
-**Статус**: `in_progress` до прохождения full checks, committed-diff review, push/deploy и smoke.
+**Статус**: `done`.
 
 ### Что делали
 
@@ -7243,6 +7243,24 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Static/audit: `python3 -m py_compile scripts/check_reference_artifact_privacy.py scripts/check_openapi_artifact_contract_preserved.py` — passed; `git diff --check` — passed; raw-value grep for Stage 164 concrete values — no matches.
 - Targeted docker tests: `docker compose --profile test run --rm test pytest tests/test_stage164_reference_artifact_privacy.py tests/test_stage164_openapi_contract_preserved.py -q` — `4 passed`; repeated after accepted Spark findings — `6 passed`.
 - Full suite: `docker compose --profile test run --rm test` — `1057 passed, 1 skipped, 58 deselected`; repeated after accepted Claude committed-diff hardening — `1057 passed, 1 skipped, 58 deselected`; repeated after accepted Spark committed-diff hardening — `1059 passed, 1 skipped, 58 deselected`.
+- Final review gates:
+  - Spark committed-diff review after all fixes — `[]`.
+  - Claude Opus committed-diff review after all fixes — `[]`.
+- Commit/push/deploy:
+  - implementation commit `f15d7ca Stage 164: Sanitize OpenAPI artifact examples`;
+  - `git push origin main` — success;
+  - GitHub Tests run `25993067959` — success (`fast`, `default`);
+  - Deploy Prod run `25993120409` — success.
+- Production smoke after deploy:
+  - `https://vetmanager-mcp.vromanichev.ru/healthz` — `status=ok`;
+  - `https://vetmanager-mcp.vromanichev.ru/readyz` — `status=ok`, storage `reason=ok`.
+- Self-attestation:
+  - Roadmap/PRD used: yes (`Roadmap.md`, Stage 164 PRD).
+  - Tests before/after implementation: yes (privacy Red, green gates, targeted docker, full suite).
+  - Security notes/review artifacts hidden: no; fixed findings remain visible, only concrete values sanitized.
+  - Audit/review gates: yes (`git diff --check`, Spark, Claude).
+  - Commit/push/deploy/smoke: yes.
+  - AssumptionLog/work log updated: yes.
 
 ### Обратная связь
 
