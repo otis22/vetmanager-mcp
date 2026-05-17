@@ -7314,6 +7314,17 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Final review gates:
   - Spark read-only failed on sandbox/runtime earlier and was repeated with same-model `gpt-5.3-codex-spark -s danger-full-access` review-only prompt per workflow; final Spark sanity after all fixes — `[]`.
   - Claude Opus final staged-diff review after all fixes — `[]`.
+- Commit/push/deploy:
+  - Commit `e8e40cc Stage 165: Inventory critical security findings` created and pushed to `origin/main`.
+  - GitHub Tests run `25996051654` — success (`fast`, `default`).
+  - GitHub Deploy Prod run `25996110828` — success.
+  - Production smoke: `https://vetmanager-mcp.vromanichev.ru/healthz` returned `{"status":"ok","probe":"liveness","service":"vetmanager-mcp"}`.
+  - Production smoke: `https://vetmanager-mcp.vromanichev.ru/readyz` returned `{"status":"ok","probe":"readiness","service":"vetmanager-mcp","checks":{"storage":{"status":"ok","reason":"ok"}}}`.
+- Self-attestation:
+  - Roadmap/PRD workflow followed; Stage 165 marked `done`, Stage 166 added for the only unresolved accepted High/Critical finding.
+  - Fixed and unresolved security notes remain visible in artifacts; no stage cleanup/history rewrite was performed.
+  - No production/customer Vetmanager API calls were made for Stage 165; work was artifact/code/test only.
+  - AssumptionLog and external work log updated with checks, reviews, CI, deploy and smoke evidence.
 
 ### Обратная связь
 
