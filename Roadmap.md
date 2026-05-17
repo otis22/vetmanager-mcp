@@ -2778,7 +2778,7 @@ Workflow allowance (по согласованию с пользователем 
 - 166.4 Обновить deployment notes, release checklist и threat model 44.5 после закрытия policy. — `todo`
 - 166.5 Full checks, audit, Spark + strong review, commit/push/deploy/smoke, AssumptionLog/self-attestation. — `todo`
 
-## Этап 167. Feedback report fixed resolution visibility — `in_progress`
+## Этап 167. Feedback report fixed resolution visibility — `done`
 
 Источник: prod feedback report `#2` уже исправлен Stage 161, но triage CLI оставляет report как `new` либо показывает только `[linked]` без видимого fixed status.
 
@@ -2787,5 +2787,5 @@ Workflow allowance (по согласованию с пользователем 
 - 167.1 Создать PRD stage 167: report-level resolution command, allowed statuses, privacy-safe output, production use for report `#2`. — `done`
 - 167.2 Реализовать CLI command для `scripts/triage_agent_feedback.py`, который creates/updates linked `known_issues` entry и переводит report в `linked`; `recent` должен показывать `known_issue=#/fixed`. — `done`
 - 167.3 Tests: fixed resolution creates/updates issue, redacts operator text, preserves existing curated issue text unless explicitly overwritten, `recent` output exposes fixed status without raw details. — `done`
-- 167.4 Full checks, audit, Spark + strong review, commit/push/deploy/smoke. — `in_progress`
-- 167.5 После деплоя обработать prod feedback report `#2` как fixed by Stage 161 и показать evidence. — `todo`
+- 167.4 Full checks, audit, Spark + strong review, commit/push/deploy/smoke. — `done` (commit `0bc21f8`; local full suite `1067 passed, 1 skipped, 58 deselected`; GitHub Tests `25999411096` success; Deploy Prod `25999466314` success; `/healthz` and `/readyz` ok).
+- 167.5 После деплоя обработать prod feedback report `#2` как fixed by Stage 161 и показать evidence. — `done` (`resolve-report 2 --status fixed` linked report `#2` to known issue `#8/fixed`; `recent` shows `#2 [linked] ... known_issue=#8/fixed`; product metrics `new_open_30d=0`, `linked=1`).

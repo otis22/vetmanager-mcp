@@ -7334,7 +7334,7 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 ## Этап 167. Feedback report fixed resolution visibility — 2026-05-17
 
-**Статус**: `in_progress` до push/deploy и обработки prod feedback report `#2`.
+**Статус**: `done`.
 
 ### Что делали
 
@@ -7343,7 +7343,7 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Что сделано
 
 - Добавлен PRD `PRD/этап-167-feedback-report-fixed-resolution.md`.
-- В Roadmap добавлен Stage 167; 167.1-167.3 отмечены `done`, 167.4 `in_progress`, 167.5 `todo`.
+- В Roadmap добавлен Stage 167; 167.1-167.5 отмечены `done`.
 - В `scripts/triage_agent_feedback.py` добавлен `resolve-report <report_id>`:
   - создает или обновляет linked `known_issues` row;
   - переводит feedback report в `linked`;
@@ -7373,6 +7373,18 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - `git diff --check` — passed.
 - PRD review: Spark fallback `[]`; Claude Opus accepted high findings, fixed in PRD/code/tests.
 - Diff review: Spark final `[]`; Claude Opus accepted high destructive-update finding, fixed; final Claude Opus `[]`.
+- Commit/push/deploy:
+  - Commit `0bc21f8 Stage 167: Add feedback report resolution CLI` pushed to `origin/main`.
+  - GitHub Tests run `25999411096` — success (`fast`, `default`).
+  - GitHub Deploy Prod run `25999466314` — success.
+  - Production smoke `/healthz` — `status=ok`.
+  - Production smoke `/readyz` — `status=ok`, storage `reason=ok`.
+- Prod feedback resolution:
+  - Before resolution, prod `recent --limit 5` showed report `#2 [new]` for `vetmanager__get_invoice_documents`.
+  - Ran `resolve-report 2 --status fixed` with Stage 161 public summary/workaround.
+  - Command returned `report #2 linked known_issue #8 status=fixed`.
+  - After resolution, prod `recent --limit 5` shows `#2 [linked] ... known_issue=#8/fixed`.
+  - Product metrics feedback block shows `new_open_30d=0`, `by_status_30d.linked=1`, `possible_pii_30d=0`.
 
 ### Обратная связь
 
