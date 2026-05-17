@@ -2754,14 +2754,26 @@ Workflow allowance (по согласованию с пользователем 
 - 164.6 Создать `artifacts/security/stage-164-openapi-privacy-audit.md` с JSON paths/fingerprints/classification/schema decisions без raw values. — `done`
 - 164.7 Full checks where applicable, audit, Spark + strong diff review, commit/push, AssumptionLog/self-attestation. — `done`
 
-## Этап 165. Critical security findings inventory without hiding fixed notes — `todo`
+## Этап 165. Critical security findings inventory without hiding fixed notes — `done`
 
 Источник: пользовательское решение 2026-05-17 — “артифакты, ревью и исправленные замечания не скрывай”; если есть неисправленные critical/security findings, добавить их в Roadmap.
 
 Цель: пройти review/security artifacts и сделать явную инвентаризацию accepted High/Critical findings: закрытые оставить видимыми с ссылкой на stage/commit, незакрытые превратить в конкретные Roadmap stages. Это не cleanup stage и не redaction stage.
 
-- 165.1 Создать PRD stage 165: sources (`artifacts/review/`, `AssumptionLog.md`, Roadmap stages 86-164), severity threshold, формат таблицы “finding → status → evidence”. — `todo`
-- 165.2 Составить inventory accepted High/Critical security findings: fixed findings не удалять из artifacts, а связать с закрывающим stage/commit/evidence. — `todo`
-- 165.3 Для каждого accepted High/Critical finding без evidence of fix добавить отдельный конкретный Roadmap stage с narrow scope, tests, review gates и deploy/verification criteria. — `todo`
-- 165.4 Зафиксировать unresolved list в AssumptionLog; если unresolved High/Critical не найдено, явно записать “no accepted unfixed High/Critical findings found” с границами поиска. — `todo`
-- 165.5 Full checks where applicable, audit, Spark + strong review, commit/push, AssumptionLog/self-attestation. — `todo`
+- 165.1 Создать PRD stage 165: sources (`artifacts/review/`, `artifacts/security/`, security/deployment/architecture/tech-debt/runbook/API/PRD artifacts, `AssumptionLog.md`, `Roadmap.md` all stages as evidence), accepted/severity threshold, формат таблицы “finding → status → evidence → rationale”. — `done`
+- 165.2 Составить inventory accepted High/Critical security findings: fixed findings не удалять из artifacts, а связать с закрывающим stage/commit/evidence. — `done`
+- 165.3 Для каждого accepted High/Critical finding без evidence of fix добавить отдельный конкретный Roadmap stage с narrow scope, tests, review gates и deploy/verification criteria. — `done` (Stage 166 added for threat-model 44.5 residual)
+- 165.4 Зафиксировать unresolved list в AssumptionLog; если unresolved High/Critical не найдено, явно записать “no accepted unfixed High/Critical findings found” с границами поиска. — `done` (one unresolved accepted finding: `S165-threat-44-5-rate-limit-xff`)
+- 165.5 Full checks where applicable, audit, Spark + strong review, commit/push, AssumptionLog/self-attestation. — `done`
+
+## Этап 166. Rate-limit multi-instance deployment policy — `todo`
+
+Источник: Stage 165 inventory `S165-threat-44-5-rate-limit-xff` / threat-model 44.5 residual.
+
+Цель: закрыть residual high-priority availability/security risk, при котором web/bearer rate limiting остаётся process-local, если `REDIS_URL` не задан, и поэтому недостаточен для multi-instance deployment.
+
+- 166.1 Создать PRD stage 166: production topology assumptions, Redis-required vs single-instance documented exception, fail-fast behavior, env contract, tests/review/deploy criteria. — `todo`
+- 166.2 Реализовать policy: для production/multi-instance контура требовать shared Redis rate-limit backend или explicit single-instance waiver; без silent process-local fallback в multi-instance mode. — `todo`
+- 166.3 Добавить regression tests для startup/env policy, bearer/web limiter backend selection and waiver semantics. — `todo`
+- 166.4 Обновить deployment notes, release checklist и threat model 44.5 после закрытия policy. — `todo`
+- 166.5 Full checks, audit, Spark + strong review, commit/push/deploy/smoke, AssumptionLog/self-attestation. — `todo`

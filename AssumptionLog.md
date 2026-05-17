@@ -7265,3 +7265,56 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь попросил планировать Roadmap по критичным замечаниям, не скрывать artifacts/reviews/fixed security notes, убрать historical API exposure и дальше делать следующий этап строго по workflow.
+
+---
+
+## Этап 165. Critical security findings inventory — 2026-05-17
+
+**Статус**: `done`.
+
+### Что делали
+
+Составляли видимый inventory accepted High/Critical security/privacy findings по review/security artifacts, Roadmap и AssumptionLog, без скрытия исправленных security notes.
+
+### Что сделано
+
+- Создан PRD `PRD/этап-165-critical-security-findings-inventory.md`.
+- PRD прошёл Spark PRD scout review и Claude Opus PRD review; принятые findings внесены в PRD до implementation. Финальные blocker/high PRD gates после правок: Spark `[]`, Claude Opus `[]`.
+- Создан `artifacts/security/stage-165-critical-findings-inventory.md`.
+- Создан `artifacts/security/stage-165-discovery-manifest.md` и persisted sweep output `artifacts/security/stage-165-sweep-files.txt`.
+- Добавлен `scripts/check_stage165_inventory_privacy.py`, который проверяет Stage 165 inventory на Stage 163/164 deny-list values и generic privacy patterns.
+- В Roadmap Stage 165 отмечены 165.1-165.4 как выполненные; добавлен Stage 166 для единственного unresolved accepted High/Critical finding (`S165-threat-44-5-rate-limit-xff`).
+
+### Решения и обоснования
+
+- Source snapshot discovery зафиксирован как `commit:4f309031cf0023bfc68b3c2516746b9d06226e60`; последующие Stage 165 правки считаются workflow evidence, но privacy checks всё равно сканируют inventory.
+- Search boundary: `artifacts/review/`, `artifacts/security/`, threat model, security deployment notes, architecture/tech-debt/operations/release/runbook/API artifacts, security/review/follow-up PRDs, `AssumptionLog.md`, and all `Roadmap.md` stages.
+- Repo-wide enumeration по severity/security vocabulary дал много source/test/config identifier-only matches; они сгруппированы в inventory header как `out-of-scope-source`, а не перечислены по одному.
+- Stage 163 и Stage 164 классифицированы как current-tree fixed with external residual history/operator risk. Это не скрывает notes и не создаёт repo-internal cleanup stage.
+- Unresolved accepted High/Critical list: `S165-threat-44-5-rate-limit-xff` из threat-model 44.5 residual. Follow-up: Roadmap Stage 166.
+
+### Проблемы
+
+- PRD-review несколько раз находил enforceability gaps: regex privacy gate, `major`/`must-fix` severity mapping, reviewed dismissals, threat-model qualitative mapping, source enumeration boundary, and false positives on long identifiers. Все адекватные findings исправлены до inventory.
+- Первичный запуск `scripts/check_stage165_inventory_privacy.py` упал на прямом импорте `scripts.*`; исправлено добавлением repo root в `sys.path`.
+- Spark committed-diff review нашёл противоречие: threat-model 44.5 был `Частично закрыто`, а Stage 165 писал “no unresolved”. Исправлено: Stage 166 добавлен как follow-up, inventory пометил `S165-threat-44-5-rate-limit-xff` как unresolved.
+- Claude Opus committed-diff review нашёл stale open-question bullets в threat-model 44.2/44.5 и `assert` self-tests в privacy checker. Исправлено: 44.2/44.5 синхронизированы с §9.7/inventory, self-tests заменены на explicit `RuntimeError`.
+
+### Проверки
+
+- `python3 scripts/check_stage165_inventory_privacy.py` — passed.
+- `python3 scripts/check_no_historical_api_key_literal.py` — passed.
+- `python3 scripts/check_reference_artifact_privacy.py` — passed.
+- `python3 -m py_compile scripts/check_stage165_inventory_privacy.py` — passed.
+- `python3 -O scripts/check_stage165_inventory_privacy.py` — passed.
+- Host `pytest tests/test_stage165_inventory_privacy.py -q` — not executed because host env still lacks `playwright` imported by `tests/conftest.py`.
+- Targeted Docker: `docker compose --profile test run --rm test pytest tests/test_stage165_inventory_privacy.py -q` — `5 passed`.
+- Full Docker suite: `docker compose --profile test run --rm test` — `1064 passed, 1 skipped, 58 deselected`.
+- `git diff --check` — passed.
+- Final review gates:
+  - Spark read-only failed on sandbox/runtime earlier and was repeated with same-model `gpt-5.3-codex-spark -s danger-full-access` review-only prompt per workflow; final Spark sanity after all fixes — `[]`.
+  - Claude Opus final staged-diff review after all fixes — `[]`.
+
+### Обратная связь
+
+Пользователь попросил “давай следующий” по workflow после Stage 164; ранее просил не прятать artifacts/reviews/fixed notes и добавлять unresolved critical/security findings в Roadmap.

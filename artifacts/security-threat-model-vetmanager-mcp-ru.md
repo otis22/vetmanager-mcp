@@ -282,14 +282,17 @@
 ### For 44.2
 
 - coupling `WEB_SESSION_SECRET` with `STORAGE_ENCRYPTION_KEY` ослабляет
-  разделение secret domains;
-- нужно проверить cookie/session defaults и safe error handling на всех web paths;
-- нужно проверить, нет ли user-facing error leaks от upstream.
+  разделение secret domains; remaining coupling is accepted by design in §9.7.
+- Cookie/session defaults and safe error handling были закрыты stages 44 и 52:
+  session timeout, CSP/safe headers, fail-fast startup validation и safe error
+  messages.
 
 ### For 44.3
 
-- scope model может быть шире, чем фактический least-privilege contract;
-- legacy fallback to full access требует отдельной оценки.
+- Закрыто stages 28, 130, 132, 137: scope schema/storage, tool access registry,
+  runtime preflight enforcement и read-only web issuance presets реализованы.
+- Legacy no-scope tokens остаются full-access compatible by design для
+  backward compatibility; это не hidden open finding.
 
 ### For 44.4
 
@@ -299,22 +302,22 @@
 ### For 44.5
 
 - in-memory rate limiting без `REDIS_URL` может быть недостаточен для
-  multi-instance deploy;
-- direct trust to `X-Forwarded-For` может делать limiter и audit spoofable.
+  multi-instance deploy; residual tracked by Roadmap Stage 166.
+- Direct trust to `X-Forwarded-For` закрыт stage 52 через `WEB_TRUSTED_PROXY_IPS`.
 
 ### For 44.6
 
 - allowlist есть, но нужен отдельный review на SSRF/host validation completeness,
   включая redirects, нестандартные host representations и reuse resolved host.
 
-## 9.7 Remediation Status (обновлено 2026-03-27)
+## 9.7 Remediation Status (обновлено 2026-05-17)
 
 | Гипотеза | Статус | Этапы | Примечание |
 |----------|--------|-------|------------|
 | 44.2 (secrets coupling, cookie defaults) | Частично закрыто | 44, 52 | Session timeout 24h, CSP headers, fail-fast startup validation. WEB_SESSION_SECRET / STORAGE_ENCRYPTION_KEY coupling остаётся by design. |
-| 44.3 (scope model) | Подготовлено | 28 | Schema/storage готовы, enforcement не включён. Legacy tokens → full access. |
+| 44.3 (scope model) | Закрыто | 28, 130, 132, 137 | Schema/storage, tool access registry, runtime preflight enforcement, and read-only web issuance presets реализованы. Legacy no-scope tokens остаются full-access compatible by design. |
 | 44.4 (audit log leaks) | Закрыто | 44, 52 | Upstream error text stripped, JSON CSP, safe error messages. |
-| 44.5 (rate limiting, XFF) | Частично закрыто | 27, 40, 52, 138 | Per-token, per-email lockout, per-IP limiting реализованы. Web/bearer rate limiting используют shared backend: in-memory default, Redis-backed при `REDIS_URL`; без Redis остаётся process-local limitation. `WEB_TRUSTED_PROXY_IPS` добавлен (stage 52). |
+| 44.5 (rate limiting, XFF) | Частично закрыто | 27, 40, 52, 138, planned 166 | Per-token, per-email lockout, per-IP limiting реализованы. Web/bearer rate limiting используют shared backend: in-memory default, Redis-backed при `REDIS_URL`; без Redis остаётся process-local limitation. `WEB_TRUSTED_PROXY_IPS` добавлен (stage 52). Residual multi-instance/Redis-required deployment policy tracked by Stage 166. |
 | 44.6 (SSRF/host validation) | Закрыто | 12, 44 | Domain validation + HTTPS + allowlist суффиксов. Redirect following disabled. |
 
 ## 10. Security Review Output Contract
