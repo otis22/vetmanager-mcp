@@ -158,7 +158,7 @@
 
 **Проверка сценария «топ-5 должников»:**
 - Для домена `devttr6` billing API вернул ошибку резолва хоста (`500`) — вероятно, домен не существует/опечатка.
-- Для домена `devtr6` с ключом `e2a41b0770304ea873f69d362688a309` API вернул `Invalid or missing API key`.
+- Для домена `devtr6` с ключом `<redacted historical devtr6 API key>` API вернул `Invalid or missing API key`.
 
 **Итог:**
 - Технически локальное host-based подключение Cursor/MCP готово.
@@ -7149,3 +7149,52 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь указал, что у `invoiceDocument` поле parent invoice id называется `document_id`, и попросил добавить решение в Roadmap и исправить по workflow.
+
+---
+
+## Этап 163. Historical API key literal redaction — 2026-05-17
+
+**Статус**: `done`.
+
+### Что делали
+
+Убирали historical `devtr6` API-key-like literal из текущего tracked tree без скрытия security notes, review artifacts и исправленных замечаний.
+
+### Что сделано
+
+- Создан PRD `PRD/этап-163-historical-api-key-literal-redaction.md`.
+- В исторической записи выше literal заменён на `<redacted historical devtr6 API key>`, при этом диагностический контекст `Invalid or missing API key` сохранён.
+- Добавлен `scripts/check_no_historical_api_key_literal.py`: hash-based check по SHA-256 fingerprint, без raw literal в source и без печати literal при fail; сканирует indexed и untracked non-ignored files.
+- Добавлен triage artifact `artifacts/security/stage-163-pattern-scan-triage.md`; по Stage 163 pattern scan не оставил unclassified matches.
+
+### Решения и обоснования
+
+- Stage 163 выполнен раньше Stage 162 как user-directed critical security/privacy priority. Stage 162 остаётся `todo`.
+- Git history rewrite не выполнялся: это отдельный coordinated secret incident process и может сломать shared history.
+- **git history residual exposure**: current-tree redaction не удаляет старое значение из git history/blame/forks/caches у тех, кто уже имеет доступ к истории. Если ключ когда-либо был валиден после раскрытия, effective mitigation — external rotate/revoke на стороне `devtr6`.
+- Stage 163 rotate/revoke status: historical evidence в этой же записи говорит, что API вернул `Invalid or missing API key`; отдельного live-probe старым literal не выполняли, чтобы не использовать раскрытый credential заново. Если оператор считает, что ключ мог оставаться валидным, rotate/revoke нужно выполнить вне репозитория.
+- Security notes, review artifacts и fixed findings не скрывались и не удалялись.
+
+### Проблемы
+
+- Spark PRD read-only review завис до полезного чтения из-за runtime/sandbox/MCP шага; запуск остановлен, same-model fallback `gpt-5.3-codex-spark -s danger-full-access` с review-only prompt вернул 3 accepted medium findings. Все исправлены.
+- Claude Opus PRD review вернул 4 high + 4 medium findings по проверяемости script/triage/residual exposure/rotate status. Все исправлены; повторные Spark и Claude PRD reviews вернули `[]`.
+
+### Проверки
+
+- Red: `python3 scripts/check_no_historical_api_key_literal.py` до redaction — fail, location-only output: `AssumptionLog.md:161`.
+- Green: `python3 scripts/check_no_historical_api_key_literal.py` — exact historical literal not found in indexed/untracked non-ignored files.
+- Static: `python3 -m py_compile scripts/check_no_historical_api_key_literal.py` — passed.
+- Targeted Stage 163 regression: `docker compose --profile test run --rm test pytest tests/test_stage163_historical_key_redaction.py -q` — first red after Claude finding failed because test container has no `git`; tests were corrected to monkeypatch `candidate_files`, then `2 passed`.
+- Context checks:
+  - `rg -n "redacted historical devtr6 API key" AssumptionLog.md` — found.
+  - `rg -n "Invalid or missing API key" AssumptionLog.md` — found.
+  - `rg -n "No unclassified matches|Residual Risk" artifacts/security/stage-163-pattern-scan-triage.md` — found.
+- Audit: `git diff --check` — passed.
+- Full suite: `docker compose --profile test run --rm test` — `1051 passed, 1 skipped, 58 deselected`; repeated after script scope hardening — `1051 passed, 1 skipped, 58 deselected`; repeated after accepted Claude diff finding and new pytest coverage — `1053 passed, 1 skipped, 58 deselected`.
+- Spark committed-diff review — `[]`.
+- Claude Opus committed-diff review accepted 2 medium test/workflow findings across two passes: new script needed pytest regression coverage; first test version did not exercise real `main()` scanner output path. Fixed with synthetic-token positive/negative tests and `main(repo_root, target_sha256)` test seam; final post-fix full suite — `1053 passed, 1 skipped, 58 deselected`.
+
+### Обратная связь
+
+Пользователь попросил делать по workflow, не скрывать артефакты/ревью/исправленные security notes, убрать historical API literal и не делать общий cleanup stage.

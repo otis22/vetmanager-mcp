@@ -2727,3 +2727,39 @@ Workflow allowance (по согласованию с пользователем 
 - 162.2 Tests: contract red/green for `add_invoice_document` payload field after probe result. — `todo`
 - 162.3 Implementation/reference updates if POST requires `document_id`; otherwise document why create/list differ. — `todo`
 - 162.4 Full checks, audit, review gates, commit/push/deploy, AssumptionLog/self-attestation. — `todo`
+
+## Этап 163. Historical API key literal redaction — `done`
+
+Источник: security/privacy audit 2026-05-17 — в tracked historical notes найден literal старого/test `devtr6` API key. Пользовательское решение: historical API literal убрать; security notes, review artifacts и исправленные замечания не прятать.
+
+Цель: удалить из текущего дерева конкретный key literal, сохранить диагностический контекст и честную историю решения. Не маскировать сами security findings; маскируется только секретоподобное значение.
+
+- 163.1 Создать PRD stage 163: scope current-tree redaction, hash-based/pattern проверки, правило “не скрывать fixed security notes/review artifacts”, decision point по git-history rewrite vs documented non-rewrite. — `done`
+- 163.2 Заменить literal historical API key в tracked notes на masked placeholder (`<redacted historical devtr6 API key>`), не удаляя объяснение инцидента/ошибки. — `done`
+- 163.3 Добавить `scripts/check_no_historical_api_key_literal.py` без raw literal в source; проверить tracked tree на exact historical literal через hash-based check и на API-key-like literals через pattern scan; зафиксировать sanitized evidence/triage без раскрытия секретов. — `done`
+- 163.4 Если ключ мог оставаться валидным: зафиксировать operator confirmation/invalid evidence либо вынести rotate/revoke `devtr6` key как explicit follow-up; если уже невалиден — зафиксировать это как assumption с основанием. — `done` (historical evidence says invalid/missing; current-tree redaction does not remove git-history residual exposure; effective mitigation for any still-valid copy is external rotate/revoke).
+- 163.5 Full checks where applicable, audit, Spark + strong diff review, commit/push, AssumptionLog/self-attestation. — `done`
+
+## Этап 164. OpenAPI artifact PII and credential-derived examples sanitization — `todo`
+
+Источник: security/privacy audit 2026-05-17 — `artifacts/vetmanager_openapi_v6.json` содержит real-looking emails и `passwd` hash-like example values. Артефакт нужен проекту, но конкретные персональные/credential-derived examples не нужны для API contract.
+
+Цель: сохранить OpenAPI artifact как рабочий reference source, но заменить персональные emails и password/hash-like example values на нейтральные placeholders без изменения schema/field names/types. Артефакт не прячем и не удаляем.
+
+- 164.1 Создать PRD stage 164: privacy boundary для reference artifacts, placeholder policy, список полей/значений под sanitization, acceptance на неизменность API-схемы. — `todo`
+- 164.2 Санитизировать `artifacts/vetmanager_openapi_v6.json`: заменить concrete emails на reserved/example domains и `passwd` example hashes на neutral placeholders. — `todo`
+- 164.3 Аудит соседних reference artifacts (`vetmanager_postman_collection.json`, API docs) на те же классы данных; добавлять в scope только concrete PII/credential-derived values, не общий cleanup. — `todo`
+- 164.4 Добавить lightweight regression check или documented grep command, который ловит возврат известных concrete emails/hash literals. — `todo`
+- 164.5 Full checks where applicable, audit, Spark + strong diff review, commit/push, AssumptionLog/self-attestation. — `todo`
+
+## Этап 165. Critical security findings inventory without hiding fixed notes — `todo`
+
+Источник: пользовательское решение 2026-05-17 — “артифакты, ревью и исправленные замечания не скрывай”; если есть неисправленные critical/security findings, добавить их в Roadmap.
+
+Цель: пройти review/security artifacts и сделать явную инвентаризацию accepted High/Critical findings: закрытые оставить видимыми с ссылкой на stage/commit, незакрытые превратить в конкретные Roadmap stages. Это не cleanup stage и не redaction stage.
+
+- 165.1 Создать PRD stage 165: sources (`artifacts/review/`, `AssumptionLog.md`, Roadmap stages 86-164), severity threshold, формат таблицы “finding → status → evidence”. — `todo`
+- 165.2 Составить inventory accepted High/Critical security findings: fixed findings не удалять из artifacts, а связать с закрывающим stage/commit/evidence. — `todo`
+- 165.3 Для каждого accepted High/Critical finding без evidence of fix добавить отдельный конкретный Roadmap stage с narrow scope, tests, review gates и deploy/verification criteria. — `todo`
+- 165.4 Зафиксировать unresolved list в AssumptionLog; если unresolved High/Critical не найдено, явно записать “no accepted unfixed High/Critical findings found” с границами поиска. — `todo`
+- 165.5 Full checks where applicable, audit, Spark + strong review, commit/push, AssumptionLog/self-attestation. — `todo`
