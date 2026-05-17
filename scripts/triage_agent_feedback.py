@@ -11,22 +11,37 @@ import json
 from pathlib import Path
 from typing import Any
 
+from fastmcp.exceptions import ToolError
 from sqlalchemy import delete, func, select
 
 from agent_feedback_service import sanitize_text, validate_agent_playbook, validate_match_rules_json
 from storage import get_session_factory
-from storage_models import AgentFeedbackReport, FEEDBACK_STATUS_LINKED, KnownIssue, KnownIssueMatchEvent
+from storage_models import (
+    AgentFeedbackReport,
+    FEEDBACK_STATUS_LINKED,
+    KNOWN_ISSUE_STATUSES,
+    KnownIssue,
+    KnownIssueMatchEvent,
+)
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _row_summary(report: AgentFeedbackReport) -> str:
+def _row_summary(
+    report: AgentFeedbackReport,
+    *,
+    known_issue_id: int | None = None,
+    known_issue_status: str | None = None,
+) -> str:
+    known_issue_text = ""
+    if known_issue_id is not None:
+        known_issue_text = f" known_issue=#{known_issue_id}/{known_issue_status or 'unknown'}"
     return (
         f"#{report.id} [{report.status}] {report.severity}/{report.category} "
         f"tool={report.related_tool or '-'} fingerprint={report.error_fingerprint_hash or '-'} "
-        f"possible_pii={str(report.possible_pii).lower()} summary={report.summary}"
+        f"possible_pii={str(report.possible_pii).lower()}{known_issue_text} summary={report.summary}"
     )
 
 
@@ -34,13 +49,18 @@ async def _recent(args: argparse.Namespace) -> None:
     async with get_session_factory()() as session:
         rows = (
             await session.execute(
-                select(AgentFeedbackReport)
+                select(AgentFeedbackReport, KnownIssue.id, KnownIssue.status)
+                .outerjoin(KnownIssue, KnownIssue.id == AgentFeedbackReport.known_issue_id)
                 .order_by(AgentFeedbackReport.created_at.desc(), AgentFeedbackReport.id.desc())
                 .limit(args.limit)
             )
-        ).scalars().all()
-    for report in rows:
-        print(_row_summary(report))
+        ).all()
+    for report, known_issue_id, known_issue_status in rows:
+        print(_row_summary(
+            report,
+            known_issue_id=known_issue_id,
+            known_issue_status=known_issue_status,
+        ))
 
 
 async def _group(args: argparse.Namespace) -> None:
@@ -67,6 +87,14 @@ def _load_json_file(path: str | None) -> dict[str, Any] | None:
 
 def _safe_optional_text(value: str | None, *, limit: int) -> str | None:
     return sanitize_text(value, limit=limit) if value else None
+
+
+def _arg_provided(args: argparse.Namespace, name: str) -> bool:
+    return hasattr(args, name)
+
+
+def _arg_has_value(args: argparse.Namespace, name: str) -> bool:
+    return _arg_provided(args, name) and getattr(args, name) not in (None, "")
 
 
 def _sanitize_json_value(value: Any) -> Any:
@@ -130,6 +158,76 @@ async def _mark(args: argparse.Namespace) -> None:
         issue.status = args.status
         await session.commit()
         print(f"known_issue #{issue.id} status={issue.status}")
+
+
+async def _resolve_report(args: argparse.Namespace) -> None:
+    """Link a feedback report to a fixed/verified known issue.
+
+    Fixed is represented on `known_issues.status`; feedback reports keep their
+    lifecycle status as `linked` to avoid a schema migration and preserve the
+    existing retention semantics.
+    """
+    if args.status not in KNOWN_ISSUE_STATUSES:
+        raise SystemExit(
+            f"Invalid known issue status: {args.status}. "
+            f"Allowed: {', '.join(KNOWN_ISSUE_STATUSES)}"
+        )
+    async with get_session_factory()() as session:
+        report = await session.get(AgentFeedbackReport, args.report_id)
+        if report is None:
+            raise SystemExit(f"Report not found: {args.report_id}")
+
+        issue: KnownIssue | None = None
+        if report.known_issue_id is not None:
+            issue = await session.get(KnownIssue, report.known_issue_id)
+
+        now = _now()
+        title_source = getattr(args, "title", "") or (report.summary if issue is None else issue.title)
+        try:
+            title = sanitize_text(title_source, limit=240, required=True) or ""
+            public_summary = (
+                _safe_optional_text(args.public_summary, limit=2000)
+                if _arg_has_value(args, "public_summary")
+                else None
+            )
+            workaround = (
+                _safe_optional_text(args.workaround, limit=4000)
+                if _arg_has_value(args, "workaround")
+                else None
+            )
+        except ToolError as exc:
+            raise SystemExit(str(exc)) from exc
+
+        if issue is None:
+            issue = KnownIssue(
+                status=args.status,
+                category=report.category,
+                severity=report.severity,
+                title=title,
+                related_tool=report.related_tool,
+                error_fingerprint_hash=report.error_fingerprint_hash,
+                public_summary=public_summary,
+                workaround=workaround,
+                report_count=1,
+                first_seen_at=report.created_at or now,
+                last_seen_at=now,
+            )
+            session.add(issue)
+            await session.flush()
+            report.known_issue_id = issue.id
+        else:
+            issue.status = args.status
+            if _arg_has_value(args, "title"):
+                issue.title = title
+            if _arg_has_value(args, "public_summary"):
+                issue.public_summary = public_summary
+            if _arg_has_value(args, "workaround"):
+                issue.workaround = workaround
+            issue.last_seen_at = now
+
+        report.status = FEEDBACK_STATUS_LINKED
+        await session.commit()
+        print(f"report #{report.id} linked known_issue #{issue.id} status={issue.status}")
 
 
 async def _export(args: argparse.Namespace) -> None:
@@ -237,6 +335,17 @@ def _build_parser() -> argparse.ArgumentParser:
     mark.add_argument("known_issue_id", type=int)
     mark.add_argument("status")
     mark.set_defaults(func=_mark)
+
+    resolve = sub.add_parser(
+        "resolve-report",
+        help="Link a feedback report to a fixed/verified known issue and mark the report linked.",
+    )
+    resolve.add_argument("report_id", type=int)
+    resolve.add_argument("--status", default="fixed")
+    resolve.add_argument("--title", default=argparse.SUPPRESS)
+    resolve.add_argument("--public-summary", default=argparse.SUPPRESS)
+    resolve.add_argument("--workaround", default=argparse.SUPPRESS)
+    resolve.set_defaults(func=_resolve_report)
 
     export = sub.add_parser("export-markdown")
     export.add_argument("--limit", type=int, default=500)

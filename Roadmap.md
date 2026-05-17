@@ -2777,3 +2777,15 @@ Workflow allowance (по согласованию с пользователем 
 - 166.3 Добавить regression tests для startup/env policy, bearer/web limiter backend selection and waiver semantics. — `todo`
 - 166.4 Обновить deployment notes, release checklist и threat model 44.5 после закрытия policy. — `todo`
 - 166.5 Full checks, audit, Spark + strong review, commit/push/deploy/smoke, AssumptionLog/self-attestation. — `todo`
+
+## Этап 167. Feedback report fixed resolution visibility — `in_progress`
+
+Источник: prod feedback report `#2` уже исправлен Stage 161, но triage CLI оставляет report как `new` либо показывает только `[linked]` без видимого fixed status.
+
+Цель: добавить операторский путь, который связывает feedback report с fixed known issue и делает это видимым в `recent`/triage выводе, чтобы закрытые тикеты не выглядели как необработанные.
+
+- 167.1 Создать PRD stage 167: report-level resolution command, allowed statuses, privacy-safe output, production use for report `#2`. — `done`
+- 167.2 Реализовать CLI command для `scripts/triage_agent_feedback.py`, который creates/updates linked `known_issues` entry и переводит report в `linked`; `recent` должен показывать `known_issue=#/fixed`. — `done`
+- 167.3 Tests: fixed resolution creates/updates issue, redacts operator text, preserves existing curated issue text unless explicitly overwritten, `recent` output exposes fixed status without raw details. — `done`
+- 167.4 Full checks, audit, Spark + strong review, commit/push/deploy/smoke. — `in_progress`
+- 167.5 После деплоя обработать prod feedback report `#2` как fixed by Stage 161 и показать evidence. — `todo`

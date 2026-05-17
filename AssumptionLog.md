@@ -7329,3 +7329,51 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь попросил “давай следующий” по workflow после Stage 164; ранее просил не прятать artifacts/reviews/fixed notes и добавлять unresolved critical/security findings в Roadmap.
+
+---
+
+## Этап 167. Feedback report fixed resolution visibility — 2026-05-17
+
+**Статус**: `in_progress` до push/deploy и обработки prod feedback report `#2`.
+
+### Что делали
+
+Добавляли operator-friendly путь для закрытия feedback report как fixed, чтобы Stage 161 fix был виден в triage output, а тикет не оставался `new`.
+
+### Что сделано
+
+- Добавлен PRD `PRD/этап-167-feedback-report-fixed-resolution.md`.
+- В Roadmap добавлен Stage 167; 167.1-167.3 отмечены `done`, 167.4 `in_progress`, 167.5 `todo`.
+- В `scripts/triage_agent_feedback.py` добавлен `resolve-report <report_id>`:
+  - создает или обновляет linked `known_issues` row;
+  - переводит feedback report в `linked`;
+  - хранит fixed status в `known_issues.status`, без новой миграции/report status;
+  - сохраняет existing curated `title`, `public_summary`, `workaround`, если оператор не передал non-empty replacement flag.
+- `recent` теперь показывает linked known issue как `known_issue=#<id>/<status>`.
+- Добавлены tests `tests/test_stage167_feedback_report_resolution.py`.
+
+### Решения и обоснования
+
+- Новый report status `fixed` не добавлялся: текущая модель разделяет lifecycle report (`new/grouped/triaged/linked/ignored`) и lifecycle verified issue (`open/acknowledged/workaround_available/fixed/wontfix`).
+- Empty CLI flags (`--title ""`, `--public-summary ""`, `--workaround ""`) трактуются как “не менять”, чтобы не стереть curated operator text.
+- `recent` не расширяет raw-text surface: он и раньше показывал sanitized-at-ingest `summary`; Stage 167 добавляет только known issue id/status.
+
+### Проблемы
+
+- Claude Opus review нашёл high data-integrity риск: update existing known issue мог стереть `title/public_summary/workaround`, если оператор не передал flags. Исправлено через `argparse.SUPPRESS`, `_arg_has_value()` и preserve semantics; добавлен regression test.
+- Claude Opus re-review указал low edge-case: explicit empty flags могли очистить curated text. Исправлено: empty flags считаются absent.
+- Spark read-only PRD review ранее завис на sandbox/runtime `bwrap`; запуск остановлен и повторен тем же `gpt-5.3-codex-spark -s danger-full-access` review-only prompt по workflow.
+
+### Проверки
+
+- `docker compose --profile test run --rm test pytest tests/test_stage167_feedback_report_resolution.py -q` — `3 passed`.
+- `python3 -m py_compile scripts/triage_agent_feedback.py` — passed.
+- `docker compose --profile test run --rm test pytest tests/test_stage150_agent_feedback_privacy.py tests/test_stage151_known_issue_match_events.py tests/test_stage159_feedback_product_metrics.py tests/test_stage167_feedback_report_resolution.py -q` — `23 passed`.
+- `docker compose --profile test run --rm test` — `1067 passed, 1 skipped, 58 deselected`.
+- `git diff --check` — passed.
+- PRD review: Spark fallback `[]`; Claude Opus accepted high findings, fixed in PRD/code/tests.
+- Diff review: Spark final `[]`; Claude Opus accepted high destructive-update finding, fixed; final Claude Opus `[]`.
+
+### Обратная связь
+
+Пользователь попросил добавить в Roadmap неудобство triage и зафиксить так, чтобы по feedback report `#2` было видно `fixed`.
