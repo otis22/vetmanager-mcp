@@ -7394,7 +7394,7 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 ## Этап 168. Account token table responsive layout hotfix — 2026-05-21
 
-**Статус**: `in_progress` after strong diff review gate passed.
+**Статус**: `done`.
 
 ### Что делали
 
@@ -7440,6 +7440,13 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Code/diff review gates:
   - Spark read-only failed on sandbox/runtime; repeated with `danger-full-access` review-only prompt; result `[]`.
   - Claude Opus strong code/diff review: first two attempts with `timeout 300` produced no output; repeated with `timeout 1500` and returned `[]`.
+- Commit/push/deploy:
+  - Commit `fb3564e Stage 168: Fix account token table layout` pushed to `origin/main`.
+  - GitHub Tests run `26255427865` — success (`fast`, `default`).
+  - GitHub Deploy Prod run `26255539956` — success.
+  - Production smoke `/healthz` — `{"status":"ok","probe":"liveness","service":"vetmanager-mcp"}`.
+  - Production smoke `/readyz` — `{"status":"ok","probe":"readiness","service":"vetmanager-mcp","checks":{"storage":{"status":"ok","reason":"ok"}}}`.
+  - Self-attestation: Stage 168 workflow completed; no test keys or Vetmanager real API calls were used for this frontend hotfix.
 
 ### Обратная связь
 

@@ -2790,7 +2790,7 @@ Workflow allowance (по согласованию с пользователем 
 - 167.4 Full checks, audit, Spark + strong review, commit/push/deploy/smoke. — `done` (commit `0bc21f8`; local full suite `1067 passed, 1 skipped, 58 deselected`; GitHub Tests `25999411096` success; Deploy Prod `25999466314` success; `/healthz` and `/readyz` ok).
 - 167.5 После деплоя обработать prod feedback report `#2` как fixed by Stage 161 и показать evidence. — `done` (`resolve-report 2 --status fixed` linked report `#2` to known issue `#8/fixed`; `recent` shows `#2 [linked] ... known_issue=#8/fixed`; product metrics `new_open_30d=0`, `linked=1`).
 
-## Этап 168. Account token table responsive layout hotfix — `in_progress`
+## Этап 168. Account token table responsive layout hotfix — `done`
 
 Источник: пользовательский скрин 2026-05-21 — в account console блок “Текущие токены” уезжает вправо: 10 колонок не помещаются, action column выходит за визуальную область.
 
@@ -2799,4 +2799,4 @@ Workflow allowance (по согласованию с пользователем 
 - 168.1 Создать PRD stage 168: compact token list fields, details boundary, responsive/mobile acceptance, tests/review/deploy criteria. — `done`
 - 168.2 Реализовать compact token table/list: main fields `Token`, `Access`, `Status`, `Last used`, `Requests`, `Actions`; `Privacy`, `IP mask`, `Expires` в per-token details. — `done`
 - 168.3 Tests: HTML contract no 10-column table, details contain hidden metadata, revoke action remains inside token list, mobile CSS regression. — `done` (`tests/test_stage168_account_token_layout.py`; targeted check `3 passed`).
-- 168.4 Full checks, audit, Spark + strong review, commit/push/deploy/smoke. — `in_progress` (local checks passed; Spark diff review `[]`; Claude Opus diff review passed after timeout increased to `1500`, result `[]`; commit/push/deploy pending).
+- 168.4 Full checks, audit, Spark + strong review, commit/push/deploy/smoke. — `done` (commit `fb3564e`; local full suite `1069 passed, 1 skipped, 58 deselected`; GitHub Tests `26255427865` success; Deploy Prod `26255539956` success; `/healthz` and `/readyz` ok).
