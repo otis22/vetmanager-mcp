@@ -49,7 +49,7 @@ def hidden_csrf_input(csrf_token: str) -> str:
     return f'<input type="hidden" name="{CSRF_FIELD_NAME}" value="{escape(csrf_token)}">'
 
 
-def render_shell(title: str, body: str) -> str:
+def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
     return f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -86,6 +86,9 @@ def render_shell(title: str, body: str) -> str:
       background: var(--paper);
       box-shadow: 0 24px 72px rgba(58, 41, 22, 0.12);
       backdrop-filter: blur(14px);
+    }}
+    .account-card {{
+      width: min(1040px, 100%);
     }}
     h1 {{
       margin: 0 0 14px;
@@ -305,15 +308,122 @@ def render_shell(title: str, body: str) -> str:
       color: var(--muted);
       font-weight: 700;
     }}
+    .token-table {{
+      table-layout: fixed;
+    }}
+    .token-table th,
+    .token-table td {{
+      overflow-wrap: anywhere;
+    }}
+    .token-cell {{
+      min-width: 0;
+    }}
+    .token-name {{
+      display: block;
+      font-weight: 700;
+      color: var(--ink);
+      overflow-wrap: anywhere;
+    }}
+    .token-prefix {{
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }}
+    .token-status {{
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(29, 35, 33, 0.06);
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 0.84rem;
+    }}
+    .token-details {{
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }}
+    .token-details summary {{
+      cursor: pointer;
+      font-weight: 700;
+      color: var(--muted);
+    }}
+    .token-details dl {{
+      display: grid;
+      grid-template-columns: max-content minmax(0, 1fr);
+      gap: 4px 10px;
+      margin: 8px 0 0;
+    }}
+    .token-details dt {{
+      color: var(--muted);
+      font-weight: 700;
+    }}
+    .token-details dd {{
+      margin: 0;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }}
+    .token-action-cell {{
+      text-align: right;
+    }}
+    .token-action-cell form {{
+      display: inline-flex;
+      margin: 0;
+    }}
+    .token-action-cell button {{
+      padding: 10px 16px;
+      white-space: nowrap;
+    }}
     @media (max-width: 780px) {{
       .grid {{ grid-template-columns: 1fr; }}
       .choice-grid {{ grid-template-columns: 1fr; }}
       .copy-row {{ grid-template-columns: 1fr; }}
+      .token-table,
+      .token-table thead,
+      .token-table tbody,
+      .token-table tr,
+      .token-table th,
+      .token-table td {{
+        display: block;
+      }}
+      .token-table thead {{
+        display: none;
+      }}
+      .token-table tr {{
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line);
+      }}
+      .token-table td {{
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 8px 0;
+        border-bottom: 0;
+      }}
+      .token-table td::before {{
+        content: attr(data-label);
+        flex: 0 0 34%;
+        color: var(--muted);
+        font-weight: 700;
+      }}
+      .token-table td.token-cell {{
+        display: block;
+      }}
+      .token-table td.token-cell::before {{
+        display: block;
+        margin-bottom: 4px;
+      }}
+      .token-action-cell {{
+        text-align: left;
+      }}
+      .token-action-cell form {{
+        justify-content: flex-start;
+      }}
     }}
   </style>
 </head>
 <body>
-  <main class="card">{body}</main>
+  <main class="{escape(main_class)}">{body}</main>
 </body>
 </html>"""
 
@@ -540,26 +650,36 @@ def render_account_page(
                     '<button type="submit">Revoke</button>'
                     "</form>"
                 )
+            token_name_html = f"""
+                <span class="token-name">{escape(str(token['name']))}</span>
+                <code class="token-prefix">{escape(str(token['token_prefix']))}</code>
+                <details class="token-details">
+                  <summary>Details</summary>
+                  <dl>
+                    <dt>Privacy</dt>
+                    <dd>{escape(str(token.get('privacy_label', 'Standard')))}</dd>
+                    <dt>IP mask</dt>
+                    <dd><code>{escape(str(token.get('ip_mask', '*.*.*.*')))}</code></dd>
+                    <dt>Expires</dt>
+                    <dd>{escape(str(token['expires_at']))}</dd>
+                  </dl>
+                </details>
+            """
             rows.append(
                 "<tr>"
-                f"<td>{escape(str(token['name']))}</td>"
-                f"<td><code>{escape(str(token['token_prefix']))}</code></td>"
-                f"<td>{escape(str(token.get('access_label', 'Legacy/custom')))}</td>"
-                f"<td>{escape(str(token.get('privacy_label', 'Standard')))}</td>"
-                f"<td><code>{escape(str(token['status']))}</code></td>"
-                # Stage 155: model is NOT NULL, web.py always populates ip_mask;
-                # default kept as defensive guard against future render-dict changes.
-                f"<td><code>{escape(str(token.get('ip_mask', '*.*.*.*')))}</code></td>"
-                f"<td>{escape(str(token['expires_at']))}</td>"
-                f"<td>{escape(str(token['last_used_at']))}</td>"
-                f"<td>{escape(str(token['request_count']))}</td>"
-                f"<td>{action_html}</td>"
+                f'<td class="token-cell" data-label="Token">{token_name_html}</td>'
+                f'<td data-label="Access">{escape(str(token.get("access_label", "Legacy/custom")))}</td>'
+                f'<td data-label="Status"><span class="token-status">{escape(str(token["status"]))}</span></td>'
+                f'<td data-label="Last used">{escape(str(token["last_used_at"]))}</td>'
+                f'<td data-label="Requests">{escape(str(token["request_count"]))}</td>'
+                f'<td class="token-action-cell" data-label="Actions">{action_html}</td>'
                 "</tr>"
             )
         token_list_html = (
-            "<table>"
+            '<table class="token-table" data-testid="token-list">'
+            '<colgroup><col style="width: 31%;"><col style="width: 16%;"><col style="width: 11%;"><col style="width: 17%;"><col style="width: 10%;"><col style="width: 15%;"></colgroup>'
             "<thead><tr>"
-            "<th>Name</th><th>Prefix</th><th>Access</th><th>Privacy</th><th>Status</th><th>IP mask</th><th>Expires</th><th>Last used</th><th>Requests</th><th>Actions</th>"
+            "<th>Token</th><th>Access</th><th>Status</th><th>Last used</th><th>Requests</th><th>Actions</th>"
             "</tr></thead>"
             f"<tbody>{''.join(rows)}</tbody>"
             "</table>"
@@ -754,4 +874,5 @@ def render_account_page(
           }})();
         </script>
         """,
+        main_class="card account-card",
     )

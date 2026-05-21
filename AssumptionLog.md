@@ -7389,3 +7389,58 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь попросил добавить в Roadmap неудобство triage и зафиксить так, чтобы по feedback report `#2` было видно `fixed`.
+
+---
+
+## Этап 168. Account token table responsive layout hotfix — 2026-05-21
+
+**Статус**: `in_progress` after strong diff review gate passed.
+
+### Что делали
+
+Исправляли верстку блока “Текущие токены” в account console по пользовательскому screenshot: 10-колоночная таблица уезжала вправо, action column выходила за видимую область.
+
+### Что сделано
+
+- Добавлен PRD `PRD/этап-168-account-token-table-responsive-layout.md`.
+- В `Roadmap.md` добавлен Stage 168.
+- В `web_html.py` account page получила отдельный `account-card` shell width и компактный token list:
+  - основной список: `Token`, `Access`, `Status`, `Last used`, `Requests`, `Actions`;
+  - `Privacy`, `IP mask`, `Expires` перенесены в per-token `<details>`.
+- Добавлен responsive CSS для token table: на ширинах до `780px` строки становятся stacked list/card.
+- Добавлен `tests/test_stage168_account_token_layout.py`:
+  - проверяет отсутствие 10 видимых колонок;
+  - проверяет наличие metadata в `<details>`;
+  - проверяет `Revoke`;
+  - через Playwright проверяет отсутствие horizontal overflow и нахождение action cell внутри viewport на `390`, `640`, `760`, `900`, `1024` px, в collapsed и expanded details состояниях.
+
+### Решения и обоснования
+
+- Горизонтальный scroll не выбран как основной UX, потому что пользователь явно не хочет видеть его в частых сценариях.
+- Редкие поля перенесены в `<details>`, чтобы сохранить доступность metadata без постоянного расширения таблицы.
+- `account-card` расширяет только account page; register/login shell остается прежним.
+- Spark PRD review нашёл размытые viewport acceptance criteria; принято и исправлено: PRD и тесты теперь фиксируют конкретные ширины.
+- Claude Opus PRD review нашёл отсутствие `390px` в AC и отсутствие expanded details в acceptance/test contract; принято и исправлено.
+
+### Проблемы
+
+- Spark read-only review дважды упирался в sandbox/runtime `bwrap`; по workflow запуск повторялся тем же `gpt-5.3-codex-spark` в `danger-full-access` с review-only prompt.
+- Claude Opus code/diff review сначала не дал валидного результата: два запуска с `timeout 300` завершились без вывода. По пользовательскому указанию timeout увеличен в 5 раз до `1500`; повторный review вернул `[]`, поэтому strong diff review gate считается закрытым.
+
+### Проверки
+
+- `python3 -m py_compile web_html.py` — passed.
+- `docker compose --profile test run --rm test pytest tests/test_stage168_account_token_layout.py tests/test_web_auth.py::test_account_token_issue_shows_raw_token_once_and_stores_only_hash -q` — `3 passed`.
+- `docker compose --profile test run --rm test pytest tests/test_web_auth.py tests/test_stage168_account_token_layout.py -q` — `36 passed`.
+- `docker compose --profile test run --rm test` — `1069 passed, 1 skipped, 58 deselected`.
+- `git diff --check` — passed.
+- PRD review gates:
+  - Spark initial findings accepted; Spark re-review `[]`.
+  - Claude Opus initial findings accepted; Claude Opus re-review `[]`.
+- Code/diff review gates:
+  - Spark read-only failed on sandbox/runtime; repeated with `danger-full-access` review-only prompt; result `[]`.
+  - Claude Opus strong code/diff review: first two attempts with `timeout 300` produced no output; repeated with `timeout 1500` and returned `[]`.
+
+### Обратная связь
+
+Пользователь согласился на compact table/list вместо horizontal scroll and asked to add it to Roadmap/PRD and fix по workflow.
