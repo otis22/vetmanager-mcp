@@ -474,7 +474,6 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "get_average_invoice": "invoice",
     "get_revenue_summary": "payment",
     "get_invoice_by_id": "invoice",
-    "create_invoice": "invoice",
     "get_goods": "good",
     "get_good_by_id": "good",
     "get_users": "user",
@@ -504,7 +503,6 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "get_closing_of_invoice_by_id": "closing_of_invoices",
     "get_invoice_documents": "invoice_document",
     "get_invoice_document_by_id": "invoice_document",
-    "add_invoice_document": "invoice_document",
     "get_cassas": "cassa",
     "get_cassa_by_id": "cassa",
     "get_cassa_closes": "cassa_close",
@@ -627,12 +625,6 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "or currently paid invoice amounts. Use when the user asks for revenue, "
         "cash received, daily proceeds, or March revenue. Domain synonyms: "
         "платёж, оплата, поступление, касса, выручка, revenue, payment."
-    ),
-    "add_invoice_document": (
-        "Add a new invoice line item to an invoice. Use when the user wants to add "
-        "a product or service into an existing bill. Domain synonyms: позиция "
-        "счёта, строка счёта, товар в счёте, услуга в счёте, позиция, invoice "
-        "document, invoice line."
     ),
     "get_invoice_documents": (
         "List invoice line items for a parent invoice. Pass invoice_id as the "

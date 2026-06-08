@@ -97,29 +97,6 @@ def register_prompts(mcp: FastMCP) -> None:
         )]
 
     @mcp.prompt
-    def create_invoice_prompt(
-        client_id: int,
-        pet_id: int,
-        service_name: str,
-    ) -> list[Message]:
-        """Create a new invoice for a client with a service/good line item.
-
-        Args:
-            client_id: ID of the client.
-            pet_id: ID of the pet.
-            service_name: Name of the service or good to add.
-        """
-        return [Message(
-            _bearer_runtime_prefix()
-            + f"Create an invoice for client ID {client_id}, pet ID {pet_id}, "
-            + f"with service or good '{service_name}'. "
-            + "1. Call get_goods(name=service_name, limit=20) and choose the correct good_id. "
-            + "2. Call create_invoice(client_id=client_id, pet_id=pet_id). "
-            + "3. Call add_invoice_document(invoice_id=invoice_id, good_id=good_id, quantity=1, price=selected_price). "
-            + "Return the invoice ID and the added line item."
-        )]
-
-    @mcp.prompt
     def doctor_workload(doctor_id: int, date_from: str, date_to: str) -> list[Message]:
         """Analyse a doctor's workload over a date range.
 

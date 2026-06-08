@@ -101,33 +101,11 @@ async def test_create_payment_is_not_registered_as_mcp_tool():
 
 
 @pytest.mark.asyncio
-@respx.mock
-async def test_add_invoice_document_maps_fields_to_api_contract():
-    billing_mock()
-    route = respx.post(f"{BASE}/rest/api/invoiceDocument").mock(
-        return_value=httpx.Response(201, json={"data": {"id": 103}})
-    )
-    headers_patch, runtime_patch = bearer_runtime_patch()
-    with headers_patch, runtime_patch:
-        await mcp.call_tool(
-            "add_invoice_document",
-            {
-                "invoice_id": 10,
-                "good_id": 20,
-                "quantity": 2.0,
-                "price": 500.0,
-            },
-        )
-
-    body = _body_of(route)
-    assert body == {
-        "invoice_id": 10,
-        "good_id": 20,
-        "quantity": 2.0,
-        "price": 500.0,
-    }
-    assert "invoiceId" not in body
-    assert "goodId" not in body
+async def test_invoice_create_tools_are_not_registered_as_mcp_tools():
+    tools = await mcp.list_tools()
+    tool_names = {tool.name for tool in tools}
+    assert "create_invoice" not in tool_names
+    assert "add_invoice_document" not in tool_names
 
 
 @pytest.mark.asyncio
@@ -704,29 +682,6 @@ async def test_get_invoices_uses_client_id_filter_not_legacy_query_param():
         for f in filters
     ), f"expected client_id filter, got {filters}"
     assert "client_id" not in _query_of(route)
-
-
-@pytest.mark.asyncio
-@respx.mock
-async def test_add_invoice_document_maps_payload_to_snake_case():
-    billing_mock()
-    route = respx.post(f"{BASE}/rest/api/invoiceDocument").mock(
-        return_value=httpx.Response(201, json={"data": {"id": 99}})
-    )
-    headers_patch, runtime_patch = bearer_runtime_patch()
-    with headers_patch, runtime_patch:
-        await mcp.call_tool(
-            "add_invoice_document",
-            {"invoice_id": 50, "good_id": 2, "quantity": 1, "price": 250.0},
-        )
-
-    body = _body_of(route)
-    assert body["invoice_id"] == 50
-    assert body["good_id"] == 2
-    assert body["quantity"] == 1
-    assert body["price"] == 250.0
-    assert "invoiceId" not in body
-    assert "goodId" not in body
 
 
 @pytest.mark.asyncio

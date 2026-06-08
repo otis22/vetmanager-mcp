@@ -5,7 +5,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from filters import build_list_query_params, eq as _filter_eq, gte as _filter_gte, lt as _filter_lt, lte as _filter_lte
-from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete, paginate_all
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_update, crud_delete, paginate_all
 from validators import LimitParam, parse_date_param
 from vetmanager_client import VetmanagerClient
 
@@ -401,24 +401,6 @@ def register(mcp: FastMCP) -> None:
             invoice_id: Unique numeric ID of the invoice.
         """
         return await crud_get_by_id("/rest/api/invoice", invoice_id)
-
-    @mcp.tool
-    async def create_invoice(
-        client_id: int,
-        pet_id: int,
-        description: str = "",
-    ) -> dict:
-        """Create a new invoice for a client/pet.
-
-        Args:
-            client_id: ID of the client being invoiced.
-            pet_id: ID of the pet the invoice is for.
-            description: Optional description for the invoice.
-        """
-        payload: dict = {"client_id": client_id, "pet_id": pet_id}
-        if description:
-            payload["description"] = description
-        return await crud_create("/rest/api/invoice", payload)
 
     @mcp.tool
     async def update_invoice(

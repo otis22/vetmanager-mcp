@@ -3,6 +3,10 @@
 import ast
 from pathlib import Path
 
+import pytest
+
+from server import mcp
+
 
 PROMPTS_PATH = Path(__file__).resolve().parents[1] / "prompts.py"
 
@@ -27,7 +31,13 @@ def _load_prompt_functions() -> tuple[str, list[ast.FunctionDef]]:
 class TestPromptsBearerOnly:
     def test_expected_prompt_count(self):
         _, prompt_functions = _load_prompt_functions()
-        assert len(prompt_functions) == 20
+        assert len(prompt_functions) == 19
+
+    @pytest.mark.asyncio
+    async def test_invoice_creation_prompt_is_not_registered(self):
+        prompts = await mcp.list_prompts()
+        prompt_names = {prompt.name for prompt in prompts}
+        assert "create_invoice_prompt" not in prompt_names
 
     def test_prompts_do_not_accept_runtime_credentials(self):
         _, prompt_functions = _load_prompt_functions()
@@ -47,6 +57,8 @@ class TestPromptsBearerOnly:
         source, _ = _load_prompt_functions()
 
         forbidden_fragments = [
+            "add_invoice_document(",
+            "create_invoice(",
             "Use domain='",
             'Use domain="',
             "api_key='",

@@ -7451,3 +7451,53 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь согласился на compact table/list вместо horizontal scroll and asked to add it to Roadmap/PRD and fix по workflow.
+
+---
+
+## Этап 162. Remove invoice creation tools — 2026-06-08
+
+**Статус**: `done`.
+
+### Что делали
+
+По пользовательскому решению убирали из MCP surface инструменты и prompt, которые создают счета или строки счетов: счета нельзя создавать через этот MCP-интерфейс. Прежний Stage 162 про безопасный probe `add_invoice_document` заменен на removal stage.
+
+### Что сделано
+
+- Удалена регистрация `tools/invoice.py::create_invoice`.
+- Удалена регистрация `tools/finance.py::add_invoice_document`.
+- Удален MCP prompt `create_invoice_prompt`, который инструктировал вызывать удаленные tools.
+- Удалены stale entries из `tool_access_registry.py` и `tool_descriptions.py`.
+- README matrix обновлена: Invoice теперь 5 tools, Finance теперь 11 tools; prompt count теперь 19.
+- `tests/test_api_contracts_hotfix.py` закрепляет, что `create_invoice` и `add_invoice_document` не возвращаются в `mcp.list_tools()`.
+- `tests/test_prompts_headers_only.py` закрепляет, что `create_invoice_prompt` не возвращается в `mcp.list_prompts()`, а prompts не инструктируют вызывать удаленные tools.
+- Roadmap Stage 162 обновлен и закрыт как `done`.
+
+### Решения и обоснования
+
+- Удалены оба create-инструмента, а не только `add_invoice_document`, потому что пользователь уточнил: “счета вообще создавать нельзя”.
+- Spark review нашел stale `create_invoice_prompt`; finding принят и исправлен удалением prompt surface и README-упоминания.
+- Низкоуровневые mock-тесты `VetmanagerClient.post("/rest/api/invoice")` и `post("/rest/api/invoiceDocument")` оставлены: они проверяют общий HTTP client, а не публичную MCP tool surface.
+- Read/update/delete invoice tools сохранены, потому что пользователь запретил именно создание счетов.
+
+### Проблемы
+
+- `python` на хосте отсутствует; py_compile выполнен через `python3`, основные проверки — через Docker test profile.
+
+### Проверки
+
+- `python3 -m py_compile tools/finance.py tools/invoice.py tool_access_registry.py tool_descriptions.py tests/test_api_contracts_hotfix.py` — passed.
+- Targeted after prompt fix:
+  `docker compose --profile test run --rm test python -m pytest tests/test_prompts_headers_only.py tests/test_api_contracts_hotfix.py::test_invoice_create_tools_are_not_registered_as_mcp_tools tests/test_stage130_access_registry.py::test_every_registered_tool_has_explicit_access_mapping -q` — `10 passed`.
+- Regression subset:
+  `docker compose --profile test run --rm test python -m pytest tests/test_stage130_access_registry.py tests/test_tools_list_schema.py tests/test_api_contracts_hotfix.py -q` — `91 passed`.
+- Full default suite:
+  `docker compose --profile test run --rm test` — `1069 passed, 1 skipped, 58 deselected`.
+- Review gates:
+  - Spark read-only hit sandbox/runtime issue; fallback `gpt-5.3-codex-spark -s danger-full-access` found stale `create_invoice_prompt`; accepted and fixed.
+  - Final Spark review — `[]`.
+  - Final Claude review — `[]`.
+
+### Обратная связь
+
+Пользователь сказал: “счета вообще создавать нельзя, этот инструмент нужно удалить”. На этом основании Stage 162 был перепрофилирован с contract probe на удаление invoice creation tools.

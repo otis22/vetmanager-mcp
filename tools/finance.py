@@ -2,7 +2,7 @@
 
 from fastmcp import FastMCP
 from filters import eq as _filter_eq, gte as _filter_gte, lte as _filter_lte
-from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_delete
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_delete
 from validators import LimitParam, parse_date_param
 
 
@@ -137,26 +137,6 @@ def register(mcp: FastMCP) -> None:
             doc_id: Unique numeric ID of the invoice document.
         """
         return await crud_get_by_id("/rest/api/invoiceDocument", doc_id)
-
-    @mcp.tool
-    async def add_invoice_document(invoice_id: int, good_id: int, quantity: float, price: float) -> dict:
-        """Add a line item (good or service) to an existing invoice.
-
-        Args:
-            invoice_id: ID of the invoice to add the item to.
-            good_id: ID of the good or service.
-            quantity: Quantity of the item.
-            price: Price per unit.
-        """
-        return await crud_create(
-            "/rest/api/invoiceDocument",
-            {
-                "invoice_id": invoice_id,
-                "good_id": good_id,
-                "quantity": quantity,
-                "price": price,
-            },
-        )
 
     @mcp.tool
     async def delete_invoice_document(doc_id: int) -> dict:

@@ -877,7 +877,7 @@
 - 55.3.2 `create_good` — создание товара/услуги (API: Good — CRUD доступен) — `done`
 - 55.3.3 `update_good` — редактирование товара/услуги — `done`
 - 55.3.4 `create_supplier` — создание поставщика (API: Suppliers — doRestCreate реализован) — `done`
-- 55.3.5 `create_invoice_document` — уже реализовано как `add_invoice_document`, верифицировано — `done`
+- 55.3.5 `create_invoice_document` — уже реализовано как `add_invoice_document`, верифицировано — `done` (superseded by Stage 162: MCP create tool removed)
 
 ### 55.4 Обновление существующих инструментов — `done`
 
@@ -2021,7 +2021,7 @@ Acceptance: workflow-check больше не репортит `prd_missing_secti
 Источник: super-review 2026-04-20 (`artifacts/review/2026-04-20-full-stage-121.md`), blocker B1. Codex-арбитраж поднял severity с high до blocker — camelCase поля молча игнорируются VM API, записи создаются с NULL в core-полях в prod.
 
 - 122.1 `tools/clinical.py::create_hospitalization`/`update_hospitalization`: payload → snake_case (`patient_id`, `doctor_id`, `date_in`, `hospital_block_id`, `date_out`). Внешние имена MCP параметров оставить `pet_id`/`doctor_id`, mapping внутри по паттерну `admission.py`. — `done`
-- 122.2 `tools/finance.py::create_payment`/`get_payments`/`add_invoice_document`/`get_invoice_documents`: payload → snake_case (`client_id`, `cassa_id`, `invoice_id`, `good_id`); заменить `extra={"clientId":...}` / `extra={"invoiceId":...}` на `filter=[{property:'client_id',...}]` / `filter=[{property:'invoice_id',...}]`. — `done`
+- 122.2 `tools/finance.py::create_payment`/`get_payments`/`add_invoice_document`/`get_invoice_documents`: payload → snake_case (`client_id`, `cassa_id`, `invoice_id`, `good_id`); заменить `extra={"clientId":...}` / `extra={"invoiceId":...}` на `filter=[{property:'client_id',...}]` / `filter=[{property:'invoice_id',...}]`. — `done` (`add_invoice_document` superseded by Stage 162: MCP create tool removed)
 - 122.3 `tools/client.py::create_client`: payload → snake_case (`first_name`, `last_name`, `cell_phone`). Проверить real API probe, какое поле telefone (cell_phone vs home_phone) по умолчанию; согласовать с `update_client`. — `done`
 - 122.4 `tools/reference.py::get_breeds`: `extra={"petTypeId":...}` → `filter=[{property:'pet_type_id',...}]`. — `done`
 - 122.5 `tools/operations.py::get_timesheets`: параметр `date` → filter по `begin_datetime >= 00:00:00` и `end_datetime <= 23:59:59` (поле `date` у timesheet не существует). — `done`
@@ -2717,16 +2717,16 @@ Workflow allowance (по согласованию с пользователем 
 - 161.3 Реализация: `tools/finance.py` фильтрует `/rest/api/invoiceDocument` по `document_id`; reference artifacts updated. — `done` (devtr6 read-only probe: `document_id` 200 for 2 invoice ids, controls `invoice_id`/`invoiceId`/`documentId` 500).
 - 161.4 Full checks, audit, review gates, commit/push/deploy, AssumptionLog/self-attestation. — `done` (commit `fdb0d6d`; GitHub Tests `25971994609` success; Deploy Prod `25972046811` success; `/healthz` ok; `/readyz` ok/storage ok; regression/static `95 passed`; devtr6 MCP real guard `1 passed`; full suite `1051 passed, 1 skipped, 58 deselected`; `git diff --check` passed; final Spark fallback `[]`; final Claude Opus `[]`).
 
-## Этап 162. InvoiceDocument create payload contract probe — `todo`
+## Этап 162. Remove invoice creation tools — `done`
 
-Источник: Claude Opus code-review Stage 161 — read-path доказал `document_id` для list filter, но `add_invoice_document` write-path всё ещё отправляет `invoice_id`.
+Источник: пользовательское решение 2026-06-08 — счета и позиции счетов нельзя создавать через MCP; прежний probe для `add_invoice_document` больше не нужен.
 
-Цель: отдельным безопасным этапом проверить на `devtr6` тестовых ключах, какой parent invoice field принимает POST `/rest/api/invoiceDocument`, и исправить `add_invoice_document`, если write contract тоже требует `document_id`.
+Цель: убрать MCP tools/prompts, которые создают счета или строки счетов, сохранив read/update/delete-инструменты без расширения mutation surface.
 
-- 162.1 PRD stage 162: safe write probe plan, rollback/delete strategy, sanitized evidence, mutation boundaries for `devtr6` only. — `todo`
-- 162.2 Tests: contract red/green for `add_invoice_document` payload field after probe result. — `todo`
-- 162.3 Implementation/reference updates if POST requires `document_id`; otherwise document why create/list differ. — `todo`
-- 162.4 Full checks, audit, review gates, commit/push/deploy, AssumptionLog/self-attestation. — `todo`
+- 162.1 Удалить регистрацию `create_invoice` и `add_invoice_document` из MCP tool surface. — `done`
+- 162.2 Удалить stale access mappings, tool descriptions, prompt surface и README-рекламу этих инструментов. — `done`
+- 162.3 Tests: закрепить, что `create_invoice` и `add_invoice_document` не возвращаются в `list_tools`, `create_invoice_prompt` не возвращается в `list_prompts`, а prompts не зовут удаленные tools; проверить access registry на отсутствие stale mappings. — `done`
+- 162.4 Targeted/full checks, audit, AssumptionLog/self-attestation. — `done` (`python3 -m py_compile` passed; targeted `10 passed`; full default suite `1069 passed, 1 skipped, 58 deselected`).
 
 ## Этап 163. Historical API key literal redaction — `done`
 

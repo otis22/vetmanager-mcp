@@ -116,12 +116,10 @@ TOKEN_PRESET_SCOPES: dict[str, tuple[str, ...]] = {
 }
 
 TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
-    "add_invoice_document": (SCOPE_FINANCE_WRITE,),
     "create_admission": (SCOPE_ADMISSIONS_WRITE,),
     "create_client": (SCOPE_CLIENTS_WRITE,),
     "create_good": (SCOPE_INVENTORY_WRITE,),
     "create_hospitalization": (SCOPE_MEDICAL_CARDS_WRITE,),
-    "create_invoice": (SCOPE_FINANCE_WRITE,),
     "create_medical_card": (SCOPE_MEDICAL_CARDS_WRITE,),
     "create_pet": (SCOPE_PETS_WRITE,),
     "create_supplier": (SCOPE_INVENTORY_WRITE,),
@@ -360,7 +358,6 @@ MARKETED_PRESET_TOOLS: dict[str, tuple[str, ...]] = {
         "update_medical_card",
     ),
     PRESET_FINANCE: (
-        "create_invoice",
         "get_average_invoice",
         "get_client_by_id",
         "get_clients",
