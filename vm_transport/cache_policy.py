@@ -23,6 +23,7 @@ SHORT_TTL_ENTITIES = frozenset({
     "client",
     "pet",
     "payment",
+    "report-ai-job",
 })
 
 

@@ -445,6 +445,19 @@ ENTITY_METADATA: dict[str, dict[str, str | list[str]]] = {
             "messages",
         ],
     },
+    "report_ai": {
+        "singular": "Report AI job",
+        "plural": "Report AI jobs",
+        "synonyms": [
+            "отчёт",
+            "отчет",
+            "ИИ отчёт",
+            "AI report",
+            "конструктор отчётов",
+            "аналитика",
+            "report ai",
+        ],
+    },
 }
 
 
@@ -550,6 +563,11 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "create_timesheet": "timesheet",
     "get_inactive_pets": "pet",
     "get_inactive_clients": "client",
+    "create_report_ai_job": "report_ai",
+    "confirm_report_ai_job_candidate": "report_ai",
+    "get_report_ai_job": "report_ai",
+    "get_report_ai_job_data": "report_ai",
+    "save_report_ai_job_as_report": "report_ai",
 }
 
 
@@ -684,6 +702,42 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "another staff role group. Domain synonyms: уведомление, рассылка, "
         "сообщение в программу, уведомление пользователям, push в программу, "
         "messages."
+    ),
+    "create_report_ai_job": (
+        "Create an async Vetmanager Report AI job from a Russian report intent. "
+        "Use after reading report_ai_prompt_helper when the user asks for an "
+        "analytic report, grouped/list report, count, trend, or business condition "
+        "that is better answered by the report constructor. The intent is limited "
+        "to 1000 characters and jobs must be polled with get_report_ai_job. "
+        "Domain synonyms: отчёт, отчет, ИИ отчёт, AI report, конструктор отчётов, "
+        "аналитика, report ai."
+    ),
+    "get_report_ai_job": (
+        "Read safe status and recognized structure for a Vetmanager Report AI job. "
+        "Use for polling queued/recognizing/building_preview jobs and for checking "
+        "ready_to_save, existing_report_matched, needs_confirmation, saved, failed, "
+        "or rejected states. It does not expose raw SQL. Domain synonyms: отчёт, "
+        "отчет, ИИ отчёт, AI report, конструктор отчётов, аналитика, report ai."
+    ),
+    "confirm_report_ai_job_candidate": (
+        "Confirm one existing report candidate for a Report AI job in "
+        "needs_confirmation. Use only with a report_id from get_report_ai_job "
+        "job.candidates. Domain synonyms: отчёт, отчет, ИИ отчёт, AI report, "
+        "конструктор отчётов, аналитика, report ai."
+    ),
+    "get_report_ai_job_data": (
+        "Get table rows for a saved or existing_report_matched Report AI job. "
+        "Rows are unavailable from ready_to_save; save explicitly first when rows "
+        "are needed. Vetmanager caps returned rows at 1000 and limited=true means "
+        "more rows exist. Domain synonyms: отчёт, отчет, ИИ отчёт, AI report, "
+        "конструктор отчётов, аналитика, report ai."
+    ),
+    "save_report_ai_job_as_report": (
+        "Explicit write action: persist a ready_to_save Report AI job as a visible "
+        "Vetmanager report with a meaningful title. This creates or reuses a "
+        "persistent report; do not hide it behind read-only workflows. Domain "
+        "synonyms: отчёт, отчет, ИИ отчёт, AI report, конструктор отчётов, "
+        "аналитика, report ai."
     ),
 }
 

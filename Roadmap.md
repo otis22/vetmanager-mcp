@@ -2800,3 +2800,43 @@ Workflow allowance (по согласованию с пользователем 
 - 168.2 Реализовать compact token table/list: main fields `Token`, `Access`, `Status`, `Last used`, `Requests`, `Actions`; `Privacy`, `IP mask`, `Expires` в per-token details. — `done`
 - 168.3 Tests: HTML contract no 10-column table, details contain hidden metadata, revoke action remains inside token list, mobile CSS regression. — `done` (`tests/test_stage168_account_token_layout.py`; targeted check `3 passed`).
 - 168.4 Full checks, audit, Spark + strong review, commit/push/deploy/smoke. — `done` (commit `fb3564e`; local full suite `1069 passed, 1 skipped, 58 deselected`; GitHub Tests `26255427865` success; Deploy Prod `26255539956` success; `/healthz` and `/readyz` ok).
+
+## Этап 169. Invoice-ready goods search with combinations — `todo`
+
+Источник: OpenAPI diff 2026-06-15 + пользовательское уточнение по `goodTag`: комбинации товаров/услуг; write tools не нужны; в списке номенклатуры должны быть обычные не-шаблонные комбинации; стоимость комбинации надо считать серверным API. Контракт проверен на `devtr6`: `productsDataForInvoice` возвращает обычные и шаблонные combinations как `id=-{tag_id}`, но не отдаёт `is_template`; `goodTag` отдаёт `positions[]`; `checkProductData` считает стоимость.
+
+Цель: добавить read-only MCP tools для invoice-ready поиска номенклатуры с combinations, не меняя существующий `get_goods` и не добавляя `goodTag` write surface.
+
+- 169.1 PRD/research review: подтвердить extjs-source-backed custom endpoint contract и bounded overfetch design. — `todo`
+- 169.2 Helpers: invoice-goods search, combination row detection, `goodTag` enrichment, template filtering, bounded overfetch with hard cap. — `todo`
+- 169.3 Add `search_invoice_goods` tool: `productsDataForInvoice`, default exclude template combinations, optional `include_template_combinations=true`, overfetch to fill pages. — `todo`
+- 169.4 Add `get_good_combination` tool: read `goodTag` by `tag_id`, return metadata and `positions[]`. — `todo`
+- 169.5 Add `calculate_good_combination_price` tool: call `good/checkProductData` with `good_id=-{tag_id}`, `tag_id`, `qty`, `clinic_id`. — `todo`
+- 169.6 Docs/metadata: tool descriptions, access registry, README matrix, API reference/research notes. — `todo`
+- 169.7 Tests/checks: mock e2e, overfetch/template-filter tests, real `devtr6` smoke for `tag_id=2` and template `tag_id=6`, full suite, audit, review gates, AssumptionLog/self-attestation. — `todo`
+
+## Этап 170. Report AI MCP tools and prompt helper — `done`
+
+Источник: исследование Report AI 2026-06-15. Пользователь предоставил short/full prompt helpers и подтвердил полный `save → data` путь на `devtr6`. Контракт проверен: `create/view` дают safe recognized/preview summary, `data` доступен только после `save` или `existing_report_matched`, `save` создаёт persistent report visible in Vetmanager.
+
+Цель: добавить MCP surface, которым сможет пользоваться сторонний агент: prompt helper для формулировки `intent_text`, async job tools, явный save tool с write scope и data tool для сохранённых/найденных отчётов.
+
+- 170.1 PRD/research review: подтвердить `artifacts/report-ai-mcp-research-2026-06-15.md`, endpoint contract, статусы, side effects, strict request bodies, dedupe/idempotency, data row limit, polling/timeout policy. — `done`
+- 170.2 Add prompt/resource `report_ai_prompt_helper` using MCP-adapted short helper; document calm clarification rules and that rows are unavailable before `saved`/`existing_report_matched`. — `done`
+- 170.3 Add `create_report_ai_job` and `get_report_ai_job` tools with safe payload handling, bounded polling guidance, timeout/resume behavior, and visible queued/processing status. — `done`
+- 170.4 Add `confirm_report_ai_job_candidate` and `get_report_ai_job_data` tools; preserve `INVALID_TRANSITION` semantics before saved/matched. — `done`
+- 170.5 Add explicit write-classified `save_report_ai_job_as_report`; require meaningful report titles and avoid hidden save behind read-looking tools. — `done`
+- 170.6 Docs/metadata: tool descriptions, access registry/scopes, README examples for external agents, API research notes. — `done`
+- 170.7 Tests/checks: mock status branches, strict body validation, dedupe reuse, idempotent save, confirm candidate validation, data row limit, save/data flow, non-polluting real `devtr6` smoke with saved-fixture reuse/skip strategy, full suite, audit, review gates, AssumptionLog/self-attestation. — `done`
+
+## Этап 171. VmLink personal account link by phone — `todo`
+
+Источник: OpenAPI diff 2026-06-15 добавил parameterized `VmLink` endpoints. Пользовательское решение: ссылку на ЛК ассистенту можно отдавать только по телефону; если ассистент знает телефон клиента, это безопасно; ссылка постоянная. `personalAccountLinkByClientId` и новые convenience `get_client_by_id` / `get_pet_by_id` tools не добавлять.
+
+Цель: добавить один read tool для получения постоянной ссылки на личный кабинет по известному телефону клиента, с нормализацией телефона и без client-id based lookup.
+
+- 171.1 PRD/research review: подтвердить `PRD/этап-171-vmlink-personal-account-link-by-phone.md`, source files, OpenAPI diff decision, privacy boundary, persistent-link behavior. — `todo`
+- 171.2 Add `get_personal_account_link_by_phone` tool: normalize phone to digits, call `VmLink/personalAccountLinkByPhone/{digits}`, return structured success/not-found. — `todo`
+- 171.3 Ensure no `get_personal_account_link_by_client_id`, no new `get_client_by_id`, no new `get_pet_by_id` are added in this stage. — `todo`
+- 171.4 Docs/metadata: tool description says use only when assistant already knows the phone; returned link is persistent/sensitive; access registry/scopes. — `todo`
+- 171.5 Tests/checks: phone normalization, success shape, missing-phone shape, upstream/route error, tool-list absence for client-id variant, real `devtr6` smoke without logging full link, full suite, audit, review gates, AssumptionLog/self-attestation. — `todo`

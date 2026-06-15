@@ -604,7 +604,7 @@ COMMIT;
 - После успешного `POST`/`PUT`/`DELETE` кеш для соответствующего тега `domain:entity` инвалидируется.
 - Ограничение подхода: кеш живёт только в памяти процесса и полностью сбрасывается при рестарте сервера.
 
-**105 инструментов** по 13 группам сущностей:
+**110 инструментов** по 14 группам сущностей:
 
 | Группа | Инструменты | Кол-во |
 |--------|-------------|--------|
@@ -621,6 +621,7 @@ COMMIT;
 | Reference | `get_breeds`, `get_breed_by_id`, `get_pet_types`, `get_pet_type_by_id`, `get_cities`, `get_city_by_id`, `get_city_types`, `get_streets`, `get_street_by_id`, `get_units`, `get_unit_by_id`, `get_roles`, `get_role_by_id`, `get_user_positions`, `get_user_position_by_id`, `get_combo_manual_names`, `get_combo_manual_name_by_id`, `get_combo_manual_items`, `get_combo_manual_item_by_id` | 19 |
 | Operations | `get_clinics`, `get_clinic_by_id`, `get_timesheets`, `get_timesheet_by_id`, `create_timesheet`, `get_properties`, `get_anonymous_clients`, `send_message_to_all`, `send_message_to_users`, `send_message_to_roles`, `get_message_reports` | 11 |
 | Schedule | `get_doctor_free_slots` | 1 |
+| Report AI | `create_report_ai_job`, `get_report_ai_job`, `confirm_report_ai_job_candidate`, `get_report_ai_job_data`, `save_report_ai_job_as_report` | 5 |
 
 Payment REST API доступен только на чтение: Vetmanager Payment entity разрешает `restList`/`restView`, поэтому MCP не публикует `create_payment`.
 
@@ -642,7 +643,7 @@ Payment REST API доступен только на чтение: Vetmanager Pay
 
 ## MCP Prompts
 
-**19 готовых шаблонов** для типовых сценариев — LLM использует их для составления цепочек вызовов инструментов:
+**20 готовых шаблонов** для типовых сценариев — LLM использует их для составления цепочек вызовов инструментов:
 
 Prompts работают по тому же bearer-only контракту, что и tools:
 они принимают только бизнес-параметры сценария. Runtime credentials не
@@ -654,6 +655,23 @@ Prompts работают по тому же bearer-only контракту, чт
 | Врач | `pet_history`, `last_vaccinations`, `add_medical_note`, `current_inpatients`, `pet_invoices`, `pet_full_profile` |
 | Финансы | `daily_revenue`, `unpaid_invoices`, `popular_services` |
 | Склад и клиентская база | `search_good`, `low_stock`, `new_clients`, `client_no_visit` |
+| Аналитика | `report_ai_prompt_helper` |
+
+### Report AI для ad-hoc отчётов
+
+Когда пользователю нужен отчёт, выборка, группировка, тренд или бизнес-условие, которое проще получить через конструктор отчётов Vetmanager, агент должен сначала вызвать prompt `report_ai_prompt_helper`, затем сформировать русский `intent_text` и создать async job через `create_report_ai_job`.
+
+Базовый flow:
+
+1. `report_ai_prompt_helper` — получить правила формулировки intent и ограничения.
+2. `create_report_ai_job(intent_text)` — создать Report AI job.
+3. `get_report_ai_job(job_id)` — poll с bounded retry; статусы `queued`/`processing` означают ожидание, `failed` возвращается пользователю как ошибка источника.
+4. Если статус `needs_confirmation`, выбрать только `report_id` из `job.candidates` и вызвать `confirm_report_ai_job_candidate`.
+5. Если статус `existing_report_matched`, сразу вызвать `get_report_ai_job_data`.
+6. Если статус `ready_to_save` и нужны строки, явно вызвать `save_report_ai_job_as_report` с вменяемым названием отчёта; это write-tool, отчёт станет видимым в Vetmanager.
+7. `get_report_ai_job_data(job_id)` — получить `columns`, `rows`, `total`, `limited`.
+
+`save_report_ai_job_as_report` нельзя прятать внутри read-only сценария: пользователь или вызывающий агент должен понимать, что создаётся persistent report. Для названий использовать короткие осмысленные заголовки с вопросом, периодом и MCP-origin, например `MCP debtors by negative balance 2026-06-15`.
 
 ## Product metrics (ad-hoc report)
 

@@ -7501,3 +7501,499 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь сказал: “счета вообще создавать нельзя, этот инструмент нужно удалить”. На этом основании Stage 162 был перепрофилирован с contract probe на удаление invoice creation tools.
+
+---
+
+## OpenAPI diff: published Swagger UI vs local artifact — 2026-06-15
+
+**Статус**: `analysis artifact`.
+
+### Что делали
+
+Сравнили опубликованную спецификацию `https://otis22.github.io/vetmanager-openapi/vetmanager_openapi_v6.yaml` с локальным артефактом `artifacts/vetmanager_openapi_v6.json`.
+
+### Что сделано
+
+- Создан артефакт `artifacts/openapi-diff-2026-06-15-remote-vs-local.md`.
+- Remote YAML был скачан заново и зафиксирован по SHA-256:
+  `224674f31dd3ffe9f79612ce3dec7de506a655c2093f8ce27eeae933d02bfb5c`.
+- Local JSON SHA-256:
+  `e2c40cc34ee4f3324d10a600b4a6de710ccf45f053ff99e2ff9b1bec62283c9e`.
+
+### Решения и обоснования
+
+- Remote spec новее по версии (`1.3.1` против local `1.2.0`) и лучше нормализует paths: trailing slash и hardcoded example IDs заменены на canonical paths / path params.
+- Remote добавляет endpoint families `goodTag`, `report-ai-job` и parameterized `VmLink`.
+- Schema names совпадают (`36` vs `36`), но 11 common schemas отличаются по nullable/example metadata.
+- Remote artifact нельзя импортировать as-is: он содержит real-looking email/password-hash examples, тогда как локальный артефакт санитизирован.
+
+### Проблемы
+
+- Код и локальная OpenAPI-спека не менялись; full test suite не запускался, потому что задача была аналитическим сравнением документационных артефактов.
+
+### Проверки
+
+- Independent recount подтвердил: local `101` paths / `129` operations; remote `103` paths / `136` operations; added `31`, removed `24`, common `105`, net `+7`; schema names equal.
+
+### Обратная связь
+
+Пользователь попросил записать diff по спецификации в проектный артефакт и повторно перепроверить разницу.
+
+---
+
+## GoodTag/combinations API planning — 2026-06-15
+
+**Статус**: `analysis`.
+
+### Что делали
+
+Разбирали, какие MCP-инструменты нужны для Vetmanager combinations / `goodTag` после сравнения OpenAPI и пользовательского объяснения бизнес-семантики комбинаций.
+
+### Что сделано
+
+- Проверен help article `https://help.vetmanager.ru/article/25283`: комбинации бывают шаблонные и обычные; обычные комбинации добавляются в счёт как единое целое, а шаблонные используются для быстрого добавления состава.
+- Использован `/home/otis/myprojects/vetmanager-extjs` как источник истины:
+  - `rest/protected/controllers/GoodTagController.php`
+  - `rest/protected/controllers/GoodController.php`
+  - `application/src/Entity/GoodEntity.php`
+  - `application/src/Entity/Goods/Records/GoodTagRow.php`
+  - `application/src/Entity/Goods/Records/Good2TagRow.php`
+- Проведён read-only real probe на `devtr6`:
+  - `GET /rest/api/goodTag` возвращает combinations с `positions[]`.
+  - `GET /rest/api/good/productsDataForInvoice` возвращает invoice-ready номенклатуру, включая обычные комбинации как строки с `id=-{tag_id}`, `tag_id={tag_id}`, `good_group=GoodsSets`.
+  - `GET /rest/api/good/checkProductData` считает `price`/`amount`/availability для combination при `good_id=-{tag_id}`, `tag_id={tag_id}`, `qty`.
+
+### Решения и обоснования
+
+- Не добавлять write tools для `goodTag` на первом этапе.
+- Основной user-facing tool должен быть не сырой `get_good_tags`, а расширенный каталог номенклатуры, который видит обычные не-шаблонные комбинации.
+- Для стоимости комбинации использовать серверный расчёт `GoodController::doCustomRestGetCheckProductData`, а не ручной MCP-sum по `positions[]`, потому что сервер учитывает партии, price formation, quantity и availability.
+
+### Проблемы
+
+- Локальная OpenAPI 1.2.0 не содержит `goodTag` и custom good endpoints, поэтому для реализации нужно расширять артефакт/контракт или явно документировать extjs-source-backed custom endpoints.
+
+### Обратная связь
+
+Пользователь уточнил, что `goodTag` — это комбинации товаров/услуг; write tools не нужны; в списке номенклатуры должны быть обычные не-шаблонные комбинации; MCP должен уметь считать стоимость комбинации.
+
+---
+
+## search_invoice_goods / combinations real API contract — 2026-06-15
+
+**Статус**: `verified on devtr6`.
+
+### Что делали
+
+Проверяли на реальном контуре `devtr6`, что planned MCP tool `search_invoice_goods` может опираться на фактический API, а не только на OpenAPI/исходники.
+
+### Что сделано
+
+- Проверен `GET /rest/api/good/productsDataForInvoice`.
+- Проверен `GET /rest/api/goodTag`.
+- Проверен `GET /rest/api/good/checkProductData`.
+
+### Решения и обоснования
+
+- `search_invoice_goods` должен использовать `GET /rest/api/good/productsDataForInvoice` с параметрами:
+  `clinic_id`, `limit`, `offset`, `search_query`, optional `category_id`.
+- Обычные combinations возвращаются invoice-ready строками:
+  `id="-{tag_id}"`, `tag_id={tag_id}`, `good_group="GoodsSets"`,
+  `group_id=-1`, `editable=0`, `price`, `default_price`.
+- На `devtr6` проверенная обычная combination `tag_id=2`, title `ggg`, возвращается как
+  `id="-2"`, `price=200`, `default_price=200`.
+- `get_good_combination` может использовать `GET /rest/api/goodTag` с filter by `id`.
+  Ответ содержит `positions[]`, включая `quantity`, `sale_param_id`, `price`,
+  `price_formation`, `markup`, вложенные `good` и `good_sale_param`.
+- `calculate_good_combination_price` должен использовать
+  `GET /rest/api/good/checkProductData` с `good_id=-{tag_id}`,
+  `tag_id={tag_id}`, `qty`, `clinic_id`.
+  На `tag_id=2`: `qty=1` -> `amount="200.0"`, `qty=2` -> `amount="400.0"`,
+  `action_is_possible=1`.
+
+### Проблемы
+
+- На `devtr6` нет шаблонных combinations (`is_template=1` вернул `total=0`), поэтому разделение template vs regular подтверждено по исходникам, а не по real fixture.
+
+### Обратная связь
+
+Пользователь утвердил отдельный tool `search_invoice_goods` и попросил проверить на `devtr6`, что спеки не врут.
+
+---
+
+## search_invoice_goods / template combinations recheck — 2026-06-15
+
+**Статус**: `verified on devtr6`.
+
+### Что делали
+
+После того как пользователь добавил шаблонную combination на `devtr6`, повторно проверили фактическое поведение API.
+
+### Что сделано
+
+- `GET /rest/api/goodTag` с `filter=[{"property":"is_template","value":1}]` теперь возвращает шаблонную combination:
+  `id=6`, title `Тест1`, `is_template=1`, `positions_len=2`.
+- `GET /rest/api/goodTag` с `is_template=0` возвращает обычные combinations:
+  `id=2` (`ggg`) и `id=4` (`Тест`).
+- `GET /rest/api/good/productsDataForInvoice` по `search_query="Тест1"` возвращает шаблонную combination как invoice row:
+  `id="-6"`, `tag_id=6`, `good_group="GoodsSets"`, `price=151`, `default_price=151`.
+- Проверены параметры `exclude_templates`, `excludeTemplates`, `good_sets`, `no_good_sets` для `productsDataForInvoice`; они не исключают шаблонную combination.
+- `GET /rest/api/good/checkProductData` для шаблонной combination `tag_id=6`, `good_id=-6` считает стоимость:
+  `qty=1` -> `amount="151.0"`, `qty=2` -> `amount="302.0"`, `action_is_possible=1`.
+
+### Решения и обоснования
+
+- `search_invoice_goods` не должен слепо доверять `productsDataForInvoice`, если нужен default режим “только обычные combinations”.
+- Для combination rows (`tag_id > 0` или negative `id`) MCP должен обогащать/проверять `is_template` через `GET /rest/api/goodTag` по `id`.
+- Default для `search_invoice_goods`: показывать товары/услуги + обычные combinations (`is_template=0`), исключая шаблонные combinations.
+- Нужен явный параметр вроде `include_template_combinations: bool = false`, если позже понадобится видеть шаблоны.
+
+### Проблемы
+
+- `productsDataForInvoice` не возвращает поле `is_template`; без дополнительного `goodTag` lookup нельзя отличить обычную combination от шаблонной в одном ответе.
+
+### Обратная связь
+
+Пользователь добавил шаблон на `devtr6` и попросил проверить контракт ещё раз.
+
+---
+
+## Stage 169 planning: invoice-ready goods search with combinations — 2026-06-15
+
+**Статус**: `planned`.
+
+### Что делали
+
+Сформировали Roadmap/PRD задачу для будущей реализации `search_invoice_goods` и companion read-only tools по combinations.
+
+### Что сделано
+
+- Создан PRD `PRD/этап-169-search-invoice-goods-combinations.md`.
+- В `Roadmap.md` добавлен Stage 169 со статусом `todo`.
+- Overfetch выбран как обязательное решение для `search_invoice_goods`, потому что template combinations фильтруются после upstream pagination.
+
+### Решения и обоснования
+
+- Существующий `get_goods` не менять: новый сценарий получает отдельный tool `search_invoice_goods`.
+- `search_invoice_goods` использует `productsDataForInvoice`, но для combination rows делает `goodTag` enrichment, чтобы узнать `is_template`.
+- Default: исключать template combinations; опционально разрешать через `include_template_combinations=true`.
+- `get_good_combination` и `calculate_good_combination_price` запланированы как read-only companion tools.
+- Write tools для `goodTag` остаются out of scope.
+
+### Проблемы
+
+- Реализация не выполнялась по прямому указанию пользователя: “формируй задачу, но пока не делай”.
+
+### Обратная связь
+
+Пользователь выбрал overfetch и попросил сформировать задачу в roadmap без реализации.
+
+---
+
+## Report AI job real API smoke — 2026-06-15
+
+**Статус**: `verified on devtr6`.
+
+### Что делали
+
+Проверяли минимальный сценарий `report-ai-job` на `devtr6` без сохранения отчёта.
+
+### Что сделано
+
+- Создана read/preview job через `POST /rest/api/report-ai-job` с intent:
+  `Покажи количество выполненных счетов за май 2026 года. Без персональных данных.`
+- API вернул `job.id=2`, `status=queued`, `is_deduplicated=false`.
+- Polling `GET /rest/api/report-ai-job/2` довёл job до `ready_to_save`.
+- Safe recognized:
+  - description: `Количество выполненных счетов за май 2026 года`
+  - tables: `["Счета"]`
+  - fields: `["Счета → Количество"]`
+  - filters: `["Статус счета = выполнен", "Дата счета в мае 2026"]`
+  - period: `май 2026`
+- Preview summary: `Превью: 1 строк, 1 колонок`.
+- `GET /rest/api/report-ai-job/2/data` без save/match вернул `409 INVALID_TRANSITION`:
+  данные доступны только для `saved` или `existing_report_matched`.
+
+### Решения и обоснования
+
+- MCP flow не может получить строки отчёта из `ready_to_save` через REST `data` endpoint без дополнительного сохранения отчёта.
+- Для первой read-oriented версии безопасный flow может быть:
+  `create_report_ai_job` → `get_report_ai_job` → return safe recognized + preview summary.
+- Полный data flow требует либо:
+  1. `existing_report_matched`, тогда `get_report_ai_job_data` read-only;
+  2. явного write tool `save_report_ai_job_as_report`, затем `get_report_ai_job_data`;
+  3. отдельного backend endpoint для transient preview data без сохранения, которого текущий REST job API не предоставляет.
+
+### Проблемы
+
+- Job creation itself persists a `report_ai_jobs` row. Отчёт не сохранялся, чтобы не создавать `report_constructor_reports` без явного решения.
+
+### Обратная связь
+
+Пользователь попросил проверить `report-ai` на простом примере на `devtr6`.
+
+---
+
+## Report AI full save/data path and debtors report — 2026-06-15
+
+**Статус**: `verified on devtr6`.
+
+### Что делали
+
+По явному запросу пользователя проверили полный путь `report-ai-job`: create → poll → save → data. Для теста получили список клиентов с отрицательным балансом без ПДн.
+
+### Что сделано
+
+- Job `#2` (`Количество выполненных счетов за май 2026`) была сохранена:
+  - `POST /rest/api/report-ai-job/2/save` -> `report_id=84`
+  - `GET /rest/api/report-ai-job/2/data` -> columns `["Количество"]`, rows `[{"Количество": 0}]`
+- Job `#4` для должников дошла до `ready_to_save`.
+- `POST /rest/api/report-ai-job/4/save` -> `report_id=86`.
+- `GET /rest/api/report-ai-job/4/data` вернул:
+  - columns: `["ID Клиента", "Баланс"]`
+  - total: `2`
+  - limited: `false`
+  - rows:
+    - `ID Клиента=424`, `Баланс="-452.0000000000"`
+    - `ID Клиента=16`, `Баланс="-225.0000000000"`
+- Контрольный прямой REST-filter `GET /rest/api/client` с `balance < 0` вернул те же два ID/баланса.
+
+### Решения и обоснования
+
+- Полный data flow работает только после `save` или `existing_report_matched`.
+- `save` создаёт записи в `report_constructor_reports`; это write side effect и должен быть отдельным explicit MCP tool/scope.
+- Для read-mostly MCP UX можно показывать `ready_to_save` recognized/preview summary, а получение строк делать только после явного `save_report_ai_job_as_report`.
+
+### Проблемы
+
+- Job queue latency нестабильна: debtors job `#4` сначала несколько минут оставалась `queued`, затем дошла до `ready_to_save`. Job `#6` также задерживалась в `queued`, позже дошла до `ready_to_save`; её не сохраняли.
+- В тестовом контуре созданы сохранённые AI reports `#84` и `#86`.
+
+### Обратная связь
+
+Пользователь попросил вызвать `save`, пройти весь путь и получить тестовый список должников: клиентов с отрицательным балансом.
+
+---
+
+## Stage 170 planning: Report AI MCP surface — 2026-06-15
+
+**Статус**: `planned`.
+
+### Что делали
+
+Оформили результаты исследования Report AI в проектный артефакт и Roadmap/PRD задачу для MCP tools, чтобы сторонний агент мог пользоваться workflow.
+
+### Что сделано
+
+- Создан артефакт `artifacts/report-ai-mcp-research-2026-06-15.md`.
+- Создан PRD `PRD/этап-170-report-ai-mcp-tools.md`.
+- В `Roadmap.md` добавлен Stage 170 со статусом `todo`.
+- Work log обновлён в `/home/otis/myprojects/LiveHelperAgent/logs/mcp/2026-06-15-report-ai-mcp-shape.md`.
+
+### Решения и обоснования
+
+- Short prompt helper экспонируется как MCP prompt/resource `report_ai_prompt_helper`, а не как обычный tool.
+- Execution surface: `create_report_ai_job`, `get_report_ai_job`, `confirm_report_ai_job_candidate`, `get_report_ai_job_data`.
+- `save_report_ai_job_as_report` запланирован как отдельный explicit write-classified tool, потому что создаёт persistent report visible in Vetmanager.
+- Автоматический save без явного разрешения пользователя запрещён.
+- Сторонний агент должен poll-ить job и честно показывать `queued/processing`; очередь может задерживаться на минуты.
+
+### Проблемы
+
+- Реализация MCP tools не выполнялась; это только planning/research artifact.
+- В `devtr6` после исследования остались сохранённые тестовые AI reports `#84` и `#86`.
+
+### Обратная связь
+
+Пользователь подтвердил, что видит созданные тестовые отчёты, и попросил логировать результаты исследования и показать, что будет сделано в MCP для стороннего агента.
+
+---
+
+## Stage 170 requirement refinement: Report AI agent flow — 2026-06-15
+
+**Статус**: `planned`.
+
+### Что делали
+
+Зафиксировали пользовательские решения по проблемам Report AI flow перед реализацией MCP tools.
+
+### Что сделано
+
+- Создан адаптированный short helper для MCP agents: `artifacts/report-ai-prompt-helper-short-mcp-2026-06-15.md`.
+- PRD Stage 170 обновлён требованиями к meaningful report titles, bounded polling/timeout/resume behavior и напоминанием, что строки доступны только после `saved`/`existing_report_matched`.
+- Research artifact и Roadmap обновлены теми же решениями.
+- Дополнительно зафиксирован implementation handoff: endpoints, strict request bodies, статусы/переходы, 1000-char `intent_text`, 24h dedupe, idempotent save, 1000-row data cap, error-code expectations.
+
+### Решения и обоснования
+
+- Проблема save side effect решается простым требованием вменяемого имени отчёта; дополнительных UX-усложнений не планируется.
+- Queue latency решается на уровне агентского протокола: bounded polling, затем возврат `job_id` и текущего статуса для продолжения позже.
+- Misinterpretation и raw SQL diagnostics оставлены как есть: агент проверяет safe recognized/preview, но MCP не требует raw SQL.
+- Short helper должен спрашивать уточнения только при существенной неоднозначности, без лишней тревоги пользователя.
+- PII policy оставляется на стороне Vetmanager; helper сохраняет минимизацию данных по умолчанию.
+- Stage 170 implementation must preserve Report AI REST semantics instead of hiding `INVALID_TRANSITION`, dedupe, idempotency, or row-limit behavior behind generic MCP responses.
+
+### Проблемы
+
+- Реализация MCP tools не выполнялась; изменения только в требованиях и артефактах.
+
+### Обратная связь
+
+Пользователь попросил не усложнять save approval, предложил решить проблему через вменяемые имена отчётов, оставить часть рисков как есть и учесть `data`-ограничение в agent prompts.
+
+---
+
+## Stage 171 planning: VmLink personal account link by phone — 2026-06-15
+
+**Статус**: `planned`.
+
+### Что делали
+
+Зафиксировали пользовательские ответы по оставшимся вопросам OpenAPI diff: `VmLink` и новые `get_*_by_id` endpoints.
+
+### Что сделано
+
+- Создан PRD `PRD/этап-171-vmlink-personal-account-link-by-phone.md`.
+- В `Roadmap.md` добавлен Stage 171.
+- `artifacts/openapi-diff-2026-06-15-remote-vs-local.md` дополнен product decisions и VmLink research notes.
+- Проверен source of truth в `/home/otis/myprojects/vetmanager-extjs`:
+  - `rest/protected/controllers/VmLinkController.php`
+  - `application/src/ServiceIntegration/VmLink.php`
+  - `rest/protected/config/services.php`
+  - `rest/protected/config/services_private.php`
+- Проведён real probe на `devtr6` без записи полного телефона/ссылки в артефакты.
+
+### Решения и обоснования
+
+- Добавлять только `get_personal_account_link_by_phone`.
+- Не добавлять `get_personal_account_link_by_client_id`, хотя endpoint есть в OpenAPI/source: пользователь разрешил отдавать ссылку на ЛК только когда ассистент уже знает телефон клиента.
+- Телефон нормализовать до digits-only перед upstream call: на `devtr6` formatted `client.cell_phone` в path дал route-level 404, а digits-only вариант вернул ссылку.
+- Ссылка на ЛК постоянная; tool docs должны считать её sensitive persistent output.
+- Новые convenience tools `get_client_by_id` и `get_pet_by_id` не нужны.
+
+### Проблемы
+
+- Missing phone endpoint возвращает HTTP 200/top-level success с `data.vetmanagerLink.success=false`, поэтому MCP должен маппить это в structured not-found result, а не считать успешной ссылкой.
+
+### Обратная связь
+
+Пользователь уточнил: “VmLink - ссылку на ЛК ассистенту можно отдавать только по телефону. Если ассистент знает телефон клиента, то это безопасно. Ссылка постоянная.” Также ответил, что отдельные `get_client_by_id`, `get_pet_by_id` не нужны.
+
+---
+
+## Stage 170 PRD review gate — 2026-06-15
+
+**Статус**: `in_progress`.
+
+### Что делали
+
+Начали реализацию Stage 170 по пользовательскому приоритету “начинай с report ai” и провели обязательный PRD review gate перед кодом.
+
+### Что сделано
+
+- Spark-review PRD: первый read-only запуск упал/завис на sandbox runtime error `bwrap Operation not permitted`; выполнен разрешённый fallback той же моделью `gpt-5.3-codex-spark` в `danger-full-access` с review-only prompt. Result: `[]`.
+- Claude Opus PRD-review: 4 findings, все приняты.
+- PRD/research/Roadmap обновлены по findings.
+- Повторный Spark-review после правок: read-only снова упал/завис на sandbox runtime error; разрешённый fallback `danger-full-access` с review-only prompt вернул `[]`.
+- Повторный Claude Opus PRD-review: 3 medium findings, все приняты; бюджет сильной PRD-модели (2 запуска) исчерпан.
+
+### Решения и обоснования
+
+- Для `needs_confirmation` safe payload должен явно отдавать `candidates[]` с `report_id`, иначе confirm-flow нефункционален.
+- `save_report_ai_job_as_report` валиден только из `ready_to_save`; `saved` идемпотентен; in-progress states должны сохранять `INVALID_TRANSITION`.
+- `create_report_ai_job` должен client-side отвергать пустой и >1000 символов `intent_text`.
+- Real `devtr6` smoke не должен плодить видимые отчёты: использовать fixed/reusable non-PII intent/title и dedupe/idempotency.
+- Уточнение после второго review: dedupe 24h и per-job idempotency не ограничивают рост отчётов навсегда, поэтому default real smoke не должен делать `/save`; saved-data read использует existing saved/matched fixture when available, а same-run save разрешён только explicit opt-in env flag.
+- `needs_confirmation` candidate shape (`report_id`, `title`, `match_score`) считается source-derived from `ReportAiJob::toSafeArray()` / `ExistingReportFinder`, но не runtime-observed на `devtr6`.
+- Queue latency conflicts with deterministic real save/data smoke; real tests must use bounded polling and skip same-run assertions when the queue does not finish in time.
+- Stage 170 взят раньше Stage 169/171 по явному пользовательскому приоритету в текущей сессии.
+
+### Проблемы
+
+- Workflow обычно требует брать самый верхний `todo`, но пользователь явно указал начать с Report AI. Решение зафиксировано как пользовательский приоритет.
+
+### Обратная связь
+
+Пользователь сказал: “Ок, Давай делать по воркфлоу, начинай с report ai”.
+
+---
+
+## Stage 170 implementation: Report AI MCP tools — 2026-06-15
+
+**Статус**: `done_pending_commit_push`.
+
+### Что делали
+
+Реализовали Stage 170 после PRD review gate: Report AI prompt helper и MCP tools для async report-ai-job workflow.
+
+### Что сделано
+
+- Добавлен модуль `tools/report_ai.py` с tools:
+  - `create_report_ai_job(intent_text)`
+  - `get_report_ai_job(job_id)`
+  - `confirm_report_ai_job_candidate(job_id, report_id)`
+  - `get_report_ai_job_data(job_id)`
+  - `save_report_ai_job_as_report(job_id, title)`
+- `report_ai_prompt_helper` зарегистрирован как MCP prompt и читает адаптированный short helper из `artifacts/report-ai-prompt-helper-short-mcp-2026-06-15.md`.
+- `save_report_ai_job_as_report` классифицирован как write tool через `analytics.write`; остальные Report AI tools используют `analytics.read`.
+- `token_scopes.required_scope_for_request` научен различать `/report-ai-job/*`: `save` требует `analytics.write`, остальные GET/POST операции требуют `analytics.read`.
+- `VetmanagerError` и `_raise_for_status` теперь сохраняют `data.error_code` и `data.details`, чтобы MCP ToolError не терял `INVALID_TRANSITION`, `VALIDATION_ERROR` и похожие коды.
+- README обновлён: 110 tools / 20 prompts, добавлен внешний agent flow для Report AI.
+- `Roadmap.md` Stage 170 обновлён: 170.1-170.6 done, 170.7 in_progress до review/commit/push.
+
+### Проверки
+
+- Red before implementation: targeted Stage 170 tests падали из-за отсутствующих tools/prompt.
+- Targeted after implementation: `67 passed`.
+- Real `devtr6` smoke for Report AI: `2 passed, 56 deselected`; default smoke не делает `/save`, saved-data test использует existing fixtures/skip strategy.
+- Full default suite before Spark fix: `1088 passed, 1 skipped, 60 deselected`.
+- Spark code review: read-only запуск снова упал/завис на `bwrap Operation not permitted`; выполнен разрешённый fallback `gpt-5.3-codex-spark` в `danger-full-access` с review-only prompt.
+- Spark findings:
+  - Accepted: real Report AI saved-fixture smoke swallowed all exceptions and could skip on real regressions. Fixed by catching only `ToolError` with expected missing/not-ready fixture markers (`HTTP 404`, `NOT_FOUND`, `INVALID_TRANSITION`) and re-raising unexpected tool errors.
+  - Rejected: `confirm_report_ai_job_candidate` should require `analytics.write`. Reason: Stage 170 PRD deliberately classifies create/get/confirm/data as `analytics.read` control-plane over `report_ai_jobs`; the user-visible persistent report side effect is isolated to `save_report_ai_job_as_report` with `analytics.write`.
+- Checks after accepted Spark fix:
+  - `docker compose --profile test run --rm test pytest tests/test_e2e_real.py -k 'report_ai' -q` -> `2 passed, 56 deselected`.
+  - `docker compose --env-file .env --profile test run --rm test python -m pytest tests/test_e2e_real.py -k 'report_ai' -q` -> `2 passed, 56 deselected`.
+  - Full default suite -> `1088 passed, 1 skipped, 60 deselected`.
+- Claude Opus strong code review found one accepted high issue: `get_report_ai_job` status polling was using shared GET cache and could freeze status for up to 900s; related real smoke did not prove progression.
+- Fix after Claude review:
+  - `VetmanagerClient._should_cache_get` bypasses cache for volatile `/rest/api/report-ai-job/{id}` status reads.
+  - `/rest/api/report-ai-job/{id}/data` remains cacheable because saved/matched rows are stable enough for existing GET cache semantics.
+  - Added regression test `test_get_report_ai_job_status_poll_bypasses_get_cache` with queued -> ready_to_save responses and `route.call_count == 2`.
+- Checks after Claude fix:
+  - `docker compose --profile test run --rm test pytest tests/test_stage170_report_ai_tools.py tests/test_client_multitenancy.py::test_get_response_is_cached_by_key tests/test_client_multitenancy.py::test_post_invalidates_domain_entity_tag_cache -q` -> `17 passed`.
+  - `docker compose --env-file .env --profile test run --rm test python -m pytest tests/test_e2e_real.py -k 'report_ai' -q` -> `2 passed, 56 deselected`.
+  - Full default suite -> `1089 passed, 1 skipped, 60 deselected`.
+- Final Claude code review after the status-cache fix found one accepted medium issue: `/rest/api/report-ai-job/{id}/data` used the default 900s GET cache, which could return stale financial/report rows after a saved report changes.
+- Fix after final Claude review:
+  - Added `report-ai-job` to `SHORT_TTL_ENTITIES`, so `/data` uses the existing short 60s tier instead of the long 900s GET tier.
+  - Kept volatile status reads fully uncached; only `/data` uses short caching.
+  - Added regression test `test_get_report_ai_job_data_uses_short_cache_tier`, proving `/data` refreshes after short TTL expiry.
+- Checks after `/data` cache fix:
+  - `docker compose --profile test run --rm test pytest tests/test_stage170_report_ai_tools.py tests/test_client_multitenancy.py::test_cache_entry_expires_after_ttl -q` -> `17 passed`.
+  - `docker compose --env-file .env --profile test run --rm test python -m pytest tests/test_e2e_real.py -k 'report_ai' -q` -> `2 passed, 56 deselected`.
+  - Full default suite -> `1090 passed, 1 skipped, 60 deselected`.
+- Final review gate:
+  - Spark-review: read-only запуск снова заблокирован `bwrap Operation not permitted`; выполнен разрешённый fallback `gpt-5.3-codex-spark` в `danger-full-access` с review-only prompt; result `[]`.
+  - Claude Opus strong review over staged diff: result `[]`; отмечены только non-blocking nits (`_tool_error_from_vm` duplicated branch, harmless case handling in `_should_cache_get`).
+- Final audit before commit:
+  - `python3 scripts/check_no_historical_api_key_literal.py` -> passed.
+  - `git diff --check` -> passed.
+- `Roadmap.md` Stage 170 marked `done`, including 170.7 review/check gate.
+
+### Решения и обоснования
+
+- MCP не скрывает Vetmanager state machine: `data` до `saved`/`existing_report_matched` остаётся upstream `INVALID_TRANSITION`.
+- `create_report_ai_job` делает client-side validation empty/>1000 `intent_text`, чтобы не плодить бессмысленные jobs.
+- Save title validation минимальная: запрещены пустые/слишком короткие/generic названия; без отдельного UX-подтверждения, как просил пользователь.
+- Real smoke non-polluting by default: создание job допустимо, видимый persistent report не создаётся без `TEST_REPORT_AI_ALLOW_SAVE=1`.
+- `confirm_report_ai_job_candidate` остаётся `analytics.read`, потому что не создаёт видимый Vetmanager report и не меняет бизнес-объекты; это подтверждение существующего safe candidate для текущей AI job. Если Vetmanager позже будет считать confirm write-sensitive, отдельным этапом изменим и registry, и prompt helper.
+- Report AI status endpoint is volatile and must not share the generic GET cache; otherwise async polling does not observe backend transitions. Report AI `/data` is less volatile than status but may contain changing financial/report rows, so it uses short cache TTL rather than the generic long GET cache.
+
+### Проблемы
+
+- Первый полный suite упал на `scripts/inline_imports_audit.py`: новый ленивый импорт `tools.report_ai` не был добавлен в documented allowlist. Исправлено allowlist-записью и полный suite повторно прошёл.
+
+### Обратная связь
+
+Пользователь попросил начать реализацию именно с Report AI по workflow.

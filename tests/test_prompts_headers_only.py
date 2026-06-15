@@ -31,7 +31,7 @@ def _load_prompt_functions() -> tuple[str, list[ast.FunctionDef]]:
 class TestPromptsBearerOnly:
     def test_expected_prompt_count(self):
         _, prompt_functions = _load_prompt_functions()
-        assert len(prompt_functions) == 19
+        assert len(prompt_functions) == 20
 
     @pytest.mark.asyncio
     async def test_invoice_creation_prompt_is_not_registered(self):

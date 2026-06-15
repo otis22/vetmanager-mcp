@@ -151,8 +151,10 @@ def register_all(mcp: FastMCP) -> None:
     from tools.operations import register as register_operations
     from tools.schedule import register as register_schedule
     from tools.feedback import register as register_feedback
+    from tools.report_ai import register as register_report_ai
 
     register_feedback(tool_mcp)
+    register_report_ai(tool_mcp)
     register_client(tool_mcp)
     register_pet(tool_mcp)
     register_admission(tool_mcp)

@@ -14,12 +14,15 @@ Run inside Docker:
     docker compose run --rm -e TEST_DOMAIN=devtr6 -e TEST_API_KEY=<key> test
 """
 
+import asyncio
 import os
 import pytest
 import re
 from unittest.mock import AsyncMock, patch
 
 import httpx
+from fastmcp.exceptions import ToolError
+
 import auth.request as auth_request
 import runtime_auth
 from server import _graceful_shutdown, mcp
@@ -45,6 +48,7 @@ TEST_USER_TOKEN_BASE_URL = os.environ.get("TEST_USER_TOKEN_BASE_URL", "")
 TEST_USER_LOGIN = os.environ.get("TEST_USER_LOGIN", "")
 TEST_USER_PASSWORD = os.environ.get("TEST_USER_PASSWORD", "")
 RUN_REAL_WEB_TESTS = os.environ.get("RUN_REAL_WEB_TESTS") == "1"
+TEST_REPORT_AI_ALLOW_SAVE = os.environ.get("TEST_REPORT_AI_ALLOW_SAVE") == "1"
 CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
 
 skip_if_no_creds = pytest.mark.skipif(
@@ -80,6 +84,12 @@ def vc() -> VetmanagerClient:
     # one edit instead of three test-file copies.
     from tests.runtime_factories import make_client_with_resolved_runtime
     return make_client_with_resolved_runtime(TEST_DOMAIN, TEST_API_KEY)
+
+
+def _tool_payload(result) -> dict:
+    payload = getattr(result, "structured_content", None)
+    assert isinstance(payload, dict)
+    return payload
 
 
 async def resolve_real_user_token() -> str:
@@ -216,6 +226,90 @@ async def test_real_two_instances_are_independent():
 async def test_real_get_clients():
     result = await call(vc().get("/rest/api/client", params={"limit": 5, "offset": 0}))
     assert "data" in result
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_report_ai_create_and_bounded_poll_non_polluting():
+    headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+    intent = (
+        "MCP smoke Report AI: покажи количество выполненных счетов за май 2026 года. "
+        "Без персональных данных."
+    )
+    with headers_patch, runtime_patch:
+        created = _tool_payload(await call(mcp.call_tool(
+            "create_report_ai_job",
+            {"intent_text": intent},
+        )))
+
+    job = created.get("data", {}).get("job", {})
+    job_id = job.get("id")
+    assert isinstance(job_id, int)
+    assert job.get("status") in {
+        "queued",
+        "recognizing",
+        "building_preview",
+        "ready_to_save",
+        "saved",
+        "failed",
+        "rejected",
+        "needs_confirmation",
+        "existing_report_matched",
+    }
+
+    current = job
+    for _ in range(6):
+        if current.get("status") not in {"queued", "recognizing", "building_preview"}:
+            break
+        await asyncio.sleep(5)
+        headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+        with headers_patch, runtime_patch:
+            viewed = _tool_payload(await call(mcp.call_tool(
+                "get_report_ai_job",
+                {"job_id": job_id},
+            )))
+        current = viewed.get("data", {}).get("job", {})
+
+    assert current.get("id") == job_id
+    if current.get("status") == "ready_to_save" and TEST_REPORT_AI_ALLOW_SAVE:
+        title = "MCP smoke report ai count May 2026 2026-06-15"
+        headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+        with headers_patch, runtime_patch:
+            saved = _tool_payload(await call(mcp.call_tool(
+                "save_report_ai_job_as_report",
+                {"job_id": job_id, "title": title},
+            )))
+        assert isinstance(saved.get("data", {}).get("report_id"), int)
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_report_ai_data_from_existing_saved_fixture_when_available():
+    expected_fixture_errors = (
+        "HTTP 404",
+        "NOT_FOUND",
+        "INVALID_TRANSITION",
+    )
+    for job_id in (2, 4):
+        headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+        with headers_patch, runtime_patch:
+            try:
+                result = _tool_payload(await mcp.call_tool(
+                    "get_report_ai_job_data",
+                    {"job_id": job_id},
+                ))
+            except ToolError as exc:
+                if not any(marker in str(exc) for marker in expected_fixture_errors):
+                    raise
+                continue
+        data = result.get("data", {})
+        if isinstance(data, dict) and isinstance(data.get("rows"), list):
+            assert isinstance(data.get("columns"), list)
+            assert isinstance(data.get("total"), int)
+            assert isinstance(data.get("limited"), bool)
+            return
+
+    pytest.skip("No existing saved Report AI fixture is available on this contour.")
 
 
 @skip_if_no_creds

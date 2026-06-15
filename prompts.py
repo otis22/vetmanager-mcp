@@ -1,6 +1,7 @@
 """MCP Prompts for Vetmanager — ready-made templates for typical clinic workflows."""
 
 from datetime import date as _date, timedelta
+from pathlib import Path
 
 from fastmcp import FastMCP
 from fastmcp.prompts import Message
@@ -20,6 +21,16 @@ def _bearer_runtime_prefix() -> str:
 
 
 def register_prompts(mcp: FastMCP) -> None:
+
+    @mcp.prompt
+    def report_ai_prompt_helper() -> list[Message]:
+        """Return the short Report AI helper for building safe report intents."""
+        helper_path = (
+            Path(__file__).resolve().parent
+            / "artifacts"
+            / "report-ai-prompt-helper-short-mcp-2026-06-15.md"
+        )
+        return [Message(_bearer_runtime_prefix() + helper_path.read_text(encoding="utf-8"))]
 
     @mcp.prompt
     def daily_schedule(date: str, doctor_id: int = 0) -> list[Message]:

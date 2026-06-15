@@ -146,8 +146,12 @@ def test_frontdesk_accepts_analytics_read_blast_radius_explicitly():
         if SCOPE_ANALYTICS_READ in scopes
     }
     assert analytics_tools == {
+        "confirm_report_ai_job_candidate",
+        "create_report_ai_job",
         "get_doctor_free_slots",
         "get_message_reports",
+        "get_report_ai_job",
+        "get_report_ai_job_data",
         "get_timesheet_by_id",
         "get_timesheets",
     }
@@ -168,6 +172,11 @@ def test_normalize_token_preset_rejects_unknown_or_whitespace_values(preset):
         ("get_inactive_pets", (SCOPE_CLIENTS_READ, SCOPE_PETS_READ, SCOPE_FINANCE_READ, SCOPE_MEDICAL_CARDS_READ)),
         ("get_doctor_free_slots", (SCOPE_ADMISSIONS_READ, SCOPE_ANALYTICS_READ)),
         ("get_message_reports", (SCOPE_ANALYTICS_READ,)),
+        ("create_report_ai_job", (SCOPE_ANALYTICS_READ,)),
+        ("get_report_ai_job", (SCOPE_ANALYTICS_READ,)),
+        ("confirm_report_ai_job_candidate", (SCOPE_ANALYTICS_READ,)),
+        ("get_report_ai_job_data", (SCOPE_ANALYTICS_READ,)),
+        ("save_report_ai_job_as_report", (SCOPE_ANALYTICS_WRITE,)),
         ("send_message_to_users", (SCOPE_MESSAGING_WRITE,)),
         ("update_user", (SCOPE_USERS_WRITE,)),
         ("create_timesheet", (SCOPE_ANALYTICS_WRITE,)),
@@ -182,3 +191,8 @@ def test_request_scope_mapping_covers_missing_write_paths():
     assert required_scope_for_request("POST", "/rest/api/timesheet") == SCOPE_ANALYTICS_WRITE
     assert required_scope_for_request("GET", "/rest/api/messages/reports") == SCOPE_ANALYTICS_READ
     assert required_scope_for_request("GET", "/rest/api/ClientPhone") == SCOPE_CLIENTS_READ
+    assert required_scope_for_request("POST", "/rest/api/report-ai-job") == SCOPE_ANALYTICS_READ
+    assert required_scope_for_request("GET", "/rest/api/report-ai-job/2") == SCOPE_ANALYTICS_READ
+    assert required_scope_for_request("POST", "/rest/api/report-ai-job/2/confirm") == SCOPE_ANALYTICS_READ
+    assert required_scope_for_request("GET", "/rest/api/report-ai-job/2/data") == SCOPE_ANALYTICS_READ
+    assert required_scope_for_request("POST", "/rest/api/report-ai-job/2/save") == SCOPE_ANALYTICS_WRITE

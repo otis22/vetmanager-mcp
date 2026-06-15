@@ -156,6 +156,14 @@ def required_scope_for_request(method: str, path: str) -> str | None:
         return None
 
     entity = parts[2]
+    if entity == "report-ai-job":
+        if normalized_method == "GET":
+            return SCOPE_ANALYTICS_READ
+        if normalized_method == "POST" and len(parts) >= 5 and parts[4] == "save":
+            return SCOPE_ANALYTICS_WRITE
+        if normalized_method == "POST":
+            return SCOPE_ANALYTICS_READ
+        return None
     if normalized_method == "GET":
         return _READ_SCOPE_BY_ENTITY.get(entity)
     if normalized_method in {"POST", "PUT", "DELETE"}:

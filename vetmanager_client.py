@@ -209,6 +209,19 @@ class VetmanagerClient:
         # the client; the free function is the canonical location.
         return _entity_from_path_fn(path)
 
+    @staticmethod
+    def _should_cache_get(path: str) -> bool:
+        normalized = path.split("?", 1)[0].strip("/")
+        parts = normalized.split("/")
+        if (
+            len(parts) == 4
+            and parts[0].lower() == "rest"
+            and parts[1].lower() == "api"
+            and parts[2] == "report-ai-job"
+        ):
+            return False
+        return True
+
     def _entity_tag(self, path: str) -> str:
         if not self._domain:
             raise AuthError("Runtime credentials are not initialized.", status_code=401)
@@ -265,7 +278,8 @@ class VetmanagerClient:
         cache_key = ""
         entity_tag = self._entity_tag(path)
         upper_method = method.upper()
-        if upper_method == "GET":
+        should_cache_get = upper_method == "GET" and self._should_cache_get(path)
+        if should_cache_get:
             full_url = self._canonical_url(url, params if isinstance(params, dict) else None)
             cache_key = self._cache_key(method, full_url)
             cached = await REQUEST_CACHE.get(cache_key)
@@ -367,7 +381,7 @@ class VetmanagerClient:
                     payload = response.json()
                     await _breaker_record_success(domain_key)
                     _breaker_resolved = True
-                    if upper_method == "GET":
+                    if should_cache_get:
                         # TTLs read through module-level names so existing tests
                         # that monkey-patch `vetmanager_client.CACHE_TTL_*` keep
                         # working. Stage 103d: cache_policy.ttl_for_entity is
@@ -500,6 +514,23 @@ class VetmanagerClient:
         if response.status_code == 404:
             raise NotFoundError("Resource not found", status_code=404)
         if response.status_code >= 400:
+            vm_error_code: str | None = None
+            vm_message: str | None = None
+            vm_details: dict = {}
+            try:
+                body = response.json()
+                if isinstance(body, dict):
+                    vm_message = body.get("message") if isinstance(body.get("message"), str) else None
+                    data = body.get("data")
+                    if isinstance(data, dict):
+                        value = data.get("error_code")
+                        if isinstance(value, str) and value:
+                            vm_error_code = value
+                        details = data.get("details")
+                        if isinstance(details, dict):
+                            vm_details = details
+            except ValueError:
+                pass
             # Stage 98.5: only 5xx counts as upstream failure (upstream health
             # signal). 4xx >=400 (400/405/409/422 etc.) is a client-side issue
             # — surfacing it as upstream_failures_total inflates the counter
@@ -508,9 +539,16 @@ class VetmanagerClient:
                 record_upstream_failure(
                     target="vetmanager_api", reason=f"http_{response.status_code}"
                 )
+            message = f"Upstream API error (HTTP {response.status_code})"
+            if vm_error_code:
+                message += f": {vm_error_code}"
+            if vm_message:
+                message += f" — {vm_message}"
             raise VetmanagerError(
-                f"Upstream API error (HTTP {response.status_code})",
+                message,
                 status_code=response.status_code,
+                error_code=vm_error_code,
+                details=vm_details,
             )
 
     async def get(self, path: str, params: dict | None = None) -> Any:
