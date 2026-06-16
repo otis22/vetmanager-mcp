@@ -7997,3 +7997,32 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь попросил начать реализацию именно с Report AI по workflow.
+
+---
+
+## Stage 166 narrowing: rate-limit production policy gate — 2026-06-16
+
+**Статус**: `planned_narrowed`.
+
+### Что делали
+
+Проверили актуальность Roadmap Stage 166 после существующих stages, где уже появились shared `rate_limit_backend.py`, Redis backend и `RATE_LIMIT_REQUIRE_REDIS=1`.
+
+### Что сделано
+
+- `Roadmap.md` Stage 166 сужен с общей задачи "multi-instance deployment policy" до узкого production policy/deploy gate.
+- Зафиксировано, что Redis limiter и shared bearer/web backend уже реализованы; Stage 166 не должен переписывать limiter.
+- Оставшийся scope: production/multi-instance должен требовать `REDIS_URL` + strict Redis mode или explicit documented single-instance waiver.
+
+### Решения и обоснования
+
+- Stage 166 остаётся актуальным как security/deploy hardening, потому что threat-model 44.5 всё ещё фиксирует residual risk silent process-local fallback в production/multi-instance сценарии.
+- Реализация будущего Stage 166 не должна переносить request cache в Redis и не должна менять алгоритм sliding-window limiter без отдельного драйвера.
+
+### Проблемы
+
+- Не выявлено.
+
+### Обратная связь
+
+Пользователь спросил, актуален ли Stage 166, и попросил исправить этап под суженный вариант.
