@@ -147,6 +147,49 @@ timeout 1200 codex exec -m gpt-5.3-codex-spark -s read-only -C "$PWD" -
 
 ---
 
+## 6.1. Feedback triage и `known_issues`
+
+Production feedback triage — операционная работа, а не repository work.
+
+Агент не изменяет и не коммитит файлы репозитория, если единственное действие:
+
+- читать `agent_feedback_reports`;
+- обновлять production `known_issues`;
+- link/resolve feedback reports;
+- править `agent_playbook_json` или `match_rules_json`;
+- исследовать конкретный feedback report без кода, тестов или PRD.
+
+Source of truth для такого triage:
+
+- production DB (`agent_feedback_reports`, `known_issues`);
+- внешний work log в `/home/otis/myprojects/LiveHelperAgent/logs/mcp/`.
+
+Запрещено по умолчанию добавлять в repo только из-за feedback triage:
+
+- `AssumptionLog.md`;
+- `README.md`;
+- `artifacts/report-ai-*`;
+- любые ad-hoc research artifacts.
+
+Repo changes допустимы только если feedback породил явное product/code intent:
+
+- code fix;
+- regression test;
+- Roadmap/PRD задачу на будущий fix;
+- документацию, которую пользователь явно попросил добавить в репозиторий.
+
+Перед любым commit после feedback triage агент обязан выполнить:
+
+```bash
+git status --short
+git diff --stat
+```
+
+Если diff содержит только разбор feedback или результаты правок `known_issues`,
+commit запрещён.
+
+---
+
 ## 7. Справочные артефакты проекта
 
 В папке `artifacts/` хранятся исходные материалы проекта. Агент **обязан** обращаться к ним при формировании Roadmap, написании PRD задач и принятии архитектурных решений:

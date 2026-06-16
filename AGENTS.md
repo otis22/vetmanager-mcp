@@ -51,3 +51,37 @@
 - Spark findings являются candidate-only: агент обязан проверить адекватность и принимать только важные, проверяемые замечания; speculative/low-impact/неподтверждённые замечания отклоняются.
 - Spark-review prompt должен быть узким: указать объект ревью (PRD, staged/uncommitted diff, committed diff), severity, формат ответа и запрет на правки.
 - Правильный вызов Spark-review из Codex runtime: `timeout 1200 codex exec -m gpt-5.3-codex-spark -s read-only -C "$PWD" -`. Если read-only падает до чтения файлов из-за sandbox/runtime ошибки (`bwrap`, user namespace и т.п.), остановить зависший запуск и один раз повторить ту же модель с `-s danger-full-access` и review-only prompt: `Review only. Do not edit files. Do not run write commands.` Fallback на другую модель разрешён только при явной model/provider failure, не при sandbox/runtime failure. Итог Spark-review (`[]` или принятые/отклонённые findings) фиксируется в AssumptionLog.
+
+## Feedback triage и `known_issues`
+
+Production feedback triage — это операционная работа, а не изменение репозитория.
+
+Не изменять и не коммитить файлы репозитория, если единственное действие:
+
+- чтение `agent_feedback_reports`;
+- обновление production `known_issues`;
+- link/resolve feedback reports;
+- правки `agent_playbook_json` или `match_rules_json`;
+- исследование конкретного feedback report без кода/тестов/PRD.
+
+Для такого triage source of truth — production DB (`agent_feedback_reports`,
+`known_issues`) и внешний work log в
+`/home/otis/myprojects/LiveHelperAgent/logs/mcp/`.
+
+Запрещено по умолчанию добавлять в repo только из-за triage:
+
+- `AssumptionLog.md`;
+- `README.md`;
+- `artifacts/report-ai-*`;
+- любые ad-hoc research artifacts.
+
+Repo changes допустимы только если feedback породил явное product/code intent:
+
+- code fix;
+- regression test;
+- Roadmap/PRD задачу на будущий fix;
+- документацию, которую пользователь явно попросил добавить в репозиторий.
+
+Перед любым commit после feedback triage агент обязан проверить
+`git status --short` и `git diff --stat`. Если diff содержит только разбор
+feedback или результаты правок `known_issues`, commit запрещён.
