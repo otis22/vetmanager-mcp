@@ -314,6 +314,97 @@ async def test_real_report_ai_data_from_existing_saved_fixture_when_available():
 
 @skip_if_no_creds
 @pytest.mark.asyncio
+async def test_real_stage169_invoice_goods_combination_search_smoke():
+    headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+    with headers_patch, runtime_patch:
+        ordinary_result = _tool_payload(await call(mcp.call_tool(
+            "search_invoice_goods",
+            {"query": "ggg", "clinic_id": 1, "limit": 20},
+        )))
+        template_default = _tool_payload(await call(mcp.call_tool(
+            "search_invoice_goods",
+            {"query": "Тест1", "clinic_id": 1, "limit": 20},
+        )))
+        template_included = _tool_payload(await call(mcp.call_tool(
+            "search_invoice_goods",
+            {
+                "query": "Тест1",
+                "clinic_id": 1,
+                "limit": 20,
+                "include_template_combinations": True,
+            },
+        )))
+
+    ordinary_items = ordinary_result.get("data", {}).get("items", [])
+    template_default_items = template_default.get("data", {}).get("items", [])
+    template_included_items = template_included.get("data", {}).get("items", [])
+    assert isinstance(ordinary_items, list)
+    assert isinstance(template_default_items, list)
+    assert isinstance(template_included_items, list)
+
+    fixture_ordinary = [
+        item for item in ordinary_items
+        if item.get("is_combination") is True and item.get("combination_tag_id") == 2
+    ]
+    fixture_template_included = [
+        item for item in template_included_items
+        if item.get("is_combination") is True and item.get("combination_tag_id") == 6
+    ]
+
+    if fixture_ordinary:
+        assert fixture_ordinary[0].get("is_template") is False
+    if fixture_template_included:
+        assert fixture_template_included[0].get("is_template") is True
+        assert all(item.get("combination_tag_id") != 6 for item in template_default_items)
+
+    if not fixture_ordinary and not fixture_template_included:
+        headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+        with headers_patch, runtime_patch:
+            broad = _tool_payload(await call(mcp.call_tool(
+                "search_invoice_goods",
+                {"query": "", "clinic_id": 1, "limit": 20, "include_template_combinations": True},
+            )))
+        combo_rows = [
+            item for item in broad.get("data", {}).get("items", [])
+            if item.get("is_combination") is True
+        ]
+        if not combo_rows:
+            pytest.skip("No GoodsSets combination rows available on this contour.")
+        assert isinstance(combo_rows[0].get("combination_tag_id"), int)
+        assert combo_rows[0].get("is_template") in {True, False, None}
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_stage169_good_combination_price_smoke():
+    tag_id = 2
+    headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+    with headers_patch, runtime_patch:
+        try:
+            combination = _tool_payload(await mcp.call_tool(
+                "get_good_combination",
+                {"tag_id": tag_id, "clinic_id": 1},
+            ))
+        except ToolError as exc:
+            if "not found" not in str(exc) and "HTTP 404" not in str(exc):
+                raise
+            pytest.skip("Known good combination fixture tag_id=2 is unavailable.")
+        calculated = _tool_payload(await call(mcp.call_tool(
+            "calculate_good_combination_price",
+            {"tag_id": tag_id, "quantity": 2, "clinic_id": 1},
+        )))
+
+    combo = combination.get("data", {}).get("combination", {})
+    assert combo.get("id") == tag_id
+    assert combo.get("positions") is None or isinstance(combo.get("positions"), list)
+    data = calculated.get("data", {})
+    assert isinstance(data.get("good"), dict)
+    assert "amount" in data["good"]
+    assert "action_is_possible" in data
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
 async def test_real_get_users():
     result = await call(vc().get("/rest/api/user", params={"limit": 5, "offset": 0}))
     assert "data" in result

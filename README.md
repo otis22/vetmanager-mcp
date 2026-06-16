@@ -604,7 +604,7 @@ COMMIT;
 - После успешного `POST`/`PUT`/`DELETE` кеш для соответствующего тега `domain:entity` инвалидируется.
 - Ограничение подхода: кеш живёт только в памяти процесса и полностью сбрасывается при рестарте сервера.
 
-**110 инструментов** по 14 группам сущностей:
+**113 инструментов** по 14 группам сущностей:
 
 | Группа | Инструменты | Кол-во |
 |--------|-------------|--------|
@@ -614,7 +614,7 @@ COMMIT;
 | MedicalCard | `get_medical_cards`, `get_medical_cards_by_client_id`, `get_medical_card_by_id`, `create_medical_card`, `update_medical_card`, `get_vaccinations` | 6 |
 | Invoice | `get_invoices`, `get_average_invoice`, `get_invoice_by_id`, `update_invoice`, `delete_invoice` | 5 |
 | Finance | `get_payments`, `get_payment_by_id`, `get_invoice_documents`, `get_invoice_document_by_id`, `delete_invoice_document`, `get_closing_of_invoices`, `get_closing_of_invoice_by_id`, `get_cassas`, `get_cassa_by_id`, `get_cassa_closes`, `get_cassa_close_by_id` | 11 |
-| Good | `get_goods`, `get_good_by_id`, `create_good`, `update_good` | 4 |
+| Good | `get_goods`, `get_good_by_id`, `search_invoice_goods`, `get_good_combination`, `calculate_good_combination_price`, `create_good`, `update_good` | 7 |
 | User | `get_users`, `get_user_by_id`, `update_user` | 3 |
 | Warehouse | `get_good_groups`, `get_good_group_by_id`, `get_good_sale_params`, `get_good_sale_param_by_id`, `get_party_accounts`, `get_party_account_by_id`, `get_party_account_docs`, `get_party_account_doc_by_id`, `get_store_documents`, `get_store_document_by_id`, `get_suppliers`, `get_supplier_by_id`, `create_supplier`, `update_supplier`, `get_good_stock_balance` | 15 |
 | Clinical | `get_hospitalizations`, `get_hospitalization_by_id`, `create_hospitalization`, `update_hospitalization`, `get_hospital_blocks`, `get_hospital_block_by_id`, `get_diagnoses` | 7 |

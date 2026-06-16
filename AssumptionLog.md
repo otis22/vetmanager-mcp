@@ -8026,3 +8026,89 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь спросил, актуален ли Stage 166, и попросил исправить этап под суженный вариант.
+
+---
+
+## Stage 169 implementation: invoice-ready goods combinations — 2026-06-16
+
+**Статус**: `done_pending_commit_push`.
+
+### Что делали
+
+Закрывали Stage 169: MCP tools для invoice-ready поиска номенклатуры с обычными `goodTag` combinations, отдельного чтения комбинации и серверного расчета стоимости.
+
+### Что сделано
+
+- Добавлен source-backed contract artifact `artifacts/stage169-invoice-goods-contract.md` для custom endpoints, которых нет в локальном sanitized OpenAPI 1.2.0.
+- В `tools/good.py` добавлены:
+  - `search_invoice_goods(query, clinic_id, limit, offset, category_id, include_template_combinations)`;
+  - `get_good_combination(tag_id, clinic_id)`;
+  - `calculate_good_combination_price(tag_id, quantity, clinic_id)`.
+- `search_invoice_goods` использует `GET /rest/api/good/productsDataForInvoice` с фиксированным upstream page size 100, overfetch max 5 страниц / 500 строк, и обогащает combinations через bounded bulk `GET /rest/api/goodTag`.
+- Default search fail-closed: template combinations и rows с missing/ambiguous `goodTag.is_template` исключаются; при `include_template_combinations=true` ambiguous rows возвращаются с `is_template=null` и warning metadata.
+- `get_good_combination` читает `goodTag` по `tag_id` и сохраняет `positions[]`.
+- `calculate_good_combination_price` вызывает `GET /rest/api/good/checkProductData` с `good_id=-{tag_id}`, `tag_id`, `qty`, `clinic_id`; MCP не считает цену вручную.
+- Access registry и request-scope mapping обновлены: новые tools и `/goodTag` относятся к `inventory.read`; marketed inventory/read-only presets включают новые tools.
+- Обновлены tool descriptions, README matrix и tests.
+
+### Проверки
+
+- PRD review gate:
+  - Spark read-only запуск снова упал/завис на `bwrap Operation not permitted`; выполнен разрешенный fallback `gpt-5.3-codex-spark -s danger-full-access` с review-only prompt.
+  - Spark accepted findings: вынести custom endpoint contract, добавить scope matrix, explicit overfetch caps, fail-closed enrichment miss policy, dedicated tests/real smoke.
+  - Spark recheck after fixes: `[]` (через разрешенный fallback).
+  - Claude Opus PRD review accepted findings: lowercase `goodtag` scope key, `goodTag limit=len(tag_ids)` with `offset=0`, derive positive `tag_id` from negative invoice row id, fixed upstream page size 100, normalize `is_template`, real smoke should skip mutable fixtures instead of hard failing.
+  - Spark recheck after Claude fixes: `[]`; Claude second PRD review: `[]`.
+- Red before implementation: targeted Stage 169 tests падали из-за отсутствующих tools и missing `goodtag` scope mapping.
+- Targeted green:
+  - `docker compose --profile test run --rm test pytest tests/test_stage169_invoice_goods_combinations.py tests/test_stage130_access_registry.py -q` -> `38 passed`.
+  - `docker compose --profile test run --rm test pytest tests/test_stage169_invoice_goods_combinations.py tests/test_stage130_access_registry.py tests/test_tools_list_schema.py -q` -> `63 passed`.
+- Real `devtr6` smoke:
+  - `docker compose --env-file .env --profile test run --rm test python -m pytest tests/test_e2e_real.py -k 'stage169_invoice_goods or stage169_good_combination' -q` -> `2 passed, 58 deselected`.
+- Full default suite:
+  - `docker compose --profile test run --rm test` -> `1101 passed, 1 skipped, 62 deselected`.
+- Audit:
+  - `git diff --check` -> passed.
+  - `python3 scripts/check_no_historical_api_key_literal.py` -> passed.
+- Spark committed-diff review:
+  - read-only запуск снова упал/завис на `bwrap Operation not permitted`; зависший процесс был остановлен, выполнен разрешенный fallback `gpt-5.3-codex-spark -s danger-full-access` с review-only prompt.
+  - Accepted medium finding: Stage 169 acceptance promised explicit hard-cap tests, but tests covered only 2-page overfetch. Fixed by adding tests for 5 upstream pages / 500 inspected rows and 50 `goodTag` enrichment cap.
+  - Accepted low finding: insufficient-scope preflight was tested only for `search_invoice_goods`. Fixed by parameterizing the test over all three Stage 169 tools.
+  - Targeted check after fixes: `docker compose --profile test run --rm test pytest tests/test_stage169_invoice_goods_combinations.py tests/test_stage130_access_registry.py tests/test_tools_list_schema.py -q` -> `67 passed`.
+  - Full suite after fixes: `docker compose --profile test run --rm test` -> `1105 passed, 1 skipped, 62 deselected`.
+  - Spark re-review after first fixes found accepted medium issue: `goodTag` enrichment cap was page-local, so a 5-page overfetch could enrich up to 250 tag IDs despite the PRD's 50 IDs per MCP call cap. Fixed by tracking a global `requested_tag_ids` budget for the whole `search_invoice_goods` invocation.
+  - Accepted low issue: overfetch could request `offset > 10000` after starting near the validator boundary. Fixed by stopping before `next_offset > 10000` and marking `overfetch_cap_reached=true` with warning metadata.
+  - Added regression tests for global multi-page `goodTag` cap and offset-bound stop.
+  - Checks after second Spark fixes:
+    - `docker compose --profile test run --rm test pytest tests/test_stage169_invoice_goods_combinations.py -q` -> `14 passed`.
+    - `docker compose --profile test run --rm test pytest tests/test_stage169_invoice_goods_combinations.py tests/test_stage130_access_registry.py tests/test_tools_list_schema.py -q` -> `69 passed`.
+    - `docker compose --profile test run --rm test` -> `1107 passed, 1 skipped, 62 deselected`.
+  - Final Spark re-review after second fixes: read-only again blocked on `bwrap` sandbox runtime issue before reading diff; killed the hung process and used allowed `gpt-5.3-codex-spark -s danger-full-access` review-only fallback. Result: `[]`.
+- Claude Opus committed-diff review:
+  - Accepted medium finding: mock tests did not cover the primary ordinary non-combination goods/services path. Fixed by adding `test_search_invoice_goods_returns_plain_good_without_goodtag_enrichment`, asserting `is_combination=false`, `is_template=false`, `combination_tag_id=null`, and no `/goodTag` request.
+  - Accepted low finding: real smoke required `positions` to be a list although contract says `positions[]` may be absent/empty. Fixed assertion to allow missing `positions`.
+  - Checks after Claude fixes:
+    - `docker compose --profile test run --rm test pytest tests/test_stage169_invoice_goods_combinations.py tests/test_stage130_access_registry.py tests/test_tools_list_schema.py -q` -> `70 passed`.
+    - `docker compose --env-file .env --profile test run --rm test python -m pytest tests/test_e2e_real.py -k 'stage169_invoice_goods or stage169_good_combination' -q` -> `2 passed, 58 deselected`.
+    - `docker compose --profile test run --rm test` -> `1108 passed, 1 skipped, 62 deselected`.
+  - Spark review after Claude fixes: read-only again blocked on the known `bwrap` sandbox issue; used allowed `gpt-5.3-codex-spark -s danger-full-access` review-only fallback. Result: `[]`.
+  - Second Claude Opus review after accepted fixes:
+    - No critical/high/medium correctness, security, access-scope, or API-contract defects.
+    - Rejected low coverage finding: no separate test for present `goodTag` row with `is_template=null`. Reason: low severity, branch is simple and reviewed, default fail-closed/ambiguous behavior is already covered through missing enrichment plus include-mode tests; no remaining high/medium defect and strong-review budget is exhausted at 2 runs.
+
+### Решения и обоснования
+
+- Не меняли существующий `get_goods`: invoice-ready catalog имеет другой upstream contract и возвращает combinations как negative ids.
+- `productsDataForInvoice` не считается источником template status: real probe показал, что он возвращает и обычные, и template combinations без `is_template`.
+- `goodTag` enrichment выбран как источник template status и positions; missing metadata в default режиме закрывается fail-closed, чтобы не показать template как обычную комбинацию.
+- Стоимость комбинации считается только серверным `checkProductData`, потому что цена/остатки/доступность зависят от Vetmanager business logic.
+- Direct host для `devtr6` не резолвился локально, но real tests через `VetmanagerClient` и billing host resolver прошли.
+
+### Проблемы
+
+- Custom endpoints `productsDataForInvoice` и `checkProductData` отсутствуют в локальной OpenAPI 1.2.0, поэтому Stage 169 опирается на `vetmanager-extjs` source и отдельный contract artifact.
+- Spark read-only sandbox в текущей среде блокируется `bwrap Operation not permitted`; использован разрешенный workflow fallback с тем же Spark model и review-only prompt.
+
+### Обратная связь
+
+Пользователь подтвердил `search_invoice_goods`, попросил проверить на `devtr6`, добавил template fixture и потребовал учитывать обычные не-template combinations и расчет стоимости комбинации.

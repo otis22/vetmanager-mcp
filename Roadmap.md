@@ -2801,19 +2801,19 @@ Workflow allowance (по согласованию с пользователем 
 - 168.3 Tests: HTML contract no 10-column table, details contain hidden metadata, revoke action remains inside token list, mobile CSS regression. — `done` (`tests/test_stage168_account_token_layout.py`; targeted check `3 passed`).
 - 168.4 Full checks, audit, Spark + strong review, commit/push/deploy/smoke. — `done` (commit `fb3564e`; local full suite `1069 passed, 1 skipped, 58 deselected`; GitHub Tests `26255427865` success; Deploy Prod `26255539956` success; `/healthz` and `/readyz` ok).
 
-## Этап 169. Invoice-ready goods search with combinations — `todo`
+## Этап 169. Invoice-ready goods search with combinations — `done`
 
 Источник: OpenAPI diff 2026-06-15 + пользовательское уточнение по `goodTag`: комбинации товаров/услуг; write tools не нужны; в списке номенклатуры должны быть обычные не-шаблонные комбинации; стоимость комбинации надо считать серверным API. Контракт проверен на `devtr6`: `productsDataForInvoice` возвращает обычные и шаблонные combinations как `id=-{tag_id}`, но не отдаёт `is_template`; `goodTag` отдаёт `positions[]`; `checkProductData` считает стоимость.
 
 Цель: добавить read-only MCP tools для invoice-ready поиска номенклатуры с combinations, не меняя существующий `get_goods` и не добавляя `goodTag` write surface.
 
-- 169.1 PRD/research review: подтвердить extjs-source-backed custom endpoint contract и bounded overfetch design. — `todo`
-- 169.2 Helpers: invoice-goods search, combination row detection, `goodTag` enrichment, template filtering, bounded overfetch with hard cap. — `todo`
-- 169.3 Add `search_invoice_goods` tool: `productsDataForInvoice`, default exclude template combinations, optional `include_template_combinations=true`, overfetch to fill pages. — `todo`
-- 169.4 Add `get_good_combination` tool: read `goodTag` by `tag_id`, return metadata and `positions[]`. — `todo`
-- 169.5 Add `calculate_good_combination_price` tool: call `good/checkProductData` with `good_id=-{tag_id}`, `tag_id`, `qty`, `clinic_id`. — `todo`
-- 169.6 Docs/metadata: tool descriptions, access registry, README matrix, API reference/research notes. — `todo`
-- 169.7 Tests/checks: mock e2e, overfetch/template-filter tests, real `devtr6` smoke for `tag_id=2` and template `tag_id=6`, full suite, audit, review gates, AssumptionLog/self-attestation. — `todo`
+- 169.1 PRD/research review: подтвердить extjs-source-backed custom endpoint contract и bounded overfetch design. — `done` (`PRD/этап-169-search-invoice-goods-combinations.md`, `artifacts/stage169-invoice-goods-contract.md`; Spark + Claude PRD review gates passed).
+- 169.2 Helpers: invoice-goods search, combination row detection, `goodTag` enrichment, template filtering, bounded overfetch with hard cap. — `done`
+- 169.3 Add `search_invoice_goods` tool: `productsDataForInvoice`, default exclude template combinations, optional `include_template_combinations=true`, overfetch to fill pages. — `done`
+- 169.4 Add `get_good_combination` tool: read `goodTag` by `tag_id`, return metadata and `positions[]`. — `done`
+- 169.5 Add `calculate_good_combination_price` tool: call `good/checkProductData` with `good_id=-{tag_id}`, `tag_id`, `qty`, `clinic_id`. — `done`
+- 169.6 Docs/metadata: tool descriptions, access registry, README matrix, API reference/research notes. — `done`
+- 169.7 Tests/checks: mock e2e, overfetch/template-filter tests, real `devtr6` smoke for `tag_id=2` and template `tag_id=6`, full suite, audit, review gates, AssumptionLog/self-attestation. — `done` (targeted `70 passed`; real `2 passed, 58 deselected`; full suite `1108 passed, 1 skipped, 62 deselected`).
 
 ## Этап 170. Report AI MCP tools and prompt helper — `done`
 

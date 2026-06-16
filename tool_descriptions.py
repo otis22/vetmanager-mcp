@@ -111,6 +111,19 @@ ENTITY_METADATA: dict[str, dict[str, str | list[str]]] = {
             "item",
         ],
     },
+    "good_combination": {
+        "singular": "good/service combination",
+        "plural": "good/service combinations",
+        "synonyms": [
+            "комбинация",
+            "набор товаров",
+            "набор услуг",
+            "goodTag",
+            "комплект",
+            "позиция для счёта",
+            "invoice goods",
+        ],
+    },
     "user": {
         "singular": "staff / user record",
         "plural": "staff / user records",
@@ -489,6 +502,9 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "get_invoice_by_id": "invoice",
     "get_goods": "good",
     "get_good_by_id": "good",
+    "search_invoice_goods": "good_combination",
+    "get_good_combination": "good_combination",
+    "calculate_good_combination_price": "good_combination",
     "get_users": "user",
     "get_user_by_id": "user",
     "get_breeds": "breed",
@@ -676,6 +692,26 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "user asks how much is left in stock, current inventory, or remaining "
         "quantity. Domain synonyms: остаток, остаток на складе, количество на "
         "складе, наличие товара, сколько осталось, запас, stock, inventory."
+    ),
+    "search_invoice_goods": (
+        "Search invoice-ready goods, services, and goodTag combinations for adding "
+        "to an invoice. Use instead of get_goods when the user needs номенклатура "
+        "для счёта, прайс-позиции, ordinary combinations, or invoice-ready IDs. "
+        "Default excludes template combinations; set include_template_combinations=true "
+        "only when templates are explicitly needed. Domain synonyms: комбинация, "
+        "набор товаров, набор услуг, goodTag, комплект, позиция для счёта."
+    ),
+    "get_good_combination": (
+        "Get one goodTag combination by tag_id with positions[] and nested goods. "
+        "Use after search_invoice_goods returns a combination_tag_id or when the "
+        "user asks what is inside a combination. Domain synonyms: комбинация, "
+        "набор товаров, набор услуг, goodTag, комплект."
+    ),
+    "calculate_good_combination_price": (
+        "Calculate a goodTag combination price through Vetmanager server logic. "
+        "Use for combination cost, amount, and availability instead of summing "
+        "positions manually. Domain synonyms: комбинация, набор товаров, набор услуг, "
+        "goodTag, стоимость комбинации."
     ),
     "send_message_to_all": (
         "Send an in-app notification campaign to all clinic users. Use when the "

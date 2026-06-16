@@ -65,6 +65,7 @@ _READ_SCOPE_BY_ENTITY = {
     "good": SCOPE_INVENTORY_READ,
     "goodgroup": SCOPE_INVENTORY_READ,
     "goodsaleparam": SCOPE_INVENTORY_READ,
+    "goodtag": SCOPE_INVENTORY_READ,
     "hospital": SCOPE_MEDICAL_CARDS_READ,
     "hospitalblock": SCOPE_MEDICAL_CARDS_READ,
     "invoicedocument": SCOPE_FINANCE_READ,

@@ -25,7 +25,65 @@ Real API facts verified on `devtr6`:
 - `productsDataForInvoice` does not return `is_template`.
 - `exclude_templates`, `excludeTemplates`, `good_sets`, `no_good_sets` did not exclude template combinations in real probe.
 - `GET /rest/api/goodTag` with filter by `id` returns `positions[]`, including `quantity`, `sale_param_id`, `price`, `price_formation`, `markup`, nested `good`, nested `good_sale_param`.
+- Source check on 2026-06-16 confirmed `GoodTagController::doRestList()` returns all matching tags in one response and loads `positions[]` for the returned tag IDs; enrichment should use a bounded bulk `id IN [...]` request when there are multiple combination rows.
 - `GET /rest/api/good/checkProductData` calculates combination price when called with `good_id=-{tag_id}`, `tag_id={tag_id}`, `qty`, `clinic_id`.
+
+## Custom endpoint contract
+
+These endpoints are extjs-source-backed and not present in sanitized local OpenAPI 1.2.0. Implementation must treat this section and `artifacts/stage169-invoice-goods-contract.md` as the Stage 169 contract.
+
+### `GET /rest/api/good/productsDataForInvoice`
+
+Request params:
+
+- `clinic_id` required positive integer.
+- `limit` 1..100.
+- `offset` 0..10000.
+- `search_query` optional string.
+- `category_id` optional integer; omit when zero.
+
+Expected response shape:
+
+- Top-level VM envelope with `success`, `message`, `data`.
+- `data.good` is an array; `data.totalCount` is optional/endpoint-dependent and must not be the only pagination stop condition.
+- Required row fields used by MCP: `id`, `name` or `title`, `good_group`, `price`, `default_price`.
+- Combination row detection: `tag_id > 0` or negative numeric `id`; expected `good_group="GoodsSets"`.
+- Positive enrichment key: use `tag_id` when present and positive; otherwise derive `abs(int(id))` when `id` is a negative numeric string. If neither yields a positive tag ID, treat the row as ambiguous and apply the enrichment miss/fail-closed policy.
+- Optional row fields preserved when present: `tag_id`, `group_id`, `is_active`, `quantity`, `sale_param_id`, `barcode`, `category_id`, `category`, `editable`, `unit_sale_param_title`.
+- Do not trust `is_template` from this endpoint for filtering even if future versions include it; enrichment via `goodTag` remains the source for template status.
+
+### `GET /rest/api/goodTag`
+
+Request params:
+
+- `limit`, `offset`, optional `clinic_id`.
+- For enrichment, use `filter=[{"property":"id","operator":"IN","value":[...]}]` with deduped positive `tag_id` values.
+- Enrichment requests must set `limit` to the number of requested tag IDs, capped at 50, and `offset=0`; otherwise Vetmanager list pagination can silently truncate the metadata response.
+- For single combination lookup, use `filter=[{"property":"id","operator":"=","value":tag_id}]`.
+
+Expected response shape:
+
+- `data.goodTag` array.
+- Required tag fields used by MCP: `id`, `title`, `is_template`.
+- Template normalization: `is_template` is true only when `str(value).strip() == "1"` or `value is True`; false when `str(value).strip() == "0"` or `value is False`; missing/empty/null is ambiguous and normalized to `null`.
+- `positions[]` may be absent/empty, but when present must be preserved. Required position fields to preserve: `tag_id`, `quantity`, `sale_param_id`, `price`, `price_formation`, `markup`, nested `good`, nested `good_sale_param`.
+- Enrichment miss/failure policy: default search must fail closed for ambiguous combination rows. If a row is a combination and its tag metadata is missing, exclude it when `include_template_combinations=false` and include warning metadata; when `include_template_combinations=true`, return the row with `is_template=null` and warning metadata.
+
+### `GET /rest/api/good/checkProductData`
+
+Request params:
+
+- `good_id=-{tag_id}`.
+- `tag_id={tag_id}`.
+- `qty` positive number.
+- `clinic_id` positive integer.
+
+Expected response shape:
+
+- Top-level VM envelope with `success`, `message`, `data`.
+- `data.good` includes server-calculated `price`, `amount`, `qty`, `default_price`, and combination identifiers when returned.
+- `data.action_is_possible`, `data.allowed_quantity`, and optional `data.message`/top-level `message` are preserved.
+- MCP does not calculate price manually from `positions[]`.
 
 ## Scope
 
@@ -46,12 +104,16 @@ Real API facts verified on `devtr6`:
      - `invoice_good_id` preserving API row `id` (`494_968_0`, `-2`, etc.).
 2. Use overfetch for `search_invoice_goods`.
    - Because template combinations are filtered after `productsDataForInvoice` pagination.
+   - Use fixed upstream page size `100` for `productsDataForInvoice` overfetch, independent of MCP `limit` (which remains `LimitParam`, 1..100).
    - Fetch more than requested until either `limit` accepted rows is reached, the upstream page is exhausted, or hard cap is hit.
-   - Cap must prevent runaway calls.
+   - Hard caps: at most 5 upstream `productsDataForInvoice` pages, at most 500 upstream product rows inspected, and at most 50 distinct combination `tag_id` values enriched per MCP call.
+   - Return metadata: `requested_limit`, `accepted_count`, `inspected_count`, `upstream_pages_fetched`, `overfetch_cap_reached`, `warnings[]`.
 3. Enrich combination rows via `GET /rest/api/goodTag`.
-   - Use bulk lookup if `goodTag` supports id IN in real/mock probe.
-   - Otherwise use bounded per-tag lookups with dedupe.
+   - Use bounded bulk lookup with `filter=[{"property":"id","operator":"IN","value":[...]}]` for deduped `tag_id` values.
+   - Keep a hard cap on enriched tag IDs to prevent runaway secondary requests.
    - Default `include_template_combinations=false` must exclude `is_template=1`.
+   - Default fail-closed on missing tag metadata: exclude ambiguous combination rows and add a warning; do not leak possible template combinations into default results.
+   - With `include_template_combinations=true`, return ambiguous combination rows with `is_template=null` and warning metadata because the caller explicitly requested all combinations.
 4. Add MCP tool `get_good_combination`.
    - Parameters: `tag_id: int`, `clinic_id: int = 1`.
    - Use `GET /rest/api/goodTag` filter by `id`.
@@ -61,6 +123,21 @@ Real API facts verified on `devtr6`:
    - Use `GET /rest/api/good/checkProductData` with `good_id=-{tag_id}`, `tag_id`, `qty`.
    - Return server-calculated `price`, `amount`, `action_is_possible`, `allowed_quantity`, `message`, and raw payload.
 6. Update tool descriptions, access registry, README matrix, and API reference notes for the new read-only tools.
+
+## Scope mapping
+
+All Stage 169 tools are read-only inventory/catalog operations:
+
+- `search_invoice_goods` -> `inventory.read`
+- `get_good_combination` -> `inventory.read`
+- `calculate_good_combination_price` -> `inventory.read`
+
+Implementation must update:
+
+- `tool_access_registry.py::TOOL_REQUIRED_SCOPES`
+- `token_scopes.py::required_scope_for_request`: `GET /rest/api/good/productsDataForInvoice` and `GET /rest/api/good/checkProductData` are already covered by entity `good` -> `inventory.read`; add lowercase entity key `goodtag` -> `inventory.read` for `GET /rest/api/goodTag`.
+- marketed preset coverage if inventory preset should expose the tools
+- tests for sufficient-scope pass and insufficient-scope preflight failure
 
 ## Out of Scope
 
@@ -81,7 +158,9 @@ Real API facts verified on `devtr6`:
 6. `calculate_good_combination_price(tag_id=2, quantity=2, clinic_id=1)` returns server-calculated `amount` and availability fields.
 7. New tools are read-only and have explicit access registry mappings.
 8. Mock e2e tests cover ordinary combination, template filtering, template inclusion, overfetch, empty result, and price calculation.
-9. Real API smoke on `devtr6` covers ordinary combination `tag_id=2`, template filtering for `tag_id=6`, and price calculation.
+9. Mock tests cover explicit caps: max 5 product pages, max 500 inspected rows, max 50 enriched tag IDs, and missing/partial `goodTag` enrichment fail-closed behavior.
+10. Scope tests cover all three tools and direct request-scope mapping for all three upstream paths.
+11. Real API smoke on `devtr6` first verifies current fixture availability. If known fixture IDs still exist, cover ordinary combination `tag_id=2`, template filtering for `tag_id=6`, template-included mode, and price calculation. If fixture IDs changed, skip exact-id assertions and assert structural invariants for whatever GoodsSets rows are available without creating/modifying data.
 
 ## Decomposition
 
@@ -107,7 +186,7 @@ During implementation:
 ```bash
 docker compose --profile test run --rm test pytest tests/test_stage169_invoice_goods_combinations.py -q
 docker compose --profile test run --rm test pytest tests/test_e2e_mock_entities.py tests/test_tools_list_schema.py tests/test_stage130_access_registry.py -q
-docker compose --env-file .env --profile test run --rm test python -m pytest tests/test_e2e_real.py -k 'invoice_goods or good_combination' -q
+docker compose --env-file .env --profile test run --rm test python -m pytest tests/test_e2e_real.py -k 'stage169_invoice_goods or stage169_good_combination' -q
 docker compose --profile test run --rm test
 git diff --check
 python3 scripts/check_no_historical_api_key_literal.py

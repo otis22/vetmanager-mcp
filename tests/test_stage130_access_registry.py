@@ -173,6 +173,9 @@ def test_normalize_token_preset_rejects_unknown_or_whitespace_values(preset):
         ("get_doctor_free_slots", (SCOPE_ADMISSIONS_READ, SCOPE_ANALYTICS_READ)),
         ("get_message_reports", (SCOPE_ANALYTICS_READ,)),
         ("create_report_ai_job", (SCOPE_ANALYTICS_READ,)),
+        ("search_invoice_goods", (SCOPE_INVENTORY_READ,)),
+        ("get_good_combination", (SCOPE_INVENTORY_READ,)),
+        ("calculate_good_combination_price", (SCOPE_INVENTORY_READ,)),
         ("get_report_ai_job", (SCOPE_ANALYTICS_READ,)),
         ("confirm_report_ai_job_candidate", (SCOPE_ANALYTICS_READ,)),
         ("get_report_ai_job_data", (SCOPE_ANALYTICS_READ,)),
@@ -196,3 +199,6 @@ def test_request_scope_mapping_covers_missing_write_paths():
     assert required_scope_for_request("POST", "/rest/api/report-ai-job/2/confirm") == SCOPE_ANALYTICS_READ
     assert required_scope_for_request("GET", "/rest/api/report-ai-job/2/data") == SCOPE_ANALYTICS_READ
     assert required_scope_for_request("POST", "/rest/api/report-ai-job/2/save") == SCOPE_ANALYTICS_WRITE
+    assert required_scope_for_request("GET", "/rest/api/good/productsDataForInvoice") == SCOPE_INVENTORY_READ
+    assert required_scope_for_request("GET", "/rest/api/good/checkProductData") == SCOPE_INVENTORY_READ
+    assert required_scope_for_request("GET", "/rest/api/goodTag") == SCOPE_INVENTORY_READ
