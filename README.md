@@ -604,11 +604,11 @@ COMMIT;
 - После успешного `POST`/`PUT`/`DELETE` кеш для соответствующего тега `domain:entity` инвалидируется.
 - Ограничение подхода: кеш живёт только в памяти процесса и полностью сбрасывается при рестарте сервера.
 
-**113 инструментов** по 14 группам сущностей:
+**114 инструментов** по 14 группам сущностей:
 
 | Группа | Инструменты | Кол-во |
 |--------|-------------|--------|
-| Client | `get_clients`, `get_debtors`, `get_client_by_id`, `create_client`, `update_client`, `delete_client`, `get_client_profile`, `get_inactive_clients` | 8 |
+| Client | `get_clients`, `get_debtors`, `get_client_by_id`, `get_personal_account_link_by_phone`, `create_client`, `update_client`, `delete_client`, `get_client_profile`, `get_inactive_clients` | 9 |
 | Pet | `get_pets`, `get_pet_by_id`, `create_pet`, `update_pet`, `delete_pet`, `get_pet_profile`, `get_inactive_pets` | 7 |
 | Admission | `get_admissions`, `get_admission_by_id`, `create_admission`, `update_admission`, `get_client_upcoming_visits`, `get_daily_schedule` | 6 |
 | MedicalCard | `get_medical_cards`, `get_medical_cards_by_client_id`, `get_medical_card_by_id`, `create_medical_card`, `update_medical_card`, `get_vaccinations` | 6 |

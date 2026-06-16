@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-06-16 — VmLink personal-account link by phone
+
+**Источник:** `artifacts/vetmanager_openapi_v6.json`, `artifacts/openapi-diff-2026-06-15-remote-vs-local.md`, `/home/otis/myprojects/vetmanager-extjs/rest/protected/controllers/VmLinkController.php`, `/home/otis/myprojects/vetmanager-extjs/application/src/ServiceIntegration/VmLink.php`, real `devtr6` probe.
+
+- OpenAPI содержит оба endpoint: `GET /rest/api/VmLink/personalAccountLinkByClientId/{clientId}` и `GET /rest/api/VmLink/personalAccountLinkByPhone/{phone}`.
+- Product boundary для MCP Stage 171: публиковать только phone-based tool. Client-ID variant не выводить в MCP, потому что пользователь разрешил отдавать постоянную ссылку на ЛК только когда ассистент уже знает телефон клиента.
+- PHP controller возвращает envelope `data.vetmanagerLink.personal_link` + `data.vetmanagerLink.success=true` при успехе. При отсутствии клиента exception гасится в контроллере и возвращается HTTP 200/top-level `success=true`, `message="Client profile not found"`, `data.vetmanagerLink.success=false`, без `personal_link`.
+- `VmLink::generatePersonalAccountLinkByClientPhone()` перед сравнением вызывает `formatPhone()`: снимает clinic/global prefixes, затем оставляет только цифры и ищет `clients_phones.clean_phone`.
+- На `devtr6` formatted phone прямо в path дал route-level 404; digits-only phone для существующего клиента вернул ссылку, missing digits-only phone вернул nested `success=false`.
+- Ссылка постоянная и чувствительная: не писать полный `personal_link` или phone digits в research artifacts, test output, logs, ToolError. Success payload MCP intentionally returns the link; error/not-found payloads do not echo arbitrary upstream message.
+- Scope caveat для MCP: `vmlink -> clients.read` coarse entity mapping authorizes all `GET /rest/api/VmLink/...` внутри `VetmanagerClient`; product boundary обеспечивается отсутствием generic REST passthrough и отсутствием client-ID MCP tool.
+
+---
+
 ## 2026-04-24 — Stage 140 contract notes
 
 **Источник:** `artifacts/vetmanager_openapi_v6.json`, `artifacts/api_crud_permissions-ru.md`, `artifacts/api_entity_reference-ru.md`, super-review stage 136.

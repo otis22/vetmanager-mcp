@@ -87,6 +87,7 @@ _READ_SCOPE_BY_ENTITY = {
     "unit": SCOPE_REFERENCE_READ,
     "user": SCOPE_USERS_READ,
     "userposition": SCOPE_REFERENCE_READ,
+    "vmlink": SCOPE_CLIENTS_READ,
 }
 
 _WRITE_SCOPE_BY_ENTITY = {

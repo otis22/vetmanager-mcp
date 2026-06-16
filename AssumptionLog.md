@@ -8112,3 +8112,65 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь подтвердил `search_invoice_goods`, попросил проверить на `devtr6`, добавил template fixture и потребовал учитывать обычные не-template combinations и расчет стоимости комбинации.
+
+## Stage 171 implementation: VmLink personal account link by phone — 2026-06-16
+
+### Что делали
+
+Закрывали Stage 171: один MCP read tool для получения постоянной ссылки на личный кабинет клиента Vetmanager только по уже известному телефону клиента.
+
+### Что сделано
+
+- Финализирован PRD `PRD/этап-171-vmlink-personal-account-link-by-phone.md` после Spark/Claude PRD review.
+- Добавлен `get_personal_account_link_by_phone(phone)` в `tools/client.py`.
+- Tool нормализует телефон до digits-only, отвергает `<7` цифр до upstream, вызывает `GET /rest/api/VmLink/personalAccountLinkByPhone/{digits}`.
+- Success payload возвращает `data.found=true`, `data.personal_link`, `data.link_is_persistent=true`, `data.warning`.
+- Not-found payload возвращает fixed safe message `Client profile not found`, `data.found=false`, `data.personal_link=null`, `data.warning`; upstream `message` не эхоит.
+- Все `VetmanagerError` subclasses, включая timeout/network/upstream errors с URL в тексте, схлопываются в fixed generic `ToolError`, чтобы не утекали phone digits, full request URL или `personal_link`.
+- Добавлен entity scope mapping `vmlink -> clients.read`, tool registry `get_personal_account_link_by_phone -> clients.read`, marketed read-only/frontdesk preset coverage.
+- Не добавлялся `get_personal_account_link_by_client_id`; новые `get_client_by_id`/`get_pet_by_id` в этом этапе не создавались.
+- Добавлены tool description, README matrix update (`114` tools), `artifacts/api-research-notes-ru.md` с VmLink envelope/source notes.
+- Добавлены mock tests `tests/test_stage171_vmlink_personal_account_link.py`, access registry checks и real `devtr6` smoke without hardcoded PII.
+
+### Решения и обоснования
+
+- `clients.read` оставлен как scope: это существующая coarse read capability для клиентских данных, пользователь явно разрешил phone-known access, а отдельный `vmlink.read` потребовал бы token/preset migration не по размеру Stage 171.
+- Accepted risk зафиксирован в PRD: tool может быть phone-existence oracle и mint persistent link для известного телефона. Stage 166 остаётся владельцем broader production rate-limit/abuse-control решения; Stage 171 добавляет только `<7 digits` reject и не расширяет Stage 166.
+- Entity scope mapping coarse: `vmlink -> clients.read` авторизует `GET /rest/api/VmLink/...` внутри `VetmanagerClient`; product boundary держится отсутствием generic REST passthrough и отсутствием client-ID MCP tool.
+- `personal_link` intentionally survives depersonalization wrapper byte-for-byte, потому что это целевой success output, а не свободный текст/PII field. Error/not-found branches его не возвращают.
+- VmLink phone normalization в MCP только strips non-digits. Дополнительное снятие country/prefix оставлено backend: PHP `VmLink::formatPhone()` снимает clinic/global prefixes и ищет `clients_phones.clean_phone`.
+
+### Проверки
+
+- PRD review gate:
+  - Первый Spark read-only снова заблокировался на известной `bwrap` sandbox/runtime проблеме; процесс остановлен, выполнен разрешённый fallback `gpt-5.3-codex-spark -s danger-full-access` с review-only prompt.
+  - Spark findings accepted: обосновать `clients.read`/persistent link risk; добавить no-leak requirement для `personal_link` в errors/logs.
+  - Первый Claude Opus PRD review findings accepted: threat model/accepted risk, deterministic redaction mechanism, depersonalization success link, phone-in-path leak handling, entity-coarse `vmlink` caveat, source verification/API research notes, real smoke PII source.
+  - Spark recheck after fixes: `[]` через разрешённый fallback.
+  - Второй Claude Opus PRD review findings accepted: explicit malformed envelope precedence, timeout URL/phone leak test, fixed safe not-found message instead of upstream message passthrough.
+  - Final Spark PRD recheck: `[]`.
+- Red before implementation:
+  - `docker compose --profile test run --rm test pytest tests/test_stage171_vmlink_personal_account_link.py tests/test_stage130_access_registry.py -q` -> expected failures: unknown tool, missing tool scope, missing `vmlink` request scope.
+- Targeted green:
+  - `docker compose --profile test run --rm test pytest tests/test_stage171_vmlink_personal_account_link.py tests/test_stage130_access_registry.py tests/test_tools_list_schema.py -q` -> `67 passed`.
+- Real `devtr6` smoke:
+  - `docker compose --env-file .env --profile test run --rm test python -m pytest tests/test_e2e_real.py -k 'vmlink' -q` -> `1 passed, 60 deselected`.
+- Full default suite:
+  - `docker compose --profile test run --rm test` -> `1120 passed, 1 skipped, 63 deselected`.
+- Audit:
+  - `git diff --check` -> passed.
+  - `python3 scripts/check_no_historical_api_key_literal.py` -> passed.
+- Committed-diff review:
+  - Spark read-only again failed on the known `bwrap` sandbox/runtime issue before completing file reads; killed the hung process and used the allowed `gpt-5.3-codex-spark -s danger-full-access` review-only fallback. Result: `[]`.
+  - Claude Opus committed-diff review found no critical/high/medium correctness, security, access, API-contract, PII, or Stage 166 regressions.
+  - Rejected/non-blocking low test-brittleness note: real smoke asserts `/cabinet/` in the link. Reason: PHP source `VmLink::generatePersonalAccountLinkByClientPhone()` constructs `/cabinet/{encoded_domain}/{encoded_client_info}` and real smoke validated it; failure would usefully catch a changed personal-account link shape.
+  - Rejected/non-blocking low defense-in-depth note: `_WRITE_SCOPE_BY_ENTITY` has no `vmlink` entry, so hypothetical non-GET direct VmLink calls would be request-scope `None`. Reason: VmLink is GET-only for Stage 171, no generic REST passthrough exists, and PRD explicitly records coarse entity-scope boundary; revisit only if a generic passthrough or VmLink write surface is introduced.
+
+### Проблемы
+
+- Spark read-only sandbox в текущей среде стабильно блокируется `bwrap Operation not permitted`; использован разрешенный workflow fallback с тем же Spark model и review-only prompt.
+- Claude Opus не смог прочитать extjs source из своего процесса, но локально source был прочитан: `VmLinkController.php` и `ServiceIntegration/VmLink.php` подтвердили envelope и phone formatting behavior.
+
+### Обратная связь
+
+Пользователь уточнил, что VmLink можно отдавать ассистенту только по телефону, ссылка постоянная, client-ID variant не нужен; также Stage 166 не трогать.

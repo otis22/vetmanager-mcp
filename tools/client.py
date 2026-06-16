@@ -1,16 +1,25 @@
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 
+from exceptions import VetmanagerError
 from filters import eq as _filter_eq, in_ as _filter_in, like as _filter_like
 from resources.client_profile import fetch as _fetch_client_profile
 from service_metrics import instrument_call as _instrument_call
 from tools._inactive_helpers import fetch_inactive_clients_page
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete, paginate_all
 from validators import LimitParam, normalize_phone_digits
+from vetmanager_client import VetmanagerClient
 
 
 # Hard cap on phase-1 ClientPhone fetch. If more rows exist we refuse the
 # search rather than silently return a truncated set of clients.
 _PHONE_SEARCH_MAX_ROWS = 100
+_PERSONAL_ACCOUNT_LINK_NOT_FOUND_MESSAGE = "Client profile not found"
+_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR = "Unable to get personal account link from Vetmanager."
+_PERSONAL_ACCOUNT_LINK_WARNING = (
+    "Personal account link is persistent and sensitive; show it only in the "
+    "relevant known-phone client context."
+)
 
 
 async def _search_client_phones(search_digits: str) -> list[int]:
@@ -64,6 +73,65 @@ async def _resolve_client_ids_by_phone(phone_digits: str) -> list[int]:
             return await _search_client_phones(phone_digits)
         return ids
     return await _search_client_phones(phone_digits)
+
+
+def _boolish_true(value) -> bool:
+    if value is True:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true"}
+    if isinstance(value, int):
+        return value == 1
+    return False
+
+
+def _boolish_false(value) -> bool:
+    if value is False:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in {"0", "false"}
+    if isinstance(value, int):
+        return value == 0
+    return False
+
+
+def _personal_account_link_not_found() -> dict:
+    return {
+        "success": True,
+        "message": _PERSONAL_ACCOUNT_LINK_NOT_FOUND_MESSAGE,
+        "data": {
+            "found": False,
+            "personal_link": None,
+            "warning": _PERSONAL_ACCOUNT_LINK_WARNING,
+        },
+    }
+
+
+def _normalize_personal_account_link_payload(payload) -> dict:
+    if not isinstance(payload, dict) or not _boolish_true(payload.get("success")):
+        raise ToolError(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR)
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise ToolError(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR)
+    vm_link = data.get("vetmanagerLink")
+    if not isinstance(vm_link, dict):
+        raise ToolError(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR)
+
+    link = vm_link.get("personal_link")
+    if _boolish_true(vm_link.get("success")) and isinstance(link, str) and link:
+        return {
+            "success": True,
+            "message": "",
+            "data": {
+                "found": True,
+                "personal_link": link,
+                "link_is_persistent": True,
+                "warning": _PERSONAL_ACCOUNT_LINK_WARNING,
+            },
+        }
+    if _boolish_false(vm_link.get("success")) or not link:
+        return _personal_account_link_not_found()
+    raise ToolError(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR)
 
 
 def register(mcp: FastMCP) -> None:
@@ -251,6 +319,24 @@ def register(mcp: FastMCP) -> None:
             client_id: Unique numeric ID of the client.
         """
         return await crud_get_by_id("/rest/api/client", client_id)
+
+    @mcp.tool
+    async def get_personal_account_link_by_phone(phone: str) -> dict:
+        """Get a persistent personal-account link by an already-known client phone.
+
+        Args:
+            phone: Client phone known from the conversation or client context.
+        """
+        phone_digits = normalize_phone_digits(phone)
+        if len(phone_digits) < 7:
+            raise ToolError("phone must contain at least 7 digits.")
+        try:
+            payload = await VetmanagerClient().get(
+                f"/rest/api/VmLink/personalAccountLinkByPhone/{phone_digits}"
+            )
+        except VetmanagerError:
+            raise ToolError(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR) from None
+        return _normalize_personal_account_link_payload(payload)
 
     @mcp.tool
     async def create_client(

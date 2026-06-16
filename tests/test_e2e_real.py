@@ -228,6 +228,77 @@ async def test_real_get_clients():
     assert "data" in result
 
 
+def _phone_digits_from_client(row: dict) -> list[str]:
+    digits: list[str] = []
+    for key in ("cell_phone", "home_phone", "work_phone"):
+        raw = row.get(key)
+        if not isinstance(raw, str):
+            continue
+        value = re.sub(r"\D+", "", raw)
+        if len(value) >= 7:
+            digits.append(value)
+    return digits
+
+
+@skip_if_no_creds
+@skip_if_not_devtr6
+@pytest.mark.asyncio
+async def test_real_vmlink_personal_account_link_by_phone_smoke():
+    clients_payload = await call(
+        vc().get(
+            "/rest/api/client",
+            params={"limit": 100, "offset": 0},
+        )
+    )
+    clients = clients_payload.get("data", {}).get("client", [])
+    phones: list[str] = []
+    if isinstance(clients, list):
+        for row in clients:
+            if isinstance(row, dict):
+                phones.extend(_phone_digits_from_client(row))
+    if not phones:
+        pytest.skip("No usable client phone available in devtr6 smoke page.")
+
+    found_payload: dict | None = None
+    headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+    with headers_patch, runtime_patch:
+        for phone_digits in phones[:20]:
+            result = await call(
+                mcp.call_tool(
+                    "get_personal_account_link_by_phone",
+                    {"phone": phone_digits},
+                )
+            )
+            payload = _tool_payload(result)
+            data = payload.get("data", {})
+            if isinstance(data, dict) and data.get("found") is True:
+                found_payload = payload
+                break
+
+        missing_result = await call(
+            mcp.call_tool(
+                "get_personal_account_link_by_phone",
+                {"phone": "00000009999999"},
+            )
+        )
+
+    if found_payload is None:
+        pytest.skip("No sampled devtr6 client phone produced a VmLink personal link.")
+    found_data = found_payload.get("data", {})
+    assert found_payload.get("success") is True
+    assert found_data.get("found") is True
+    assert isinstance(found_data.get("personal_link"), str)
+    assert found_data["personal_link"].startswith("https://")
+    assert "/cabinet/" in found_data["personal_link"]
+
+    missing_payload = _tool_payload(missing_result)
+    missing_data = missing_payload.get("data", {})
+    assert missing_payload.get("success") is True
+    assert missing_payload.get("message") == "Client profile not found"
+    assert missing_data.get("found") is False
+    assert missing_data.get("personal_link") is None
+
+
 @skip_if_no_creds
 @pytest.mark.asyncio
 async def test_real_report_ai_create_and_bounded_poll_non_polluting():

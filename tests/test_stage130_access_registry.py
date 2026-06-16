@@ -168,6 +168,7 @@ def test_normalize_token_preset_rejects_unknown_or_whitespace_values(preset):
     ("tool_name", "expected_scopes"),
     [
         ("get_client_profile", (SCOPE_CLIENTS_READ, SCOPE_FINANCE_READ, SCOPE_ADMISSIONS_READ)),
+        ("get_personal_account_link_by_phone", (SCOPE_CLIENTS_READ,)),
         ("get_pet_profile", (SCOPE_PETS_READ, SCOPE_MEDICAL_CARDS_READ)),
         ("get_inactive_pets", (SCOPE_CLIENTS_READ, SCOPE_PETS_READ, SCOPE_FINANCE_READ, SCOPE_MEDICAL_CARDS_READ)),
         ("get_doctor_free_slots", (SCOPE_ADMISSIONS_READ, SCOPE_ANALYTICS_READ)),
@@ -202,3 +203,4 @@ def test_request_scope_mapping_covers_missing_write_paths():
     assert required_scope_for_request("GET", "/rest/api/good/productsDataForInvoice") == SCOPE_INVENTORY_READ
     assert required_scope_for_request("GET", "/rest/api/good/checkProductData") == SCOPE_INVENTORY_READ
     assert required_scope_for_request("GET", "/rest/api/goodTag") == SCOPE_INVENTORY_READ
+    assert required_scope_for_request("GET", "/rest/api/VmLink/personalAccountLinkByPhone/79184140259") == SCOPE_CLIENTS_READ

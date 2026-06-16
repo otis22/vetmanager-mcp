@@ -2829,14 +2829,14 @@ Workflow allowance (по согласованию с пользователем 
 - 170.6 Docs/metadata: tool descriptions, access registry/scopes, README examples for external agents, API research notes. — `done`
 - 170.7 Tests/checks: mock status branches, strict body validation, dedupe reuse, idempotent save, confirm candidate validation, data row limit, save/data flow, non-polluting real `devtr6` smoke with saved-fixture reuse/skip strategy, full suite, audit, review gates, AssumptionLog/self-attestation. — `done`
 
-## Этап 171. VmLink personal account link by phone — `todo`
+## Этап 171. VmLink personal account link by phone — `done`
 
 Источник: OpenAPI diff 2026-06-15 добавил parameterized `VmLink` endpoints. Пользовательское решение: ссылку на ЛК ассистенту можно отдавать только по телефону; если ассистент знает телефон клиента, это безопасно; ссылка постоянная. `personalAccountLinkByClientId` и новые convenience `get_client_by_id` / `get_pet_by_id` tools не добавлять.
 
 Цель: добавить один read tool для получения постоянной ссылки на личный кабинет по известному телефону клиента, с нормализацией телефона и без client-id based lookup.
 
-- 171.1 PRD/research review: подтвердить `PRD/этап-171-vmlink-personal-account-link-by-phone.md`, source files, OpenAPI diff decision, privacy boundary, persistent-link behavior. — `todo`
-- 171.2 Add `get_personal_account_link_by_phone` tool: normalize phone to digits, call `VmLink/personalAccountLinkByPhone/{digits}`, return structured success/not-found. — `todo`
-- 171.3 Ensure no `get_personal_account_link_by_client_id`, no new `get_client_by_id`, no new `get_pet_by_id` are added in this stage. — `todo`
-- 171.4 Docs/metadata: tool description says use only when assistant already knows the phone; returned link is persistent/sensitive; access registry/scopes. — `todo`
-- 171.5 Tests/checks: phone normalization, success shape, missing-phone shape, upstream/route error, tool-list absence for client-id variant, real `devtr6` smoke without logging full link, full suite, audit, review gates, AssumptionLog/self-attestation. — `todo`
+- 171.1 PRD/research review: подтвердить `PRD/этап-171-vmlink-personal-account-link-by-phone.md`, source files, OpenAPI diff decision, privacy boundary, persistent-link behavior. — `done`
+- 171.2 Add `get_personal_account_link_by_phone` tool: normalize phone to digits, call `VmLink/personalAccountLinkByPhone/{digits}`, return structured success/not-found. — `done`
+- 171.3 Ensure no `get_personal_account_link_by_client_id`, no new `get_client_by_id`, no new `get_pet_by_id` are added in this stage. — `done`
+- 171.4 Docs/metadata: tool description says use only when assistant already knows the phone; returned link is persistent/sensitive; access registry/scopes. — `done`
+- 171.5 Tests/checks: phone normalization, success shape, missing-phone shape, upstream/route error, tool-list absence for client-id variant, real `devtr6` smoke without logging full link, full suite, audit, review gates, AssumptionLog/self-attestation. — `done`

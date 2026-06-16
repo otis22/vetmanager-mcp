@@ -478,6 +478,7 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "get_clients": "client",
     "get_debtors": "client",
     "get_client_by_id": "client",
+    "get_personal_account_link_by_phone": "client",
     "create_client": "client",
     "update_client": "client",
     "get_client_profile": "client",
@@ -626,6 +627,13 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "user asks for a full owner card or consolidated client context. Domain "
         "synonyms: клиент, владелец, хозяин, хозяин питомца, контакт, "
         "клиентская база, client."
+    ),
+    "get_personal_account_link_by_phone": (
+        "Get the persistent personal-account link for a client / owner only when "
+        "the assistant already knows the client's phone. Do not use client ID for "
+        "this workflow. The returned link is sensitive and persistent; show it "
+        "only in the relevant known-phone client context. Domain synonyms: "
+        "клиент, владелец, хозяин, личный кабинет, ссылка на ЛК, VmLink, client."
     ),
     "get_pet_profile": (
         "Build a full pet / patient profile in one call: pet data, recent medical "
