@@ -33,6 +33,19 @@ services:
     profiles:
       - production
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    profiles:
+      - production
+
   mcp:
     build:
       context: .
@@ -51,6 +64,11 @@ services:
       STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY:-}
       WEB_SESSION_SECRET: ${WEB_SESSION_SECRET:-}
       FEEDBACK_FINGERPRINT_PEPPER: ${FEEDBACK_FINGERPRINT_PEPPER:-}
+      REDIS_URL: ${REDIS_URL:-}
+      RATE_LIMIT_REQUIRE_REDIS: ${RATE_LIMIT_REQUIRE_REDIS:-}
+      RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS: ${RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS:-}
+      RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS: ${RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS:-}
+      RATE_LIMIT_REDIS_HEALTH_CHECK_INTERVAL_SECONDS: ${RATE_LIMIT_REDIS_HEALTH_CHECK_INTERVAL_SECONDS:-}
     ports:
       - "127.0.0.1:${PORT:-8000}:${PORT:-8000}"
     volumes:
@@ -60,6 +78,9 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+        required: false
+      redis:
         condition: service_healthy
         required: false
     deploy:

@@ -8174,3 +8174,40 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь уточнил, что VmLink можно отдавать ассистенту только по телефону, ссылка постоянная, client-ID variant не нужен; также Stage 166 не трогать.
+
+## Этап 166. Production Redis rate-limit deployment — 2026-06-16
+
+### Что делали
+
+Настроили production Redis-backed backend для shared web/bearer rate limiting на текущем single-host deployment.
+
+### Что сделано
+
+- В `docker-compose.yml` добавлен production service `redis` на `redis:7-alpine`.
+- В `mcp` container явно проброшены `REDIS_URL`, `RATE_LIMIT_REQUIRE_REDIS` и Redis timeout env-переменные.
+- В `.env.example` добавлены production Redis rate-limit параметры.
+- На production сервере `/opt/vetmanager-mcp/.env` выставлены `REDIS_URL=redis://redis:6379/0` и `RATE_LIMIT_REQUIRE_REDIS=1`.
+- Production containers пересозданы: `mcp`, `postgres`, `redis` healthy; `/healthz` и `/readyz` вернули `200`.
+
+### Решения и обоснования
+
+- Redis порт не опубликован наружу; MCP ходит к `redis:6379` внутри Docker Compose network.
+- Persistence Redis отключена (`--save "" --appendonly no`), потому что rate-limit state эфемерен.
+- `RATE_LIMIT_REQUIRE_REDIS=1` включен сразу, чтобы production rate limiting fail-closed при недоступном Redis.
+
+### Проверки
+
+- `docker compose --profile production config --quiet` — passed.
+- `docker compose --profile test config --quiet` — passed.
+- `docker compose --profile test run --rm test pytest tests/test_rate_limit_backend.py -q` — `25 passed`.
+- Remote `redis-cli ping` — `PONG`.
+- Remote MCP env содержит `REDIS_URL` и `RATE_LIMIT_REQUIRE_REDIS=1`.
+- Remote direct backend check: first consume allowed, second consume denied for `limit=1`.
+
+### Проблемы
+
+- Первый `/readyz` сразу после recreate вернул transient `503` из-за storage readiness race/different-loop asyncpg после рестарта; повторная проверка вернула `200 OK`, container health стал `healthy`.
+
+### Обратная связь
+
+Пользователь попросил настроить Redis на сервере, добавить env, затем commit/push/deploy и протестировать rate limiting.
