@@ -2864,3 +2864,35 @@ Research summary:
 - 172.5 `#6 get_average_invoice`: за день с выручкой возвращает нули. Проблема: `get_revenue_summary` и admissions показывают данные за `2026-06-17`, а `get_average_invoice` считает 0; текущий code path фильтрует `invoice.create_date`, а бизнес-ожидание ближе к executed/paid/financial date. Решение: уточнить семантику и привести к `get_revenue_summary`: добавить `date_basis` (`create_date`, `invoice_date`, возможно `payment_create_date`/paid basis), дефолт выбрать под morning brief, вернуть `date_field`/warnings в output. — `done`
 - 172.6 `#5 get_debtors`: падает на большой базе до полезной пагинации. Проблема: tool сначала тянет всех ACTIVE clients через `paginate_all`, а `max_rows` срабатывает раньше, чем фильтр по отрицательному балансу. Решение: фильтровать `balance < 0` на стороне Vetmanager API, если поддерживается, и добавить фильтр по дате последнего визита клиента (`last_visit_date`); добавить параметры window/date filters и tests на server-side filter shape. — `done`
 - 172.7 `#9 get_report_ai_job`: job зависает в `queued`. Проблема: Report AI job больше 30 секунд остаётся `queued`, без причины/ошибки/updated_at. Решение: логировать и собирать такие данные: MCP metric/log для long-queued polls, safe output fields для age/status/update hints, operator query/runbook по stale in-progress jobs; upstream worker/cleanup diagnostics проверить отдельным research gate. — `done`
+
+## Этап 173. ChatGPT Apps OAuth-compatible MCP connector — `todo`
+
+Источник: пользовательский запрос 2026-06-18 — подключить текущий `vetmanager-mcp` к веб-агентам ChatGPT не через ручную вставку service bearer token, а через ChatGPT-compatible OAuth. Research: OpenAI Apps SDK docs (`Connect from ChatGPT`, `Authentication`, `Testing`) и Claude Opus plan review 2026-06-18. Подробное исследование и риски: `artifacts/stage173-chatgpt-oauth-research.md`.
+
+Цель: добавить OAuth 2.1 authorization-code + PKCE слой для ChatGPT Apps/Connectors поверх существующей account/bearer архитектуры, не ломая текущих MCP-клиентов (`Cursor`/`Claude`/`Codex`) и не меняя Vetmanager auth modes. ChatGPT должен получать свой OAuth access token через login/consent flow, а runtime должен мапить этот token в существующий `BearerAuthContext` (`account_id`, scoped access, bound `vetmanager_connection_id`).
+
+Ключевые решения:
+- Существующий service bearer contract (`Authorization: Bearer <service_token>`) оставить без изменений.
+- Для ChatGPT v1 использовать opaque DB-backed OAuth access/refresh tokens с hash-at-rest, distinct prefix и instant revoke; JWT/JWKS не вводить без отдельной необходимости.
+- OAuth grant bind-ить к конкретному `vetmanager_connection_id` на момент consent, чтобы смена active integration не переключала старый ChatGPT grant на другую клинику.
+- Dynamic Client Registration (DCR) считать обязательной частью v1; CIMD оставить follow-up после working DCR.
+- Refresh tokens обязательны: rotation + reuse detection; без них ChatGPT connector будет часто требовать re-link.
+- OAuth grant/token machinery делать через vetted library (например, Authlib), а custom code держать вокруг account/session/consent/storage binding.
+
+Основные риски:
+- Сломать существующие service bearer tokens, если runtime resolver начнёт иначе трактовать `Authorization`.
+- Дать ChatGPT слишком широкий доступ из-за рассинхрона OAuth scopes и `TOOL_REQUIRED_SCOPES`.
+- Не получить ChatGPT linking UI из-за неверных OAuth metadata, `securitySchemes`, `WWW-Authenticate` или path-suffixed protected-resource URL.
+- Создать cross-clinic data leak, если OAuth grant не bind-ится к конкретной Vetmanager connection.
+- Открыть новые unauthenticated attack surfaces (`/oauth/register`, `/oauth/authorize`, `/oauth/token`) без rate limits, exact redirect validation, PKCE S256, CSRF и cleanup.
+
+- 173.1 Создать PRD stage 173: подтвердить OpenAI Apps SDK auth requirements, DCR vs CIMD scope, opaque token decision, connection binding, refresh rotation, security risks, no-regression boundary для service bearer clients. — `todo`
+- 173.2 Metadata/discovery: добавить `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource` и path-suffixed `/.well-known/oauth-protected-resource/mcp`; проверить ingress/HTTPS routing и точный `resource_metadata` URL. — `todo`
+- 173.3 Storage + DCR: добавить миграции для `oauth_clients`, `oauth_grants`, `oauth_authorization_codes`, `oauth_access_tokens`, `oauth_refresh_tokens`; реализовать `POST /oauth/register` с exact redirect URI validation, TTL/cleanup, rate limits и DCR storage caps. — `todo`
+- 173.4 Authorization endpoint: реализовать `GET /oauth/authorize` через существующий account login/session, OAuth state passthrough, отдельный CSRF для local login/consent, consent screen, scope selection/defaults, bind к `connection_id`, single-use auth code с коротким TTL и PKCE `S256`. — `todo`
+- 173.5 Token endpoint: реализовать `POST /oauth/token` для authorization-code exchange и refresh grant; проверять `client_id`, `redirect_uri`, `resource`/audience, PKCE verifier; добавить refresh token rotation и reuse detection с revoke grant family. — `todo`
+- 173.6 Runtime resolver: добавить prefix-routed OAuth token path, который проверяет hash/expiry/revoke/audience/scopes/connection binding и возвращает тот же `BearerAuthContext`; существующий service bearer path покрыть regression tests. — `todo`
+- 173.7 MCP auth metadata/challenge: добавить per-tool `securitySchemes`/OAuth scopes, проверить поддержку текущей FastMCP версии; при missing/expired/revoked/insufficient scope отдавать корректный `401`/`WWW-Authenticate` и `_meta["mcp/www_authenticate"]` для ChatGPT linking UI. — `todo`
+- 173.8 Account UI: добавить блок `Connect ChatGPT`, список OAuth grants/sessions, revoke/disconnect; disconnect должен отзывать access + refresh tokens; не показывать и не требовать ручной service bearer token для ChatGPT. — `todo`
+- 173.9 Tests/checks: metadata variants, DCR success/abuse, exact redirect validation, PKCE negative paths, OAuth CSRF, token exchange, refresh rotation/reuse detection, revoked/expired token challenge, scope matrix, connection-binding stability after active integration changes, existing service bearer no-regression. — `todo`
+- 173.10 ChatGPT rollout: проверить в ChatGPT Developer Mode connector и API Playground (`https://vetmanager-mcp.vromanichev.ru/mcp`), golden prompts, auth re-link/revoke flows, mobile/client behavior; public submission оставить отдельным решением после private validation. — `todo`
