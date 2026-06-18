@@ -195,6 +195,53 @@ SEED_ISSUES: tuple[SeedIssue, ...] = (
         public_summary="Timesheet day queries must include overlapping night shifts.",
         workaround="Use overlap predicate for day schedules instead of strict containment.",
     ),
+    SeedIssue(
+        slug="report-ai-goods-good-id-preview",
+        title="[seed:report-ai-goods-good-id-preview] Report AI goods preview fails on good.id",
+        category="bug",
+        severity="medium",
+        priority=35,
+        related_tool="get_report_ai_job_data",
+        match_rules={
+            "version": 1,
+            "all": [
+                {"field": "related_tool", "op": "eq", "value": "get_report_ai_job_data"},
+                {"field": "error_code", "op": "eq", "value": "ToolError"},
+                {
+                    "field": "normalized_error_text",
+                    "op": "contains_any",
+                    "value": ["preview_failed", "preview failed"],
+                },
+                {
+                    "field": "normalized_error_text",
+                    "op": "contains_any",
+                    "value": [
+                        "good.id",
+                        "`good`.`id`",
+                        '"good"."id"',
+                        "good id",
+                        "goods good",
+                        "товар",
+                    ],
+                },
+            ],
+        },
+        agent_playbook=_playbook(
+            "Report AI goods preview can fail when generated SQL references a standalone good.id field.",
+            steps=[
+                "Read report_ai_prompt_helper before retrying.",
+                "Rephrase the Russian intent to request product code/article/title instead of standalone good.id.",
+                "Create a new Report AI job and poll it with get_report_ai_job.",
+            ],
+            do_not_do=[
+                "Do not ask Report AI to output a standalone good.id column.",
+                "Do not expose or edit raw SQL in MCP output.",
+            ],
+            tools=["create_report_ai_job", "get_report_ai_job"],
+        ),
+        public_summary="Report AI goods preview may fail when the generated query references good.id.",
+        workaround="Retry with an intent asking for product code/article/title instead of standalone good.id.",
+    ),
 )
 
 

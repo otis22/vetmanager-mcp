@@ -2,12 +2,19 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from exceptions import VetmanagerError
-from filters import eq as _filter_eq, in_ as _filter_in, like as _filter_like
+from filters import (
+    eq as _filter_eq,
+    gte as _filter_gte,
+    in_ as _filter_in,
+    like as _filter_like,
+    lt as _filter_lt,
+    lte as _filter_lte,
+)
 from resources.client_profile import fetch as _fetch_client_profile
 from service_metrics import instrument_call as _instrument_call
 from tools._inactive_helpers import fetch_inactive_clients_page
-from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete, paginate_all
-from validators import LimitParam, normalize_phone_digits
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
+from validators import LimitParam, normalize_phone_digits, parse_date_param
 from vetmanager_client import VetmanagerClient
 
 
@@ -211,23 +218,52 @@ def register(mcp: FastMCP) -> None:
     async def get_debtors(
         limit: LimitParam = 100,
         offset: int = 0,
+        last_visit_date_from: str = "",
+        last_visit_date_to: str = "",
     ) -> dict:
-        """List all ACTIVE clients who have a negative balance (debtors).
+        """List ACTIVE clients who have a negative balance (debtors).
 
-        Iterates through all active clients using pagination and returns only
-        those whose balance field is negative.  The result includes client name,
-        phone, and balance amount.
+        Uses server-side balance filtering and returns one stable page.  The
+        result includes client name, phone, balance amount, and metadata for
+        fetching the next page via offset.
 
         Args:
-            limit: Max clients to fetch per page (1–100, default 100).
+            limit: Max debtors to return (1–100, default 100).
             offset: Pagination offset (0–10000).
+            last_visit_date_from: Optional minimum client.last_visit_date.
+            last_visit_date_to: Optional maximum client.last_visit_date.
         """
-        clients, _ = await paginate_all(
+        resolved_last_visit_from = parse_date_param(last_visit_date_from)
+        resolved_last_visit_to = parse_date_param(last_visit_date_to)
+        if (
+            resolved_last_visit_from
+            and resolved_last_visit_to
+            and resolved_last_visit_from > resolved_last_visit_to
+        ):
+            raise ValueError("last_visit_date_from must be on or before last_visit_date_to")
+
+        combined_filters = [
+            _filter_eq("status", "ACTIVE"),
+            _filter_lt("balance", "0"),
+        ]
+        if resolved_last_visit_from:
+            combined_filters.append(_filter_gte("last_visit_date", resolved_last_visit_from))
+        if resolved_last_visit_to:
+            combined_filters.append(_filter_lte("last_visit_date", resolved_last_visit_to))
+        sort = [{"property": "id", "direction": "ASC"}]
+        response = await crud_list(
             "/rest/api/client",
-            filters=[_filter_eq("status", "ACTIVE")],
-            page_size=limit,
-            entity_key="client",
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=combined_filters,
         )
+        data = response.get("data", {}) if isinstance(response, dict) else {}
+        clients = data.get("client", []) if isinstance(data, dict) else []
+        try:
+            total_count = int(data.get("totalCount", 0)) if isinstance(data, dict) else 0
+        except (TypeError, ValueError):
+            total_count = 0
 
         debtors: list[dict] = []
         for c in clients:
@@ -247,13 +283,22 @@ def register(mcp: FastMCP) -> None:
                         "home_phone": c.get("home_phone", ""),
                         "balance": balance,
                         "status": c.get("status", ""),
+                        "last_visit_date": c.get("last_visit_date", ""),
                     }
                 )
 
+        returned_count = len(debtors)
         return {
             "success": True,
-            "debtors_count": len(debtors),
-            "total_active_clients_checked": len(clients),
+            "debtors_count": returned_count,
+            "returned_count": returned_count,
+            "total_count": total_count,
+            "total_active_clients_checked": total_count,
+            "limit": limit,
+            "offset": offset,
+            "server_side_balance_filter": True,
+            "applied_filters": [f.to_dict() for f in combined_filters],
+            "sort": sort,
             "debtors": debtors,
         }
 

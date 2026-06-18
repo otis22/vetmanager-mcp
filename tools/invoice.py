@@ -23,6 +23,7 @@ def register(mcp: FastMCP) -> None:
         "invoiced",
         "paid_by_executed_invoices",
     }
+    _AVERAGE_INVOICE_DATE_BASES = {"invoice_date", "create_date"}
 
     def _parse_money_filter(value: str, *, field_name: str) -> str:
         if value == "":
@@ -334,18 +335,31 @@ def register(mcp: FastMCP) -> None:
     async def get_average_invoice(
         date_from: str = "",
         date_to: str = "",
+        date_basis: str = "invoice_date",
     ) -> dict:
         """Calculate the average invoice (average check) for a given period.
 
         Fetches all invoices in the specified date range using pagination and
         computes the average, total, and count.  If no dates are provided the
-        last 365 days are used.
+        last 365 days are used. By default the period is based on executed
+        invoice_date, which matches financial-day reports. Use
+        date_basis="create_date" only for legacy record-created/audit
+        semantics.
 
         Args:
             date_from: Start date. Accepts YYYY-MM-DD or relative forms
                 (today, -30d, -1m, ...). Default: 1 year ago.
             date_to: End date. Same accepted formats. Default: today.
+            date_basis: 'invoice_date' for financial executed invoices
+                (default), or 'create_date' for legacy record-created
+                semantics without an automatic status filter.
         """
+        if date_basis not in _AVERAGE_INVOICE_DATE_BASES:
+            raise ValueError(
+                f"date_basis must be one of {sorted(_AVERAGE_INVOICE_DATE_BASES)}, "
+                f"got '{date_basis}'"
+            )
+
         today = date.today()
         if not date_to:
             date_to = today.isoformat()
@@ -355,11 +369,25 @@ def register(mcp: FastMCP) -> None:
             date_from = (today - timedelta(days=365)).isoformat()
         else:
             date_from = parse_date_param(date_from)
+        if date_from and date_to and date_from > date_to:
+            raise ValueError("date_from must be on or before date_to")
 
+        date_field = date_basis
         combined_filters = [
-            _filter_gte("create_date", date_from),
-            _filter_lte("create_date", date_to),
+            _filter_gte(date_field, _day_start(date_from)),
+            _filter_lt(date_field, _next_day_start(date_to)),
         ]
+        status = ""
+        warnings: list[str] = []
+        if date_basis == "invoice_date":
+            status = "exec"
+            combined_filters.append(_filter_eq("status", status))
+        else:
+            warnings.append(
+                "date_basis=create_date uses legacy record-created semantics "
+                "and does not automatically filter invoice status. For financial "
+                "average check, use date_basis=invoice_date."
+            )
 
         invoices, _ = await paginate_all(
             "/rest/api/invoice",
@@ -386,9 +414,16 @@ def register(mcp: FastMCP) -> None:
             "success": True,
             "date_from": date_from,
             "date_to": date_to,
+            "date_basis": date_basis,
+            "date_field": date_field,
+            "amount_field": "amount",
+            "status": status,
             "invoices_with_amount": total_count,
             "total_revenue": round(total_sum, 2),
+            "total_amount": f"{total_sum:.2f}",
             "average_invoice": average,
+            "applied_filters": [f.to_dict() for f in combined_filters],
+            "warnings": warnings,
         }
 
     @mcp.tool

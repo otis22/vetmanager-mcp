@@ -1,14 +1,17 @@
 import json
 import asyncio
+import logging
 
 import httpx
 import pytest
 import respx
 from fastmcp.exceptions import ToolError
 
+import service_metrics
 from server import mcp
 from tests.runtime_factories import patch_runtime_credentials
 from token_scopes import SCOPE_ANALYTICS_READ, SCOPE_ANALYTICS_WRITE, SCOPE_REPORT_AI_WRITE
+import tools.report_ai as report_ai
 import vetmanager_client
 
 
@@ -54,6 +57,8 @@ async def test_report_ai_prompt_helper_registered_and_mentions_data_boundary():
     assert "saved" in body
     assert "existing_report_matched" in body
     assert "Do not write SQL" in body
+    assert "good.id" in body
+    assert "код/артикул/наименование товара" in body
 
 
 @pytest.mark.asyncio
@@ -139,6 +144,66 @@ async def test_get_report_ai_job_exposes_candidates_for_confirmation():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_get_report_ai_job_adds_goods_good_id_workaround_for_preview_failed():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/report-ai-job/22").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "job": {
+                        "id": 22,
+                        "status": "failed",
+                        "error_code": "PREVIEW_FAILED",
+                        "error_message_safe": "Unknown column 'good.id' in field list",
+                    }
+                },
+            },
+        )
+    )
+
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_report_ai_job", {"job_id": 22})
+
+    assert route.call_count == 1
+    job = _structured(result)["data"]["job"]
+    assert job["mcp_workaround"]["code"] == "report_ai_goods_good_id_preview_failed"
+    assert job["mcp_workaround"]["safe_to_retry"] is True
+    assert "good.id" in job["mcp_workaround"]["do_not_do"][0]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_report_ai_job_does_not_annotate_unrelated_preview_failed():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/report-ai-job/22").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "job": {
+                        "id": 22,
+                        "status": "failed",
+                        "error_code": "PREVIEW_FAILED",
+                        "error_message_safe": "Renderer timeout",
+                    }
+                },
+            },
+        )
+    )
+
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_report_ai_job", {"job_id": 22})
+
+    assert "mcp_workaround" not in _structured(result)["data"]["job"]
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_get_report_ai_job_status_poll_bypasses_get_cache():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/report-ai-job/22").mock(
@@ -170,6 +235,174 @@ async def test_get_report_ai_job_status_poll_bypasses_get_cache():
     assert route.call_count == 2
     assert _structured(first)["data"]["job"]["status"] == "queued"
     assert _structured(second)["data"]["job"]["status"] == "ready_to_save"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_report_ai_job_adds_long_queued_diagnostics_metric_and_log(
+    monkeypatch, caplog
+):
+    report_ai._reset_report_ai_queue_observations()
+    service_metrics.reset_service_metrics()
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/report-ai-job/77").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "job": {
+                        "id": 77,
+                        "status": "queued",
+                        "created_at": "2026-06-18 12:00:00",
+                        "updated_at": "2026-06-18 12:00:05",
+                    }
+                },
+            },
+        )
+    )
+    observed_times = iter([100.0, 131.0])
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: next(observed_times))
+
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    with headers_patch, runtime_patch, caplog.at_level(logging.WARNING, logger="vetmanager.runtime"):
+        first = await mcp.call_tool("get_report_ai_job", {"job_id": 77})
+        second = await mcp.call_tool("get_report_ai_job", {"job_id": 77})
+
+    assert route.call_count == 2
+    assert "mcp_queue_diagnostics" not in _structured(first)["data"]["job"]
+    diagnostics = _structured(second)["data"]["job"]["mcp_queue_diagnostics"]
+    assert diagnostics["code"] == "report_ai_job_long_queued"
+    assert diagnostics["observed_queued_age_seconds"] == 31
+    assert diagnostics["threshold_seconds"] == 30
+    assert diagnostics["status"] == "queued"
+    assert diagnostics["created_at"] == "2026-06-18 12:00:00"
+    assert diagnostics["updated_at"] == "2026-06-18 12:00:05"
+
+    snapshot = service_metrics.snapshot_service_metrics()
+    assert snapshot["report_ai_long_queued_polls_total"] == 1
+    assert "vetmanager_report_ai_long_queued_polls_total 1" in (
+        service_metrics.render_prometheus_metrics()
+    )
+    records = [
+        record
+        for record in caplog.records
+        if getattr(record, "event_name", "") == "report_ai_job_long_queued"
+    ]
+    assert len(records) == 1
+    record = records[0]
+    assert record.status == "queued"
+    assert record.threshold_seconds == 30
+    assert record.observed_queued_age_seconds == 31
+    assert not hasattr(record, "intent_text")
+    assert not hasattr(record, "domain")
+    assert not hasattr(record, "sql")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_report_ai_job_fresh_queued_has_no_diagnostics_or_metric(monkeypatch):
+    report_ai._reset_report_ai_queue_observations()
+    service_metrics.reset_service_metrics()
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/report-ai-job/78").mock(
+        return_value=httpx.Response(
+            200,
+            json={"success": True, "data": {"job": {"id": 78, "status": "queued"}}},
+        )
+    )
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: 200.0)
+
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_report_ai_job", {"job_id": 78})
+
+    assert "mcp_queue_diagnostics" not in _structured(result)["data"]["job"]
+    assert service_metrics.snapshot_service_metrics()["report_ai_long_queued_polls_total"] == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_report_ai_job_queue_observation_is_tenant_scoped(monkeypatch):
+    report_ai._reset_report_ai_queue_observations()
+    service_metrics.reset_service_metrics()
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/report-ai-job/77").mock(
+        return_value=httpx.Response(
+            200,
+            json={"success": True, "data": {"job": {"id": 77, "status": "queued"}}},
+        )
+    )
+    observed_times = iter([100.0, 131.0])
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: next(observed_times))
+
+    tenant_a_headers, tenant_a_runtime = bearer_runtime_patch(
+        scopes=(SCOPE_ANALYTICS_READ,),
+    )
+    tenant_b_headers, tenant_b_runtime = patch_runtime_credentials(
+        DOMAIN,
+        API_KEY,
+        bearer_token="mock-token-b",
+        account_id=2,
+        bearer_token_id=2,
+        connection_id=2,
+        scopes=(SCOPE_ANALYTICS_READ,),
+    )
+    with tenant_a_headers, tenant_a_runtime:
+        await mcp.call_tool("get_report_ai_job", {"job_id": 77})
+    with tenant_b_headers, tenant_b_runtime:
+        tenant_b_first = await mcp.call_tool("get_report_ai_job", {"job_id": 77})
+
+    assert route.call_count == 2
+    assert "mcp_queue_diagnostics" not in _structured(tenant_b_first)["data"]["job"]
+    assert service_metrics.snapshot_service_metrics()["report_ai_long_queued_polls_total"] == 0
+    assert report_ai._report_ai_queue_observation_count() == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_report_ai_job_clears_queued_observation_after_status_transition(monkeypatch):
+    report_ai._reset_report_ai_queue_observations()
+    service_metrics.reset_service_metrics()
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/report-ai-job/79").mock(
+        side_effect=[
+            httpx.Response(200, json={"success": True, "data": {"job": {"id": 79, "status": "queued"}}}),
+            httpx.Response(200, json={"success": True, "data": {"job": {"id": 79, "status": "ready_to_save"}}}),
+            httpx.Response(200, json={"success": True, "data": {"job": {"id": 79, "status": "queued"}}}),
+        ]
+    )
+    observed_times = iter([10.0, 45.0, 100.0])
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: next(observed_times))
+
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("get_report_ai_job", {"job_id": 79})
+        await mcp.call_tool("get_report_ai_job", {"job_id": 79})
+        result = await mcp.call_tool("get_report_ai_job", {"job_id": 79})
+
+    assert route.call_count == 3
+    assert "mcp_queue_diagnostics" not in _structured(result)["data"]["job"]
+    assert service_metrics.snapshot_service_metrics()["report_ai_long_queued_polls_total"] == 0
+
+
+def test_report_ai_queue_observations_are_bounded_and_ttl_evicted():
+    report_ai._reset_report_ai_queue_observations()
+    report_ai._observe_report_ai_queue({"id": 1, "status": "queued"}, now=0.0)
+    report_ai._observe_report_ai_queue(
+        {"id": 2, "status": "queued"},
+        now=report_ai.REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS + 1.0,
+    )
+    assert report_ai._report_ai_queue_observation_count() == 1
+
+    report_ai._reset_report_ai_queue_observations()
+    for job_id in range(report_ai.REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES + 2):
+        report_ai._observe_report_ai_queue({"id": job_id, "status": "queued"}, now=0.0)
+
+    assert (
+        report_ai._report_ai_queue_observation_count()
+        == report_ai.REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES
+    )
 
 
 @pytest.mark.asyncio

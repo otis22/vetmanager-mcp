@@ -121,6 +121,64 @@ async def test_seeded_issue_matches_agent_playbook(
 
 
 @pytest.mark.asyncio
+async def test_seeded_report_ai_goods_good_id_issue_matches_data_error(
+    sqlite_session_factory_builder,
+    tmp_path: Path,
+    monkeypatch,
+    feedback_pepper,
+) -> None:
+    import scripts.seed_known_issues as seed
+
+    session_factory = await sqlite_session_factory_builder(tmp_path / "report-ai-good-id.db")
+    monkeypatch.setattr(seed, "get_session_factory", lambda: session_factory)
+    await seed.seed_known_issues(apply=True)
+
+    async with session_factory() as session:
+        match = await feedback.find_known_issue_match(
+            session,
+            feedback.FeedbackIncident(
+                related_tool="get_report_ai_job_data",
+                error_code="ToolError",
+                error_excerpt="HTTP 500 PREVIEW_FAILED — Unknown column 'good.id' in field list",
+            ),
+        )
+
+    assert match is not None
+    assert match.title.startswith("[seed:report-ai-goods-good-id-preview] ")
+    assert match.playbook["safe_to_retry"] is True
+    assert match.playbook["recommended_tool_sequence"] == [
+        "create_report_ai_job",
+        "get_report_ai_job",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_seeded_report_ai_goods_good_id_issue_ignores_generic_preview_failed(
+    sqlite_session_factory_builder,
+    tmp_path: Path,
+    monkeypatch,
+    feedback_pepper,
+) -> None:
+    import scripts.seed_known_issues as seed
+
+    session_factory = await sqlite_session_factory_builder(tmp_path / "report-ai-generic-preview.db")
+    monkeypatch.setattr(seed, "get_session_factory", lambda: session_factory)
+    await seed.seed_known_issues(apply=True)
+
+    async with session_factory() as session:
+        match = await feedback.find_known_issue_match(
+            session,
+            feedback.FeedbackIncident(
+                related_tool="get_report_ai_job_data",
+                error_code="ToolError",
+                error_excerpt="HTTP 500 PREVIEW_FAILED — Renderer timeout",
+            ),
+        )
+
+    assert match is None
+
+
+@pytest.mark.asyncio
 async def test_diagnostic_requires_pepper_before_apply(
     sqlite_session_factory_builder,
     tmp_path: Path,

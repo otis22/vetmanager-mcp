@@ -49,8 +49,11 @@ def _reset_service_metrics_state():
     autouse fixture makes it impossible to forget.
     """
     from service_metrics import reset_service_metrics
+    from tools.report_ai import _reset_report_ai_queue_observations
+    _reset_report_ai_queue_observations()
     reset_service_metrics()
     yield
+    _reset_report_ai_queue_observations()
     reset_service_metrics()
 
 

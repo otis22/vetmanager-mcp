@@ -1,14 +1,23 @@
 """Report AI job tools for Vetmanager report constructor workflows."""
 
 import json
+import time
+from collections import OrderedDict
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from exceptions import AuthError, VetmanagerError
+from observability_logging import RUNTIME_LOGGER
+from runtime_auth import get_current_runtime_credentials
+from service_metrics import record_report_ai_long_queued_poll
 from vetmanager_client import VetmanagerClient
 
 
 INTENT_MAX_LENGTH = 1000
+REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS = 30
+REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS = 3600
+REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES = 4096
+REPORT_AI_GOODS_GOOD_ID_WORKAROUND_CODE = "report_ai_goods_good_id_preview_failed"
 _GENERIC_REPORT_TITLES = {
     "report",
     "отчет",
@@ -19,6 +28,181 @@ _GENERIC_REPORT_TITLES = {
     "test",
     "тест",
 }
+_GOODS_GOOD_ID_MARKERS = (
+    "good.id",
+    "`good`.`id`",
+    '"good"."id"',
+    "unknown column",
+    "unknown field",
+    "неизвестная колонка",
+    "неизвестное поле",
+    "неизвестный столбец",
+)
+_ReportAiQueueObservationKey = tuple[int | None, int | None, int]
+_REPORT_AI_QUEUE_OBSERVATIONS: OrderedDict[
+    _ReportAiQueueObservationKey, dict[str, float]
+] = OrderedDict()
+
+
+def _monotonic_seconds() -> float:
+    return time.monotonic()
+
+
+def _reset_report_ai_queue_observations() -> None:
+    _REPORT_AI_QUEUE_OBSERVATIONS.clear()
+
+
+def _report_ai_queue_observation_count() -> int:
+    return len(_REPORT_AI_QUEUE_OBSERVATIONS)
+
+
+def _cleanup_report_ai_queue_observations(now: float) -> None:
+    expired_job_ids = [
+        job_id
+        for job_id, observation in _REPORT_AI_QUEUE_OBSERVATIONS.items()
+        if now - observation["last_seen"] > REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS
+    ]
+    for job_id in expired_job_ids:
+        _REPORT_AI_QUEUE_OBSERVATIONS.pop(job_id, None)
+    while len(_REPORT_AI_QUEUE_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
+        _REPORT_AI_QUEUE_OBSERVATIONS.popitem(last=False)
+
+
+def _report_ai_queue_observation_key(job: dict) -> _ReportAiQueueObservationKey | None:
+    job_id = job.get("id")
+    try:
+        normalized_job_id = int(job_id)
+    except (TypeError, ValueError):
+        return None
+    credentials = get_current_runtime_credentials()
+    return (
+        credentials.account_id if credentials is not None else None,
+        credentials.connection_id if credentials is not None else None,
+        normalized_job_id,
+    )
+
+
+def _observe_report_ai_queue(job: dict, *, now: float | None = None) -> int | None:
+    observation_key = _report_ai_queue_observation_key(job)
+
+    current_time = _monotonic_seconds() if now is None else now
+    _cleanup_report_ai_queue_observations(current_time)
+
+    if job.get("status") != "queued":
+        if observation_key is not None:
+            _REPORT_AI_QUEUE_OBSERVATIONS.pop(observation_key, None)
+        return None
+
+    if observation_key is None:
+        return None
+
+    observation = _REPORT_AI_QUEUE_OBSERVATIONS.get(observation_key)
+    if observation is None:
+        observation = {"first_seen": current_time, "last_seen": current_time}
+        _REPORT_AI_QUEUE_OBSERVATIONS[observation_key] = observation
+    else:
+        observation["last_seen"] = current_time
+        _REPORT_AI_QUEUE_OBSERVATIONS.move_to_end(observation_key)
+
+    _cleanup_report_ai_queue_observations(current_time)
+    return max(0, int(current_time - observation["first_seen"]))
+
+
+def _queued_age_bucket(age_seconds: int) -> str:
+    if age_seconds < 60:
+        return "30s_1m"
+    if age_seconds < 300:
+        return "1m_5m"
+    if age_seconds < 900:
+        return "5m_15m"
+    return "15m_plus"
+
+
+def _report_ai_goods_good_id_workaround() -> dict:
+    return {
+        "code": REPORT_AI_GOODS_GOOD_ID_WORKAROUND_CODE,
+        "summary": (
+            "Report AI preview failed on a goods report likely because the generated "
+            "query referenced an unavailable good.id field/expression."
+        ),
+        "steps": [
+            "Read report_ai_prompt_helper before retrying.",
+            "Rephrase the Russian intent to request product code/article/title instead of a standalone good.id column.",
+            "Create a new Report AI job and poll it with get_report_ai_job.",
+        ],
+        "do_not_do": [
+            "Do not ask Report AI to output a standalone good.id column.",
+            "Do not expose or edit raw SQL in MCP output.",
+        ],
+        "safe_to_retry": True,
+    }
+
+
+def _looks_like_goods_good_id_preview_failure(job: dict) -> bool:
+    if job.get("status") != "failed" or job.get("error_code") != "PREVIEW_FAILED":
+        return False
+    message = str(job.get("error_message_safe") or "").lower()
+    if not message:
+        return False
+    if any(marker in message for marker in ("good.id", "`good`.`id`", '"good"."id"')):
+        return True
+    has_unknown_column_marker = any(marker in message for marker in _GOODS_GOOD_ID_MARKERS[3:])
+    return has_unknown_column_marker and "good" in message and "id" in message
+
+
+def _annotate_report_ai_workarounds(payload: dict) -> dict:
+    data = payload.get("data")
+    job = data.get("job") if isinstance(data, dict) else payload.get("job")
+    if not isinstance(job, dict) or not _looks_like_goods_good_id_preview_failure(job):
+        return payload
+    job.setdefault("mcp_workaround", _report_ai_goods_good_id_workaround())
+    return payload
+
+
+def _annotate_report_ai_queue_diagnostics(payload: dict) -> dict:
+    data = payload.get("data")
+    job = data.get("job") if isinstance(data, dict) else payload.get("job")
+    if not isinstance(job, dict):
+        return payload
+
+    observed_age_seconds = _observe_report_ai_queue(job)
+    if (
+        observed_age_seconds is None
+        or observed_age_seconds < REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS
+    ):
+        return payload
+
+    diagnostics = {
+        "code": "report_ai_job_long_queued",
+        "observed_queued_age_seconds": observed_age_seconds,
+        "threshold_seconds": REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS,
+        "status": "queued",
+        "operator_hint": (
+            "Continue bounded polling. If the job remains queued, inspect Report AI "
+            "worker/stale in-progress diagnostics using the MCP operator runbook."
+        ),
+    }
+    for field_name in ("created_at", "updated_at"):
+        if job.get(field_name):
+            diagnostics[field_name] = job[field_name]
+
+    job.setdefault("mcp_queue_diagnostics", diagnostics)
+    record_report_ai_long_queued_poll()
+    RUNTIME_LOGGER.warning(
+        "report_ai_job_long_queued",
+        extra={
+            "event_name": "report_ai_job_long_queued",
+            "status": "queued",
+            "threshold_seconds": REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS,
+            "observed_queued_age_seconds": observed_age_seconds,
+            "observed_queued_age_bucket": _queued_age_bucket(observed_age_seconds),
+        },
+    )
+    return payload
+
+
+def _annotate_report_ai_job_payload(payload: dict) -> dict:
+    return _annotate_report_ai_queue_diagnostics(_annotate_report_ai_workarounds(payload))
 
 
 def _validate_intent_text(intent_text: str) -> str:
@@ -191,8 +375,11 @@ def register(mcp: FastMCP) -> None:
                 needs_confirmation, saved, failed, or rejected. For
                 needs_confirmation, the returned job.candidates contain the
                 report_id values accepted by confirm_report_ai_job_candidate.
+                If MCP observes the same job queued for 30+ seconds, the safe
+                job payload includes mcp_queue_diagnostics with operator hints.
         """
-        return await _call_vm("GET", f"/rest/api/report-ai-job/{job_id}")
+        payload = await _call_vm("GET", f"/rest/api/report-ai-job/{job_id}")
+        return _annotate_report_ai_job_payload(payload)
 
     @mcp.tool
     async def confirm_report_ai_job_candidate(job_id: int, report_id: int) -> dict:

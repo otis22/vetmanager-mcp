@@ -619,10 +619,10 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "не хватает инструмента, неверное описание."
     ),
     "get_debtors": (
-        "Find ACTIVE debtors among client / owner records and return those with a "
-        "negative balance. Use when the user asks for debtors, balances due, "
-        "owing clients, or clients in debt. Domain synonyms: клиент, владелец, "
-        "хозяин, контакт, клиентская база, client."
+        "Find one stable paginated page of ACTIVE debtors using server-side "
+        "negative-balance filtering. Use limit/offset for more pages and "
+        "last_visit_date_from/to to narrow large debtor lists. Domain synonyms: "
+        "клиент, владелец, хозяин, контакт, клиентская база, client."
     ),
     "get_client_profile": (
         "Build a full client / owner profile in one call: client data, recent "
@@ -659,10 +659,11 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "карта, история вакцинаций, vaccination card, vaccine record."
     ),
     "get_average_invoice": (
-        "Calculate the average invoice / bill amount for the requested period. Use "
-        "when the user asks for average check, average bill, or average revenue per "
-        "invoice. Domain synonyms: счёт, счёт-фактура, чек, квитанция, документ "
-        "оплаты, invoice, bill."
+        "Calculate the average invoice / bill amount for the requested period. "
+        "Defaults to date_basis='invoice_date' and executed invoices for financial "
+        "average check; use date_basis='create_date' only for legacy record-created "
+        "audit semantics. Domain synonyms: счёт, счёт-фактура, чек, квитанция, "
+        "документ оплаты, invoice, bill."
     ),
     "get_revenue_summary": (
         "Calculate authoritative revenue totals for a date range using executed "
@@ -763,7 +764,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "Read safe status and recognized structure for a Vetmanager Report AI job. "
         "Use for polling queued/recognizing/building_preview jobs and for checking "
         "ready_to_save, existing_report_matched, needs_confirmation, saved, failed, "
-        "or rejected states. It does not expose raw SQL. Domain synonyms: отчёт, "
+        "or rejected states. If MCP observes a job queued for 30+ seconds, the "
+        "job includes mcp_queue_diagnostics with safe operator hints. It does "
+        "not expose raw SQL. Domain synonyms: отчёт, "
         "отчет, ИИ отчёт, AI report, конструктор отчётов, аналитика, report ai."
     ),
     "confirm_report_ai_job_candidate": (

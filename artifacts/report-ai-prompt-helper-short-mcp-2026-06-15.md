@@ -51,6 +51,12 @@ If the user already gave a precise criterion, do not ask again. Example: "client
 - Pets/patients: pets.
 - Doctors/employees: active users.
 
+## Goods report workaround
+
+For goods/product reports, ask for business columns such as product code, SKU/article, barcode when relevant, product title/name, group, quantity, revenue, cost, margin, and period grouping.
+Do not ask Report AI to output a standalone `good.id` column. If an identifier is needed for disambiguation, ask for "код/артикул/наименование товара" in Russian rather than `good.id`.
+For goods sold through invoices, describe the business relation as "позиции счёта и связанные товары" without writing SQL.
+
 ## Output expected from the helper
 
 Return one of:

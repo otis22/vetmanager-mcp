@@ -8376,3 +8376,231 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь попросил выполнить `172.2` по workflow.
+
+## Этап 172.3. Report AI intent_text limit — 2026-06-18
+
+### Что делали
+
+Проверяли production feedback `#8`: можно ли поднять MCP limit `create_report_ai_job(intent_text)` с 1000 до 64 000 символов.
+
+### Что сделано
+
+- Создан PRD `PRD/этап-172.3-report-ai-intent-limit.md`.
+- Проверен upstream код:
+  - `JobService::INTENT_MAX_LENGTH = 1000`;
+  - `ReportAiJobsController::actionCreate()` не имеет отдельного max, но вызывает `JobService::create()`;
+  - migration `report_ai_jobs.intent_text TEXT NOT NULL`, storage не блокирует 64 000.
+- Real API probe на `devtr6` через проектный `VetmanagerClient` подтвердил HTTP 400 `VALIDATION_ERROR` на 1001 символ.
+- Roadmap `172.3` переведён в `stop`.
+
+### Решения и обоснования
+
+- MCP `INTENT_MAX_LENGTH` оставлен `1000`: это максимальное подтверждённое значение текущего upstream.
+- MCP-only raise до 64 000 не принят, потому что upstream всё равно отвергнет запрос; пользователь получит позднюю upstream-ошибку вместо быстрой client-side валидации.
+- Корневой fix требует upstream изменения `JobService::INTENT_MAX_LENGTH` и отдельной проверки deployed contour; это вне scope `vetmanager-mcp`.
+
+### Проверки 172.3
+
+- Storage/source inspection: upstream migration uses `TEXT NOT NULL` for `report_ai_jobs.intent_text`.
+- Real API probe: `POST /rest/api/report-ai-job` с `intent_text` длиной 1001 вернул HTTP 400 `VALIDATION_ERROR — intent_text длиннее 1000 символов`.
+- PRD decision review:
+  - Spark read-only hit the known `bwrap` sandbox/runtime issue; documented review-only fallback `gpt-5.3-codex-spark -s danger-full-access` returned `[]`.
+  - Claude Opus review returned `[]`; noted non-blocking contour inference gap, but agreed that keeping MCP at 1000 is the safe conservative choice.
+
+### Проблемы
+
+- Roadmap target 64 000 заблокирован upstream request validation на текущем deployed contour.
+
+### Обратная связь
+
+Пользователь попросил выполнить весь Stage 172 до конца; после фиксации blocker продолжаем к `172.4`.
+
+## Этап 172.4. Report AI goods good.id workaround — 2026-06-18
+
+### Что делали
+
+Закрывали production feedback `#7`: Report AI goods report падал на preview из-за `PREVIEW_FAILED` с `good.id`.
+
+### Что сделано
+
+- Создан PRD `PRD/этап-172.4-report-ai-good-id-workaround.md`.
+- `report_ai_prompt_helper` дополнен goods workaround: просить код/артикул/наименование товара вместо standalone `good.id`.
+- `get_report_ai_job` теперь добавляет safe `job.mcp_workaround` для `failed` + `PREVIEW_FAILED`, если `error_message_safe` содержит goods/`good.id`/unknown-column markers.
+- `scripts/seed_known_issues.py` дополнен seed row `[seed:report-ai-goods-good-id-preview]` для real ToolError path `get_report_ai_job_data`.
+- Roadmap `172.4` marked `done`.
+
+### Решения и обоснования
+
+- Принята Claude PRD-review правка: generic known-issue injection не сработает на успешном `get_report_ai_job` с terminal `failed`, поэтому poll path получает явную payload annotation.
+- Seed привязан к `get_report_ai_job_data`, потому что именно `/data` возвращает upstream HTTP 500 `PREVIEW_FAILED`, который превращается в MCP `ToolError` и проходит через `augment_tool_error`.
+- Annotation не добавляется по одному `PREVIEW_FAILED`; нужен goods marker, иначе риск ложной подсказки для unrelated preview failures.
+- MCP не переписывает SQL и не раскрывает raw SQL; workaround только просит переформулировать business intent.
+
+### PRD-review 172.4
+
+- Spark read-only hit the known `bwrap` sandbox/runtime issue; documented review-only fallback `gpt-5.3-codex-spark -s danger-full-access` returned `[]`.
+- Claude Opus found two accepted blockers in the initial PRD:
+  - verify safe failed-job payload fields before relying on `error_code`/`error_message_safe`;
+  - do not seed `get_report_ai_job` as an exception path because failed poll returns HTTP 200.
+- PRD updated with verified upstream `ReportAiJob::toSafeArray()` facts and seed retargeted to `get_report_ai_job_data`.
+- Code/diff review:
+  - Spark review of the Stage 172.4 scoped diff returned `[]`.
+  - Claude Opus review returned `[]`; non-blocking note about too-broad seed matching was accepted and fixed by requiring `preview_failed` plus a goods marker.
+
+### Проверки 172.4
+
+- Targeted run before seed narrowing: `docker compose --profile test run --rm test pytest tests/test_stage170_report_ai_tools.py tests/test_stage157_feedback_kb_seed.py -q` — `30 passed`.
+- Targeted rerun after seed narrowing: same command — `31 passed`.
+
+### Проблемы
+
+- Root cause remains upstream Report AI schema/prompt mapping; MCP only adds deterministic workaround and guidance.
+
+### Обратная связь
+
+Пользователь попросил выполнить весь Stage 172 до конца.
+
+## Этап 172.6. get_debtors server-side filters — 2026-06-18
+
+### Что делали
+
+Закрывали production feedback `#5`: `get_debtors` падал на больших базах, потому что сначала загружал всех ACTIVE клиентов и только потом фильтровал `balance < 0`.
+
+### Что сделано
+
+- Создан PRD `PRD/этап-172.6-debtors-server-side-filters.md`.
+- `get_debtors` переведён с broad `paginate_all` на single page `/rest/api/client`.
+- Request теперь всегда отправляет server-side filters `status=ACTIVE` и `balance < 0`.
+- Добавлены optional `last_visit_date_from` / `last_visit_date_to`.
+- Добавлен deterministic sort `id ASC`.
+- Output дополнен `returned_count`, `total_count`, `limit`, `offset`, `applied_filters`, `sort`, `server_side_balance_filter`.
+- Совместимые поля `success`, `debtors_count`, `debtors`, `total_active_clients_checked` сохранены; `total_active_clients_checked` теперь compatibility alias для `total_count` server-side filtered debtors.
+- `tool_descriptions.py` обновлён под page-based debtors behavior.
+- Roadmap `172.6` marked `done`.
+
+### Решения и обоснования
+
+- `limit`/`offset` теперь являются реальной страницей результата, а не page size для полного scan; это deliberate fix для больших баз.
+- Defensive local `balance < 0` post-filter оставлен на странице, чтобы не вернуть positive balance, если upstream когда-либо проигнорирует filter.
+- Spark PRD-review нашёл два blocker-а: нужен deterministic sort для offset pagination и нужно явно сохранить/переописать legacy count fields. Оба приняты и внесены в PRD/реализацию.
+
+### PRD-review 172.6
+
+- Spark read-only hit the known `bwrap` sandbox/runtime issue; documented review-only fallback `gpt-5.3-codex-spark -s danger-full-access` returned two accepted blockers: deterministic sort and legacy count compatibility.
+- Claude Opus PRD-review returned `[]` after those fixes.
+- Code/diff review:
+  - Spark review of the Stage 172.6 scoped implementation returned `[]`.
+  - Claude Opus review returned `[]`; non-blocking note about date-only `last_visit_date_to <=` matching existing inactive-client convention was left out of scope.
+
+### Проверки 172.6
+
+- Targeted run: `docker compose --profile test run --rm test pytest tests/test_stage172_debtors_filters.py tests/test_stage130_depersonalization.py::test_depersonalized_get_debtors_redacts_real_phone_fields -q` — `4 passed`.
+
+### Проблемы
+
+- `total_active_clients_checked` kept for compatibility but no longer means a full active-client scan; response metadata documents the bounded server-side filtered query via `total_count`/`returned_count`/`server_side_balance_filter`.
+
+### Обратная связь
+
+Пользователь попросил выполнить весь Stage 172 до конца.
+
+## Этап 172.5. get_average_invoice date_basis — 2026-06-18
+
+### Что делали
+
+Закрывали production feedback `#6`: `get_average_invoice` возвращал нули за день с финансовой выручкой, потому что фильтровал `invoice.create_date`, а не финансовую дату счёта.
+
+### Что сделано
+
+- Создан PRD `PRD/этап-172.5-average-invoice-date-basis.md`.
+- `get_average_invoice` получил `date_basis`:
+  - default `invoice_date` — half-open day window + `status="exec"`;
+  - explicit `create_date` — legacy/audit fallback без автоматического status filter.
+- Output дополнен `date_basis`, `date_field`, `amount_field`, `status`, `total_amount`, `applied_filters`, `warnings`.
+- Совместимые поля `invoices_with_amount`, `total_revenue`, `average_invoice` сохранены.
+- `tool_descriptions.py` обновлён: агенту явно объяснён default `invoice_date` и fallback `create_date`.
+- Roadmap `172.5` marked `done`.
+
+### Решения и обоснования
+
+- Default `invoice_date` выбран для morning brief/финансового дня, чтобы совпадать с `get_revenue_summary(mode="invoiced")` и `get_invoices(invoice_date_from/to)`.
+- Spark PRD-review нашёл blocker: `create_date` fallback нельзя одновременно называть legacy/audit и принудительно фильтровать `status="exec"`. Принято: `create_date` сохраняет old no-status semantics.
+- Для обоих date basis используется half-open window, чтобы не терять записи с временем в конце дня.
+
+### PRD-review 172.5
+
+- Spark read-only hit the known `bwrap` sandbox/runtime issue; documented review-only fallback `gpt-5.3-codex-spark -s danger-full-access` returned one accepted blocker about `create_date` legacy status semantics.
+- Claude Opus PRD-review returned `[]` after the Spark finding fix.
+- Code/diff review:
+  - Spark review of the Stage 172.5 scoped diff returned `[]`.
+  - Claude Opus review returned `[]`; non-blocking notes about legacy amount fallback/float arithmetic were left out of scope.
+
+### Проверки 172.5
+
+- Targeted run: `docker compose --profile test run --rm test pytest tests/test_revenue_summary.py tests/test_ergonomic_filters.py::test_get_invoices_invoice_date_uses_half_open_day_window -q` — `13 passed`.
+
+### Проблемы
+
+- Existing `get_invoices(date_from/date_to)` still has its historical `create_date <= date_to` behavior; this stage changes only `get_average_invoice`.
+
+### Обратная связь
+
+Пользователь попросил выполнить весь Stage 172 до конца.
+
+## Этап 172.7. Report AI queued diagnostics — 2026-06-18
+
+### Что делали
+
+Закрывали production feedback `#9`: `get_report_ai_job` показывал зависание Report AI job в `queued`, но MCP не давал отдельного safe diagnostic signal для оператора и агента.
+
+### Что сделано
+
+- Создан PRD `PRD/этап-172.7-report-ai-queued-diagnostics.md`.
+- В `get_report_ai_job` добавлен safe `mcp_queue_diagnostics`, когда MCP process наблюдает job в `queued` не менее 30 monotonic seconds.
+- Добавлен bounded process-local observation state keyed by `(account_id, connection_id, job_id)`: max 4096 entries, TTL 1 hour, cleanup on access, transition cleanup for non-queued statuses.
+- Добавлена scalar metric `report_ai_long_queued_polls_total` в `service_metrics.py`, snapshot и Prometheus render как `vetmanager_report_ai_long_queued_polls_total`.
+- Добавлен safe runtime warning `event_name=report_ai_job_long_queued` без `job_id`, domain, intent, raw SQL или клиентских данных.
+- Обновлено описание `get_report_ai_job` в `tool_descriptions.py`.
+- Добавлен runbook `artifacts/report-ai-queued-diagnostics-runbook.md`.
+- Тестовый autouse fixture теперь сбрасывает Report AI queue observation state между тестами.
+- Roadmap `172.7` marked `done`.
+
+### Решения и обоснования
+
+- Отказались считать 30-second threshold по upstream `created_at`, потому что Vetmanager timestamps naive server-local, а MCP process timezone может отличаться; timezone offset больше threshold и давал бы ложные срабатывания/пропуски.
+- Выбран MCP-observed monotonic duration как safe lower-bound signal. В multi-worker deployment он best-effort per process и может under-count; это явно отражено в PRD/runbook.
+- Observation state keyed by `(account_id, connection_id, job_id)`, чтобы одинаковые upstream `job_id` у разных клиник не делили observed age. Domain/secret не используются в key/log/metric.
+- Metric сделана label-free scalar counter, чтобы исключить cardinality risk; `observed_queued_age_seconds` остаётся только в output/log, не в labels.
+
+### PRD-review 172.7
+
+- Initial Spark PRD-review returned `[]` after read-only fallback was not needed on final runs.
+- Claude Opus PRD-review found accepted blockers:
+  - naive upstream timestamp vs process-local/UTC time made age math unsafe;
+  - monotonic observation state needed concrete TTL/cap eviction;
+  - PRD needed decomposition and process-local/multi-worker caveat.
+- PRD updated after each accepted finding; final Spark review returned `[]`; final Claude Opus review returned `[]`.
+
+### Code/diff review 172.7
+
+- Spark review of the Stage 172.7 scoped implementation returned `[]`.
+- Claude Opus review returned `[]`; non-blocking suggestion about test isolation was accepted by resetting Report AI queue observation state in `tests/conftest.py`.
+- Final Claude pre-commit review found a non-blocking but real multi-tenant reliability issue: observation state was keyed only by `job_id`. Accepted and fixed by tenant-scoped `(account_id, connection_id, job_id)` key plus regression test.
+- Spark tenant-fix review first produced a stale/false-positive test-validity finding; the test already used `100.0 -> 131.0` monotonic time. The test was strengthened with `observation_count == 2`; repeated Spark review returned `[]`.
+- Claude tenant-fix review returned `[]`.
+
+### Проверки 172.7
+
+- Targeted run: `docker compose --profile test run --rm test pytest tests/test_stage170_report_ai_tools.py tests/test_service_metrics.py -q` — `26 passed`.
+- Targeted run repeated after test fixture hardening — `26 passed`.
+- Targeted run after tenant-scoped observation key: `docker compose --profile test run --rm test pytest tests/test_stage170_report_ai_tools.py tests/test_service_metrics.py -q` — `27 passed`.
+- Targeted run after strengthening tenant-scoped regression assertion — `27 passed`.
+- Full suite after tenant-scoped observation key: `docker compose --profile test run --rm test` — `1167 passed, 1 skipped, 63 deselected`.
+
+### Проблемы
+
+- MCP-observed queued age is not authoritative upstream queue duration. In multi-worker deployments, polls can land on different processes and under-count observed age; operators must treat the signal as a symptom and inspect upstream worker/stale in-progress state separately.
+
+### Обратная связь
+
+Пользователь попросил выполнить весь Stage 172 до конца, затем commit и push.

@@ -46,6 +46,7 @@ _TOOL_CALL_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = def
 _TOKEN_PRESET_ISSUED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _RATE_LIMIT_BACKEND_DEGRADED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _SANITIZER_FAILURES_TOTAL = 0
+_REPORT_AI_LONG_QUEUED_POLLS_TOTAL = 0
 _ACCOUNT_LAST_REQUEST_AGE_HOURS: dict[int, float] = {}
 # Stage 110.2: business events counter — `account_registered`, `bearer_token_issued`,
 # `bearer_token_revoked`, `web_login_succeeded`. Accumulated in-process since last
@@ -58,7 +59,7 @@ _BUSINESS_EVENTS_TOTAL: DefaultDict[str, int] = defaultdict(int)
 def reset_service_metrics() -> None:
     """Clear all in-memory metrics. Tests should call this to isolate assertions."""
     with _LOCK:
-        global _SANITIZER_FAILURES_TOTAL
+        global _REPORT_AI_LONG_QUEUED_POLLS_TOTAL, _SANITIZER_FAILURES_TOTAL
         _HTTP_REQUESTS_TOTAL.clear()
         _HTTP_REQUEST_LATENCY_SECONDS.clear()
         _AUTH_FAILURES_TOTAL.clear()
@@ -70,6 +71,7 @@ def reset_service_metrics() -> None:
         _TOKEN_PRESET_ISSUED_TOTAL.clear()
         _RATE_LIMIT_BACKEND_DEGRADED_TOTAL.clear()
         _SANITIZER_FAILURES_TOTAL = 0
+        _REPORT_AI_LONG_QUEUED_POLLS_TOTAL = 0
         _BUSINESS_EVENTS_TOTAL.clear()
         _ACCOUNT_LAST_REQUEST_AGE_HOURS.clear()
 
@@ -230,6 +232,13 @@ def record_sanitizer_failure() -> None:
         _SANITIZER_FAILURES_TOTAL += 1
 
 
+def record_report_ai_long_queued_poll() -> None:
+    """Increment the MCP-observed long-queued Report AI poll counter."""
+    with _LOCK:
+        global _REPORT_AI_LONG_QUEUED_POLLS_TOTAL
+        _REPORT_AI_LONG_QUEUED_POLLS_TOTAL += 1
+
+
 def set_account_last_request_age_hours(values: dict[int, float]) -> None:
     """Replace account-level activation gauges with the latest DB snapshot."""
     with _LOCK:
@@ -281,6 +290,7 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 sorted(_RATE_LIMIT_BACKEND_DEGRADED_TOTAL.items())
             ),
             "sanitizer_failures_total": _SANITIZER_FAILURES_TOTAL,
+            "report_ai_long_queued_polls_total": _REPORT_AI_LONG_QUEUED_POLLS_TOTAL,
             "business_events_total": dict(sorted(_BUSINESS_EVENTS_TOTAL.items())),
             "account_last_request_age_hours": {
                 str(account_id): age_hours
@@ -435,6 +445,14 @@ def render_prometheus_metrics() -> str:
             "# HELP vetmanager_sanitizer_failures_total Total fail-closed depersonalization sanitizer errors.",
             "# TYPE vetmanager_sanitizer_failures_total counter",
             f"vetmanager_sanitizer_failures_total {snapshot.get('sanitizer_failures_total', 0)}",
+        ]
+    )
+
+    lines.extend(
+        [
+            "# HELP vetmanager_report_ai_long_queued_polls_total Total MCP-observed Report AI polls that remained queued for at least the long-queue threshold.",
+            "# TYPE vetmanager_report_ai_long_queued_polls_total counter",
+            f"vetmanager_report_ai_long_queued_polls_total {snapshot.get('report_ai_long_queued_polls_total', 0)}",
         ]
     )
 

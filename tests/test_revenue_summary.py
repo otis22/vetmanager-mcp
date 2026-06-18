@@ -402,3 +402,105 @@ async def test_get_revenue_summary_rejects_invalid_dates_before_http():
             )
     assert "date_from" in str(exc_info.value)
     assert not route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_average_invoice_defaults_to_invoice_date_exec_half_open():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "totalCount": 2,
+                    "invoice": [
+                        {"id": 1, "amount": "1000.00", "status": "exec"},
+                        {"id": 2, "amount": "500.00", "status": "exec"},
+                    ],
+                }
+            },
+        )
+    )
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_average_invoice",
+            {"date_from": "2026-06-17", "date_to": "2026-06-17"},
+        )
+
+    data = result.structured_content
+    assert data["date_basis"] == "invoice_date"
+    assert data["date_field"] == "invoice_date"
+    assert data["status"] == "exec"
+    assert data["invoices_with_amount"] == 2
+    assert data["total_revenue"] == 1500.0
+    assert data["average_invoice"] == 750.0
+    assert data["warnings"] == []
+    actual = {(f["property"], f["operator"], f["value"]) for f in _filters_from_call(route.calls[0])}
+    assert ("invoice_date", ">=", "2026-06-17 00:00:00") in actual
+    assert ("invoice_date", "<", "2026-06-18 00:00:00") in actual
+    assert ("status", "=", "exec") in actual
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_average_invoice_create_date_preserves_no_status_filter():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "totalCount": 1,
+                    "invoice": [{"id": 1, "amount": "900.00", "status": "save"}],
+                }
+            },
+        )
+    )
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_average_invoice",
+            {
+                "date_from": "2026-06-17",
+                "date_to": "2026-06-17",
+                "date_basis": "create_date",
+            },
+        )
+
+    data = result.structured_content
+    assert data["date_basis"] == "create_date"
+    assert data["date_field"] == "create_date"
+    assert data["status"] == ""
+    assert data["average_invoice"] == 900.0
+    assert data["warnings"]
+    actual = {(f["property"], f["operator"], f["value"]) for f in _filters_from_call(route.calls[0])}
+    assert ("create_date", ">=", "2026-06-17 00:00:00") in actual
+    assert ("create_date", "<", "2026-06-18 00:00:00") in actual
+    assert not any(f[0] == "status" for f in actual)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_average_invoice_rejects_invalid_date_basis_before_http():
+    route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(200, json={"data": {"invoice": []}})
+    )
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(Exception) as exc_info:
+            await mcp.call_tool(
+                "get_average_invoice",
+                {
+                    "date_from": "2026-06-17",
+                    "date_to": "2026-06-17",
+                    "date_basis": "payment_create_date",
+                },
+            )
+
+    assert "date_basis" in str(exc_info.value)
+    assert not route.called
