@@ -19,6 +19,7 @@ from token_scopes import (
     SCOPE_PETS_READ,
     SCOPE_PETS_WRITE,
     SCOPE_REFERENCE_READ,
+    SCOPE_REPORT_AI_WRITE,
     SCOPE_USERS_READ,
     SCOPE_USERS_WRITE,
     SUPPORTED_TOKEN_SCOPES,
@@ -30,6 +31,7 @@ PRESET_FRONTDESK = "frontdesk"
 PRESET_DOCTOR = "doctor"
 PRESET_FINANCE = "finance"
 PRESET_INVENTORY = "inventory"
+PRESET_REPORT_AI = "report_ai"
 TOKEN_PRESET_CHOICES = (
     PRESET_FULL_ACCESS,
     PRESET_READ_ONLY,
@@ -37,6 +39,7 @@ TOKEN_PRESET_CHOICES = (
     PRESET_DOCTOR,
     PRESET_FINANCE,
     PRESET_INVENTORY,
+    PRESET_REPORT_AI,
 )
 TOKEN_PRESET_LABELS: dict[str, str] = {
     PRESET_FULL_ACCESS: "Full access",
@@ -45,6 +48,7 @@ TOKEN_PRESET_LABELS: dict[str, str] = {
     PRESET_DOCTOR: "Doctor",
     PRESET_FINANCE: "Finance",
     PRESET_INVENTORY: "Inventory",
+    PRESET_REPORT_AI: "Report AI",
 }
 
 TOKEN_PRESET_SCOPES: dict[str, tuple[str, ...]] = {
@@ -110,6 +114,14 @@ TOKEN_PRESET_SCOPES: dict[str, tuple[str, ...]] = {
                 SCOPE_INVENTORY_READ,
                 SCOPE_INVENTORY_WRITE,
                 SCOPE_REFERENCE_READ,
+            )
+        )
+    ),
+    PRESET_REPORT_AI: tuple(
+        sorted(
+            (
+                SCOPE_ANALYTICS_READ,
+                SCOPE_REPORT_AI_WRITE,
             )
         )
     ),
@@ -230,7 +242,7 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
     "send_message_to_all": (SCOPE_MESSAGING_WRITE,),
     "send_message_to_roles": (SCOPE_MESSAGING_WRITE,),
     "send_message_to_users": (SCOPE_MESSAGING_WRITE,),
-    "save_report_ai_job_as_report": (SCOPE_ANALYTICS_WRITE,),
+    "save_report_ai_job_as_report": (SCOPE_REPORT_AI_WRITE,),
     "search_invoice_goods": (SCOPE_INVENTORY_READ,),
     "calculate_good_combination_price": (SCOPE_INVENTORY_READ,),
     "update_admission": (SCOPE_ADMISSIONS_WRITE,),
@@ -427,6 +439,16 @@ MARKETED_PRESET_TOOLS: dict[str, tuple[str, ...]] = {
         "get_suppliers",
         "update_good",
         "update_supplier",
+    ),
+    PRESET_REPORT_AI: (
+        "create_report_ai_job",
+        "confirm_report_ai_job_candidate",
+        "get_report_ai_job",
+        "get_report_ai_job_data",
+        "start_report_export",
+        "get_report_export_file",
+        "get_report_ai_job_export",
+        "save_report_ai_job_as_report",
     ),
 }
 

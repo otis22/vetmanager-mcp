@@ -17,12 +17,14 @@ from token_scopes import (
     SCOPE_PETS_READ,
     SCOPE_PETS_WRITE,
     SCOPE_REFERENCE_READ,
+    SCOPE_REPORT_AI_WRITE,
     SCOPE_USERS_READ,
     SUPPORTED_TOKEN_SCOPES,
     TOKEN_ACCESS_POLICY_VERSION,
     deserialize_token_scopes,
     normalize_token_scopes,
 )
+from tool_access_registry import PRESET_REPORT_AI
 
 
 def test_service_bearer_token_scope_helpers_roundtrip():
@@ -44,6 +46,12 @@ def test_legacy_token_without_scopes_gets_full_access_defaults():
 
 def test_deserialize_missing_scopes_preserves_legacy_full_access():
     assert deserialize_token_scopes(None) == list(SUPPORTED_TOKEN_SCOPES)
+
+
+def test_deserialize_old_full_access_snapshot_expands_to_current_full_access():
+    old_full_access = [scope for scope in SUPPORTED_TOKEN_SCOPES if scope != SCOPE_REPORT_AI_WRITE]
+
+    assert deserialize_token_scopes(json.dumps(old_full_access)) == list(SUPPORTED_TOKEN_SCOPES)
 
 
 def test_normalize_token_scopes_rejects_unknown_values():
@@ -167,6 +175,44 @@ async def test_issue_service_bearer_token_uses_selected_access_preset_scopes(tmp
             SCOPE_PETS_WRITE,
             SCOPE_REFERENCE_READ,
             SCOPE_USERS_READ,
+        ]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_issue_service_bearer_token_uses_report_ai_access_preset_scopes(tmp_path):
+    from pathlib import Path
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from storage import Base, create_database_engine
+    from storage_models import Account
+
+    database_path = Path(tmp_path) / "token-report-ai-preset.db"
+    engine = create_database_engine(f"sqlite:///{database_path}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with session_factory() as session:
+            account = Account(email="report-ai-preset@example.com", status="active")
+            session.add(account)
+            await session.commit()
+
+        async with session_factory() as session:
+            token, _ = await issue_service_bearer_token(
+                session,
+                account_id=1,
+                name="Report AI token",
+                access_preset=PRESET_REPORT_AI,
+                ip_mask="*.*.*.*",
+            )
+
+        assert deserialize_token_scopes(token.scopes_json) == [
+            SCOPE_ANALYTICS_READ,
+            SCOPE_REPORT_AI_WRITE,
         ]
     finally:
         await engine.dispose()

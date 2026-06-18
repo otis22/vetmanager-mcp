@@ -8,7 +8,7 @@ from fastmcp.exceptions import ToolError
 
 from server import mcp
 from tests.runtime_factories import patch_runtime_credentials
-from token_scopes import SCOPE_ANALYTICS_READ, SCOPE_ANALYTICS_WRITE
+from token_scopes import SCOPE_ANALYTICS_READ, SCOPE_ANALYTICS_WRITE, SCOPE_REPORT_AI_WRITE
 import vetmanager_client
 
 
@@ -23,7 +23,7 @@ def billing_mock():
     )
 
 
-def bearer_runtime_patch(*, scopes=(SCOPE_ANALYTICS_READ, SCOPE_ANALYTICS_WRITE)):
+def bearer_runtime_patch(*, scopes=(SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE)):
     return patch_runtime_credentials(
         DOMAIN,
         API_KEY,
@@ -326,7 +326,7 @@ async def test_get_report_ai_job_data_uses_short_cache_tier(monkeypatch):
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_save_report_ai_job_as_report_requires_write_scope():
+async def test_save_report_ai_job_as_report_requires_report_ai_write_scope():
     billing_mock()
     route = respx.post(f"{BASE}/rest/api/report-ai-job/22/save").mock(
         return_value=httpx.Response(200, json={"data": {"report_id": 84}})
@@ -334,7 +334,26 @@ async def test_save_report_ai_job_as_report_requires_write_scope():
 
     headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
     with headers_patch, runtime_patch:
-        with pytest.raises(ToolError, match="analytics.write"):
+        with pytest.raises(ToolError, match="report_ai.write"):
+            await mcp.call_tool(
+                "save_report_ai_job_as_report",
+                {"job_id": 22, "title": "MCP debtors by negative balance 2026-06-15"},
+            )
+
+    assert route.call_count == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_save_report_ai_job_as_report_rejects_analytics_write_without_report_ai_scope():
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/report-ai-job/22/save").mock(
+        return_value=httpx.Response(200, json={"data": {"report_id": 84}})
+    )
+
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_WRITE,))
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="report_ai.write"):
             await mcp.call_tool(
                 "save_report_ai_job_as_report",
                 {"job_id": 22, "title": "MCP debtors by negative balance 2026-06-15"},

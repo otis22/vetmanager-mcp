@@ -451,6 +451,7 @@ vetmanager-mcp/
 | `doctor` | `admissions.read`, `analytics.read`, `medical_cards.read`, `medical_cards.write`, `pets.read`, `reference.read`, `users.read` |
 | `finance` | `clients.read`, `finance.read`, `finance.write`, `reference.read` |
 | `inventory` | `inventory.read`, `inventory.write`, `reference.read` |
+| `report_ai` | `analytics.read`, `report_ai.write` |
 
 Supported scopes:
 - `clients.read`
@@ -472,6 +473,7 @@ Supported scopes:
 - `reference.read`
 - `analytics.read`
 - `analytics.write`
+- `report_ai.write`
 
 Scope routing:
 - `tool_access_registry.py::TOOL_REQUIRED_SCOPES` — source of truth для
@@ -480,9 +482,12 @@ Scope routing:
 - `token_scopes.py::required_scope_for_request` — defense-in-depth на REST path:
   `ClientPhone` требует `clients.read`, `/messages/reports` и timesheet read
   paths требуют `analytics.read`, send-message mutation paths требуют
-  `messaging.write`.
+  `messaging.write`, а `/report-ai-job/{id}/save` требует `report_ai.write`.
 - `messaging.read` остаётся supported legacy scope для совместимости со старыми
   manifests, но active preset'ы его не используют.
+- `report_ai.write` — узкий write scope только для explicit
+  `save_report_ai_job_as_report`; old persisted full-access snapshots before
+  this scope are expanded to current full access during deserialization.
 
 Storage:
 - `service_bearer_tokens.access_policy_version` хранит версию policy schema;

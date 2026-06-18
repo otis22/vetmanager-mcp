@@ -10,9 +10,11 @@ from tool_access_registry import (
     PRESET_FULL_ACCESS,
     PRESET_INVENTORY,
     PRESET_READ_ONLY,
+    PRESET_REPORT_AI,
     TOKEN_PRESET_SCOPES,
     MARKETED_PRESET_TOOLS,
     TOOL_REQUIRED_SCOPES,
+    get_presets_allowing_tool,
     normalize_token_preset,
 )
 from token_scopes import (
@@ -32,6 +34,7 @@ from token_scopes import (
     SCOPE_PETS_READ,
     SCOPE_PETS_WRITE,
     SCOPE_REFERENCE_READ,
+    SCOPE_REPORT_AI_WRITE,
     SCOPE_USERS_READ,
     SCOPE_USERS_WRITE,
     SUPPORTED_TOKEN_SCOPES,
@@ -120,6 +123,13 @@ def test_full_access_preset_matches_supported_scopes_snapshot():
                 SCOPE_REFERENCE_READ,
             ),
         ),
+        (
+            PRESET_REPORT_AI,
+            (
+                SCOPE_ANALYTICS_READ,
+                SCOPE_REPORT_AI_WRITE,
+            ),
+        ),
     ],
 )
 def test_presets_expose_expected_scope_bundles(preset, expected_scopes):
@@ -186,7 +196,7 @@ def test_normalize_token_preset_rejects_unknown_or_whitespace_values(preset):
         ("start_report_export", (SCOPE_ANALYTICS_READ,)),
         ("get_report_export_file", (SCOPE_ANALYTICS_READ,)),
         ("get_report_ai_job_export", (SCOPE_ANALYTICS_READ,)),
-        ("save_report_ai_job_as_report", (SCOPE_ANALYTICS_WRITE,)),
+        ("save_report_ai_job_as_report", (SCOPE_REPORT_AI_WRITE,)),
         ("send_message_to_users", (SCOPE_MESSAGING_WRITE,)),
         ("update_user", (SCOPE_USERS_WRITE,)),
         ("create_timesheet", (SCOPE_ANALYTICS_WRITE,)),
@@ -205,10 +215,27 @@ def test_request_scope_mapping_covers_missing_write_paths():
     assert required_scope_for_request("GET", "/rest/api/report-ai-job/2") == SCOPE_ANALYTICS_READ
     assert required_scope_for_request("POST", "/rest/api/report-ai-job/2/confirm") == SCOPE_ANALYTICS_READ
     assert required_scope_for_request("GET", "/rest/api/report-ai-job/2/data") == SCOPE_ANALYTICS_READ
-    assert required_scope_for_request("POST", "/rest/api/report-ai-job/2/save") == SCOPE_ANALYTICS_WRITE
+    assert required_scope_for_request("POST", "/rest/api/report-ai-job/2/save") == SCOPE_REPORT_AI_WRITE
     assert required_scope_for_request("GET", "/rest/api/report/StartReport") == SCOPE_ANALYTICS_READ
     assert required_scope_for_request("GET", "/rest/api/report/reportFile") == SCOPE_ANALYTICS_READ
     assert required_scope_for_request("GET", "/rest/api/good/productsDataForInvoice") == SCOPE_INVENTORY_READ
     assert required_scope_for_request("GET", "/rest/api/good/checkProductData") == SCOPE_INVENTORY_READ
     assert required_scope_for_request("GET", "/rest/api/goodTag") == SCOPE_INVENTORY_READ
     assert required_scope_for_request("GET", "/rest/api/VmLink/personalAccountLinkByPhone/79184140259") == SCOPE_CLIENTS_READ
+
+
+def test_report_ai_preset_advertises_full_report_ai_flow():
+    assert MARKETED_PRESET_TOOLS[PRESET_REPORT_AI] == (
+        "create_report_ai_job",
+        "confirm_report_ai_job_candidate",
+        "get_report_ai_job",
+        "get_report_ai_job_data",
+        "start_report_export",
+        "get_report_export_file",
+        "get_report_ai_job_export",
+        "save_report_ai_job_as_report",
+    )
+    assert get_presets_allowing_tool("save_report_ai_job_as_report") == (
+        "Full access",
+        "Report AI",
+    )

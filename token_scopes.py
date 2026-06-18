@@ -26,6 +26,7 @@ SCOPE_MESSAGING_WRITE = "messaging.write"
 SCOPE_REFERENCE_READ = "reference.read"
 SCOPE_ANALYTICS_READ = "analytics.read"
 SCOPE_ANALYTICS_WRITE = "analytics.write"
+SCOPE_REPORT_AI_WRITE = "report_ai.write"
 
 SUPPORTED_TOKEN_SCOPES = (
     SCOPE_ADMISSIONS_READ,
@@ -45,8 +46,33 @@ SUPPORTED_TOKEN_SCOPES = (
     SCOPE_PETS_READ,
     SCOPE_PETS_WRITE,
     SCOPE_REFERENCE_READ,
+    SCOPE_REPORT_AI_WRITE,
     SCOPE_USERS_READ,
     SCOPE_USERS_WRITE,
+)
+
+LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS = (
+    (
+        SCOPE_ADMISSIONS_READ,
+        SCOPE_ADMISSIONS_WRITE,
+        SCOPE_ANALYTICS_READ,
+        SCOPE_ANALYTICS_WRITE,
+        SCOPE_CLIENTS_READ,
+        SCOPE_CLIENTS_WRITE,
+        SCOPE_FINANCE_READ,
+        SCOPE_FINANCE_WRITE,
+        SCOPE_INVENTORY_READ,
+        SCOPE_INVENTORY_WRITE,
+        SCOPE_MEDICAL_CARDS_READ,
+        SCOPE_MEDICAL_CARDS_WRITE,
+        SCOPE_MESSAGING_READ,
+        SCOPE_MESSAGING_WRITE,
+        SCOPE_PETS_READ,
+        SCOPE_PETS_WRITE,
+        SCOPE_REFERENCE_READ,
+        SCOPE_USERS_READ,
+        SCOPE_USERS_WRITE,
+    ),
 )
 
 _READ_SCOPE_BY_ENTITY = {
@@ -144,9 +170,12 @@ def deserialize_token_scopes(raw_value: str | None) -> list[str]:
     loaded = json.loads(raw_value)
     if not isinstance(loaded, list):
         raise ValueError("Token scopes payload must be a JSON list.")
-    return normalize_token_scopes(
+    normalized = normalize_token_scopes(
         [value for value in loaded if isinstance(value, str)]
     )
+    if tuple(normalized) in LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS:
+        return normalize_token_scopes(None)
+    return normalized
 
 
 def required_scope_for_request(method: str, path: str) -> str | None:
@@ -162,7 +191,7 @@ def required_scope_for_request(method: str, path: str) -> str | None:
         if normalized_method == "GET":
             return SCOPE_ANALYTICS_READ
         if normalized_method == "POST" and len(parts) >= 5 and parts[4] == "save":
-            return SCOPE_ANALYTICS_WRITE
+            return SCOPE_REPORT_AI_WRITE
         if normalized_method == "POST":
             return SCOPE_ANALYTICS_READ
         return None

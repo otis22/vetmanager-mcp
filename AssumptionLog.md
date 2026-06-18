@@ -8314,3 +8314,65 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
   - Spark read-only again hit the known `bwrap` sandbox/runtime issue and was killed; allowed `gpt-5.3-codex-spark -s danger-full-access` review-only fallback returned `[]`.
   - Claude Opus final re-review: no blocking findings.
 - Roadmap `172.1` marked `done`; remaining Stage 172 items stay queued for later tasks.
+
+## Этап 172.2. Report AI save narrow scope — 2026-06-18
+
+### Что делали
+
+Закрыли production feedback `#10`: `save_report_ai_job_as_report` требовал слишком широкий `analytics.write`, из-за чего пользователю приходилось выдавать Full access для сохранения Report AI отчёта.
+
+### Что сделано
+
+- Создан PRD `PRD/этап-172.2-report-ai-save-narrow-scope.md`.
+- Добавлен supported scope `report_ai.write`.
+- Добавлен preset `report_ai` / `Report AI` со scope bundle `analytics.read` + `report_ai.write`.
+- `save_report_ai_job_as_report` и REST defense-in-depth mapping `POST /rest/api/report-ai-job/{id}/save` переведены с `analytics.write` на `report_ai.write`.
+- `MARKETED_PRESET_TOOLS[report_ai]` покрывает полный Report AI flow: create/poll/confirm/data/export/save.
+- Для ранее выданных full-access tokens с exact old full-access `scopes_json` добавлена десериализационная совместимость: snapshot расширяется до текущего `SUPPORTED_TOKEN_SCOPES`.
+- Обновлены `README.md` и `artifacts/technical-requirements-vetmanager-mcp-ru.md`.
+- Roadmap `172.2` marked `done`; remaining Stage 172 items stay queued.
+
+### Решения и обоснования
+
+- `read_only` не получил write scope: `save_report_ai_job_as_report` создаёт persistent report в Vetmanager, поэтому write-возможность в preset с label `Read only` была бы семантически неверной.
+- Узкий `report_ai.write` не заменяет `analytics.write`; существующие analytics mutations, например `create_timesheet`, остаются на `analytics.write`.
+- Existing custom tokens with `analytics.write` but without `report_ai.write` intentionally lose Report AI save access; silent grandfathering would keep the old too-broad permission boundary.
+- Old full-access snapshots are expanded only when the persisted scope set exactly matches the known old full-access bundle; partial/custom tokens are not upgraded.
+
+### PRD-review 172.2
+
+- Spark PRD-review first read-only run hit the known `bwrap` sandbox/runtime issue before completing file reads; allowed `gpt-5.3-codex-spark -s danger-full-access` review-only fallback was used.
+- Accepted Spark finding: preset marketed coverage must include `save_report_ai_job_as_report`, otherwise allowed preset hints become inconsistent.
+- Claude Opus PRD-review accepted findings:
+  - Do not add write scope to `read_only`; introduce a dedicated minimal preset instead.
+  - Document and test that `analytics.write`-only custom tokens are no longer enough for Report AI save.
+  - Use two-segment scope naming; selected `report_ai.write`.
+  - Account for exact-bundle inference/display effects for previously issued presets.
+  - Test `get_presets_allowing_tool("save_report_ai_job_as_report")`.
+- Follow-up Opus PRD-review accepted findings:
+  - Previously issued full-access tokens with non-empty frozen old full-access `scopes_json` would otherwise lose access; fixed via exact snapshot expansion.
+  - Scope item for `MARKETED_PRESET_TOOLS[report_ai]` must explicitly cover the whole Report AI flow; fixed in PRD and implementation.
+- Final Spark PRD recheck flagged the same two items as not-yet-implemented code, which was expected before implementation; both were implemented and covered by tests.
+
+### Проверки 172.2
+
+- Targeted run: `docker compose --profile test run --rm test pytest tests/test_stage170_report_ai_tools.py tests/test_stage130_access_registry.py tests/test_token_scopes.py -q` — `62 passed`.
+- Extended targeted run: `docker compose --profile test run --rm test pytest tests/test_stage170_report_ai_tools.py tests/test_stage130_access_registry.py tests/test_token_scopes.py tests/test_web_auth.py tests/test_migrations.py -q` — `105 passed`.
+- Full suite before audit tweak: `docker compose --profile test run --rm test` — `1152 passed, 1 skipped, 63 deselected`.
+- Audit tweak: legacy full-access snapshot made explicit rather than derived from current `SUPPORTED_TOKEN_SCOPES`, so future scopes cannot alter the historical snapshot signature.
+- Targeted rerun after audit tweak: same targeted command — `62 passed`.
+- Full suite after audit tweak: `docker compose --profile test run --rm test` — `1152 passed, 1 skipped, 63 deselected`.
+- Static whitespace check: `git diff --check` — passed.
+- Secret literal check: `python3 scripts/check_no_historical_api_key_literal.py` — passed.
+- Code/diff review gates:
+  - Spark review of the Stage 172.2 uncommitted diff returned `[]`.
+  - Claude Opus strong review of the Stage 172.2 uncommitted diff returned `[]`.
+
+### Проблемы
+
+- Spark read-only sandbox still fails/hangs on `bwrap`/user namespace in this environment; used the documented review-only fallback with the same Spark model.
+- Worktree contains unrelated untracked `artifacts/stage173-chatgpt-oauth-research.md`; it was not touched as part of 172.2.
+
+### Обратная связь
+
+Пользователь попросил выполнить `172.2` по workflow.
