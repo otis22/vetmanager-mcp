@@ -166,6 +166,8 @@ def required_scope_for_request(method: str, path: str) -> str | None:
         if normalized_method == "POST":
             return SCOPE_ANALYTICS_READ
         return None
+    if entity == "report" and normalized_method == "GET":
+        return SCOPE_ANALYTICS_READ
     if normalized_method == "GET":
         return _READ_SCOPE_BY_ENTITY.get(entity)
     if normalized_method in {"POST", "PUT", "DELETE"}:

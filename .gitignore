@@ -8,6 +8,7 @@ __pycache__/
 dist/
 .coverage
 htmlcov/
+data/
 
 # Dev artifacts (screenshots, playwright cache)
 *.png

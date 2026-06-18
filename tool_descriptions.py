@@ -584,6 +584,9 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "confirm_report_ai_job_candidate": "report_ai",
     "get_report_ai_job": "report_ai",
     "get_report_ai_job_data": "report_ai",
+    "start_report_export": "report_ai",
+    "get_report_export_file": "report_ai",
+    "get_report_ai_job_export": "report_ai",
     "save_report_ai_job_as_report": "report_ai",
 }
 
@@ -775,6 +778,29 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "are needed. Vetmanager caps returned rows at 1000 and limited=true means "
         "more rows exist. Domain synonyms: отчёт, отчет, ИИ отчёт, AI report, "
         "конструктор отчётов, аналитика, report ai."
+    ),
+    "start_report_export": (
+        "Start a Vetmanager Report Constructor CSV/XLSX export for a known report_id. "
+        "Use only when the report_id is already known and the report has REST export "
+        "enabled in Vetmanager. Optional filter_json is report-specific JSON; MCP "
+        "validates JSON syntax only. The tool returns report_file_id for "
+        "get_report_export_file. Do not log or paste export file locators outside "
+        "the tool response. Domain synonyms: отчёт, отчет, CSV отчёт, XLSX отчёт, "
+        "конструктор отчётов, аналитика."
+    ),
+    "get_report_export_file": (
+        "Get CSV/XLSX export file locators for a report_file_id returned by "
+        "start_report_export. If Vetmanager says generation is still in progress, "
+        "retry after a delay. Treat html_file, csv_file, csv_semicolon_file, and "
+        "xlsx_file as sensitive clinic-data locators. Domain synonyms: отчёт, "
+        "CSV отчёт, XLSX отчёт, выгрузка отчёта, конструктор отчётов."
+    ),
+    "get_report_ai_job_export": (
+        "Start CSV/XLSX export for a Report AI job only when it is saved or "
+        "existing_report_matched and includes job.report_id. This does not auto-save "
+        "ready_to_save jobs and may return not REST-exportable for AI-saved reports "
+        "without Vetmanager REST access enabled. Domain synonyms: ИИ отчёт, AI "
+        "report, CSV отчёт, XLSX отчёт, конструктор отчётов."
     ),
     "save_report_ai_job_as_report": (
         "Explicit write action: persist a ready_to_save Report AI job as a visible "

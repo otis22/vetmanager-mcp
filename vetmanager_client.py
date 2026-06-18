@@ -212,6 +212,9 @@ class VetmanagerClient:
     @staticmethod
     def _should_cache_get(path: str) -> bool:
         normalized = path.split("?", 1)[0].strip("/")
+        lowered = normalized.lower()
+        if lowered in {"rest/api/report/startreport", "rest/api/report/reportfile"}:
+            return False
         parts = normalized.split("/")
         if (
             len(parts) == 4
@@ -274,6 +277,7 @@ class VetmanagerClient:
         self._require_scope(method, path)
         base = await self._resolve_host()
         url = f"{base}{path}"
+        retry_enabled = bool(kwargs.pop("retry", True))
         params = kwargs.get("params")
         cache_key = ""
         entity_tag = self._entity_tag(path)
@@ -296,7 +300,10 @@ class VetmanagerClient:
         _corr_ctx = get_current_request_context()
         outbound_correlation_id = _corr_ctx.get("correlation_id") if _corr_ctx else None
 
-        max_retries = MAX_RETRIES_READ if upper_method == "GET" else MAX_RETRIES_WRITE
+        if not retry_enabled:
+            max_retries = 0
+        else:
+            max_retries = MAX_RETRIES_READ if upper_method == "GET" else MAX_RETRIES_WRITE
         attempt = 0
         # Stage 106.1 (F2 fix): `_check_breaker_allows` above may have
         # transitioned to HALF_OPEN with probe_in_flight=True. If the retry
@@ -377,7 +384,7 @@ class VetmanagerClient:
                         await _breaker_record_failure(domain_key)
                         _breaker_resolved = True
 
-                    self._raise_for_status(response)
+                    self._raise_for_status(response, path=path)
                     payload = response.json()
                     await _breaker_record_success(domain_key)
                     _breaker_resolved = True
@@ -503,8 +510,20 @@ class VetmanagerClient:
             if not _breaker_resolved:
                 await _breaker_record_failure(domain_key)
 
-    def _raise_for_status(self, response: httpx.Response) -> None:
+    def _raise_for_status(self, response: httpx.Response, *, path: str = "") -> None:
         if response.status_code == 401:
+            try:
+                body = response.json()
+                vm_message = body.get("message") if isinstance(body, dict) else None
+            except ValueError:
+                vm_message = None
+            normalized_path = path.split("?", 1)[0].strip("/").lower()
+            if (
+                normalized_path == "rest/api/report/reportfile"
+                and isinstance(vm_message, str)
+                and vm_message
+            ):
+                raise VetmanagerError(vm_message, status_code=401)
             raise AuthError(
                 f"Invalid or missing API key ({_masked_secret(self._api_key)})",
                 status_code=401,
@@ -551,8 +570,8 @@ class VetmanagerClient:
                 details=vm_details,
             )
 
-    async def get(self, path: str, params: dict | None = None) -> Any:
-        return await self._request("GET", path, params=params)
+    async def get(self, path: str, params: dict | None = None, *, retry: bool = True) -> Any:
+        return await self._request("GET", path, params=params, retry=retry)
 
     async def post(self, path: str, json: Any = None) -> Any:
         return await self._request("POST", path, json=json)

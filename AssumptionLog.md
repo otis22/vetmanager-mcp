@@ -8211,3 +8211,106 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь попросил настроить Redis на сервере, добавить env, затем commit/push/deploy и протестировать rate limiting.
+
+## Этап 172. Production feedback follow-up research — 2026-06-18
+
+### Что делали
+
+Провели read-only triage production feedback reports `#5`-`#11` и зафиксировали follow-up workplan в `Roadmap.md`.
+
+### Что выяснили
+
+- `#11 get_report_ai_job_data`: лимит 1000 строк находится upstream в `JobService::DATA_ROW_LIMIT`; MCP сейчас не может получить строки за пределами `/data` response.
+- `#10 save_report_ai_job_as_report`: current token model имеет только coarse `analytics.write`; narrow Report AI save scope отсутствует.
+- `#8 create_report_ai_job`: лимит 1000 символов продублирован в upstream `JobService::INTENT_MAX_LENGTH` и MCP `tools/report_ai.py::INTENT_MAX_LENGTH`.
+- `#7 Report AI goods SQL`: feedback с `good.id` требует MCP known issue/playbook workaround и отдельного upstream Report AI schema/prompt fix.
+- `#6 get_average_invoice`: current implementation считает по `invoice.create_date`; финансовые workflows уже используют `invoice.invoice_date`.
+- `#5 get_debtors`: current implementation фильтрует `balance < 0` после полного обхода ACTIVE clients; `client.balance` и `client.last_visit_date` подтверждены reference artifacts.
+- `#9 queued Report AI job`: upstream имеет stale in-progress repository query, но MCP не логирует/агрегирует long-queued polls для operator diagnostics.
+
+### Решения и обоснования
+
+- Добавлен `Roadmap.md` Stage 172 с задачами `172.1`-`172.7`; код и production DB не менялись.
+- Для `#11` пользовательское решение зафиксировано как full single-shot report output без limit/offset; accepted risk: payload-size/OOM boundary надо явно проверить в PRD перед реализацией.
+- Для `#8` целевой лимит зафиксирован как 64 000 символов, с fallback на максимально подтверждённое upstream значение, если storage/request validation не позволит 64 000.
+- Для `#5` server-side filters должны включать и `balance < 0`, и `last_visit_date` window, чтобы не повторять full-client scan.
+
+### Update 2026-06-18: Report export route found
+
+- Пользователь уточнил, что Vetmanager API менять нельзя; нужен MCP-only путь к уже существующей CSV-выгрузке.
+- Найден existing REST flow:
+  - `GET /rest/api/report/StartReport?report_id=<id>&filter=<json>` -> `data.report.report_file_id`;
+  - `GET /rest/api/report/reportFile?file_id=<report_file_id>` -> `html_file`, `csv_file`, `csv_semicolon_file`, `xlsx_file`.
+- `StartReport` проверяет `report_constructor_reports.allow_rest_api=1`; для AI reports, сохранённых текущим upstream save path, возможен `403 Report is not accessible for REST`.
+- REST endpoint для списка report constructor reports не найден в OpenAPI/source; Stage 172.1 переформулирован под tools по известному `report_id`, без list-reports tool.
+
+### Проверки
+
+- Production feedback data прочитаны read-only через `scripts/triage_agent_feedback.py` с `PYTHONPATH=/app`.
+- Локально просмотрены `tools/report_ai.py`, `tools/client.py`, `tools/invoice.py`, `tool_access_registry.py`, `token_scopes.py`, `artifacts/report-ai-mcp-research-2026-06-15.md`, `artifacts/api_entity_reference-ru.md`, upstream `JobService.php`/`JobRepository.php`/`PromptBuilder.php`.
+
+### Проблемы
+
+- `scripts/triage_agent_feedback.py` внутри production container требует явный `PYTHONPATH=/app`; без него падает на import `agent_feedback_service`.
+
+### PRD-review 172.1
+
+- Spark-review (`gpt-5.3-codex-spark`) first read-only run failed before review because sandbox/user namespace setup could not start; repeated once with `-s danger-full-access` and review-only prompt.
+- Accepted Spark findings:
+  - `/rest/api/report/StartReport` and `/rest/api/report/reportFile` must bypass GET cache because they start/poll export jobs.
+  - `get_report_ai_job_export` must use explicit allowlist `saved`/`existing_report_matched`; every other status is rejected before `StartReport`.
+  - Empty `filter_json` must not be sent as `filter`; non-empty value is validated as JSON.
+- PRD updated accordingly before implementation.
+- Claude Opus PRD-review accepted findings:
+  - Export tools do not bypass upstream AI `/data` 1000-row cap for AI-saved reports when saved report has `allow_rest_api=0`; `get_report_ai_job_export` is graceful degradation for those cases, not a guaranteed fix.
+  - Export file locators and `filter_json` are sensitive and must not be logged or copied into ToolError messages.
+  - OpenAPI exposes only generic params for report endpoints; concrete `report_id`/`file_id` and response fields come from upstream source and need a real API probe before treating the contract as verified.
+  - `filter_json` structure is report-specific/opaque unless probed; MCP validates syntax only and documents silent full-export risk.
+  - Request-level scope mapping for `/rest/api/report/StartReport` and `/rest/api/report/reportFile` must be tested as `analytics.read`.
+  - `VetmanagerError.status_code` is available and must be used for 403-specific REST-exportable guidance.
+  - Not-ready `reportFile` responses must be described as transient retry guidance.
+
+### Implementation 172.1
+
+- Added MCP tools:
+  - `start_report_export(report_id, filter_json=None)`;
+  - `get_report_export_file(report_file_id)`;
+  - `get_report_ai_job_export(job_id, filter_json=None)`.
+- New tools require `analytics.read`; `save_report_ai_job_as_report` remains `analytics.write`.
+- `/rest/api/report/StartReport` and `/rest/api/report/reportFile` bypass MCP GET cache.
+- `filter_json` is omitted when empty and syntax-validated only when supplied; report-specific filter semantics remain opaque.
+- `get_report_ai_job_export` allows only `saved` and `existing_report_matched`, does not auto-save, and returns clear not-REST-exportable guidance on 403.
+- Export file locators are returned only in success payload from upstream; ToolError guidance does not echo file paths or filters.
+- Code Spark-review (`gpt-5.3-codex-spark`) first read-only run hit the same sandbox/runtime failure; repeated once with `-s danger-full-access` and review-only prompt.
+- Accepted code Spark findings:
+  - `get_report_ai_job_export` must validate `job.report_id` via `_validate_positive_int()` before `StartReport`.
+  - `get_report_export_file` should treat HTTP 409 as retryable not-ready even without exact upstream English message text.
+- Claude Opus code review findings accepted and fixed:
+  - `StartReport` is a side-effecting GET and must bypass the generic GET retry loop; `VetmanagerClient.get(..., retry=False)` is used for `StartReport`.
+  - Upstream source confirms `reportFile` transient states return HTTP 401 with messages such as `build in progress`; `VetmanagerClient` now preserves the upstream 401 message only for `/rest/api/report/reportFile`, while other 401 handling remains unchanged.
+  - `StartReport` and `reportFile` success envelopes are validated before returning raw payloads: missing `data.report.report_file_id` or missing expected export file fields becomes a sanitized `ToolError`.
+- Final Claude Opus code review accepted finding:
+  - Client-side scope-denied `AuthError(status_code=403)` must not be shown as "not REST-exportable"; `_safe_export_error` now preserves scope-denied messages while upstream 403 remains REST-export/rate-limit guidance.
+
+### Проверки 172.1
+
+- Red run before implementation: `docker compose --profile test run --rm test pytest tests/test_stage172_report_export_tools.py tests/test_stage130_access_registry.py -q` — failed on missing tools/scope mappings as expected.
+- Targeted green run after implementation: `docker compose --profile test run --rm test pytest tests/test_stage172_report_export_tools.py tests/test_stage130_access_registry.py tests/test_tools_list_schema.py -q` — `75 passed`.
+- Targeted green run after privacy/Spark fixes: same command — `78 passed`.
+- Full suite after implementation: `docker compose --profile test run --rm test` — `1133 passed, 7 skipped, 63 deselected`.
+- Full suite after privacy fix: same command — `1134 passed, 7 skipped, 63 deselected`.
+- Full suite after accepted Spark fixes: same command — `1136 passed, 7 skipped, 63 deselected`.
+- Targeted green run after accepted Claude fixes: `docker compose --profile test run --rm test pytest tests/test_stage172_report_export_tools.py tests/test_stage130_access_registry.py tests/test_tools_list_schema.py -q` — `81 passed`.
+- Full suite after accepted Claude fixes: `docker compose --profile test run --rm test` — `1139 passed, 7 skipped, 63 deselected`.
+- Targeted green run after final Claude scope-message fix: same targeted command — `83 passed`.
+- Full suite after final Claude scope-message fix: `docker compose --profile test run --rm test` — `1141 passed, 7 skipped, 63 deselected`.
+- Static whitespace check: `git diff --check` — passed.
+- Real API probe on `devtr6`, report `74`:
+  - `StartReport` returned `data.report.report_file_id`.
+  - First `reportFile` call returned transient not-ready response, confirming async polling semantics.
+  - Immediate second `StartReport` attempt was blocked by upstream 10-minute rate limit (`You can not run a report more than 10 minutes`), confirming rate-limit behavior.
+  - After cooldown, probe confirmed `reportFile` returns `html_file`, `csv_file`, `csv_semicolon_file`, `xlsx_file`; file locator values were intentionally not printed.
+- Final review gates after the scope-message fix:
+  - Spark read-only again hit the known `bwrap` sandbox/runtime issue and was killed; allowed `gpt-5.3-codex-spark -s danger-full-access` review-only fallback returned `[]`.
+  - Claude Opus final re-review: no blocking findings.
+- Roadmap `172.1` marked `done`; remaining Stage 172 items stay queued for later tasks.

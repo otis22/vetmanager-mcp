@@ -150,10 +150,13 @@ def test_frontdesk_accepts_analytics_read_blast_radius_explicitly():
         "create_report_ai_job",
         "get_doctor_free_slots",
         "get_message_reports",
+        "get_report_ai_job_export",
         "get_report_ai_job",
         "get_report_ai_job_data",
+        "get_report_export_file",
         "get_timesheet_by_id",
         "get_timesheets",
+        "start_report_export",
     }
     assert SCOPE_ANALYTICS_READ in TOKEN_PRESET_SCOPES[PRESET_FRONTDESK]
 
@@ -180,6 +183,9 @@ def test_normalize_token_preset_rejects_unknown_or_whitespace_values(preset):
         ("get_report_ai_job", (SCOPE_ANALYTICS_READ,)),
         ("confirm_report_ai_job_candidate", (SCOPE_ANALYTICS_READ,)),
         ("get_report_ai_job_data", (SCOPE_ANALYTICS_READ,)),
+        ("start_report_export", (SCOPE_ANALYTICS_READ,)),
+        ("get_report_export_file", (SCOPE_ANALYTICS_READ,)),
+        ("get_report_ai_job_export", (SCOPE_ANALYTICS_READ,)),
         ("save_report_ai_job_as_report", (SCOPE_ANALYTICS_WRITE,)),
         ("send_message_to_users", (SCOPE_MESSAGING_WRITE,)),
         ("update_user", (SCOPE_USERS_WRITE,)),
@@ -200,6 +206,8 @@ def test_request_scope_mapping_covers_missing_write_paths():
     assert required_scope_for_request("POST", "/rest/api/report-ai-job/2/confirm") == SCOPE_ANALYTICS_READ
     assert required_scope_for_request("GET", "/rest/api/report-ai-job/2/data") == SCOPE_ANALYTICS_READ
     assert required_scope_for_request("POST", "/rest/api/report-ai-job/2/save") == SCOPE_ANALYTICS_WRITE
+    assert required_scope_for_request("GET", "/rest/api/report/StartReport") == SCOPE_ANALYTICS_READ
+    assert required_scope_for_request("GET", "/rest/api/report/reportFile") == SCOPE_ANALYTICS_READ
     assert required_scope_for_request("GET", "/rest/api/good/productsDataForInvoice") == SCOPE_INVENTORY_READ
     assert required_scope_for_request("GET", "/rest/api/good/checkProductData") == SCOPE_INVENTORY_READ
     assert required_scope_for_request("GET", "/rest/api/goodTag") == SCOPE_INVENTORY_READ

@@ -621,7 +621,7 @@ COMMIT;
 | Reference | `get_breeds`, `get_breed_by_id`, `get_pet_types`, `get_pet_type_by_id`, `get_cities`, `get_city_by_id`, `get_city_types`, `get_streets`, `get_street_by_id`, `get_units`, `get_unit_by_id`, `get_roles`, `get_role_by_id`, `get_user_positions`, `get_user_position_by_id`, `get_combo_manual_names`, `get_combo_manual_name_by_id`, `get_combo_manual_items`, `get_combo_manual_item_by_id` | 19 |
 | Operations | `get_clinics`, `get_clinic_by_id`, `get_timesheets`, `get_timesheet_by_id`, `create_timesheet`, `get_properties`, `get_anonymous_clients`, `send_message_to_all`, `send_message_to_users`, `send_message_to_roles`, `get_message_reports` | 11 |
 | Schedule | `get_doctor_free_slots` | 1 |
-| Report AI | `create_report_ai_job`, `get_report_ai_job`, `confirm_report_ai_job_candidate`, `get_report_ai_job_data`, `save_report_ai_job_as_report` | 5 |
+| Report AI | `create_report_ai_job`, `get_report_ai_job`, `confirm_report_ai_job_candidate`, `get_report_ai_job_data`, `start_report_export`, `get_report_export_file`, `get_report_ai_job_export`, `save_report_ai_job_as_report` | 8 |
 
 Payment REST API доступен только на чтение: Vetmanager Payment entity разрешает `restList`/`restView`, поэтому MCP не публикует `create_payment`.
 
@@ -672,6 +672,14 @@ Prompts работают по тому же bearer-only контракту, чт
 7. `get_report_ai_job_data(job_id)` — получить `columns`, `rows`, `total`, `limited`.
 
 `save_report_ai_job_as_report` нельзя прятать внутри read-only сценария: пользователь или вызывающий агент должен понимать, что создаётся persistent report. Для названий использовать короткие осмысленные заголовки с вопросом, периодом и MCP-origin, например `MCP debtors by negative balance 2026-06-15`.
+
+Для больших таблиц `get_report_ai_job_data` ограничен Vetmanager upstream: если `limited=true`, JSON rows обрезаны. Для полного CSV/XLSX export есть отдельный read-only flow только по известному Report Constructor `report_id`:
+
+1. `start_report_export(report_id, filter_json=None)` — запускает `/rest/api/report/StartReport`; `filter_json` передаётся только когда задан и должен быть валидным JSON.
+2. `get_report_export_file(report_file_id)` — получает `html_file`, `csv_file`, `csv_semicolon_file`, `xlsx_file`; если генерация ещё идёт, повторить вызов после задержки.
+3. `get_report_ai_job_export(job_id, filter_json=None)` — convenience только для `saved`/`existing_report_matched` jobs с `job.report_id`; не сохраняет `ready_to_save` jobs автоматически.
+
+Ограничения export flow: список отчётов по REST не опубликован, поэтому `list_reports` tool нет; export работает только для отчётов с включённым REST access (`allow_rest_api=1`). AI reports, сохранённые текущим upstream path, могут возвращать `not REST-exportable`. Значения `html_file`/`csv_file`/`csv_semicolon_file`/`xlsx_file` считать чувствительными ссылками/путями к bulk clinic data.
 
 ## Product metrics (ad-hoc report)
 
