@@ -2896,3 +2896,26 @@ Research summary:
 - 173.8 Account UI: добавить блок `Connect ChatGPT`, список OAuth grants/sessions, revoke/disconnect; disconnect должен отзывать access + refresh tokens; не показывать и не требовать ручной service bearer token для ChatGPT. — `todo`
 - 173.9 Tests/checks: metadata variants, DCR success/abuse, exact redirect validation, PKCE negative paths, OAuth CSRF, token exchange, refresh rotation/reuse detection, revoked/expired token challenge, scope matrix, connection-binding stability after active integration changes, existing service bearer no-regression. — `todo`
 - 173.10 ChatGPT rollout: проверить в ChatGPT Developer Mode connector и API Playground (`https://vetmanager-mcp.vromanichev.ru/mcp`), golden prompts, auth re-link/revoke flows, mobile/client behavior; public submission оставить отдельным решением после private validation. — `todo`
+
+## Этап 174. Daily schedule pagination — `todo`
+
+Источник: production feedback report `#14` от 2026-06-19: `get_daily_schedule can truncate a daily schedule without pagination support`.
+
+Цель: дать агенту безопасный способ дочитать насыщенное дневное расписание, сохранив текущий default first-page behavior и не делая unbounded auto-fetch.
+
+- 174.1 Создать PRD stage 174: подтвердить текущий контракт `get_daily_schedule`, `limit <= 100`, `totalCount/returnedCount/truncated`, нужный pagination UX, backward compatibility и acceptance criteria. — `todo`
+- 174.2 Добавить `offset: int = 0` в `get_daily_schedule`, валидировать offset как в list tools, передавать его в `/rest/api/admission`, сохранить filters по дате/status/doctor/clinic и sort `admission_date ASC`. — `todo`
+- 174.3 Расширить response metadata: `limit`, `offset`, `returnedCount`, `totalCount`, `has_more`, `next_offset`, `truncated`; сохранить `data.admission` и `data.totalCount` для совместимости. — `todo`
+- 174.4 Tests: первая страница `totalCount=150, limit=100, offset=0` возвращает `has_more=true` и `next_offset=100`; вторая страница отправляет `offset=100`; invalid offset rejected before upstream; existing doctor/clinic/status/date filters unchanged. — `todo`
+- 174.5 Full checks, audit, review gates, commit/push/deploy/smoke; после деплоя связать production feedback report `#14` с fixed known issue. — `todo`
+
+## Этап 175. Analytics access preset UI and scope bundle hotfix — `done`
+
+Источник: пользовательское уточнение 2026-06-19: отдельные права на Report AI не видны в `/account` Access preset selector; нужен preset “аналитика”: full read + все права на работу с отчётами.
+
+Цель: сделать существующий backend preset `report_ai` видимым в UI как `Analytics` и расширить его scope bundle до full read-only + `report_ai.write`, без custom scope builder и без общего Full access.
+
+- 175.1 Добавить `report_ai` в `/account` Access preset dropdown с label `Analytics`. — `done`
+- 175.2 Расширить `TOKEN_PRESET_SCOPES[report_ai]`: все read-only scopes + `report_ai.write`; сохранить value `report_ai` для совместимости existing metrics/storage/API. — `done`
+- 175.3 Tests/docs: registry expected scopes, token issuance snapshot, account UI option visibility, README/technical requirements. — `done`
+- 175.4 Full checks, audit, review gates, commit/push/deploy/smoke. — `done`

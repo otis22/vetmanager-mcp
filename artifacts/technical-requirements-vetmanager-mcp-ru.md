@@ -451,7 +451,7 @@ vetmanager-mcp/
 | `doctor` | `admissions.read`, `analytics.read`, `medical_cards.read`, `medical_cards.write`, `pets.read`, `reference.read`, `users.read` |
 | `finance` | `clients.read`, `finance.read`, `finance.write`, `reference.read` |
 | `inventory` | `inventory.read`, `inventory.write`, `reference.read` |
-| `report_ai` | `analytics.read`, `report_ai.write` |
+| `report_ai` (`Analytics` in UI) | `admissions.read`, `analytics.read`, `clients.read`, `finance.read`, `inventory.read`, `medical_cards.read`, `pets.read`, `reference.read`, `users.read`, `report_ai.write` |
 
 Supported scopes:
 - `clients.read`

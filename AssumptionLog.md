@@ -8604,3 +8604,44 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Обратная связь
 
 Пользователь попросил выполнить весь Stage 172 до конца, затем commit и push.
+
+## Этап 175. Analytics access preset UI and scope bundle hotfix — 2026-06-19
+
+### Что делали
+
+Пользователь уточнил, что отдельные права Report AI не видны в `/account` Access preset selector, а нужен понятный preset "аналитика": full read-only + все права на работу с отчётами, без custom scope builder и без общего Full access.
+
+### Что сделано
+
+- Backend preset value `report_ai` сохранён для storage/API/metrics compatibility, но user-facing label изменён на `Analytics`.
+- `report_ai` добавлен в `/account` Access preset dropdown.
+- `TOKEN_PRESET_SCOPES[report_ai]` расширен до текущего `read_only` bundle + `report_ai.write`; broad write scopes не добавлялись.
+- Старые persisted `report_ai` scope snapshots (`analytics.read` + `report_ai.write`) при deserialization расширяются до текущего Analytics bundle, чтобы существующие токены отображались как `Analytics` и получали ожидаемый full read-only + report save contract.
+- Добавлен guard test, который фиксирует инвариант: legacy expansion bundle == `TOKEN_PRESET_SCOPES[report_ai]` == `TOKEN_PRESET_SCOPES[read_only] ∪ {report_ai.write}`.
+- README и technical requirements синхронизированы с новым UI label и scope bundle.
+- Roadmap Stage 174 добавлен как future task для `get_daily_schedule` pagination по production feedback `#14`; реализация Stage 174 не начата.
+
+### Решения и обоснования
+
+- Value `report_ai` не переименовывался в `analytics`, чтобы не ломать сохранённые формы, audit details, metrics и существующие tokens.
+- Расширение старых `report_ai` токенов до Analytics bundle — осознанное изменение прав: раньше такие токены имели только `analytics.read + report_ai.write`, теперь получают тот же full read-only bundle, что и новые Analytics токены. Это соответствует пользовательскому требованию "права аналитика = full read + отчёты"; отдельная миграция не нужна, потому что расширение делается на read path через `deserialize_token_scopes`.
+- `messaging.read` не входит в Analytics, потому что текущий продуктовый `read_only` preset его не содержит; Analytics определён как `read_only + report_ai.write`.
+
+### Code/diff review 175
+
+- Initial Spark read-only hit the known `bwrap` sandbox/runtime issue; documented review-only fallback `gpt-5.3-codex-spark -s danger-full-access` found one accepted medium issue: legacy `report_ai` token snapshots could drift/display as legacy if bundle compatibility was not handled. Fixed by deserialization expansion.
+- Claude Opus review found one accepted medium issue: duplicated Analytics bundle lacked a cross-equality guard against drift. Fixed with `test_report_ai_analytics_bundle_tracks_current_preset_scopes`.
+- Final Spark review returned `[]`.
+- Final Claude Opus review returned `[]`.
+
+### Проверки 175
+
+- Targeted before guard test: `docker compose --profile test run --rm test pytest tests/test_stage130_access_registry.py tests/test_token_scopes.py tests/test_web_auth.py::test_account_token_issue_supports_access_preset_and_depersonalized_policy -q` — `47 passed`.
+- Full suite before guard test: `docker compose --profile test run --rm test` — `1162 passed, 7 skipped, 63 deselected`.
+- Targeted after guard test: `docker compose --profile test run --rm test pytest tests/test_stage130_access_registry.py tests/test_token_scopes.py tests/test_web_auth.py::test_account_token_issue_supports_access_preset_and_depersonalized_policy -q` — `48 passed`.
+- Final full suite: `docker compose --profile test run --rm test` — `1163 passed, 7 skipped, 63 deselected`.
+- Audit: `git diff --check` clean; `python3 scripts/check_no_historical_api_key_literal.py` — historical devtr6 API key literal not found.
+
+### Проблемы
+
+- Старые `report_ai` tokens получают больше read authority при следующем deserialization. Это intentional compatibility behavior for the renamed/expanded Analytics preset; operators should treat Analytics as a read-wide reporting preset, not as the old narrow two-scope Report AI preset.

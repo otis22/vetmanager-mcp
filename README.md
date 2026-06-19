@@ -201,7 +201,8 @@ Bearer-токен привязан к account сервиса:
 - кабинет показывает health активной integration и статус `reauth_required`, если сохранённый user token больше не проходит валидацию;
 - доступен выпуск Bearer-токенов с именем, сроком действия, preset'ом доступа
   (`full_access`, `read_only`, `frontdesk`, `doctor`, `finance`, `inventory`, `report_ai`)
-  и опциональным режимом деперсонализации ответов;
+  и опциональным режимом деперсонализации ответов; `report_ai` отображается в UI
+  как `Analytics` и даёт full read-only доступ плюс права сохранения Report AI отчётов;
 - web-выпуск безопасен по умолчанию: blank expiry становится 30 days,
   default preset — `read_only`, а `full_access` и `*.*.*.*` IP mask требуют
   явного подтверждения в форме;
@@ -671,7 +672,7 @@ Prompts работают по тому же bearer-only контракту, чт
 6. Если статус `ready_to_save` и нужны строки, явно вызвать `save_report_ai_job_as_report` с вменяемым названием отчёта; это write-tool, отчёт станет видимым в Vetmanager.
 7. `get_report_ai_job_data(job_id)` — получить `columns`, `rows`, `total`, `limited`.
 
-`save_report_ai_job_as_report` нельзя прятать внутри read-only сценария: пользователь или вызывающий агент должен понимать, что создаётся persistent report. Для этого есть минимальный preset `report_ai` (`analytics.read` + `report_ai.write`) без Full access. Для названий использовать короткие осмысленные заголовки с вопросом, периодом и MCP-origin, например `MCP debtors by negative balance 2026-06-15`.
+`save_report_ai_job_as_report` нельзя прятать внутри read-only сценария: пользователь или вызывающий агент должен понимать, что создаётся persistent report. Для этого есть preset `Analytics` (`report_ai`): full read-only scopes + `report_ai.write`, без общего Full access. Для названий использовать короткие осмысленные заголовки с вопросом, периодом и MCP-origin, например `MCP debtors by negative balance 2026-06-15`.
 
 Для больших таблиц `get_report_ai_job_data` ограничен Vetmanager upstream: если `limited=true`, JSON rows обрезаны. Для полного CSV/XLSX export есть отдельный read-only flow только по известному Report Constructor `report_id`:
 

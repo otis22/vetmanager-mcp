@@ -75,6 +75,26 @@ LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS = (
     ),
 )
 
+LEGACY_REPORT_AI_PRESET_SCOPE_SNAPSHOTS = (
+    (
+        SCOPE_ANALYTICS_READ,
+        SCOPE_REPORT_AI_WRITE,
+    ),
+)
+
+REPORT_AI_ANALYTICS_SCOPE_BUNDLE = (
+    SCOPE_ADMISSIONS_READ,
+    SCOPE_ANALYTICS_READ,
+    SCOPE_CLIENTS_READ,
+    SCOPE_FINANCE_READ,
+    SCOPE_INVENTORY_READ,
+    SCOPE_MEDICAL_CARDS_READ,
+    SCOPE_PETS_READ,
+    SCOPE_REFERENCE_READ,
+    SCOPE_REPORT_AI_WRITE,
+    SCOPE_USERS_READ,
+)
+
 _READ_SCOPE_BY_ENTITY = {
     "admission": SCOPE_ADMISSIONS_READ,
     "breed": SCOPE_REFERENCE_READ,
@@ -175,6 +195,8 @@ def deserialize_token_scopes(raw_value: str | None) -> list[str]:
     )
     if tuple(normalized) in LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS:
         return normalize_token_scopes(None)
+    if tuple(normalized) in LEGACY_REPORT_AI_PRESET_SCOPE_SNAPSHOTS:
+        return normalize_token_scopes(REPORT_AI_ANALYTICS_SCOPE_BUNDLE)
     return normalized
 
 

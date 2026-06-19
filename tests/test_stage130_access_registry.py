@@ -126,8 +126,16 @@ def test_full_access_preset_matches_supported_scopes_snapshot():
         (
             PRESET_REPORT_AI,
             (
+                SCOPE_ADMISSIONS_READ,
                 SCOPE_ANALYTICS_READ,
+                SCOPE_CLIENTS_READ,
+                SCOPE_FINANCE_READ,
+                SCOPE_INVENTORY_READ,
+                SCOPE_MEDICAL_CARDS_READ,
+                SCOPE_PETS_READ,
+                SCOPE_REFERENCE_READ,
                 SCOPE_REPORT_AI_WRITE,
+                SCOPE_USERS_READ,
             ),
         ),
     ],
@@ -237,5 +245,5 @@ def test_report_ai_preset_advertises_full_report_ai_flow():
     )
     assert get_presets_allowing_tool("save_report_ai_job_as_report") == (
         "Full access",
-        "Report AI",
+        "Analytics",
     )

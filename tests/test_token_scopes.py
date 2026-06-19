@@ -13,6 +13,8 @@ from token_scopes import (
     SCOPE_CLIENTS_READ,
     SCOPE_CLIENTS_WRITE,
     SCOPE_FINANCE_READ,
+    SCOPE_INVENTORY_READ,
+    SCOPE_MEDICAL_CARDS_READ,
     SCOPE_MESSAGING_WRITE,
     SCOPE_PETS_READ,
     SCOPE_PETS_WRITE,
@@ -21,10 +23,11 @@ from token_scopes import (
     SCOPE_USERS_READ,
     SUPPORTED_TOKEN_SCOPES,
     TOKEN_ACCESS_POLICY_VERSION,
+    REPORT_AI_ANALYTICS_SCOPE_BUNDLE,
     deserialize_token_scopes,
     normalize_token_scopes,
 )
-from tool_access_registry import PRESET_REPORT_AI
+from tool_access_registry import PRESET_READ_ONLY, PRESET_REPORT_AI, TOKEN_PRESET_SCOPES
 
 
 def test_service_bearer_token_scope_helpers_roundtrip():
@@ -52,6 +55,32 @@ def test_deserialize_old_full_access_snapshot_expands_to_current_full_access():
     old_full_access = [scope for scope in SUPPORTED_TOKEN_SCOPES if scope != SCOPE_REPORT_AI_WRITE]
 
     assert deserialize_token_scopes(json.dumps(old_full_access)) == list(SUPPORTED_TOKEN_SCOPES)
+
+
+def test_deserialize_old_report_ai_snapshot_expands_to_analytics_bundle():
+    old_report_ai_preset = [SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE]
+
+    assert deserialize_token_scopes(json.dumps(old_report_ai_preset)) == [
+        SCOPE_ADMISSIONS_READ,
+        SCOPE_ANALYTICS_READ,
+        SCOPE_CLIENTS_READ,
+        SCOPE_FINANCE_READ,
+        SCOPE_INVENTORY_READ,
+        SCOPE_MEDICAL_CARDS_READ,
+        SCOPE_PETS_READ,
+        SCOPE_REFERENCE_READ,
+        SCOPE_REPORT_AI_WRITE,
+        SCOPE_USERS_READ,
+    ]
+
+
+def test_report_ai_analytics_bundle_tracks_current_preset_scopes():
+    expected_analytics_scopes = tuple(
+        sorted(set(TOKEN_PRESET_SCOPES[PRESET_READ_ONLY]) | {SCOPE_REPORT_AI_WRITE})
+    )
+
+    assert TOKEN_PRESET_SCOPES[PRESET_REPORT_AI] == expected_analytics_scopes
+    assert tuple(sorted(REPORT_AI_ANALYTICS_SCOPE_BUNDLE)) == expected_analytics_scopes
 
 
 def test_normalize_token_scopes_rejects_unknown_values():
@@ -211,8 +240,16 @@ async def test_issue_service_bearer_token_uses_report_ai_access_preset_scopes(tm
             )
 
         assert deserialize_token_scopes(token.scopes_json) == [
+            SCOPE_ADMISSIONS_READ,
             SCOPE_ANALYTICS_READ,
+            SCOPE_CLIENTS_READ,
+            SCOPE_FINANCE_READ,
+            SCOPE_INVENTORY_READ,
+            SCOPE_MEDICAL_CARDS_READ,
+            SCOPE_PETS_READ,
+            SCOPE_REFERENCE_READ,
             SCOPE_REPORT_AI_WRITE,
+            SCOPE_USERS_READ,
         ]
     finally:
         await engine.dispose()

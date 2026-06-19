@@ -22,6 +22,7 @@ from tool_access_registry import (
     PRESET_FRONTDESK,
     PRESET_FULL_ACCESS,
     PRESET_READ_ONLY,
+    PRESET_REPORT_AI,
     TOKEN_PRESET_SCOPES,
 )
 from web_security import reset_web_security_state
@@ -1278,6 +1279,8 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
         account_page = await client.get("/account")
         assert 'data-testid="token-access-preset"' in account_page.text
         assert 'data-testid="token-is-depersonalized"' in account_page.text
+        assert f'value="{PRESET_REPORT_AI}"' in account_page.text
+        assert "Analytics" in account_page.text
         await _post_with_csrf(
             client,
             "/account/integration",

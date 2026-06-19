@@ -48,7 +48,7 @@ TOKEN_PRESET_LABELS: dict[str, str] = {
     PRESET_DOCTOR: "Doctor",
     PRESET_FINANCE: "Finance",
     PRESET_INVENTORY: "Inventory",
-    PRESET_REPORT_AI: "Report AI",
+    PRESET_REPORT_AI: "Analytics",
 }
 
 TOKEN_PRESET_SCOPES: dict[str, tuple[str, ...]] = {
@@ -120,8 +120,16 @@ TOKEN_PRESET_SCOPES: dict[str, tuple[str, ...]] = {
     PRESET_REPORT_AI: tuple(
         sorted(
             (
+                SCOPE_ADMISSIONS_READ,
                 SCOPE_ANALYTICS_READ,
+                SCOPE_CLIENTS_READ,
+                SCOPE_FINANCE_READ,
+                SCOPE_INVENTORY_READ,
+                SCOPE_MEDICAL_CARDS_READ,
+                SCOPE_PETS_READ,
+                SCOPE_REFERENCE_READ,
                 SCOPE_REPORT_AI_WRITE,
+                SCOPE_USERS_READ,
             )
         )
     ),
