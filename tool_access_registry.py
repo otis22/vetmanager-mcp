@@ -136,6 +136,7 @@ TOKEN_PRESET_SCOPES: dict[str, tuple[str, ...]] = {
 }
 
 TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
+    "get_report_ai_prompt_helper": (),
     "create_admission": (SCOPE_ADMISSIONS_WRITE,),
     "create_client": (SCOPE_CLIENTS_WRITE,),
     "create_good": (SCOPE_INVENTORY_WRITE,),

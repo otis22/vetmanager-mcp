@@ -2919,3 +2919,16 @@ Research summary:
 - 175.2 Расширить `TOKEN_PRESET_SCOPES[report_ai]`: все read-only scopes + `report_ai.write`; сохранить value `report_ai` для совместимости existing metrics/storage/API. — `done`
 - 175.3 Tests/docs: registry expected scopes, token issuance snapshot, account UI option visibility, README/technical requirements. — `done`
 - 175.4 Full checks, audit, review gates, commit/push/deploy/smoke. — `done`
+
+## Этап 176. Report AI helper tool and export fallback guidance — `done`
+
+Источник: пользовательское уточнение 2026-06-19: export tools (`start_report_export`, `get_report_export_file`) выглядят слишком основным путём для отчётов; агент должен использовать их как fallback или когда явно есть `report_id`. Также согласованный prompt helper для отчётов сейчас доступен как MCP prompt, но не виден клиентам/агентам, которые показывают только tools.
+
+Цель: сделать Report AI workflow очевидным для агентов: сначала получить подсказку по формулировке отчёта, затем запускать Report AI job; CSV/XLSX export использовать только как fallback/explicit path. Использовать существующий helper artifact `artifacts/report-ai-prompt-helper-short-mcp-2026-06-15.md` как single source of truth.
+
+- 176.1 Создать PRD stage 176: зафиксировать default Report AI flow, fallback-only export triggers, scope-free helper tool, no duplicate helper text, acceptance criteria и risks. — `done`
+- 176.2 Добавить tool `get_report_ai_prompt_helper`, который возвращает тот же текст, что MCP prompt `report_ai_prompt_helper`; вынести чтение helper artifact в общий loader. Tool должен быть доступен без `report_ai`/Analytics scope, потому что это статическая подсказка до запуска отчётов. — `done`
+- 176.3 Обновить descriptions: `create_report_ai_job` должен просить сначала использовать `get_report_ai_prompt_helper` или prompt `report_ai_prompt_helper`, если пользователь не дал готовый русский `intent_text`; `get_report_ai_job_data` должен при `limited=true` сначала рекомендовать сузить отчёт, а export считать крайней мерой. — `done`
+- 176.4 Ослабить export path в descriptions: `start_report_export`, `get_report_export_file`, `get_report_ai_job_export` явно пометить как fallback-only / not default; допустимые триггеры — пользователь дал `report_id`, явно просит CSV/XLSX, либо `get_report_ai_job_data` вернул `limited=true` и у job есть `report_id`. — `done`
+- 176.5 Tests: tool registered; tool is scope-free; prompt/tool helper text equal and read one artifact; descriptions contain fallback guidance and do not promote export as default path; tool count/schema snapshots updated. — `done`
+- 176.6 Full checks, audit, review gates, commit/push/deploy/smoke. — `done`

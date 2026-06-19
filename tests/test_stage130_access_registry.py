@@ -194,6 +194,7 @@ def test_normalize_token_preset_rejects_unknown_or_whitespace_values(preset):
         ("get_inactive_pets", (SCOPE_CLIENTS_READ, SCOPE_PETS_READ, SCOPE_FINANCE_READ, SCOPE_MEDICAL_CARDS_READ)),
         ("get_doctor_free_slots", (SCOPE_ADMISSIONS_READ, SCOPE_ANALYTICS_READ)),
         ("get_message_reports", (SCOPE_ANALYTICS_READ,)),
+        ("get_report_ai_prompt_helper", ()),
         ("create_report_ai_job", (SCOPE_ANALYTICS_READ,)),
         ("search_invoice_goods", (SCOPE_INVENTORY_READ,)),
         ("get_good_combination", (SCOPE_INVENTORY_READ,)),

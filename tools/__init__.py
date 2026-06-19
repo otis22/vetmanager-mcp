@@ -18,7 +18,7 @@ from vetmanager_client import resolve_runtime_credentials
 
 
 SCOPE_DENIED_MESSAGE = "Tool is not permitted for this token."
-BASELINE_ALLOWED_TOOLS = {"report_problem"}
+BASELINE_ALLOWED_TOOLS = {"get_report_ai_prompt_helper", "report_problem"}
 
 
 def _format_scope_denied_message(

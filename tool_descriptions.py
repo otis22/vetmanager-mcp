@@ -580,6 +580,7 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "create_timesheet": "timesheet",
     "get_inactive_pets": "pet",
     "get_inactive_clients": "client",
+    "get_report_ai_prompt_helper": "report_ai",
     "create_report_ai_job": "report_ai",
     "confirm_report_ai_job_candidate": "report_ai",
     "get_report_ai_job": "report_ai",
@@ -753,11 +754,21 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "create_report_ai_job": (
         "Create an async Vetmanager Report AI job from a Russian report intent. "
-        "Use after reading report_ai_prompt_helper when the user asks for an "
-        "analytic report, grouped/list report, count, trend, or business condition "
-        "that is better answered by the report constructor. The intent is limited "
-        "to 1000 characters and jobs must be polled with get_report_ai_job. "
+        "Use after reading get_report_ai_prompt_helper or the MCP prompt "
+        "report_ai_prompt_helper unless the user already supplied a final Russian "
+        "intent_text. Use when the user asks for an analytic report, grouped/list "
+        "report, count, trend, or business condition that is better answered by "
+        "the report constructor. The intent is limited to 1000 characters and "
+        "jobs must be polled with get_report_ai_job. "
         "Domain synonyms: отчёт, отчет, ИИ отчёт, AI report, конструктор отчётов, "
+        "аналитика, report ai."
+    ),
+    "get_report_ai_prompt_helper": (
+        "Return static guidance for writing safe Russian Report AI intent_text. "
+        "Use before create_report_ai_job when MCP prompts are not visible in the "
+        "client, unless the user already supplied a final Russian intent_text. "
+        "This helper is advisory and does not call Vetmanager. Domain synonyms: "
+        "отчёт, отчет, ИИ отчёт, AI report, подсказка отчёта, конструктор отчётов, "
         "аналитика, report ai."
     ),
     "get_report_ai_job": (
@@ -779,28 +790,36 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "Get table rows for a saved or existing_report_matched Report AI job. "
         "Rows are unavailable from ready_to_save; save explicitly first when rows "
         "are needed. Vetmanager caps returned rows at 1000 and limited=true means "
-        "more rows exist. Domain synonyms: отчёт, отчет, ИИ отчёт, AI report, "
+        "more rows exist. When limited=true, narrow or refine the report first "
+        "with period, filters, or aggregation; CSV/XLSX export is a fallback only "
+        "when the user still needs all rows and a report_id is available. "
+        "Domain synonyms: отчёт, отчет, ИИ отчёт, AI report, "
         "конструктор отчётов, аналитика, report ai."
     ),
     "start_report_export": (
         "Start a Vetmanager Report Constructor CSV/XLSX export for a known report_id. "
-        "Use only when the report_id is already known and the report has REST export "
-        "enabled in Vetmanager. Optional filter_json is report-specific JSON; MCP "
-        "validates JSON syntax only. The tool returns report_file_id for "
-        "get_report_export_file. Do not log or paste export file locators outside "
-        "the tool response. Domain synonyms: отчёт, отчет, CSV отчёт, XLSX отчёт, "
+        "This is a fallback-only path, not the default Report AI workflow. Use only "
+        "when the user provided a known report_id, explicitly asks for CSV/XLSX, or "
+        "get_report_ai_job_data returned limited=true and a report_id is available. "
+        "The report must have REST export enabled in Vetmanager. Optional filter_json "
+        "is report-specific JSON; MCP validates JSON syntax only. The tool returns "
+        "report_file_id for get_report_export_file. Do not log or paste export file "
+        "locators outside the tool response. Domain synonyms: отчёт, отчет, CSV отчёт, XLSX отчёт, "
         "конструктор отчётов, аналитика."
     ),
     "get_report_export_file": (
         "Get CSV/XLSX export file locators for a report_file_id returned by "
-        "start_report_export. If Vetmanager says generation is still in progress, "
+        "start_report_export. This is a fallback-only follow-up, not a default "
+        "discovery/list step. If Vetmanager says generation is still in progress, "
         "retry after a delay. Treat html_file, csv_file, csv_semicolon_file, and "
         "xlsx_file as sensitive clinic-data locators. Domain synonyms: отчёт, "
         "CSV отчёт, XLSX отчёт, выгрузка отчёта, конструктор отчётов."
     ),
     "get_report_ai_job_export": (
         "Start CSV/XLSX export for a Report AI job only when it is saved or "
-        "existing_report_matched and includes job.report_id. This does not auto-save "
+        "existing_report_matched and includes job.report_id. This is a fallback-only "
+        "path for explicit CSV/XLSX requests or limited=true row results; it is not "
+        "the default way to read Report AI rows. This does not auto-save "
         "ready_to_save jobs and may return not REST-exportable for AI-saved reports "
         "without Vetmanager REST access enabled. Domain synonyms: ИИ отчёт, AI "
         "report, CSV отчёт, XLSX отчёт, конструктор отчётов."

@@ -8,6 +8,7 @@ from fastmcp.exceptions import ToolError
 
 from exceptions import AuthError, VetmanagerError
 from observability_logging import RUNTIME_LOGGER
+from prompts import get_report_ai_prompt_helper_text
 from runtime_auth import get_current_runtime_credentials
 from service_metrics import record_report_ai_long_queued_poll
 from vetmanager_client import VetmanagerClient
@@ -126,7 +127,7 @@ def _report_ai_goods_good_id_workaround() -> dict:
             "query referenced an unavailable good.id field/expression."
         ),
         "steps": [
-            "Read report_ai_prompt_helper before retrying.",
+            "Read get_report_ai_prompt_helper or report_ai_prompt_helper before retrying.",
             "Rephrase the Russian intent to request product code/article/title instead of a standalone good.id column.",
             "Create a new Report AI job and poll it with get_report_ai_job.",
         ],
@@ -348,6 +349,16 @@ async def _start_report_export(report_id: int, filter_json: str | None = None) -
 
 
 def register(mcp: FastMCP) -> None:
+
+    @mcp.tool
+    async def get_report_ai_prompt_helper() -> dict:
+        """Return guidance for formulating safe Vetmanager Report AI intents.
+
+        Use this static helper before create_report_ai_job when MCP prompts are
+        not visible in the client. It returns the same text as the
+        report_ai_prompt_helper prompt.
+        """
+        return {"helper_text": get_report_ai_prompt_helper_text()}
 
     @mcp.tool
     async def create_report_ai_job(intent_text: str) -> dict:

@@ -229,7 +229,7 @@ SEED_ISSUES: tuple[SeedIssue, ...] = (
         agent_playbook=_playbook(
             "Report AI goods preview can fail when generated SQL references a standalone good.id field.",
             steps=[
-                "Read report_ai_prompt_helper before retrying.",
+                "Read get_report_ai_prompt_helper or report_ai_prompt_helper before retrying.",
                 "Rephrase the Russian intent to request product code/article/title instead of standalone good.id.",
                 "Create a new Report AI job and poll it with get_report_ai_job.",
             ],

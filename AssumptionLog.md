@@ -8645,3 +8645,52 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Проблемы
 
 - Старые `report_ai` tokens получают больше read authority при следующем deserialization. Это intentional compatibility behavior for the renamed/expanded Analytics preset; operators should treat Analytics as a read-wide reporting preset, not as the old narrow two-scope Report AI preset.
+
+## Этап 176. Report AI helper tool and export fallback guidance — 2026-06-19
+
+### Что делали
+
+Пользователь уточнил, что CSV/XLSX export tools выглядят как основной путь отчётов, хотя должны быть fallback/explicit path, а helper по формулировке Report AI intent доступен как MCP prompt, но не виден tool-only клиентам.
+
+### Что сделано
+
+- Добавлен tool `get_report_ai_prompt_helper`, который возвращает тот же rendered helper text, что prompt `report_ai_prompt_helper`.
+- Чтение `artifacts/report-ai-prompt-helper-short-mcp-2026-06-15.md` вынесено в общий loader в `prompts.py`; prompt и tool больше не дублируют путь/текст.
+- Helper tool добавлен как baseline allowed: authenticated bearer с любым непустым scope manifest может читать статическую подсказку, без `analytics.read`/`report_ai.write`; empty scopes остаются denied.
+- `create_report_ai_job` description теперь явно указывает `get_report_ai_prompt_helper` или `report_ai_prompt_helper` как advisory step, если пользователь не дал готовый русский `intent_text`.
+- `get_report_ai_job_data` description теперь при `limited=true` направляет сначала сужать отчёт фильтрами/периодом/агрегацией; export описан как fallback только когда нужны все строки и есть `report_id`.
+- `start_report_export`, `get_report_export_file`, `get_report_ai_job_export` descriptions помечены как fallback-only / not default.
+- Runtime goods `good.id` workaround и seeded known issue playbook теперь называют и tool, и prompt helper.
+- README обновлён: Report AI tools count 9, helper tool/prompt flow, export fallback policy.
+
+### Решения и обоснования
+
+- Helper не требует Report AI/Analytics scope, потому что не обращается в Vetmanager и нужен до запуска отчёта. При этом bearer authentication и непустой scope manifest сохранены по текущему baseline pattern.
+- Helper advisory, не mandatory enforcement: существующий `create_report_ai_job(intent_text=...)` должен работать без предварительного helper call.
+- Export implementation не менялась: корректировка только в discovery/descriptions, чтобы агенты не выбирали export как default path.
+- `list_reports` tool не добавлялся, потому что REST endpoint списка отчётов не подтверждён.
+
+### PRD-review 176
+
+- Spark PRD-review сначала выявил неоднозначность equality prompt/tool body и scope semantics; PRD уточнён до byte-for-byte comparison raw rendered prompt text vs `helper_text`, non-empty unrelated scope allowed, empty scopes denied.
+- Spark follow-up выявил необходимость явно сохранить advisory nature helper и fallback trigger for `limited=true`; PRD обновлён, финальный Spark sanity returned `[]`.
+- Claude Opus PRD-review выявил риск сравнения `str(message.content)` вместо `.content.text`, необходимость явно тестировать оба helper names в `create_report_ai_job` description, depersonalized helper invariance и runtime/KB hints по goods workaround. Все принятые замечания внесены в PRD.
+- Второй Claude PRD-review вернул accepted medium finding про goods workaround/seeded known issue references; PRD обновлён. Бюджет Claude PRD-review после этого исчерпан; финальный Spark sanity returned `[]`.
+
+### Проверки 176
+
+- Red/Green targeted: `docker compose --profile test run --rm test pytest tests/test_stage170_report_ai_tools.py tests/test_stage130_access_registry.py -q` — сначала Red до реализации, затем `66 passed`.
+- Related regression: `docker compose --profile test run --rm test pytest tests/test_stage172_report_export_tools.py tests/test_tools_list_schema.py tests/test_stage149_agent_feedback.py::test_report_problem_baseline_scope_requires_authenticated_non_empty_scopes -q` — `50 passed`.
+- Combined targeted: `docker compose --profile test run --rm test pytest tests/test_stage170_report_ai_tools.py tests/test_stage130_access_registry.py tests/test_stage172_report_export_tools.py tests/test_tools_list_schema.py tests/test_stage149_agent_feedback.py::test_report_problem_baseline_scope_requires_authenticated_non_empty_scopes -q` — `116 passed`.
+- Claude Opus code review found one accepted low-severity test gap: guidance assertions checked `SPECIAL_TOOL_DESCRIPTIONS` but not live `tools/list` descriptions. Fixed with `test_report_ai_guidance_reaches_live_tool_descriptions`.
+- Spark code review after the fix returned `[]`.
+- Claude Opus code review after the fix returned `[]`.
+- Targeted after review fix: `docker compose --profile test run --rm test pytest tests/test_stage170_report_ai_tools.py tests/test_stage130_access_registry.py tests/test_stage172_report_export_tools.py tests/test_tools_list_schema.py tests/test_stage149_agent_feedback.py::test_report_problem_baseline_scope_requires_authenticated_non_empty_scopes -q` — `117 passed`.
+- Full suite before review fix: `docker compose --profile test run --rm test` — `1169 passed, 7 skipped, 63 deselected`.
+- Full suite after review fix: `docker compose --profile test run --rm test` — `1170 passed, 7 skipped, 63 deselected`.
+- Audit: `git diff --check` clean; `python3 scripts/check_no_historical_api_key_literal.py` — historical devtr6 API key literal not found.
+
+### Проблемы
+
+- Description guidance improves agent tool choice but cannot guarantee every client/LLM will call helper before `create_report_ai_job`.
+- Export locators remain sensitive bulk clinic data; descriptions warn not to log or paste locators outside tool response.

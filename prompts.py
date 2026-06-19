@@ -20,17 +20,27 @@ def _bearer_runtime_prefix() -> str:
     )
 
 
+def _report_ai_prompt_helper_path() -> Path:
+    return (
+        Path(__file__).resolve().parent
+        / "artifacts"
+        / "report-ai-prompt-helper-short-mcp-2026-06-15.md"
+    )
+
+
+def get_report_ai_prompt_helper_text() -> str:
+    """Return the rendered Report AI helper shared by prompt and tool."""
+    return _bearer_runtime_prefix() + _report_ai_prompt_helper_path().read_text(
+        encoding="utf-8"
+    )
+
+
 def register_prompts(mcp: FastMCP) -> None:
 
     @mcp.prompt
     def report_ai_prompt_helper() -> list[Message]:
         """Return the short Report AI helper for building safe report intents."""
-        helper_path = (
-            Path(__file__).resolve().parent
-            / "artifacts"
-            / "report-ai-prompt-helper-short-mcp-2026-06-15.md"
-        )
-        return [Message(_bearer_runtime_prefix() + helper_path.read_text(encoding="utf-8"))]
+        return [Message(get_report_ai_prompt_helper_text())]
 
     @mcp.prompt
     def daily_schedule(date: str, doctor_id: int = 0) -> list[Message]:

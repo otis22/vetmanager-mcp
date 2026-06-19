@@ -9,8 +9,15 @@ from fastmcp.exceptions import ToolError
 
 import service_metrics
 from server import mcp
+from scripts.seed_known_issues import SEED_ISSUES
 from tests.runtime_factories import patch_runtime_credentials
-from token_scopes import SCOPE_ANALYTICS_READ, SCOPE_ANALYTICS_WRITE, SCOPE_REPORT_AI_WRITE
+from token_scopes import (
+    SCOPE_ANALYTICS_READ,
+    SCOPE_ANALYTICS_WRITE,
+    SCOPE_CLIENTS_READ,
+    SCOPE_REPORT_AI_WRITE,
+)
+from tool_descriptions import SPECIAL_TOOL_DESCRIPTIONS
 import tools.report_ai as report_ai
 import vetmanager_client
 
@@ -26,7 +33,11 @@ def billing_mock():
     )
 
 
-def bearer_runtime_patch(*, scopes=(SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE)):
+def bearer_runtime_patch(
+    *,
+    scopes=(SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE),
+    is_depersonalized: bool = False,
+):
     return patch_runtime_credentials(
         DOMAIN,
         API_KEY,
@@ -34,6 +45,7 @@ def bearer_runtime_patch(*, scopes=(SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE)
         bearer_token_id=1,
         connection_id=1,
         scopes=scopes,
+        is_depersonalized=is_depersonalized,
     )
 
 
@@ -59,6 +71,118 @@ async def test_report_ai_prompt_helper_registered_and_mentions_data_boundary():
     assert "Do not write SQL" in body
     assert "good.id" in body
     assert "код/артикул/наименование товара" in body
+
+
+@pytest.mark.asyncio
+async def test_get_report_ai_prompt_helper_tool_matches_prompt_body():
+    names = {tool.name for tool in await mcp.list_tools()}
+    assert "get_report_ai_prompt_helper" in names
+
+    prompt = await mcp.get_prompt("report_ai_prompt_helper")
+    rendered = await prompt.render(arguments={})
+    prompt_body = "\n".join(message.content.text for message in rendered.messages)
+
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_CLIENTS_READ,))
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_report_ai_prompt_helper", {})
+
+    helper_text = _structured(result)["helper_text"]
+    assert helper_text == prompt_body
+    assert "ready_to_save" in helper_text
+    assert "saved" in helper_text
+    assert "existing_report_matched" in helper_text
+    assert "Do not write SQL" in helper_text
+    assert "good.id" in helper_text
+    assert "код/артикул/наименование товара" in helper_text
+
+
+@pytest.mark.asyncio
+async def test_get_report_ai_prompt_helper_scope_free_but_authenticated():
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_CLIENTS_READ,))
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_report_ai_prompt_helper", {})
+
+    assert "helper_text" in _structured(result)
+
+    empty_headers_patch, empty_runtime_patch = bearer_runtime_patch(scopes=())
+    with empty_headers_patch, empty_runtime_patch:
+        with pytest.raises(ToolError, match="not permitted"):
+            await mcp.call_tool("get_report_ai_prompt_helper", {})
+
+
+@pytest.mark.asyncio
+async def test_get_report_ai_prompt_helper_depersonalized_token_preserves_text():
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_CLIENTS_READ,))
+    with headers_patch, runtime_patch:
+        normal = await mcp.call_tool("get_report_ai_prompt_helper", {})
+
+    dep_headers_patch, dep_runtime_patch = bearer_runtime_patch(
+        scopes=(SCOPE_CLIENTS_READ,),
+        is_depersonalized=True,
+    )
+    with dep_headers_patch, dep_runtime_patch:
+        depersonalized = await mcp.call_tool("get_report_ai_prompt_helper", {})
+
+    assert _structured(depersonalized)["helper_text"] == _structured(normal)["helper_text"]
+
+
+def test_report_ai_guidance_descriptions_name_helper_and_fallback_policy():
+    create_description = SPECIAL_TOOL_DESCRIPTIONS["create_report_ai_job"]
+    assert "get_report_ai_prompt_helper" in create_description
+    assert "report_ai_prompt_helper" in create_description
+
+    data_description = SPECIAL_TOOL_DESCRIPTIONS["get_report_ai_job_data"]
+    assert "limited=true" in data_description
+    assert "narrow" in data_description.lower() or "refine" in data_description.lower()
+    assert "report_id" in data_description
+    assert "fallback" in data_description.lower()
+
+    for tool_name in (
+        "start_report_export",
+        "get_report_export_file",
+        "get_report_ai_job_export",
+    ):
+        description = SPECIAL_TOOL_DESCRIPTIONS[tool_name]
+        assert "fallback" in description.lower() or "not default" in description.lower()
+
+
+@pytest.mark.asyncio
+async def test_report_ai_guidance_reaches_live_tool_descriptions():
+    tools_by_name = {tool.name: tool for tool in await mcp.list_tools()}
+
+    create_description = tools_by_name["create_report_ai_job"].description
+    assert "get_report_ai_prompt_helper" in create_description
+    assert "report_ai_prompt_helper" in create_description
+
+    data_description = tools_by_name["get_report_ai_job_data"].description
+    assert "limited=true" in data_description
+    assert "report_id" in data_description
+    assert "fallback" in data_description.lower()
+
+    for tool_name in (
+        "start_report_export",
+        "get_report_export_file",
+        "get_report_ai_job_export",
+    ):
+        description = tools_by_name[tool_name].description
+        assert "fallback" in description.lower() or "not default" in description.lower()
+
+
+def test_report_ai_goods_workaround_mentions_helper_tool_and_prompt():
+    workaround = report_ai._report_ai_goods_good_id_workaround()
+    steps_text = "\n".join(workaround["steps"])
+
+    assert "get_report_ai_prompt_helper" in steps_text
+    assert "report_ai_prompt_helper" in steps_text
+
+    seeded_issue = next(
+        issue
+        for issue in SEED_ISSUES
+        if issue.slug == "report-ai-goods-good-id-preview"
+    )
+    seeded_steps = "\n".join(seeded_issue.agent_playbook["steps"])
+    assert "get_report_ai_prompt_helper" in seeded_steps
+    assert "report_ai_prompt_helper" in seeded_steps
 
 
 @pytest.mark.asyncio
