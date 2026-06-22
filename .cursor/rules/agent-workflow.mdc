@@ -111,6 +111,22 @@ timeout 1200 codex exec -m gpt-5.3-codex-spark -s read-only -C "$PWD" -
 
 Если read-only sandbox падает до чтения файлов из-за runtime/sandbox ошибки (например `bwrap`/user namespace failure), это не считается finding проекта. Нужно остановить зависший запуск, повторить тот же `gpt-5.3-codex-spark` один раз с `-s danger-full-access` и prompt: `Review only. Do not edit files. Do not run write commands.` Fallback на другую модель разрешён только при явной model/provider failure, а не при sandbox/runtime failure. Результат Spark-review фиксируется в AssumptionLog вместе с принятыми/отклонёнными findings или `[]`.
 
+Claude Opus review из Codex runtime:
+
+- Когда текущий агент работает в Codex и `ревью сторонней моделью` должен делать Claude Opus, shell timeout должен быть минимум в 2 раза больше лимита, который сообщается Claude в prompt.
+- Default: real shell timeout `1200s`, prompt deadline `600 seconds`.
+- В prompt всегда явно писать, что Claude должен закончить review в указанный срок; реальный shell timeout Claude не сообщать.
+- Для inline diff/context review отключать tools/MCP, если они не нужны reviewer'у.
+- Prompt должен запрещать правки, shell-команды и tool calls: `Review only. Do not edit files. Do not run commands. Do not output tool calls.`
+- Предпочтительный output для review gate — structured JSON findings. Для Claude CLI использовать `--output-format json` и JSON schema, когда доступно.
+- Если Claude вернул не review, а попытку tool call, prose вместо требуемой schema или другой невалидный формат, запуск не считать полноценным review и повторить в пределах бюджета с более жёстким prompt/schema.
+- Если Claude недоступен из-за provider/model error, зафиксировать это в `AssumptionLog.md` и действовать по budget/blocked rationale.
+- Пример вызова для inline diff/context review:
+
+```bash
+{ printf '%s\n' 'Review only. Do not edit files. Do not run commands. Do not output tool calls. Finish this review within 600 seconds. Review the supplied diff only. Return JSON matching the schema. Findings should include only material correctness/security/regression issues; use an empty findings array if none.'; git show --find-renames --find-copies --format=fuller HEAD; } | timeout 1200 claude -p --model opus --strict-mcp-config --mcp-config '{"mcpServers":{}}' --tools "" --output-format json --json-schema '{"type":"object","properties":{"findings":{"type":"array","items":{"type":"object","properties":{"severity":{"type":"string"},"file":{"type":"string"},"line":{"type":"integer"},"reason":{"type":"string"}},"required":["severity","file","line","reason"],"additionalProperties":false}}},"required":["findings"],"additionalProperties":false}'
+```
+
 ## 4. Core Loop агента
 
 Агент работает только через цикл:
