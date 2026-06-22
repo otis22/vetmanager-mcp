@@ -30,7 +30,8 @@ from storage_models import (
     VetmanagerConnection,
 )
 from tests.runtime_factories import make_runtime_credentials
-from token_scopes import SUPPORTED_TOKEN_SCOPES
+from token_scopes import LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS, SUPPORTED_TOKEN_SCOPES
+from tool_access_registry import PRESET_FULL_ACCESS, PRESET_READ_ONLY, TOKEN_PRESET_SCOPES
 from tool_oauth_security import OAuthChallengeMiddleware, _challenge_result
 from tool_scope_security import ScopeDeniedToolError
 from web_auth import (
@@ -108,6 +109,8 @@ async def _authorize_and_consent(
     scope: str = "clients.read pets.read",
     state: str = "state-token",
     code_challenge: str,
+    access_preset: str = PRESET_READ_ONLY,
+    confirm_full_access: bool = False,
 ) -> str:
     consent_response = await client.get(
         "/oauth/authorize",
@@ -126,13 +129,17 @@ async def _authorize_and_consent(
     csrf_token = CSRF_RE.search(consent_response.text).group(1)
     request_state = REQUEST_STATE_RE.search(consent_response.text).group(1)
     connection_id = CONNECTION_ID_RE.search(consent_response.text).group(1)
+    consent_data = {
+        "csrf_token": csrf_token,
+        "request_state": request_state,
+        "connection_id": connection_id,
+        "access_preset": access_preset,
+    }
+    if confirm_full_access:
+        consent_data["confirm_full_access"] = "1"
     callback_response = await client.post(
         "/oauth/authorize/consent",
-        data={
-            "csrf_token": csrf_token,
-            "request_state": request_state,
-            "connection_id": connection_id,
-        },
+        data=consent_data,
         follow_redirects=False,
     )
     assert callback_response.status_code == 303
@@ -536,12 +543,17 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
                 "csrf_token": csrf_token,
                 "request_state": request_state,
                 "connection_id": connection_id,
+                "access_preset": PRESET_READ_ONLY,
             },
             follow_redirects=False,
         )
 
     assert consent_response.status_code == 200
     assert "ChatGPT access" in consent_response.text
+    assert 'data-testid="oauth-access-preset"' in consent_response.text
+    assert 'data-testid="oauth-effective-scope-preview"' in consent_response.text
+    assert "Effective scopes by access level" in consent_response.text
+    assert f'value="{PRESET_READ_ONLY}" selected' in consent_response.text
     assert callback_response.status_code == 303
     callback_url = urlparse(callback_response.headers["location"])
     callback_query = parse_qs(callback_url.query)
@@ -560,8 +572,165 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
     assert stored_code.redirect_uri == "https://chat.openai.com/aip/callback"
     assert stored_code.resource == "https://test.example.com/mcp"
     assert stored_code.scope == "clients.read pets.read"
+    assert stored_code.access_preset == PRESET_READ_ONLY
     assert stored_code.account_id == account_id
     assert stored_code.vetmanager_connection_id == int(connection_id)
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_oauth_consent_narrows_full_request_to_read_only_preset(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="oauth-readonly@example.com")
+    verifier = "Verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
+    full_scope = " ".join(SUPPORTED_TOKEN_SCOPES)
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
+        response = await client.post(
+            "/oauth/register",
+            json={
+                "client_name": "ChatGPT",
+                "redirect_uris": ["https://chat.openai.com/aip/callback"],
+                "scope": full_scope,
+            },
+        )
+        client_id = response.json()["client_id"]
+        raw_code = await _authorize_and_consent(
+            client,
+            client_id=client_id,
+            scope=full_scope,
+            code_challenge=_pkce_challenge(verifier),
+        )
+        token_response = await client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": raw_code,
+                "client_id": client_id,
+                "redirect_uri": "https://chat.openai.com/aip/callback",
+                "resource": "https://test.example.com/mcp",
+                "code_verifier": verifier,
+            },
+        )
+
+    assert token_response.status_code == 200
+    assert token_response.json()["scope"] == " ".join(TOKEN_PRESET_SCOPES[PRESET_READ_ONLY])
+    async with storage.get_session_factory()() as session:
+        grant = await session.scalar(select(OAuthGrant))
+
+    assert grant is not None
+    assert grant.access_preset == PRESET_READ_ONLY
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_oauth_consent_rejects_full_access_without_confirmation(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="oauth-full-confirm@example.com")
+    full_scope = " ".join(SUPPORTED_TOKEN_SCOPES)
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
+        response = await client.post(
+            "/oauth/register",
+            json={
+                "client_name": "ChatGPT",
+                "redirect_uris": ["https://chat.openai.com/aip/callback"],
+                "scope": full_scope,
+            },
+        )
+        client_id = response.json()["client_id"]
+        consent_response = await client.get(
+            "/oauth/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": "https://chat.openai.com/aip/callback",
+                "resource": "https://test.example.com/mcp",
+                "scope": full_scope,
+                "state": "state-full",
+                "code_challenge": "challenge",
+                "code_challenge_method": "S256",
+            },
+        )
+        callback_response = await client.post(
+            "/oauth/authorize/consent",
+            data={
+                "csrf_token": CSRF_RE.search(consent_response.text).group(1),
+                "request_state": REQUEST_STATE_RE.search(consent_response.text).group(1),
+                "connection_id": CONNECTION_ID_RE.search(consent_response.text).group(1),
+                "access_preset": PRESET_FULL_ACCESS,
+            },
+            follow_redirects=False,
+        )
+
+    assert callback_response.status_code == 400
+    assert "Full access requires explicit confirmation." in callback_response.text
+    async with storage.get_session_factory()() as session:
+        assert await session.scalar(select(OAuthAuthorizationCode)) is None
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_oauth_consent_rejects_empty_scope_intersection(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="oauth-empty-intersection@example.com")
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
+        response = await client.post(
+            "/oauth/register",
+            json={
+                "client_name": "ChatGPT",
+                "redirect_uris": ["https://chat.openai.com/aip/callback"],
+                "scope": "messaging.write",
+            },
+        )
+        client_id = response.json()["client_id"]
+        consent_response = await client.get(
+            "/oauth/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": "https://chat.openai.com/aip/callback",
+                "resource": "https://test.example.com/mcp",
+                "scope": "messaging.write",
+                "state": "state-empty",
+                "code_challenge": "challenge",
+                "code_challenge_method": "S256",
+            },
+        )
+        callback_response = await client.post(
+            "/oauth/authorize/consent",
+            data={
+                "csrf_token": CSRF_RE.search(consent_response.text).group(1),
+                "request_state": REQUEST_STATE_RE.search(consent_response.text).group(1),
+                "connection_id": CONNECTION_ID_RE.search(consent_response.text).group(1),
+                "access_preset": PRESET_READ_ONLY,
+            },
+            follow_redirects=False,
+        )
+
+    assert callback_response.status_code == 400
+    assert "Selected access level does not include any requested scopes." in callback_response.text
+    async with storage.get_session_factory()() as session:
+        assert await session.scalar(select(OAuthAuthorizationCode)) is None
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -618,6 +787,7 @@ async def test_oauth_token_exchange_refresh_rotation_and_reuse_revocation(tmp_pa
                 "refresh_token": first_payload["refresh_token"],
                 "client_id": client_id,
                 "resource": "https://test.example.com/mcp",
+                "scope": " ".join(SUPPORTED_TOKEN_SCOPES),
             },
         )
         reuse_response = await client.post(
@@ -641,6 +811,7 @@ async def test_oauth_token_exchange_refresh_rotation_and_reuse_revocation(tmp_pa
     second_payload = refresh_response.json()
     assert second_payload["refresh_token"] != first_payload["refresh_token"]
     assert second_payload["access_token"] != first_payload["access_token"]
+    assert second_payload["scope"] == "clients.read pets.read"
     assert reuse_response.status_code == 400
     assert reuse_response.json()["error"] == "invalid_grant"
 
@@ -729,6 +900,145 @@ async def test_oauth_token_rejects_exchange_when_client_disabled(tmp_path, monke
 
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_client"
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_oauth_refresh_rejects_legacy_full_access_grant_with_relink_message(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="legacy-full-oauth@example.com")
+    raw_refresh_token = "vm_ort_legacy-refresh-token"
+    legacy_full_scopes = LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS[0]
+    full_scope = " ".join(legacy_full_scopes)
+
+    async with storage.get_session_factory()() as session:
+        connection = await session.scalar(select(VetmanagerConnection))
+        oauth_client = OAuthClient(
+            client_id="vm_oc_legacy_full",
+            client_name="ChatGPT",
+            redirect_uris_json='["https://chat.openai.com/aip/callback"]',
+            token_endpoint_auth_method="none",
+            grant_types_json='["authorization_code","refresh_token"]',
+            response_types_json='["code"]',
+            scope=full_scope,
+            status="active",
+        )
+        session.add(oauth_client)
+        await session.flush()
+        grant = OAuthGrant(
+            account_id=account_id,
+            vetmanager_connection_id=connection.id,
+            client_id=oauth_client.client_id,
+            scopes_json=oauth_service._stable_json(list(legacy_full_scopes)),
+            access_preset=None,
+            status="active",
+        )
+        session.add(grant)
+        await session.flush()
+        session.add(
+            OAuthRefreshToken(
+                grant_id=grant.id,
+                token_prefix=build_token_prefix(raw_refresh_token),
+                token_hash=hash_bearer_token(raw_refresh_token),
+                scope=full_scope,
+                resource="https://test.example.com/mcp",
+                status="active",
+                expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+            )
+        )
+        await session.commit()
+        grant_id = grant.id
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": raw_refresh_token,
+                "client_id": "vm_oc_legacy_full",
+                "resource": "https://test.example.com/mcp",
+            },
+        )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["error"] == "invalid_grant"
+    assert "Reconnect ChatGPT and choose an access level." in payload["error_description"]
+    async with storage.get_session_factory()() as session:
+        stored_grant = await session.get(OAuthGrant, grant_id)
+        refresh_tokens = (await session.execute(select(OAuthRefreshToken))).scalars().all()
+
+    assert stored_grant.status == "revoked"
+    assert stored_grant.revocation_reason == "legacy_full_access_relink_required"
+    assert {token.status for token in refresh_tokens} == {"revoked"}
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_oauth_refresh_allows_new_confirmed_full_access_with_legacy_snapshot_scope(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="new-full-legacy-snapshot@example.com")
+    verifier = "Verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
+    legacy_full_scope = " ".join(LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS[0])
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
+        register_response = await client.post(
+            "/oauth/register",
+            json={
+                "client_name": "ChatGPT",
+                "redirect_uris": ["https://chat.openai.com/aip/callback"],
+                "scope": legacy_full_scope,
+            },
+        )
+        client_id = register_response.json()["client_id"]
+        raw_code = await _authorize_and_consent(
+            client,
+            client_id=client_id,
+            scope=legacy_full_scope,
+            code_challenge=_pkce_challenge(verifier),
+            access_preset=PRESET_FULL_ACCESS,
+            confirm_full_access=True,
+        )
+        token_response = await client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": raw_code,
+                "client_id": client_id,
+                "redirect_uri": "https://chat.openai.com/aip/callback",
+                "resource": "https://test.example.com/mcp",
+                "code_verifier": verifier,
+            },
+        )
+        refresh_response = await client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": token_response.json()["refresh_token"],
+                "client_id": client_id,
+                "resource": "https://test.example.com/mcp",
+            },
+        )
+
+    assert token_response.status_code == 200
+    assert refresh_response.status_code == 200
+    async with storage.get_session_factory()() as session:
+        grant = await session.scalar(select(OAuthGrant))
+
+    assert grant is not None
+    assert grant.access_preset == PRESET_FULL_ACCESS
+    assert grant.status == "active"
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -933,8 +1243,12 @@ async def test_account_ui_lists_and_revokes_oauth_grant_family(tmp_path, monkeyp
         )
 
     assert page_response.status_code == 200
+    assert 'data-testid="chatgpt-connect-instructions"' in page_response.text
+    assert 'data-testid="chatgpt-mcp-url"' in page_response.text
     assert 'data-testid="oauth-grant-list"' in page_response.text
     assert "ChatGPT" in page_response.text
+    assert "Custom/legacy" in page_response.text
+    assert "clients.read" in page_response.text
     assert f'action="/account/oauth-grants/{grant_id}/revoke"' in page_response.text
     assert revoke_response.status_code == 200
     assert "ChatGPT connection disconnected successfully." in revoke_response.text
@@ -947,6 +1261,56 @@ async def test_account_ui_lists_and_revokes_oauth_grant_family(tmp_path, monkeyp
     assert stored_grant.status == "revoked"
     assert {token.status for token in access_tokens} == {"revoked"}
     assert {token.status for token in refresh_tokens} == {"revoked"}
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_account_ui_warns_for_legacy_broad_oauth_grant(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    account_id = await _register_account_with_connection(email="legacy-broad-ui@example.com")
+
+    async def fake_health(*args, **kwargs):
+        return "active", "ok"
+
+    monkeypatch.setattr(web, "evaluate_connection_health", fake_health)
+
+    legacy_full_scopes = LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS[0]
+    async with storage.get_session_factory()() as session:
+        connection = await session.scalar(select(VetmanagerConnection))
+        client = OAuthClient(
+            client_id="vm_oc_legacy_broad_ui",
+            client_name="ChatGPT",
+            redirect_uris_json='["https://chat.openai.com/aip/callback"]',
+            token_endpoint_auth_method="none",
+            grant_types_json='["authorization_code","refresh_token"]',
+            response_types_json='["code"]',
+            scope=" ".join(legacy_full_scopes),
+            status="active",
+        )
+        session.add(client)
+        await session.flush()
+        session.add(
+            OAuthGrant(
+                account_id=account_id,
+                vetmanager_connection_id=connection.id,
+                client_id=client.client_id,
+                scopes_json=oauth_service._stable_json(list(legacy_full_scopes)),
+                access_preset=None,
+                status="active",
+            )
+        )
+        await session.commit()
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
+        page_response = await client.get("/account")
+
+    assert page_response.status_code == 200
+    assert "Legacy Full access: reconnect ChatGPT and choose an access level." in page_response.text
 
     await engine.dispose()
     storage.reset_storage_state()

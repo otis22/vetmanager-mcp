@@ -2933,7 +2933,7 @@ Research summary:
 - 176.5 Tests: tool registered; tool is scope-free; prompt/tool helper text equal and read one artifact; descriptions contain fallback guidance and do not promote export as default path; tool count/schema snapshots updated. — `done`
 - 176.6 Full checks, audit, review gates, commit/push/deploy/smoke. — `done`
 
-## Этап 177. ChatGPT connection instructions and OAuth access presets — `todo`
+## Этап 177. ChatGPT connection instructions and OAuth access presets — `done`
 
 Источник: пользовательская проверка 2026-06-22 показала, что ChatGPT Developer Mode connector успешно вызывает MCP tools. Пользователь попросил добавить понятную инструкцию подключения ChatGPT в профиль, заявить возможность на лендинге простым языком, и отдельно поднял вопрос управления правами: сейчас ChatGPT OAuth может получить слишком широкий набор scopes.
 
@@ -2944,11 +2944,11 @@ Research summary:
 - Права ChatGPT должны выбираться на стороне нашего `/account`/consent UI, а не доверяться blindly тому, какие scopes запросил OAuth client. Requested scopes можно сузить до выбранного preset, но нельзя расширить сверх него без действия пользователя.
 - В списке ChatGPT-подключений нужно показывать понятный уровень доступа: `Read only`, `Analytics`, `Front desk`, `Full access`, дату подключения, последний вызов/использование, и кнопку отключения.
 
-- 177.1 Создать PRD stage 177: зафиксировать аудиторию, простой язык инструкции, где показывать блок в `/account`, где на лендинге, default access preset, consent UX, revoke/re-link сценарии и acceptance criteria. — `todo`
-- 177.2 `/account`: добавить блок “Подключить ChatGPT” с короткой инструкцией без технического жаргона: открыть ChatGPT Developer Mode/Connectors, добавить MCP URL `https://vetmanager-mcp.vromanichev.ru/mcp`, пройти вход и подтвердить доступ. Добавить copy button для MCP URL и checklist “что должно получиться”. — `todo`
-- 177.3 Landing page: добавить аккуратный user-facing блок “Можно подключить к ChatGPT” простым языком: ассистент сможет читать расписание, клиентов, долги и отчёты через защищённое подключение; не обещать write-действия без подтверждения; CTA вести в `/account`. — `todo`
-- 177.4 OAuth consent/access preset: добавить выбор уровня доступа для ChatGPT OAuth grant на consent screen или в account pre-settings. Default — `Read only`; `Analytics` и `Front desk` доступны явно; `Full access` требует отдельного подтверждения с понятным предупреждением. — `todo`
-- 177.5 OAuth scope enforcement: при authorization-code flow сохранять в grant только scopes выбранного preset'а; если ChatGPT/DCR/requested scopes шире выбранного preset'а — выдавать пересечение или отклонять понятной ошибкой, но не расширять grant. Runtime `TOOL_REQUIRED_SCOPES` остаётся финальным enforcement. — `todo`
-- 177.6 Account UI для ChatGPT grants: показывать current preset/access label, scopes summary, дату подключения, revoke/disconnect; после смены preset требовать re-link или безопасную server-side reissue стратегию, без молчаливого расширения прав. — `todo`
-- 177.7 Tests: account instruction rendering, landing copy, consent preset defaults, requested-scope narrowing, Full access confirmation, grant scope persistence, insufficient-scope challenge from ChatGPT token, revoke/re-link smoke. — `todo`
-- 177.8 Full checks, audit, review gates, commit/push/deploy/smoke; после deploy повторить ChatGPT Developer Mode golden prompts на read-only и Analytics grants. — `todo`
+- 177.1 Создать PRD stage 177: зафиксировать аудиторию, простой язык инструкции, где показывать блок в `/account`, где на лендинге, default access preset, consent UX, revoke/re-link сценарии и acceptance criteria. — `done`
+- 177.2 `/account`: добавить блок “Подключить ChatGPT” с короткой инструкцией без технического жаргона: открыть ChatGPT Developer Mode/Connectors, добавить MCP URL `https://vetmanager-mcp.vromanichev.ru/mcp`, пройти вход и подтвердить доступ. Добавить copy button для MCP URL и checklist “что должно получиться”. — `done`
+- 177.3 Landing page: добавить аккуратный user-facing блок “Можно подключить к ChatGPT” простым языком: ассистент сможет читать расписание, клиентов, долги и отчёты через защищённое подключение; не обещать write-действия без подтверждения; CTA вести в `/account`. — `done`
+- 177.4 OAuth consent/access preset: добавить выбор уровня доступа для ChatGPT OAuth grant на consent screen или в account pre-settings. Default — `Read only`; `Analytics` и `Front desk` доступны явно; `Full access` требует отдельного подтверждения с понятным предупреждением. — `done`
+- 177.5 OAuth scope enforcement: при authorization-code flow сохранять в grant только scopes выбранного preset'а; если ChatGPT/DCR/requested scopes шире выбранного preset'а — выдавать пересечение или отклонять понятной ошибкой, но не расширять grant. Runtime `TOOL_REQUIRED_SCOPES` остаётся финальным enforcement. — `done`
+- 177.6 Account UI для ChatGPT grants: показывать current preset/access label, scopes summary, дату подключения, revoke/disconnect; после смены preset требовать re-link или безопасную server-side reissue стратегию, без молчаливого расширения прав. — `done`
+- 177.7 Tests: account instruction rendering, landing copy, consent preset defaults, requested-scope narrowing, Full access confirmation, grant scope persistence, insufficient-scope challenge from ChatGPT token, revoke/re-link smoke. — `done`
+- 177.8 Full checks, audit, review gates, commit/push/deploy/smoke; после deploy повторить ChatGPT Developer Mode golden prompts на read-only и Analytics grants. — `done`

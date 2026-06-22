@@ -15,11 +15,18 @@ from tool_access_registry import (
     PRESET_READ_ONLY,
     PRESET_REPORT_AI,
     TOKEN_PRESET_LABELS,
+    TOKEN_PRESET_SCOPES,
 )
 
 
 _DEFAULT_SITE_BASE_URL = "https://vetmanager-mcp.vromanichev.ru"
 _DOCTOR_PRESET_FORM_VALUE = "clinical_staff"
+_CHATGPT_OAUTH_ACCESS_PRESETS = (
+    PRESET_READ_ONLY,
+    PRESET_REPORT_AI,
+    PRESET_FRONTDESK,
+    PRESET_FULL_ACCESS,
+)
 
 
 def _resolve_site_base_url() -> str:
@@ -34,6 +41,17 @@ def _resolve_site_base_url() -> str:
         return _DEFAULT_SITE_BASE_URL
     if any(c in raw for c in ('"', "'", "<", ">", " ", "\t", "\n", "\r", "\x00")):
         return _DEFAULT_SITE_BASE_URL
+    return raw
+
+
+def _resolve_mcp_path() -> str:
+    raw = (os.environ.get("MCP_PATH") or "/mcp").strip()
+    if not raw or len(raw) > 128:
+        return "/mcp"
+    if not raw.startswith("/"):
+        return "/mcp"
+    if any(c in raw for c in ('"', "'", "<", ">", " ", "\t", "\n", "\r", "\x00")):
+        return "/mcp"
     return raw
 from vetmanager_auth import (
     VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
@@ -498,9 +516,34 @@ def render_oauth_consent_page(
     scopes: list[str],
     connections: list[dict[str, str | int]],
     error: str | None = None,
+    selected_access_preset: str = PRESET_READ_ONLY,
 ) -> str:
     error_html = f'<div class="error">{escape(error)}</div>' if error else ""
     scope_items = "".join(f"<li><code>{escape(scope)}</code></li>" for scope in scopes)
+    access_options = "".join(
+        (
+            f'<option value="{escape(preset)}" {"selected" if selected_access_preset == preset else ""}>'
+            f'{escape(TOKEN_PRESET_LABELS[preset])}</option>'
+        )
+        for preset in _CHATGPT_OAUTH_ACCESS_PRESETS
+    )
+    requested_scope_set = set(scopes)
+    effective_preview_rows = []
+    for preset in _CHATGPT_OAUTH_ACCESS_PRESETS:
+        granted_scopes = [scope for scope in TOKEN_PRESET_SCOPES[preset] if scope in requested_scope_set]
+        omitted_count = max(0, len(scopes) - len(granted_scopes))
+        if granted_scopes:
+            granted_text = ", ".join(granted_scopes)
+        else:
+            granted_text = "No overlapping scopes"
+        omitted_text = f"; {omitted_count} requested scope(s) will not be granted" if omitted_count else ""
+        effective_preview_rows.append(
+            "<li>"
+            f"<strong>{escape(TOKEN_PRESET_LABELS[preset])}:</strong> "
+            f"<code>{escape(granted_text)}</code>{escape(omitted_text)}"
+            "</li>"
+        )
+    effective_preview_html = "".join(effective_preview_rows)
     if len(connections) == 1:
         connection = connections[0]
         connection_input = (
@@ -529,10 +572,27 @@ def render_oauth_consent_page(
           <span>Requested scopes</span>
           <ul>{scope_items}</ul>
         </section>
+        <section class="metric" data-testid="oauth-effective-scope-preview">
+          <span>Effective scopes by access level</span>
+          <ul>{effective_preview_html}</ul>
+        </section>
         <form method="post" action="/oauth/authorize/consent" data-testid="oauth-consent-form">
           {hidden_csrf_input(csrf_token)}
           <input type="hidden" name="request_state" value="{escape(request_state)}">
           {connection_input}
+          <label>Access level
+            <select name="access_preset" required data-testid="oauth-access-preset">
+              {access_options}
+            </select>
+            <small style="color: var(--muted); font-size: 0.85rem;">ChatGPT получит только те requested scopes, которые входят в выбранный access level.</small>
+          </label>
+          <label style="display: flex; gap: 10px; align-items: start;">
+            <input type="checkbox" name="confirm_full_access" value="1" data-testid="oauth-confirm-full-access" style="width: auto; margin-top: 6px;">
+            <span>
+              <strong style="display: block; color: var(--ink);">Confirm Full access</strong>
+              <small style="color: var(--muted); font-size: 0.85rem;">Нужно только если вы выбираете Full access.</small>
+            </span>
+          </label>
           <button type="submit">Allow</button>
         </form>
         """,
@@ -689,6 +749,7 @@ def render_account_page(
         </section>
         """
     token_disabled = "disabled" if active_connection is None or integration_health_status != INTEGRATION_HEALTH_ACTIVE else ""
+    chatgpt_mcp_url = f"{site_base_url}{_resolve_mcp_path()}"
     token_note = (
         "<p>Сначала сохраните активную Vetmanager integration, затем можно выпускать Bearer-токены.</p>"
         if active_connection is None
@@ -756,9 +817,16 @@ def render_account_page(
                     '<button type="submit">Disconnect</button>'
                     "</form>"
                 )
+            warning_html = (
+                '<div class="error" style="margin-top: 8px;">Legacy Full access: reconnect ChatGPT and choose an access level.</div>'
+                if grant.get("legacy_full_access")
+                else ""
+            )
             rows.append(
                 "<tr>"
                 f'<td data-label="Client">{escape(str(grant["client_name"]))}</td>'
+                f'<td data-label="Access">{escape(str(grant.get("access_label", "Custom/legacy")))}{warning_html}</td>'
+                f'<td data-label="Scopes"><code>{escape(str(grant.get("scope_summary", "No scopes")))}</code></td>'
                 f'<td data-label="Status"><span class="token-status">{escape(str(grant["status"]))}</span></td>'
                 f'<td data-label="Connection"><code>{escape(str(grant["connection_id"]))}</code></td>'
                 f'<td data-label="Created">{escape(str(grant["created_at"]))}</td>'
@@ -769,7 +837,7 @@ def render_account_page(
         oauth_grants_html = (
             '<table class="token-table" data-testid="oauth-grant-list">'
             "<thead><tr>"
-            "<th>Client</th><th>Status</th><th>Connection</th><th>Created</th><th>Last used</th><th>Actions</th>"
+            "<th>Client</th><th>Access</th><th>Scopes</th><th>Status</th><th>Connection</th><th>Created</th><th>Last used</th><th>Actions</th>"
             "</tr></thead>"
             f"<tbody>{''.join(rows)}</tbody>"
             "</table>"
@@ -907,7 +975,16 @@ def render_account_page(
         {token_list_html}
         <hr style="border: none; border-top: 1px solid var(--line); margin: 28px 0;">
         <h2>ChatGPT connections</h2>
-        <p>ChatGPT uses OAuth linking and does not require manual service bearer token copy-paste.</p>
+        <div class="panel-card" data-testid="chatgpt-connect-instructions">
+          <strong>Подключение ChatGPT</strong>
+          <p>В ChatGPT добавьте MCP connector и укажите URL ниже. Bearer-токен копировать не нужно: ChatGPT откроет вход в этот кабинет, а права вы выберете на экране подтверждения.</p>
+          <code class="token-flash-value" id="chatgpt-mcp-url" data-testid="chatgpt-mcp-url">{escape(chatgpt_mcp_url)}</code>
+          <div class="copy-row">
+            <button class="copy-button" id="chatgpt-mcp-copy-button" type="button">Скопировать URL</button>
+            <span class="copy-status" id="chatgpt-mcp-copy-status" aria-live="polite"></span>
+          </div>
+          <p class="hint">Обычный режим по умолчанию — Read only. Full access требует отдельного подтверждения.</p>
+        </div>
         {oauth_grants_html}
         <form method="post" action="/logout" data-testid="logout-form">
           {hidden_csrf_input(csrf_token)}
@@ -956,6 +1033,25 @@ def render_account_page(
                   sel.removeAllRanges();
                   sel.addRange(range);
                   if (copyStatus) copyStatus.textContent = 'Автокопирование недоступно. Токен выделен, скопируйте вручную.';
+                }}
+              }});
+            }}
+
+            const mcpCopyButton = document.getElementById('chatgpt-mcp-copy-button');
+            const mcpCopyEl = document.getElementById('chatgpt-mcp-url');
+            const mcpCopyStatus = document.getElementById('chatgpt-mcp-copy-status');
+            if (mcpCopyButton && mcpCopyEl) {{
+              mcpCopyButton.addEventListener('click', async () => {{
+                try {{
+                  await navigator.clipboard.writeText(mcpCopyEl.textContent);
+                  if (mcpCopyStatus) mcpCopyStatus.textContent = 'URL скопирован в буфер обмена.';
+                }} catch (_error) {{
+                  const range = document.createRange();
+                  range.selectNodeContents(mcpCopyEl);
+                  const sel = window.getSelection();
+                  sel.removeAllRanges();
+                  sel.addRange(range);
+                  if (mcpCopyStatus) mcpCopyStatus.textContent = 'Автокопирование недоступно. URL выделен, скопируйте вручную.';
                 }}
               }});
             }}

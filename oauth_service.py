@@ -24,7 +24,15 @@ from storage_models import (
     OAuthGrant,
     OAuthRefreshToken,
 )
-from token_scopes import SUPPORTED_TOKEN_SCOPES, normalize_token_scopes
+from token_scopes import LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS, SUPPORTED_TOKEN_SCOPES, normalize_token_scopes
+from tool_access_registry import (
+    PRESET_FRONTDESK,
+    PRESET_FULL_ACCESS,
+    PRESET_READ_ONLY,
+    PRESET_REPORT_AI,
+    TOKEN_PRESET_SCOPES,
+    infer_token_preset,
+)
 from web_auth import get_web_session_secret
 
 OAUTH_CLIENT_ID_PREFIX = "vm_oc_"
@@ -45,6 +53,12 @@ OAUTH_REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30
 OAUTH_DCR_GRANT_TYPES = ("authorization_code", "refresh_token")
 OAUTH_DCR_RESPONSE_TYPES = ("code",)
 OAUTH_DCR_TOKEN_ENDPOINT_AUTH_METHOD = "none"
+CHATGPT_OAUTH_ACCESS_PRESETS = (
+    PRESET_READ_ONLY,
+    PRESET_REPORT_AI,
+    PRESET_FRONTDESK,
+    PRESET_FULL_ACCESS,
+)
 PKCE_VERIFIER_ALLOWED_CHARS = set(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "abcdefghijklmnopqrstuvwxyz"
@@ -65,6 +79,53 @@ class OAuthRequestError(Exception):
 
 def _stable_json(values: list[str]) -> str:
     return json.dumps(values, ensure_ascii=True, separators=(",", ":"))
+
+
+def _scope_string(scopes: tuple[str, ...] | list[str]) -> str:
+    return " ".join(normalize_token_scopes(scopes))
+
+
+def _is_full_access_scope(scope: str) -> bool:
+    return is_broad_oauth_full_access_scope(scope.split())
+
+
+def is_broad_oauth_full_access_scope(scopes: tuple[str, ...] | list[str]) -> bool:
+    normalized = tuple(normalize_token_scopes(scopes))
+    if normalized == TOKEN_PRESET_SCOPES[PRESET_FULL_ACCESS]:
+        return True
+    normalized_set = set(normalized)
+    return any(set(snapshot).issubset(normalized_set) for snapshot in LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS)
+
+
+def narrow_oauth_authorize_request_scope(
+    request_data: dict,
+    *,
+    access_preset: str,
+    confirm_full_access: bool,
+) -> dict:
+    """Apply the account owner's selected access preset to an OAuth authorize request."""
+    selected_preset = (access_preset or "").strip()
+    if not selected_preset:
+        raise OAuthRequestError("invalid_request", "access_preset is required.")
+    if selected_preset not in CHATGPT_OAUTH_ACCESS_PRESETS:
+        raise OAuthRequestError("invalid_request", "Unsupported access preset.")
+    if selected_preset == PRESET_FULL_ACCESS and not confirm_full_access:
+        raise OAuthRequestError("invalid_request", "Full access requires explicit confirmation.")
+
+    requested_scopes = tuple(normalize_token_scopes(list(request_data.get("scopes") or [])))
+    preset_scopes = set(TOKEN_PRESET_SCOPES[selected_preset])
+    final_scopes = tuple(scope for scope in requested_scopes if scope in preset_scopes)
+    if not final_scopes:
+        raise OAuthRequestError(
+            "invalid_scope",
+            "Selected access level does not include any requested scopes. Choose another access level or reconnect ChatGPT.",
+        )
+
+    narrowed = dict(request_data)
+    narrowed["scopes"] = list(final_scopes)
+    narrowed["scope"] = _scope_string(list(final_scopes))
+    narrowed["access_preset"] = selected_preset
+    return narrowed
 
 
 def _b64url_encode(raw_value: bytes) -> str:
@@ -345,6 +406,7 @@ async def create_oauth_authorization_code(
         redirect_uri=request_data["redirect_uri"],
         resource=request_data["resource"],
         scope=request_data["scope"],
+        access_preset=request_data.get("access_preset"),
         code_challenge=request_data["code_challenge"],
         code_challenge_method=request_data["code_challenge_method"],
         account_id=account_id,
@@ -451,6 +513,7 @@ async def exchange_oauth_authorization_code(session: AsyncSession, form: dict[st
         vetmanager_connection_id=code.vetmanager_connection_id,
         client_id=code.client_id,
         scopes_json=json.dumps(code.scope.split(), ensure_ascii=True),
+        access_preset=code.access_preset or infer_token_preset(tuple(normalize_token_scopes(code.scope.split()))),
         status=OAUTH_STATUS_ACTIVE,
     )
     session.add(grant)
@@ -518,6 +581,13 @@ async def exchange_oauth_refresh_token(session: AsyncSession, form: dict[str, st
     await _require_active_oauth_client(session, grant.client_id)
     if grant.status != OAUTH_STATUS_ACTIVE:
         raise OAuthRequestError("invalid_grant", "Grant is not active.")
+    if grant.access_preset is None and _is_full_access_scope(refresh_token.scope):
+        await _revoke_grant_family(session, grant.id, reason="legacy_full_access_relink_required")
+        await session.commit()
+        raise OAuthRequestError(
+            "invalid_grant",
+            "This ChatGPT connection used legacy full access. Reconnect ChatGPT and choose an access level.",
+        )
     expires_at = refresh_token.expires_at
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)

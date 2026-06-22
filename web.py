@@ -8,6 +8,7 @@ HTML rendering lives in web_html.py.
 from __future__ import annotations
 
 from datetime import timezone
+import json
 import os
 from secrets import token_urlsafe
 import time
@@ -21,6 +22,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 
 from observability_logging import RUNTIME_LOGGER
+from oauth_service import is_broad_oauth_full_access_scope
 from request_context import attach_request_context_headers, get_request_context
 from secret_manager import get_storage_encryption_key
 from service_metrics import record_http_request
@@ -265,6 +267,24 @@ def _format_dt(value) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _load_oauth_grant_scopes(raw_value: str) -> tuple[str, ...]:
+    try:
+        values = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return ()
+    if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
+        return ()
+    return tuple(values)
+
+
+def _summarize_scopes(scopes: tuple[str, ...]) -> str:
+    if not scopes:
+        return "No scopes"
+    if len(scopes) <= 3:
+        return ", ".join(scopes)
+    return f"{', '.join(scopes[:3])} +{len(scopes) - 3}"
+
+
 async def _load_account_dashboard(
     account_id: int,
 ) -> tuple[
@@ -375,11 +395,21 @@ async def _load_account_dashboard(
         oauth_grant_view = []
         for grant in grants:
             client = clients_by_id.get(grant.client_id)
+            scopes = _load_oauth_grant_scopes(grant.scopes_json)
+            inferred_preset = infer_token_preset(scopes)
+            access_label = (
+                get_token_preset_label(inferred_preset)
+                if inferred_preset is not None
+                else "Custom/legacy"
+            )
             oauth_grant_view.append(
                 {
                     "id": grant.id,
                     "client_name": (client.client_name if client else None) or "ChatGPT",
                     "client_id": grant.client_id,
+                    "access_label": access_label,
+                    "scope_summary": _summarize_scopes(scopes),
+                    "legacy_full_access": grant.access_preset is None and is_broad_oauth_full_access_scope(list(scopes)),
                     "status": grant.status,
                     "created_at": _format_dt(grant.created_at),
                     "last_used_at": _format_dt(grant.last_used_at),

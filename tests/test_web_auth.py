@@ -1249,6 +1249,8 @@ async def test_account_token_issue_allows_confirmed_full_access_and_wildcard_ip(
 async def test_account_token_issue_supports_access_preset_and_depersonalized_policy(tmp_path: Path, monkeypatch):
     engine = await _prepare_web_db(tmp_path, monkeypatch)
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    monkeypatch.setenv("SITE_BASE_URL", "https://clinic.example.com")
+    monkeypatch.setenv("MCP_PATH", "/custom/mcp")
     async with storage.get_session_factory()() as session:
         await register_account(
             session,
@@ -1279,6 +1281,10 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
         account_page = await client.get("/account")
         assert 'data-testid="token-access-preset"' in account_page.text
         assert 'data-testid="token-is-depersonalized"' in account_page.text
+        assert 'data-testid="chatgpt-connect-instructions"' in account_page.text
+        assert 'data-testid="chatgpt-mcp-url"' in account_page.text
+        assert "https://clinic.example.com/custom/mcp" in account_page.text
+        assert "Bearer-токен копировать не нужно" in account_page.text
         assert f'value="{PRESET_REPORT_AI}"' in account_page.text
         assert "Analytics" in account_page.text
         await _post_with_csrf(

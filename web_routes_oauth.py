@@ -19,6 +19,7 @@ from oauth_service import (
     build_authorization_redirect_uri,
     create_oauth_authorization_code,
     exchange_oauth_token,
+    narrow_oauth_authorize_request_scope,
     read_oauth_authorize_request,
     register_oauth_client,
     sign_oauth_authorize_request,
@@ -247,6 +248,11 @@ def register_oauth_routes(
             validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
             request_data = read_oauth_authorize_request(form.get("request_state", ""))
             connection_id = int(form.get("connection_id", ""))
+            request_data = narrow_oauth_authorize_request_scope(
+                request_data,
+                access_preset=form.get("access_preset", ""),
+                confirm_full_access=form.get("confirm_full_access") == "1",
+            )
         except (OAuthRequestError, ValueError) as exc:
             csrf_token = resolve_csrf_token(request)
             return html_response(

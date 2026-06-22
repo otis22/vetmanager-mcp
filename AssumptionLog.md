@@ -8834,3 +8834,49 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Пользователь подтвердил, что все ChatGPT UI validation tests пройдены: connector подключается, MCP calls выполняются, golden prompts прошли.
 - Roadmap Stage 173 и 173.10 переведены в `done`.
 - Оставшийся вопрос управления правами ChatGPT OAuth grant не блокирует Stage 173 и вынесен в Stage 177: default `Read only`, явный выбор `Analytics`/`Front desk`, `Full access` только с дополнительным подтверждением, narrowing requested scopes до выбранного preset.
+
+## Этап 177. ChatGPT connection instructions and OAuth access presets — 2026-06-22
+
+### Что делали
+
+Закрывали Stage 177: понятная инструкция подключения ChatGPT в кабинете и на лендинге плюс безопасное управление OAuth правами ChatGPT grant через access presets.
+
+### Что сделано
+
+- Создан PRD `PRD/этап-177-chatgpt-onboarding-oauth-access-presets.md` с архитектурным решением и review/critique gates.
+- Landing получил user-facing блок “Можно подключить прямо к ChatGPT” без ручного bearer-token copy-paste.
+- Account UI получил блок “Подключение ChatGPT” с MCP URL, copy button, поддержкой `MCP_PATH`, и пояснением, что права выбираются при OAuth linking.
+- OAuth consent получил обязательный `access_preset`: `Read only` по умолчанию, `Analytics`, `Front desk`, `Full access` только с отдельным подтверждением.
+- Authorization-code flow сужает requested scopes до выбранного preset intersection и не расширяет grant сверх выбранного access level.
+- Consent page показывает server-rendered preview effective scopes по каждому access level до Allow.
+- OAuth grants теперь хранят `access_preset`; authorization codes тоже хранят выбранный preset, чтобы token exchange не путал новые custom/partial grants с legacy.
+- Legacy broad full-access grants без `access_preset` на refresh получают `invalid_grant` с relink guidance и revocation reason `legacy_full_access_relink_required`.
+- Account UI показывает access label, scope summary и warning для legacy broad Full access variants.
+
+### Решения и обоснования
+
+- Source of truth для runtime enforcement остаётся `TOOL_REQUIRED_SCOPES`; OAuth consent только формирует финальный token scope set.
+- `access_preset` хранится nullable: `NULL` означает legacy/unknown для старых rows, а новые grants получают выбранный preset даже если effective scopes являются partial/custom intersection.
+- Legacy broad detector учитывает current Full access и historical full-access snapshots через `LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS`; это закрывает старые broad grants без ложного revoke loop для новых confirmed Full access grants.
+- Public OAuth refresh не принимает scope widening: refresh token переиздаётся с прежним scope.
+
+### Проверки
+
+- PRD review: Spark + Claude Opus PRD-review; приняты замечания про mandatory preset, no silent downgrade, legacy full grants и account label consistency.
+- Targeted before reviews: `docker compose --profile test run --rm test pytest tests/test_stage173_oauth_metadata.py tests/test_web_auth.py::test_account_token_issue_supports_access_preset_and_depersonalized_policy tests/test_landing_page.py::test_stage177_landing_mentions_chatgpt_connector_plainly tests/test_migrations.py::test_alembic_upgrade_creates_bearer_service_tables tests/test_migrations.py::test_oauth_chatgpt_migration_round_trip` — `31 passed`.
+- Full suite before review fixes: `docker compose --profile test run --rm test` — `1215 passed, 1 skipped, 63 deselected`.
+- Spark code review: read-only run hit known `bwrap`/runtime hang; stopped and repeated once with `-s danger-full-access` review-only prompt. Accepted findings: legacy full detector exact-match too narrow; account warning used same exact-match; consent lacked visible effective-scope preview.
+- Targeted after Spark fixes: same targeted set — `32 passed`.
+- Full suite after Spark fixes: `docker compose --profile test run --rm test` — `1216 passed, 1 skipped, 63 deselected`.
+- Claude Opus review: first schema attempts failed before/at API; successful prose review found one valid medium issue: new custom/partial grants could be confused with legacy when `access_preset` was inferred only from final scopes. Fixed by persisting selected preset on authorization codes and copying it to grants.
+- Targeted after Opus fix: `docker compose --profile test run --rm test pytest tests/test_stage173_oauth_metadata.py tests/test_migrations.py::test_alembic_upgrade_creates_bearer_service_tables tests/test_migrations.py::test_oauth_chatgpt_migration_round_trip` — `31 passed`.
+- Final full suite: `docker compose --profile test run --rm test` — `1217 passed, 1 skipped, 63 deselected`.
+- Final audit: `git diff --check` clean.
+- Historical key checker: `python3 scripts/check_no_historical_api_key_literal.py` — historical devtr6 API key literal not found.
+- Final Claude Opus review with strict JSON output returned `{"findings":[]}`.
+
+### Проблемы
+
+- Claude Code `--json-schema` accepted only object schema, not top-level array; final review used `{ "findings": [...] }`.
+- Spark read-only review can still hang on the known sandbox/runtime path; fallback was used according to workflow.
+- ChatGPT Developer Mode golden prompts for new Read only / Analytics OAuth grants still require post-deploy manual validation in ChatGPT UI.

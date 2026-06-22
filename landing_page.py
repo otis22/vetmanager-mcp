@@ -1693,6 +1693,26 @@ def render_landing_page(script_nonce: str = "") -> str:
     </section>
 
     <section class="section">
+      <div class="shell explainer" data-testid="chatgpt-connector-section">
+        <div class="label-block">
+          <p class="section-label">ChatGPT</p>
+          <h2>Можно подключить прямо к ChatGPT</h2>
+        </div>
+        <div class="body">
+          <p>
+            В кабинете есть готовый URL для ChatGPT MCP connector. Вы добавляете connector в ChatGPT,
+            входите в аккаунт сервиса и выбираете права: Read only, Analytics, Front desk или Full access.
+          </p>
+          <p>
+            Токен вручную копировать не нужно. По умолчанию используется Read only, а Full access не выдаётся
+            без отдельного подтверждения.
+          </p>
+          <p><a class="inline-link" href="/register">Создать аккаунт и подключить ChatGPT</a></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
       <div class="shell">
         <section class="onboarding" id="mcp-onboarding" data-testid="mcp-onboarding">
           <div data-testid="mcp-onboarding-main-copy">

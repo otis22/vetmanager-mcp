@@ -337,6 +337,15 @@ def test_stage148_landing_inline_script_carries_nonce_attribute():
     assert "__SCRIPT_NONCE__" not in rendered_default
 
 
+def test_stage177_landing_mentions_chatgpt_connector_plainly():
+    html = render_landing_page()
+
+    assert 'data-testid="chatgpt-connector-section"' in html
+    assert "Можно подключить прямо к ChatGPT" in html
+    assert "Bearer" not in html.split('data-testid="chatgpt-connector-section"', 1)[1].split("</section>", 1)[0]
+    assert "Full access не выдаётся" in html
+
+
 def test_stage146_tabs_and_copy_controls_are_structurally_wired():
     html = render_landing_page()
     section_html = _extract_mcp_onboarding(html)
