@@ -38,6 +38,14 @@ alwaysApply: true
 - Создать PRD задачи в `/PRD`
 - Выполнить декомпозицию
 - Изучить связанные `/artifacts` после создания PRD и обновить PRD проверенными фактами
+- Добавить в новые PRD секцию `Архитектурное решение`:
+  - проблема, которую решает выбранная архитектура;
+  - контекст и ограничения: existing patterns, API/OpenAPI facts, security/privacy, backward compatibility, performance/load limits;
+  - рассмотренные варианты с плюсами/минусами;
+  - выбранное решение и почему оно лучше альтернатив;
+  - инварианты, которые должны остаться истинными после реализации;
+  - rollback/fallback, если решение окажется неверным или upstream поведение изменится.
+- Для задач, которые затрагивают auth, storage, public/API/MCP contract, production behavior, performance/load limits или cross-module ownership boundary, выполнить отдельный `Architecture Critique` gate через стороннюю сильную модель до обычного PRD-review.
 - Перед PRD-review выполнить Spark-review pass, устранить только адекватные и важные findings
 - Провести PRD-review, устранить адекватные findings и повторить review после правок
 - Перед PRD-review сторонней моделью выполнить Spark-review pass, устранить только адекватные и важные findings
@@ -50,6 +58,26 @@ alwaysApply: true
 - ИЛИ ≤ 150 строк кода
 
 Без декомпозиции реализация запрещена
+
+Backfill rule:
+
+- Секция `Архитектурное решение` обязательна для PRD, созданных после этого правила, и для старых PRD только при существенном обновлении перед новой реализацией.
+- Старые PRD не нужно переписывать задним числом только ради соответствия новой структуре.
+
+Architecture Critique gate:
+
+- Цель gate — атаковать выбранное архитектурное решение до реализации, а не ревьюить стиль текста PRD.
+- Prompt должен просить только medium/high findings по рискам:
+  - неверная граница ответственности или ownership;
+  - лишняя абстракция/сложность;
+  - нарушение existing project patterns;
+  - backward compatibility break;
+  - security/privacy regression;
+  - performance/load risk;
+  - missing rollback/fallback;
+  - более простой жизнеспособный вариант.
+- Агент обязан зафиксировать accepted/rejected findings и rationale в PRD или `AssumptionLog.md`.
+- Если задача не затрагивает перечисленные архитектурные зоны риска, агент явно пишет в PRD: `Architecture Critique: not required` с краткой причиной.
 
 ---
 
@@ -87,24 +115,26 @@ timeout 1200 codex exec -m gpt-5.3-codex-spark -s read-only -C "$PWD" -
 1. Выбрать задачу
 2. Создать/обновить PRD задачи
 3. Изучить связанные `/artifacts` и обновить PRD проверенными фактами
-4. Spark-review PRD → проверить адекватность findings → устранить только адекватные и важные findings
-5. PRD-review → устранение адекватных findings → повтор PRD-review после правок
-6. Spark-review перед PRD-review сторонней моделью → проверить адекватность findings → устранить только адекватные и важные findings
-7. PRD-review сторонней моделью → устранение адекватных findings → повтор после существенных правок в пределах бюджета
-8. Оценка PRD на простоту → при изменении PRD повторить PRD-review gates
-9. Написать тесты
-10. Red → Green
-11. Запустить все проверки
-12. Провести аудит изменений:
+4. Добавить/обновить секцию `Архитектурное решение`; для старых PRD — только если PRD существенно обновляется перед новой реализацией
+5. Если задача затрагивает auth/storage/public/API/MCP contract/production behavior/performance/cross-module boundary: Architecture Critique сторонней сильной моделью → устранить адекватные findings либо зафиксировать rejected rationale
+6. Spark-review PRD → проверить адекватность findings → устранить только адекватные и важные findings
+7. PRD-review → устранение адекватных findings → повтор PRD-review после правок
+8. Spark-review перед PRD-review сторонней моделью → проверить адекватность findings → устранить только адекватные и важные findings
+9. PRD-review сторонней моделью → устранение адекватных findings → повтор после существенных правок в пределах бюджета
+10. Оценка PRD на простоту → при изменении PRD повторить PRD-review gates
+11. Написать тесты
+12. Red → Green
+13. Запустить все проверки
+14. Провести аудит изменений:
    - проверить, не появились ли legacy-паттерны, дублирование, рассинхрон со свежим контрактом
    - при необходимости выполнить рефакторинг под новые изменения
-13. После аудита/рефакторинга заново запустить полный прогон тестов и проверок
-14. Commit
-15. Spark-review committed diff → проверить адекватность findings → устранить только адекватные и важные findings
-16. Ревью сторонней моделью на committed diff до push → устранение адекватных findings → повтор tests/audit/commit/review в пределах бюджета
-17. Push
-18. Заполнить self-attestation checklist и показать пользователю
-19. Обновить `Roadmap.md` и `AssumptionLog.md`
+15. После аудита/рефакторинга заново запустить полный прогон тестов и проверок
+16. Commit
+17. Spark-review committed diff → проверить адекватность findings → устранить только адекватные и важные findings
+18. Ревью сторонней моделью на committed diff до push → устранение адекватных findings → повтор tests/audit/commit/review в пределах бюджета
+19. Push
+20. Заполнить self-attestation checklist и показать пользователю
+21. Обновить `Roadmap.md` и `AssumptionLog.md`
 
 Запрещено:
 
