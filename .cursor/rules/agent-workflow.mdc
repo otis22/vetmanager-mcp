@@ -78,6 +78,8 @@ Architecture Critique gate:
   - более простой жизнеспособный вариант.
 - Агент обязан зафиксировать accepted/rejected findings и rationale в PRD или `AssumptionLog.md`.
 - Если задача не затрагивает перечисленные архитектурные зоны риска, агент явно пишет в PRD: `Architecture Critique: not required` с краткой причиной.
+- Для крупных архитектурных задач Architecture Critique может засчитываться как PRD-review сторонней сильной моделью, если prompt явно покрывает и архитектурное решение, и полноту PRD: scope, alternatives, risks, acceptance criteria, tests, rollout/rollback. В этом случае не нужно запускать отдельный второй strong PRD-review без существенных изменений PRD.
+- Если после Architecture Critique PRD существенно изменился, повторить strong review в пределах PRD-review бюджета; если изменения только редакционные или уточняют accepted findings без смены решения, повторный strong review не обязателен.
 
 ---
 
@@ -93,6 +95,7 @@ Architecture Critique gate:
 - Spark-review: максимум 3 запуска перед каждым видом review gate; Spark-бюджет отдельный от бюджета сильной модели
 - `gpt-5.3-codex-spark` как обычный scout/subagent для вспомогательных задач можно запускать без лимита; лимит 3 относится только к Spark-review перед конкретным review gate
 - PRD-review сторонней моделью: максимум 2 запуска на задачу
+- Architecture Critique, засчитанный как strong PRD-review, расходует тот же бюджет PRD-review сторонней моделью; не добавлять отдельный третий запуск strong-модели только из-за нового gate.
 - code/diff review сторонней моделью: максимум 2 запуска на задачу
 - бюджеты раздельные и не расходуют друг друга
 - правильное имя модели Spark: `gpt-5.3-codex-spark`; имя `gpt-5.3-spark` неполное и не должно использоваться
