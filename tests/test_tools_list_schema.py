@@ -126,6 +126,12 @@ class TestToolsListSchema:
         assert "date_from" in properties
         assert "date_to" in properties
 
+    def test_get_daily_schedule_exports_offset_param(self, all_tool_exports):
+        tool = next(t for t in all_tool_exports if t["name"] == "get_daily_schedule")
+        properties = tool["schema"].get("properties", {})
+        assert "offset" in properties
+        assert properties["offset"].get("default") == 0
+
     def test_get_invoice_documents_keeps_public_invoice_id_contract(self, all_tool_exports):
         tool = next(t for t in all_tool_exports if t["name"] == "get_invoice_documents")
         properties = tool["schema"].get("properties", {})

@@ -250,7 +250,7 @@ async def test_daily_schedule_filters_inactive_statuses_via_api():
 @respx.mock
 async def test_daily_schedule_reports_truncation_when_total_exceeds_returned_rows():
     billing_mock()
-    respx.get(f"{BASE}/rest/api/admission").mock(
+    route = respx.get(f"{BASE}/rest/api/admission").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -270,9 +270,165 @@ async def test_daily_schedule_reports_truncation_when_total_exceeds_returned_row
         )
 
     data = result.structured_content
+    params = route.calls[0].request.url.params
+    assert params["offset"] == "0"
+    assert data["limit"] == 100
+    assert data["offset"] == 0
     assert data["returnedCount"] == 100
     assert data["totalCount"] == 150
+    assert data["has_more"] is True
+    assert data["next_offset"] == 100
     assert data["truncated"] is True
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_daily_schedule_second_page_uses_offset_and_reports_no_more_rows():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 150,
+                    "admission": [{"id": index} for index in range(100, 150)],
+                },
+            },
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_daily_schedule",
+            {"date": "2026-04-10", "limit": 100, "offset": 100},
+        )
+
+    params = route.calls[0].request.url.params
+    assert params["limit"] == "100"
+    assert params["offset"] == "100"
+
+    data = result.structured_content
+    assert data["limit"] == 100
+    assert data["offset"] == 100
+    assert data["returnedCount"] == 50
+    assert data["totalCount"] == 150
+    assert data["has_more"] is False
+    assert data["next_offset"] is None
+    assert data["truncated"] is False
+    assert [row["id"] for row in data["data"]["admission"]] == list(range(100, 150))
+
+
+@respx.mock
+@pytest.mark.asyncio
+@pytest.mark.parametrize("offset", [-1, 10001])
+async def test_daily_schedule_invalid_offset_rejected_before_upstream(offset):
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(500, json={"success": False})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(Exception):
+            await mcp.call_tool(
+                "get_daily_schedule",
+                {"date": "2026-04-10", "offset": offset},
+            )
+
+    assert route.call_count == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_daily_schedule_does_not_return_unusable_next_offset():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 10060,
+                    "admission": [{"id": index} for index in range(100)],
+                },
+            },
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_daily_schedule",
+            {"date": "2026-04-10", "limit": 100, "offset": 9950},
+        )
+
+    data = result.structured_content
+    assert data["truncated"] is True
+    assert data["has_more"] is False
+    assert data["next_offset"] is None
+    assert data["pagination_limit_reached"] is True
+    assert data["pagination_stalled"] is False
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_daily_schedule_allows_exact_maximum_next_offset():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 10001,
+                    "admission": [{"id": index} for index in range(100)],
+                },
+            },
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_daily_schedule",
+            {"date": "2026-04-10", "limit": 100, "offset": 9900},
+        )
+
+    data = result.structured_content
+    assert data["truncated"] is True
+    assert data["has_more"] is True
+    assert data["next_offset"] == 10000
+    assert data["pagination_limit_reached"] is False
+    assert data["pagination_stalled"] is False
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_daily_schedule_empty_page_does_not_return_same_next_offset():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 150,
+                    "admission": [],
+                },
+            },
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_daily_schedule",
+            {"date": "2026-04-10", "limit": 100, "offset": 100},
+        )
+
+    data = result.structured_content
+    assert data["truncated"] is True
+    assert data["has_more"] is False
+    assert data["next_offset"] is None
+    assert data["pagination_limit_reached"] is False
+    assert data["pagination_stalled"] is True
 
 
 @pytest.mark.asyncio

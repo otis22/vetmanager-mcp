@@ -466,6 +466,15 @@ Bearer-токен должен храниться только в локальн
 
 Инструменты работают по bearer-only контракту: runtime credentials берутся только из `Authorization: Bearer <service_token>`, а Vetmanager credentials резолвятся через account context. Параметры `limit` (1–100) и `offset` (0–10 000) защищены от случайных массовых выборок.
 
+`get_daily_schedule` поддерживает постраничное чтение насыщенного дневного
+расписания: если ответ содержит `has_more=true`, следующий вызов нужно делать с
+`offset=next_offset`. Поля `data.admission` и `data.totalCount` сохранены для
+совместимости. Если `truncated=true`, но `has_more=false`, значит данных больше,
+но безопасного следующего `offset` нет: либо достигнута граница offset
+(`pagination_limit_reached=true`), либо upstream вернул пустую страницу без
+продвижения (`pagination_stalled=true`). В таком случае нужно сузить дату/врача/
+клинику, а не повторять тот же offset.
+
 ### Контракт `tools/list`
 
 MCP-клиенты могут использовать `tools/list` как источник истины по возможностям сервера.

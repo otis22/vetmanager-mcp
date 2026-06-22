@@ -5,7 +5,12 @@ from fastmcp import FastMCP
 from filters import eq as _filter_eq, gte as _filter_gte, in_ as _filter_in, lt as _filter_lt
 from resources.admission_status import ACTIVE_ADMISSION_STATUSES  # noqa: F401 — BC re-export
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
-from validators import LimitParam, parse_date_param
+from validators import (
+    LimitParam,
+    VETMANAGER_MAX_OFFSET,
+    parse_date_param,
+    validate_list_params,
+)
 from vm_datetime import normalize_vm_datetime
 
 
@@ -209,6 +214,7 @@ def register(mcp: FastMCP) -> None:
         doctor_id: int = 0,
         clinic_id: int = 0,
         limit: LimitParam = 100,
+        offset: int = 0,
     ) -> dict:
         """List active appointments scheduled for a given day.
 
@@ -225,7 +231,10 @@ def register(mcp: FastMCP) -> None:
                 user_id on the admission entity).
             clinic_id: Optional. Filter to a specific clinic.
             limit: Max records to return (1–100, default 100).
+            offset: Pagination offset (0–10000). When has_more is true, use
+                next_offset to fetch the next page.
         """
+        validate_list_params(limit, offset)
         resolved = parse_date_param(date)
         if not resolved:
             raise ValueError("date is required")
@@ -246,19 +255,32 @@ def register(mcp: FastMCP) -> None:
         resp = await crud_list(
             "/rest/api/admission",
             limit=limit,
-            offset=0,
+            offset=offset,
             sort=[{"property": "admission_date", "direction": "ASC"}],
             filters=filters,
         )
         rows, total = _unwrap_admission_list_response(resp)
         returned_count = len(rows)
         total_count = int(total or 0)
+        next_offset_candidate = offset + returned_count
+        truncated = total_count > next_offset_candidate
+        pagination_limit_reached = (
+            truncated and next_offset_candidate > VETMANAGER_MAX_OFFSET
+        )
+        pagination_stalled = truncated and returned_count == 0
+        has_more = truncated and not pagination_limit_reached and not pagination_stalled
         return {
             "success": True,
             "date": resolved,
+            "limit": limit,
+            "offset": offset,
             "returnedCount": returned_count,
             "totalCount": total_count,
-            "truncated": total_count > returned_count,
+            "has_more": has_more,
+            "next_offset": next_offset_candidate if has_more else None,
+            "pagination_limit_reached": pagination_limit_reached,
+            "pagination_stalled": pagination_stalled,
+            "truncated": truncated,
             "data": {"admission": rows, "totalCount": total_count},
         }
 

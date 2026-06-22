@@ -8718,3 +8718,46 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 - Production KB validation: `known_issue #19` и `#20` имеют валидные `match_rules_json` и `agent_playbook_json`.
 - Targeted: `docker compose --profile test run --rm test pytest tests/test_stage170_report_ai_tools.py -k 'guidance_descriptions_name_helper_and_fallback_policy or guidance_reaches_live_tool_descriptions'` — `2 passed`.
+
+## Этап 174. Daily schedule pagination — 2026-06-22
+
+### Что делали
+
+Закрыли production feedback report `#14`: `get_daily_schedule` показывал только первую страницу насыщенного дневного расписания и не давал агенту безопасно дочитать следующие записи.
+
+### Что сделано
+
+- Добавлен PRD `PRD/этап-174-daily-schedule-pagination.md`.
+- `get_daily_schedule` получил параметр `offset: int = 0`, общую валидацию `limit/offset` через `validate_list_params` и передачу `offset` в `/rest/api/admission`.
+- Response metadata расширена полями `limit`, `offset`, `has_more`, `next_offset`, `pagination_limit_reached`, `pagination_stalled`; `data.admission` и `data.totalCount` сохранены.
+- README описывает agent-facing контракт: следующую страницу читать только при `has_more=true`; при `truncated=true` и `has_more=false` нужно сузить дату/врача/клинику, а не повторять тот же offset.
+- Roadmap Stage 174 переведён в `done`.
+
+### Решения и обоснования
+
+- Auto-fetch всех страниц не добавлялся: tool остаётся bounded, caller сам управляет страницами через `offset`.
+- `truncated` считается относительно текущего offset: `totalCount > offset + returnedCount`.
+- `next_offset` возвращается только если он безопасен для следующего вызова. На границе `_OFFSET_MAX=10000` exact `next_offset=10000` разрешён, но `>10000` не рекламируется.
+- Если upstream вернул пустую страницу при `totalCount > offset`, ставим `pagination_stalled=true`, чтобы агент не зациклился на том же offset.
+
+### Review gates
+
+- Spark review сначала запущен в read-only sandbox, но runtime завис после sandbox/MCP ошибки; по project fallback rule остановлен и повторён с `-s danger-full-access` и review-only prompt. Результат: `[]`.
+- Claude Opus review #1 нашёл missing negative offset test и unusable `next_offset` beyond offset max; оба замечания приняты и исправлены.
+- Spark follow-up после фиксов: `[]`.
+- Claude Opus review #2 нашёл риск `next_offset == offset` на пустой странице и missing exact-boundary test; оба замечания приняты и исправлены.
+- Финальный Spark sanity: `[]`.
+- Финальный Claude Opus review: `No findings`.
+
+### Проверки
+
+- Red targeted до реализации подтвердил отсутствие pagination metadata/offset passthrough.
+- Targeted related: `docker compose --profile test run --rm test pytest tests/test_convenience_tools.py tests/test_tools_list_schema.py -q` — `42 passed`.
+- Full suite: `docker compose --profile test run --rm test` — `1183 passed, 1 skipped, 63 deselected`.
+- Audit: `git diff --check` clean.
+- Docker-run historical key checker не стартует из-за отсутствия `git` в test image; host fallback `python3 scripts/check_no_historical_api_key_literal.py` — historical devtr6 API key literal not found.
+
+### Проблемы
+
+- Offset pagination не делает snapshot-consistency поверх меняющегося расписания Vetmanager; deterministic sort снижает риск, но при concurrent schedule edits возможны внешние race effects.
+- Если API возвращает пустую страницу при `totalCount > offset`, MCP не пытается угадывать дальше и просит caller сузить запрос.
