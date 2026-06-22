@@ -368,6 +368,9 @@ def register(mcp: FastMCP) -> None:
             intent_text: Russian business-report request. Must be non-empty and
                 no longer than 1000 characters. The job is async; poll with
                 get_report_ai_job and reuse returned jobs when is_deduplicated=true.
+                For complex or multi-condition reports, prefer narrower
+                periods and simpler grouped requests; do not create duplicate
+                queued jobs without user consent.
         """
         intent = _validate_intent_text(intent_text)
         return await _call_vm(
@@ -388,6 +391,9 @@ def register(mcp: FastMCP) -> None:
                 report_id values accepted by confirm_report_ai_job_candidate.
                 If MCP observes the same job queued for 30+ seconds, the safe
                 job payload includes mcp_queue_diagnostics with operator hints.
+                Keep polling bounded. If a complex report remains queued, explain
+                that processing is on the Vetmanager side and suggest checking
+                later or simplifying/splitting the report intent.
         """
         payload = await _call_vm("GET", f"/rest/api/report-ai-job/{job_id}")
         return _annotate_report_ai_job_payload(payload)

@@ -759,7 +759,10 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "intent_text. Use when the user asks for an analytic report, grouped/list "
         "report, count, trend, or business condition that is better answered by "
         "the report constructor. The intent is limited to 1000 characters and "
-        "jobs must be polled with get_report_ai_job. "
+        "jobs must be polled with get_report_ai_job. For complex or "
+        "multi-condition reports, prefer narrower periods and simpler grouped "
+        "requests; if a job stays queued, do not create duplicate jobs without "
+        "user consent. "
         "Domain synonyms: отчёт, отчет, ИИ отчёт, AI report, конструктор отчётов, "
         "аналитика, report ai."
     ),
@@ -776,8 +779,10 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "Use for polling queued/recognizing/building_preview jobs and for checking "
         "ready_to_save, existing_report_matched, needs_confirmation, saved, failed, "
         "or rejected states. If MCP observes a job queued for 30+ seconds, the "
-        "job includes mcp_queue_diagnostics with safe operator hints. It does "
-        "not expose raw SQL. Domain synonyms: отчёт, "
+        "job includes mcp_queue_diagnostics with safe operator hints. Keep polling "
+        "bounded; if a complex report remains queued, explain that processing is "
+        "on the Vetmanager side and suggest checking later or simplifying/splitting "
+        "the report intent. It does not expose raw SQL. Domain synonyms: отчёт, "
         "отчет, ИИ отчёт, AI report, конструктор отчётов, аналитика, report ai."
     ),
     "confirm_report_ai_job_candidate": (

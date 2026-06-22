@@ -130,6 +130,17 @@ def test_report_ai_guidance_descriptions_name_helper_and_fallback_policy():
     create_description = SPECIAL_TOOL_DESCRIPTIONS["create_report_ai_job"]
     assert "get_report_ai_prompt_helper" in create_description
     assert "report_ai_prompt_helper" in create_description
+    assert "complex or multi-condition reports" in create_description
+    assert "duplicate jobs" in create_description
+    assert "ABC" not in create_description
+    assert "XYZ" not in create_description
+
+    job_description = SPECIAL_TOOL_DESCRIPTIONS["get_report_ai_job"]
+    assert "bounded" in job_description.lower()
+    assert "Vetmanager side" in job_description
+    assert "simplifying/splitting" in job_description
+    assert "ABC" not in job_description
+    assert "XYZ" not in job_description
 
     data_description = SPECIAL_TOOL_DESCRIPTIONS["get_report_ai_job_data"]
     assert "limited=true" in data_description
@@ -153,6 +164,16 @@ async def test_report_ai_guidance_reaches_live_tool_descriptions():
     create_description = tools_by_name["create_report_ai_job"].description
     assert "get_report_ai_prompt_helper" in create_description
     assert "report_ai_prompt_helper" in create_description
+    assert "complex or multi-condition reports" in create_description
+    assert "ABC" not in create_description
+    assert "XYZ" not in create_description
+
+    job_description = tools_by_name["get_report_ai_job"].description
+    assert "bounded" in job_description.lower()
+    assert "Vetmanager side" in job_description
+    assert "simplifying/splitting" in job_description
+    assert "ABC" not in job_description
+    assert "XYZ" not in job_description
 
     data_description = tools_by_name["get_report_ai_job_data"].description
     assert "limited=true" in data_description

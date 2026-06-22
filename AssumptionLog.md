@@ -8694,3 +8694,27 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 - Description guidance improves agent tool choice but cannot guarantee every client/LLM will call helper before `create_report_ai_job`.
 - Export locators remain sensitive bulk clinic data; descriptions warn not to log or paste locators outside tool response.
+
+## Production feedback #15/#17 playbooks — 2026-06-22
+
+### Что делали
+
+Разобрали новые production feedback reports `#15`, `#16`, `#17` после Stage 176. Цель — не добавлять большой roadmap item там, где достаточно agent-facing guidance, а сделать подсказки видимыми агенту через production KB и `tools/list`.
+
+### Что сделано
+
+- Production `known_issue #20` для `#16/#17` переведён в `workaround_available`: агенту рекомендуется попросить пользователя выпустить новый Bearer token с preset `Analytics`, затем вызвать `save_report_ai_job_as_report` и `get_report_ai_job_data`; `Full access` не нужен.
+- Production `known_issue #19` для `#15` переведён в `workaround_available`: для сложных/многоусловных Report AI jobs агент должен использовать bounded polling, объяснять Vetmanager-side queue, предлагать проверить job позже или упростить/разбить отчёт.
+- В `tool_descriptions.py` и docstrings `tools/report_ai.py` добавлена generic guidance для сложных/многоусловных отчётов: не плодить duplicate queued jobs без согласия пользователя, не ждать бесконечно, объяснять upstream processing и предлагать simplify/split.
+- Добавлены regression assertions в `tests/test_stage170_report_ai_tools.py`, чтобы guidance доходил до live tool descriptions и не был привязан к ABC/XYZ.
+
+### Решения и обоснования
+
+- Read-only data path после `ready_to_save` не добавлялся в Roadmap: существующий `Analytics` preset является достаточным рабочим путём для сценария `#16/#17`.
+- Большой root-cause этап для queued Report AI jobs не добавлялся: MCP не управляет очередью/preview worker Vetmanager. Минимально полезное действие на стороне MCP — правильный agent UX и bounded polling guidance.
+- Формулировки не привязаны к ABC/XYZ, потому что зависать может любой сложный или многоусловный отчёт.
+
+### Проверки
+
+- Production KB validation: `known_issue #19` и `#20` имеют валидные `match_rules_json` и `agent_playbook_json`.
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_stage170_report_ai_tools.py -k 'guidance_descriptions_name_helper_and_fallback_policy or guidance_reaches_live_tool_descriptions'` — `2 passed`.
