@@ -12,6 +12,7 @@ from observability_logging import RUNTIME_LOGGER
 from secret_manager import get_storage_encryption_key
 from service_metrics import record_auth_failure, record_business_event, record_token_preset_issued
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
+from oauth_service import revoke_oauth_grant_family
 from tool_access_registry import PRESET_FULL_ACCESS, PRESET_READ_ONLY, get_token_preset_label
 from storage import get_session_factory
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY, VETMANAGER_AUTH_MODE_USER_TOKEN
@@ -231,6 +232,7 @@ def register_account_routes(
             integration_health_status,
             integration_health_reason,
             _bearer_tokens,
+            _oauth_grants,
         ) = await load_account_dashboard(account_id)
         if account is None:
             response = redirect_response(request, url="/login", status_code=303)
@@ -381,4 +383,60 @@ def register_account_routes(
             request,
             account_id,
             token_success="Bearer token revoked successfully.",
+        )
+
+    @observed_route(
+        mcp,
+        "/account/oauth-grants/{grant_id:int}/revoke",
+        methods=["POST"],
+        include_in_schema=False,
+    )
+    async def account_oauth_grant_revoke(request: Request) -> HTMLResponse | RedirectResponse:
+        account_id = get_account_id_from_request(request)
+        if account_id is None:
+            response = redirect_response(request, url="/login", status_code=303)
+            clear_account_session_cookie(response)
+            return response
+
+        form = await read_form(request)
+        try:
+            validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
+        except ValueError as exc:
+            return await render_account_dashboard_response(
+                request,
+                account_id,
+                status_code=403,
+                token_error=str(exc),
+            )
+
+        grant_id = int(request.path_params["grant_id"])
+        try:
+            async with get_session_factory()() as session:
+                await revoke_oauth_grant_family(
+                    session,
+                    account_id=account_id,
+                    grant_id=grant_id,
+                )
+        except ValueError as exc:
+            return await render_account_dashboard_response(
+                request,
+                account_id,
+                status_code=400,
+                token_error=str(exc),
+            )
+
+        RUNTIME_LOGGER.info(
+            "OAuth grant revoked",
+            extra={
+                "event_name": "oauth_grant_revoked",
+                "account_id": account_id,
+                "grant_id": grant_id,
+            },
+        )
+        record_business_event("oauth_grant_revoked")
+
+        return await render_account_dashboard_response(
+            request,
+            account_id,
+            token_success="ChatGPT connection disconnected successfully.",
         )

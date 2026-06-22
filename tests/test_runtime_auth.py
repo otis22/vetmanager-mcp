@@ -1,6 +1,7 @@
 """Unit tests for stage 22.3 runtime credentials resolution."""
 
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -9,8 +10,15 @@ import pytest_asyncio
 import auth.request as auth_request
 import runtime_auth
 from bearer_token_manager import generate_bearer_token
+from bearer_token_manager import build_token_prefix, hash_bearer_token
 from exceptions import AuthError
-from storage_models import Account, ServiceBearerToken, VetmanagerConnection
+from storage_models import (
+    Account,
+    OAuthAccessToken,
+    OAuthGrant,
+    ServiceBearerToken,
+    VetmanagerConnection,
+)
 from token_scopes import SCOPE_CLIENTS_READ
 from vetmanager_auth import (
     VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
@@ -19,6 +27,7 @@ from vetmanager_auth import (
 
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
+OAUTH_RAW_ACCESS_TOKEN = "vm_oat_runtime_test_token"
 
 
 @pytest_asyncio.fixture
@@ -62,6 +71,8 @@ async def test_resolve_runtime_credentials_prefers_bearer_context(session_factor
     assert resolved.vetmanager_auth.auth_mode == VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
     assert "clients.read" in resolved.scopes
     assert resolved.is_depersonalized is False
+    assert resolved.auth_subject_type == "service_bearer"
+    assert resolved.auth_subject_id == resolved.bearer_token_id
 
 
 @pytest.mark.asyncio
@@ -141,6 +152,125 @@ async def test_resolve_runtime_credentials_normalizes_user_token_mode(session_fa
     assert resolved.vetmanager_auth.auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN
     assert resolved.vetmanager_auth.build_headers()["X-USER-TOKEN"] == "user-token-secret"
     assert resolved.vetmanager_auth.build_headers()["X-APP-NAME"] == "vetmanager-mcp"
+
+
+@pytest.mark.asyncio
+async def test_resolve_runtime_credentials_accepts_oauth_access_token(session_factory, monkeypatch):
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    now = datetime.now(timezone.utc)
+
+    async with session_factory() as session:
+        account = Account(email="oauth@example.com", status="active")
+        session.add(account)
+        await session.flush()
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+            domain="oauth-clinic",
+        )
+        connection.set_credentials(
+            {"domain": "oauth-clinic", "api_key": "oauth-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        session.add(connection)
+        await session.flush()
+        grant = OAuthGrant(
+            account_id=account.id,
+            vetmanager_connection_id=connection.id,
+            client_id="vm_oc_test",
+            scopes_json='["clients.read"]',
+            status="active",
+        )
+        session.add(grant)
+        await session.flush()
+        access_token = OAuthAccessToken(
+            grant_id=grant.id,
+            token_prefix=build_token_prefix(OAUTH_RAW_ACCESS_TOKEN),
+            token_hash=hash_bearer_token(OAUTH_RAW_ACCESS_TOKEN),
+            scope="clients.read",
+            resource="https://test.example.com/mcp",
+            status="active",
+            expires_at=now + timedelta(minutes=30),
+        )
+        session.add(access_token)
+        await session.commit()
+
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    headers = {"authorization": f"Bearer {OAUTH_RAW_ACCESS_TOKEN}"}
+    with patch.object(auth_request, "_get_request_headers", return_value=headers):
+        with patch.object(runtime_auth, "get_session_factory", return_value=session_factory):
+            resolved = await runtime_auth.resolve_runtime_credentials()
+
+    assert resolved.source == "oauth"
+    assert resolved.domain == "oauth-clinic"
+    assert resolved.api_key == "oauth-key"
+    assert resolved.account_id == 1
+    assert resolved.bearer_token_id is None
+    assert resolved.connection_id == 1
+    assert resolved.scopes == ("clients.read",)
+    assert resolved.auth_subject_type == "oauth_access_token"
+    assert resolved.auth_subject_id == 1
+
+
+@pytest.mark.asyncio
+async def test_resolve_runtime_credentials_rejects_oauth_wrong_resource(session_factory, monkeypatch):
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    now = datetime.now(timezone.utc)
+
+    async with session_factory() as session:
+        account = Account(email="oauth-wrong-resource@example.com", status="active")
+        session.add(account)
+        await session.flush()
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+            domain="oauth-clinic",
+        )
+        connection.set_credentials(
+            {"domain": "oauth-clinic", "api_key": "oauth-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        session.add(connection)
+        await session.flush()
+        grant = OAuthGrant(
+            account_id=account.id,
+            vetmanager_connection_id=connection.id,
+            client_id="vm_oc_test",
+            scopes_json='["clients.read"]',
+            status="active",
+        )
+        session.add(grant)
+        await session.flush()
+        session.add(
+            OAuthAccessToken(
+                grant_id=grant.id,
+                token_prefix=build_token_prefix(OAUTH_RAW_ACCESS_TOKEN),
+                token_hash=hash_bearer_token(OAUTH_RAW_ACCESS_TOKEN),
+                scope="clients.read",
+                resource="https://other.example.com/mcp",
+                status="active",
+                expires_at=now + timedelta(minutes=30),
+            )
+        )
+        await session.commit()
+
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    headers = {"authorization": f"Bearer {OAUTH_RAW_ACCESS_TOKEN}"}
+    with patch.object(auth_request, "_get_request_headers", return_value=headers):
+        with patch.object(runtime_auth, "get_session_factory", return_value=session_factory):
+            with pytest.raises(AuthError) as exc_info:
+                await runtime_auth.resolve_runtime_credentials()
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.error_code == "invalid_token"
+    assert "resource_metadata=\"https://test.example.com/.well-known/oauth-protected-resource/mcp\"" in (
+        exc_info.value.details["www_authenticate"]
+    )
+    assert exc_info.value.details["mcp/www_authenticate"] == [
+        exc_info.value.details["www_authenticate"]
+    ]
 
 
 @pytest.mark.asyncio

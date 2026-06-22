@@ -54,7 +54,7 @@ def get_bearer_token() -> str:
         record_auth_failure(source="bearer_header", reason="missing_authorization")
         _log_bearer_header_failure("missing_authorization")
         raise AuthError(
-            "Missing Authorization header. Set Authorization: Bearer <service_token>.",
+            "Missing Authorization header. Set Authorization: Bearer <bearer_token>.",
             status_code=401,
         )
     scheme, _, token = authorization.partition(" ")
@@ -62,7 +62,7 @@ def get_bearer_token() -> str:
         record_auth_failure(source="bearer_header", reason="invalid_authorization")
         _log_bearer_header_failure("invalid_authorization")
         raise AuthError(
-            "Invalid Authorization header. Use Authorization: Bearer <service_token>.",
+            "Invalid Authorization header. Use Authorization: Bearer <bearer_token>.",
             status_code=401,
         )
     return token.strip()

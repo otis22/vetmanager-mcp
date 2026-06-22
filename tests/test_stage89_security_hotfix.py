@@ -177,6 +177,7 @@ def test_web_html_account_page_uses_site_base_url(monkeypatch):
         integration_health_status="active",
         integration_health_reason="",
         bearer_tokens=[],
+        oauth_grants=[],
         issued_raw_token="demo-token-xyz",
     )
     assert "https://my-clinic.example.org/mcp" in html

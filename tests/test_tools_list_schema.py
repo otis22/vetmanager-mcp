@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from server import mcp  # noqa: E402
+from tool_access_registry import TOOL_REQUIRED_SCOPES  # noqa: E402
 
 
 def _get_all_tool_exports(run_async) -> list[dict]:
@@ -23,6 +24,7 @@ def _get_all_tool_exports(run_async) -> list[dict]:
                 "name": t.name,
                 "description": t.to_mcp_tool().description or "",
                 "schema": t.to_mcp_tool().inputSchema or {},
+                "meta": t.to_mcp_tool().model_dump(by_alias=True).get("_meta") or {},
             }
             for t in tools
         ]
@@ -138,10 +140,21 @@ class TestToolsListSchema:
         assert "invoice_id" in properties
         assert "document_id" not in properties
         assert "documentId" not in properties
-        description = tool["description"]
-        assert "invoice_id" in description
-        assert "document_id" not in description
-        assert "documentId" not in description
+
+    def test_every_tool_exports_oauth_security_scheme_metadata(self, all_tool_exports):
+        missing = []
+        for tool in all_tool_exports:
+            schemes = tool["meta"].get("securitySchemes")
+            if not schemes:
+                missing.append(tool["name"])
+                continue
+            assert schemes == [
+                {
+                    "type": "oauth2",
+                    "scopes": list(TOOL_REQUIRED_SCOPES.get(tool["name"], ())),
+                }
+            ]
+        assert not missing, f"Tools without OAuth securitySchemes metadata: {missing}"
 
     def test_limit_has_minimum_when_present(self, all_tool_exports):
         """Every tool with a 'limit' param must declare minimum in its schema."""

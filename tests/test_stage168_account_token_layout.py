@@ -45,6 +45,7 @@ def _render_account_with_tokens() -> str:
                 "request_count": 0,
             },
         ],
+        oauth_grants=[],
     )
 
 

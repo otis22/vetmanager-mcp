@@ -22,6 +22,17 @@ CONNECTION_STATUS_ACTIVE = "active"
 CONNECTION_STATUS_DISABLED = "disabled"
 CONNECTION_STATUSES = (CONNECTION_STATUS_ACTIVE, CONNECTION_STATUS_DISABLED)
 
+OAUTH_STATUS_ACTIVE = "active"
+OAUTH_STATUS_DISABLED = "disabled"
+OAUTH_STATUS_REVOKED = "revoked"
+OAUTH_STATUS_EXPIRED = "expired"
+OAUTH_STATUS_CONSUMED = "consumed"
+
+OAUTH_CLIENT_STATUSES = (OAUTH_STATUS_ACTIVE, OAUTH_STATUS_DISABLED)
+OAUTH_GRANT_STATUSES = (OAUTH_STATUS_ACTIVE, OAUTH_STATUS_REVOKED)
+OAUTH_CODE_STATUSES = (OAUTH_STATUS_ACTIVE, OAUTH_STATUS_CONSUMED, OAUTH_STATUS_EXPIRED)
+OAUTH_TOKEN_STATUSES = (OAUTH_STATUS_ACTIVE, OAUTH_STATUS_REVOKED, OAUTH_STATUS_EXPIRED)
+
 TOKEN_STATUS_ACTIVE = "active"
 TOKEN_STATUS_REVOKED = "revoked"
 TOKEN_STATUS_EXPIRED = "expired"
@@ -341,6 +352,176 @@ class TokenUsageLog(Base):
     details_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     bearer_token: Mapped[ServiceBearerToken] = relationship(back_populates="usage_logs")
+
+
+class OAuthClient(Base):
+    """Dynamic OAuth public client registered by ChatGPT."""
+
+    __tablename__ = "oauth_clients"
+    __table_args__ = (
+        UniqueConstraint("client_id", name="uq_oauth_clients_client_id"),
+        CheckConstraint(
+            f"status IN ({', '.join(repr(s) for s in OAUTH_CLIENT_STATUSES)})",
+            name="ck_oauth_clients_status",
+        ),
+        Index("ix_oauth_clients_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    client_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    client_name: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    redirect_uris_json: Mapped[str] = mapped_column(Text, nullable=False)
+    token_endpoint_auth_method: Mapped[str] = mapped_column(String(32), nullable=False)
+    grant_types_json: Mapped[str] = mapped_column(Text, nullable=False)
+    response_types_json: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=OAUTH_STATUS_ACTIVE)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OAuthGrant(Base):
+    """Authorized ChatGPT grant bound to one Vetmanager connection."""
+
+    __tablename__ = "oauth_grants"
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN ({', '.join(repr(s) for s in OAUTH_GRANT_STATUSES)})",
+            name="ck_oauth_grants_status",
+        ),
+        Index("ix_oauth_grants_account_status", "account_id", "status"),
+        Index("ix_oauth_grants_connection_status", "vetmanager_connection_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
+    vetmanager_connection_id: Mapped[int] = mapped_column(
+        ForeignKey("vetmanager_connections.id"),
+        nullable=False,
+        index=True,
+    )
+    client_id: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    scopes_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=OAUTH_STATUS_ACTIVE)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revocation_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+class OAuthAuthorizationCode(Base):
+    """Single-use OAuth authorization code stored as hash-at-rest."""
+
+    __tablename__ = "oauth_authorization_codes"
+    __table_args__ = (
+        UniqueConstraint("code_hash", name="uq_oauth_authorization_codes_code_hash"),
+        CheckConstraint(
+            f"status IN ({', '.join(repr(s) for s in OAUTH_CODE_STATUSES)})",
+            name="ck_oauth_authorization_codes_status",
+        ),
+        Index("ix_oauth_authorization_codes_client_status", "client_id", "status"),
+        Index("ix_oauth_authorization_codes_expires", "expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code_prefix: Mapped[str] = mapped_column(String(32), nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    client_id: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    redirect_uri: Mapped[str] = mapped_column(Text, nullable=False)
+    resource: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str] = mapped_column(Text, nullable=False)
+    code_challenge: Mapped[str] = mapped_column(String(160), nullable=False)
+    code_challenge_method: Mapped[str] = mapped_column(String(16), nullable=False)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
+    vetmanager_connection_id: Mapped[int] = mapped_column(
+        ForeignKey("vetmanager_connections.id"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=OAUTH_STATUS_ACTIVE)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+class OAuthAccessToken(Base):
+    """OAuth access token metadata; raw token is returned once and never stored."""
+
+    __tablename__ = "oauth_access_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_oauth_access_tokens_token_hash"),
+        CheckConstraint(
+            f"status IN ({', '.join(repr(s) for s in OAUTH_TOKEN_STATUSES)})",
+            name="ck_oauth_access_tokens_status",
+        ),
+        Index("ix_oauth_access_tokens_grant_status", "grant_id", "status"),
+        Index("ix_oauth_access_tokens_expires", "expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    grant_id: Mapped[int] = mapped_column(ForeignKey("oauth_grants.id"), nullable=False, index=True)
+    token_prefix: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope: Mapped[str] = mapped_column(Text, nullable=False)
+    resource: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=OAUTH_STATUS_ACTIVE)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+class OAuthRefreshToken(Base):
+    """Rotating OAuth refresh token stored as hash-at-rest."""
+
+    __tablename__ = "oauth_refresh_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_oauth_refresh_tokens_token_hash"),
+        CheckConstraint(
+            f"status IN ({', '.join(repr(s) for s in OAUTH_TOKEN_STATUSES)})",
+            name="ck_oauth_refresh_tokens_status",
+        ),
+        Index("ix_oauth_refresh_tokens_grant_status", "grant_id", "status"),
+        Index("ix_oauth_refresh_tokens_expires", "expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    grant_id: Mapped[int] = mapped_column(ForeignKey("oauth_grants.id"), nullable=False, index=True)
+    token_prefix: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope: Mapped[str] = mapped_column(Text, nullable=False)
+    resource: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=OAUTH_STATUS_ACTIVE)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    replaced_by_token_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
 
 
 class AgentFeedbackReport(Base):

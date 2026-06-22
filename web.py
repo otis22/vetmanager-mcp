@@ -31,6 +31,8 @@ from storage_models import (
     ServiceBearerToken,
     TokenUsageStat,
     VetmanagerConnection,
+    OAuthClient,
+    OAuthGrant,
 )
 from token_cleanup import scan_token_expiry_warnings, sync_expired_tokens
 from tool_access_registry import PRESET_READ_ONLY, infer_token_preset, get_token_preset_label
@@ -43,6 +45,7 @@ from web_auth import SESSION_COOKIE_NAME, read_account_session_token, clear_acco
 from web_html import render_account_page
 from web_routes_account import register_account_routes
 from web_routes_auth import register_auth_routes
+from web_routes_oauth import register_oauth_routes
 from web_routes_system import register_system_routes
 from web_security import (
     CSRF_COOKIE_NAME,
@@ -264,7 +267,16 @@ def _format_dt(value) -> str:
 
 async def _load_account_dashboard(
     account_id: int,
-) -> tuple[Account | None, int, int, VetmanagerConnection | None, str, str, list[dict[str, str | int]]]:
+) -> tuple[
+    Account | None,
+    int,
+    int,
+    VetmanagerConnection | None,
+    str,
+    str,
+    list[dict[str, str | int]],
+    list[dict[str, str | int]],
+]:
     async with get_session_factory()() as session:
         # sync_expired_tokens commits internally when it has work; on return the
         # session has no pending state, so the subsequent scan_token_expiry_warnings
@@ -283,7 +295,7 @@ async def _load_account_dashboard(
             )
         account = await session.get(Account, account_id)
         if account is None:
-            return None, 0, 0, None, "unknown", "Integration is not configured yet.", []
+            return None, 0, 0, None, "unknown", "Integration is not configured yet.", [], []
 
         active_connection_count = await session.scalar(
             select(func.count())
@@ -346,6 +358,34 @@ async def _load_account_dashboard(
                     "privacy_label": "Depersonalized" if token.is_depersonalized else "Standard",
                 }
             )
+        grants = (
+            await session.execute(
+                select(OAuthGrant)
+                .where(OAuthGrant.account_id == account.id)
+                .order_by(OAuthGrant.created_at.desc())
+            )
+        ).scalars().all()
+        clients_by_id: dict[str, OAuthClient] = {}
+        if grants:
+            client_ids = sorted({grant.client_id for grant in grants})
+            clients = (
+                await session.execute(select(OAuthClient).where(OAuthClient.client_id.in_(client_ids)))
+            ).scalars().all()
+            clients_by_id = {client.client_id: client for client in clients}
+        oauth_grant_view = []
+        for grant in grants:
+            client = clients_by_id.get(grant.client_id)
+            oauth_grant_view.append(
+                {
+                    "id": grant.id,
+                    "client_name": (client.client_name if client else None) or "ChatGPT",
+                    "client_id": grant.client_id,
+                    "status": grant.status,
+                    "created_at": _format_dt(grant.created_at),
+                    "last_used_at": _format_dt(grant.last_used_at),
+                    "connection_id": grant.vetmanager_connection_id,
+                }
+            )
         integration_health_status = INTEGRATION_HEALTH_UNKNOWN
         integration_health_reason = "Integration is not configured yet."
         if active_connection is not None:
@@ -361,6 +401,7 @@ async def _load_account_dashboard(
             integration_health_status,
             integration_health_reason,
             token_view,
+            oauth_grant_view,
         )
 
 
@@ -395,6 +436,7 @@ async def _render_account_dashboard_response(
         integration_health_status,
         integration_health_reason,
         bearer_tokens,
+        oauth_grants,
     ) = await _load_account_dashboard(account_id)
     if account is None:
         response = _redirect_response(request, url="/login", status_code=303)
@@ -415,6 +457,7 @@ async def _render_account_dashboard_response(
             integration_health_status=integration_health_status,
             integration_health_reason=integration_health_reason,
             bearer_tokens=bearer_tokens,
+            oauth_grants=oauth_grants,
             integration_error=integration_error,
             integration_success=integration_success,
             form_auth_mode=form_auth_mode,
@@ -460,6 +503,17 @@ def register_web_routes(mcp: FastMCP) -> None:
         html_response=_html_response,
         redirect_response=_redirect_response,
         read_form=_read_form,
+        resolve_csrf_token=_resolve_csrf_token,
+    )
+
+    register_oauth_routes(
+        mcp,
+        observed_route=_observed_custom_route,
+        html_response=_html_response,
+        json_response=_json_response,
+        redirect_response=_redirect_response,
+        read_form=_read_form,
+        get_account_id_from_request=_get_account_id_from_request,
         resolve_csrf_token=_resolve_csrf_token,
     )
 

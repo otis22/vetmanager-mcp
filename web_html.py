@@ -456,8 +456,15 @@ def render_register_page(*, csrf_token: str, error: str | None = None, email: st
     )
 
 
-def render_login_page(*, csrf_token: str, error: str | None = None, email: str = "") -> str:
+def render_login_page(
+    *,
+    csrf_token: str,
+    error: str | None = None,
+    email: str = "",
+    next_url: str = "",
+) -> str:
     error_html = f'<div class="error">{escape(error)}</div>' if error else ""
+    next_html = f'<input type="hidden" name="next" value="{escape(next_url)}">' if next_url else ""
     return render_shell(
         "Вход в аккаунт",
         f"""
@@ -466,6 +473,7 @@ def render_login_page(*, csrf_token: str, error: str | None = None, email: str =
         {error_html}
         <form method="post" action="/login" data-testid="login-form">
           {hidden_csrf_input(csrf_token)}
+          {next_html}
           <label>Email
             <input type="email" name="email" autocomplete="email" value="{escape(email)}" required data-testid="login-email">
           </label>
@@ -482,6 +490,55 @@ def render_login_page(*, csrf_token: str, error: str | None = None, email: str =
     )
 
 
+def render_oauth_consent_page(
+    *,
+    csrf_token: str,
+    request_state: str,
+    client_name: str,
+    scopes: list[str],
+    connections: list[dict[str, str | int]],
+    error: str | None = None,
+) -> str:
+    error_html = f'<div class="error">{escape(error)}</div>' if error else ""
+    scope_items = "".join(f"<li><code>{escape(scope)}</code></li>" for scope in scopes)
+    if len(connections) == 1:
+        connection = connections[0]
+        connection_input = (
+            f'<input type="hidden" name="connection_id" value="{escape(str(connection["id"]))}">'
+            f'<p>Clinic: <code>{escape(str(connection.get("domain", "n/a")))}</code></p>'
+        )
+    else:
+        options = "".join(
+            f'<option value="{escape(str(connection["id"]))}">{escape(str(connection.get("domain", "n/a")))}</option>'
+            for connection in connections
+        )
+        connection_input = f"""
+          <label>Clinic connection
+            <select name="connection_id" required>
+              {options}
+            </select>
+          </label>
+        """
+    return render_shell(
+        "ChatGPT access",
+        f"""
+        <h1>ChatGPT access</h1>
+        <p><strong>{escape(client_name)}</strong> requests access to this Vetmanager MCP service.</p>
+        {error_html}
+        <section class="metric">
+          <span>Requested scopes</span>
+          <ul>{scope_items}</ul>
+        </section>
+        <form method="post" action="/oauth/authorize/consent" data-testid="oauth-consent-form">
+          {hidden_csrf_input(csrf_token)}
+          <input type="hidden" name="request_state" value="{escape(request_state)}">
+          {connection_input}
+          <button type="submit">Allow</button>
+        </form>
+        """,
+    )
+
+
 def render_account_page(
     account: Account,
     *,
@@ -493,6 +550,7 @@ def render_account_page(
     integration_health_status: str,
     integration_health_reason: str,
     bearer_tokens: list[dict[str, str | int]],
+    oauth_grants: list[dict[str, str | int]],
     integration_error: str | None = None,
     integration_success: str | None = None,
     form_auth_mode: str = VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
@@ -686,6 +744,36 @@ def render_account_page(
             f"<tbody>{''.join(rows)}</tbody>"
             "</table>"
         )
+    oauth_grants_html = "<p>ChatGPT connections пока нет.</p>"
+    if oauth_grants:
+        rows = []
+        for grant in oauth_grants:
+            action_html = "&mdash;"
+            if str(grant["status"]) == "active":
+                action_html = (
+                    f'<form method="post" action="/account/oauth-grants/{grant["id"]}/revoke">'
+                    f'{hidden_csrf_input(csrf_token)}'
+                    '<button type="submit">Disconnect</button>'
+                    "</form>"
+                )
+            rows.append(
+                "<tr>"
+                f'<td data-label="Client">{escape(str(grant["client_name"]))}</td>'
+                f'<td data-label="Status"><span class="token-status">{escape(str(grant["status"]))}</span></td>'
+                f'<td data-label="Connection"><code>{escape(str(grant["connection_id"]))}</code></td>'
+                f'<td data-label="Created">{escape(str(grant["created_at"]))}</td>'
+                f'<td data-label="Last used">{escape(str(grant["last_used_at"]))}</td>'
+                f'<td class="token-action-cell" data-label="Actions">{action_html}</td>'
+                "</tr>"
+            )
+        oauth_grants_html = (
+            '<table class="token-table" data-testid="oauth-grant-list">'
+            "<thead><tr>"
+            "<th>Client</th><th>Status</th><th>Connection</th><th>Created</th><th>Last used</th><th>Actions</th>"
+            "</tr></thead>"
+            f"<tbody>{''.join(rows)}</tbody>"
+            "</table>"
+        )
     return render_shell(
         "Кабинет аккаунта",
         f"""
@@ -817,7 +905,10 @@ def render_account_page(
         <h2>Текущие токены</h2>
         <p>В списке показываются только безопасные поля. Raw token после создания больше не доступен.</p>
         {token_list_html}
-        <p>Текущий MCP runtime использует только <code>Authorization: Bearer &lt;service_token&gt;</code>. Этот web account уже стал источником регистрации, интеграции и выпуска токенов; следующим шагом здесь появится полноценный token list UI.</p>
+        <hr style="border: none; border-top: 1px solid var(--line); margin: 28px 0;">
+        <h2>ChatGPT connections</h2>
+        <p>ChatGPT uses OAuth linking and does not require manual service bearer token copy-paste.</p>
+        {oauth_grants_html}
         <form method="post" action="/logout" data-testid="logout-form">
           {hidden_csrf_input(csrf_token)}
           <button type="submit" data-testid="logout-submit">Выйти</button>

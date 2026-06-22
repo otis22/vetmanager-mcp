@@ -8768,3 +8768,44 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Offset pagination не делает snapshot-consistency поверх меняющегося расписания Vetmanager; deterministic sort снижает риск, но при concurrent schedule edits возможны внешние race effects.
 - Если API возвращает пустую страницу при `totalCount > offset`, MCP не пытается угадывать дальше и просит caller сузить запрос.
 - Remote `triage_agent_feedback.py` required `PYTHONPATH=.` inside the production container; first run failed before DB changes with `ModuleNotFoundError`, retry succeeded.
+
+## Этап 173. ChatGPT Apps OAuth-compatible MCP connector — 2026-06-22
+
+### Что делали
+
+Реализовали ChatGPT-compatible OAuth public-client path поверх существующего account/service-bearer runtime без изменения текущего `vm_st_` service bearer контракта.
+
+### Что сделано
+
+- Добавлен PRD `PRD/этап-173-chatgpt-oauth-mcp-connector.md` с архитектурным решением и critique gates.
+- Добавлены OAuth discovery endpoints: `/.well-known/oauth-protected-resource`, `/.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-authorization-server`, `/.well-known/openid-configuration`.
+- Добавлены OAuth таблицы: `oauth_clients`, `oauth_grants`, `oauth_authorization_codes`, `oauth_access_tokens`, `oauth_refresh_tokens`.
+- Реализован DCR `POST /oauth/register` для public clients: HTTPS redirect URI, `token_endpoint_auth_method=none`, scope validation, rate limit, cap equivalent registrations without keying only by shared ChatGPT redirect URI.
+- Реализован authorization-code + PKCE S256 flow: `/oauth/authorize`, consent form, signed request state, login `next`, single-use auth code.
+- Реализован `/oauth/token` для `authorization_code` и `refresh_token`: atomic code consume, refresh rotation, reuse detection with grant-family revoke.
+- Runtime resolver получил prefix route для `vm_oat_` OAuth access tokens; downstream tools продолжают получать единый `RuntimeCredentials` shape.
+- `tools/list` теперь содержит `_meta.securitySchemes` OAuth scopes для всех tools на основе `TOOL_REQUIRED_SCOPES`.
+- Account UI показывает ChatGPT OAuth grants и позволяет disconnect/revoke grant family без показа raw OAuth tokens.
+
+### Решения и обоснования
+
+- v1 явно ставит `client_id_metadata_document_supported=false`: CIMD оставлен follow-up, DCR используется как public-client path.
+- OAuth tokens/codes opaque и hash-at-rest; raw values возвращаются только один раз.
+- Public `/oauth/revoke` не добавлен в v1: account UI disconnect закрывает server-side revoke, а публичный endpoint увеличивает unauthenticated surface. Вернуться к нему только если private ChatGPT validation докажет необходимость.
+- Service bearer `vm_st_` path сохраняет существующий `resolve_bearer_auth_context` / `BearerAuthContext`; внешний runtime shape для обоих auth paths — `RuntimeCredentials`.
+- Challenge metadata пока закреплена в `AuthError.details` (`www_authenticate`, `mcp/www_authenticate`) и `tools/list _meta.securitySchemes`; фактическое поведение ChatGPT linking UI нужно подтвердить private validation после deploy.
+
+### Проверки
+
+- Targeted: `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_stage173_oauth_metadata.py tests/test_runtime_auth.py tests/test_request_auth.py tests/test_tools_list_schema.py tests/test_migrations.py tests/test_web_auth.py::test_login_logout_flow_requires_valid_credentials tests/test_web_auth.py::test_login_rate_limit_returns_429_after_repeated_failures tests/test_stage168_account_token_layout.py tests/test_packaging_metadata.py -q"` — `75 passed`.
+- Spark code review first ran in read-only sandbox and hit the known `bwrap`/MCP-resource runtime failure; the hung run was stopped and repeated once with `-s danger-full-access` and review-only prompt per workflow. Initial accepted findings: malformed PKCE verifier could 500, disabled OAuth clients were not rechecked at token exchange/refresh, and token endpoint rate limit was keyed by attacker-controlled `client_id`.
+- Targeted after Spark fixes: `docker compose --profile test run --rm test sh -c "python -m pytest tests/test_stage173_oauth_metadata.py tests/test_runtime_auth.py tests/test_tools_list_schema.py -q"` — `54 passed`.
+- Full suite after Spark fixes: `docker compose --profile test run --rm test` — `1205 passed, 1 skipped, 63 deselected`.
+- Follow-up Spark code review after fixes: `[]`.
+- Claude Opus code review after fixes used the temporary Stage 173 rule: real command timeout `1200s`, prompt-reported time limit `600s`; result `[]`.
+- Audit: `git diff --check` clean.
+
+### Проблемы
+
+- Private ChatGPT Developer Mode/API Playground validation ещё не выполнена в этом рабочем дереве; она остаётся rollout gate 173.10 после deploy.
+- FastMCP supports `_meta.securitySchemes`, but tool-error `_meta["mcp/www_authenticate"]` integration may need adjustment after real ChatGPT validation.

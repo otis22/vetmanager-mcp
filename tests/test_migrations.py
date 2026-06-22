@@ -37,6 +37,11 @@ def test_alembic_upgrade_creates_bearer_service_tables(tmp_path: Path):
     assert "agent_feedback_reports" in table_names
     assert "known_issues" in table_names
     assert "known_issue_match_events" in table_names  # Stage 151
+    assert "oauth_clients" in table_names
+    assert "oauth_grants" in table_names
+    assert "oauth_authorization_codes" in table_names
+    assert "oauth_access_tokens" in table_names
+    assert "oauth_refresh_tokens" in table_names
     account_columns = {column["name"] for column in inspector.get_columns("accounts")}
     assert "password_hash" in account_columns
     token_columns = {column["name"] for column in inspector.get_columns("service_bearer_tokens")}
@@ -53,6 +58,24 @@ def test_alembic_upgrade_creates_bearer_service_tables(tmp_path: Path):
     account_indexes = {index["name"] for index in inspector.get_indexes("accounts")}
     assert "archived_at" in account_columns
     assert "ix_accounts_archived_at" in account_indexes
+    oauth_client_columns = {column["name"] for column in inspector.get_columns("oauth_clients")}
+    assert {
+        "client_id",
+        "redirect_uris_json",
+        "token_endpoint_auth_method",
+        "grant_types_json",
+        "response_types_json",
+        "scope",
+        "status",
+    }.issubset(oauth_client_columns)
+    access_token_columns = {column["name"] for column in inspector.get_columns("oauth_access_tokens")}
+    assert {"grant_id", "token_prefix", "token_hash", "resource", "status", "expires_at"}.issubset(
+        access_token_columns
+    )
+    refresh_token_columns = {column["name"] for column in inspector.get_columns("oauth_refresh_tokens")}
+    assert {"used_at", "replaced_by_token_id"}.issubset(refresh_token_columns)
+    oauth_access_indexes = {index["name"] for index in inspector.get_indexes("oauth_access_tokens")}
+    assert "ix_oauth_access_tokens_grant_status" in oauth_access_indexes
 
 
 def test_account_archival_migration_round_trip(tmp_path: Path):
@@ -69,6 +92,25 @@ def test_account_archival_migration_round_trip(tmp_path: Path):
     inspector = inspect(create_engine(config.get_main_option("sqlalchemy.url")))
     assert "archived_at" not in {column["name"] for column in inspector.get_columns("accounts")}
     assert "ix_accounts_archived_at" not in {index["name"] for index in inspector.get_indexes("accounts")}
+
+
+def test_oauth_chatgpt_migration_round_trip(tmp_path: Path):
+    """Stage 173: OAuth tables are reversible as one schema slice."""
+    config = _make_alembic_config(tmp_path)
+    command.upgrade(config, "head")
+
+    engine = create_engine(config.get_main_option("sqlalchemy.url"))
+    inspector = inspect(engine)
+    assert "oauth_clients" in set(inspector.get_table_names())
+
+    command.downgrade(config, "20260503_000014")
+    inspector = inspect(create_engine(config.get_main_option("sqlalchemy.url")))
+    table_names = set(inspector.get_table_names())
+    assert "oauth_clients" not in table_names
+    assert "oauth_grants" not in table_names
+    assert "oauth_authorization_codes" not in table_names
+    assert "oauth_access_tokens" not in table_names
+    assert "oauth_refresh_tokens" not in table_names
 
 
 def test_agent_feedback_possible_pii_migration_backfills_existing_rows(tmp_path: Path):

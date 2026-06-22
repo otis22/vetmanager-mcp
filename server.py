@@ -12,6 +12,7 @@ from observability_logging import RUNTIME_LOGGER
 from rate_limit_backend import shutdown_rate_limit_backend
 from storage import bootstrap_storage_schema, get_database_url, initialize_storage
 from structured_logging import configure_logging
+from tool_oauth_security import apply_tool_oauth_security_metadata
 from tool_descriptions import enhance_tool_descriptions
 from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
@@ -76,6 +77,7 @@ register_all(mcp)
 register_prompts(mcp)
 register_web_routes(mcp)
 enhance_tool_descriptions(mcp)
+apply_tool_oauth_security_metadata(mcp)
 
 async def _graceful_shutdown() -> None:
     """Stage 99.3: close shared httpx.AsyncClient keep-alive sockets with

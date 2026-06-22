@@ -29,6 +29,15 @@ from web_security import (
 )
 
 
+def _safe_next_url(raw_value: str | None) -> str:
+    value = (raw_value or "").strip()
+    if not value or not value.startswith("/") or value.startswith("//"):
+        return ""
+    if "\r" in value or "\n" in value or "\x00" in value:
+        return ""
+    return value
+
+
 def register_auth_routes(
     mcp,
     *,
@@ -155,7 +164,10 @@ def register_auth_routes(
         csrf_token = resolve_csrf_token(request)
         return html_response(
             request,
-            render_login_page(csrf_token=csrf_token),
+            render_login_page(
+                csrf_token=csrf_token,
+                next_url=_safe_next_url(request.query_params.get("next")),
+            ),
             with_csrf_cookie=True,
             csrf_token=csrf_token,
         )
@@ -173,6 +185,7 @@ def register_auth_routes(
                     csrf_token=csrf_token,
                     error=str(exc),
                     email=form.get("email", ""),
+                    next_url=_safe_next_url(form.get("next")),
                 ),
                 status_code=403,
                 with_csrf_cookie=True,
@@ -212,6 +225,7 @@ def register_auth_routes(
                     csrf_token=csrf_token,
                     error="Too many login attempts.",
                     email=form.get("email", ""),
+                    next_url=_safe_next_url(form.get("next")),
                 ),
                 status_code=429,
                 with_csrf_cookie=True,
@@ -248,6 +262,7 @@ def register_auth_routes(
                         csrf_token=csrf_token,
                         error="Too many login attempts.",
                         email=form.get("email", ""),
+                        next_url=_safe_next_url(form.get("next")),
                     ),
                     status_code=429,
                     with_csrf_cookie=True,
@@ -260,6 +275,7 @@ def register_auth_routes(
                     csrf_token=csrf_token,
                     error="Invalid email or password.",
                     email=form.get("email", ""),
+                    next_url=_safe_next_url(form.get("next")),
                 ),
                 status_code=401,
                 with_csrf_cookie=True,
@@ -279,7 +295,11 @@ def register_auth_routes(
             },
         )
         record_business_event("web_login_succeeded")
-        response = redirect_response(request, url="/account", status_code=303)
+        response = redirect_response(
+            request,
+            url=_safe_next_url(form.get("next")) or "/account",
+            status_code=303,
+        )
         set_account_session_cookie(response, account.id)
         return response
 
