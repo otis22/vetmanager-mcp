@@ -8804,8 +8804,13 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Follow-up Spark code review after fixes: `[]`.
 - Claude Opus code review after fixes used the temporary Stage 173 rule: real command timeout `1200s`, prompt-reported time limit `600s`; result `[]`.
 - Audit: `git diff --check` clean.
+- Commit/push: `2fdc2c3 Add ChatGPT OAuth connector` pushed to `main`.
+- GitHub Actions `Tests` run `27963713056` — success.
+- GitHub Actions `Deploy Prod` run `27963913433` — success.
+- Post-deploy smoke: `scripts/post_deploy_smoke_checks.sh https://vetmanager-mcp.vromanichev.ru vetmanager-mcp.vromanichev.ru` — passed.
+- Production OAuth discovery smoke passed for `/.well-known/oauth-protected-resource`, `/.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-authorization-server`, and `/.well-known/openid-configuration`; metadata returns `resource=https://vetmanager-mcp.vromanichev.ru/mcp`, issuer `https://vetmanager-mcp.vromanichev.ru`, DCR registration endpoint `/oauth/register`, and `client_id_metadata_document_supported=false`.
 
 ### Проблемы
 
-- Private ChatGPT Developer Mode/API Playground validation ещё не выполнена в этом рабочем дереве; она остаётся rollout gate 173.10 после deploy.
+- Private ChatGPT Developer Mode/API Playground validation ещё не выполнена из Codex-сессии, потому что требует интерактивной ChatGPT user/session validation. MCP-side deploy and public OAuth discovery smoke are complete; rollout gate 173.10 remains `in_progress` until connector linking/auth/revoke is checked in ChatGPT.
 - FastMCP supports `_meta.securitySchemes`, but tool-error `_meta["mcp/www_authenticate"]` integration may need adjustment after real ChatGPT validation.
