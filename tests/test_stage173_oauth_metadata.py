@@ -8,13 +8,17 @@ import pytest
 import base64
 import hashlib
 import re
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
+from fastmcp import Client
 from sqlalchemy import select
 from urllib.parse import parse_qs, urlparse
 
 import oauth_service
 import storage
 import web
+from bearer_token_manager import build_token_prefix, hash_bearer_token
+from exceptions import AuthError
 from server import mcp
 from storage import Base, create_database_engine
 from storage_models import (
@@ -25,7 +29,10 @@ from storage_models import (
     OAuthRefreshToken,
     VetmanagerConnection,
 )
+from tests.runtime_factories import make_runtime_credentials
 from token_scopes import SUPPORTED_TOKEN_SCOPES
+from tool_oauth_security import OAuthChallengeMiddleware, _challenge_result
+from tool_scope_security import ScopeDeniedToolError
 from web_auth import (
     SESSION_COOKIE_NAME,
     create_account_session_token,
@@ -197,7 +204,7 @@ async def test_oauth_authorization_server_metadata_is_dcr_public_client_v1(monke
 @pytest.mark.asyncio
 async def test_openid_configuration_alias_matches_authorization_server_metadata(monkeypatch):
     monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
-    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    app = mcp.http_app(path="/mcp", transport="streamable-http", stateless_http=True)
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -207,6 +214,109 @@ async def test_openid_configuration_alias_matches_authorization_server_metadata(
     assert oauth_response.status_code == 200
     assert openid_response.status_code == 200
     assert openid_response.json() == oauth_response.json()
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_auth_failure_returns_oauth_challenge_meta(monkeypatch):
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+
+    async def _reject_credentials():
+        raise AuthError("Invalid authorization.", status_code=401, error_code="invalid_token")
+
+    async def _unexpected_call_next(context):
+        raise AssertionError("Auth challenge middleware must not call the tool after auth failure")
+
+    monkeypatch.setattr("tool_oauth_security._is_http_mcp_request", lambda: True)
+    monkeypatch.setattr("tool_oauth_security.resolve_runtime_credentials", _reject_credentials)
+
+    response = await OAuthChallengeMiddleware().on_call_tool(
+        SimpleNamespace(message=SimpleNamespace(name="get_clients")),
+        _unexpected_call_next,
+    )
+    result = response.to_mcp_result().model_dump(mode="json", by_alias=True)
+
+    assert result["isError"] is True
+    assert result["content"][0]["text"] == "Runtime authentication failed."
+    challenge = result["_meta"]["mcp/www_authenticate"][0]
+    assert 'resource_metadata="https://test.example.com/.well-known/oauth-protected-resource/mcp"' in challenge
+    assert 'scope="clients.read"' in challenge
+    assert 'error="invalid_token"' in challenge
+
+
+@pytest.mark.asyncio
+async def test_fastmcp_dispatch_preserves_oauth_challenge_meta(monkeypatch):
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+
+    async def _reject_credentials():
+        raise AuthError("Invalid authorization.", status_code=401, error_code="invalid_token")
+
+    monkeypatch.setattr("tool_oauth_security._is_http_mcp_request", lambda: True)
+    monkeypatch.setattr("tool_oauth_security.resolve_runtime_credentials", _reject_credentials)
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("get_clients", {"limit": 1}, raise_on_error=False)
+
+    assert result.is_error is True
+    assert result.content[0].text == "Runtime authentication failed."
+    challenge = result.meta["mcp/www_authenticate"][0]
+    assert 'resource_metadata="https://test.example.com/.well-known/oauth-protected-resource/mcp"' in challenge
+    assert 'scope="clients.read"' in challenge
+    assert 'error="invalid_token"' in challenge
+
+
+@pytest.mark.asyncio
+async def test_fastmcp_success_path_reuses_middleware_credentials(monkeypatch):
+    calls = 0
+
+    async def _resolve_credentials():
+        nonlocal calls
+        calls += 1
+        return make_runtime_credentials("clinic", "secret-key", scopes=("clients.read",))
+
+    monkeypatch.setattr("tool_oauth_security._is_http_mcp_request", lambda: True)
+    monkeypatch.setattr("tool_oauth_security.resolve_runtime_credentials", _resolve_credentials)
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("get_report_ai_prompt_helper", {}, raise_on_error=False)
+
+    assert result.is_error is False
+    assert calls == 1
+
+
+def test_mcp_tool_scope_denial_returns_insufficient_scope_challenge_meta(monkeypatch):
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    result = _challenge_result(
+        ScopeDeniedToolError(
+            "Tool 'get_clients' is not permitted for this token.",
+            required_scopes=("clients.read",),
+        )
+    ).to_mcp_result().model_dump(mode="json", by_alias=True)
+
+    assert result["isError"] is True
+    assert "Tool 'get_clients' is not permitted for this token." in result["content"][0]["text"]
+    challenge = result["_meta"]["mcp/www_authenticate"][0]
+    assert 'resource_metadata="https://test.example.com/.well-known/oauth-protected-resource/mcp"' in challenge
+    assert 'scope="clients.read"' in challenge
+    assert 'error="insufficient_scope"' in challenge
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_unknown_name_defers_to_fastmcp_routing(monkeypatch):
+    async def _call_next(context):
+        return "routed"
+
+    async def _unexpected_credentials():
+        raise AssertionError("Unknown tools should not be preflight-authenticated")
+
+    monkeypatch.setattr("tool_oauth_security._is_http_mcp_request", lambda: True)
+    monkeypatch.setattr("tool_oauth_security.resolve_runtime_credentials", _unexpected_credentials)
+
+    response = await OAuthChallengeMiddleware().on_call_tool(
+        SimpleNamespace(message=SimpleNamespace(name="missing_tool")),
+        _call_next,
+    )
+
+    assert response == "routed"
 
 
 @pytest.mark.asyncio

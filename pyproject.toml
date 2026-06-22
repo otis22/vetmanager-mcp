@@ -63,6 +63,7 @@ only-include = [
     "tool_access_registry.py",
     "tool_descriptions.py",
     "tool_oauth_security.py",
+    "tool_scope_security.py",
     "tools",
     "validators.py",
     "vetmanager_auth.py",

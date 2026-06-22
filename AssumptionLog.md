@@ -8814,3 +8814,13 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 - Private ChatGPT Developer Mode/API Playground validation ещё не выполнена из Codex-сессии, потому что требует интерактивной ChatGPT user/session validation. MCP-side deploy and public OAuth discovery smoke are complete; rollout gate 173.10 remains `in_progress` until connector linking/auth/revoke is checked in ChatGPT.
 - FastMCP supports `_meta.securitySchemes`, but tool-error `_meta["mcp/www_authenticate"]` integration may need adjustment after real ChatGPT validation.
+
+### Дополнение по HTTP MCP tool-call challenge metadata — 2026-06-22
+
+- Production smoke после initial Stage 173 deploy показал gap: unauthenticated HTTP `tools/call` для `get_clients` возвращал обычную MCP tool error `Runtime authentication failed.`, но без `_meta["mcp/www_authenticate"]`. Это могло помешать ChatGPT linking UI понять, что нужно OAuth-подключение.
+- Добавлен `OAuthChallengeMiddleware` для HTTP MCP tool calls: он делает preflight runtime auth/scope check, возвращает `CallToolResult(isError=true)` с `_meta["mcp/www_authenticate"]`, а при успешной auth переиспользует credentials через `use_runtime_credentials`, чтобы wrapper не делал второй DB resolve.
+- Scope enforcement вынесен из `tools/__init__.py` в `tool_scope_security.py`, чтобы middleware и wrapper использовали один policy path. `AuthError` теперь преобразуется в `AuthChallengeToolError`; insufficient scope — в `ScopeDeniedToolError`.
+- Unit coverage не использует ASGI Streamable HTTP `tools/call`, потому что этот путь в test suite порождал `sse_starlette`/anyio `MemoryObjectReceiveStream` ResourceWarning under warning-as-error. Вместо этого покрыты прямой middleware path и in-memory `fastmcp.Client` dispatch, а фактический HTTP behavior должен проверяться post-deploy smoke.
+- Spark review candidate про bypass для tool names вне `TOOL_REQUIRED_SCOPES` отклонён: существующий контракт `tests/test_stage130_access_registry.py::test_every_registered_tool_has_explicit_access_mapping` требует mapping для всех зарегистрированных tools, baseline tools тоже mapped with `()`, а unknown tool names должны уходить в FastMCP routing, что покрыто отдельным тестом.
+- Финальные проверки: targeted middleware/FastMCP tests — `3 passed`; full suite `docker compose --profile test run --rm test` — `1210 passed, 1 skipped, 63 deselected`; `git diff --check` clean; `python3 scripts/check_no_historical_api_key_literal.py` — historical devtr6 API key literal not found.
+- Финальный Spark review вернул только отклонённый candidate выше. Claude Opus review по временному правилу пользователя (реальный `timeout 1200`, prompt limit `600 seconds`) вернул `findings: []`.

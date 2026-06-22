@@ -12,7 +12,7 @@ from observability_logging import RUNTIME_LOGGER
 from rate_limit_backend import shutdown_rate_limit_backend
 from storage import bootstrap_storage_schema, get_database_url, initialize_storage
 from structured_logging import configure_logging
-from tool_oauth_security import apply_tool_oauth_security_metadata
+from tool_oauth_security import OAuthChallengeMiddleware, apply_tool_oauth_security_metadata
 from tool_descriptions import enhance_tool_descriptions
 from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
@@ -69,6 +69,7 @@ mcp = FastMCP(
         "<phone>, and <address>."
     ),
 )
+mcp.add_middleware(OAuthChallengeMiddleware())
 
 from tools import register_all  # noqa: E402
 from prompts import register_prompts  # noqa: E402
