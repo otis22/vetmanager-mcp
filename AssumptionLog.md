@@ -8756,8 +8756,15 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Full suite: `docker compose --profile test run --rm test` — `1183 passed, 1 skipped, 63 deselected`.
 - Audit: `git diff --check` clean.
 - Docker-run historical key checker не стартует из-за отсутствия `git` в test image; host fallback `python3 scripts/check_no_historical_api_key_literal.py` — historical devtr6 API key literal not found.
+- Commit/push: `ef5efc8 Add daily schedule pagination` pushed to `main`.
+- GitHub Actions `Tests` run `27946270380` — success.
+- GitHub Actions `Deploy Prod` run `27946413469` — success.
+- Post-deploy smoke: `scripts/post_deploy_smoke_checks.sh https://vetmanager-mcp.vromanichev.ru vetmanager-mcp.vromanichev.ru` — passed after transient metrics DNS timeouts retried successfully.
+- Public smoke: `/healthz` returned liveness `ok`; `/readyz` returned readiness `ok`, storage `ok`.
+- Production feedback resolution: `agent_feedback_reports #14` remains `linked`, `known_issues #18` marked `fixed`.
 
 ### Проблемы
 
 - Offset pagination не делает snapshot-consistency поверх меняющегося расписания Vetmanager; deterministic sort снижает риск, но при concurrent schedule edits возможны внешние race effects.
 - Если API возвращает пустую страницу при `totalCount > offset`, MCP не пытается угадывать дальше и просит caller сузить запрос.
+- Remote `triage_agent_feedback.py` required `PYTHONPATH=.` inside the production container; first run failed before DB changes with `ModuleNotFoundError`, retry succeeded.
