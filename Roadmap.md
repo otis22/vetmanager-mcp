@@ -2865,7 +2865,7 @@ Research summary:
 - 172.6 `#5 get_debtors`: падает на большой базе до полезной пагинации. Проблема: tool сначала тянет всех ACTIVE clients через `paginate_all`, а `max_rows` срабатывает раньше, чем фильтр по отрицательному балансу. Решение: фильтровать `balance < 0` на стороне Vetmanager API, если поддерживается, и добавить фильтр по дате последнего визита клиента (`last_visit_date`); добавить параметры window/date filters и tests на server-side filter shape. — `done`
 - 172.7 `#9 get_report_ai_job`: job зависает в `queued`. Проблема: Report AI job больше 30 секунд остаётся `queued`, без причины/ошибки/updated_at. Решение: логировать и собирать такие данные: MCP metric/log для long-queued polls, safe output fields для age/status/update hints, operator query/runbook по stale in-progress jobs; upstream worker/cleanup diagnostics проверить отдельным research gate. — `done`
 
-## Этап 173. ChatGPT Apps OAuth-compatible MCP connector — `in_progress`
+## Этап 173. ChatGPT Apps OAuth-compatible MCP connector — `done`
 
 Источник: пользовательский запрос 2026-06-18 — подключить текущий `vetmanager-mcp` к веб-агентам ChatGPT не через ручную вставку service bearer token, а через ChatGPT-compatible OAuth. Research: OpenAI Apps SDK docs (`Connect from ChatGPT`, `Authentication`, `Testing`) и Claude Opus plan review 2026-06-18. Подробное исследование и риски: `artifacts/stage173-chatgpt-oauth-research.md`.
 
@@ -2895,7 +2895,7 @@ Research summary:
 - 173.7 MCP auth metadata/challenge: добавить per-tool `securitySchemes`/OAuth scopes, проверить поддержку текущей FastMCP версии; при missing/expired/revoked/insufficient scope отдавать корректный `401`/`WWW-Authenticate` и `_meta["mcp/www_authenticate"]` для ChatGPT linking UI. — `done`
 - 173.8 Account UI: добавить блок `Connect ChatGPT`, список OAuth grants/sessions, revoke/disconnect; disconnect должен отзывать access + refresh tokens; не показывать и не требовать ручной service bearer token для ChatGPT. — `done`
 - 173.9 Tests/checks: metadata variants, DCR success/abuse, exact redirect validation, PKCE negative paths, OAuth CSRF, token exchange, concurrent code/refresh double-spend, refresh rotation/reuse detection, revoked/expired token challenge, scope matrix, connection-binding stability after active integration changes, existing service bearer no-regression. — `done`
-- 173.10 ChatGPT rollout: проверить в ChatGPT Developer Mode connector и API Playground (`https://vetmanager-mcp.vromanichev.ru/mcp`), golden prompts, auth re-link/revoke flows, mobile/client behavior; public submission оставить отдельным решением после private validation. — `in_progress`
+- 173.10 ChatGPT rollout: проверить в ChatGPT Developer Mode connector и API Playground (`https://vetmanager-mcp.vromanichev.ru/mcp`), golden prompts, auth re-link/revoke flows, mobile/client behavior; public submission оставить отдельным решением после private validation. — `done` (пользовательская ChatGPT UI validation 2026-06-22: connector подключился, MCP tool calls работают, golden prompts пройдены)
 
 ## Этап 174. Daily schedule pagination — `done`
 

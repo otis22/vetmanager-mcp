@@ -8812,8 +8812,8 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 ### Проблемы
 
-- Private ChatGPT Developer Mode/API Playground validation ещё не выполнена из Codex-сессии, потому что требует интерактивной ChatGPT user/session validation. MCP-side deploy and public OAuth discovery smoke are complete; rollout gate 173.10 remains `in_progress` until connector linking/auth/revoke is checked in ChatGPT.
-- FastMCP supports `_meta.securitySchemes`, but tool-error `_meta["mcp/www_authenticate"]` integration may need adjustment after real ChatGPT validation.
+- Private ChatGPT Developer Mode/API Playground validation выполнена пользователем 2026-06-22: ChatGPT connector подключился к `https://vetmanager-mcp.vromanichev.ru/mcp`, MCP tool calls работают, golden prompts пройдены. Stage 173.10 закрыт.
+- FastMCP `_meta.securitySchemes` и tool-error `_meta["mcp/www_authenticate"]` достаточно работоспособны для ChatGPT linking/tool-call flow по пользовательской UI validation и production HTTP smoke. Улучшение управления OAuth правами вынесено в Stage 177, потому что это product hardening, а не blocker Stage 173.
 
 ### Дополнение по HTTP MCP tool-call challenge metadata — 2026-06-22
 
@@ -8828,3 +8828,9 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - GitHub Actions `Tests` run `27968534259` — success. `Deploy Prod` run `27968713435` — success.
 - Post-deploy smoke: `scripts/post_deploy_smoke_checks.sh https://vetmanager-mcp.vromanichev.ru vetmanager-mcp.vromanichev.ru` — passed.
 - Production HTTP MCP smoke with initialized session: unauthenticated `tools/call get_clients` returned `isError=true`, text `Runtime authentication failed.`, and `_meta["mcp/www_authenticate"]` with `resource_metadata="https://vetmanager-mcp.vromanichev.ru/.well-known/oauth-protected-resource/mcp"`, `scope="clients.read"`, `error="invalid_token"`.
+
+### Дополнение по ChatGPT UI validation — 2026-06-22
+
+- Пользователь подтвердил, что все ChatGPT UI validation tests пройдены: connector подключается, MCP calls выполняются, golden prompts прошли.
+- Roadmap Stage 173 и 173.10 переведены в `done`.
+- Оставшийся вопрос управления правами ChatGPT OAuth grant не блокирует Stage 173 и вынесен в Stage 177: default `Read only`, явный выбор `Analytics`/`Front desk`, `Full access` только с дополнительным подтверждением, narrowing requested scopes до выбранного preset.
