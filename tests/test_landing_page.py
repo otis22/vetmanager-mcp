@@ -211,6 +211,23 @@ async def test_topbar_links_to_agent_instructions():
 
 
 @pytest.mark.asyncio
+async def test_topbar_links_to_chatgpt_section():
+    """Topbar navigation must expose the ChatGPT connector section."""
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/")
+
+    html = response.text
+    nav_start = html.find("<nav>")
+    nav_end = html.find("</nav>", nav_start)
+    nav_html = html[nav_start:nav_end]
+    assert "#chatgpt-connector" in nav_html
+    assert "ChatGPT" in nav_html
+
+
+@pytest.mark.asyncio
 async def test_open_source_section():
     """Landing page must have an Open Source section with self-hosted info."""
     app = mcp.http_app(path="/mcp", transport="streamable-http")
@@ -340,6 +357,14 @@ def test_stage148_landing_inline_script_carries_nonce_attribute():
 def test_stage177_landing_mentions_chatgpt_connector_plainly():
     html = render_landing_page()
 
+    hero_start = html.find('class="hero"')
+    hero_end = html.find("</section>", hero_start)
+    hero_html = html[hero_start:hero_end]
+    assert 'data-testid="hero-chatgpt-note"' in hero_html
+    assert "Можно подключить прямо к ChatGPT" in hero_html
+    assert "готовый MCP connector" in hero_html
+
+    assert 'id="chatgpt-connector"' in html
     assert 'data-testid="chatgpt-connector-section"' in html
     assert "Можно подключить прямо к ChatGPT" in html
     assert "Bearer" not in html.split('data-testid="chatgpt-connector-section"', 1)[1].split("</section>", 1)[0]

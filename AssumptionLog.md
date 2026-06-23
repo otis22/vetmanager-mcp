@@ -8880,3 +8880,29 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Claude Code `--json-schema` accepted only object schema, not top-level array; final review used `{ "findings": [...] }`.
 - Spark read-only review can still hang on the known sandbox/runtime path; fallback was used according to workflow.
 - ChatGPT Developer Mode golden prompts for new Read only / Analytics OAuth grants still require post-deploy manual validation in ChatGPT UI.
+
+## ChatGPT landing/profile instruction visibility hotfix — 2026-06-23
+
+### Что делали
+
+После Stage 177 пользователь не увидел ChatGPT-информацию на лендинге и попросил полную инструкцию в профиле, потому что приложение ещё не опубликовано в GPT Store.
+
+### Что сделано
+
+- ChatGPT вынесен в первый экран landing page: добавлена hero-заметка “Можно подключить прямо к ChatGPT”.
+- В topbar landing page добавлена ссылка `ChatGPT`, ведущая к подробному блоку `#chatgpt-connector`.
+- Блок ChatGPT на лендинге получил стабильный anchor `id="chatgpt-connector"`.
+- В `/account` инструкция расширена до пошагового сценария: включить Developer Mode в ChatGPT, открыть Connectors, добавить новый MCP connector, вставить MCP URL, пройти вход и выбрать права.
+- Текст явно говорит, что приложения пока нет в GPT Store и подключение делается вручную.
+
+### Проверки
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_web_auth.py::test_account_token_issue_supports_access_preset_and_depersonalized_policy tests/test_landing_page.py` — `22 passed`.
+- Final full suite: `docker compose --profile test run --rm test` — `1218 passed, 1 skipped, 63 deselected`.
+- Audit: `git diff --check` clean.
+- Historical key checker: `python3 scripts/check_no_historical_api_key_literal.py` — historical devtr6 API key literal not found.
+
+### Решения и обоснования
+
+- Подробный нижний блок оставлен, но ChatGPT теперь виден сразу в hero и navigation: иначе пользователь не воспринимает возможность как заявленную на лендинге.
+- Профильная инструкция не предлагает Bearer token copy-paste для ChatGPT, потому что OAuth flow сам открывает вход и consent screen с выбором прав.

@@ -1284,6 +1284,10 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
         assert 'data-testid="chatgpt-connect-instructions"' in account_page.text
         assert 'data-testid="chatgpt-mcp-url"' in account_page.text
         assert "https://clinic.example.com/custom/mcp" in account_page.text
+        assert "Пока приложения нет в GPT Store" in account_page.text
+        assert "Developer Mode" in account_page.text
+        assert "Connectors" in account_page.text
+        assert "нового MCP connector" in account_page.text
         assert "Bearer-токен копировать не нужно" in account_page.text
         assert f'value="{PRESET_REPORT_AI}"' in account_page.text
         assert "Analytics" in account_page.text

@@ -436,6 +436,30 @@ def render_landing_page(script_nonce: str = "") -> str:
     }
     .hero-fineprint + .hero-fineprint { margin-top: 10px; }
 
+    .hero-chatgpt-note {
+      margin: 18px 0 0;
+      max-width: 58ch;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 14px;
+      border: 1px solid var(--line-strong);
+      border-radius: 14px;
+      background: var(--paper-card);
+      color: var(--ink-700);
+      font-size: 0.94rem;
+      line-height: 1.45;
+      box-shadow: var(--shadow-sm);
+    }
+    .hero-chatgpt-note strong {
+      color: var(--ink-900);
+      font-weight: 650;
+    }
+    .hero-chatgpt-note svg {
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+
     .cta-row {
       display: flex;
       flex-wrap: wrap;
@@ -1580,6 +1604,7 @@ def render_landing_page(script_nonce: str = "") -> str:
           GitHub
         </a>
         <a class="nav-link" href="#mcp-agent-instructions">Инструкции</a>
+        <a class="nav-link" href="#chatgpt-connector">ChatGPT</a>
         <a class="nav-ghost" href="/login">Войти</a>
         <a class="nav-cta" href="/register">Создать аккаунт</a>
       </nav>
@@ -1597,6 +1622,10 @@ def render_landing_page(script_nonce: str = "") -> str:
             получать данные из Vetmanager через AI-ассистента: по клиентам, пациентам,
             приёмам, финансам и складу. Без ручного поиска по разделам и без передачи
             секретов клиники в каждое подключение.
+          </p>
+          <p class="hero-chatgpt-note" data-testid="hero-chatgpt-note">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><path d="M3 12h18"/><path d="m5.6 5.6 12.8 12.8"/><path d="m18.4 5.6-12.8 12.8"/></svg>
+            <span><strong>Можно подключить прямо к ChatGPT:</strong> в кабинете есть готовый MCP connector, права выбираются при подключении.</span>
           </p>
           <p class="hero-fineprint">
             Сервис не сохраняет бизнес-данные из Vetmanager для постоянного хранения. Он хранит только технические данные интеграции и сервисные bearer-метаданные, необходимые для авторизации и работы MCP runtime.
@@ -1692,7 +1721,7 @@ def render_landing_page(script_nonce: str = "") -> str:
       </div>
     </section>
 
-    <section class="section">
+    <section class="section" id="chatgpt-connector">
       <div class="shell explainer" data-testid="chatgpt-connector-section">
         <div class="label-block">
           <p class="section-label">ChatGPT</p>

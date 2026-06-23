@@ -977,7 +977,14 @@ def render_account_page(
         <h2>ChatGPT connections</h2>
         <div class="panel-card" data-testid="chatgpt-connect-instructions">
           <strong>Подключение ChatGPT</strong>
-          <p>В ChatGPT добавьте MCP connector и укажите URL ниже. Bearer-токен копировать не нужно: ChatGPT откроет вход в этот кабинет, а права вы выберете на экране подтверждения.</p>
+          <p>Пока приложения нет в GPT Store, подключение делается вручную через режим разработчика ChatGPT.</p>
+          <ol>
+            <li>Откройте ChatGPT и включите Developer Mode в настройках.</li>
+            <li>Перейдите в Connectors и выберите добавление нового MCP connector.</li>
+            <li>Вставьте MCP URL ниже и сохраните connector.</li>
+            <li>ChatGPT откроет вход в этот кабинет; войдите и выберите уровень доступа.</li>
+          </ol>
+          <p>Bearer-токен копировать не нужно: ChatGPT сам пройдёт OAuth-подключение, а права вы выберете на экране подтверждения.</p>
           <code class="token-flash-value" id="chatgpt-mcp-url" data-testid="chatgpt-mcp-url">{escape(chatgpt_mcp_url)}</code>
           <div class="copy-row">
             <button class="copy-button" id="chatgpt-mcp-copy-button" type="button">Скопировать URL</button>
