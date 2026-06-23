@@ -8,12 +8,14 @@ import pytest
 import base64
 import hashlib
 import re
+import respx
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from fastmcp import Client
 from sqlalchemy import select
 from urllib.parse import parse_qs, urlparse
 
+import auth.request as auth_request
 import oauth_service
 import storage
 import web
@@ -21,12 +23,14 @@ from bearer_token_manager import build_token_prefix, hash_bearer_token
 from exceptions import AuthError
 from server import mcp
 from storage import Base, create_database_engine
+from depersonalization import REDACTED_EMAIL, REDACTED_NAME, REDACTED_PHONE
 from storage_models import (
     OAuthAccessToken,
     OAuthAuthorizationCode,
     OAuthClient,
     OAuthGrant,
     OAuthRefreshToken,
+    Account,
     VetmanagerConnection,
 )
 from tests.runtime_factories import make_runtime_credentials
@@ -111,6 +115,7 @@ async def _authorize_and_consent(
     code_challenge: str,
     access_preset: str = PRESET_READ_ONLY,
     confirm_full_access: bool = False,
+    privacy_mode: str = "depersonalized",
 ) -> str:
     consent_response = await client.get(
         "/oauth/authorize",
@@ -134,6 +139,7 @@ async def _authorize_and_consent(
         "request_state": request_state,
         "connection_id": connection_id,
         "access_preset": access_preset,
+        "privacy_mode": privacy_mode,
     }
     if confirm_full_access:
         consent_data["confirm_full_access"] = "1"
@@ -144,6 +150,45 @@ async def _authorize_and_consent(
     )
     assert callback_response.status_code == 303
     return parse_qs(urlparse(callback_response.headers["location"]).query)["code"][0]
+
+
+async def _exchange_authorization_code(
+    client: httpx.AsyncClient,
+    *,
+    raw_code: str,
+    client_id: str,
+    verifier: str,
+) -> httpx.Response:
+    return await client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": raw_code,
+            "client_id": client_id,
+            "redirect_uri": "https://chat.openai.com/aip/callback",
+            "resource": "https://test.example.com/mcp",
+            "code_verifier": verifier,
+        },
+    )
+
+
+def _mock_client_lookup_with_personal_fields() -> None:
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://clinic.vetmanager.cloud"}})
+    )
+    respx.get("https://clinic.vetmanager.cloud/rest/api/client/42").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "id": 42,
+                    "firstName": "Anna",
+                    "phone": "+7 (916) 123-45-67",
+                    "email": "anna@example.com",
+                }
+            },
+        )
+    )
 
 
 @pytest.mark.asyncio
@@ -552,6 +597,9 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
     assert "ChatGPT access" in consent_response.text
     assert 'data-testid="oauth-access-preset"' in consent_response.text
     assert 'data-testid="oauth-effective-scope-preview"' in consent_response.text
+    assert 'data-testid="oauth-privacy-mode"' in consent_response.text
+    assert 'data-testid="oauth-privacy-depersonalized"' in consent_response.text
+    assert 'data-testid="oauth-privacy-personal-data"' in consent_response.text
     assert "Effective scopes by access level" in consent_response.text
     assert f'value="{PRESET_READ_ONLY}" selected' in consent_response.text
     assert callback_response.status_code == 303
@@ -573,6 +621,7 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
     assert stored_code.resource == "https://test.example.com/mcp"
     assert stored_code.scope == "clients.read pets.read"
     assert stored_code.access_preset == PRESET_READ_ONLY
+    assert stored_code.is_depersonalized is True
     assert stored_code.account_id == account_id
     assert stored_code.vetmanager_connection_id == int(connection_id)
 
@@ -626,6 +675,202 @@ async def test_oauth_consent_narrows_full_request_to_read_only_preset(tmp_path, 
 
     assert grant is not None
     assert grant.access_preset == PRESET_READ_ONLY
+    assert grant.is_depersonalized is True
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_oauth_consent_allows_explicit_personal_data_mode(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="oauth-personal-data@example.com")
+    verifier = "Verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
+        client_id = await _register_oauth_client(client)
+        raw_code = await _authorize_and_consent(
+            client,
+            client_id=client_id,
+            code_challenge=_pkce_challenge(verifier),
+            privacy_mode="personal_data",
+        )
+        token_response = await _exchange_authorization_code(
+            client,
+            raw_code=raw_code,
+            client_id=client_id,
+            verifier=verifier,
+        )
+
+    assert token_response.status_code == 200
+    async with storage.get_session_factory()() as session:
+        stored_code = await session.scalar(select(OAuthAuthorizationCode))
+        grant = await session.scalar(select(OAuthGrant))
+
+    assert stored_code is not None
+    assert stored_code.is_depersonalized is False
+    assert grant is not None
+    assert grant.is_depersonalized is False
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_oauth_tool_call_redacts_personal_fields_by_default(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="oauth-redacted-tool@example.com")
+    verifier = "Verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
+        client_id = await _register_oauth_client(client)
+        raw_code = await _authorize_and_consent(
+            client,
+            client_id=client_id,
+            code_challenge=_pkce_challenge(verifier),
+        )
+        token_response = await _exchange_authorization_code(
+            client,
+            raw_code=raw_code,
+            client_id=client_id,
+            verifier=verifier,
+        )
+
+    assert token_response.status_code == 200
+    raw_access_token = token_response.json()["access_token"]
+    _mock_client_lookup_with_personal_fields()
+    monkeypatch.setattr(
+        auth_request,
+        "_get_request_headers",
+        lambda: {"authorization": f"Bearer {raw_access_token}"},
+    )
+
+    result = await mcp.call_tool("get_client_by_id", {"client_id": 42})
+
+    assert result.structured_content["data"]["id"] == 42
+    assert result.structured_content["data"]["firstName"] == REDACTED_NAME
+    assert result.structured_content["data"]["phone"] == REDACTED_PHONE
+    assert result.structured_content["data"]["email"] == REDACTED_EMAIL
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_oauth_tool_call_preserves_personal_fields_when_explicitly_allowed(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="oauth-raw-tool@example.com")
+    verifier = "Verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
+        client_id = await _register_oauth_client(client)
+        raw_code = await _authorize_and_consent(
+            client,
+            client_id=client_id,
+            code_challenge=_pkce_challenge(verifier),
+            privacy_mode="personal_data",
+        )
+        token_response = await _exchange_authorization_code(
+            client,
+            raw_code=raw_code,
+            client_id=client_id,
+            verifier=verifier,
+        )
+
+    assert token_response.status_code == 200
+    raw_access_token = token_response.json()["access_token"]
+    _mock_client_lookup_with_personal_fields()
+    monkeypatch.setattr(
+        auth_request,
+        "_get_request_headers",
+        lambda: {"authorization": f"Bearer {raw_access_token}"},
+    )
+
+    result = await mcp.call_tool("get_client_by_id", {"client_id": 42})
+
+    assert result.structured_content["data"]["firstName"] == "Anna"
+    assert result.structured_content["data"]["phone"] == "+7 (916) 123-45-67"
+    assert result.structured_content["data"]["email"] == "anna@example.com"
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_legacy_oauth_tool_call_redacts_personal_fields_for_null_privacy_marker(
+    tmp_path,
+    monkeypatch,
+):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="oauth-legacy-null-tool@example.com")
+    raw_access_token = "vm_oat_legacy_null_privacy"
+
+    async with storage.get_session_factory()() as session:
+        account = await session.get(Account, account_id)
+        connection = await session.scalar(select(VetmanagerConnection))
+        oauth_client = OAuthClient(
+            client_id="vm_oc_legacy_null_privacy",
+            client_name="ChatGPT",
+            redirect_uris_json='["https://chat.openai.com/aip/callback"]',
+            token_endpoint_auth_method="none",
+            grant_types_json='["authorization_code","refresh_token"]',
+            response_types_json='["code"]',
+            scope="clients.read",
+            status="active",
+        )
+        session.add(oauth_client)
+        await session.flush()
+        grant = OAuthGrant(
+            account_id=account.id,
+            vetmanager_connection_id=connection.id,
+            client_id=oauth_client.client_id,
+            scopes_json='["clients.read"]',
+            is_depersonalized=None,
+            status="active",
+        )
+        session.add(grant)
+        await session.flush()
+        session.add(
+            OAuthAccessToken(
+                grant_id=grant.id,
+                token_prefix=build_token_prefix(raw_access_token),
+                token_hash=hash_bearer_token(raw_access_token),
+                scope="clients.read",
+                resource="https://test.example.com/mcp",
+                status="active",
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+        )
+        await session.commit()
+
+    _mock_client_lookup_with_personal_fields()
+    monkeypatch.setattr(
+        auth_request,
+        "_get_request_headers",
+        lambda: {"authorization": f"Bearer {raw_access_token}"},
+    )
+
+    result = await mcp.call_tool("get_client_by_id", {"client_id": 42})
+
+    assert result.structured_content["data"]["firstName"] == REDACTED_NAME
+    assert result.structured_content["data"]["phone"] == REDACTED_PHONE
+    assert result.structured_content["data"]["email"] == REDACTED_EMAIL
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -1202,6 +1447,7 @@ async def test_account_ui_lists_and_revokes_oauth_grant_family(tmp_path, monkeyp
             vetmanager_connection_id=connection.id,
             client_id=client.client_id,
             scopes_json='["clients.read"]',
+            is_depersonalized=True,
             status="active",
         )
         session.add(grant)
@@ -1248,6 +1494,8 @@ async def test_account_ui_lists_and_revokes_oauth_grant_family(tmp_path, monkeyp
     assert 'data-testid="oauth-grant-list"' in page_response.text
     assert "ChatGPT" in page_response.text
     assert "Custom/legacy" in page_response.text
+    assert "Personal data" in page_response.text
+    assert "Скрыты" in page_response.text
     assert "clients.read" in page_response.text
     assert f'action="/account/oauth-grants/{grant_id}/revoke"' in page_response.text
     assert revoke_response.status_code == 200
@@ -1311,6 +1559,7 @@ async def test_account_ui_warns_for_legacy_broad_oauth_grant(tmp_path, monkeypat
 
     assert page_response.status_code == 200
     assert "Legacy Full access: reconnect ChatGPT and choose an access level." in page_response.text
+    assert "Legacy connection: personal data is hidden now." in page_response.text
 
     await engine.dispose()
     storage.reset_storage_state()

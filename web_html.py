@@ -517,6 +517,7 @@ def render_oauth_consent_page(
     connections: list[dict[str, str | int]],
     error: str | None = None,
     selected_access_preset: str = PRESET_READ_ONLY,
+    selected_privacy_mode: str = "depersonalized",
 ) -> str:
     error_html = f'<div class="error">{escape(error)}</div>' if error else ""
     scope_items = "".join(f"<li><code>{escape(scope)}</code></li>" for scope in scopes)
@@ -544,6 +545,8 @@ def render_oauth_consent_page(
             "</li>"
         )
     effective_preview_html = "".join(effective_preview_rows)
+    depersonalized_checked = "checked" if selected_privacy_mode != "personal_data" else ""
+    personal_data_checked = "checked" if selected_privacy_mode == "personal_data" else ""
     if len(connections) == 1:
         connection = connections[0]
         connection_input = (
@@ -586,6 +589,23 @@ def render_oauth_consent_page(
             </select>
             <small style="color: var(--muted); font-size: 0.85rem;">ChatGPT получит только те requested scopes, которые входят в выбранный access level.</small>
           </label>
+          <fieldset class="metric" style="border: 1px solid var(--line); margin: 16px 0;" data-testid="oauth-privacy-mode">
+            <legend>Персональные данные</legend>
+            <label style="display: flex; gap: 10px; align-items: start;">
+              <input type="radio" name="privacy_mode" value="depersonalized" {depersonalized_checked} data-testid="oauth-privacy-depersonalized" style="width: auto; margin-top: 6px;">
+              <span>
+                <strong style="display: block; color: var(--ink);">Без персональных данных</strong>
+                <small style="color: var(--muted); font-size: 0.85rem;">ФИО, телефоны, email и адреса будут скрыты в ответах ChatGPT.</small>
+              </span>
+            </label>
+            <label style="display: flex; gap: 10px; align-items: start;">
+              <input type="radio" name="privacy_mode" value="personal_data" {personal_data_checked} data-testid="oauth-privacy-personal-data" style="width: auto; margin-top: 6px;">
+              <span>
+                <strong style="display: block; color: var(--ink);">Разрешить персональные данные</strong>
+                <small style="color: var(--muted); font-size: 0.85rem;">ChatGPT сможет видеть имена клиентов, телефоны, email и похожие поля, если выбранные права разрешают такой tool call.</small>
+              </span>
+            </label>
+          </fieldset>
           <label style="display: flex; gap: 10px; align-items: start;">
             <input type="checkbox" name="confirm_full_access" value="1" data-testid="oauth-confirm-full-access" style="width: auto; margin-top: 6px;">
             <span>
@@ -822,10 +842,16 @@ def render_account_page(
                 if grant.get("legacy_full_access")
                 else ""
             )
+            privacy_warning_html = (
+                '<div class="error" style="margin-top: 8px;">Legacy connection: personal data is hidden now. Disconnect and reconnect ChatGPT to explicitly choose this mode.</div>'
+                if grant.get("legacy_privacy")
+                else ""
+            )
             rows.append(
                 "<tr>"
                 f'<td data-label="Client">{escape(str(grant["client_name"]))}</td>'
                 f'<td data-label="Access">{escape(str(grant.get("access_label", "Custom/legacy")))}{warning_html}</td>'
+                f'<td data-label="Personal data">{escape(str(grant.get("privacy_label", "Hidden")))}{privacy_warning_html}</td>'
                 f'<td data-label="Scopes"><code>{escape(str(grant.get("scope_summary", "No scopes")))}</code></td>'
                 f'<td data-label="Status"><span class="token-status">{escape(str(grant["status"]))}</span></td>'
                 f'<td data-label="Connection"><code>{escape(str(grant["connection_id"]))}</code></td>'
@@ -837,7 +863,7 @@ def render_account_page(
         oauth_grants_html = (
             '<table class="token-table" data-testid="oauth-grant-list">'
             "<thead><tr>"
-            "<th>Client</th><th>Access</th><th>Scopes</th><th>Status</th><th>Connection</th><th>Created</th><th>Last used</th><th>Actions</th>"
+            "<th>Client</th><th>Access</th><th>Personal data</th><th>Scopes</th><th>Status</th><th>Connection</th><th>Created</th><th>Last used</th><th>Actions</th>"
             "</tr></thead>"
             f"<tbody>{''.join(rows)}</tbody>"
             "</table>"
@@ -993,7 +1019,7 @@ def render_account_page(
             <button class="copy-button" id="chatgpt-mcp-copy-button" type="button">Скопировать URL</button>
             <span class="copy-status" id="chatgpt-mcp-copy-status" aria-live="polite"></span>
           </div>
-          <p class="hint">Обычный режим по умолчанию — Read only. Full access требует отдельного подтверждения.</p>
+          <p class="hint">Обычный режим по умолчанию — Read only без персональных данных. Full access и персональные данные требуют отдельного явного выбора.</p>
         </div>
         {oauth_grants_html}
         <form method="post" action="/logout" data-testid="logout-form">

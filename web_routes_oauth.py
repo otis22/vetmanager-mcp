@@ -252,6 +252,7 @@ def register_oauth_routes(
                 request_data,
                 access_preset=form.get("access_preset", ""),
                 confirm_full_access=form.get("confirm_full_access") == "1",
+                privacy_mode=form.get("privacy_mode", "depersonalized"),
             )
         except (OAuthRequestError, ValueError) as exc:
             csrf_token = resolve_csrf_token(request)

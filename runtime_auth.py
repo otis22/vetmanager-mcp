@@ -163,6 +163,7 @@ async def _resolve_oauth_runtime_credentials(raw_token: str) -> RuntimeCredentia
         account_id = grant.account_id
         connection_id = grant.vetmanager_connection_id
         scopes = tuple(access_token.scope.split())
+        is_depersonalized = True if grant.is_depersonalized is not False else False
         access_token.last_used_at = now
         grant.last_used_at = now
         await session.commit()
@@ -174,7 +175,7 @@ async def _resolve_oauth_runtime_credentials(raw_token: str) -> RuntimeCredentia
         bearer_token_id=None,
         connection_id=connection_id,
         scopes=scopes,
-        is_depersonalized=False,
+        is_depersonalized=is_depersonalized,
         auth_subject_type="oauth_access_token",
         auth_subject_id=access_token_id,
     )

@@ -410,6 +410,12 @@ async def _load_account_dashboard(
                     "access_label": access_label,
                     "scope_summary": _summarize_scopes(scopes),
                     "legacy_full_access": grant.access_preset is None and is_broad_oauth_full_access_scope(list(scopes)),
+                    "privacy_label": (
+                        "Разрешены"
+                        if grant.is_depersonalized is False
+                        else "Скрыты"
+                    ),
+                    "legacy_privacy": grant.is_depersonalized is None,
                     "status": grant.status,
                     "created_at": _format_dt(grant.created_at),
                     "last_used_at": _format_dt(grant.last_used_at),

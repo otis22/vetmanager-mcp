@@ -73,6 +73,8 @@ def test_alembic_upgrade_creates_bearer_service_tables(tmp_path: Path):
     oauth_code_columns = {column["name"] for column in inspector.get_columns("oauth_authorization_codes")}
     assert "access_preset" in oauth_grant_columns
     assert "access_preset" in oauth_code_columns
+    assert "is_depersonalized" in oauth_grant_columns
+    assert "is_depersonalized" in oauth_code_columns
     assert {"grant_id", "token_prefix", "token_hash", "resource", "status", "expires_at"}.issubset(
         access_token_columns
     )

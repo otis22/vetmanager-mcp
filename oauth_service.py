@@ -59,6 +59,12 @@ CHATGPT_OAUTH_ACCESS_PRESETS = (
     PRESET_FRONTDESK,
     PRESET_FULL_ACCESS,
 )
+OAUTH_PRIVACY_MODE_DEPERSONALIZED = "depersonalized"
+OAUTH_PRIVACY_MODE_PERSONAL_DATA = "personal_data"
+CHATGPT_OAUTH_PRIVACY_MODES = (
+    OAUTH_PRIVACY_MODE_DEPERSONALIZED,
+    OAUTH_PRIVACY_MODE_PERSONAL_DATA,
+)
 PKCE_VERIFIER_ALLOWED_CHARS = set(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "abcdefghijklmnopqrstuvwxyz"
@@ -102,6 +108,7 @@ def narrow_oauth_authorize_request_scope(
     *,
     access_preset: str,
     confirm_full_access: bool,
+    privacy_mode: str = OAUTH_PRIVACY_MODE_DEPERSONALIZED,
 ) -> dict:
     """Apply the account owner's selected access preset to an OAuth authorize request."""
     selected_preset = (access_preset or "").strip()
@@ -111,6 +118,9 @@ def narrow_oauth_authorize_request_scope(
         raise OAuthRequestError("invalid_request", "Unsupported access preset.")
     if selected_preset == PRESET_FULL_ACCESS and not confirm_full_access:
         raise OAuthRequestError("invalid_request", "Full access requires explicit confirmation.")
+    selected_privacy_mode = (privacy_mode or OAUTH_PRIVACY_MODE_DEPERSONALIZED).strip()
+    if selected_privacy_mode not in CHATGPT_OAUTH_PRIVACY_MODES:
+        raise OAuthRequestError("invalid_request", "Unsupported privacy mode.")
 
     requested_scopes = tuple(normalize_token_scopes(list(request_data.get("scopes") or [])))
     preset_scopes = set(TOKEN_PRESET_SCOPES[selected_preset])
@@ -125,6 +135,8 @@ def narrow_oauth_authorize_request_scope(
     narrowed["scopes"] = list(final_scopes)
     narrowed["scope"] = _scope_string(list(final_scopes))
     narrowed["access_preset"] = selected_preset
+    narrowed["privacy_mode"] = selected_privacy_mode
+    narrowed["is_depersonalized"] = selected_privacy_mode != OAUTH_PRIVACY_MODE_PERSONAL_DATA
     return narrowed
 
 
@@ -407,6 +419,7 @@ async def create_oauth_authorization_code(
         resource=request_data["resource"],
         scope=request_data["scope"],
         access_preset=request_data.get("access_preset"),
+        is_depersonalized=bool(request_data.get("is_depersonalized", True)),
         code_challenge=request_data["code_challenge"],
         code_challenge_method=request_data["code_challenge_method"],
         account_id=account_id,
@@ -514,6 +527,7 @@ async def exchange_oauth_authorization_code(session: AsyncSession, form: dict[st
         client_id=code.client_id,
         scopes_json=json.dumps(code.scope.split(), ensure_ascii=True),
         access_preset=code.access_preset or infer_token_preset(tuple(normalize_token_scopes(code.scope.split()))),
+        is_depersonalized=True if code.is_depersonalized is not False else False,
         status=OAUTH_STATUS_ACTIVE,
     )
     session.add(grant)

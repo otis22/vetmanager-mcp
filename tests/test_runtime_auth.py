@@ -180,6 +180,7 @@ async def test_resolve_runtime_credentials_accepts_oauth_access_token(session_fa
             vetmanager_connection_id=connection.id,
             client_id="vm_oc_test",
             scopes_json='["clients.read"]',
+            is_depersonalized=False,
             status="active",
         )
         session.add(grant)
@@ -209,8 +210,66 @@ async def test_resolve_runtime_credentials_accepts_oauth_access_token(session_fa
     assert resolved.bearer_token_id is None
     assert resolved.connection_id == 1
     assert resolved.scopes == ("clients.read",)
+    assert resolved.is_depersonalized is False
     assert resolved.auth_subject_type == "oauth_access_token"
     assert resolved.auth_subject_id == 1
+
+
+@pytest.mark.asyncio
+async def test_resolve_runtime_credentials_treats_legacy_oauth_privacy_as_depersonalized(
+    session_factory,
+    monkeypatch,
+):
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    now = datetime.now(timezone.utc)
+
+    async with session_factory() as session:
+        account = Account(email="oauth-legacy-privacy@example.com", status="active")
+        session.add(account)
+        await session.flush()
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+            domain="oauth-clinic",
+        )
+        connection.set_credentials(
+            {"domain": "oauth-clinic", "api_key": "oauth-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        session.add(connection)
+        await session.flush()
+        grant = OAuthGrant(
+            account_id=account.id,
+            vetmanager_connection_id=connection.id,
+            client_id="vm_oc_test",
+            scopes_json='["clients.read"]',
+            is_depersonalized=None,
+            status="active",
+        )
+        session.add(grant)
+        await session.flush()
+        session.add(
+            OAuthAccessToken(
+                grant_id=grant.id,
+                token_prefix=build_token_prefix(OAUTH_RAW_ACCESS_TOKEN),
+                token_hash=hash_bearer_token(OAUTH_RAW_ACCESS_TOKEN),
+                scope="clients.read",
+                resource="https://test.example.com/mcp",
+                status="active",
+                expires_at=now + timedelta(minutes=30),
+            )
+        )
+        await session.commit()
+
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    headers = {"authorization": f"Bearer {OAUTH_RAW_ACCESS_TOKEN}"}
+    with patch.object(auth_request, "_get_request_headers", return_value=headers):
+        with patch.object(runtime_auth, "get_session_factory", return_value=session_factory):
+            resolved = await runtime_auth.resolve_runtime_credentials()
+
+    assert resolved.source == "oauth"
+    assert resolved.is_depersonalized is True
 
 
 @pytest.mark.asyncio

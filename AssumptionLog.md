@@ -8912,3 +8912,61 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Пользователь показал экран ChatGPT Settings → Apps с переключателем Developer mode и попросил добавить больше деталей “для простых”.
 - `/account` инструкция уточнена: открыть ChatGPT, нажать имя/аватар в левом нижнем углу, открыть Settings, выбрать Apps, включить Developer mode, принять Elevated risk, нажать Create app/создать connector, вставить MCP URL.
 - Проверки: `docker compose --profile test run --rm test pytest tests/test_web_auth.py::test_account_token_issue_supports_access_preset_and_depersonalized_policy` — `1 passed`; `docker compose --profile test run --rm test pytest tests/test_web_auth.py tests/test_landing_page.py` — `55 passed`; `git diff --check` clean; historical key checker clean.
+
+## Этап 178. ChatGPT OAuth personal-data privacy mode — 2026-06-23
+
+### Что делали
+
+Закрывали Stage 178: отдельный выбор, может ли ChatGPT OAuth grant видеть
+персональные данные, независимо от access preset/scopes.
+
+### Что сделано
+
+- Создан PRD `PRD/stage-178-chatgpt-oauth-personal-data-privacy.md` с
+  архитектурным решением.
+- Добавлена migration `20260623_000017`: nullable `is_depersonalized` для
+  `oauth_authorization_codes` и `oauth_grants`.
+- OAuth consent page получил выбор privacy mode: default `Без персональных
+  данных`, explicit `Разрешить персональные данные`.
+- Authorization code exchange копирует privacy marker в OAuth grant.
+- OAuth runtime resolver теперь выставляет `RuntimeCredentials.is_depersonalized`
+  из grant; `NULL` трактуется как `true`.
+- Account UI показывает для ChatGPT connections access level и personal-data
+  mode отдельно, а legacy grants получают reconnect guidance.
+
+### Решения и обоснования
+
+- Privacy mode не стал OAuth scope: scopes управляют tools, а
+  `is_depersonalized` управляет field-level redaction в уже разрешённых tool
+  results.
+- Existing centralized sanitizer переиспользован без нового privacy layer.
+- Legacy `NULL` grants fail-safe: уже активные OAuth access tokens после деплоя
+  начинают получать redacted персональные поля. Это privacy-positive, но
+  возможное silent behavior change; поэтому account UI показывает guidance для
+  reconnect.
+
+### Проверки
+
+- PRD Spark-review: read-only запуск упёрся в известный sandbox/user namespace
+  hang; остановлен и повторён той же моделью с `-s danger-full-access` и
+  review-only prompt. Accepted findings: добавить OAuth tool-call sanitizer
+  integration tests и privacy-safe rollback wording.
+- Claude Opus Architecture Critique/PRD-review: accepted findings про rollout
+  behavior для already-issued legacy OAuth tokens и explicit legacy `NULL`
+  live-token test.
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_migrations.py tests/test_runtime_auth.py tests/test_stage173_oauth_metadata.py tests/test_stage168_account_token_layout.py` — `55 passed`.
+- Full suite: `docker compose --profile test run --rm test` — `1223 passed, 1
+  skipped, 63 deselected`.
+- Final audit: `git diff --check` clean; historical key checker clean.
+- Spark committed diff review: read-only запуск снова упёрся в `bwrap`; выполнен
+  fallback той же моделью с `-s danger-full-access` и review-only prompt;
+  результат `{"findings":[]}`.
+- Claude Opus committed diff review: strict JSON output, tools/MCP disabled,
+  prompt deadline 600 seconds; результат `{"findings":[]}`.
+
+### Проблемы
+
+- Spark read-only review сохранил известную проблему runtime sandbox hang; fallback
+  выполнен по workflow.
+- Post-deploy ручная ChatGPT Developer Mode проверка privacy modes всё ещё
+  зависит от внешнего ChatGPT UI.

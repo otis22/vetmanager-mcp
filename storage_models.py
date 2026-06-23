@@ -412,6 +412,7 @@ class OAuthGrant(Base):
     client_id: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
     scopes_json: Mapped[str] = mapped_column(Text, nullable=False)
     access_preset: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    is_depersonalized: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=OAUTH_STATUS_ACTIVE)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -445,6 +446,7 @@ class OAuthAuthorizationCode(Base):
     resource: Mapped[str] = mapped_column(Text, nullable=False)
     scope: Mapped[str] = mapped_column(Text, nullable=False)
     access_preset: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    is_depersonalized: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     code_challenge: Mapped[str] = mapped_column(String(160), nullable=False)
     code_challenge_method: Mapped[str] = mapped_column(String(16), nullable=False)
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
