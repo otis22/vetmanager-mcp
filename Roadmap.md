@@ -2952,3 +2952,24 @@ Research summary:
 - 177.6 Account UI для ChatGPT grants: показывать current preset/access label, scopes summary, дату подключения, revoke/disconnect; после смены preset требовать re-link или безопасную server-side reissue стратегию, без молчаливого расширения прав. — `done`
 - 177.7 Tests: account instruction rendering, landing copy, consent preset defaults, requested-scope narrowing, Full access confirmation, grant scope persistence, insufficient-scope challenge from ChatGPT token, revoke/re-link smoke. — `done`
 - 177.8 Full checks, audit, review gates, commit/push/deploy/smoke; после deploy повторить ChatGPT Developer Mode golden prompts на read-only и Analytics grants. — `done`
+
+## Этап 178. ChatGPT OAuth personal-data privacy mode — `todo`
+
+Источник: обсуждение 2026-06-23 после Stage 177. Для service Bearer tokens уже есть режим `is_depersonalized`, который скрывает персональные данные через centralized sanitizer. Для ChatGPT OAuth grants сейчас можно выбрать только access preset/scopes, но нельзя отдельно разрешить или запретить персональные данные.
+
+Цель: дать владельцу клиники отдельный понятный выбор privacy mode при подключении ChatGPT: по умолчанию “без персональных данных”, а доступ к ФИО/телефонам/email/похожим полям — только явным разрешением.
+
+Ключевое продуктово-техническое решение:
+- Default для новых ChatGPT OAuth grants: персональные данные запрещены (`is_depersonalized=true`), даже если выбран `Read only`, `Analytics` или `Front desk`.
+- На OAuth consent screen добавить отдельный выбор privacy mode: `Без персональных данных` и `Разрешить персональные данные`; разрешение персональных данных должно быть явным действием пользователя.
+- Runtime для OAuth token должен прокидывать privacy mode в тот же `RuntimeCredentials.is_depersonalized`, что и Bearer path, чтобы переиспользовать существующий centralized sanitizer/fail-closed boundary.
+- В `/account` список ChatGPT connections должен показывать отдельно `Права` и `Персональные данные`: например `Analytics` + `запрещены` или `Front desk` + `разрешены`.
+- Смена privacy mode для существующего ChatGPT grant не должна молча расширять доступ. Безопасный v1 UX: отключить ChatGPT connection и подключить заново с новым режимом.
+
+- 178.1 Создать PRD stage 178: зафиксировать UX consent, default privacy mode, storage migration, runtime propagation, relink policy, acceptance criteria и privacy risks. — `todo`
+- 178.2 Storage/migration: добавить nullable/backfilled privacy marker для `oauth_grants` и `oauth_authorization_codes` (например `is_depersonalized`), не ломая существующие grants; определить legacy behavior и account warning/relink guidance. — `todo`
+- 178.3 OAuth consent UI: добавить выбор privacy mode рядом с access preset; default — `Без персональных данных`; `Разрешить персональные данные` требует явного выбора и понятного предупреждения. — `todo`
+- 178.4 OAuth token/runtime: при authorization-code exchange сохранять privacy mode в grant; runtime resolver для OAuth access token должен возвращать `RuntimeCredentials.is_depersonalized` из grant/token policy и использовать существующий sanitizer. — `todo`
+- 178.5 Account UI: в ChatGPT connections показывать privacy label, понятное описание режима и guidance “для смены отключите и подключите заново”; revoke/disconnect остаётся основным способом смены. — `todo`
+- 178.6 Tests: consent default depersonalized, explicit personal-data allow, grant/code persistence, OAuth runtime sanitizer on depersonalized ChatGPT token, normal raw behavior when explicitly allowed, account UI labels, legacy/relink behavior. — `todo`
+- 178.7 Full checks, audit, review gates, commit/push/deploy/smoke; после deploy вручную проверить ChatGPT Developer Mode prompt, который возвращает клиентские телефоны/ФИО, в обоих режимах. — `todo`
