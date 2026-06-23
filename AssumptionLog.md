@@ -8906,3 +8906,9 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 - Подробный нижний блок оставлен, но ChatGPT теперь виден сразу в hero и navigation: иначе пользователь не воспринимает возможность как заявленную на лендинге.
 - Профильная инструкция не предлагает Bearer token copy-paste для ChatGPT, потому что OAuth flow сам открывает вход и consent screen с выбором прав.
+
+### Дополнение по простому пути в настройки ChatGPT — 2026-06-23
+
+- Пользователь показал экран ChatGPT Settings → Apps с переключателем Developer mode и попросил добавить больше деталей “для простых”.
+- `/account` инструкция уточнена: открыть ChatGPT, нажать имя/аватар в левом нижнем углу, открыть Settings, выбрать Apps, включить Developer mode, принять Elevated risk, нажать Create app/создать connector, вставить MCP URL.
+- Проверки: `docker compose --profile test run --rm test pytest tests/test_web_auth.py::test_account_token_issue_supports_access_preset_and_depersonalized_policy` — `1 passed`; `docker compose --profile test run --rm test pytest tests/test_web_auth.py tests/test_landing_page.py` — `55 passed`; `git diff --check` clean; historical key checker clean.
