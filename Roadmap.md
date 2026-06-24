@@ -2973,3 +2973,22 @@ Research summary:
 - 178.5 Account UI: в ChatGPT connections показывать privacy label, понятное описание режима и guidance “для смены отключите и подключите заново”; revoke/disconnect остаётся основным способом смены. — `done`
 - 178.6 Tests: consent default depersonalized, explicit personal-data allow, grant/code persistence, OAuth runtime sanitizer on depersonalized ChatGPT token, normal raw behavior when explicitly allowed, account UI labels, legacy/relink behavior. — `done`
 - 178.7 Full checks, audit, review gates, commit/push/deploy/smoke; после deploy вручную проверить ChatGPT Developer Mode prompt, который возвращает клиентские телефоны/ФИО, в обоих режимах. — `done`
+
+## Этап 179. Hotfix ChatGPT OAuth consent redirect CSP — `done`
+
+Источник: production report 2026-06-24: на ChatGPT OAuth consent screen клик `Allow`
+создавал authorization code, но браузер оставался на странице, а ChatGPT не
+вызывал `/oauth/token`.
+
+Цель: разблокировать post-consent redirect из `/oauth/authorize/consent` обратно
+на ChatGPT callback без ослабления CSP для остальных web-страниц.
+
+- 179.1 Прочитать production logs и подтвердить: `POST /oauth/authorize/consent`
+  возвращает `303`, authorization codes создаются, но `consumed_at` пустой и
+  `/oauth/token` не вызывается. — `done`
+- 179.2 Исправить CSP для OAuth authorize/consent flow: `form-action` должен
+  разрешать `https://chatgpt.com` и legacy `https://chat.openai.com`, остальные
+  страницы остаются на `form-action 'self'`. — `done`
+- 179.3 Добавить regression test на OAuth consent CSP и post-consent redirect
+  CSP. — `done`
+- 179.4 Прогнать проверки, audit, deploy и production smoke. — `done`

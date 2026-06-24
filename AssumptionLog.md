@@ -8970,3 +8970,41 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
   выполнен по workflow.
 - Post-deploy ручная ChatGPT Developer Mode проверка privacy modes всё ещё
   зависит от внешнего ChatGPT UI.
+
+## Этап 179. Hotfix ChatGPT OAuth consent redirect CSP — 2026-06-24
+
+### Что делали
+
+Разбирали production report: на ChatGPT OAuth consent screen кнопка `Allow`
+визуально ничего не меняла.
+
+### Что нашли
+
+- Production logs показали успешный flow до consent: `GET /oauth/authorize`
+  после login возвращал `200`.
+- Каждый клик `Allow` делал `POST /oauth/authorize/consent` и получал `303`.
+- В `oauth_authorization_codes` создавались новые коды для клиента ChatGPT, но
+  `consumed_at` оставался пустым.
+- После `303` не было `POST /oauth/token`, значит ChatGPT не получал или не
+  обрабатывал redirect с authorization code.
+
+### Решение
+
+- Причина признана CSP-related: базовый header `form-action 'self'` безопасен
+  для обычных форм, но может блокировать cross-origin redirect в цепочке form
+  submit после OAuth consent.
+- Для путей `/oauth/authorize*` добавлено узкое расширение CSP:
+  `form-action 'self' https://chatgpt.com https://chat.openai.com`.
+- Остальные web-страницы остаются на `form-action 'self'`.
+- `redirect_uri` по-прежнему проходит exact-match validation через сохранённый
+  OAuth client, произвольные внешние redirect targets не разрешались и не
+  разрешаются.
+
+### Проверки
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_stage173_oauth_metadata.py::test_oauth_authorize_consent_creates_code_bound_to_connection` — `1 passed`.
+- Full suite: `docker compose --profile test run --rm test` — `1217 passed, 7 skipped, 63 deselected`.
+- Final audit: `git diff --check` clean; historical key checker clean.
+- Production deploy: `scripts/sync_and_deploy_server.sh root@vetmanager-mcp.vromanichev.ru /opt/vetmanager-mcp` — passed; post-deploy smoke passed.
+- Production smoke: real `/oauth/authorize?...redirect_uri=https://chatgpt.com/...` response now includes `form-action 'self' https://chatgpt.com https://chat.openai.com`.
+- Codex review: skipped with justification — production OAuth linking was actively broken, the change is a narrow CSP allowlist hotfix with targeted regression, full suite, audit and production smoke. Follow-up review can be run if this grows beyond CSP scope.

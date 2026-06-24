@@ -73,10 +73,14 @@ def _apply_security_headers(
     response: HTMLResponse | RedirectResponse,
     *,
     script_nonce: str | None = None,
+    allow_chatgpt_form_action: bool = False,
 ) -> None:
     script_src = "script-src 'self'"
     if script_nonce:
         script_src += f" 'nonce-{script_nonce}'"
+    form_action = "form-action 'self'"
+    if allow_chatgpt_form_action:
+        form_action += " https://chatgpt.com https://chat.openai.com"
     csp = (
         "default-src 'self'; "
         f"{script_src}; "
@@ -85,7 +89,7 @@ def _apply_security_headers(
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; "
         "base-uri 'self'; "
-        "form-action 'self'; "
+        f"{form_action}; "
         "frame-ancestors 'none'"
     )
     if os.environ.get("WEB_ENABLE_HSTS", "").strip().lower() in {"1", "true", "yes", "on"}:
@@ -115,7 +119,11 @@ def _html_response(
     no_store: bool = False,
 ) -> HTMLResponse:
     response = HTMLResponse(content, status_code=status_code)
-    _apply_security_headers(response, script_nonce=script_nonce)
+    _apply_security_headers(
+        response,
+        script_nonce=script_nonce,
+        allow_chatgpt_form_action=request.url.path.startswith("/oauth/authorize"),
+    )
     if no_store:
         _apply_no_store_headers(response)
     attach_request_context_headers(response, request)
@@ -135,7 +143,10 @@ def _redirect_response(
     with_csrf_cookie: bool = False,
 ) -> RedirectResponse:
     response = RedirectResponse(url=url, status_code=status_code)
-    _apply_security_headers(response)
+    _apply_security_headers(
+        response,
+        allow_chatgpt_form_action=request.url.path.startswith("/oauth/authorize"),
+    )
     attach_request_context_headers(response, request)
     if with_csrf_cookie:
         ensure_csrf_cookie(response, existing_token=request.cookies.get(CSRF_COOKIE_NAME))

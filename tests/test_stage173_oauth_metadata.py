@@ -594,6 +594,8 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
         )
 
     assert consent_response.status_code == 200
+    consent_csp = consent_response.headers["content-security-policy"]
+    assert "form-action 'self' https://chatgpt.com https://chat.openai.com" in consent_csp
     assert "ChatGPT access" in consent_response.text
     assert 'data-testid="oauth-access-preset"' in consent_response.text
     assert 'data-testid="oauth-effective-scope-preview"' in consent_response.text
@@ -603,6 +605,8 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
     assert "Effective scopes by access level" in consent_response.text
     assert f'value="{PRESET_READ_ONLY}" selected' in consent_response.text
     assert callback_response.status_code == 303
+    callback_csp = callback_response.headers["content-security-policy"]
+    assert "form-action 'self' https://chatgpt.com https://chat.openai.com" in callback_csp
     callback_url = urlparse(callback_response.headers["location"])
     callback_query = parse_qs(callback_url.query)
     assert callback_url.scheme == "https"
