@@ -366,9 +366,15 @@ def test_stage177_landing_mentions_chatgpt_connector_plainly():
 
     assert 'id="chatgpt-connector"' in html
     assert 'data-testid="chatgpt-connector-section"' in html
-    assert "Можно подключить прямо к ChatGPT" in html
-    assert "Bearer" not in html.split('data-testid="chatgpt-connector-section"', 1)[1].split("</section>", 1)[0]
-    assert "Full access не выдаётся" in html
+    section_html = html.split('data-testid="chatgpt-connector-section"', 1)[1].split("</section>", 1)[0]
+    assert "Работает прямо в ChatGPT" in section_html
+    assert "Подключите сервис через готовый MCP connector." in section_html
+    assert "Без ручных токенов, с безопасным доступом по умолчанию." in section_html
+    assert '<a class="inline-link" href="/register">Подключить</a>' in section_html
+    assert "Bearer" not in section_html
+    assert "API key" not in section_html
+    assert "service token" not in section_html
+    assert "service bearer" not in section_html
 
 
 def test_stage146_tabs_and_copy_controls_are_structurally_wired():
