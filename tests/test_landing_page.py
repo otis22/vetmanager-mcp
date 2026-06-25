@@ -361,8 +361,9 @@ def test_stage177_landing_mentions_chatgpt_connector_plainly():
     hero_end = html.find("</section>", hero_start)
     hero_html = html[hero_start:hero_end]
     assert 'data-testid="hero-chatgpt-note"' in hero_html
-    assert "Можно подключить прямо к ChatGPT" in hero_html
+    assert "Работает прямо в ChatGPT" in hero_html
     assert "готовый MCP connector" in hero_html
+    assert "без ручных токенов" in hero_html
 
     assert 'id="chatgpt-connector"' in html
     assert 'data-testid="chatgpt-connector-section"' in html
