@@ -9008,3 +9008,55 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Production deploy: `scripts/sync_and_deploy_server.sh root@vetmanager-mcp.vromanichev.ru /opt/vetmanager-mcp` — passed; post-deploy smoke passed.
 - Production smoke: real `/oauth/authorize?...redirect_uri=https://chatgpt.com/...` response now includes `form-action 'self' https://chatgpt.com https://chat.openai.com`.
 - Codex review: skipped with justification — production OAuth linking was actively broken, the change is a narrow CSP allowlist hotfix with targeted regression, full suite, audit and production smoke. Follow-up review can be run if this grows beyond CSP scope.
+
+## Этап 180. Landing ChatGPT connector copy simplification — 2026-06-25
+
+### Что делали
+
+- Упростили публичный ChatGPT copy на лендинге:
+  - hero-note теперь: `Работает прямо в ChatGPT: подключается через готовый MCP connector, без ручных токенов.`;
+  - секция `#chatgpt-connector` теперь использует короткий вариант:
+    `Работает прямо в ChatGPT`, `Подключите сервис через готовый MCP connector.`,
+    `Без ручных токенов, с безопасным доступом по умолчанию.`, CTA `Подключить`.
+- Обновили regression test, чтобы закрепить hero-note, секционный текст, CTA и
+  отсутствие manual credential language в ChatGPT-секции.
+
+### Решения
+
+- Landing copy не перечисляет access presets и не объясняет consent flow; эти
+  детали остаются в кабинете и OAuth consent UI.
+- CTA остаётся `/register`, потому лендинг не определяет auth state.
+- Architecture Critique не требовался: изменение не затрагивает auth, storage,
+  API/MCP contract, runtime behavior или ownership boundary.
+
+### Проверки
+
+- Targeted: `docker compose --profile test run --rm test pytest tests/test_landing_page.py -q` — `21 passed`.
+- Full suite после секционной правки: `docker compose --profile test run --rm test` — `1217 passed, 7 skipped, 63 deselected`.
+- Full suite после hero-note правки: `docker compose --profile test run --rm test` — `1217 passed, 7 skipped, 63 deselected`.
+- Audit: `git diff --check` clean; `python3 scripts/check_no_historical_api_key_literal.py` — historical devtr6 API key literal not found.
+- PRD Spark-review: read-only завис на известном sandbox/MCP path; fallback той же моделью с `-s danger-full-access` дал 3 medium findings, все приняты.
+- Claude Opus PRD-review: `{"findings":[]}`.
+- Spark committed diff review for `6e9f286`: read-only завис на sandbox/MCP path; fallback той же моделью с `-s danger-full-access` — `{"findings":[]}`.
+- Claude Opus committed diff review for `6e9f286`: `{"findings":[]}`.
+- Spark committed diff review for `dbdc1b4`: первый read-only запуск завершился provider/model error, fallback той же моделью с `-s danger-full-access` — `{"findings":[]}`.
+- Claude Opus committed diff review for `dbdc1b4`: `{"findings":[]}`.
+- GitHub Actions `Tests`:
+  - `28176105806` for `6e9f286` — success;
+  - `28176765442` for `dbdc1b4` — success.
+- GitHub Actions `Deploy Prod`:
+  - `28176288014` for `6e9f286` — success;
+  - `28176947628` for `dbdc1b4` — success.
+- Production smoke:
+  - `https://vetmanager-mcp.vromanichev.ru/healthz` — ok;
+  - `https://vetmanager-mcp.vromanichev.ru/readyz` — ok;
+  - public landing contains the new hero-note and `#chatgpt-connector` copy;
+  - old phrases `Можно подключить прямо к ChatGPT`, `Создать аккаунт и подключить ChatGPT`, `права выбираются при подключении` are absent from the checked landing output.
+
+### Проблемы
+
+- Spark read-only review remains unreliable in this runtime because of
+  sandbox/user namespace or provider/tool errors; workflow fallback was used and
+  recorded.
+- GitHub Actions emits a Node.js 20 deprecation annotation for `actions/checkout@v4`;
+  it did not fail tests/deploy and is unrelated to this landing copy change.

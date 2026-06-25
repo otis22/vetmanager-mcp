@@ -2993,7 +2993,7 @@ Research summary:
   CSP. — `done`
 - 179.4 Прогнать проверки, audit, deploy и production smoke. — `done`
 
-## Этап 180. Landing ChatGPT connector copy simplification — `in_progress`
+## Этап 180. Landing ChatGPT connector copy simplification — `done`
 
 Источник: пользовательское уточнение 2026-06-25 — текущий текст блока ChatGPT
 слишком похож на инструкцию, а для лендинга нужен более простой вариант.
@@ -3004,4 +3004,4 @@ Research summary:
 - 180.1 Создать PRD stage 180 с narrow copy scope и acceptance criteria. — `done`
 - 180.2 Обновить `landing_page.py` и regression test landing copy. — `done`
 - 180.3 Прогнать проверки, audit, review gates, commit/push/deploy/smoke,
-  обновить `AssumptionLog.md`. — `todo`
+  обновить `AssumptionLog.md`. — `done`
