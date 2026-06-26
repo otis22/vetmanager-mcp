@@ -1,7 +1,9 @@
 """Financial entity tools: Payment, ClosingOfInvoices, InvoiceDocument, Cassa, CassaClose."""
 
+from datetime import date, timedelta
+
 from fastmcp import FastMCP
-from filters import eq as _filter_eq, gte as _filter_gte, lte as _filter_lte
+from filters import eq as _filter_eq, gte as _filter_gte, lt as _filter_lt
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_delete
 from validators import LimitParam, parse_date_param
 
@@ -10,6 +12,31 @@ def register(mcp: FastMCP) -> None:
 
     _PAYMENT_STATUSES = {"exec", "save", "deleted"}
     _INVOICE_DOCUMENT_FILTER_FIELDS = {"invoice_id", "invoiceId", "documentId", "document_id"}
+
+    def _parse_date_range(date_from: str, date_to: str, *, label: str) -> tuple[str, str]:
+        resolved_from = parse_date_param(date_from)
+        resolved_to = parse_date_param(date_to)
+        if resolved_from and resolved_to and resolved_from > resolved_to:
+            raise ValueError(f"{label}_from must be on or before {label}_to")
+        return resolved_from, resolved_to
+
+    def _day_start(date_value: str) -> str:
+        return f"{date_value} 00:00:00"
+
+    def _next_day_start(date_value: str) -> str:
+        next_day = date.fromisoformat(date_value) + timedelta(days=1)
+        return f"{next_day.isoformat()} 00:00:00"
+
+    def _reject_payment_create_date_filter_conflict(filters: list[dict] | None) -> None:
+        for item in filters or []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("property") == "create_date":
+                raise ValueError(
+                    "Do not pass create_date in filter together with date_from/date_to. "
+                    "Use date_from/date_to for payment date range, or omit them and pass "
+                    "a raw create_date filter explicitly."
+                )
 
     def _reject_invoice_document_parent_filters(filters: list[dict] | None) -> None:
         for item in filters or []:
@@ -44,22 +71,28 @@ def register(mcp: FastMCP) -> None:
             date_from: Filter payments created on or after this date.
                 Accepts YYYY-MM-DD or relative: today, yesterday, tomorrow,
                 +Nd/-Nd, +Nw/-Nw, +Nm/-Nm.
-            date_to: Filter payments created on or before this date.
-                Same accepted formats as `date_from`.
+            date_to: Filter payments through this local clinic date (inclusive);
+                implemented as create_date < next day's 00:00:00. Same accepted
+                formats as `date_from`.
         """
         if status and status not in _PAYMENT_STATUSES:
             raise ValueError(
                 f"status must be one of {sorted(_PAYMENT_STATUSES)}, got '{status}'"
             )
 
-        resolved_date_from = parse_date_param(date_from)
-        resolved_date_to = parse_date_param(date_to)
+        resolved_date_from, resolved_date_to = _parse_date_range(
+            date_from, date_to, label="date"
+        )
+        if resolved_date_from or resolved_date_to:
+            _reject_payment_create_date_filter_conflict(filter)
 
         combined_filters: list = list(filter or [])
         if resolved_date_from:
-            combined_filters.append(_filter_gte("create_date", resolved_date_from))
+            combined_filters.append(
+                _filter_gte("create_date", _day_start(resolved_date_from))
+            )
         if resolved_date_to:
-            combined_filters.append(_filter_lte("create_date", resolved_date_to))
+            combined_filters.append(_filter_lt("create_date", _next_day_start(resolved_date_to)))
         if client_id:
             combined_filters.append(_filter_eq("client_id", client_id))
         if status:

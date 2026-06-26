@@ -132,6 +132,61 @@ async def test_get_revenue_summary_received_uses_exec_payments_and_half_open_dat
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_get_payments_date_range_matches_revenue_summary_received_boundaries():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/payment").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "totalCount": 1,
+                    "payment": [
+                        {
+                            "id": 1,
+                            "amount": "100.00",
+                            "status": "exec",
+                            "create_date": "2026-03-15 10:00:00",
+                        }
+                    ],
+                }
+            },
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool(
+            "get_payments",
+            {
+                "date_from": "2026-03-01",
+                "date_to": "2026-03-31",
+                "status": "exec",
+            },
+        )
+        await mcp.call_tool(
+            "get_revenue_summary",
+            {"date_from": "2026-03-01", "date_to": "2026-03-31"},
+        )
+
+    payments_filters = _filters_from_call(route.calls[0])
+    summary_filters = _filters_from_call(route.calls[1])
+
+    def create_date_bounds(filters: list[dict]) -> set[tuple[str, str]]:
+        return {
+            (f["operator"], f["value"])
+            for f in filters
+            if f["property"] == "create_date"
+        }
+
+    expected = {
+        (">=", "2026-03-01 00:00:00"),
+        ("<", "2026-04-01 00:00:00"),
+    }
+    assert create_date_bounds(payments_filters) == expected
+    assert create_date_bounds(summary_filters) == expected
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_get_revenue_summary_invoice_modes_use_invoice_date_and_non_cashflow_label():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/invoice").mock(

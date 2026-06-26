@@ -915,9 +915,10 @@ async def test_get_payments_relative_dates():
     assert len(date_filters) == 2
     today = date.today()
     thirty_ago = (today - timedelta(days=30)).isoformat()
+    tomorrow = (today + timedelta(days=1)).isoformat()
     by_op = {f["operator"]: f["value"] for f in date_filters}
-    assert by_op[">="] == thirty_ago
-    assert by_op["<="] == today.isoformat()
+    assert by_op[">="] == f"{thirty_ago} 00:00:00"
+    assert by_op["<"] == f"{tomorrow} 00:00:00"
 
 
 @pytest.mark.asyncio

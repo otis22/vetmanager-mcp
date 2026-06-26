@@ -3021,3 +3021,15 @@ but are being forced to run on Node.js 24: actions/checkout@v4`.
   убрать Node.js 20 deprecation annotation. — `todo`
 - 181.3 Прогнать CI, audit, review gates, commit/push/deploy/smoke и обновить
   `AssumptionLog.md`. — `todo`
+
+## Этап 182. `get_payments` date range hotfix — `in_progress`
+
+Источник: production feedback `#18` от 2026-06-26 и real API/MCP repro на свежем платеже в `devtr6`: `get_revenue_summary(date_from=date,date_to=date,mode="received")` видит проведённый платёж за день, а `get_payments(date_from=date,date_to=date,status="exec")` возвращает пусто из-за `create_date <= YYYY-MM-DD` для timestamp-поля.
+
+Цель: привести `get_payments` к той же whole-day half-open timestamp range semantics, что и `get_revenue_summary`, чтобы drill-down по платежам совпадал с дневной выручкой.
+
+- 182.1 PRD/research: reproduce on MCP + direct real API, document facts and planned fix. — `done`
+- 182.2 Implement `get_payments` half-open date range + validation. — `done`
+- 182.3 Regression tests and targeted checks. — `done`
+- 182.4 Full checks, audit, review gates, commit/push/deploy. — `in_progress`
+- 182.5 Production feedback closure for report `#18`. — `todo`

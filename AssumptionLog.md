@@ -9060,3 +9060,129 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
   recorded.
 - GitHub Actions emits a Node.js 20 deprecation annotation for `actions/checkout@v4`;
   it did not fail tests/deploy and is unrelated to this landing copy change.
+
+## Этап 182. `get_payments` date range hotfix PRD/research — 2026-06-26
+
+### Что делали
+
+Готовили hotfix PRD по production feedback `#18`: `get_payments` не находит
+проведённые платежи за день, хотя `get_revenue_summary` за тот же день видит
+выручку.
+
+### Что сделано
+
+- Создан PRD `PRD/этап-182-get-payments-date-range-hotfix.md`.
+- Добавлен Stage 182 в `Roadmap.md`.
+- Проверены facts на свежем тестовом платеже пользователя в `devtr6` за
+  `2026-06-26`.
+- MCP `get_revenue_summary(date_from="2026-06-26", date_to="2026-06-26",
+  mode="received")` вернул `total_amount="700.00"`, `returned_count=1` и
+  filters `create_date >= "2026-06-26 00:00:00"`, `create_date < "2026-06-27
+  00:00:00"`, `status = "exec"`.
+- MCP `get_payments(date_from="2026-06-26", date_to="2026-06-26",
+  status="exec")` вернул `totalCount=0`, `payment=[]`.
+- Direct real API probe на `devtr6` подтвердил:
+  - текущий `get_payments` filter shape `create_date >= "2026-06-26"` +
+    `create_date <= "2026-06-26"` + `status = "exec"` -> `totalCount=0`;
+  - half-open day filter `create_date >= "2026-06-26 00:00:00"` +
+    `create_date < "2026-06-27 00:00:00"` + `status = "exec"` ->
+    `totalCount=1`, payment `id=258`, amount `700.0000000000`,
+    `create_date="2026-06-26 13:15:52"`, `invoice_id=228`.
+
+### Решения и обоснования
+
+- PRD выбирает fix, а не docs-only: пользовательский `date_to` должен означать
+  включительно весь local clinic day, а API timestamp boundary должен быть
+  strict `< next_day_start`.
+- Решение локализовано в `tools/finance.py::get_payments`, потому что это
+  hotfix; общий date-range helper можно вынести позже, если появится ещё один
+  affected tool.
+- `get_revenue_summary` считается authoritative pattern для payment drill-down,
+  потому что уже возвращает `applied_filters` и корректно обрабатывает
+  fractional-second-safe upper boundary.
+
+### Проблемы
+
+- Первая попытка direct real API probe через `source .env` столкнулась с
+  `UID: readonly variable`; последующие probe загружали `.env` внутри Python без
+  печати секретов.
+- Billing API для короткого домена `devtr6` вернул `url` на верхнем уровне
+  (`devtr6.vetmanager2.ru`), а не в `data`; probe был адаптирован без изменения
+  production code.
+
+### Обратная связь
+
+Пользователь уточнил, что только что создал счёт на сегодня, и попросил вызвать
+инструменты/провести исследования, необходимые для создания hotfix PRD.
+
+### Реализация hotfix — 2026-06-26
+
+- `tools/finance.py::get_payments` переведён на whole-day half-open timestamp
+  boundaries для `payment.create_date`:
+  - `date_from` -> `create_date >= "{date_from} 00:00:00"`;
+  - `date_to` -> `create_date < "{date_to + 1 day} 00:00:00"`.
+- Добавлена validation `date_from <= date_to` only when both date bounds are
+  present.
+- One-sided ranges сохранены:
+  - only `date_from` даёт только lower bound;
+  - only `date_to` даёт только upper bound;
+  - no dates не добавляет MCP-generated `create_date` filter.
+- Caller-provided raw `create_date` filters сохраняются, если `date_from` и
+  `date_to` не переданы. Если date args переданы вместе с raw `create_date`
+  filter, запрос rejected before upstream, чтобы не создавать конфликтующие
+  constraints.
+- Next-day boundary считается через `datetime.date.fromisoformat(...) +
+  timedelta(days=1)`, покрыто rollover tests.
+
+### Проверки hotfix
+
+- Spark PRD review: read-only sandbox завис до полезного чтения из-за известной
+  `bwrap`/user namespace проблемы; запуск остановлен и повторён same-model
+  `gpt-5.3-codex-spark -s danger-full-access` с review-only prompt. Accepted
+  findings: безопасный rollback без нормализации старого broken поведения,
+  `devtr6` payment id только illustrative, parity test с `get_revenue_summary`.
+- Claude Opus Architecture Critique/PRD review: accepted findings про optional
+  one-sided ranges, conflict contract для caller `create_date`, real date
+  arithmetic rollover и rollback wording без unscope feature flag. Повторный
+  Claude review после правок вернул `[]`.
+- Targeted после implementation: `docker compose --profile test run --rm test
+  pytest tests/test_api_contracts_hotfix.py::test_get_payments_uses_create_date_filters_for_march_2026_revenue
+  tests/test_api_contracts_hotfix.py::test_get_payments_date_filters_merge_with_client_and_caller_filters
+  tests/test_api_contracts_hotfix.py::test_get_payments_one_sided_date_ranges_and_rollover
+  tests/test_api_contracts_hotfix.py::test_get_payments_rejects_invalid_range_and_create_date_filter_conflict
+  tests/test_api_contracts_hotfix.py::test_get_payments_preserves_raw_create_date_filter_without_date_args
+  tests/test_ergonomic_filters.py::test_get_payments_relative_dates
+  tests/test_revenue_summary.py::test_get_payments_date_range_matches_revenue_summary_received_boundaries
+  tests/test_revenue_summary.py::test_get_revenue_summary_received_uses_exec_payments_and_half_open_dates -q`
+  — `8 passed`.
+- Broader targeted: `docker compose --profile test run --rm test pytest
+  tests/test_api_contracts_hotfix.py tests/test_ergonomic_filters.py
+  tests/test_revenue_summary.py tests/test_tools_list_schema.py -q` —
+  `128 passed`.
+- Full suite before audit cleanup: `docker compose --profile test run --rm test`
+  — `1227 passed, 1 skipped, 63 deselected`.
+- After formatting cleanup targeted: `5 passed`.
+- Final full suite after cleanup: `docker compose --profile test run --rm test`
+  — `1227 passed, 1 skipped, 63 deselected`.
+- `git diff --check` — clean.
+- `python3 scripts/check_no_historical_api_key_literal.py` — historical devtr6
+  API key literal not found.
+- Local-code real API smoke in test container with `.env` credentials:
+  `get_payments(date_from="2026-06-26", date_to="2026-06-26", status="exec")`
+  returned `totalCount=1`, first payment `id=258`; `get_revenue_summary` for the
+  same day returned `total_amount=700.00`, `returned_count=1`, with matching
+  half-open `create_date` filters.
+- Spark committed-diff review: read-only sandbox hit known `bwrap`/user namespace
+  failure; stopped and repeated with same model
+  `gpt-5.3-codex-spark -s danger-full-access` and review-only prompt. Result:
+  no material `get_payments` date-range regression found. Accepted workflow
+  findings: PRD/Roadmap statuses and code review notes must be completed before
+  release closure.
+- Claude Opus committed-diff review returned `{"findings":[]}`. It noted a
+  non-blocking existing contract caveat: exact drill-down parity with
+  `get_revenue_summary(mode="received")` requires callers to pass
+  `status="exec"`, as in production feedback `#18`.
+- После rebase поверх актуального `origin/main` hotfix перенумерован в Stage 182,
+  потому что remote уже содержал Stage 179-181. Full suite on rebased commit:
+  `docker compose --profile test run --rm test` — `1227 passed, 1 skipped, 63
+  deselected`.

@@ -55,6 +55,12 @@ def _filter_of(route) -> list[dict]:
     return json.loads(q["filter"][0]) if "filter" in q else []
 
 
+def _filter_of_call(call) -> list[dict]:
+    url = str(call.request.url)
+    q = parse_qs(urlparse(url).query)
+    return json.loads(q["filter"][0]) if "filter" in q else []
+
+
 def _query_of(route) -> dict[str, list[str]]:
     url = str(route.calls.last.request.url)
     return parse_qs(urlparse(url).query)
@@ -624,8 +630,8 @@ async def test_get_payments_uses_create_date_filters_for_march_2026_revenue():
         for f in filters
         if f.get("property") == "create_date"
     }
-    assert by_operator[">="] == "2026-03-01"
-    assert by_operator["<="] == "2026-03-31"
+    assert by_operator[">="] == "2026-03-01 00:00:00"
+    assert by_operator["<"] == "2026-04-01 00:00:00"
 
 
 @pytest.mark.asyncio
@@ -654,7 +660,7 @@ async def test_get_payments_date_filters_merge_with_client_and_caller_filters():
     assert any(
         f.get("property") == "create_date"
         and f.get("operator") == ">="
-        and f.get("value") == "2026-03-01"
+        and f.get("value") == "2026-03-01 00:00:00"
         for f in filters
     )
     assert any(
@@ -663,6 +669,85 @@ async def test_get_payments_date_filters_merge_with_client_and_caller_filters():
         and f.get("value") == "cash"
         for f in filters
     )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_payments_one_sided_date_ranges_and_rollover():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/payment").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "payment": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("get_payments", {"date_from": "2026-12-31"})
+        await mcp.call_tool("get_payments", {"date_to": "2028-02-29"})
+
+    from_filters = _filter_of_call(route.calls[0])
+    to_filters = _filter_of_call(route.calls[1])
+    assert {
+        (f.get("property"), f.get("operator"), f.get("value"))
+        for f in from_filters
+        if f.get("property") == "create_date"
+    } == {("create_date", ">=", "2026-12-31 00:00:00")}
+    assert {
+        (f.get("property"), f.get("operator"), f.get("value"))
+        for f in to_filters
+        if f.get("property") == "create_date"
+    } == {("create_date", "<", "2028-03-01 00:00:00")}
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_payments_rejects_invalid_range_and_create_date_filter_conflict():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/payment").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "payment": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(Exception) as range_exc:
+            await mcp.call_tool(
+                "get_payments",
+                {"date_from": "2026-06-27", "date_to": "2026-06-26"},
+            )
+        with pytest.raises(Exception) as conflict_exc:
+            await mcp.call_tool(
+                "get_payments",
+                {
+                    "date_from": "2026-06-26",
+                    "filter": [
+                        {
+                            "property": "create_date",
+                            "operator": ">=",
+                            "value": "2026-06-26 12:00:00",
+                        }
+                    ],
+                },
+            )
+
+    assert "date_from must be on or before date_to" in str(range_exc.value)
+    assert "Do not pass create_date in filter" in str(conflict_exc.value)
+    assert len(route.calls) == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_payments_preserves_raw_create_date_filter_without_date_args():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/payment").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "payment": []}})
+    )
+    raw_filter = {
+        "property": "create_date",
+        "operator": ">=",
+        "value": "2026-06-26 12:00:00",
+    }
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("get_payments", {"filter": [raw_filter], "limit": 20})
+
+    assert raw_filter in _filter_of(route)
 
 
 @pytest.mark.asyncio
