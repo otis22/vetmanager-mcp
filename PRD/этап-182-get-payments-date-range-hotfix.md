@@ -234,9 +234,8 @@ probe и `get_revenue_summary` подтверждают, что timestamp filter
 - 182.2 Implement `get_payments` half-open date range + validation. <= 2h,
   <=150 LOC. — `done`
 - 182.3 Regression tests and targeted checks. <= 2h. — `done`
-- 182.4 Full checks, audit, review gates, commit/push/deploy. <= 2h. —
-  `in_progress`
-- 182.5 Production feedback closure for report `#18`. <= 2h. — `todo`
+- 182.4 Full checks, audit, review gates, commit/push/deploy. <= 2h. — `done`
+- 182.5 Production feedback closure for report `#18`. <= 2h. — `done`
 
 ## Architecture Critique
 

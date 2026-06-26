@@ -9186,3 +9186,18 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
   потому что remote уже содержал Stage 179-181. Full suite on rebased commit:
   `docker compose --profile test run --rm test` — `1227 passed, 1 skipped, 63
   deselected`.
+- Commit/push: `567a586 Fix payment date range filters` pushed to `main`.
+- GitHub Actions `Tests` run `28233590153` — success. Warning: existing Node.js
+  20 deprecation annotation for `actions/checkout@v4`, already tracked in
+  Roadmap Stage 181.
+- GitHub Actions `Deploy Prod` run `28233713543` — success.
+- Post-deploy smoke: `scripts/post_deploy_smoke_checks.sh
+  https://vetmanager-mcp.vromanichev.ru vetmanager-mcp.vromanichev.ru` — passed.
+- Production MCP smoke after deploy:
+  `get_payments(date_from="2026-06-26", date_to="2026-06-26", status="exec")`
+  returned `totalCount=1`, first payment `id=258`, amount `700.0000000000`;
+  `get_revenue_summary` for the same day returned `total_amount="700.00"`,
+  `returned_count=1`, and half-open `create_date` filters.
+- Production feedback `#18` resolved via `triage_agent_feedback.py
+  resolve-report 18 --status fixed`; report is now linked to known issue
+  `#21/fixed`.
