@@ -3006,7 +3006,7 @@ Research summary:
 - 180.3 Прогнать проверки, audit, review gates, commit/push/deploy/smoke,
   обновить `AssumptionLog.md`. — `done`
 
-## Этап 181. GitHub Actions Node.js 20 deprecation warnings — `todo`
+## Этап 181. GitHub Actions Node.js 20 deprecation warnings — `done`
 
 Источник: GitHub Actions runs 2026-06-25 (`Tests` и `Deploy Prod`) показывают
 annotation: `Node.js 20 is deprecated. The following actions target Node.js 20
@@ -3016,11 +3016,12 @@ but are being forced to run on Node.js 24: actions/checkout@v4`.
 
 - 181.1 Создать PRD stage 181: подтвердить affected workflows/actions,
   recommended upgrade path, backward compatibility и acceptance criteria. —
-  `todo`
+  `done`
 - 181.2 Обновить GitHub Actions action versions или workflow usage так, чтобы
-  убрать Node.js 20 deprecation annotation. — `todo`
+  убрать Node.js 20 deprecation annotation. — `done`
 - 181.3 Прогнать CI, audit, review gates, commit/push/deploy/smoke и обновить
-  `AssumptionLog.md`. — `todo`
+  `AssumptionLog.md`. — `done` (local checks + review gates passed; GitHub
+  CI/deploy warning disappearance remains post-push confirmation)
 
 ## Этап 182. `get_payments` date range hotfix — `done`
 

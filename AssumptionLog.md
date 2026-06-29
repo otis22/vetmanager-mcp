@@ -9201,3 +9201,58 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Production feedback `#18` resolved via `triage_agent_feedback.py
   resolve-report 18 --status fixed`; report is now linked to known issue
   `#21/fixed`.
+
+## Этап 181. GitHub Actions Node.js 20 deprecation warnings — 2026-06-29
+
+### Что делали
+
+Закрывали Roadmap stage 181: GitHub Actions `Tests` и `Deploy Prod` показывали
+Node.js 20 deprecation annotation для `actions/checkout@v4`.
+
+### Что сделано
+
+- Создан PRD `PRD/этап-181-github-actions-node20-deprecation.md`.
+- Проверены все workflow: `actions/checkout@v4` был только в
+  `.github/workflows/test.yml`, `deploy-prod.yml`, `test-real.yml`,
+  `shellcheck.yml`.
+- Все 5 checkout steps обновлены на `actions/checkout@v7`.
+- Triggers, Docker build/test commands, deploy commands, secrets handling и
+  ShellCheck commands не менялись.
+- `Roadmap.md` stage 181 переведён в `done`.
+
+### Решения и обоснования
+
+- Выбран `actions/checkout@v7`, а не env workaround
+  `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24`: warning связан с metadata самого
+  action, поэтому force-runtime не является достаточным cleanup.
+- `actions/checkout@v7` выбран вместо v5, потому что upstream README на
+  2026-06-29 показывает v7 как актуальный usage, а v5 был только первым major
+  с Node 24 runtime.
+- Scope оставлен минимальным: не меняли permissions, SHA pinning, Docker,
+  deploy или test contours.
+
+### Проблемы
+
+- Локально нельзя подтвердить исчезновение GitHub annotation до push/remote CI
+  run; acceptance для этого остаётся post-push GitHub Actions check.
+
+### Обратная связь
+
+Пользователь попросил выполнить stage 181 после краткого разбора Roadmap.
+
+### Проверки
+
+- `rg "actions/checkout@v4" .github/workflows` — no matches.
+- `rg "actions/checkout@v7" .github/workflows` — 5 matches.
+- Workflow YAML parse check через `yaml.safe_load` в test-контейнере — passed.
+- `git diff --check` — clean.
+- `docker compose --profile test run --rm test` — `1227 passed, 1 skipped,
+  63 deselected`.
+- `scripts/check_stage_completion.sh 181` — high-severity checks passed; commit
+  prefix and remote CI confirmation remain post-commit/post-push checks.
+- Codex review outcome: `[]`.
+- Codex review / Spark diff review: read-only sandbox/MCP path завис до
+  полезного результата; запуск остановлен и повторён той же моделью
+  `gpt-5.3-codex-spark` с `-s danger-full-access` и review-only prompt.
+  Result: `[]`.
+- Claude Opus diff review: `{"findings":[]}`.
