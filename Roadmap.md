@@ -3107,56 +3107,74 @@ but are being forced to run on Node.js 24: actions/checkout@v4`.
   tests, Docker suite, deploy, prod smoke, link feedback report `#20` as fixed
   only after verifying the new tool closes the daily-control use case. — `done`
 
-## Этап 185. MCP tool descriptions LLM usability audit — `todo`
+## Этап 185. High-impact MCP tool description cleanup — `todo`
 
 Источник: аудит 2026-07-03 live `mcp.list_tools` (119 tools) и Claude Opus
 critique по тому, как внешние LLM выбирают MCP tools. Production feedback `#20`
 уже обработан: report linked to known issue `#23` со статусом `fixed`.
 
+Цель: точечно улучшить LLM tool selection и safety для самых рискованных
+описаний, не превращая этап в массовую перепись всех 119 tools.
+
 Текущая оценка descriptions: около `7/10`. Сильные стороны — RU/EN synonyms,
 осмысленные descriptions у специализированных tools (`get_medical_cards_by_date`,
 `get_revenue_summary`, `search_invoice_goods`, `report_problem`). Главные gaps:
-generic CRUD/write wording, слабые safety cues для destructive/broadcast tools,
-недостаточная взаимная навигация между похожими tools, Report AI/export state
-machine описан prose-only, README tool count расходится с live tool count
-(`115` в таблице vs `119` в live export или нужна явная методика подсчёта).
+слабые safety cues для destructive/broadcast tools, недостаточная взаимная
+навигация между похожими tools, Report AI/export state machine описан
+prose-only, README tool count расходится с live tool count (`115` в таблице vs
+`119` в live export или нужна явная методика подсчёта).
+
+Scope:
+- High-impact wording only: destructive/broadcast safety, несколько конфликтных
+  clusters, Report AI/export ordering, README count/tests.
+- Короткий PRD, без повторного большого исследования всех descriptions.
+
+Out of scope:
+- Массовая перепись всех 119 descriptions.
+- Изменение tool schemas/params/scopes/access, если не найден явный баг.
+- Новые MCP tools или изменение product behavior.
+- Полная переработка create/update descriptions для всех сущностей.
 
 Принято/отклонено по Claude Opus:
 - Принято: усилить safety wording для `delete_*` и `send_message_to_all`;
-  добавить `CHOOSE THIS WHEN / use X instead` в overlapping clusters;
-  прописать preconditions/order для Report AI/export tools; улучшить
-  create/update required-field guidance.
+  добавить `CHOOSE THIS WHEN / use X instead` в top overlapping clusters;
+  прописать preconditions/order для Report AI/export tools.
+- Частично принято: create/update required-field guidance только для
+  high-traffic/high-risk tools, если это укладывается в этап
+  (`create_admission`, `create_medical_card`, `create_client`, `create_pet`,
+  optionally `update_admission`).
 - Отклонено как artifact: finding про пустые schemas. Перепроверка показала,
   что FastMCP exposes schemas через `tool.parameters`; нулевая schema только у
   `get_report_ai_prompt_helper`, что ожидаемо.
 
-- 185.1 PRD/research: сделать корректный live export `mcp.list_tools` с
-  `tool.parameters`, разделить issues на description-only, schema/doc-count,
-  prompt/helper и product-surface risks; зафиксировать scoring rubric 1–10. —
-  `todo`
+- 185.1 Short PRD: зафиксировать narrow scope, accepted Claude findings,
+  out-of-scope, target tools/clusters и acceptance criteria. — `todo`
 - 185.2 Safety descriptions: добавить единый `DESTRUCTIVE`/`HIGH-IMPACT`
   preamble для `delete_client`, `delete_pet`, `delete_invoice`,
   `delete_invoice_document`, `send_message_to_all`; явно требовать
   подтверждение exact record/message и советовать более узкие tools
   (`send_message_to_roles`, `send_message_to_users`). — `todo`
-- 185.3 Disambiguation clusters: добавить reciprocal guidance для
+- 185.3 Top disambiguation clusters: добавить reciprocal guidance только для
   `get_goods` vs `search_invoice_goods`, `get_medical_cards` vs
   `get_medical_cards_by_date`/`get_medical_cards_by_client_id`,
   `get_revenue_summary` vs `get_average_invoice`, `get_clients` vs
-  `get_debtors`/`get_inactive_clients`/`get_client_profile`, invoice/export
-  line-item tools. — `todo`
-- 185.4 Report AI/export state machine: в descriptions и helper явно прописать
+  `get_debtors`/`get_inactive_clients`/`get_client_profile`, and
+  Report export trio. — `todo`
+- 185.4 Report AI/export ordering: в descriptions и helper явно прописать
   canonical order, required states/preconditions и sibling selection:
   `create_report_ai_job` → `get_report_ai_job` →
   `confirm_report_ai_job_candidate`/`save_report_ai_job_as_report` →
   `get_report_ai_job_data`; `get_report_ai_job_export` vs
   `start_report_export` vs `get_report_export_file`. — `todo`
-- 185.5 Create/update guidance: для основных mutation tools добавить minimum
-  required fields и lookup chain (`get_clients`/`get_pets`/`get_users`/
-  `get_clinics` etc.) без расширения write surface. — `todo`
+- 185.5 Optional focused create/update guidance: если не раздувает diff,
+  добавить minimum required fields и lookup chain только для
+  `create_admission`, `create_medical_card`, `create_client`, `create_pet`
+  and optionally `update_admission`; остальное вынести в follow-up. — `todo`
 - 185.6 Docs/count/tests: reconcile README “tool count” with live tool count
   or document counting rules; add regression tests for high-impact wording,
-  reciprocal disambiguation, Report AI state guidance and live schema export
-  using `tool.parameters`. — `todo`
+  reciprocal disambiguation and Report AI state guidance. Live schema test
+  должен проверять `tool.parameters`, не `inputSchema`. — `todo`
 - 185.7 Workflow: PRD reviews, implementation, targeted/full tests, Docker
-  suite, audit, Spark/Claude review, commit/push/deploy/smoke. — `todo`
+  suite, audit, Spark/Claude review, commit/push/deploy; prod smoke лёгкий:
+  `/mcp`/`tools/list` wording reached production, без real Vetmanager API smoke. —
+  `todo`
