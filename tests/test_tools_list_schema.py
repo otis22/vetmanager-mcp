@@ -31,6 +31,10 @@ def _get_all_tool_exports(run_async) -> list[dict]:
     return run_async(_fetch())
 
 
+def _tools_by_name(all_tool_exports):
+    return {tool["name"]: tool for tool in all_tool_exports}
+
+
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 @pytest.fixture
@@ -152,6 +156,97 @@ class TestToolsListSchema:
         assert "invoice_id" in properties
         assert "document_id" not in properties
         assert "documentId" not in properties
+
+    def test_stage185_high_impact_tools_have_safety_wording(self, all_tool_exports):
+        tools = _tools_by_name(all_tool_exports)
+        for tool_name in (
+            "delete_client",
+            "delete_pet",
+            "delete_invoice",
+            "delete_invoice_document",
+        ):
+            description = tools[tool_name]["description"]
+            assert "destructive" in description.lower()
+            assert "confirm" in description.lower()
+            assert "exact" in description.lower()
+
+        broadcast = tools["send_message_to_all"]["description"]
+        assert "notifies every clinic user" in broadcast.lower()
+        assert "send_message_to_roles" in broadcast
+        assert "send_message_to_users" in broadcast
+        assert "confirm" in broadcast.lower()
+
+    def test_stage185_overlapping_tools_have_reciprocal_disambiguation(self, all_tool_exports):
+        tools = _tools_by_name(all_tool_exports)
+        assert "search_invoice_goods" in tools["get_goods"]["description"]
+        assert "get_goods" in tools["search_invoice_goods"]["description"]
+
+        assert "get_medical_cards_by_date" in tools["get_medical_cards"]["description"]
+        assert "get_medical_cards_by_client_id" in tools["get_medical_cards"]["description"]
+        assert "get_medical_cards" in tools["get_medical_cards_by_date"]["description"]
+        assert "get_medical_cards" in tools["get_medical_cards_by_client_id"]["description"]
+
+        assert "get_average_invoice" in tools["get_revenue_summary"]["description"]
+        assert "get_revenue_summary" in tools["get_average_invoice"]["description"]
+
+        assert "get_client_profile" in tools["get_clients"]["description"]
+        assert "get_debtors" in tools["get_clients"]["description"]
+        assert "get_inactive_clients" in tools["get_clients"]["description"]
+
+    def test_stage185_report_ai_export_tools_explain_order_and_preconditions(self, all_tool_exports):
+        tools = _tools_by_name(all_tool_exports)
+        create = tools["create_report_ai_job"]["description"]
+        assert "canonical order" in create.lower()
+        assert "get_report_ai_job" in create
+
+        job = tools["get_report_ai_job"]["description"]
+        assert "needs_confirmation" in job
+        assert "confirm_report_ai_job_candidate" in job
+        assert "save_report_ai_job_as_report" in job
+
+        data = tools["get_report_ai_job_data"]["description"]
+        assert "saved" in data
+        assert "existing_report_matched" in data
+        assert "get_report_ai_job_export" in data
+
+        ai_export = tools["get_report_ai_job_export"]["description"]
+        assert "get_report_ai_job" in ai_export
+        assert "start_report_export" in ai_export
+        assert "get_report_export_file" in ai_export
+
+        start_export = tools["start_report_export"]["description"]
+        assert "known report_id" in start_export
+        assert "get_report_ai_job_export" in start_export
+
+        file_export = tools["get_report_export_file"]["description"]
+        assert "start_report_export" in file_export
+        assert "get_report_ai_job_export" in file_export
+
+    def test_stage185_readme_tool_count_matches_live_tools(self, all_tool_exports):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        marker = "**"
+        line = next(line for line in readme.splitlines() if "инструментов** по" in line)
+        count_text = line.split(marker, 2)[1].split()[0]
+        assert int(count_text) == len(all_tool_exports)
+
+    def test_stage185_python_tool_parameters_are_schema_source(self, run_async):
+        async def _fetch():
+            tools = await mcp.list_tools()
+            return [
+                {
+                    "name": tool.name,
+                    "parameters": tool.parameters,
+                    "input_schema": tool.to_mcp_tool().inputSchema,
+                }
+                for tool in tools
+            ]
+
+        exports = run_async(_fetch())
+        assert len(exports) >= 100
+        for tool in exports:
+            assert tool["parameters"] == tool["input_schema"], tool["name"]
+        helper = next(tool for tool in exports if tool["name"] == "get_report_ai_prompt_helper")
+        assert helper["parameters"].get("properties") == {}
 
     def test_every_tool_exports_oauth_security_scheme_metadata(self, all_tool_exports):
         missing = []

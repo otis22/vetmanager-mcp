@@ -633,6 +633,14 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "synonyms: клиент, владелец, хозяин, хозяин питомца, контакт, "
         "клиентская база, client."
     ),
+    "get_clients": (
+        "List or search client / owner records. Use for client directory lookup, "
+        "filters, and paginated client lists. Use get_client_profile instead for "
+        "one consolidated owner card with invoices/admissions, get_debtors for "
+        "negative-balance debtor lists, and get_inactive_clients for reactivation "
+        "segments. Domain synonyms: клиент, владелец, хозяин, контакт, "
+        "клиентская база, client."
+    ),
     "get_personal_account_link_by_phone": (
         "Get the persistent personal-account link for a client / owner only when "
         "the assistant already knows the client's phone. Do not use client ID for "
@@ -646,10 +654,19 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "card or consolidated pet history. Domain synonyms: питомец, пациент, "
         "животное, кот, собака, пациент клиники, pet, animal."
     ),
+    "get_medical_cards": (
+        "List or search medical cards / clinical records. Use for general "
+        "medical-card lookup and filters. Use get_medical_cards_by_date for "
+        "clinic-local date or daily clinical control, and "
+        "get_medical_cards_by_client_id for one owner's pets. Domain synonyms: "
+        "медкарта, медицинская карта, история болезни, история лечения, "
+        "клиническая запись, осмотр, medical card, medical record."
+    ),
     "get_medical_cards_by_client_id": (
         "List medical cards for pets that belong to one client / owner, including "
         "pet pagination metadata. Use when the user asks for the medical history "
-        "of animals of one owner. "
+        "of animals of one owner; use get_medical_cards for general medical-card "
+        "searches across clients. "
         "Domain synonyms: медкарта, медицинская карта, история болезни, история "
         "лечения, клиническая запись, осмотр, medical card, medical record."
     ),
@@ -658,9 +675,11 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "control. By default searches all branches; pass clinic_id only when the "
         "user explicitly asks for one branch because it can exclude medical cards "
         "or analyses from other branches. Returns pagination metadata including "
-        "total/total_known/truncated and clinic_filter_applied. Domain synonyms: "
-        "медкарта, медицинская карта, история болезни, история лечения, "
-        "клиническая запись, осмотр, daily control, medical card, medical record."
+        "total/total_known/truncated and clinic_filter_applied; use "
+        "get_medical_cards for broader medical-card search not anchored to a "
+        "date. Domain synonyms: медкарта, медицинская карта, история болезни, "
+        "история лечения, клиническая запись, осмотр, daily control, medical card, "
+        "medical record."
     ),
     "get_vaccinations": (
         "List vaccination records for one pet / patient with returnedCount, "
@@ -673,14 +692,16 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "Calculate the average invoice / bill amount for the requested period. "
         "Defaults to date_basis='invoice_date' and executed invoices for financial "
         "average check; use date_basis='create_date' only for legacy record-created "
-        "audit semantics. Domain synonyms: счёт, счёт-фактура, чек, квитанция, "
-        "документ оплаты, invoice, bill."
+        "audit semantics. Use get_revenue_summary instead for total revenue, cash "
+        "received, or billed invoice totals. Domain synonyms: счёт, счёт-фактура, "
+        "чек, квитанция, документ оплаты, invoice, bill."
     ),
     "get_revenue_summary": (
         "Calculate authoritative revenue totals for a date range using executed "
         "payments by default, with explicit non-cashflow invoice modes for billed "
         "or currently paid invoice amounts. Use when the user asks for revenue, "
-        "cash received, daily proceeds, or March revenue. Domain synonyms: "
+        "cash received, daily proceeds, or March revenue. Use get_average_invoice "
+        "instead for average check / average invoice amount. Domain synonyms: "
         "платёж, оплата, поступление, касса, выручка, revenue, payment."
     ),
     "get_invoice_documents": (
@@ -716,10 +737,19 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "quantity. Domain synonyms: остаток, остаток на складе, количество на "
         "складе, наличие товара, сколько осталось, запас, stock, inventory."
     ),
+    "get_goods": (
+        "List or search goods / services in the product directory. Use for catalog "
+        "lookup, product metadata, groups, or stock-related discovery. Use "
+        "search_invoice_goods instead when the user needs invoice-ready goods, "
+        "services, goodTag combinations, or IDs for adding positions to an "
+        "invoice. Domain synonyms: товар, услуга, номенклатура, препарат, "
+        "материал, good, service."
+    ),
     "search_invoice_goods": (
         "Search invoice-ready goods, services, and goodTag combinations for adding "
         "to an invoice. Use instead of get_goods when the user needs номенклатура "
         "для счёта, прайс-позиции, ordinary combinations, or invoice-ready IDs. "
+        "Use get_goods instead for plain catalog lookup or product metadata. "
         "Default excludes template combinations; set include_template_combinations=true "
         "only when templates are explicitly needed. Domain synonyms: комбинация, "
         "набор товаров, набор услуг, goodTag, комплект, позиция для счёта."
@@ -737,10 +767,12 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "goodTag, стоимость комбинации."
     ),
     "send_message_to_all": (
-        "Send an in-app notification campaign to all clinic users. Use when the "
-        "user asks for a broadcast, mass notification, global message, or general "
-        "in-app mailing. Domain synonyms: уведомление, рассылка, сообщение в "
-        "программу, уведомление пользователям, push в программу, messages."
+        "Send an in-app notification campaign to all clinic users. This notifies "
+        "every clinic user, so confirm the user really wants a clinic-wide "
+        "broadcast before calling. Use send_message_to_roles for role-scoped "
+        "broadcasts and send_message_to_users for selected recipients. Domain "
+        "synonyms: уведомление, рассылка, сообщение в программу, уведомление "
+        "пользователям, push в программу, messages."
     ),
     "send_message_to_users": (
         "Send an in-app notification campaign to specific users by ID. Use when "
@@ -764,6 +796,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "create_report_ai_job": (
         "Create an async Vetmanager Report AI job from a Russian report intent. "
+        "Canonical order: get_report_ai_prompt_helper -> create_report_ai_job -> "
+        "get_report_ai_job, then confirm/save/read/export according to the returned "
+        "status. "
         "Use after reading get_report_ai_prompt_helper or the MCP prompt "
         "report_ai_prompt_helper unless the user already supplied a final Russian "
         "intent_text. Use when the user asks for an analytic report, grouped/list "
@@ -793,8 +828,10 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "bounded; if a complex report remains queued, explain that processing is "
         "on the Vetmanager side and suggest checking later or simplifying/splitting "
         "the report intent. For needs_confirmation, show job.candidates and confirm "
-        "only a report_id from that list; successful confirmation enables data reads "
-        "without saving a new report. recognized.preview_example_row is LLM-generated "
+        "only a report_id from that list with confirm_report_ai_job_candidate; use "
+        "save_report_ai_job_as_report when a ready_to_save job must be persisted "
+        "before reading rows. Successful confirmation enables data reads without "
+        "saving a new report. recognized.preview_example_row is LLM-generated "
         "example preview metadata, not a verified live clinic row. It does not expose raw SQL. Domain synonyms: отчёт, "
         "отчет, ИИ отчёт, AI report, конструктор отчётов, аналитика, report ai."
     ),
@@ -813,7 +850,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "more rows exist. Responses may include csv_export_url for the supported "
         "CSV/XLSX export path. When limited=true or totals approach the cap, avoid "
         "pasting huge tables into chat; narrow/refine the report or use CSV/XLSX "
-        "export when the user needs bulk review. "
+        "export with get_report_ai_job_export when the user needs bulk review and "
+        "a report_id is available. "
         "Domain synonyms: отчёт, отчет, ИИ отчёт, AI report, "
         "конструктор отчётов, аналитика, report ai."
     ),
@@ -822,6 +860,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "This starts the supported CSV/XLSX export path. Use it "
         "when the user provided a known report_id, explicitly asks for CSV/XLSX, or "
         "get_report_ai_job_data returned limited=true and a report_id is available. "
+        "For Report AI jobs, prefer get_report_ai_job_export when you have a job_id "
+        "rather than manually calling this with the report_id. "
         "The report must have REST export enabled in Vetmanager. Optional filter_json "
         "is report-specific JSON; MCP validates JSON syntax only. The tool returns "
         "report_file_id for get_report_export_file. Vetmanager may respond with busy "
@@ -831,7 +871,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_report_export_file": (
         "Get CSV/XLSX export file locators for a report_file_id returned by "
-        "start_report_export. This is an export follow-up, not a default "
+        "start_report_export. For Report AI exports, get_report_ai_job_export can "
+        "start the export and return the report_file_id for this tool. This is an "
+        "export follow-up, not a default "
         "discovery/list step. If Vetmanager says generation is still in progress, "
         "retry after a delay. Treat html_file, csv_file, csv_semicolon_file, and "
         "xlsx_file as sensitive clinic-data locators. Domain synonyms: отчёт, "
@@ -841,7 +883,10 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "Start CSV/XLSX export for a Report AI job only when it is saved or "
         "existing_report_matched and includes job.report_id. This is the supported "
         "bulk export path for explicit CSV/XLSX requests or limited=true row results; "
-        "it is not the default way to read small Report AI row sets. This does not auto-save "
+        "it is not the default way to read small Report AI row sets. Check "
+        "get_report_ai_job first to verify saved/existing_report_matched status; "
+        "this tool delegates export start to start_report_export and returns "
+        "report_file_id for get_report_export_file. This does not auto-save "
         "ready_to_save jobs. Domain synonyms: ИИ отчёт, AI "
         "report, CSV отчёт, XLSX отчёт, конструктор отчётов."
     ),
@@ -891,8 +936,10 @@ def _build_generic_description(tool_name: str) -> str | None:
         )
     if tool_name.startswith("delete_"):
         return (
-            f"Delete an existing {singular}. Use when the user asks to remove or "
-            f"delete a record in this domain area. Domain synonyms: {synonyms}."
+            f"Destructive action: delete an existing {singular}. Use when the user "
+            f"asks to remove or delete a record in this domain area. Confirm the "
+            f"exact record ID with the user before calling. Domain synonyms: "
+            f"{synonyms}."
         )
     if tool_name.startswith("add_"):
         return (

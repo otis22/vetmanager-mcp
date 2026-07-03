@@ -6,6 +6,9 @@ Your task is to convert the user's business question into a clear Russian `inten
 
 ## Agent flow constraints
 
+- Canonical MCP order: `get_report_ai_prompt_helper` → `create_report_ai_job` →
+  `get_report_ai_job`, then confirm, save, read rows, or export according to the
+  returned status.
 - Report AI jobs are async. After creating a job, poll the job status instead of expecting immediate rows.
 - `ready_to_save` does not expose report rows. It exposes safe recognized structure and preview summary only.
 - Rows are available only after `saved` or `existing_report_matched`.

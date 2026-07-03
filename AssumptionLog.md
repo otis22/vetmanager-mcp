@@ -9333,3 +9333,58 @@ Checks:
 - Production deploy via `scripts/sync_and_deploy_server.sh root@212.193.59.219 /opt/vetmanager-mcp` completed after restoring the existing production `FEEDBACK_FINGERPRINT_PEPPER` line to a compose-parseable raw value; deploy checks passed, including migrations, health, readiness retry, TLS check and post-deploy `/mcp` smoke.
 - Stage-specific production smoke inside the deployed MCP container called `get_medical_cards_by_date` for the latest real medical-card date. All-branches path returned a bounded page with `clinic_filter_applied=false`, `total_known=true`; optional branch path returned a bounded page with `clinic_filter_applied=true`, matching `clinic_id`, and `total_known=true`.
 - Production feedback report `#20` linked to known issue `#23` with status `fixed`.
+
+## Stage 185 High-impact MCP tool description cleanup — 2026-07-03
+
+Context:
+- Implemented narrow Stage 185 after MCP tool description audit rated current
+  descriptions around `7/10`.
+- Live `mcp.list_tools` count is 119. FastMCP Python objects expose schemas via
+  `tool.parameters`; `get_report_ai_prompt_helper` is the only expected empty
+  parameter object.
+
+Decisions:
+- Kept the stage description-only: no new tools, no schema/parameter/scope/auth
+  changes, no Vetmanager API behavior changes.
+- Used natural safety wording instead of synthetic `HIGH-IMPACT` /
+  `DESTRUCTIVE` marker tokens after Claude review.
+- Added destructive-action confirmation wording for generic `delete_*` tools and
+  blast-radius wording for `send_message_to_all`.
+- Added reciprocal selection guidance only for the agreed clusters:
+  goods/invoice goods, medical cards by general/date/client, revenue summary vs
+  average invoice, client list vs profile/debtors/inactive clients, and Report
+  AI/export siblings.
+- Skipped optional create/update required-field guidance as scope creep for this
+  stage.
+- README counts live `mcp.list_tools`; `get_report_ai_prompt_helper` and
+  `report_problem` are included in the 119 total.
+
+Review gates:
+- Spark PRD review read-only hit sandbox/bwrap runtime failure before review; per
+  workflow repeated once with `gpt-5.3-codex-spark -s danger-full-access` and
+  review-only prompt. Accepted findings: narrow optional create/update guidance,
+  add public contract compatibility invariant, guard against collateral edits,
+  and make README count/smoke criteria deterministic.
+- Claude Opus Architecture/PRD review 1 accepted findings to avoid synthetic
+  marker tokens, remove collateral-guard wording contradiction, and make README
+  count testing explicit.
+- Claude Opus Architecture/PRD review 2 accepted simplification findings to
+  avoid brittle byte snapshots and keep review gates out of product acceptance
+  criteria.
+
+Checks:
+- Red Stage 185 tests before implementation: `uv run --group dev pytest
+  tests/test_tools_list_schema.py -k 'stage185' -q` — `4 failed, 1 passed, 28
+  deselected`.
+- Targeted green: `uv run --group dev pytest tests/test_tools_list_schema.py -k
+  'stage185' -q` — `5 passed, 28 deselected`.
+- Broader targeted: `uv run --group dev pytest tests/test_tools_list_schema.py
+  tests/test_stage170_report_ai_tools.py -q` — `68 passed`.
+- Full uv suite: `uv run --group dev pytest -q` — `1240 passed, 71 skipped`.
+- Docker suite: `docker compose --profile test run --rm test` — `1246 passed,
+  1 skipped, 64 deselected`.
+- Spark committed-diff review: read-only hit sandbox/bwrap runtime failure and
+  stalled before completing; per workflow stopped and repeated once with
+  `gpt-5.3-codex-spark -s danger-full-access` and review-only prompt. Result:
+  `[]`.
+- Claude Opus committed-diff review: `{"findings":[]}`.
