@@ -5,13 +5,25 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 import stat
 import sys
 import tempfile
 
 
-def _shell_quote(value: str) -> str:
-    return "'" + value.replace("'", "'\"'\"'") + "'"
+_DOTENV_RAW_RE = re.compile(r"^[A-Za-z0-9_./:@+-]+$")
+
+
+def _dotenv_quote(value: str) -> str:
+    if _DOTENV_RAW_RE.fullmatch(value):
+        return value
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("$", "\\$")
+        .replace("`", "\\`")
+    )
+    return f'"{escaped}"'
 
 
 def update_env_secret(env_path: Path, key: str, secret_path: Path) -> None:
@@ -40,7 +52,7 @@ def update_env_secret(env_path: Path, key: str, secret_path: Path) -> None:
         gid = os.getgid()
         lines = []
 
-    new_line = f"{key}={_shell_quote(value)}"
+    new_line = f"{key}={_dotenv_quote(value)}"
     prefix = f"{key}="
     replaced = False
     next_lines: list[str] = []

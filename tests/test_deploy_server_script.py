@@ -84,6 +84,35 @@ def test_update_env_secret_round_trips_shell_sensitive_values(tmp_path: Path) ->
     assert env_path.read_text(encoding="utf-8").count("FEEDBACK_FINGERPRINT_PEPPER=") == 1
 
 
+def test_update_env_secret_writes_safe_values_without_shell_quote_nesting(tmp_path: Path) -> None:
+    env_path = tmp_path / ".env"
+    secret_path = tmp_path / "secret"
+    secret = "74b2e742784867a33865d2a6ee5801eafc7c1039d12a080d1d4fa08f2efb98fc"
+    env_path.write_text(
+        "LOG_LEVEL=INFO\n"
+        f"FEEDBACK_FINGERPRINT_PEPPER='{secret}'\n",
+        encoding="utf-8",
+    )
+    secret_path.write_text(secret, encoding="utf-8")
+
+    for _ in range(2):
+        subprocess.run(
+            [
+                sys.executable,
+                str(ENV_WRITER_PATH),
+                str(env_path),
+                "FEEDBACK_FINGERPRINT_PEPPER",
+                str(secret_path),
+            ],
+            check=True,
+        )
+
+    text = env_path.read_text(encoding="utf-8")
+    assert f"FEEDBACK_FINGERPRINT_PEPPER={secret}\n" in text
+    assert "'\"'\"'" not in text
+    assert _source_env_value(env_path) == secret
+
+
 def test_update_env_secret_rejects_newlines_and_preserves_existing_env(tmp_path: Path) -> None:
     env_path = tmp_path / ".env"
     secret_path = tmp_path / "secret"
