@@ -3107,7 +3107,7 @@ but are being forced to run on Node.js 24: actions/checkout@v4`.
   tests, Docker suite, deploy, prod smoke, link feedback report `#20` as fixed
   only after verifying the new tool closes the daily-control use case. — `done`
 
-## Этап 185. High-impact MCP tool description cleanup — `in_progress`
+## Этап 185. High-impact MCP tool description cleanup — `done`
 
 Источник: аудит 2026-07-03 live `mcp.list_tools` (119 tools) и Claude Opus
 critique по тому, как внешние LLM выбирают MCP tools. Production feedback `#20`
@@ -3175,4 +3175,4 @@ Out of scope:
 - 185.7 Workflow: PRD reviews, implementation, targeted/full tests, Docker
   suite, audit, Spark/Claude review, commit/push/deploy; prod smoke лёгкий:
   `/mcp`/`tools/list` wording reached production, без real Vetmanager API smoke. —
-  `in_progress`
+  `done`

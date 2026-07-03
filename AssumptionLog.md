@@ -9388,3 +9388,14 @@ Checks:
   `gpt-5.3-codex-spark -s danger-full-access` and review-only prompt. Result:
   `[]`.
 - Claude Opus committed-diff review: `{"findings":[]}`.
+- Pushed implementation commit `26c8981` to `main`.
+- Production deploy via `scripts/sync_and_deploy_server.sh
+  root@212.193.59.219 /opt/vetmanager-mcp` completed after repairing an
+  already malformed remote `FEEDBACK_FINGERPRINT_PEPPER` `.env` line to a
+  Docker Compose-compatible raw value; deploy checks passed, including backup,
+  migrations, health, readiness retry, TLS check and post-deploy smoke.
+- Stage-specific production smoke inside the deployed MCP container verified
+  live `mcp.list_tools` count `119` and intended wording on target tools:
+  `delete_client` safety, `send_message_to_all` blast radius/narrower tools,
+  `get_goods`/`search_invoice_goods` reciprocal guidance, and Report AI/export
+  order guidance.
