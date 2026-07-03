@@ -3058,3 +3058,51 @@ but are being forced to run on Node.js 24: actions/checkout@v4`.
 - 183.8 Обновить `known_issues` и runtime workaround для `report-ai-goods-good-id-preview`: не удалять; сделать legacy/contour-specific, сузить match rules до явных `good.id`/unknown-column markers, убрать общий `товар`, playbook сначала проверяет status/candidates и retry делает только при real `PREVIEW_FAILED + good.id`. — `done`
 - 183.9 Docs/tests: обновить README Report AI section, relevant helper/tests (`test_stage170_report_ai_tools.py`, `test_stage172_report_export_tools.py`, `test_stage157_feedback_kb_seed.py`, descriptions snapshots), добавить goods/ABC/XYZ real smoke follow-up или explicit skipped opt-in fixture. — `done`
 - 183.10 Checks/review/commit: targeted tests, full `docker compose --profile test run --rm test`, opt-in real Report AI checks, update `AssumptionLog.md`, audit diff, Spark review, Claude Opus review, повторные проверки после review fixes. — `done` (`uv` full suite passed; after local Docker restart, canonical Docker suite passed: `1236 passed, 1 skipped, 63 deselected`)
+
+## Этап 184. Medical cards date-range listing for daily control — `todo`
+
+Источник: production feedback `#20` от 2026-07-01: `get_medical_cards`
+требует `pet_id`, поэтому daily control по всем медкартам за дату вынужден
+идти через медленные обходы admissions/invoices/card IDs или через Report AI,
+который может остаться в queue и не дать same-turn fallback.
+
+Цель: добавить прямой read-only MCP путь для списка медкарт за дату/период
+поверх `/rest/api/MedicalCards`, без зависимости от Report AI и без потери
+записей из других филиалов.
+
+Ключевые решения:
+- Новый tool делать отдельным (`get_medical_cards_by_date` или близкое имя),
+  не размывать контракт текущего `get_medical_cards(pet_id=...)`.
+- Фильтр филиала `clinic_id` — **опциональный**. По умолчанию искать по всем
+  филиалам, чтобы не пропустить важные медкарты/анализы из другого филиала.
+  Если пользователь явно просит конкретный филиал, агент передаёт `clinic_id`.
+- В tool description явно предупредить: `clinic_id` сужает результат и может
+  исключить релевантные записи из других филиалов; для полного daily control
+  параметр нужно опускать.
+- В ответе возвращать `clinic_filter_applied: true/false`.
+
+- 184.1 PRD/research: проверить real/API shape `/rest/api/MedicalCards` list
+  для `date_create` filters и nested `pet`/`doctor`/`invoice`; зафиксировать
+  PII/depersonalization policy, date/timezone assumptions, pagination limits
+  и критерии закрытия feedback `#20`. — `todo`
+- 184.2 Реализовать date-range tool: `date` XOR `date_from/date_to`, half-open
+  фильтр `date_create >= YYYY-MM-DD 00:00:00` и `< next_day 00:00:00`,
+  optional `clinic_id`, deterministic default sort, normalized
+  `medicalCards`/`medicalcards` response. — `todo`
+- 184.3 Добавить bounded pagination/truncation contract: `total`,
+  `medical_cards_count`, `truncated`, `limit`, `offset`, echoed date range и
+  `clinic_filter_applied`; не терять записи молча. — `todo`
+- 184.4 Context handling: сохранять upstream nested `pet`/`doctor`/`invoice`,
+  если list endpoint их отдаёт; если owner/client context не приходит,
+  не добавлять unbounded N+1 в v1, а явно вернуть safe metadata и вынести
+  bounded enrichment в follow-up при необходимости. — `todo`
+- 184.5 Access/docs/prompts: зарегистрировать scope `medical_cards.read`,
+  обновить `tool_descriptions.py`, README/assistant guidance и production
+  known issue/playbook для feedback `#20`. — `todo`
+- 184.6 Tests/checks: покрыть границы дня (`00:00:00`, `23:59:59`,
+  next-day exclusion), invalid date/range, optional `clinic_id`, отсутствие
+  clinic filter by default, response key normalization, pagination/truncation,
+  access registry/schema. — `todo`
+- 184.7 Full workflow: PRD reviews, implementation reviews, targeted/full
+  tests, Docker suite, deploy, prod smoke, link feedback report `#20` as fixed
+  only after verifying the new tool closes the daily-control use case. — `todo`
