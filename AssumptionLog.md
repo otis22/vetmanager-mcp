@@ -9329,3 +9329,7 @@ Checks:
 - Post-review opt-in real smoke via `.env`: `tests/test_e2e_real.py::test_real_get_medical_cards_by_date_smoke` — `1 passed`, including optional `clinic_id` narrowing when available.
 - Post-review full uv suite: `uv run --group dev pytest -q` — `1235 passed, 71 skipped`.
 - Post-review Docker suite: `docker compose --profile test run --rm test` — `1241 passed, 1 skipped, 64 deselected`.
+- Pushed implementation commit `c53b2d3` to `main`.
+- Production deploy via `scripts/sync_and_deploy_server.sh root@212.193.59.219 /opt/vetmanager-mcp` completed after restoring the existing production `FEEDBACK_FINGERPRINT_PEPPER` line to a compose-parseable raw value; deploy checks passed, including migrations, health, readiness retry, TLS check and post-deploy `/mcp` smoke.
+- Stage-specific production smoke inside the deployed MCP container called `get_medical_cards_by_date` for the latest real medical-card date. All-branches path returned a bounded page with `clinic_filter_applied=false`, `total_known=true`; optional branch path returned a bounded page with `clinic_filter_applied=true`, matching `clinic_id`, and `total_known=true`.
+- Production feedback report `#20` linked to known issue `#23` with status `fixed`.

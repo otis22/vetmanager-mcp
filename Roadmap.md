@@ -3059,7 +3059,7 @@ but are being forced to run on Node.js 24: actions/checkout@v4`.
 - 183.9 Docs/tests: обновить README Report AI section, relevant helper/tests (`test_stage170_report_ai_tools.py`, `test_stage172_report_export_tools.py`, `test_stage157_feedback_kb_seed.py`, descriptions snapshots), добавить goods/ABC/XYZ real smoke follow-up или explicit skipped opt-in fixture. — `done`
 - 183.10 Checks/review/commit: targeted tests, full `docker compose --profile test run --rm test`, opt-in real Report AI checks, update `AssumptionLog.md`, audit diff, Spark review, Claude Opus review, повторные проверки после review fixes. — `done` (`uv` full suite passed; after local Docker restart, canonical Docker suite passed: `1236 passed, 1 skipped, 63 deselected`)
 
-## Этап 184. Medical cards date-range listing for daily control — `in_progress`
+## Этап 184. Medical cards date-range listing for daily control — `done`
 
 Источник: production feedback `#20` от 2026-07-01: `get_medical_cards`
 требует `pet_id`, поэтому daily control по всем медкартам за дату вынужден
@@ -3105,4 +3105,4 @@ but are being forced to run on Node.js 24: actions/checkout@v4`.
   access registry/schema. — `done`
 - 184.7 Full workflow: PRD reviews, implementation reviews, targeted/full
   tests, Docker suite, deploy, prod smoke, link feedback report `#20` as fixed
-  only after verifying the new tool closes the daily-control use case. — `in_progress`
+  only after verifying the new tool closes the daily-control use case. — `done`
