@@ -9287,6 +9287,6 @@ Checks:
 - Targeted tests via uv: `uv run --group dev pytest tests/test_stage170_report_ai_tools.py tests/test_stage172_report_export_tools.py tests/test_stage157_feedback_kb_seed.py -q` — `75 passed`.
 - Opt-in real Report AI tests via uv and `.env`: `tests/test_e2e_real.py::test_real_report_ai_create_and_bounded_poll_non_polluting` and `tests/test_e2e_real.py::test_real_report_ai_data_from_existing_saved_fixture_when_available` — `2 passed`.
 - Full uv suite after installing Playwright Chromium: `uv run --group dev pytest -q` — `1230 passed, 70 skipped`.
-- Docker Compose gate could not be executed: `docker version` timed out after printing client info only; `docker.service` is stuck in `activating (start)` since 2026-07-01 21:35 MSK. I did not restart Docker because that could disrupt unrelated local containers.
+- After user approval to restart local Docker, canonical Docker suite passed: `docker compose --profile test run --rm test` — `1236 passed, 1 skipped, 63 deselected`.
 - Spark committed-diff review: `[]`.
 - Claude Opus committed-diff review: `{"findings":[]}`.
