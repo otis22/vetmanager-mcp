@@ -66,6 +66,12 @@ def _query_of(route) -> dict[str, list[str]]:
     return parse_qs(urlparse(url).query)
 
 
+def _sort_of(route) -> list[dict]:
+    url = str(route.calls.last.request.url)
+    q = parse_qs(urlparse(url).query)
+    return json.loads(q["sort"][0]) if "sort" in q else []
+
+
 # ── create/update mutation contract gates ───────────────────────────────────
 
 
@@ -506,6 +512,157 @@ async def test_get_medical_cards_by_client_id_no_pets_short_circuits():
     structured = result.structured_content or {}
     assert structured.get("pets_count") == 0
     assert structured.get("medical_cards") == []
+
+
+# ── get_medical_cards_by_date ───────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_medical_cards_by_date_uses_half_open_date_filter_without_clinic_by_default():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 2,
+                    "medicalCards": [
+                        {"id": 1, "date_create": "2026-07-01 00:00:00"},
+                        {"id": 2, "date_create": "2026-07-01 23:59:59"},
+                    ],
+                },
+            },
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_medical_cards_by_date",
+            {"date": "2026-07-01", "limit": 20},
+        )
+
+    filters = _filter_of(route)
+    assert {"property": "date_create", "value": "2026-07-01 00:00:00", "operator": ">="} in filters
+    assert {"property": "date_create", "value": "2026-07-02 00:00:00", "operator": "<"} in filters
+    assert not any(f.get("property") == "clinic_id" for f in filters)
+    assert _sort_of(route) == [
+        {"property": "date_create", "direction": "ASC"},
+        {"property": "id", "direction": "ASC"},
+    ]
+
+    structured = result.structured_content or {}
+    assert structured["date_from"] == "2026-07-01"
+    assert structured["date_to"] == "2026-07-01"
+    assert structured["clinic_filter_applied"] is False
+    assert structured["clinic_id"] is None
+    assert structured["total"] == 2
+    assert structured["total_known"] is True
+    assert structured["medical_cards_count"] == 2
+    assert structured["truncated"] is False
+    assert structured["owner_context_available"] is False
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_medical_cards_by_date_applies_optional_clinic_filter_and_truncation():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 120,
+                    "medicalcards": [{"id": 10, "clinic_id": 3}],
+                },
+            },
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_medical_cards_by_date",
+            {
+                "date_from": "2026-07-01",
+                "date_to": "2026-07-03",
+                "clinic_id": 3,
+                "limit": 1,
+                "offset": 20,
+            },
+        )
+
+    filters = _filter_of(route)
+    assert {"property": "date_create", "value": "2026-07-01 00:00:00", "operator": ">="} in filters
+    assert {"property": "date_create", "value": "2026-07-04 00:00:00", "operator": "<"} in filters
+    assert {"property": "clinic_id", "value": "3", "operator": "="} in filters
+
+    structured = result.structured_content or {}
+    assert structured["clinic_filter_applied"] is True
+    assert structured["clinic_id"] == 3
+    assert structured["total"] == 120
+    assert structured["total_known"] is True
+    assert structured["medical_cards_count"] == 1
+    assert structured["truncated"] is True
+    assert structured["medical_cards"] == [{"id": 10, "clinic_id": 3}]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_medical_cards_by_date_marks_total_unknown_without_total_count():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(
+            200,
+            json={"success": True, "data": {"medicalcard": [{"id": 7}]}},
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_medical_cards_by_date",
+            {"date": "2026-07-01"},
+        )
+
+    structured = result.structured_content or {}
+    assert structured["total"] is None
+    assert structured["total_known"] is False
+    assert structured["truncated"] is None
+    assert structured["medical_cards_count"] == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_medical_cards_by_date_rejects_invalid_date_arguments():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(200, json={"data": {"medicalCards": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(Exception):
+            await mcp.call_tool(
+                "get_medical_cards_by_date",
+                {"date": "2026-07-01", "date_from": "2026-07-01", "date_to": "2026-07-02"},
+            )
+        with pytest.raises(Exception):
+            await mcp.call_tool(
+                "get_medical_cards_by_date",
+                {"date_from": "2026-07-01"},
+            )
+        with pytest.raises(Exception):
+            await mcp.call_tool(
+                "get_medical_cards_by_date",
+                {"date_from": "2026-07-03", "date_to": "2026-07-01"},
+            )
+        with pytest.raises(Exception):
+            await mcp.call_tool(
+                "get_medical_cards_by_date",
+                {"date": "not-a-date"},
+            )
+
+    assert route.call_count == 0
 
 
 # ── Stage 122 payload/query contract hotfixes ───────────────────────────────

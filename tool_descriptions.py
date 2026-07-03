@@ -492,6 +492,7 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "create_admission": "admission",
     "update_admission": "admission",
     "get_medical_cards": "medical_card",
+    "get_medical_cards_by_date": "medical_card",
     "get_medical_cards_by_client_id": "medical_card",
     "get_medical_card_by_id": "medical_card",
     "create_medical_card": "medical_card",
@@ -651,6 +652,15 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "of animals of one owner. "
         "Domain synonyms: медкарта, медицинская карта, история болезни, история "
         "лечения, клиническая запись, осмотр, medical card, medical record."
+    ),
+    "get_medical_cards_by_date": (
+        "List medical cards by clinic-local date or date range for daily clinical "
+        "control. By default searches all branches; pass clinic_id only when the "
+        "user explicitly asks for one branch because it can exclude medical cards "
+        "or analyses from other branches. Returns pagination metadata including "
+        "total/total_known/truncated and clinic_filter_applied. Domain synonyms: "
+        "медкарта, медицинская карта, история болезни, история лечения, "
+        "клиническая запись, осмотр, daily control, medical card, medical record."
     ),
     "get_vaccinations": (
         "List vaccination records for one pet / patient with returnedCount, "

@@ -680,6 +680,67 @@ async def test_real_get_medical_cards():
 
 @skip_if_no_creds
 @pytest.mark.asyncio
+async def test_real_get_medical_cards_by_date_smoke():
+    latest = await call(
+        vc().get(
+            "/rest/api/MedicalCards",
+            params={
+                "limit": 1,
+                "offset": 0,
+                "sort": '[{"property":"date_create","direction":"DESC"}]',
+            },
+        )
+    )
+    data = latest.get("data", {})
+    rows = (
+        data.get("medicalCards")
+        or data.get("medicalcards")
+        or data.get("medicalcard")
+        or []
+    )
+    if not rows:
+        pytest.skip("No real medical cards available for date-range smoke.")
+    day = str(rows[0].get("date_create", ""))[:10]
+    if not day:
+        pytest.skip("Latest real medical card has no date_create.")
+    clinic_id = rows[0].get("clinic_id")
+
+    headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_medical_cards_by_date",
+            {"date": day, "limit": 1},
+        )
+
+    payload = _tool_payload(result)
+    assert payload["date_from"] == day
+    assert payload["date_to"] == day
+    assert payload["clinic_filter_applied"] is False
+    assert payload["total_known"] is True
+    assert payload["medical_cards_count"] <= 1
+    assert isinstance(payload["medical_cards"], list)
+
+    if clinic_id in (None, ""):
+        pytest.skip("Latest real medical card has no clinic_id for branch filter smoke.")
+    clinic_id_int = int(clinic_id)
+
+    with headers_patch, runtime_patch:
+        clinic_result = await mcp.call_tool(
+            "get_medical_cards_by_date",
+            {"date": day, "clinic_id": clinic_id_int, "limit": 1},
+        )
+
+    clinic_payload = _tool_payload(clinic_result)
+    assert clinic_payload["clinic_filter_applied"] is True
+    assert clinic_payload["clinic_id"] == clinic_id_int
+    assert clinic_payload["total_known"] is True
+    assert clinic_payload["medical_cards_count"] <= 1
+    for card in clinic_payload["medical_cards"]:
+        assert str(card.get("clinic_id")) == str(clinic_id)
+
+
+@skip_if_no_creds
+@pytest.mark.asyncio
 async def test_real_get_clients_pagination():
     """Offset pagination must work without error."""
     result = await call(vc().get("/rest/api/client", params={"limit": 2, "offset": 0}))

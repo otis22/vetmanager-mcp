@@ -1,9 +1,17 @@
 import json
+from datetime import date, timedelta
+
 from fastmcp import FastMCP
 
-from filters import build_list_query_params, eq as _filter_eq, in_ as _filter_in
+from filters import (
+    build_list_query_params,
+    eq as _filter_eq,
+    gte as _filter_gte,
+    in_ as _filter_in,
+    lt as _filter_lt,
+)
 from tools.crud_helpers import crud_get_by_id, crud_create, crud_update
-from validators import LimitParam
+from validators import LimitParam, parse_date_param
 from vetmanager_client import VetmanagerClient
 
 # The correct Vetmanager REST endpoint for medical cards is /rest/api/MedicalCards
@@ -13,6 +21,27 @@ _MC_ENDPOINT = "/rest/api/MedicalCards"
 _MC_KEY = "medicalCards"
 _CLIENT_PETS_PAGE_SIZE = 100
 _CLIENT_PETS_MAX_PAGES = 20
+_DEFAULT_DATE_SORT = [
+    {"property": "date_create", "direction": "ASC"},
+    {"property": "id", "direction": "ASC"},
+]
+
+
+def _next_day_start(value: str) -> str:
+    return (date.fromisoformat(value) + timedelta(days=1)).isoformat() + " 00:00:00"
+
+
+def _day_start(value: str) -> str:
+    return f"{value} 00:00:00"
+
+
+def _extract_medical_cards(data: dict) -> list[dict]:
+    return (
+        data.get(_MC_KEY)
+        or data.get("medicalcards")
+        or data.get("medicalcard")
+        or []
+    )
 
 
 def register(mcp: FastMCP) -> None:
@@ -54,6 +83,83 @@ def register(mcp: FastMCP) -> None:
         if isinstance(data, dict) and _MC_KEY in data and "medicalcards" not in data:
             data["medicalcards"] = data[_MC_KEY]
         return result
+
+    @mcp.tool
+    async def get_medical_cards_by_date(
+        date: str = "",
+        date_from: str = "",
+        date_to: str = "",
+        clinic_id: int | None = None,
+        limit: LimitParam = 20,
+        offset: int = 0,
+        sort: list[dict] | None = None,
+    ) -> dict:
+        """List medical card records by clinic-local date range.
+
+        Use this for daily medical-card control across all branches by default.
+        Pass clinic_id only when the user explicitly asks for one branch; it
+        narrows results and can exclude relevant medical cards or analyses from
+        other branches.
+
+        Args:
+            date: Single clinic-local day (YYYY-MM-DD or relative date).
+            date_from: Start clinic-local day for range mode.
+            date_to: End clinic-local day for range mode.
+            clinic_id: Optional branch filter. Omit for all branches.
+            limit: Max records to return (1-100, default 20).
+            offset: Pagination offset (0-10000).
+            sort: Optional Vetmanager sort list. Defaults to date_create ASC, id ASC.
+        """
+        if date and (date_from or date_to):
+            raise ValueError("use either `date` or `date_from`/`date_to`, not both")
+        if bool(date_from) != bool(date_to):
+            raise ValueError("date_from and date_to must be provided together")
+        if not date and not (date_from and date_to):
+            raise ValueError("date or date_from/date_to is required")
+
+        resolved_from = parse_date_param(date or date_from)
+        resolved_to = parse_date_param(date or date_to)
+        if resolved_from > resolved_to:
+            raise ValueError("date_from must be on or before date_to")
+
+        filters = [
+            _filter_gte("date_create", _day_start(resolved_from)),
+            _filter_lt("date_create", _next_day_start(resolved_to)),
+        ]
+        clinic_filter_applied = clinic_id is not None and clinic_id > 0
+        if clinic_filter_applied:
+            filters.append(_filter_eq("clinic_id", str(clinic_id)))
+
+        params = build_list_query_params(
+            limit=limit,
+            offset=offset,
+            sort=sort or _DEFAULT_DATE_SORT,
+            filters=filters,
+        )
+        result = await VetmanagerClient().get(_MC_ENDPOINT, params=params)
+        data = result.get("data", {})
+        cards = _extract_medical_cards(data) if isinstance(data, dict) else []
+        raw_total = data.get("totalCount") if isinstance(data, dict) else None
+        total_known = raw_total is not None
+        total = int(raw_total) if total_known else None
+        count = len(cards)
+        truncated = (offset + count) < total if total_known else None
+
+        return {
+            "success": result.get("success", True),
+            "date_from": resolved_from,
+            "date_to": resolved_to,
+            "clinic_filter_applied": clinic_filter_applied,
+            "clinic_id": clinic_id if clinic_filter_applied else None,
+            "limit": limit,
+            "offset": offset,
+            "total": total,
+            "total_known": total_known,
+            "medical_cards_count": count,
+            "truncated": truncated,
+            "owner_context_available": False,
+            "medical_cards": cards,
+        }
 
     @mcp.tool
     async def get_medical_cards_by_client_id(

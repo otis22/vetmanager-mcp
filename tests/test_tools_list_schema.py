@@ -134,6 +134,18 @@ class TestToolsListSchema:
         assert "offset" in properties
         assert properties["offset"].get("default") == 0
 
+    def test_get_medical_cards_by_date_exports_daily_control_contract(self, all_tool_exports):
+        tool = next(t for t in all_tool_exports if t["name"] == "get_medical_cards_by_date")
+        properties = tool["schema"].get("properties", {})
+        assert "date" in properties
+        assert "date_from" in properties
+        assert "date_to" in properties
+        assert "clinic_id" in properties
+        assert "limit" in properties
+        assert "offset" in properties
+        assert "clinic_id" in tool["description"]
+        assert "all branches" in tool["description"]
+
     def test_get_invoice_documents_keeps_public_invoice_id_contract(self, all_tool_exports):
         tool = next(t for t in all_tool_exports if t["name"] == "get_invoice_documents")
         properties = tool["schema"].get("properties", {})

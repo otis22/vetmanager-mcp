@@ -9290,3 +9290,42 @@ Checks:
 - After user approval to restart local Docker, canonical Docker suite passed: `docker compose --profile test run --rm test` — `1236 passed, 1 skipped, 63 deselected`.
 - Spark committed-diff review: `[]`.
 - Claude Opus committed-diff review: `{"findings":[]}`.
+
+## Stage 184 Medical cards date-range listing — 2026-07-03
+
+Context:
+- Production feedback `#20` reported that daily medical-card control needed all medical cards for a clinic date, while existing `get_medical_cards` required `pet_id` and Report AI could remain queued.
+- User clarified that branch filtering must not be mandatory because it can hide important records from other branches.
+
+Decisions:
+- Added a separate read-only `get_medical_cards_by_date` tool instead of changing the existing `get_medical_cards(pet_id=...)` contract.
+- `clinic_id` is optional only; default behavior searches all branches. The tool returns `clinic_filter_applied` so agents can see whether the result was narrowed.
+- Date ranges use clinic-local naive half-open bounds on `date_create`, matching existing MCP timestamp filters: `>= day 00:00:00` and `< next_day 00:00:00`.
+- The tool returns one bounded page and honest pagination metadata. If upstream omits `totalCount`, MCP returns `total=null`, `total_known=false`, `truncated=null` instead of claiming completeness.
+- Real API probe showed `/rest/api/MedicalCards` returns `data.medicalCards`, `totalCount`, `patient` nested object, and no nested `pet`/`doctor`/`owner`/`client` in the sampled list row. Therefore v1 returns `owner_context_available=false` and does not add unbounded owner enrichment.
+
+Review gates:
+- Spark PRD review read-only hit sandbox/bwrap runtime failure before completion; per workflow it was stopped and repeated once with `gpt-5.3-codex-spark -s danger-full-access` and review-only prompt.
+- Spark PRD review accepted 3 medium findings: require both `date_from` and `date_to`, document clinic-local timezone semantics, and avoid false `truncated=false` when `totalCount` is absent. PRD was updated.
+- Claude Opus Architecture/PRD review returned `{"findings":[]}`.
+- Spark committed-diff review: read-only hit sandbox/bwrap runtime failure and did not complete; repeated once with `gpt-5.3-codex-spark -s danger-full-access` and review-only prompt. Result: `[]`.
+- Claude Opus committed-diff review accepted 2 medium findings: README tool count was stale after adding the tool, and live smoke did not verify optional `clinic_id` narrowing. Fixes applied: README count updated to 115; `clinic_id` filter value aligned to existing string filter convention; opt-in real smoke now exercises branch narrowing when latest real row has `clinic_id`.
+- Final Spark committed-diff review after fixes: read-only hit the same sandbox/bwrap runtime failure; repeated once with `gpt-5.3-codex-spark -s danger-full-access` and review-only prompt. Result: `[]`.
+- Final Claude Opus committed-diff review after fixes: `{"findings":[]}`.
+
+Checks:
+- Red tests before implementation failed on unknown `get_medical_cards_by_date` as expected.
+- Targeted green: `uv run --group dev pytest tests/test_api_contracts_hotfix.py -k 'get_medical_cards_by_date' tests/test_tools_list_schema.py::TestToolsListSchema::test_get_medical_cards_by_date_exports_daily_control_contract -q` — `5 passed`.
+- Broader targeted: `uv run --group dev pytest tests/test_api_contracts_hotfix.py -k 'medical_cards' tests/test_tools_list_schema.py tests/test_stage130_access_registry.py -q` — `11 passed`.
+- Opt-in real smoke via `.env`: `tests/test_e2e_real.py::test_real_get_medical_cards_by_date_smoke` — `1 passed`.
+- Impacted full targeted: `uv run --group dev pytest tests/test_api_contracts_hotfix.py tests/test_tools_list_schema.py tests/test_stage130_access_registry.py tests/test_e2e_real.py::test_real_get_medical_cards_by_date_smoke -q` — `116 passed, 1 skipped`.
+- Full uv suite before final audit cleanup: `uv run --group dev pytest -q` — `1235 passed, 71 skipped`.
+- Docker suite before final audit cleanup: `docker compose --profile test run --rm test` — `1241 passed, 1 skipped, 64 deselected`.
+- Final py_compile after audit cleanup: `python3 -m py_compile tools/medical_card.py tool_access_registry.py tool_descriptions.py tests/test_api_contracts_hotfix.py tests/test_tools_list_schema.py tests/test_e2e_real.py` — passed.
+- Final whitespace audit: `git diff --check` — clean.
+- Final full uv suite after audit cleanup: `uv run --group dev pytest -q` — `1235 passed, 71 skipped`.
+- Final Docker suite after audit cleanup: `docker compose --profile test run --rm test` — `1241 passed, 1 skipped, 64 deselected`.
+- Post-review targeted checks: `python3 -m py_compile tools/medical_card.py tests/test_api_contracts_hotfix.py tests/test_e2e_real.py` and `uv run --group dev pytest tests/test_api_contracts_hotfix.py -k 'get_medical_cards_by_date' tests/test_tools_list_schema.py::TestToolsListSchema::test_get_medical_cards_by_date_exports_daily_control_contract -q` — `5 passed, 47 deselected`.
+- Post-review opt-in real smoke via `.env`: `tests/test_e2e_real.py::test_real_get_medical_cards_by_date_smoke` — `1 passed`, including optional `clinic_id` narrowing when available.
+- Post-review full uv suite: `uv run --group dev pytest -q` — `1235 passed, 71 skipped`.
+- Post-review Docker suite: `docker compose --profile test run --rm test` — `1241 passed, 1 skipped, 64 deselected`.
