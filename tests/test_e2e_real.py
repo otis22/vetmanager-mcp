@@ -305,8 +305,11 @@ async def test_real_report_ai_create_and_bounded_poll_non_polluting():
     headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
     intent = (
         "MCP smoke Report AI: покажи количество выполненных счетов за май 2026 года. "
-        "Без персональных данных."
+        "Без персональных данных. "
+        + "Укажи только агрегированное количество, без ФИО, телефонов, email и иных персональных данных. "
+        * 12
     )
+    assert len(intent) > 1000
     with headers_patch, runtime_patch:
         created = _tool_payload(await call(mcp.call_tool(
             "create_report_ai_job",
@@ -351,6 +354,27 @@ async def test_real_report_ai_create_and_bounded_poll_non_polluting():
                 {"job_id": job_id, "title": title},
             )))
         assert isinstance(saved.get("data", {}).get("report_id"), int)
+    if current.get("status") == "needs_confirmation":
+        candidates = current.get("candidates") or []
+        if not candidates or not isinstance(candidates[0].get("report_id"), int):
+            pytest.skip("Report AI needs_confirmation did not return a usable candidate.")
+        report_id = candidates[0]["report_id"]
+        headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+        with headers_patch, runtime_patch:
+            confirmed = _tool_payload(await call(mcp.call_tool(
+                "confirm_report_ai_job_candidate",
+                {"job_id": job_id, "report_id": report_id},
+            )))
+        assert confirmed.get("data", {}).get("report_id") == report_id
+        headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+        with headers_patch, runtime_patch:
+            data = _tool_payload(await call(mcp.call_tool(
+                "get_report_ai_job_data",
+                {"job_id": job_id},
+            )))
+        assert isinstance(data.get("data", {}).get("columns"), list)
+        assert isinstance(data.get("data", {}).get("total"), int)
+        assert isinstance(data.get("data", {}).get("limited"), bool)
 
 
 @skip_if_no_creds
@@ -378,6 +402,8 @@ async def test_real_report_ai_data_from_existing_saved_fixture_when_available():
             assert isinstance(data.get("columns"), list)
             assert isinstance(data.get("total"), int)
             assert isinstance(data.get("limited"), bool)
+            if "csv_export_url" in data:
+                assert isinstance(data.get("csv_export_url"), str)
             return
 
     pytest.skip("No existing saved Report AI fixture is available on this contour.")

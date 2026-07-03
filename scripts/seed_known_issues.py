@@ -197,7 +197,7 @@ SEED_ISSUES: tuple[SeedIssue, ...] = (
     ),
     SeedIssue(
         slug="report-ai-goods-good-id-preview",
-        title="[seed:report-ai-goods-good-id-preview] Report AI goods preview fails on good.id",
+        title="[seed:report-ai-goods-good-id-preview] Legacy Report AI goods preview fails on good.id",
         category="bug",
         severity="medium",
         priority=35,
@@ -219,19 +219,20 @@ SEED_ISSUES: tuple[SeedIssue, ...] = (
                         "good.id",
                         "`good`.`id`",
                         '"good"."id"',
-                        "good id",
-                        "goods good",
-                        "товар",
+                        "unknown column good id",
+                        "unknown field good id",
                     ],
                 },
             ],
         },
         agent_playbook=_playbook(
-            "Report AI goods preview can fail when generated SQL references a standalone good.id field.",
+            "Older Vetmanager contours or unresolved Report AI edge cases can fail when generated SQL references a standalone good.id field.",
             steps=[
+                "Check get_report_ai_job first; if the job has candidates, use confirm_report_ai_job_candidate instead of creating a duplicate job.",
+                "Retry only when the job really failed with PREVIEW_FAILED and an explicit good.id marker.",
                 "Read get_report_ai_prompt_helper or report_ai_prompt_helper before retrying.",
                 "Rephrase the Russian intent to request product code/article/title instead of standalone good.id.",
-                "Create a new Report AI job and poll it with get_report_ai_job.",
+                "Create a new Report AI job only after confirming there is no usable candidate or existing matched report.",
             ],
             do_not_do=[
                 "Do not ask Report AI to output a standalone good.id column.",
@@ -239,8 +240,8 @@ SEED_ISSUES: tuple[SeedIssue, ...] = (
             ],
             tools=["create_report_ai_job", "get_report_ai_job"],
         ),
-        public_summary="Report AI goods preview may fail when the generated query references good.id.",
-        workaround="Retry with an intent asking for product code/article/title instead of standalone good.id.",
+        public_summary="Legacy Report AI goods preview may fail when the generated query references good.id.",
+        workaround="If PREVIEW_FAILED still explicitly mentions good.id, retry with an intent asking for product code/article/title instead of standalone good.id.",
     ),
 )
 

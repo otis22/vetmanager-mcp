@@ -676,20 +676,22 @@ Prompts работают по тому же bearer-only контракту, чт
 1. `get_report_ai_prompt_helper` или `report_ai_prompt_helper` — получить правила формулировки intent и ограничения.
 2. `create_report_ai_job(intent_text)` — создать Report AI job.
 3. `get_report_ai_job(job_id)` — poll с bounded retry; статусы `queued`/`processing` означают ожидание, `failed` возвращается пользователю как ошибка источника.
-4. Если статус `needs_confirmation`, выбрать только `report_id` из `job.candidates` и вызвать `confirm_report_ai_job_candidate`.
+4. Если статус `needs_confirmation`, показать `job.candidates`, выбрать только `report_id` из этого списка и вызвать `confirm_report_ai_job_candidate`.
 5. Если статус `existing_report_matched`, сразу вызвать `get_report_ai_job_data`.
 6. Если статус `ready_to_save` и нужны строки, явно вызвать `save_report_ai_job_as_report` с вменяемым названием отчёта; это write-tool, отчёт станет видимым в Vetmanager.
-7. `get_report_ai_job_data(job_id)` — получить `columns`, `rows`, `total`, `limited`.
+7. `get_report_ai_job_data(job_id)` — получить `columns`, `rows`, `total`, `limited` и, когда upstream отдаёт, `csv_export_url`.
+
+`intent_text` для `create_report_ai_job` ограничен Vetmanager лимитом 20000 символов. Для сложных отчётов лучше не просто писать длинный текст, а явно указать период, фильтры, метрики, группировки и сортировку. `recognized.preview_example_row` в статусе job — это LLM-generated пример ожидаемой строки, а не подтверждённая строка из данных клиники.
 
 `save_report_ai_job_as_report` нельзя прятать внутри read-only сценария: пользователь или вызывающий агент должен понимать, что создаётся persistent report. Для этого есть preset `Analytics` (`report_ai`): full read-only scopes + `report_ai.write`, без общего Full access. Для названий использовать короткие осмысленные заголовки с вопросом, периодом и MCP-origin, например `MCP debtors by negative balance 2026-06-15`.
 
-Для больших таблиц `get_report_ai_job_data` ограничен Vetmanager upstream: если `limited=true`, JSON rows обрезаны. Сначала стоит сузить отчёт периодом, фильтрами или агрегацией. Полный CSV/XLSX export — fallback-only путь, когда пользователю всё ещё нужны все строки и уже известен `report_id`:
+Для больших таблиц `get_report_ai_job_data` ограничен Vetmanager upstream до 10000 JSON rows: если `limited=true`, rows обрезаны; если `total` близок к лимиту, не стоит вставлять всю таблицу в чат. Сначала стоит сузить отчёт периодом, фильтрами или агрегацией. Полный CSV/XLSX export — поддержанный bulk-путь, когда пользователю всё ещё нужны все строки и уже известен `report_id`:
 
-1. `start_report_export(report_id, filter_json=None)` — fallback-only запуск `/rest/api/report/StartReport`; использовать только если пользователь дал `report_id`, явно просит CSV/XLSX или `limited=true` требует полного export и `report_id` доступен.
-2. `get_report_export_file(report_file_id)` — fallback-only follow-up после `start_report_export`; получает `html_file`, `csv_file`, `csv_semicolon_file`, `xlsx_file`; если генерация ещё идёт, повторить вызов после задержки.
-3. `get_report_ai_job_export(job_id, filter_json=None)` — convenience fallback только для `saved`/`existing_report_matched` jobs с `job.report_id`; не сохраняет `ready_to_save` jobs автоматически.
+1. `start_report_export(report_id, filter_json=None)` — запуск `/rest/api/report/StartReport`; использовать если пользователь дал `report_id`, явно просит CSV/XLSX или `limited=true` требует полного export и `report_id` доступен.
+2. `get_report_export_file(report_file_id)` — follow-up после `start_report_export`; получает `html_file`, `csv_file`, `csv_semicolon_file`, `xlsx_file`; если генерация ещё идёт, повторить вызов после задержки с bounded retry.
+3. `get_report_ai_job_export(job_id, filter_json=None)` — convenience export только для `saved`/`existing_report_matched` jobs с `job.report_id`; не сохраняет `ready_to_save` jobs автоматически.
 
-Ограничения export flow: список отчётов по REST не опубликован, поэтому `list_reports` tool нет; export работает только для отчётов с включённым REST access (`allow_rest_api=1`). AI reports, сохранённые текущим upstream path, могут возвращать `not REST-exportable`. Значения `html_file`/`csv_file`/`csv_semicolon_file`/`xlsx_file` считать чувствительными ссылками/путями к bulk clinic data.
+Ограничения export flow: список отчётов по REST не опубликован, поэтому `list_reports` tool нет; export работает только для отчётов с включённым REST access (`allow_rest_api=1`). Новый upstream включает REST access для AI reports, но старые/частично обновлённые контуры могут возвращать отказ. `StartReport` также может возвращать временные состояния `Report creating in progress` или `can not run a report more than 10 minutes`; в этих случаях нужен bounded retry позже, а не создание дубликатов. Значения `csv_export_url`, `html_file`/`csv_file`/`csv_semicolon_file`/`xlsx_file` считать чувствительными ссылками/путями к bulk clinic data и не писать в логи.
 
 ## Product metrics (ad-hoc report)
 

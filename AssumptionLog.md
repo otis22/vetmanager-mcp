@@ -9256,3 +9256,37 @@ Node.js 20 deprecation annotation для `actions/checkout@v4`.
   `gpt-5.3-codex-spark` с `-s danger-full-access` и review-only prompt.
   Result: `[]`.
 - Claude Opus diff review: `{"findings":[]}`.
+## Stage 183 Report AI upstream contract sync — 2026-07-03
+
+Context:
+- Implemented Stage 183 after upstream Vetmanager Report AI update research on `devtr6` and `/home/otis/myprojects/vetmanager-extjs`.
+- Upstream now supports `INTENT_MAX_LENGTH=20000`, `DATA_ROW_LIMIT=10000`, `csv_export_url` from `/report-ai-job/{id}/data`, `allow_rest_api=1` for AI reports, `needs_confirmation` candidate confirmation, and `preview_example_row`.
+
+Decisions:
+- MCP `create_report_ai_job` limit is now 20000, not 64000, because upstream source confirms 20000.
+- `get_report_ai_job_data` preserves upstream rows and `csv_export_url`, and adds `mcp_large_result_guidance` for `limited=true` or totals near the 10000 cap instead of truncating further inside MCP.
+- `preview_example_row` is documented as LLM-generated preview metadata, not a verified live clinic row; MCP does not expose hidden upstream `analysis_type`/`period_range`.
+- `get_report_ai_job_export` and Report Constructor export descriptions now treat AI report export as supported for saved/existing matched reports, while preserving no-auto-save for `ready_to_save`.
+- `StartReport` 403 handling is message-aware for REST-deny, busy/in-progress, and 10-minute/time-limit cases. Unknown 403 gets conservative bounded-retry/ambiguous export-denied wording.
+- `report-ai-goods-good-id-preview` known issue remains available as legacy/edge-case guidance, but matching was narrowed to explicit `good.id` markers and no longer matches generic goods/товар preview failures.
+
+Review gates:
+- PRD Spark review: read-only sandbox hung before review; per workflow repeated once with `gpt-5.3-codex-spark -s danger-full-access` and review-only prompt. Result: `[]`.
+- Claude Opus Architecture/PRD review 1 accepted 3 medium findings:
+  1. add large-payload guidance/acceptance for 10000 inline rows;
+  2. verify and clarify `preview_example_row` as generated metadata, not live data;
+  3. define unknown 403 export default behavior and bounded retry guidance.
+- Spark PRD sanity after fixes accepted 1 medium finding: add explicit no-hidden-write compatibility acceptance.
+- Claude Opus PRD review 2 accepted 1 medium finding: reconcile `csv_export_url` from `/data` with no-log export locator invariant and add log-safety acceptance.
+- All accepted PRD findings were applied before implementation.
+
+Checks:
+- `python3 -m py_compile tools/report_ai.py vetmanager_client.py scripts/seed_known_issues.py tests/test_stage170_report_ai_tools.py tests/test_stage172_report_export_tools.py tests/test_stage157_feedback_kb_seed.py tests/test_e2e_real.py` — passed.
+- Direct helper checks with stubbed dependencies for Report AI pure functions — passed.
+- Text contract checks for `tool_descriptions.py` and prompt helper with stubbed `fastmcp` — passed.
+- Targeted tests via uv: `uv run --group dev pytest tests/test_stage170_report_ai_tools.py tests/test_stage172_report_export_tools.py tests/test_stage157_feedback_kb_seed.py -q` — `75 passed`.
+- Opt-in real Report AI tests via uv and `.env`: `tests/test_e2e_real.py::test_real_report_ai_create_and_bounded_poll_non_polluting` and `tests/test_e2e_real.py::test_real_report_ai_data_from_existing_saved_fixture_when_available` — `2 passed`.
+- Full uv suite after installing Playwright Chromium: `uv run --group dev pytest -q` — `1230 passed, 70 skipped`.
+- Docker Compose gate could not be executed: `docker version` timed out after printing client info only; `docker.service` is stuck in `activating (start)` since 2026-07-01 21:35 MSK. I did not restart Docker because that could disrupt unrelated local containers.
+- Spark committed-diff review: `[]`.
+- Claude Opus committed-diff review: `{"findings":[]}`.

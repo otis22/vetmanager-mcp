@@ -396,7 +396,16 @@ async def test_get_report_ai_job_export_starts_export_for_saved_job_report_id():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_get_report_ai_job_export_surfaces_403_as_not_rest_exportable():
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Report is not accessible for REST", "not REST-exportable"),
+        ("Error: Report creating in progress. Please wait for finish.", "already being created"),
+        ("Error: You can not run a report more than 10 minutes", "temporarily limited"),
+        ("Some unexpected 403", "denied or temporarily limited"),
+    ],
+)
+async def test_get_report_ai_job_export_classifies_startreport_403(message, expected):
     billing_mock()
     respx.get(f"{BASE}/rest/api/report-ai-job/22").mock(
         return_value=httpx.Response(
@@ -405,12 +414,12 @@ async def test_get_report_ai_job_export_surfaces_403_as_not_rest_exportable():
         )
     )
     start_route = respx.get(f"{BASE}/rest/api/report/StartReport").mock(
-        return_value=httpx.Response(403, json={"success": False, "message": "not accessible"})
+        return_value=httpx.Response(403, json={"success": False, "message": message})
     )
 
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
-        with pytest.raises(ToolError, match="not REST-exportable"):
+        with pytest.raises(ToolError, match=expected):
             await mcp.call_tool("get_report_ai_job_export", {"job_id": 22})
 
     assert start_route.call_count == 1

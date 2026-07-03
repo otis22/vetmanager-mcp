@@ -14,7 +14,9 @@ from service_metrics import record_report_ai_long_queued_poll
 from vetmanager_client import VetmanagerClient
 
 
-INTENT_MAX_LENGTH = 1000
+INTENT_MAX_LENGTH = 20000
+REPORT_AI_DATA_ROW_LIMIT = 10000
+REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD = 9000
 REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS = 30
 REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS = 3600
 REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES = 4096
@@ -123,13 +125,14 @@ def _report_ai_goods_good_id_workaround() -> dict:
     return {
         "code": REPORT_AI_GOODS_GOOD_ID_WORKAROUND_CODE,
         "summary": (
-            "Report AI preview failed on a goods report likely because the generated "
-            "query referenced an unavailable good.id field/expression."
+            "Report AI preview failed with an explicit good.id marker. This can still "
+            "happen on older Vetmanager contours or unresolved goods report edge cases."
         ),
         "steps": [
-            "Read get_report_ai_prompt_helper or report_ai_prompt_helper before retrying.",
+            "Check the current job status with get_report_ai_job; if it returned candidates, use confirm_report_ai_job_candidate instead of creating a duplicate job.",
+            "If the job really failed with PREVIEW_FAILED and a good.id marker, read get_report_ai_prompt_helper or report_ai_prompt_helper before retrying.",
             "Rephrase the Russian intent to request product code/article/title instead of a standalone good.id column.",
-            "Create a new Report AI job and poll it with get_report_ai_job.",
+            "Create a new Report AI job only after confirming there is no usable candidate or existing matched report.",
         ],
         "do_not_do": [
             "Do not ask Report AI to output a standalone good.id column.",
@@ -204,6 +207,38 @@ def _annotate_report_ai_queue_diagnostics(payload: dict) -> dict:
 
 def _annotate_report_ai_job_payload(payload: dict) -> dict:
     return _annotate_report_ai_queue_diagnostics(_annotate_report_ai_workarounds(payload))
+
+
+def _annotate_report_ai_data_payload(payload: dict) -> dict:
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return payload
+
+    limited = data.get("limited") is True
+    try:
+        total = int(data.get("total"))
+    except (TypeError, ValueError):
+        total = None
+
+    near_cap = total is not None and total >= REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD
+    if not limited and not near_cap:
+        return payload
+
+    guidance = {
+        "code": "report_ai_large_result",
+        "row_limit": REPORT_AI_DATA_ROW_LIMIT,
+        "threshold": REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD,
+        "limited": limited,
+        "total": total,
+        "summary": (
+            "Report AI returned a large row set. Avoid pasting huge tables into chat; "
+            "narrow the report or use CSV/XLSX export for bulk review."
+        ),
+    }
+    if data.get("csv_export_url"):
+        guidance["export_available"] = True
+    data.setdefault("mcp_large_result_guidance", guidance)
+    return payload
 
 
 def _validate_intent_text(intent_text: str) -> str:
@@ -312,10 +347,24 @@ def _safe_export_error(
             "Report export is not ready yet; call get_report_export_file again after a delay."
         )
     if exc.status_code == 403:
+        if "report creating in progress" in lowered:
+            return ToolError(
+                "Report export is already being created by Vetmanager; retry after a delay "
+                "with bounded polling instead of starting duplicate exports."
+            )
+        if "can not run a report more than 10 minutes" in lowered:
+            return ToolError(
+                "Report export is temporarily limited by Vetmanager because a report has "
+                "been running too long; retry later instead of starting duplicate exports."
+            )
+        if "not accessible for rest" in lowered:
+            return ToolError(
+                "Report is not REST-exportable: Vetmanager denied StartReport for this report_id."
+            )
         return ToolError(
-            "Report is not REST-exportable or export is rate-limited: "
-            "Vetmanager denied StartReport for this report_id. "
-            "Use a Report Constructor report with REST access enabled and retry later if needed."
+            "Report export was denied or temporarily limited by Vetmanager (HTTP 403). "
+            "Retry only with bounded attempts; if it keeps failing, treat this report_id "
+            "as not currently exportable."
         )
     return ToolError(f"{action} failed{status}{code}.")
 
@@ -366,7 +415,7 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             intent_text: Russian business-report request. Must be non-empty and
-                no longer than 1000 characters. The job is async; poll with
+                no longer than 20000 characters. The job is async; poll with
                 get_report_ai_job and reuse returned jobs when is_deduplicated=true.
                 For complex or multi-condition reports, prefer narrower
                 periods and simpler grouped requests; do not create duplicate
@@ -389,6 +438,10 @@ def register(mcp: FastMCP) -> None:
                 needs_confirmation, saved, failed, or rejected. For
                 needs_confirmation, the returned job.candidates contain the
                 report_id values accepted by confirm_report_ai_job_candidate.
+                After successful confirmation the job becomes existing_report_matched,
+                and rows can be read with get_report_ai_job_data without saving a
+                new report. recognized.preview_example_row is LLM-generated example
+                preview metadata, not a verified live clinic row.
                 If MCP observes the same job queued for 30+ seconds, the safe
                 job payload includes mcp_queue_diagnostics with operator hints.
                 Keep polling bounded. If a complex report remains queued, explain
@@ -405,6 +458,8 @@ def register(mcp: FastMCP) -> None:
         Args:
             job_id: Report AI job ID currently in needs_confirmation.
             report_id: Candidate report ID from get_report_ai_job job.candidates.
+                A successful confirmation makes the job existing_report_matched;
+                call get_report_ai_job_data next when rows are needed.
         """
         return await _call_vm(
             "POST",
@@ -420,10 +475,13 @@ def register(mcp: FastMCP) -> None:
             job_id: Report AI job ID. Data is available only for saved or
                 existing_report_matched jobs. ready_to_save has preview summary
                 only; call save_report_ai_job_as_report first when rows are
-                needed. Returned rows are capped by Vetmanager at 1000 and
-                limited=true means total is larger.
+                needed. Returned rows are capped by Vetmanager at 10000 and
+                limited=true means total is larger. When limited=true or totals
+                approach the cap, prefer narrowing the report or CSV/XLSX export
+                via the returned csv_export_url/report_id for bulk review.
         """
-        return await _call_vm("GET", f"/rest/api/report-ai-job/{job_id}/data")
+        payload = await _call_vm("GET", f"/rest/api/report-ai-job/{job_id}/data")
+        return _annotate_report_ai_data_payload(payload)
 
     @mcp.tool
     async def save_report_ai_job_as_report(job_id: int, title: str) -> dict:

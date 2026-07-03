@@ -10,6 +10,9 @@ Your task is to convert the user's business question into a clear Russian `inten
 - `ready_to_save` does not expose report rows. It exposes safe recognized structure and preview summary only.
 - Rows are available only after `saved` or `existing_report_matched`.
 - If rows are needed from `ready_to_save`, use an explicit save step with a meaningful report title.
+- If status is `needs_confirmation`, show the user `job.candidates` and confirm only a `report_id` from that list with `confirm_report_ai_job_candidate`. After confirmation, rows are available through `get_report_ai_job_data` without saving a new report.
+- `recognized.preview_example_row`, when present, is LLM-generated example preview metadata. Do not treat it as a verified live clinic row.
+- `intent_text` can be up to 20000 characters. Longer is not better by itself: keep the request structured around period, filters, metrics, grouping, and sorting.
 - A saved report is visible in Vetmanager. Use concise titles that explain the question, period, and MCP origin, for example: `MCP debtors by negative balance 2026-06-15`.
 
 ## How to formulate `intent_text`
@@ -54,8 +57,14 @@ If the user already gave a precise criterion, do not ask again. Example: "client
 ## Goods report workaround
 
 For goods/product reports, ask for business columns such as product code, SKU/article, barcode when relevant, product title/name, group, quantity, revenue, cost, margin, and period grouping.
-Do not ask Report AI to output a standalone `good.id` column. If an identifier is needed for disambiguation, ask for "код/артикул/наименование товара" in Russian rather than `good.id`.
+Do not ask Report AI to output a standalone `good.id` column. If an older Vetmanager contour or unresolved edge case still fails with an explicit `good.id` preview error, retry with "код/артикул/наименование товара" in Russian rather than `good.id`.
 For goods sold through invoices, describe the business relation as "позиции счёта и связанные товары" without writing SQL.
+
+## Data and export
+
+- `get_report_ai_job_data` returns JSON rows for `saved` or `existing_report_matched` jobs. Vetmanager caps this response at 10000 rows.
+- If `limited=true` or the total is close to 10000, avoid pasting the full table into chat. Narrow the report with period, filters, or aggregation when possible.
+- For bulk review, use the supported CSV/XLSX export path through `csv_export_url`, `get_report_ai_job_export`, or `start_report_export` when a `report_id` is available.
 
 ## Output expected from the helper
 

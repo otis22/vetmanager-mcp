@@ -3034,3 +3034,27 @@ but are being forced to run on Node.js 24: actions/checkout@v4`.
 - 182.3 Regression tests and targeted checks. — `done`
 - 182.4 Full checks, audit, review gates, commit/push/deploy. — `done`
 - 182.5 Production feedback closure for report `#18`. — `done`
+
+## Этап 183. Report AI upstream contract sync — `done`
+
+Источник: исследование 2026-07-03 свежих изменений Vetmanager Report AI в `/home/otis/myprojects/vetmanager-extjs` и real API checks на `devtr6`. Upstream поднял лимиты (`INTENT_MAX_LENGTH=20000`, `DATA_ROW_LIMIT=10000`), добавил штатный `csv_export_url`, включил `allow_rest_api=1` для AI-отчётов через runtime insert и миграцию existing reports, активировал `needs_confirmation`/candidate confirm flow, добавил `preview_example_row`, исправил view alias/CTE ветку `SubqueryExpander` для ABC/XYZ/goods сценариев.
+
+Цель: синхронизировать MCP tools, prompts, descriptions, docs, tests и known issues с новым upstream contract, не ломая безопасный Report AI workflow и не выдавая raw SQL/PII.
+
+Подтверждённые факты:
+- Real API `devtr6` принимает `intent_text` длиной 1200 символов; старый upstream blocker `1000` больше не воспроизводится.
+- Saved AI report `job_id=2/report_id=84` отдаёт `/data` с `csv_export_url`; `StartReport` возвращает `report_file_id`, `reportFile` возвращает `html_file`, `csv_file`, `csv_semicolon_file`, `xlsx_file`.
+- New jobs `44`/`46` перешли в `needs_confirmation` с candidate `report_id=84`; `POST /report-ai-job/46/confirm` перевёл job в `existing_report_matched`, после чего `/data` вернул rows и `csv_export_url`.
+- `StartReport` использует HTTP 403 не только для REST-deny, но и для временных states: `Report creating in progress` и `You can not run a report more than 10 minutes`.
+- Upstream source/tests показывают fix `SubqueryExpander` для view alias в CTE/повторных упоминаниях, но real e2e goods/ABC/XYZ smoke ещё нужен перед удалением `good.id` workaround.
+
+- 183.1 Создать PRD stage 183: зафиксировать upstream evidence, real checks, scope, risks, acceptance criteria, no-raw-SQL/no-PII boundary и backward compatibility. — `done`
+- 183.2 Обновить MCP Report AI limits: `tools/report_ai.py::INTENT_MAX_LENGTH` и tool/doc descriptions `1000 → 20000`; tests на `20000` accepted и `20001` rejected. — `done`
+- 183.3 Обновить data contract: descriptions/tests `1000 rows → 10000 rows`; считать `csv_export_url` штатным полем `/report-ai-job/{id}/data`; guidance: `/data` для JSON rows до лимита, полный CSV/XLSX через export. — `done`
+- 183.4 Обновить export flow/error handling: `get_report_ai_job_export` больше не описывать как сомнительный fallback для AI reports; различать `StartReport` 403 для not REST-exportable, busy/in-progress и 10-minute/rate-limit retry cases; покрыть tests. — `done`
+- 183.5 Усилить `needs_confirmation` flow: descriptions/prompts должны вести агента через candidates → `confirm_report_ai_job_candidate(report_id)` → `existing_report_matched` → `get_report_ai_job_data` без save; добавить mocked full-flow test и opt-in real e2e branch. — `done`
+- 183.6 Поддержать `preview_example_row` как safe recognized field: tests, helper wording, явное пояснение что это пример ожидаемой строки, а не реальные данные; не пытаться выводить upstream-internal `analysis_type`/`period_range`. — `done`
+- 183.7 Обновить `get_report_ai_prompt_helper` artifact и tool descriptions registry (`tool_descriptions.py`): лимиты, canonical flows, `csv_export_url`, confirm path, export path, bounded polling, safe retry rules. — `done`
+- 183.8 Обновить `known_issues` и runtime workaround для `report-ai-goods-good-id-preview`: не удалять; сделать legacy/contour-specific, сузить match rules до явных `good.id`/unknown-column markers, убрать общий `товар`, playbook сначала проверяет status/candidates и retry делает только при real `PREVIEW_FAILED + good.id`. — `done`
+- 183.9 Docs/tests: обновить README Report AI section, relevant helper/tests (`test_stage170_report_ai_tools.py`, `test_stage172_report_export_tools.py`, `test_stage157_feedback_kb_seed.py`, descriptions snapshots), добавить goods/ABC/XYZ real smoke follow-up или explicit skipped opt-in fixture. — `done`
+- 183.10 Checks/review/commit: targeted tests, full `docker compose --profile test run --rm test`, opt-in real Report AI checks, update `AssumptionLog.md`, audit diff, Spark review, Claude Opus review, повторные проверки после review fixes. — `done` (`uv` full suite passed; Docker daemon stuck in `activating (start)` so Docker Compose command could not reach server)

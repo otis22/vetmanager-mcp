@@ -529,6 +529,16 @@ class VetmanagerClient:
                 status_code=401,
             )
         if response.status_code == 403:
+            normalized_path = path.split("?", 1)[0].strip("/").lower()
+            vm_message = None
+            try:
+                body = response.json()
+                if isinstance(body, dict):
+                    vm_message = body.get("message") if isinstance(body.get("message"), str) else None
+            except ValueError:
+                pass
+            if normalized_path == "rest/api/report/startreport" and vm_message:
+                raise VetmanagerError(vm_message, status_code=403)
             raise AuthError("Access forbidden", status_code=403)
         if response.status_code == 404:
             raise NotFoundError("Resource not found", status_code=404)

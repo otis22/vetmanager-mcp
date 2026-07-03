@@ -131,6 +131,7 @@ def test_report_ai_guidance_descriptions_name_helper_and_fallback_policy():
     assert "get_report_ai_prompt_helper" in create_description
     assert "report_ai_prompt_helper" in create_description
     assert "complex or multi-condition reports" in create_description
+    assert "20000" in create_description
     assert "duplicate jobs" in create_description
     assert "ABC" not in create_description
     assert "XYZ" not in create_description
@@ -139,22 +140,20 @@ def test_report_ai_guidance_descriptions_name_helper_and_fallback_policy():
     assert "bounded" in job_description.lower()
     assert "Vetmanager side" in job_description
     assert "simplifying/splitting" in job_description
+    assert "preview_example_row" in job_description
+    assert "existing_report_matched" in job_description
     assert "ABC" not in job_description
     assert "XYZ" not in job_description
 
     data_description = SPECIAL_TOOL_DESCRIPTIONS["get_report_ai_job_data"]
     assert "limited=true" in data_description
+    assert "10000" in data_description
+    assert "csv_export_url" in data_description
     assert "narrow" in data_description.lower() or "refine" in data_description.lower()
-    assert "report_id" in data_description
-    assert "fallback" in data_description.lower()
+    assert "bulk" in data_description.lower()
 
-    for tool_name in (
-        "start_report_export",
-        "get_report_export_file",
-        "get_report_ai_job_export",
-    ):
-        description = SPECIAL_TOOL_DESCRIPTIONS[tool_name]
-        assert "fallback" in description.lower() or "not default" in description.lower()
+    assert "supported" in SPECIAL_TOOL_DESCRIPTIONS["start_report_export"].lower()
+    assert "supported" in SPECIAL_TOOL_DESCRIPTIONS["get_report_ai_job_export"].lower()
 
 
 @pytest.mark.asyncio
@@ -165,6 +164,7 @@ async def test_report_ai_guidance_reaches_live_tool_descriptions():
     assert "get_report_ai_prompt_helper" in create_description
     assert "report_ai_prompt_helper" in create_description
     assert "complex or multi-condition reports" in create_description
+    assert "20000" in create_description
     assert "ABC" not in create_description
     assert "XYZ" not in create_description
 
@@ -172,21 +172,16 @@ async def test_report_ai_guidance_reaches_live_tool_descriptions():
     assert "bounded" in job_description.lower()
     assert "Vetmanager side" in job_description
     assert "simplifying/splitting" in job_description
+    assert "preview_example_row" in job_description
     assert "ABC" not in job_description
     assert "XYZ" not in job_description
 
     data_description = tools_by_name["get_report_ai_job_data"].description
     assert "limited=true" in data_description
-    assert "report_id" in data_description
-    assert "fallback" in data_description.lower()
+    assert "10000" in data_description
+    assert "csv_export_url" in data_description
 
-    for tool_name in (
-        "start_report_export",
-        "get_report_export_file",
-        "get_report_ai_job_export",
-    ):
-        description = tools_by_name[tool_name].description
-        assert "fallback" in description.lower() or "not default" in description.lower()
+    assert "supported" in tools_by_name["get_report_ai_job_export"].description.lower()
 
 
 def test_report_ai_goods_workaround_mentions_helper_tool_and_prompt():
@@ -204,6 +199,7 @@ def test_report_ai_goods_workaround_mentions_helper_tool_and_prompt():
     seeded_steps = "\n".join(seeded_issue.agent_playbook["steps"])
     assert "get_report_ai_prompt_helper" in seeded_steps
     assert "report_ai_prompt_helper" in seeded_steps
+    assert "confirm_report_ai_job_candidate" in seeded_steps
 
 
 @pytest.mark.asyncio
@@ -240,7 +236,7 @@ async def test_create_report_ai_job_posts_strict_intent_body():
 
 @pytest.mark.asyncio
 @respx.mock
-@pytest.mark.parametrize("intent_text", ["", "   ", "x" * 1001])
+@pytest.mark.parametrize("intent_text", ["", "   ", "x" * 20001])
 async def test_create_report_ai_job_rejects_empty_or_long_intent_before_upstream(intent_text):
     billing_mock()
     route = respx.post(f"{BASE}/rest/api/report-ai-job").mock(
@@ -253,6 +249,30 @@ async def test_create_report_ai_job_rejects_empty_or_long_intent_before_upstream
             await mcp.call_tool("create_report_ai_job", {"intent_text": intent_text})
 
     assert route.call_count == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_create_report_ai_job_accepts_20000_character_intent():
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/report-ai-job").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "message": "",
+                "data": {"job": {"id": 10, "status": "queued"}, "is_deduplicated": False},
+            },
+        )
+    )
+
+    intent = "x" * 20000
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("create_report_ai_job", {"intent_text": intent})
+
+    assert route.call_count == 1
+    assert _body_of(route) == {"intent_text": intent}
 
 
 @pytest.mark.asyncio
@@ -285,6 +305,38 @@ async def test_get_report_ai_job_exposes_candidates_for_confirmation():
     assert route.call_count == 1
     candidates = _structured(result)["data"]["job"]["candidates"]
     assert candidates == [{"report_id": 84, "title": "MCP existing", "match_score": 0.81}]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_report_ai_job_preserves_preview_example_row():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/report-ai-job/22").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "job": {
+                        "id": 22,
+                        "status": "ready_to_save",
+                        "recognized": {
+                            "description": "Средний чек",
+                            "preview_example_row": {"Месяц": "2026-05", "Средний чек": "4500"},
+                        },
+                    }
+                },
+            },
+        )
+    )
+
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_report_ai_job", {"job_id": 22})
+
+    assert route.call_count == 1
+    recognized = _structured(result)["data"]["job"]["recognized"]
+    assert recognized["preview_example_row"] == {"Месяц": "2026-05", "Средний чек": "4500"}
 
 
 @pytest.mark.asyncio
@@ -636,8 +688,9 @@ async def test_get_report_ai_job_data_returns_limited_rows_metadata():
                 "data": {
                     "columns": ["ID Клиента", "Баланс"],
                     "rows": rows,
-                    "total": 1001,
+                    "total": 10001,
                     "limited": True,
+                    "csv_export_url": "/rest/api/report/startReport?report_id=84",
                 },
             },
         )
@@ -650,8 +703,110 @@ async def test_get_report_ai_job_data_returns_limited_rows_metadata():
     assert route.call_count == 1
     payload = _structured(result)
     assert payload["data"]["rows"] == rows
-    assert payload["data"]["total"] == 1001
+    assert payload["data"]["total"] == 10001
     assert payload["data"]["limited"] is True
+    assert payload["data"]["csv_export_url"] == "/rest/api/report/startReport?report_id=84"
+    guidance = payload["data"]["mcp_large_result_guidance"]
+    assert guidance["code"] == "report_ai_large_result"
+    assert guidance["row_limit"] == 10000
+    assert guidance["export_available"] is True
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_report_ai_job_data_adds_near_cap_guidance_without_limited():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/report-ai-job/22/data").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "message": "",
+                "data": {
+                    "columns": ["ID"],
+                    "rows": [{"ID": 1}],
+                    "total": 9000,
+                    "limited": False,
+                },
+            },
+        )
+    )
+
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_report_ai_job_data", {"job_id": 22})
+
+    assert route.call_count == 1
+    guidance = _structured(result)["data"]["mcp_large_result_guidance"]
+    assert guidance["limited"] is False
+    assert guidance["total"] == 9000
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_report_ai_job_data_preserves_csv_export_url_without_logging(caplog):
+    billing_mock()
+    url = "/rest/api/report/startReport?report_id=84"
+    route = respx.get(f"{BASE}/rest/api/report-ai-job/22/data").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "message": "",
+                "data": {
+                    "columns": ["ID"],
+                    "rows": [{"ID": 1}],
+                    "total": 1,
+                    "limited": False,
+                    "csv_export_url": url,
+                },
+            },
+        )
+    )
+
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    with headers_patch, runtime_patch, caplog.at_level(logging.WARNING):
+        result = await mcp.call_tool("get_report_ai_job_data", {"job_id": 22})
+
+    assert route.call_count == 1
+    assert _structured(result)["data"]["csv_export_url"] == url
+    assert url not in "\n".join(record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_confirmed_existing_report_matched_data_flow_does_not_save():
+    billing_mock()
+    confirm_route = respx.post(f"{BASE}/rest/api/report-ai-job/22/confirm").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {"report_id": 84}})
+    )
+    data_route = respx.get(f"{BASE}/rest/api/report-ai-job/22/data").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "columns": ["Количество"],
+                    "rows": [{"Количество": 1}],
+                    "total": 1,
+                    "limited": False,
+                },
+            },
+        )
+    )
+    save_route = respx.post(f"{BASE}/rest/api/report-ai-job/22/save").mock(
+        return_value=httpx.Response(200, json={"data": {"report_id": 999}})
+    )
+
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("confirm_report_ai_job_candidate", {"job_id": 22, "report_id": 84})
+        result = await mcp.call_tool("get_report_ai_job_data", {"job_id": 22})
+
+    assert confirm_route.call_count == 1
+    assert data_route.call_count == 1
+    assert save_route.call_count == 0
+    assert _structured(result)["data"]["rows"] == [{"Количество": 1}]
 
 
 @pytest.mark.asyncio
