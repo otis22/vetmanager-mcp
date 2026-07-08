@@ -750,21 +750,41 @@ async def test_update_hospitalization_empty_date_out_is_omitted():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_get_payments_uses_client_id_filter_not_legacy_query_param():
+async def test_get_payments_rejects_client_id_before_http():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/payment").mock(
         return_value=httpx.Response(200, json={"data": [{"id": 1}]})
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
-        await mcp.call_tool("get_payments", {"client_id": 42, "limit": 20})
+        with pytest.raises(ToolError, match="get_client_payment_applications"):
+            await mcp.call_tool("get_payments", {"client_id": 42, "limit": 20})
 
-    filters = _filter_of(route)
-    assert any(
-        f.get("property") == "client_id" and f.get("value") == 42
-        for f in filters
-    ), f"expected client_id filter, got {filters}"
-    assert "clientId" not in _query_of(route)
+    assert len(route.calls) == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("property_name", ["client_id", "clientId"])
+async def test_get_payments_rejects_raw_client_id_filter_before_http(property_name):
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/payment").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": 1}]})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="get_client_payment_applications"):
+            await mcp.call_tool(
+                "get_payments",
+                {
+                    "filter": [
+                        {"property": property_name, "value": 42, "operator": "="}
+                    ],
+                    "limit": 20,
+                },
+            )
+
+    assert len(route.calls) == 0
 
 
 @pytest.mark.asyncio
@@ -793,7 +813,7 @@ async def test_get_payments_uses_create_date_filters_for_march_2026_revenue():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_get_payments_date_filters_merge_with_client_and_caller_filters():
+async def test_get_payments_date_filters_merge_with_caller_filters():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/payment").mock(
         return_value=httpx.Response(200, json={"data": {"totalCount": 0, "payment": []}})
@@ -803,7 +823,6 @@ async def test_get_payments_date_filters_merge_with_client_and_caller_filters():
         await mcp.call_tool(
             "get_payments",
             {
-                "client_id": 42,
                 "date_from": "2026-03-01",
                 "filter": [
                     {"property": "payment_type", "operator": "=", "value": "cash"}
@@ -813,7 +832,6 @@ async def test_get_payments_date_filters_merge_with_client_and_caller_filters():
         )
 
     filters = _filter_of(route)
-    assert any(f.get("property") == "client_id" and f.get("value") == 42 for f in filters)
     assert any(
         f.get("property") == "create_date"
         and f.get("operator") == ">="
@@ -826,6 +844,248 @@ async def test_get_payments_date_filters_merge_with_client_and_caller_filters():
         and f.get("value") == "cash"
         for f in filters
     )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_client_payment_applications_filters_closing_rows_by_client_and_date():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/closingOfInvoices").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 1,
+                    "closingOfInvoices": [
+                        {
+                            "id": 10,
+                            "client_id": 42,
+                            "plus_type_document": "payment",
+                            "plus_document_id": 5,
+                            "minus_type_document": "invoice",
+                            "minus_document_id": 7,
+                            "create_date": "2026-07-08 12:30:00",
+                            "plus_payment": {"id": 5, "status": "exec"},
+                            "invoice": {"id": 7, "client_id": 42, "pet_id": 9},
+                        }
+                    ],
+                },
+            },
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_client_payment_applications",
+            {
+                "client_id": 42,
+                "date_from": "2026-07-08",
+                "date_to": "2026-07-08",
+                "limit": 20,
+            },
+        )
+
+    filters = _filter_of(route)
+    assert {"property": "client_id", "value": 42, "operator": "="} in filters
+    assert {"property": "plus_type_document", "value": "payment", "operator": "="} in filters
+    assert {
+        "property": "create_date",
+        "value": "2026-07-08 00:00:00",
+        "operator": ">=",
+    } in filters
+    assert {
+        "property": "create_date",
+        "value": "2026-07-09 00:00:00",
+        "operator": "<",
+    } in filters
+
+    data = result.structured_content["data"]
+    assert data["client_id"] == 42
+    assert data["count"] == 1
+    assert data["total"] == 1
+    assert data["truncated"] is False
+    assert data["closingOfInvoices"][0]["plus_payment"]["id"] == 5
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_client_payment_applications_propagates_closing_failure_message():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/closingOfInvoices").mock(
+        return_value=httpx.Response(
+            200,
+            json={"success": False, "message": "closing lookup temporarily failed"},
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_client_payment_applications",
+            {"client_id": 42, "limit": 20},
+        )
+
+    payload = result.structured_content
+    assert payload["success"] is False
+    assert payload["message"] == "closing lookup temporarily failed"
+    assert payload["data"]["closingOfInvoices"] == []
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_client_payment_applications_pet_filter_uses_invoice_ids():
+    billing_mock()
+    invoice_route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 2,
+                    "invoice": [{"id": "7", "client_id": 42, "pet_id": 9}, {"id": "8"}],
+                },
+            },
+        )
+    )
+    closing_route = respx.get(f"{BASE}/rest/api/closingOfInvoices").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 1,
+                    "closingOfInvoices": [
+                        {
+                            "id": 10,
+                            "client_id": 42,
+                            "plus_type_document": "payment",
+                            "minus_type_document": "invoice",
+                            "minus_document_id": 7,
+                        }
+                    ],
+                },
+            },
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_client_payment_applications",
+            {"client_id": 42, "pet_id": 9, "limit": 20},
+        )
+
+    invoice_filters = _filter_of(invoice_route)
+    assert {"property": "client_id", "value": 42, "operator": "="} in invoice_filters
+    assert {"property": "pet_id", "value": 9, "operator": "="} in invoice_filters
+
+    closing_filters = _filter_of(closing_route)
+    assert {"property": "minus_type_document", "value": "invoice", "operator": "="} in closing_filters
+    assert {"property": "minus_document_id", "value": [7, 8], "operator": "IN"} in closing_filters
+    assert result.structured_content["data"]["pet_id"] == 9
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_client_payment_applications_pet_filter_no_invoices_short_circuits():
+    billing_mock()
+    invoice_route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(
+            200,
+            json={"success": True, "data": {"totalCount": 0, "invoice": []}},
+        )
+    )
+    closing_route = respx.get(f"{BASE}/rest/api/closingOfInvoices").mock(
+        return_value=httpx.Response(200, json={"data": {"closingOfInvoices": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_client_payment_applications",
+            {"client_id": 42, "pet_id": 999, "limit": 20},
+        )
+
+    assert invoice_route.called
+    assert len(closing_route.calls) == 0
+    data = result.structured_content["data"]
+    assert data["closingOfInvoices"] == []
+    assert data["count"] == 0
+    assert data["total"] == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_client_payment_applications_pet_filter_propagates_invoice_failure():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(
+            200,
+            json={"success": False, "message": "invoice lookup temporarily failed"},
+        )
+    )
+    closing_route = respx.get(f"{BASE}/rest/api/closingOfInvoices").mock(
+        return_value=httpx.Response(200, json={"data": {"closingOfInvoices": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="invoice lookup temporarily failed"):
+            await mcp.call_tool(
+                "get_client_payment_applications",
+                {"client_id": 42, "pet_id": 9, "limit": 20},
+            )
+
+    assert len(closing_route.calls) == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_client_payment_applications_pet_filter_rejects_large_invoice_fanout():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 101,
+                    "invoice": [{"id": i} for i in range(1, 101)],
+                },
+            },
+        )
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="client-level call without pet_id"):
+            await mcp.call_tool(
+                "get_client_payment_applications",
+                {"client_id": 42, "pet_id": 9, "limit": 20},
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_client_payment_applications_pet_filter_rejects_unknown_full_invoice_page():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {"invoice": [{"id": i} for i in range(1, 101)]},
+            },
+        )
+    )
+    closing_route = respx.get(f"{BASE}/rest/api/closingOfInvoices").mock(
+        return_value=httpx.Response(200, json={"data": {"closingOfInvoices": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="unknown total"):
+            await mcp.call_tool(
+                "get_client_payment_applications",
+                {"client_id": 42, "pet_id": 9, "limit": 20},
+            )
+
+    assert len(closing_route.calls) == 0
 
 
 @pytest.mark.asyncio

@@ -3176,3 +3176,33 @@ Out of scope:
   suite, audit, Spark/Claude review, commit/push/deploy; prod smoke лёгкий:
   `/mcp`/`tools/list` wording reached production, без real Vetmanager API smoke. —
   `done`
+
+## Этап 186. Client and payment feedback contract fixes — `in_progress`
+
+Источник: production feedback `#22`-`#25` от 2026-07-08. `get_clients(name=...)`
+возвращал слишком широкий список из-за неавторитетного query param `name`;
+`get_payments(client_id=...)` падал HTTP 500, потому что реальный Payment REST
+endpoint не имеет поля `client_id`.
+
+Цель: привести MCP contracts к фактической Vetmanager модели, не отправлять
+неподдерживаемые payment filters и дать отдельный корректный путь для оплат
+клиента через `closingOfInvoices`.
+
+- 186.1 PRD/research: проверить `vetmanager-extjs` models/controllers и
+  `devtr6` REST shape для Payment/ClosingOfInvoices/Invoice; зафиксировать
+  API facts, architecture decision, tests and rollout. — `done`
+- 186.2 `get_clients` contract fix: name search через `last_name`,
+  `first_name`, `middle_name` filters с merge по `id`; убрать query param
+  `name`; regression test. — `done`
+- 186.3 `get_payments` contract fix: запретить `client_id` до HTTP,
+  обновить descriptions/tests/docs; сохранить прямые payment filters
+  `status/create_date/payment_type/invoice_id` where supported. — `done`
+- 186.4 Новый `get_client_payment_applications`: читать применения оплат клиента через
+  `/rest/api/closingOfInvoices` (`client_id`, `plus_type_document=payment`,
+  optional date/status/pet filters), возвращать closing rows with nested
+  `plus_payment`/`invoice` and honest pagination metadata. — `done`
+- 186.5 Artifacts/docs/access/tests: синхронизировать entity reference,
+  tool descriptions, schemas/access registry and real `devtr6` smoke. — `done`
+- 186.6 Full workflow: targeted/full checks, audit, review gates, commit/push,
+  deploy/smoke and mark production feedback `#24/#25` fixed when verified. —
+  `in_progress`

@@ -3,7 +3,12 @@
 from datetime import date, timedelta
 
 from fastmcp import FastMCP
-from filters import eq as _filter_eq, gte as _filter_gte, lt as _filter_lt
+from filters import (
+    eq as _filter_eq,
+    gte as _filter_gte,
+    in_ as _filter_in,
+    lt as _filter_lt,
+)
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_delete
 from validators import LimitParam, parse_date_param
 
@@ -12,6 +17,7 @@ def register(mcp: FastMCP) -> None:
 
     _PAYMENT_STATUSES = {"exec", "save", "deleted"}
     _INVOICE_DOCUMENT_FILTER_FIELDS = {"invoice_id", "invoiceId", "documentId", "document_id"}
+    _CLIENT_PAYMENT_INVOICE_ID_CAP = 100
 
     def _parse_date_range(date_from: str, date_to: str, *, label: str) -> tuple[str, str]:
         resolved_from = parse_date_param(date_from)
@@ -38,6 +44,17 @@ def register(mcp: FastMCP) -> None:
                     "a raw create_date filter explicitly."
                 )
 
+    def _reject_payment_client_filter(filters: list[dict] | None) -> None:
+        for item in filters or []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("property") in {"client_id", "clientId"}:
+                raise ValueError(
+                    "Vetmanager Payment REST does not support client_id filter. "
+                    "Use get_client_payment_applications(client_id=...) for "
+                    "client-scoped payment applications."
+                )
+
     def _reject_invoice_document_parent_filters(filters: list[dict] | None) -> None:
         for item in filters or []:
             if not isinstance(item, dict):
@@ -48,6 +65,87 @@ def register(mcp: FastMCP) -> None:
                     "it is converted to document_id internally. Do not also pass "
                     "invoice_id/invoiceId/documentId/document_id in filter."
                 )
+
+    def _extract_entity_rows(resp: dict, entity_key: str) -> tuple[list[dict], int | None]:
+        data = resp.get("data", {}) if isinstance(resp, dict) else {}
+        if isinstance(data, list):
+            return [row for row in data if isinstance(row, dict)], None
+        if not isinstance(data, dict):
+            return [], None
+        rows = data.get(entity_key) or []
+        total = data.get("totalCount")
+        try:
+            parsed_total = int(total) if total is not None else None
+        except (TypeError, ValueError):
+            parsed_total = None
+        return [row for row in rows if isinstance(row, dict)], parsed_total
+
+    def _result_metadata(
+        *,
+        rows: list[dict],
+        total: int | None,
+        limit: int,
+        offset: int,
+        client_id: int,
+        pet_id: int,
+        date_from: str,
+        date_to: str,
+    ) -> dict:
+        truncated = None if total is None else offset + len(rows) < total
+        return {
+            "client_id": client_id,
+            "pet_id": pet_id or None,
+            "date_from": date_from or None,
+            "date_to": date_to or None,
+            "limit": limit,
+            "offset": offset,
+            "count": len(rows),
+            "total": total,
+            "truncated": truncated,
+            "closingOfInvoices": rows,
+        }
+
+    def _coerce_invoice_id(value) -> int | None:
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        return None
+
+    async def _invoice_ids_for_client_pet(client_id: int, pet_id: int) -> list[int]:
+        invoice_resp = await crud_list(
+            "/rest/api/invoice",
+            limit=_CLIENT_PAYMENT_INVOICE_ID_CAP,
+            offset=0,
+            filters=[_filter_eq("client_id", client_id), _filter_eq("pet_id", pet_id)],
+        )
+        if isinstance(invoice_resp, dict) and invoice_resp.get("success") is False:
+            message = invoice_resp.get("message") or "Invoice lookup failed"
+            raise ValueError(
+                "Invoice lookup failed for get_client_payment_applications "
+                f"pet filter: {message}"
+            )
+        rows, total = _extract_entity_rows(invoice_resp, "invoice")
+        if total is not None and total > _CLIENT_PAYMENT_INVOICE_ID_CAP:
+            raise ValueError(
+                "pet filter matched too many invoices for get_client_payment_applications "
+                f"({total} > {_CLIENT_PAYMENT_INVOICE_ID_CAP}). Use the client-level "
+                "call without pet_id and filter returned invoice.pet_id, or query a "
+                "narrower pet context separately."
+            )
+        if total is None and len(rows) >= _CLIENT_PAYMENT_INVOICE_ID_CAP:
+            raise ValueError(
+                "pet filter may have more invoices than get_client_payment_applications "
+                f"can safely query ({_CLIENT_PAYMENT_INVOICE_ID_CAP} rows with unknown total). "
+                "Use the client-level call without pet_id and filter returned invoice.pet_id, "
+                "or query a narrower pet context separately."
+            )
+        invoice_ids: list[int] = []
+        for row in rows:
+            invoice_id = _coerce_invoice_id(row.get("id"))
+            if invoice_id is not None:
+                invoice_ids.append(invoice_id)
+        return invoice_ids
 
     @mcp.tool
     async def get_payments(
@@ -65,7 +163,9 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
-            client_id: Filter by client ID (0 = no filter).
+            client_id: Deprecated unsupported filter. Vetmanager Payment REST
+                has no client_id field; use get_client_payment_applications
+                for client-scoped payment applications.
             status: Filter by payment workflow status. Valid values:
                 'exec' (posted), 'save' (draft), 'deleted'.
             date_from: Filter payments created on or after this date.
@@ -79,6 +179,13 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(
                 f"status must be one of {sorted(_PAYMENT_STATUSES)}, got '{status}'"
             )
+        if client_id:
+            raise ValueError(
+                "Vetmanager Payment REST does not support client_id filter. "
+                "Use get_client_payment_applications(client_id=...) for "
+                "client-scoped payment applications."
+            )
+        _reject_payment_client_filter(filter)
 
         resolved_date_from, resolved_date_to = _parse_date_range(
             date_from, date_to, label="date"
@@ -93,14 +200,114 @@ def register(mcp: FastMCP) -> None:
             )
         if resolved_date_to:
             combined_filters.append(_filter_lt("create_date", _next_day_start(resolved_date_to)))
-        if client_id:
-            combined_filters.append(_filter_eq("client_id", client_id))
         if status:
             combined_filters.append(_filter_eq("status", status))
         return await crud_list(
             "/rest/api/payment", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,
         )
+
+    @mcp.tool
+    async def get_client_payment_applications(
+        client_id: int,
+        limit: LimitParam = 20,
+        offset: int = 0,
+        pet_id: int = 0,
+        date_from: str = "",
+        date_to: str = "",
+        sort: list[dict] | None = None,
+    ) -> dict:
+        """List payment applications for a client via closingOfInvoices.
+
+        This is the correct client-scoped finance path: Payment rows do not
+        have client_id or pet_id directly. Vetmanager links client/invoice and
+        payment through closingOfInvoices rows. The result is not a complete
+        list of unapplied/advance payments; it returns payment applications
+        represented by closingOfInvoices with plus_type_document='payment'.
+
+        Args:
+            client_id: Required client ID.
+            limit: Max records to return.
+            offset: Pagination offset.
+            pet_id: Optional pet/patient filter via client invoices.
+            date_from: Filter application create_date on or after this date.
+            date_to: Filter application create_date through this local clinic
+                date (inclusive), implemented as < next day 00:00:00.
+        """
+        if client_id <= 0:
+            raise ValueError("client_id is required")
+        if pet_id < 0:
+            raise ValueError("pet_id must be positive or 0")
+        resolved_date_from, resolved_date_to = _parse_date_range(
+            date_from, date_to, label="date"
+        )
+
+        filters: list = [
+            _filter_eq("client_id", client_id),
+            _filter_eq("plus_type_document", "payment"),
+        ]
+        if resolved_date_from:
+            filters.append(_filter_gte("create_date", _day_start(resolved_date_from)))
+        if resolved_date_to:
+            filters.append(_filter_lt("create_date", _next_day_start(resolved_date_to)))
+        if pet_id:
+            invoice_ids = await _invoice_ids_for_client_pet(client_id, pet_id)
+            if not invoice_ids:
+                return {
+                    "success": True,
+                    "data": _result_metadata(
+                        rows=[],
+                        total=0,
+                        limit=limit,
+                        offset=offset,
+                        client_id=client_id,
+                        pet_id=pet_id,
+                        date_from=resolved_date_from,
+                        date_to=resolved_date_to,
+                    ),
+                }
+            filters.extend([
+                _filter_eq("minus_type_document", "invoice"),
+                _filter_in("minus_document_id", invoice_ids),
+            ])
+
+        response = await crud_list(
+            "/rest/api/closingOfInvoices",
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=filters,
+        )
+        rows, total = _extract_entity_rows(response, "closingOfInvoices")
+        success = response.get("success", True) if isinstance(response, dict) else True
+        if success is False:
+            return {
+                "success": False,
+                "message": response.get("message") or "closingOfInvoices lookup failed",
+                "data": _result_metadata(
+                    rows=rows,
+                    total=total,
+                    limit=limit,
+                    offset=offset,
+                    client_id=client_id,
+                    pet_id=pet_id,
+                    date_from=resolved_date_from,
+                    date_to=resolved_date_to,
+                ),
+            }
+        return {
+            "success": success,
+            "data": _result_metadata(
+                rows=rows,
+                total=total,
+                limit=limit,
+                offset=offset,
+                client_id=client_id,
+                pet_id=pet_id,
+                date_from=resolved_date_from,
+                date_to=resolved_date_to,
+            ),
+        }
 
     @mcp.tool
     async def get_payment_by_id(payment_id: int) -> dict:

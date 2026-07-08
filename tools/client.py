@@ -1,3 +1,6 @@
+import asyncio
+from decimal import Decimal, InvalidOperation
+
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
@@ -141,6 +144,93 @@ def _normalize_personal_account_link_payload(payload) -> dict:
     raise ToolError(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR)
 
 
+def _extract_clients(resp: dict) -> list[dict]:
+    data = resp.get("data", {}) if isinstance(resp, dict) else {}
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return data.get("client") or data.get("clients") or []
+    return []
+
+
+def _response_total_count(resp: dict) -> int | None:
+    data = resp.get("data", {}) if isinstance(resp, dict) else {}
+    if not isinstance(data, dict) or "totalCount" not in data:
+        return None
+    try:
+        return int(data["totalCount"])
+    except (TypeError, ValueError):
+        return None
+
+
+def _name_tokens(name: str) -> list[str]:
+    return [token.casefold() for token in name.split() if token.strip()]
+
+
+def _client_name_text(client: dict) -> str:
+    return " ".join(
+        str(client.get(field) or "")
+        for field in ("last_name", "first_name", "middle_name")
+    ).casefold()
+
+
+def _sortable_client_value(value):
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _numeric_client_value(value) -> Decimal | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if not isinstance(value, (int, float, str)):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        numeric_value = Decimal(text)
+    except (InvalidOperation, ValueError):
+        return None
+    if not numeric_value.is_finite():
+        return None
+    return numeric_value
+
+
+def _sort_merged_clients(clients: list[dict], sort: list[dict] | None) -> None:
+    if not sort:
+        return
+    for spec in reversed(sort):
+        if not isinstance(spec, dict):
+            continue
+        property_name = spec.get("property")
+        if not property_name:
+            continue
+        descending = str(spec.get("direction", "")).upper() == "DESC"
+        present_values = [
+            client.get(property_name)
+            for client in clients
+            if client.get(property_name) is not None
+        ]
+        numeric_sort = bool(present_values) and all(
+            _numeric_client_value(value) is not None
+            for value in present_values
+        )
+
+        def key(client: dict):
+            value = client.get(property_name)
+            sortable_value = (
+                _numeric_client_value(value)
+                if numeric_sort
+                else _sortable_client_value(value)
+            )
+            if descending:
+                return (value is not None, sortable_value)
+            return (value is None, sortable_value)
+
+        clients.sort(key=key, reverse=descending)
+
+
 def register(mcp: FastMCP) -> None:
 
     @mcp.tool
@@ -162,7 +252,11 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max number of records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
-            name: Filter by client name (partial match).
+            name: Filter by client name (LIKE match on last_name, first_name,
+                or middle_name). Name search issues separate requests and
+                merges by client id because Vetmanager filters do not expose
+                OR across properties. The response includes truncated=True when
+                the bounded merged search may have more matches.
             phone: Filter by phone number (any of cell/home/work). The
                 input is normalized to digits-only before matching against
                 the `clients_phones.clean_phone` index, so formatted input
@@ -172,6 +266,12 @@ def register(mcp: FastMCP) -> None:
             status: Filter by client status: 'ACTIVE' (default), 'DELETED',
                     'INACTIVE', or '' for all.
         """
+        if name and offset:
+            raise ValueError(
+                "offset is not supported with name search because Vetmanager "
+                "does not provide stable OR pagination across name fields. "
+                "Use offset=0 and narrow by phone/email/status if needed."
+            )
         combined_filters: list = list(filter or [])
         if status:
             combined_filters.append(_filter_eq("status", status))
@@ -208,10 +308,77 @@ def register(mcp: FastMCP) -> None:
         if email:
             combined_filters.append(_filter_like("email", email))
 
+        if name:
+            tokens = _name_tokens(name)
+            if not tokens:
+                raise ValueError("name filter must contain non-space text")
+            query_values = list(dict.fromkeys(tokens))
+            field_names = ("last_name", "first_name", "middle_name")
+            requests = [
+                crud_list(
+                    "/rest/api/client",
+                    limit=100,
+                    offset=0,
+                    sort=sort,
+                    filters=combined_filters + [_filter_like(field_name, f"%{token}%")],
+                )
+                for token in query_values
+                for field_name in field_names
+            ]
+
+            responses = await asyncio.gather(*requests)
+            failed_response = next(
+                (
+                    resp
+                    for resp in responses
+                    if isinstance(resp, dict) and resp.get("success") is False
+                ),
+                None,
+            )
+            if failed_response is not None:
+                message = failed_response.get("message") or "Client name search failed"
+                return {
+                    "success": False,
+                    "message": message,
+                    "data": {"client": [], "totalCount": 0},
+                }
+
+            response_rows = [(resp, _extract_clients(resp)) for resp in responses]
+            upstream_truncated = False
+            for resp, rows in response_rows:
+                response_total = _response_total_count(resp)
+                if response_total is None:
+                    upstream_truncated = upstream_truncated or len(rows) >= 100
+                else:
+                    upstream_truncated = upstream_truncated or response_total > len(rows)
+
+            seen_ids: set = set()
+            matches: list[dict] = []
+            for client in [row for _, rows in response_rows for row in rows]:
+                client_id = client.get("id")
+                if client_id is None:
+                    continue
+                if client_id in seen_ids:
+                    continue
+                name_text = _client_name_text(client)
+                if not all(token in name_text for token in tokens):
+                    continue
+                seen_ids.add(client_id)
+                matches.append(client)
+
+            _sort_merged_clients(matches, sort)
+            return {
+                "success": True,
+                "data": {
+                    "client": matches[:limit],
+                    "totalCount": len(matches),
+                    "truncated": upstream_truncated or len(matches) > limit,
+                },
+            }
+
         return await crud_list(
             "/rest/api/client", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,
-            extra={"name": name},
         )
 
     @mcp.tool

@@ -91,6 +91,14 @@ class TestPromptsBearerOnly:
         assert 'mode="received"' in daily_revenue_section
         assert "truncated" in daily_revenue_section
 
+    def test_client_balance_prompt_uses_payment_applications(self):
+        source, _ = _load_prompt_functions()
+        client_balance_section = source.split("def client_balance", 1)[1].split(
+            "@mcp.prompt", 1
+        )[0]
+        assert "get_payments(client_id=client_id" not in client_balance_section
+        assert "get_client_payment_applications(client_id=client_id" in client_balance_section
+
     def test_popular_services_prompt_uses_financial_invoice_filters(self):
         source, _ = _load_prompt_functions()
         popular_services_section = source.split("def popular_services", 1)[1].split(

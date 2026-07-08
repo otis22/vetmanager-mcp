@@ -205,6 +205,349 @@ async def test_get_clients_phone_no_match_short_circuits():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_get_clients_name_filter_uses_client_fields_not_name_query_param():
+    billing_mock()
+    responses = [
+        httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {"totalCount": 1, "client": [{"id": 7, "last_name": "Иванова"}]},
+            },
+        ),
+        httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 2,
+                    "client": [
+                        {"id": 8, "first_name": "Иван"},
+                        {"id": 10, "first_name": "Петр", "last_name": "FilteredOut"},
+                    ],
+                },
+            },
+        ),
+        httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {"totalCount": 1, "client": [{"id": 9, "middle_name": "Иванович"}]},
+            },
+        ),
+    ]
+    route = respx.get(f"{BASE}/rest/api/client").mock(side_effect=responses)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_clients", {"name": "Иван", "limit": 20})
+
+    assert len(route.calls) == 3
+    call_filters = []
+    for call in route.calls:
+        query = parse_qs(urlparse(str(call.request.url)).query)
+        call_filters.append(json.loads(query["filter"][0]))
+    filter_props = {
+        item["property"]
+        for filters in call_filters
+        for item in filters
+        if item.get("operator", "").upper() == "LIKE"
+    }
+    assert {"last_name", "first_name", "middle_name"} <= filter_props
+    for call in route.calls:
+        query = parse_qs(urlparse(str(call.request.url)).query)
+        assert "name" not in query
+
+    data = result.structured_content["data"]
+    assert [client["id"] for client in data["client"]] == [7, 8, 9]
+    assert data["totalCount"] == 3
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_clients_name_filter_requires_all_tokens_and_rejects_offset():
+    billing_mock()
+    responses = [
+        httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 2,
+                    "client": [
+                        {"id": 7, "last_name": "Иванова", "first_name": "Мария"},
+                        {"id": 8, "last_name": "Иванова", "first_name": "Анна"},
+                    ],
+                },
+            },
+        ),
+        httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 2,
+                    "client": [
+                        {"id": 7, "last_name": "Иванова", "first_name": "Мария"},
+                        {"id": 9, "last_name": "Петрова", "first_name": "Мария"},
+                    ],
+                },
+            },
+        ),
+        httpx.Response(
+            200,
+            json={"success": True, "data": {"totalCount": 0, "client": []}},
+        ),
+        httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 2,
+                    "client": [
+                        {"id": 7, "last_name": "Иванова", "first_name": "Мария"},
+                        {"id": 9, "last_name": "Петрова", "first_name": "Мария"},
+                    ],
+                },
+            },
+        ),
+        httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 2,
+                    "client": [
+                        {"id": 7, "last_name": "Иванова", "first_name": "Мария"},
+                        {"id": 9, "last_name": "Петрова", "first_name": "Мария"},
+                    ],
+                },
+            },
+        ),
+        httpx.Response(
+            200,
+            json={"success": True, "data": {"totalCount": 0, "client": []}},
+        ),
+    ]
+    route = respx.get(f"{BASE}/rest/api/client").mock(side_effect=responses)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_clients",
+            {"name": "Иванова Мария", "limit": 20},
+        )
+        with pytest.raises(Exception, match="offset"):
+            await mcp.call_tool("get_clients", {"name": "Иванова", "offset": 20})
+
+    assert len(route.calls) == 6
+    data = result.structured_content["data"]
+    assert [client["id"] for client in data["client"]] == [7]
+    assert data["totalCount"] == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_clients_name_filter_total_count_is_before_limit():
+    billing_mock()
+    responses = [
+        httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 3,
+                    "client": [
+                        {"id": 7, "last_name": "Иванова"},
+                        {"id": 8, "first_name": "Иван"},
+                        {"id": 9, "middle_name": "Иванович"},
+                    ],
+                },
+            },
+        ),
+        httpx.Response(200, json={"success": True, "data": {"client": []}}),
+        httpx.Response(200, json={"success": True, "data": {"client": []}}),
+    ]
+    respx.get(f"{BASE}/rest/api/client").mock(side_effect=responses)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_clients", {"name": "Иван", "limit": 1})
+
+    data = result.structured_content["data"]
+    assert [client["id"] for client in data["client"]] == [7]
+    assert data["totalCount"] == 3
+    assert data["truncated"] is True
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_clients_name_filter_applies_sort_before_limit():
+    billing_mock()
+    responses = [
+        httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 3,
+                    "client": [
+                        {"id": 7, "last_name": "Иванов", "create_date": "2026-01-01 00:00:00"},
+                        {"id": 8, "last_name": "Иванов", "create_date": "2026-03-01 00:00:00"},
+                        {"id": 9, "last_name": "Иванов", "create_date": "2026-05-01 00:00:00"},
+                    ],
+                },
+            },
+        ),
+        httpx.Response(200, json={"success": True, "data": {"client": []}}),
+        httpx.Response(200, json={"success": True, "data": {"client": []}}),
+    ]
+    respx.get(f"{BASE}/rest/api/client").mock(side_effect=responses)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_clients",
+            {
+                "name": "Иванов",
+                "limit": 2,
+                "sort": [{"property": "create_date", "direction": "DESC"}],
+            },
+        )
+
+    data = result.structured_content["data"]
+    assert [client["id"] for client in data["client"]] == [9, 8]
+    assert data["totalCount"] == 3
+    assert data["truncated"] is True
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_clients_name_filter_sort_handles_mixed_value_types():
+    billing_mock()
+    responses = [
+        httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 3,
+                    "client": [
+                        {"id": 7, "last_name": "Иванов", "external_id": 5},
+                        {"id": 8, "last_name": "Иванов", "external_id": "A12"},
+                        {"id": 9, "last_name": "Иванов", "external_id": None},
+                    ],
+                },
+            },
+        ),
+        httpx.Response(200, json={"success": True, "data": {"client": []}}),
+        httpx.Response(200, json={"success": True, "data": {"client": []}}),
+    ]
+    respx.get(f"{BASE}/rest/api/client").mock(side_effect=responses)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_clients",
+            {
+                "name": "Иванов",
+                "limit": 3,
+                "sort": [{"property": "external_id", "direction": "ASC"}],
+            },
+        )
+
+    data = result.structured_content["data"]
+    assert [client["id"] for client in data["client"]] == [7, 8, 9]
+    assert data["totalCount"] == 3
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_clients_name_filter_sort_preserves_numeric_ordering():
+    billing_mock()
+    responses = [
+        httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "totalCount": 3,
+                    "client": [
+                        {"id": 1, "last_name": "Иванов"},
+                        {"id": 100, "last_name": "Иванов"},
+                        {"id": 9, "last_name": "Иванов"},
+                    ],
+                },
+            },
+        ),
+        httpx.Response(200, json={"success": True, "data": {"client": []}}),
+        httpx.Response(200, json={"success": True, "data": {"client": []}}),
+    ]
+    respx.get(f"{BASE}/rest/api/client").mock(side_effect=responses)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_clients",
+            {
+                "name": "Иванов",
+                "limit": 3,
+                "sort": [{"property": "id", "direction": "ASC"}],
+            },
+        )
+
+    data = result.structured_content["data"]
+    assert [client["id"] for client in data["client"]] == [1, 9, 100]
+    assert data["totalCount"] == 3
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_clients_name_filter_surfaces_upstream_truncation():
+    billing_mock()
+    rows = [{"id": i, "last_name": "Иванов"} for i in range(1, 101)]
+    responses = [
+        httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {"totalCount": 101, "client": rows},
+            },
+        ),
+        httpx.Response(200, json={"success": True, "data": {"client": []}}),
+        httpx.Response(200, json={"success": True, "data": {"client": []}}),
+    ]
+    respx.get(f"{BASE}/rest/api/client").mock(side_effect=responses)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_clients", {"name": "Иванов", "limit": 20})
+
+    data = result.structured_content["data"]
+    assert len(data["client"]) == 20
+    assert data["totalCount"] == 100
+    assert data["truncated"] is True
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_clients_name_filter_propagates_success_false_response():
+    billing_mock()
+    responses = [
+        httpx.Response(
+            200,
+            json={"success": False, "message": "temporary client search failure"},
+        ),
+        httpx.Response(200, json={"success": True, "data": {"client": []}}),
+        httpx.Response(200, json={"success": True, "data": {"client": []}}),
+    ]
+    respx.get(f"{BASE}/rest/api/client").mock(side_effect=responses)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_clients", {"name": "Иван", "limit": 20})
+
+    payload = result.structured_content
+    assert payload["success"] is False
+    assert payload["message"] == "temporary client search failure"
+    assert payload["data"]["client"] == []
+    assert payload["data"]["totalCount"] == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_get_clients_phone_falls_back_to_full_digits():
     """If trailing-10 pass returns nothing, retry with full normalized digits."""
     billing_mock()

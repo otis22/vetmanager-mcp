@@ -227,26 +227,27 @@
 
 ---
 
-### 2.10. ClosingOfInvoices (Закрытие счетов)
+### 2.10. ClosingOfInvoices (Закрытие счетов / применение оплат)
 
-> **Бизнес-контекст:** Сущность `closingOfInvoices` (закрытие счетов) представляет собой финансовую операцию, в ходе которой один или несколько счетов закрываются (помечаются как оплаченные).
+> **Бизнес-контекст:** Сущность `closingOfInvoices` представляет финансовое применение одного документа к другому, например применение платежа (`plus_type_document='payment'`) к счету (`minus_type_document='invoice'`). Для клиентского контекста оплат эта сущность важнее прямого `payment`, потому что содержит `client_id` и связи с invoice/payment.
 
 **Эндпоинт API:** `/rest/api/closingOfInvoices`
 
 | Имя поля | Тип | Nullable | Описание |
 | :--- | :--- | :--- | :--- |
 | `id` | integer | Нет | Уникальный идентификатор. |
-| `invoice_id` | integer | Нет | Внешний ключ к сущности `invoice`. |
-| `payment_id` | integer | Нет | Внешний ключ к сущности `payment`. |
-| `amount` | string | Нет | Сумма, примененная из платежа к этому счету. |
+| `client_id` | integer | Нет | Внешний ключ к сущности `client`. |
+| `plus_amount` | string | Нет | Сумма со стороны документа-источника. |
+| `plus_type_document` | string | Нет | Тип документа-источника, например `payment`. |
+| `plus_document_id` | integer | Нет | ID документа-источника, например `payment.id`. |
+| `minus_amount` | string | Нет | Сумма со стороны закрываемого документа. |
+| `minus_type_document` | string | Нет | Тип закрываемого документа, например `invoice`. |
+| `minus_document_id` | integer | Нет | ID закрываемого документа, например `invoice.id`. |
 | `create_date` | string | Нет | Дата операции закрытия. |
-| `user_id` | integer | Нет | ID пользователя, выполнившего операцию. |
-| `clinic_id` | integer | Нет | Внешний ключ к сущности `clinics`. |
-| `cassa_id` | integer | Нет | Внешний ключ к сущности `cassa`. |
-| `status` | string | Нет | Статус записи. |
-| `payment_type` | string | Нет | Тип платежа (например, `cash`, `card`). |
-| `payment` | object | Да | Вложенный объект платежа. |
-| `invoice` | object | Да | Вложенный объект счета. |
+| `client` | object | Да | Вложенный объект клиента. |
+| `invoice` | object | Да | Вложенный объект счета, обычно при `minus_type_document='invoice'`. |
+| `plus_payment` | object | Да | Вложенный объект платежа при `plus_type_document='payment'`. |
+| `minus_payment` | object | Да | Вложенный объект платежа, если платеж находится на стороне `minus`. |
 
 ---
 
@@ -569,7 +570,7 @@
 
 ### 2.24. Payment (Оплата)
 
-> **Бизнес-контекст:** Сущность `payment` (оплата) представляет собой финансовый платеж, произведенный клиентом. Платеж может быть применен к одному или нескольким счетам.
+> **Бизнес-контекст:** Сущность `payment` (оплата) представляет финансовый платеж. В Vetmanager REST у `payment` нет прямых полей `client_id` и `pet_id`; клиентский/пациентский контекст получается через `closingOfInvoices` и связанные счета.
 
 **Эндпоинт API:** `/rest/api/payment`
 
@@ -578,15 +579,13 @@
 | `id` | integer | Нет | Уникальный идентификатор. |
 | `amount` | string | Нет | Сумма платежа. |
 | `payment_type` | string | Нет | Тип платежа (например, `cash`, `cashless`, `transfer`). |
-| `client_id` | integer | Нет | Внешний ключ к сущности `client`. |
 | `cassa_id` | integer | Нет | Внешний ключ к сущности `cassa`. |
-| `user_id` | integer | Нет | ID пользователя, обработавшего платеж. |
+| `cassaclose_id` | integer | Да | Внешний ключ к закрытию кассовой смены. |
+| `payed_user` | integer | Да | ID пользователя, обработавшего платеж. |
 | `create_date` | string | Нет | Дата совершения платежа. |
-| `clinic_id` | integer | Нет | Внешний ключ к сущности `clinics`. |
 | `description` | string | Да | Примечания к платежу. |
 | `status` | string | Нет | Статус записи о платеже. |
 | `invoice_id` | integer | Да | Внешний ключ к основному `invoice`. |
-| `closingOfInvoices` | array | Нет | Массив записей `closingOfInvoices`. |
 
 ---
 

@@ -15,6 +15,7 @@ Run inside Docker:
 """
 
 import asyncio
+import json
 import os
 import pytest
 import re
@@ -863,6 +864,39 @@ async def test_real_get_payments():
 async def test_real_get_closing_of_invoices():
     result = await call(vc().get("/rest/api/closingOfInvoices", params={"limit": 5, "offset": 0}))
     assert "data" in result
+
+
+@skip_if_no_creds
+@skip_if_not_devtr6
+@pytest.mark.asyncio
+async def test_real_get_client_payment_applications_uses_closing_contract():
+    filters = json.dumps([
+        {"property": "plus_type_document", "value": "payment", "operator": "="},
+    ])
+    seed = await call(
+        vc().get(
+            "/rest/api/closingOfInvoices",
+            params={"limit": 1, "offset": 0, "filter": filters},
+        )
+    )
+    seed_rows = seed.get("data", {}).get("closingOfInvoices", [])
+    if not seed_rows:
+        pytest.skip("devtr6 has no closingOfInvoices payment applications to smoke")
+    client_id = int(seed_rows[0]["client_id"])
+
+    headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+    with headers_patch, runtime_patch:
+        result = await call(mcp.call_tool(
+            "get_client_payment_applications",
+            {"client_id": client_id, "limit": 5},
+        ))
+
+    data = _tool_payload(result)["data"]
+    rows = data["closingOfInvoices"]
+    assert data["client_id"] == client_id
+    assert rows
+    assert all(int(row["client_id"]) == client_id for row in rows)
+    assert all(row.get("plus_type_document") == "payment" for row in rows)
 
 
 @skip_if_no_creds

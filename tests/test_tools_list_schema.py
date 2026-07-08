@@ -131,6 +131,21 @@ class TestToolsListSchema:
         properties = tool["schema"].get("properties", {})
         assert "date_from" in properties
         assert "date_to" in properties
+        assert "client_id" in properties
+        assert "get_client_payment_applications" in tool["description"]
+
+    def test_get_client_payment_applications_exports_contract(self, all_tool_exports):
+        tool = next(
+            t for t in all_tool_exports
+            if t["name"] == "get_client_payment_applications"
+        )
+        properties = tool["schema"].get("properties", {})
+        assert "client_id" in properties
+        assert "pet_id" in properties
+        assert "date_from" in properties
+        assert "date_to" in properties
+        assert "payment applications" in tool["description"].lower()
+        assert "closingOfInvoices" in tool["description"]
 
     def test_get_daily_schedule_exports_offset_param(self, all_tool_exports):
         tool = next(t for t in all_tool_exports if t["name"] == "get_daily_schedule")

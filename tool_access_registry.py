@@ -217,6 +217,7 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
     "get_party_account_docs": (SCOPE_INVENTORY_READ,),
     "get_party_accounts": (SCOPE_INVENTORY_READ,),
     "get_payment_by_id": (SCOPE_FINANCE_READ,),
+    "get_client_payment_applications": (SCOPE_FINANCE_READ,),
     "get_payments": (SCOPE_FINANCE_READ,),
     "get_revenue_summary": (SCOPE_FINANCE_READ,),
     "create_report_ai_job": (SCOPE_ANALYTICS_READ,),

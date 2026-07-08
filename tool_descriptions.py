@@ -530,6 +530,7 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "get_combo_manual_item_by_id": "combo_manual_item",
     "get_payments": "payment",
     "get_payment_by_id": "payment",
+    "get_client_payment_applications": "closing_of_invoices",
     "get_closing_of_invoices": "closing_of_invoices",
     "get_closing_of_invoice_by_id": "closing_of_invoices",
     "get_invoice_documents": "invoice_document",
@@ -703,6 +704,24 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "cash received, daily proceeds, or March revenue. Use get_average_invoice "
         "instead for average check / average invoice amount. Domain synonyms: "
         "платёж, оплата, поступление, касса, выручка, revenue, payment."
+    ),
+    "get_payments": (
+        "List direct Vetmanager Payment records. Use for raw payment/date/status "
+        "lookup on /rest/api/payment. Payment records do not have client_id or "
+        "pet_id in Vetmanager REST; client_id is a deprecated unsupported "
+        "argument and is rejected before HTTP. Use get_client_payment_applications "
+        "for client- or pet-scoped payment applications through closingOfInvoices. "
+        "Domain synonyms: платёж, оплата, поступление, касса, payment."
+    ),
+    "get_client_payment_applications": (
+        "List payment applications for one client via /rest/api/closingOfInvoices. "
+        "Use when the user asks for a client's payments or pet-scoped payment "
+        "applications and needs the invoice/payment context. This returns "
+        "closingOfInvoices rows where plus_type_document='payment'; it is not a "
+        "complete list of unapplied or advance payments. Supports client_id, "
+        "optional pet_id via invoice IDs, date_from/date_to on create_date, "
+        "limit/offset, and sort. Domain synonyms: оплата клиента, платёж клиента, "
+        "оплата питомца, закрытие счёта, применение платежа, closingOfInvoices."
     ),
     "get_invoice_documents": (
         "List invoice line items for a parent invoice. Pass invoice_id as the "

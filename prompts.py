@@ -88,7 +88,7 @@ def register_prompts(mcp: FastMCP) -> None:
             _bearer_runtime_prefix()
             + f"Show the financial summary for client ID {client_id}. "
             + "1. Call get_invoices(client_id=client_id, limit=100, sort=[{'property':'create_date','direction':'DESC'}]). "
-            + "2. Call get_payments(client_id=client_id, limit=100, sort=[{'property':'id','direction':'DESC'}]). "
+            + "2. Call get_client_payment_applications(client_id=client_id, limit=100, sort=[{'property':'create_date','direction':'DESC'}]). "
             + "Summarise total debt, recent invoices, and the latest payment amount/date."
         )]
 

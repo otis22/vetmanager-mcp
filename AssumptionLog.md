@@ -9399,3 +9399,163 @@ Checks:
   `delete_client` safety, `send_message_to_all` blast radius/narrower tools,
   `get_goods`/`search_invoice_goods` reciprocal guidance, and Report AI/export
   order guidance.
+
+## Этап 186. Client and payment feedback contract fixes — 2026-07-08
+
+Context:
+- Production feedback `#22`-`#25` showed two contract defects:
+  `get_clients(name=...)` used a non-authoritative `name` query param, and
+  `get_payments(client_id=...)` sent an unsupported Payment filter that
+  produced upstream HTTP 500 on `devtr6`.
+- `vetmanager-extjs` and real `devtr6` probes confirmed `payment` has
+  `invoice_id` but no `client_id`/`pet_id`; `closingOfInvoices` has
+  `client_id`, `plus_type_document`, `plus_document_id`, `minus_type_document`,
+  `minus_document_id`, `plus_payment`, and `invoice`.
+
+Decisions:
+- `get_clients(name=...)` now queries `last_name`, `first_name`, and
+  `middle_name` with `LIKE`, merges by `id`, locally requires all name tokens,
+  and rejects `offset > 0` because stable deep pagination across merged OR
+  queries is not guaranteed.
+- `get_payments` remains a direct `/rest/api/payment` list. Its deprecated
+  `client_id` argument is kept in schema for compatibility but fails locally
+  before any HTTP call and points callers to `get_client_payment_applications`.
+- Added `get_client_payment_applications` for client-scoped payment
+  applications via `/rest/api/closingOfInvoices`. The tool intentionally
+  returns application rows, not a complete list of unapplied or advance
+  payments.
+- Pet-scoped payment applications prefetch matching invoices by
+  `client_id + pet_id`, cap the invoice-ID fanout at 100, short-circuit empty
+  invoice sets, and then filter `closingOfInvoices` by `minus_document_id IN`.
+
+Review gates so far:
+- Spark PRD review read-only hit a sandbox/bwrap runtime failure before review;
+  per workflow repeated once with `gpt-5.3-codex-spark -s danger-full-access`
+  and review-only prompt. Accepted findings: verify actual Payment fields,
+  avoid hidden fallback, and make the client payment tool semantically narrow.
+- Claude Opus PRD review required three runs, exceeding the planned budget of
+  two because the first two runs found material API-contract issues. Accepted
+  findings included multi-token client name search, stable-pagination rejection
+  for merged name search, real `closingOfInvoices` filter verification, and
+  renaming/scope to payment applications.
+
+Checks so far:
+- Targeted Docker regressions for new client/payment contracts, schema, and
+  access registry: `12 passed`.
+- Broader touched-surface Docker run:
+  `tests/test_ergonomic_filters.py tests/test_api_contracts_hotfix.py
+  tests/test_tools_list_schema.py tests/test_stage130_access_registry.py
+  tests/test_revenue_summary.py` plus new real-smoke skip path: `183 passed`.
+- Opt-in real `devtr6` smoke for `get_client_payment_applications`: `1 passed`.
+- Full Docker suite: `docker compose --profile test run --rm test` —
+  `1254 passed, 1 skipped, 65 deselected`.
+- Audit checks: `git diff --check` clean; `py_compile` for touched Python files
+  passed; `rg mcp_fallback` found no remaining fallback.
+- Spark committed-diff review: read-only hit sandbox/bwrap runtime failure and
+  was stopped; per workflow repeated once with `gpt-5.3-codex-spark
+  -s danger-full-access` and review-only prompt. Accepted findings: merged
+  `get_clients(name)` must propagate `success=false` subresponses, and
+  `totalCount` must represent all bounded merged matches before applying
+  `limit`.
+- Post-Spark targeted tests for `get_clients(name)`: `4 passed`.
+- Post-Spark full Docker suite: `docker compose --profile test run --rm test` —
+  `1256 passed, 1 skipped, 65 deselected`.
+- Second Spark committed-diff fallback review accepted findings: reject raw
+  `client_id`/`clientId` filters passed through `get_payments(filter=...)`, and
+  reject ambiguous full 100-row invoice prefetch pages when upstream omits
+  `totalCount` for `get_client_payment_applications(pet_id=...)`.
+- Post-second-Spark targeted finance regressions: `5 passed`.
+- Post-second-Spark full Docker suite: `docker compose --profile test run --rm
+  test` — `1259 passed, 1 skipped, 65 deselected`.
+- Final pre-Claude real `devtr6` smoke after second Spark hardening: `1 passed`.
+- Final Spark committed-diff fallback review result: `[]`.
+- Claude Opus committed-diff review accepted two medium findings:
+  pet-scoped invoice fanout must handle string invoice ids without a false empty
+  result, and merged `get_clients(name)` must surface possible 100-row upstream
+  truncation instead of silently presenting the bounded merge as complete.
+- Post-Claude fixes: invoice IDs from `/rest/api/invoice` are coerced from
+  numeric strings before building `minus_document_id IN`, and merged name search
+  now returns `truncated` metadata when an upstream subquery is capped or the
+  caller `limit` cuts returned matches.
+- Post-Claude targeted regressions: `3 passed`.
+- Post-Claude full Docker suite: `docker compose --profile test run --rm test`
+  — `1260 passed, 1 skipped, 65 deselected`.
+- Post-Claude real `devtr6` smoke for `get_client_payment_applications`:
+  `1 passed`.
+- Post-Claude audit: `git diff --check` clean; `python3 -m py_compile
+  tools/client.py tools/finance.py` passed.
+- Final Spark committed-diff review after Claude fixes accepted one medium
+  finding: `get_client_payment_applications(pet_id=...)` must not treat
+  `success=false` from the invoice prefetch as an empty successful invoice set.
+- Post-final-Spark fix: invoice prefetch `success=false` now raises a clear
+  local tool error with the upstream message, and the closingOfInvoices request
+  is not made.
+- Post-final-Spark targeted regression: `1 passed`.
+- Post-final-Spark full Docker suite: `docker compose --profile test run --rm
+  test` — `1261 passed, 1 skipped, 65 deselected`.
+- Post-final-Spark real `devtr6` smoke: `1 passed`.
+- Post-final-Spark audit: `git diff --check` clean; `python3 -m py_compile
+  tools/client.py tools/finance.py` passed.
+- Final Claude Opus committed-diff review accepted two medium findings:
+  pet invoice fanout cap wording must not suggest `date_from/date_to` when the
+  invoice prefetch is intentionally not filtered by closing date, and
+  `closingOfInvoices success=false` must preserve the upstream message.
+- Post-final-Claude fixes: pet fanout cap errors now direct callers to the
+  client-level call without `pet_id` and filtering returned `invoice.pet_id`;
+  `get_client_payment_applications` now returns `success=false` with the
+  upstream `message` when the closing lookup itself reports `success=false`.
+- Post-final-Claude targeted regressions: `2 passed`.
+- Post-final-Claude full Docker suite: `docker compose --profile test run --rm
+  test` — `1262 passed, 1 skipped, 65 deselected`.
+- Post-final-Claude real `devtr6` smoke: `1 passed`.
+- Post-final-Claude audit: `git diff --check` clean; `python3 -m py_compile
+  tools/client.py tools/finance.py` passed.
+- Final Spark review returned `[]` but exposed a stale `client_balance` prompt
+  reference to `get_payments(client_id=...)`; accepted as a workflow contract
+  fix even though it was not emitted as a JSON finding.
+- Prompt fix: `client_balance` now instructs
+  `get_client_payment_applications(client_id=...)` instead of the deprecated
+  unsupported `get_payments(client_id=...)`, with a regression test preventing
+  the stale prompt from returning.
+- Post-prompt targeted regression: `1 passed`.
+- Post-prompt full Docker suite: `docker compose --profile test run --rm test`
+  — `1263 passed, 1 skipped, 65 deselected`.
+- Post-prompt real `devtr6` smoke: `1 passed`.
+- Post-prompt audit: `git diff --check` clean; `python3 -m py_compile
+  prompts.py tools/client.py tools/finance.py` passed.
+- Final Spark review after prompt fix returned `[]`.
+- Final Claude Opus review accepted one medium finding: merged
+  `get_clients(name=..., sort=...)` forwarded sort to upstream subrequests but
+  did not re-apply global sort after merging and before `limit`.
+- Post-Opus sort fix: merged name search now applies caller sort in memory
+  before slicing and has a regression test for `create_date DESC`.
+- Post-sort-fix targeted regression: `1 passed`.
+- Post-sort-fix full Docker suite: `docker compose --profile test run --rm
+  test` — `1264 passed, 1 skipped, 65 deselected`.
+- Post-sort-fix real `devtr6` smoke: `1 passed`.
+- Post-sort-fix audit: `git diff --check` clean; `python3 -m py_compile
+  tools/client.py tools/finance.py prompts.py` passed.
+- Spark review for the sort fix returned `[]`.
+- Claude Opus review of the sort fix accepted one medium finding: mixed
+  numeric/string sort values could raise `TypeError`.
+- Post-mixed-sort fix: merged name search uses type-stable sort values and has
+  a regression test for mixed nonnumeric values.
+- Post-mixed-sort targeted regressions: `2 passed`.
+- Post-mixed-sort full Docker suite: `1265 passed, 1 skipped, 65 deselected`.
+- Post-mixed-sort real `devtr6` smoke: `1 passed`.
+- Post-mixed-sort audit: `git diff --check` clean; `python3 -m py_compile
+  tools/client.py tools/finance.py prompts.py` passed.
+- Spark review for mixed-sort fix returned `[]`.
+- Claude Opus review accepted one medium finding: string coercion avoided
+  mixed-type crashes but sorted numeric fields lexicographically.
+- Final numeric-sort fix: merged name search detects all-numeric present values
+  and sorts them as `Decimal`, falling back to string order only for genuinely
+  mixed nonnumeric values; added numeric ordering regression for `[1, 9, 100]`.
+- Final targeted sort regressions: `3 passed`.
+- Final full Docker suite: `docker compose --profile test run --rm test` —
+  `1266 passed, 1 skipped, 65 deselected`.
+- Final real `devtr6` smoke: `1 passed`.
+- Final audit: `git diff --check` clean; `python3 -m py_compile
+  tools/client.py tools/finance.py prompts.py` passed.
+- Final Spark review returned `[]`; final Claude Opus review returned
+  `{"findings":[]}`.
