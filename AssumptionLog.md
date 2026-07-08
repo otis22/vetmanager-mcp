@@ -9559,3 +9559,19 @@ Checks so far:
   tools/client.py tools/finance.py prompts.py` passed.
 - Final Spark review returned `[]`; final Claude Opus review returned
   `{"findings":[]}`.
+- Commit `d579f6e` pushed to `main`.
+- Production deploy to `/opt/vetmanager-mcp` completed via
+  `scripts/sync_and_deploy_server.sh root@212.193.59.219 /opt/vetmanager-mcp`.
+  Deploy script built the image, created a pre-deploy PostgreSQL backup, ran
+  migrations, restarted the MCP container, verified DB tables/TLS, and passed
+  post-deploy smoke checks. One initial `/readyz` attempt returned 503 during
+  storage warmup, then the smoke script passed.
+- Stage-specific production smoke inside the MCP container confirmed:
+  `tool_count=120`, `get_client_payment_applications` is registered,
+  `get_payments` description points to it, the new tool description mentions
+  `closingOfInvoices`, `client_balance` prompt is registered, and the new tool
+  schema requires `client_id`.
+- Production feedback closure: known issue `#24` for reports `#22`-`#24`
+  (`get_clients` name filter) and known issue `#25` for report `#25`
+  (`get_payments(client_id)` 500) were marked `fixed`; `recent` verified the
+  reports now show `known_issue=#24/fixed` and `known_issue=#25/fixed`.

@@ -3177,7 +3177,7 @@ Out of scope:
   `/mcp`/`tools/list` wording reached production, без real Vetmanager API smoke. —
   `done`
 
-## Этап 186. Client and payment feedback contract fixes — `in_progress`
+## Этап 186. Client and payment feedback contract fixes — `done`
 
 Источник: production feedback `#22`-`#25` от 2026-07-08. `get_clients(name=...)`
 возвращал слишком широкий список из-за неавторитетного query param `name`;
@@ -3205,4 +3205,4 @@ endpoint не имеет поля `client_id`.
   tool descriptions, schemas/access registry and real `devtr6` smoke. — `done`
 - 186.6 Full workflow: targeted/full checks, audit, review gates, commit/push,
   deploy/smoke and mark production feedback `#24/#25` fixed when verified. —
-  `in_progress`
+  `done`
