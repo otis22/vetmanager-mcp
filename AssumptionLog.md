@@ -9707,3 +9707,28 @@ Checks so far:
   `28 passed, 1 skipped`; full suite
   `docker compose --profile test run --rm test pytest -q` —
   `1336 passed, 13 skipped`; syntax/json/py_compile/diff-check passed.
+
+## Этап 191. Known issue match effectiveness
+
+- Основание: product metrics показывали `known_issue_match_events=0` за 30d,
+  но это само по себе не отличает "нет подходящих ошибок" от "match/injection
+  path сломан" или "known issues есть, но agent playbook невалиден".
+- Архитектурное решение: не менять production known issues и match rules без
+  конкретного report. Вместо этого добавить deterministic regression для
+  injection/no-match path и aggregate-only CLI diagnostic, который не печатает
+  raw report summaries/details или known issue titles.
+- Implementation: `scripts/triage_agent_feedback.py match-effectiveness --days N`
+  выводит reports with/without known issue by source/status, match events by
+  source and known issue readiness counts, включая `agent_injection_skipped`
+  для `workaround_available` rows без валидного playbook.
+- Tests:
+  `docker compose --profile test run --rm test pytest tests/test_stage191_known_issue_effectiveness.py -q`
+  — `3 passed`;
+  `docker compose --profile test run --rm test pytest tests/test_stage191_known_issue_effectiveness.py tests/test_stage149_agent_feedback.py tests/test_stage151_known_issue_match_events.py tests/test_stage159_feedback_product_metrics.py tests/test_stage167_feedback_report_resolution.py -q`
+  — `36 passed`.
+- Full suite:
+  `docker compose --profile test run --rm test pytest -q`
+  — `1339 passed, 13 skipped`.
+- Audit: `git diff --check` and
+  `python3 -m py_compile scripts/triage_agent_feedback.py agent_feedback_service.py`
+  passed.

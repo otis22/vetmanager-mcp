@@ -3251,7 +3251,7 @@ semantics.
 - 190.5 Full workflow: tests, audit, review gates, commit/push/deploy/smoke,
   проверка Grafana/Prometheus на prod без public PII exposure. — `done`
 
-## Этап 191. Known issue match effectiveness — `todo`
+## Этап 191. Known issue match effectiveness — `done`
 
 Источник: production metrics показывают 0 known issue match events за 30 дней,
 хотя есть linked/workaround known issues. Нужно проверить, что KB injection
@@ -3261,14 +3261,14 @@ semantics.
 массовой правки production known issues.
 
 - 191.1 PRD/research: описать текущий feedback/known issue flow, active
-  workaround clusters and privacy constraints. — `todo`
+  workaround clusters and privacy constraints. — `done`
 - 191.2 Добавить focused regression для match event write / no-match path and
-  active workaround playbook injection where match rules exist. — `todo`
+  active workaround playbook injection where match rules exist. — `done`
 - 191.3 Улучшить read-only triage diagnostics: команда/вывод показывает
-  matched/no-match/skipped aggregates without raw report text. — `todo`
-- 191.4 Update docs/metrics notes and AssumptionLog. — `todo`
+  matched/no-match/skipped aggregates without raw report text. — `done`
+- 191.4 Update docs/metrics notes and AssumptionLog. — `done`
 - 191.5 Full workflow: tests, audit, review gates, commit/push/deploy/smoke. —
-  `todo`
+  `done`
 
 ## Этап 192. Focused create/update guidance — `todo`
 

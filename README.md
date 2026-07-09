@@ -542,6 +542,17 @@ exist and are active before it writes synthetic diagnostic rows. Before/after
 production runs, check runtime logs for `feedback_auto_event_failed`,
 `known_issue_lookup_failed` and `known_issue_match_event_write_failed`.
 
+For aggregate-only effectiveness diagnostics without raw report text:
+
+```bash
+python scripts/triage_agent_feedback.py match-effectiveness --days 30
+```
+
+The output shows report counts with/without linked known issues, match events
+by source (`report`, `auto`, `injection`) and readiness counts for known issues
+whose agent injection would be skipped because a valid playbook is missing.
+It intentionally omits report summaries, details and known-issue titles.
+
 Each diagnostic `--apply` intentionally writes one synthetic auto-event/report
 with `related_tool='__stage157_diagnostic__'` to prove the write path. Clean it
 up after production verification if those rows should not remain in analytics:

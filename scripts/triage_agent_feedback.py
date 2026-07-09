@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from fastmcp.exceptions import ToolError
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select
 
 from agent_feedback_service import sanitize_text, validate_agent_playbook, validate_match_rules_json
 from storage import get_session_factory
@@ -309,6 +309,83 @@ async def _match_events_stats(args: argparse.Namespace) -> None:
         print(f"| {row.known_issue_id} | {row.title} | {row.source} | {row.events} | {row.distinct_accounts} | {row.distinct_tokens} |")
 
 
+async def _match_effectiveness(args: argparse.Namespace) -> None:
+    """Stage 191: aggregate-only known-issue matching diagnostics."""
+    cutoff = _now() - timedelta(days=args.days)
+    async with get_session_factory()() as session:
+        report_rows = (
+            await session.execute(
+                select(
+                    AgentFeedbackReport.source,
+                    AgentFeedbackReport.status,
+                    func.count().label("reports"),
+                    func.sum(
+                        case((AgentFeedbackReport.known_issue_id.is_not(None), 1), else_=0)
+                    ).label("with_known_issue"),
+                )
+                .where(AgentFeedbackReport.created_at >= cutoff)
+                .group_by(AgentFeedbackReport.source, AgentFeedbackReport.status)
+                .order_by(AgentFeedbackReport.source.asc(), AgentFeedbackReport.status.asc())
+            )
+        ).all()
+        event_rows = (
+            await session.execute(
+                select(KnownIssueMatchEvent.source, func.count().label("events"))
+                .where(KnownIssueMatchEvent.created_at >= cutoff)
+                .group_by(KnownIssueMatchEvent.source)
+                .order_by(KnownIssueMatchEvent.source.asc())
+            )
+        ).all()
+        issues = (await session.execute(select(KnownIssue))).scalars().all()
+
+    print(f"# Known issue match effectiveness ({args.days}d)")
+    print("## Reports by source/status")
+    print("| source | status | reports | with_known_issue | without_known_issue |")
+    print("|---|---|---:|---:|---:|")
+    for row in report_rows:
+        with_known_issue = int(row.with_known_issue or 0)
+        reports = int(row.reports or 0)
+        print(
+            f"| {row.source} | {row.status} | {reports} | {with_known_issue} | "
+            f"{reports - with_known_issue} |"
+        )
+
+    print("\n## Match events by source")
+    print("| source | events |")
+    print("|---|---:|")
+    for row in event_rows:
+        print(f"| {row.source} | {int(row.events or 0)} |")
+
+    readiness: dict[str, dict[str, int]] = defaultdict(lambda: {
+        "issues": 0,
+        "matchable": 0,
+        "valid_playbook": 0,
+        "agent_injection_skipped": 0,
+    })
+    for issue in issues:
+        row = readiness[issue.status]
+        row["issues"] += 1
+        if issue.error_fingerprint_hash or issue.match_rules_json:
+            row["matchable"] += 1
+        if validate_agent_playbook(issue.agent_playbook_json) is not None:
+            row["valid_playbook"] += 1
+        if (
+            issue.status == "workaround_available"
+            and validate_agent_playbook(issue.agent_playbook_json) is None
+        ):
+            row["agent_injection_skipped"] += 1
+
+    print("\n## Known issue readiness")
+    print("| status | issues | matchable | valid_playbook | agent_injection_skipped |")
+    print("|---|---:|---:|---:|---:|")
+    for status in sorted(readiness):
+        row = readiness[status]
+        print(
+            f"| {status} | {row['issues']} | {row['matchable']} | "
+            f"{row['valid_playbook']} | {row['agent_injection_skipped']} |"
+        )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Triage DB-backed agent feedback.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -372,6 +449,13 @@ def _build_parser() -> argparse.ArgumentParser:
     match_stats.add_argument("--days", type=int, default=7)
     match_stats.add_argument("--top", type=int, default=20)
     match_stats.set_defaults(func=_match_events_stats)
+
+    match_effectiveness = sub.add_parser(
+        "match-effectiveness",
+        help="Stage 191: aggregate-only matched/no-match/skipped known-issue diagnostics.",
+    )
+    match_effectiveness.add_argument("--days", type=int, default=30)
+    match_effectiveness.set_defaults(func=_match_effectiveness)
 
     return parser
 
