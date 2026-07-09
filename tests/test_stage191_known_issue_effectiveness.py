@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
+import subprocess
+import sys
 from types import SimpleNamespace
 
 from fastmcp.exceptions import ToolError
@@ -13,6 +17,8 @@ import agent_feedback_service as feedback
 import scripts.triage_agent_feedback as triage_cli
 from storage_models import AgentFeedbackReport, KnownIssue, KnownIssueMatchEvent
 from tests.runtime_factories import make_runtime_credentials
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture
@@ -39,6 +45,22 @@ def _rules() -> dict:
             {"field": "normalized_error_text", "op": "contains_any", "value": ["date filter"]},
         ],
     }
+
+
+def test_stage191_cli_file_runs_without_pythonpath() -> None:
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [sys.executable, "scripts/triage_agent_feedback.py", "--help"],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "match-effectiveness" in result.stdout
 
 
 @pytest.mark.asyncio

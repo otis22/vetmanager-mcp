@@ -9770,3 +9770,20 @@ Checks so far:
   `docker compose --profile test run --rm test pytest -q`
   — `1340 passed, 13 skipped`.
 - Audit: compose config assertion and `git diff --check` passed.
+
+## Этап 191 production deploy follow-up. CLI bootstrap
+
+- Основание: production verification of
+  `python scripts/triage_agent_feedback.py match-effectiveness --days 30`
+  failed without manual `PYTHONPATH=/app` because direct script execution put
+  only `scripts/` on `sys.path`.
+- Архитектурное решение: add repo-root bootstrap to
+  `scripts/triage_agent_feedback.py` before project-local imports. No diagnostic
+  logic or DB writes changed.
+- Tests:
+  `docker compose --profile test run --rm test pytest tests/test_stage191_known_issue_effectiveness.py -q`
+  — `4 passed`;
+  `docker compose --profile test run --rm test pytest -q`
+  — `1341 passed, 13 skipped`.
+- Audit: `python3 -m py_compile scripts/triage_agent_feedback.py` and
+  `git diff --check` passed.
