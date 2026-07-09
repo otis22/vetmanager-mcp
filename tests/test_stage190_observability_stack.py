@@ -61,11 +61,14 @@ def test_stage190_observability_security_and_resource_limits() -> None:
     services = _compose()["services"]
     prometheus = services["prometheus"]
     grafana = services["grafana"]
+    prometheus_entrypoint = prometheus["entrypoint"]
+    prometheus_command = prometheus_entrypoint[2]
 
-    assert "--storage.tsdb.retention.time=30d" in "\n".join(prometheus["command"])
-    assert "--storage.tsdb.retention.size=1GB" in "\n".join(prometheus["command"])
-    assert "printenv METRICS_AUTH_TOKEN > /tmp/metrics_bearer_token" in "\n".join(prometheus["command"])
-    assert "$${METRICS_AUTH_TOKEN" not in "\n".join(prometheus["command"])
+    assert prometheus_entrypoint[:2] == ["/bin/sh", "-c"]
+    assert "--storage.tsdb.retention.time=30d" in prometheus_command
+    assert "--storage.tsdb.retention.size=1GB" in prometheus_command
+    assert "printenv METRICS_AUTH_TOKEN > /tmp/metrics_bearer_token" in prometheus_command
+    assert "$${METRICS_AUTH_TOKEN" not in prometheus_command
     assert prometheus["cpus"] == "0.5"
     assert prometheus["mem_limit"] == "384m"
     assert grafana["cpus"] == "0.5"

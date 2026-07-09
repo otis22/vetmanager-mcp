@@ -98,7 +98,7 @@ services:
     mem_limit: 384m
     environment:
       METRICS_AUTH_TOKEN: ${METRICS_AUTH_TOKEN:-}
-    command:
+    entrypoint:
       - /bin/sh
       - -c
       - |

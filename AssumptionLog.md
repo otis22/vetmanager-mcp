@@ -9754,3 +9754,19 @@ Checks so far:
   — `1340 passed, 13 skipped`.
 - Audit: `python3 -m py_compile tool_descriptions.py` and `git diff --check`
   passed.
+
+## Этап 190 production deploy follow-up. Prometheus entrypoint
+
+- Основание: after production deploy, app smoke passed but Prometheus restarted
+  with `prometheus: error: unexpected /bin/sh`; Docker image entrypoint treated
+  `/bin/sh` from compose `command` as a Prometheus argument.
+- Архитектурное решение: keep the bearer-token file generation, but move the
+  full shell script into Prometheus `entrypoint: ["/bin/sh", "-c", script]`
+  so the base image entrypoint cannot reinterpret it as Prometheus CLI args.
+- Tests:
+  `docker compose --profile test run --rm test pytest tests/test_stage190_observability_stack.py tests/test_deploy_server_script.py tests/test_post_deploy_smoke_checks.py tests/test_prometheus_metrics.py -q`
+  — `18 passed, 1 skipped`;
+  runtime compose probe starts Prometheus without `/bin/sh` argument errors;
+  `docker compose --profile test run --rm test pytest -q`
+  — `1340 passed, 13 skipped`.
+- Audit: compose config assertion and `git diff --check` passed.
