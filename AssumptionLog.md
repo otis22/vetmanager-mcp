@@ -9732,3 +9732,25 @@ Checks so far:
 - Audit: `git diff --check` and
   `python3 -m py_compile scripts/triage_agent_feedback.py agent_feedback_service.py`
   passed.
+
+## Этап 192. Focused create/update guidance
+
+- Основание: optional scope 185.5 был остановлен как потенциально широкий; safe
+  остаток — text-only guidance для нескольких write tools, где LLM чаще может
+  подставить имя вместо resolved ID.
+- Архитектурное решение: изменить только `tool_descriptions.py` special
+  descriptions для `create_client`, `create_pet`, `create_admission`,
+  `update_admission`, `create_medical_card`. Runtime write logic, scopes,
+  schemas and API payload mapping не менялись.
+- Implementation: descriptions теперь требуют resolve/confirm exact owner/pet/
+  doctor/admission IDs and target context before writing, with no new API claims.
+- Tests:
+  `docker compose --profile test run --rm test pytest tests/test_tools_list_schema.py::TestToolsListSchema::test_stage192_create_update_tools_explain_id_resolution_without_schema_changes -q`
+  — `1 passed`;
+  `docker compose --profile test run --rm test pytest tests/test_tools_list_schema.py -q`
+  — `35 passed`.
+- Full suite:
+  `docker compose --profile test run --rm test pytest -q`
+  — `1340 passed, 13 skipped`.
+- Audit: `python3 -m py_compile tool_descriptions.py` and `git diff --check`
+  passed.

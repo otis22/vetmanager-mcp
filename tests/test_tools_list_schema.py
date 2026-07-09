@@ -237,6 +237,51 @@ class TestToolsListSchema:
         assert "start_report_export" in file_export
         assert "get_report_ai_job_export" in file_export
 
+    def test_stage192_create_update_tools_explain_id_resolution_without_schema_changes(self, all_tool_exports):
+        tools = _tools_by_name(all_tool_exports)
+        expected_properties = {
+            "create_client": {"first_name", "last_name", "phone", "email"},
+            "create_pet": {"alias", "owner_id", "type_id", "breed_id", "birthday", "note"},
+            "create_admission": {"pet_id", "client_id", "doctor_id", "date", "reason", "status"},
+            "update_admission": {
+                "admission_id",
+                "date",
+                "doctor_id",
+                "client_id",
+                "pet_id",
+                "reason",
+                "status",
+                "clinic_id",
+                "admission_type",
+            },
+            "create_medical_card": {
+                "patient_id",
+                "doctor_id",
+                "date_create",
+                "description",
+                "diagnosis",
+                "treatment",
+                "recomendation",
+                "clinic_id",
+                "admission_type",
+                "meet_result_id",
+                "weight",
+                "temperature",
+            },
+        }
+        expected_fragments = {
+            "create_client": ("checking whether the owner already exists", "Confirm the exact owner"),
+            "create_pet": ("resolving owner_id", "confirming the exact owner"),
+            "create_admission": ("resolving pet_id, client_id, and doctor_id", "Confirm the exact pet"),
+            "update_admission": ("confirming the exact admission_id", "leave optional fields empty or 0"),
+            "create_medical_card": ("resolving patient_id", "Confirm the exact pet, doctor"),
+        }
+        for tool_name, properties in expected_properties.items():
+            assert set(tools[tool_name]["schema"].get("properties", {})) == properties
+            description = tools[tool_name]["description"]
+            for fragment in expected_fragments[tool_name]:
+                assert fragment in description
+
     def test_stage185_readme_tool_count_matches_live_tools(self, all_tool_exports):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         marker = "**"

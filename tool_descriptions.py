@@ -642,6 +642,13 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "segments. Domain synonyms: клиент, владелец, хозяин, контакт, "
         "клиентская база, client."
     ),
+    "create_client": (
+        "Create a new client / owner record only after checking whether the owner "
+        "already exists when the user provides a name, phone, or email. Confirm "
+        "the exact owner details before writing; do not use this to update an "
+        "existing client. Domain synonyms: клиент, владелец, хозяин, контакт, "
+        "клиентская база, client."
+    ),
     "get_personal_account_link_by_phone": (
         "Get the persistent personal-account link for a client / owner only when "
         "the assistant already knows the client's phone. Do not use client ID for "
@@ -654,6 +661,28 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "cards, and vaccination context. Use when the user asks for a full patient "
         "card or consolidated pet history. Domain synonyms: питомец, пациент, "
         "животное, кот, собака, пациент клиники, pet, animal."
+    ),
+    "create_pet": (
+        "Register a new pet / patient only after resolving owner_id with "
+        "get_clients or known client context and confirming the exact owner. "
+        "Resolve type_id/breed_id with reference lookups when the user specifies "
+        "species or breed. Domain synonyms: питомец, пациент, животное, кот, "
+        "собака, пациент клиники, pet, animal."
+    ),
+    "create_admission": (
+        "Schedule a new admission / appointment only after resolving pet_id, "
+        "client_id, and doctor_id with get_pets/get_clients/get_users or known "
+        "context. Confirm the exact pet, owner, doctor, date/time, and reason "
+        "before writing. Domain synonyms: приём, визит, запись, запись на приём, "
+        "запись к врачу, консультация, appointment."
+    ),
+    "update_admission": (
+        "Update an existing admission / appointment only after resolving and "
+        "confirming the exact admission_id with get_admissions or "
+        "get_admission_by_id. For changed pet/client/doctor values, resolve the "
+        "new IDs before writing; leave optional fields empty or 0 when unchanged. "
+        "Domain synonyms: приём, визит, запись, запись на приём, запись к врачу, "
+        "консультация, appointment."
     ),
     "get_medical_cards": (
         "List or search medical cards / clinical records. Use for general "
@@ -681,6 +710,14 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "date. Domain synonyms: медкарта, медицинская карта, история болезни, "
         "история лечения, клиническая запись, осмотр, daily control, medical card, "
         "medical record."
+    ),
+    "create_medical_card": (
+        "Add a new medical card / clinical record only after resolving patient_id "
+        "(pet ID) and doctor_id with get_pets/get_users or known context. Confirm "
+        "the exact pet, doctor, record date, and clinical text before writing; "
+        "use optional clinic/admission fields only when explicitly known. Domain "
+        "synonyms: медкарта, медицинская карта, история болезни, история лечения, "
+        "клиническая запись, осмотр, medical card, medical record."
     ),
     "get_vaccinations": (
         "List vaccination records for one pet / patient with returnedCount, "

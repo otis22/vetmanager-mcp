@@ -3270,7 +3270,7 @@ semantics.
 - 191.5 Full workflow: tests, audit, review gates, commit/push/deploy/smoke. —
   `done`
 
-## Этап 192. Focused create/update guidance — `todo`
+## Этап 192. Focused create/update guidance — `done`
 
 Источник: stopped optional scope 185.5. Без production feedback по write-tools
 это низкий приоритет, но можно закрыть безопасно как text-only guidance для
@@ -3281,10 +3281,10 @@ schemas, scopes или runtime write logic.
 
 - 192.1 PRD/research: выбрать только narrow target tools
   (`create_admission`, `create_medical_card`, `create_client`, `create_pet`,
-  optional `update_admission`) and document out-of-scope. — `todo`
+  optional `update_admission`) and document out-of-scope. — `done`
 - 192.2 Добавить descriptions guidance: minimum lookup chain, required IDs and
-  confirmation expectations, без новых API claims. — `todo`
+  confirmation expectations, без новых API claims. — `done`
 - 192.3 Regression tests for exact wording fragments and tools/list schema
-  stability. — `todo`
+  stability. — `done`
 - 192.4 Full workflow: tests, audit, review gates, commit/push/deploy/smoke. —
-  `todo`
+  `done`
