@@ -9575,3 +9575,52 @@ Checks so far:
   (`get_clients` name filter) and known issue `#25` for report `#25`
   (`get_payments(client_id)` 500) were marked `fixed`; `recent` verified the
   reports now show `known_issue=#24/fixed` and `known_issue=#25/fixed`.
+
+## Этап 189. Activation and onboarding follow-up
+
+- Основание: production product metrics 2026-07-09 показали activation gap:
+  11 accounts total, 1 live за 7 дней, 6 без tokens, 5 без active connection.
+  Все feedback reports за 30 дней были linked, поэтому этап сфокусирован на
+  owner-facing next-step guidance и read-only funnel metrics, а не на runtime
+  bug fix.
+- Архитектурное решение: расширить существующий `/account` и
+  `scripts/product_metrics_report.py`, не добавляя новый admin route и не
+  меняя auth/token/OAuth/runtime semantics. UI использует уже загруженные
+  dashboard counts/token views; product metrics считает activation funnel по
+  existing storage tables.
+- Canonical usable-token predicate: `ServiceBearerToken.status == active` and
+  `(expires_at IS NULL OR expires_at > now)`. Recent usage uses
+  `TokenUsageStat.last_used_at >= now - 7 days` with UTC-aware `now`.
+- Spark PRD review: read-only sandbox failed before file read due to bwrap/user
+  namespace issue and was killed; one allowed fallback run with
+  `-s danger-full-access` was review-only. Accepted findings: define canonical
+  funnel formulas and add executable privacy/redaction tests.
+- Spark committed-diff review accepted one medium finding cluster: account UI
+  activation state had to use the same usable-token predicate and 7-day recent
+  usage window as product metrics. Fixed by passing raw token datetimes from
+  `web.py`, adding renderer predicates, and covering expired-token/stale-usage
+  scenarios in tests.
+- Claude Opus Architecture/PRD review accepted three medium findings:
+  reconcile Roadmap/PRD aggregate lists, cite `TokenUsageStat.last_used_at`, and
+  define a single usable-token predicate. PRD/Roadmap were updated before
+  implementation.
+- Claude Opus committed-diff review accepted two medium findings: Stage 189
+  Roadmap header status had to be `done`, and metrics tests needed an
+  expired-token branch that produces `needs_token > 0`. Both were fixed before
+  final review gates.
+- Implementation: `/account` now renders `activation-status` with states
+  `needs_connection`, `needs_token`, `needs_client_use`, `ready`; product
+  metrics JSON/Markdown now include `activation_funnel`.
+- Targeted tests:
+  `docker compose --profile test run --rm test pytest tests/test_stage189_activation_onboarding.py -q`
+  — `7 passed`.
+- Related regression:
+  `docker compose --profile test run --rm test pytest tests/test_stage189_activation_onboarding.py tests/test_stage110_product_metrics.py tests/test_stage168_account_token_layout.py tests/test_stage89_security_hotfix.py -q`
+  — `35 passed`.
+- Full suite:
+  `docker compose --profile test run --rm test`
+  — initial run `1273 passed, 1 skipped, 65 deselected`; after Spark
+  committed-diff fix `1275 passed, 1 skipped, 65 deselected`; after Claude
+  committed-diff fix `1275 passed, 1 skipped, 65 deselected`.
+- Local audit before review gates: `git diff --check` and
+  `python3 -m py_compile web_html.py scripts/product_metrics_report.py` passed.

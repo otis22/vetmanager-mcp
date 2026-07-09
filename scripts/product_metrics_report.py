@@ -224,6 +224,95 @@ async def _count_accounts_without_active_connection(session) -> int:
     return int(await session.scalar(stmt) or 0)
 
 
+async def _collect_activation_funnel(session, *, now: datetime) -> dict[str, int]:
+    """Activation/onboarding funnel over non-archived accounts.
+
+    Counts are hierarchical, not mutually exclusive. A usable token is an active
+    token that is not expired at `now`.
+    """
+    account_ids = set(
+        (
+            await session.execute(
+                select(Account.id).where(Account.archived_at.is_(None))
+            )
+        ).scalars().all()
+    )
+    if not account_ids:
+        return {
+            "connected": 0,
+            "with_tokens": 0,
+            "with_active_tokens": 0,
+            "with_recent_usage": 0,
+            "ready_for_mcp": 0,
+            "needs_connection": 0,
+            "needs_token": 0,
+            "needs_client_use": 0,
+        }
+
+    connected = set(
+        (
+            await session.execute(
+                select(VetmanagerConnection.account_id)
+                .join(Account, Account.id == VetmanagerConnection.account_id)
+                .where(Account.archived_at.is_(None))
+                .where(VetmanagerConnection.status == "active")
+            )
+        ).scalars().all()
+    )
+    with_tokens = set(
+        (
+            await session.execute(
+                select(ServiceBearerToken.account_id)
+                .join(Account, Account.id == ServiceBearerToken.account_id)
+                .where(Account.archived_at.is_(None))
+            )
+        ).scalars().all()
+    )
+    usable_tokens = set(
+        (
+            await session.execute(
+                select(ServiceBearerToken.account_id)
+                .join(Account, Account.id == ServiceBearerToken.account_id)
+                .where(Account.archived_at.is_(None))
+                .where(ServiceBearerToken.status == TOKEN_STATUS_ACTIVE)
+                .where(
+                    or_(
+                        ServiceBearerToken.expires_at.is_(None),
+                        ServiceBearerToken.expires_at > now,
+                    )
+                )
+            )
+        ).scalars().all()
+    )
+    recent_usage_cutoff = now - timedelta(days=7)
+    with_recent_usage = set(
+        (
+            await session.execute(
+                select(ServiceBearerToken.account_id)
+                .join(Account, Account.id == ServiceBearerToken.account_id)
+                .join(TokenUsageStat, TokenUsageStat.bearer_token_id == ServiceBearerToken.id)
+                .where(Account.archived_at.is_(None))
+                .where(TokenUsageStat.last_used_at >= recent_usage_cutoff)
+            )
+        ).scalars().all()
+    )
+
+    ready = connected & usable_tokens
+    needs_connection = account_ids - connected
+    needs_token = connected - usable_tokens
+    needs_client_use = ready - with_recent_usage
+    return {
+        "connected": len(connected),
+        "with_tokens": len(with_tokens),
+        "with_active_tokens": len(usable_tokens),
+        "with_recent_usage": len(with_recent_usage),
+        "ready_for_mcp": len(ready),
+        "needs_connection": len(needs_connection),
+        "needs_token": len(needs_token),
+        "needs_client_use": len(needs_client_use),
+    }
+
+
 async def _count_active_tokens(session, *, now: datetime) -> int:
     stmt = select(func.count()).select_from(ServiceBearerToken).where(
         ServiceBearerToken.status == TOKEN_STATUS_ACTIVE,
@@ -515,6 +604,7 @@ async def collect_metrics(
         no_tokens = await _count_accounts_without_tokens(session)
         no_connection = await _count_accounts_without_active_connection(session)
         dead_list = await _fetch_dead_account_rows(session, now=now)
+        activation_funnel = await _collect_activation_funnel(session, now=now)
 
         # Tokens
         active = await _count_active_tokens(session, now=now)
@@ -593,6 +683,7 @@ async def collect_metrics(
             "by_event_30d": fail_30d,
         },
         "feedback": feedback,
+        "activation_funnel": activation_funnel,
     }
 
 
@@ -617,6 +708,18 @@ def format_markdown(m: dict[str, Any], *, now: datetime) -> str:
     out.append(f"- dead (registered >30d, no request in 30d): **{a['dead_30d']}**")
     out.append(f"- no tokens: {a['no_tokens']}")
     out.append(f"- no active vetmanager connection: {a['no_active_connection']}")
+    out.append("")
+
+    activation = m.get("activation_funnel", {})
+    out.append("## Activation funnel")
+    out.append(f"- connected: {activation.get('connected', 0)}")
+    out.append(f"- with tokens: {activation.get('with_tokens', 0)}")
+    out.append(f"- with active tokens: {activation.get('with_active_tokens', 0)}")
+    out.append(f"- with recent usage (7d): {activation.get('with_recent_usage', 0)}")
+    out.append(f"- ready for MCP: **{activation.get('ready_for_mcp', 0)}**")
+    out.append(f"- needs connection: {activation.get('needs_connection', 0)}")
+    out.append(f"- needs token: {activation.get('needs_token', 0)}")
+    out.append(f"- needs client use: {activation.get('needs_client_use', 0)}")
     out.append("")
 
     out.append("## Tokens")
@@ -738,6 +841,7 @@ def format_json(m: dict[str, Any], *, now: datetime) -> str:
             "requests": m["requests"],
             "failures": m["failures"],
             "feedback": m.get("feedback", {"reports": {}, "match_events": {}}),
+            "activation_funnel": m.get("activation_funnel", {}),
         },
         indent=2,
         ensure_ascii=False,

@@ -3206,3 +3206,85 @@ endpoint не имеет поля `client_id`.
 - 186.6 Full workflow: targeted/full checks, audit, review gates, commit/push,
   deploy/smoke and mark production feedback `#24/#25` fixed when verified. —
   `done`
+
+## Этап 189. Activation and onboarding follow-up — `done`
+
+Источник: production product metrics 2026-07-09: 11 accounts total, 1 live за
+7 дней, 6 без токенов, 5 без active connection. Это activation gap, а не
+runtime bug.
+
+Цель: сделать следующий шаг в `/account` очевидным для владельца аккаунта и
+добавить read-only activation funnel в product metrics без изменения auth/token
+semantics.
+
+- 189.1 PRD/research: зафиксировать production metrics signal, текущий account
+  UI contract, privacy boundary и acceptance criteria. — `done`
+- 189.2 Account UI: добавить компактный onboarding status/checklist с
+  состояниями integration/token/usage/ChatGPT, без показа секретов и без
+  изменения submit flows. — `done`
+- 189.3 Product metrics: добавить activation funnel aggregates
+  (`connected`, `with_tokens`, `with_recent_usage`, `ready_for_mcp`,
+  `with_active_tokens`, `needs_connection`, `needs_token`,
+  `needs_client_use`) в JSON/Markdown. — `done`
+- 189.4 Tests/checks: HTML regression + product metrics regression +
+  viewport/layout check. — `done`
+- 189.5 Full workflow: tests, audit, review gates, commit/push/deploy/smoke,
+  визуальная проверка landing/login/account. — `done`
+
+## Этап 190. Prometheus and Grafana production observability — `todo`
+
+Источник: `/metrics` уже отдаёт Prometheus-compatible process-local counters,
+но без Prometheus история теряется при restart и нет графиков.
+
+Цель: добавить безопасный production observability контур для Prometheus/Grafana
+без персональных данных в labels и без публичного unauthenticated доступа.
+
+- 190.1 PRD/research: зафиксировать scrape source, privacy boundary, access
+  model Grafana через localhost/SSH tunnel или nginx basic auth. — `todo`
+- 190.2 Добавить Prometheus/Grafana compose services, persistent volumes,
+  local-only ports and scrape config for `mcp:8000/metrics`. — `todo`
+- 190.3 Добавить Grafana datasource/dashboard provisioning для top tools,
+  error rate, upstream statuses, business events and activation telemetry. —
+  `todo`
+- 190.4 Update docs/scripts/smoke: README observability notes, product metrics
+  command top-5 tool calls, deploy smoke for observability services. — `todo`
+- 190.5 Full workflow: tests, audit, review gates, commit/push/deploy/smoke,
+  проверка Grafana/Prometheus на prod без public PII exposure. — `todo`
+
+## Этап 191. Known issue match effectiveness — `todo`
+
+Источник: production metrics показывают 0 known issue match events за 30 дней,
+хотя есть linked/workaround known issues. Нужно проверить, что KB injection
+реально срабатывает и наблюдаема.
+
+Цель: повысить диагностируемость и test coverage match/injection path без
+массовой правки production known issues.
+
+- 191.1 PRD/research: описать текущий feedback/known issue flow, active
+  workaround clusters and privacy constraints. — `todo`
+- 191.2 Добавить focused regression для match event write / no-match path and
+  active workaround playbook injection where match rules exist. — `todo`
+- 191.3 Улучшить read-only triage diagnostics: команда/вывод показывает
+  matched/no-match/skipped aggregates without raw report text. — `todo`
+- 191.4 Update docs/metrics notes and AssumptionLog. — `todo`
+- 191.5 Full workflow: tests, audit, review gates, commit/push/deploy/smoke. —
+  `todo`
+
+## Этап 192. Focused create/update guidance — `todo`
+
+Источник: stopped optional scope 185.5. Без production feedback по write-tools
+это низкий приоритет, но можно закрыть безопасно как text-only guidance для
+нескольких рискованных create/update tools.
+
+Цель: улучшить LLM tool selection для create/update workflows без изменения
+schemas, scopes или runtime write logic.
+
+- 192.1 PRD/research: выбрать только narrow target tools
+  (`create_admission`, `create_medical_card`, `create_client`, `create_pet`,
+  optional `update_admission`) and document out-of-scope. — `todo`
+- 192.2 Добавить descriptions guidance: minimum lookup chain, required IDs and
+  confirmation expectations, без новых API claims. — `todo`
+- 192.3 Regression tests for exact wording fragments and tools/list schema
+  stability. — `todo`
+- 192.4 Full workflow: tests, audit, review gates, commit/push/deploy/smoke. —
+  `todo`

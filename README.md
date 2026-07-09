@@ -707,6 +707,7 @@ Prompts работают по тому же bearer-only контракту, чт
 
 Метрики (не покидают prod-сервер при обычном просмотре; email маскируются `al***@ex***.com` — маскирование снижает случайный disclosure, но это не анонимизация: в небольшой customer base и при characteristic доменах результат остаётся частично re-identifiable. Отчёт предназначен для owner-local просмотра):
 - **Accounts**: total / new 24h-7d-30d / live (req within 7d) / dead (reg>30d, 0 req in 30d) / no tokens / no active connection + dead-accounts table.
+- **Activation funnel**: connected / with tokens / with active tokens / with recent usage (7d) / ready for MCP / needs connection / needs token / needs client use.
 - **Tokens**: active / expiring in 7d / issued 24h / revoked 24h-7d.
 - **Requests**: total 24h-7d-30d + top-N accounts by 30d request count.
 - **Failures** (24h / 7d / 30d breakdown): rate_limited, revoked, expired, ip_denied, no_scopes, no_connection.

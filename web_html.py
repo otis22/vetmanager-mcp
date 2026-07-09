@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta, timezone
 from html import escape
 
 from storage_models import Account, VetmanagerConnection
@@ -53,6 +54,38 @@ def _resolve_mcp_path() -> str:
     if any(c in raw for c in ('"', "'", "<", ">", " ", "\t", "\n", "\r", "\x00")):
         return "/mcp"
     return raw
+
+
+def _activation_datetime(value: object, fallback: object = None) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(fallback, str):
+        text = fallback.strip()
+        if not text or text in {"Never", "No expiry"}:
+            return None
+        if text.endswith(" UTC"):
+            text = text.removesuffix(" UTC")
+        try:
+            parsed = datetime.strptime(text, "%Y-%m-%d %H:%M")
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _activation_token_is_usable(token: dict[str, object], *, now: datetime) -> bool:
+    if str(token.get("status")) != "active":
+        return False
+    expires_at = _activation_datetime(token.get("expires_at_raw"), token.get("expires_at"))
+    return expires_at is None or expires_at > now
+
+
+def _activation_token_recently_used(token: dict[str, object], *, cutoff: datetime) -> bool:
+    last_used_at = _activation_datetime(token.get("last_used_at_raw"), token.get("last_used_at"))
+    return last_used_at is not None and last_used_at >= cutoff
 from vetmanager_auth import (
     VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
     VETMANAGER_AUTH_MODE_USER_TOKEN,
@@ -298,6 +331,33 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
     .section-note {{
       margin-top: 8px;
       color: var(--muted);
+    }}
+    .activation-status {{
+      margin-top: 18px;
+      padding: 18px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.76);
+    }}
+    .activation-status h2 {{
+      margin: 0 0 8px;
+      font-size: 1.25rem;
+      line-height: 1.25;
+    }}
+    .activation-status ol {{
+      margin: 12px 0 0;
+      padding-left: 1.35rem;
+    }}
+    .activation-status li {{
+      margin: 6px 0;
+    }}
+    .activation-done {{
+      color: #1f4b50;
+      font-weight: 700;
+    }}
+    .activation-next {{
+      color: #7d2d14;
+      font-weight: 700;
     }}
     code {{
       font-family: "JetBrains Mono", Consolas, monospace;
@@ -629,8 +689,8 @@ def render_account_page(
     active_connection: VetmanagerConnection | None,
     integration_health_status: str,
     integration_health_reason: str,
-    bearer_tokens: list[dict[str, str | int]],
-    oauth_grants: list[dict[str, str | int]],
+    bearer_tokens: list[dict[str, object]],
+    oauth_grants: list[dict[str, object]],
     integration_error: str | None = None,
     integration_success: str | None = None,
     form_auth_mode: str = VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
@@ -646,6 +706,7 @@ def render_account_page(
     token_is_depersonalized: bool = False,
     issued_token_access_label: str | None = None,
     issued_token_privacy_label: str | None = None,
+    activation_now: datetime | None = None,
 ) -> str:
     # Stage 100.6: escape even though _resolve_site_base_url validates —
     # defense-in-depth against future misconfig where validation may be
@@ -779,6 +840,55 @@ def render_account_page(
             else "<p>После создания raw token показывается только один раз, а в storage сохраняется только hash и безопасный prefix.</p>"
         )
     )
+    activation_now = activation_now or datetime.now(timezone.utc)
+    recent_usage_cutoff = activation_now - timedelta(days=7)
+    integration_ready = active_connection is not None and integration_health_status == INTEGRATION_HEALTH_ACTIVE
+    has_active_token = any(
+        _activation_token_is_usable(token, now=activation_now)
+        for token in bearer_tokens
+    )
+    has_client_usage = any(
+        _activation_token_recently_used(token, cutoff=recent_usage_cutoff)
+        for token in bearer_tokens
+    )
+    has_chatgpt = any(str(grant.get("status")) == "active" for grant in oauth_grants)
+    if not integration_ready:
+        activation_state = "needs_connection"
+        activation_title = "Подключите Vetmanager"
+        activation_summary = "Сначала сохраните рабочую интеграцию клиники."
+    elif not has_active_token:
+        activation_state = "needs_token"
+        activation_title = "Выпустите Bearer token"
+        activation_summary = "Интеграция готова; следующий шаг — выдать токен для MCP-клиента."
+    elif not has_client_usage:
+        activation_state = "needs_client_use"
+        activation_title = "Подключите MCP-клиент"
+        activation_summary = "Токен готов; вставьте MCP URL и Authorization bearer token в клиент."
+    else:
+        activation_state = "ready"
+        activation_title = "Готово к работе"
+        activation_summary = "Интеграция и токен уже используются MCP-клиентом."
+
+    def _activation_item(done: bool, text: str, *, current: bool = False) -> str:
+        marker_class = "activation-done" if done else ("activation-next" if current else "")
+        marker = "✓" if done else ("следующий шаг" if current else "ожидает")
+        return (
+            f'<li><span class="{marker_class}">{escape(marker)}</span> '
+            f"{escape(text)}</li>"
+        )
+
+    activation_html = f"""
+        <section class="activation-status" data-testid="activation-status" data-activation-state="{activation_state}">
+          <h2>{escape(activation_title)}</h2>
+          <p>{escape(activation_summary)}</p>
+          <ol>
+            {_activation_item(integration_ready, "Vetmanager integration active", current=activation_state == "needs_connection")}
+            {_activation_item(has_active_token, "Bearer token issued and active", current=activation_state == "needs_token")}
+            {_activation_item(has_client_usage, "MCP client made at least one request", current=activation_state == "needs_client_use")}
+            {_activation_item(has_chatgpt, "ChatGPT OAuth connection configured", current=False)}
+          </ol>
+        </section>
+    """
     token_list_html = "<p>Токенов пока нет.</p>"
     if bearer_tokens:
         rows = []
@@ -874,6 +984,7 @@ def render_account_page(
         <h1>Личный кабинет</h1>
         <p>Вы вошли как <strong>{escape(account.email)}</strong>. Здесь вы подключаете Vetmanager клиники, проверяете статус интеграции и выпускаете Bearer-токены для работы AI-ассистента.</p>
         {issued_token_html}
+        {activation_html}
         {onboarding_html}
         <div class="metric">
           <span>Privacy и auth transparency</span>
