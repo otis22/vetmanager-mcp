@@ -3231,7 +3231,7 @@ semantics.
 - 189.5 Full workflow: tests, audit, review gates, commit/push/deploy/smoke,
   визуальная проверка landing/login/account. — `done`
 
-## Этап 190. Prometheus and Grafana production observability — `todo`
+## Этап 190. Prometheus and Grafana production observability — `done`
 
 Источник: `/metrics` уже отдаёт Prometheus-compatible process-local counters,
 но без Prometheus история теряется при restart и нет графиков.
@@ -3240,16 +3240,16 @@ semantics.
 без персональных данных в labels и без публичного unauthenticated доступа.
 
 - 190.1 PRD/research: зафиксировать scrape source, privacy boundary, access
-  model Grafana через localhost/SSH tunnel или nginx basic auth. — `todo`
+  model Grafana через localhost/SSH tunnel или nginx basic auth. — `done`
 - 190.2 Добавить Prometheus/Grafana compose services, persistent volumes,
-  local-only ports and scrape config for `mcp:8000/metrics`. — `todo`
+  local-only ports and scrape config for `mcp:8000/metrics`. — `done`
 - 190.3 Добавить Grafana datasource/dashboard provisioning для top tools,
   error rate, upstream statuses, business events and activation telemetry. —
-  `todo`
+  `done`
 - 190.4 Update docs/scripts/smoke: README observability notes, product metrics
-  command top-5 tool calls, deploy smoke for observability services. — `todo`
+  command top-5 tool calls, deploy smoke for observability services. — `done`
 - 190.5 Full workflow: tests, audit, review gates, commit/push/deploy/smoke,
-  проверка Grafana/Prometheus на prod без public PII exposure. — `todo`
+  проверка Grafana/Prometheus на prod без public PII exposure. — `done`
 
 ## Этап 191. Known issue match effectiveness — `todo`
 

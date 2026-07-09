@@ -115,6 +115,30 @@ async def test_get_personal_account_link_by_phone_not_found_uses_fixed_safe_mess
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_get_personal_account_link_by_phone_404_uses_fixed_safe_message():
+    billing_mock()
+    route = respx.get(
+        f"{BASE}/rest/api/VmLink/personalAccountLinkByPhone/{PHONE_DIGITS}"
+    ).mock(return_value=httpx.Response(404, json={"message": "not found"}))
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "get_personal_account_link_by_phone",
+            {"phone": PHONE_DIGITS},
+        )
+
+    payload = _structured(result)
+    assert route.call_count == 1
+    assert payload["success"] is True
+    assert payload["message"] == NOT_FOUND_MESSAGE
+    assert payload["data"]["found"] is False
+    assert payload["data"]["personal_link"] is None
+    assert PHONE_DIGITS not in str(payload)
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_get_personal_account_link_by_phone_rejects_too_short_before_upstream():
     billing_mock()
     route = respx.get(

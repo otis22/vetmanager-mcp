@@ -346,3 +346,19 @@ def test_prometheus_output_exposes_new_metrics():
     # And the concrete labeled rows are present
     assert 'target="vetmanager_api"' in text
     assert 'endpoint="/rest/api/pet"' in text
+    assert 'tool="pet"' in text
+
+
+def test_tool_call_metrics_sanitize_dynamic_endpoint_segments():
+    reset_service_metrics()
+    record_tool_call(
+        endpoint="/rest/api/client/123456",
+        method="GET",
+        outcome="success",
+        duration_seconds=0.05,
+    )
+    text = render_prometheus_metrics()
+
+    assert 'endpoint="/rest/api/client/{id}"' in text
+    assert 'tool="client"' in text
+    assert 'client/123456' not in text

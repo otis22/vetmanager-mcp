@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: vetmanager-mcp
+    metrics_path: /metrics
+    scheme: http
+    bearer_token_file: /tmp/metrics_bearer_token
+    static_configs:
+      - targets:
+          - mcp:8000

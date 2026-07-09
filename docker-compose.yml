@@ -60,18 +60,19 @@ services:
       MCP_TRANSPORT: ${MCP_TRANSPORT:-streamable-http}
       MCP_HOST: ${MCP_HOST:-0.0.0.0}
       MCP_PATH: ${MCP_PATH:-/mcp}
-      PORT: ${PORT:-8000}
+      PORT: 8000
       SITE_BASE_URL: ${SITE_BASE_URL:-}
       STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY:-}
       WEB_SESSION_SECRET: ${WEB_SESSION_SECRET:-}
       FEEDBACK_FINGERPRINT_PEPPER: ${FEEDBACK_FINGERPRINT_PEPPER:-}
+      METRICS_AUTH_TOKEN: ${METRICS_AUTH_TOKEN:-}
       REDIS_URL: ${REDIS_URL:-}
       RATE_LIMIT_REQUIRE_REDIS: ${RATE_LIMIT_REQUIRE_REDIS:-}
       RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS: ${RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS:-}
       RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS: ${RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS:-}
       RATE_LIMIT_REDIS_HEALTH_CHECK_INTERVAL_SECONDS: ${RATE_LIMIT_REDIS_HEALTH_CHECK_INTERVAL_SECONDS:-}
     ports:
-      - "127.0.0.1:${PORT:-8000}:${PORT:-8000}"
+      - "127.0.0.1:${PORT:-8000}:8000"
     volumes:
       - .:/app
       - mcp-data:/app/data  # SQLite fallback for local dev
@@ -89,6 +90,70 @@ services:
         limits:
           cpus: '1'
           memory: 512M
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    cpus: '0.5'
+    mem_limit: 384m
+    environment:
+      METRICS_AUTH_TOKEN: ${METRICS_AUTH_TOKEN:-}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        umask 077
+        printenv METRICS_AUTH_TOKEN > /tmp/metrics_bearer_token
+        exec /bin/prometheus \
+          --config.file=/etc/prometheus/prometheus.yml \
+          --storage.tsdb.path=/prometheus \
+          --storage.tsdb.retention.time=30d \
+          --storage.tsdb.retention.size=1GB \
+          --web.console.libraries=/usr/share/prometheus/console_libraries \
+          --web.console.templates=/usr/share/prometheus/consoles
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      mcp:
+        condition: service_started
+    profiles:
+      - production
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 384M
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    restart: unless-stopped
+    cpus: '0.5'
+    mem_limit: 256m
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/vetmanager-overview.json
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+    profiles:
+      - production
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   test:
     build:
@@ -121,3 +186,5 @@ services:
 
 volumes:
   mcp-data:
+  prometheus-data:
+  grafana-data:

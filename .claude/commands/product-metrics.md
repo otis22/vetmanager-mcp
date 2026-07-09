@@ -25,12 +25,43 @@ argument-hint: "[--top-n=M] [--format=markdown|json]"
 
    Таймаут: 30 сек (скрипт должен отработать за < 2 сек на реальной БД).
 
-3. Если stdout пустой или ненулевой exit code:
+3. Дополнительно собери top-5 tool-call counters и период их накопления:
+   - source для counters: production `/metrics`, только строки
+     `vetmanager_tool_calls_total{...}`.
+   - source для начала периода: `docker compose --profile production ps mcp --format json`,
+     поле `CreatedAt` контейнера `mcp`.
+   - конец периода: timestamp генерации основного product metrics отчёта, если он есть
+     в stdout (`_generated at ... UTC`); иначе текущий `date -u`.
+   - counters process-local: явно подпиши, что период — с последнего старта/restart
+     контейнера `mcp`, а не 30-дневное окно БД.
+   - агрегируй по tool/endpoint: если `endpoint` содержит `:tool_name`, используй часть
+     после `:` как имя tool; иначе используй весь endpoint label. Суммируй success/error
+     rows одного tool/endpoint.
+   - выведи ровно top-5 по убыванию `calls`; если есть error rows, сохрани их в сумме и
+     не скрывай, что это общий count по всем outcomes.
+
+   Удобные команды:
+   ```
+   ssh root@212.193.59.219 'cd /opt/vetmanager-mcp && docker compose --profile production ps mcp --format json'
+   ssh root@212.193.59.219 'curl -fsS http://127.0.0.1:8000/metrics' | rg '^vetmanager_tool_calls_total'
+   ```
+
+   Секцию добавляй после основного Markdown отчёта:
+   ```
+   ## Tool calls top-5
+   _process-local counters since <container CreatedAt> to <report timestamp>; period resets on mcp restart_
+
+   | rank | tool / endpoint | calls |
+   |---|---|---:|
+   | 1 | ... | ... |
+   ```
+
+4. Если stdout пустой или ненулевой exit code:
    - Проверь `curl -sf https://vetmanager-mcp.vromanichev.ru/healthz` — если сервис лёг, скажи пользователю.
    - Если healthy, но скрипт упал — покажи stderr, предложи пересобрать образ: `./scripts/deploy_server.sh root@212.193.59.219 /opt/vetmanager-mcp`.
    - НЕ пытайся 3+ раза — one failure → diagnose → пользователь решает.
 
-4. Markdown output от скрипта уже готов к показу. Просто отрежь шум деплоя (если есть) и покажи чистый отчёт в ответе пользователю. **Не добавляй свои заголовки** — скрипт форматирует сам.
+5. Markdown output от скрипта уже готов к показу. Просто отрежь шум деплоя (если есть), добавь только секцию `Tool calls top-5` из шага 3 и покажи чистый отчёт в ответе пользователю. **Не добавляй свои заголовки** — скрипт форматирует сам.
 
 ## Пример
 

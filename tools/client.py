@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from exceptions import VetmanagerError
+from exceptions import NotFoundError, VetmanagerError
 from filters import (
     eq as _filter_eq,
     gte as _filter_gte,
@@ -546,6 +546,8 @@ def register(mcp: FastMCP) -> None:
             payload = await VetmanagerClient().get(
                 f"/rest/api/VmLink/personalAccountLinkByPhone/{phone_digits}"
             )
+        except NotFoundError:
+            return _personal_account_link_not_found()
         except VetmanagerError:
             raise ToolError(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR) from None
         return _normalize_personal_account_link_payload(payload)

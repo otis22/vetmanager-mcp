@@ -68,6 +68,8 @@ def test_f1_whitelist_extract_survives_env_without_postgres_keys(tmp_path: Path)
         f'cd "$1"\n'
         f'POSTGRES_USER=defaultuser\n'
         f'POSTGRES_DB=defaultdb\n'
+        f'GRAFANA_ADMIN_PASSWORD=stage153-safe-default\n'
+        f'METRICS_AUTH_TOKEN=stage153-safe-metrics-token\n'
         f'{env_block}\n'
         f'echo "USER=${{POSTGRES_USER}}"\n'
         f'echo "DB=${{POSTGRES_DB}}"\n'
@@ -83,13 +85,16 @@ def test_f1_whitelist_extract_survives_env_without_postgres_keys(tmp_path: Path)
     assert "DB=defaultdb" in out, "F1: defaults must survive when .env lacks POSTGRES_DB"
 
 
-def test_f1_deploy_server_whitelist_extracts_only_postgres_keys(tmp_path: Path) -> None:
-    """Synthetic test: extract POSTGRES_USER/DB from a metachar-laden .env, prove malicious values do not execute."""
+def test_f1_deploy_server_whitelist_extracts_only_allowed_keys(tmp_path: Path) -> None:
+    """Extract allowed deploy keys from a metachar-laden .env, prove malicious values do not execute."""
     env_path = tmp_path / ".env"
     canary = tmp_path / "PWNED"
     env_path.write_text(
         "# header comment\n"
         "POSTGRES_USER=safeuser\n"
+        "GRAFANA_ADMIN_USER=observability\n"
+        "GRAFANA_ADMIN_PASSWORD=stage153-safe-secret\n"
+        "METRICS_AUTH_TOKEN=stage153-safe-metrics-token\n"
         f'MALICIOUS=$(touch "{canary}")\n'
         'POSTGRES_DB="quoteddb"\n'
         "OTHER_KEY=ignored_value\n"
@@ -107,8 +112,11 @@ def test_f1_deploy_server_whitelist_extracts_only_postgres_keys(tmp_path: Path) 
         f'cd "$1"\n'
         f'POSTGRES_USER=defaultuser\n'
         f'POSTGRES_DB=defaultdb\n'
+        f'GRAFANA_ADMIN_USER=admin\n'
+        f'GRAFANA_ADMIN_PASSWORD=stage153-safe-default\n'
+        f'METRICS_AUTH_TOKEN=stage153-safe-default-metrics\n'
         f'{env_block}\n'
-        f'printf "USER=%s\\nDB=%s\\n" "$POSTGRES_USER" "$POSTGRES_DB"\n'
+        f'printf "USER=%s\\nDB=%s\\nGRAFANA_USER=%s\\nGRAFANA_PASSWORD=%s\\nMETRICS=%s\\n" "$POSTGRES_USER" "$POSTGRES_DB" "$GRAFANA_ADMIN_USER" "$GRAFANA_ADMIN_PASSWORD" "$METRICS_AUTH_TOKEN"\n'
         f'if [ -n "${{MALICIOUS:-}}" ]; then echo "MALICIOUS_SOURCED=$MALICIOUS"; else echo "MALICIOUS_NOT_SOURCED"; fi\n'
         f'if [ -n "${{OTHER_KEY:-}}" ]; then echo "OTHER_SOURCED=$OTHER_KEY"; else echo "OTHER_NOT_SOURCED"; fi\n'
     )
@@ -122,6 +130,9 @@ def test_f1_deploy_server_whitelist_extracts_only_postgres_keys(tmp_path: Path) 
     out = result.stdout
     assert "USER=safeuser" in out
     assert "DB=quoteddb" in out
+    assert "GRAFANA_USER=observability" in out
+    assert "GRAFANA_PASSWORD=stage153-safe-secret" in out
+    assert "METRICS=stage153-safe-metrics-token" in out
     assert "MALICIOUS_NOT_SOURCED" in out, "F1: malicious key must NOT be sourced (whitelist only)"
     assert "OTHER_NOT_SOURCED" in out, "F1: non-whitelisted keys must NOT leak into env"
     assert not canary.exists(), "F1 CRITICAL: $(touch ...) inside .env value MUST NOT execute"

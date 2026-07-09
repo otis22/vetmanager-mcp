@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass
+import re
 from threading import Lock
 from typing import DefaultDict
 
@@ -54,6 +55,10 @@ _ACCOUNT_LAST_REQUEST_AGE_HOURS: dict[int, float] = {}
 # (TokenUsageLog + Account); this metric is the hook for future Grafana panels
 # without touching the call sites again.
 _BUSINESS_EVENTS_TOTAL: DefaultDict[str, int] = defaultdict(int)
+_DYNAMIC_PATH_SEGMENT_RE = re.compile(
+    r"/(?:\d+|[0-9a-fA-F]{8,}(?:-[0-9a-fA-F]{4,})*)(?=/|$)"
+)
+_TOOL_LABEL_ALLOWED_RE = re.compile(r"[^a-zA-Z0-9_.:-]+")
 
 
 def reset_service_metrics() -> None:
@@ -206,11 +211,29 @@ def record_tool_call(
     """
     normalized_method = method.upper()
     labeled_endpoint = f"{endpoint}:{tool_name}" if tool_name else endpoint
+    labeled_endpoint = _sanitize_tool_endpoint_label(labeled_endpoint)
     with _LOCK:
         _TOOL_CALLS_TOTAL[(labeled_endpoint, normalized_method, outcome)] += 1
         _TOOL_CALL_LATENCY_SECONDS[(labeled_endpoint, normalized_method)].observe(
             duration_seconds
         )
+
+
+def _sanitize_tool_endpoint_label(endpoint: str) -> str:
+    """Keep tool-call labels low-cardinality even if a caller passes a concrete path."""
+    return _DYNAMIC_PATH_SEGMENT_RE.sub("/{id}", endpoint)
+
+
+def _tool_family_label(endpoint: str) -> str:
+    if ":" in endpoint:
+        return _TOOL_LABEL_ALLOWED_RE.sub("_", endpoint.rsplit(":", 1)[1]) or "unknown"
+
+    base, sep, operation = endpoint.partition("#")
+    parts = [part for part in base.strip("/").split("/") if part and part != "{id}"]
+    entity = parts[-1] if parts else "unknown"
+    if sep and operation:
+        entity = f"{entity}.{operation}"
+    return _TOOL_LABEL_ALLOWED_RE.sub("_", entity) or "unknown"
 
 
 def record_token_preset_issued(preset: str) -> None:
@@ -400,9 +423,15 @@ def render_prometheus_metrics() -> str:
     )
     for key, value in snapshot["tool_calls_total"].items():
         endpoint, method, outcome = key.split("|", 2)
+        labels = _labels_text(
+            endpoint=endpoint,
+            tool=_tool_family_label(endpoint),
+            method=method,
+            outcome=outcome,
+        )
         lines.append(
             f"vetmanager_tool_calls_total"
-            f"{_labels_text(endpoint=endpoint, method=method, outcome=outcome)} {value}"
+            f"{labels} {value}"
         )
 
     lines.extend(
@@ -413,7 +442,11 @@ def render_prometheus_metrics() -> str:
     )
     for key, value in snapshot["tool_call_latency_seconds"].items():
         endpoint, method = key.split("|", 1)
-        labels = _labels_text(endpoint=endpoint, method=method)
+        labels = _labels_text(
+            endpoint=endpoint,
+            tool=_tool_family_label(endpoint),
+            method=method,
+        )
         lines.append(f"vetmanager_tool_call_latency_seconds_count{labels} {value['count']}")
         lines.append(f"vetmanager_tool_call_latency_seconds_sum{labels} {value['sum_seconds']}")
         lines.append(f"vetmanager_tool_call_latency_seconds_max{labels} {value['max_seconds']}")

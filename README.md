@@ -715,6 +715,37 @@ Prompts работают по тому же bearer-only контракту, чт
 
 Параллельно в Prometheus-expose'е `/metrics` копится `vetmanager_business_events_total{event=...}` counter для будущих Grafana-дашбордов без изменения кода.
 
+## Prometheus / Grafana
+
+Production compose поднимает Prometheus и Grafana в профиле `production`:
+
+- Prometheus: `127.0.0.1:${PROMETHEUS_PORT:-9090}`.
+- Grafana: `127.0.0.1:${GRAFANA_PORT:-3000}`.
+- Prometheus scrapes `mcp:8000/metrics` внутри Docker network. Production
+  deploy требует `METRICS_AUTH_TOKEN`; Prometheus получает его через
+  bearer-token file, токен не инлайнится в config.
+- Grafana provisioning добавляет datasource `Prometheus` и dashboard
+  `Vetmanager MCP Overview`.
+
+Доступ с рабочей машины:
+
+```bash
+ssh -L 3000:127.0.0.1:3000 -L 9090:127.0.0.1:9090 root@212.193.59.219
+```
+
+Публично Grafana не публикуется по умолчанию. Если нужен доступ через nginx,
+сначала включить basic auth на nginx location и только потом проксировать
+Grafana. Без basic auth наружу не открывать.
+
+Перед production deploy задать `METRICS_AUTH_TOKEN` и `GRAFANA_ADMIN_PASSWORD`
+в server `.env`; пустые значения и defaults вроде `admin`/`password` deploy
+script отвергает. Anonymous access и sign-up в Grafana выключены.
+
+Dashboard queries используют только низкокардинальные service labels
+(`tool`, `endpoint`, `outcome`, `target`, `status`, `event`) и не должны
+добавлять email, clinic/customer identifiers, token prefixes или
+payload-derived labels.
+
 ## CI/CD
 
 | Воркфлоу | Триггер | Что делает |

@@ -9624,3 +9624,86 @@ Checks so far:
   committed-diff fix `1275 passed, 1 skipped, 65 deselected`.
 - Local audit before review gates: `git diff --check` and
   `python3 -m py_compile web_html.py scripts/product_metrics_report.py` passed.
+
+## Этап 190. Prometheus and Grafana production observability
+
+- Основание: `/metrics` уже отдаёт process-local Prometheus exposition, но без
+  Prometheus/Grafana история теряется при restart и нет графиков.
+- Архитектурное решение: добавить Prometheus/Grafana в production compose с
+  localhost-only ports, named volumes, Prometheus retention caps and Grafana
+  provisioning. Public Grafana остаётся out-of-scope; доступ через SSH tunnel
+  или nginx basic auth only.
+- Security/privacy: Grafana anonymous/sign-up disabled, admin password must be
+  non-empty/non-default before deploy. Prometheus uses `bearer_token_file` for
+  `METRICS_AUTH_TOKEN`; dashboard queries are restricted to low-cardinality
+  non-PII labels. Grafana API deploy checks avoid `curl -u` argv exposure.
+- PRD reviews: Spark accepted 2 high + 3 medium findings around deploy start,
+  Grafana credentials, label hygiene, retention and runtime checks. Claude Opus
+  accepted 2 high + 4 medium findings around password guard, metrics auth,
+  non-fatal observability checks, Grafana limits, secret delivery and volume
+  permissions. PRD was updated; final Spark sanity returned `[]`.
+- Implementation: added `prometheus` and `grafana` compose services,
+  `ops/prometheus/prometheus.yml`, Grafana datasource/dashboard provisioning,
+  README observability notes, deploy warning-only observability checks, and
+  Stage 190 static tests. The existing product-metrics command top-5 tool-call
+  addition was folded into this stage.
+- Targeted checks:
+  `docker compose --profile test run --rm test pytest tests/test_stage190_observability_stack.py tests/test_deploy_server_script.py tests/test_post_deploy_smoke_checks.py tests/test_prometheus_metrics.py -q`
+  — `18 passed, 1 skipped`.
+- Full-suite follow-up: the first full run exposed an unrelated real devtr6
+  smoke failure for `get_personal_account_link_by_phone` when VmLink returned
+  HTTP 404 for a missing phone. Decision: map `NotFoundError` to the existing
+  safe `Client profile not found` envelope, preserving generic ToolError
+  handling for upstream errors/timeouts.
+- Regression checks after the follow-up:
+  `docker compose --profile test run --rm test pytest tests/test_stage171_vmlink_personal_account_link.py -q`
+  — `12 passed`; real smoke
+  `docker compose --profile test run --rm test pytest tests/test_e2e_real.py::test_real_vmlink_personal_account_link_by_phone_smoke -q`
+  — `1 passed`.
+- Full suite:
+  `docker compose --profile test run --rm test pytest -q`
+  — `1335 passed, 13 skipped`.
+- Compose/shell/code audit: `git diff --check`,
+  `GRAFANA_ADMIN_PASSWORD=stage190-not-default docker compose --profile production config`,
+  `bash -n scripts/deploy_server.sh scripts/post_deploy_smoke_checks.sh`,
+  `python3 -m json.tool ops/grafana/dashboards/vetmanager-overview.json`, and
+  `python3 -m py_compile tools/client.py scripts/product_metrics_report.py` passed.
+- Spark committed-diff review: read-only sandbox hung after bwrap warning and
+  was killed; one allowed review-only fallback with `-s danger-full-access`
+  found two medium issues. Accepted fixes: add runtime-enforced `cpus` and
+  `mem_limit` for Prometheus/Grafana because `deploy.resources` is not enforced
+  by plain `docker compose up`; parse Prometheus `/api/v1/targets` JSON and
+  require the `vetmanager-mcp` target to be `up` instead of grepping any healthy
+  target.
+- Checks after Spark committed-diff fixes:
+  `docker compose --profile test run --rm test pytest tests/test_stage190_observability_stack.py tests/test_deploy_server_script.py tests/test_post_deploy_smoke_checks.py tests/test_prometheus_metrics.py -q`
+  — `18 passed, 1 skipped`;
+  `docker compose --profile test run --rm test pytest -q`
+  — `1335 passed, 13 skipped`;
+  `git diff --check`, `bash -n`, compose config, and py_compile passed.
+- Final Spark committed-diff review for amended commit again required the
+  allowed read-only-sandbox fallback and produced three medium findings. Accepted
+  fixes: expose sanitized endpoint labels plus low-cardinality `tool` labels and
+  switch Grafana top-tools query to `tool`; lock the production container port
+  to 8000 while keeping the host port configurable so Prometheus `mcp:8000`
+  remains correct; require non-empty `METRICS_AUTH_TOKEN` in production deploy.
+- Final checks after the second Spark fix:
+  `docker compose --profile test run --rm test pytest tests/test_stage190_observability_stack.py tests/test_stage153_review_followup.py::test_f1_whitelist_extract_survives_env_without_postgres_keys tests/test_stage153_review_followup.py::test_f1_deploy_server_whitelist_extracts_only_allowed_keys tests/test_stage88_observability_core.py -q`
+  — `17 passed, 1 skipped`;
+  `docker compose --profile test run --rm test pytest -q`
+  — `1336 passed, 13 skipped`;
+  `git diff --check`, `bash -n`, compose config, JSON validation, and py_compile
+  passed.
+- Final review gates for commit `1200683`: Spark read-only failed before a valid
+  local-file review due to the known bwrap runtime issue and was stopped; the
+  allowed review-only `danger-full-access` fallback returned `[]`. Claude Opus
+  committed-diff review returned `{"findings":[]}`.
+- Final review rerun on `b2b0f15` found one accepted high/medium issue: Docker
+  Compose preserved `$${METRICS_AUTH_TOKEN:-}` into the container shell, where
+  `$$` expands to PID, so Prometheus would write an invalid bearer-token file.
+  Fixed by using `printenv METRICS_AUTH_TOKEN > /tmp/metrics_bearer_token`.
+  Checks: Stage 190 targeted `5 passed, 1 skipped`; runtime container env probe
+  for Prometheus `METRICS_AUTH_TOKEN=abc` passed; related regression
+  `28 passed, 1 skipped`; full suite
+  `docker compose --profile test run --rm test pytest -q` —
+  `1336 passed, 13 skipped`; syntax/json/py_compile/diff-check passed.

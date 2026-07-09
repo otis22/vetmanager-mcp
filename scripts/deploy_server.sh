@@ -81,6 +81,9 @@ fi
 
 POSTGRES_USER="${POSTGRES_USER:-vetmanager}"
 POSTGRES_DB="${POSTGRES_DB:-vetmanager}"
+GRAFANA_ADMIN_USER="${GRAFANA_ADMIN_USER:-admin}"
+GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD:-}"
+METRICS_AUTH_TOKEN="${METRICS_AUTH_TOKEN:-}"
 
 UID_VAL="${DOCKER_UID:-$(id -u)}"
 GID_VAL="${DOCKER_GID:-$(id -g)}"
@@ -129,6 +132,9 @@ if [ -f .env ]; then
   # `|| true` keeps grep no-match (exit 1) from killing `set -euo pipefail`.
   PG_USER_LINE="$( { grep -E '^POSTGRES_USER=' .env || true; } | head -n 1 | cut -d= -f2- | tr -d '\r')"
   PG_DB_LINE="$( { grep -E '^POSTGRES_DB=' .env || true; } | head -n 1 | cut -d= -f2- | tr -d '\r')"
+  GRAFANA_USER_LINE="$( { grep -E '^GRAFANA_ADMIN_USER=' .env || true; } | head -n 1 | cut -d= -f2- | tr -d '\r')"
+  GRAFANA_PASSWORD_LINE="$( { grep -E '^GRAFANA_ADMIN_PASSWORD=' .env || true; } | head -n 1 | cut -d= -f2- | tr -d '\r')"
+  METRICS_AUTH_TOKEN_LINE="$( { grep -E '^METRICS_AUTH_TOKEN=' .env || true; } | head -n 1 | cut -d= -f2- | tr -d '\r')"
   if [ -n "${PG_USER_LINE}" ]; then
     POSTGRES_USER="${PG_USER_LINE%\"}"
     POSTGRES_USER="${POSTGRES_USER#\"}"
@@ -137,7 +143,50 @@ if [ -f .env ]; then
     POSTGRES_DB="${PG_DB_LINE%\"}"
     POSTGRES_DB="${POSTGRES_DB#\"}"
   fi
+  if [ -n "${GRAFANA_USER_LINE}" ]; then
+    GRAFANA_ADMIN_USER="${GRAFANA_USER_LINE%\"}"
+    GRAFANA_ADMIN_USER="${GRAFANA_ADMIN_USER#\"}"
+  fi
+  if [ -n "${GRAFANA_PASSWORD_LINE}" ]; then
+    GRAFANA_ADMIN_PASSWORD="${GRAFANA_PASSWORD_LINE%\"}"
+    GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD#\"}"
+  fi
+  if [ -n "${METRICS_AUTH_TOKEN_LINE}" ]; then
+    METRICS_AUTH_TOKEN="${METRICS_AUTH_TOKEN_LINE%\"}"
+    METRICS_AUTH_TOKEN="${METRICS_AUTH_TOKEN#\"}"
+  fi
 fi
+
+case "${METRICS_AUTH_TOKEN}" in
+  "")
+    echo "ERROR: METRICS_AUTH_TOKEN must be set before production deploy."
+    exit 1
+    ;;
+  *$'\n'*|*$'\r'*)
+    echo "ERROR: METRICS_AUTH_TOKEN must not contain newline characters."
+    exit 1
+    ;;
+  *\"*|*\\*)
+    echo "ERROR: METRICS_AUTH_TOKEN must not contain double quote or backslash characters."
+    exit 1
+    ;;
+esac
+export METRICS_AUTH_TOKEN
+
+case "${GRAFANA_ADMIN_PASSWORD}" in
+  ""|admin|password|changeme|CHANGE_ME)
+    echo "ERROR: GRAFANA_ADMIN_PASSWORD must be set to a non-default secret value before production deploy."
+    exit 1
+    ;;
+  *$'\n'*|*$'\r'*)
+    echo "ERROR: GRAFANA_ADMIN_PASSWORD must not contain newline characters."
+    exit 1
+    ;;
+  *\"*|*\\*)
+    echo "ERROR: GRAFANA_ADMIN_PASSWORD must not contain double quote or backslash characters."
+    exit 1
+    ;;
+esac
 
 # ── Build image once ─────────────────────────────────────────────────────────
 echo "--> Building Docker image..."
@@ -277,6 +326,71 @@ if [ -f "./scripts/post_deploy_smoke_checks.sh" ]; then
   fi
 else
   echo "WARNING: scripts/post_deploy_smoke_checks.sh not found, skipping app smoke checks."
+fi
+
+# ── Start observability services (warning-only, app deploy already succeeded) ─
+echo "--> Starting observability services..."
+if ! compose up -d --no-build prometheus grafana; then
+  echo "WARNING: observability services failed to start; app deploy remains complete."
+  dump_compose_diagnostics
+else
+  OBS_WARN=0
+  for svc in prometheus grafana; do
+    CID="$(compose ps -q "${svc}" || true)"
+    if [ -z "${CID}" ]; then
+      echo "WARNING: ${svc} container is missing."
+      OBS_WARN=1
+      continue
+    fi
+    RUNNING="$(docker inspect -f '{{.State.Running}}' "${CID}" 2>/dev/null || echo "false")"
+    if [ "${RUNNING}" != "true" ]; then
+      echo "WARNING: ${svc} container is not running."
+      OBS_WARN=1
+    fi
+  done
+  prometheus_mcp_target_is_up() {
+    curl -fsS http://127.0.0.1:9090/api/v1/targets 2>/dev/null | python3 -c '
+import json
+import sys
+
+payload = json.load(sys.stdin)
+targets = payload.get("data", {}).get("activeTargets", [])
+for target in targets:
+    if (
+        target.get("scrapePool") == "vetmanager-mcp"
+        and target.get("health") == "up"
+        and "mcp:8000" in str(target.get("scrapeUrl", ""))
+    ):
+        sys.exit(0)
+sys.exit(1)
+'
+  }
+  if ! prometheus_mcp_target_is_up; then
+    echo "WARNING: Prometheus target health is not up yet."
+    OBS_WARN=1
+  fi
+  if ! curl -fsS http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
+    echo "WARNING: Grafana health endpoint is not reachable yet."
+    OBS_WARN=1
+  fi
+  grafana_api_check() {
+    local path="$1"
+    printf 'user = "%s:%s"\n' "${GRAFANA_ADMIN_USER}" "${GRAFANA_ADMIN_PASSWORD}" \
+      | curl -fsS --config - "http://127.0.0.1:3000${path}" >/dev/null 2>&1
+  }
+  if ! grafana_api_check "/api/datasources/name/Prometheus"; then
+    echo "WARNING: Grafana Prometheus datasource is not provisioned yet."
+    OBS_WARN=1
+  fi
+  if ! grafana_api_check "/api/dashboards/uid/vetmanager-mcp-overview"; then
+    echo "WARNING: Grafana Vetmanager dashboard is not provisioned yet."
+    OBS_WARN=1
+  fi
+  if [ "${OBS_WARN}" = "0" ]; then
+    echo "--> Observability services are running."
+  else
+    echo "WARNING: observability checks reported warnings; inspect Prometheus/Grafana after deploy."
+  fi
 fi
 REMOTE
 
