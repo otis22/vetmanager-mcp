@@ -10162,3 +10162,40 @@ Checks so far:
   - Full suite:
     `docker compose --profile test run --rm test` —
     `1347 passed, 2 skipped, 65 deselected`.
+- **Additional final review fixes before push**:
+  - Claude Opus review found that cleanup throttle advanced before the
+    surrounding transaction committed. Accepted and fixed: cleanup due-check and
+    throttle marking are now separated, and `_last_cleanup_at` advances only
+    after successful commit. Regression:
+    `test_stage198_cleanup_throttle_advances_only_after_successful_commit`.
+  - Claude Opus review found transient Vetmanager timeout/upstream failures
+    polluted `integration_failed` product events. Accepted and fixed:
+    transient failures still log/update auth metrics but do not persist
+    activation product events. Regression:
+    `test_stage198_transient_vetmanager_failure_does_not_persist_product_event`.
+  - Claude Opus review found new-account funnel inversion from revoked/expired
+    tokens. Accepted and fixed: ordered current-state funnel stages now require
+    active, non-expired tokens and active integration; stage 156 regression
+    expectations now pin this.
+  - Claude Opus review found `token_copied` is an optional branch, not a
+    mandatory precondition for first MCP request. Accepted as dashboard/PRD
+    clarification: ordered Grafana funnel excludes `token_copied`; the metric
+    remains exported and visible through activation event/funnel series.
+  - Claude Opus review found the reauth no-event invariant lacked coverage.
+    Accepted and fixed with
+    `test_stage198_reauth_does_not_persist_activation_events`.
+- **Final local checks before push**:
+  - Targeted regression:
+    `docker compose --profile test run --rm test pytest tests/test_stage156_activation_telemetry.py tests/test_stage198_activation_telemetry.py tests/test_stage190_observability_stack.py::test_stage190_grafana_provisioning_and_dashboard_queries_are_safe -q`
+    — `19 passed`.
+  - Full suite:
+    `docker compose --profile test run --rm test` —
+    `1350 passed, 2 skipped, 65 deselected`.
+  - `git diff --check` — clean.
+- **Final committed-diff review before push**:
+  - Spark read-only repeatedly hit the known Codex `bwrap` sandbox/runtime hang
+    before useful file reads; per workflow it was stopped and repeated with the
+    same `gpt-5.3-codex-spark` model, `-s danger-full-access`, and review-only
+    prompt. Final fallback review for `HEAD~5..HEAD` returned `[]`.
+  - Claude Opus final committed-diff review for `HEAD~5..HEAD`, with tools/MCP
+    disabled and strict JSON schema, returned `{"findings":[]}`.

@@ -2,8 +2,8 @@
 
 ## Статус
 
-Implemented locally — 2026-07-10. Pending committed-diff review, push,
-production deploy, and smoke verification.
+Implemented and reviewed locally — 2026-07-10. Pending push, production
+deploy, and smoke verification.
 
 ## Контекст и проблема
 
@@ -310,3 +310,14 @@ Each implementation subtask is expected to stay under 150 LOC or under 2 hours.
 - GitHub Tests and Deploy Prod are green.
 - Production smoke verifies `/metrics` exposes the new activation series and
   account registration/integration/token flow still works.
+
+### Post-review semantic clarification
+
+The ordered Grafana new-account funnel is:
+
+`new_registered -> integration_saved -> token_issued -> first_mcp_request`.
+
+`token_copied` remains exported as `vetmanager_activation_funnel_accounts` and
+`vetmanager_activation_event_accounts`, but it is treated as an optional UI
+branch and is not part of the ordered Grafana funnel. This avoids implying that
+copying the generated config is mandatory before the first MCP request.

@@ -3448,6 +3448,8 @@ error_class без mobile/desktop и без продуктовой записи 
   integration_failed/saved → token_issued → token_copied →
   first_mcp_request. — `done`
 - 198.4 Tests/checks, audit, review gates, commit/push/deploy/smoke. — `in_progress`
+  (local checks and final Spark/Claude committed-diff review gates passed; push,
+  GitHub, deploy and production smoke pending)
 
 ## Этап 199. Activation-first кабинет — `done`
 
