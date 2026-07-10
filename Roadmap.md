@@ -3381,8 +3381,9 @@ instead of an empty panel.
 мобильного, видит ошибку/успех и понимает следующий шаг.
 
 - 196.1 PRD/research: зафиксировать причины мобильных 400, scope фиксов и
-  acceptance. — `done` (research = design review 2026-07-10; отдельный PRD не
-  создавался — воркфлоу сокращён по явному указанию пользователя)
+  acceptance. — `done` (research = design review 2026-07-10; PRD оформлен
+  as-built постфактум: `PRD/этап-196-197-199-activation-ux.md`; воркфлоу
+  сокращён по явному указанию пользователя)
 - 196.2 Нормализация домена server-side (trim + lower + вырезание
   `https://`-префикса и `.vetmanager.ru`-суффикса) + мобильные атрибуты
   инпутов (`autocapitalize`, `autocorrect`, `spellcheck`) + подсказка формата
@@ -3414,6 +3415,8 @@ instead of an empty panel.
 
 - 197.1 PRD/research: путь token → first request; security-решение по
   дефолту IP-маски (guided «любой IP» vs подсеть) с rationale. — `done`
+  (as-built PRD: `PRD/этап-196-197-199-activation-ux.md`; rationale в
+  AssumptionLog 2026-07-10)
 - 197.2 One-click выпуск для `needs_token`: одна primary-кнопка с дефолтами
   (prefilled имя, 30 дней, Analytics, явный выбор IP с честным
   предупреждением); полная форма — за «Настроить вручную». — `done`
@@ -3455,7 +3458,8 @@ error_class без mobile/desktop и без продуктовой записи 
 экраном с одной primary-кнопкой; остальные секции свёрнуты/за якорями.
 
 - 199.1 PRD/research: структура activation-first экрана, поведение после
-  `ready`, миграция существующих секций. — `done`
+  `ready`, миграция существующих секций. — `done` (as-built PRD:
+  `PRD/этап-196-197-199-activation-ux.md`)
 - 199.2 Реализация: stepper-заголовок («Шаг N из 3»), показ текущего шага,
   сворачивание метрик/privacy/ChatGPT-секций до активации. — `done`
 - 199.3 Tests/checks, audit, review gates, commit/push/deploy/smoke с

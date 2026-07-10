@@ -92,6 +92,10 @@
 3. Для рабочего MCP-контура credentials приходят только через:
    - `Authorization: Bearer <service_token>`
 4. Web-контур (`/register`, `/login`, `/account`) работает через signed session cookie.
+   Кабинет — activation-first (stage 199): stepper «Шаг N из 3», секции-`details`
+   по состоянию воронки; служебные endpoint'ы кабинета —
+   `POST /account/telemetry/token-copied` (CSRF, аггрегатная телеметрия) и
+   `GET /account/activation-status` (JSON для polling-индикатора, stage 197).
 5. Контейнеры запускаются с UID/GID хоста для корректной работы с bind mounts.
 
 ### 3.2. Основные компоненты
@@ -705,7 +709,7 @@ docker compose up -d
 ### Observability metrics (stage 88 + 110 + 134)
 - `vetmanager_upstream_requests_total{target,status}` + latency histogram;
 - `vetmanager_tool_calls_total{endpoint,method,outcome}` + latency histogram;
-- `vetmanager_business_events_total{event}` — fixed allowlist lifecycle events, including `oauth_grant_revoked`.
+- `vetmanager_business_events_total{event}` — fixed allowlist lifecycle events, including `oauth_grant_revoked` and `token_copied` (stage 197).
 - `vetmanager_token_preset_issued_total{preset}`;
 - `vetmanager_activation_funnel_accounts{stage}`;
 - `vetmanager_sanitizer_failures_total`;

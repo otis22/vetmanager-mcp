@@ -9993,7 +9993,11 @@ Checks so far:
   («Выполняй все 3 этапа, отходи от воркфлоу, деплой не делай»). Роль research
   выполнил design/вёрстка review 2026-07-10 (лог
   `LiveHelperAgent/logs/mcp/2026-07-10-activation-funnel-design-review.md`).
-  Изменения закоммичены локально; push и deploy не выполнялись.
+  Изменения закоммичены локально; push и deploy не выполнялись. PRD оформлен
+  as-built постфактум: `PRD/этап-196-197-199-activation-ux.md`;
+  technical requirements дополнены (web-контур: activation-first кабинет,
+  endpoint'ы `/account/telemetry/token-copied` и `/account/activation-status`;
+  business events: `token_copied`).
 - **Домен нормализуется, а не отклоняется** (196.2): `validate_domain` теперь
   сам приводит ввод к канону — trim + lower + срез `https://`-префикса,
   path/query и суффиксов `.vetmanager.ru`/`.vetmanager.cloud`. Обоснование:
