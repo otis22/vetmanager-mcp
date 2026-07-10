@@ -9787,3 +9787,44 @@ Checks so far:
   — `1341 passed, 13 skipped`.
 - Audit: `python3 -m py_compile scripts/triage_agent_feedback.py` and
   `git diff --check` passed.
+
+## Этап 194. Analytics defaults and activation funnel
+
+- Основание: Report AI workflow требует `report_ai.write`, поэтому токены,
+  выпускаемые из account UI и ChatGPT OAuth consent без явного выбора preset,
+  должны по умолчанию использовать `report_ai` / `Analytics`, а не `read_only`.
+- Архитектурное решение: `report_ai` становится default preset только для
+  пустого/неявного выбора. `full_access` по-прежнему требует явного выбора и
+  подтверждения, а OAuth grant не расширяет scope сверх запрошенного клиентом:
+  effective scopes остаются intersection(requested scopes, preset scopes).
+- UI help по REST API key взят из support-bot-base:
+  `/home/otis/myprojects/support-bot-base/base/vetmanager_help_ru/Integratsiya_s_drugimi_prilozheniyami_i_servisami/Integratsiya_so_storonnimi_programmami_i_servisami_cherez_REST_API.md`.
+  В account UI добавлена короткая инструкция: Vetmanager settings -> service
+  integrations -> enable REST API -> edit -> copy API KEY. Сам ключ не
+  логируется и не отображается повторно.
+- Activation funnel экспортируется как aggregate-only Prometheus gauge
+  `vetmanager_activation_funnel_accounts{stage=...}` без account/email/domain
+  labels. Stages: `registered`, `connected`, `with_active_tokens`,
+  `ready_for_mcp`, `with_recent_usage_7d`. `with_active_tokens` показывает
+  active accounts with live service bearer tokens, а `ready_for_mcp`
+  дополнительно требует active Vetmanager connection, чтобы stale-token/
+  no-connection gaps были видны отдельно.
+- Grafana получает отдельный `Activation funnel` bar gauge panel по этой
+  метрике. Labels остаются только low-cardinality `stage`; персональные данные
+  в Grafana не добавляются.
+- Accepted review findings: добавить OAuth regression, что Analytics default не
+  расширяет narrow requested scope; не менять semantics существующей account age
+  gauge; проверить уникальность panel ids и grid overlap; инициализировать все
+  activation funnel stages нулями до первого scan; развести семантику
+  `with_active_tokens` и `ready_for_mcp`; фильтровать activation funnel stages
+  по фиксированному allowlist, чтобы будущий caller не создал dynamic label
+  cardinality; явно проверить в OAuth consent regression, что default
+  `Analytics` preview показывает `report_ai.write` при broad requested scope.
+- Checks:
+  `docker compose --profile test run --rm test pytest tests/test_web_auth.py tests/test_stage173_oauth_metadata.py tests/test_stage156_activation_telemetry.py tests/test_stage190_observability_stack.py tests/test_service_metrics.py -q`
+  — `86 passed, 1 skipped`;
+  `docker compose --profile test run --rm test` —
+  `1289 passed, 2 skipped, 65 deselected` after the activation funnel review
+  fixes;
+  `python3 -m json.tool ops/grafana/dashboards/vetmanager-overview.json` and
+  `git diff --check` passed.

@@ -37,7 +37,7 @@ from storage_models import (
     OAuthGrant,
 )
 from token_cleanup import scan_token_expiry_warnings, sync_expired_tokens
-from tool_access_registry import PRESET_READ_ONLY, infer_token_preset, get_token_preset_label
+from tool_access_registry import PRESET_REPORT_AI, infer_token_preset, get_token_preset_label
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
 from vetmanager_connection_service import (
     INTEGRATION_HEALTH_UNKNOWN,
@@ -470,7 +470,7 @@ async def _render_account_dashboard_response(
     token_name: str = "",
     token_expiry_days: str = "30",
     ip_mask: str | None = None,
-    token_access_preset: str = PRESET_READ_ONLY,
+    token_access_preset: str = PRESET_REPORT_AI,
     token_is_depersonalized: bool = False,
     issued_token_access_label: str | None = None,
     issued_token_privacy_label: str | None = None,

@@ -49,6 +49,17 @@ _RATE_LIMIT_BACKEND_DEGRADED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _SANITIZER_FAILURES_TOTAL = 0
 _REPORT_AI_LONG_QUEUED_POLLS_TOTAL = 0
 _ACCOUNT_LAST_REQUEST_AGE_HOURS: dict[int, float] = {}
+_ACTIVATION_FUNNEL_STAGES = (
+    "registered",
+    "connected",
+    "with_active_tokens",
+    "ready_for_mcp",
+    "with_recent_usage_7d",
+)
+_ACTIVATION_FUNNEL_ACCOUNTS: dict[str, int] = {
+    stage: 0
+    for stage in _ACTIVATION_FUNNEL_STAGES
+}
 # Stage 110.2: business events counter — `account_registered`, `bearer_token_issued`,
 # `bearer_token_revoked`, `web_login_succeeded`. Accumulated in-process since last
 # reset; reset_service_metrics() zeros it. Persistent counts live in the DB
@@ -79,6 +90,11 @@ def reset_service_metrics() -> None:
         _REPORT_AI_LONG_QUEUED_POLLS_TOTAL = 0
         _BUSINESS_EVENTS_TOTAL.clear()
         _ACCOUNT_LAST_REQUEST_AGE_HOURS.clear()
+        _ACTIVATION_FUNNEL_ACCOUNTS.clear()
+        _ACTIVATION_FUNNEL_ACCOUNTS.update({
+            stage: 0
+            for stage in _ACTIVATION_FUNNEL_STAGES
+        })
 
 
 _ALLOWED_BUSINESS_EVENTS = frozenset({
@@ -272,6 +288,16 @@ def set_account_last_request_age_hours(values: dict[int, float]) -> None:
         })
 
 
+def set_activation_funnel_accounts(values: dict[str, int]) -> None:
+    """Replace aggregate activation funnel gauges with the latest DB snapshot."""
+    with _LOCK:
+        _ACTIVATION_FUNNEL_ACCOUNTS.clear()
+        _ACTIVATION_FUNNEL_ACCOUNTS.update({
+            stage: int(values.get(stage, 0))
+            for stage in _ACTIVATION_FUNNEL_STAGES
+        })
+
+
 def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, int | float]]]:
     """Return a stable JSON-serializable snapshot of current service metrics."""
     with _LOCK:
@@ -319,6 +345,7 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 str(account_id): age_hours
                 for account_id, age_hours in sorted(_ACCOUNT_LAST_REQUEST_AGE_HOURS.items())
             },
+            "activation_funnel_accounts": dict(sorted(_ACTIVATION_FUNNEL_ACCOUNTS.items())),
         }
 
 
@@ -515,6 +542,18 @@ def render_prometheus_metrics() -> str:
         lines.append(
             f"vetmanager_account_last_request_age_hours"
             f"{_labels_text(account_id=account_id)} {age_hours}"
+        )
+
+    lines.extend(
+        [
+            "# HELP vetmanager_activation_funnel_accounts Current aggregate activation funnel account counts by stage.",
+            "# TYPE vetmanager_activation_funnel_accounts gauge",
+        ]
+    )
+    for stage, count in snapshot.get("activation_funnel_accounts", {}).items():
+        lines.append(
+            f"vetmanager_activation_funnel_accounts"
+            f"{_labels_text(stage=stage)} {count}"
         )
 
     # Cache metrics (from request_cache singleton).

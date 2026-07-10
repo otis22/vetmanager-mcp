@@ -99,6 +99,7 @@ def test_stage190_grafana_provisioning_and_dashboard_queries_are_safe() -> None:
     assert datasource["uid"] == "Prometheus"
     assert datasource["url"] == "http://prometheus:9090"
     panel_titles = {panel["title"] for panel in dashboard["panels"]}
+    panel_ids = [panel["id"] for panel in dashboard["panels"]]
     assert {
         "Top tool calls",
         "Tool call rate",
@@ -106,7 +107,19 @@ def test_stage190_grafana_provisioning_and_dashboard_queries_are_safe() -> None:
         "Upstream statuses",
         "Business events",
         "Activation telemetry",
+        "Activation funnel",
     }.issubset(panel_titles)
+    assert len(panel_ids) == len(set(panel_ids))
+    occupied_cells: set[tuple[int, int]] = set()
+    for panel in dashboard["panels"]:
+        pos = panel["gridPos"]
+        cells = {
+            (x, y)
+            for x in range(pos["x"], pos["x"] + pos["w"])
+            for y in range(pos["y"], pos["y"] + pos["h"])
+        }
+        assert not (occupied_cells & cells), panel["title"]
+        occupied_cells.update(cells)
 
     text = GRAFANA_DASHBOARD.read_text(encoding="utf-8")
     forbidden = ("email", "clinic", "customer", "client_name", "phone", "token_prefix")
@@ -120,6 +133,7 @@ def test_stage190_grafana_provisioning_and_dashboard_queries_are_safe() -> None:
         "target",
         "status",
         "event",
+        "stage",
     }
     label_names = set(re.findall(r"(?:by|without) \(([^)]*)\)", text))
     flattened = {

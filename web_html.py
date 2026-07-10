@@ -23,8 +23,8 @@ from tool_access_registry import (
 _DEFAULT_SITE_BASE_URL = "https://vetmanager-mcp.vromanichev.ru"
 _DOCTOR_PRESET_FORM_VALUE = "clinical_staff"
 _CHATGPT_OAUTH_ACCESS_PRESETS = (
-    PRESET_READ_ONLY,
     PRESET_REPORT_AI,
+    PRESET_READ_ONLY,
     PRESET_FRONTDESK,
     PRESET_FULL_ACCESS,
 )
@@ -576,7 +576,7 @@ def render_oauth_consent_page(
     scopes: list[str],
     connections: list[dict[str, str | int]],
     error: str | None = None,
-    selected_access_preset: str = PRESET_READ_ONLY,
+    selected_access_preset: str = PRESET_REPORT_AI,
     selected_privacy_mode: str = "depersonalized",
 ) -> str:
     error_html = f'<div class="error">{escape(error)}</div>' if error else ""
@@ -702,7 +702,7 @@ def render_account_page(
     token_name: str = "",
     token_expiry_days: str = "30",
     ip_mask: str = "",
-    token_access_preset: str = PRESET_READ_ONLY,
+    token_access_preset: str = PRESET_REPORT_AI,
     token_is_depersonalized: bool = False,
     issued_token_access_label: str | None = None,
     issued_token_privacy_label: str | None = None,
@@ -779,13 +779,13 @@ def render_account_page(
             f"{escape(label)}</option>"
         )
         for form_value, preset, label in (
+            (PRESET_REPORT_AI, PRESET_REPORT_AI, TOKEN_PRESET_LABELS[PRESET_REPORT_AI]),
             (PRESET_FULL_ACCESS, PRESET_FULL_ACCESS, TOKEN_PRESET_LABELS[PRESET_FULL_ACCESS]),
             (PRESET_READ_ONLY, PRESET_READ_ONLY, TOKEN_PRESET_LABELS[PRESET_READ_ONLY]),
             (PRESET_FRONTDESK, PRESET_FRONTDESK, TOKEN_PRESET_LABELS[PRESET_FRONTDESK]),
             (_DOCTOR_PRESET_FORM_VALUE, PRESET_DOCTOR, TOKEN_PRESET_LABELS[PRESET_DOCTOR]),
             (PRESET_FINANCE, PRESET_FINANCE, TOKEN_PRESET_LABELS[PRESET_FINANCE]),
             (PRESET_INVENTORY, PRESET_INVENTORY, TOKEN_PRESET_LABELS[PRESET_INVENTORY]),
-            (PRESET_REPORT_AI, PRESET_REPORT_AI, TOKEN_PRESET_LABELS[PRESET_REPORT_AI]),
         )
     )
     issued_token_html = ""
@@ -1034,6 +1034,7 @@ def render_account_page(
           </div>
           <div class="panel-card field-panel" data-mode-panel="{VETMANAGER_AUTH_MODE_DOMAIN_API_KEY}" data-testid="panel-domain-api-key" {"hidden" if not show_domain_api_key_panel else ""}>
             <strong>Шаг 2. Данные клиники для API key</strong>
+            <p class="hint" data-testid="vetmanager-api-key-help">В Vetmanager откройте Настройки -> Интеграция с сервисами, включите REST API, нажмите редактирование и скопируйте API KEY. Этот ключ даёт широкий доступ к программе, поэтому вставляйте его только здесь и не отправляйте в чат.</p>
             <label>Clinic domain
               <input type="text" name="domain" value="{escape(domain_value)}" placeholder="myclinic" {domain_input_attrs} data-testid="integration-domain">
             </label>
@@ -1130,7 +1131,7 @@ def render_account_page(
             <button class="copy-button" id="chatgpt-mcp-copy-button" type="button">Скопировать URL</button>
             <span class="copy-status" id="chatgpt-mcp-copy-status" aria-live="polite"></span>
           </div>
-          <p class="hint">Обычный режим по умолчанию — Read only без персональных данных. Full access и персональные данные требуют отдельного явного выбора.</p>
+          <p class="hint">Обычный режим по умолчанию — Analytics без персональных данных, чтобы ChatGPT мог работать с отчётами. Full access и персональные данные требуют отдельного явного выбора.</p>
         </div>
         {oauth_grants_html}
         <form method="post" action="/logout" data-testid="logout-form">

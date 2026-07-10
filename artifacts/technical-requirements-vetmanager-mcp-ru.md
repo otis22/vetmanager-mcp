@@ -453,6 +453,11 @@ vetmanager-mcp/
 | `inventory` | `inventory.read`, `inventory.write`, `reference.read` |
 | `report_ai` (`Analytics` in UI) | `admissions.read`, `analytics.read`, `clients.read`, `finance.read`, `inventory.read`, `medical_cards.read`, `pets.read`, `reference.read`, `users.read`, `report_ai.write` |
 
+Начиная с этапа 194, `report_ai` / `Analytics` является default preset для
+нового service bearer token в кабинете и для ChatGPT OAuth consent. Это даёт
+доступ к Report AI flow по умолчанию без общего `full_access`; `read_only`
+остаётся доступным как явный более узкий выбор.
+
 Supported scopes:
 - `clients.read`
 - `clients.write`
@@ -702,6 +707,7 @@ docker compose up -d
 - `vetmanager_tool_calls_total{endpoint,method,outcome}` + latency histogram;
 - `vetmanager_business_events_total{event}` — 4 allowed events.
 - `vetmanager_token_preset_issued_total{preset}`;
+- `vetmanager_activation_funnel_accounts{stage}`;
 - `vetmanager_sanitizer_failures_total`;
 - `vetmanager_auth_failures_total{source="metrics",reason="invalid_token"}`;
 

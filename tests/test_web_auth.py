@@ -934,7 +934,7 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_account_token_issue_uses_safe_web_defaults(tmp_path: Path, monkeypatch):
+async def test_account_token_issue_uses_analytics_web_defaults(tmp_path: Path, monkeypatch):
     engine = await _prepare_web_db(tmp_path, monkeypatch)
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
     domain = "clinic-safe-defaults"
@@ -973,7 +973,7 @@ async def test_account_token_issue_uses_safe_web_defaults(tmp_path: Path, monkey
         )
 
     assert token is not None
-    assert token.get_scopes() == list(TOKEN_PRESET_SCOPES[PRESET_READ_ONLY])
+    assert token.get_scopes() == list(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
     assert token.allowed_ip_mask == "127.0.0.1"
     assert token.expires_at is not None
     expires_at = token.expires_at
@@ -1280,6 +1280,7 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
         )
         account_page = await client.get("/account")
         assert 'data-testid="token-access-preset"' in account_page.text
+        assert 'data-testid="vetmanager-api-key-help"' in account_page.text
         assert 'data-testid="token-is-depersonalized"' in account_page.text
         assert 'data-testid="chatgpt-connect-instructions"' in account_page.text
         assert 'data-testid="chatgpt-mcp-url"' in account_page.text
@@ -1294,7 +1295,10 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
         assert "новый MCP connector" in account_page.text
         assert "Bearer-токен копировать не нужно" in account_page.text
         assert f'value="{PRESET_REPORT_AI}"' in account_page.text
+        assert f'value="{PRESET_REPORT_AI}" selected' in account_page.text
         assert "Analytics" in account_page.text
+        assert "Настройки -> Интеграция с сервисами" in account_page.text
+        assert "API KEY" in account_page.text
         await _post_with_csrf(
             client,
             "/account/integration",

@@ -3288,3 +3288,54 @@ schemas, scopes или runtime write logic.
   stability. — `done`
 - 192.4 Full workflow: tests, audit, review gates, commit/push/deploy/smoke. —
   `done`
+
+## Этап 193. OAuth disconnect business event allowlist — `todo`
+
+Источник: 2026-07-10 inspection: `web_routes_account.py` already calls
+`record_business_event("oauth_grant_revoked")`, but `service_metrics.py`
+strict allowlist does not include this event. Сейчас disconnect ChatGPT/OAuth
+grant отбрасывается как unknown business event and does not appear in
+`vetmanager_business_events_total`.
+
+Цель: сделать ChatGPT/OAuth disconnect видимым в Prometheus/Grafana без
+добавления персональных данных в labels и без изменения revoke semantics.
+
+- 193.1 Add `oauth_grant_revoked` to `service_metrics._ALLOWED_BUSINESS_EVENTS`
+  and update Prometheus HELP/docs where lifecycle event list is explicit. —
+  `todo`
+- 193.2 Add/extend regression tests: known event increments, unknown event is
+  still dropped/logged, and OAuth disconnect call-site uses the allowed event.
+  — `todo`
+- 193.3 Update Grafana/dashboard docs only if the panel hard-codes event names;
+  otherwise verify `sum by (event)` picks up the new label automatically. —
+  `todo`
+- 193.4 Full checks, audit, review gates, commit/push/deploy/smoke with
+  `/metrics` verification. — `todo`
+
+## Этап 194. Analytics defaults and activation funnel — `done`
+
+Источник: пользовательский запрос 2026-07-10 после product metrics. Report AI
+flow требует `report_ai.write`; этот scope входит в preset `report_ai`
+(`Analytics` in UI), но service bearer и ChatGPT OAuth consent default сейчас
+остаются `read_only`. Activation funnel есть в product metrics, но Grafana видит
+только частичную activation telemetry.
+
+Цель: сделать Analytics default для ручного bearer token и ChatGPT OAuth consent,
+добавить подсказку где взять Vetmanager REST API key, и вывести безопасную
+aggregate activation funnel в Prometheus/Grafana.
+
+- 194.1 PRD/research: зафиксировать `report_ai` preset boundary, OAuth
+  narrowing semantics, help-source path for REST API key, and PII-free Grafana
+  labels. — `done`
+- 194.2 Account token issuance default: blank `/account/tokens` POST and form
+  selected option use `PRESET_REPORT_AI`; full-access confirmation remains
+  unchanged. — `done`
+- 194.3 ChatGPT OAuth consent default: selected preset is `Analytics`; full
+  requested scope narrows to `TOKEN_PRESET_SCOPES[PRESET_REPORT_AI]` unless the
+  user explicitly chooses another preset. — `done`
+- 194.4 Account UI help: add concise Vetmanager REST API key instructions from
+  support-bot-base help without storing or displaying secrets. — `done`
+- 194.5 Prometheus/Grafana funnel: export aggregate
+  `vetmanager_activation_funnel_accounts{stage=...}` gauges and add dashboard
+  panel. — `done`
+- 194.6 Tests/checks, audit, Claude review, commit/push/deploy/smoke. — `done`

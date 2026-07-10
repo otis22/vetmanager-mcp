@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import distinct, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from observability_logging import RUNTIME_LOGGER
-from service_metrics import set_account_last_request_age_hours
+from service_metrics import set_account_last_request_age_hours, set_activation_funnel_accounts
 from storage_models import (
     ACCOUNT_STATUS_ACTIVE,
     CONNECTION_STATUS_ACTIVE,
@@ -57,6 +57,69 @@ async def scan_activation_telemetry(
 ) -> int:
     """Refresh account activation gauges and emit best-effort silence warnings."""
     current = now or datetime.now(timezone.utc)
+    active_accounts_stmt = (
+        select(Account.id)
+        .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+        .where(Account.archived_at.is_(None))
+    )
+    account_ids = set((await session.execute(active_accounts_stmt)).scalars().all())
+    connected_account_ids = set(
+        (
+            await session.execute(
+                select(VetmanagerConnection.account_id)
+                .join(Account, Account.id == VetmanagerConnection.account_id)
+                .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+                .where(Account.archived_at.is_(None))
+                .where(VetmanagerConnection.status == CONNECTION_STATUS_ACTIVE)
+            )
+        ).scalars().all()
+    )
+    active_token_account_ids = set(
+        (
+            await session.execute(
+                select(ServiceBearerToken.account_id)
+                .join(Account, Account.id == ServiceBearerToken.account_id)
+                .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+                .where(Account.archived_at.is_(None))
+                .where(ServiceBearerToken.status == TOKEN_STATUS_ACTIVE)
+                .where(
+                    or_(
+                        ServiceBearerToken.expires_at.is_(None),
+                        ServiceBearerToken.expires_at > current,
+                    )
+                )
+            )
+        ).scalars().all()
+    )
+    recent_usage_cutoff = current - timedelta(days=7)
+    recent_usage_account_ids = set(
+        (
+            await session.execute(
+                select(ServiceBearerToken.account_id)
+                .join(Account, Account.id == ServiceBearerToken.account_id)
+                .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+                .where(Account.archived_at.is_(None))
+                .where(ServiceBearerToken.status == TOKEN_STATUS_ACTIVE)
+                .where(
+                    or_(
+                        ServiceBearerToken.expires_at.is_(None),
+                        ServiceBearerToken.expires_at > current,
+                    )
+                )
+                .where(ServiceBearerToken.last_used_at >= recent_usage_cutoff)
+            )
+        ).scalars().all()
+    )
+    connected_with_active_token_ids = connected_account_ids & active_token_account_ids
+    connected_recent_usage_ids = connected_with_active_token_ids & recent_usage_account_ids
+    set_activation_funnel_accounts({
+        "registered": len(account_ids),
+        "connected": len(connected_account_ids),
+        "with_active_tokens": len(account_ids & active_token_account_ids),
+        "ready_for_mcp": len(connected_with_active_token_ids),
+        "with_recent_usage_7d": len(connected_recent_usage_ids),
+    })
+
     stmt = (
         select(
             Account.id.label("account_id"),

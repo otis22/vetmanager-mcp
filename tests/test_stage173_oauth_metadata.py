@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import httpx
 import pytest
 import base64
@@ -35,7 +36,7 @@ from storage_models import (
 )
 from tests.runtime_factories import make_runtime_credentials
 from token_scopes import LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS, SUPPORTED_TOKEN_SCOPES
-from tool_access_registry import PRESET_FULL_ACCESS, PRESET_READ_ONLY, TOKEN_PRESET_SCOPES
+from tool_access_registry import PRESET_FULL_ACCESS, PRESET_READ_ONLY, PRESET_REPORT_AI, TOKEN_PRESET_SCOPES
 from tool_oauth_security import OAuthChallengeMiddleware, _challenge_result
 from tool_scope_security import ScopeDeniedToolError
 from web_auth import (
@@ -113,7 +114,7 @@ async def _authorize_and_consent(
     scope: str = "clients.read pets.read",
     state: str = "state-token",
     code_challenge: str,
-    access_preset: str = PRESET_READ_ONLY,
+    access_preset: str = PRESET_REPORT_AI,
     confirm_full_access: bool = False,
     privacy_mode: str = "depersonalized",
 ) -> str:
@@ -603,7 +604,7 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
     assert 'data-testid="oauth-privacy-depersonalized"' in consent_response.text
     assert 'data-testid="oauth-privacy-personal-data"' in consent_response.text
     assert "Effective scopes by access level" in consent_response.text
-    assert f'value="{PRESET_READ_ONLY}" selected' in consent_response.text
+    assert f'value="{PRESET_REPORT_AI}" selected' in consent_response.text
     assert callback_response.status_code == 303
     callback_csp = callback_response.headers["content-security-policy"]
     assert "form-action 'self' https://chatgpt.com https://chat.openai.com" in callback_csp
@@ -659,6 +660,7 @@ async def test_oauth_consent_narrows_full_request_to_read_only_preset(tmp_path, 
             client_id=client_id,
             scope=full_scope,
             code_challenge=_pkce_challenge(verifier),
+            access_preset=PRESET_READ_ONLY,
         )
         token_response = await client.post(
             "/oauth/token",
@@ -680,6 +682,125 @@ async def test_oauth_consent_narrows_full_request_to_read_only_preset(tmp_path, 
     assert grant is not None
     assert grant.access_preset == PRESET_READ_ONLY
     assert grant.is_depersonalized is True
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_oauth_consent_defaults_full_request_to_analytics_preset(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="oauth-analytics-default@example.com")
+    verifier = "Verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
+    full_scope = " ".join(SUPPORTED_TOKEN_SCOPES)
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
+        response = await client.post(
+            "/oauth/register",
+            json={
+                "client_name": "ChatGPT",
+                "redirect_uris": ["https://chat.openai.com/aip/callback"],
+                "scope": full_scope,
+            },
+        )
+        client_id = response.json()["client_id"]
+        consent_preview = await client.get(
+            "/oauth/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": "https://chat.openai.com/aip/callback",
+                "resource": "https://test.example.com/mcp",
+                "scope": full_scope,
+                "state": "preview-state",
+                "code_challenge": _pkce_challenge(verifier),
+                "code_challenge_method": "S256",
+            },
+        )
+        raw_code = await _authorize_and_consent(
+            client,
+            client_id=client_id,
+            scope=full_scope,
+            code_challenge=_pkce_challenge(verifier),
+        )
+        token_response = await client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": raw_code,
+                "client_id": client_id,
+                "redirect_uri": "https://chat.openai.com/aip/callback",
+                "resource": "https://test.example.com/mcp",
+                "code_verifier": verifier,
+            },
+        )
+
+    assert consent_preview.status_code == 200
+    assert f'value="{PRESET_REPORT_AI}" selected' in consent_preview.text
+    assert "report_ai.write" in consent_preview.text
+    assert token_response.status_code == 200
+    assert token_response.json()["scope"] == " ".join(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
+    async with storage.get_session_factory()() as session:
+        grant = await session.scalar(select(OAuthGrant))
+
+    assert grant is not None
+    assert grant.access_preset == PRESET_REPORT_AI
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_oauth_analytics_default_does_not_expand_narrow_requested_scope(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="oauth-narrow-default@example.com")
+    verifier = "Verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
+        register_response = await client.post(
+            "/oauth/register",
+            json={
+                "client_name": "ChatGPT",
+                "redirect_uris": ["https://chat.openai.com/aip/callback"],
+                "scope": "clients.read",
+            },
+        )
+        client_id = register_response.json()["client_id"]
+        raw_code = await _authorize_and_consent(
+            client,
+            client_id=client_id,
+            scope="clients.read",
+            code_challenge=_pkce_challenge(verifier),
+        )
+        token_response = await client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": raw_code,
+                "client_id": client_id,
+                "redirect_uri": "https://chat.openai.com/aip/callback",
+                "resource": "https://test.example.com/mcp",
+                "code_verifier": verifier,
+            },
+        )
+
+    assert token_response.status_code == 200
+    assert token_response.json()["scope"] == "clients.read"
+    assert "report_ai.write" not in token_response.json()["scope"]
+    async with storage.get_session_factory()() as session:
+        grant = await session.scalar(select(OAuthGrant))
+
+    assert grant is not None
+    assert grant.access_preset == PRESET_REPORT_AI
+    assert json.loads(grant.scopes_json) == ["clients.read"]
 
     await engine.dispose()
     storage.reset_storage_state()

@@ -13,7 +13,7 @@ from secret_manager import get_storage_encryption_key
 from service_metrics import record_auth_failure, record_business_event, record_token_preset_issued
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
 from oauth_service import revoke_oauth_grant_family
-from tool_access_registry import PRESET_FULL_ACCESS, PRESET_READ_ONLY, get_token_preset_label
+from tool_access_registry import PRESET_FULL_ACCESS, PRESET_REPORT_AI, get_token_preset_label
 from storage import get_session_factory
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY, VETMANAGER_AUTH_MODE_USER_TOKEN
 from vetmanager_connection_service import (
@@ -243,7 +243,7 @@ def register_account_routes(
         expiry_raw = form.get("expires_in_days", "").strip()
         request_ip = get_request_ip(request)
         ip_mask_raw = form.get("ip_mask", "").strip()
-        access_preset = form.get("access_preset", PRESET_READ_ONLY)
+        access_preset = form.get("access_preset", PRESET_REPORT_AI)
         if access_preset == _DOCTOR_PRESET_FORM_VALUE:
             access_preset = "doctor"
         is_depersonalized = form.get("is_depersonalized") == "1"

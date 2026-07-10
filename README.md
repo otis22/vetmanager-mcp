@@ -138,6 +138,7 @@ HTTP probes и scrape endpoints:
   - `vetmanager_cache_{hits,misses,invalidations,evictions}_total` + `vetmanager_cache_entries`;
   - `vetmanager_business_events_total{event=...}` — lifecycle business events (`account_registered`, `web_login_succeeded`, `bearer_token_issued`, `bearer_token_revoked`) (stage 110);
   - `vetmanager_token_preset_issued_total{preset}` — issuance counter by access preset;
+  - `vetmanager_activation_funnel_accounts{stage}` — aggregate activation funnel gauges (`registered`, `connected`, `with_active_tokens`, `ready_for_mcp`, `with_recent_usage_7d`) without account/email/domain labels; `ready_for_mcp` means an active Vetmanager connection and a live token, while `with_active_tokens` can expose stale-token/no-connection gaps;
   - `vetmanager_account_last_request_age_hours{account_id}` — hours since the
     last successful bearer runtime request for active accounts with active
     connection and live token; never-used tokens use the earliest live token
@@ -204,7 +205,8 @@ Bearer-токен привязан к account сервиса:
   и опциональным режимом деперсонализации ответов; `report_ai` отображается в UI
   как `Analytics` и даёт full read-only доступ плюс права сохранения Report AI отчётов;
 - web-выпуск безопасен по умолчанию: blank expiry становится 30 days,
-  default preset — `read_only`, а `full_access` и `*.*.*.*` IP mask требуют
+  default preset — `report_ai` / `Analytics`, чтобы новые токены могли работать
+  с Report AI; `full_access` и `*.*.*.*` IP mask требуют
   явного подтверждения в форме;
 - после выпуска raw bearer token показывается в отдельной success-card в верхней части страницы и может быть скопирован кнопкой;
 - доступен список токенов со статусом, сроком действия, `last_used_at`, `request_count` и revoke action.
@@ -738,11 +740,24 @@ Production compose поднимает Prometheus и Grafana в профиле `p
 - Grafana provisioning добавляет datasource `Prometheus` и dashboard
   `Vetmanager MCP Overview`.
 
-Доступ с рабочей машины:
+Доступ с рабочей машины — SSH-туннель (`-N` — только форвардинг, без shell):
 
 ```bash
-ssh -L 3000:127.0.0.1:3000 -L 9090:127.0.0.1:9090 root@212.193.59.219
+ssh -N -L 3000:127.0.0.1:3000 -L 9090:127.0.0.1:9090 root@212.193.59.219
 ```
+
+После этого Grafana доступна на `http://127.0.0.1:3000`, Prometheus — на
+`http://127.0.0.1:9090`. Если порт занят (`Address already in use`) — туннель
+уже поднят, проверить: `pgrep -af "ssh.*212.193.59.219"`.
+
+Логин в Grafana — учётка админа из server `.env`:
+
+```bash
+ssh root@212.193.59.219 'cd /opt/vetmanager-mcp && grep -E "^(GRAFANA_ADMIN_USER|GRAFANA_ADMIN_PASSWORD)=" .env'
+```
+
+`GRAFANA_ADMIN_USER` в `.env` может отсутствовать — тогда действует дефолт
+`admin` (см. `docker-compose.yml`).
 
 Публично Grafana не публикуется по умолчанию. Если нужен доступ через nginx,
 сначала включить basic auth на nginx location и только потом проксировать

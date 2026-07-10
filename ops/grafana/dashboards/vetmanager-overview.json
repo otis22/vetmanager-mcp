@@ -108,6 +108,29 @@
       ],
       "title": "Activation telemetry",
       "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24},
+      "id": 7,
+      "options": {
+        "displayMode": "gradient",
+        "legend": {"displayMode": "list", "placement": "bottom"},
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "expr": "vetmanager_activation_funnel_accounts",
+          "instant": true,
+          "legendFormat": "{{stage}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Activation funnel",
+      "type": "bargauge"
     }
   ],
   "refresh": "30s",
