@@ -46,10 +46,11 @@ def test_browser_user_token_flow_can_issue_bearer_and_call_mcp(
     page.get_by_test_id("integration-submit").click()
     page.wait_for_load_state("networkidle")
 
-    assert "Vetmanager integration saved successfully." in page.content()
+    assert "Интеграция Vetmanager сохранена. Следующий шаг — выпустите Bearer token." in page.content()
     assert mocked.password not in page.content()
     assert mocked.user_token not in page.content()
 
+    page.get_by_test_id("token-manual-form").locator("summary").click()
     page.get_by_test_id("token-name").fill("Browser user token")
     page.get_by_test_id("token-expires-in-days").fill("7")
     page.get_by_test_id("token-ip-mask").fill("*.*.*.*")

@@ -574,4 +574,5 @@ def register_web_routes(mcp: FastMCP) -> None:
         get_account_id_from_request=_get_account_id_from_request,
         render_account_dashboard_response=_render_account_dashboard_response,
         load_account_dashboard=_load_account_dashboard,
+        json_response=_json_response,
     )

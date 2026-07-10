@@ -5,9 +5,15 @@ from __future__ import annotations
 import re
 
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from exceptions import AuthError, HostResolutionError, VetmanagerError
+from exceptions import (
+    AuthError,
+    HostResolutionError,
+    VetmanagerError,
+    VetmanagerTimeoutError,
+    VetmanagerUpstreamUnavailable,
+)
 from observability_logging import RUNTIME_LOGGER
 from secret_manager import get_storage_encryption_key
 from service_metrics import record_auth_failure, record_business_event, record_token_preset_issued
@@ -22,11 +28,54 @@ from vetmanager_connection_service import (
     save_user_login_password_connection,
 )
 from web_auth import clear_account_session_cookie
-from web_html import _DOCTOR_PRESET_FORM_VALUE
+from web_html import _DOCTOR_PRESET_FORM_VALUE, QUICK_TOKEN_NAME, compute_activation_state
 from web_security import CSRF_FIELD_NAME, get_request_ip, validate_csrf_request
 
 
 _CAMEL_BOUNDARY = re.compile(r"(?<!^)(?=[A-Z])")
+
+# Stage 196.3: user-facing Russian texts with a concrete next step. Exception
+# messages themselves stay English — they feed logs, metrics, and the MCP layer.
+INTEGRATION_SAVED_MESSAGE = (
+    "Интеграция Vetmanager сохранена. Следующий шаг — выпустите Bearer token."
+)
+INTEGRATION_REAUTH_MESSAGE = "Повторная авторизация выполнена, user token обновлён."
+
+
+def _integration_error_text(exc: Exception) -> str:
+    """Map an integration save failure to a Russian message with a next step."""
+    message = str(exc)
+    if "domain format" in message:
+        return (
+            "Неверный формат домена клиники. Укажите только поддомен из адреса, "
+            "по которому вы открываете Vetmanager: для myclinic.vetmanager.ru "
+            "это myclinic."
+        )
+    if "Invalid Vetmanager API key" in message:
+        return (
+            "Vetmanager не принял API key. Проверьте, что ключ скопирован целиком: "
+            "в Vetmanager откройте Настройки → Интеграция с сервисами → REST API "
+            "и скопируйте API KEY заново."
+        )
+    if "Invalid Vetmanager login or password" in message:
+        return (
+            "Vetmanager не принял логин или пароль. Проверьте данные, с которыми "
+            "вы входите в Vetmanager, и попробуйте ещё раз."
+        )
+    if isinstance(exc, (VetmanagerTimeoutError, VetmanagerUpstreamUnavailable)) or (
+        "timed out" in message or "unavailable" in message
+    ):
+        return (
+            "Vetmanager сейчас не отвечает. Подождите минуту и попробуйте ещё раз — "
+            "данные формы сохранены."
+        )
+    if isinstance(exc, HostResolutionError):
+        return (
+            "Не нашли клинику с таким доменом. Проверьте поддомен из адреса, "
+            "по которому вы открываете Vetmanager (для myclinic.vetmanager.ru "
+            "это myclinic)."
+        )
+    return message
 
 
 def _camel_to_snake(name: str) -> str:
@@ -48,6 +97,7 @@ def register_account_routes(
     get_account_id_from_request,
     render_account_dashboard_response,
     load_account_dashboard,
+    json_response,
 ):
     @observed_route(mcp, "/account", methods=["GET"], include_in_schema=False)
     async def account_page(request: Request) -> HTMLResponse | RedirectResponse:
@@ -122,7 +172,7 @@ def register_account_routes(
                 request,
                 account_id,
                 status_code=400,
-                integration_error=str(exc),
+                integration_error=_integration_error_text(exc),
                 form_auth_mode=auth_mode,
                 form_domain=domain,
             )
@@ -130,7 +180,7 @@ def register_account_routes(
         return await render_account_dashboard_response(
             request,
             account_id,
-            integration_success="Vetmanager integration saved successfully.",
+            integration_success=INTEGRATION_SAVED_MESSAGE,
         )
 
     @observed_route(mcp, "/account/integration/reauth", methods=["POST"], include_in_schema=False)
@@ -195,7 +245,7 @@ def register_account_routes(
                 request,
                 account_id,
                 status_code=400,
-                integration_error=str(exc),
+                integration_error=_integration_error_text(exc),
                 form_auth_mode=auth_mode,
                 form_domain=domain,
             )
@@ -203,7 +253,7 @@ def register_account_routes(
         return await render_account_dashboard_response(
             request,
             account_id,
-            integration_success="Vetmanager integration re-authorized successfully.",
+            integration_success=INTEGRATION_REAUTH_MESSAGE,
         )
 
     @observed_route(mcp, "/account/tokens", methods=["POST"], include_in_schema=False)
@@ -249,6 +299,19 @@ def register_account_routes(
         is_depersonalized = form.get("is_depersonalized") == "1"
         confirm_full_access = form.get("confirm_full_access") == "1"
         confirm_wildcard_ip = form.get("confirm_wildcard_ip") == "1"
+        # Stage 197.2: one-click issuance. The quick form carries an explicit
+        # IP-scope radio; choosing "any" IS the wildcard confirmation (the
+        # stage-155 explicit-ip_mask service contract stays intact — the
+        # wildcard warning log still fires in issue_service_bearer_token).
+        quick_ip_choice = form.get("quick_ip_choice", "").strip()
+        if quick_ip_choice:
+            if not token_name.strip():
+                token_name = QUICK_TOKEN_NAME
+            if quick_ip_choice == "any":
+                ip_mask_raw = "*.*.*.*"
+                confirm_wildcard_ip = True
+            else:
+                ip_mask_raw = "" if request_ip == "unknown" else request_ip
         if not ip_mask_raw:
             if request_ip == "unknown":
                 ip_mask_raw = ""
@@ -261,7 +324,7 @@ def register_account_routes(
                 account_id,
                 status_code=400,
                 token_error=(
-                    "Configure Vetmanager integration before issuing bearer tokens."
+                    "Сначала подключите Vetmanager, затем можно выпускать Bearer-токены."
                     if active_connection is None
                     else integration_health_reason
                 ),
@@ -323,7 +386,7 @@ def register_account_routes(
         return await render_account_dashboard_response(
             request,
             account_id,
-            token_success="Bearer token issued successfully.",
+            token_success="Bearer token выпущен.",
             issued_raw_token=raw_token,
             issued_token_access_label=get_token_preset_label(access_preset),
             issued_token_privacy_label="Depersonalized" if is_depersonalized else "Standard",
@@ -382,7 +445,7 @@ def register_account_routes(
         return await render_account_dashboard_response(
             request,
             account_id,
-            token_success="Bearer token revoked successfully.",
+            token_success="Bearer token отозван.",
         )
 
     @observed_route(
@@ -463,5 +526,78 @@ def register_account_routes(
         return await render_account_dashboard_response(
             request,
             account_id,
-            token_success="ChatGPT connection disconnected successfully.",
+            token_success="ChatGPT connection отключена.",
         )
+
+    @observed_route(
+        mcp,
+        "/account/telemetry/token-copied",
+        methods=["POST"],
+        include_in_schema=False,
+    )
+    async def account_token_copied(request: Request) -> Response:
+        """Stage 197.3: activation telemetry — user copied token/config/MCP URL.
+
+        Fired from the account page copy buttons via fetch. CSRF-protected like
+        every other account POST; records only an aggregate business event and
+        a structured log without secrets.
+        """
+        account_id = get_account_id_from_request(request)
+        if account_id is None:
+            return json_response(request, {"error": "unauthorized"}, status_code=401)
+
+        form = await read_form(request)
+        try:
+            validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
+        except ValueError:
+            return json_response(request, {"error": "csrf"}, status_code=403)
+
+        kind = form.get("kind", "")
+        if kind not in {"token", "config", "mcp_url"}:
+            kind = "unknown"
+        RUNTIME_LOGGER.info(
+            "Token copied",
+            extra={
+                "event_name": "token_copied",
+                "account_id": account_id,
+                "copy_kind": kind,
+            },
+        )
+        record_business_event("token_copied")
+        return Response(status_code=204)
+
+    @observed_route(
+        mcp,
+        "/account/activation-status",
+        methods=["GET"],
+        include_in_schema=False,
+    )
+    async def account_activation_status(request: Request) -> Response:
+        """Stage 197.4: current activation state for the waiting indicator.
+
+        The account page polls this while it waits for the first MCP request
+        and reloads once the state changes.
+        """
+        account_id = get_account_id_from_request(request)
+        if account_id is None:
+            return json_response(request, {"error": "unauthorized"}, status_code=401)
+
+        (
+            account,
+            _active_connection_count,
+            _bearer_token_count,
+            active_connection,
+            integration_health_status,
+            _integration_health_reason,
+            bearer_tokens,
+            _oauth_grants,
+        ) = await load_account_dashboard(account_id)
+        if account is None:
+            return json_response(request, {"error": "unauthorized"}, status_code=401)
+
+        state = compute_activation_state(
+            active_connection=active_connection,
+            integration_health_status=integration_health_status,
+            bearer_tokens=bearer_tokens,
+        )
+        return json_response(request, {"state": state})

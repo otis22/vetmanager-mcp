@@ -510,7 +510,7 @@ async def test_account_integration_form_saves_active_vetmanager_connection(tmp_p
         )
 
     assert response.status_code == 200
-    assert "Vetmanager integration saved successfully." in response.text
+    assert "Интеграция Vetmanager сохранена. Следующий шаг — выпустите Bearer token." in response.text
     assert "clinic-a" in response.text
     assert "domain_api_key" in response.text
     assert "secret-key" not in response.text
@@ -666,7 +666,7 @@ async def test_account_integration_form_exchanges_login_password_into_user_token
         )
 
     assert response.status_code == 200
-    assert "Vetmanager integration saved successfully." in response.text
+    assert "Интеграция Vetmanager сохранена. Следующий шаг — выпустите Bearer token." in response.text
     assert "clinic-user" in response.text
     assert "user_token" in response.text
     assert "user-token-secret" not in response.text
@@ -747,7 +747,7 @@ async def test_account_integration_form_shows_safe_error_for_failed_login_passwo
         )
 
     assert response.status_code == 400
-    assert "Invalid Vetmanager login or password." in response.text
+    assert "Vetmanager не принял логин или пароль" in response.text
     assert "doctor" not in response.text
     assert "bad-password" not in response.text
 
@@ -801,7 +801,7 @@ async def test_account_integration_form_shows_safe_error_for_invalid_api_key(tmp
         )
 
     assert response.status_code == 400
-    assert "Invalid Vetmanager API key." in response.text
+    assert "Vetmanager не принял API key" in response.text
     assert "bad-key" not in response.text
 
     async with storage.get_session_factory()() as session:
@@ -865,7 +865,7 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
 
     assert response.status_code == 200
     _assert_no_store_html(response)
-    assert "Bearer token issued successfully." in response.text
+    assert "Bearer token выпущен." in response.text
     assert 'id="issued-token-panel"' in response.text
     assert "Скопировать токен" in response.text
     raw_token_match = re.search(r"vm_st_[A-Za-z0-9_\\-]+", response.text)
@@ -1506,7 +1506,7 @@ async def test_account_token_issue_requires_active_integration(tmp_path: Path, m
         )
 
     assert response.status_code == 400
-    assert "Configure Vetmanager integration before issuing bearer tokens." in response.text
+    assert "Сначала подключите Vetmanager, затем можно выпускать Bearer-токены." in response.text
 
     async with storage.get_session_factory()() as session:
         stored = await session.get(ServiceBearerToken, 1)
@@ -1570,7 +1570,7 @@ async def test_account_token_revoke_updates_status_and_writes_audit_log(tmp_path
         )
 
     assert revoked.status_code == 200
-    assert "Bearer token revoked successfully." in revoked.text
+    assert "Bearer token отозван." in revoked.text
     assert "revoked" in revoked.text
     assert raw_token not in revoked.text
 
@@ -1848,7 +1848,7 @@ async def test_reauth_submit_replaces_invalid_user_token_connection(tmp_path: Pa
         )
 
     assert response.status_code == 200
-    assert "Vetmanager integration re-authorized successfully." in response.text
+    assert "Повторная авторизация выполнена, user token обновлён." in response.text
     assert "fresh-user-token" not in response.text
     assert "new-password-123" not in response.text
 

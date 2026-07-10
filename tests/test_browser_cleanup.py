@@ -34,6 +34,7 @@ def test_browser_cleanup_removes_account_and_related_entities(
     page.get_by_test_id("integration-submit").click()
     page.wait_for_load_state("networkidle")
 
+    page.get_by_test_id("token-manual-form").locator("summary").click()
     page.get_by_test_id("token-name").fill("Browser cleanup token")
     page.get_by_test_id("token-expires-in-days").fill("7")
     page.get_by_test_id("token-ip-mask").fill("*.*.*.*")

@@ -3368,3 +3368,95 @@ instead of an empty panel.
 - 195.2 Add regression coverage for the no-data-safe query and validate
   dashboard JSON. — `done`
 - 195.3 Full checks, review gates, commit/push/deploy/smoke. — `done`
+
+## Этап 196. Activation UX: шаг подключения Vetmanager (мобильный) — `done`
+
+Источник: design/вёрстка review 2026-07-10 по prod-аналитике activation-воронки
+(9×400 на POST /account/integration с мобильного, затем успех с десктопа).
+Причины: ошибка рендерится в середине длинной страницы и не видна после
+перезагрузки; автокапитализация мобильной клавиатуры ломает строго-lowercase
+валидацию домена; нет loading-state при живом probe → повторные сабмиты.
+
+Цель: новый пользователь стабильно проходит шаг подключения Vetmanager с
+мобильного, видит ошибку/успех и понимает следующий шаг.
+
+- 196.1 PRD/research: зафиксировать причины мобильных 400, scope фиксов и
+  acceptance. — `done` (research = design review 2026-07-10; отдельный PRD не
+  создавался — воркфлоу сокращён по явному указанию пользователя)
+- 196.2 Нормализация домена server-side (trim + lower + вырезание
+  `https://`-префикса и `.vetmanager.ru`-суффикса) + мобильные атрибуты
+  инпутов (`autocapitalize`, `autocorrect`, `spellcheck`) + подсказка формата
+  под полем (строгий client-side `pattern` сознательно не ставился — он бы
+  отклонял ввод, который сервер теперь нормализует; см. AssumptionLog). — `done`
+- 196.3 Видимость ошибки интеграции: якорь секции, scroll к `.error`,
+  `role="alert"`, русские тексты ошибок с конкретным следующим шагом
+  (домен / API key / логин-пароль / где взять ключ). — `done`
+- 196.4 Успех тоже ведёт дальше: scroll к success-плашке + CTA «Выпустите
+  Bearer token» с якорем на форму токена. — `done`
+- 196.5 Анти-даблсабмит: disable кнопки + индикатор «Проверяем подключение…»
+  на время probe; show/hide toggle для поля API key. — `done`
+- 196.6 Кнопка reauth только при `reauth_required`; визуальная подсветка
+  выбранной auth-mode карточки; disabled-стили для заблокированных
+  контролов с пояснением причины. — `done`
+- 196.7 Tests/checks, audit, review gates, commit/push/deploy/smoke с
+  мобильной layout-проверкой. — `done`
+
+## Этап 197. Activation UX: one-click выпуск токена и первый MCP-запрос — `done`
+
+Источник: та же воронка — за 30 дней 3 новых аккаунта выпустили токен, но
+только 1 сделал MCP-запрос. Инструкция подключения спрятана в свёрнутый
+`details`, копируется только токен без готового конфига, а пустая IP-маска
+молчаливо привязывает токен к IP браузера в момент выпуска (activation trap:
+первый запрос клиента с другого IP получает молчаливый 401).
+
+Цель: токен выпускается в один клик с безопасными дефолтами, и пользователь
+доводится до первого успешного MCP-запроса.
+
+- 197.1 PRD/research: путь token → first request; security-решение по
+  дефолту IP-маски (guided «любой IP» vs подсеть) с rationale. — `done`
+- 197.2 One-click выпуск для `needs_token`: одна primary-кнопка с дефолтами
+  (prefilled имя, 30 дней, Analytics, явный выбор IP с честным
+  предупреждением); полная форма — за «Настроить вручную». — `done`
+- 197.3 При `needs_client_use` инструкция подключения раскрыта по умолчанию
+  и является основным блоком; per-client инструкции (Cursor / Claude Code /
+  ChatGPT); кнопка «Скопировать готовый конфиг» (JSON с URL и токеном) +
+  событие `token_copied`. — `done`
+- 197.4 Индикатор ожидания первого запроса в кабинете (auto-refresh статуса
+  activation-чеклиста). — `done`
+- 197.5 Tests/checks, audit, review gates, commit/push/deploy/smoke. — `done`
+
+## Этап 198. Activation telemetry: продуктовые события и funnel новых аккаунтов — `todo`
+
+Источник: план пользователя 2026-07-10 по activation-аналитике (пункты 1 и 5).
+Сейчас failed integration attempts видны только как structured log + метрика
+error_class без mobile/desktop и без продуктовой записи по account_id; funnel
+этапа 194.5 не выделяет когорту новых аккаунтов и стадии
+`integration_failed`/`token_copied`.
+
+Цель: activation-воронка новых аккаунтов видна в Grafana целиком, включая
+провалы интеграции и копирование токена, без секретов и PII.
+
+- 198.1 PRD/research: схема продуктового события failed integration attempt
+  (причина-класс, auth_mode, mobile/desktop, account_id, без секретов) и
+  PII-free labels для Grafana. — `todo`
+- 198.2 Запись failed/saved integration attempts в продуктовые события +
+  событие `token_copied` из UI (этап 197.3) в той же схеме. — `todo`
+- 198.3 Grafana funnel по новым аккаунтам: registered →
+  integration_failed/saved → token_issued → token_copied →
+  first_mcp_request. — `todo`
+- 198.4 Tests/checks, audit, review gates, commit/push/deploy/smoke. — `todo`
+
+## Этап 199. Activation-first кабинет — `done`
+
+Источник: design review 2026-07-10. Кабинет — единая длинная страница из семи
+секций; до полной активации пользователь ищет следующий шаг скроллом.
+
+Цель: до состояния `ready` кабинет показывает текущий шаг воронки одним
+экраном с одной primary-кнопкой; остальные секции свёрнуты/за якорями.
+
+- 199.1 PRD/research: структура activation-first экрана, поведение после
+  `ready`, миграция существующих секций. — `done`
+- 199.2 Реализация: stepper-заголовок («Шаг N из 3»), показ текущего шага,
+  сворачивание метрик/privacy/ChatGPT-секций до активации. — `done`
+- 199.3 Tests/checks, audit, review gates, commit/push/deploy/smoke с
+  layout-проверкой mobile/desktop. — `done`

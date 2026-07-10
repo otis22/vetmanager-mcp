@@ -6,24 +6,54 @@ from exceptions import VetmanagerError
 
 DOMAIN_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 
+# Stage 196: hostname suffixes users paste along with the clinic subdomain.
+_KNOWN_HOST_SUFFIXES = (".vetmanager.ru", ".vetmanager.cloud")
+
+
+def normalize_domain_input(raw: str) -> str:
+    """Normalize user-entered clinic domain before validation.
+
+    Mobile keyboards auto-capitalize the first letter and users often paste
+    the full clinic URL; both used to fail the strict lowercase pattern.
+    Accepts "MyClinic", "https://myclinic.vetmanager.ru/", "myclinic.vetmanager.cloud"
+    and reduces them all to "myclinic". Unknown shapes pass through for
+    validate_domain to reject with a format error.
+    """
+    domain = raw.strip().lower()
+    for scheme in ("https://", "http://"):
+        if domain.startswith(scheme):
+            domain = domain[len(scheme):]
+            break
+    domain = domain.split("/", 1)[0].split("?", 1)[0]
+    domain = domain.rstrip(".")
+    for suffix in _KNOWN_HOST_SUFFIXES:
+        if domain.endswith(suffix):
+            domain = domain[: -len(suffix)]
+            break
+    return domain
+
 
 def validate_domain(domain: str) -> str:
     """Validate and return a Vetmanager clinic subdomain.
 
+    Input is normalized first (see normalize_domain_input), so values like
+    "MyClinic" or "https://myclinic.vetmanager.ru" validate to "myclinic".
+
     Args:
-        domain: Clinic subdomain (e.g. "myclinic").
+        domain: Clinic subdomain (e.g. "myclinic") or a pasted clinic URL.
 
     Returns:
-        The validated domain string.
+        The validated, normalized domain string.
 
     Raises:
-        VetmanagerError: If the domain format is invalid.
+        VetmanagerError: If the domain format is invalid after normalization.
     """
-    if not DOMAIN_PATTERN.fullmatch(domain):
+    normalized = normalize_domain_input(domain)
+    if not DOMAIN_PATTERN.fullmatch(normalized):
         raise VetmanagerError(
             "Invalid Vetmanager domain format. Use clinic subdomain like 'myclinic'."
         )
-    return domain
+    return normalized
 
 
 # ── IP mask validation and matching ──────────────────────────────────────────

@@ -545,7 +545,7 @@ def test_real_web_account_can_issue_bearer_and_call_tool(live_server_url: str, r
             page_path="/account",
         )
         assert integration.status_code == 200
-        assert "Vetmanager integration saved successfully." in integration.text
+        assert "Интеграция Vetmanager сохранена. Следующий шаг — выпустите Bearer token." in integration.text
 
         issued = _post_with_csrf_sync(
             client,

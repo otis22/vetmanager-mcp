@@ -101,6 +101,8 @@ _ALLOWED_BUSINESS_EVENTS = frozenset({
     "web_login_succeeded",
     "bearer_token_issued",
     "bearer_token_revoked",
+    # Stage 197: user copied the issued token / ready-made client config.
+    "token_copied",
     "oauth_grant_revoked",
     # Stage 154: per-threshold expiry warnings (cardinality 3 — safe).
     "token_expiry_warning_1d",

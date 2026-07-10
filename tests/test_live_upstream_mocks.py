@@ -34,7 +34,7 @@ def test_live_http_domain_api_key_flow_uses_deterministic_upstream_mocks(
     page.wait_for_load_state("networkidle")
 
     html = page.content()
-    assert "Vetmanager integration saved successfully." in html
+    assert "Интеграция Vetmanager сохранена. Следующий шаг — выпустите Bearer token." in html
     assert mocked.api_key not in html
     assert mocked.billing_route.called
     assert mocked.validation_route.called
@@ -83,7 +83,7 @@ def test_live_http_user_token_flow_uses_deterministic_upstream_mocks(
     page.wait_for_load_state("networkidle")
 
     html = page.content()
-    assert "Vetmanager integration saved successfully." in html
+    assert "Интеграция Vetmanager сохранена. Следующий шаг — выпустите Bearer token." in html
     assert mocked.user_token not in html
     assert mocked.password not in html
     assert mocked.billing_route.called

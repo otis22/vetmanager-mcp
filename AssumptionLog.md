@@ -9985,3 +9985,52 @@ Checks so far:
     shell despite review-only prompt, but did not edit files.
   - Claude Opus review after the epsilon denominator fix returned
     `{"findings":[]}`.
+
+## Этапы 196, 197, 199. Activation UX (мобильная интеграция, one-click токен, activation-first кабинет) — 2026-07-10
+
+- **Отклонение от воркфлоу — по явному указанию пользователя**: этапы выполнены
+  одной сессией без PRD-файлов, без ревью сторонней моделью и без deploy
+  («Выполняй все 3 этапа, отходи от воркфлоу, деплой не делай»). Роль research
+  выполнил design/вёрстка review 2026-07-10 (лог
+  `LiveHelperAgent/logs/mcp/2026-07-10-activation-funnel-design-review.md`).
+  Изменения закоммичены локально; push и deploy не выполнялись.
+- **Домен нормализуется, а не отклоняется** (196.2): `validate_domain` теперь
+  сам приводит ввод к канону — trim + lower + срез `https://`-префикса,
+  path/query и суффиксов `.vetmanager.ru`/`.vetmanager.cloud`. Обоснование:
+  мобильные клавиатуры капитализируют первую букву, а строгий lowercase-паттерн
+  давал 400 (реальный кейс из prod: 9×400 с мобильного). Строгий `pattern` на
+  клиенте сознательно не ставился — он бы отклонял ввод, который сервер теперь
+  принимает; вместо него подсказка формата под полем.
+- **Тексты ошибок локализуются на display-слое** (196.3): исключения
+  сервисного слоя остаются английскими (логи/метрики/MCP), маппинг в русские
+  тексты с next-step — в `web_routes_account._integration_error_text`.
+- **Quick-issue «любой IP» не ослабляет контракт этапа 155** (197.2):
+  ip_mask по-прежнему передаётся явно, wildcard-warning в
+  `issue_service_bearer_token` продолжает срабатывать. Явный radio-выбор
+  «Работать с любого IP» считается эквивалентом confirm_wildcard_ip: пользователь
+  видит выбор и честное предупреждение прямо в форме. Rationale смены дефолта:
+  молчаливая привязка к IP браузера — activation trap (токен с мобильного/CGNAT
+  умирает при первом запросе клиента с другого IP), а bearer сам по себе секрет;
+  IP-маска остаётся доступной как ручная настройка и как выбор «Только мой
+  текущий IP».
+- **token_copied добавлен в allowlist business events**; endpoint
+  `/account/telemetry/token-copied` требует сессию и CSRF, пишет только
+  аггрегат + structured log без секретов. Полная продуктовая телеметрия
+  (mobile/desktop, account_id-события в БД) — этап 198, не этот.
+- **Activation-first через `<details>`** (199): секции остаются в DOM
+  (тесты/якоря/формы адресуемы), сворачивание — атрибутом `open` по состоянию
+  воронки; сообщение об ошибке/успехе принудительно раскрывает свою секцию.
+  Порог: при `ready` открываются meta/ChatGPT/токены, до `ready` — только
+  текущий шаг.
+- **Реграссия, пойманная локальной браузерной проверкой**: две copy-кнопки в
+  `.copy-row` переполняли 390px-вьюпорт (flex без wrap) — исправлено
+  `flex-wrap: wrap`, закреплено viewport-тестом с issued-token состоянием.
+- **Проверки**: локально `.venv` pytest — 1334 passed (все состояния воронки),
+  плюс живой браузерный прогон против локального сервера с мокнутым Vetmanager:
+  регистрация → ошибка ключа (алерт виден, autoscroll) → сохранение
+  `MYCLINIC.vetmanager.ru` → домен `myclinic` → CTA → one-click токен →
+  `token_copied` в `/metrics` → индикатор ожидания → авто-reload в «Готово к
+  работе» после симуляции первого запроса. Официальный прогон
+  `docker compose --profile test run --rm test` — см. итог сессии.
+- Скриншоты проверки: `mobile-02-error-visible.png`, `mobile-04-quick-issue.png`,
+  `mobile-07-needs-client-use.png`, `desktop-08-ready.png`.

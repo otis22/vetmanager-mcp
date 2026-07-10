@@ -1652,7 +1652,7 @@ async def test_account_ui_lists_and_revokes_oauth_grant_family(tmp_path, monkeyp
     assert "clients.read" in page_response.text
     assert f'action="/account/oauth-grants/{grant_id}/revoke"' in page_response.text
     assert revoke_response.status_code == 200
-    assert "ChatGPT connection disconnected successfully." in revoke_response.text
+    assert "ChatGPT connection отключена." in revoke_response.text
     assert repeat_revoke_response.status_code == 200
     assert noop_revoke_response.status_code == 200
 
