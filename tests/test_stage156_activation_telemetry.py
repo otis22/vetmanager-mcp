@@ -122,8 +122,13 @@ def test_account_last_request_age_metric_renders_prometheus_series() -> None:
     assert snapshot["account_last_request_age_hours"] == {"42": 25.5}
     assert snapshot["activation_funnel_accounts"] == {
         "connected": 0,
+        "first_mcp_request": 0,
+        "integration_saved": 0,
+        "new_registered": 0,
         "ready_for_mcp": 2,
         "registered": 3,
+        "token_copied": 0,
+        "token_issued": 0,
         "with_active_tokens": 0,
         "with_recent_usage_7d": 0,
     }
@@ -244,8 +249,13 @@ async def test_scan_filters_non_live_accounts_tokens_and_connections(session_fac
     assert snapshot_service_metrics()["account_last_request_age_hours"] == {str(live.id): 30.0}
     assert snapshot_service_metrics()["activation_funnel_accounts"] == {
         "connected": 5,
+        "first_mcp_request": 6,
+        "integration_saved": 5,
+        "new_registered": 6,
         "ready_for_mcp": 1,
         "registered": 6,
+        "token_copied": 0,
+        "token_issued": 6,
         "with_active_tokens": 2,
         "with_recent_usage_7d": 1,
     }

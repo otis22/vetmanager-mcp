@@ -7,25 +7,40 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import distinct, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from activation_events import cleanup_activation_events
 from observability_logging import RUNTIME_LOGGER
-from service_metrics import set_account_last_request_age_hours, set_activation_funnel_accounts
+from service_metrics import (
+    set_account_last_request_age_hours,
+    set_activation_event_accounts,
+    set_activation_funnel_accounts,
+)
 from storage_models import (
     ACCOUNT_STATUS_ACTIVE,
     CONNECTION_STATUS_ACTIVE,
     TOKEN_STATUS_ACTIVE,
     Account,
+    ActivationEvent,
     ServiceBearerToken,
+    TokenUsageStat,
     VetmanagerConnection,
 )
 
 SILENCE_THRESHOLDS_HOURS = (24, 72)
+ACTIVATION_SCAN_CACHE_TTL = timedelta(seconds=60)
 
 _ALERTED_THRESHOLDS: set[tuple[int, int]] = set()
+_ACTIVATION_SCAN_CACHE_AT: datetime | None = None
+_ACTIVATION_SCAN_CACHE_FUNNEL: dict[str, int] | None = None
+_ACTIVATION_SCAN_CACHE_EVENTS: dict[tuple[str, str, str, str], int] | None = None
 
 
 def reset_activation_telemetry_state() -> None:
     """Clear process-local no-traffic warning dedup state for tests."""
+    global _ACTIVATION_SCAN_CACHE_AT, _ACTIVATION_SCAN_CACHE_FUNNEL, _ACTIVATION_SCAN_CACHE_EVENTS
     _ALERTED_THRESHOLDS.clear()
+    _ACTIVATION_SCAN_CACHE_AT = None
+    _ACTIVATION_SCAN_CACHE_FUNNEL = None
+    _ACTIVATION_SCAN_CACHE_EVENTS = None
 
 
 def _ensure_aware_utc(value: datetime) -> datetime:
@@ -50,6 +65,31 @@ def _clear_account_dedup(account_id: int) -> None:
     })
 
 
+def _apply_activation_scan_cache(current: datetime) -> bool:
+    if (
+        _ACTIVATION_SCAN_CACHE_AT is None
+        or _ACTIVATION_SCAN_CACHE_FUNNEL is None
+        or _ACTIVATION_SCAN_CACHE_EVENTS is None
+    ):
+        return False
+    if current - _ACTIVATION_SCAN_CACHE_AT >= ACTIVATION_SCAN_CACHE_TTL:
+        return False
+    set_activation_funnel_accounts(dict(_ACTIVATION_SCAN_CACHE_FUNNEL))
+    set_activation_event_accounts(dict(_ACTIVATION_SCAN_CACHE_EVENTS))
+    return True
+
+
+def _store_activation_scan_cache(
+    current: datetime,
+    funnel_values: dict[str, int],
+    event_values: dict[tuple[str, str, str, str], int],
+) -> None:
+    global _ACTIVATION_SCAN_CACHE_AT, _ACTIVATION_SCAN_CACHE_FUNNEL, _ACTIVATION_SCAN_CACHE_EVENTS
+    _ACTIVATION_SCAN_CACHE_AT = current
+    _ACTIVATION_SCAN_CACHE_FUNNEL = dict(funnel_values)
+    _ACTIVATION_SCAN_CACHE_EVENTS = dict(event_values)
+
+
 async def scan_activation_telemetry(
     session: AsyncSession,
     *,
@@ -57,68 +97,180 @@ async def scan_activation_telemetry(
 ) -> int:
     """Refresh account activation gauges and emit best-effort silence warnings."""
     current = now or datetime.now(timezone.utc)
-    active_accounts_stmt = (
-        select(Account.id)
-        .where(Account.status == ACCOUNT_STATUS_ACTIVE)
-        .where(Account.archived_at.is_(None))
-    )
-    account_ids = set((await session.execute(active_accounts_stmt)).scalars().all())
-    connected_account_ids = set(
-        (
-            await session.execute(
-                select(VetmanagerConnection.account_id)
-                .join(Account, Account.id == VetmanagerConnection.account_id)
-                .where(Account.status == ACCOUNT_STATUS_ACTIVE)
-                .where(Account.archived_at.is_(None))
-                .where(VetmanagerConnection.status == CONNECTION_STATUS_ACTIVE)
-            )
-        ).scalars().all()
-    )
-    active_token_account_ids = set(
-        (
-            await session.execute(
-                select(ServiceBearerToken.account_id)
-                .join(Account, Account.id == ServiceBearerToken.account_id)
-                .where(Account.status == ACCOUNT_STATUS_ACTIVE)
-                .where(Account.archived_at.is_(None))
-                .where(ServiceBearerToken.status == TOKEN_STATUS_ACTIVE)
-                .where(
-                    or_(
-                        ServiceBearerToken.expires_at.is_(None),
-                        ServiceBearerToken.expires_at > current,
+    try:
+        deleted_old_events = await cleanup_activation_events(session, now=current)
+        if deleted_old_events:
+            await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        RUNTIME_LOGGER.warning(
+            "Activation event cleanup failed",
+            extra={
+                "event_name": "activation_event_cleanup_failed",
+                "error_class": type(exc).__name__,
+            },
+        )
+
+    if not _apply_activation_scan_cache(current):
+        new_account_cutoff = current - timedelta(days=30)
+        active_accounts_stmt = (
+            select(Account.id)
+            .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+            .where(Account.archived_at.is_(None))
+        )
+        account_ids = set((await session.execute(active_accounts_stmt)).scalars().all())
+        connected_account_ids = set(
+            (
+                await session.execute(
+                    select(VetmanagerConnection.account_id)
+                    .join(Account, Account.id == VetmanagerConnection.account_id)
+                    .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+                    .where(Account.archived_at.is_(None))
+                    .where(VetmanagerConnection.status == CONNECTION_STATUS_ACTIVE)
+                )
+            ).scalars().all()
+        )
+        active_token_account_ids = set(
+            (
+                await session.execute(
+                    select(ServiceBearerToken.account_id)
+                    .join(Account, Account.id == ServiceBearerToken.account_id)
+                    .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+                    .where(Account.archived_at.is_(None))
+                    .where(ServiceBearerToken.status == TOKEN_STATUS_ACTIVE)
+                    .where(
+                        or_(
+                            ServiceBearerToken.expires_at.is_(None),
+                            ServiceBearerToken.expires_at > current,
+                        )
                     )
                 )
-            )
-        ).scalars().all()
-    )
-    recent_usage_cutoff = current - timedelta(days=7)
-    recent_usage_account_ids = set(
-        (
-            await session.execute(
-                select(ServiceBearerToken.account_id)
-                .join(Account, Account.id == ServiceBearerToken.account_id)
-                .where(Account.status == ACCOUNT_STATUS_ACTIVE)
-                .where(Account.archived_at.is_(None))
-                .where(ServiceBearerToken.status == TOKEN_STATUS_ACTIVE)
-                .where(
-                    or_(
-                        ServiceBearerToken.expires_at.is_(None),
-                        ServiceBearerToken.expires_at > current,
+            ).scalars().all()
+        )
+        recent_usage_cutoff = current - timedelta(days=7)
+        recent_usage_account_ids = set(
+            (
+                await session.execute(
+                    select(ServiceBearerToken.account_id)
+                    .join(Account, Account.id == ServiceBearerToken.account_id)
+                    .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+                    .where(Account.archived_at.is_(None))
+                    .where(ServiceBearerToken.status == TOKEN_STATUS_ACTIVE)
+                    .where(
+                        or_(
+                            ServiceBearerToken.expires_at.is_(None),
+                            ServiceBearerToken.expires_at > current,
+                        )
+                    )
+                    .where(ServiceBearerToken.last_used_at >= recent_usage_cutoff)
+                )
+            ).scalars().all()
+        )
+        connected_with_active_token_ids = connected_account_ids & active_token_account_ids
+        connected_recent_usage_ids = connected_with_active_token_ids & recent_usage_account_ids
+        new_account_ids = set(
+            (
+                await session.execute(
+                    select(Account.id)
+                    .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+                    .where(Account.archived_at.is_(None))
+                    .where(Account.created_at >= new_account_cutoff)
+                )
+            ).scalars().all()
+        )
+        integration_saved_ids = new_account_ids & connected_account_ids
+        token_issued_ids = set(
+            (
+                await session.execute(
+                    select(ServiceBearerToken.account_id)
+                    .join(Account, Account.id == ServiceBearerToken.account_id)
+                    .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+                    .where(Account.archived_at.is_(None))
+                    .where(Account.created_at >= new_account_cutoff)
+                )
+            ).scalars().all()
+        )
+        token_copied_ids = set(
+            (
+                await session.execute(
+                    select(ActivationEvent.account_id)
+                    .join(Account, Account.id == ActivationEvent.account_id)
+                    .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+                    .where(Account.archived_at.is_(None))
+                    .where(Account.created_at >= new_account_cutoff)
+                    .where(ActivationEvent.created_at >= new_account_cutoff)
+                    .where(ActivationEvent.event_name == "token_copied")
+                )
+            ).scalars().all()
+        )
+        first_mcp_request_ids = set(
+            (
+                await session.execute(
+                    select(ServiceBearerToken.account_id)
+                    .join(Account, Account.id == ServiceBearerToken.account_id)
+                    .outerjoin(
+                        TokenUsageStat,
+                        TokenUsageStat.bearer_token_id == ServiceBearerToken.id,
+                    )
+                    .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+                    .where(Account.archived_at.is_(None))
+                    .where(Account.created_at >= new_account_cutoff)
+                    .where(
+                        or_(
+                            ServiceBearerToken.last_used_at.is_not(None),
+                            TokenUsageStat.last_used_at.is_not(None),
+                            TokenUsageStat.request_count > 0,
+                        )
                     )
                 )
-                .where(ServiceBearerToken.last_used_at >= recent_usage_cutoff)
+            ).scalars().all()
+        )
+        funnel_values = {
+            "registered": len(account_ids),
+            "connected": len(connected_account_ids),
+            "with_active_tokens": len(account_ids & active_token_account_ids),
+            "ready_for_mcp": len(connected_with_active_token_ids),
+            "with_recent_usage_7d": len(connected_recent_usage_ids),
+            "new_registered": len(new_account_ids),
+            "integration_saved": len(integration_saved_ids),
+            "token_issued": len(new_account_ids & token_issued_ids),
+            "token_copied": len(new_account_ids & token_copied_ids),
+            "first_mcp_request": len(new_account_ids & first_mcp_request_ids),
+        }
+        set_activation_funnel_accounts(funnel_values)
+        event_rows = (
+            await session.execute(
+                select(
+                    ActivationEvent.event_name,
+                    ActivationEvent.device_class,
+                    ActivationEvent.auth_mode,
+                    func.coalesce(ActivationEvent.reason_class, "none").label("reason"),
+                    func.count(distinct(ActivationEvent.account_id)).label("account_count"),
+                )
+                .join(Account, Account.id == ActivationEvent.account_id)
+                .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+                .where(Account.archived_at.is_(None))
+                .where(Account.created_at >= new_account_cutoff)
+                .where(ActivationEvent.created_at >= new_account_cutoff)
+                .group_by(
+                    ActivationEvent.event_name,
+                    ActivationEvent.device_class,
+                    ActivationEvent.auth_mode,
+                    func.coalesce(ActivationEvent.reason_class, "none"),
+                )
             )
-        ).scalars().all()
-    )
-    connected_with_active_token_ids = connected_account_ids & active_token_account_ids
-    connected_recent_usage_ids = connected_with_active_token_ids & recent_usage_account_ids
-    set_activation_funnel_accounts({
-        "registered": len(account_ids),
-        "connected": len(connected_account_ids),
-        "with_active_tokens": len(account_ids & active_token_account_ids),
-        "ready_for_mcp": len(connected_with_active_token_ids),
-        "with_recent_usage_7d": len(connected_recent_usage_ids),
-    })
+        ).all()
+        event_values = {
+            (
+                str(row.event_name),
+                str(row.device_class),
+                str(row.auth_mode),
+                str(row.reason),
+            ): int(row.account_count or 0)
+            for row in event_rows
+        }
+        set_activation_event_accounts(event_values)
+        _store_activation_scan_cache(current, funnel_values, event_values)
 
     stmt = (
         select(

@@ -3428,7 +3428,7 @@ instead of an empty panel.
   activation-чеклиста). — `done`
 - 197.5 Tests/checks, audit, review gates, commit/push/deploy/smoke. — `done`
 
-## Этап 198. Activation telemetry: продуктовые события и funnel новых аккаунтов — `todo`
+## Этап 198. Activation telemetry: продуктовые события и funnel новых аккаунтов — `in_progress`
 
 Источник: план пользователя 2026-07-10 по activation-аналитике (пункты 1 и 5).
 Сейчас failed integration attempts видны только как structured log + метрика
@@ -3441,13 +3441,13 @@ error_class без mobile/desktop и без продуктовой записи 
 
 - 198.1 PRD/research: схема продуктового события failed integration attempt
   (причина-класс, auth_mode, mobile/desktop, account_id, без секретов) и
-  PII-free labels для Grafana. — `todo`
+  PII-free labels для Grafana. — `done`
 - 198.2 Запись failed/saved integration attempts в продуктовые события +
-  событие `token_copied` из UI (этап 197.3) в той же схеме. — `todo`
+  событие `token_copied` из UI (этап 197.3) в той же схеме. — `done`
 - 198.3 Grafana funnel по новым аккаунтам: registered →
   integration_failed/saved → token_issued → token_copied →
-  first_mcp_request. — `todo`
-- 198.4 Tests/checks, audit, review gates, commit/push/deploy/smoke. — `todo`
+  first_mcp_request. — `done`
+- 198.4 Tests/checks, audit, review gates, commit/push/deploy/smoke. — `in_progress`
 
 ## Этап 199. Activation-first кабинет — `done`
 

@@ -131,6 +131,46 @@
       ],
       "title": "Activation funnel",
       "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+      "id": 8,
+      "options": {
+        "displayMode": "gradient",
+        "legend": {"displayMode": "list", "placement": "bottom"},
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "expr": "vetmanager_activation_funnel_accounts{stage=~\"new_registered|integration_saved|token_issued|token_copied|first_mcp_request\"}",
+          "instant": true,
+          "legendFormat": "{{stage}}",
+          "refId": "A"
+        }
+      ],
+      "title": "New account activation funnel",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+      "id": 9,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "single", "sort": "none"}},
+      "targets": [
+        {
+          "expr": "sum by (reason, device, auth_mode) (vetmanager_activation_event_accounts{event=\"integration_failed\"})",
+          "instant": true,
+          "legendFormat": "{{reason}} {{device}} {{auth_mode}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Integration failures by reason/device",
+      "type": "bargauge"
     }
   ],
   "refresh": "30s",

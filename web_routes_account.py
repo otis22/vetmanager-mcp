@@ -8,6 +8,11 @@ from sqlalchemy import func, select
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
+from activation_events import (
+    classify_activation_device,
+    classify_activation_reason,
+    record_activation_event_best_effort,
+)
 from exceptions import (
     AuthError,
     HostResolutionError,
@@ -97,6 +102,39 @@ def _camel_to_snake(name: str) -> str:
     return _CAMEL_BOUNDARY.sub("_", name).lower()
 
 
+async def _record_activation_event_for_account(
+    *,
+    account_id: int,
+    event_name: str,
+    auth_mode: str | None = None,
+    device_class: str | None = None,
+    reason_class: str | None = None,
+    copy_kind: str | None = None,
+) -> None:
+    """Record activation telemetry without affecting the account route result."""
+    try:
+        async with get_session_factory()() as session:
+            await record_activation_event_best_effort(
+                session,
+                account_id=account_id,
+                event_name=event_name,
+                auth_mode=auth_mode,
+                device_class=device_class,
+                reason_class=reason_class,
+                copy_kind=copy_kind,
+            )
+    except Exception as exc:  # pragma: no cover - defensive route boundary
+        RUNTIME_LOGGER.warning(
+            "Activation event route recording failed",
+            extra={
+                "event_name": "activation_event_route_record_failed",
+                "account_id": account_id,
+                "activation_event": event_name,
+                "error_class": type(exc).__name__,
+            },
+        )
+
+
 async def _load_activation_state_for_polling(account_id: int) -> str | None:
     """Return activation state for polling without probing Vetmanager upstream.
 
@@ -182,16 +220,24 @@ def register_account_routes(
             return response
 
         form = await read_form(request)
+        auth_mode = form.get("auth_mode", VETMANAGER_AUTH_MODE_DOMAIN_API_KEY).strip()
+        device_class = classify_activation_device(request.headers)
         try:
             validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
         except ValueError as exc:
+            await _record_activation_event_for_account(
+                account_id=account_id,
+                event_name="integration_failed",
+                auth_mode=auth_mode,
+                device_class=device_class,
+                reason_class=classify_activation_reason(exc, csrf=True),
+            )
             return await render_account_dashboard_response(
                 request,
                 account_id,
                 status_code=403,
                 integration_error=str(exc),
             )
-        auth_mode = form.get("auth_mode", VETMANAGER_AUTH_MODE_DOMAIN_API_KEY).strip()
         domain = form.get("domain", "")
         vm_login = form.get("vm_login", "")
         vm_password = form.get("vm_password", "")
@@ -216,6 +262,13 @@ def register_account_routes(
                         encryption_key=get_storage_encryption_key(),
                     )
         except (ValueError, AuthError, HostResolutionError, VetmanagerError) as exc:
+            await _record_activation_event_for_account(
+                account_id=account_id,
+                event_name="integration_failed",
+                auth_mode=auth_mode,
+                device_class=device_class,
+                reason_class=classify_activation_reason(exc),
+            )
             # Stage 112.2 (super-review 2026-04-19): structured log + metric
             # so support can find the event by account_id and SRE can alert
             # on integration_save_failed spikes. Do NOT include str(exc) —
@@ -242,6 +295,12 @@ def register_account_routes(
                 form_domain=domain,
             )
 
+        await _record_activation_event_for_account(
+            account_id=account_id,
+            event_name="integration_saved",
+            auth_mode=auth_mode,
+            device_class=device_class,
+        )
         return await render_account_dashboard_response(
             request,
             account_id,
@@ -620,6 +679,13 @@ def register_account_routes(
         kind = form.get("kind", "")
         if kind not in {"token", "config", "mcp_url"}:
             kind = "unknown"
+        await _record_activation_event_for_account(
+            account_id=account_id,
+            event_name="token_copied",
+            auth_mode="unknown",
+            device_class=classify_activation_device(request.headers),
+            copy_kind=kind,
+        )
         RUNTIME_LOGGER.info(
             "Token copied",
             extra={

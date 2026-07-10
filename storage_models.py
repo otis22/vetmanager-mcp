@@ -39,6 +39,27 @@ TOKEN_STATUS_EXPIRED = "expired"
 TOKEN_STATUS_DISABLED = "disabled"
 TOKEN_STATUSES = (TOKEN_STATUS_ACTIVE, TOKEN_STATUS_REVOKED, TOKEN_STATUS_EXPIRED, TOKEN_STATUS_DISABLED)
 
+ACTIVATION_EVENT_INTEGRATION_FAILED = "integration_failed"
+ACTIVATION_EVENT_INTEGRATION_SAVED = "integration_saved"
+ACTIVATION_EVENT_TOKEN_COPIED = "token_copied"
+ACTIVATION_EVENT_NAMES = (
+    ACTIVATION_EVENT_INTEGRATION_FAILED,
+    ACTIVATION_EVENT_INTEGRATION_SAVED,
+    ACTIVATION_EVENT_TOKEN_COPIED,
+)
+
+ACTIVATION_AUTH_MODES = ("domain_api_key", "user_token", "unknown")
+ACTIVATION_DEVICE_CLASSES = ("mobile", "desktop", "unknown")
+ACTIVATION_REASON_CLASSES = (
+    "auth_error",
+    "host_resolution_error",
+    "vetmanager_error",
+    "validation_error",
+    "csrf_error",
+    "unknown",
+)
+ACTIVATION_COPY_KINDS = ("token", "config", "mcp_url", "unknown")
+
 FEEDBACK_SOURCE_MODEL = "model"
 FEEDBACK_SOURCE_AUTO = "auto"
 FEEDBACK_SOURCE_USER_COMPLAINT = "user_complaint"
@@ -137,6 +158,70 @@ class Account(Base):
         back_populates="account",
         cascade="all, delete-orphan",
     )
+    activation_events: Mapped[list["ActivationEvent"]] = relationship(
+        back_populates="account",
+        cascade="all, delete-orphan",
+    )
+
+
+class ActivationEvent(Base):
+    """Persisted product telemetry for activation funnel analysis."""
+
+    __tablename__ = "activation_events"
+    __table_args__ = (
+        CheckConstraint(
+            f"event_name IN ({', '.join(repr(s) for s in ACTIVATION_EVENT_NAMES)})",
+            name="ck_activation_events_event_name",
+        ),
+        CheckConstraint(
+            f"auth_mode IN ({', '.join(repr(s) for s in ACTIVATION_AUTH_MODES)})",
+            name="ck_activation_events_auth_mode",
+        ),
+        CheckConstraint(
+            f"device_class IN ({', '.join(repr(s) for s in ACTIVATION_DEVICE_CLASSES)})",
+            name="ck_activation_events_device_class",
+        ),
+        CheckConstraint(
+            "reason_class IS NULL OR "
+            f"reason_class IN ({', '.join(repr(s) for s in ACTIVATION_REASON_CLASSES)})",
+            name="ck_activation_events_reason_class",
+        ),
+        CheckConstraint(
+            "copy_kind IS NULL OR "
+            f"copy_kind IN ({', '.join(repr(s) for s in ACTIVATION_COPY_KINDS)})",
+            name="ck_activation_events_copy_kind",
+        ),
+        Index("ix_activation_events_created_at", "created_at"),
+        Index("ix_activation_events_account_created", "account_id", "created_at"),
+        Index("ix_activation_events_event_created", "event_name", "created_at"),
+        Index(
+            "ix_activation_events_breakdown_created",
+            "event_name",
+            "device_class",
+            "auth_mode",
+            "reason_class",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    event_name: Mapped[str] = mapped_column(String(32), nullable=False)
+    auth_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    device_class: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
+    reason_class: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    copy_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    account: Mapped[Account] = relationship(back_populates="activation_events")
 
 
 class VetmanagerConnection(Base):

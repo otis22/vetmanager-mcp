@@ -42,6 +42,7 @@ def test_alembic_upgrade_creates_bearer_service_tables(tmp_path: Path):
     assert "oauth_authorization_codes" in table_names
     assert "oauth_access_tokens" in table_names
     assert "oauth_refresh_tokens" in table_names
+    assert "activation_events" in table_names
     account_columns = {column["name"] for column in inspector.get_columns("accounts")}
     assert "password_hash" in account_columns
     token_columns = {column["name"] for column in inspector.get_columns("service_bearer_tokens")}
@@ -82,6 +83,27 @@ def test_alembic_upgrade_creates_bearer_service_tables(tmp_path: Path):
     assert {"used_at", "replaced_by_token_id"}.issubset(refresh_token_columns)
     oauth_access_indexes = {index["name"] for index in inspector.get_indexes("oauth_access_tokens")}
     assert "ix_oauth_access_tokens_grant_status" in oauth_access_indexes
+    activation_event_columns = {
+        column["name"] for column in inspector.get_columns("activation_events")
+    }
+    assert {
+        "account_id",
+        "event_name",
+        "auth_mode",
+        "device_class",
+        "reason_class",
+        "copy_kind",
+        "created_at",
+    }.issubset(activation_event_columns)
+    activation_event_indexes = {
+        index["name"] for index in inspector.get_indexes("activation_events")
+    }
+    assert {
+        "ix_activation_events_created_at",
+        "ix_activation_events_account_created",
+        "ix_activation_events_event_created",
+        "ix_activation_events_breakdown_created",
+    }.issubset(activation_event_indexes)
 
 
 def test_account_archival_migration_round_trip(tmp_path: Path):

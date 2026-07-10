@@ -103,14 +103,20 @@ async def _post_with_csrf(
     *,
     page_path: str | None = None,
     follow_redirects: bool | None = None,
+    headers: dict[str, str] | None = None,
 ) -> httpx.Response:
-    csrf_page = await client.get(page_path or path)
+    csrf_page = await client.get(page_path or path, headers=headers)
     token = _extract_csrf_token(csrf_page.text)
     request_data = dict(data)
     request_data["csrf_token"] = token
     if follow_redirects is None:
-        return await client.post(path, data=request_data)
-    return await client.post(path, data=request_data, follow_redirects=follow_redirects)
+        return await client.post(path, data=request_data, headers=headers)
+    return await client.post(
+        path,
+        data=request_data,
+        follow_redirects=follow_redirects,
+        headers=headers,
+    )
 
 
 @pytest.mark.asyncio

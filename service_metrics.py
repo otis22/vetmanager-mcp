@@ -55,11 +55,17 @@ _ACTIVATION_FUNNEL_STAGES = (
     "with_active_tokens",
     "ready_for_mcp",
     "with_recent_usage_7d",
+    "new_registered",
+    "integration_saved",
+    "token_issued",
+    "token_copied",
+    "first_mcp_request",
 )
 _ACTIVATION_FUNNEL_ACCOUNTS: dict[str, int] = {
     stage: 0
     for stage in _ACTIVATION_FUNNEL_STAGES
 }
+_ACTIVATION_EVENT_ACCOUNTS: DefaultDict[tuple[str, str, str, str], int] = defaultdict(int)
 # Stage 110.2: business events counter. Accumulated in-process since last reset;
 # reset_service_metrics() zeros it. Persistent counts live in the DB
 # (TokenUsageLog + Account); this metric is the hook for Grafana panels without
@@ -94,6 +100,7 @@ def reset_service_metrics() -> None:
             stage: 0
             for stage in _ACTIVATION_FUNNEL_STAGES
         })
+        _ACTIVATION_EVENT_ACCOUNTS.clear()
 
 
 _ALLOWED_BUSINESS_EVENTS = frozenset({
@@ -300,6 +307,16 @@ def set_activation_funnel_accounts(values: dict[str, int]) -> None:
         })
 
 
+def set_activation_event_accounts(values: dict[tuple[str, str, str, str], int]) -> None:
+    """Replace aggregate activation event account gauges with latest DB snapshot."""
+    with _LOCK:
+        _ACTIVATION_EVENT_ACCOUNTS.clear()
+        _ACTIVATION_EVENT_ACCOUNTS.update({
+            (str(event), str(device), str(auth_mode), str(reason)): int(count)
+            for (event, device, auth_mode, reason), count in values.items()
+        })
+
+
 def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, int | float]]]:
     """Return a stable JSON-serializable snapshot of current service metrics."""
     with _LOCK:
@@ -348,6 +365,12 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 for account_id, age_hours in sorted(_ACCOUNT_LAST_REQUEST_AGE_HOURS.items())
             },
             "activation_funnel_accounts": dict(sorted(_ACTIVATION_FUNNEL_ACCOUNTS.items())),
+            "activation_event_accounts": {
+                f"{event}|{device}|{auth_mode}|{reason}": count
+                for (event, device, auth_mode, reason), count in sorted(
+                    _ACTIVATION_EVENT_ACCOUNTS.items()
+                )
+            },
         }
 
 
@@ -556,6 +579,19 @@ def render_prometheus_metrics() -> str:
         lines.append(
             f"vetmanager_activation_funnel_accounts"
             f"{_labels_text(stage=stage)} {count}"
+        )
+
+    lines.extend(
+        [
+            "# HELP vetmanager_activation_event_accounts New-account activation event account counts by bounded event/device/auth/reason labels.",
+            "# TYPE vetmanager_activation_event_accounts gauge",
+        ]
+    )
+    for key, count in snapshot.get("activation_event_accounts", {}).items():
+        event, device, auth_mode, reason = str(key).split("|", 3)
+        lines.append(
+            f"vetmanager_activation_event_accounts"
+            f"{_labels_text(event=event, device=device, auth_mode=auth_mode, reason=reason)} {count}"
         )
 
     # Cache metrics (from request_cache singleton).

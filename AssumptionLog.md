@@ -10105,3 +10105,41 @@ Checks so far:
   - cleanup removed both temporary production accounts created by the smoke
     attempts; follow-up query showed `remaining_accounts=0` for prefix
     `codex-prod-activation-*`.
+
+## Этап 198. Activation telemetry and new-account funnel — 2026-07-10
+
+- **Privacy boundary**: activation product events persist only bounded fields:
+  numeric `account_id`, allowlisted `event_name`, `auth_mode`, `device_class`,
+  `reason_class`, `copy_kind`, and timestamp. Raw domain, email, API key,
+  login/password, Bearer token, User-Agent, request body, and exception text are
+  not stored or exported.
+- **Failure semantics**: `integration_failed` is an append-only attempt event
+  and is exported through `vetmanager_activation_event_accounts`; it is not a
+  state in `vetmanager_activation_funnel_accounts`. A fail-then-succeed account
+  can contribute to the failure breakdown and still count as `integration_saved`.
+- **New-account funnel semantics**: legacy activation stages remain emitted for
+  compatibility. Additive stages are scoped to active, non-archived accounts
+  created in the last 30 days: `new_registered`, `integration_saved`,
+  `token_issued`, `token_copied`, `first_mcp_request`.
+- **Retention and scan cost**: activation events older than 90 days are removed
+  by a throttled best-effort cleanup hook from event writes and metrics scan.
+  Cleanup due-check runs before the 60-second process-local aggregate cache, so
+  repeated Prometheus/Grafana scrapes avoid repeated new-funnel aggregation
+  without blocking retention.
+- **Grafana labels**: new panels use only bounded labels
+  `stage`, `event`, `device`, `auth_mode`, and `reason`; no per-account,
+  email, domain, token prefix, or clinic labels are introduced.
+- **Review gates before implementation**: architecture critique returned 6
+  material findings, Spark PRD-review returned 5 findings, and Claude Opus
+  PRD-review returned 9 findings. All were accepted and resolved in the PRD
+  before implementation.
+- **Local audit finding**: full Docker suite first failed only because the new
+  runtime module `activation_events.py` was missing from wheel `only-include`.
+  Added it to `pyproject.toml` and reran the full suite.
+- **Local checks**:
+  - Targeted regression:
+    `docker compose --profile test run --rm test pytest tests/test_stage198_activation_telemetry.py tests/test_stage156_activation_telemetry.py tests/test_web_auth.py tests/test_stage190_observability_stack.py::test_stage190_grafana_provisioning_and_dashboard_queries_are_safe tests/test_migrations.py::test_alembic_upgrade_creates_bearer_service_tables -q`
+    — `51 passed`.
+  - Full suite after packaging fix:
+    `docker compose --profile test run --rm test` —
+    `1345 passed, 2 skipped, 65 deselected`.

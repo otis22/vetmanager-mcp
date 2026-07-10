@@ -108,6 +108,8 @@ def test_stage190_grafana_provisioning_and_dashboard_queries_are_safe() -> None:
         "Business events",
         "Activation telemetry",
         "Activation funnel",
+        "New account activation funnel",
+        "Integration failures by reason/device",
     }.issubset(panel_titles)
     tool_error_panel = next(
         panel for panel in dashboard["panels"] if panel["title"] == "Tool error rate"
@@ -142,6 +144,9 @@ def test_stage190_grafana_provisioning_and_dashboard_queries_are_safe() -> None:
         "status",
         "event",
         "stage",
+        "device",
+        "auth_mode",
+        "reason",
     }
     label_names = set(re.findall(r"(?:by|without) \(([^)]*)\)", text))
     flattened = {
