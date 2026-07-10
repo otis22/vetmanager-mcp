@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from sqlalchemy import func, select
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
@@ -21,6 +22,14 @@ from service_token_service import issue_service_bearer_token, revoke_service_bea
 from oauth_service import revoke_oauth_grant_family
 from tool_access_registry import PRESET_FULL_ACCESS, PRESET_REPORT_AI, get_token_preset_label
 from storage import get_session_factory
+from storage_models import (
+    CONNECTION_STATUS_ACTIVE,
+    TOKEN_STATUS_ACTIVE,
+    Account,
+    ServiceBearerToken,
+    TokenUsageStat,
+    VetmanagerConnection,
+)
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY, VETMANAGER_AUTH_MODE_USER_TOKEN
 from vetmanager_connection_service import (
     INTEGRATION_HEALTH_ACTIVE,
@@ -28,7 +37,7 @@ from vetmanager_connection_service import (
     save_user_login_password_connection,
 )
 from web_auth import clear_account_session_cookie
-from web_html import _DOCTOR_PRESET_FORM_VALUE, QUICK_TOKEN_NAME, compute_activation_state
+from web_html import _DOCTOR_PRESET_FORM_VALUE, QUICK_TOKEN_NAME
 from web_security import CSRF_FIELD_NAME, get_request_ip, validate_csrf_request
 
 
@@ -86,6 +95,62 @@ def _camel_to_snake(name: str) -> str:
     human-queryable Prometheus label values.
     """
     return _CAMEL_BOUNDARY.sub("_", name).lower()
+
+
+async def _load_activation_state_for_polling(account_id: int) -> str | None:
+    """Return activation state for polling without probing Vetmanager upstream.
+
+    The account page already evaluated connection health before rendering the
+    waiting state. Polling only needs to detect whether a token has received its
+    first MCP request, so this must stay DB-only and cheap.
+    """
+    async with get_session_factory()() as session:
+        account = await session.get(Account, account_id)
+        if account is None or account.archived_at is not None or account.status != "active":
+            return None
+        active_connection = await session.scalar(
+            select(VetmanagerConnection.id)
+            .where(VetmanagerConnection.account_id == account_id)
+            .where(VetmanagerConnection.status == CONNECTION_STATUS_ACTIVE)
+            .limit(1)
+        )
+        if active_connection is None:
+            return "needs_connection"
+
+        usable_token_ids = [
+            int(token_id)
+            for token_id in (
+                await session.execute(
+                    select(ServiceBearerToken.id)
+                    .where(ServiceBearerToken.account_id == account_id)
+                    .where(ServiceBearerToken.status == TOKEN_STATUS_ACTIVE)
+                    .where(
+                        (ServiceBearerToken.expires_at.is_(None))
+                        | (ServiceBearerToken.expires_at > func.now())
+                    )
+                )
+            ).scalars().all()
+        ]
+        if not usable_token_ids:
+            return "needs_token"
+
+        used_token = await session.scalar(
+            select(ServiceBearerToken.id)
+            .outerjoin(
+                TokenUsageStat,
+                TokenUsageStat.bearer_token_id == ServiceBearerToken.id,
+            )
+            .where(ServiceBearerToken.id.in_(usable_token_ids))
+            .where(
+                (ServiceBearerToken.last_used_at.is_not(None))
+                | (TokenUsageStat.last_used_at.is_not(None))
+                | (TokenUsageStat.request_count > 0)
+            )
+            .limit(1)
+        )
+        if used_token is None:
+            return "needs_client_use"
+        return "ready"
 
 
 def register_account_routes(
@@ -582,22 +647,7 @@ def register_account_routes(
         if account_id is None:
             return json_response(request, {"error": "unauthorized"}, status_code=401)
 
-        (
-            account,
-            _active_connection_count,
-            _bearer_token_count,
-            active_connection,
-            integration_health_status,
-            _integration_health_reason,
-            bearer_tokens,
-            _oauth_grants,
-        ) = await load_account_dashboard(account_id)
-        if account is None:
+        state = await _load_activation_state_for_polling(account_id)
+        if state is None:
             return json_response(request, {"error": "unauthorized"}, status_code=401)
-
-        state = compute_activation_state(
-            active_connection=active_connection,
-            integration_health_status=integration_health_status,
-            bearer_tokens=bearer_tokens,
-        )
         return json_response(request, {"state": state})

@@ -10038,3 +10038,45 @@ Checks so far:
   `docker compose --profile test run --rm test` — см. итог сессии.
 - Скриншоты проверки: `mobile-02-error-visible.png`, `mobile-04-quick-issue.png`,
   `mobile-07-needs-client-use.png`, `desktop-08-ready.png`.
+
+## Этап 200. Activation UX deploy hardening — 2026-07-10
+
+- **Activation polling должен быть DB-only**. Ревью перед deploy показало, что
+  `/account/activation-status` вызывал полный `load_account_dashboard`, а значит
+  при ожидании первого MCP-запроса мог каждые 15 секунд делать Vetmanager health
+  probe. Решение: endpoint теперь использует отдельный helper
+  `_load_activation_state_for_polling`, который читает только account,
+  active connection, usable tokens и usage-сигналы из storage. Это сохраняет
+  UX auto-refresh, но не создаёт upstream-нагрузку.
+- **Health/reauth drift закрыт bounded reload, а не upstream probe в polling**.
+  Spark-review справедливо отметил, что DB-only polling сам не увидит
+  `reauth_required`. Вместо возврата expensive probe в polling выбран компромисс:
+  страница делает один forced reload после 20 polling attempts, чтобы обычный
+  account render переоценил health/reauth, но не повторяет reload бесконечно.
+  После дополнительного review finding polling также ограничен 80 total attempts
+  на вкладку через `sessionStorage`; abandoned tab не будет бесконечно
+  опрашивать backend.
+- **Activation ready semantics синхронизированы с page view**. Polling считает
+  `ready`, если есть active usable token и хотя бы один usage-сигнал:
+  `ServiceBearerToken.last_used_at`, `TokenUsageStat.last_used_at` или
+  `TokenUsageStat.request_count > 0`. Это закрывает mismatch, где page уже
+  могла показать `ready`, а polling продолжал держать пользователя в
+  `needs_client_use`.
+- **MCP URL в готовом конфиге экранируется на HTML display-слое**. Хотя URL
+  обычно строится из trusted `SITE_BASE_URL`, review указал на небезопасную
+  привычку вставлять его в `<textarea>` без escaping. Теперь
+  `chatgpt_mcp_url` проходит через `escape()` перед JSON-placeholder.
+- **Review gates**:
+  - первый Spark-review нашёл 2 medium findings (upstream probe через polling,
+    unescaped URL placeholder) — оба приняты и исправлены;
+  - Claude Opus review нашёл 2 medium findings (reload loop и mismatch usage
+    semantics) — оба приняты и исправлены;
+  - повторный Spark-review после bounded polling вернул `[]`;
+  - повторный Claude Opus review вернул `{"findings":[]}`.
+- **Локальные проверки перед commit/push/deploy**:
+  - `docker compose --profile test run --rm test pytest tests/test_stage197_token_quick_issue.py -q`
+    — `10 passed`;
+  - `docker compose --profile test run --rm test pytest tests/test_stage196_activation_ux.py tests/test_stage197_token_quick_issue.py tests/test_stage199_activation_first.py tests/test_web_auth.py -q`
+    — `80 passed`;
+  - полный `docker compose --profile test run --rm test` —
+    `1340 passed, 2 skipped, 65 deselected`.

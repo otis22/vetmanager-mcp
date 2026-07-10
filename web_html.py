@@ -1242,11 +1242,12 @@ def render_account_page(
     # afterthought.
     client_instructions_html = ""
     if activation_state == "needs_client_use":
+        chatgpt_mcp_url_html = escape(chatgpt_mcp_url)
         config_placeholder = (
             "{\n"
             '  "mcpServers": {\n'
             '    "vetmanager": {\n'
-            f'      "url": "{chatgpt_mcp_url}",\n'
+            f'      "url": "{chatgpt_mcp_url_html}",\n'
             '      "headers": {\n'
             '        "Authorization": "Bearer &lt;ВАШ_ТОКЕН&gt;"\n'
             "      }\n"
@@ -1571,16 +1572,37 @@ def render_account_page(
             const pollEl = document.querySelector('[data-poll-activation]');
             if (pollEl) {{
               const initialState = pollEl.getAttribute('data-poll-activation');
+              const forcedReloadKey = 'vm_activation_forced_reload_count';
+              const pollAttemptKey = 'vm_activation_poll_attempt_count';
+              let forcedReloads = Number(sessionStorage.getItem(forcedReloadKey) || '0');
+              let pollAttempts = Number(sessionStorage.getItem(pollAttemptKey) || '0');
+              const reloadAfterAttempts = 20;
+              const maxPollAttempts = 80;
               const timer = setInterval(async () => {{
                 try {{
+                  pollAttempts += 1;
+                  sessionStorage.setItem(pollAttemptKey, String(pollAttempts));
                   const response = await fetch('/account/activation-status', {{
                     headers: {{ 'Accept': 'application/json' }},
                   }});
                   if (!response.ok) return;
                   const payload = await response.json();
                   if (payload.state && payload.state !== initialState) {{
+                    sessionStorage.removeItem(forcedReloadKey);
+                    sessionStorage.removeItem(pollAttemptKey);
                     clearInterval(timer);
                     location.reload();
+                  }}
+                  if (pollAttempts >= reloadAfterAttempts) {{
+                    if (forcedReloads < 1) {{
+                      forcedReloads += 1;
+                      sessionStorage.setItem(forcedReloadKey, String(forcedReloads));
+                      clearInterval(timer);
+                      location.reload();
+                    }}
+                  }}
+                  if (pollAttempts >= maxPollAttempts) {{
+                    clearInterval(timer);
                   }}
                 }} catch (_error) {{}}
               }}, 15000);

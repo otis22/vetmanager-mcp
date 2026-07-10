@@ -3464,3 +3464,25 @@ error_class без mobile/desktop и без продуктовой записи 
   сворачивание метрик/privacy/ChatGPT-секций до активации. — `done`
 - 199.3 Tests/checks, audit, review gates, commit/push/deploy/smoke с
   layout-проверкой mobile/desktop. — `done`
+
+## Этап 200. Activation UX deploy hardening и production verification — `in_progress`
+
+Источник: пользователь 2026-07-10 попросил взять уже сделанные этапы
+196/197/199, провести ревью, внести правки, прогнать проверки, сделать
+production deploy и полностью проверить сервис после выката.
+
+Цель: безопасно выкатить Activation UX в production после полноценного
+review-gate и убедиться, что регистрация, интеграция, выпуск токена, первый MCP
+запрос и адаптивная вёрстка работают на prod.
+
+- 200.1 Review hardening: убрать expensive upstream probe из
+  `/account/activation-status`, экранировать MCP URL в JSON-подсказке,
+  ограничить polling/reload в состоянии ожидания первого MCP-запроса. —
+  `done`
+- 200.2 Review gates: Spark review + Claude Opus review на финальные правки. —
+  `done`
+- 200.3 Локальные проверки: таргетированные regression tests + полный
+  `docker compose --profile test run --rm test`. — `done`
+- 200.4 Commit/push, GitHub Actions, production deploy и полный prod smoke
+  (регистрация → Vetmanager integration → token issue → first MCP request →
+  layout mobile/desktop). — `in_progress`

@@ -231,6 +231,12 @@ def test_client_instructions_become_primary_content_at_needs_client_use() -> Non
     # Waiting indicator with polling marker.
     assert 'data-testid="activation-waiting"' in html
     assert 'data-poll-activation="needs_client_use"' in html
+    assert "vm_activation_forced_reload_count" in html
+    assert "vm_activation_poll_attempt_count" in html
+    assert "reloadAfterAttempts = 20" in html
+    assert "maxPollAttempts = 80" in html
+    assert "forcedReloads < 1" in html
+    assert "pollAttempts >= maxPollAttempts" in html
 
     ready = _account_page(bearer_tokens=[_token_view(request_count=5)])
     assert 'data-testid="client-connect-instructions"' not in ready
@@ -310,7 +316,6 @@ async def test_token_copied_endpoint_requires_session_and_csrf(
 
 
 @pytest.mark.asyncio
-@respx.mock
 async def test_activation_status_endpoint_reports_current_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -333,11 +338,31 @@ async def test_activation_status_endpoint_reports_current_state(
         assert fresh.json() == {"state": "needs_connection"}
 
     await _register_account_with_active_connection(email="poll2@example.com")
-    _mock_active_connection_health("clinic")
     async with _app_client() as client:
         await _login_client(client, "poll2@example.com")
         connected = await client.get("/account/activation-status")
         assert connected.json() == {"state": "needs_token"}
+
+    async with storage.get_session_factory()() as session:
+        account = await session.scalar(
+            select(Account).where(Account.email == "poll2@example.com")
+        )
+        assert account is not None
+        token = ServiceBearerToken(
+            account_id=account.id,
+            name="used by last_used_at",
+            status="active",
+            allowed_ip_mask="*.*.*.*",
+            last_used_at=NOW,
+        )
+        token.set_raw_token("vm_st_poll_used_by_last_used_at")
+        session.add(token)
+        await session.commit()
+
+    async with _app_client() as client:
+        await _login_client(client, "poll2@example.com")
+        ready = await client.get("/account/activation-status")
+        assert ready.json() == {"state": "ready"}
 
     await engine.dispose()
     storage.reset_storage_state()
