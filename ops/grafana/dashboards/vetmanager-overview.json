@@ -48,7 +48,7 @@
       "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single", "sort": "none"}},
       "targets": [
         {
-          "expr": "sum(rate(vetmanager_tool_calls_total{outcome=\"error\"}[5m])) / clamp_min(sum(rate(vetmanager_tool_calls_total[5m])), 1)",
+          "expr": "(sum(rate(vetmanager_tool_calls_total{outcome=\"error\"}[5m])) or vector(0)) / clamp_min((sum(rate(vetmanager_tool_calls_total[5m])) or vector(0)), 1e-9)",
           "legendFormat": "tool error rate",
           "refId": "A"
         }

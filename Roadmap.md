@@ -3349,3 +3349,22 @@ aggregate activation funnel в Prometheus/Grafana.
   `vetmanager_activation_funnel_accounts{stage=...}` gauges and add dashboard
   panel. — `done`
 - 194.6 Tests/checks, audit, Claude review, commit/push/deploy/smoke. — `done`
+
+## Этап 195. Grafana Tool error rate no-data hotfix — `done`
+
+Источник: пользователь сообщил 2026-07-10, что panel `Tool error rate` в
+Grafana ничего не показывает. Production `/metrics` показывает
+`vetmanager_tool_calls_total` with `outcome="success"`, but no current
+`outcome="error"` series, so the PromQL numerator is an empty vector and
+Grafana renders No data instead of 0%.
+
+Цель: when there are tool calls and no tool errors, show `0%` Tool error rate
+instead of an empty panel.
+
+- 195.1 Update Grafana panel query to zero-fill missing error series with
+  `or vector(0)` while keeping denominator guarded by `clamp_min(..., 1e-9)`.
+  —
+  `done`
+- 195.2 Add regression coverage for the no-data-safe query and validate
+  dashboard JSON. — `done`
+- 195.3 Full checks, review gates, commit/push/deploy/smoke. — `done`

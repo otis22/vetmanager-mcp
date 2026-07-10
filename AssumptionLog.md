@@ -9958,3 +9958,30 @@ Checks so far:
     `vetmanager_business_events_total{event="oauth_grant_revoked"} 1`;
   - temporary production accounts/grants/clients created for verification were
     removed; follow-up query showed `stage193_temp_accounts=0`.
+
+## Этап 195. Grafana Tool error rate no-data hotfix — 2026-07-10
+
+- Root cause: production `/metrics` exported `vetmanager_tool_calls_total` only
+  for current success outcomes. The Grafana query
+  `sum(rate(vetmanager_tool_calls_total{outcome="error"}[5m])) / ...` returns an
+  empty vector when no `outcome="error"` time series exists, so Grafana renders
+  No data instead of `0%`.
+- Decision: zero-fill the missing numerator with `or vector(0)` and also guard
+  the denominator with `or vector(0)` + `clamp_min(..., 1e-9)`. This preserves
+  the exact error ratio for low-traffic periods, still renders 0 when there are
+  no calls, preserves the percentunit panel, and keeps labels PII-free.
+- Production observation before fix: `vetmanager_tool_calls_total` existed with
+  labels `endpoint`, `tool`, `method`, `outcome`, and current samples were
+  success-only.
+- Checks before commit:
+  - `python3 -m json.tool ops/grafana/dashboards/vetmanager-overview.json >/dev/null`
+    passed.
+  - Targeted dashboard regression
+    `docker compose --profile test run --rm test pytest tests/test_stage190_observability_stack.py::test_stage190_grafana_provisioning_and_dashboard_queries_are_safe -q`
+    passed (`1 passed`).
+  - Full suite `docker compose --profile test run --rm test` passed:
+    `1295 passed, 2 skipped, 65 deselected`.
+  - Spark review with `gpt-5.3-codex-spark` returned `[]`; it read diff through
+    shell despite review-only prompt, but did not edit files.
+  - Claude Opus review after the epsilon denominator fix returned
+    `{"findings":[]}`.
