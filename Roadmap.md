@@ -3465,7 +3465,7 @@ error_class без mobile/desktop и без продуктовой записи 
 - 199.3 Tests/checks, audit, review gates, commit/push/deploy/smoke с
   layout-проверкой mobile/desktop. — `done`
 
-## Этап 200. Activation UX deploy hardening и production verification — `in_progress`
+## Этап 200. Activation UX deploy hardening и production verification — `done`
 
 Источник: пользователь 2026-07-10 попросил взять уже сделанные этапы
 196/197/199, провести ревью, внести правки, прогнать проверки, сделать
@@ -3485,4 +3485,4 @@ review-gate и убедиться, что регистрация, интегра
   `docker compose --profile test run --rm test`. — `done`
 - 200.4 Commit/push, GitHub Actions, production deploy и полный prod smoke
   (регистрация → Vetmanager integration → token issue → first MCP request →
-  layout mobile/desktop). — `in_progress`
+  layout mobile/desktop). — `done`

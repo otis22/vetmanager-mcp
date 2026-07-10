@@ -10080,3 +10080,28 @@ Checks so far:
     — `80 passed`;
   - полный `docker compose --profile test run --rm test` —
     `1340 passed, 2 skipped, 65 deselected`.
+- **Commit/push/CI/deploy**:
+  - committed `ffb95ad Harden activation polling before deploy`;
+  - pushed to `main`;
+  - GitHub Actions `Tests` run `29117204344` passed (`fast` and `default`);
+  - GitHub Actions `Deploy Prod` run `29117385032` passed.
+- **Production verification after deploy**:
+  - штатный `scripts/post_deploy_smoke_checks.sh` against
+    `https://vetmanager-mcp.vromanichev.ru` passed with production
+    `METRICS_AUTH_TOKEN` (healthz, readyz, metrics, MCP endpoint);
+  - browser production smoke зарегистрировал временный аккаунт, проверил
+    русскую ошибку для invalid API key, затем сохранил real Vetmanager
+    domain/API-key integration with pasted uppercase/full URL input and verified
+    normalized stored domain;
+  - same smoke issued one-click Bearer token, clicked “Скопировать готовый
+    конфиг” and observed `/account/telemetry/token-copied` response `204`;
+  - same smoke performed a real MCP `get_clients` request through the issued
+    Bearer token, reopened `/account`, and verified
+    `data-activation-state="ready"` plus Russian checklist text
+    `MCP-клиент сделал хотя бы один запрос` with the old English label absent;
+  - responsive layout check on production passed for 390, 760, and 1024 px
+    widths: no document overflow, activation/token/ChatGPT/meta sections within
+    viewport, four activation checklist rows;
+  - cleanup removed both temporary production accounts created by the smoke
+    attempts; follow-up query showed `remaining_accounts=0` for prefix
+    `codex-prod-activation-*`.
