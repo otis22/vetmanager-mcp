@@ -245,6 +245,54 @@ async def test_resolve_bearer_auth_context_increments_request_count(session_fact
 
 
 @pytest.mark.asyncio
+async def test_resolve_bearer_auth_context_does_not_increment_request_count_on_auth_failure(
+    session_factory,
+):
+    """Usage stats are success-only; failed auth must not drive activation readiness."""
+    raw_token = generate_bearer_token()
+
+    async with session_factory() as session:
+        account = Account(email="no-scopes@example.com", status="active")
+        session.add(account)
+        await session.flush()
+
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+            domain="clinic-a",
+        )
+        connection.set_credentials(
+            {"domain": "clinic-a", "api_key": "secret-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        token = ServiceBearerToken(account_id=account.id, name="No scopes token")
+        token.set_raw_token(raw_token)
+        token.scopes_json = "[]"
+        session.add_all([connection, token])
+        await session.commit()
+        token_id = token.id
+
+    async with session_factory() as session:
+        with pytest.raises(AuthError, match="no authorized scopes"):
+            await resolve_bearer_auth_context(
+                raw_token,
+                session,
+                encryption_key=TEST_ENCRYPTION_KEY,
+            )
+
+    async with session_factory() as session:
+        stats = await session.scalar(
+            select(TokenUsageStat).where(TokenUsageStat.bearer_token_id == token_id)
+        )
+        stored_token = await session.get(ServiceBearerToken, token_id)
+
+    assert stats is None
+    assert stored_token is not None
+    assert stored_token.last_used_at is None
+
+
+@pytest.mark.asyncio
 async def test_resolve_bearer_auth_context_concurrent_first_successes_keep_usage_stats(
     session_factory,
 ):

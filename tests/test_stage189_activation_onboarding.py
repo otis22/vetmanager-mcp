@@ -210,6 +210,105 @@ def test_activation_panel_guides_ready_unused_account_to_client_use(now_utc) -> 
     assert "Подключите MCP-клиент" in html
 
 
+def test_activation_panel_treats_request_count_as_client_usage(now_utc) -> None:
+    html = _account_page(
+        active_connection=_Connection(),
+        activation_now=now_utc,
+        bearer_tokens=[
+            {
+                "id": 10,
+                "name": "ops",
+                "token_prefix": "vm_st_safe_prefix",
+                "access_label": "Read only",
+                "privacy_label": "Depersonalized",
+                "status": "active",
+                "ip_mask": "10.20.30.*",
+                "expires_at_raw": now_utc + timedelta(days=21),
+                "expires_at": "2026-07-30 12:00 UTC",
+                "last_used_at_raw": None,
+                "last_used_at": "Never",
+                "request_count": 3,
+            }
+        ],
+    )
+
+    assert 'data-activation-state="ready"' in html
+    assert "Готово к работе" in html
+
+
+def test_activation_panel_logs_invalid_request_count_shape(now_utc, caplog) -> None:
+    with caplog.at_level("WARNING"):
+        html = _account_page(
+            active_connection=_Connection(),
+            activation_now=now_utc,
+            bearer_tokens=[
+                {
+                    "id": 10,
+                    "name": "ops",
+                    "token_prefix": "vm_st_safe_prefix",
+                    "access_label": "Read only",
+                    "privacy_label": "Depersonalized",
+                    "status": "active",
+                    "ip_mask": "10.20.30.*",
+                    "expires_at_raw": now_utc + timedelta(days=21),
+                    "expires_at": "2026-07-30 12:00 UTC",
+                    "last_used_at_raw": None,
+                    "last_used_at": "Never",
+                    "request_count": object(),
+                }
+            ],
+        )
+
+    assert 'data-activation-state="needs_client_use"' in html
+    assert "Подключите MCP-клиент" in html
+    assert any(
+        record.levelname == "WARNING"
+        and getattr(record, "event_name", None) == "activation_request_count_parse_failed"
+        and getattr(record, "token_id", None) == 10
+        for record in caplog.records
+    )
+
+
+def test_activation_panel_ignores_historical_usage_on_unusable_token(now_utc) -> None:
+    html = _account_page(
+        active_connection=_Connection(),
+        activation_now=now_utc,
+        bearer_tokens=[
+            {
+                "id": 10,
+                "name": "old",
+                "token_prefix": "vm_st_old_prefix",
+                "access_label": "Read only",
+                "privacy_label": "Depersonalized",
+                "status": "revoked",
+                "ip_mask": "10.20.30.*",
+                "expires_at_raw": None,
+                "expires_at": "No expiry",
+                "last_used_at_raw": now_utc - timedelta(days=1),
+                "last_used_at": "2026-07-08 12:00 UTC",
+                "request_count": 5,
+            },
+            {
+                "id": 11,
+                "name": "fresh",
+                "token_prefix": "vm_st_fresh_prefix",
+                "access_label": "Read only",
+                "privacy_label": "Depersonalized",
+                "status": "active",
+                "ip_mask": "10.20.30.*",
+                "expires_at_raw": now_utc + timedelta(days=21),
+                "expires_at": "2026-07-30 12:00 UTC",
+                "last_used_at_raw": None,
+                "last_used_at": "Never",
+                "request_count": 0,
+            },
+        ],
+    )
+
+    assert 'data-activation-state="needs_client_use"' in html
+    assert "Подключите MCP-клиент" in html
+
+
 def test_activation_panel_ready_state(now_utc) -> None:
     html = _account_page(
         active_connection=_Connection(),
@@ -227,13 +326,21 @@ def test_activation_panel_ready_state(now_utc) -> None:
                 "expires_at": "2026-07-30 12:00 UTC",
                 "last_used_at_raw": now_utc,
                 "last_used_at": "2026-07-09 12:00 UTC",
-                "request_count": 4,
+                "request_count": 0,
             }
         ],
     )
 
     assert 'data-activation-state="ready"' in html
     assert "Готово к работе" in html
+    assert "Vetmanager integration active" not in html
+    assert "Bearer token issued and active" not in html
+    assert "MCP client made at least one request" not in html
+    assert "ChatGPT OAuth connection configured" not in html
+    assert "Интеграция Vetmanager активна" in html
+    assert "Bearer token выпущен и активен" in html
+    assert "MCP-клиент сделал хотя бы один запрос" in html
+    assert "Подключение ChatGPT OAuth настроено" in html
 
 
 def test_activation_panel_treats_expired_token_as_missing_token(now_utc) -> None:
@@ -262,7 +369,7 @@ def test_activation_panel_treats_expired_token_as_missing_token(now_utc) -> None
     assert "Выпустите Bearer token" in html
 
 
-def test_activation_panel_treats_stale_usage_as_needs_client_use(now_utc) -> None:
+def test_activation_panel_treats_any_last_used_at_as_client_usage(now_utc) -> None:
     html = _account_page(
         active_connection=_Connection(),
         activation_now=now_utc,
@@ -284,8 +391,8 @@ def test_activation_panel_treats_stale_usage_as_needs_client_use(now_utc) -> Non
         ],
     )
 
-    assert 'data-activation-state="needs_client_use"' in html
-    assert "Подключите MCP-клиент" in html
+    assert 'data-activation-state="ready"' in html
+    assert "Готово к работе" in html
 
 
 def test_activation_panel_does_not_overflow_common_viewports(page: Page) -> None:
@@ -303,6 +410,25 @@ def test_activation_panel_does_not_overflow_common_viewports(page: Page) -> None
             "() => document.documentElement.scrollWidth > window.innerWidth"
         )
         assert overflow is False
+        checklist_rows = page.evaluate(
+            """() => {
+                const container = document.querySelector('[data-testid="activation-status"]');
+                const list = container.querySelector('ol');
+                const containerBox = container.getBoundingClientRect();
+                const nodes = Array.from(container.querySelectorAll('li'));
+                return {
+                    count: nodes.length,
+                    listOverflows: list.scrollWidth > list.clientWidth,
+                    rowsOutOfBounds: nodes.some((node) => {
+                        const box = node.getBoundingClientRect();
+                        return box.left < containerBox.left - 1 || box.right > containerBox.right + 1;
+                    }),
+                };
+            }"""
+        )
+        assert checklist_rows["count"] == 4
+        assert checklist_rows["listOverflows"] is False
+        assert checklist_rows["rowsOutOfBounds"] is False
 
 
 @pytest.mark.asyncio

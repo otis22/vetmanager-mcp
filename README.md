@@ -136,9 +136,9 @@ HTTP probes и scrape endpoints:
   - `vetmanager_upstream_requests_total{target,status}` + `vetmanager_upstream_request_latency_seconds_{count,sum,max}` — all VM API requests with their outcome (stage 88);
   - `vetmanager_tool_calls_total{endpoint,method,outcome}` + `vetmanager_tool_call_latency_seconds_{count,sum,max}` — per-tool (endpoint+method) latency and success/error rate via crud_helpers instrumentation (stage 88);
   - `vetmanager_cache_{hits,misses,invalidations,evictions}_total` + `vetmanager_cache_entries`;
-  - `vetmanager_business_events_total{event=...}` — lifecycle business events (`account_registered`, `web_login_succeeded`, `bearer_token_issued`, `bearer_token_revoked`) (stage 110);
+  - `vetmanager_business_events_total{event=...}` — fixed allowlist business events from `service_metrics._ALLOWED_BUSINESS_EVENTS`, including account/token/OAuth lifecycle events and token-expiry warning events;
   - `vetmanager_token_preset_issued_total{preset}` — issuance counter by access preset;
-  - `vetmanager_activation_funnel_accounts{stage}` — aggregate activation funnel gauges (`registered`, `connected`, `with_active_tokens`, `ready_for_mcp`, `with_recent_usage_7d`) without account/email/domain labels; `ready_for_mcp` means an active Vetmanager connection and a live token, while `with_active_tokens` can expose stale-token/no-connection gaps;
+  - `vetmanager_activation_funnel_accounts{stage}` — aggregate activation funnel gauges (`registered`, `connected`, `with_active_tokens`, `ready_for_mcp`, `with_recent_usage_7d`) without account/email/domain labels; `ready_for_mcp` means an active Vetmanager connection and a live token, while `with_active_tokens` can expose stale-token/no-connection gaps; `with_recent_usage_7d` is a freshness signal and is stricter than the account UI checklist, which marks a usable token as connected after any successful historical request;
   - `vetmanager_account_last_request_age_hours{account_id}` — hours since the
     last successful bearer runtime request for active accounts with active
     connection and live token; never-used tokens use the earliest live token

@@ -112,6 +112,7 @@ def test_ac2_business_event_allowlist_includes_per_threshold() -> None:
     assert "token_expiry_warning_1d" in allowed
     assert "token_expiry_warning_7d" in allowed
     assert "token_expiry_warning_14d" in allowed
+    assert "oauth_grant_revoked" in allowed
 
 
 # ─── AC #3, #4: detection rule ───────────────────────────────────────────────

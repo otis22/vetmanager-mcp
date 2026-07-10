@@ -412,7 +412,7 @@ def register_account_routes(
         grant_id = int(request.path_params["grant_id"])
         try:
             async with get_session_factory()() as session:
-                await revoke_oauth_grant_family(
+                revoke_result = await revoke_oauth_grant_family(
                     session,
                     account_id=account_id,
                     grant_id=grant_id,
@@ -425,15 +425,40 @@ def register_account_routes(
                 token_error=str(exc),
             )
 
-        RUNTIME_LOGGER.info(
-            "OAuth grant revoked",
-            extra={
-                "event_name": "oauth_grant_revoked",
-                "account_id": account_id,
-                "grant_id": grant_id,
-            },
-        )
-        record_business_event("oauth_grant_revoked")
+        if revoke_result.grant_transitioned:
+            RUNTIME_LOGGER.info(
+                "OAuth grant revoked",
+                extra={
+                    "event_name": "oauth_grant_revoked",
+                    "account_id": account_id,
+                    "grant_id": grant_id,
+                    "grant_transitioned": revoke_result.grant_transitioned,
+                    "access_tokens_transitioned": revoke_result.access_tokens_transitioned,
+                    "refresh_tokens_transitioned": revoke_result.refresh_tokens_transitioned,
+                },
+            )
+            record_business_event("oauth_grant_revoked")
+        elif revoke_result.any_transition:
+            RUNTIME_LOGGER.info(
+                "OAuth grant family repaired",
+                extra={
+                    "event_name": "oauth_grant_family_repaired",
+                    "account_id": account_id,
+                    "grant_id": grant_id,
+                    "grant_transitioned": revoke_result.grant_transitioned,
+                    "access_tokens_transitioned": revoke_result.access_tokens_transitioned,
+                    "refresh_tokens_transitioned": revoke_result.refresh_tokens_transitioned,
+                },
+            )
+        else:
+            RUNTIME_LOGGER.info(
+                "OAuth grant revoke no-op",
+                extra={
+                    "event_name": "oauth_grant_revoke_noop",
+                    "account_id": account_id,
+                    "grant_id": grant_id,
+                },
+            )
 
         return await render_account_dashboard_response(
             request,

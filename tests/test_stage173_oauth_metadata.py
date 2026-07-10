@@ -23,6 +23,7 @@ import web
 from bearer_token_manager import build_token_prefix, hash_bearer_token
 from exceptions import AuthError
 from server import mcp
+from service_metrics import reset_service_metrics, snapshot_service_metrics
 from storage import Base, create_database_engine
 from depersonalization import REDACTED_EMAIL, REDACTED_NAME, REDACTED_PHONE
 from storage_models import (
@@ -1544,8 +1545,9 @@ async def test_oauth_token_concurrent_refresh_allows_single_success_then_revokes
 
 
 @pytest.mark.asyncio
-async def test_account_ui_lists_and_revokes_oauth_grant_family(tmp_path, monkeypatch):
+async def test_account_ui_lists_and_revokes_oauth_grant_family(tmp_path, monkeypatch, caplog):
     engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    reset_service_metrics()
     account_id = await _register_account_with_connection(email="grant-ui@example.com")
 
     async def fake_health(*args, **kwargs):
@@ -1604,14 +1606,40 @@ async def test_account_ui_lists_and_revokes_oauth_grant_family(tmp_path, monkeyp
 
     app = mcp.http_app(path="/mcp", transport="streamable-http")
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
-        page_response = await client.get("/account")
-        csrf_token = CSRF_RE.search(page_response.text).group(1)
-        revoke_response = await client.post(
-            f"/account/oauth-grants/{grant_id}/revoke",
-            data={"csrf_token": csrf_token},
-        )
+    with caplog.at_level("INFO"):
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
+            page_response = await client.get("/account")
+            csrf_token = CSRF_RE.search(page_response.text).group(1)
+            revoke_response = await client.post(
+                f"/account/oauth-grants/{grant_id}/revoke",
+                data={"csrf_token": csrf_token},
+            )
+            async with storage.get_session_factory()() as session:
+                stored_grant = await session.get(OAuthGrant, grant_id)
+                assert stored_grant is not None
+                stored_grant.status = "revoked"
+                access_token = await session.scalar(
+                    select(OAuthAccessToken).where(OAuthAccessToken.grant_id == grant_id)
+                )
+                refresh_token = await session.scalar(
+                    select(OAuthRefreshToken).where(OAuthRefreshToken.grant_id == grant_id)
+                )
+                assert access_token is not None
+                assert refresh_token is not None
+                access_token.status = "active"
+                access_token.revoked_at = None
+                refresh_revoked_at = refresh_token.revoked_at
+                assert refresh_revoked_at is not None
+                await session.commit()
+            repeat_revoke_response = await client.post(
+                f"/account/oauth-grants/{grant_id}/revoke",
+                data={"csrf_token": csrf_token},
+            )
+            noop_revoke_response = await client.post(
+                f"/account/oauth-grants/{grant_id}/revoke",
+                data={"csrf_token": csrf_token},
+            )
 
     assert page_response.status_code == 200
     assert 'data-testid="chatgpt-connect-instructions"' in page_response.text
@@ -1625,6 +1653,8 @@ async def test_account_ui_lists_and_revokes_oauth_grant_family(tmp_path, monkeyp
     assert f'action="/account/oauth-grants/{grant_id}/revoke"' in page_response.text
     assert revoke_response.status_code == 200
     assert "ChatGPT connection disconnected successfully." in revoke_response.text
+    assert repeat_revoke_response.status_code == 200
+    assert noop_revoke_response.status_code == 200
 
     async with storage.get_session_factory()() as session:
         stored_grant = await session.get(OAuthGrant, grant_id)
@@ -1634,6 +1664,17 @@ async def test_account_ui_lists_and_revokes_oauth_grant_family(tmp_path, monkeyp
     assert stored_grant.status == "revoked"
     assert {token.status for token in access_tokens} == {"revoked"}
     assert {token.status for token in refresh_tokens} == {"revoked"}
+    assert [token.revoked_at for token in refresh_tokens] == [refresh_revoked_at]
+    assert snapshot_service_metrics()["business_events_total"]["oauth_grant_revoked"] == 1
+    assert any(
+        getattr(record, "event_name", None) == "oauth_grant_family_repaired"
+        and getattr(record, "access_tokens_transitioned", None) is True
+        for record in caplog.records
+    )
+    assert any(
+        getattr(record, "event_name", None) == "oauth_grant_revoke_noop"
+        for record in caplog.records
+    )
 
     await engine.dispose()
     storage.reset_storage_state()

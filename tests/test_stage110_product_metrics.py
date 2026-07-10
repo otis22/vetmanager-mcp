@@ -361,6 +361,7 @@ def test_record_business_event_increments_counter():
     record_business_event("web_login_succeeded")
     record_business_event("bearer_token_issued")
     record_business_event("bearer_token_revoked")
+    record_business_event("oauth_grant_revoked")
 
     snap = snapshot_service_metrics()
     events = snap["business_events_total"]
@@ -368,3 +369,19 @@ def test_record_business_event_increments_counter():
     assert events["web_login_succeeded"] == 1
     assert events["bearer_token_issued"] == 1
     assert events["bearer_token_revoked"] == 1
+    assert events["oauth_grant_revoked"] == 1
+
+
+def test_record_business_event_rejects_unknown_oauth_event(caplog):
+    reset_service_metrics()
+
+    with caplog.at_level("ERROR"):
+        record_business_event("oauth_bogus")
+
+    events = snapshot_service_metrics()["business_events_total"]
+    assert "oauth_bogus" not in events
+    assert any(
+        record.levelname == "ERROR"
+        and getattr(record, "dropped_name", None) == "oauth_bogus"
+        for record in caplog.records
+    )

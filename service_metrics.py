@@ -60,11 +60,10 @@ _ACTIVATION_FUNNEL_ACCOUNTS: dict[str, int] = {
     stage: 0
     for stage in _ACTIVATION_FUNNEL_STAGES
 }
-# Stage 110.2: business events counter — `account_registered`, `bearer_token_issued`,
-# `bearer_token_revoked`, `web_login_succeeded`. Accumulated in-process since last
-# reset; reset_service_metrics() zeros it. Persistent counts live in the DB
-# (TokenUsageLog + Account); this metric is the hook for future Grafana panels
-# without touching the call sites again.
+# Stage 110.2: business events counter. Accumulated in-process since last reset;
+# reset_service_metrics() zeros it. Persistent counts live in the DB
+# (TokenUsageLog + Account); this metric is the hook for Grafana panels without
+# touching the call sites again.
 _BUSINESS_EVENTS_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _DYNAMIC_PATH_SEGMENT_RE = re.compile(
     r"/(?:\d+|[0-9a-fA-F]{8,}(?:-[0-9a-fA-F]{4,})*)(?=/|$)"
@@ -102,6 +101,7 @@ _ALLOWED_BUSINESS_EVENTS = frozenset({
     "web_login_succeeded",
     "bearer_token_issued",
     "bearer_token_revoked",
+    "oauth_grant_revoked",
     # Stage 154: per-threshold expiry warnings (cardinality 3 — safe).
     "token_expiry_warning_1d",
     "token_expiry_warning_7d",
@@ -523,7 +523,7 @@ def render_prometheus_metrics() -> str:
     # do not include newlines in event_name values ourselves.
     lines.extend(
         [
-            "# HELP vetmanager_business_events_total Business lifecycle events (account_registered, bearer_token_issued, bearer_token_revoked, web_login_succeeded).",
+            "# HELP vetmanager_business_events_total Business lifecycle events.",
             "# TYPE vetmanager_business_events_total counter",
         ]
     )

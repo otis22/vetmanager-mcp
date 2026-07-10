@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from html import escape
 
+from observability_logging import RUNTIME_LOGGER
 from storage_models import Account, VetmanagerConnection
 from tool_access_registry import (
     PRESET_DOCTOR,
@@ -18,6 +19,15 @@ from tool_access_registry import (
     TOKEN_PRESET_LABELS,
     TOKEN_PRESET_SCOPES,
 )
+from vetmanager_auth import (
+    VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
+    VETMANAGER_AUTH_MODE_USER_TOKEN,
+)
+from vetmanager_connection_service import (
+    INTEGRATION_HEALTH_ACTIVE,
+    INTEGRATION_HEALTH_REAUTH_REQUIRED,
+)
+from web_security import CSRF_FIELD_NAME
 
 
 _DEFAULT_SITE_BASE_URL = "https://vetmanager-mcp.vromanichev.ru"
@@ -83,18 +93,20 @@ def _activation_token_is_usable(token: dict[str, object], *, now: datetime) -> b
     return expires_at is None or expires_at > now
 
 
-def _activation_token_recently_used(token: dict[str, object], *, cutoff: datetime) -> bool:
+def _activation_token_has_client_usage(token: dict[str, object]) -> bool:
+    try:
+        if int(token.get("request_count") or 0) > 0:
+            return True
+    except (TypeError, ValueError):
+        RUNTIME_LOGGER.warning(
+            "activation request_count parse failed",
+            extra={
+                "event_name": "activation_request_count_parse_failed",
+                "token_id": token.get("id"),
+            },
+        )
     last_used_at = _activation_datetime(token.get("last_used_at_raw"), token.get("last_used_at"))
-    return last_used_at is not None and last_used_at >= cutoff
-from vetmanager_auth import (
-    VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
-    VETMANAGER_AUTH_MODE_USER_TOKEN,
-)
-from vetmanager_connection_service import (
-    INTEGRATION_HEALTH_ACTIVE,
-    INTEGRATION_HEALTH_REAUTH_REQUIRED,
-)
-from web_security import CSRF_FIELD_NAME
+    return last_used_at is not None
 
 
 def hidden_csrf_input(csrf_token: str) -> str:
@@ -841,14 +853,14 @@ def render_account_page(
         )
     )
     activation_now = activation_now or datetime.now(timezone.utc)
-    recent_usage_cutoff = activation_now - timedelta(days=7)
     integration_ready = active_connection is not None and integration_health_status == INTEGRATION_HEALTH_ACTIVE
     has_active_token = any(
         _activation_token_is_usable(token, now=activation_now)
         for token in bearer_tokens
     )
     has_client_usage = any(
-        _activation_token_recently_used(token, cutoff=recent_usage_cutoff)
+        _activation_token_is_usable(token, now=activation_now)
+        and _activation_token_has_client_usage(token)
         for token in bearer_tokens
     )
     has_chatgpt = any(str(grant.get("status")) == "active" for grant in oauth_grants)
@@ -882,10 +894,10 @@ def render_account_page(
           <h2>{escape(activation_title)}</h2>
           <p>{escape(activation_summary)}</p>
           <ol>
-            {_activation_item(integration_ready, "Vetmanager integration active", current=activation_state == "needs_connection")}
-            {_activation_item(has_active_token, "Bearer token issued and active", current=activation_state == "needs_token")}
-            {_activation_item(has_client_usage, "MCP client made at least one request", current=activation_state == "needs_client_use")}
-            {_activation_item(has_chatgpt, "ChatGPT OAuth connection configured", current=False)}
+            {_activation_item(integration_ready, "Интеграция Vetmanager активна", current=activation_state == "needs_connection")}
+            {_activation_item(has_active_token, "Bearer token выпущен и активен", current=activation_state == "needs_token")}
+            {_activation_item(has_client_usage, "MCP-клиент сделал хотя бы один запрос", current=activation_state == "needs_client_use")}
+            {_activation_item(has_chatgpt, "Подключение ChatGPT OAuth настроено", current=False)}
           </ol>
         </section>
     """

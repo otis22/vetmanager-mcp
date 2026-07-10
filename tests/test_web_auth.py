@@ -934,6 +934,67 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_account_page_marks_ready_from_usage_stat_request_count_without_last_used_at(
+    tmp_path: Path,
+    monkeypatch,
+):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    domain = "clinic-request-count"
+    await _register_account_with_active_connection(
+        email="request-count-owner@example.com",
+        domain=domain,
+    )
+    _mock_active_connection_health(domain)
+
+    async with storage.get_session_factory()() as session:
+        account = await session.scalar(
+            select(Account).where(Account.email == "request-count-owner@example.com")
+        )
+        assert account is not None
+        token = ServiceBearerToken(
+            account_id=account.id,
+            name="Stats-only token",
+            token_prefix="vm_st_stats_only",
+            token_hash="hash-stats-only",
+            status="active",
+            created_at=datetime.now(timezone.utc),
+        )
+        session.add(token)
+        await session.flush()
+        session.add(TokenUsageStat(
+            bearer_token_id=token.id,
+            request_count=3,
+            last_used_at=None,
+        ))
+        await session.commit()
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as client:
+        await _post_with_csrf(
+            client,
+            "/login",
+            data={"email": "request-count-owner@example.com", "password": "Integration-Pass-123"},
+        )
+        response = await client.get("/account")
+
+    assert response.status_code == 200
+    assert 'data-activation-state="ready"' in response.text
+    assert "Готово к работе" in response.text
+    assert "MCP-клиент сделал хотя бы один запрос" in response.text
+    assert "MCP client made at least one request" not in response.text
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_account_token_issue_uses_analytics_web_defaults(tmp_path: Path, monkeypatch):
     engine = await _prepare_web_db(tmp_path, monkeypatch)
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)

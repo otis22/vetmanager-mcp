@@ -705,7 +705,7 @@ docker compose up -d
 ### Observability metrics (stage 88 + 110 + 134)
 - `vetmanager_upstream_requests_total{target,status}` + latency histogram;
 - `vetmanager_tool_calls_total{endpoint,method,outcome}` + latency histogram;
-- `vetmanager_business_events_total{event}` — 4 allowed events.
+- `vetmanager_business_events_total{event}` — fixed allowlist lifecycle events, including `oauth_grant_revoked`.
 - `vetmanager_token_preset_issued_total{preset}`;
 - `vetmanager_activation_funnel_accounts{stage}`;
 - `vetmanager_sanitizer_failures_total`;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bearer_token_manager import build_token_prefix, hash_bearer_token
 from oauth_metadata import get_mcp_resource_url
+from observability_logging import RUNTIME_LOGGER
 from storage_models import (
     OAUTH_STATUS_ACTIVE,
     OAUTH_STATUS_REVOKED,
@@ -71,6 +73,22 @@ PKCE_VERIFIER_ALLOWED_CHARS = set(
     "0123456789"
     "-._~"
 )
+
+
+@dataclass(frozen=True)
+class OAuthRevokeFamilyResult:
+    grant_transitioned: bool
+    access_tokens_transitioned: bool
+    refresh_tokens_transitioned: bool
+    grant_rowcount_unknown: bool = False
+
+    @property
+    def any_transition(self) -> bool:
+        return (
+            self.grant_transitioned
+            or self.access_tokens_transitioned
+            or self.refresh_tokens_transitioned
+        )
 
 
 class OAuthRequestError(Exception):
@@ -542,23 +560,88 @@ async def exchange_oauth_authorization_code(session: AsyncSession, form: dict[st
     return token_payload
 
 
-async def _revoke_grant_family(session: AsyncSession, grant_id: int, *, reason: str) -> None:
+async def _revoke_grant_family(
+    session: AsyncSession,
+    grant_id: int,
+    *,
+    reason: str,
+    transition_only: bool = False,
+    preserve_revoked_children: bool = False,
+) -> OAuthRevokeFamilyResult:
     now = datetime.now(timezone.utc)
-    await session.execute(
+    grant_filters = [OAuthGrant.id == grant_id]
+    if transition_only:
+        grant_filters.append(OAuthGrant.status != OAUTH_STATUS_REVOKED)
+    access_filters = [OAuthAccessToken.grant_id == grant_id]
+    refresh_filters = [OAuthRefreshToken.grant_id == grant_id]
+    if preserve_revoked_children:
+        access_filters.append(OAuthAccessToken.status != OAUTH_STATUS_REVOKED)
+        refresh_filters.append(OAuthRefreshToken.status != OAUTH_STATUS_REVOKED)
+
+    grant_result = await session.execute(
         update(OAuthGrant)
-        .where(OAuthGrant.id == grant_id)
+        .where(*grant_filters)
         .values(status=OAUTH_STATUS_REVOKED, revoked_at=now, revocation_reason=reason)
     )
-    await session.execute(
+    access_result = await session.execute(
         update(OAuthAccessToken)
-        .where(OAuthAccessToken.grant_id == grant_id)
+        .where(*access_filters)
         .values(status=OAUTH_STATUS_REVOKED, revoked_at=now)
     )
-    await session.execute(
+    refresh_result = await session.execute(
         update(OAuthRefreshToken)
-        .where(OAuthRefreshToken.grant_id == grant_id)
+        .where(*refresh_filters)
         .values(status=OAUTH_STATUS_REVOKED, revoked_at=now)
     )
+    return OAuthRevokeFamilyResult(
+        grant_transitioned=_rowcount_changed(
+            grant_result.rowcount,
+            grant_id=grant_id,
+            family_part="grant",
+            reason=reason,
+        ),
+        grant_rowcount_unknown=_rowcount_unknown(grant_result.rowcount),
+        access_tokens_transitioned=_rowcount_changed(
+            access_result.rowcount,
+            grant_id=grant_id,
+            family_part="access_tokens",
+            reason=reason,
+        ),
+        refresh_tokens_transitioned=_rowcount_changed(
+            refresh_result.rowcount,
+            grant_id=grant_id,
+            family_part="refresh_tokens",
+            reason=reason,
+        ),
+    )
+
+
+def _rowcount_changed(
+    rowcount: int | None,
+    *,
+    grant_id: int,
+    family_part: str,
+    reason: str,
+) -> bool:
+    # SQLAlchemy may report -1/None for dialects that cannot provide rowcount.
+    # Treat unknown as not confirmed and log it instead of silently over-counting
+    # idempotent repeat disconnects as new transitions.
+    if rowcount is None or rowcount < 0:
+        RUNTIME_LOGGER.warning(
+            "OAuth revoke rowcount unknown",
+            extra={
+                "event_name": "oauth_revoke_rowcount_unknown",
+                "grant_id": grant_id,
+                "family_part": family_part,
+                "reason": reason,
+            },
+        )
+        return False
+    return rowcount > 0
+
+
+def _rowcount_unknown(rowcount: int | None) -> bool:
+    return rowcount is None or rowcount < 0
 
 
 async def revoke_oauth_grant_family(
@@ -567,12 +650,19 @@ async def revoke_oauth_grant_family(
     account_id: int,
     grant_id: int,
     reason: str = "account_disconnect",
-) -> None:
+) -> OAuthRevokeFamilyResult:
     grant = await session.get(OAuthGrant, grant_id)
     if grant is None or grant.account_id != account_id:
         raise ValueError("OAuth grant not found.")
-    await _revoke_grant_family(session, grant.id, reason=reason)
+    result = await _revoke_grant_family(
+        session,
+        grant.id,
+        reason=reason,
+        transition_only=True,
+        preserve_revoked_children=True,
+    )
     await session.commit()
+    return result
 
 
 async def exchange_oauth_refresh_token(session: AsyncSession, form: dict[str, str]) -> dict:

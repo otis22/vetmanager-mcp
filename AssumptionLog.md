@@ -9828,3 +9828,109 @@ Checks so far:
   fixes;
   `python3 -m json.tool ops/grafana/dashboards/vetmanager-overview.json` and
   `git diff --check` passed.
+
+## Этап 193. OAuth revoke event and account activation UX
+
+- Основание: account route already records `oauth_grant_revoked`, but the
+  strict business-event allowlist did not include it, so ChatGPT/OAuth
+  disconnect was logged as an unknown event and missing from Prometheus/Grafana.
+- Архитектурное решение: add a single fixed low-cardinality
+  `oauth_grant_revoked` value to `_ALLOWED_BUSINESS_EVENTS`; keep unknown
+  business events rejected/logged. Prometheus HELP text was made generic so
+  future fixed allowlist additions do not require changing metric metadata.
+- Metric emission contract: `record_business_event("oauth_grant_revoked")` has a
+  single production call site in `web_routes_account.py`, after the authenticated
+  account OAuth disconnect/revoke route performs a real active-to-revoked
+  grant transition. Repeated disconnect POSTs for an already revoked grant still
+  run idempotent child-token revocation cleanup, but do not emit another business
+  event. If that cleanup repairs an active child token under an already-revoked
+  grant, the account route logs `oauth_grant_family_repaired` without adding a
+  Prometheus business-event label. Pure no-op repeats log
+  `oauth_grant_revoke_noop`. The grant-transition signal is an atomic
+  status-conditional update, so concurrent disconnect POSTs do not double-count.
+  Automatic refresh-token family revocation paths do not emit this business
+  event.
+- Account onboarding decision: the UI checklist marks "MCP client used" only
+  when a currently usable token has any historical successful usage
+  (`request_count > 0` or any `last_used_at`). `request_count` is success-only
+  for bearer runtime auth/context resolution; failed auth attempts do not create
+  or increment `TokenUsageStat`. Historical usage on revoked or expired tokens
+  does not make a fresh unused token ready. Grafana `with_recent_usage_7d`
+  remains a separate freshness signal and can be stricter than the account UI
+  readiness checklist.
+- Grafana dashboard check: the `Business events` panel uses
+  `sum by (event) (increase(vetmanager_business_events_total[1h]))` and
+  `{{event}}`, so no hard-coded event list needed to show
+  `oauth_grant_revoked`.
+- Review results: Spark scout initially hit the known read-only bwrap runtime
+  failure, was stopped, then rerun with `danger-full-access` review-only prompt
+  and returned `[]`. Claude Opus review found missing loader/negative coverage
+  and docs/workflow gaps; accepted fixes added route-level `request_count`
+  coverage, explicit unknown-event rejection, unusable-token negative coverage,
+  checklist-row overflow checks, and docs for UI vs 7d funnel semantics. Later
+  Claude passes found stale hard-coded event lists in docs, a vacuous overflow
+  assertion, missing proof that the Playwright layout test executed, and a repeat
+  OAuth revoke metric overcount risk, partial-family cleanup risk, and silent
+  `request_count` schema-drift risk; accepted fixes changed docs to reference
+  `service_metrics._ALLOWED_BUSINESS_EVENTS` as source of truth, made the
+  checklist-row test assert exactly four rows before checking the list and row
+  bounding boxes against the activation card, made OAuth grant disconnect record
+  `oauth_grant_revoked` only on the first successful state transition through
+  the shared family-revoke helper while still self-healing child tokens and
+  preserving already-revoked child timestamps, and added a debug runtime signal
+  when activation `request_count` cannot be parsed. Final Claude Opus review
+  found that partial-family repair under an already-revoked grant was mislabeled
+  as a no-op and that `rowcount == 1` was too strict; accepted fix changed the
+  helper to return per-family transition flags, treat unknown rowcount
+  explicitly, and log child-token repair as `oauth_grant_family_repaired`.
+  Final follow-up kept `oauth_grant_revoked` strictly tied to grant transitions,
+  leaving partial-family repair as structured logs only while still keeping pure
+  repeat no-ops uncounted. A Claude review suggested a locked pre-read fallback
+  for unknown grant rowcount; the next Claude pass found the lock-order and
+  SQLite no-op risks. Accepted final fix removes `SELECT ... FOR UPDATE` and the
+  unknown-rowcount transition fallback, relying on status-conditional UPDATE
+  rowcount for SQLite/Postgres and logging `oauth_revoke_rowcount_unknown` for
+  diagnostics instead of over-counting. The same pass found the malformed
+  activation `request_count` signal was too quiet; accepted fix changed
+  `activation_request_count_parse_failed` from debug to warning.
+  Final Spark re-review returned `[]`; final Claude Opus re-review returned
+  `{"findings":[]}`.
+- Checks:
+  browser-layout overflow suite —
+  `docker compose --profile test run --rm test pytest tests/test_stage189_activation_onboarding.py -k overflow -rs` —
+  `1 passed, 10 deselected`;
+  targeted review-fix suite —
+  `docker compose --profile test run --rm test pytest ... -q` —
+  `12 passed`;
+  post-review targeted suites —
+  `docker compose --profile test run --rm test pytest ... -q` —
+  `3 passed`, `3 passed`, and `1 passed`;
+  final targeted suite —
+  `docker compose --profile test run --rm test pytest ... -q` —
+  `3 passed`;
+  full suite —
+  `docker compose --profile test run --rm test` —
+  `1293 passed, 2 skipped, 65 deselected` before the repeat-revoke metric fix
+  and `1294 passed, 2 skipped, 65 deselected` after the atomic/self-healing
+  revoke and request-count warning fixes; after the partial-family repair
+  transition-result fix, targeted tests passed (`3 passed`) and full suite
+  passed again with `1294 passed, 2 skipped, 65 deselected`; after import-block
+  cleanup in `web_html.py`, targeted activation/account checks passed
+  (`3 passed`) and the full suite passed again with
+  `1294 passed, 2 skipped, 65 deselected`; after the final metric-contract fix
+  (grant transition only, family repair structured log only), targeted OAuth
+  revoke test passed (`1 passed`) and the full suite passed again with
+  `1294 passed, 2 skipped, 65 deselected`; after the unknown grant-rowcount
+  fallback fix, targeted OAuth revoke test passed (`1 passed`) and the full
+  suite passed again with `1294 passed, 2 skipped, 65 deselected`; after changing
+  the rowcount fallback pre-read to `SELECT ... FOR UPDATE`, targeted OAuth
+  revoke test passed (`1 passed`) and the full suite passed again with
+  `1294 passed, 2 skipped, 65 deselected`; after pinning `request_count` as
+  success-only for bearer auth/context resolution, targeted checks passed
+  (`4 passed`) and the full suite passed with
+  `1295 passed, 2 skipped, 65 deselected`; after removing the locked pre-read
+  fallback and promoting malformed activation `request_count` logs to warning,
+  targeted checks passed (`4 passed`) and the full suite passed again with
+  `1295 passed, 2 skipped, 65 deselected`;
+  `git diff --check`, `python3 -m json.tool ops/grafana/dashboards/vetmanager-overview.json`,
+  and `rg -n "timedelta" web_html.py || true` passed.

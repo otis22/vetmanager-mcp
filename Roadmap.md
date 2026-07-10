@@ -3289,7 +3289,7 @@ schemas, scopes или runtime write logic.
 - 192.4 Full workflow: tests, audit, review gates, commit/push/deploy/smoke. —
   `done`
 
-## Этап 193. OAuth disconnect business event allowlist — `todo`
+## Этап 193. OAuth disconnect business event allowlist and account activation UX — `in_progress`
 
 Источник: 2026-07-10 inspection: `web_routes_account.py` already calls
 `record_business_event("oauth_grant_revoked")`, but `service_metrics.py`
@@ -3299,18 +3299,28 @@ grant отбрасывается как unknown business event and does not appe
 
 Цель: сделать ChatGPT/OAuth disconnect видимым в Prometheus/Grafana без
 добавления персональных данных в labels и без изменения revoke semantics.
+Дополнение 2026-07-10: исправить account onboarding checklist после
+пользовательского скриншота — шаг "MCP client made at least one request"
+показывает `needs_client_use`, хотя запросы уже были, и checklist частично на
+английском.
 
 - 193.1 Add `oauth_grant_revoked` to `service_metrics._ALLOWED_BUSINESS_EVENTS`
   and update Prometheus HELP/docs where lifecycle event list is explicit. —
-  `todo`
+  `done`
 - 193.2 Add/extend regression tests: known event increments, unknown event is
   still dropped/logged, and OAuth disconnect call-site uses the allowed event.
-  — `todo`
+  — `done`
 - 193.3 Update Grafana/dashboard docs only if the panel hard-codes event names;
   otherwise verify `sum by (event)` picks up the new label automatically. —
-  `todo`
-- 193.4 Full checks, audit, review gates, commit/push/deploy/smoke with
-  `/metrics` verification. — `todo`
+  `done` (`ops/grafana/dashboards/vetmanager-overview.json` uses
+  `sum by (event) (increase(vetmanager_business_events_total[1h]))` and
+  `{{event}}` legend)
+- 193.4 Account activation UX bugfix: use `request_count > 0` or any
+  `last_used_at` on a currently usable token as "MCP client used", translate
+  checklist rows to Russian, and keep viewport/layout regression green. —
+  `done`
+- 193.5 Full checks, audit, review gates, commit/push/deploy/smoke with
+  `/metrics`, registration/account UI, and layout verification. — `todo`
 
 ## Этап 194. Analytics defaults and activation funnel — `done`
 

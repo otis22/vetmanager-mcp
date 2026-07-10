@@ -2,11 +2,12 @@
 
 > **Last updated:** stage 45 baseline. Метрики, добавленные после:
 > - **Stage 88**: `vetmanager_upstream_requests_total{target,status}`, `vetmanager_upstream_request_latency_seconds_{count,sum,max}`, `vetmanager_tool_calls_total{endpoint,method,outcome}`, `vetmanager_tool_call_latency_seconds_*`.
-> - **Stage 110**: `vetmanager_business_events_total{event=...}` — 4 lifecycle events (account_registered, web_login_succeeded, bearer_token_issued, bearer_token_revoked).
+> - **Stage 110 + 193**: `vetmanager_business_events_total{event=...}` — fixed allowlist business events from `service_metrics._ALLOWED_BUSINESS_EVENTS` (account/token/OAuth lifecycle + token-expiry warning events).
 > - **Stage 111.1**: `/metrics` endpoint теперь требует `Authorization: Bearer $METRICS_AUTH_TOKEN` когда env задан (иначе 403). Без env — backward-compat open.
 > - **Stage 112**: `circuit_breaker_opened` structured log на CLOSED→OPEN + HALF_OPEN→OPEN; `integration_save_failed` log + `vetmanager_auth_failures_total{source="web_integration[_reauth]"}`; `entity` вместо `url_path` в retry/timeout/network-error логах (privacy).
 > - **Stage 134**: token audit committed logs пишутся только после successful DB commit и включают `request_id`/`correlation_id`; `/metrics` auth failures пишут security log + `vetmanager_auth_failures_total{source="metrics",reason="invalid_token"}`; custom web route 500/413 paths сохраняют correlation headers; billing host resolver coalesces concurrent cold-cache requests per domain.
 > - **Stage 156**: `/metrics` после успешной `METRICS_AUTH_TOKEN` bearer-auth обновляет activation gauge `vetmanager_account_last_request_age_hours{account_id}` и пишет `account_traffic_silent` warning на порогах 24h/72h для active accounts с active connection и live token.
+> - **Stage 193**: account UI checklist считает usable token подключенным после любого успешного historical request; Grafana `with_recent_usage_7d` остается отдельным freshness-сигналом и поэтому может быть строже UI.
 >
 > Полная ревизия runbook — отдельным этапом.
 
