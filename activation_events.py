@@ -54,10 +54,8 @@ def classify_activation_device(headers: Mapping[str, str]) -> str:
     return "desktop"
 
 
-def classify_activation_reason(exc: BaseException, *, csrf: bool = False) -> str:
+def classify_activation_reason(exc: BaseException) -> str:
     """Map an exception to a bounded activation failure reason."""
-    if csrf:
-        return "csrf_error"
     if isinstance(exc, AuthError):
         return "auth_error"
     if isinstance(exc, HostResolutionError):

@@ -225,13 +225,6 @@ def register_account_routes(
         try:
             validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
         except ValueError as exc:
-            await _record_activation_event_for_account(
-                account_id=account_id,
-                event_name="integration_failed",
-                auth_mode=auth_mode,
-                device_class=device_class,
-                reason_class=classify_activation_reason(exc, csrf=True),
-            )
             return await render_account_dashboard_response(
                 request,
                 account_id,

@@ -55,7 +55,6 @@ ACTIVATION_REASON_CLASSES = (
     "host_resolution_error",
     "vetmanager_error",
     "validation_error",
-    "csrf_error",
     "unknown",
 )
 ACTIVATION_COPY_KINDS = ("token", "config", "mcp_url", "unknown")

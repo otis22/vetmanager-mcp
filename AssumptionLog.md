@@ -10143,3 +10143,22 @@ Checks so far:
   - Full suite after packaging fix:
     `docker compose --profile test run --rm test` —
     `1345 passed, 2 skipped, 65 deselected`.
+- **Committed diff reviews**:
+  - Spark committed-diff review: initial read-only run hit Codex sandbox/runtime
+    `bwrap` failure and was stopped; fallback with
+    `gpt-5.3-codex-spark -s danger-full-access` using a review-only prompt
+    returned `[]`.
+  - Claude Opus committed-diff review returned 2 Medium findings. Both were
+    accepted and fixed:
+    1. CSRF-rejected `/account/integration` requests must not write product
+       activation events. Fix: CSRF branch is write-free, `csrf_error` removed
+       from the activation reason enum/migration/PRD, and regression test added.
+    2. `activation_events` migration needed a rollback test. Fix: added
+       `test_activation_events_migration_round_trip`.
+- **Checks after committed-diff review fixes**:
+  - Targeted regression:
+    `docker compose --profile test run --rm test pytest tests/test_stage198_activation_telemetry.py tests/test_migrations.py tests/test_web_auth.py tests/test_stage190_observability_stack.py::test_stage190_grafana_provisioning_and_dashboard_queries_are_safe -q`
+    — `53 passed`.
+  - Full suite:
+    `docker compose --profile test run --rm test` —
+    `1347 passed, 2 skipped, 65 deselected`.

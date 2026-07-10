@@ -140,6 +140,33 @@ async def test_stage198_integration_events_are_persisted_without_secrets(
 
 
 @pytest.mark.asyncio
+async def test_stage198_csrf_rejection_does_not_persist_product_event(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    async with storage.get_session_factory()() as session:
+        await register_account(
+            session,
+            email="stage198-csrf@example.com",
+            password="Integration-Pass-123",
+        )
+
+    async with _app_client() as client:
+        await _login_client(client, "stage198-csrf@example.com")
+        response = await client.post(
+            "/account/integration",
+            data={"domain": "clinic-198", "api_key": "bad-key"},
+        )
+
+    assert response.status_code == 403
+    assert await _events_for("stage198-csrf@example.com") == []
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
 @respx.mock
 async def test_stage198_token_copied_event_is_persisted_and_best_effort(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

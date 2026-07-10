@@ -43,7 +43,7 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "reason_class IS NULL OR reason_class IN "
             "('auth_error', 'host_resolution_error', 'vetmanager_error', "
-            "'validation_error', 'csrf_error', 'unknown')",
+            "'validation_error', 'unknown')",
             name="ck_activation_events_reason_class",
         ),
         sa.CheckConstraint(

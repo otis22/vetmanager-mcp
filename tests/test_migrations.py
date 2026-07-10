@@ -203,6 +203,31 @@ def test_known_issue_match_events_migration_round_trip(tmp_path: Path):
     assert "known_issue_match_events" in set(inspector.get_table_names())
 
 
+def test_activation_events_migration_round_trip(tmp_path: Path):
+    """Stage 198: activation_events table and indexes are reversible."""
+    config = _make_alembic_config(tmp_path)
+    command.upgrade(config, "head")
+
+    engine = create_engine(config.get_main_option("sqlalchemy.url"))
+    inspector = inspect(engine)
+    assert "activation_events" in set(inspector.get_table_names())
+    assert {
+        "ix_activation_events_account_id",
+        "ix_activation_events_created_at",
+        "ix_activation_events_account_created",
+        "ix_activation_events_event_created",
+        "ix_activation_events_breakdown_created",
+    }.issubset({index["name"] for index in inspector.get_indexes("activation_events")})
+
+    command.downgrade(config, "20260623_000017")
+    inspector = inspect(create_engine(config.get_main_option("sqlalchemy.url")))
+    assert "activation_events" not in set(inspector.get_table_names())
+
+    command.upgrade(config, "head")
+    inspector = inspect(create_engine(config.get_main_option("sqlalchemy.url")))
+    assert "activation_events" in set(inspector.get_table_names())
+
+
 def test_depersonalized_flag_migration_defaults_existing_tokens_to_false(tmp_path: Path):
     """Upgrade must keep legacy tokens standard when adding depersonalization policy."""
     from sqlalchemy import text as _text
