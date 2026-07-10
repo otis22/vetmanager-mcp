@@ -34,6 +34,26 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def is_activation_event_cleanup_due(
+    *,
+    now: datetime | None = None,
+    force: bool = False,
+) -> bool:
+    """Return whether old activation events should be cleaned up now."""
+    current = now or _now_utc()
+    return bool(
+        force
+        or _last_cleanup_at is None
+        or current - _last_cleanup_at >= _CLEANUP_INTERVAL
+    )
+
+
+def mark_activation_event_cleanup_succeeded(*, now: datetime | None = None) -> None:
+    """Advance cleanup throttle after the caller has committed successfully."""
+    global _last_cleanup_at
+    _last_cleanup_at = now or _now_utc()
+
+
 def _coerce(value: str | None, allowed: tuple[str, ...], default: str) -> str:
     if value in allowed:
         return str(value)
@@ -74,19 +94,13 @@ async def cleanup_activation_events(
     force: bool = False,
 ) -> int:
     """Delete old activation events, throttled to once per day by default."""
-    global _last_cleanup_at
     current = now or _now_utc()
-    if (
-        not force
-        and _last_cleanup_at is not None
-        and current - _last_cleanup_at < _CLEANUP_INTERVAL
-    ):
+    if not is_activation_event_cleanup_due(now=current, force=force):
         return 0
     cutoff = current - timedelta(days=ACTIVATION_EVENT_RETENTION_DAYS)
     result = await session.execute(
         delete(ActivationEvent).where(ActivationEvent.created_at < cutoff)
     )
-    _last_cleanup_at = current
     return int(result.rowcount or 0)
 
 
@@ -125,6 +139,8 @@ async def record_activation_event_best_effort(
         else None
     )
     try:
+        cleanup_now = _now_utc()
+        cleanup_due = is_activation_event_cleanup_due(now=cleanup_now)
         session.add(
             ActivationEvent(
                 account_id=account_id,
@@ -135,8 +151,10 @@ async def record_activation_event_best_effort(
                 copy_kind=safe_copy_kind,
             )
         )
-        await cleanup_activation_events(session)
+        await cleanup_activation_events(session, now=cleanup_now)
         await session.commit()
+        if cleanup_due:
+            mark_activation_event_cleanup_succeeded(now=cleanup_now)
     except Exception as exc:  # pragma: no cover - defensive route boundary
         await session.rollback()
         RUNTIME_LOGGER.warning(

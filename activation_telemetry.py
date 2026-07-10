@@ -7,7 +7,11 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import distinct, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from activation_events import cleanup_activation_events
+from activation_events import (
+    cleanup_activation_events,
+    is_activation_event_cleanup_due,
+    mark_activation_event_cleanup_succeeded,
+)
 from observability_logging import RUNTIME_LOGGER
 from service_metrics import (
     set_account_last_request_age_hours,
@@ -98,9 +102,12 @@ async def scan_activation_telemetry(
     """Refresh account activation gauges and emit best-effort silence warnings."""
     current = now or datetime.now(timezone.utc)
     try:
+        cleanup_due = is_activation_event_cleanup_due(now=current)
         deleted_old_events = await cleanup_activation_events(session, now=current)
         if deleted_old_events:
             await session.commit()
+        if cleanup_due:
+            mark_activation_event_cleanup_succeeded(now=current)
     except Exception as exc:
         await session.rollback()
         RUNTIME_LOGGER.warning(

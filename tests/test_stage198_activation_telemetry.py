@@ -10,6 +10,7 @@ import pytest
 import respx
 from sqlalchemy import func, select
 
+import activation_events
 import activation_telemetry
 import web_routes_account
 import storage
@@ -19,7 +20,7 @@ from activation_events import (
     record_activation_event_best_effort,
     reset_activation_event_state,
 )
-from exceptions import AuthError, HostResolutionError, VetmanagerError
+from exceptions import AuthError, HostResolutionError, VetmanagerError, VetmanagerTimeoutError
 from server import mcp
 from service_metrics import render_prometheus_metrics, snapshot_service_metrics
 from storage import Base, create_database_engine
@@ -161,6 +162,40 @@ async def test_stage198_csrf_rejection_does_not_persist_product_event(
 
     assert response.status_code == 403
     assert await _events_for("stage198-csrf@example.com") == []
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_stage198_transient_vetmanager_failure_does_not_persist_product_event(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    async with storage.get_session_factory()() as session:
+        await register_account(
+            session,
+            email="stage198-timeout@example.com",
+            password="Integration-Pass-123",
+        )
+
+    async def raise_timeout(*args, **kwargs) -> None:
+        raise VetmanagerTimeoutError("probe timeout")
+
+    monkeypatch.setattr(web_routes_account, "save_domain_api_key_connection", raise_timeout)
+
+    async with _app_client() as client:
+        await _login_client(client, "stage198-timeout@example.com")
+        response = await _post_with_csrf(
+            client,
+            "/account/integration",
+            data={"domain": "clinic-198", "api_key": "secret-key"},
+            page_path="/account",
+        )
+
+    assert response.status_code == 400
+    assert await _events_for("stage198-timeout@example.com") == []
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -340,6 +375,77 @@ async def test_stage198_metrics_include_new_account_funnel_and_event_breakdown(
     ) in metrics
     assert "old@example.com" not in metrics
     assert "account_id=" not in metrics.split("vetmanager_activation_event_accounts", 1)[1]
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_stage198_cleanup_throttle_advances_only_after_successful_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = tmp_path / "stage198-cleanup-commit.sqlite"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+    storage.reset_storage_state()
+    engine = create_database_engine(f"sqlite:///{db_path}")
+    reset_activation_event_state()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    old_event_time = NOW - timedelta(days=100)
+    async with storage.get_session_factory()() as session:
+        account = Account(
+            email="cleanup-commit@example.com",
+            status="active",
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        account.activation_events.append(
+            ActivationEvent(
+                event_name="token_copied",
+                auth_mode="unknown",
+                device_class="desktop",
+                created_at=old_event_time,
+            )
+        )
+        session.add(account)
+        await session.commit()
+        account_id = account.id
+
+    monkeypatch.setattr(activation_events, "_now_utc", lambda: NOW)
+    async with storage.get_session_factory()() as session:
+        async def fail_commit() -> None:
+            raise RuntimeError("commit failed")
+
+        monkeypatch.setattr(session, "commit", fail_commit)
+        await activation_events.record_activation_event_best_effort(
+            session,
+            account_id=account_id,
+            event_name="token_copied",
+            auth_mode="unknown",
+            device_class="desktop",
+            copy_kind="config",
+        )
+
+    monkeypatch.setattr(activation_events, "_now_utc", lambda: NOW + timedelta(minutes=1))
+    async with storage.get_session_factory()() as session:
+        await activation_events.record_activation_event_best_effort(
+            session,
+            account_id=account_id,
+            event_name="token_copied",
+            auth_mode="unknown",
+            device_class="desktop",
+            copy_kind="token",
+        )
+        events = list(
+            (
+                await session.execute(
+                    select(ActivationEvent).where(ActivationEvent.account_id == account_id)
+                )
+            ).scalars()
+        )
+        assert len(events) == 1
+        assert events[0].copy_kind == "token"
 
     await engine.dispose()
     storage.reset_storage_state()

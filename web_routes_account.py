@@ -255,13 +255,14 @@ def register_account_routes(
                         encryption_key=get_storage_encryption_key(),
                     )
         except (ValueError, AuthError, HostResolutionError, VetmanagerError) as exc:
-            await _record_activation_event_for_account(
-                account_id=account_id,
-                event_name="integration_failed",
-                auth_mode=auth_mode,
-                device_class=device_class,
-                reason_class=classify_activation_reason(exc),
-            )
+            if not isinstance(exc, (VetmanagerTimeoutError, VetmanagerUpstreamUnavailable)):
+                await _record_activation_event_for_account(
+                    account_id=account_id,
+                    event_name="integration_failed",
+                    auth_mode=auth_mode,
+                    device_class=device_class,
+                    reason_class=classify_activation_reason(exc),
+                )
             # Stage 112.2 (super-review 2026-04-19): structured log + metric
             # so support can find the event by account_id and SRE can alert
             # on integration_save_failed spikes. Do NOT include str(exc) —
