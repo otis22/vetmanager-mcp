@@ -194,6 +194,13 @@ async def scan_activation_telemetry(
                     .where(Account.status == ACCOUNT_STATUS_ACTIVE)
                     .where(Account.archived_at.is_(None))
                     .where(Account.created_at >= new_account_cutoff)
+                    .where(ServiceBearerToken.status == TOKEN_STATUS_ACTIVE)
+                    .where(
+                        or_(
+                            ServiceBearerToken.expires_at.is_(None),
+                            ServiceBearerToken.expires_at > current,
+                        )
+                    )
                 )
             ).scalars().all()
         )
@@ -222,6 +229,13 @@ async def scan_activation_telemetry(
                     .where(Account.status == ACCOUNT_STATUS_ACTIVE)
                     .where(Account.archived_at.is_(None))
                     .where(Account.created_at >= new_account_cutoff)
+                    .where(ServiceBearerToken.status == TOKEN_STATUS_ACTIVE)
+                    .where(
+                        or_(
+                            ServiceBearerToken.expires_at.is_(None),
+                            ServiceBearerToken.expires_at > current,
+                        )
+                    )
                     .where(
                         or_(
                             ServiceBearerToken.last_used_at.is_not(None),
@@ -240,9 +254,9 @@ async def scan_activation_telemetry(
             "with_recent_usage_7d": len(connected_recent_usage_ids),
             "new_registered": len(new_account_ids),
             "integration_saved": len(integration_saved_ids),
-            "token_issued": len(new_account_ids & token_issued_ids),
-            "token_copied": len(new_account_ids & token_copied_ids),
-            "first_mcp_request": len(new_account_ids & first_mcp_request_ids),
+            "token_issued": len(integration_saved_ids & token_issued_ids),
+            "token_copied": len(integration_saved_ids & token_issued_ids & token_copied_ids),
+            "first_mcp_request": len(integration_saved_ids & first_mcp_request_ids),
         }
         set_activation_funnel_accounts(funnel_values)
         event_rows = (

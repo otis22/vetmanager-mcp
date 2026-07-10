@@ -249,13 +249,13 @@ async def test_scan_filters_non_live_accounts_tokens_and_connections(session_fac
     assert snapshot_service_metrics()["account_last_request_age_hours"] == {str(live.id): 30.0}
     assert snapshot_service_metrics()["activation_funnel_accounts"] == {
         "connected": 5,
-        "first_mcp_request": 6,
+        "first_mcp_request": 1,
         "integration_saved": 5,
         "new_registered": 6,
         "ready_for_mcp": 1,
         "registered": 6,
         "token_copied": 0,
-        "token_issued": 6,
+        "token_issued": 1,
         "with_active_tokens": 2,
         "with_recent_usage_7d": 1,
     }
