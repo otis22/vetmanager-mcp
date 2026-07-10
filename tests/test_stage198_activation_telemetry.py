@@ -27,6 +27,7 @@ from storage import Base, create_database_engine
 from storage_models import Account, ActivationEvent, ServiceBearerToken, TokenUsageStat, VetmanagerConnection
 from tests.test_web_auth import (
     TEST_ENCRYPTION_KEY,
+    _extract_csrf_token,
     _post_with_csrf,
     _prepare_web_db,
     register_account,
@@ -196,6 +197,64 @@ async def test_stage198_transient_vetmanager_failure_does_not_persist_product_ev
 
     assert response.status_code == 400
     assert await _events_for("stage198-timeout@example.com") == []
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_stage198_reauth_does_not_persist_activation_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    async with storage.get_session_factory()() as session:
+        await register_account(
+            session,
+            email="stage198-reauth@example.com",
+            password="Integration-Pass-123",
+        )
+
+    respx.get("https://billing-api.vetmanager.cloud/host/clinic-198-reauth").mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": {"url": "https://clinic-198-reauth.vetmanager.cloud"}},
+        )
+    )
+    respx.get("https://clinic-198-reauth.vetmanager.cloud/rest/api/client").mock(
+        side_effect=[
+            httpx.Response(200, json={"data": []}),
+            httpx.Response(200, json={"data": []}),
+            httpx.Response(401, json={"error": "unauthorized"}),
+            httpx.Response(200, json={"data": []}),
+        ]
+    )
+
+    async with _app_client() as client:
+        await _login_client(client, "stage198-reauth@example.com")
+        account_page = await client.get("/account")
+        csrf_token = _extract_csrf_token(account_page.text)
+        success = await client.post(
+            "/account/integration/reauth",
+            data={
+                "domain": "clinic-198-reauth",
+                "api_key": "secret-key",
+                "csrf_token": csrf_token,
+            },
+        )
+        failed = await client.post(
+            "/account/integration/reauth",
+            data={
+                "domain": "clinic-198-reauth",
+                "api_key": "bad-key",
+                "csrf_token": csrf_token,
+            },
+        )
+
+    assert success.status_code == 200
+    assert failed.status_code == 400
+    assert await _events_for("stage198-reauth@example.com") == []
 
     await engine.dispose()
     storage.reset_storage_state()

@@ -119,6 +119,11 @@ def test_stage190_grafana_provisioning_and_dashboard_queries_are_safe() -> None:
     assert "or vector(0)" in tool_error_expr
     assert "clamp_min" in tool_error_expr
     assert "1e-9" in tool_error_expr
+    new_account_funnel_panel = next(
+        panel for panel in dashboard["panels"] if panel["title"] == "New account activation funnel"
+    )
+    new_account_funnel_expr = new_account_funnel_panel["targets"][0]["expr"]
+    assert "token_copied" not in new_account_funnel_expr
     assert len(panel_ids) == len(set(panel_ids))
     occupied_cells: set[tuple[int, int]] = set()
     for panel in dashboard["panels"]:

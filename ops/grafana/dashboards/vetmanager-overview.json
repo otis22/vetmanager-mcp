@@ -146,7 +146,7 @@
       },
       "targets": [
         {
-          "expr": "vetmanager_activation_funnel_accounts{stage=~\"new_registered|integration_saved|token_issued|token_copied|first_mcp_request\"}",
+          "expr": "vetmanager_activation_funnel_accounts{stage=~\"new_registered|integration_saved|token_issued|first_mcp_request\"}",
           "instant": true,
           "legendFormat": "{{stage}}",
           "refId": "A"
