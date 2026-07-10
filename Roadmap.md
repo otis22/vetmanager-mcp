@@ -3289,7 +3289,7 @@ schemas, scopes или runtime write logic.
 - 192.4 Full workflow: tests, audit, review gates, commit/push/deploy/smoke. —
   `done`
 
-## Этап 193. OAuth disconnect business event allowlist and account activation UX — `in_progress`
+## Этап 193. OAuth disconnect business event allowlist and account activation UX — `done`
 
 Источник: 2026-07-10 inspection: `web_routes_account.py` already calls
 `record_business_event("oauth_grant_revoked")`, but `service_metrics.py`
@@ -3320,7 +3320,7 @@ grant отбрасывается как unknown business event and does not appe
   checklist rows to Russian, and keep viewport/layout regression green. —
   `done`
 - 193.5 Full checks, audit, review gates, commit/push/deploy/smoke with
-  `/metrics`, registration/account UI, and layout verification. — `todo`
+  `/metrics`, registration/account UI, and layout verification. — `done`
 
 ## Этап 194. Analytics defaults and activation funnel — `done`
 

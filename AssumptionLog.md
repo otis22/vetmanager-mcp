@@ -9934,3 +9934,27 @@ Checks so far:
   `1295 passed, 2 skipped, 65 deselected`;
   `git diff --check`, `python3 -m json.tool ops/grafana/dashboards/vetmanager-overview.json`,
   and `rg -n "timedelta" web_html.py || true` passed.
+- Commit/push/CI/deploy:
+  - committed `0bf0556 Fix OAuth revoke metrics and activation checklist`;
+  - pushed to `main`;
+  - GitHub Actions `Tests` run `29088950562` passed (`fast` and `default`);
+  - GitHub Actions `Deploy Prod` run `29089103328` passed.
+- Production verification after deploy:
+  - `scripts/post_deploy_smoke_checks.sh` against
+    `https://vetmanager-mcp.vromanichev.ru` passed with production
+    `METRICS_AUTH_TOKEN` (healthz, readyz, metrics, MCP);
+  - browser production smoke registered a temporary account, saved a real
+    domain/API-key Vetmanager integration, issued a Bearer token, performed a
+    real MCP `tools/call`, reopened `/account`, and verified
+    `data-activation-state="ready"`;
+  - the same browser smoke verified the activation checklist rows are Russian
+    and the old English labels are absent;
+  - responsive layout check on production passed for 1024, 760, and 390 px
+    widths: no document overflow, four checklist rows, no list overflow, no row
+    out-of-bounds against the activation card;
+  - controlled OAuth disconnect smoke registered another temporary account,
+    saved integration, seeded a synthetic non-PII ChatGPT/OAuth grant, revoked it
+    through the account UI, and `/metrics` exposed
+    `vetmanager_business_events_total{event="oauth_grant_revoked"} 1`;
+  - temporary production accounts/grants/clients created for verification were
+    removed; follow-up query showed `stage193_temp_accounts=0`.
