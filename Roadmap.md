@@ -3428,7 +3428,7 @@ instead of an empty panel.
   activation-чеклиста). — `done`
 - 197.5 Tests/checks, audit, review gates, commit/push/deploy/smoke. — `done`
 
-## Этап 198. Activation telemetry: продуктовые события и funnel новых аккаунтов — `in_progress`
+## Этап 198. Activation telemetry: продуктовые события и funnel новых аккаунтов — `done`
 
 Источник: план пользователя 2026-07-10 по activation-аналитике (пункты 1 и 5).
 Сейчас failed integration attempts видны только как structured log + метрика
@@ -3447,9 +3447,13 @@ error_class без mobile/desktop и без продуктовой записи 
 - 198.3 Grafana funnel по новым аккаунтам: registered →
   integration_failed/saved → token_issued → token_copied →
   first_mcp_request. — `done`
-- 198.4 Tests/checks, audit, review gates, commit/push/deploy/smoke. — `in_progress`
-  (local checks and final Spark/Claude committed-diff review gates passed; push,
-  GitHub, deploy and production smoke pending)
+- 198.4 Tests/checks, audit, review gates, commit/push/deploy/smoke. — `done`
+  (local full suite `1350 passed, 2 skipped, 65 deselected`; final Spark `[]`;
+  final Claude Opus `{"findings":[]}`; GitHub Tests `29123674747` success;
+  Deploy Prod `29123848025` success; public `/healthz` and `/readyz` ok;
+  prod browser registration/integration/token smoke ok; local public `/metrics`
+  new-series scrape blocked by unavailable prod metrics token, while remote
+  deploy smoke verified `/metrics` with server token)
 
 ## Этап 199. Activation-first кабинет — `done`
 

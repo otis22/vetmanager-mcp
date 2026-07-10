@@ -2,8 +2,8 @@
 
 ## Статус
 
-Implemented and reviewed locally — 2026-07-10. Pending push, production
-deploy, and smoke verification.
+Done — implemented, reviewed, deployed to production, and smoke-verified on
+2026-07-10.
 
 ## Контекст и проблема
 
@@ -321,3 +321,17 @@ The ordered Grafana new-account funnel is:
 `vetmanager_activation_event_accounts`, but it is treated as an optional UI
 branch and is not part of the ordered Grafana funnel. This avoids implying that
 copying the generated config is mandatory before the first MCP request.
+
+### Production verification note
+
+GitHub Tests run `29123674747` and Deploy Prod run `29123848025` were green for
+commit `6ac151e`. The deploy script's remote post-deploy smoke verified
+`/healthz`, `/readyz`, `/metrics`, `/mcp`, public `/mcp`, Prometheus target
+health, and Grafana dashboard availability using server-side secrets.
+
+Manual public smoke verified `/healthz` and `/readyz`, and a Playwright browser
+smoke completed registration, invalid integration error in Russian, real test
+Vetmanager integration, quick token issue, and mobile/desktop overflow checks.
+The public `/metrics` endpoint correctly returned `403` without the production
+metrics token; local `.env` did not contain the current production token, so
+new activation series were not scraped from the operator machine after deploy.

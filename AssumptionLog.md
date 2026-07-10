@@ -10199,3 +10199,24 @@ Checks so far:
     prompt. Final fallback review for `HEAD~5..HEAD` returned `[]`.
   - Claude Opus final committed-diff review for `HEAD~5..HEAD`, with tools/MCP
     disabled and strict JSON schema, returned `{"findings":[]}`.
+- **Push/deploy/smoke**:
+  - Pushed `main` through commit `6ac151e`.
+  - GitHub Tests `29123674747` passed: both `default` and `fast` jobs green.
+  - Deploy Prod `29123848025` passed. Remote deploy log shows PostgreSQL ready,
+    MCP healthy, DB integrity check passed, post-deploy smoke checks passed, and
+    Prometheus/Grafana containers running.
+  - Manual public endpoint smoke after deploy:
+    `/healthz` returned `{"status":"ok"}`, `/readyz` returned storage ok, and
+    `/mcp` returned expected 406 for a request without SSE `Accept` header.
+  - Manual prod browser smoke (Playwright in Docker test image) registered
+    `stage198-prod-1783718012@example.com`, verified the activation checklist is
+    Russian (`MCP-клиент сделал хотя бы один запрос`), verified invalid domain
+    integration error in Russian, saved a real test Vetmanager integration,
+    issued a quick Bearer token, and checked mobile 390px and desktop 1366px
+    layouts for horizontal overflow.
+  - Local public `/metrics` checks returned 403 because the operator machine did
+    not have the current production `METRICS_AUTH_TOKEN`; the deploy script's
+    server-side smoke did verify `/metrics` with the server token. New
+    activation metric series are covered by local tests and exported by the
+    deployed code, but were not manually scraped from outside production after
+    deploy due to that credential gap.
