@@ -10255,3 +10255,21 @@ Checks so far:
     result.
   - Claude Opus review for `HEAD~1..HEAD`, with tools/MCP disabled and the real
     diff piped inline, returned `{"findings":[]}`.
+- **Push/deploy/smoke**:
+  - Pushed `main` through commit `dec8ba7`.
+  - GitHub Tests `29145403452` passed: both `default` and `fast` jobs green.
+  - Deploy Prod `29145500214` passed. Remote deploy log shows PostgreSQL ready,
+    MCP healthy, DB integrity check passed, post-deploy smoke checks passed, and
+    Prometheus/Grafana containers running.
+  - Public smoke after deploy:
+    `/healthz` returned 200 `status=ok`, `/readyz` returned 200 with storage ok,
+    and `/mcp` returned expected 406 without SSE `Accept` header.
+  - Direct prod Grafana API check for dashboard
+    `vetmanager-mcp-overview` confirmed the `Activation telemetry` panel now
+    uses:
+    `(avg(vetmanager_account_last_request_age_hours) or vector(0))` and
+    `(count(vetmanager_account_last_request_age_hours) or vector(0))`.
+  - Direct prod Prometheus API check for both expressions returned
+    `status=success`, `series=1`, `value=0`, confirming Grafana receives a
+    zero-valued series instead of an empty vector when no activation-age samples
+    are present.
