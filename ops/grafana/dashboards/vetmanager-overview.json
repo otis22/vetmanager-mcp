@@ -96,12 +96,12 @@
       "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single", "sort": "none"}},
       "targets": [
         {
-          "expr": "avg(vetmanager_account_last_request_age_hours)",
+          "expr": "(avg(vetmanager_account_last_request_age_hours) or vector(0))",
           "legendFormat": "avg last request age",
           "refId": "A"
         },
         {
-          "expr": "count(vetmanager_account_last_request_age_hours)",
+          "expr": "(count(vetmanager_account_last_request_age_hours) or vector(0))",
           "legendFormat": "accounts with activation telemetry",
           "refId": "B"
         }

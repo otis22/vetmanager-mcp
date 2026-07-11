@@ -10220,3 +10220,38 @@ Checks so far:
     activation metric series are covered by local tests and exported by the
     deployed code, but were not manually scraped from outside production after
     deploy due to that credential gap.
+
+## Grafana Activation telemetry empty-vector gap — 2026-07-11
+
+- **Context**: production Grafana dashboard `Activation telemetry` showed an
+  interrupted graph after stage 198 deployment.
+- **Decision**: keep the metric semantics unchanged and make only the dashboard
+  PromQL tolerant of missing samples by wrapping both panel expressions with
+  `or vector(0)`.
+- **Reasoning**: `vetmanager_account_last_request_age_hours` is produced by the
+  activation scan and can legitimately be absent for a scrape window when there
+  are no matching accounts/series yet. Plain `avg(...)` and `count(...)` return
+  an empty vector in that case, which Grafana renders as a gap. Returning zero
+  for the dashboard aggregate matches existing safe-query practice already used
+  by `Tool error rate`.
+- **Scope**: changed only
+  `ops/grafana/dashboards/vetmanager-overview.json` and added a regression
+  assertion to
+  `tests/test_stage190_observability_stack.py::test_stage190_grafana_provisioning_and_dashboard_queries_are_safe`.
+- **Checks**:
+  - Targeted:
+    `docker compose --profile test run --rm test pytest tests/test_stage190_observability_stack.py::test_stage190_grafana_provisioning_and_dashboard_queries_are_safe -q`
+    — `1 passed`.
+  - Full suite:
+    `docker compose --profile test run --rm test` —
+    `1350 passed, 2 skipped, 65 deselected`.
+  - `python3 -m json.tool ops/grafana/dashboards/vetmanager-overview.json >/dev/null`
+    — passed.
+  - `git diff --check` — clean.
+- **Committed-diff review**:
+  - Spark review for `HEAD~1..HEAD` with
+    `gpt-5.3-codex-spark -s read-only` returned `[]`. The command emitted the
+    known Codex bubblewrap warning, but completed with a strict empty findings
+    result.
+  - Claude Opus review for `HEAD~1..HEAD`, with tools/MCP disabled and the real
+    diff piped inline, returned `{"findings":[]}`.

@@ -119,6 +119,20 @@ def test_stage190_grafana_provisioning_and_dashboard_queries_are_safe() -> None:
     assert "or vector(0)" in tool_error_expr
     assert "clamp_min" in tool_error_expr
     assert "1e-9" in tool_error_expr
+    activation_telemetry_panel = next(
+        panel for panel in dashboard["panels"] if panel["title"] == "Activation telemetry"
+    )
+    activation_telemetry_exprs = {
+        target["expr"] for target in activation_telemetry_panel["targets"]
+    }
+    assert (
+        "(avg(vetmanager_account_last_request_age_hours) or vector(0))"
+        in activation_telemetry_exprs
+    )
+    assert (
+        "(count(vetmanager_account_last_request_age_hours) or vector(0))"
+        in activation_telemetry_exprs
+    )
     new_account_funnel_panel = next(
         panel for panel in dashboard["panels"] if panel["title"] == "New account activation funnel"
     )
