@@ -1428,15 +1428,16 @@ def render_account_page(
         <summary><h2>ChatGPT connections</h2></summary>
         <div class="panel-card" data-testid="chatgpt-connect-instructions">
           <strong>Подключение ChatGPT</strong>
-          <p>Пока приложения нет в GPT Store, подключение делается вручную через режим разработчика ChatGPT.</p>
+          <p>Пока сервис не опубликован в ChatGPT Plugin directory, подключение делается вручную как developer-mode plugin/app.</p>
           <ol>
-            <li>Откройте ChatGPT в браузере или приложении.</li>
+            <li>Откройте ChatGPT web.</li>
             <li>Нажмите на своё имя или аватар в левом нижнем углу и откройте Settings.</li>
-            <li>В левом меню выберите Apps.</li>
-            <li>Включите Developer mode. ChatGPT покажет предупреждение Elevated risk — это нормально для ручного подключения, пока приложения нет в магазине.</li>
-            <li>Нажмите Create app или перейдите к созданию connector.</li>
-            <li>Добавьте новый MCP connector, вставьте MCP URL ниже и сохраните.</li>
-            <li>ChatGPT откроет вход в этот кабинет; войдите и выберите уровень доступа.</li>
+            <li>Включите Developer mode. Обычно он находится в Security and login; в workspace-планах админ может включать его в Apps или Connected Data settings.</li>
+            <li>Откройте Settings → Plugins или перейдите на <code>chatgpt.com/plugins</code>.</li>
+            <li>Нажмите + или Create и добавьте plugin/app с MCP Server URL ниже.</li>
+            <li>Если ChatGPT покажет Scan Tools — запустите проверку tools, затем сохраните draft или создайте plugin.</li>
+            <li>При OAuth-входе ChatGPT откроет этот кабинет; войдите и выберите уровень доступа.</li>
+            <li>В новом чате нажмите + рядом с полем ввода, откройте More и выберите созданный plugin/app.</li>
           </ol>
           <p>Bearer-токен копировать не нужно: ChatGPT сам пройдёт OAuth-подключение, а права вы выберете на экране подтверждения.</p>
           <code class="token-flash-value" id="chatgpt-mcp-url" data-testid="chatgpt-mcp-url">{escape(chatgpt_mcp_url)}</code>
@@ -1444,7 +1445,7 @@ def render_account_page(
             <button class="copy-button" id="chatgpt-mcp-copy-button" type="button" data-copy-source="chatgpt-mcp-url" data-copy-kind="mcp_url" data-copy-status="chatgpt-mcp-copy-status" data-copied-text="URL скопирован в буфер обмена.">Скопировать URL</button>
             <span class="copy-status" id="chatgpt-mcp-copy-status" aria-live="polite"></span>
           </div>
-          <p class="hint">Обычный режим по умолчанию — Analytics без персональных данных, чтобы ChatGPT мог работать с отчётами. Full access и персональные данные требуют отдельного явного выбора.</p>
+          <p class="hint">Обычный режим по умолчанию — Analytics без персональных данных, чтобы ChatGPT мог работать с отчётами. После изменения tools или описаний откройте plugin в Settings → Plugins и нажмите Refresh. Full access и персональные данные требуют отдельного явного выбора.</p>
         </div>
         {oauth_grants_html}
         </details>

@@ -1625,7 +1625,7 @@ def render_landing_page(script_nonce: str = "") -> str:
           </p>
           <p class="hero-chatgpt-note" data-testid="hero-chatgpt-note">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><path d="M3 12h18"/><path d="m5.6 5.6 12.8 12.8"/><path d="m18.4 5.6-12.8 12.8"/></svg>
-            <span><strong>Работает прямо в ChatGPT:</strong> подключается через готовый MCP connector, без ручных токенов.</span>
+            <span><strong>Работает прямо в ChatGPT:</strong> подключается как developer-mode plugin/app через OAuth, без ручных токенов.</span>
           </p>
           <p class="hero-fineprint">
             Сервис не сохраняет бизнес-данные из Vetmanager для постоянного хранения. Он хранит только технические данные интеграции и сервисные bearer-метаданные, необходимые для авторизации и работы MCP runtime.
@@ -1729,7 +1729,7 @@ def render_landing_page(script_nonce: str = "") -> str:
         </div>
         <div class="body">
           <p>
-            Подключите сервис через готовый MCP connector.
+            Подключите сервис как ChatGPT plugin/app через MCP.
           </p>
           <p>
             Без ручных токенов, с безопасным доступом по умолчанию.

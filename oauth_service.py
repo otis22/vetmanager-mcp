@@ -15,7 +15,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bearer_token_manager import build_token_prefix, hash_bearer_token
-from oauth_metadata import get_mcp_resource_url
+from oauth_metadata import OAUTH_SCOPE_OFFLINE_ACCESS, get_mcp_resource_url
 from observability_logging import RUNTIME_LOGGER
 from storage_models import (
     OAUTH_STATUS_ACTIVE,
@@ -109,12 +109,48 @@ def _scope_string(scopes: tuple[str, ...] | list[str]) -> str:
     return " ".join(normalize_token_scopes(scopes))
 
 
+def normalize_oauth_tool_scopes(scopes: list[str] | tuple[str, ...]) -> list[str]:
+    """Return only MCP tool scopes from an OAuth scope list."""
+    return normalize_token_scopes(
+        [scope for scope in scopes if scope.strip() != OAUTH_SCOPE_OFFLINE_ACCESS]
+    )
+
+
+def normalize_oauth_requested_scopes(scopes: list[str] | tuple[str, ...]) -> list[str]:
+    """Return stable OAuth scopes, preserving supported protocol scopes."""
+    protocol_scopes: list[str] = []
+    tool_candidates: list[str] = []
+    unknown: list[str] = []
+    for raw_scope in scopes:
+        scope = raw_scope.strip()
+        if not scope:
+            continue
+        if scope == OAUTH_SCOPE_OFFLINE_ACCESS:
+            if scope not in protocol_scopes:
+                protocol_scopes.append(scope)
+            continue
+        if scope not in SUPPORTED_TOKEN_SCOPES:
+            unknown.append(scope)
+            continue
+        tool_candidates.append(scope)
+    if unknown:
+        raise ValueError(f"Unknown token scopes: {', '.join(sorted(set(unknown)))}")
+    tool_scopes = normalize_token_scopes(tool_candidates)
+    if not tool_scopes:
+        raise ValueError("scope must contain at least one supported scope.")
+    return [*tool_scopes, *protocol_scopes]
+
+
+def _oauth_scope_string(scopes: tuple[str, ...] | list[str]) -> str:
+    return " ".join(normalize_oauth_requested_scopes(scopes))
+
+
 def _is_full_access_scope(scope: str) -> bool:
-    return is_broad_oauth_full_access_scope(scope.split())
+    return is_broad_oauth_full_access_scope(normalize_oauth_tool_scopes(scope.split()))
 
 
 def is_broad_oauth_full_access_scope(scopes: tuple[str, ...] | list[str]) -> bool:
-    normalized = tuple(normalize_token_scopes(scopes))
+    normalized = tuple(normalize_oauth_tool_scopes(scopes))
     if normalized == TOKEN_PRESET_SCOPES[PRESET_FULL_ACCESS]:
         return True
     normalized_set = set(normalized)
@@ -140,7 +176,17 @@ def narrow_oauth_authorize_request_scope(
     if selected_privacy_mode not in CHATGPT_OAUTH_PRIVACY_MODES:
         raise OAuthRequestError("invalid_request", "Unsupported privacy mode.")
 
-    requested_scopes = tuple(normalize_token_scopes(list(request_data.get("scopes") or [])))
+    raw_oauth_scopes = (
+        request_data.get("oauth_scopes")
+        or request_data.get("scope", "").split()
+        or request_data.get("scopes")
+        or []
+    )
+    requested_oauth_scopes = normalize_oauth_requested_scopes(list(raw_oauth_scopes))
+    requested_scopes = tuple(normalize_oauth_tool_scopes(requested_oauth_scopes))
+    protocol_scopes = [
+        scope for scope in requested_oauth_scopes if scope == OAUTH_SCOPE_OFFLINE_ACCESS
+    ]
     preset_scopes = set(TOKEN_PRESET_SCOPES[selected_preset])
     final_scopes = tuple(scope for scope in requested_scopes if scope in preset_scopes)
     if not final_scopes:
@@ -151,7 +197,8 @@ def narrow_oauth_authorize_request_scope(
 
     narrowed = dict(request_data)
     narrowed["scopes"] = list(final_scopes)
-    narrowed["scope"] = _scope_string(list(final_scopes))
+    narrowed["oauth_scopes"] = [*final_scopes, *protocol_scopes]
+    narrowed["scope"] = _oauth_scope_string(narrowed["oauth_scopes"])
     narrowed["access_preset"] = selected_preset
     narrowed["privacy_mode"] = selected_privacy_mode
     narrowed["is_depersonalized"] = selected_privacy_mode != OAUTH_PRIVACY_MODE_PERSONAL_DATA
@@ -235,11 +282,9 @@ def _validate_scope(payload: dict) -> str:
     if not isinstance(raw_scope, str):
         raise OAuthRequestError("invalid_client_metadata", "scope must be a string.")
     try:
-        scopes = normalize_token_scopes(raw_scope.split())
+        scopes = normalize_oauth_requested_scopes(raw_scope.split())
     except ValueError as exc:
         raise OAuthRequestError("invalid_scope", str(exc)) from exc
-    if not scopes:
-        raise OAuthRequestError("invalid_scope", "scope must contain at least one supported scope.")
     return " ".join(scopes)
 
 
@@ -358,11 +403,12 @@ async def validate_oauth_authorize_request(session: AsyncSession, params) -> dic
 
     requested_scope = (params.get("scope") or client.scope).strip()
     try:
-        requested_scopes = normalize_token_scopes(requested_scope.split())
+        requested_oauth_scopes = normalize_oauth_requested_scopes(requested_scope.split())
     except ValueError as exc:
         raise OAuthRequestError("invalid_scope", str(exc)) from exc
-    client_scopes = set(normalize_token_scopes(client.scope.split()))
-    if not requested_scopes or any(scope not in client_scopes for scope in requested_scopes):
+    requested_tool_scopes = normalize_oauth_tool_scopes(requested_oauth_scopes)
+    client_tool_scopes = set(normalize_oauth_tool_scopes(client.scope.split()))
+    if any(scope not in client_tool_scopes for scope in requested_tool_scopes):
         raise OAuthRequestError("invalid_scope", "Requested scope is not allowed for this client.")
 
     return {
@@ -370,8 +416,9 @@ async def validate_oauth_authorize_request(session: AsyncSession, params) -> dic
         "client_name": client.client_name or "ChatGPT",
         "redirect_uri": redirect_uri,
         "resource": resource,
-        "scope": " ".join(requested_scopes),
-        "scopes": requested_scopes,
+        "scope": " ".join(requested_oauth_scopes),
+        "scopes": requested_tool_scopes,
+        "oauth_scopes": requested_oauth_scopes,
         "state": (params.get("state") or "").strip(),
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
@@ -543,8 +590,8 @@ async def exchange_oauth_authorization_code(session: AsyncSession, form: dict[st
         account_id=code.account_id,
         vetmanager_connection_id=code.vetmanager_connection_id,
         client_id=code.client_id,
-        scopes_json=json.dumps(code.scope.split(), ensure_ascii=True),
-        access_preset=code.access_preset or infer_token_preset(tuple(normalize_token_scopes(code.scope.split()))),
+        scopes_json=json.dumps(normalize_oauth_tool_scopes(code.scope.split()), ensure_ascii=True),
+        access_preset=code.access_preset or infer_token_preset(tuple(normalize_oauth_tool_scopes(code.scope.split()))),
         is_depersonalized=True if code.is_depersonalized is not False else False,
         status=OAUTH_STATUS_ACTIVE,
     )

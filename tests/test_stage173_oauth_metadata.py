@@ -22,6 +22,7 @@ import storage
 import web
 from bearer_token_manager import build_token_prefix, hash_bearer_token
 from exceptions import AuthError
+from oauth_metadata import OAUTH_SCOPE_OFFLINE_ACCESS, get_oauth_scopes_supported
 from server import mcp
 from service_metrics import reset_service_metrics, snapshot_service_metrics
 from storage import Base, create_database_engine
@@ -95,13 +96,17 @@ async def _register_account_with_connection(email: str = "oauth-owner@example.co
         return account.id
 
 
-async def _register_oauth_client(client: httpx.AsyncClient) -> str:
+async def _register_oauth_client(
+    client: httpx.AsyncClient,
+    *,
+    scope: str = "clients.read pets.read",
+) -> str:
     response = await client.post(
         "/oauth/register",
         json={
             "client_name": "ChatGPT",
             "redirect_uris": ["https://chat.openai.com/aip/callback"],
-            "scope": "clients.read pets.read",
+            "scope": scope,
         },
     )
     assert response.status_code == 201
@@ -210,7 +215,9 @@ async def test_oauth_protected_resource_metadata_uses_canonical_mcp_resource(mon
     assert payload["resource"] == "https://test.example.com/mcp"
     assert payload["authorization_servers"] == ["https://test.example.com"]
     assert payload["resource_documentation"] == "https://test.example.com/"
-    assert payload["scopes_supported"] == list(SUPPORTED_TOKEN_SCOPES)
+    assert payload["scopes_supported"] == get_oauth_scopes_supported()
+    assert OAUTH_SCOPE_OFFLINE_ACCESS in payload["scopes_supported"]
+    assert OAUTH_SCOPE_OFFLINE_ACCESS not in SUPPORTED_TOKEN_SCOPES
 
 
 @pytest.mark.asyncio
@@ -252,7 +259,9 @@ async def test_oauth_authorization_server_metadata_is_dcr_public_client_v1(monke
     assert payload["code_challenge_methods_supported"] == ["S256"]
     assert payload["token_endpoint_auth_methods_supported"] == ["none"]
     assert payload["client_id_metadata_document_supported"] is False
-    assert payload["scopes_supported"] == list(SUPPORTED_TOKEN_SCOPES)
+    assert payload["scopes_supported"] == get_oauth_scopes_supported()
+    assert OAUTH_SCOPE_OFFLINE_ACCESS in payload["scopes_supported"]
+    assert OAUTH_SCOPE_OFFLINE_ACCESS not in SUPPORTED_TOKEN_SCOPES
 
 
 @pytest.mark.asyncio
@@ -417,6 +426,51 @@ async def test_oauth_dcr_registers_public_client(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_oauth_dcr_accepts_offline_access_without_tool_scope_expansion(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/oauth/register",
+            json={
+                "client_name": "ChatGPT offline",
+                "redirect_uris": ["https://chat.openai.com/aip/callback"],
+                "token_endpoint_auth_method": "none",
+                "grant_types": ["authorization_code", "refresh_token"],
+                "response_types": ["code"],
+                "scope": "clients.read offline_access",
+            },
+        )
+        rejected = await client.post(
+            "/oauth/register",
+            json={
+                "client_name": "ChatGPT bad scope",
+                "redirect_uris": ["https://chat.openai.com/aip/callback"],
+                "scope": "clients.read offline_access unknown.scope",
+            },
+        )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["scope"] == "clients.read offline_access"
+    assert rejected.status_code == 400
+    assert rejected.json()["error"] == "invalid_scope"
+
+    async with storage.get_session_factory()() as session:
+        stored = await session.scalar(select(OAuthClient).where(OAuthClient.client_id == payload["client_id"]))
+
+    assert stored is not None
+    assert stored.scope == "clients.read offline_access"
+    assert oauth_service.normalize_oauth_tool_scopes(stored.scope.split()) == ["clients.read"]
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
 async def test_oauth_dcr_rejects_unsafe_redirect_uri(tmp_path, monkeypatch):
     engine = await _prepare_oauth_db(tmp_path, monkeypatch)
     app = mcp.http_app(path="/mcp", transport="streamable-http")
@@ -548,6 +602,60 @@ async def test_oauth_authorize_without_session_redirects_to_login_with_next(tmp_
     next_value = parse_qs(urlparse(location).query)["next"][0]
     assert next_value.startswith("/oauth/authorize?")
     assert "state=state-123" in next_value
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_oauth_authorize_accepts_offline_access_for_legacy_registered_client(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="oauth-legacy-offline@example.com")
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        client.cookies.set(
+            SESSION_COOKIE_NAME,
+            create_account_session_token(account_id),
+            path="/",
+        )
+        client_id = await _register_oauth_client(client, scope="clients.read")
+        consent_response = await client.get(
+            "/oauth/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": "https://chat.openai.com/aip/callback",
+                "resource": "https://test.example.com/mcp",
+                "scope": "clients.read offline_access",
+                "state": "state-legacy-offline",
+                "code_challenge": "challenge",
+                "code_challenge_method": "S256",
+            },
+        )
+        csrf_token = CSRF_RE.search(consent_response.text).group(1)
+        request_state = REQUEST_STATE_RE.search(consent_response.text).group(1)
+        connection_id = CONNECTION_ID_RE.search(consent_response.text).group(1)
+        callback_response = await client.post(
+            "/oauth/authorize/consent",
+            data={
+                "csrf_token": csrf_token,
+                "request_state": request_state,
+                "connection_id": connection_id,
+                "access_preset": PRESET_READ_ONLY,
+            },
+            follow_redirects=False,
+        )
+
+    assert consent_response.status_code == 200
+    assert callback_response.status_code == 303
+    async with storage.get_session_factory()() as session:
+        stored_code = await session.scalar(select(OAuthAuthorizationCode))
+
+    assert stored_code is not None
+    assert stored_code.scope == "clients.read offline_access"
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -858,10 +966,14 @@ async def test_oauth_tool_call_redacts_personal_fields_by_default(tmp_path, monk
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
-        client_id = await _register_oauth_client(client)
+        client_id = await _register_oauth_client(
+            client,
+            scope="clients.read pets.read offline_access",
+        )
         raw_code = await _authorize_and_consent(
             client,
             client_id=client_id,
+            scope="clients.read pets.read offline_access",
             code_challenge=_pkce_challenge(verifier),
         )
         token_response = await _exchange_authorization_code(
@@ -1122,10 +1234,14 @@ async def test_oauth_token_exchange_refresh_rotation_and_reuse_revocation(tmp_pa
             create_account_session_token(account_id),
             path="/",
         )
-        client_id = await _register_oauth_client(client)
+        client_id = await _register_oauth_client(
+            client,
+            scope="clients.read pets.read offline_access",
+        )
         raw_code = await _authorize_and_consent(
             client,
             client_id=client_id,
+            scope="clients.read pets.read offline_access",
             code_challenge=_pkce_challenge(verifier),
         )
         token_response = await client.post(
@@ -1158,7 +1274,7 @@ async def test_oauth_token_exchange_refresh_rotation_and_reuse_revocation(tmp_pa
                 "refresh_token": first_payload["refresh_token"],
                 "client_id": client_id,
                 "resource": "https://test.example.com/mcp",
-                "scope": " ".join(SUPPORTED_TOKEN_SCOPES),
+                "scope": "clients.read pets.read offline_access",
             },
         )
         reuse_response = await client.post(
@@ -1175,14 +1291,14 @@ async def test_oauth_token_exchange_refresh_rotation_and_reuse_revocation(tmp_pa
     assert first_payload["access_token"].startswith("vm_oat_")
     assert first_payload["refresh_token"].startswith("vm_ort_")
     assert first_payload["token_type"] == "Bearer"
-    assert first_payload["scope"] == "clients.read pets.read"
+    assert first_payload["scope"] == "clients.read pets.read offline_access"
     assert replay_response.status_code == 400
     assert replay_response.json()["error"] == "invalid_grant"
     assert refresh_response.status_code == 200
     second_payload = refresh_response.json()
     assert second_payload["refresh_token"] != first_payload["refresh_token"]
     assert second_payload["access_token"] != first_payload["access_token"]
-    assert second_payload["scope"] == "clients.read pets.read"
+    assert second_payload["scope"] == "clients.read pets.read offline_access"
     assert reuse_response.status_code == 400
     assert reuse_response.json()["error"] == "invalid_grant"
 
@@ -1192,6 +1308,7 @@ async def test_oauth_token_exchange_refresh_rotation_and_reuse_revocation(tmp_pa
         refresh_tokens = (await session.execute(select(OAuthRefreshToken))).scalars().all()
 
     assert grant is not None
+    assert json.loads(grant.scopes_json) == ["clients.read", "pets.read"]
     assert grant.status == "revoked"
     assert {token.status for token in access_tokens} == {"revoked"}
     assert {token.status for token in refresh_tokens} == {"revoked"}

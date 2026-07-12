@@ -3492,3 +3492,23 @@ review-gate и убедиться, что регистрация, интегра
 - 200.4 Commit/push, GitHub Actions, production deploy и полный prod smoke
   (регистрация → Vetmanager integration → token issue → first MCP request →
   layout mobile/desktop). — `done`
+
+## Этап 201. ChatGPT Plugin flow docs and OAuth refresh compatibility — `in_progress`
+
+Источник: пользователь 2026-07-12 сообщил, что ChatGPT изменил процесс
+добавления MCP apps/plugins, и попросил обновить текст инструкции и выполнить
+проверку по workflow.
+
+Цель: инструкция в кабинете соответствует актуальному ChatGPT Plugin /
+developer-mode MCP flow, а OAuth discovery/DCR/authorize/token flow совместим
+с требованием ChatGPT сохранять подключение через refresh tokens.
+
+- 201.1 PRD/research: сверить текущий текст с официальными OpenAI docs,
+  зафиксировать новый Plugin flow и OAuth `offline_access` риск. —
+  `done`
+- 201.2 Обновить ChatGPT instructions в кабинете и публичный landing copy
+  под Plugin directory / Scan Tools / Draft / Refresh wording. — `done`
+- 201.3 OAuth compatibility: advertise/accept `offline_access` для ChatGPT
+  refresh-token flow без превращения его в MCP tool scope. — `done`
+- 201.4 Tests/checks, audit, review gates, commit/push/deploy/smoke. —
+  `in_progress`

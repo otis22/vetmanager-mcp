@@ -362,14 +362,14 @@ def test_stage177_landing_mentions_chatgpt_connector_plainly():
     hero_html = html[hero_start:hero_end]
     assert 'data-testid="hero-chatgpt-note"' in hero_html
     assert "Работает прямо в ChatGPT" in hero_html
-    assert "готовый MCP connector" in hero_html
+    assert "developer-mode plugin/app" in hero_html
     assert "без ручных токенов" in hero_html
 
     assert 'id="chatgpt-connector"' in html
     assert 'data-testid="chatgpt-connector-section"' in html
     section_html = html.split('data-testid="chatgpt-connector-section"', 1)[1].split("</section>", 1)[0]
     assert "Работает прямо в ChatGPT" in section_html
-    assert "Подключите сервис через готовый MCP connector." in section_html
+    assert "Подключите сервис как ChatGPT plugin/app через MCP." in section_html
     assert "Без ручных токенов, с безопасным доступом по умолчанию." in section_html
     assert '<a class="inline-link" href="/register">Подключить</a>' in section_html
     assert "Bearer" not in section_html

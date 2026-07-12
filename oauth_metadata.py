@@ -9,6 +9,12 @@ from token_scopes import SUPPORTED_TOKEN_SCOPES
 
 DEFAULT_SITE_BASE_URL = "https://vetmanager-mcp.vromanichev.ru"
 DEFAULT_MCP_PATH = "/mcp"
+OAUTH_SCOPE_OFFLINE_ACCESS = "offline_access"
+
+
+def get_oauth_scopes_supported() -> list[str]:
+    """Return OAuth discovery scopes: MCP tool scopes plus OAuth protocol scopes."""
+    return [*SUPPORTED_TOKEN_SCOPES, OAUTH_SCOPE_OFFLINE_ACCESS]
 
 
 def get_site_base_url() -> str:
@@ -43,7 +49,7 @@ def build_protected_resource_metadata() -> dict:
     return {
         "resource": get_mcp_resource_url(),
         "authorization_servers": [base_url],
-        "scopes_supported": list(SUPPORTED_TOKEN_SCOPES),
+        "scopes_supported": get_oauth_scopes_supported(),
         "resource_documentation": f"{base_url}/",
     }
 
@@ -61,5 +67,5 @@ def build_authorization_server_metadata() -> dict:
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
         "client_id_metadata_document_supported": False,
-        "scopes_supported": list(SUPPORTED_TOKEN_SCOPES),
+        "scopes_supported": get_oauth_scopes_supported(),
     }

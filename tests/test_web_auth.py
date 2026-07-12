@@ -1352,14 +1352,16 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
         assert 'data-testid="chatgpt-connect-instructions"' in account_page.text
         assert 'data-testid="chatgpt-mcp-url"' in account_page.text
         assert "https://clinic.example.com/custom/mcp" in account_page.text
-        assert "Пока приложения нет в GPT Store" in account_page.text
+        assert "ChatGPT Plugin directory" in account_page.text
         assert "своё имя или аватар" in account_page.text
         assert "Settings" in account_page.text
-        assert "Apps" in account_page.text
+        assert "Plugins" in account_page.text
+        assert "chatgpt.com/plugins" in account_page.text
         assert "Developer mode" in account_page.text
-        assert "Elevated risk" in account_page.text
-        assert "Create app" in account_page.text
-        assert "новый MCP connector" in account_page.text
+        assert "Scan Tools" in account_page.text
+        assert "Refresh" in account_page.text
+        assert "plugin/app" in account_page.text
+        assert "Откройте ChatGPT web" in account_page.text
         assert "Bearer-токен копировать не нужно" in account_page.text
         assert f'value="{PRESET_REPORT_AI}"' in account_page.text
         assert f'value="{PRESET_REPORT_AI}" selected' in account_page.text

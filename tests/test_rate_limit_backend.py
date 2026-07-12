@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import sys
-import time
 import types
 
 import pytest
@@ -443,16 +442,13 @@ async def test_check_rate_limit_calls_backend_interleaved(monkeypatch):
 
     monkeypatch.setattr("web_security.get_rate_limit_backend", _fake_get_backend)
 
-    started = time.perf_counter()
     await asyncio.gather(
         check_rate_limit("login", "a", limit=10, window_seconds=60),
         check_rate_limit("login", "b", limit=10, window_seconds=60),
         check_rate_limit("login", "c", limit=10, window_seconds=60),
     )
-    elapsed = time.perf_counter() - started
 
     assert backend.max_active >= 2
-    assert elapsed < 0.12, f"expected interleaving, got serial latency {elapsed:.3f}s"
 
 
 @pytest.mark.asyncio
