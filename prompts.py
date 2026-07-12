@@ -253,8 +253,10 @@ def register_prompts(mcp: FastMCP) -> None:
             _bearer_runtime_prefix()
             + f"Build a full profile for pet ID {pet_id}. "
             + "Prefer get_pet_profile(pet_id) as the primary aggregated tool. "
-            + "If more client context is needed, call get_client_by_id using the owner from the pet record. "
-            + "Summarise pet details, vaccination status, recent medical history, and recent invoices."
+            + "It returns pet details, owner context when permitted, recent medical cards, "
+            + "vaccination status, and recent invoices with line items when permitted. "
+            + "Summarise pet details, owner, vaccination status, recent medical history, "
+            + "and recent invoices; mention partial section_errors if some sections are unavailable."
         )]
 
     @mcp.prompt

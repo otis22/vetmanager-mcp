@@ -38,7 +38,13 @@ from storage_models import (
 )
 from tests.runtime_factories import make_runtime_credentials
 from token_scopes import LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS, SUPPORTED_TOKEN_SCOPES
-from tool_access_registry import PRESET_FULL_ACCESS, PRESET_READ_ONLY, PRESET_REPORT_AI, TOKEN_PRESET_SCOPES
+from tool_access_registry import (
+    PRESET_FRONTDESK,
+    PRESET_FULL_ACCESS,
+    PRESET_READ_ONLY,
+    PRESET_REPORT_AI,
+    TOKEN_PRESET_SCOPES,
+)
 from tool_oauth_security import OAuthChallengeMiddleware, _challenge_result
 from tool_scope_security import ScopeDeniedToolError
 from web_auth import (
@@ -426,6 +432,36 @@ async def test_oauth_dcr_registers_public_client(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_oauth_dcr_without_scope_defaults_to_analytics_preset(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/oauth/register",
+            json={
+                "client_name": "ChatGPT",
+                "redirect_uris": ["https://chat.openai.com/aip/callback"],
+            },
+        )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["scope"] == " ".join(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
+
+    async with storage.get_session_factory()() as session:
+        stored = await session.scalar(select(OAuthClient).where(OAuthClient.client_id == payload["client_id"]))
+
+    assert stored is not None
+    assert stored.scope == " ".join(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
 async def test_oauth_dcr_accepts_offline_access_without_tool_scope_expansion(tmp_path, monkeypatch):
     engine = await _prepare_oauth_db(tmp_path, monkeypatch)
     monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
@@ -465,6 +501,31 @@ async def test_oauth_dcr_accepts_offline_access_without_tool_scope_expansion(tmp
     assert stored is not None
     assert stored.scope == "clients.read offline_access"
     assert oauth_service.normalize_oauth_tool_scopes(stored.scope.split()) == ["clients.read"]
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_oauth_dcr_rejects_protocol_only_scope_without_tool_scope(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/oauth/register",
+            json={
+                "client_name": "ChatGPT",
+                "redirect_uris": ["https://chat.openai.com/aip/callback"],
+                "scope": OAUTH_SCOPE_OFFLINE_ACCESS,
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_scope"
+    assert "at least one supported scope" in response.json()["error_description"]
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -655,7 +716,7 @@ async def test_oauth_authorize_accepts_offline_access_for_legacy_registered_clie
         stored_code = await session.scalar(select(OAuthAuthorizationCode))
 
     assert stored_code is not None
-    assert stored_code.scope == "clients.read offline_access"
+    assert stored_code.scope == " ".join([*TOKEN_PRESET_SCOPES[PRESET_READ_ONLY], OAUTH_SCOPE_OFFLINE_ACCESS])
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -706,13 +767,23 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
     assert consent_response.status_code == 200
     consent_csp = consent_response.headers["content-security-policy"]
     assert "form-action 'self' https://chatgpt.com https://chat.openai.com" in consent_csp
-    assert "ChatGPT access" in consent_response.text
+    assert "Доступ ChatGPT" in consent_response.text
     assert 'data-testid="oauth-access-preset"' in consent_response.text
     assert 'data-testid="oauth-effective-scope-preview"' in consent_response.text
     assert 'data-testid="oauth-privacy-mode"' in consent_response.text
     assert 'data-testid="oauth-privacy-depersonalized"' in consent_response.text
     assert 'data-testid="oauth-privacy-personal-data"' in consent_response.text
-    assert "Effective scopes by access level" in consent_response.text
+    assert 'data-testid="oauth-requested-scopes-technical"' in consent_response.text
+    assert 'data-testid="oauth-granted-scopes-technical"' in consent_response.text
+    assert "Технические scopes" in consent_response.text
+    assert "Если выбрать уровень шире запроса ChatGPT" in consent_response.text
+    assert "report_ai.write" in consent_response.text
+    assert "font-size: 0.72rem" in consent_response.text
+    assert "Аналитик" in consent_response.text
+    assert "всё чтение + работа с отчётами" in consent_response.text
+    assert "Только чтение" in consent_response.text
+    assert "можно смотреть данные, нельзя менять" in consent_response.text
+    assert "Что означают уровни доступа" in consent_response.text
     assert f'value="{PRESET_REPORT_AI}" selected' in consent_response.text
     assert callback_response.status_code == 303
     callback_csp = callback_response.headers["content-security-policy"]
@@ -733,7 +804,7 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
     assert stored_code.client_id == client_id
     assert stored_code.redirect_uri == "https://chat.openai.com/aip/callback"
     assert stored_code.resource == "https://test.example.com/mcp"
-    assert stored_code.scope == "clients.read pets.read"
+    assert stored_code.scope == " ".join(TOKEN_PRESET_SCOPES[PRESET_READ_ONLY])
     assert stored_code.access_preset == PRESET_READ_ONLY
     assert stored_code.is_depersonalized is True
     assert stored_code.account_id == account_id
@@ -797,12 +868,11 @@ async def test_oauth_consent_narrows_full_request_to_read_only_preset(tmp_path, 
 
 
 @pytest.mark.asyncio
-async def test_oauth_consent_defaults_full_request_to_analytics_preset(tmp_path, monkeypatch):
+async def test_oauth_consent_defaults_omitted_scope_to_analytics_preset(tmp_path, monkeypatch):
     engine = await _prepare_oauth_db(tmp_path, monkeypatch)
     monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
     account_id = await _register_account_with_connection(email="oauth-analytics-default@example.com")
     verifier = "Verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
-    full_scope = " ".join(SUPPORTED_TOKEN_SCOPES)
     app = mcp.http_app(path="/mcp", transport="streamable-http")
     transport = httpx.ASGITransport(app=app)
 
@@ -813,7 +883,6 @@ async def test_oauth_consent_defaults_full_request_to_analytics_preset(tmp_path,
             json={
                 "client_name": "ChatGPT",
                 "redirect_uris": ["https://chat.openai.com/aip/callback"],
-                "scope": full_scope,
             },
         )
         client_id = response.json()["client_id"]
@@ -824,18 +893,22 @@ async def test_oauth_consent_defaults_full_request_to_analytics_preset(tmp_path,
                 "client_id": client_id,
                 "redirect_uri": "https://chat.openai.com/aip/callback",
                 "resource": "https://test.example.com/mcp",
-                "scope": full_scope,
                 "state": "preview-state",
                 "code_challenge": _pkce_challenge(verifier),
                 "code_challenge_method": "S256",
             },
         )
-        raw_code = await _authorize_and_consent(
-            client,
-            client_id=client_id,
-            scope=full_scope,
-            code_challenge=_pkce_challenge(verifier),
+        callback_response = await client.post(
+            "/oauth/authorize/consent",
+            data={
+                "csrf_token": CSRF_RE.search(consent_preview.text).group(1),
+                "request_state": REQUEST_STATE_RE.search(consent_preview.text).group(1),
+                "connection_id": CONNECTION_ID_RE.search(consent_preview.text).group(1),
+                "access_preset": PRESET_REPORT_AI,
+            },
+            follow_redirects=False,
         )
+        raw_code = parse_qs(urlparse(callback_response.headers["location"]).query)["code"][0]
         token_response = await client.post(
             "/oauth/token",
             data={
@@ -850,7 +923,8 @@ async def test_oauth_consent_defaults_full_request_to_analytics_preset(tmp_path,
 
     assert consent_preview.status_code == 200
     assert f'value="{PRESET_REPORT_AI}" selected' in consent_preview.text
-    assert "report_ai.write" in consent_preview.text
+    assert "всё чтение + работа с отчётами" in consent_preview.text
+    assert callback_response.status_code == 303
     assert token_response.status_code == 200
     assert token_response.json()["scope"] == " ".join(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
     async with storage.get_session_factory()() as session:
@@ -864,7 +938,7 @@ async def test_oauth_consent_defaults_full_request_to_analytics_preset(tmp_path,
 
 
 @pytest.mark.asyncio
-async def test_oauth_analytics_default_does_not_expand_narrow_requested_scope(tmp_path, monkeypatch):
+async def test_oauth_analytics_default_grants_full_analytics_for_narrow_requested_scope(tmp_path, monkeypatch):
     engine = await _prepare_oauth_db(tmp_path, monkeypatch)
     monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
     account_id = await _register_account_with_connection(email="oauth-narrow-default@example.com")
@@ -902,14 +976,13 @@ async def test_oauth_analytics_default_does_not_expand_narrow_requested_scope(tm
         )
 
     assert token_response.status_code == 200
-    assert token_response.json()["scope"] == "clients.read"
-    assert "report_ai.write" not in token_response.json()["scope"]
+    assert token_response.json()["scope"] == " ".join(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
     async with storage.get_session_factory()() as session:
         grant = await session.scalar(select(OAuthGrant))
 
     assert grant is not None
     assert grant.access_preset == PRESET_REPORT_AI
-    assert json.loads(grant.scopes_json) == ["clients.read"]
+    assert json.loads(grant.scopes_json) == list(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -1168,10 +1241,11 @@ async def test_oauth_consent_rejects_full_access_without_confirmation(tmp_path, 
 
 
 @pytest.mark.asyncio
-async def test_oauth_consent_rejects_empty_scope_intersection(tmp_path, monkeypatch):
+async def test_oauth_consent_preselects_covering_preset_for_broader_requested_scope(tmp_path, monkeypatch):
     engine = await _prepare_oauth_db(tmp_path, monkeypatch)
     monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
-    account_id = await _register_account_with_connection(email="oauth-empty-intersection@example.com")
+    account_id = await _register_account_with_connection(email="oauth-covering-preset@example.com")
+    verifier = "Verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
     app = mcp.http_app(path="/mcp", transport="streamable-http")
     transport = httpx.ASGITransport(app=app)
 
@@ -1182,7 +1256,7 @@ async def test_oauth_consent_rejects_empty_scope_intersection(tmp_path, monkeypa
             json={
                 "client_name": "ChatGPT",
                 "redirect_uris": ["https://chat.openai.com/aip/callback"],
-                "scope": "messaging.write",
+                "scope": "clients.write",
             },
         )
         client_id = response.json()["client_id"]
@@ -1193,25 +1267,90 @@ async def test_oauth_consent_rejects_empty_scope_intersection(tmp_path, monkeypa
                 "client_id": client_id,
                 "redirect_uri": "https://chat.openai.com/aip/callback",
                 "resource": "https://test.example.com/mcp",
-                "scope": "messaging.write",
-                "state": "state-empty",
-                "code_challenge": "challenge",
+                "scope": "clients.write",
+                "state": "state-covering",
+                "code_challenge": _pkce_challenge(verifier),
                 "code_challenge_method": "S256",
             },
         )
+        assert f'value="{PRESET_FRONTDESK}" selected' in consent_response.text
         callback_response = await client.post(
             "/oauth/authorize/consent",
             data={
                 "csrf_token": CSRF_RE.search(consent_response.text).group(1),
                 "request_state": REQUEST_STATE_RE.search(consent_response.text).group(1),
                 "connection_id": CONNECTION_ID_RE.search(consent_response.text).group(1),
-                "access_preset": PRESET_READ_ONLY,
+                "access_preset": PRESET_FRONTDESK,
+            },
+            follow_redirects=False,
+        )
+        raw_code = parse_qs(urlparse(callback_response.headers["location"]).query)["code"][0]
+        token_response = await _exchange_authorization_code(
+            client,
+            raw_code=raw_code,
+            client_id=client_id,
+            verifier=verifier,
+        )
+
+    assert callback_response.status_code == 303
+    assert token_response.status_code == 200
+    assert token_response.json()["scope"] == " ".join(TOKEN_PRESET_SCOPES[PRESET_FRONTDESK])
+    async with storage.get_session_factory()() as session:
+        grant = await session.scalar(select(OAuthGrant))
+
+    assert grant is not None
+    assert json.loads(grant.scopes_json) == list(TOKEN_PRESET_SCOPES[PRESET_FRONTDESK])
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_oauth_consent_preselects_full_for_full_only_requested_scope_but_requires_confirmation(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="oauth-full-covering@example.com")
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
+        response = await client.post(
+            "/oauth/register",
+            json={
+                "client_name": "ChatGPT",
+                "redirect_uris": ["https://chat.openai.com/aip/callback"],
+                "scope": "finance.write",
+            },
+        )
+        client_id = response.json()["client_id"]
+        consent_response = await client.get(
+            "/oauth/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": "https://chat.openai.com/aip/callback",
+                "resource": "https://test.example.com/mcp",
+                "scope": "finance.write",
+                "state": "state-full-covering",
+                "code_challenge": "challenge",
+                "code_challenge_method": "S256",
+            },
+        )
+        assert f'value="{PRESET_FULL_ACCESS}" selected' in consent_response.text
+        callback_response = await client.post(
+            "/oauth/authorize/consent",
+            data={
+                "csrf_token": CSRF_RE.search(consent_response.text).group(1),
+                "request_state": REQUEST_STATE_RE.search(consent_response.text).group(1),
+                "connection_id": CONNECTION_ID_RE.search(consent_response.text).group(1),
+                "access_preset": PRESET_FULL_ACCESS,
             },
             follow_redirects=False,
         )
 
     assert callback_response.status_code == 400
-    assert "Selected access level does not include any requested scopes." in callback_response.text
+    assert "Full access requires explicit confirmation." in callback_response.text
     async with storage.get_session_factory()() as session:
         assert await session.scalar(select(OAuthAuthorizationCode)) is None
 
@@ -1291,14 +1430,14 @@ async def test_oauth_token_exchange_refresh_rotation_and_reuse_revocation(tmp_pa
     assert first_payload["access_token"].startswith("vm_oat_")
     assert first_payload["refresh_token"].startswith("vm_ort_")
     assert first_payload["token_type"] == "Bearer"
-    assert first_payload["scope"] == "clients.read pets.read offline_access"
+    assert first_payload["scope"] == " ".join([*TOKEN_PRESET_SCOPES[PRESET_REPORT_AI], OAUTH_SCOPE_OFFLINE_ACCESS])
     assert replay_response.status_code == 400
     assert replay_response.json()["error"] == "invalid_grant"
     assert refresh_response.status_code == 200
     second_payload = refresh_response.json()
     assert second_payload["refresh_token"] != first_payload["refresh_token"]
     assert second_payload["access_token"] != first_payload["access_token"]
-    assert second_payload["scope"] == "clients.read pets.read offline_access"
+    assert second_payload["scope"] == " ".join([*TOKEN_PRESET_SCOPES[PRESET_REPORT_AI], OAUTH_SCOPE_OFFLINE_ACCESS])
     assert reuse_response.status_code == 400
     assert reuse_response.json()["error"] == "invalid_grant"
 
@@ -1308,7 +1447,7 @@ async def test_oauth_token_exchange_refresh_rotation_and_reuse_revocation(tmp_pa
         refresh_tokens = (await session.execute(select(OAuthRefreshToken))).scalars().all()
 
     assert grant is not None
-    assert json.loads(grant.scopes_json) == ["clients.read", "pets.read"]
+    assert json.loads(grant.scopes_json) == list(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
     assert grant.status == "revoked"
     assert {token.status for token in access_tokens} == {"revoked"}
     assert {token.status for token in refresh_tokens} == {"revoked"}

@@ -657,10 +657,12 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "клиент, владелец, хозяин, личный кабинет, ссылка на ЛК, VmLink, client."
     ),
     "get_pet_profile": (
-        "Build a full pet / patient profile in one call: pet data, recent medical "
-        "cards, and vaccination context. Use when the user asks for a full patient "
-        "card or consolidated pet history. Domain synonyms: питомец, пациент, "
-        "животное, кот, собака, пациент клиники, pet, animal."
+        "Build a full pet / patient profile in one call: pet data, owner context "
+        "when permitted, recent medical cards, vaccination context, and recent "
+        "invoices with goods/services line items when finance access is permitted. "
+        "Use when the user asks for a full patient card, medical profile, or "
+        "consolidated pet history. Domain synonyms: питомец, пациент, животное, "
+        "кот, собака, пациент клиники, медицинский профиль, pet, animal."
     ),
     "create_pet": (
         "Register a new pet / patient only after resolving owner_id with "

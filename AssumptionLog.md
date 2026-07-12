@@ -10338,3 +10338,102 @@ Checks so far:
   - Production MCP OAuth smoke used the refreshed access token for `list_tools`;
     the call succeeded and returned 120 tools. Temporary smoke account/client/
     grants/tokens were deleted after the check.
+
+## Этапы 202-203 ChatGPT OAuth scopes and full patient profile — 2026-07-12
+
+- **Context**: пользователь сообщил две production-facing проблемы:
+  ChatGPT OAuth consent показывал ошибку про неполные права из-за mismatch
+  между requested scopes и выбранным по умолчанию Analytics preset; запрос
+  «Покажи медицинский профиль Альфа» не получал полный профиль пациента.
+- **Decisions**:
+  - OAuth DCR без явного `scope` теперь регистрирует Analytics preset
+    (`PRESET_REPORT_AI`), а consent выдаёт выбранный пользователем preset
+    целиком, сохраняя OAuth protocol scope `offline_access` отдельно от MCP
+    tool scopes.
+  - Если ChatGPT requested tool scopes шире Analytics, consent preselect выбирает
+    минимальный доступный preset, покрывающий запрос; Full access всё равно
+    требует отдельного checkbox confirmation.
+  - `Read only` закреплён как preset, покрывающий весь read-only tool surface;
+    `Analytics` закреплён как `Read only` + `report_ai.write`.
+  - Consent page проверена дважды технически и маркетингово: первая browser
+    проверка desktop/mobile показала слишком длинный mobile UX из-за английских
+    scope lists в пользовательском блоке; после правки английские scopes
+    оставлены только в компактном техническом блоке, а уровни доступа описаны
+    простым русским текстом.
+  - `get_pet_profile` сохраняет старые базовые required scopes
+    `pets.read + medical_cards.read` для обратной совместимости. Owner и invoice
+    sections optional: `clients.read` даёт owner, `finance.read` даёт последние
+    счета и строки; нехватка optional scopes возвращает `partial: true` и
+    structured `section_errors`.
+- **Review findings before implementation**:
+  - Spark/Claude PRD review для 202 приняты по token-response/stored/runtime
+    consistency, broader requested scopes handling, DCR default blast radius и
+    consent edge tests. Строгий intersection-only подход отклонён как не
+    соответствующий user-selected OAuth consent модели.
+  - Spark/Claude PRD review для 203 приняты по backward compatibility scopes,
+    invoice sorting/truncation metadata, owner two-phase fetch, partial invoice
+    document failures и depersonalization boundary.
+- **Local checks before external code review**:
+  - Targeted OAuth/access registry after final consent UX change:
+    `79 passed`.
+  - Full final:
+    `docker compose --profile test run --rm test` —
+    `1361 passed, 2 skipped, 65 deselected`.
+  - Browser UI check: local rendered consent preview at desktop `1280x900` and
+    mobile `390x844`; final mobile snapshot height reduced from ~2787px to
+    ~1924px after removing English preset scope lists from the primary user
+    block.
+- **Code review fixes**:
+  - Spark committed-diff review returned `[]`.
+  - Claude Opus committed-diff review accepted two medium findings: unverified
+    server-side sort keys for `MedicalCards.date_create` and
+    `invoice.invoice_date` could hard-fail otherwise valid profile requests.
+    MedicalCards sort was reverted to the existing `id DESC`; invoice
+    server-side `invoice_date` sort was removed.
+  - Final Claude Opus review accepted one additional medium finding: fetching
+    invoice page without any server-side order could miss the latest invoices
+    for high-volume pets. Fixed by using safe server-side `id DESC` for the
+    bounded invoice page, then client-side sorting the returned page by
+    `invoice_date DESC`, `id DESC`.
+  - Final strong review then kept invoice recency as a production-acceptance
+    risk unless `invoice.invoice_date` sortability was verified. A real
+    Vetmanager probe through the test container and `.env` credentials confirmed
+    `/rest/api/invoice` accepts server-side `invoice_date DESC`, `id DESC` and
+    returns rows with `invoice_date`; the bounded invoice page now uses that
+    server-side sort.
+  - After real-verified `invoice_date DESC` sort fix: targeted profile
+    regression `6 passed, 20 deselected`; full Docker suite
+    `1361 passed, 2 skipped, 65 deselected`.
+  - Spark OAuth candidate about granted scopes exceeding the authorize request
+    was rejected as a code blocker after Claude Opus validation: it is the
+    explicit product decision for owner-selected consent presets. It remains a
+    production acceptance risk and must be verified by OAuth smoke before
+    closing stages 202-203.
+  - Final Claude Opus review accepted one medium consent-transparency finding:
+    because selected presets can grant more than requested scopes, consent must
+    disclose concrete effective scopes. Fixed with a compact collapsed technical
+    block listing granted scopes for each access level and a visible note that a
+    broader selected level grants the selected level's rights.
+  - A follow-up Chromium check caught that the broader-level warning was inside
+    the collapsed technical details and therefore not visible by default. Moved
+    it under the access preset selector; repeated desktop `1280x900` and mobile
+    `390x844` Chromium checks passed with no horizontal overflow, technical
+    scope font `11.52px`, collapsed granted-scopes details, desktop body height
+    `1437px`, mobile body height `2070px`.
+  - Post-review targeted checks:
+    `docker compose --profile test run --rm test pytest tests/test_e2e_mock_clinical_profiles.py -k "pet_profile" tests/test_stage173_oauth_metadata.py tests/test_stage130_access_registry.py tests/test_stage102_aggregator_structured_errors.py::test_section_errors_classify_upstream_unavailable_as_retryable` —
+    `7 passed, 99 deselected`; follow-up OAuth/access targeted run —
+    `80 passed`.
+  - Post-review full suite:
+    `docker compose --profile test run --rm test` —
+    `1361 passed, 2 skipped, 65 deselected`.
+  - Post-review audit: `git diff --check` clean.
+  - After final invoice `id DESC` review fix: targeted profile regression
+    `6 passed, 20 deselected`; full Docker suite
+    `1361 passed, 2 skipped, 65 deselected`.
+  - After final consent transparency visibility fix: targeted OAuth/access/profile
+    run `85 passed, 20 deselected`; full Docker suite
+    `1361 passed, 2 skipped, 65 deselected`.
+- **Pending**: final Spark review, Claude Opus committed-diff review,
+  commit/push, GitHub Tests, Deploy Prod, production smoke, and final
+  production OAuth consent verification will be appended after rollout.

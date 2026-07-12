@@ -7,10 +7,18 @@ import respx
 import httpx
 from fastmcp.exceptions import ToolError
 
+from depersonalization import REDACTED_EMAIL, REDACTED_NAME, REDACTED_PHONE
 from server import mcp
 from tests.runtime_factories import (
     make_client_with_resolved_runtime,
     patch_runtime_credentials,
+)
+from token_scopes import (
+    SCOPE_CLIENTS_READ,
+    SCOPE_FINANCE_READ,
+    SCOPE_MEDICAL_CARDS_READ,
+    SCOPE_PETS_READ,
+    SUPPORTED_TOKEN_SCOPES,
 )
 
 DOMAIN = "testclinic"
@@ -443,6 +451,291 @@ async def test_get_pet_profile_no_vaccinations():
     assert result["last_vaccination_date"] is None
     assert result["next_vaccination_date"] is None
     assert result["vaccinations"] == []
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_pet_profile_returns_owner_medical_cards_and_invoice_line_items():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/pet/14").mock(
+        return_value=httpx.Response(200, json={
+            "data": {"pet": {"id": 14, "alias": "Альфа", "owner_id": 422}}
+        })
+    )
+    respx.get(f"{BASE}/rest/api/client/422").mock(
+        return_value=httpx.Response(200, json={
+            "data": {
+                "client": {
+                    "id": 422,
+                    "first_name": "Анна",
+                    "phone": "+7 916 123-45-67",
+                    "email": "anna@example.com",
+                }
+            }
+        })
+    )
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(200, json={
+            "success": True,
+            "data": {
+                "totalCount": 5,
+                "medicalCards": [
+                    {"id": 905, "patient_id": 14, "date_create": "2026-07-12 10:00:00", "description": "Осмотр 5"},
+                    {"id": 904, "patient_id": 14, "date_create": "2026-07-11 10:00:00", "description": "Осмотр 4"},
+                    {"id": 903, "patient_id": 14, "date_create": "2026-07-10 10:00:00", "description": "Осмотр 3"},
+                    {"id": 902, "patient_id": 14, "date_create": "2026-07-09 10:00:00", "description": "Осмотр 2"},
+                    {"id": 901, "patient_id": 14, "date_create": "2026-07-08 10:00:00", "description": "Осмотр 1"},
+                ],
+            },
+        })
+    )
+    respx.get(f"{BASE}/rest/api/MedicalCards/Vaccinations").mock(
+        return_value=httpx.Response(200, json={
+            "success": True,
+            "data": {"medicalcards": []},
+        })
+    )
+    invoice_route = respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(200, json={
+            "success": True,
+            "data": {
+                "totalCount": 6,
+                "invoice": [
+                    {"id": 301, "pet_id": 14, "invoice_date": "2026-07-09 09:00:00", "amount": "1200.00"},
+                    {"id": 302, "pet_id": 14, "invoice_date": "2026-07-11 12:00:00", "amount": "850.00"},
+                    {"id": 303, "pet_id": 14, "invoice_date": "2026-07-12 09:00:00", "amount": "300.00"},
+                    {"id": 304, "pet_id": 14, "invoice_date": "2026-07-12 10:00:00", "amount": "400.00"},
+                    {"id": 305, "pet_id": 14, "invoice_date": "2026-07-13 08:00:00", "amount": "500.00"},
+                    {"id": 306, "pet_id": 14, "invoice_date": "2026-07-13 08:00:00", "amount": "600.00"},
+                ],
+            },
+        })
+    )
+    invoice_docs_route = respx.get(f"{BASE}/rest/api/invoiceDocument").mock(
+        side_effect=[
+            httpx.Response(200, json={
+                "success": True,
+                "data": {
+                    "totalCount": 1,
+                    "invoiceDocument": [
+                        {"id": 700, "document_id": 306, "good_id": 17, "quantity": "1", "good": {"title": "Осмотр"}}
+                    ],
+                },
+            }),
+            httpx.Response(200, json={
+                "success": True,
+                "data": {
+                    "totalCount": 1,
+                    "invoiceDocument": [
+                        {"id": 701, "document_id": 305, "good_id": 18, "quantity": "2", "good": {"title": "Препарат"}}
+                    ],
+                },
+            }),
+            httpx.Response(200, json={
+                "success": True,
+                "data": {
+                    "totalCount": 1,
+                    "invoiceDocument": [
+                        {"id": 702, "document_id": 304, "good_id": 19, "quantity": "1", "good": {"title": "УЗИ"}}
+                    ],
+                },
+            }),
+            httpx.Response(200, json={
+                "success": True,
+                "data": {
+                    "totalCount": 1,
+                    "invoiceDocument": [
+                        {"id": 703, "document_id": 303, "good_id": 20, "quantity": "1", "good": {"title": "Анализ"}}
+                    ],
+                },
+            }),
+            httpx.Response(200, json={
+                "success": True,
+                "data": {
+                    "totalCount": 1,
+                    "invoiceDocument": [
+                        {"id": 704, "document_id": 302, "good_id": 21, "quantity": "1", "good": {"title": "Вакцина"}}
+                    ],
+                },
+            }),
+        ]
+    )
+
+    headers_patch, runtime_patch = patch_runtime_credentials(
+        DOMAIN,
+        API_KEY,
+        bearer_token="mock-token",
+        bearer_token_id=1,
+        connection_id=1,
+        scopes=SUPPORTED_TOKEN_SCOPES,
+        is_depersonalized=True,
+    )
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_pet_profile", {"pet_id": 14})
+
+    payload = result.structured_content
+    assert payload["pet"]["id"] == 14
+    assert payload["owner"]["first_name"] == REDACTED_NAME
+    assert payload["owner"]["phone"] == REDACTED_PHONE
+    assert payload["owner"]["email"] == REDACTED_EMAIL
+    assert [row["id"] for row in payload["last_medical_cards"]] == [905, 904, 903, 902, 901]
+    assert [invoice["id"] for invoice in payload["last_invoices"]] == [306, 305, 304, 303, 302]
+    assert payload["last_invoices_total"] == 6
+    assert payload["last_invoices"][0]["invoice_documents"][0]["good"]["title"] == "Осмотр"
+    assert payload["last_invoices"][0]["invoice_documents_total"] == 1
+    assert payload["last_invoices"][0]["invoice_documents_truncated"] is False
+    invoice_sort = invoice_route.calls.last.request.url.params["sort"]
+    assert '"property":"invoice_date"' in invoice_sort
+    assert '"property":"id"' in invoice_sort
+    assert '"direction":"DESC"' in invoice_sort
+    assert invoice_docs_route.call_count == 5
+    first_doc_filter = invoice_docs_route.calls[0].request.url.params["filter"]
+    assert '"property":"document_id"' in first_doc_filter
+    assert '"value":"306"' in first_doc_filter
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_pet_profile_old_scopes_keep_base_profile_with_optional_section_errors():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/pet/14").mock(
+        return_value=httpx.Response(200, json={
+            "data": {"pet": {"id": 14, "alias": "Альфа", "owner_id": 422}}
+        })
+    )
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(200, json={
+            "success": True,
+            "data": {"totalCount": 0, "medicalCards": []},
+        })
+    )
+    respx.get(f"{BASE}/rest/api/MedicalCards/Vaccinations").mock(
+        return_value=httpx.Response(200, json={
+            "success": True,
+            "data": {"medicalcards": []},
+        })
+    )
+
+    headers_patch, runtime_patch = patch_runtime_credentials(
+        DOMAIN,
+        API_KEY,
+        bearer_token="mock-token",
+        bearer_token_id=1,
+        connection_id=1,
+        scopes=(SCOPE_PETS_READ, SCOPE_MEDICAL_CARDS_READ),
+    )
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_pet_profile", {"pet_id": 14})
+
+    payload = result.structured_content
+    assert payload["pet"]["id"] == 14
+    assert payload["owner"] == {}
+    assert payload["last_invoices"] == []
+    assert payload["partial"] is True
+    assert payload["section_errors"]["owner"]["error_type"] == "missing_scope"
+    assert payload["section_errors"]["invoices"]["error_type"] == "missing_scope"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_pet_profile_owner_failure_keeps_profile_partial():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/pet/14").mock(
+        return_value=httpx.Response(200, json={
+            "data": {"pet": {"id": 14, "alias": "Альфа", "owner_id": 422}}
+        })
+    )
+    respx.get(f"{BASE}/rest/api/client/422").mock(side_effect=httpx.ConnectError("owner down"))
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(200, json={
+            "success": True,
+            "data": {"medicalCards": [{"id": 1, "patient_id": 14}]},
+        })
+    )
+    respx.get(f"{BASE}/rest/api/MedicalCards/Vaccinations").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {"medicalcards": []}})
+    )
+    respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {"invoice": []}})
+    )
+
+    headers_patch, runtime_patch = patch_runtime_credentials(
+        DOMAIN,
+        API_KEY,
+        bearer_token="mock-token",
+        bearer_token_id=1,
+        connection_id=1,
+        scopes=(SCOPE_PETS_READ, SCOPE_MEDICAL_CARDS_READ, SCOPE_CLIENTS_READ, SCOPE_FINANCE_READ),
+    )
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_pet_profile", {"pet_id": 14})
+
+    payload = result.structured_content
+    assert payload["partial"] is True
+    assert payload["pet"]["id"] == 14
+    assert payload["owner"] == {}
+    assert payload["last_medical_cards"] == [{"id": 1, "patient_id": 14}]
+    assert payload["section_errors"]["owner"]["error_type"] == "vetmanager_error"
+    assert payload["section_errors"]["owner"]["retryable"] is True
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_pet_profile_preserves_successful_invoice_documents_when_one_fails():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/pet/14").mock(
+        return_value=httpx.Response(200, json={
+            "data": {"pet": {"id": 14, "alias": "Альфа", "owner_id": 422}}
+        })
+    )
+    respx.get(f"{BASE}/rest/api/client/422").mock(
+        return_value=httpx.Response(200, json={"data": {"client": {"id": 422}}})
+    )
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {"medicalCards": []}})
+    )
+    respx.get(f"{BASE}/rest/api/MedicalCards/Vaccinations").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {"medicalcards": []}})
+    )
+    respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(200, json={
+            "success": True,
+            "data": {
+                "totalCount": 2,
+                "invoice": [
+                    {"id": 401, "pet_id": 14, "invoice_date": "2026-07-11 12:00:00"},
+                    {"id": 402, "pet_id": 14, "invoice_date": "2026-07-10 12:00:00"},
+                ],
+            },
+        })
+    )
+    respx.get(f"{BASE}/rest/api/invoiceDocument").mock(
+        side_effect=[
+            httpx.Response(200, json={
+                "success": True,
+                "data": {"totalCount": 1, "invoiceDocument": [{"id": 801, "document_id": 401}]},
+            }),
+            httpx.ConnectError("boom"),
+        ]
+    )
+
+    headers_patch, runtime_patch = patch_runtime_credentials(
+        DOMAIN,
+        API_KEY,
+        bearer_token="mock-token",
+        bearer_token_id=1,
+        connection_id=1,
+        scopes=(SCOPE_PETS_READ, SCOPE_MEDICAL_CARDS_READ, SCOPE_CLIENTS_READ, SCOPE_FINANCE_READ),
+    )
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_pet_profile", {"pet_id": 14})
+
+    payload = result.structured_content
+    assert payload["partial"] is True
+    assert payload["last_invoices"][0]["invoice_documents"] == [{"id": 801, "document_id": 401}]
+    assert payload["last_invoices"][1]["invoice_documents"] == []
+    assert payload["last_invoices"][1]["invoice_documents_error"]["error_type"] == "invoice_documents_error"
+    assert payload["section_errors"]["invoice_documents"]["402"]["error_type"] == "invoice_documents_error"
 
 
 

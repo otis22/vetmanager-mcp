@@ -157,6 +157,19 @@ def is_broad_oauth_full_access_scope(scopes: tuple[str, ...] | list[str]) -> boo
     return any(set(snapshot).issubset(normalized_set) for snapshot in LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS)
 
 
+def select_default_oauth_access_preset(requested_scopes: list[str] | tuple[str, ...]) -> str:
+    """Return the safest user-facing default preset for an authorize request."""
+    requested_tool_scopes = set(normalize_oauth_tool_scopes(requested_scopes))
+    analytics_scopes = set(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
+    if not requested_tool_scopes or requested_tool_scopes.issubset(analytics_scopes):
+        return PRESET_REPORT_AI
+
+    for preset in (PRESET_FRONTDESK, PRESET_FULL_ACCESS):
+        if requested_tool_scopes.issubset(TOKEN_PRESET_SCOPES[preset]):
+            return preset
+    return PRESET_FULL_ACCESS
+
+
 def narrow_oauth_authorize_request_scope(
     request_data: dict,
     *,
@@ -183,17 +196,10 @@ def narrow_oauth_authorize_request_scope(
         or []
     )
     requested_oauth_scopes = normalize_oauth_requested_scopes(list(raw_oauth_scopes))
-    requested_scopes = tuple(normalize_oauth_tool_scopes(requested_oauth_scopes))
     protocol_scopes = [
         scope for scope in requested_oauth_scopes if scope == OAUTH_SCOPE_OFFLINE_ACCESS
     ]
-    preset_scopes = set(TOKEN_PRESET_SCOPES[selected_preset])
-    final_scopes = tuple(scope for scope in requested_scopes if scope in preset_scopes)
-    if not final_scopes:
-        raise OAuthRequestError(
-            "invalid_scope",
-            "Selected access level does not include any requested scopes. Choose another access level or reconnect ChatGPT.",
-        )
+    final_scopes = tuple(TOKEN_PRESET_SCOPES[selected_preset])
 
     narrowed = dict(request_data)
     narrowed["scopes"] = list(final_scopes)
@@ -278,7 +284,7 @@ def _validate_optional_string_list(
 def _validate_scope(payload: dict) -> str:
     raw_scope = payload.get("scope")
     if raw_scope is None:
-        return " ".join(SUPPORTED_TOKEN_SCOPES)
+        return " ".join(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
     if not isinstance(raw_scope, str):
         raise OAuthRequestError("invalid_client_metadata", "scope must be a string.")
     try:

@@ -183,7 +183,9 @@ def register(mcp: FastMCP) -> None:
 
         Aggregates:
         - Full pet record (with breed and type data)
+        - Owner/client record when the runtime token has clients.read
         - Last 5 medical card records
+        - Last 5 invoices with line items when the runtime token has finance.read
         - All vaccination records (date, next vaccination date, vaccine name)
         - Computed last_vaccination_date and next_vaccination_date
 

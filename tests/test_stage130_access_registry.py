@@ -157,6 +157,28 @@ def test_full_access_preset_covers_every_registered_tool_scope():
         assert set(required_scopes).issubset(full_access_scopes), tool_name
 
 
+def test_read_only_preset_covers_every_read_scope_tool():
+    read_only_scopes = set(TOKEN_PRESET_SCOPES[PRESET_READ_ONLY])
+    missing: list[str] = []
+    for tool_name, required_scopes in TOOL_REQUIRED_SCOPES.items():
+        if not required_scopes:
+            continue
+        if all(scope.endswith(".read") for scope in required_scopes):
+            if not set(required_scopes).issubset(read_only_scopes):
+                missing.append(tool_name)
+
+    assert not missing, f"Read only preset misses read-only tools: {missing}"
+
+
+def test_analytics_preset_is_read_only_plus_report_tools():
+    read_only_scopes = set(TOKEN_PRESET_SCOPES[PRESET_READ_ONLY])
+    analytics_scopes = set(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
+
+    assert read_only_scopes.issubset(analytics_scopes)
+    assert SCOPE_REPORT_AI_WRITE in analytics_scopes
+    assert analytics_scopes - read_only_scopes == {SCOPE_REPORT_AI_WRITE}
+
+
 def test_frontdesk_accepts_analytics_read_blast_radius_explicitly():
     analytics_tools = {
         name

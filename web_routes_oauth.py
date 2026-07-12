@@ -22,6 +22,7 @@ from oauth_service import (
     narrow_oauth_authorize_request_scope,
     read_oauth_authorize_request,
     register_oauth_client,
+    select_default_oauth_access_preset,
     sign_oauth_authorize_request,
     validate_oauth_authorize_request,
 )
@@ -230,6 +231,7 @@ def register_oauth_routes(
                     {"id": connection.id, "domain": connection.domain or "n/a"}
                     for connection in connections
                 ],
+                selected_access_preset=select_default_oauth_access_preset(request_data["oauth_scopes"]),
             ),
             with_csrf_cookie=True,
             csrf_token=csrf_token,

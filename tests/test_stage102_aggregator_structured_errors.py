@@ -116,7 +116,13 @@ async def test_section_errors_classify_upstream_unavailable_as_retryable():
     # Pet record succeeds; MedicalCards section will be blocked by the
     # breaker we force-open below (for the same domain).
     respx.get(f"{BASE}/rest/api/pet/8").mock(
-        return_value=httpx.Response(200, json={"data": {"pet": {"id": 8, "alias": "Buddy"}}})
+        return_value=httpx.Response(
+            200,
+            json={"data": {"pet": {"id": 8, "alias": "Buddy", "owner_id": 88}}},
+        )
+    )
+    respx.get(f"{BASE}/rest/api/client/88").mock(
+        return_value=httpx.Response(200, json={"data": {"client": {"id": 88}}})
     )
     respx.get(f"{BASE}/rest/api/MedicalCards").mock(
         return_value=httpx.Response(200, json={"data": {"medicalCards": []}})

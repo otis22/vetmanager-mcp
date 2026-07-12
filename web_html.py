@@ -38,6 +38,24 @@ _CHATGPT_OAUTH_ACCESS_PRESETS = (
     PRESET_FRONTDESK,
     PRESET_FULL_ACCESS,
 )
+_CHATGPT_OAUTH_PRESET_COPY = {
+    PRESET_REPORT_AI: (
+        "Аналитик",
+        "всё чтение + работа с отчётами",
+    ),
+    PRESET_READ_ONLY: (
+        "Только чтение",
+        "можно смотреть данные, нельзя менять",
+    ),
+    PRESET_FRONTDESK: (
+        "Регистратура",
+        "расписание, клиенты, питомцы и сообщения",
+    ),
+    PRESET_FULL_ACCESS: (
+        "Полный доступ",
+        "чтение и изменение всех доступных данных",
+    ),
+}
 
 
 def _resolve_site_base_url() -> str:
@@ -737,38 +755,38 @@ def render_oauth_consent_page(
     selected_privacy_mode: str = "depersonalized",
 ) -> str:
     error_html = f'<div class="error">{escape(error)}</div>' if error else ""
-    scope_items = "".join(f"<li><code>{escape(scope)}</code></li>" for scope in scopes)
+    scope_items = "".join(f"<li><code>{escape(scope)}</code></li>" for scope in scopes) or "<li>не переданы</li>"
     access_options = "".join(
         (
             f'<option value="{escape(preset)}" {"selected" if selected_access_preset == preset else ""}>'
-            f'{escape(TOKEN_PRESET_LABELS[preset])}</option>'
+            f'{escape(_CHATGPT_OAUTH_PRESET_COPY[preset][0])}</option>'
         )
         for preset in _CHATGPT_OAUTH_ACCESS_PRESETS
     )
-    requested_scope_set = set(scopes)
     effective_preview_rows = []
+    granted_scope_rows = []
     for preset in _CHATGPT_OAUTH_ACCESS_PRESETS:
-        granted_scopes = [scope for scope in TOKEN_PRESET_SCOPES[preset] if scope in requested_scope_set]
-        omitted_count = max(0, len(scopes) - len(granted_scopes))
-        if granted_scopes:
-            granted_text = ", ".join(granted_scopes)
-        else:
-            granted_text = "No overlapping scopes"
-        omitted_text = f"; {omitted_count} requested scope(s) will not be granted" if omitted_count else ""
+        title, description = _CHATGPT_OAUTH_PRESET_COPY[preset]
         effective_preview_rows.append(
             "<li>"
-            f"<strong>{escape(TOKEN_PRESET_LABELS[preset])}:</strong> "
-            f"<code>{escape(granted_text)}</code>{escape(omitted_text)}"
+            f"<strong>{escape(title)}:</strong> {escape(description)}"
+            "</li>"
+        )
+        scopes_text = " ".join(TOKEN_PRESET_SCOPES[preset])
+        granted_scope_rows.append(
+            "<li>"
+            f"<strong>{escape(title)}:</strong> <code>{escape(scopes_text)}</code>"
             "</li>"
         )
     effective_preview_html = "".join(effective_preview_rows)
+    granted_scopes_html = "".join(granted_scope_rows)
     depersonalized_checked = "checked" if selected_privacy_mode != "personal_data" else ""
     personal_data_checked = "checked" if selected_privacy_mode == "personal_data" else ""
     if len(connections) == 1:
         connection = connections[0]
         connection_input = (
             f'<input type="hidden" name="connection_id" value="{escape(str(connection["id"]))}">'
-            f'<p>Clinic: <code>{escape(str(connection.get("domain", "n/a")))}</code></p>'
+            f'<p>Клиника: <code>{escape(str(connection.get("domain", "n/a")))}</code></p>'
         )
     else:
         options = "".join(
@@ -776,35 +794,40 @@ def render_oauth_consent_page(
             for connection in connections
         )
         connection_input = f"""
-          <label>Clinic connection
+          <label>Подключение Vetmanager
             <select name="connection_id" required>
               {options}
             </select>
           </label>
         """
     return render_shell(
-        "ChatGPT access",
+        "Доступ ChatGPT",
         f"""
-        <h1>ChatGPT access</h1>
-        <p><strong>{escape(client_name)}</strong> requests access to this Vetmanager MCP service.</p>
+        <h1>Доступ ChatGPT</h1>
+        <p><strong>{escape(client_name)}</strong> просит подключить ChatGPT к данным Vetmanager.</p>
         {error_html}
-        <section class="metric">
-          <span>Requested scopes</span>
-          <ul>{scope_items}</ul>
-        </section>
         <section class="metric" data-testid="oauth-effective-scope-preview">
-          <span>Effective scopes by access level</span>
+          <span>Что означают уровни доступа</span>
           <ul>{effective_preview_html}</ul>
         </section>
+        <section class="metric" data-testid="oauth-requested-scopes-technical" style="font-size: 0.72rem; color: var(--muted);">
+          <span>Технические scopes, которые передал ChatGPT</span>
+          <ul>{scope_items}</ul>
+        </section>
+        <details class="metric" data-testid="oauth-granted-scopes-technical" style="font-size: 0.72rem; color: var(--muted);">
+          <summary>Технические scopes, которые выдаёт каждый уровень</summary>
+          <ul>{granted_scopes_html}</ul>
+        </details>
         <form method="post" action="/oauth/authorize/consent" data-testid="oauth-consent-form">
           {hidden_csrf_input(csrf_token)}
           <input type="hidden" name="request_state" value="{escape(request_state)}">
           {connection_input}
-          <label>Access level
+          <label>Уровень доступа
             <select name="access_preset" required data-testid="oauth-access-preset">
               {access_options}
             </select>
-            <small style="color: var(--muted); font-size: 0.85rem;">ChatGPT получит только те requested scopes, которые входят в выбранный access level.</small>
+            <small style="color: var(--muted); font-size: 0.85rem;">ChatGPT получит права выбранного уровня; это может быть больше технического запроса ChatGPT. Полный доступ требует отдельного подтверждения.</small>
+            <small style="display: block; color: var(--muted); font-size: 0.85rem;">Если выбрать уровень шире запроса ChatGPT, будут выданы права выбранного уровня.</small>
           </label>
           <fieldset class="metric" style="border: 1px solid var(--line); margin: 16px 0;" data-testid="oauth-privacy-mode">
             <legend>Персональные данные</legend>
@@ -824,13 +847,13 @@ def render_oauth_consent_page(
             </label>
           </fieldset>
           <label style="display: flex; gap: 10px; align-items: start;">
-            <input type="checkbox" name="confirm_full_access" value="1" data-testid="oauth-confirm-full-access" style="width: auto; margin-top: 6px;">
+              <input type="checkbox" name="confirm_full_access" value="1" data-testid="oauth-confirm-full-access" style="width: auto; margin-top: 6px;">
             <span>
-              <strong style="display: block; color: var(--ink);">Confirm Full access</strong>
+              <strong style="display: block; color: var(--ink);">Подтвердить полный доступ</strong>
               <small style="color: var(--muted); font-size: 0.85rem;">Нужно только если вы выбираете Full access.</small>
             </span>
           </label>
-          <button type="submit">Allow</button>
+          <button type="submit">Разрешить</button>
         </form>
         """,
     )
