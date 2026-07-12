@@ -10434,6 +10434,43 @@ Checks so far:
   - After final consent transparency visibility fix: targeted OAuth/access/profile
     run `85 passed, 20 deselected`; full Docker suite
     `1361 passed, 2 skipped, 65 deselected`.
-- **Pending**: final Spark review, Claude Opus committed-diff review,
-  commit/push, GitHub Tests, Deploy Prod, production smoke, and final
-  production OAuth consent verification will be appended after rollout.
+- **Final review gates**:
+  - Final Spark review on committed diff `e1b9057..f18864f`: read-only run hit
+    the known `bwrap` runtime issue and stalled on MCP resource listing; it was
+    terminated and repeated once with `-s danger-full-access` and strict
+    review-only prompt. Result: `[]`.
+  - Final Claude Opus committed-diff review on inline diff with tools disabled:
+    `{"findings":[]}`.
+- **Push/deploy/smoke**:
+  - Pushed `main` through commit `f18864f`.
+  - GitHub Tests `29211546167` passed: `fast` job green in `2m48s`, `default`
+    job green in `3m7s`.
+  - Deploy Prod `29211645032` passed for `f18864f`.
+  - Public HTTPS smoke after deploy: `/healthz` returned 200 `status=ok`,
+    `/readyz` returned 200 with storage ok, `/mcp` returned expected 406 without
+    SSE `Accept` header.
+  - Production OAuth smoke over HTTPS created a temporary account and active
+    Vetmanager connection, registered DCR without `scope`, verified consent
+    default `Analytics`, exchanged code, and verified the token contains the
+    10-scope Analytics grant including `clients.read`, `pets.read`,
+    `medical_cards.read`, `finance.read`, and `report_ai.write`, plus a refresh
+    token. The OAuth grant was revoked after the check.
+  - Production MCP OAuth smoke used the access token for `initialize`,
+    `tools/list`, and `tools/call get_pet_profile {"pet_id": 14}`. It returned
+    120 tools including `get_pet_profile`; profile result included `pet`,
+    `owner`, 5 `last_medical_cards`, 5 `last_invoices`, invoice document keys,
+    `partial=false`, and no `section_errors`.
+  - Production OAuth escalation smoke requested only `clients.read`, confirmed
+    consent default stayed `Analytics`, then selected `frontdesk`; token scope
+    included `clients.write` and other Frontdesk scopes. That OAuth grant was
+    revoked after the check.
+  - Production consent HTML was saved redacted locally and checked twice:
+    content assertions over live HTML plus Chromium desktop `1280x900` and
+    mobile `390x844` rendering from the production HTML. Technical scope blocks
+    remained `11.52px`, granted-scopes details were collapsed by default, and
+    there was no horizontal overflow (desktop body height `1591px`, mobile body
+    height `2223px`).
+  - Limitation: the smoke used a ChatGPT-compatible synthetic OAuth client over
+    the same production endpoints, not the real ChatGPT UI automation. The
+    redirect host was `chat.openai.com`, and the OAuth/MCP contract that ChatGPT
+    uses was exercised end-to-end.
