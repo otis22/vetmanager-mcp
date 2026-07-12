@@ -207,3 +207,24 @@ protocol scope allowlist without touching MCP tool scopes.
   stored client scope did not include the protocol marker. Fixed by checking
   client subset only for MCP tool scopes while allowing known OAuth protocol
   scopes, and added a legacy-client regression test.
+- Final committed-diff reviews after the fix:
+  - Spark review returned `[]`.
+  - Claude Opus review returned `{"findings":[]}`.
+
+## Deployment Notes
+
+- Pushed `main` through commit `43f13a4`.
+- GitHub Tests `29207415739` succeeded (`fast` and `default` jobs green).
+- Deploy Prod `29207515367` succeeded.
+- Production smoke:
+  - public `/healthz` and `/readyz` returned 200/ok;
+  - account page over HTTPS contains the updated ChatGPT Plugin flow wording:
+    `Developer mode`, `Settings → Plugins`, `Scan Tools`, `Refresh`, and the
+    note that the service is not published in ChatGPT Plugin directory;
+  - OAuth discovery metadata includes `offline_access`;
+  - legacy DCR client registered with only `clients.read` can authorize
+    `clients.read offline_access`;
+  - authorization-code exchange and refresh rotation both return
+    `clients.read offline_access` and issue refresh tokens;
+  - MCP OAuth `list_tools` with the refreshed access token succeeds and returns
+    120 tools.

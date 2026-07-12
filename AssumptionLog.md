@@ -10273,3 +10273,68 @@ Checks so far:
     `status=success`, `series=1`, `value=0`, confirming Grafana receives a
     zero-valued series instead of an empty vector when no activation-age samples
     are present.
+
+## Этап 201 ChatGPT Plugin flow docs and OAuth refresh compatibility — 2026-07-12
+
+- **Context**: пользователь сообщил, что ChatGPT изменил процесс добавления
+  MCP apps/plugins, попросил обновить инструкцию и выполнить проверку по
+  workflow.
+- **Sources checked**:
+  - OpenAI Apps SDK `Connect from ChatGPT`;
+  - OpenAI Apps SDK `Authentication`;
+  - OpenAI Help Center `Developer mode and MCP apps in ChatGPT`.
+- **Decisions**:
+  - Текст инструкции переведён с старого wording про GPT Store / MCP connector
+    на current developer-mode Plugin flow: ChatGPT web → Settings →
+    Developer mode → Settings → Plugins или `chatgpt.com/plugins` →
+    create/draft plugin/app → Scan Tools → OAuth → Refresh after tool changes.
+  - Landing copy теперь честно говорит про developer-mode plugin/app через
+    OAuth, а не про готовый опубликованный connector.
+  - `offline_access` добавлен как OAuth protocol scope: discovery/DCR/authorize
+    и token/refresh responses его принимают и эхоят, но `SUPPORTED_TOKEN_SCOPES`
+    и runtime tool authorization остаются tool-only.
+  - Legacy DCR clients, созданные до `offline_access`, могут запросить
+    `offline_access` на authorize: subset-check применяется только к MCP
+    tool-scopes, known OAuth protocol scopes валидируются отдельно.
+  - Full docker suite выявил хрупкую wall-clock latency проверку в
+    `test_check_rate_limit_calls_backend_interleaved`; функциональный сигнал
+    interleaving проходил. Тест ужесточён по смыслу и освобождён от
+    нестабильного elapsed-time порога.
+- **Review findings**:
+  - Spark architecture/PRD review: accepted findings to document
+    `offline_access` contract explicitly and add DCR/authorize/refresh
+    regressions.
+  - Claude Opus architecture/PRD review: accepted findings to echo
+    `offline_access` in OAuth token responses, filter it at runtime boundary,
+    and include authorize/token/refresh in prod smoke. OpenID alias finding was
+    partially accepted: keep alias, pin OAuth-only metadata parity and avoid
+    claiming `id_token` support.
+  - Spark committed-diff review first found the legacy-DCR authorize rejection
+    described above; fixed with regression test. Final Spark review returned
+    `[]`.
+  - Claude Opus final committed-diff review returned `{"findings":[]}`.
+- **Local checks**:
+  - Targeted initial regression: `8 passed`.
+  - Targeted rate-limit hardening check: `1 passed`.
+  - Targeted legacy-DCR/offline fix check: `4 passed`.
+  - Full final:
+    `docker compose --profile test run --rm test` —
+    `1352 passed, 2 skipped, 65 deselected`.
+- **Push/deploy/smoke**:
+  - Pushed `main` through commit `43f13a4`.
+  - GitHub Tests `29207415739` passed: `fast` and `default` jobs green.
+  - Deploy Prod `29207515367` passed: deploy job green.
+  - Public smoke after deploy: `/healthz` returned 200 `status=ok`, `/readyz`
+    returned 200 with storage ok, `/mcp` returned expected 406 without SSE
+    `Accept` header.
+  - Production account-page text smoke over HTTPS verified the page contains
+    `Developer mode`, `Settings → Plugins`, `Scan Tools`, `Refresh`, and the
+    note that the service is not published in ChatGPT Plugin directory.
+  - Production OAuth smoke over HTTPS created a temporary account and active
+    Vetmanager connection, registered a legacy DCR client with scope
+    `clients.read`, authorized `clients.read offline_access`, exchanged code,
+    rotated refresh token, and verified both token responses keep
+    `clients.read offline_access`.
+  - Production MCP OAuth smoke used the refreshed access token for `list_tools`;
+    the call succeeded and returned 120 tools. Temporary smoke account/client/
+    grants/tokens were deleted after the check.
