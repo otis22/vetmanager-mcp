@@ -23,6 +23,7 @@ import web
 from bearer_token_manager import build_token_prefix, hash_bearer_token
 from exceptions import AuthError
 from oauth_metadata import OAUTH_SCOPE_OFFLINE_ACCESS, get_oauth_scopes_supported
+from runtime_auth import resolve_runtime_credentials
 from server import mcp
 from service_metrics import reset_service_metrics, snapshot_service_metrics
 from storage import Base, create_database_engine
@@ -983,6 +984,142 @@ async def test_oauth_analytics_default_grants_full_analytics_for_narrow_requeste
     assert grant is not None
     assert grant.access_preset == PRESET_REPORT_AI
     assert json.loads(grant.scopes_json) == list(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_legacy_preset_oauth_access_token_uses_effective_preset_scopes(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="legacy-narrow-access@example.com")
+    raw_access_token = "vm_oat_legacy-narrow-access"
+
+    async with storage.get_session_factory()() as session:
+        connection = await session.scalar(select(VetmanagerConnection))
+        oauth_client = OAuthClient(
+            client_id="vm_oc_legacy_narrow_access",
+            client_name="ChatGPT",
+            redirect_uris_json='["https://chat.openai.com/aip/callback"]',
+            token_endpoint_auth_method="none",
+            grant_types_json='["authorization_code","refresh_token"]',
+            response_types_json='["code"]',
+            scope="clients.read pets.read",
+            status="active",
+        )
+        session.add(oauth_client)
+        await session.flush()
+        grant = OAuthGrant(
+            account_id=account_id,
+            vetmanager_connection_id=connection.id,
+            client_id=oauth_client.client_id,
+            scopes_json='["clients.read","pets.read"]',
+            access_preset=PRESET_REPORT_AI,
+            status="active",
+        )
+        session.add(grant)
+        await session.flush()
+        session.add(
+            OAuthAccessToken(
+                grant_id=grant.id,
+                token_prefix=build_token_prefix(raw_access_token),
+                token_hash=hash_bearer_token(raw_access_token),
+                scope="clients.read pets.read",
+                resource="https://test.example.com/mcp",
+                status="active",
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+        )
+        await session.commit()
+
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(
+            auth_request,
+            "_get_request_headers",
+            lambda: {"authorization": f"Bearer {raw_access_token}"},
+        )
+        credentials = await resolve_runtime_credentials()
+
+    assert set(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI]).issubset(credentials.scopes)
+    assert "medical_cards.read" in credentials.scopes
+    assert "finance.read" in credentials.scopes
+    assert "report_ai.write" in credentials.scopes
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_legacy_preset_oauth_refresh_upgrades_token_scope_to_effective_preset(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="legacy-narrow-refresh@example.com")
+    raw_refresh_token = "vm_ort_legacy-narrow-refresh"
+
+    async with storage.get_session_factory()() as session:
+        connection = await session.scalar(select(VetmanagerConnection))
+        oauth_client = OAuthClient(
+            client_id="vm_oc_legacy_narrow_refresh",
+            client_name="ChatGPT",
+            redirect_uris_json='["https://chat.openai.com/aip/callback"]',
+            token_endpoint_auth_method="none",
+            grant_types_json='["authorization_code","refresh_token"]',
+            response_types_json='["code"]',
+            scope="clients.read pets.read offline_access",
+            status="active",
+        )
+        session.add(oauth_client)
+        await session.flush()
+        grant = OAuthGrant(
+            account_id=account_id,
+            vetmanager_connection_id=connection.id,
+            client_id=oauth_client.client_id,
+            scopes_json='["clients.read","pets.read"]',
+            access_preset=PRESET_REPORT_AI,
+            status="active",
+        )
+        session.add(grant)
+        await session.flush()
+        session.add(
+            OAuthRefreshToken(
+                grant_id=grant.id,
+                token_prefix=build_token_prefix(raw_refresh_token),
+                token_hash=hash_bearer_token(raw_refresh_token),
+                scope="clients.read pets.read offline_access",
+                resource="https://test.example.com/mcp",
+                status="active",
+                expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+            )
+        )
+        await session.commit()
+        grant_id = grant.id
+
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": raw_refresh_token,
+                "client_id": "vm_oc_legacy_narrow_refresh",
+                "resource": "https://test.example.com/mcp",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["scope"] == " ".join([*TOKEN_PRESET_SCOPES[PRESET_REPORT_AI], OAUTH_SCOPE_OFFLINE_ACCESS])
+    async with storage.get_session_factory()() as session:
+        stored_grant = await session.get(OAuthGrant, grant_id)
+        refresh_tokens = (await session.execute(select(OAuthRefreshToken))).scalars().all()
+
+    assert stored_grant is not None
+    assert json.loads(stored_grant.scopes_json) == list(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
+    assert {token.scope for token in refresh_tokens} == {
+        "clients.read pets.read offline_access",
+        " ".join([*TOKEN_PRESET_SCOPES[PRESET_REPORT_AI], OAUTH_SCOPE_OFFLINE_ACCESS]),
+    }
 
     await engine.dispose()
     storage.reset_storage_state()

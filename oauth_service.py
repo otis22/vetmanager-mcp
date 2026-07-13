@@ -145,6 +145,43 @@ def _oauth_scope_string(scopes: tuple[str, ...] | list[str]) -> str:
     return " ".join(normalize_oauth_requested_scopes(scopes))
 
 
+def _protocol_scopes_from_oauth_scope(scope: str) -> list[str]:
+    return [
+        value
+        for value in scope.split()
+        if value.strip() == OAUTH_SCOPE_OFFLINE_ACCESS
+    ]
+
+
+def get_effective_oauth_scope_for_preset(
+    access_preset: str | None,
+    stored_scope: str,
+) -> str:
+    """Return the OAuth scope that should be effective for a stored grant.
+
+    Older ChatGPT grants can have `access_preset=report_ai` while their access
+    and refresh tokens still store the pre-stage-202 intersection scope. The
+    owner consented to the preset, so runtime and refresh must honor the preset.
+    """
+    if access_preset not in CHATGPT_OAUTH_ACCESS_PRESETS:
+        return _oauth_scope_string(stored_scope.split())
+    return _oauth_scope_string(
+        [
+            *TOKEN_PRESET_SCOPES[access_preset],
+            *_protocol_scopes_from_oauth_scope(stored_scope),
+        ]
+    )
+
+
+def get_effective_oauth_tool_scopes_for_preset(
+    access_preset: str | None,
+    stored_scope: str,
+) -> list[str]:
+    return normalize_oauth_tool_scopes(
+        get_effective_oauth_scope_for_preset(access_preset, stored_scope).split()
+    )
+
+
 def _is_full_access_scope(scope: str) -> bool:
     return is_broad_oauth_full_access_scope(normalize_oauth_tool_scopes(scope.split()))
 
@@ -771,10 +808,18 @@ async def exchange_oauth_refresh_token(session: AsyncSession, form: dict[str, st
         await session.commit()
         raise OAuthRequestError("invalid_grant", "Refresh token reuse detected.")
 
+    effective_scope = get_effective_oauth_scope_for_preset(
+        grant.access_preset,
+        refresh_token.scope,
+    )
+    effective_tool_scopes = normalize_oauth_tool_scopes(effective_scope.split())
+    if json.loads(grant.scopes_json or "[]") != effective_tool_scopes:
+        grant.scopes_json = json.dumps(effective_tool_scopes, ensure_ascii=True)
+
     token_payload = await _issue_oauth_token_pair(
         session,
         grant_id=grant.id,
-        scope=refresh_token.scope,
+        scope=effective_scope,
         resource=refresh_token.resource,
     )
     new_refresh_token = await session.scalar(

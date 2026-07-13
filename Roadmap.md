@@ -3605,3 +3605,34 @@ read-only tool surface; `Analytics` должен быть `Read only` + рабо
   Deploy Prod `29211645032` green; production MCP smoke returned 120 tools and
   `get_pet_profile(14)` returned `pet`, `owner`, 5 medical cards and 5 invoices
   with invoice document keys, `partial=false`)
+
+## Этап 204. Legacy ChatGPT OAuth grants honor selected preset — `in_progress`
+
+Источник: пользователь 2026-07-13 сообщил, что после деплоя 202/203 в ChatGPT
+повторяется отказ по запросу «Медицинский профиль Альфа», и ChatGPT всё ещё
+показывает предупреждение по правам. Production smoke нового OAuth flow был
+зелёным, значит проблема в уже выданных до stage 202 OAuth grants/tokens.
+
+Цель: старые ChatGPT OAuth grants, где пользователь уже выбрал preset
+(`Analytics`, `Frontdesk` и т.д.), должны на runtime и refresh использовать
+effective scopes выбранного preset-а, а не старое intersection значение,
+сохранённое в access/refresh token scope до stage 202.
+
+- 204.1 Root cause: подтвердить, что existing grants с `access_preset` могут
+  иметь narrow token scope (`clients.read pets.read`), а refresh переиздаёт этот
+  narrow scope; runtime также читает scope из access token. — `done`
+- 204.2 OAuth refresh/runtime hotfix: вычислять effective scope из
+  `OAuthGrant.access_preset`, сохранять OAuth protocol scopes вроде
+  `offline_access`, обновлять `OAuthGrant.scopes_json` при refresh и использовать
+  effective preset scopes в runtime credentials. — `done`
+- 204.3 Regression tests: покрыть старый active access token с
+  `access_preset=report_ai` и narrow scope; покрыть refresh такого grant-а,
+  который должен вернуть полный Analytics scope и обновить stored grant scopes.
+  — `done`
+- 204.4 Checks/review/deploy/smoke: targeted tests, full suite, audit, review,
+  commit/push/deploy, production smoke старого/narrow grant или эквивалентного
+  synthetic сценария. — `in_progress`
+  (targeted: new regressions `2 passed`, OAuth file `42 passed`,
+  OAuth/runtime/profile `58 passed, 20 deselected`; full suite
+  `1363 passed, 2 skipped, 65 deselected`; Spark final `[]`; Claude Opus final
+  `{"findings":[]}`)

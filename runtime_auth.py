@@ -15,7 +15,7 @@ from domain_validation import validate_domain as _validate_domain
 from exceptions import AuthError, VetmanagerError
 from oauth_metadata import get_mcp_resource_url
 from oauth_challenge import oauth_challenge_details
-from oauth_service import OAUTH_ACCESS_TOKEN_PREFIX, normalize_oauth_tool_scopes
+from oauth_service import OAUTH_ACCESS_TOKEN_PREFIX, get_effective_oauth_tool_scopes_for_preset
 from request_auth import get_bearer_token
 from secret_manager import get_storage_encryption_key
 from storage import get_session_factory
@@ -162,7 +162,12 @@ async def _resolve_oauth_runtime_credentials(raw_token: str) -> RuntimeCredentia
         access_token_id = access_token.id
         account_id = grant.account_id
         connection_id = grant.vetmanager_connection_id
-        scopes = tuple(normalize_oauth_tool_scopes(access_token.scope.split()))
+        scopes = tuple(
+            get_effective_oauth_tool_scopes_for_preset(
+                grant.access_preset,
+                access_token.scope,
+            )
+        )
         is_depersonalized = True if grant.is_depersonalized is not False else False
         access_token.last_used_at = now
         grant.last_used_at = now

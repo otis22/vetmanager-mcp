@@ -10474,3 +10474,48 @@ Checks so far:
     the same production endpoints, not the real ChatGPT UI automation. The
     redirect host was `chat.openai.com`, and the OAuth/MCP contract that ChatGPT
     uses was exercised end-to-end.
+
+## Этап 204 Legacy ChatGPT OAuth grants honor selected preset — 2026-07-13
+
+- **Context**: пользователь повторно увидел отказ ChatGPT на запрос
+  «Медицинский профиль Альфа» и предупреждение ChatGPT по правам после stage
+  202/203 deploy.
+- **Root cause**:
+  - Stage 202 исправил новые OAuth authorize/consent/token flows, но уже
+    существующие ChatGPT grants/tokens не переиздаются автоматически.
+  - Старый grant мог хранить `access_preset=report_ai`, но access/refresh token
+    `scope` оставался pre-stage-202 intersection, например
+    `clients.read pets.read`.
+  - `exchange_oauth_refresh_token()` переиздавал новый token pair со старым
+    `refresh_token.scope`, а runtime credentials брали scopes из
+    `OAuthAccessToken.scope`. Поэтому ChatGPT продолжал видеть narrow granted
+    scopes и мог не вызвать `get_pet_profile` с нужными правами.
+- **Decision**:
+  - Если `OAuthGrant.access_preset` установлен и входит в ChatGPT OAuth presets,
+    effective OAuth scope берётся из `TOKEN_PRESET_SCOPES[access_preset]`;
+    protocol scopes вроде `offline_access` сохраняются из stored token scope.
+  - Refresh возвращает effective preset scope и обновляет `OAuthGrant.scopes_json`
+    до effective tool scopes.
+  - Runtime credentials для старых active access tokens тоже используют
+    effective preset scopes, чтобы не ждать истечения старого access token.
+- **Checks so far**:
+  - New targeted regressions:
+    `docker compose --profile test run --rm test pytest tests/test_stage173_oauth_metadata.py::test_legacy_preset_oauth_access_token_uses_effective_preset_scopes tests/test_stage173_oauth_metadata.py::test_legacy_preset_oauth_refresh_upgrades_token_scope_to_effective_preset`
+    — `2 passed`.
+  - OAuth file:
+    `docker compose --profile test run --rm test pytest tests/test_stage173_oauth_metadata.py`
+    — `42 passed`.
+  - OAuth/runtime/profile targeted:
+    `docker compose --profile test run --rm test pytest tests/test_stage173_oauth_metadata.py tests/test_runtime_auth.py tests/test_e2e_mock_clinical_profiles.py -k "oauth or runtime or pet_profile"`
+    — `58 passed, 20 deselected`.
+  - Full suite:
+    `docker compose --profile test run --rm test` —
+    `1363 passed, 2 skipped, 65 deselected`.
+- **Reviews**:
+  - Spark review on uncommitted diff: read-only run hit the known `bwrap`
+    runtime issue and was repeated once with `-s danger-full-access` and strict
+    review-only prompt. Result: `[]`.
+  - Claude Opus review on inline uncommitted diff with tools disabled:
+    `{"findings":[]}`.
+- **Pending**: audit, commit/push/deploy, production smoke for
+  legacy/narrow preset grant behavior.
