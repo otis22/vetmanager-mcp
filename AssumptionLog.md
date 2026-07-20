@@ -10583,3 +10583,57 @@ Checks so far:
     `vetmanager-mcp-overview`, title `Vetmanager MCP Overview`, 29 panels,
     rows: Service, HTTP, MCP Tools, Upstream Vetmanager, Auth/OAuth/Product,
     Cache, Activation.
+
+## Этап 206 Vetmanager host resolution resilience — 2026-07-20
+
+- **Context**: production feedback reports `#26`-`#35` from `2026-07-17` are one
+  DNS/host-resolution cluster, not ten independent product bugs. Affected
+  tools: `get_clients`, `get_cassa_closes`,
+  `get_medical_cards_by_date/get_daily_schedule`.
+- **Decision**:
+  - Created PRD `PRD/этап-206-vetmanager-host-resolution-resilience.md`.
+  - Added Roadmap stage 206 as `todo`.
+  - The task must classify billing-api failures separately from resolved
+    Vetmanager host DNS/connect/read/network failures, and must keep logs,
+    metrics and ToolError hints operator-safe.
+  - Post-fix closure is part of the task: after deploy, verify smoke/metrics/log
+    privacy, create/update one production `known_issues` entry, link/resolve
+    feedback reports `#26`-`#35`, and rerun product metrics.
+- **Architecture/review gates**:
+  - Architecture Critique is required before implementation because the task
+    touches production behavior, observability semantics and upstream transport
+    boundaries.
+  - PRD Spark/Claude review has not been run yet; this turn only created the
+    backlog task per user request.
+
+- **PRD and Architecture Critique (workflow continuation)**:
+  - Spark read-only PRD review hit the documented `bwrap` sandbox failure and
+    was retried once with strict review-only `danger-full-access` fallback.
+  - Accepted: add typed transport taxonomy, billing HTTP/malformed/invalid
+    origin metrics, bounded reason values, and regression coverage.
+  - Claude Opus Architecture Critique rejected any persistent last-known-good
+    origin fallback: an outage cannot prove that a clinic has not migrated
+    hosts, so stale routing can misdirect authenticated traffic. Existing
+    success-only TTL cache remains the only bounded reuse.
+  - Accepted: DNS is not a separate metric class because `httpx.ConnectError`
+    cannot reliably distinguish it from connection refusal without fragile
+    parsing; it maps to `connect_error`.
+  - Accepted: keep billing and clinic transport metrics on existing targets
+    `billing_api` and `vetmanager_api`; HTTP failure reasons are bounded to
+    `http_4xx` / `http_5xx`; one request correlation ID must traverse billing
+    resolution and the clinic request.
+  - Rejected as scope expansion: a new billing breaker or negative-cache.
+    Existing per-call retry is one attempt and concurrent lookups are
+    coalesced; changing availability semantics needs a separate incident-backed
+    task.
+- **Implementation and verification**:
+  - Added bounded transport reasons (`connect_timeout`, `read_timeout`,
+    `timeout`, `connect_error`, `network_error`) and HTTP classes (`http_4xx`,
+    `http_5xx`) for `billing_api` and `vetmanager_api` metrics.
+  - Billing malformed JSON, null nested payloads and invalid origins now return
+    safe errors and failure metrics without treating them as `http_200`.
+  - Full suite: `1373 passed, 2 skipped, 65 deselected`.
+  - Final Spark review candidate (billing HTTP no retry) was rejected: the PRD
+    intentionally retains transport-only retry. Final Claude Opus review found
+    null `data` parsing; fixed with regression coverage. The earlier Claude
+    import candidate was rejected after verification: the import already exists.

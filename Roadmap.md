@@ -3666,3 +3666,29 @@ Vetmanager, auth/OAuth/product counters, cache и activation telemetry.
   `29734847181` green; production Grafana API returned dashboard
   `vetmanager-mcp-overview` with 29 panels and rows Service, HTTP, MCP Tools,
   Upstream Vetmanager, Auth/OAuth/Product, Cache, Activation)
+
+## Этап 206. Vetmanager host resolution resilience — `in_progress`
+
+Источник: production feedback reports `#26`-`#35` от `2026-07-17`: десять
+новых model reports образуют один DNS/host-resolution cluster. MCP runtime не
+смог получить данные из Vetmanager для `get_clients`, `get_cassa_closes`,
+`get_medical_cards_by_date` и `get_daily_schedule`, хотя сервисные `/healthz`
+и `/readyz` на `2026-07-20` зелёные.
+
+Цель: разделить и сделать наблюдаемыми причины billing-api, resolved-host DNS,
+connect/read timeout и network failures; улучшить operator-safe diagnostics и
+после фикса закрыть production feedback reports `#26`-`#35` одним
+verified known issue.
+
+- 206.1 PRD/research + Architecture Critique: current failure path,
+  exception taxonomy, logs/metrics inventory, решение по last-known-good
+  fallback. — `done`
+- 206.2 Failure classification: billing API vs resolved Vetmanager host
+  DNS/connect/read/network failures. — `done`
+- 206.3 Observability: bounded structured logs/metrics и stable ToolError hints
+  без credentials/PII/payload leaks. — `done`
+- 206.4 Optional resilience: last-known-good validated origin fallback, только
+  если review подтвердит acceptable stale-routing risk. — `done` (rejected: stale routing risk)
+- 206.5 Post-fix production closure: deploy smoke, verify metrics/log privacy,
+  create/update known issue, link/resolve reports `#26`-`#35`, rerun product
+  metrics. — `todo`

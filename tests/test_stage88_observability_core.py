@@ -222,8 +222,8 @@ async def test_network_error_emits_structured_warning_and_records_latency(monkey
 
     httpx.ConnectError is a subclass of httpx.RequestError, so it flows
     through the `except httpx.RequestError` branch in vetmanager_client._request
-    and produces event_name='vm_upstream_network_error' plus the
-    upstream_requests_total{status='network_error'} counter bump.
+    and produces event_name='vm_upstream_network_error' plus the bounded
+    upstream_requests_total{status='connect_error'} counter bump.
 
     Guards against regression where the two branches drift (e.g. wrong
     event_name, missing field, latency not recorded).
@@ -281,7 +281,7 @@ async def test_network_error_emits_structured_warning_and_records_latency(monkey
     assert record.error_class == "ConnectError"
 
     snap = snapshot_service_metrics()
-    assert snap["upstream_requests_total"].get("vetmanager_api|network_error") == 1
+    assert snap["upstream_requests_total"].get("vetmanager_api|connect_error") == 1
 
 
 # ── per-tool metric via crud_helpers ────────────────────────────────────────

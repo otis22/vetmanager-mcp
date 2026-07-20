@@ -433,7 +433,9 @@ async def test_resolve_host_leader_cancellation_propagates_and_clears_inflight(
     await reset_billing_resolver()
     started = asyncio.Event()
 
-    async def never_finishes(domain: str, *, max_retries: int) -> str:
+    async def never_finishes(
+        domain: str, *, max_retries: int, correlation_id: str | None = None
+    ) -> str:
         started.set()
         await asyncio.Future()
         return RESOLVED_HOST
@@ -459,7 +461,9 @@ async def test_resolve_host_leader_cancellation_propagates_and_clears_inflight(
         await second
     assert DOMAIN not in host_resolver._inflight_resolutions_by_loop.get(loop, {})
 
-    async def succeeds(domain: str, *, max_retries: int) -> str:
+    async def succeeds(
+        domain: str, *, max_retries: int, correlation_id: str | None = None
+    ) -> str:
         return RESOLVED_HOST
 
     monkeypatch.setattr(

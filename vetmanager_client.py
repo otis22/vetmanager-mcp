@@ -22,6 +22,7 @@ from domain_validation import validate_domain as validate_runtime_domain
 from runtime_auth import get_current_runtime_credentials, resolve_runtime_credentials
 from service_metrics import record_upstream_failure, record_upstream_request
 from token_scopes import required_scope_for_request
+from upstream_transport import classify_http_status, classify_transport_error
 from vetmanager_auth import VetmanagerAuthContext
 # Stage 103d BC note: the `_BREAKER_*` names below are re-exports of the
 # canonical constants in `vm_transport.breaker`. They are snapshots — the
@@ -246,7 +247,11 @@ class VetmanagerClient:
         if not self._domain:
             raise VetmanagerError("Missing Vetmanager domain in runtime credentials.")
         await self._pace_requests()
-        self._base_url = await resolve_vetmanager_host(self._domain)
+        context = get_current_request_context()
+        self._base_url = await resolve_vetmanager_host(
+            self._domain,
+            correlation_id=context.get("correlation_id"),
+        )
         return self._base_url
 
     def _headers(self) -> dict[str, str]:
@@ -438,10 +443,11 @@ class VetmanagerClient:
                     # Stage 105.2 (B2 fix): ONE breaker failure per logical call.
                     await _breaker_record_failure(domain_key)
                     _breaker_resolved = True
-                    record_upstream_failure(target="vetmanager_api", reason="timeout")
+                    reason = classify_transport_error(exc)
+                    record_upstream_failure(target="vetmanager_api", reason=reason)
                     record_upstream_request(
                         target="vetmanager_api",
-                        status="timeout",
+                        status=reason,
                         duration_seconds=elapsed,
                     )
                     RUNTIME_LOGGER.warning(
@@ -456,7 +462,9 @@ class VetmanagerClient:
                             "attempt": attempt + 1,
                         },
                     )
-                    raise VetmanagerTimeoutError(f"Request to {url} timed out") from exc
+                    raise VetmanagerTimeoutError(
+                        "Timeout requesting Vetmanager upstream. Please retry shortly."
+                    ) from exc
                 except (AuthError, NotFoundError):
                     # True 4xx (401/403/404) — upstream is alive, just rejected
                     # the request. During HALF_OPEN probe this MUST clear
@@ -482,10 +490,11 @@ class VetmanagerClient:
                     # Stage 105.2 (B2 fix): one breaker failure per logical call.
                     await _breaker_record_failure(domain_key)
                     _breaker_resolved = True
-                    record_upstream_failure(target="vetmanager_api", reason="network_error")
+                    reason = classify_transport_error(exc)
+                    record_upstream_failure(target="vetmanager_api", reason=reason)
                     record_upstream_request(
                         target="vetmanager_api",
-                        status="network_error",
+                        status=reason,
                         duration_seconds=elapsed,
                     )
                     RUNTIME_LOGGER.warning(
@@ -501,7 +510,9 @@ class VetmanagerClient:
                             "error_class": exc.__class__.__name__,
                         },
                     )
-                    raise VetmanagerError(f"Network error requesting {url}: {exc}") from exc
+                    raise VetmanagerError(
+                        "Network error requesting Vetmanager upstream. Please retry shortly."
+                    ) from exc
         finally:
             # Stage 106.1 (F2 fix): clear breaker probe_in_flight on any
             # UNEXPECTED exit (CancelledError, shutdown, KeyboardInterrupt).
@@ -566,7 +577,7 @@ class VetmanagerClient:
             # on local bugs and wakes SRE on-call with false positives.
             if response.status_code >= 500:
                 record_upstream_failure(
-                    target="vetmanager_api", reason=f"http_{response.status_code}"
+                    target="vetmanager_api", reason=classify_http_status(response.status_code)
                 )
             message = f"Upstream API error (HTTP {response.status_code})"
             if vm_error_code:

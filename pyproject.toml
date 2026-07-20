@@ -66,6 +66,7 @@ only-include = [
     "tool_oauth_security.py",
     "tool_scope_security.py",
     "tools",
+    "upstream_transport.py",
     "validators.py",
     "vetmanager_auth.py",
     "vetmanager_client.py",

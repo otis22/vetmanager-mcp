@@ -33,7 +33,9 @@ from env_utils import env_float
 from exceptions import HostResolutionError, VetmanagerError, VetmanagerTimeoutError
 from host_validation import validate_resolved_vetmanager_origin
 from observability_logging import RUNTIME_LOGGER
+from request_context import get_current_request_context
 from service_metrics import record_upstream_failure, record_upstream_request
+from upstream_transport import classify_http_status, classify_transport_error
 
 
 BILLING_API = "https://billing-api.vetmanager.cloud/host/{domain}"
@@ -130,6 +132,7 @@ async def resolve_vetmanager_host(
     domain: str,
     *,
     max_retries: int = _DEFAULT_MAX_RETRIES,
+    correlation_id: str | None = None,
 ) -> str:
     """Resolve clinic domain to validated HTTPS origin via billing API.
 
@@ -172,7 +175,9 @@ async def resolve_vetmanager_host(
         task = inflight.get(domain)
         if task is None:
             task = asyncio.create_task(
-                _resolve_vetmanager_host_uncached(domain, max_retries=max_retries)
+                _resolve_vetmanager_host_uncached(
+                    domain, max_retries=max_retries, correlation_id=correlation_id
+                )
             )
             inflight[domain] = task
             task.add_done_callback(
@@ -202,34 +207,62 @@ async def _resolve_vetmanager_host_uncached(
     domain: str,
     *,
     max_retries: int,
+    correlation_id: str | None = None,
 ) -> str:
     """Resolve host after cache/coalescing fast paths have been handled."""
 
     url = BILLING_API.format(domain=domain)
     client = await _get_shared_client()
+    correlation_id = correlation_id or get_current_request_context().get("correlation_id")
 
     for attempt in range(max_retries + 1):
         started = time.monotonic()
         try:
             response = await client.get(url)
             elapsed = time.monotonic() - started
-            # Stage 107.7: latency metric for billing_api.
-            record_upstream_request(
-                target="billing_api",
-                status=f"http_{response.status_code}",
-                duration_seconds=elapsed,
-            )
-            response.raise_for_status()
-            data = response.json()
-            host = data.get("data", {}).get("url") or data.get("url")
-            if not host:
+            if response.status_code >= 400:
+                reason = classify_http_status(response.status_code)
+                record_upstream_failure(target="billing_api", reason=reason)
+                record_upstream_request(
+                    target="billing_api", status=reason, duration_seconds=elapsed,
+                )
                 raise HostResolutionError(
-                    f"Unexpected billing API response for domain '{domain}'."
+                    f"Billing API returned HTTP {response.status_code}. Please retry shortly."
+                )
+            try:
+                data = response.json()
+            except ValueError:
+                data = None
+            nested_data = data.get("data") if isinstance(data, dict) else None
+            host = (
+                nested_data.get("url") or data.get("url")
+                if isinstance(nested_data, dict)
+                else data.get("url") if isinstance(data, dict) else None
+            )
+            if not host:
+                record_upstream_failure(target="billing_api", reason="malformed_response")
+                record_upstream_request(
+                    target="billing_api", status="malformed_response", duration_seconds=elapsed,
+                )
+                raise HostResolutionError(
+                    "Unexpected billing API host response. Please retry shortly."
                 )
             host = host.rstrip("/")
             if not host.startswith("http"):
                 host = f"https://{host}"
-            validated = validate_resolved_vetmanager_origin(host, domain=domain)
+            try:
+                validated = validate_resolved_vetmanager_origin(host, domain=domain)
+            except HostResolutionError as exc:
+                record_upstream_failure(target="billing_api", reason="invalid_origin")
+                record_upstream_request(
+                    target="billing_api", status="invalid_origin", duration_seconds=elapsed,
+                )
+                raise HostResolutionError(
+                    "Billing API returned an invalid host response. Please retry shortly."
+                ) from exc
+            record_upstream_request(
+                target="billing_api", status="http_200", duration_seconds=elapsed,
+            )
             RUNTIME_LOGGER.debug(
                 "Resolved billing host.",
                 extra={
@@ -250,32 +283,38 @@ async def _resolve_vetmanager_host_uncached(
             if attempt < max_retries:
                 await asyncio.sleep(0.1 * (attempt + 1))
                 continue
-            record_upstream_failure(target="billing_api", reason="timeout")
+            reason = classify_transport_error(exc)
+            record_upstream_failure(target="billing_api", reason=reason)
             record_upstream_request(
-                target="billing_api", status="timeout", duration_seconds=elapsed,
+                target="billing_api", status=reason, duration_seconds=elapsed,
+            )
+            RUNTIME_LOGGER.warning(
+                "Billing API transport failure",
+                extra={"event_name": "billing_api_transport_failure", "domain": domain,
+                       "target": "billing_api", "reason": reason, "attempt": attempt + 1,
+                       "correlation_id": correlation_id},
             )
             raise VetmanagerTimeoutError(
-                f"Timeout resolving host for domain '{domain}'"
-            ) from exc
-        except httpx.HTTPStatusError as exc:
-            record_upstream_failure(
-                target="billing_api",
-                reason=f"http_{exc.response.status_code}",
-            )
-            raise HostResolutionError(
-                f"Billing API returned {exc.response.status_code} for domain '{domain}'."
+                "Timeout resolving Vetmanager host. Please retry shortly."
             ) from exc
         except httpx.RequestError as exc:
             elapsed = time.monotonic() - started
             if attempt < max_retries:
                 await asyncio.sleep(0.1 * (attempt + 1))
                 continue
-            record_upstream_failure(target="billing_api", reason="network_error")
+            reason = classify_transport_error(exc)
+            record_upstream_failure(target="billing_api", reason=reason)
             record_upstream_request(
-                target="billing_api", status="network_error", duration_seconds=elapsed,
+                target="billing_api", status=reason, duration_seconds=elapsed,
+            )
+            RUNTIME_LOGGER.warning(
+                "Billing API transport failure",
+                extra={"event_name": "billing_api_transport_failure", "domain": domain,
+                       "target": "billing_api", "reason": reason, "attempt": attempt + 1,
+                       "correlation_id": correlation_id},
             )
             raise VetmanagerError(
-                f"Network error resolving host for domain '{domain}': {exc}"
+                "Network error resolving Vetmanager host. Please retry shortly."
             ) from exc
 
     raise VetmanagerError(f"Failed to resolve host for domain '{domain}' after {max_retries + 1} attempts.")
