@@ -10572,3 +10572,14 @@ Checks so far:
   - Claude Opus review on final dashboard/test diff with tools disabled:
     `{"findings":[]}`.
 - **Pending**: commit/push/deploy, production Grafana API smoke.
+- **Push/deploy/smoke**:
+  - Pushed `main` through commit `6983686`.
+  - GitHub Tests `29734662835` passed: `fast` job green in `2m52s`,
+    `default` job green in `3m7s`.
+  - Deploy Prod `29734847181` passed: deploy job green in `45s`.
+  - Public HTTPS smoke after deploy: `/healthz` returned 200 `status=ok`,
+    `/readyz` returned 200 with storage ok.
+  - Production Grafana API smoke returned dashboard
+    `vetmanager-mcp-overview`, title `Vetmanager MCP Overview`, 29 panels,
+    rows: Service, HTTP, MCP Tools, Upstream Vetmanager, Auth/OAuth/Product,
+    Cache, Activation.

@@ -3642,7 +3642,7 @@ effective scopes выбранного preset-а, а не старое intersecti
   cards and 5 invoices; refresh returns full Analytics scope + `offline_access`;
   temporary production rows cleaned up)
 
-## Этап 205. Grafana metrics dashboard — `in_progress`
+## Этап 205. Grafana metrics dashboard — `done`
 
 Источник: пользователь 2026-07-20 попросил собрать ещё дашборд метрик после
 открытия production Grafana.
@@ -3657,8 +3657,12 @@ Vetmanager, auth/OAuth/product counters, cache и activation telemetry.
   с секциями Service, HTTP, MCP Tools, Upstream Vetmanager,
   Auth/OAuth/Product, Cache, Activation. — `done`
 - 205.3 Checks/deploy/smoke: JSON validation, commit/push/deploy, production
-  Grafana API smoke для `vetmanager-mcp-overview`. — `in_progress`
+  Grafana API smoke для `vetmanager-mcp-overview`. — `done`
   (JSON validation passed; Stage 190 targeted `5 passed, 1 skipped`; production
   Prometheus query validation passed; Spark review accepted windowed HTTP max
   latency finding and rejected invalid `quantile()` finding because production
-  Prometheus API validated the query; Claude Opus final `{"findings":[]}`)
+  Prometheus API validated the query; Claude Opus final `{"findings":[]}`;
+  pushed `6983686`; GitHub Tests `29734662835` green; Deploy Prod
+  `29734847181` green; production Grafana API returned dashboard
+  `vetmanager-mcp-overview` with 29 panels and rows Service, HTTP, MCP Tools,
+  Upstream Vetmanager, Auth/OAuth/Product, Cache, Activation)
