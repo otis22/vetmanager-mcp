@@ -10542,3 +10542,33 @@ Checks so far:
     returned a new token pair with full Analytics scope plus `offline_access`.
   - Temporary production smoke rows were removed; cleanup check returned
     `accounts=0`, `clients=0`, `grants=0`.
+
+## Этап 205 Grafana metrics dashboard — 2026-07-20
+
+- **Context**: пользователь попросил собрать дополнительный дашборд метрик после
+  открытия production Grafana через SSH tunnel.
+- **Decision**:
+  - Обновляем provisioned dashboard `vetmanager-mcp-overview`, а не правим
+    Grafana вручную, чтобы dashboard переживал restart/deploy.
+  - Используем только уже экспортируемые Prometheus метрики из
+    `service_metrics.py` и стандартный Prometheus `up`.
+- **Implemented**:
+  - `ops/grafana/dashboards/vetmanager-overview.json` расширен до 29 panels и
+    7 секций: Service, HTTP, MCP Tools, Upstream Vetmanager,
+    Auth/OAuth/Product, Cache, Activation.
+- **Checks so far**:
+  - `jq empty ops/grafana/dashboards/vetmanager-overview.json` — passed.
+  - Production Prometheus API query validation для dashboard PromQL — all
+    expressions returned `status=success`.
+  - Targeted:
+    `docker compose --profile test run --rm test pytest tests/test_stage190_observability_stack.py`
+    — `5 passed, 1 skipped`.
+  - Spark review returned two findings:
+    - accepted medium: HTTP max latency should be windowed; fixed with
+      `max(max_over_time(vetmanager_http_request_latency_seconds_max[$__rate_interval]))`;
+    - rejected high: `quantile(0.95, vector)` was claimed invalid, but it is a
+      valid PromQL aggregation operator and production Prometheus API returned
+      `status=success` for the exact query.
+  - Claude Opus review on final dashboard/test diff with tools disabled:
+    `{"findings":[]}`.
+- **Pending**: commit/push/deploy, production Grafana API smoke.

@@ -3641,3 +3641,24 @@ effective scopes выбранного preset-а, а не старое intersecti
   Analytics effective scopes and `get_pet_profile(14)` returns owner, 5 medical
   cards and 5 invoices; refresh returns full Analytics scope + `offline_access`;
   temporary production rows cleaned up)
+
+## Этап 205. Grafana metrics dashboard — `in_progress`
+
+Источник: пользователь 2026-07-20 попросил собрать ещё дашборд метрик после
+открытия production Grafana.
+
+Цель: расширить provisioned Grafana dashboard `Vetmanager MCP Overview`, чтобы
+в одном месте были видны service health, HTTP, MCP tool calls, upstream
+Vetmanager, auth/OAuth/product counters, cache и activation telemetry.
+
+- 205.1 PRD/research: проверить существующий provisioning, datasource и
+  экспортируемые Prometheus метрики. — `done`
+- 205.2 Dashboard: обновить `ops/grafana/dashboards/vetmanager-overview.json`
+  с секциями Service, HTTP, MCP Tools, Upstream Vetmanager,
+  Auth/OAuth/Product, Cache, Activation. — `done`
+- 205.3 Checks/deploy/smoke: JSON validation, commit/push/deploy, production
+  Grafana API smoke для `vetmanager-mcp-overview`. — `in_progress`
+  (JSON validation passed; Stage 190 targeted `5 passed, 1 skipped`; production
+  Prometheus query validation passed; Spark review accepted windowed HTTP max
+  latency finding and rejected invalid `quantile()` finding because production
+  Prometheus API validated the query; Claude Opus final `{"findings":[]}`)

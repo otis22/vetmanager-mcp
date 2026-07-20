@@ -101,43 +101,49 @@ def test_stage190_grafana_provisioning_and_dashboard_queries_are_safe() -> None:
     panel_titles = {panel["title"] for panel in dashboard["panels"]}
     panel_ids = [panel["id"] for panel in dashboard["panels"]]
     assert {
-        "Top tool calls",
-        "Tool call rate",
-        "Tool error rate",
-        "Upstream statuses",
-        "Business events",
-        "Activation telemetry",
+        "Service",
+        "HTTP",
+        "MCP Tools",
+        "Upstream Vetmanager",
+        "Auth, OAuth, Product",
+        "Cache",
+        "HTTP error share",
+        "HTTP latency",
+        "MCP error share",
+        "Tool calls by outcome",
+        "Slowest tool families avg latency",
+        "Top tool families in range",
+        "Upstream requests by status",
+        "Upstream avg latency",
+        "Auth failures",
+        "Business events in range",
+        "Security and reliability counters",
+        "Cache hit ratio",
         "Activation funnel",
-        "New account activation funnel",
-        "Integration failures by reason/device",
+        "Account last request age",
+        "Activation events",
     }.issubset(panel_titles)
     tool_error_panel = next(
-        panel for panel in dashboard["panels"] if panel["title"] == "Tool error rate"
+        panel for panel in dashboard["panels"] if panel["title"] == "MCP error share"
     )
     tool_error_expr = tool_error_panel["targets"][0]["expr"]
     assert 'vetmanager_tool_calls_total{outcome="error"}' in tool_error_expr
     assert "or vector(0)" in tool_error_expr
     assert "clamp_min" in tool_error_expr
     assert "1e-9" in tool_error_expr
+    http_latency_panel = next(
+        panel for panel in dashboard["panels"] if panel["title"] == "HTTP latency"
+    )
+    http_latency_exprs = {target["expr"] for target in http_latency_panel["targets"]}
+    assert any("max_over_time(vetmanager_http_request_latency_seconds_max" in expr for expr in http_latency_exprs)
     activation_telemetry_panel = next(
-        panel for panel in dashboard["panels"] if panel["title"] == "Activation telemetry"
+        panel for panel in dashboard["panels"] if panel["title"] == "Account last request age"
     )
     activation_telemetry_exprs = {
         target["expr"] for target in activation_telemetry_panel["targets"]
     }
-    assert (
-        "(avg(vetmanager_account_last_request_age_hours) or vector(0))"
-        in activation_telemetry_exprs
-    )
-    assert (
-        "(count(vetmanager_account_last_request_age_hours) or vector(0))"
-        in activation_telemetry_exprs
-    )
-    new_account_funnel_panel = next(
-        panel for panel in dashboard["panels"] if panel["title"] == "New account activation funnel"
-    )
-    new_account_funnel_expr = new_account_funnel_panel["targets"][0]["expr"]
-    assert "token_copied" not in new_account_funnel_expr
+    assert "avg(vetmanager_account_last_request_age_hours) or vector(0)" in activation_telemetry_exprs
+    assert "quantile(0.95, vetmanager_account_last_request_age_hours) or vector(0)" in activation_telemetry_exprs
     assert len(panel_ids) == len(set(panel_ids))
     occupied_cells: set[tuple[int, int]] = set()
     for panel in dashboard["panels"]:
@@ -156,11 +162,15 @@ def test_stage190_grafana_provisioning_and_dashboard_queries_are_safe() -> None:
 
     allowed_labels = {
         "endpoint",
+        "route",
         "tool",
         "method",
         "outcome",
         "target",
         "status",
+        "status_code",
+        "source",
+        "preset",
         "event",
         "stage",
         "device",

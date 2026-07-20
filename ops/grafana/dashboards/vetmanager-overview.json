@@ -4,182 +4,336 @@
   },
   "editable": false,
   "fiscalYearStartMonth": 0,
-  "graphTooltip": 0,
+  "graphTooltip": 1,
   "id": null,
   "links": [],
   "panels": [
     {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 100,
+      "panels": [],
+      "title": "Service",
+      "type": "row"
+    },
+    {
       "datasource": {"type": "prometheus", "uid": "Prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1},
       "id": 1,
-      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "single", "sort": "none"}},
-      "targets": [
-        {
-          "expr": "topk(5, sum by (tool) (increase(vetmanager_tool_calls_total[30m])))",
-          "legendFormat": "{{tool}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Top tool calls",
-      "type": "timeseries"
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showPercentChange": false, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "up{job=\"vetmanager-mcp\"}", "instant": true, "legendFormat": "up", "refId": "A"}],
+      "title": "MCP up",
+      "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "Prometheus"},
-      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 1},
       "id": 2,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single", "sort": "none"}},
-      "targets": [
-        {
-          "expr": "sum(rate(vetmanager_tool_calls_total[5m]))",
-          "legendFormat": "tool calls/sec",
-          "refId": "A"
-        }
-      ],
-      "title": "Tool call rate",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "Prometheus"},
-      "fieldConfig": {"defaults": {"unit": "percentunit"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
-      "id": 3,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single", "sort": "none"}},
-      "targets": [
-        {
-          "expr": "(sum(rate(vetmanager_tool_calls_total{outcome=\"error\"}[5m])) or vector(0)) / clamp_min((sum(rate(vetmanager_tool_calls_total[5m])) or vector(0)), 1e-9)",
-          "legendFormat": "tool error rate",
-          "refId": "A"
-        }
-      ],
-      "title": "Tool error rate",
-      "type": "timeseries"
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showPercentChange": false, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "sum(rate(vetmanager_http_requests_total[$__rate_interval]))", "legendFormat": "requests/sec", "refId": "A"}],
+      "title": "HTTP request rate",
+      "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "Prometheus"},
       "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 1},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showPercentChange": false, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "sum(rate(vetmanager_tool_calls_total[$__rate_interval]))", "legendFormat": "calls/sec", "refId": "A"}],
+      "title": "MCP tool rate",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "percentunit"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 1},
       "id": 4,
-      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "single", "sort": "none"}},
-      "targets": [
-        {
-          "expr": "sum by (target, status) (rate(vetmanager_upstream_requests_total[5m]))",
-          "legendFormat": "{{target}} {{status}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Upstream statuses",
-      "type": "timeseries"
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showPercentChange": false, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "(sum(rate(vetmanager_tool_calls_total{outcome=\"error\"}[$__rate_interval])) or vector(0)) / clamp_min(sum(rate(vetmanager_tool_calls_total[$__rate_interval])), 1e-9)", "legendFormat": "error share", "refId": "A"}],
+      "title": "MCP error share",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5},
+      "id": 101,
+      "panels": [],
+      "title": "HTTP",
+      "type": "row"
     },
     {
       "datasource": {"type": "prometheus", "uid": "Prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
       "id": 5,
-      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "single", "sort": "none"}},
-      "targets": [
-        {
-          "expr": "sum by (event) (increase(vetmanager_business_events_total[1h]))",
-          "legendFormat": "{{event}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Business events",
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (route, method, status_code) (rate(vetmanager_http_requests_total[$__rate_interval]))", "legendFormat": "{{method}} {{route}} {{status_code}}", "refId": "A"}],
+      "title": "HTTP requests by route/status",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "Prometheus"},
-      "fieldConfig": {"defaults": {"unit": "h"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "percentunit"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 6},
       "id": 6,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single", "sort": "none"}},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {
-          "expr": "(avg(vetmanager_account_last_request_age_hours) or vector(0))",
-          "legendFormat": "avg last request age",
-          "refId": "A"
-        },
-        {
-          "expr": "(count(vetmanager_account_last_request_age_hours) or vector(0))",
-          "legendFormat": "accounts with activation telemetry",
-          "refId": "B"
-        }
+        {"expr": "(sum(rate(vetmanager_http_requests_total{status_code=~\"5..\"}[$__rate_interval])) or vector(0)) / clamp_min(sum(rate(vetmanager_http_requests_total[$__rate_interval])), 1e-9)", "legendFormat": "5xx", "refId": "A"},
+        {"expr": "(sum(rate(vetmanager_http_requests_total{status_code=~\"4..\"}[$__rate_interval])) or vector(0)) / clamp_min(sum(rate(vetmanager_http_requests_total[$__rate_interval])), 1e-9)", "legendFormat": "4xx", "refId": "B"}
       ],
-      "title": "Activation telemetry",
+      "title": "HTTP error share",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 6},
+      "id": 7,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "sum(rate(vetmanager_http_request_latency_seconds_sum[$__rate_interval])) / clamp_min(sum(rate(vetmanager_http_request_latency_seconds_count[$__rate_interval])), 1e-9)", "legendFormat": "avg", "refId": "A"},
+        {"expr": "max(max_over_time(vetmanager_http_request_latency_seconds_max[$__rate_interval]))", "legendFormat": "window max", "refId": "B"}
+      ],
+      "title": "HTTP latency",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "id": 102,
+      "panels": [],
+      "title": "MCP Tools",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 15},
+      "id": 8,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (outcome) (rate(vetmanager_tool_calls_total[$__rate_interval]))", "legendFormat": "{{outcome}}", "refId": "A"}],
+      "title": "Tool calls by outcome",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 15},
+      "id": 9,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "topk(10, sum by (tool) (rate(vetmanager_tool_call_latency_seconds_sum[$__rate_interval])) / clamp_min(sum by (tool) (rate(vetmanager_tool_call_latency_seconds_count[$__rate_interval])), 1e-9))", "legendFormat": "{{tool}}", "refId": "A"}],
+      "title": "Slowest tool families avg latency",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "Prometheus"},
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24},
-      "id": 7,
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 15},
+      "id": 10,
       "options": {
         "displayMode": "gradient",
-        "legend": {"displayMode": "list", "placement": "bottom"},
+        "legend": {"displayMode": "table", "placement": "right"},
         "orientation": "horizontal",
         "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
         "showUnfilled": true
       },
+      "targets": [{"expr": "topk(12, sum by (tool) (increase(vetmanager_tool_calls_total[$__range])))", "instant": true, "legendFormat": "{{tool}}", "refId": "A"}],
+      "title": "Top tool families in range",
+      "type": "bargauge"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 23},
+      "id": 103,
+      "panels": [],
+      "title": "Upstream Vetmanager",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 24},
+      "id": 11,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (target, status) (rate(vetmanager_upstream_requests_total[$__rate_interval]))", "legendFormat": "{{target}} {{status}}", "refId": "A"}],
+      "title": "Upstream requests by status",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 24},
+      "id": 12,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (target, status) (rate(vetmanager_upstream_request_latency_seconds_sum[$__rate_interval])) / clamp_min(sum by (target, status) (rate(vetmanager_upstream_request_latency_seconds_count[$__rate_interval])), 1e-9)", "legendFormat": "{{target}} {{status}}", "refId": "A"}],
+      "title": "Upstream avg latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 24},
+      "id": 13,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (target, reason) (rate(vetmanager_upstream_failures_total[$__rate_interval]))", "legendFormat": "{{target}} {{reason}}", "refId": "A"}],
+      "title": "Upstream failures",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 32},
+      "id": 104,
+      "panels": [],
+      "title": "Auth, OAuth, Product",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 33},
+      "id": 14,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (source, reason) (rate(vetmanager_auth_failures_total[$__rate_interval]))", "legendFormat": "{{source}} {{reason}}", "refId": "A"}],
+      "title": "Auth failures",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 33},
+      "id": 15,
+      "options": {
+        "displayMode": "gradient",
+        "legend": {"displayMode": "table", "placement": "right"},
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true
+      },
+      "targets": [{"expr": "sum by (event) (increase(vetmanager_business_events_total[$__range]))", "instant": true, "legendFormat": "{{event}}", "refId": "A"}],
+      "title": "Business events in range",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 33},
+      "id": 16,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {
-          "expr": "vetmanager_activation_funnel_accounts",
-          "instant": true,
-          "legendFormat": "{{stage}}",
-          "refId": "A"
-        }
+        {"expr": "sum by (preset) (increase(vetmanager_token_preset_issued_total[$__range]))", "instant": true, "legendFormat": "issued {{preset}}", "refId": "A"},
+        {"expr": "increase(vetmanager_report_ai_long_queued_polls_total[$__range])", "instant": true, "legendFormat": "report ai long queued polls", "refId": "B"},
+        {"expr": "increase(vetmanager_sanitizer_failures_total[$__range])", "instant": true, "legendFormat": "sanitizer failures", "refId": "C"},
+        {"expr": "sum by (reason) (increase(vetmanager_rate_limit_backend_degraded_total[$__range]))", "instant": true, "legendFormat": "rate limit degraded {{reason}}", "refId": "D"}
       ],
+      "title": "Security and reliability counters",
+      "type": "bargauge"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 41},
+      "id": 105,
+      "panels": [],
+      "title": "Cache",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "percentunit"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 42},
+      "id": 17,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum(rate(vetmanager_cache_hits_total[$__rate_interval])) / clamp_min(sum(rate(vetmanager_cache_hits_total[$__rate_interval])) + sum(rate(vetmanager_cache_misses_total[$__rate_interval])), 1e-9)", "legendFormat": "hit ratio", "refId": "A"}],
+      "title": "Cache hit ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 42},
+      "id": 18,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "vetmanager_cache_entries", "legendFormat": "entries", "refId": "A"}],
+      "title": "Cache entries",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 42},
+      "id": 19,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "rate(vetmanager_cache_invalidations_total[$__rate_interval])", "legendFormat": "invalidations", "refId": "A"},
+        {"expr": "rate(vetmanager_cache_evictions_total[$__rate_interval])", "legendFormat": "evictions", "refId": "B"}
+      ],
+      "title": "Cache churn",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 50},
+      "id": 106,
+      "panels": [],
+      "title": "Activation",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 51},
+      "id": 20,
+      "options": {
+        "displayMode": "gradient",
+        "legend": {"displayMode": "table", "placement": "right"},
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true
+      },
+      "targets": [{"expr": "vetmanager_activation_funnel_accounts", "instant": true, "legendFormat": "{{stage}}", "refId": "A"}],
       "title": "Activation funnel",
       "type": "bargauge"
     },
     {
       "datasource": {"type": "prometheus", "uid": "Prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
-      "id": 8,
-      "options": {
-        "displayMode": "gradient",
-        "legend": {"displayMode": "list", "placement": "bottom"},
-        "orientation": "horizontal",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
-        "showUnfilled": true
-      },
+      "fieldConfig": {"defaults": {"unit": "h"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 51},
+      "id": 21,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {
-          "expr": "vetmanager_activation_funnel_accounts{stage=~\"new_registered|integration_saved|token_issued|first_mcp_request\"}",
-          "instant": true,
-          "legendFormat": "{{stage}}",
-          "refId": "A"
-        }
+        {"expr": "avg(vetmanager_account_last_request_age_hours) or vector(0)", "legendFormat": "avg", "refId": "A"},
+        {"expr": "quantile(0.95, vetmanager_account_last_request_age_hours) or vector(0)", "legendFormat": "p95", "refId": "B"}
       ],
-      "title": "New account activation funnel",
-      "type": "bargauge"
+      "title": "Account last request age",
+      "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "Prometheus"},
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
-      "id": 9,
-      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "single", "sort": "none"}},
-      "targets": [
-        {
-          "expr": "sum by (reason, device, auth_mode) (vetmanager_activation_event_accounts{event=\"integration_failed\"})",
-          "instant": true,
-          "legendFormat": "{{reason}} {{device}} {{auth_mode}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Integration failures by reason/device",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 51},
+      "id": 22,
+      "options": {
+        "displayMode": "gradient",
+        "legend": {"displayMode": "table", "placement": "right"},
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true
+      },
+      "targets": [{"expr": "sum by (event, reason) (vetmanager_activation_event_accounts{event=~\"integration_failed|token_issued|first_mcp_request\"})", "instant": true, "legendFormat": "{{event}} {{reason}}", "refId": "A"}],
+      "title": "Activation events",
       "type": "bargauge"
     }
   ],
   "refresh": "30s",
   "schemaVersion": 40,
-  "tags": ["vetmanager-mcp"],
+  "tags": ["vetmanager-mcp", "operations"],
   "templating": {"list": []},
   "time": {"from": "now-6h", "to": "now"},
   "timezone": "browser",
   "title": "Vetmanager MCP Overview",
   "uid": "vetmanager-mcp-overview",
-  "version": 1
+  "version": 2,
+  "weekStart": ""
 }
