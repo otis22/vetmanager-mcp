@@ -3606,7 +3606,7 @@ read-only tool surface; `Analytics` должен быть `Read only` + рабо
   `get_pet_profile(14)` returned `pet`, `owner`, 5 medical cards and 5 invoices
   with invoice document keys, `partial=false`)
 
-## Этап 204. Legacy ChatGPT OAuth grants honor selected preset — `in_progress`
+## Этап 204. Legacy ChatGPT OAuth grants honor selected preset — `done`
 
 Источник: пользователь 2026-07-13 сообщил, что после деплоя 202/203 в ChatGPT
 повторяется отказ по запросу «Медицинский профиль Альфа», и ChatGPT всё ещё
@@ -3631,8 +3631,13 @@ effective scopes выбранного preset-а, а не старое intersecti
   — `done`
 - 204.4 Checks/review/deploy/smoke: targeted tests, full suite, audit, review,
   commit/push/deploy, production smoke старого/narrow grant или эквивалентного
-  synthetic сценария. — `in_progress`
+  synthetic сценария. — `done`
   (targeted: new regressions `2 passed`, OAuth file `42 passed`,
   OAuth/runtime/profile `58 passed, 20 deselected`; full suite
   `1363 passed, 2 skipped, 65 deselected`; Spark final `[]`; Claude Opus final
-  `{"findings":[]}`)
+  `{"findings":[]}`; pushed `80aa07c`; GitHub Tests `29237220558` green;
+  Deploy Prod `29237428320` green; production synthetic legacy grant smoke
+  verified old narrow access token + `access_preset=report_ai` resolves to
+  Analytics effective scopes and `get_pet_profile(14)` returns owner, 5 medical
+  cards and 5 invoices; refresh returns full Analytics scope + `offline_access`;
+  temporary production rows cleaned up)

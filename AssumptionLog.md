@@ -10517,5 +10517,28 @@ Checks so far:
     review-only prompt. Result: `[]`.
   - Claude Opus review on inline uncommitted diff with tools disabled:
     `{"findings":[]}`.
-- **Pending**: audit, commit/push/deploy, production smoke for
-  legacy/narrow preset grant behavior.
+- **Push/deploy/smoke**:
+  - Final audit: `git diff --check` clean.
+  - Pushed `main` through commit `80aa07c`.
+  - GitHub Tests `29237220558` passed: `fast` job green in `3m24s`,
+    `default` job green in `3m34s`.
+  - Deploy Prod `29237428320` passed: deploy job green in `48s`.
+  - Public HTTPS smoke after deploy: `/healthz` returned 200 `status=ok`,
+    `/readyz` returned 200 with storage ok, `/mcp` returned expected 406 without
+    SSE `Accept` header.
+  - Production synthetic legacy grant smoke created a temporary account,
+    Vetmanager connection, OAuth client, OAuth grant and old-style tokens:
+    `OAuthGrant.access_preset=report_ai`, access token scope
+    `clients.read pets.read`, refresh token scope
+    `clients.read pets.read offline_access`.
+  - Runtime resolver for the old narrow access token returned the 10-scope
+    Analytics effective scope, including `medical_cards.read`, `finance.read`
+    and `report_ai.write`.
+  - Production HTTPS MCP smoke with that same old access token returned 120
+    tools and `get_pet_profile(14)` succeeded with `owner`, 5
+    `last_medical_cards`, 5 `last_invoices`, no `section_errors`, and
+    `is_error=false`.
+  - Production `/oauth/token` refresh smoke for the old narrow refresh token
+    returned a new token pair with full Analytics scope plus `offline_access`.
+  - Temporary production smoke rows were removed; cleanup check returned
+    `accounts=0`, `clients=0`, `grants=0`.
