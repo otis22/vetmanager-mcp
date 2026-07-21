@@ -10637,3 +10637,11 @@ Checks so far:
     intentionally retains transport-only retry. Final Claude Opus review found
     null `data` parsing; fixed with regression coverage. The earlier Claude
     import candidate was rejected after verification: the import already exists.
+- **Production closure (2026-07-21)**:
+  - Commit `0cdcc27` passed GitHub Tests `29755017101` and Deploy Prod
+    `29755260139`.
+  - Server-side authenticated smoke passed for `/healthz`, `/readyz`,
+    `/metrics`, local `/mcp`, and public HTTPS `/mcp`.
+  - Production reports `#26`-`#35` were linked to one known issue `#26` with
+    status `fixed`; its report count is 10. Product metrics reports zero new
+    open feedback in the 30-day window.

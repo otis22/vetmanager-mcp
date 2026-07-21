@@ -3667,7 +3667,7 @@ Vetmanager, auth/OAuth/product counters, cache и activation telemetry.
   `vetmanager-mcp-overview` with 29 panels and rows Service, HTTP, MCP Tools,
   Upstream Vetmanager, Auth/OAuth/Product, Cache, Activation)
 
-## Этап 206. Vetmanager host resolution resilience — `in_progress`
+## Этап 206. Vetmanager host resolution resilience — `done`
 
 Источник: production feedback reports `#26`-`#35` от `2026-07-17`: десять
 новых model reports образуют один DNS/host-resolution cluster. MCP runtime не
@@ -3691,4 +3691,4 @@ verified known issue.
   если review подтвердит acceptable stale-routing risk. — `done` (rejected: stale routing risk)
 - 206.5 Post-fix production closure: deploy smoke, verify metrics/log privacy,
   create/update known issue, link/resolve reports `#26`-`#35`, rerun product
-  metrics. — `todo`
+  metrics. — `done`
