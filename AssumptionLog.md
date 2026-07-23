@@ -10645,3 +10645,12 @@ Checks so far:
   - Production reports `#26`-`#35` were linked to one known issue `#26` with
     status `fixed`; its report count is 10. Product metrics reports zero new
     open feedback in the 30-day window.
+
+## Этап 166 Rate-limit production policy gate — 2026-07-23
+
+- **Decision**: stopped by user decision after production verification.
+- **Evidence**: production runs one MCP container with Redis running,
+  `REDIS_URL` configured and `RATE_LIMIT_REQUIRE_REDIS=1`; strict mode already
+  prevents a silent process-local rate-limit fallback.
+- **Resume trigger**: planned multi-instance scaling or a deployment env
+  contract change.

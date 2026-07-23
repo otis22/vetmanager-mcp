@@ -2766,17 +2766,16 @@ Workflow allowance (по согласованию с пользователем 
 - 165.4 Зафиксировать unresolved list в AssumptionLog; если unresolved High/Critical не найдено, явно записать “no accepted unfixed High/Critical findings found” с границами поиска. — `done` (one unresolved accepted finding: `S165-threat-44-5-rate-limit-xff`)
 - 165.5 Full checks where applicable, audit, Spark + strong review, commit/push, AssumptionLog/self-attestation. — `done`
 
-## Этап 166. Rate-limit production policy gate — `todo`
+## Этап 166. Rate-limit production policy gate — `stop`
 
 Источник: Stage 165 inventory `S165-threat-44-5-rate-limit-xff` / threat-model 44.5 residual.
 
 Цель: закрыть residual high-priority availability/security risk не переписывая limiter: Redis backend, shared bearer/web limiter и `RATE_LIMIT_REQUIRE_REDIS=1` уже реализованы. Stage 166 должен только закрепить production policy/deploy gate: в production или multi-instance режиме shared Redis rate-limit backend обязателен, а process-local fallback допустим только при явном documented single-instance waiver.
 
-- 166.1 Создать узкий PRD stage 166: зафиксировать existing implementation baseline (`rate_limit_backend.py`, `RATE_LIMIT_REQUIRE_REDIS=1`, bearer/web shared backend), production topology signal, Redis-required rule, explicit single-instance waiver, fail-fast behavior, env contract, tests/review/deploy criteria. — `todo`
-- 166.2 Реализовать минимальный policy gate: при production/multi-instance сигнале требовать `REDIS_URL` + strict Redis mode или явный single-instance waiver; без silent process-local fallback в production/multi-instance mode. Не менять алгоритм limiter и не переносить cache/request cache в Redis. — `todo`
-- 166.3 Добавить regression tests только для startup/env policy, strict Redis requirement, waiver semantics и того, что bearer/web limiter продолжают использовать existing shared backend. — `todo`
-- 166.4 Обновить deployment notes, release checklist и threat model 44.5: описать Redis-required production contract, single-instance waiver и текущую границу ответственности. — `todo`
-- 166.5 Full checks, audit, Spark + strong review, commit/push/deploy/smoke, AssumptionLog/self-attestation. — `todo`
+- 166.1–166.5 — `stop`: production на 2026-07-23 уже использует один MCP
+  container, running Redis, `REDIS_URL` и `RATE_LIMIT_REQUIRE_REDIS=1`; strict
+  Redis mode исключает silent process-local fallback. Возобновить только перед
+  multi-instance/scaled topology либо при изменении deployment env contract.
 
 ## Этап 167. Feedback report fixed resolution visibility — `done`
 
