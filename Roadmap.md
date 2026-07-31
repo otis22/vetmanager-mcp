@@ -3747,3 +3747,10 @@ UX-принципы (Claude Opus review): один экран — одно де�
   deselected`; Tests `30628053699` green; Deploy Prod `30628255578` green;
   production landing/login/account smoke passed. Claude OAuth/MCP smoke остаётся
   ручной проверкой пользователя.)
+
+## Этап 209. Упрощение лендинга для клиник — `todo`
+
+- 209.1 UI/UX решение и короткие тексты от Claude Opus 5. — `todo`
+- 209.2 Упростить основной путь и убрать технический жаргон. — `todo`
+- 209.3 Уточнить доверительные тексты и пометить пример ответа. — `todo`
+- 209.4 Проверки, review, deploy и production UI smoke. — `todo`
