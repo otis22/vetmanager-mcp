@@ -1607,10 +1607,10 @@ def render_landing_page(script_nonce: str = "") -> str:
   <div class="topbar-wrap">
     <header class="shell topbar">
       <div class="brand">
-        <div class="seal" aria-label="Vetmanager MCP">VM</div>
+        <div class="seal" aria-label="Vetmanager">VM</div>
         <div>
-          <h1>Vetmanager MCP Service</h1>
-          <p>Bearer-only gateway for clinic operations through AI clients</p>
+          <h1>Vetmanager для ИИ-помощника</h1>
+          <p>Помощник для вашей клиники</p>
         </div>
       </div>
       <input type="checkbox" id="menu-toggle" class="menu-toggle" aria-hidden="true">
@@ -1620,10 +1620,11 @@ def render_landing_page(script_nonce: str = "") -> str:
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
           GitHub
         </a>
-        <a class="nav-link" href="#mcp-agent-instructions">Инструкции</a>
-        <a class="nav-link" href="#chatgpt-connector">ChatGPT</a>
+        <a class="nav-link" href="#how-it-works">Как это работает</a>
+        <a class="nav-link" href="#examples">Пример ответа</a>
+        <a class="nav-link" href="#faq">Ваши данные</a>
         <a class="nav-ghost" href="/login">Войти</a>
-        <a class="nav-cta" href="/register">Создать аккаунт</a>
+        <a class="nav-cta" href="/register">Подключить</a>
       </nav>
     </header>
   </div>
@@ -1635,21 +1636,15 @@ def render_landing_page(script_nonce: str = "") -> str:
           <p class="section-label">Для ветклиник и врачей</p>
           <h1>Ваш ИИ-помощник теперь знает <em>вашу клинику</em></h1>
           <p class="hero-lede">
-            Подключите Vetmanager к ChatGPT, Claude или Manus — и спрашивайте про записи,
-            приёмы и клиентов обычными словами.
+            Подключите Vetmanager к ИИ-помощнику, которым вы уже пользуетесь,
+            и спрашивайте о записях, приёмах и выручке обычными словами.
           </p>
-          <p><strong>Выберите помощника, которым уже пользуетесь.</strong></p>
-          <div class="agent-choice" data-testid="agent-choice">
-            <a href="/register?agent=chatgpt">ChatGPT</a>
-            <a href="/register?agent=claude">Claude</a>
-            <a href="/register?agent=manus">Manus</a>
-          </div>
           <div class="cta-row">
             <a class="cta" href="/register">
               Подключить за 2 минуты
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
             </a>
-            <a class="ghost" href="#examples">Посмотреть, что умеет</a>
+            <a class="ghost" href="#examples">Посмотреть пример ответа</a>
           </div>
           <p class="hero-fineprint">По умолчанию помощник только читает данные. Доступ можно изменить или отключить в кабинете.</p>
           <p class="hero-fineprint">Мы не храним данные о клиентах и пациентах. Логин и пароль Vetmanager не сохраняются.</p>
@@ -1657,31 +1652,30 @@ def render_landing_page(script_nonce: str = "") -> str:
           <div class="trust-strip">
             <span class="trust-item">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-              Bearer-only авторизация
+              Логин и пароль от Vetmanager не сохраняются
             </span>
             <span class="trust-item">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 18 22 12 16 6"/><path d="M8 6 2 12 8 18"/></svg>
-              Open Source
+              Данные клиники берём только чтобы ответить на вопрос
             </span>
             <span class="trust-item">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M22 4 12 14.01l-3-3"/></svg>
-              IP-маска на каждый токен
+              Подключение защищено и работает только для вашей клиники
             </span>
           </div>
         </div>
 
-        <aside class="mock-chat rise-in d2" aria-label="Пример ответа AI-ассистента">
+        <aside class="mock-chat rise-in d2" aria-label="Пример ответа ИИ-помощника">
           <div class="mock-head">
             <div class="dots"><i></i><i></i><i></i></div>
-            <span class="label">vetmanager · march 2026</span>
-            <span class="live">Live</span>
+            <span class="label">Пример ответа</span>
           </div>
           <div class="mock-body">
             <div class="bubble user">Какая выручка за март 2026?</div>
             <div class="answer-card">
               <span class="who">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
-                AI-ассистент · из Vetmanager
+                ИИ-помощник · данные Vetmanager
               </span>
               <div class="revenue-headline">
                 <span class="total">₽&nbsp;487 200</span>
@@ -1704,7 +1698,7 @@ def render_landing_page(script_nonce: str = "") -> str:
               </ul>
               <div class="mock-source">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
-                Vetmanager · 234 платежа · <span>обновлено сейчас</span>
+                Данные в примере вымышленные
               </div>
             </div>
           </div>
@@ -1712,24 +1706,18 @@ def render_landing_page(script_nonce: str = "") -> str:
       </div>
     </section>
 
-    <section class="section">
+    <section class="section" id="how-it-works">
       <div class="shell explainer">
         <div class="label-block">
-          <p class="section-label">Контекст</p>
-          <h2>Что такое MCP?</h2>
+          <p class="section-label">Начало работы</p>
+          <h2>Как это работает</h2>
         </div>
         <div class="body">
-          <p>
-            <strong>MCP</strong> (Model Context Protocol) — открытый стандарт, который позволяет AI-ассистентам
-            безопасно подключаться к внешним системам. Этот сервис — MCP-мост к Vetmanager:
-            ваша клиника подключается один раз, а дальше команда получает данные через
-            привычный AI-интерфейс, без необходимости переключаться между экранами Vetmanager.
-          </p>
-          <p>
-            Под капотом — bearer-only авторизация и сервисные токены, которые можно ограничить
-            по IP-маске. На уровне UI — никакой технической специфики: вы задаёте вопрос
-            на русском, агент возвращает ответ по вашим данным.
-          </p>
+          <ol>
+            <li>Зарегистрируйтесь и подключите свою клинику Vetmanager.</li>
+            <li>Откройте ChatGPT, Claude или Manus, которым уже пользуетесь.</li>
+            <li>Задайте вопрос обычными словами — ИИ-помощник ответит по данным вашей клиники.</li>
+          </ol>
         </div>
       </div>
     </section>
@@ -1737,16 +1725,17 @@ def render_landing_page(script_nonce: str = "") -> str:
     <section class="section" id="chatgpt-connector">
       <div class="shell explainer" data-testid="chatgpt-connector-section">
         <div class="label-block">
-          <p class="section-label">ChatGPT</p>
-          <h2>Работает прямо в ChatGPT</h2>
+          <p class="section-label">Ваш выбор</p>
+          <h2>С какими помощниками работает</h2>
         </div>
         <div class="body">
-          <p>
-            Подключите сервис как ChatGPT plugin/app через MCP.
-          </p>
-          <p>
-            Без ручных токенов, с безопасным доступом по умолчанию.
-          </p>
+          <p>Выберите помощника, которым уже пользуетесь. Это необязательно: общая кнопка выше сразу открывает регистрацию.</p>
+          <div class="agent-choice" data-testid="agent-choice">
+            <a href="/register?agent=chatgpt">ChatGPT</a>
+            <a href="/register?agent=claude">Claude</a>
+            <a href="/register?agent=manus">Manus</a>
+          </div>
+          <p>Пользуетесь ChatGPT? После подключения выберите свою клинику в списке подключений и задавайте вопросы в обычном чате. То же самое работает в Claude и Manus.</p>
           <p><a class="inline-link" href="/register">Подключить</a></p>
         </div>
       </div>
@@ -1754,6 +1743,8 @@ def render_landing_page(script_nonce: str = "") -> str:
 
     <section class="section">
       <div class="shell">
+        <details class="disclosure">
+          <summary>Для разработчиков</summary>
         <section class="onboarding" id="mcp-onboarding" data-testid="mcp-onboarding">
           <div data-testid="mcp-onboarding-main-copy">
             <div class="onboarding-head">
@@ -1953,6 +1944,7 @@ def render_landing_page(script_nonce: str = "") -> str:
             </div>
           </div>
         </section>
+        </details>
       </div>
     </section>
 
@@ -2007,7 +1999,7 @@ def render_landing_page(script_nonce: str = "") -> str:
 
         <p style="color: var(--ink-500); font-size: 0.96rem; line-height: 1.65; max-width: 80ch; margin-top: 28px;">
           Сервис сделан для <strong style="color: var(--ink-900)">ветврачей, администраторов и руководителей клиник</strong>,
-          которым нужен быстрый доступ к данным Vetmanager через AI-ассистента.
+          которым нужен быстрый доступ к данным Vetmanager через ИИ-помощника.
         </p>
       </div>
     </section>
@@ -2023,7 +2015,7 @@ def render_landing_page(script_nonce: str = "") -> str:
         <div class="step-list">
           <div class="step-row"><div><strong>Зарегистрироваться</strong><span>Создать аккаунт клиники и открыть личный кабинет.</span></div></div>
           <div class="step-row"><div><strong>Подключить Vetmanager</strong><span>Указать домен клиники и настроить безопасную авторизацию один раз.</span></div></div>
-          <div class="step-row"><div><strong>Работать через AI-ассистента</strong><span>Задавать вопросы по клиентам, пациентам, приёмам, финансам и складу в одном интерфейсе.</span></div></div>
+          <div class="step-row"><div><strong>Работать через ИИ-помощника</strong><span>Задавать вопросы по клиентам, пациентам, приёмам, финансам и складу в одном интерфейсе.</span></div></div>
         </div>
       </div>
     </section>
@@ -2048,11 +2040,10 @@ def render_landing_page(script_nonce: str = "") -> str:
 
     <section class="section" id="faq">
       <div class="shell">
-        <p class="section-label">Детали</p>
-        <h2 class="section-title">Технические детали и FAQ</h2>
+        <p class="section-label">Ваши данные</p>
+        <h2 class="section-title">Как мы работаем с данными</h2>
         <p class="section-lede">
-          Эти блоки скрыты по умолчанию: их полезно открыть, если вы — IT-специалист
-          клиники или хотите понять, что именно сохраняется на сервисе.
+          Здесь — короткие ответы о подключении и данных вашей клиники.
         </p>
 
         <details class="disclosure" style="margin-top: 24px;">
@@ -2060,7 +2051,7 @@ def render_landing_page(script_nonce: str = "") -> str:
             <span class="ic-pre">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
             </span>
-            Технический блок: формат подключения и MCP config
+            Для разработчиков
             <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           </summary>
           <div class="body">
@@ -2090,13 +2081,12 @@ def render_landing_page(script_nonce: str = "") -> str:
             <span class="ic-pre">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
             </span>
-            Какие данные сохраняются на сервисе?
+            Храните ли вы логин и пароль от Vetmanager?
             <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           </summary>
           <div class="body">
             <p>
-              Сервис хранит только учётные данные подключения к Vetmanager (зашифрованные) и service-токены.
-              Бизнес-данные клиники (клиенты, пациенты, счета) не сохраняются — они запрашиваются из Vetmanager в момент обращения.
+              Нет. Логин и пароль от Vetmanager не сохраняются. Для связи хранится отдельный защищённый ключ подключения в зашифрованном виде. Данные клиники — записи, приёмы и платежи — не сохраняются: они запрашиваются только в момент ответа.
             </p>
           </div>
         </details>
@@ -2106,14 +2096,13 @@ def render_landing_page(script_nonce: str = "") -> str:
             <span class="ic-pre">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 12 2 2 4-4"/><path d="M21 12c-1 0-3-1-3-3s2-3 3-3 3 1 3 3-2 3-3 3"/><path d="M3 12c1 0 3-1 3-3s-2-3-3-3-3 1-3 3 2 3 3 3"/><path d="M3 12c1 0 3 1 3 3s-2 3-3 3-3-1-3-3 2-3 3-3"/><path d="M21 12c-1 0-3 1-3 3s2 3 3 3 3-1 3-3-2-3-3-3"/></svg>
             </span>
-            Чем это отличается от прямого использования Vetmanager API?
+            Как помощник отвечает на вопросы?
             <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           </summary>
           <div class="body">
             <p>
-              Vetmanager API требует знания эндпоинтов, фильтров и структуры данных.
-              MCP-сервис позволяет задавать вопросы на естественном языке через AI-ассистента,
-              а сервис сам выбирает нужные API-вызовы.
+              Вы задаёте вопрос обычными словами, а помощник находит нужные данные
+              Vetmanager и возвращает понятный ответ.
             </p>
           </div>
         </details>
@@ -2128,8 +2117,8 @@ def render_landing_page(script_nonce: str = "") -> str:
           </summary>
           <div class="body">
             <p>
-              Credentials клиники хранятся в зашифрованном виде. Доступ осуществляется только через
-              bearer-токены, которые можно отозвать в любой момент. Логин и пароль Vetmanager не сохраняются.
+              Логин и пароль Vetmanager не сохраняются. Защищённый ключ подключения
+              хранится зашифрованно; доступ можно отключить в кабинете.
             </p>
           </div>
         </details>
@@ -2141,11 +2130,11 @@ def render_landing_page(script_nonce: str = "") -> str:
         <div class="callout">
           <div>
             <p class="section-label" style="color: rgba(245, 245, 240, 0.7);">Готовы начать?</p>
-            <h2>Подключите AI-ассистента к данным вашей клиники уже сегодня</h2>
-            <p>Регистрация занимает пару минут. Сервис не требует установки и совместим с любым MCP-клиентом.</p>
+            <h2>Подключите клинику к своему ИИ-помощнику</h2>
+            <p>После подключения задайте первый вопрос о вашей клинике.</p>
             <div class="cta-row">
               <a class="cta" href="/register">
-                Создать аккаунт
+                Подключить
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
               </a>
               <a class="ghost" href="/login">Войти</a>
@@ -2154,10 +2143,10 @@ def render_landing_page(script_nonce: str = "") -> str:
           <div class="right">
             <span class="label">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-              Open Source
+              Дополнительно
             </span>
-            <h3>Разверните у себя</h3>
-            <p>Проект полностью открыт. Развернуть собственный экземпляр MCP-сервера на своём сервере — три команды Docker.</p>
+            <h3>Нужна помощь?</h3>
+            <p>В кабинете можно проверить подключение и обратиться в поддержку.</p>
             <a class="git-link" href="https://github.com/otis22/vetmanager-mcp" target="_blank" rel="noopener">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
               github.com/otis22/vetmanager-mcp
@@ -2170,8 +2159,8 @@ def render_landing_page(script_nonce: str = "") -> str:
 
   <footer class="shell">
     <div class="brand-block">
-      <strong>Vetmanager MCP Service</strong>
-      <p>AI-ассистент для ветеринарных клиник</p>
+      <strong>Vetmanager</strong>
+      <p>ИИ-помощник для ветеринарных клиник</p>
     </div>
     <nav class="links" aria-label="Подвал">
       <a href="/register">Регистрация</a>
@@ -2187,7 +2176,7 @@ def render_landing_page(script_nonce: str = "") -> str:
 
   <div class="sticky-cta" role="complementary" aria-label="Быстрый старт">
     <div>
-      <strong>Подключите за 5 минут</strong>
+      <strong>Подключите помощника</strong>
       <span>Регистрация без оплаты</span>
     </div>
     <a href="/register">Создать</a>

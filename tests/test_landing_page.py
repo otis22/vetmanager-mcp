@@ -17,16 +17,16 @@ async def test_root_landing_page_renders_product_message():
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert "Vetmanager MCP Service" in response.text
+    assert "Vetmanager для ИИ-помощника" in response.text
     assert "Ваш ИИ-помощник теперь знает" in response.text
     assert "Подключить за 2 минуты" in response.text
     assert "ChatGPT" in response.text
     assert "Claude" in response.text
     assert "Manus" in response.text
-    assert "не храним данные о клиентах и пациентах" in response.text
+    assert "Данные в примере вымышленные" in response.text
     assert "Логин и пароль Vetmanager не сохраняются" in response.text
     assert "/register" in response.text
-    assert "Cursor" in response.text
+    assert "Пример ответа" in response.text
 
 
 @pytest.mark.asyncio
@@ -38,17 +38,29 @@ async def test_landing_agent_choice_is_mobile_safe_and_uses_simple_copy():
         response = await client.get("/")
 
     html = response.text
+    assert 'data-testid="agent-choice"' in html
+    assert "/register?agent=chatgpt" in html
+    assert "/register?agent=claude" in html
+    assert "/register?agent=manus" in html
+    assert "min-height: 48px" in html
+    assert ".agent-choice { grid-template-columns: 1fr; }" in html
+    assert 'href="#examples"' in html
+    assert 'id="examples"' in html
+
+
+def test_stage209_public_copy_keeps_direct_cta_and_privacy_contract():
+    html = render_landing_page()
     hero_start = html.find('class="hero"')
     hero_end = html.find("</section>", hero_start)
     hero_html = html[hero_start:hero_end]
-    assert 'data-testid="agent-choice"' in hero_html
-    assert "/register?agent=chatgpt" in hero_html
-    assert "/register?agent=claude" in hero_html
-    assert "/register?agent=manus" in hero_html
-    assert "min-height: 48px" in html
-    assert ".agent-choice { grid-template-columns: 1fr; }" in html
-    assert 'href="#examples"' in hero_html
-    assert 'id="examples"' in html
+
+    assert html.count("2 минуты") == 1
+    assert 'class="cta" href="/register"' in hero_html
+    assert "Подключить за 5 минут" not in html
+    assert "Пример ответа" in hero_html
+    assert "Логин и пароль от Vetmanager не сохраняются" in html
+    assert "Для связи хранится отдельный защищённый ключ подключения" in html
+    assert "Данные в примере вымышленные" in html
 
 
 @pytest.mark.asyncio
@@ -110,7 +122,7 @@ async def test_seal_has_aria_label():
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         response = await client.get("/")
 
-    assert 'aria-label="Vetmanager MCP"' in response.text
+    assert 'aria-label="Vetmanager"' in response.text
 
 
 @pytest.mark.asyncio
@@ -152,8 +164,8 @@ async def test_mcp_explanation_section():
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         response = await client.get("/")
 
-    assert "Что такое MCP" in response.text
-    assert "Model Context Protocol" in response.text
+    assert "Как это работает" in response.text
+    assert 'id="how-it-works"' in response.text
 
 
 @pytest.mark.asyncio
@@ -169,7 +181,7 @@ async def test_faq_section():
     assert 'id="faq"' in html
     assert "<details" in html
     assert "<summary" in html
-    assert "Какие данные сохраняются" in html
+    assert "Храните ли вы логин и пароль" in html
 
 
 @pytest.mark.asyncio
@@ -217,8 +229,7 @@ async def test_topbar_has_github_link():
 
 
 @pytest.mark.asyncio
-async def test_topbar_links_to_agent_instructions():
-    """Topbar navigation must expose the MCP agent instructions block."""
+async def test_topbar_links_to_user_sections():
     app = mcp.http_app(path="/mcp", transport="streamable-http")
     transport = httpx.ASGITransport(app=app)
 
@@ -229,8 +240,9 @@ async def test_topbar_links_to_agent_instructions():
     nav_start = html.find("<nav>")
     nav_end = html.find("</nav>", nav_start)
     nav_html = html[nav_start:nav_end]
-    assert "#mcp-agent-instructions" in nav_html
-    assert "Инструкции" in nav_html
+    assert "#how-it-works" in nav_html
+    assert "#examples" in nav_html
+    assert "#faq" in nav_html
 
 
 @pytest.mark.asyncio
@@ -246,13 +258,11 @@ async def test_topbar_links_to_chatgpt_section():
     nav_start = html.find("<nav>")
     nav_end = html.find("</nav>", nav_start)
     nav_html = html[nav_start:nav_end]
-    assert "#chatgpt-connector" in nav_html
-    assert "ChatGPT" in nav_html
+    assert "#chatgpt-connector" not in nav_html
 
 
 @pytest.mark.asyncio
-async def test_open_source_section():
-    """Landing page must have an Open Source section with self-hosted info."""
+async def test_final_cta_prioritizes_clinic_help():
     app = mcp.http_app(path="/mcp", transport="streamable-http")
     transport = httpx.ASGITransport(app=app)
 
@@ -260,8 +270,8 @@ async def test_open_source_section():
         response = await client.get("/")
 
     html = response.text
-    assert "Open Source" in html
-    assert "Разверните у себя" in html
+    assert "Нужна помощь?" in html
+    assert "В кабинете можно проверить подключение" in html
     assert "github.com/otis22/vetmanager-mcp" in html
 
 
@@ -380,19 +390,15 @@ def test_stage148_landing_inline_script_carries_nonce_attribute():
 def test_stage177_landing_mentions_chatgpt_connector_plainly():
     html = render_landing_page()
 
-    hero_start = html.find('class="hero"')
-    hero_end = html.find("</section>", hero_start)
-    hero_html = html[hero_start:hero_end]
-    assert 'data-testid="agent-choice"' in hero_html
-    assert "Выберите помощника, которым уже пользуетесь." in hero_html
-    assert "/register?agent=chatgpt" in hero_html
+    assert 'data-testid="agent-choice"' in html
+    assert "Выберите помощника, которым уже пользуетесь." in html
+    assert "/register?agent=chatgpt" in html
 
     assert 'id="chatgpt-connector"' in html
     assert 'data-testid="chatgpt-connector-section"' in html
     section_html = html.split('data-testid="chatgpt-connector-section"', 1)[1].split("</section>", 1)[0]
-    assert "Работает прямо в ChatGPT" in section_html
-    assert "Подключите сервис как ChatGPT plugin/app через MCP." in section_html
-    assert "Без ручных токенов, с безопасным доступом по умолчанию." in section_html
+    assert "С какими помощниками работает" in section_html
+    assert "Пользуетесь ChatGPT?" in section_html
     assert '<a class="inline-link" href="/register">Подключить</a>' in section_html
     assert "Bearer" not in section_html
     assert "API key" not in section_html
