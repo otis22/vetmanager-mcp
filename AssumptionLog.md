@@ -10683,4 +10683,15 @@ Checks so far:
 - **UX**: first-request prompts appear for the bearer waiting state and for an
   active OAuth grant. Technical setup stays available under «Для разработчиков».
 - **Verification**: browser coverage checks 375px and desktop no-overflow for
-  landing/account; full suite `1379 passed, 2 skipped, 65 deselected`.
+  landing/account; final full suite `1380 passed, 2 skipped, 65 deselected`.
+- **Reviews**: Spark found that the agent choice was not retained and that the
+  OAuth guide was too broad; Claude Opus found missing privacy copy, activation
+  polling and duplicate guidance. Accepted findings were fixed; the secondary
+  CTA target was verified as existing, and duplicate-guide finding was rejected
+  after the mutually-exclusive condition was inspected.
+- **Production closure**: commit `d390db0` passed GitHub Tests `30628053699`
+  and Deploy Prod `30628255578`. Public `/`, `/login`, `/healthz`, `/readyz`
+  returned 200; authenticated account smoke passed with local-only credentials.
+  Claude OAuth/MCP smoke is intentionally a manual user verification.
+- **Access copy**: landing now states that read-only is the default; a broader
+  access level is possible only when selected separately in the cabinet.

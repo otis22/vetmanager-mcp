@@ -1651,7 +1651,7 @@ def render_landing_page(script_nonce: str = "") -> str:
             </a>
             <a class="ghost" href="#examples">Посмотреть, что умеет</a>
           </div>
-          <p class="hero-fineprint">Помощник только читает данные. Отключить можно в один клик.</p>
+          <p class="hero-fineprint">По умолчанию помощник только читает данные. Доступ можно изменить или отключить в кабинете.</p>
           <p class="hero-fineprint">Мы не храним данные о клиентах и пациентах. Логин и пароль Vetmanager не сохраняются.</p>
           <p class="returning-hint">Уже зарегистрированы? <a href="/login">Войти в кабинет</a></p>
           <div class="trust-strip">

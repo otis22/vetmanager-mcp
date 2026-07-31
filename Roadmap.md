@@ -3708,7 +3708,7 @@ confirmation для Full access.
   fixed the inactive-connection error re-render; user confirmed Claude MCP
   works after deploy. Manus is accepted as compatible without a separate smoke.)
 
-## Этап 208. Активация через ИИ-помощника — `in_progress`
+## Этап 208. Активация через ИИ-помощника — `done`
 
 Источник: пользователь 2026-07-31. Главная ценность продукта — подключить
 Vetmanager к уже используемому ChatGPT, Claude или Manus; сценарий для coding
@@ -3742,4 +3742,8 @@ UX-принципы (Claude Opus review): один экран — одно де�
   Технические ключи и адреса — только в свёрнутом «Для разработчиков». — `done`
 - 208.5 Проверки и rollout: mobile-first UI/regression tests, PRD/code review,
   deploy и измерение conversion `consent_completed → first_successful_request`
-  и time-to-first-request по помощникам. — `todo`
+  и time-to-first-request по помощникам. — `done`
+  (browser mobile 375px + desktop; full Docker `1380 passed, 2 skipped, 65
+  deselected`; Tests `30628053699` green; Deploy Prod `30628255578` green;
+  production landing/login/account smoke passed. Claude OAuth/MCP smoke остаётся
+  ручной проверкой пользователя.)
