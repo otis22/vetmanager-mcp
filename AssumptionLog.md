@@ -10698,3 +10698,26 @@ Checks so far:
 - **Final rollout**: clarification commit `785732c` passed GitHub Tests
   `30628583888` and Deploy Prod `30628787745`; public landing, login, liveness
   and readiness endpoints returned `200`, and production served the new copy.
+
+## Этап 209 Упрощение лендинга для клиник — 2026-07-31
+
+- **UI/UX decision**: Claude Opus 5 review `41732291-d2c7-4d6c-b1ff-41e20c420fd5`
+  accepted the simple one-page hierarchy: direct registration CTA, trust,
+  three steps, example, optional assistant choice, data answers and a final CTA.
+  New screens, integrations, experiments, analytics and backend changes were
+  explicitly rejected as out of scope.
+- **Privacy evidence**: `storage_models.VetmanagerConnection.set_credentials()`
+  stores the connection payload only encrypted; login/password flow exchanges
+  credentials before storage and existing browser tests prove password and user
+  token are absent from account HTML. Public copy therefore distinguishes
+  non-stored Vetmanager login/password and non-stored business data from the
+  encrypted protected connection credential.
+- **Reviews**: Spark committed-diff review `019fb834-e83f-7cb3-b534-0cbc4845aa62`
+  returned `[]`. Claude Opus code reviews found and the follow-up fixed: hidden
+  developer deep links, duplicate developer labels, attribution, incomplete
+  visible steps, support route, metadata, responsive coverage and CTA wording.
+  The second code-review pass found generic disclosure deep-link scrolling,
+  duplicate connection wording and strict assertion gaps; all accepted findings
+  were fixed. Strong code-review budget is exhausted (2/2).
+- **Verification before rollout**: targeted landing/browser suite `27 passed`;
+  final full Docker suite completed after the follow-up without reported errors.
