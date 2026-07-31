@@ -15,7 +15,11 @@ def test_browser_can_open_live_register_page(page, live_server_url):
 
 @pytest.mark.browser
 def test_landing_agent_choice_is_usable_on_mobile_and_desktop(page, live_server_url):
-    for viewport in ({"width": 375, "height": 812}, {"width": 1440, "height": 900}):
+    for viewport in (
+        {"width": 375, "height": 812},
+        {"width": 768, "height": 900},
+        {"width": 1440, "height": 900},
+    ):
         page.set_viewport_size(viewport)
         page.goto(f"{live_server_url}/")
         choices = page.get_by_test_id("agent-choice")

@@ -65,19 +65,19 @@ def render_landing_page(script_nonce: str = "") -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#1e3a4d">
-  <title>Vetmanager MCP Service — AI-ассистент для ветклиник</title>
+  <title>ИИ-помощник для Vetmanager — для ветеринарных клиник</title>
   <meta
     name="description"
-    content="MCP-сервис для Vetmanager: AI-ассистент для ветклиник с bearer-авторизацией и безопасным хранением credentials."
+    content="Подключите Vetmanager к привычному ИИ-помощнику и задавайте вопросы о клинике обычными словами."
   >
   <meta name="robots" content="index, follow">
-  <meta property="og:title" content="Vetmanager MCP Service">
-  <meta property="og:description" content="AI-ассистент для ветклиник. Данные клиники по запросу за секунды через MCP.">
+  <meta property="og:title" content="ИИ-помощник для Vetmanager">
+  <meta property="og:description" content="Помощник для ветеринарной клиники: записи, приёмы и выручка в привычном чате.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://vetmanager-mcp.vromanichev.ru/">
   <link rel="canonical" href="https://vetmanager-mcp.vromanichev.ru/">
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="Vetmanager MCP Service">
+  <meta name="twitter:title" content="ИИ-помощник для Vetmanager">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%231e3a4d'/><text y='66' x='50' text-anchor='middle' font-size='48' font-weight='700' fill='%23f5f5f0' font-family='ui-sans-serif,system-ui,sans-serif' letter-spacing='-2'>VM</text><circle cx='78' cy='24' r='6' fill='%23bb4d24'/></svg>">
   <style>
     :root {
@@ -1609,8 +1609,8 @@ def render_landing_page(script_nonce: str = "") -> str:
       <div class="brand">
         <div class="seal" aria-label="Vetmanager">VM</div>
         <div>
-          <h1>Vetmanager для ИИ-помощника</h1>
-          <p>Помощник для вашей клиники</p>
+          <h1>ИИ-помощник для Vetmanager</h1>
+          <p>Независимый сервис для вашей клиники</p>
         </div>
       </div>
       <input type="checkbox" id="menu-toggle" class="menu-toggle" aria-hidden="true">
@@ -1715,7 +1715,7 @@ def render_landing_page(script_nonce: str = "") -> str:
         <div class="body">
           <ol>
             <li>Зарегистрируйтесь и подключите свою клинику Vetmanager.</li>
-            <li>Откройте ChatGPT, Claude или Manus, которым уже пользуетесь.</li>
+            <li>В кабинете подключите клинику и следуйте короткой инструкции для ChatGPT, Claude или Manus.</li>
             <li>Задайте вопрос обычными словами — ИИ-помощник ответит по данным вашей клиники.</li>
           </ol>
         </div>
@@ -1743,8 +1743,8 @@ def render_landing_page(script_nonce: str = "") -> str:
 
     <section class="section">
       <div class="shell">
-        <details class="disclosure">
-          <summary>Для разработчиков</summary>
+        <details class="disclosure" id="developer-onboarding">
+          <summary>Для разработчиков: подключение помощника</summary>
         <section class="onboarding" id="mcp-onboarding" data-testid="mcp-onboarding">
           <div data-testid="mcp-onboarding-main-copy">
             <div class="onboarding-head">
@@ -2051,7 +2051,7 @@ def render_landing_page(script_nonce: str = "") -> str:
             <span class="ic-pre">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
             </span>
-            Для разработчиков
+            Для разработчиков: формат подключения
             <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           </summary>
           <div class="body">
@@ -2146,7 +2146,7 @@ def render_landing_page(script_nonce: str = "") -> str:
               Дополнительно
             </span>
             <h3>Нужна помощь?</h3>
-            <p>В кабинете можно проверить подключение и обратиться в поддержку.</p>
+            <p>Проверить подключение можно в кабинете.</p>
             <a class="git-link" href="https://github.com/otis22/vetmanager-mcp" target="_blank" rel="noopener">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
               github.com/otis22/vetmanager-mcp
@@ -2159,8 +2159,8 @@ def render_landing_page(script_nonce: str = "") -> str:
 
   <footer class="shell">
     <div class="brand-block">
-      <strong>Vetmanager</strong>
-      <p>ИИ-помощник для ветеринарных клиник</p>
+      <strong>ИИ-помощник для Vetmanager</strong>
+      <p>Независимый сервис для ветеринарных клиник</p>
     </div>
     <nav class="links" aria-label="Подвал">
       <a href="/register">Регистрация</a>
@@ -2179,11 +2179,19 @@ def render_landing_page(script_nonce: str = "") -> str:
       <strong>Подключите помощника</strong>
       <span>Регистрация без оплаты</span>
     </div>
-    <a href="/register">Создать</a>
+    <a href="/register">Подключить</a>
   </div>
 
   <script nonce="__SCRIPT_NONCE__">
     (() => {
+      const developerOnboarding = document.getElementById("developer-onboarding");
+      const openDeveloperOnboarding = () => {
+        if (window.location.hash === "#mcp-agent-instructions" && developerOnboarding) {
+          developerOnboarding.open = true;
+        }
+      };
+      openDeveloperOnboarding();
+      window.addEventListener("hashchange", openDeveloperOnboarding);
       const root = document.getElementById("mcp-onboarding");
       if (!root) return;
 

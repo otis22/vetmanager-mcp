@@ -17,7 +17,7 @@ async def test_root_landing_page_renders_product_message():
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert "Vetmanager для ИИ-помощника" in response.text
+    assert "ИИ-помощник для Vetmanager" in response.text
     assert "Ваш ИИ-помощник теперь знает" in response.text
     assert "Подключить за 2 минуты" in response.text
     assert "ChatGPT" in response.text
@@ -54,13 +54,15 @@ def test_stage209_public_copy_keeps_direct_cta_and_privacy_contract():
     hero_end = html.find("</section>", hero_start)
     hero_html = html[hero_start:hero_end]
 
-    assert html.count("2 минуты") == 1
+    assert hero_html.count("2 минуты") == 1
     assert 'class="cta" href="/register"' in hero_html
     assert "Подключить за 5 минут" not in html
     assert "Пример ответа" in hero_html
     assert "Логин и пароль от Vetmanager не сохраняются" in html
     assert "Для связи хранится отдельный защищённый ключ подключения" in html
     assert "Данные в примере вымышленные" in html
+    assert 'id="developer-onboarding"' in html
+    assert 'window.location.hash === "#mcp-agent-instructions"' in html
 
 
 @pytest.mark.asyncio
@@ -141,6 +143,7 @@ async def test_seo_meta_tags():
     assert 'property="og:type"' in html
     assert 'name="twitter:card"' in html
     assert 'rel="icon"' in html
+    assert "ИИ-помощник для Vetmanager" in html
 
 
 @pytest.mark.asyncio
@@ -271,7 +274,7 @@ async def test_final_cta_prioritizes_clinic_help():
 
     html = response.text
     assert "Нужна помощь?" in html
-    assert "В кабинете можно проверить подключение" in html
+    assert "Проверить подключение можно в кабинете" in html
     assert "github.com/otis22/vetmanager-mcp" in html
 
 
