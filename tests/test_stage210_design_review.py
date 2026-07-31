@@ -147,8 +147,8 @@ def test_technical_block_has_a_visible_affordance() -> None:
 
     assert 'class="chev"' in block, "collapsed technical block has no chevron"
     assert 'class="ic-pre"' in block, "collapsed technical block has no leading icon"
-    assert "Подключить агента вручную" in block
-    assert "Техническая настройка" in html
+    assert "Подключить кодинг-агента" in block
+    assert "Кодинг-агенты" in html
 
 
 def test_technical_block_summary_says_who_it_is_for() -> None:
@@ -156,7 +156,7 @@ def test_technical_block_summary_says_who_it_is_for() -> None:
     block = _developer_block(render_landing_page())
     summary = block[: block.find("</summary>")]
 
-    assert "Codex" in summary and "Claude" in summary
+    assert "Codex" in summary and "Claude Code" in summary
     assert "ключ доступа" in summary.lower()
 
 
@@ -200,14 +200,6 @@ def test_duplicated_content_is_removed_from_the_technical_block() -> None:
     # The examples themselves stay on the page, in their public homes.
     assert "Какая выручка была за март?" in html
     assert "Кому из пациентов пора на прививку?" in html
-
-
-def test_technical_block_heading_does_not_outrank_page_sections() -> None:
-    """D-2: a heading hidden inside a disclosure must not be an h2."""
-    block = _developer_block(render_landing_page())
-
-    assert "<h3>Подключите ИИ-агента к вашему Vetmanager за 5 минут</h3>" in block
-    assert "<h2>Подключите ИИ-агента" not in block
 
 
 # ------------------------------------------------------------------- landing: D-3
@@ -557,3 +549,110 @@ def test_a_record_is_separated_from_the_next_one_not_from_its_own_details() -> N
 
     assert ".token-table tbody tr:has(+ .detail-row) > td { border-bottom: 0; }" in html
     assert ".token-table .detail-row:has(+ .note-row) > td { border-bottom: 0; }" in html
+
+
+# ------------------------------------------------------- 210.7: coding agents
+
+def test_section_is_named_after_coding_agents() -> None:
+    """The block was called "technical setup", which said nothing about who it is for."""
+    html = render_landing_page()
+
+    assert "Использование с кодинг-агентом" in html
+    assert "Кодинг-агенты" in html
+    assert "Подключить кодинг-агента" in _developer_block(html)
+    assert "Если настраиваете агента сами" not in html
+    assert "Подключить агента вручную" not in html
+
+
+def test_block_lists_only_coding_agents() -> None:
+    """Manus is not a coding agent; it stays on the public path instead."""
+    block = _developer_block(render_landing_page())
+
+    assert "manus" not in block.lower()
+    assert block.count('role="tab"') == 4
+    assert block.count('role="tabpanel"') == 4
+    assert block.count("data-copy-target") == 4
+    for agent in ("codex", "claude", "cursor", "other"):
+        assert f'id="mcp-tab-{agent}"' in block
+
+
+def test_manus_still_reachable_from_the_public_path() -> None:
+    """Narrowing the technical block must not remove Manus from the landing."""
+    html = render_landing_page()
+    public_html = html.replace(_developer_block(html), "")
+
+    assert "Manus" in public_html
+    assert "/register?agent=manus" in public_html
+
+
+def test_claude_tab_describes_claude_code_not_the_desktop_app() -> None:
+    """Claude Code configures MCP through `claude mcp add`, not desktop settings."""
+    block = _developer_block(render_landing_page())
+
+    assert "Claude Code" in block
+    assert "claude mcp add" in block
+    assert "Claude Desktop" not in block
+    assert "перезапустить Claude и проверить список" not in block
+
+
+def test_block_heading_no_longer_duplicates_the_section_title() -> None:
+    """R-1/V-5: an h3 in a default font outranked by the subheads below it."""
+    block = _developer_block(render_landing_page())
+
+    assert "Подключите ИИ-агента к вашему Vetmanager за 5 минут" not in block
+    assert 'class="section-label"' not in block, "eyebrows removed inside the block"
+    assert 'id="mcp-agent-instructions"' in block, "anchor target must survive"
+
+
+def test_block_content_clears_the_card_border() -> None:
+    """V-4: summary had padding, the section inside <details> had none."""
+    html = render_landing_page()
+
+    assert ".disclosure .onboarding {\n      padding: 4px 24px 28px;" in html
+
+
+def test_agent_list_is_stated_once() -> None:
+    """V-6: the same names appeared in the note, the lede and the intro in a row."""
+    block = _developer_block(render_landing_page())
+
+    assert "Работает через MCP: <strong>" not in block
+    assert "или другой MCP-совместимый агент" not in block
+    # The names survive only where they identify a control or a hint, never as
+    # a third restatement of the same list in prose.
+    prose = block[block.find("</summary>") : block.find('class="agent-tabs"')]
+    assert "Cursor" not in prose
+
+
+def test_tabs_and_panel_share_one_container() -> None:
+    """V-7: two boxes with a gap read as two unrelated components."""
+    html = render_landing_page()
+
+    assert ".agent-tabs {\n      background: var(--paper-card);" in html
+    assert ".command-card {\n      display: grid;\n      gap: 14px;\n      padding: 22px;\n      background: var(--paper-card);\n    }" in html
+
+
+def test_copy_button_does_not_outshout_the_page_cta() -> None:
+    """V-9: a solid accent fill made Copy the loudest thing inside the block."""
+    html = render_landing_page()
+
+    assert ".copy-button {\n      border: 1px solid var(--line);" in html
+    assert ".copy-button {\n      border: 0;\n      cursor: pointer;\n      background: var(--accent);" not in html
+
+
+def test_connection_config_is_styled_like_the_commands() -> None:
+    """R-3: moved out of .body, the JSON lost its styling and hit the border."""
+    html = render_landing_page()
+
+    assert 'class="config-card"' in html
+    assert ".config-card pre,\n    .command-card pre {" in html
+
+
+def test_key_note_only_talks_about_the_key() -> None:
+    """V-10: the note mixed the key with an unrelated tip about the computer."""
+    html = render_landing_page()
+    note = html[html.find('class="privacy-note"') :]
+    note = note[: note.find("</div>", note.find("</div>") + 1)]
+
+    assert "Настройку удобнее делать с компьютера" not in note
+    # The tip keeps its place next to the steps, inside the same copy block.
+    assert "Настройку удобнее делать с компьютера" in html

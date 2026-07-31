@@ -310,7 +310,6 @@ def test_stage146_mcp_onboarding_core_copy_and_privacy():
     section_html = _extract_mcp_onboarding(html)
     main_copy = _extract_main_copy(section_html)
 
-    assert "Подключите ИИ-агента к вашему Vetmanager за 5 минут" in main_copy
     assert "MCP — это мост между ИИ-агентом и Vetmanager" in main_copy
     # Stage 210: the example questions used to be repeated inside the collapsed
     # technical block as a third copy. They now live only in the public
@@ -347,16 +346,16 @@ def test_stage146_agent_tabs_commands_and_real_mcp_url(monkeypatch):
     assert "Скопируйте готовую команду" in section_html
     assert "Рекомендуем для старта" in section_html
 
-    for agent in ("Codex", "Claude", "Cursor", "Manus", "Другой агент"):
+    for agent in ("Codex", "Claude Code", "Cursor", "Другой агент"):
         assert agent in section_html
     for prompt in (
         "Настрой мне MCP-сервер Vetmanager.",
-        "Подключи MCP-сервер Vetmanager.",
+        "Настрой MCP-сервер Vetmanager в Claude Code.",
         "Добавь MCP-сервер Vetmanager в настройки Cursor.",
-        "Подключи Vetmanager MCP.",
+        "Подключи MCP-сервер Vetmanager.",
     ):
         assert prompt in section_html
-    assert section_html.count("Ключ доступа / Bearer token я вставлю сам") >= 4
+    assert section_html.count("Ключ доступа / Bearer token я вставлю сам") >= 3
     assert "Ключ доступа я вставлю сам" in section_html
 
 
@@ -424,13 +423,13 @@ def test_stage146_tabs_and_copy_controls_are_structurally_wired():
     section_html = _extract_mcp_onboarding(html)
 
     assert 'role="tablist"' in section_html
-    assert section_html.count('role="tab"') == 5
-    assert section_html.count('role="tabpanel"') == 5
+    assert section_html.count('role="tab"') == 4
+    assert section_html.count('role="tabpanel"') == 4
     assert section_html.count('aria-selected="true"') == 1
     assert 'id="mcp-tab-codex"' in section_html
     assert 'aria-selected="true" aria-controls="mcp-panel-codex"' in section_html
 
-    for agent in ("codex", "claude", "cursor", "manus", "other"):
+    for agent in ("codex", "claude", "cursor", "other"):
         assert f'id="mcp-tab-{agent}"' in section_html
         assert f'aria-controls="mcp-panel-{agent}"' in section_html
         assert f'id="mcp-panel-{agent}"' in section_html
@@ -440,7 +439,7 @@ def test_stage146_tabs_and_copy_controls_are_structurally_wired():
         assert f'id="mcp-copy-status-{agent}"' in section_html
         assert f'aria-describedby="mcp-copy-status-{agent}"' in section_html
 
-    assert section_html.count('role="status" aria-live="polite"') == 5
+    assert section_html.count('role="status" aria-live="polite"') == 4
     assert "navigator.clipboard.writeText" in html
     assert ".textContent" in html
     assert "2000" in html

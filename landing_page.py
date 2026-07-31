@@ -897,28 +897,20 @@ def render_landing_page(script_nonce: str = "") -> str:
       gap: clamp(36px, 5vw, 64px);
     }
 
-    .onboarding-head {
-      display: grid;
-      grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-      gap: clamp(28px, 4vw, 56px);
-      align-items: start;
-    }
-    .onboarding-head h2 {
-      font-family: var(--font-display);
-      font-weight: 600;
-      font-size: clamp(2rem, 4vw, 3rem);
-      letter-spacing: -0.015em;
-      line-height: 1.05;
-      max-width: 14ch;
-    }
-    .onboarding-head .lede {
+    .onboarding .lede {
       color: var(--ink-500);
-      font-size: 1.05rem;
-      line-height: 1.65;
-      margin: 18px 0 0;
-      max-width: 56ch;
+      font-size: 1.02rem;
+      line-height: 1.7;
+      margin: 0 0 12px;
+      max-width: 68ch;
     }
-    .onboarding-head .lede strong { color: var(--ink-900); font-weight: 600; }
+    .onboarding .lede:last-of-type { margin-bottom: 0; }
+    .onboarding .lede strong { color: var(--ink-900); font-weight: 600; }
+    .step-note {
+      margin: 14px 0 0;
+      color: var(--ink-400);
+      font-size: 0.92rem;
+    }
 
     /* Flow diagram (5 nodes) */
     .flow-map {
@@ -990,37 +982,6 @@ def render_landing_page(script_nonce: str = "") -> str:
       padding: 2px 0;
     }
 
-    /* Prompt chips */
-    .prompts-wrap h3 {
-      font-family: var(--font-display);
-      font-weight: 600;
-      font-size: 1.5rem;
-      letter-spacing: -0.008em;
-      margin: 0 0 14px;
-    }
-    .prompt-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 12px;
-    }
-    .prompt-chip {
-      margin: 0;
-      padding: 14px 16px;
-      border-radius: 14px;
-      background: var(--paper-card);
-      border: 1px solid var(--line);
-      color: var(--ink-800);
-      font-size: 0.95rem;
-      line-height: 1.45;
-      font-weight: 500;
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      transition: border-color 180ms ease, transform 180ms ease;
-    }
-    .prompt-chip:hover { border-color: var(--ink-200); transform: translateY(-1px); }
-    .prompt-chip svg { color: var(--ink-300); flex-shrink: 0; margin-top: 2px; }
-    .prompt-chip:hover svg { color: var(--accent); }
 
     /* Quick steps */
     .quick-steps {
@@ -1038,6 +999,7 @@ def render_landing_page(script_nonce: str = "") -> str:
       gap: 6px;
     }
     .quick-step .num {
+      font-variant-numeric: tabular-nums;
       font-family: var(--font-mono);
       font-size: 0.78rem;
       letter-spacing: 0.06em;
@@ -1074,16 +1036,20 @@ def render_landing_page(script_nonce: str = "") -> str:
     .privacy-note a { color: var(--ink-900); font-weight: 600; text-decoration: underline; text-decoration-color: rgba(187, 77, 36, 0.4); text-underline-offset: 2px; }
 
     /* Tabs */
-    .agent-tabs { display: grid; gap: 18px; }
+    .agent-tabs {
+      background: var(--paper-card);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
     .tab-list {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
-      padding: 6px;
-      background: var(--paper-card);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      box-shadow: var(--shadow-sm);
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--paper-warm);
     }
     .tab-button {
       border: 0;
@@ -1126,11 +1092,17 @@ def render_landing_page(script_nonce: str = "") -> str:
       gap: 14px;
       padding: 22px;
       background: var(--paper-card);
+    }
+    .config-card {
+      margin-top: 16px;
+      padding: 22px;
+      background: var(--paper-card);
       border: 1px solid var(--line);
       border-radius: var(--r-lg);
       box-shadow: var(--shadow-sm);
     }
     .command-card[hidden] { display: none; }
+    .config-card pre,
     .command-card pre {
       margin: 0;
       padding: 18px 20px;
@@ -1150,10 +1122,10 @@ def render_landing_page(script_nonce: str = "") -> str:
       flex-wrap: wrap;
     }
     .copy-button {
-      border: 0;
+      border: 1px solid var(--line);
       cursor: pointer;
-      background: var(--accent);
-      color: #fff;
+      background: var(--paper-card);
+      color: var(--ink-900);
       font: inherit;
       font-weight: 600;
       font-size: 0.92rem;
@@ -1164,7 +1136,7 @@ def render_landing_page(script_nonce: str = "") -> str:
       gap: 8px;
       transition: background 180ms ease, transform 180ms ease;
     }
-    .copy-button:hover { background: var(--accent-700); transform: translateY(-1px); }
+    .copy-button:hover { background: var(--ink-50); border-color: var(--ink-200); }
     .copy-status {
       min-height: 1.2em;
       color: var(--moss);
@@ -1187,9 +1159,9 @@ def render_landing_page(script_nonce: str = "") -> str:
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
       gap: 14px;
     }
-    .grid-5 {
+    .grid-4 {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
       gap: 12px;
     }
     .mini-card {
@@ -1205,10 +1177,11 @@ def render_landing_page(script_nonce: str = "") -> str:
       font-family: var(--font-display);
       font-weight: 600;
       font-size: 1rem;
-      display: inline-flex;
-      align-items: center;
+      display: flex;
+      align-items: flex-start;
       gap: 8px;
     }
+    .mini-card strong svg { flex-shrink: 0; margin-top: 3px; }
     .mini-card strong svg { color: var(--ink-500); }
     .mini-card.error strong svg { color: var(--accent); }
     .mini-card span {
@@ -1366,6 +1339,10 @@ def render_landing_page(script_nonce: str = "") -> str:
       display: grid;
       place-items: center;
       flex-shrink: 0;
+    }
+    .disclosure .onboarding {
+      padding: 4px 24px 28px;
+      gap: clamp(28px, 4vw, 44px);
     }
     .disclosure .body {
       padding: 0 24px 26px;
@@ -1595,7 +1572,6 @@ def render_landing_page(script_nonce: str = "") -> str:
       .hero-grid,
       .how-grid { grid-template-columns: minmax(0, 1fr); }
       .explainer,
-      .onboarding-head,
       .two-col,
       .callout {
         grid-template-columns: 1fr;
@@ -1797,11 +1773,11 @@ def render_landing_page(script_nonce: str = "") -> str:
 
     <section class="section">
       <div class="shell">
-        <p class="section-label">Техническая настройка</p>
-        <h2 class="section-title">Если настраиваете агента сами</h2>
+        <p class="section-label">Кодинг-агенты</p>
+        <h2 class="section-title">Использование с кодинг-агентом</h2>
         <p class="section-lede">
-          Не обязательный шаг: для работы через ChatGPT, Claude или Manus достаточно
-          регистрации. Этот раздел — для тех, кто подключает агента вручную.
+          Codex, Claude Code, Cursor и другие агенты, которые работают у вас в редакторе.
+          Для ChatGPT, Claude и Manus этот раздел не нужен — там хватает регистрации.
         </p>
         <details class="disclosure" id="developer-onboarding" style="margin-top: 24px;">
           <summary>
@@ -1809,40 +1785,35 @@ def render_landing_page(script_nonce: str = "") -> str:
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
             </span>
             <span class="summary-text">
-              Подключить агента вручную
-              <span class="summary-note">Codex, Claude, Cursor, Manus — готовые команды и ключ доступа</span>
+              Подключить кодинг-агента
+              <span class="summary-note">Codex, Claude Code, Cursor — готовая команда и ключ доступа</span>
             </span>
             <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           </summary>
         <section class="onboarding" id="mcp-onboarding" data-testid="mcp-onboarding">
           <div data-testid="mcp-onboarding-main-copy">
-            <div class="onboarding-head">
-              <div>
-                <p class="section-label">Подключение агента</p>
-                <h3>Подключите ИИ-агента к вашему Vetmanager за 5 минут</h3>
-                <p class="lede">
-                  Работает через MCP: <strong>Codex, Claude, Cursor, Manus</strong> и другие совместимые агенты смогут находить клиентов,
-                  смотреть записи, проверять счета и считать выручку по данным вашей клиники.
-                </p>
-                <p class="lede">
-                  MCP — это мост между ИИ-агентом и Vetmanager. Вы задаёте вопрос обычным языком, агент обращается
-                  к Vetmanager через разрешённые команды и возвращает ответ по вашим данным.
-                </p>
-              </div>
-            </div>
+            <p class="lede">
+              Агент сможет находить клиентов, смотреть записи, проверять счета и считать
+              выручку по данным вашей клиники.
+            </p>
+            <p class="lede">
+              MCP — это мост между ИИ-агентом и Vetmanager. Вы задаёте вопрос обычным языком, агент обращается
+              к Vetmanager через разрешённые команды и возвращает ответ по вашим данным.
+            </p>
 
-            <div style="margin-top: 36px;">
+            <div style="margin-top: 32px;">
               <h3 class="subhead">Подключение в 3 шага</h3>
               <div class="quick-steps">
-                <div class="quick-step"><span class="num">01 — ВЫБОР</span><strong>Выберите агента</strong><span>Если сомневаетесь, начните с Codex.</span></div>
-                <div class="quick-step"><span class="num">02 — КОМАНДА</span><strong>Отправьте команду</strong><span>Скопируйте готовый текст ниже и дайте его агенту.</span></div>
-                <div class="quick-step"><span class="num">03 — КЛЮЧ</span><strong>Вставьте ключ</strong><span>Добавьте ключ доступа в настройки и перезапустите сессию.</span></div>
+                <div class="quick-step"><span class="num">01</span><strong>Выберите агента</strong><span>Если сомневаетесь, начните с Codex.</span></div>
+                <div class="quick-step"><span class="num">02</span><strong>Отправьте команду</strong><span>Скопируйте готовый текст ниже и дайте его агенту.</span></div>
+                <div class="quick-step"><span class="num">03</span><strong>Вставьте ключ</strong><span>Добавьте ключ доступа в настройки и перезапустите сессию.</span></div>
               </div>
+              <p class="step-note">Настройку удобнее делать с компьютера.</p>
               <div class="privacy-note">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                 <div>
-                  Ключ доступа не нужно отправлять в чат. Он хранится в настройках агента или на вашем компьютере.
-                  Настройку удобнее делать с компьютера. Ключ доступа выдаётся в кабинете после регистрации и подключения Vetmanager:
+                  <strong>Ключ доступа не нужно отправлять в чат.</strong> Он хранится в настройках агента
+                  или на вашем компьютере. Выдаётся в кабинете после регистрации и подключения Vetmanager:
                   <a href="/register">создать аккаунт</a> или <a href="/login">войти в кабинет</a>.
                 </div>
               </div>
@@ -1850,20 +1821,18 @@ def render_landing_page(script_nonce: str = "") -> str:
           </div>
 
           <div id="mcp-agent-instructions">
-            <p class="section-label">Готовые инструкции</p>
             <h3 class="subhead" style="margin-bottom: 8px;">Инструкции для агентов</h3>
-            <p style="color: var(--ink-500); font-size: 0.98rem; line-height: 1.6; margin-bottom: 4px;">
-              Выберите Codex, Claude, Cursor, Manus или другой MCP-совместимый агент. Скопируйте готовую команду
-              и отправьте её агенту: он сам найдёт файл настроек, а ключ доступа вы вставите вручную.
+            <p style="color: var(--ink-500); font-size: 0.98rem; line-height: 1.6; margin-bottom: 0;">
+              Скопируйте готовую команду и отправьте её агенту: он сам найдёт файл настроек,
+              а ключ доступа вы вставите вручную.
             </p>
           </div>
 
           <div class="agent-tabs" data-testid="mcp-agent-tabs">
             <div class="tab-list" role="tablist" aria-label="Выберите ИИ-агента">
               <button class="tab-button" id="mcp-tab-codex" role="tab" aria-selected="true" aria-controls="mcp-panel-codex" tabindex="0" type="button">Codex</button>
-              <button class="tab-button" id="mcp-tab-claude" role="tab" aria-selected="false" aria-controls="mcp-panel-claude" tabindex="-1" type="button">Claude</button>
+              <button class="tab-button" id="mcp-tab-claude" role="tab" aria-selected="false" aria-controls="mcp-panel-claude" tabindex="-1" type="button">Claude Code</button>
               <button class="tab-button" id="mcp-tab-cursor" role="tab" aria-selected="false" aria-controls="mcp-panel-cursor" tabindex="-1" type="button">Cursor</button>
-              <button class="tab-button" id="mcp-tab-manus" role="tab" aria-selected="false" aria-controls="mcp-panel-manus" tabindex="-1" type="button">Manus</button>
               <button class="tab-button" id="mcp-tab-other" role="tab" aria-selected="false" aria-controls="mcp-panel-other" tabindex="-1" type="button">Другой агент</button>
             </div>
 
@@ -1889,13 +1858,13 @@ def render_landing_page(script_nonce: str = "") -> str:
             </div>
 
             <div class="command-card" id="mcp-panel-claude" role="tabpanel" aria-labelledby="mcp-tab-claude" hidden>
-              <pre id="mcp-command-claude">Подключи MCP-сервер Vetmanager.
+              <pre id="mcp-command-claude">Настрой MCP-сервер Vetmanager в Claude Code.
 
 Адрес сервера: __MCP_SERVER_URL__
 
-Ключ доступа / Bearer token я вставлю сам, но покажи путь к файлу или настройке, куда его нужно вставить.
+Ключ доступа / Bearer token я вставлю сам, но покажи команду claude mcp add и куда в ней подставить ключ.
 
-После настройки скажи, как перезапустить Claude и проверить список доступных MCP-инструментов.</pre>
+После настройки скажи, как проверить подключение командой /mcp.</pre>
               <div class="command-actions">
                 <button class="copy-button" type="button" data-copy-target="mcp-command-claude" aria-describedby="mcp-copy-status-claude">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
@@ -1919,23 +1888,6 @@ def render_landing_page(script_nonce: str = "") -> str:
                   Скопировать
                 </button>
                 <span class="copy-status" id="mcp-copy-status-cursor" role="status" aria-live="polite"></span>
-              </div>
-            </div>
-
-            <div class="command-card" id="mcp-panel-manus" role="tabpanel" aria-labelledby="mcp-tab-manus" hidden>
-              <pre id="mcp-command-manus">Подключи Vetmanager MCP.
-
-Адрес сервера: __MCP_SERVER_URL__
-
-Ключ доступа / Bearer token я вставлю сам, но покажи путь к файлу или настройке, куда его нужно вставить.
-
-После подключения проверь, что доступны инструменты Vetmanager.</pre>
-              <div class="command-actions">
-                <button class="copy-button" type="button" data-copy-target="mcp-command-manus" aria-describedby="mcp-copy-status-manus">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                  Скопировать
-                </button>
-                <span class="copy-status" id="mcp-copy-status-manus" role="status" aria-live="polite"></span>
               </div>
             </div>
 
@@ -1964,11 +1916,10 @@ def render_landing_page(script_nonce: str = "") -> str:
             <p style="color: var(--ink-500); font-size: 0.98rem; line-height: 1.6; max-width: 64ch;">
               Попросите его ещё раз показать путь к конфигурации. Если не получилось, откройте ручную подсказку для вашего агента.
             </p>
-            <div class="grid-5" style="margin-top: 18px;">
+            <div class="grid-4" style="margin-top: 18px;">
               <div class="mini-card"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>Codex</strong><span>Попросите Codex показать путь к MCP config именно для вашей системы.</span></div>
-              <div class="mini-card"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Claude</strong><span>Откройте настройки Claude Desktop / MCP servers и перезапустите Claude.</span></div>
+              <div class="mini-card"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Claude Code</strong><span>Добавьте сервер командой <code>claude mcp add</code>, затем проверьте подключение командой <code>/mcp</code> в новой сессии.</span></div>
               <div class="mini-card"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>Cursor</strong><span>Откройте MCP settings в Cursor и перезапустите Cursor-сессию.</span></div>
-              <div class="mini-card"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>Manus</strong><span>Проверьте настройки подключений и список доступных tools.</span></div>
               <div class="mini-card"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Другой агент</strong><span>Найдите раздел MCP servers, укажите URL и авторизацию через ключ доступа.</span></div>
             </div>
           </div>
@@ -1987,6 +1938,7 @@ def render_landing_page(script_nonce: str = "") -> str:
             <p style="color: var(--ink-500); font-size: 0.98rem; line-height: 1.6; max-width: 64ch;">
               Формат подключения: <code>Authorization: Bearer &lt;service_token&gt;</code>.
             </p>
+            <div class="config-card">
             <pre>{
   "mcpServers": {
     "vetmanager": {
@@ -1997,6 +1949,7 @@ def render_landing_page(script_nonce: str = "") -> str:
     }
   }
 }</pre>
+            </div>
           </div>
         </section>
         </details>
