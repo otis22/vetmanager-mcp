@@ -10734,3 +10734,8 @@ Checks so far:
   full Docker suite completed before the hotfix deploy. Strong code-review
   budget remains exhausted (2/2); the change is the direct, test-covered fix
   for the accepted Spark finding.
+- **Hotfix production closure**: commit `c09a124` passed GitHub Tests
+  `30633495703` and Deploy Prod `30633718127`. Public GET smoke returned
+  `200` for `/`, `/register`, `/healthz` and `/readyz`; production HTML contains
+  the safe `getElementById` hash handler, direct CTA, single time estimate,
+  example label and support mail link.
