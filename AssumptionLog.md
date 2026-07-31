@@ -10721,3 +10721,9 @@ Checks so far:
   were fixed. Strong code-review budget is exhausted (2/2).
 - **Verification before rollout**: targeted landing/browser suite `27 passed`;
   final full Docker suite completed after the follow-up without reported errors.
+- **Production closure**: release commits `9fa75b9`, `6fe5ee6` and `8e10ea9`
+  were pushed. GitHub Tests `30632743101` and Deploy Prod `30632962933` were
+  green. GET-only production smoke returned `200` for `/`, `/register`,
+  `/healthz` and `/readyz`; the served landing contained the new title,
+  direct `/register` CTA, one «2 минуты» claim, example label and collapsed
+  developer guidance.
