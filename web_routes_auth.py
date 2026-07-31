@@ -38,6 +38,11 @@ def _safe_next_url(raw_value: str | None) -> str:
     return value
 
 
+def _selected_agent(raw_value: str | None) -> str:
+    value = (raw_value or "").strip().lower()
+    return value if value in {"chatgpt", "claude", "manus"} else ""
+
+
 def register_auth_routes(
     mcp,
     *,
@@ -52,7 +57,7 @@ def register_auth_routes(
         csrf_token = resolve_csrf_token(request)
         return html_response(
             request,
-            render_register_page(csrf_token=csrf_token),
+            render_register_page(csrf_token=csrf_token, selected_agent=_selected_agent(request.query_params.get("agent"))),
             with_csrf_cookie=True,
             csrf_token=csrf_token,
         )
@@ -155,7 +160,9 @@ def register_auth_routes(
         )
         record_business_event("account_registered")
 
-        response = redirect_response(request, url="/account", status_code=303)
+        selected_agent = _selected_agent(form.get("agent"))
+        destination = f"/account?agent={selected_agent}" if selected_agent else "/account"
+        response = redirect_response(request, url=destination, status_code=303)
         set_account_session_cookie(response, account.id)
         return response
 

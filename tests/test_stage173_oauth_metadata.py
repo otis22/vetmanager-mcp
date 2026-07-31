@@ -2128,6 +2128,9 @@ async def test_account_ui_lists_and_revokes_oauth_grant_family(tmp_path, monkeyp
             )
 
     assert page_response.status_code == 200
+    assert 'data-testid="oauth-first-request-guide"' in page_response.text
+    assert "Подсказки для вашего помощника" in page_response.text
+    assert "Покажи записи на сегодня" in page_response.text
     assert 'data-testid="chatgpt-connect-instructions"' in page_response.text
     assert 'data-testid="chatgpt-mcp-url"' in page_response.text
     assert 'data-testid="oauth-grant-list"' in page_response.text

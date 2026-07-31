@@ -209,7 +209,10 @@ def register_account_routes(
             response = redirect_response(request, url="/login", status_code=303)
             clear_account_session_cookie(response)
             return response
-        return await render_account_dashboard_response(request, account_id)
+        selected_agent = (request.query_params.get("agent") or "").strip().lower()
+        if selected_agent not in {"chatgpt", "claude", "manus"}:
+            selected_agent = ""
+        return await render_account_dashboard_response(request, account_id, selected_agent=selected_agent)
 
     @observed_route(mcp, "/account/integration", methods=["POST"], include_in_schema=False)
     async def account_integration_submit(request: Request) -> HTMLResponse | RedirectResponse:

@@ -18,14 +18,37 @@ async def test_root_landing_page_renders_product_message():
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert "Vetmanager MCP Service" in response.text
-    assert "Authorization: Bearer" in response.text
-    assert "/mcp" in response.text
-    assert "не сохраняет бизнес-данные из Vetmanager" in response.text
-    assert "логин и пароль Vetmanager не сохраняются" in response.text
-    assert "для ветврачей, администраторов и руководителей клиник" in response.text
-    assert "Зарегистрироваться" in response.text
+    assert "Ваш ИИ-помощник теперь знает" in response.text
+    assert "Подключить за 2 минуты" in response.text
+    assert "ChatGPT" in response.text
+    assert "Claude" in response.text
+    assert "Manus" in response.text
+    assert "не храним данные о клиентах и пациентах" in response.text
+    assert "Логин и пароль Vetmanager не сохраняются" in response.text
     assert "/register" in response.text
     assert "Cursor" in response.text
+
+
+@pytest.mark.asyncio
+async def test_landing_agent_choice_is_mobile_safe_and_uses_simple_copy():
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/")
+
+    html = response.text
+    hero_start = html.find('class="hero"')
+    hero_end = html.find("</section>", hero_start)
+    hero_html = html[hero_start:hero_end]
+    assert 'data-testid="agent-choice"' in hero_html
+    assert "/register?agent=chatgpt" in hero_html
+    assert "/register?agent=claude" in hero_html
+    assert "/register?agent=manus" in hero_html
+    assert "min-height: 48px" in html
+    assert ".agent-choice { grid-template-columns: 1fr; }" in html
+    assert 'href="#examples"' in hero_html
+    assert 'id="examples"' in html
 
 
 @pytest.mark.asyncio
@@ -360,10 +383,9 @@ def test_stage177_landing_mentions_chatgpt_connector_plainly():
     hero_start = html.find('class="hero"')
     hero_end = html.find("</section>", hero_start)
     hero_html = html[hero_start:hero_end]
-    assert 'data-testid="hero-chatgpt-note"' in hero_html
-    assert "Работает прямо в ChatGPT" in hero_html
-    assert "developer-mode plugin/app" in hero_html
-    assert "без ручных токенов" in hero_html
+    assert 'data-testid="agent-choice"' in hero_html
+    assert "Выберите помощника, которым уже пользуетесь." in hero_html
+    assert "/register?agent=chatgpt" in hero_html
 
     assert 'id="chatgpt-connector"' in html
     assert 'data-testid="chatgpt-connector-section"' in html

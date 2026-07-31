@@ -682,8 +682,11 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
 </html>"""
 
 
-def render_register_page(*, csrf_token: str, error: str | None = None, email: str = "") -> str:
+def render_register_page(
+    *, csrf_token: str, error: str | None = None, email: str = "", selected_agent: str = ""
+) -> str:
     error_html = f'<div class="error">{escape(error)}</div>' if error else ""
+    agent_html = f'<input type="hidden" name="agent" value="{escape(selected_agent)}">' if selected_agent else ""
     return render_shell(
         "Регистрация аккаунта",
         f"""
@@ -692,6 +695,7 @@ def render_register_page(*, csrf_token: str, error: str | None = None, email: st
         {error_html}
         <form method="post" action="/register" data-testid="register-form">
           {hidden_csrf_input(csrf_token)}
+          {agent_html}
           <label>Email
             <input type="email" name="email" autocomplete="email" value="{escape(email)}" required data-testid="register-email">
           </label>
@@ -887,6 +891,7 @@ def render_account_page(
     issued_token_access_label: str | None = None,
     issued_token_privacy_label: str | None = None,
     activation_now: datetime | None = None,
+    selected_agent: str = "",
 ) -> str:
     # Stage 100.6: escape even though _resolve_site_base_url validates —
     # defense-in-depth against future misconfig where validation may be
@@ -1047,6 +1052,27 @@ def render_account_page(
         for token in bearer_tokens
     )
     has_chatgpt = any(str(grant.get("status")) == "active" for grant in oauth_grants)
+    selected_agent_label = {"chatgpt": "ChatGPT", "claude": "Claude", "manus": "Manus"}.get(selected_agent, "")
+    selected_agent_html = (
+        f"<p>Вы выбрали {escape(selected_agent_label)}. Сначала подключите клинику.</p>"
+        if selected_agent_label
+        else ""
+    )
+    oauth_success_html = ""
+    if has_chatgpt and integration_ready and not has_client_usage:
+        oauth_success_html = """
+        <section class="panel-card" data-testid="oauth-first-request-guide">
+          <strong>Подсказки для вашего помощника</strong>
+          <p>Откройте помощника и попробуйте одну из фраз:</p>
+          <ul>
+            <li>Покажи записи на сегодня</li>
+            <li>Найди карточку клиента по фамилии</li>
+            <li>Сколько приёмов было на прошлой неделе?</li>
+            <li>Кого напомнить о визите завтра?</li>
+            <li>Кто не приходил больше полугода?</li>
+          </ul>
+        </section>
+        """
     activation_state = compute_activation_state(
         active_connection=active_connection,
         integration_health_status=integration_health_status,
@@ -1280,8 +1306,18 @@ def render_account_page(
         )
         client_instructions_html = f"""
         <section class="panel-card client-guide" id="client-connect" data-testid="client-connect-instructions">
-          <strong>Подключите MCP-клиент — остался один шаг</strong>
-          <p>MCP URL: <code>{escape(chatgpt_mcp_url)}</code>. Bearer-токен показывался один раз при выпуске; если он не сохранился — выпустите новый в секции «Выпуск Bearer-токенов».</p>
+          <strong>Почти готово — спросите помощника</strong>
+          <p>Откройте ChatGPT, Claude или Manus и попробуйте одну из фраз:</p>
+          <ul>
+            <li>Покажи записи на сегодня</li>
+            <li>Найди карточку клиента по фамилии</li>
+            <li>Сколько приёмов было на прошлой неделе?</li>
+            <li>Кого напомнить о визите завтра?</li>
+            <li>Кто не приходил больше полугода?</li>
+          </ul>
+          <details>
+            <summary>Для разработчиков</summary>
+            <p>Адрес подключения: <code>{chatgpt_mcp_url_html}</code>. Если токен не сохранился, выпустите новый ниже.</p>
           <details open>
             <summary>Cursor / Claude Code</summary>
             <p>Добавьте блок в конфигурацию MCP (Cursor: <code>mcp.json</code>; Claude Code: <code>claude mcp add</code> или <code>.mcp.json</code>) и подставьте свой токен:</p>
@@ -1291,16 +1327,20 @@ def render_account_page(
             <summary>ChatGPT</summary>
             <p>ChatGPT подключается без Bearer-токена — через OAuth. Раскройте секцию «ChatGPT connections» ниже и следуйте инструкции.</p>
           </details>
+          </details>
         </section>
         """
     return render_shell(
         "Кабинет аккаунта",
         f"""
-        <h1>Личный кабинет</h1>
+        <h1>Мой помощник</h1>
         {stepper_html}
-        <p>Вы вошли как <strong>{escape(account.email)}</strong>. Здесь вы подключаете Vetmanager клиники, проверяете статус интеграции и выпускаете Bearer-токены для работы AI-ассистента.</p>
+        <p>Вы вошли как <strong>{escape(account.email)}</strong>.</p>
+        <p>Подключите Vetmanager — и помощник сможет отвечать на вопросы о вашей клинике.</p>
+        {selected_agent_html}
         {issued_token_html}
         {activation_html}
+        {oauth_success_html}
         {client_instructions_html}
         {onboarding_html}
         <details class="section-block" id="account-meta" data-testid="account-meta" {meta_open}>

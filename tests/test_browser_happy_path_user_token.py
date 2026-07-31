@@ -31,7 +31,7 @@ def test_browser_user_token_flow_can_issue_bearer_and_call_mcp(
     page.get_by_test_id("register-submit").click()
     page.wait_for_load_state("networkidle")
 
-    assert page.locator("h1").inner_text() == "Личный кабинет"
+    assert page.locator("h1").inner_text() == "Мой помощник"
     assert page.get_by_test_id("integration-api-key").count() == 1
 
     page.get_by_test_id("auth-mode-user-token-radio").check()

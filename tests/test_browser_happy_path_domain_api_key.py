@@ -28,7 +28,7 @@ def test_browser_domain_api_key_flow_can_issue_bearer_and_call_mcp(
     page.get_by_test_id("register-submit").click()
     page.wait_for_load_state("networkidle")
 
-    assert page.locator("h1").inner_text() == "Личный кабинет"
+    assert page.locator("h1").inner_text() == "Мой помощник"
     assert page.get_by_test_id("integration-api-key").count() == 1
     assert page.get_by_test_id("panel-domain-api-key").is_visible()
     assert page.get_by_test_id("panel-user-token").is_hidden()

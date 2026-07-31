@@ -225,6 +225,9 @@ def test_issued_token_panel_has_open_instructions_and_config_copy() -> None:
 def test_client_instructions_become_primary_content_at_needs_client_use() -> None:
     html = _account_page(bearer_tokens=[_token_view()])
     assert 'data-testid="client-connect-instructions"' in html
+    assert "Почти готово — спросите помощника" in html
+    assert "Покажи записи на сегодня" in html
+    assert "Для разработчиков" in html
     assert "Cursor / Claude Code" in html
     assert "ChatGPT" in html
     assert "ВАШ_ТОКЕН" in html

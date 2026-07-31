@@ -137,7 +137,7 @@ async def test_register_route_creates_account_and_starts_session(tmp_path: Path,
         )
 
     assert response.status_code == 200
-    assert "Личный кабинет" in response.text
+    assert "Мой помощник" in response.text
     assert "owner@example.com" in response.text
     assert SESSION_COOKIE_NAME in client.cookies
 

@@ -534,6 +534,22 @@ def render_landing_page(script_nonce: str = "") -> str:
       padding-top: 24px;
       border-top: 1px solid var(--line);
     }
+    .agent-choice {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin: 22px 0;
+    }
+    .agent-choice a {
+      min-height: 48px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--r-sm);
+      background: var(--paper-card);
+      font-weight: 700;
+    }
+    .agent-choice a:hover { border-color: var(--accent); color: var(--accent-700); }
     .trust-item {
       display: inline-flex;
       align-items: center;
@@ -1575,6 +1591,7 @@ def render_landing_page(script_nonce: str = "") -> str:
     }
 
     @media (max-width: 540px) {
+      .agent-choice { grid-template-columns: 1fr; }
       .mock-head .label { display: none; }
       .revenue-headline { flex-wrap: wrap; }
       .revenue-headline .total { font-size: 1.45rem; }
@@ -1616,30 +1633,26 @@ def render_landing_page(script_nonce: str = "") -> str:
       <div class="shell hero-grid">
         <div class="rise-in">
           <p class="section-label">Для ветклиник и врачей</p>
-          <h1>Данные клиники <em>по запросу</em><br>за&nbsp;секунды</h1>
+          <h1>Ваш ИИ-помощник теперь знает <em>вашу клинику</em></h1>
           <p class="hero-lede">
-            Сервис для ветврачей, администраторов и руководителей клиник помогает быстрее
-            получать данные из Vetmanager через AI-ассистента: по клиентам, пациентам,
-            приёмам, финансам и складу. Без ручного поиска по разделам и без передачи
-            секретов клиники в каждое подключение.
+            Подключите Vetmanager к ChatGPT, Claude или Manus — и спрашивайте про записи,
+            приёмы и клиентов обычными словами.
           </p>
-          <p class="hero-chatgpt-note" data-testid="hero-chatgpt-note">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><path d="M3 12h18"/><path d="m5.6 5.6 12.8 12.8"/><path d="m18.4 5.6-12.8 12.8"/></svg>
-            <span><strong>Работает прямо в ChatGPT:</strong> подключается как developer-mode plugin/app через OAuth, без ручных токенов.</span>
-          </p>
-          <p class="hero-fineprint">
-            Сервис не сохраняет бизнес-данные из Vetmanager для постоянного хранения. Он хранит только технические данные интеграции и сервисные bearer-метаданные, необходимые для авторизации и работы MCP runtime.
-          </p>
-          <p class="hero-fineprint">
-            Если выбран режим авторизации через Vetmanager login/password, логин и пароль Vetmanager не сохраняются: они нужны только для получения user token. При смене пароля в Vetmanager такой token может стать невалидным, и потребуется повторная авторизация.
-          </p>
+          <p><strong>Выберите помощника, которым уже пользуетесь.</strong></p>
+          <div class="agent-choice" data-testid="agent-choice">
+            <a href="/register?agent=chatgpt">ChatGPT</a>
+            <a href="/register?agent=claude">Claude</a>
+            <a href="/register?agent=manus">Manus</a>
+          </div>
           <div class="cta-row">
             <a class="cta" href="/register">
-              Зарегистрироваться
+              Подключить за 2 минуты
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
             </a>
-            <a class="ghost" href="#mcp-agent-instructions">Инструкции для агентов</a>
+            <a class="ghost" href="#examples">Посмотреть, что умеет</a>
           </div>
+          <p class="hero-fineprint">Помощник только читает данные. Отключить можно в один клик.</p>
+          <p class="hero-fineprint">Мы не храним данные о клиентах и пациентах. Логин и пароль Vetmanager не сохраняются.</p>
           <p class="returning-hint">Уже зарегистрированы? <a href="/login">Войти в кабинет</a></p>
           <div class="trust-strip">
             <span class="trust-item">

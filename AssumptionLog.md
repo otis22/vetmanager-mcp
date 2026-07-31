@@ -10673,3 +10673,14 @@ Checks so far:
 - **Production closure**: commit `90be20d` was pushed; the user confirmed
   Claude MCP works after deploy. Manus is accepted as compatible by the same
   OAuth contract without a separate manual smoke at the user's direction.
+
+## Этап 208 Активация через ИИ-помощника — 2026-07-31
+
+- **Decision**: landing and account are connector-first for ChatGPT, Claude and
+  Manus. Existing OAuth, token and activation storage contracts are unchanged.
+- **Privacy**: no new telemetry schema was added; account guidance contains no
+  customer/patient data or prompt history.
+- **UX**: first-request prompts appear for the bearer waiting state and for an
+  active OAuth grant. Technical setup stays available under «Для разработчиков».
+- **Verification**: browser coverage checks 375px and desktop no-overflow for
+  landing/account; full suite `1379 passed, 2 skipped, 65 deselected`.

@@ -474,6 +474,7 @@ async def _render_account_dashboard_response(
     token_is_depersonalized: bool = False,
     issued_token_access_label: str | None = None,
     issued_token_privacy_label: str | None = None,
+    selected_agent: str = "",
 ) -> HTMLResponse | RedirectResponse:
     csrf_token = _resolve_csrf_token(request)
     script_nonce = _generate_csp_nonce()
@@ -522,6 +523,7 @@ async def _render_account_dashboard_response(
             token_is_depersonalized=token_is_depersonalized,
             issued_token_access_label=issued_token_access_label,
             issued_token_privacy_label=issued_token_privacy_label,
+            selected_agent=selected_agent,
         ),
         status_code=status_code,
         with_csrf_cookie=True,
