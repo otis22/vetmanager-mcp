@@ -299,7 +299,7 @@ def _load_oauth_grant_scopes(raw_value: str) -> tuple[str, ...]:
 
 def _summarize_scopes(scopes: tuple[str, ...]) -> str:
     if not scopes:
-        return "No scopes"
+        return "нет"
     if len(scopes) <= 3:
         return ", ".join(scopes)
     return f"{', '.join(scopes[:3])} +{len(scopes) - 3}"
