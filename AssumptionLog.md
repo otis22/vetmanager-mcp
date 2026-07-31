@@ -10739,3 +10739,28 @@ Checks so far:
   `200` for `/`, `/register`, `/healthz` and `/readyz`; production HTML contains
   the safe `getElementById` hash handler, direct CTA, single time estimate,
   example label and support mail link.
+
+## Этап 209.5 Второстепенный Open Source footer-copy — 2026-07-31
+
+- **Decision**: the user asked to retain self-hosted and Open Source on the
+  landing. The accepted Opus 5 hierarchy for stage 209 already placed this
+  information in footer/developer disclosure, so it is a muted note under the
+  existing GitHub link in the final auxiliary card, not a competing CTA.
+- **Scope**: one server-rendered sentence and a regression assertion; no
+  registration, backend, connection, OAuth, telemetry or storage contract
+  changed.
+- **Verification**: targeted landing/browser tests passed (`27 passed`); the
+  complete Docker suite completed without reported errors after the review fix.
+- **Reviews**: Spark committed-diff review
+  `019fb857-b275-7231-a018-059702e0de62` returned two accepted low findings:
+  make the notice visually muted and assert its location after the GitHub link.
+  Commit `4b6d407` fixed both; follow-up Spark review
+  `019fb859-af6d-7111-af6b-8bb30853b016` returned `[]`. Claude Opus code-review
+  budget for stage 209 was already exhausted (2/2), so no additional launch
+  was made; this is a direct, Spark-reviewed, test-covered micro-fix that
+  follows the already accepted Opus UI decision.
+- **Production closure**: commits `fc4b6b9` and `4b6d407` passed GitHub Tests
+  `30634398315` and Deploy Prod `30634621677`. GET-only production smoke
+  returned `200` for `/`, `/register`, `/healthz` and `/readyz`; served landing
+  HTML contains the `self-hosted-note` and its text. No accounts or connections
+  were created and no local credentials were read, printed, removed or committed.
