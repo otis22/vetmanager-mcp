@@ -281,6 +281,8 @@ async def test_final_cta_prioritizes_clinic_help():
     assert 'mailto:support@vetmanager.cloud' in html
     assert "github.com/otis22/vetmanager-mcp" in html
     assert "Проект открыт. Техническая команда может установить его на своём сервере." in html
+    self_hosted_note = html.index('class="self-hosted-note"')
+    assert self_hosted_note > html.index("github.com/otis22/vetmanager-mcp")
 
 
 def _extract_mcp_onboarding(html: str) -> str:
