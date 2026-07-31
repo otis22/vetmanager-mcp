@@ -511,7 +511,9 @@ def register_account_routes(
             token_success="Bearer token выпущен.",
             issued_raw_token=raw_token,
             issued_token_access_label=display_access_label(access_preset),
-            issued_token_privacy_label="Depersonalized" if is_depersonalized else "Standard",
+            issued_token_privacy_label=(
+                "Без персональных данных" if is_depersonalized else "Обычные данные"
+            ),
         )
 
     @observed_route(

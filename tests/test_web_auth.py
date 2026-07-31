@@ -1391,7 +1391,7 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
     # Stage 210: the issued-token block speaks Russian; the English preset
     # labels stay in tool_access_registry for MCP scope-denied messages.
     assert "Уровень доступа:</strong> Регистратура" in response.text
-    assert "Персональные данные:</strong> Depersonalized" in response.text
+    assert "Персональные данные:</strong> Без персональных данных" in response.text
     assert "Регистратура" in response.text
 
     async with storage.get_session_factory()() as session:

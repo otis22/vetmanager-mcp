@@ -879,6 +879,22 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
       .token-action-cell {{
         text-align: left;
       }}
+      .token-table td.grant-name-cell {{
+        display: block;
+      }}
+      .token-table td.grant-name-cell::before {{
+        display: block;
+        margin-bottom: 4px;
+      }}
+      .token-table .detail-row td,
+      .token-table .note-row td {{
+        display: block;
+        padding: 4px 0 10px;
+      }}
+      .token-table .detail-row td::before,
+      .token-table .note-row td::before {{
+        content: none;
+      }}
       .token-action-cell form {{
         justify-content: flex-start;
       }}
@@ -1375,7 +1391,7 @@ def render_account_page(
             f'<td data-label="Последнее использование">'
             f'{_timestamp_html(token.get("last_used_at_raw"), token["last_used_at"])}</td>'
             f'<td data-label="Запросов">{escape(str(token["request_count"]))}</td>'
-            f'<td class="token-action-cell">{action_html}</td>'
+            f'<td class="token-action-cell" data-label="Действия">{action_html}</td>'
             "</tr>"
         )
 
@@ -1447,7 +1463,7 @@ def render_account_page(
                 )
             rows.append(
                 "<tr>"
-                f'<td data-label="Помощник">{escape(client_name)}{in_use_html}</td>'
+                f'<td class="grant-name-cell" data-label="Помощник">{escape(client_name)}{in_use_html}</td>'
                 f'<td data-label="Доступ">{escape(str(grant.get("access_label", "Настроен вручную")))}</td>'
                 f'<td data-label="Персональные данные">{escape(str(grant.get("privacy_label", "Скрыты")))}</td>'
                 f'<td data-label="Статус"><span class="token-status status-{escape(status)}">'
@@ -1456,7 +1472,7 @@ def render_account_page(
                 f'{_timestamp_html(grant.get("created_at_raw"), grant["created_at"])}</td>'
                 f'<td data-label="Последнее использование">'
                 f'{_timestamp_html(grant.get("last_used_at_raw"), grant["last_used_at"])}</td>'
-                f'<td class="token-action-cell">{action_html}</td>'
+                f'<td class="token-action-cell" data-label="Действия">{action_html}</td>'
                 "</tr>"
                 f'<tr class="detail-row"><td colspan="7">'
                 '<details class="token-details"><summary>Подробнее</summary>'

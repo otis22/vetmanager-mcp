@@ -509,3 +509,43 @@ def test_every_token_status_renders(status: str) -> None:
     )
 
     assert f"status-{status}" in html
+
+
+# ------------------------------------------------- external review follow-ups
+
+def test_issued_key_block_speaks_russian() -> None:
+    """The one-time block after creating a key kept English privacy labels.
+
+    Found by the external committed-diff review: the smoke check never issues a
+    key, so this path had no coverage.
+    """
+    html = _account_html(
+        issued_raw_token="vm_st_freshly_created_value",
+        issued_token_access_label="Аналитика",
+        issued_token_privacy_label="Без персональных данных",
+    )
+    text = visible_text(html)
+
+    assert "Depersonalized" not in text
+    assert "Standard" not in text
+    assert "Без персональных данных" in text
+
+
+def test_full_width_rows_do_not_become_their_own_mobile_card() -> None:
+    """K-2/K-4 on 390px: colspan rows carry no data-label.
+
+    Without an explicit rule the card layout renders them as right-aligned
+    fragments that read like a separate connection.
+    """
+    html = _account_html()
+
+    assert ".token-table .detail-row td,\n      .token-table .note-row td {\n        display: block;" in html
+    assert "content: none;" in html
+    assert "td.grant-name-cell {\n        display: block;\n      }" in html
+
+
+def test_action_cells_keep_their_mobile_label() -> None:
+    """The header became screen-reader-only, so the cell needs its own label."""
+    html = _account_html()
+
+    assert html.count('data-label="Действия"') >= 2
