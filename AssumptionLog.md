@@ -10695,3 +10695,6 @@ Checks so far:
   Claude OAuth/MCP smoke is intentionally a manual user verification.
 - **Access copy**: landing now states that read-only is the default; a broader
   access level is possible only when selected separately in the cabinet.
+- **Final rollout**: clarification commit `785732c` passed GitHub Tests
+  `30628583888` and Deploy Prod `30628787745`; public landing, login, liveness
+  and readiness endpoints returned `200`, and production served the new copy.
