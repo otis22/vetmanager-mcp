@@ -63,7 +63,7 @@ def test_stage209_public_copy_keeps_direct_cta_and_privacy_contract():
     assert "Для связи хранится отдельный защищённый ключ подключения" in html
     assert "Данные в примере вымышленные" in html
     assert 'id="developer-onboarding"' in html
-    assert 'target.closest("details")' in html
+    assert 'document.getElementById(window.location.hash.slice(1))' in html
     assert "scrollIntoView" in html
 
 

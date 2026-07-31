@@ -10727,3 +10727,10 @@ Checks so far:
   `/healthz` and `/readyz`; the served landing contained the new title,
   direct `/register` CTA, one «2 минуты» claim, example label and collapsed
   developer guidance.
+- **Post-closure Spark follow-up**: committed-diff review
+  `019fb848-c57a-7983-9a52-0b479ed8e61d` found one medium issue in arbitrary
+  fragment handling. Replaced `querySelector(location.hash)` with safe
+  `getElementById(location.hash.slice(1))`; targeted `27 passed` and another
+  full Docker suite completed before the hotfix deploy. Strong code-review
+  budget remains exhausted (2/2); the change is the direct, test-covered fix
+  for the accepted Spark finding.

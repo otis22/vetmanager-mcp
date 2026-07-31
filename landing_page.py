@@ -2186,7 +2186,7 @@ def render_landing_page(script_nonce: str = "") -> str:
     (() => {
       const openHashDisclosure = () => {
         if (!window.location.hash) return;
-        const target = document.querySelector(window.location.hash);
+        const target = document.getElementById(window.location.hash.slice(1));
         if (!target) return;
         let disclosure = target.closest("details");
         while (disclosure) {
