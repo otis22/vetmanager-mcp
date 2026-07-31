@@ -312,11 +312,14 @@ def test_stage146_mcp_onboarding_core_copy_and_privacy():
 
     assert "Подключите ИИ-агента к вашему Vetmanager за 5 минут" in main_copy
     assert "MCP — это мост между ИИ-агентом и Vetmanager" in main_copy
-    assert "Какая выручка была за март?" in main_copy
-    assert "Покажи записи врача на завтра" in main_copy
-    assert "Найди клиента по телефону" in main_copy
-    assert "Какие счета оплачены частично?" in main_copy
-    assert "Кому из пациентов пора на прививку?" in main_copy
+    # Stage 210: the example questions used to be repeated inside the collapsed
+    # technical block as a third copy. They now live only in the public
+    # "Какие вопросы можно задавать" section, where every visitor sees them.
+    assert "Какая выручка была за март?" in html
+    assert "Покажи записи врача на завтра" in html
+    assert "Найди клиента по телефону" in html
+    assert "Какие счета оплачены частично?" in html
+    assert "Кому из пациентов пора на прививку?" in html
     assert "Ключ доступа не нужно отправлять в чат" in main_copy
     assert "/register" in main_copy
     assert "/login" in main_copy

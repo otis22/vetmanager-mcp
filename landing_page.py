@@ -301,7 +301,8 @@ def render_landing_page(script_nonce: str = "") -> str:
       background: var(--accent);
     }
 
-    .brand h1 {
+    .brand .brand-name {
+      display: block;
       margin: 0;
       font-size: 0.92rem;
       font-weight: 600;
@@ -313,7 +314,7 @@ def render_landing_page(script_nonce: str = "") -> str:
     .brand p {
       margin: 1px 0 0;
       font-size: 0.78rem;
-      color: var(--ink-300);
+      color: var(--ink-500);
       letter-spacing: 0.005em;
     }
 
@@ -435,6 +436,13 @@ def render_landing_page(script_nonce: str = "") -> str:
       border-left: 2px solid var(--line);
     }
     .hero-fineprint + .hero-fineprint { margin-top: 10px; }
+    .hero-price {
+      margin: 20px 0 0;
+      color: var(--ink-700);
+      font-size: 0.98rem;
+      line-height: 1.5;
+    }
+    .hero-price strong { color: var(--ink-900); font-weight: 600; }
 
     .hero-chatgpt-note {
       margin: 18px 0 0;
@@ -602,7 +610,7 @@ def render_landing_page(script_nonce: str = "") -> str:
     .mock-head .label {
       font-family: var(--font-mono);
       font-size: 0.76rem;
-      color: var(--ink-300);
+      color: var(--ink-500);
       letter-spacing: 0.04em;
       margin-left: 8px;
     }
@@ -1233,6 +1241,21 @@ def render_landing_page(script_nonce: str = "") -> str:
       margin-top: 28px;
     }
 
+    .how-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: clamp(24px, 4vw, 56px);
+      align-items: start;
+      margin-top: 28px;
+    }
+    .how-steps-title {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1.25rem;
+      letter-spacing: -0.008em;
+      margin: 0 0 16px;
+      color: var(--ink-900);
+    }
     .step-list {
       display: grid;
       gap: 14px;
@@ -1324,6 +1347,16 @@ def render_landing_page(script_nonce: str = "") -> str:
       color: var(--ink-300);
     }
     .disclosure[open] summary .chev { transform: rotate(180deg); color: var(--accent); }
+    .disclosure summary .summary-text { display: block; }
+    .disclosure summary .summary-note {
+      display: block;
+      margin-top: 3px;
+      font-family: var(--font-body);
+      font-weight: 400;
+      font-size: 0.86rem;
+      line-height: 1.45;
+      color: var(--ink-500);
+    }
     .disclosure summary .ic-pre {
       width: 36px;
       height: 36px;
@@ -1485,7 +1518,7 @@ def render_landing_page(script_nonce: str = "") -> str:
       padding: 4px 0;
     }
     footer .links a:hover { color: var(--ink-900); }
-    footer .copy { text-align: right; color: var(--ink-300); font-size: 0.84rem; }
+    footer .copy { text-align: right; color: var(--ink-500); font-size: 0.84rem; }
 
     /* ------------------------------------------------------------ Mobile sticky CTA */
 
@@ -1505,6 +1538,7 @@ def render_landing_page(script_nonce: str = "") -> str:
       justify-content: space-between;
       gap: 12px;
     }
+    .sticky-cta.is-hidden { display: none; }
     .sticky-cta strong {
       display: block;
       font-size: 0.92rem;
@@ -1559,6 +1593,7 @@ def render_landing_page(script_nonce: str = "") -> str:
 
     @media (max-width: 920px) {
       .hero-grid,
+      .how-grid { grid-template-columns: minmax(0, 1fr); }
       .explainer,
       .onboarding-head,
       .two-col,
@@ -1602,7 +1637,7 @@ def render_landing_page(script_nonce: str = "") -> str:
       .revenue-headline .total { font-size: 1.45rem; }
       .breakdown li { font-size: 0.78rem; }
       .brand p { display: none; }
-      .brand h1 { font-size: 0.98rem; }
+      .brand .brand-name { font-size: 0.98rem; }
     }
   </style>
 </head>
@@ -1614,7 +1649,7 @@ def render_landing_page(script_nonce: str = "") -> str:
       <div class="brand">
         <div class="seal" aria-label="Vetmanager">VM</div>
         <div>
-          <h1>ИИ-помощник для Vetmanager</h1>
+          <span class="brand-name">ИИ-помощник для Vetmanager</span>
           <p>Независимый сервис для вашей клиники</p>
         </div>
       </div>
@@ -1651,6 +1686,7 @@ def render_landing_page(script_nonce: str = "") -> str:
             </a>
             <a class="ghost" href="#examples">Посмотреть пример ответа</a>
           </div>
+          <p class="hero-price"><strong>Бесплатно.</strong> Оплата не нужна ни сейчас, ни потом.</p>
           <p class="hero-fineprint">По умолчанию помощник только читает данные. Доступ можно изменить или отключить в кабинете.</p>
           <p class="hero-fineprint">Мы не храним данные о клиентах и пациентах. Логин и пароль Vetmanager не сохраняются.</p>
           <p class="returning-hint">Уже зарегистрированы? <a href="/login">Войти в кабинет</a></p>
@@ -1712,17 +1748,30 @@ def render_landing_page(script_nonce: str = "") -> str:
     </section>
 
     <section class="section" id="how-it-works">
-      <div class="shell explainer">
-        <div class="label-block">
-          <p class="section-label">Начало работы</p>
-          <h2>Как это работает</h2>
-        </div>
-        <div class="body">
-          <ol>
-            <li>Зарегистрируйтесь.</li>
-            <li>В кабинете подключите свою клинику Vetmanager и следуйте короткой инструкции для ChatGPT, Claude или Manus.</li>
-            <li>Задайте вопрос обычными словами — ИИ-помощник ответит по данным вашей клиники.</li>
-          </ol>
+      <div class="shell">
+        <p class="section-label">Начало работы</p>
+        <h2 class="section-title">Как это работает</h2>
+        <p class="section-lede">Вы спрашиваете обычными словами, помощник берёт ответ из вашей клиники.</p>
+        <div class="how-grid">
+          <div class="flow-map" aria-label="Что происходит после вопроса">
+            <div class="flow-node"><span class="num">1</span><div><strong>Вы задаёте вопрос</strong><span>«Покажи записи на завтра» или «Какая выручка за март».</span></div></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-node"><span class="num">2</span><div><strong>Ваш ИИ-помощник</strong><span>ChatGPT, Claude или Manus — тот, которым вы уже пользуетесь.</span></div></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-node"><span class="num">3</span><div><strong>Защищённое подключение</strong><span>Работает только для вашей клиники и только на разрешённые вами действия.</span></div></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-node"><span class="num">4</span><div><strong>Ваш Vetmanager</strong><span>Данные остаются в вашей рабочей системе.</span></div></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-node"><span class="num">5</span><div><strong>Ответ по данным клиники</strong><span>Помощник возвращает понятный результат.</span></div></div>
+          </div>
+          <div>
+            <h3 class="how-steps-title">Что нужно сделать</h3>
+            <div class="step-list">
+            <div class="step-row"><div><strong>Зарегистрироваться</strong><span>Создать аккаунт клиники и открыть личный кабинет.</span></div></div>
+            <div class="step-row"><div><strong>Подключить Vetmanager</strong><span>Указать домен клиники и настроить безопасный доступ один раз.</span></div></div>
+            <div class="step-row"><div><strong>Спрашивать</strong><span>Задавать вопросы по клиентам, пациентам, приёмам, финансам и складу в привычном чате.</span></div></div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -1734,7 +1783,7 @@ def render_landing_page(script_nonce: str = "") -> str:
           <h2>С какими помощниками работает</h2>
         </div>
         <div class="body">
-          <p>Выберите помощника, которым уже пользуетесь. Это необязательно: общая кнопка выше сразу открывает регистрацию.</p>
+          <p>Выберите помощника, которым уже пользуетесь.</p>
           <div class="agent-choice" data-testid="agent-choice">
             <a href="/register?agent=chatgpt">ChatGPT</a>
             <a href="/register?agent=claude">Claude</a>
@@ -1748,14 +1797,29 @@ def render_landing_page(script_nonce: str = "") -> str:
 
     <section class="section">
       <div class="shell">
-        <details class="disclosure" id="developer-onboarding">
-          <summary>Для разработчиков: подключение помощника</summary>
+        <p class="section-label">Техническая настройка</p>
+        <h2 class="section-title">Если настраиваете агента сами</h2>
+        <p class="section-lede">
+          Не обязательный шаг: для работы через ChatGPT, Claude или Manus достаточно
+          регистрации. Этот раздел — для тех, кто подключает агента вручную.
+        </p>
+        <details class="disclosure" id="developer-onboarding" style="margin-top: 24px;">
+          <summary>
+            <span class="ic-pre">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            </span>
+            <span class="summary-text">
+              Подключить агента вручную
+              <span class="summary-note">Codex, Claude, Cursor, Manus — готовые команды и ключ доступа</span>
+            </span>
+            <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
         <section class="onboarding" id="mcp-onboarding" data-testid="mcp-onboarding">
           <div data-testid="mcp-onboarding-main-copy">
             <div class="onboarding-head">
               <div>
                 <p class="section-label">Подключение агента</p>
-                <h2>Подключите ИИ-агента к вашему Vetmanager за 5 минут</h2>
+                <h3>Подключите ИИ-агента к вашему Vetmanager за 5 минут</h3>
                 <p class="lede">
                   Работает через MCP: <strong>Codex, Claude, Cursor, Manus</strong> и другие совместимые агенты смогут находить клиентов,
                   смотреть записи, проверять счета и считать выручку по данным вашей клиники.
@@ -1764,28 +1828,6 @@ def render_landing_page(script_nonce: str = "") -> str:
                   MCP — это мост между ИИ-агентом и Vetmanager. Вы задаёте вопрос обычным языком, агент обращается
                   к Vetmanager через разрешённые команды и возвращает ответ по вашим данным.
                 </p>
-              </div>
-              <div class="flow-map" aria-label="Как работает подключение">
-                <div class="flow-node"><span class="num">1</span><div><strong>Вы задаёте вопрос</strong><span>Например, про выручку, записи или клиента.</span></div></div>
-                <div class="flow-arrow">↓</div>
-                <div class="flow-node"><span class="num">2</span><div><strong>ИИ-агент</strong><span>Codex, Claude, Cursor, Manus или другой совместимый агент.</span></div></div>
-                <div class="flow-arrow">↓</div>
-                <div class="flow-node"><span class="num">3</span><div><strong>MCP-мост</strong><span>Передаёт запрос через разрешённые команды.</span></div></div>
-                <div class="flow-arrow">↓</div>
-                <div class="flow-node"><span class="num">4</span><div><strong>Ваш Vetmanager</strong><span>Данные остаются в вашей рабочей системе.</span></div></div>
-                <div class="flow-arrow">↓</div>
-                <div class="flow-node"><span class="num">5</span><div><strong>Ответ по данным клиники</strong><span>Агент возвращает понятный результат.</span></div></div>
-              </div>
-            </div>
-
-            <div class="prompts-wrap" style="margin-top: 36px;">
-              <h3 class="subhead">Что можно спросить после подключения</h3>
-              <div class="prompt-grid">
-                <p class="prompt-chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 16h8"/><path d="M7 11h12"/><path d="M7 6h3"/></svg>Какая выручка была за март?</p>
-                <p class="prompt-chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>Покажи записи врача на завтра</p>
-                <p class="prompt-chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>Найди клиента по телефону</p>
-                <p class="prompt-chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>Какие счета оплачены частично?</p>
-                <p class="prompt-chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>Кому из пациентов пора на прививку?</p>
               </div>
             </div>
 
@@ -1932,21 +1974,29 @@ def render_landing_page(script_nonce: str = "") -> str:
           </div>
 
           <div>
-            <h3 class="subhead">Примеры задач по ролям</h3>
-            <div class="grid-3">
-              <div class="mini-card"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Администратор</strong><span>Найди клиента по телефону<br>Покажи записи на завтра<br>Какие счета оплачены частично?</span></div>
-              <div class="mini-card"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 2v2"/><path d="M5 2v2"/><path d="M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1"/><path d="M8 15a6 6 0 0 0 12 0v-3"/><circle cx="20" cy="10" r="2"/></svg>Врач</strong><span>Покажи историю питомца<br>Кому из пациентов пора на прививку?<br>Покажи последние приёмы клиента</span></div>
-              <div class="mini-card"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>Руководитель клиники</strong><span>Какая выручка была за март?<br>Собери отчёт по оплатам за неделю<br>Найди клиентов с долгом</span></div>
-            </div>
-          </div>
-
-          <div>
             <h3 class="subhead">Частые ошибки</h3>
             <div class="grid-3">
               <div class="mini-card error"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>Агент не видит Vetmanager</strong><span>Перезапустите сессию и попросите показать список подключённых MCP-серверов.</span></div>
               <div class="mini-card error"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>Ошибка 401 / ключ доступа не подошёл</strong><span>Проверьте, что ключ вставлен в настройки и скопирован полностью.</span></div>
               <div class="mini-card error"><strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>Инструменты не появились</strong><span>Проверьте адрес MCP-сервера и перезапустите приложение или сессию.</span></div>
             </div>
+          </div>
+
+          <div>
+            <h3 class="subhead">Если настраиваете руками</h3>
+            <p style="color: var(--ink-500); font-size: 0.98rem; line-height: 1.6; max-width: 64ch;">
+              Формат подключения: <code>Authorization: Bearer &lt;service_token&gt;</code>.
+            </p>
+            <pre>{
+  "mcpServers": {
+    "vetmanager": {
+      "url": "__MCP_SERVER_URL__",
+      "headers": {
+        "Authorization": "Bearer vm_st_your_service_token"
+      }
+    }
+  }
+}</pre>
           </div>
         </section>
         </details>
@@ -2009,22 +2059,6 @@ def render_landing_page(script_nonce: str = "") -> str:
       </div>
     </section>
 
-    <section class="section">
-      <div class="shell">
-        <p class="section-label">Старт</p>
-        <h2 class="section-title">Как начать работу</h2>
-        <p class="section-lede">
-          Регистрация вынесена в главный сценарий, потому что именно с
-          неё начинается настройка клиники и безопасного доступа команды.
-        </p>
-        <div class="step-list">
-          <div class="step-row"><div><strong>Зарегистрироваться</strong><span>Создать аккаунт клиники и открыть личный кабинет.</span></div></div>
-          <div class="step-row"><div><strong>Подключить Vetmanager</strong><span>Указать домен клиники и настроить безопасную авторизацию один раз.</span></div></div>
-          <div class="step-row"><div><strong>Работать через ИИ-помощника</strong><span>Задавать вопросы по клиентам, пациентам, приёмам, финансам и складу в одном интерфейсе.</span></div></div>
-        </div>
-      </div>
-    </section>
-
     <section class="section" id="examples">
       <div class="shell">
         <p class="section-label">Примеры</p>
@@ -2034,11 +2068,12 @@ def render_landing_page(script_nonce: str = "") -> str:
           нескольких переходов по Vetmanager или помощи администратора.
         </p>
         <ul class="examples-list">
-          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Покажи записи на сегодня и ближайшие приёмы по врачам.</span></li>
-          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Найди клиента и покажи историю обращений его питомца.</span></li>
-          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Какие пациенты давно не приходили на повторный приём?</span></li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Какая выручка была за март?</span></li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Покажи записи врача на завтра</span></li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Найди клиента по телефону</span></li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Какие счета оплачены частично?</span></li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Кому из пациентов пора на прививку?</span></li>
           <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Покажи должников и суммы задолженности.</span></li>
-          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Покажи неоплаченные счета и сумму задолженности.</span></li>
         </ul>
       </div>
     </section>
@@ -2054,30 +2089,16 @@ def render_landing_page(script_nonce: str = "") -> str:
         <details class="disclosure" style="margin-top: 24px;">
           <summary>
             <span class="ic-pre">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
             </span>
-            Для разработчиков: формат подключения
+            Сколько это стоит?
             <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           </summary>
           <div class="body">
             <p>
-              Для технической команды сервис остаётся совместимым с MCP-клиентами и
-              использует bearer-only runtime, но эти детали не нужны для старта работы
-              клиники.
+              Бесплатно. Сервис бесплатен для клиник: оплата не нужна ни при
+              регистрации, ни потом. Ограничений по сроку использования нет.
             </p>
-            <p>
-              Формат подключения: <code>Authorization: Bearer &lt;service_token&gt;</code>.
-            </p>
-            <pre>{
-  "mcpServers": {
-    "vetmanager": {
-      "url": "https://vetmanager-mcp.vromanichev.ru/mcp",
-      "headers": {
-        "Authorization": "Bearer vm_st_your_service_token"
-      }
-    }
-  }
-}</pre>
           </div>
         </details>
 
@@ -2180,10 +2201,10 @@ def render_landing_page(script_nonce: str = "") -> str:
     </div>
   </footer>
 
-  <div class="sticky-cta" role="complementary" aria-label="Быстрый старт">
+  <div class="sticky-cta is-hidden" role="complementary" aria-label="Быстрый старт">
     <div>
       <strong>Подключите помощника</strong>
-      <span>Регистрация без оплаты</span>
+      <span>Бесплатно, без оплаты</span>
     </div>
     <a href="/register">Подключить</a>
   </div>
@@ -2203,6 +2224,26 @@ def render_landing_page(script_nonce: str = "") -> str:
       };
       openHashDisclosure();
       window.addEventListener("hashchange", openHashDisclosure);
+
+      // Stage 210 (L-5): the sticky bar repeated a CTA that was already on
+      // screen and covered the fineprint under it. Reveal it only once the
+      // hero button is gone. Without IntersectionObserver the bar simply
+      // stays visible, which is the previous behaviour.
+      const stickyBar = document.querySelector(".sticky-cta");
+      const heroCta = document.querySelector(".hero .cta");
+      if (stickyBar && heroCta && "IntersectionObserver" in window) {
+        const stickyObserver = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              stickyBar.classList.toggle("is-hidden", entry.isIntersecting);
+            });
+          },
+          { rootMargin: "0px 0px -20% 0px" }
+        );
+        stickyObserver.observe(heroCta);
+      } else if (stickyBar) {
+        stickyBar.classList.remove("is-hidden");
+      }
       const root = document.getElementById("mcp-onboarding");
       if (!root) return;
 
