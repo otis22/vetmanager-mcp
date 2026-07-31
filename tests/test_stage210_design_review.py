@@ -656,3 +656,12 @@ def test_key_note_only_talks_about_the_key() -> None:
     assert "Настройку удобнее делать с компьютера" not in note
     # The tip keeps its place next to the steps, inside the same copy block.
     assert "Настройку удобнее делать с компьютера" in html
+
+
+def test_claude_code_command_pins_the_transport_and_header() -> None:
+    """External review: without --transport and --header the agent can emit a
+    command that looks right and does not authenticate."""
+    block = _developer_block(render_landing_page())
+
+    assert "claude mcp add --transport http" in block
+    assert "Authorization: Bearer" in block

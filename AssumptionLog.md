@@ -10909,3 +10909,20 @@ Checks so far:
 
 - **Проверки**: Docker suite `1431 passed, 2 skipped, 65 deselected`. Высота
   развёрнутого блока 2436 → 2202 px.
+
+### Этап 210.7 — ревью на committed diff и закрытие
+
+- **Code/diff review сторонней моделью**: Codex `gpt-5.5`, запуск 1/2.
+  0 critical, 1 warning, 6 nit. Ревьюер отдельно сверился с официальной
+  документацией Claude Code вместо опоры на память.
+- **Принято (2)**: команда в табе Claude Code не фиксировала `--transport http`
+  и `--header`, из-за чего агент мог сгенерировать внешне правильную, но
+  неавторизующуюся команду — теперь в тексте показан полный вид
+  `claude mcp add --transport http vetmanager <адрес> --header "Authorization:
+  Bearer <ключ>"`; подэтап 210.7 переведён в `done` в Roadmap.
+- **Подтверждено ревью**: Manus удалён только из `#developer-onboarding` и
+  остаётся на публичном пути; висячих ARIA-ссылок на удалённые таб и панель
+  нет; удалённый CSS не имеет живой разметки; ARIA табов сохранена и на 390 px
+  таб-лист переносится, а не обрезается; инвариант 208/209 не нарушен;
+  `.config-card pre, .command-card pre` не задевает другие `<pre>`.
+- **Проверки**: Docker suite `1432 passed, 2 skipped, 65 deselected`.

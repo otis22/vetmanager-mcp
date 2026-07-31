@@ -1861,8 +1861,11 @@ def render_landing_page(script_nonce: str = "") -> str:
               <pre id="mcp-command-claude">Настрой MCP-сервер Vetmanager в Claude Code.
 
 Адрес сервера: __MCP_SERVER_URL__
+Транспорт: http, авторизация — заголовок Authorization: Bearer
 
-Ключ доступа / Bearer token я вставлю сам, но покажи команду claude mcp add и куда в ней подставить ключ.
+Ключ доступа / Bearer token я вставлю сам. Покажи готовую команду вида
+claude mcp add --transport http vetmanager &lt;адрес&gt; --header &quot;Authorization: Bearer &lt;ключ&gt;&quot;
+и скажи, куда в ней подставить ключ.
 
 После настройки скажи, как проверить подключение командой /mcp.</pre>
               <div class="command-actions">
