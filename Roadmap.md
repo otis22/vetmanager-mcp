@@ -3748,7 +3748,7 @@ UX-принципы (Claude Opus review): один экран — одно де�
   production landing/login/account smoke passed. Claude OAuth/MCP smoke остаётся
   ручной проверкой пользователя.)
 
-## Этап 209. Упрощение лендинга для клиник — `done`
+## Этап 209. Упрощение лендинга для клиник — `in_progress`
 
 - 209.1 UI/UX решение и короткие тексты от Claude Opus 5. — `done`
 - 209.2 Упростить основной путь и убрать технический жаргон. — `done`
@@ -3758,3 +3758,5 @@ UX-принципы (Claude Opus review): один экран — одно де�
   committed diff `[]`; Claude Opus code reviews accepted follow-up fixes;
   Tests `30632743101` green; Deploy Prod `30632962933` green; production GET
   smoke `/`, `/register`, `/healthz`, `/readyz` returned `200`.)
+- 209.5 Второстепенно показать Open Source и самостоятельную установку в
+  footer-блоке. — `in_progress`

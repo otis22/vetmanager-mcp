@@ -280,6 +280,7 @@ async def test_final_cta_prioritizes_clinic_help():
     assert "Проверить подключение можно в кабинете" in html
     assert 'mailto:support@vetmanager.cloud' in html
     assert "github.com/otis22/vetmanager-mcp" in html
+    assert "Проект открыт. Техническая команда может установить его на своём сервере." in html
 
 
 def _extract_mcp_onboarding(html: str) -> str:
