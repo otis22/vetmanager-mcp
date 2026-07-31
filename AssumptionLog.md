@@ -10670,3 +10670,6 @@ Checks so far:
   versus grant scopes and token responses already use narrowed scope).
 - **Verification**: targeted OAuth suite `44 passed`; full Docker suite
   `1376 passed, 2 skipped, 65 deselected`.
+- **Production closure**: commit `90be20d` was pushed; the user confirmed
+  Claude MCP works after deploy. Manus is accepted as compatible by the same
+  OAuth contract without a separate manual smoke at the user's direction.

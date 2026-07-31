@@ -3692,7 +3692,7 @@ verified known issue.
   create/update known issue, link/resolve reports `#26`-`#35`, rerun product
   metrics. — `done`
 
-## Этап 207. OAuth Analytics default for broad-scope clients — `in_progress`
+## Этап 207. OAuth Analytics default for broad-scope clients — `done`
 
 Цель: OAuth consent не должен предвыбирать `Full access`, когда Claude или иной
 client запрашивает широкий набор scopes. Без явного выбора пользователя default
@@ -3702,4 +3702,8 @@ confirmation для Full access.
 - 207.1 PRD, architecture/review gates и regression design. — `done`
 - 207.2 Изменить default selector без изменения explicit preset semantics. — `done`
 - 207.3 Добавить OAuth consent regressions для Claude-style broad scopes. — `done`
-- 207.4 Full checks, audit, reviews, deploy и OAuth smoke. — `in_progress`
+- 207.4 Full checks, audit, reviews, deploy и OAuth smoke. — `done`
+  (targeted OAuth `44 passed`; full Docker suite `1376 passed, 2 skipped, 65
+  deselected`; Spark final `[]`; Claude Opus review found and the follow-up
+  fixed the inactive-connection error re-render; user confirmed Claude MCP
+  works after deploy. Manus is accepted as compatible without a separate smoke.)
