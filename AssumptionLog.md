@@ -10654,3 +10654,19 @@ Checks so far:
   prevents a silent process-local rate-limit fallback.
 - **Resume trigger**: planned multi-instance scaling or a deployment env
   contract change.
+
+## Этап 207 OAuth Analytics default — 2026-07-31
+
+- **Decision**: new OAuth consent pages use a dedicated UI-default helper that
+  always returns `report_ai` / Analytics. Client-requested scopes remain a
+  technical capability request and never preselect a broader owner consent.
+- **Compatibility**: explicit Read only, Front desk and Full access selections
+  keep their existing issuance semantics; Full access still requires its
+  confirmation. Existing grants and tokens are not migrated.
+- **Review**: Spark PRD process returned no retrievable output after runtime
+  completion. Claude Opus Architecture Critique accepted the dedicated UI
+  helper and error-state preservation; rejected the alleged scope-display and
+  token-response regressions after code inspection (the UI labels requested
+  versus grant scopes and token responses already use narrowed scope).
+- **Verification**: targeted OAuth suite `44 passed`; full Docker suite
+  `1376 passed, 2 skipped, 65 deselected`.

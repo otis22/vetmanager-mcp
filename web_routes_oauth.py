@@ -22,7 +22,7 @@ from oauth_service import (
     narrow_oauth_authorize_request_scope,
     read_oauth_authorize_request,
     register_oauth_client,
-    select_default_oauth_access_preset,
+    default_oauth_consent_access_preset,
     sign_oauth_authorize_request,
     validate_oauth_authorize_request,
 )
@@ -231,7 +231,7 @@ def register_oauth_routes(
                     {"id": connection.id, "domain": connection.domain or "n/a"}
                     for connection in connections
                 ],
-                selected_access_preset=select_default_oauth_access_preset(request_data["oauth_scopes"]),
+                selected_access_preset=default_oauth_consent_access_preset(),
             ),
             with_csrf_cookie=True,
             csrf_token=csrf_token,
@@ -246,6 +246,7 @@ def register_oauth_routes(
     )
     async def oauth_authorize_consent(request: Request) -> HTMLResponse | RedirectResponse:
         form = await read_form(request)
+        request_data: dict = {}
         try:
             validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
             request_data = read_oauth_authorize_request(form.get("request_state", ""))
@@ -263,10 +264,12 @@ def register_oauth_routes(
                 render_oauth_consent_page(
                     csrf_token=csrf_token,
                     request_state=form.get("request_state", ""),
-                    client_name="ChatGPT",
-                    scopes=[],
+                    client_name=str(request_data.get("client_name") or "ChatGPT"),
+                    scopes=list(request_data.get("scopes") or []),
                     connections=[],
                     error=str(exc),
+                    selected_access_preset=form.get("access_preset") or default_oauth_consent_access_preset(),
+                    selected_privacy_mode=form.get("privacy_mode", "depersonalized"),
                 ),
                 status_code=400,
                 with_csrf_cookie=True,
@@ -297,6 +300,10 @@ def register_oauth_routes(
                         scopes=list(request_data.get("scopes") or []),
                         connections=[],
                         error="Selected Vetmanager connection is not active.",
+                        selected_access_preset=str(
+                            request_data.get("access_preset") or default_oauth_consent_access_preset()
+                        ),
+                        selected_privacy_mode=str(request_data.get("privacy_mode") or "depersonalized"),
                     ),
                     status_code=400,
                     with_csrf_cookie=True,

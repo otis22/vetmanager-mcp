@@ -869,6 +869,99 @@ async def test_oauth_consent_narrows_full_request_to_read_only_preset(tmp_path, 
 
 
 @pytest.mark.asyncio
+async def test_oauth_consent_defaults_broad_requested_scope_to_analytics_preset(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="oauth-broad-default@example.com")
+    verifier = "Verifier-1234567890-abcdefghijklmnopqrstuvwxyz"
+    full_scope = " ".join(SUPPORTED_TOKEN_SCOPES)
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
+        client_id = await _register_oauth_client(client, scope=full_scope)
+        consent_preview = await client.get(
+            "/oauth/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": "https://chat.openai.com/aip/callback",
+                "resource": "https://test.example.com/mcp",
+                "scope": full_scope,
+                "state": "broad-default-state",
+                "code_challenge": _pkce_challenge(verifier),
+                "code_challenge_method": "S256",
+            },
+        )
+        raw_code = await _authorize_and_consent(
+            client,
+            client_id=client_id,
+            scope=full_scope,
+            state="broad-default-state",
+            code_challenge=_pkce_challenge(verifier),
+        )
+        token_response = await _exchange_authorization_code(
+            client,
+            raw_code=raw_code,
+            client_id=client_id,
+            verifier=verifier,
+        )
+
+    assert consent_preview.status_code == 200
+    assert f'value="{PRESET_REPORT_AI}" selected' in consent_preview.text
+    assert token_response.status_code == 200
+    assert token_response.json()["scope"] == " ".join(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_oauth_consent_full_access_error_retains_submitted_selection(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
+    account_id = await _register_account_with_connection(email="oauth-full-error@example.com")
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        client.cookies.set(SESSION_COOKIE_NAME, create_account_session_token(account_id), path="/")
+        client_id = await _register_oauth_client(client)
+        consent_preview = await client.get(
+            "/oauth/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": "https://chat.openai.com/aip/callback",
+                "resource": "https://test.example.com/mcp",
+                "scope": "clients.read pets.read",
+                "state": "full-error-state",
+                "code_challenge": "challenge",
+                "code_challenge_method": "S256",
+            },
+        )
+        error_response = await client.post(
+            "/oauth/authorize/consent",
+            data={
+                "csrf_token": CSRF_RE.search(consent_preview.text).group(1),
+                "request_state": REQUEST_STATE_RE.search(consent_preview.text).group(1),
+                "connection_id": CONNECTION_ID_RE.search(consent_preview.text).group(1),
+                "access_preset": PRESET_FULL_ACCESS,
+                "privacy_mode": "personal_data",
+            },
+        )
+
+    assert error_response.status_code == 400
+    assert "Full access requires explicit confirmation." in error_response.text
+    assert f'value="{PRESET_FULL_ACCESS}" selected' in error_response.text
+    assert 'value="personal_data" checked' in error_response.text
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
 async def test_oauth_consent_defaults_omitted_scope_to_analytics_preset(tmp_path, monkeypatch):
     engine = await _prepare_oauth_db(tmp_path, monkeypatch)
     monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
@@ -1378,7 +1471,7 @@ async def test_oauth_consent_rejects_full_access_without_confirmation(tmp_path, 
 
 
 @pytest.mark.asyncio
-async def test_oauth_consent_preselects_covering_preset_for_broader_requested_scope(tmp_path, monkeypatch):
+async def test_oauth_consent_defaults_to_analytics_for_frontdesk_scope_request(tmp_path, monkeypatch):
     engine = await _prepare_oauth_db(tmp_path, monkeypatch)
     monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
     account_id = await _register_account_with_connection(email="oauth-covering-preset@example.com")
@@ -1410,7 +1503,7 @@ async def test_oauth_consent_preselects_covering_preset_for_broader_requested_sc
                 "code_challenge_method": "S256",
             },
         )
-        assert f'value="{PRESET_FRONTDESK}" selected' in consent_response.text
+        assert f'value="{PRESET_REPORT_AI}" selected' in consent_response.text
         callback_response = await client.post(
             "/oauth/authorize/consent",
             data={
@@ -1443,7 +1536,7 @@ async def test_oauth_consent_preselects_covering_preset_for_broader_requested_sc
 
 
 @pytest.mark.asyncio
-async def test_oauth_consent_preselects_full_for_full_only_requested_scope_but_requires_confirmation(tmp_path, monkeypatch):
+async def test_oauth_consent_defaults_to_analytics_for_full_only_scope_but_full_requires_confirmation(tmp_path, monkeypatch):
     engine = await _prepare_oauth_db(tmp_path, monkeypatch)
     monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
     account_id = await _register_account_with_connection(email="oauth-full-covering@example.com")
@@ -1474,7 +1567,7 @@ async def test_oauth_consent_preselects_full_for_full_only_requested_scope_but_r
                 "code_challenge_method": "S256",
             },
         )
-        assert f'value="{PRESET_FULL_ACCESS}" selected' in consent_response.text
+        assert f'value="{PRESET_REPORT_AI}" selected' in consent_response.text
         callback_response = await client.post(
             "/oauth/authorize/consent",
             data={

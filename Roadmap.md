@@ -3691,3 +3691,15 @@ verified known issue.
 - 206.5 Post-fix production closure: deploy smoke, verify metrics/log privacy,
   create/update known issue, link/resolve reports `#26`-`#35`, rerun product
   metrics. — `done`
+
+## Этап 207. OAuth Analytics default for broad-scope clients — `in_progress`
+
+Цель: OAuth consent не должен предвыбирать `Full access`, когда Claude или иной
+client запрашивает широкий набор scopes. Без явного выбора пользователя default
+остаётся `Analytics`; расширение прав требует ручного выбора и existing
+confirmation для Full access.
+
+- 207.1 PRD, architecture/review gates и regression design. — `done`
+- 207.2 Изменить default selector без изменения explicit preset semantics. — `done`
+- 207.3 Добавить OAuth consent regressions для Claude-style broad scopes. — `done`
+- 207.4 Full checks, audit, reviews, deploy и OAuth smoke. — `in_progress`

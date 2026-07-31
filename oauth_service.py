@@ -194,17 +194,9 @@ def is_broad_oauth_full_access_scope(scopes: tuple[str, ...] | list[str]) -> boo
     return any(set(snapshot).issubset(normalized_set) for snapshot in LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS)
 
 
-def select_default_oauth_access_preset(requested_scopes: list[str] | tuple[str, ...]) -> str:
-    """Return the safest user-facing default preset for an authorize request."""
-    requested_tool_scopes = set(normalize_oauth_tool_scopes(requested_scopes))
-    analytics_scopes = set(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
-    if not requested_tool_scopes or requested_tool_scopes.issubset(analytics_scopes):
-        return PRESET_REPORT_AI
-
-    for preset in (PRESET_FRONTDESK, PRESET_FULL_ACCESS):
-        if requested_tool_scopes.issubset(TOKEN_PRESET_SCOPES[preset]):
-            return preset
-    return PRESET_FULL_ACCESS
+def default_oauth_consent_access_preset() -> str:
+    """Return the safe owner-facing default for a new OAuth consent page."""
+    return PRESET_REPORT_AI
 
 
 def narrow_oauth_authorize_request_scope(
