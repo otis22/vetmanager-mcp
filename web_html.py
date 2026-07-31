@@ -731,8 +731,15 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
       font-size: 0.92rem;
       line-height: 1.45;
     }}
-    .note-row td, .detail-row td {{ padding-top: 0; border-bottom: 0; }}
-    .note-row + tr td, .detail-row + .note-row td {{ border-top: 0; }}
+    /* A record now spans up to three rows: data, details, warning. The
+       separator belongs after the last of them, otherwise the details block
+       reads as part of the next record. */
+    .note-row td, .detail-row td {{
+      padding-top: 0;
+      border-bottom: 1px solid var(--line);
+    }}
+    .token-table tbody tr:has(+ .detail-row) > td {{ border-bottom: 0; }}
+    .token-table .detail-row:has(+ .note-row) > td {{ border-bottom: 0; }}
     .token-archive {{
       margin-top: 18px;
       border-top: 1px solid var(--line);

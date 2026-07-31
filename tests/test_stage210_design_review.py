@@ -549,3 +549,11 @@ def test_action_cells_keep_their_mobile_label() -> None:
     html = _account_html()
 
     assert html.count('data-label="Действия"') >= 2
+
+
+def test_a_record_is_separated_from_the_next_one_not_from_its_own_details() -> None:
+    """A connection spans up to three rows; the rule goes after the last of them."""
+    html = _account_html()
+
+    assert ".token-table tbody tr:has(+ .detail-row) > td { border-bottom: 0; }" in html
+    assert ".token-table .detail-row:has(+ .note-row) > td { border-bottom: 0; }" in html
