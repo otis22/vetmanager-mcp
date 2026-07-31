@@ -37,14 +37,14 @@ from storage_models import (
     OAuthGrant,
 )
 from token_cleanup import scan_token_expiry_warnings, sync_expired_tokens
-from tool_access_registry import PRESET_REPORT_AI, infer_token_preset, get_token_preset_label
+from tool_access_registry import PRESET_REPORT_AI, infer_token_preset
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
 from vetmanager_connection_service import (
     INTEGRATION_HEALTH_UNKNOWN,
     evaluate_connection_health,
 )
 from web_auth import SESSION_COOKIE_NAME, read_account_session_token, clear_account_session_cookie
-from web_html import render_account_page
+from web_html import display_access_label, render_account_page
 from web_routes_account import register_account_routes
 from web_routes_auth import register_auth_routes
 from web_routes_oauth import register_oauth_routes
@@ -272,10 +272,19 @@ def _get_account_id_from_request(request: Request) -> int | None:
 
 def _format_dt(value) -> str:
     if value is None:
-        return "Never"
+        return "Не использовался"
     if getattr(value, "tzinfo", None) is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _iso_dt(value) -> str | None:
+    """Machine-readable timestamp for `<time datetime>`; the client localises it."""
+    if value is None:
+        return None
+    if getattr(value, "tzinfo", None) is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
 
 
 def _load_oauth_grant_scopes(raw_value: str) -> tuple[str, ...]:
@@ -369,26 +378,26 @@ async def _load_account_dashboard(
         for token in tokens:
             usage = usage_by_token_id.get(token.id)
             inferred_preset = infer_token_preset(token.get_scopes())
-            access_label = (
-                get_token_preset_label(inferred_preset)
-                if inferred_preset is not None
-                else "Legacy/custom"
-            )
+            access_label = display_access_label(inferred_preset)
             token_view.append(
                 {
                     "id": token.id,
                     "name": token.name,
                     "token_prefix": token.token_prefix,
                     "status": token.status,
-                    "expires_at_raw": token.expires_at,
-                    "expires_at": _format_dt(token.expires_at) if token.expires_at else "No expiry",
-                    "last_used_at_raw": token.last_used_at or (usage.last_used_at if usage else None),
+                    "expires_at_raw": _iso_dt(token.expires_at),
+                    "expires_at": _format_dt(token.expires_at) if token.expires_at else "Без срока",
+                    "last_used_at_raw": _iso_dt(
+                        token.last_used_at or (usage.last_used_at if usage else None)
+                    ),
                     "last_used_at": _format_dt(token.last_used_at or (usage.last_used_at if usage else None)),
                     "request_count": int(usage.request_count if usage else 0),
                     "ip_mask": token.allowed_ip_mask,
                     "access_preset": inferred_preset or "legacy",
                     "access_label": access_label,
-                    "privacy_label": "Depersonalized" if token.is_depersonalized else "Standard",
+                    "privacy_label": (
+                        "Без персональных данных" if token.is_depersonalized else "Обычные данные"
+                    ),
                 }
             )
         grants = (
@@ -410,11 +419,7 @@ async def _load_account_dashboard(
             client = clients_by_id.get(grant.client_id)
             scopes = _load_oauth_grant_scopes(grant.scopes_json)
             inferred_preset = infer_token_preset(scopes)
-            access_label = (
-                get_token_preset_label(inferred_preset)
-                if inferred_preset is not None
-                else "Custom/legacy"
-            )
+            access_label = display_access_label(inferred_preset)
             oauth_grant_view.append(
                 {
                     "id": grant.id,
@@ -431,10 +436,22 @@ async def _load_account_dashboard(
                     "legacy_privacy": grant.is_depersonalized is None,
                     "status": grant.status,
                     "created_at": _format_dt(grant.created_at),
+                    "created_at_raw": _iso_dt(grant.created_at),
                     "last_used_at": _format_dt(grant.last_used_at),
+                    "last_used_at_raw": _iso_dt(grant.last_used_at),
                     "connection_id": grant.vetmanager_connection_id,
+                    "is_last_used": False,
                 }
             )
+        # Stage 210 (K-4): nine near-identical ChatGPT rows made "Disconnect" a
+        # guess. Mark the one that actually served the most recent request.
+        used_views = [
+            (grant.last_used_at, view)
+            for grant, view in zip(grants, oauth_grant_view)
+            if view["status"] == "active" and grant.last_used_at is not None
+        ]
+        if used_views:
+            max(used_views, key=lambda pair: pair[0])[1]["is_last_used"] = True
         integration_health_status = INTEGRATION_HEALTH_UNKNOWN
         integration_health_reason = "Integration is not configured yet."
         if active_connection is not None:

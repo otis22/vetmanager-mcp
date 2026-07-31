@@ -97,7 +97,7 @@ def _section_is_open(html: str, testid: str) -> bool:
 
 def test_stepper_reflects_activation_progress() -> None:
     assert "Шаг 1 из 3 — Подключите Vetmanager" in _needs_connection()
-    assert "Шаг 2 из 3 — Выпустите Bearer token" in _needs_token()
+    assert "Шаг 2 из 3 — Выпустите ключ доступа" in _needs_token()
     assert "Шаг 3 из 3 — Подключите MCP-клиент" in _needs_client_use()
 
 

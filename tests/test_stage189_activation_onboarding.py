@@ -181,7 +181,7 @@ def test_activation_panel_guides_connected_account_to_token() -> None:
     html = _account_page(active_connection=_Connection())
 
     assert 'data-activation-state="needs_token"' in html
-    assert "Выпустите Bearer token" in html
+    assert "Выпустите ключ доступа" in html
 
 
 def test_activation_panel_guides_ready_unused_account_to_client_use(now_utc) -> None:
@@ -337,10 +337,11 @@ def test_activation_panel_ready_state(now_utc) -> None:
     assert "Bearer token issued and active" not in html
     assert "MCP client made at least one request" not in html
     assert "ChatGPT OAuth connection configured" not in html
-    assert "Интеграция Vetmanager активна" in html
-    assert "Bearer token выпущен и активен" in html
-    assert "MCP-клиент сделал хотя бы один запрос" in html
-    assert "Подключение ChatGPT OAuth настроено" in html
+    # Stage 210: the readiness checklist names each step in plain Russian.
+    assert "Vetmanager подключён" in html
+    assert "Ключ доступа выпущен" in html
+    assert "Помощник сделал первый запрос" in html
+    assert "ChatGPT подключён" in html
 
 
 def test_activation_panel_treats_expired_token_as_missing_token(now_utc) -> None:
@@ -366,7 +367,7 @@ def test_activation_panel_treats_expired_token_as_missing_token(now_utc) -> None
     )
 
     assert 'data-activation-state="needs_token"' in html
-    assert "Выпустите Bearer token" in html
+    assert "Выпустите ключ доступа" in html
 
 
 def test_activation_panel_treats_any_last_used_at_as_client_usage(now_utc) -> None:
@@ -413,7 +414,7 @@ def test_activation_panel_does_not_overflow_common_viewports(page: Page) -> None
         checklist_rows = page.evaluate(
             """() => {
                 const container = document.querySelector('[data-testid="activation-status"]');
-                const list = container.querySelector('ol');
+                const list = container.querySelector('ul');
                 const containerBox = container.getBoundingClientRect();
                 const nodes = Array.from(container.querySelectorAll('li'));
                 return {

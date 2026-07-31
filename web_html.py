@@ -16,8 +16,8 @@ from tool_access_registry import (
     PRESET_INVENTORY,
     PRESET_READ_ONLY,
     PRESET_REPORT_AI,
-    TOKEN_PRESET_LABELS,
     TOKEN_PRESET_SCOPES,
+    get_token_preset_label,
 )
 from vetmanager_auth import (
     VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
@@ -28,6 +28,64 @@ from vetmanager_connection_service import (
     INTEGRATION_HEALTH_REAUTH_REQUIRED,
 )
 from web_security import CSRF_FIELD_NAME
+
+# Stage 210 (K-3): display-only labels for the cabinet, which clinic staff read.
+# `TOKEN_PRESET_LABELS` stays English on purpose — it is embedded in MCP
+# scope-denied messages addressed to an AI agent, not to a person.
+TOKEN_PRESET_DISPLAY_LABELS: dict[str, str] = {
+    PRESET_FULL_ACCESS: "Полный доступ",
+    PRESET_READ_ONLY: "Только чтение",
+    PRESET_FRONTDESK: "Регистратура",
+    PRESET_DOCTOR: "Врач",
+    PRESET_FINANCE: "Финансы",
+    PRESET_INVENTORY: "Склад",
+    PRESET_REPORT_AI: "Аналитика",
+}
+
+# Stage 210 (K-4): the status column was the most important field and the only
+# one with no visual signal — all three states shared one grey pill.
+TOKEN_STATUS_DISPLAY: dict[str, str] = {
+    "active": "Работает",
+    "expired": "Истёк",
+    "revoked": "Отозван",
+}
+
+
+def display_access_label(inferred_preset: str | None) -> str:
+    """Russian access label for the cabinet.
+
+    Deliberately separate from `get_token_preset_label`, whose English labels go
+    into MCP scope-denied messages read by an AI agent rather than by a person.
+    """
+    if inferred_preset is None:
+        return "Настроен вручную"
+    return TOKEN_PRESET_DISPLAY_LABELS.get(
+        inferred_preset, get_token_preset_label(inferred_preset)
+    )
+
+
+def _account_status_display(status: str) -> str:
+    """Stage 210 (K-3): account status is prose for a clinic, not an enum dump."""
+    return {
+        "active": "активен",
+        "blocked": "заблокирован",
+        "pending": "ожидает подтверждения",
+    }.get(str(status), str(status))
+
+
+def _timestamp_html(iso_value: str | None, fallback_text: str) -> str:
+    """Render a timestamp the client can localise.
+
+    Stage 210 (K-7): the attribute carries machine time, the element carries the
+    server-rendered UTC string. Without JS the user sees exactly what they saw
+    before, so the localisation is an enhancement rather than a dependency.
+    """
+    if not iso_value:
+        return escape(str(fallback_text))
+    return (
+        f'<time datetime="{escape(str(iso_value))}" data-local-time>'
+        f"{escape(str(fallback_text))}</time>"
+    )
 
 
 _DEFAULT_SITE_BASE_URL = "https://vetmanager-mcp.vromanichev.ru"
@@ -165,7 +223,7 @@ QUICK_TOKEN_NAME = "Мой первый токен"
 
 _ACTIVATION_STEPPER = {
     "needs_connection": "Шаг 1 из 3 — Подключите Vetmanager",
-    "needs_token": "Шаг 2 из 3 — Выпустите Bearer token",
+    "needs_token": "Шаг 2 из 3 — Выпустите ключ доступа",
     "needs_client_use": "Шаг 3 из 3 — Подключите MCP-клиент",
 }
 
@@ -189,6 +247,16 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
       --muted: #58645f;
       --accent: #bb4d24;
       --line: rgba(29, 35, 33, 0.12);
+      --danger: #9c3d1c;
+      --danger-line: #d9b3a6;
+      --warn-bg: #f6ecd6;
+      --warn-ink: #7d5808;
+      --ok-bg: #dcece0;
+      --ok-ink: #2c5f3a;
+      --off-bg: #e7eaec;
+      --off-ink: #5f6d78;
+      --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+      --font-display: "Iowan Old Style", "Source Serif Pro", "Charter", "Cambria", Georgia, serif;
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -198,7 +266,7 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
         radial-gradient(circle at top left, rgba(47, 109, 115, 0.15), transparent 34%),
         linear-gradient(180deg, #faf5ea 0%, var(--bg) 100%);
       color: var(--ink);
-      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-family: var(--font-body);
       display: grid;
       place-items: center;
       padding: 24px;
@@ -217,7 +285,7 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
     }}
     h1 {{
       margin: 0 0 14px;
-      font: 700 clamp(2.2rem, 5vw, 3.4rem)/0.95 "Iowan Old Style", "Palatino Linotype", serif;
+      font: 700 clamp(2.2rem, 5vw, 3.4rem)/0.95 var(--font-display);
     }}
     p, li, label, input, select, button, a {{
       font-size: 1rem;
@@ -229,6 +297,7 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
       gap: 14px;
       margin-top: 18px;
     }}
+    label {{ display: block; }}
     input, select {{
       width: 100%;
       border: 1px solid var(--line);
@@ -249,8 +318,25 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
       font-weight: 700;
     }}
     button {{
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }}
+    button.primary {{
       background: var(--accent);
       color: #fff9f3;
+      border-color: var(--accent);
+    }}
+    button.danger {{
+      background: transparent;
+      color: var(--danger);
+      border: 1px solid var(--danger-line);
+    }}
+    button.danger:hover,
+    button.danger:focus-visible {{
+      background: var(--danger);
+      color: #fff9f3;
+      border-color: var(--danger);
     }}
     .link {{
       color: var(--ink);
@@ -260,9 +346,11 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
     .actions {{
       display: flex;
       flex-wrap: wrap;
+      align-items: center;
       gap: 12px;
       margin-top: 18px;
     }}
+    .actions form {{ margin: 0; }}
     .error {{
       margin-top: 12px;
       padding: 12px 14px;
@@ -350,6 +438,27 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
     }}
     .section-block > summary {{
       cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 4px 0;
+    }}
+    .section-block > summary::-webkit-details-marker {{ display: none; }}
+    .section-block > summary::after {{
+      content: "";
+      margin-left: auto;
+      width: 9px;
+      height: 9px;
+      border-right: 2px solid var(--muted);
+      border-bottom: 2px solid var(--muted);
+      transform: rotate(45deg) translate(-2px, -2px);
+      transition: transform 200ms ease;
+      flex-shrink: 0;
+    }}
+    .section-block[open] > summary::after {{
+      transform: rotate(-135deg) translate(-2px, -2px);
+      border-color: var(--accent);
     }}
     .section-block > summary h2 {{
       display: inline-block;
@@ -401,9 +510,13 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
     .card {{
       min-width: 0;
     }}
+    .choice-option {{ cursor: pointer; }}
     .choice-option input {{
-      width: auto;
+      width: 20px;
+      height: 20px;
       margin-right: 8px;
+      accent-color: var(--accent);
+      flex-shrink: 0;
     }}
     .choice-option strong {{
       display: block;
@@ -519,9 +632,10 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
       font-size: 1.25rem;
       line-height: 1.25;
     }}
-    .activation-status ol {{
+    .activation-status ul {{
       margin: 12px 0 0;
       padding-left: 1.35rem;
+      list-style: none;
     }}
     .activation-status li {{
       margin: 6px 0;
@@ -586,12 +700,107 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
     }}
     .token-status {{
       display: inline-block;
+      padding: 2px 9px;
+      border-radius: 999px;
+      background: var(--off-bg);
+      color: var(--off-ink);
+      font-size: 0.82rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }}
+    .status-active {{ background: var(--ok-bg); color: var(--ok-ink); }}
+    .status-expired {{ background: var(--off-bg); color: var(--off-ink); }}
+    .status-revoked {{ background: rgba(156, 61, 28, 0.12); color: var(--danger); }}
+    .badge-in-use {{
+      display: inline-block;
+      margin-left: 6px;
       padding: 2px 8px;
       border-radius: 999px;
-      background: rgba(29, 35, 33, 0.06);
-      font-family: "JetBrains Mono", Consolas, monospace;
-      font-size: 0.84rem;
+      background: var(--ok-bg);
+      color: var(--ok-ink);
+      font-size: 0.76rem;
+      font-weight: 700;
+      white-space: nowrap;
     }}
+    .warning {{
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: var(--warn-bg);
+      color: var(--warn-ink);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }}
+    .note-row td, .detail-row td {{ padding-top: 0; border-bottom: 0; }}
+    .note-row + tr td, .detail-row + .note-row td {{ border-top: 0; }}
+    .token-archive {{
+      margin-top: 18px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }}
+    .token-archive > summary {{
+      cursor: pointer;
+      font-weight: 700;
+      color: var(--muted);
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+    }}
+    .token-archive > summary::-webkit-details-marker {{ display: none; }}
+    .token-archive > summary::after {{
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(45deg) translate(-2px, -2px);
+      transition: transform 200ms ease;
+    }}
+    .token-archive[open] > summary::after {{
+      transform: rotate(-135deg) translate(-2px, -2px);
+    }}
+    .sr-only {{
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }}
+    .account-topbar {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 22px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--line);
+    }}
+    .account-topbar .seal {{
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      background: #1e3a4d;
+      color: #f5f5f0;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 0.86rem;
+      letter-spacing: -0.02em;
+      flex-shrink: 0;
+    }}
+    .account-topbar .who {{
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 0.9rem;
+      word-break: break-word;
+    }}
+    .account-topbar strong {{ font-size: 0.98rem; }}
     .token-details {{
       margin-top: 8px;
       color: var(--muted);
@@ -691,7 +900,7 @@ def render_register_page(
         "Регистрация аккаунта",
         f"""
         <h1>Регистрация аккаунта</h1>
-        <p>Создайте аккаунт сервиса для подключения клиники и выпуска Bearer-токенов.</p>
+        <p>Аккаунт нужен, чтобы подключить клинику и выдать помощнику доступ. Занимает пару минут.</p>
         {error_html}
         <form method="post" action="/register" data-testid="register-form">
           {hidden_csrf_input(csrf_token)}
@@ -703,7 +912,7 @@ def render_register_page(
             <input type="password" name="password" autocomplete="new-password" minlength="8" required data-testid="register-password">
             <small style="color: var(--muted); font-size: 0.85rem;">Минимум 8 символов</small>
           </label>
-          <button type="submit" data-testid="register-submit">Создать аккаунт</button>
+          <button type="submit" class="primary" data-testid="register-submit">Создать аккаунт</button>
         </form>
         <div class="actions">
           <a class="link" href="/login">Уже есть аккаунт</a>
@@ -726,7 +935,7 @@ def render_login_page(
         "Вход в аккаунт",
         f"""
         <h1>Вход в аккаунт</h1>
-        <p>Войдите в аккаунт для управления интеграцией с Vetmanager и Bearer-токенами.</p>
+        <p>Войдите, чтобы управлять подключением клиники и ключами доступа.</p>
         {error_html}
         <form method="post" action="/login" data-testid="login-form">
           {hidden_csrf_input(csrf_token)}
@@ -737,7 +946,7 @@ def render_login_page(
           <label>Пароль
             <input type="password" name="password" autocomplete="current-password" minlength="8" required data-testid="login-password">
           </label>
-          <button type="submit" data-testid="login-submit">Войти</button>
+          <button type="submit" class="primary" data-testid="login-submit">Войти</button>
         </form>
         <div class="actions">
           <a class="link" href="/register">Создать аккаунт</a>
@@ -854,10 +1063,10 @@ def render_oauth_consent_page(
               <input type="checkbox" name="confirm_full_access" value="1" data-testid="oauth-confirm-full-access" style="width: auto; margin-top: 6px;">
             <span>
               <strong style="display: block; color: var(--ink);">Подтвердить полный доступ</strong>
-              <small style="color: var(--muted); font-size: 0.85rem;">Нужно только если вы выбираете Full access.</small>
+              <small style="color: var(--muted); font-size: 0.85rem;">Нужно только для полного доступа.</small>
             </span>
           </label>
-          <button type="submit">Разрешить</button>
+          <button type="submit" class="primary">Разрешить</button>
         </form>
         """,
     )
@@ -918,11 +1127,11 @@ def render_account_page(
         onboarding_html = """
         <div class="panel-card">
           <strong>Сначала подключите Vetmanager</strong>
-          <p>После регистрации следующий шаг один: выбрать способ авторизации, подключить клинику и только потом выпускать Bearer-токены для AI-ассистента.</p>
+          <p>После регистрации шаг один: выбрать способ входа, подключить клинику и только потом выпустить ключ доступа для помощника.</p>
         </div>
         """
     active_connection_html = """
-        <p>Активная Vetmanager integration ещё не настроена. Следующий Bearer-токен этого account пока не сможет резолвить clinic credentials.</p>
+        <p>Vetmanager ещё не подключён. Ключ доступа можно выпустить, но помощник пока не сможет получить данные клиники.</p>
     """
     if active_connection is not None:
         reauth_html = ""
@@ -955,7 +1164,7 @@ def render_account_page(
     )
     success_html = (
         '<div class="success" id="integration-success" role="status" data-autoscroll="true">{}'
-        ' <a class="link" href="#token-section" data-testid="integration-success-cta">Выпустить Bearer token</a></div>'.format(
+        ' <a class="link" href="#token-section" data-testid="integration-success-cta">Выпустить ключ доступа</a></div>'.format(
             escape(integration_success)
         )
         if integration_success
@@ -978,30 +1187,30 @@ def render_account_page(
             f"{escape(label)}</option>"
         )
         for form_value, preset, label in (
-            (PRESET_REPORT_AI, PRESET_REPORT_AI, TOKEN_PRESET_LABELS[PRESET_REPORT_AI]),
-            (PRESET_FULL_ACCESS, PRESET_FULL_ACCESS, TOKEN_PRESET_LABELS[PRESET_FULL_ACCESS]),
-            (PRESET_READ_ONLY, PRESET_READ_ONLY, TOKEN_PRESET_LABELS[PRESET_READ_ONLY]),
-            (PRESET_FRONTDESK, PRESET_FRONTDESK, TOKEN_PRESET_LABELS[PRESET_FRONTDESK]),
-            (_DOCTOR_PRESET_FORM_VALUE, PRESET_DOCTOR, TOKEN_PRESET_LABELS[PRESET_DOCTOR]),
-            (PRESET_FINANCE, PRESET_FINANCE, TOKEN_PRESET_LABELS[PRESET_FINANCE]),
-            (PRESET_INVENTORY, PRESET_INVENTORY, TOKEN_PRESET_LABELS[PRESET_INVENTORY]),
+            (PRESET_REPORT_AI, PRESET_REPORT_AI, TOKEN_PRESET_DISPLAY_LABELS[PRESET_REPORT_AI]),
+            (PRESET_FULL_ACCESS, PRESET_FULL_ACCESS, TOKEN_PRESET_DISPLAY_LABELS[PRESET_FULL_ACCESS]),
+            (PRESET_READ_ONLY, PRESET_READ_ONLY, TOKEN_PRESET_DISPLAY_LABELS[PRESET_READ_ONLY]),
+            (PRESET_FRONTDESK, PRESET_FRONTDESK, TOKEN_PRESET_DISPLAY_LABELS[PRESET_FRONTDESK]),
+            (_DOCTOR_PRESET_FORM_VALUE, PRESET_DOCTOR, TOKEN_PRESET_DISPLAY_LABELS[PRESET_DOCTOR]),
+            (PRESET_FINANCE, PRESET_FINANCE, TOKEN_PRESET_DISPLAY_LABELS[PRESET_FINANCE]),
+            (PRESET_INVENTORY, PRESET_INVENTORY, TOKEN_PRESET_DISPLAY_LABELS[PRESET_INVENTORY]),
         )
     )
     issued_token_html = ""
     if issued_raw_token:
         issued_access_html = (
-            f'<p><strong>Access:</strong> {escape(issued_token_access_label)}</p>'
+            f'<p><strong>Уровень доступа:</strong> {escape(issued_token_access_label)}</p>'
             if issued_token_access_label
             else ""
         )
         issued_privacy_html = (
-            f'<p><strong>Privacy:</strong> {escape(issued_token_privacy_label)}</p>'
+            f'<p><strong>Персональные данные:</strong> {escape(issued_token_privacy_label)}</p>'
             if issued_token_privacy_label
             else ""
         )
         issued_token_html = f"""
         <section class="token-flash" id="issued-token-panel">
-          <h2 style="margin: 0 0 12px;">Новый Bearer-токен создан</h2>
+          <h2 style="margin: 0 0 12px;">Ключ доступа создан</h2>
           <div class="token-flash-warning">
             <span style="font-size: 1.2em;">&#9888;</span>
             <span>Токен показывается только один раз. После перезагрузки страницы он будет недоступен. Скопируйте его сейчас.</span>
@@ -1032,10 +1241,10 @@ def render_account_page(
     token_disabled = "disabled" if active_connection is None or integration_health_status != INTEGRATION_HEALTH_ACTIVE else ""
     chatgpt_mcp_url = f"{site_base_url}{_resolve_mcp_path()}"
     token_note = (
-        "<p>Сначала сохраните активную Vetmanager integration, затем можно выпускать Bearer-токены.</p>"
+        "<p>Сначала подключите Vetmanager, затем можно выпустить ключ доступа.</p>"
         if active_connection is None
         else (
-            "<p>Сначала восстановите работоспособность Vetmanager integration, затем можно выпускать Bearer-токены.</p>"
+            "<p>Сначала восстановите подключение к Vetmanager, затем можно выпустить ключ доступа.</p>"
             if integration_health_status != INTEGRATION_HEALTH_ACTIVE
             else "<p>После создания raw token показывается только один раз, а в storage сохраняется только hash и безопасный prefix.</p>"
         )
@@ -1083,7 +1292,7 @@ def render_account_page(
         activation_title = "Подключите Vetmanager"
         activation_summary = "Сначала сохраните рабочую интеграцию клиники."
     elif activation_state == "needs_token":
-        activation_title = "Выпустите Bearer token"
+        activation_title = "Выпустите ключ доступа"
         activation_summary = "Интеграция готова; следующий шаг — выдать токен для MCP-клиента."
     elif activation_state == "needs_client_use":
         activation_title = "Подключите MCP-клиент"
@@ -1121,100 +1330,153 @@ def render_account_page(
         <section class="activation-status" data-testid="activation-status" data-activation-state="{activation_state}">
           <h2>{escape(activation_title)}</h2>
           <p>{escape(activation_summary)}</p>
-          <ol>
-            {_activation_item(integration_ready, "Интеграция Vetmanager активна", current=activation_state == "needs_connection")}
-            {_activation_item(has_active_token, "Bearer token выпущен и активен", current=activation_state == "needs_token")}
-            {_activation_item(has_client_usage, "MCP-клиент сделал хотя бы один запрос", current=activation_state == "needs_client_use")}
-            {_activation_item(has_chatgpt, "Подключение ChatGPT OAuth настроено", current=False)}
-          </ol>
+          <ul>
+            {_activation_item(integration_ready, "Vetmanager подключён", current=activation_state == "needs_connection")}
+            {_activation_item(has_active_token, "Ключ доступа выпущен", current=activation_state == "needs_token")}
+            {_activation_item(has_client_usage, "Помощник сделал первый запрос", current=activation_state == "needs_client_use")}
+            {_activation_item(has_chatgpt, "ChatGPT подключён", current=False)}
+          </ul>
           {waiting_html}
         </section>
     """
-    token_list_html = "<p>Токенов пока нет.</p>"
-    if bearer_tokens:
-        rows = []
-        for token in bearer_tokens:
-            action_html = "&mdash;"
-            if str(token["status"]) == "active":
-                action_html = (
-                    f'<form method="post" action="/account/tokens/{token["id"]}/revoke">'
-                    f'{hidden_csrf_input(csrf_token)}'
-                    '<button type="submit">Revoke</button>'
-                    "</form>"
-                )
-            token_name_html = f"""
+    def _token_row(token: dict) -> str:
+        status = str(token["status"])
+        action_html = "&mdash;"
+        if status == "active":
+            action_html = (
+                f'<form method="post" action="/account/tokens/{token["id"]}/revoke">'
+                f'{hidden_csrf_input(csrf_token)}'
+                '<button type="submit" class="danger" '
+                f'data-confirm="Отозвать ключ «{escape(str(token["name"]))}»? '
+                'Помощник, который им пользуется, потеряет доступ.">Отозвать</button>'
+                "</form>"
+            )
+        token_name_html = f"""
                 <span class="token-name">{escape(str(token['name']))}</span>
                 <code class="token-prefix">{escape(str(token['token_prefix']))}</code>
                 <details class="token-details">
-                  <summary>Details</summary>
+                  <summary>Подробнее</summary>
                   <dl>
-                    <dt>Privacy</dt>
-                    <dd>{escape(str(token.get('privacy_label', 'Standard')))}</dd>
-                    <dt>IP mask</dt>
+                    <dt>Данные</dt>
+                    <dd>{escape(str(token.get('privacy_label', 'Обычные данные')))}</dd>
+                    <dt>Разрешённые адреса</dt>
                     <dd><code>{escape(str(token.get('ip_mask', '*.*.*.*')))}</code></dd>
-                    <dt>Expires</dt>
-                    <dd>{escape(str(token['expires_at']))}</dd>
+                    <dt>Действует до</dt>
+                    <dd>{_timestamp_html(token.get('expires_at_raw'), token['expires_at'])}</dd>
                   </dl>
                 </details>
             """
-            rows.append(
-                "<tr>"
-                f'<td class="token-cell" data-label="Token">{token_name_html}</td>'
-                f'<td data-label="Access">{escape(str(token.get("access_label", "Legacy/custom")))}</td>'
-                f'<td data-label="Status"><span class="token-status">{escape(str(token["status"]))}</span></td>'
-                f'<td data-label="Last used">{escape(str(token["last_used_at"]))}</td>'
-                f'<td data-label="Requests">{escape(str(token["request_count"]))}</td>'
-                f'<td class="token-action-cell" data-label="Actions">{action_html}</td>'
-                "</tr>"
-            )
-        token_list_html = (
-            '<table class="token-table" data-testid="token-list">'
+        return (
+            "<tr>"
+            f'<td class="token-cell" data-label="Ключ">{token_name_html}</td>'
+            f'<td data-label="Доступ">{escape(str(token.get("access_label", "Настроен вручную")))}</td>'
+            f'<td data-label="Статус"><span class="token-status status-{escape(status)}">'
+            f'{escape(TOKEN_STATUS_DISPLAY.get(status, status))}</span></td>'
+            f'<td data-label="Последнее использование">'
+            f'{_timestamp_html(token.get("last_used_at_raw"), token["last_used_at"])}</td>'
+            f'<td data-label="Запросов">{escape(str(token["request_count"]))}</td>'
+            f'<td class="token-action-cell">{action_html}</td>'
+            "</tr>"
+        )
+
+    def _token_table(tokens: list[dict], testid: str) -> str:
+        return (
+            f'<table class="token-table" data-testid="{testid}">'
             '<colgroup><col style="width: 31%;"><col style="width: 16%;"><col style="width: 11%;"><col style="width: 17%;"><col style="width: 10%;"><col style="width: 15%;"></colgroup>'
             "<thead><tr>"
-            "<th>Token</th><th>Access</th><th>Status</th><th>Last used</th><th>Requests</th><th>Actions</th>"
+            "<th>Ключ</th><th>Доступ</th><th>Статус</th><th>Последнее использование</th>"
+            "<th>Запросов</th><th><span class=\"sr-only\">Действия</span></th>"
             "</tr></thead>"
-            f"<tbody>{''.join(rows)}</tbody>"
+            f"<tbody>{''.join(_token_row(token) for token in tokens)}</tbody>"
             "</table>"
         )
-    oauth_grants_html = "<p>ChatGPT connections пока нет.</p>"
+
+    # Stage 210 (K-4): 9 of 13 rows were expired or revoked and took 70% of the
+    # section, so finished keys fold away behind a counter.
+    token_list_html = "<p>Ключей пока нет.</p>"
+    working_tokens = [t for t in bearer_tokens if str(t["status"]) == "active"]
+    finished_tokens = [t for t in bearer_tokens if str(t["status"]) != "active"]
+    if bearer_tokens:
+        parts = []
+        if working_tokens:
+            parts.append(_token_table(working_tokens, "token-list"))
+        else:
+            parts.append('<p data-testid="token-list">Рабочих ключей нет.</p>')
+        if finished_tokens:
+            parts.append(
+                '<details class="token-archive" data-testid="finished-tokens">'
+                f"<summary>Завершённые ключи · {len(finished_tokens)}</summary>"
+                f'{_token_table(finished_tokens, "finished-token-list")}'
+                "</details>"
+            )
+        token_list_html = "".join(parts)
+    oauth_grants_html = "<p>Подключений ChatGPT пока нет.</p>"
     if oauth_grants:
         rows = []
         for grant in oauth_grants:
+            status = str(grant["status"])
+            client_name = str(grant["client_name"])
             action_html = "&mdash;"
-            if str(grant["status"]) == "active":
+            if status == "active":
                 action_html = (
                     f'<form method="post" action="/account/oauth-grants/{grant["id"]}/revoke">'
                     f'{hidden_csrf_input(csrf_token)}'
-                    '<button type="submit">Disconnect</button>'
+                    '<button type="submit" class="danger" '
+                    f'data-confirm="Отключить {escape(client_name)}? '
+                    'Помощник перестанет отвечать по данным клиники, пока вы не подключите его заново.">'
+                    "Отключить</button>"
                     "</form>"
                 )
-            warning_html = (
-                '<div class="error" style="margin-top: 8px;">Legacy Full access: reconnect ChatGPT and choose an access level.</div>'
-                if grant.get("legacy_full_access")
+            in_use_html = (
+                ' <span class="badge-in-use">Используется сейчас</span>'
+                if grant.get("is_last_used")
                 else ""
             )
-            privacy_warning_html = (
-                '<div class="error" style="margin-top: 8px;">Legacy connection: personal data is hidden now. Disconnect and reconnect ChatGPT to explicitly choose this mode.</div>'
-                if grant.get("legacy_privacy")
-                else ""
-            )
+            # Stage 210 (K-2): these used to render inside a ~78px column and
+            # broke mid-word. They are warnings, not errors, and get a full row.
+            notes = []
+            if grant.get("legacy_full_access"):
+                notes.append(
+                    "Подключение выдано с полным доступом. Отключите и подключите "
+                    f"{escape(client_name)} заново, чтобы выбрать уровень доступа явно."
+                )
+            if grant.get("legacy_privacy"):
+                notes.append(
+                    "Подключение создано в старом режиме, персональные данные сейчас скрыты. "
+                    f"Отключите и подключите {escape(client_name)} заново, чтобы выбрать режим явно."
+                )
             rows.append(
                 "<tr>"
-                f'<td data-label="Client">{escape(str(grant["client_name"]))}</td>'
-                f'<td data-label="Access">{escape(str(grant.get("access_label", "Custom/legacy")))}{warning_html}</td>'
-                f'<td data-label="Personal data">{escape(str(grant.get("privacy_label", "Hidden")))}{privacy_warning_html}</td>'
-                f'<td data-label="Scopes"><code>{escape(str(grant.get("scope_summary", "No scopes")))}</code></td>'
-                f'<td data-label="Status"><span class="token-status">{escape(str(grant["status"]))}</span></td>'
-                f'<td data-label="Connection"><code>{escape(str(grant["connection_id"]))}</code></td>'
-                f'<td data-label="Created">{escape(str(grant["created_at"]))}</td>'
-                f'<td data-label="Last used">{escape(str(grant["last_used_at"]))}</td>'
-                f'<td class="token-action-cell" data-label="Actions">{action_html}</td>'
+                f'<td data-label="Помощник">{escape(client_name)}{in_use_html}</td>'
+                f'<td data-label="Доступ">{escape(str(grant.get("access_label", "Настроен вручную")))}</td>'
+                f'<td data-label="Персональные данные">{escape(str(grant.get("privacy_label", "Скрыты")))}</td>'
+                f'<td data-label="Статус"><span class="token-status status-{escape(status)}">'
+                f'{escape(TOKEN_STATUS_DISPLAY.get(status, status))}</span></td>'
+                f'<td data-label="Подключено">'
+                f'{_timestamp_html(grant.get("created_at_raw"), grant["created_at"])}</td>'
+                f'<td data-label="Последнее использование">'
+                f'{_timestamp_html(grant.get("last_used_at_raw"), grant["last_used_at"])}</td>'
+                f'<td class="token-action-cell">{action_html}</td>'
                 "</tr>"
+                f'<tr class="detail-row"><td colspan="7">'
+                '<details class="token-details"><summary>Подробнее</summary>'
+                "<dl><dt>Разрешённые действия</dt>"
+                f'<dd><code>{escape(str(grant.get("scope_summary", "нет")))}</code></dd></dl>'
+                "</details></td></tr>"
+                + (
+                    f'<tr class="note-row"><td colspan="7">'
+                    + "".join(f'<div class="warning">{note}</div>' for note in notes)
+                    + "</td></tr>"
+                    if notes
+                    else ""
+                )
             )
         oauth_grants_html = (
             '<table class="token-table" data-testid="oauth-grant-list">'
             "<thead><tr>"
-            "<th>Client</th><th>Access</th><th>Personal data</th><th>Scopes</th><th>Status</th><th>Connection</th><th>Created</th><th>Last used</th><th>Actions</th>"
+            "<th>Помощник</th><th>Доступ</th><th>Персональные данные</th><th>Статус</th>"
+            "<th>Подключено</th><th>Последнее использование</th>"
+            "<th><span class=\"sr-only\">Действия</span></th>"
             "</tr></thead>"
             f"<tbody>{''.join(rows)}</tbody>"
             "</table>"
@@ -1278,7 +1540,7 @@ def render_account_page(
                 </label>
               </div>
               <div class="actions">
-                <button type="submit" data-testid="token-quick-submit">Выпустить токен</button>
+                <button type="submit" class="primary" data-testid="token-quick-submit">Выпустить ключ доступа</button>
                 <span class="form-status" data-submit-status aria-live="polite"></span>
               </div>
             </form>
@@ -1325,7 +1587,7 @@ def render_account_page(
           </details>
           <details>
             <summary>ChatGPT</summary>
-            <p>ChatGPT подключается без Bearer-токена — через OAuth. Раскройте секцию «ChatGPT connections» ниже и следуйте инструкции.</p>
+            <p>Для ChatGPT ключ доступа не нужен — он подключается сам. Раскройте секцию «Подключения ChatGPT» ниже и следуйте инструкции.</p>
           </details>
           </details>
         </section>
@@ -1333,10 +1595,30 @@ def render_account_page(
     return render_shell(
         "Кабинет аккаунта",
         f"""
+        <header class="account-topbar">
+          <div class="seal" aria-label="Vetmanager">VM</div>
+          <div>
+            <strong>ИИ-помощник для Vetmanager</strong>
+          </div>
+          <span class="who">{escape(account.email)}</span>
+        </header>
         <h1>Мой помощник</h1>
         {stepper_html}
-        <p>Вы вошли как <strong>{escape(account.email)}</strong>.</p>
         <p>Подключите Vetmanager — и помощник сможет отвечать на вопросы о вашей клинике.</p>
+        <div class="grid" data-testid="account-summary">
+          <section class="metric">
+            <span>Статус аккаунта</span>
+            <strong>{escape(_account_status_display(account.status))}</strong>
+          </section>
+          <section class="metric">
+            <span>Активные подключения</span>
+            <strong>{active_connection_count}</strong>
+          </section>
+          <section class="metric">
+            <span>Ключи доступа</span>
+            <strong>{bearer_token_count}</strong>
+          </section>
+        </div>
         {selected_agent_html}
         {issued_token_html}
         {activation_html}
@@ -1344,26 +1626,13 @@ def render_account_page(
         {client_instructions_html}
         {onboarding_html}
         <details class="section-block" id="account-meta" data-testid="account-meta" {meta_open}>
-          <summary><h2>Статус аккаунта и privacy</h2></summary>
+          <summary><h2>Аккаунт и данные</h2></summary>
           <div class="metric">
-            <span>Privacy и auth transparency</span>
-            <p>Сервис не сохраняет бизнес-данные Vetmanager для постоянного хранения. Хранятся только технические данные интеграции и service bearer metadata, необходимые для авторизации и работы MCP runtime.</p>
-            <p>логин и пароль Vetmanager не сохраняются: они используются только для получения user token. при смене пароля в Vetmanager сохранённый user token может стать невалидным, и тогда потребуется повторная авторизация.</p>
+            <span>Что мы храним</span>
+            <p>Сервис не хранит данные вашей клиники. Сохраняются только настройки подключения и служебные сведения о ключах доступа — без них помощник не сможет авторизоваться.</p>
+            <p>Логин и пароль Vetmanager не сохраняются: они нужны только один раз, чтобы получить ключ подключения. Если вы смените пароль в Vetmanager, ключ может перестать работать — тогда потребуется подключиться заново.</p>
           </div>
-          <div class="grid">
-            <section class="metric">
-              <span>Статус аккаунта</span>
-              <strong>{escape(account.status)}</strong>
-            </section>
-            <section class="metric">
-              <span>Активные интеграции</span>
-              <strong>{active_connection_count}</strong>
-            </section>
-            <section class="metric">
-              <span>Bearer-токены</span>
-              <strong>{bearer_token_count}</strong>
-            </section>
-          </div>
+
         </details>
         <details class="section-block" id="integration-section" data-testid="integration-section" {integration_open}>
         <summary><h2>Интеграция Vetmanager</h2><span class="summary-hint">{escape(integration_summary_hint)}</span></summary>
@@ -1395,11 +1664,11 @@ def render_account_page(
           <div class="panel-card field-panel" data-mode-panel="{VETMANAGER_AUTH_MODE_DOMAIN_API_KEY}" data-testid="panel-domain-api-key" {"hidden" if not show_domain_api_key_panel else ""}>
             <strong>Шаг 2. Данные клиники для API key</strong>
             <p class="hint" data-testid="vetmanager-api-key-help">В Vetmanager откройте Настройки -> Интеграция с сервисами, включите REST API, нажмите редактирование и скопируйте API KEY. Этот ключ даёт широкий доступ к программе, поэтому вставляйте его только здесь и не отправляйте в чат.</p>
-            <label>Clinic domain
+            <label>Домен клиники
               <input type="text" name="domain" value="{escape(domain_value)}" placeholder="myclinic" autocapitalize="none" autocorrect="off" spellcheck="false" {domain_input_attrs} data-testid="integration-domain">
               <small style="color: var(--muted); font-size: 0.85rem;">Только поддомен: для myclinic.vetmanager.ru — myclinic. Можно вставить полный адрес, мы возьмём из него поддомен.</small>
             </label>
-            <label>Vetmanager REST API key
+            <label>Ключ Vetmanager REST API
               <span class="reveal-row">
                 <input type="password" id="integration-api-key-input" name="api_key" autocomplete="off" placeholder="API key" autocapitalize="none" spellcheck="false" {api_key_input_attrs} data-testid="integration-api-key">
                 <button type="button" class="link reveal-toggle" data-reveal-target="integration-api-key-input" aria-pressed="false" data-testid="integration-api-key-reveal">Показать</button>
@@ -1409,7 +1678,7 @@ def render_account_page(
           </div>
           <div class="panel-card field-panel" data-mode-panel="{VETMANAGER_AUTH_MODE_USER_TOKEN}" data-testid="panel-user-token" {"hidden" if not show_user_token_panel else ""}>
             <strong>Шаг 2. Данные клиники для логина и пароля</strong>
-            <label>Clinic domain
+            <label>Домен клиники
               <input type="text" name="domain" value="{escape(domain_value)}" placeholder="myclinic" autocapitalize="none" autocorrect="off" spellcheck="false" {'' if show_user_token_panel else 'disabled'} data-panel-input="true" data-required-when-active="true" data-testid="integration-domain-user-token">
               <small style="color: var(--muted); font-size: 0.85rem;">Только поддомен: для myclinic.vetmanager.ru — myclinic. Можно вставить полный адрес, мы возьмём из него поддомен.</small>
             </label>
@@ -1422,14 +1691,14 @@ def render_account_page(
             <p class="hint">Для этого режима сервис использует логин и пароль только для получения нового user token. Эти данные не сохраняются в storage, логи и audit trail.</p>
           </div>
           <div class="actions">
-            <button type="submit" data-testid="integration-submit">Сохранить подключение</button>
+            <button type="submit" class="primary" data-testid="integration-submit">Сохранить подключение</button>
             {reauth_button_html}
             <span class="form-status" data-submit-status aria-live="polite"></span>
           </div>
         </form>
         </details>
         <details class="section-block" id="token-section" data-testid="token-section" {token_section_open}>
-        <summary><h2>Выпуск Bearer-токенов</h2></summary>
+        <summary><h2>Выпуск ключей доступа</h2></summary>
         {token_error_html}
         {token_success_html}
         {token_note}
@@ -1448,7 +1717,7 @@ def render_account_page(
             <select name="access_preset" {token_disabled} data-testid="token-access-preset">
               {preset_options}
             </select>
-            <small style="color: var(--muted); font-size: 0.85rem;">Preset определяет scopes токена: без custom-конструктора и без per-tool ручной настройки.</small>
+            <small style="color: var(--muted); font-size: 0.85rem;">Уровень доступа определяет, что помощник сможет видеть. Настройка по отдельным действиям не требуется.</small>
           </label>
           <label style="display: flex; gap: 10px; align-items: start;">
             <input type="checkbox" name="is_depersonalized" value="1" {"checked" if token_is_depersonalized else ""} {token_disabled} data-testid="token-is-depersonalized" style="width: auto; margin-top: 6px;">
@@ -1465,7 +1734,7 @@ def render_account_page(
             <input type="checkbox" name="confirm_full_access" value="1" {token_disabled} data-testid="token-confirm-full-access" style="width: auto; margin-top: 6px;">
             <span>
               <strong style="display: block; color: var(--ink);">Подтвердить полный доступ</strong>
-              <small style="color: var(--muted); font-size: 0.85rem;">Нужно только для preset Full access.</small>
+              <small style="color: var(--muted); font-size: 0.85rem;">Нужно только для полного доступа.</small>
             </span>
           </label>
           <label style="display: flex; gap: 10px; align-items: start;">
@@ -1476,19 +1745,19 @@ def render_account_page(
             </span>
           </label>
           <div class="actions">
-            <button type="submit" {token_disabled} data-testid="token-submit">Выпустить Bearer token</button>
+            <button type="submit" class="primary" {token_disabled} data-testid="token-submit">Выпустить ключ доступа</button>
             <span class="form-status" data-submit-status aria-live="polite"></span>
           </div>
         </form>
         </details>
         </details>
         <details class="section-block" id="tokens-list-section" data-testid="tokens-list-section" {tokens_list_open}>
-        <summary><h2>Текущие токены</h2></summary>
-        <p>В списке показываются только безопасные поля. Raw token после создания больше не доступен.</p>
+        <summary><h2>Текущие ключи доступа</h2></summary>
+        <p>В списке видны только безопасные сведения. Сам ключ показывается один раз — сразу после создания.</p>
         {token_list_html}
         </details>
         <details class="section-block" id="chatgpt-section" data-testid="chatgpt-section" {chatgpt_open}>
-        <summary><h2>ChatGPT connections</h2></summary>
+        <summary><h2>Подключения ChatGPT</h2></summary>
         <div class="panel-card" data-testid="chatgpt-connect-instructions">
           <strong>Подключение ChatGPT</strong>
           <p>Пока сервис не опубликован в ChatGPT Plugin directory, подключение делается вручную как developer-mode plugin/app.</p>
@@ -1502,22 +1771,22 @@ def render_account_page(
             <li>При OAuth-входе ChatGPT откроет этот кабинет; войдите и выберите уровень доступа.</li>
             <li>В новом чате нажмите + рядом с полем ввода, откройте More и выберите созданный plugin/app.</li>
           </ol>
-          <p>Bearer-токен копировать не нужно: ChatGPT сам пройдёт OAuth-подключение, а права вы выберете на экране подтверждения.</p>
+          <p>Ключ доступа копировать не нужно: ChatGPT подключается сам, а права вы выберете на экране подтверждения.</p>
           <code class="token-flash-value" id="chatgpt-mcp-url" data-testid="chatgpt-mcp-url">{escape(chatgpt_mcp_url)}</code>
           <div class="copy-row">
             <button class="copy-button" id="chatgpt-mcp-copy-button" type="button" data-copy-source="chatgpt-mcp-url" data-copy-kind="mcp_url" data-copy-status="chatgpt-mcp-copy-status" data-copied-text="URL скопирован в буфер обмена.">Скопировать URL</button>
             <span class="copy-status" id="chatgpt-mcp-copy-status" aria-live="polite"></span>
           </div>
-          <p class="hint">Обычный режим по умолчанию — Analytics без персональных данных, чтобы ChatGPT мог работать с отчётами. После изменения tools или описаний откройте plugin в Settings → Plugins и нажмите Refresh. Full access и персональные данные требуют отдельного явного выбора.</p>
+          <p class="hint">По умолчанию помощник получает аналитику без персональных данных — этого хватает для отчётов. Полный доступ и персональные данные нужно выбирать отдельно и явно.</p>
         </div>
         {oauth_grants_html}
         </details>
-        <form method="post" action="/logout" data-testid="logout-form">
-          {hidden_csrf_input(csrf_token)}
-          <button type="submit" data-testid="logout-submit">Выйти</button>
-        </form>
         <div class="actions">
           <a class="link" href="/">На лендинг</a>
+          <form method="post" action="/logout" data-testid="logout-form">
+            {hidden_csrf_input(csrf_token)}
+            <button type="submit" data-testid="logout-submit">Выйти из аккаунта</button>
+          </form>
         </div>
         <script nonce="{escape(script_nonce)}">
           (() => {{
@@ -1542,6 +1811,33 @@ def render_account_page(
                 radio.addEventListener('change', updatePanels);
               }}
               updatePanels();
+            }}
+
+            // Stage 210 (K-1): revoking a key or disconnecting an assistant is
+            // irreversible and used to fire on the first click.
+            for (const button of document.querySelectorAll('button[data-confirm]')) {{
+              button.addEventListener('click', (event) => {{
+                if (!window.confirm(button.getAttribute('data-confirm'))) {{
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+              }});
+            }}
+
+            // Stage 210 (K-7): UTC is three hours off for a Moscow clinic. The
+            // server text stays as the fallback when Intl is unavailable.
+            if (window.Intl && typeof Intl.DateTimeFormat === 'function') {{
+              const localTime = new Intl.DateTimeFormat('ru-RU', {{
+                day: 'numeric', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit',
+              }});
+              for (const node of document.querySelectorAll('time[data-local-time]')) {{
+                const parsed = new Date(node.getAttribute('datetime'));
+                if (!Number.isNaN(parsed.getTime())) {{
+                  node.title = node.textContent.trim();
+                  node.textContent = localTime.format(parsed);
+                }}
+              }}
             }}
 
             // Stage 196.5: lock submit buttons and show progress while the

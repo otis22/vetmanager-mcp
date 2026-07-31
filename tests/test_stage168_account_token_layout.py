@@ -24,8 +24,8 @@ def _render_account_with_tokens() -> str:
                 "id": 10,
                 "name": "vetmanager-ai-assistant4234-with-a-very-long-human-readable-name",
                 "token_prefix": "vm_st_Q9Uwh5",
-                "access_label": "Legacy/custom",
-                "privacy_label": "Standard",
+                "access_label": "Настроен вручную",
+                "privacy_label": "Обычные данные",
                 "status": "active",
                 "ip_mask": "*.*.*.*",
                 "expires_at": "2027-06-07 18:29 UTC",
@@ -36,8 +36,8 @@ def _render_account_with_tokens() -> str:
                 "id": 11,
                 "name": "codex bridge",
                 "token_prefix": "vm_st_QE53hD",
-                "access_label": "Read only",
-                "privacy_label": "Depersonalized",
+                "access_label": "Только чтение",
+                "privacy_label": "Без персональных данных",
                 "status": "expired",
                 "ip_mask": "10.20.30.*",
                 "expires_at": "2026-06-20 08:27 UTC",
@@ -54,23 +54,30 @@ def test_account_token_list_uses_compact_primary_columns() -> None:
 
     assert 'class="card account-card"' in html
     assert 'class="token-table" data-testid="token-list"' in html
-    assert html.count("<th>") == 6
-    assert "<th>Token</th><th>Access</th><th>Status</th><th>Last used</th><th>Requests</th><th>Actions</th>" in html
+    # Stage 210: the table keeps six columns, but the header is Russian and the
+    # action column carries a screen-reader-only label instead of "Actions".
+    # Expired keys now render in their own folded table, so the count doubles.
+    assert html.count("<th>") == 12
+    assert (
+        "<th>Ключ</th><th>Доступ</th><th>Статус</th><th>Последнее использование</th>"
+        "<th>Запросов</th><th><span class=\"sr-only\">Действия</span></th>"
+    ) in html
     assert "<th>Name</th>" not in html
     assert "<th>Prefix</th>" not in html
     assert "<th>Privacy</th>" not in html
     assert "<th>IP mask</th>" not in html
     assert "<th>Expires</th>" not in html
 
-    assert '<summary>Details</summary>' in html
-    assert "<dt>Privacy</dt>" in html
-    assert "<dt>IP mask</dt>" in html
-    assert "<dt>Expires</dt>" in html
-    assert "Depersonalized" in html
+    assert "<summary>Подробнее</summary>" in html
+    assert "<dt>Данные</dt>" in html
+    assert "<dt>Разрешённые адреса</dt>" in html
+    assert "<dt>Действует до</dt>" in html
+    assert "Без персональных данных" in html
     assert "10.20.30.*" in html
-    assert 'class="token-action-cell" data-label="Actions"' in html
+    assert 'class="token-action-cell"' in html
     assert 'action="/account/tokens/10/revoke"' in html
-    assert "<button type=\"submit\">Revoke</button>" in html
+    assert 'class="danger"' in html
+    assert ">Отозвать</button>" in html
 
 
 def test_account_token_list_does_not_overflow_common_viewports(page: Page) -> None:
@@ -106,4 +113,4 @@ def test_account_token_list_does_not_overflow_common_viewports(page: Page) -> No
         assert_no_horizontal_overflow()
 
     assert "@media (max-width: 780px)" in html
-    assert 'data-label="Actions"' in html
+    assert 'data-label="Ключ"' in html

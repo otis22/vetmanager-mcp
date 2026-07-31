@@ -25,7 +25,8 @@ from secret_manager import get_storage_encryption_key
 from service_metrics import record_auth_failure, record_business_event, record_token_preset_issued
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
 from oauth_service import revoke_oauth_grant_family
-from tool_access_registry import PRESET_FULL_ACCESS, PRESET_REPORT_AI, get_token_preset_label
+from tool_access_registry import PRESET_FULL_ACCESS, PRESET_REPORT_AI
+from web_html import display_access_label
 from storage import get_session_factory
 from storage_models import (
     CONNECTION_STATUS_ACTIVE,
@@ -509,7 +510,7 @@ def register_account_routes(
             account_id,
             token_success="Bearer token выпущен.",
             issued_raw_token=raw_token,
-            issued_token_access_label=get_token_preset_label(access_preset),
+            issued_token_access_label=display_access_label(access_preset),
             issued_token_privacy_label="Depersonalized" if is_depersonalized else "Standard",
         )
 

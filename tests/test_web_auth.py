@@ -561,9 +561,10 @@ async def test_account_page_shows_privacy_and_reauth_notices(tmp_path: Path, mon
         response = await client.get("/account")
 
     assert response.status_code == 200
-    assert "не сохраняет бизнес-данные Vetmanager" in response.text
-    assert "логин и пароль Vetmanager не сохраняются" in response.text
-    assert "при смене пароля в Vetmanager" in response.text
+    # Stage 210: same promise, written for a clinic rather than an engineer.
+    assert "Сервис не хранит данные вашей клиники" in response.text
+    assert "Логин и пароль Vetmanager не сохраняются" in response.text
+    assert "Если вы смените пароль в Vetmanager" in response.text
     assert "Выберите способ авторизации Vetmanager" in response.text
     assert "Подключить по API key" in response.text
     assert "Подключить по логину и паролю" in response.text
@@ -878,7 +879,7 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
     assert raw_token_match is not None
     raw_token = raw_token_match.group(0)
     assert "копируйте его сейчас" in response.text.lower()
-    assert response.text.index('id="issued-token-panel"') < response.text.index("Выпуск Bearer-токенов")
+    assert response.text.index('id="issued-token-panel"') < response.text.index("Выпуск ключей доступа")
 
     used_at = datetime(2026, 3, 21, 14, 30, tzinfo=timezone.utc)
     async with storage.get_session_factory()() as session:
@@ -906,7 +907,7 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
     assert raw_token not in follow_up.text
     assert "Cursor prod" in follow_up.text
     assert "active" in follow_up.text
-    assert "Текущие токены" in follow_up.text
+    assert "Текущие ключи доступа" in follow_up.text
     assert "2026-03-21 14:30 UTC" in follow_up.text
 
     async with storage.get_session_factory()() as session:
@@ -992,7 +993,7 @@ async def test_account_page_marks_ready_from_usage_stat_request_count_without_la
     assert response.status_code == 200
     assert 'data-activation-state="ready"' in response.text
     assert "Готово к работе" in response.text
-    assert "MCP-клиент сделал хотя бы один запрос" in response.text
+    assert "Помощник сделал первый запрос" in response.text
     assert "MCP client made at least one request" not in response.text
 
     await engine.dispose()
@@ -1359,13 +1360,13 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
         assert "chatgpt.com/plugins" in account_page.text
         assert "Developer mode" in account_page.text
         assert "Scan Tools" in account_page.text
-        assert "Refresh" in account_page.text
+        assert "Полный доступ и персональные данные" in account_page.text
         assert "plugin/app" in account_page.text
         assert "Откройте ChatGPT web" in account_page.text
-        assert "Bearer-токен копировать не нужно" in account_page.text
+        assert "Ключ доступа копировать не нужно" in account_page.text
         assert f'value="{PRESET_REPORT_AI}"' in account_page.text
         assert f'value="{PRESET_REPORT_AI}" selected' in account_page.text
-        assert "Analytics" in account_page.text
+        assert "Аналитика" in account_page.text
         assert "Настройки -> Интеграция с сервисами" in account_page.text
         assert "API KEY" in account_page.text
         await _post_with_csrf(
@@ -1387,10 +1388,11 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
         )
 
     assert response.status_code == 200
-    assert "Access:</strong> Front desk" in response.text
-    assert "Privacy:</strong> Depersonalized" in response.text
-    assert "Front desk" in response.text
-    assert "Depersonalized" in response.text
+    # Stage 210: the issued-token block speaks Russian; the English preset
+    # labels stay in tool_access_registry for MCP scope-denied messages.
+    assert "Уровень доступа:</strong> Регистратура" in response.text
+    assert "Персональные данные:</strong> Depersonalized" in response.text
+    assert "Регистратура" in response.text
 
     async with storage.get_session_factory()() as session:
         stored = await session.get(ServiceBearerToken, 1)
