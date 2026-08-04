@@ -3857,7 +3857,9 @@ Evidence из production feedback:
   Claude Opus review закрыты без critical/high)
 - 211.4 Частичный release подтверждённого scope: провести push, CI deploy и
   production smoke только для `211.3`; не закрывать этап, не менять known
-  issue/reports и не расширять API contract до `done` у `211.2`. — `in_progress`
+  issue/reports и не расширять API contract до `done` у `211.2`. — `done`
+  (release SHA `e004860`; Tests `30914997709` и Deploy Prod `30915283135`
+  successful; production `/healthz` и `/readyz` returned `ok`)
 - 211.5 Fallback без upstream diagnostics: если API-команда явно подтверждает
   отсутствие machine-readable queue/export diagnostics, зафиксировать этот
   ответ и выпустить только factual MCP guidance с bounded polling, без новой

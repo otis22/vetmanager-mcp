@@ -11070,3 +11070,10 @@ Checks so far:
   Разрешены только уже reviewed changes из `48f8428`/`80ea2ae`; deploy не
   закрывает этап 211, не меняет known issues и не разрешает добавлять API fields,
   TTL/SLA или retry automation до upstream decision.
+
+- **Partial release completed (211.4)**: `e004860` pushed to `origin/main`.
+  GitHub Tests `30914997709` completed `success`; chained Deploy Prod
+  `30915283135` completed `success` (remote deploy script including smoke).
+  Independent production `https://vetmanager-mcp.vromanichev.ru/healthz` and
+  `/readyz` returned `status=ok`; readiness storage check is `ok`. Stage 211
+  remains `in_progress` solely on `211.2` upstream contract decision.

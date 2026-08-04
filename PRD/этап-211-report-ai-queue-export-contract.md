@@ -197,3 +197,7 @@ Architecture Critique: пройден для безопасного scope `211.3
 Пользователь разрешил production deploy завершённого scope `211.3` до ответа
 Vetmanager. Такой deploy не означает closure этапа: `211.2` и финальная
 диагностика/изменение public contract остаются открытыми.
+
+Partial release выполнен для SHA `e004860`: GitHub Tests `30914997709` и Deploy
+Prod `30915283135` завершились successfully, production `/healthz` и `/readyz`
+вернули `ok`. Это не закрывает этап 211 до upstream contract decision.
