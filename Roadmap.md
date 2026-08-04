@@ -3800,14 +3800,21 @@ UX-принципы (Claude Opus review): один экран — одно де�
 
 - 210.7 Переименование, сужение до кодинг-агентов и вёрстка внутри блока. — `done`
 
-## Этап 211. Контракт и диагностика очереди Report AI — `in_progress`
+## Этап 211. Контракт и диагностика очереди Report AI — `done`
 
-Release gate: закрытие этапа и любое расширение public API contract запрещены,
-пока `211.2` не получит и не подтвердит upstream contract на test contour.
+Первоначальный release gate для расширения public API contract остаётся в силе:
+TTL/SLA, новые поля, machine-readable queue diagnostics и автоматический retry
+нельзя добавлять без подтверждённого upstream contract на test contour.
 Пользователь явно разрешил deploy подтверждённого scope `211.3` до ответа:
 только source + real-probe wording и safe error mapping без новых полей API,
 TTL/SLA или retry automation. Если Vetmanager не предоставит machine-readable
 diagnostics, этап переходит на отдельный fallback по подтверждённым MCP-фактам.
+
+User-directed fallback для exact export 403: source guard `Report creating in
+progress` действует до 30 минут от создания non-terminal REST export; второй
+guard действует до 10 минут. Поэтому после любого из этих двух текстов разрешена
+одна новая `StartReport` attempt не ранее чем через 30 минут — без automatic,
+immediate или parallel retry и без обещания успеха.
 
 Источник: production feedback `#37` и real-API исследование `2026-08-04` на
 тестовом контуре. Новый job оставался `queued` более 2,5 минут без причины,
@@ -3847,7 +3854,8 @@ Evidence из production feedback:
 - 211.2 Upstream contract decision: получить и зафиксировать ответ Vetmanager
   по worker queue, terminal failure/timeout status, retry metadata и
   различению export blockers; подтвердить каждый новый API claim на test
-  contour. — `in_progress` (ожидается ответ `Roadmap API`)
+  contour. — `stop` (внешний API backlog: ответ `Roadmap API` не получен;
+  Stage 211 завершён безопасным fallback без нового API claim)
 - 211.3 Контракт MCP: обновить tool descriptions и prompt helper — async queue,
   bounded polling, доступ к rows только из `saved`/`existing_report_matched`,
   `limited=true`/`10000` и export 403 как upstream busy/temporary limit; добавить
@@ -3860,7 +3868,8 @@ Evidence из production feedback:
   issue/reports и не расширять API contract до `done` у `211.2`. — `done`
   (release SHA `e004860`; Tests `30914997709` и Deploy Prod `30915283135`
   successful; production `/healthz` и `/readyz` returned `ok`)
-- 211.5 Fallback без upstream diagnostics: если API-команда явно подтверждает
-  отсутствие machine-readable queue/export diagnostics, зафиксировать этот
-  ответ и выпустить только factual MCP guidance с bounded polling, без новой
-  error mapping или обещания SLA/retry. — `todo`
+- 211.5 User-directed fallback: выпустить source-backed delayed retry policy
+  для двух exact export 403 — одна новая `StartReport` attempt через 30 минут,
+  без automatic/immediate/parallel retry; подтвердить tests/review/deploy и
+  закрыть этап без ожидания API answer. — `done` (targeted Docker: `63 passed`;
+  full default Docker: `exit=0`; deploy/smoke фиксируются после release SHA)

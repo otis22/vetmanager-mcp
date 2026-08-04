@@ -161,7 +161,8 @@ def test_report_ai_guidance_descriptions_name_helper_and_fallback_policy():
     export_description = SPECIAL_TOOL_DESCRIPTIONS["start_report_export"]
     assert "tenant-wide REST export guard" in export_description
     assert "no retry_after" in export_description
-    assert "Do not automatically repeat StartReport" in export_description
+    assert "wait 30 minutes before one new StartReport attempt" in export_description
+    assert "do not retry automatically, immediately, or in parallel" in export_description
     assert "retry only with bounded attempts" not in export_description
 
 
@@ -173,7 +174,8 @@ def test_report_ai_readme_uses_current_queue_and_export_contract():
     assert "`queued`/`recognizing`/`building_preview`" in readme
     assert "`queued`/`processing`" not in readme
     assert "API не возвращает `retry_after`" in readme
-    assert "Не повторять `StartReport` автоматически" in readme
+    assert "подождать 30 минут и выполнить одну новую попытку `StartReport`" in readme
+    assert "не повторять автоматически, немедленно или параллельно" in readme
 
 
 @pytest.mark.asyncio
@@ -208,7 +210,8 @@ async def test_report_ai_guidance_reaches_live_tool_descriptions():
     export_description = tools_by_name["start_report_export"].description
     assert "tenant-wide REST export guard" in export_description
     assert "no retry_after" in export_description
-    assert "Do not automatically repeat StartReport" in export_description
+    assert "wait 30 minutes before one new StartReport attempt" in export_description
+    assert "do not retry automatically, immediately, or in parallel" in export_description
     assert "retry only with bounded attempts" not in export_description
 
 

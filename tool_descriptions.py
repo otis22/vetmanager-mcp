@@ -926,8 +926,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "is report-specific JSON; MCP validates JSON syntax only. The tool returns "
         "report_file_id for get_report_export_file. Vetmanager may respond with busy "
         "or time-limit states from a tenant-wide REST export guard and provides no "
-        "retry_after. Do not automatically repeat StartReport or create duplicate "
-        "exports. Do not log or paste export file "
+        "retry_after. For either recognized guard, wait 30 minutes before one new "
+        "StartReport attempt; do not retry automatically, immediately, or in parallel. "
+        "Do not log or paste export file "
         "locators outside the tool response. Domain synonyms: отчёт, отчет, CSV отчёт, XLSX отчёт, "
         "конструктор отчётов, аналитика."
     ),

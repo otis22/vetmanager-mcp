@@ -51,6 +51,10 @@ Vetmanager API для MCP-пользователя. Детали worker/cleanup 
   `Report creating in progress`; любой REST export возрастом до 10 минут —
   `You can not run a report more than 10 minutes`. API не возвращает stable
   code, `retry_after` или already-created `report_file_id`.
+- User-directed fallback, source-backed: после любого из этих двух
+  распознанных 403 MCP рекомендует ждать 30 минут и выполнить одну новую
+  `StartReport` попытку. Это не automatic retry, не `retry_after` от API и не
+  гарантия успеха: параллельные или немедленные повторы запрещены.
 - Full API handoff отправлен в Bitrix24 чат `Roadmap API`, message `#434805`.
   Вопросы queue worker, `tasks_serialized` и global Report Constructor state
   находятся у Vetmanager; MCP не имеет к ним доступа.
@@ -82,7 +86,8 @@ Vetmanager API для MCP-пользователя. Детали worker/cleanup 
    `needs_confirmation` / `ready_to_save` нужно обрабатывать без отложенного
    обещания срока, потому что API не отдаёт expiry metadata; export 403 —
    tenant-global temporary guard без `retry_after`, поэтому повторный
-   `StartReport` не запускается автоматически.
+   `StartReport` не запускается автоматически; по прямому решению пользователя
+   для двух known 403 разрешена одна новая попытка после 30 минут.
 3. Внести только MCP-изменения, которые не зависят от непроверенных обещаний
    upstream, и покрыть их targeted unit/mock + opt-in real tests.
 4. После upstream исправления или контракта повторить test-contour probes,
@@ -96,7 +101,8 @@ Vetmanager API для MCP-пользователя. Детали worker/cleanup 
 - Изменение состояния production feedback/known issues до подтверждения
   причины и воспроизводимой проверки.
 - Автосохранение `ready_to_save` report из read-looking MCP tool.
-- Повторный `StartReport` как способ polling или скрытый retry.
+- Повторный `StartReport` как способ polling, скрытый retry либо немедленный/
+  параллельный retry.
 - Вывод raw SQL, PII, API keys, tenant identifiers или export locators в logs,
   metrics, PRD или ToolError.
 
@@ -133,6 +139,11 @@ MCP может наблюдать symptom (`queued`, 409, 403), но не мож
 или менять wire payload. Это минимальный вариант, который уменьшает ложные
 ожидания без предположения о будущем upstream contract.
 
+Уточнение user-directed fallback: source guards имеют максимальное окно 30
+минут от создания REST export. Поэтому для двух exact 403 текстов допустима одна
+новая попытка после 30 минут. Это manual/deferred action следующего agent turn,
+а не фоновая задача MCP и не API SLA.
+
 ### Инварианты
 
 - Rows остаются доступными только для `saved` / `existing_report_matched`, пока
@@ -140,6 +151,8 @@ MCP может наблюдать symptom (`queued`, 409, 403), но не мож
 - `save_report_ai_job_as_report` остаётся явным write action.
 - `StartReport` выполняется один раз на export attempt; polling идёт только по
   полученному `report_file_id`.
+- После двух known 403 новая export attempt допускается не ранее чем через 30
+  минут; она одна, не параллельна первой и не запускается автоматически.
 - Tool descriptions не называют `queued` успешным результатом и не обещают
   время готовности, которого upstream не отдаёт.
 - Изменения не ослабляют scope checks и не раскрывают sensitive data.
@@ -181,23 +194,26 @@ Architecture Critique: пройден для безопасного scope `211.3
 3. Descriptions разделяют `queued`, `ready_to_save`, `saved` и
    `existing_report_matched`; не обещают rows или same-turn result раньше
    допустимого статуса.
-4. Export description запрещает blind retry `StartReport` и объясняет polling
-   по `report_file_id`; ambiguous 403 остаётся bounded/temporary guidance.
+4. Export description объясняет polling по `report_file_id`; two known 403
+   разрешают одну новую attempt через 30 минут, а ambiguous 403 остаётся
+   bounded/temporary guidance без этого срока.
 5. Tests проверяют утверждённый wire contract, error classification и отсутствие
    скрытого `/save` или sensitive data в logs.
 6. Real probe подтверждает каждый новый upstream claim до его публикации в MCP.
 
 ## Текущее состояние
 
-Безопасная часть `211.3` завершена по source + real-probe фактам. `211.2`
-остаётся внешней зависимостью: без ответа Vetmanager нельзя публиковать TTL/SLA,
-новые API fields, queue diagnostics или автоматический retry. Если команда явно
-подтвердит отсутствие machine-readable diagnostics, выполняется `211.5`.
+Безопасные части `211.3` и `211.5` завершены по source + real-probe фактам.
+Для двух exact export 403 опубликована только user-directed рекомендация:
+выждать 30 минут и выполнить одну новую попытку `StartReport`. MCP не запускает
+её автоматически, немедленно или параллельно; это не `retry_after` и не SLA.
 
-Пользователь разрешил production deploy завершённого scope `211.3` до ответа
-Vetmanager. Такой deploy не означает closure этапа: `211.2` и финальная
-диагностика/изменение public contract остаются открытыми.
+`211.2` переведена в внешний API backlog: без ответа Vetmanager нельзя
+публиковать TTL/SLA, новые API fields, queue diagnostics или автоматический
+retry. Завершение Stage 211 не означает, что upstream contract получен или что
+эти ограничения устранены.
 
 Partial release выполнен для SHA `e004860`: GitHub Tests `30914997709` и Deploy
 Prod `30915283135` завершились successfully, production `/healthz` и `/readyz`
-вернули `ok`. Это не закрывает этап 211 до upstream contract decision.
+вернули `ok`. Следующий release SHA для `211.5` дополнит эту запись после CI и
+production smoke.

@@ -400,10 +400,13 @@ async def test_get_report_ai_job_export_starts_export_for_saved_job_report_id():
     ("message", "expected"),
     [
         ("Report is not accessible for REST", "not REST-exportable"),
-        ("Error: Report creating in progress. Please wait for finish.", "temporarily blocked"),
+        (
+            "Error: Report creating in progress. Please wait for finish.",
+            "temporarily blocked by Vetmanager's tenant-wide REST export guard; wait 30 minutes",
+        ),
         (
             "Error: You can not run a report more than 10 minutes",
-            "temporarily limited by Vetmanager's tenant-wide REST export guard",
+            "temporarily limited by Vetmanager's tenant-wide REST export guard; wait 30 minutes",
         ),
         ("Some unexpected 403", "denied or temporarily limited"),
     ],

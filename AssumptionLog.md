@@ -11077,3 +11077,27 @@ Checks so far:
   Independent production `https://vetmanager-mcp.vromanichev.ru/healthz` and
   `/readyz` returned `status=ok`; readiness storage check is `ok`. Stage 211
   remains `in_progress` solely on `211.2` upstream contract decision.
+
+- **User-directed fallback (211.5)**: по прямому решению пользователя для двух
+  exact текстовых export `403` допустима одна новая попытка `StartReport` не
+  ранее чем через 30 минут. Это значение покрывает максимальный подтверждённый
+  source guard (non-terminal REST export `<30` минут); второй guard действует
+  `<10` минут. Политика не добавляет background/automatic retry, polling,
+  параллельные или немедленные повторения, `retry_after`, API TTL либо SLA и не
+  гарантирует успех при другой tenant-wide активности.
+
+- **Review/validation 211.5**: три узких Spark запуска не дали валидного
+  review-result: первый остановился на read-only `bwrap` runtime error, два
+  review-only fallback не вернули structured findings. Это зафиксировано как
+  provider/runtime failure, не как успешный review. Новый Claude Opus запуск не
+  выполнялся: два доступных strong code-review запуска уже израсходованы на
+  текущий Stage 211 и закрыли его прежний diff без critical/high. Изменение
+  ограничено user-directed wording и regression assertions; targeted Docker
+  suite — `63 passed`, full default Docker — Docker event
+  `vetmanager-mcp-test-run-2e77f6be7acd exit=0`, `git diff --check` проходит.
+
+- **Closure 211**: по прямому пользовательскому решению Stage 211 закрывается
+  после выпуска `211.5`; `211.2` не выдана за выполненную и переведена в
+  отдельный внешний API backlog до ответа Vetmanager. Любое добавление
+  machine-readable diagnostics, TTL/SLA или automatic retry требует нового
+  PRD/review/test contour после этого ответа.

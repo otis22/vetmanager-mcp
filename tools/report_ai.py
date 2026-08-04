@@ -350,12 +350,14 @@ def _safe_export_error(
         if "report creating in progress" in lowered:
             return ToolError(
                 "Report export is temporarily blocked by Vetmanager's tenant-wide REST export guard; "
-                "no retry delay was provided, so do not automatically start a duplicate export."
+                "wait 30 minutes before one new StartReport attempt. Do not retry "
+                "automatically, immediately, or in parallel."
             )
         if "can not run a report more than 10 minutes" in lowered:
             return ToolError(
                 "Report export is temporarily limited by Vetmanager's tenant-wide REST export guard; "
-                "no retry delay was provided, so do not automatically start a duplicate export."
+                "wait 30 minutes before one new StartReport attempt. Do not retry "
+                "automatically, immediately, or in parallel."
             )
         if "not accessible for rest" in lowered:
             return ToolError(
