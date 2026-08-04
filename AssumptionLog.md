@@ -11064,3 +11064,9 @@ Checks so far:
   `failed/PREVIEW_FAILED` составляет примерно `600–900` секунд. Это internal
   cleanup window, не обещание времени обработки и не public SLA: API по-прежнему
   не отдаёт `expires_at`, `retry_after` или stable error code.
+
+- **Partial release decision (211.4)**: пользователь явно разрешил довести
+  подтверждённый scope `211.3` до production deploy без ожидания `211.2`.
+  Разрешены только уже reviewed changes из `48f8428`/`80ea2ae`; deploy не
+  закрывает этап 211, не меняет known issues и не разрешает добавлять API fields,
+  TTL/SLA или retry automation до upstream decision.

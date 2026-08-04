@@ -3802,12 +3802,12 @@ UX-принципы (Claude Opus review): один экран — одно де�
 
 ## Этап 211. Контракт и диагностика очереди Report AI — `in_progress`
 
-Release gate: closure `211.4` и любое расширение public API contract запрещены,
+Release gate: закрытие этапа и любое расширение public API contract запрещены,
 пока `211.2` не получит и не подтвердит upstream contract на test contour.
-`211.3` разрешён только для source + real-probe подтверждённого wording без
-новых полей API, TTL/SLA или retry automation. Если Vetmanager не предоставит
-machine-readable diagnostics, этап переходит на отдельный fallback по
-подтверждённым MCP-фактам.
+Пользователь явно разрешил deploy подтверждённого scope `211.3` до ответа:
+только source + real-probe wording и safe error mapping без новых полей API,
+TTL/SLA или retry automation. Если Vetmanager не предоставит machine-readable
+diagnostics, этап переходит на отдельный fallback по подтверждённым MCP-фактам.
 
 Источник: production feedback `#37` и real-API исследование `2026-08-04` на
 тестовом контуре. Новый job оставался `queued` более 2,5 минут без причины,
@@ -3855,9 +3855,9 @@ Evidence из production feedback:
   wording без нового API claim, TTL/SLA или retry automation. — `done`
   (targeted/default Docker и isolated real Report AI smoke прошли; Spark и два
   Claude Opus review закрыты без critical/high)
-- 211.4 Closure: обновить known issue/reports после подтверждения, провести
-  reviews, deploy/smoke только для принятых MCP изменений и закрыть этап. Старт
-  только после `done` у `211.2` и `211.3`. — `todo`
+- 211.4 Частичный release подтверждённого scope: провести push, CI deploy и
+  production smoke только для `211.3`; не закрывать этап, не менять known
+  issue/reports и не расширять API contract до `done` у `211.2`. — `in_progress`
 - 211.5 Fallback без upstream diagnostics: если API-команда явно подтверждает
   отсутствие machine-readable queue/export diagnostics, зафиксировать этот
   ответ и выпустить только factual MCP guidance с bounded polling, без новой

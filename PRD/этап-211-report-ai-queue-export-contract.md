@@ -193,3 +193,7 @@ Architecture Critique: пройден для безопасного scope `211.3
 остаётся внешней зависимостью: без ответа Vetmanager нельзя публиковать TTL/SLA,
 новые API fields, queue diagnostics или автоматический retry. Если команда явно
 подтвердит отсутствие machine-readable diagnostics, выполняется `211.5`.
+
+Пользователь разрешил production deploy завершённого scope `211.3` до ответа
+Vetmanager. Такой deploy не означает closure этапа: `211.2` и финальная
+диагностика/изменение public contract остаются открытыми.
