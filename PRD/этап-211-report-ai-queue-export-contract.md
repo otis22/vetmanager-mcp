@@ -40,9 +40,12 @@ Vetmanager API для MCP-пользователя. Детали worker/cleanup 
   включает interactive statuses `needs_confirmation` и `ready_to_save` в
   cleanup selection, чтобы abandoned job не блокировали dedupe бессрочно;
   каждые 300 секунд записи старше 600 секунд переходят в
-  `failed/PREVIEW_FAILED`. Это current upstream policy, но не опубликованный
-  public API contract: MCP не должен обещать пользователю доступное время
-  confirm/save, пока Vetmanager не подтвердит TTL и не добавит metadata.
+  `failed/PREVIEW_FAILED`. При штатной периодичности cleanup фактическое окно
+  истечения составляет примерно 600–900 секунд: запись становится stale после
+  600 секунд и ждёт ближайший запуск task до 300 секунд. Это current upstream
+  policy, но не опубликованный public API contract/SLA: MCP не должен обещать
+  пользователю это время confirm/save, пока Vetmanager не подтвердит TTL и не
+  добавит metadata.
 - Подтверждено source: оба export 403 guards tenant-global, а не scoped to
   `report_id`: non-terminal REST export возрастом до 30 минут выдаёт
   `Report creating in progress`; любой REST export возрастом до 10 минут —

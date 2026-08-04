@@ -3815,6 +3815,11 @@ machine-readable diagnostics, этап переходит на отдельны�
 `409 INVALID_TRANSITION`; export AI report зависит от общего состояния Report
 Constructor и может вернуть `403` при long-running/busy запуске.
 
+Подтверждённая внутренняя cleanup policy interactive jobs: stale threshold
+`600` секунд и запуск task каждые `300` секунд, то есть штатное фактическое
+окно до `failed/PREVIEW_FAILED` — примерно `600–900` секунд. Это не public API
+SLA и не должно попадать в user-facing promise без metadata от Vetmanager.
+
 Цель: синхронизировать MCP-описания с актуальным upstream contract и передать
 Vetmanager воспроизводимые данные для диагностики worker queue/export, не
 маскируя upstream ограничение ложными retry или обещаниями same-turn результата.

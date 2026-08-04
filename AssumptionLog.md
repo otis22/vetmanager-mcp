@@ -11056,3 +11056,11 @@ Checks so far:
   event `exit=0`. Широкий opt-in real launcher ранее был остановлен после
   order-dependent host-resolution/Report AI failures (`exit=137`); это не
   результат 211.3 и требует отдельного восстановления real-suite isolation.
+
+- **Cleanup window ≠ public SLA (211.2)**: по прямому указанию пользователя
+  зафиксировано уточнение source policy: `AiReportJobsCleanupTask` обрабатывает
+  stale interactive job после `600` секунд, а период task — `300` секунд.
+  Поэтому при штатной работе scheduler фактическое окно до
+  `failed/PREVIEW_FAILED` составляет примерно `600–900` секунд. Это internal
+  cleanup window, не обещание времени обработки и не public SLA: API по-прежнему
+  не отдаёт `expires_at`, `retry_after` или stable error code.
