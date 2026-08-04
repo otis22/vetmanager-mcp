@@ -349,13 +349,13 @@ def _safe_export_error(
     if exc.status_code == 403:
         if "report creating in progress" in lowered:
             return ToolError(
-                "Report export is already being created by Vetmanager; retry after a delay "
-                "with bounded polling instead of starting duplicate exports."
+                "Report export is temporarily blocked by Vetmanager's tenant-wide REST export guard; "
+                "no retry delay was provided, so do not automatically start a duplicate export."
             )
         if "can not run a report more than 10 minutes" in lowered:
             return ToolError(
-                "Report export is temporarily limited by Vetmanager because a report has "
-                "been running too long; retry later instead of starting duplicate exports."
+                "Report export is temporarily limited by Vetmanager's tenant-wide REST export guard; "
+                "no retry delay was provided, so do not automatically start a duplicate export."
             )
         if "not accessible for rest" in lowered:
             return ToolError(

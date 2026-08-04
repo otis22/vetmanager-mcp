@@ -1,6 +1,7 @@
 import json
 import asyncio
 import logging
+from pathlib import Path
 
 import httpx
 import pytest
@@ -142,6 +143,8 @@ def test_report_ai_guidance_descriptions_name_helper_and_fallback_policy():
     assert "simplifying/splitting" in job_description
     assert "preview_example_row" in job_description
     assert "existing_report_matched" in job_description
+    assert "queued/recognizing/building_preview" in job_description
+    assert "no expiry or retry metadata" in job_description
     assert "ABC" not in job_description
     assert "XYZ" not in job_description
 
@@ -154,6 +157,23 @@ def test_report_ai_guidance_descriptions_name_helper_and_fallback_policy():
 
     assert "supported" in SPECIAL_TOOL_DESCRIPTIONS["start_report_export"].lower()
     assert "supported" in SPECIAL_TOOL_DESCRIPTIONS["get_report_ai_job_export"].lower()
+
+    export_description = SPECIAL_TOOL_DESCRIPTIONS["start_report_export"]
+    assert "tenant-wide REST export guard" in export_description
+    assert "no retry_after" in export_description
+    assert "Do not automatically repeat StartReport" in export_description
+    assert "retry only with bounded attempts" not in export_description
+
+
+def test_report_ai_readme_uses_current_queue_and_export_contract():
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "`queued`/`recognizing`/`building_preview`" in readme
+    assert "`queued`/`processing`" not in readme
+    assert "API не возвращает `retry_after`" in readme
+    assert "Не повторять `StartReport` автоматически" in readme
 
 
 @pytest.mark.asyncio
@@ -173,6 +193,8 @@ async def test_report_ai_guidance_reaches_live_tool_descriptions():
     assert "Vetmanager side" in job_description
     assert "simplifying/splitting" in job_description
     assert "preview_example_row" in job_description
+    assert "queued/recognizing/building_preview" in job_description
+    assert "no expiry or retry metadata" in job_description
     assert "ABC" not in job_description
     assert "XYZ" not in job_description
 
@@ -182,6 +204,12 @@ async def test_report_ai_guidance_reaches_live_tool_descriptions():
     assert "csv_export_url" in data_description
 
     assert "supported" in tools_by_name["get_report_ai_job_export"].description.lower()
+
+    export_description = tools_by_name["start_report_export"].description
+    assert "tenant-wide REST export guard" in export_description
+    assert "no retry_after" in export_description
+    assert "Do not automatically repeat StartReport" in export_description
+    assert "retry only with bounded attempts" not in export_description
 
 
 def test_report_ai_goods_workaround_mentions_helper_tool_and_prompt():

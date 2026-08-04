@@ -3799,3 +3799,61 @@ UX-принципы (Claude Opus review): один экран — одно де�
 причёсывается.
 
 - 210.7 Переименование, сужение до кодинг-агентов и вёрстка внутри блока. — `done`
+
+## Этап 211. Контракт и диагностика очереди Report AI — `in_progress`
+
+Release gate: closure `211.4` и любое расширение public API contract запрещены,
+пока `211.2` не получит и не подтвердит upstream contract на test contour.
+`211.3` разрешён только для source + real-probe подтверждённого wording без
+новых полей API, TTL/SLA или retry automation. Если Vetmanager не предоставит
+machine-readable diagnostics, этап переходит на отдельный fallback по
+подтверждённым MCP-фактам.
+
+Источник: production feedback `#37` и real-API исследование `2026-08-04` на
+тестовом контуре. Новый job оставался `queued` более 2,5 минут без причины,
+`report_id` или изменения `updated_at`; `/data` до terminal state возвращает
+`409 INVALID_TRANSITION`; export AI report зависит от общего состояния Report
+Constructor и может вернуть `403` при long-running/busy запуске.
+
+Цель: синхронизировать MCP-описания с актуальным upstream contract и передать
+Vetmanager воспроизводимые данные для диагностики worker queue/export, не
+маскируя upstream ограничение ложными retry или обещаниями same-turn результата.
+
+Evidence из production feedback:
+
+- очередь/preview: `#15` (ABC/XYZ за 3 месяца), `#19` (date-scoped job),
+  `#21` (auto-updating setup) и новый `#37` (grouped KPI) — jobs остаются
+  queued и не дают same-turn результат; `#9` ранее зафиксировал indefinite
+  queue для inventory report;
+- read-only результат: `#16` и high-severity `#17` — после `ready_to_save`
+  rows недоступны без сохранения/`report_ai.write`, из-за чего блокируется KPI
+  service-line aggregation;
+- большой результат/export: `#11` — historical 1000-row cap без pagination;
+  текущий contract поднял inline cap до `10000` и добавил CSV path, но real probe
+  подтвердил export blocker `403` long-running/busy;
+- закрытые регрессии не переоткрывать как новые: `#8` intent limit, `#10`
+  narrow save scope, `#7` goods-by-month `good.id` SQL.
+
+- 211.1 PRD и повторяемое исследование: проверить lifecycle `queued → ...`,
+  cleanup/worker evidence, `/data` state machine, inline limit `10000` и
+  `StartReport`/`reportFile` busy/long-running ветки на test contour; подготовить
+  privacy-safe API handoff. — `done` (PRD создан; handoff отправлен в Bitrix24
+  `Roadmap API`, message `#434805`; reproducible evidence приложен)
+- 211.2 Upstream contract decision: получить и зафиксировать ответ Vetmanager
+  по worker queue, terminal failure/timeout status, retry metadata и
+  различению export blockers; подтвердить каждый новый API claim на test
+  contour. — `in_progress` (ожидается ответ `Roadmap API`)
+- 211.3 Контракт MCP: обновить tool descriptions и prompt helper — async queue,
+  bounded polling, доступ к rows только из `saved`/`existing_report_matched`,
+  `limited=true`/`10000` и export 403 как upstream busy/temporary limit; добавить
+  targeted regression tests. Разрешён только source + real-probe подтверждённый
+  wording без нового API claim, TTL/SLA или retry automation. — `done`
+  (targeted/default Docker и isolated real Report AI smoke прошли; Spark и два
+  Claude Opus review закрыты без critical/high)
+- 211.4 Closure: обновить known issue/reports после подтверждения, провести
+  reviews, deploy/smoke только для принятых MCP изменений и закрыть этап. Старт
+  только после `done` у `211.2` и `211.3`. — `todo`
+- 211.5 Fallback без upstream diagnostics: если API-команда явно подтверждает
+  отсутствие machine-readable queue/export diagnostics, зафиксировать этот
+  ответ и выпустить только factual MCP guidance с bounded polling, без новой
+  error mapping или обещания SLA/retry. — `todo`

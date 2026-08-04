@@ -10926,3 +10926,133 @@ Checks so far:
   таб-лист переносится, а не обрезается; инвариант 208/209 не нарушен;
   `.config-card pre, .command-card pre` не задевает другие `<pre>`.
 - **Проверки**: Docker suite `1432 passed, 2 skipped, 65 deselected`.
+
+## Планирование этапа 211 — Report AI queue/export contract — 2026-08-04
+
+- **Источник**: production feedback `#37` и исследование с `TEST_DOMAIN` /
+  `TEST_API_KEY` на test contour. Созданный job `#116` оставался `queued`
+  более 2,5 минут, без `error_code`, `report_id` и изменения `updated_at`.
+  Это подтверждает upstream worker/queue symptom, но не доказывает его
+  конкретную инфраструктурную причину без доступа Vetmanager к queue/logs.
+- **Подтверждённый contract**: `/data` для in-progress job возвращает `409
+  INVALID_TRANSITION`; saved fixtures возвращают data и `csv_export_url`.
+  Актуальные upstream limits — `intent_text` до `20000`, inline data до `10000`
+  строк; старые значения `1000` нельзя сохранять в MCP-описаниях.
+- **Export**: `StartReport` для saved AI fixture успешно стартовал, но повтор
+  получил upstream `403` long-running limit. MCP не должен объявлять AI export
+  permanently unsupported или бесконечно повторять вызов; точную причину
+  (`busy` vs long-running global blocker) должен отдать/подтвердить Vetmanager.
+- **Решение**: добавлен будущий этап 211. На этой сессии не меняются tool
+  descriptions, MCP behaviour, production feedback rows или known issues:
+  сначала нужен PRD и ответ владельца upstream queue/export.
+- **Связанные feedback для API handoff**: `#15`, `#19`, `#21`, `#37` образуют
+  повторяющийся queue/preview cluster (ABC/XYZ, date-scoped, auto-updating,
+  grouped KPI); `#9` — прежний inventory queued case. `#16` и high `#17`
+  показывают read-only gap после `ready_to_save`; `#11` — historical row-cap
+  case. `#7`, `#8`, `#10` — closed fixes (`good.id`, intent limit, narrow save
+  scope), их не надо описывать как открытые incidents.
+- **Передача upstream**: русский handoff отправлен 2026-08-04 в Bitrix24 чат
+  `Roadmap API` сообщением `#434805` и приложен как
+  `2026-08-04-report-ai-api-handoff.md`. Запрошены worker/queue investigation
+  и stable queue/export diagnostics.
+- **PRD**: создан `PRD/этап-211-report-ai-queue-export-contract.md`; Roadmap
+  этап 211 и 211.1 переведены в `in_progress`. Architecture Critique, code
+  changes и PRD-review отложены до ответа upstream: сейчас нельзя честно выбрать
+  API mapping, ownership или rollback для ещё не подтверждённого contract.
+- **211.1 закрыт**: на 12:01 MSK в `Roadmap API` ещё нет ответа на message
+  `#434805`. Подзадача завершена по своему deliverable (research, PRD, handoff);
+  ожидание и проверка ответа вынесены в активную 211.2, а MCP changes — в 211.3.
+
+- **Spark PRD-review этапа 211**: `gpt-5.3-codex-spark`, валидный запуск после
+  read-only sandbox fallback, 3 findings. Приняты все: явный release gate для
+  211.3/211.4, отдельный fallback при подтверждённом отсутствии diagnostics и
+  разделение observed worker details от public contract. Детали `600`/`300`
+  секунд не считаются MCP SLA до ответа Vetmanager.
+
+- **Architecture Critique этапа 211**: первая попытка Claude Opus не получила
+  содержимое файлов и корректно вернула critical finding вместо выдуманного
+  ревью; два последующих self-contained запуска не вернули валидный JSON и были
+  остановлены. Гейт не пройден и не считается выполненным; повторять его после
+  upstream contract decision перед реализацией `211.3`.
+
+- **Маршрутизация handoff**: в `Roadmap API` пользователь уточнил, что этим
+  занимается другой владелец и сообщение отправлено не туда. Поиск получателя
+  по первоначальному описанию в доступном Bitrix не дал результата. Сообщения
+  `#434805`/`#434841` не считаются
+  подтверждённой передачей владельцу API; новый получатель нужен до 211.2.
+
+- **Корректная маршрутизация handoff**: полный privacy-safe handoff отправлен
+  в личный диалог владельца API сообщением `#435013` с приложением. Это является
+  входом для `211.2`; до подтверждённого ответа release gate не открывается.
+
+- **211.2 source + real-probe finding (corrected)**: после `git pull` upstream
+  master `a414afb0a4` и read-only повторного GET job `#116` подтверждено, что
+  `needs_confirmation` через 600 секунд становится `failed/PREVIEW_FAILED`.
+  History commit `80e5d5983b` показывает intentional policy: cleanup включает
+  `needs_confirmation`/`ready_to_save`, чтобы abandoned job не блокировали
+  dedupe бессрочно. Это не regression cleanup, а недокументированный public
+  contract: API не отдаёт `expires_at`/specific code/retry metadata. Владельцу
+  API отправлено correction сообщением `#435105`; MCP не должен обещать
+  пользователю доступное время confirm/save до ответа владельца API.
+
+- **Export contract уточнён source**: `StartReport` блокируется global tenant
+  guards, не самим `report_id`: незавершённый REST export <30 минут и любой
+  REST export <10 минут. Ответы остаются free-text 403 без code/retry metadata
+  и без идемпотентного `report_file_id`; в MCP допустима только bounded,
+  non-duplicating guidance.
+
+- **Release block 211**: после трёх последовательных проверок личного диалога
+  владельца API и remote upstream нет contract decision, API-fix или новой ветки
+  для Report AI. Поэтому нельзя подтвердить public TTL interactive jobs,
+  queue/export diagnostics, обновить MCP contract без предположений либо пройти
+  real verification/release gates. Цель 211 переведена в blocked до внешнего
+  ответа или изменения upstream state.
+
+- **Architecture Critique 211, Claude Opus**: валидный JSON review после
+  self-contained контекста. Принято: проверка отсутствия automatic retry уже
+  покрыта runtime `retry=False` и existing regression. Отклонено: runtime не
+  содержит false `queued, processing` classification (queue polling использует
+  `queued`/`recognizing`/`building_preview`), вынос status constants создаст
+  лишнюю coupling с README, а `StartReport` не является recovery для failed AI
+  job. Принято в docs/test: заменить устаревший README `processing` и явно
+  указать отсутствие expiry/retry metadata и tenant-wide export guard.
+
+- **Code/diff review 211.3, Spark**: read-only запуск упёрся в `bwrap` до
+  чтения файлов; после разрешённого review-only fallback и одного узкого
+  повторного запуска `gpt-5.3-codex-spark` вернул `[]`. Проверены только
+  текущий diff, отсутствие automatic `StartReport` retry, public API claims,
+  tests и согласованность README/PRD/runtime.
+
+- **Code/diff review 211.3, Claude Opus**: два запуска с отключёнными tools,
+  self-contained diff, `--output-format json` и schema завершились без output.
+  Они не засчитаны как независимое ревью и требуют повторного valid JSON запуска
+  перед commit/deploy; budget rationale — invalid response, не finding.
+
+- **Проверки 211.3**: targeted Docker suite — `63 passed`; полный default
+  Docker suite завершился `exit=0` (Docker event для
+  `vetmanager-mcp-test-run-7478b554ca58`). Второй случайно запущенный suite был
+  остановлен локально (`exit=137`) и не используется как результат проверки.
+  `git diff --check` проходит; commit/deploy не выполнялись.
+
+- **Code/diff review 211.3, Claude Opus**: валидный JSON review после
+  background-capture. Нет critical/high. Приняты 3 medium findings по качеству
+  regression coverage: README path привязан к repo root через `__file__`, exact
+  status trio проверяется в static/live tool descriptions, две known 403 ветки
+  снова проверяются разными expected fragments. После правок обязателен новый
+  targeted/full validation; повторный strong review не нужен, поскольку
+  архитектура и public contract не менялись.
+
+- **Final code/diff review 211.3, Claude Opus**: второй valid JSON запуск не
+  нашёл critical/high. Приняты ещё 2 medium findings по regression coverage:
+  ten-minute 403 теперь проверяется уникальной полной фразой, а static/live
+  `start_report_export` descriptions проверяют tenant-wide guard, отсутствие
+  `retry_after`, запрет automatic retry и отсутствие старого wording. Бюджет
+  strong review исчерпан; дальнейшие изменения scope не вносились.
+
+- **Финальные проверки 211.3**: targeted Docker suite после fixes — `63
+  passed`; full default Docker suite — Docker event
+  `vetmanager-mcp-test-run-19513b529374 exit=0`. Isolated opt-in real Report AI
+  smoke (`create_and_bounded_poll_non_polluting`, saved fixture data) — Docker
+  event `exit=0`. Широкий opt-in real launcher ранее был остановлен после
+  order-dependent host-resolution/Report AI failures (`exit=137`); это не
+  результат 211.3 и требует отдельного восстановления real-suite isolation.

@@ -689,10 +689,10 @@ Prompts работают по тому же bearer-only контракту, чт
 
 1. `get_report_ai_prompt_helper` или `report_ai_prompt_helper` — получить правила формулировки intent и ограничения.
 2. `create_report_ai_job(intent_text)` — создать Report AI job.
-3. `get_report_ai_job(job_id)` — poll с bounded retry; статусы `queued`/`processing` означают ожидание, `failed` возвращается пользователю как ошибка источника.
-4. Если статус `needs_confirmation`, показать `job.candidates`, выбрать только `report_id` из этого списка и вызвать `confirm_report_ai_job_candidate`.
+3. `get_report_ai_job(job_id)` — poll с bounded retry; статусы `queued`/`recognizing`/`building_preview` означают ожидание, `failed` возвращается пользователю как ошибка источника.
+4. Если статус `needs_confirmation`, показать `job.candidates`, выбрать только `report_id` из этого списка и вызвать `confirm_report_ai_job_candidate`. Обработать это в текущем workflow: API не возвращает срок действия или retry metadata.
 5. Если статус `existing_report_matched`, сразу вызвать `get_report_ai_job_data`.
-6. Если статус `ready_to_save` и нужны строки, явно вызвать `save_report_ai_job_as_report` с вменяемым названием отчёта; это write-tool, отчёт станет видимым в Vetmanager.
+6. Если статус `ready_to_save` и нужны строки, явно вызвать `save_report_ai_job_as_report` с вменяемым названием отчёта; это write-tool, отчёт станет видимым в Vetmanager. Не обещать срок на save: API не возвращает expiry или retry metadata.
 7. `get_report_ai_job_data(job_id)` — получить `columns`, `rows`, `total`, `limited` и, когда upstream отдаёт, `csv_export_url`.
 
 `intent_text` для `create_report_ai_job` ограничен Vetmanager лимитом 20000 символов. Для сложных отчётов лучше не просто писать длинный текст, а явно указать период, фильтры, метрики, группировки и сортировку. `recognized.preview_example_row` в статусе job — это LLM-generated пример ожидаемой строки, а не подтверждённая строка из данных клиники.
@@ -705,7 +705,7 @@ Prompts работают по тому же bearer-only контракту, чт
 2. `get_report_export_file(report_file_id)` — follow-up после `start_report_export`; получает `html_file`, `csv_file`, `csv_semicolon_file`, `xlsx_file`; если генерация ещё идёт, повторить вызов после задержки с bounded retry.
 3. `get_report_ai_job_export(job_id, filter_json=None)` — convenience export только для `saved`/`existing_report_matched` jobs с `job.report_id`; не сохраняет `ready_to_save` jobs автоматически.
 
-Ограничения export flow: список отчётов по REST не опубликован, поэтому `list_reports` tool нет; export работает только для отчётов с включённым REST access (`allow_rest_api=1`). Новый upstream включает REST access для AI reports, но старые/частично обновлённые контуры могут возвращать отказ. `StartReport` также может возвращать временные состояния `Report creating in progress` или `can not run a report more than 10 minutes`; в этих случаях нужен bounded retry позже, а не создание дубликатов. Значения `csv_export_url`, `html_file`/`csv_file`/`csv_semicolon_file`/`xlsx_file` считать чувствительными ссылками/путями к bulk clinic data и не писать в логи.
+Ограничения export flow: список отчётов по REST не опубликован, поэтому `list_reports` tool нет; export работает только для отчётов с включённым REST access (`allow_rest_api=1`). Новый upstream включает REST access для AI reports, но старые/частично обновлённые контуры могут возвращать отказ. `StartReport` также может вернуть 403 `Report creating in progress` или `can not run a report more than 10 minutes`: это временный guard для REST export всего tenant, а не гарантия о конкретном `report_id`; API не возвращает `retry_after`. Не повторять `StartReport` автоматически и не создавать дубликаты; после успешного запуска poll только его `report_file_id` через `get_report_export_file`. Значения `csv_export_url`, `html_file`/`csv_file`/`csv_semicolon_file`/`xlsx_file` считать чувствительными ссылками/путями к bulk clinic data и не писать в логи.
 
 ## Product metrics (ad-hoc report)
 
