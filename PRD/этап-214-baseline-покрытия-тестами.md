@@ -79,7 +79,8 @@ production behavior.
 
 Default contour завершился с `exit 0`. Line coverage: **88,58%**
 (`7464/8426`). По выбранным модулям: `auth/` — 89,11% (`221/248`),
-`tools/feedback.py` — 58,33% (`7/12`), `tools/report_ai.py` — 90,37%
+`agent_feedback_service.py` — 87,18% (`374/429`), а `tools/feedback.py` — 58,33%
+(`7/12`) только для тонкой MCP-обёртки; `tools/report_ai.py` — 90,37%
 (`244/270`), `service_metrics.py` — 98,56% (`206/209`),
 `activation_telemetry.py` — 95,45% (`105/110`).
 

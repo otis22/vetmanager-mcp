@@ -11188,6 +11188,63 @@ Checks so far:
 - **Committed-diff review**: Spark review inline committed diff вернул
   `findings: []`. Два запуска Claude Opus с inline diff, отключёнными tools/MCP
   и обязательной JSON schema завершились без output; это invalid review output,
-  не отсутствие findings. Strong code-review budget (2/2) исчерпан без
-  проверяемых finding; scope остался ограничен test tooling, а финальный audit
-  и full default Docker contour прошли успешно.
+  не отсутствие findings. Первоначальная пометка Strong code-review budget
+  `(2/2)` заменена post-hoc правилом ниже: эти infrastructure failures слот не
+  расходуют. Scope остался ограничен test tooling, а финальный audit и full
+  default Docker contour прошли успешно.
+
+## Post-hoc review этапов 213–214 и правило бюджета review
+
+- **Инфраструктурные сбои не расходуют budget**: уточнено правило `AGENTS.md`
+  и согласованная Cursor-инструкция: слот strong review расходует только
+  разбираемый verdict (findings либо явный пустой список). Два исторических
+  пустых Claude Opus output для committed diff 214 и ранее зафиксированные
+  аналогичные сбои являются инфраструктурными, а не использованными слотами.
+  Для одного gate разрешены суммарно максимум три infrastructure retry,
+  независимо от смены prompt/schema; каждая попытка фиксируется как `N/3`.
+  Этого достаточно для кратковременных флаков, но после третьей неуспешной
+  попытки gate честно фиксируется как `blocked`, не образуя бесконечный цикл.
+  Правило действует вперёд; обратная классификация разрешена только для
+  user-directed backfill этапов 213–214 и не открывает historical gates других
+  этапов.
+
+- **Coverage feedback scope**: `.coveragerc` с `source=.` действительно
+  измеряет `agent_feedback_service.py`; XML baseline показывает ему 87,18%
+  line coverage. Число 58,33% (`7/12`) относится только к
+  `tools/feedback.py`, тонкой MCP-обёртке, и исправлено в PRD 214. Менять
+  `.coveragerc` не потребовалось.
+
+- **Post-hoc Spark committed-diff review `a9c2d51..42bb033`**: валидный
+  результат `[]`; findings не приняты.
+
+- **Post-hoc Claude Opus committed-diff review `a9c2d51..42bb033`**: валидный
+  structured JSON вернул один low candidate о гипотетических untracked Python
+  trees при `source=.`. Отклонён: finding не показывает реально включаемый
+  посторонний файл или расхождение текущих local/CI результатов; полный
+  product-root scope является намеренным и проверяемо включает service, а не
+  только MCP-обёртку. Валидный verdict расходует один strong code/diff slot.
+
+- **Локальная проверка после backfill**: `docker compose --profile test run
+  --rm test` — `1437 passed, 2 skipped, 65 deselected`; `git diff --check`
+  проходит.
+
+- **Coverage worker files**: `.gitignore` дополнен `.coverage.*`, чтобы
+  параллельные per-process файлы coverage не попадали в staged diff; проверено
+  через `git check-ignore` для representative имени.
+
+- **Code-review follow-up commit**: первый Spark pass вернул вложенные пустые
+  списки вместо требуемого YAML findings list; он учитывается только в
+  отдельном Spark лимите, не в strong-model counter. Повтор с более строгим
+  форматом не дал findings. Claude Opus review
+  принял четыре замечания: выровнены `CLAUDE.md`, `AGENTS.md` и Cursor rule;
+  infrastructure cap стал cumulative и записываемым как `N/3`; historical
+  budget claim 214 аннотирован; coverage ratio сервиса уточнён до `374/429`.
+  После исправлений full Docker contour: `1437 passed, 2 skipped, 65 deselected`.
+
+- **Второй valid Claude Opus code/diff review**: приняты уточнения policy:
+  сильная модель и Spark имеют раздельные counters; допустимы максимум три
+  неуспешные strong-model попытки всего (`1/3`–`3/3`); `blocked` запрещает
+  push; STOP относится к третьему валидному review; backward reclassification
+  ограничена user-directed backfill 213–214. Все исправления внесены в этот
+  commit. Strong code/diff budget израсходован двумя валидными verdict, поэтому
+  третий запуск не выполнялся.

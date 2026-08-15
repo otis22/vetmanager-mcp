@@ -94,9 +94,9 @@ Architecture Critique gate:
 
 - Spark-review: максимум 3 запуска перед каждым видом review gate; Spark-бюджет отдельный от бюджета сильной модели
 - `gpt-5.3-codex-spark` как обычный scout/subagent для вспомогательных задач можно запускать без лимита; лимит 3 относится только к Spark-review перед конкретным review gate
-- PRD-review сторонней моделью: максимум 2 запуска на задачу
+- PRD-review сторонней моделью: максимум 2 валидных запуска на задачу; валиден только разбираемый verdict (findings или явный пустой список)
 - Architecture Critique, засчитанный как strong PRD-review, расходует тот же бюджет PRD-review сторонней моделью; не добавлять отдельный третий запуск strong-модели только из-за нового gate.
-- code/diff review сторонней моделью: максимум 2 запуска на задачу
+- code/diff review сторонней моделью: максимум 2 валидных запуска на задачу; валиден только разбираемый verdict (findings или явный пустой список)
 - бюджеты раздельные и не расходуют друг друга
 - правильное имя модели Spark: `gpt-5.3-codex-spark`; имя `gpt-5.3-spark` неполное и не должно использоваться
 - Spark не принимает финальных решений: его вывод является candidate-only и обязан пройти проверку на адекватность
@@ -119,8 +119,7 @@ Claude Opus review из Codex runtime:
 - Для inline diff/context review отключать tools/MCP, если они не нужны reviewer'у.
 - Prompt должен запрещать правки, shell-команды и tool calls: `Review only. Do not edit files. Do not run commands. Do not output tool calls.`
 - Предпочтительный output для review gate — structured JSON findings. Для Claude CLI использовать `--output-format json` и JSON schema, когда доступно.
-- Если Claude вернул не review, а попытку tool call, prose вместо требуемой schema или другой невалидный формат, запуск не считать полноценным review и повторить в пределах бюджета с более жёстким prompt/schema.
-- Если Claude недоступен из-за provider/model error, зафиксировать это в `AssumptionLog.md` и действовать по budget/blocked rationale.
+- Пустой ответ, попытка tool call, prose вместо требуемой schema, другой невалидный формат или provider/model error — infrastructure failure сильной модели: он не расходует слот бюджета и фиксируется отдельной строкой в `AssumptionLog.md` как неуспешная попытка `N/3`. Для одного strong review gate допускается максимум три такие попытки всего (от `1/3` до `3/3`); смена prompt/schema счётчик не сбрасывает. После третьей неуспешной попытки gate фиксируется как blocked и push запрещён до пользовательского решения или восстановления провайдера; Spark имеет отдельный лимит и в этот счётчик не входит.
 - Пример вызова для inline diff/context review:
 
 ```bash
