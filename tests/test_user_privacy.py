@@ -156,3 +156,29 @@ def test_user_projection_preserves_non_user_data_envelope():
     }
 
     assert _project_user_response(upstream) == upstream
+
+
+def test_user_projection_fails_closed_for_unexpected_success_data_shape():
+    from tools.user import _project_user_response
+
+    upstream = {
+        "success": True,
+        "data": {"staff": [{"first_name": "Анна", "passwd": "secret"}]},
+        "hint": "unexpected upstream wrapper",
+    }
+
+    projected = _project_user_response(upstream)
+
+    assert projected["hint"] == upstream["hint"]
+    assert projected["data"] == {}
+    assert "passwd" not in str(projected["data"])
+
+
+def test_user_projection_allows_sparse_direct_record_without_id():
+    from tools.user import _project_user_response
+
+    projected = _project_user_response(
+        {"success": True, "data": {"first_name": "Анна", "passwd": "secret"}}
+    )
+
+    assert projected["data"] == {"first_name": "Анна"}

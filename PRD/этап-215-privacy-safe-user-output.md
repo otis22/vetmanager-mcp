@@ -22,8 +22,8 @@
 ## Scope
 
 1. Добавить в `tools/user.py` closed allowlist и единый projection helper для
-   каждой read-точки: обычный `get_users`, name-search `get_users` и
-   `get_user_by_id`.
+   каждой точки выдачи пользователя: обычный `get_users`, name-search
+   `get_users`, `get_user_by_id` и ответ `update_user`.
 2. Сохранять только аналитически обоснованные поля:
    - `id`, `last_name`, `first_name`, `middle_name`, `nickname`, `position_id`,
      `role_id`, `is_active` — идентификация сотрудника и кадровые срезы,
@@ -32,18 +32,20 @@
    `cell_phone`, `address`, `user_inn`, `calc_percents`: это credential/auth
    metadata, частные контакты, персональный налоговый идентификатор и данные о
    вознаграждении; они не нужны для заявленной аналитики.
-4. Сохранить transport envelope и pagination metadata, но не пробрасывать
-   неизвестные поля объекта пользователя. Новые upstream поля поэтому не
+4. Сохранить transport envelope и scalar pagination metadata, но не
+   пробрасывать неизвестные поля успешного user payload. Неожиданная mapping
+   форма проецируется как sparse user record, поэтому новые upstream поля не
    попадут в MCP-ответ автоматически.
-5. Добавить test-first регрессии: обе read-ручки не отдают `passwd`/`login` и
-   сохраняют требуемые аналитические поля. Отдельно покрыть name-search ветку,
-   поскольку она формирует ответ локально.
+5. Добавить test-first регрессии: все точки выдачи не отдают `passwd`/`login`
+   и сохраняют требуемые аналитические поля. Отдельно покрыть name-search
+   ветку, поскольку она формирует ответ локально, и fail-closed неизвестную
+   форму успешного `data`.
 6. Провести read-only аудит остальных callers `crud_list`; не менять их в этом
    этапе, а перечислить результат в handoff.
 
 ## Out of scope
 
-- Изменение Vetmanager API, write-инструмента `update_user`, иных tools или
+- Изменение Vetmanager API, входного контракта `update_user`, иных tools или
   production/SSH действий.
 - Глобальная sanitization в `crud_helpers`: разные сущности требуют отдельного
   contract-aware allowlist.
@@ -65,10 +67,17 @@ sanitizer или изменение `crud_helpers` создали бы не по
 denylist: поле, добавленное Vetmanager позднее, не появится в ответе до явного
 аналитического обоснования.
 
+`update_user` по-прежнему принимает разрешённые его входным контрактом
+контактные поля для записи, но не возвращает их эхом: успешный статус и
+allowlisted кадровые поля подтверждают выполнение операции без повторного
+раскрытия персональных данных. Получение/сверка контакта после записи потребует
+отдельного привилегированного контракта, а не общего user-ответа.
+
 ## Acceptance criteria
 
-- Ни одна read-ручка из `tools/user.py` не возвращает `passwd` или `login`.
-- В read-ответах нет перечисленных non-analytic/auth/access полей, включая
+- Ни одна точка выдачи из `tools/user.py`, включая `update_user`, не возвращает
+  `passwd` или `login`.
+- В user-ответах нет перечисленных non-analytic/auth/access полей, включая
   `role.super`; нужные аналитические поля и pagination сохраняются.
 - Все targeted и полный mock test contours проходят.
 - В финальном handoff перечислены другие прямые `crud_list` passthrough и их

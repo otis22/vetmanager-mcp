@@ -11199,8 +11199,9 @@ Checks so far:
   содержал три пропущенных примера с историческим production IP в разделе
   локального SSH-туннеля Grafana. Они заменены на `<your-server-ip>`; все
   исторические вхождения IP в этом журнале и PRD также заменены на
-  `<production-server-ip>`/`<your-server-ip>`. Поэтому current tree не
-  раскрывает этот адрес.
+  `<production-server-ip>`/`<your-server-ip>`. Это относится к проверенным
+  документационным примерам; deploy-скрипты в тот момент намеренно не входили
+  в эту правку и требуют отдельной проверки/решения.
 
 - **Review документационного diff**: Spark вернул `[]`. Первый Claude Opus
   запуск завершился пустым output (`1/3`, infrastructure failure); повторный
@@ -11284,16 +11285,23 @@ Checks so far:
   тоже проецирует ответ; секция этапа перенесена после содержимого post-hoc
   review 213–214. Добавлены regressions для update response, error response
   без `data` и non-user `data` error envelope.
-- Targeted contour после follow-up:
+- Targeted contour после последнего follow-up:
   `uv run pytest -q tests/test_user_privacy.py tests/test_ergonomic_filters.py
-  tests/test_e2e_mock_crud.py tests/test_e2e_mock_entities.py` — `152 passed`.
+  tests/test_e2e_mock_crud.py tests/test_e2e_mock_entities.py` — `154 passed`.
 - Полный Docker contour повторён через PTY/polling, чтобы получить читаемый
-  terminal result: `1443 passed, 2 skipped, 65 deselected` за `204.98s`.
+  terminal result: `1445 passed, 2 skipped, 65 deselected` за `184.62s`.
 - Docker launcher diagnosis: `docker compose --profile test run --rm test
   sh -c 'exit 23'` корректно вернул `compose_probe_exit=23`. Следовательно,
   Docker Compose передаёт exit status; прежний full run потерял summary из-за
   отсоединения процесса в runtime orchestration после `exec` cell, а не из-за
   `--rm` или compose launcher. Он не засчитывается как пройденный contour.
+- Range-review `origin/main..main` передал ещё три принятых finding'а:
+  успешный user payload теперь должен проецироваться fail-closed без эвристики
+  по `id`; PRD должен включать уже реализованную projection ответа
+  `update_user`; blanket-утверждение о production IP сужено до
+  документационных примеров. Проверка текущего `scripts/` не нашла самого
+  исторического IP; остающееся historical решение о deploy defaults не
+  переопределялось этим этапом.
 - Read-only audit других direct `crud_list` passthrough не менялся в scope:
   clients — контакты/паспорт/баланс/notes; pets/admissions/invoices/hospital —
   nested client/owner и clinical data; suppliers — контакты/ИНН/банковские

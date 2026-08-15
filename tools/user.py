@@ -20,40 +20,60 @@ _ANALYTICS_USER_FIELDS = frozenset(
     }
 )
 
+_USER_PAGINATION_FIELDS = frozenset(
+    {"totalCount", "total", "limit", "offset", "page", "pageSize", "hasMore", "nextPage", "prevPage"}
+)
+
 
 def _project_user(user: dict) -> dict:
     """Return the closed analytics-safe view of one Vetmanager user."""
     return {field: user[field] for field in _ANALYTICS_USER_FIELDS if field in user}
 
 
+def _project_user_data(data: object) -> object:
+    """Return a fail-closed view of a successful user endpoint payload."""
+    if isinstance(data, list):
+        return [_project_user(user) if isinstance(user, dict) else user for user in data]
+    if not isinstance(data, dict):
+        return data
+
+    users_key = next((key for key in ("user", "users") if key in data), None)
+    if users_key is None:
+        # A sparse direct record need not have ``id``.  Treat every unknown
+        # mapping as one and retain only its allowlisted fields.
+        return _project_user(data)
+
+    users = data[users_key]
+    if isinstance(users, list):
+        projected_users = [
+            _project_user(user) if isinstance(user, dict) else user for user in users
+        ]
+    elif isinstance(users, dict):
+        projected_users = _project_user(users)
+    else:
+        projected_users = users
+
+    # Keep documented/common scalar pagination metadata, but never arbitrary
+    # nested values that could contain another unprojected user record.
+    projected_data = {users_key: projected_users}
+    for field in _USER_PAGINATION_FIELDS:
+        value = data.get(field)
+        if field in data and not isinstance(value, (dict, list)):
+            projected_data[field] = value
+    return projected_data
+
+
 def _project_user_response(response: dict) -> dict:
-    """Project user records without changing an upstream response envelope."""
-    if not isinstance(response, dict) or "data" not in response:
+    """Project successful user payloads while preserving error envelopes."""
+    if (
+        not isinstance(response, dict)
+        or "data" not in response
+        or response.get("success") is False
+    ):
         return response
 
-    data = response["data"]
     projected = dict(response)
-
-    if isinstance(data, list):
-        projected["data"] = [
-            _project_user(user) if isinstance(user, dict) else user
-            for user in data
-        ]
-    elif isinstance(data, dict) and ("user" in data or "users" in data):
-        users_key = "user" if "user" in data else "users"
-        users = data[users_key]
-        projected_data = dict(data)
-        if isinstance(users, list):
-            projected_data[users_key] = [
-                _project_user(user) if isinstance(user, dict) else user
-                for user in users
-            ]
-        elif isinstance(users, dict):
-            projected_data[users_key] = _project_user(users)
-        projected["data"] = projected_data
-    elif isinstance(data, dict) and "id" in data:
-        projected["data"] = _project_user(data)
-
+    projected["data"] = _project_user_data(response["data"])
     return projected
 
 
