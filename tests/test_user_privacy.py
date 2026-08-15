@@ -145,7 +145,7 @@ def test_user_projection_preserves_error_envelope_without_data():
     assert "data" not in projected
 
 
-def test_user_projection_preserves_non_user_data_envelope():
+def test_user_projection_preserves_non_user_error_data_and_logs_anomaly(caplog):
     from tools.user import _project_user_response
 
     upstream = {
@@ -155,10 +155,18 @@ def test_user_projection_preserves_non_user_data_envelope():
         "hint": "retry",
     }
 
-    assert _project_user_response(upstream) == upstream
+    with caplog.at_level("WARNING", logger="vetmanager.runtime"):
+        projected = _project_user_response(upstream)
+
+    assert projected == upstream
+    assert any(
+        record.message == "user_projection_unexpected_data_shape"
+        and record.event_name == "user_projection_unexpected_data_shape"
+        for record in caplog.records
+    )
 
 
-def test_user_list_projection_fails_closed_and_logs_unexpected_data_shape(caplog):
+def test_user_projection_sanitizes_nested_records_and_logs_unexpected_data_shape(caplog):
     from tools.user import _project_user_response
 
     upstream = {
@@ -168,14 +176,13 @@ def test_user_list_projection_fails_closed_and_logs_unexpected_data_shape(caplog
     }
 
     with caplog.at_level("WARNING", logger="vetmanager.runtime"):
-        projected = _project_user_response(upstream, is_list_response=True)
+        projected = _project_user_response(upstream)
 
     assert projected["hint"] == upstream["hint"]
-    assert projected["data"] == {}
-    assert "passwd" not in str(projected["data"])
+    assert projected["data"] == {"staff": [{"first_name": "Анна"}]}
     assert any(
-        record.message == "user_list_projection_unexpected_data_shape"
-        and record.event_name == "user_list_projection_unexpected_data_shape"
+        record.message == "user_projection_unexpected_data_shape"
+        and record.event_name == "user_projection_unexpected_data_shape"
         for record in caplog.records
     )
 
@@ -190,7 +197,7 @@ def test_user_projection_allows_sparse_direct_record_without_id():
     assert projected["data"] == {"first_name": "Анна"}
 
 
-def test_user_list_projection_keeps_only_verified_total_count_metadata():
+def test_user_projection_keeps_only_verified_total_count_metadata():
     from tools.user import _project_user_response
 
     projected = _project_user_response(
@@ -202,8 +209,47 @@ def test_user_list_projection_keeps_only_verified_total_count_metadata():
                 "pageSize": 20,
             },
         },
-        is_list_response=True,
     )
 
     assert set(projected["data"]) == {"user", "totalCount"}
     _assert_analytics_projection(projected["data"]["user"][0])
+
+
+def test_user_projection_sanitizes_error_user_payload_without_losing_envelope():
+    from tools.user import _project_user_response
+
+    upstream = {
+        "success": False,
+        "message": "partial failure",
+        "data": {"totalCount": 1, "user": [_UPSTREAM_USER]},
+        "errors": [{"code": "UPSTREAM_FAILURE"}],
+        "hint": "retry",
+    }
+
+    projected = _project_user_response(upstream)
+
+    assert projected["success"] is False
+    assert projected["message"] == upstream["message"]
+    assert projected["errors"] == upstream["errors"]
+    assert projected["hint"] == upstream["hint"]
+    assert projected["data"]["totalCount"] == 1
+    _assert_analytics_projection(projected["data"]["user"][0])
+
+
+def test_user_projection_keeps_total_count_in_unexpected_data_shape(caplog):
+    from tools.user import _project_user_response
+
+    upstream = {
+        "success": True,
+        "data": {"totalCount": 1, "staff": [_UPSTREAM_USER]},
+    }
+
+    with caplog.at_level("WARNING", logger="vetmanager.runtime"):
+        projected = _project_user_response(upstream)
+
+    assert projected["data"]["totalCount"] == 1
+    _assert_analytics_projection(projected["data"]["staff"][0])
+    assert any(
+        record.message == "user_projection_unexpected_data_shape"
+        for record in caplog.records
+    )

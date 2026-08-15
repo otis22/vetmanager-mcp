@@ -24,6 +24,19 @@ _ANALYTICS_USER_FIELDS = frozenset(
 # Vetmanager ERestController::outputHelper (line 497) emits list data as
 # {"totalCount": ..., "user": [...]}; crud_list returns that response unchanged.
 _USER_PAGINATION_FIELDS = frozenset({"totalCount"})
+_USER_RECORD_FIELDS = _ANALYTICS_USER_FIELDS | frozenset(
+    {
+        "login",
+        "passwd",
+        "last_change_pwd_date",
+        "email",
+        "phone",
+        "cell_phone",
+        "address",
+        "user_inn",
+        "calc_percents",
+    }
+)
 
 
 def _project_user(user: dict) -> dict:
@@ -31,58 +44,61 @@ def _project_user(user: dict) -> dict:
     return {field: user[field] for field in _ANALYTICS_USER_FIELDS if field in user}
 
 
-def _project_user_data(data: object, *, is_list_response: bool = False) -> object:
-    """Return a fail-closed view of a successful user endpoint payload."""
+def _looks_like_user_record(value: object) -> bool:
+    return isinstance(value, dict) and bool(value.keys() & _USER_RECORD_FIELDS)
+
+
+def _project_user_value(value: object) -> object:
+    """Project user records recursively without changing non-user values."""
+    if _looks_like_user_record(value):
+        projected = _project_user(value)
+        if "totalCount" in value:
+            projected["totalCount"] = value["totalCount"]
+        return projected
+    if isinstance(value, list):
+        return [_project_user_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _project_user_value(item) for key, item in value.items()}
+    return value
+
+
+def _log_unexpected_user_data_shape() -> None:
+    RUNTIME_LOGGER.warning(
+        "user_projection_unexpected_data_shape",
+        extra={"event_name": "user_projection_unexpected_data_shape"},
+    )
+
+
+def _project_user_data(data: object) -> object:
+    """Project user records in any data shape and retain the response metadata."""
     if isinstance(data, list):
-        return [_project_user(user) if isinstance(user, dict) else user for user in data]
+        _log_unexpected_user_data_shape()
+        return _project_user_value(data)
     if not isinstance(data, dict):
+        _log_unexpected_user_data_shape()
         return data
 
     users_key = next((key for key in ("user", "users") if key in data), None)
-    if users_key is None:
-        if is_list_response:
-            RUNTIME_LOGGER.warning(
-                "user_list_projection_unexpected_data_shape",
-                extra={"event_name": "user_list_projection_unexpected_data_shape"},
-            )
-            return {}
-        # A sparse direct record need not have ``id``.  Treat every unknown
-        # mapping as one and retain only its allowlisted fields.
-        return _project_user(data)
+    if users_key is not None:
+        projected_data = {users_key: _project_user_value(data[users_key])}
+        for field in _USER_PAGINATION_FIELDS:
+            if field in data:
+                projected_data[field] = data[field]
+        return projected_data
+    if _looks_like_user_record(data):
+        return _project_user_value(data)
 
-    users = data[users_key]
-    if isinstance(users, list):
-        projected_users = [
-            _project_user(user) if isinstance(user, dict) else user for user in users
-        ]
-    elif isinstance(users, dict):
-        projected_users = _project_user(users)
-    else:
-        projected_users = users
-
-    # Keep documented/common scalar pagination metadata, but never arbitrary
-    # nested values that could contain another unprojected user record.
-    projected_data = {users_key: projected_users}
-    for field in _USER_PAGINATION_FIELDS:
-        value = data.get(field)
-        if field in data and not isinstance(value, (dict, list)):
-            projected_data[field] = value
-    return projected_data
+    _log_unexpected_user_data_shape()
+    return _project_user_value(data)
 
 
-def _project_user_response(response: dict, *, is_list_response: bool = False) -> dict:
-    """Project successful user payloads while preserving error envelopes."""
-    if (
-        not isinstance(response, dict)
-        or "data" not in response
-        or response.get("success") is False
-    ):
+def _project_user_response(response: dict) -> dict:
+    """Preserve every envelope key and project any user records in ``data``."""
+    if not isinstance(response, dict) or "data" not in response:
         return response
 
     projected = dict(response)
-    projected["data"] = _project_user_data(
-        response["data"], is_list_response=is_list_response
-    )
+    projected["data"] = _project_user_data(response["data"])
     return projected
 
 
@@ -133,8 +149,7 @@ def register(mcp: FastMCP) -> None:
                     offset=offset,
                     sort=sort,
                     filters=base_filters if base_filters else None,
-                ),
-                is_list_response=True,
+                )
             )
 
         # Name search: issue two parallel filter variants and merge by id.
