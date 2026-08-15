@@ -3923,3 +3923,19 @@ blockers.
   `coverage.xml`; добавить конфигурацию и regression check. — `done`
 - 214.3 CI: вывести summary job и загрузить XML-артефакт. — `done`
 - 214.4 Full checks, audit, reviews, commit/push и измерение времени. — `done`
+
+## Этап 215. Privacy-safe выдача сотрудников — `stop`
+
+Источник: feedback report `#39`. Инструменты чтения сотрудников не должны
+возвращать credential, authentication/access metadata или лишние персональные
+данные из ответа Vetmanager.
+
+- 215.1 PRD, сверка схемы `user`, privacy projection и regression design. — `done`
+  (после внешней причины блокировки пользователь явно разрешил локальную
+  реализацию без push; source of truth дополнен backend-моделью Vetmanager)
+- 215.2 Проецировать все read-ответы `tools/user.py` на allowlist аналитических
+  полей. — `done`
+- 215.3 Добавить регрессии обеих read-ручек, аудит соседних `crud_list`
+  инструментов, проверки, review и release gate. — `stop`
+  (локальная реализация готова; external code-review вернул пустой stdout,
+  поэтому push ожидает решения Владимира)

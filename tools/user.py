@@ -7,6 +7,53 @@ from tools.crud_helpers import crud_list, crud_get_by_id, crud_update
 from validators import LimitParam
 
 
+_ANALYTICS_USER_FIELDS = frozenset(
+    {
+        "id",
+        "last_name",
+        "first_name",
+        "middle_name",
+        "nickname",
+        "position_id",
+        "role_id",
+        "is_active",
+    }
+)
+
+
+def _project_user(user: dict) -> dict:
+    """Return the closed analytics-safe view of one Vetmanager user."""
+    return {field: user[field] for field in _ANALYTICS_USER_FIELDS if field in user}
+
+
+def _project_user_response(response: dict) -> dict:
+    """Project user records while preserving the documented response envelope."""
+    data = response.get("data")
+    projected: dict = {key: response[key] for key in ("success", "message") if key in response}
+
+    if isinstance(data, list):
+        projected["data"] = [_project_user(user) for user in data if isinstance(user, dict)]
+    elif isinstance(data, dict) and ("user" in data or "users" in data):
+        users_key = "user" if "user" in data else "users"
+        users = data[users_key]
+        projected_data = {
+            users_key: [_project_user(user) for user in users if isinstance(user, dict)]
+            if isinstance(users, list)
+            else _project_user(users)
+            if isinstance(users, dict)
+            else users,
+        }
+        if "totalCount" in data:
+            projected_data["totalCount"] = data["totalCount"]
+        projected["data"] = projected_data
+    elif isinstance(data, dict):
+        projected["data"] = _project_user(data)
+    else:
+        projected["data"] = data
+
+    return projected
+
+
 def register(mcp: FastMCP) -> None:
 
     @mcp.tool
@@ -47,12 +94,14 @@ def register(mcp: FastMCP) -> None:
             base_filters.append(_filter_eq("is_active", 1 if is_active else 0))
 
         if not name:
-            return await crud_list(
-                "/rest/api/user",
-                limit=limit,
-                offset=offset,
-                sort=sort,
-                filters=base_filters if base_filters else None,
+            return _project_user_response(
+                await crud_list(
+                    "/rest/api/user",
+                    limit=limit,
+                    offset=offset,
+                    sort=sort,
+                    filters=base_filters if base_filters else None,
+                )
             )
 
         # Name search: issue two parallel filter variants and merge by id.
@@ -91,7 +140,7 @@ def register(mcp: FastMCP) -> None:
             if uid in seen_ids:
                 continue
             seen_ids.add(uid)
-            merged.append(user)
+            merged.append(_project_user(user))
             if len(merged) >= limit:
                 break
 
@@ -106,7 +155,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             user_id: Unique numeric ID of the user.
         """
-        return await crud_get_by_id("/rest/api/user", user_id)
+        return _project_user_response(await crud_get_by_id("/rest/api/user", user_id))
 
     @mcp.tool
     async def update_user(

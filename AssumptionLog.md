@@ -11195,6 +11195,60 @@ Checks so far:
 
 ## Post-hoc review этапов 213–214 и правило бюджета review
 
+## Этап 215. Privacy-safe выдача сотрудников — блокировка PRD review
+
+- Создан PRD `PRD/этап-215-privacy-safe-user-output.md` для feedback report
+  `#39`. Проверенные source-of-truth: `components.schemas.user` в OpenAPI и
+  §2.34 entity reference. Решение: closed allowlist для кадровой аналитики,
+  включая безопасную вложенную projection `position` и `role`; исключаются
+  credential, access/auth metadata, контакты, SIP, ИНН и `role.super`.
+- Spark PRD-review: read-only sandbox не смог создать user namespace
+  (`bwrap: loopback: Failed RTM_NEWADDR`), same-model fallback с
+  `danger-full-access` и review-only prompt завершился валидным `[]`.
+- Ревью сторонней моделью PRD: три последовательные попытки Claude Opus с
+  inline context, отключёнными tools/MCP и required JSON schema вернули пустой
+  stdout. Это infrastructure failure, а не валидный verdict и не расходует
+  code/diff budget; попытки зафиксированы как `1/3`, `2/3`, `3/3`.
+- После третьей пустой попытки PRD-review gate помечен `blocked`; по workflow
+  реализация, тесты, code/diff review, commit и push этапа 215 не выполнялись.
+  Нужны решение пользователя или восстановление провайдера для продолжения.
+- Пользователь подтвердил внешний характер сбоя: тот же документированный
+  вызов Claude из обычной shell-сессии вернул валидный JSON за 31 секунду.
+  Поэтому он явно разрешил продолжить локальные реализацию, тесты и аудит, но
+  запретил push до восстановления strong-review gate. Для итогового diff
+  допускается только одна новая попытка; пустой stdout фиксируется как
+  infrastructure failure без повторов.
+- Backend source of truth уточнён пользователем из
+  `rest/protected/models/User.php::attributeLabels`: allowlist сужен ровно до
+  `id`, ФИО, `nickname`, `position_id`, `role_id`, `is_active`. В частности,
+  `calc_percents` исключён как данные о вознаграждении, а computed-поля из
+  OpenAPI/reference не добавляются без отдельного подтверждения.
+- Реализация применяет file-local closed projection ко всем read-путям
+  `tools/user.py`: обычный list, name-search merge и get-by-id. В тестовом
+  upstream payload есть намеренно добавленное неизвестное поле: оно тоже не
+  проходит allowlist. Targeted regression contour:
+  `uv run pytest -q tests/test_user_privacy.py tests/test_ergonomic_filters.py
+  tests/test_e2e_mock_entities.py tests/test_e2e_mock_crud.py` — `149 passed`.
+- Read-only аудит остальных прямых `crud_list` passthrough не менялся в scope
+  этапа. Потенциальные sensitive surfaces: `get_clients`/name-path — контакты,
+  адрес, паспорт, баланс и внутренние заметки; `get_pets`, `get_admissions`,
+  `get_invoices` и `get_hospitalizations` — вложенные client/owner данные и
+  clinical notes/diagnoses; `get_suppliers` — контакты, ИНН и банковские счета;
+  `get_clinics` — контактные данные и `ip_access`; `get_properties` —
+  произвольные installation settings; `get_roles` — `super`; `get_timesheets`
+  и `get_message_reports` — график сотрудников и названия кампаний. Эти
+  endpoints требуют отдельных contract-aware решений, global sanitizer не
+  вводился.
+- Локальный implementation commit: `2c83cdc`. Spark committed-diff review
+  вернул валидный `[]`. Единственная разрешённая пользователем попытка strong
+  code/diff review (Claude Opus, inline context, tools/MCP disabled, required
+  JSON schema) вернула пустой stdout без stderr-диагностики. Это
+  infrastructure failure; повтор не запускался. Push не выполнялся и ожидает
+  решения Владимира. Полный Docker run дошёл до завершающих 99% тестов без
+  показанных failures, но launcher отсоединился и удалил `--rm` container до
+  возврата итоговой summary/exit status; поэтому это не считается формальным
+  подтверждением полного contour, в отличие от targeted `149 passed`.
+
 - **Документационная коррекция после повторной сверки**: README действительно
   содержал три пропущенных примера с историческим production IP в разделе
   локального SSH-туннеля Grafana. Они заменены на `<your-server-ip>`; все
