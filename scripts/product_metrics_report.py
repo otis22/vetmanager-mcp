@@ -96,10 +96,14 @@ def _to_aware(dt: datetime | None) -> datetime | None:
 from privacy_utils import mask_email as _mask_email  # noqa: E402
 
 
-async def _count_accounts(session, *, since: datetime | None = None) -> int:
+async def _count_accounts(
+    session, *, since: datetime | None = None, until: datetime | None = None
+) -> int:
     stmt = select(func.count()).select_from(Account).where(Account.archived_at.is_(None))
     if since is not None:
         stmt = stmt.where(Account.created_at >= since)
+    if until is not None:
+        stmt = stmt.where(Account.created_at < until)
     return int(await session.scalar(stmt) or 0)
 
 
@@ -347,12 +351,13 @@ async def _count_events(
     return int(await session.scalar(stmt) or 0)
 
 
-async def _failure_breakdown(session, *, since: datetime) -> dict[str, int]:
+async def _failure_breakdown(session, *, since: datetime, until: datetime) -> dict[str, int]:
     rows = await session.execute(
         select(TokenUsageLog.event_type, func.count())
         .where(
             TokenUsageLog.event_type.in_(FAILURE_EVENTS),
             TokenUsageLog.event_at >= since,
+            TokenUsageLog.event_at < until,
         )
         .group_by(TokenUsageLog.event_type)
     )
@@ -363,20 +368,25 @@ async def _failure_breakdown(session, *, since: datetime) -> dict[str, int]:
 
 
 async def _top_accounts_by_requests(
-    session, *, top_n: int
+    session, *, now: datetime, top_n: int
 ) -> list[dict[str, Any]]:
+    """Rank non-archived accounts by successful requests during the fixed 30-day window."""
+    cutoff = now - timedelta(days=30)
     rows = await session.execute(
         select(
             Account.id,
             Account.email,
-            func.coalesce(func.sum(TokenUsageStat.request_count), 0).label("total"),
+            func.count(TokenUsageLog.id).label("total"),
         )
         .select_from(Account)
         .join(ServiceBearerToken, ServiceBearerToken.account_id == Account.id)
-        .join(TokenUsageStat, TokenUsageStat.bearer_token_id == ServiceBearerToken.id)
+        .join(TokenUsageLog, TokenUsageLog.bearer_token_id == ServiceBearerToken.id)
         .where(Account.archived_at.is_(None))
+        .where(TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED)
+        .where(TokenUsageLog.event_at >= cutoff)
+        .where(TokenUsageLog.event_at < now)
         .group_by(Account.id, Account.email)
-        .order_by(func.sum(TokenUsageStat.request_count).desc())
+        .order_by(func.count(TokenUsageLog.id).desc(), Account.id.asc())
         .limit(top_n)
     )
     return [
@@ -389,9 +399,10 @@ async def _top_accounts_by_requests(
     ]
 
 
-async def _count_feedback_reports(session, *, since: datetime) -> int:
+async def _count_feedback_reports(session, *, since: datetime, until: datetime) -> int:
     stmt = select(func.count()).select_from(AgentFeedbackReport).where(
         AgentFeedbackReport.created_at >= since,
+        AgentFeedbackReport.created_at < until,
     )
     return int(await session.scalar(stmt) or 0)
 
@@ -400,12 +411,14 @@ async def _count_feedback_reports_where(
     session,
     *,
     since: datetime,
+    until: datetime,
     conditions: tuple[Any, ...],
 ) -> int:
     stmt = (
         select(func.count())
         .select_from(AgentFeedbackReport)
         .where(AgentFeedbackReport.created_at >= since)
+        .where(AgentFeedbackReport.created_at < until)
     )
     for condition in conditions:
         stmt = stmt.where(condition)
@@ -418,11 +431,13 @@ async def _feedback_breakdown(
     column,
     labels: tuple[str, ...],
     since: datetime,
+    until: datetime,
 ) -> dict[str, int]:
     rows = await session.execute(
         select(column, func.count())
         .select_from(AgentFeedbackReport)
         .where(AgentFeedbackReport.created_at >= since)
+        .where(AgentFeedbackReport.created_at < until)
         .group_by(column)
     )
     out = {label: 0 for label in labels}
@@ -436,6 +451,7 @@ async def _top_feedback_tools(
     session,
     *,
     since: datetime,
+    until: datetime,
     top_n: int,
 ) -> list[dict[str, Any]]:
     count_label = func.count().label("reports")
@@ -443,6 +459,7 @@ async def _top_feedback_tools(
     rows = await session.execute(
         select(tool_label, count_label)
         .where(AgentFeedbackReport.created_at >= since)
+        .where(AgentFeedbackReport.created_at < until)
         .group_by(tool_label)
         .order_by(count_label.desc(), tool_label.asc())
         .limit(top_n)
@@ -456,17 +473,19 @@ async def _top_feedback_tools(
     ]
 
 
-async def _count_match_events(session, *, since: datetime) -> int:
+async def _count_match_events(session, *, since: datetime, until: datetime) -> int:
     stmt = select(func.count()).select_from(KnownIssueMatchEvent).where(
         KnownIssueMatchEvent.created_at >= since,
+        KnownIssueMatchEvent.created_at < until,
     )
     return int(await session.scalar(stmt) or 0)
 
 
-async def _match_events_by_source(session, *, since: datetime) -> dict[str, int]:
+async def _match_events_by_source(session, *, since: datetime, until: datetime) -> dict[str, int]:
     rows = await session.execute(
         select(KnownIssueMatchEvent.source, func.count())
         .where(KnownIssueMatchEvent.created_at >= since)
+        .where(KnownIssueMatchEvent.created_at < until)
         .group_by(KnownIssueMatchEvent.source)
     )
     out = {source: 0 for source in KNOWN_ISSUE_MATCH_SOURCES}
@@ -484,6 +503,7 @@ async def _top_known_issues_by_match_events(
     session,
     *,
     since: datetime,
+    until: datetime,
     top_n: int,
 ) -> list[dict[str, Any]]:
     events_label = func.count().label("events")
@@ -503,6 +523,7 @@ async def _top_known_issues_by_match_events(
         )
         .join(KnownIssue, KnownIssue.id == KnownIssueMatchEvent.known_issue_id)
         .where(KnownIssueMatchEvent.created_at >= since)
+        .where(KnownIssueMatchEvent.created_at < until)
         .group_by(KnownIssueMatchEvent.known_issue_id, KnownIssue.title)
         .order_by(events_label.desc(), KnownIssueMatchEvent.known_issue_id.asc())
         .limit(top_n)
@@ -525,17 +546,19 @@ async def _collect_feedback_metrics(session, *, now: datetime, top_n: int) -> di
     since_30d = now - timedelta(days=30)
     return {
         "reports": {
-            "total_24h": await _count_feedback_reports(session, since=since_24h),
-            "total_7d": await _count_feedback_reports(session, since=since_7d),
-            "total_30d": await _count_feedback_reports(session, since=since_30d),
+            "total_24h": await _count_feedback_reports(session, since=since_24h, until=now),
+            "total_7d": await _count_feedback_reports(session, since=since_7d, until=now),
+            "total_30d": await _count_feedback_reports(session, since=since_30d, until=now),
             "new_open_30d": await _count_feedback_reports_where(
                 session,
                 since=since_30d,
+                until=now,
                 conditions=(AgentFeedbackReport.status == "new",),
             ),
             "possible_pii_30d": await _count_feedback_reports_where(
                 session,
                 since=since_30d,
+                until=now,
                 conditions=(AgentFeedbackReport.possible_pii.is_(True),),
             ),
             "by_source_30d": await _feedback_breakdown(
@@ -543,39 +566,45 @@ async def _collect_feedback_metrics(session, *, now: datetime, top_n: int) -> di
                 column=AgentFeedbackReport.source,
                 labels=FEEDBACK_SOURCES,
                 since=since_30d,
+                until=now,
             ),
             "by_status_30d": await _feedback_breakdown(
                 session,
                 column=AgentFeedbackReport.status,
                 labels=FEEDBACK_STATUSES,
                 since=since_30d,
+                until=now,
             ),
             "by_severity_30d": await _feedback_breakdown(
                 session,
                 column=AgentFeedbackReport.severity,
                 labels=FEEDBACK_SEVERITIES,
                 since=since_30d,
+                until=now,
             ),
             "by_category_30d": await _feedback_breakdown(
                 session,
                 column=AgentFeedbackReport.category,
                 labels=FEEDBACK_CATEGORIES,
                 since=since_30d,
+                until=now,
             ),
             "top_tools_30d": await _top_feedback_tools(
                 session,
                 since=since_30d,
+                until=now,
                 top_n=top_n,
             ),
         },
         "match_events": {
-            "total_7d": await _count_match_events(session, since=since_7d),
-            "total_30d": await _count_match_events(session, since=since_30d),
-            "by_source_7d": await _match_events_by_source(session, since=since_7d),
-            "by_source_30d": await _match_events_by_source(session, since=since_30d),
+            "total_7d": await _count_match_events(session, since=since_7d, until=now),
+            "total_30d": await _count_match_events(session, since=since_30d, until=now),
+            "by_source_7d": await _match_events_by_source(session, since=since_7d, until=now),
+            "by_source_30d": await _match_events_by_source(session, since=since_30d, until=now),
             "top_known_issues_30d": await _top_known_issues_by_match_events(
                 session,
                 since=since_30d,
+                until=now,
                 top_n=top_n,
             ),
         },
@@ -596,9 +625,9 @@ async def collect_metrics(
         # Accounts
         total = await _count_accounts(session)
         archived = await _count_archived_accounts(session)
-        new_24h = await _count_accounts(session, since=now - timedelta(hours=24))
-        new_7d = await _count_accounts(session, since=now - timedelta(days=7))
-        new_30d = await _count_accounts(session, since=now - timedelta(days=30))
+        new_24h = await _count_accounts(session, since=now - timedelta(hours=24), until=now)
+        new_7d = await _count_accounts(session, since=now - timedelta(days=7), until=now)
+        new_30d = await _count_accounts(session, since=now - timedelta(days=30), until=now)
         live_7d = await _count_live_accounts(session, now=now, window=timedelta(days=7))
         dead_30d = await _count_dead_accounts(session, now=now)
         no_tokens = await _count_accounts_without_tokens(session)
@@ -612,14 +641,17 @@ async def collect_metrics(
         issued_24h = await _count_events(
             session, event_type=TOKEN_EVENT_CREATED,
             since=now - timedelta(hours=24),
+            until=now,
         )
         revoked_24h = await _count_events(
             session, event_type=TOKEN_EVENT_REVOKED,
             since=now - timedelta(hours=24),
+            until=now,
         )
         revoked_7d = await _count_events(
             session, event_type=TOKEN_EVENT_REVOKED,
             since=now - timedelta(days=7),
+            until=now,
         )
         # Stage 116.2 (PRD 110 acceptance): auto-expired tokens (detected
         # by token_cleanup sweep). Separate from auth_failed_expired —
@@ -627,27 +659,31 @@ async def collect_metrics(
         expired_auto_24h = await _count_events(
             session, event_type=TOKEN_EVENT_EXPIRED,
             since=now - timedelta(hours=24),
+            until=now,
         )
 
         # Requests
         succeeded_24h = await _count_events(
             session, event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
             since=now - timedelta(hours=24),
+            until=now,
         )
         succeeded_7d = await _count_events(
             session, event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
             since=now - timedelta(days=7),
+            until=now,
         )
         succeeded_30d = await _count_events(
             session, event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
             since=now - timedelta(days=30),
+            until=now,
         )
-        top_accounts = await _top_accounts_by_requests(session, top_n=top_n)
+        top_accounts = await _top_accounts_by_requests(session, now=now, top_n=top_n)
 
         # Failures
-        fail_24h = await _failure_breakdown(session, since=now - timedelta(hours=24))
-        fail_7d = await _failure_breakdown(session, since=now - timedelta(days=7))
-        fail_30d = await _failure_breakdown(session, since=now - timedelta(days=30))
+        fail_24h = await _failure_breakdown(session, since=now - timedelta(hours=24), until=now)
+        fail_7d = await _failure_breakdown(session, since=now - timedelta(days=7), until=now)
+        fail_30d = await _failure_breakdown(session, since=now - timedelta(days=30), until=now)
         feedback = await _collect_feedback_metrics(session, now=now, top_n=top_n)
 
     return {
@@ -734,11 +770,11 @@ def format_markdown(m: dict[str, Any], *, now: datetime) -> str:
     out.append(f"- total (24h / 7d / 30d): {r['total_24h']} / {r['total_7d']} / {r['total_30d']}")
     out.append("")
 
-    out.append("## Top accounts")
+    out.append("## Top accounts (30d)")
     if not r["top_accounts"]:
         out.append("_none_")
     else:
-        out.append("| rank | account_id | email | requests |")
+        out.append("| rank | account_id | email | requests_30d |")
         out.append("|---|---|---|---|")
         for i, row in enumerate(r["top_accounts"], start=1):
             out.append(f"| {i} | {row['account_id']} | {row['email']} | {row['request_count']} |")
@@ -876,7 +912,7 @@ def main() -> int:
     # while live/dead/new/failures remained hardcoded, producing silent
     # mislabel. 30-day window is now fixed across all counters.
     p.add_argument("--format", choices=["markdown", "json"], default="markdown")
-    p.add_argument("--top-n", type=int, default=10, help="Top-N accounts by request count.")
+    p.add_argument("--top-n", type=int, default=10, help="Top-N accounts by successful requests in the fixed 30-day window.")
     p.add_argument("--now-override", type=str, default=None, help="ISO timestamp for deterministic testing only.")
     args = p.parse_args()
     return asyncio.run(_async_main(args))

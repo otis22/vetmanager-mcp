@@ -3868,8 +3868,21 @@ Evidence из production feedback:
   issue/reports и не расширять API contract до `done` у `211.2`. — `done`
   (release SHA `e004860`; Tests `30914997709` и Deploy Prod `30915283135`
   successful; production `/healthz` и `/readyz` returned `ok`)
+
 - 211.5 User-directed fallback: выпустить source-backed delayed retry policy
   для двух exact export 403 — одна новая `StartReport` attempt через 30 минут,
   без automatic/immediate/parallel retry; подтвердить tests/review/deploy и
   закрыть этап без ожидания API answer. — `done` (targeted Docker: `63 passed`;
   full default Docker: `exit=0`; deploy/smoke фиксируются после release SHA)
+
+## Этап 212. Корректность activation dashboard и 30-дневного product report — `done`
+
+Цель: устранить расхождение dashboard/report с фактически записываемой
+телеметрией и заявленным 30-дневным периодом.
+
+- 212.1 PRD, проверка источников метрик и review gates. — `done`
+- 212.2 Grafana: показывать в `Activation events` только persisted
+  `ActivationEvent`; funnel stages оставить отдельной метрикой. — `done`
+- 212.3 Product report: считать top accounts по успешным запросам за 30 дней
+  и честно обозначить период. — `done`
+- 212.4 Regression tests, полный suite, audit, review, commit/push и CI. — `done`

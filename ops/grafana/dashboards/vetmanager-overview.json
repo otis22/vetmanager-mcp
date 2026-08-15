@@ -321,7 +321,7 @@
         "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
         "showUnfilled": true
       },
-      "targets": [{"expr": "sum by (event, reason) (vetmanager_activation_event_accounts{event=~\"integration_failed|token_issued|first_mcp_request\"})", "instant": true, "legendFormat": "{{event}} {{reason}}", "refId": "A"}],
+      "targets": [{"expr": "sum by (event, reason) (vetmanager_activation_event_accounts{event=~\"integration_failed|integration_saved|token_copied\"})", "instant": true, "legendFormat": "{{event}} {{reason}}", "refId": "A"}],
       "title": "Activation events",
       "type": "bargauge"
     }

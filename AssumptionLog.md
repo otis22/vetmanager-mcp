@@ -11101,3 +11101,48 @@ Checks so far:
   отдельный внешний API backlog до ответа Vetmanager. Любое добавление
   machine-readable diagnostics, TTL/SLA или automatic retry требует нового
   PRD/review/test contour после этого ответа.
+
+- **Stage 212 — источники activation telemetry**: `ActivationEvent` остаётся
+  bounded persisted product-event schema с allowlist
+  `integration_failed`, `integration_saved`, `token_copied`. `token_issued` и
+  `first_mcp_request` — вычисляемые DB funnel stages и должны отображаться
+  только через `vetmanager_activation_funnel_accounts`, не через label `event`.
+  Расширять storage allowlist ради Grafana не нужно.
+
+- **Stage 212 — 30-day top accounts**: выбран timestamped
+  `TokenUsageLog(token_auth_succeeded)` вместо lifetime
+  `TokenUsageStat.request_count`: только первый источник позволяет честно
+  посчитать `[now - 30d, now]`. Archived accounts исключаются; tie-break по
+  `Account.id` делает report deterministic. Остальные period-labelled report
+  sections уже используют соответствующие keys/headers; inventory/state
+  sections не выданы за period aggregates.
+
+- **PRD/Architecture review 212**: Spark read-only pass не смог прочитать
+  файлы из-за known `bwrap` runtime failure; обязательный review-only fallback
+  с тем же `gpt-5.3-codex-spark` прочитал PRD и вернул `[]`. Два Claude Opus
+  запуска с inline context, disabled tools и JSON schema завершились без
+  output; это invalid review output, не отсутствие findings. Strong PRD-review
+  budget исчерпан, поэтому решение оставлено простым, source-backed и покрыто
+  regression tests.
+
+- **Проверки 212 до финального code review**: targeted Docker
+  `tests/test_stage110_product_metrics.py`
+  + `tests/test_stage212_observability_report_correctness.py` — `18 passed`;
+  Grafana JSON validated in Docker; default full Docker suite completed with
+  `exit=0` (1437 selected, 65 deselected). После audit добавлена верхняя
+  граница `event_at <= now` и targeted checks повторены: `18 passed`.
+
+- **Дополнительная period audit 212**: проверка committed-diff указала на
+  необходимость сверить верхнюю границу окна. Все 24h/7d/30d request, token
+  lifecycle, account registration, feedback и known-issue counters теперь
+  используют единое полуоткрытое окно `[now - window, now)`; regression
+  fixture содержит future event и проверяет, что `total_30d` его не учитывает.
+  Это исправление дополняет top-account window, а не меняет lifetime/state
+  sections.
+
+- **Final code/diff review 212**: Spark read-only pass снова упёрся в known
+  `bwrap`; два candidate-pass с danger-full-access прочитали commit, но не
+  вернули завершённый YAML и были остановлены как incomplete. Claude Opus
+  review committed diff вернул валидный `{"findings":[]}`; находок не принято.
+  Final targeted Docker report/observability suite: `20 passed`; full default
+  Docker suite завершился успешно после final period-boundary audit.

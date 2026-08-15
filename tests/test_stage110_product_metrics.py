@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 
 from scripts.product_metrics_report import (
     _async_main,
@@ -222,12 +223,55 @@ async def test_requests_counters(seeded_session, now_utc):
 async def test_top_accounts_ranked(seeded_session, now_utc):
     m = await collect_metrics(seeded_session, now=now_utc, top_n=3)
     top = m["requests"]["top_accounts"]
-    # Based on TokenUsageStat.request_count: A2=120, A1=50, A3=10
-    assert len(top) == 3
-    assert top[0]["request_count"] == 120
-    assert top[0]["email"].startswith("li***")  # masked
-    assert top[1]["request_count"] == 50
-    assert top[2]["request_count"] == 10
+    # All six successful request events in the fixed 30-day window belong to A1.
+    assert len(top) == 1
+    assert top[0]["request_count"] == 6
+
+
+@pytest.mark.asyncio
+async def test_top_accounts_uses_30_day_window_not_lifetime_stat(seeded_session, now_utc):
+    """`now_utc` is the same deterministic anchor accepted by --now-override."""
+    async with seeded_session() as session:
+        old_account = await session.scalar(
+            select(Account).where(Account.email == "dead@example.com")
+        )
+        new_account = await session.scalar(
+            select(Account).where(Account.email == "live2@example.com")
+        )
+        old_token = await session.scalar(
+            select(ServiceBearerToken).where(ServiceBearerToken.account_id == old_account.id)
+        )
+        new_token = await session.scalar(
+            select(ServiceBearerToken).where(ServiceBearerToken.account_id == new_account.id)
+        )
+        old_stat = await session.scalar(
+            select(TokenUsageStat).where(TokenUsageStat.bearer_token_id == old_token.id)
+        )
+        old_stat.request_count = 10_000
+        for offset_hours in range(7):
+            session.add(TokenUsageLog(
+                bearer_token_id=new_token.id,
+                event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
+                event_at=now_utc - timedelta(hours=offset_hours + 1),
+            ))
+        session.add(TokenUsageLog(
+            bearer_token_id=old_token.id,
+            event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
+            event_at=now_utc - timedelta(days=31),
+        ))
+        session.add(TokenUsageLog(
+            bearer_token_id=new_token.id,
+            event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
+            event_at=now_utc + timedelta(minutes=1),
+        ))
+        await session.commit()
+
+    metrics = await collect_metrics(seeded_session, now=now_utc, top_n=3)
+
+    assert [row["account_id"] for row in metrics["requests"]["top_accounts"]] == [new_account.id, 1]
+    assert metrics["requests"]["top_accounts"][0]["request_count"] == 7
+    assert all(row["account_id"] != old_account.id for row in metrics["requests"]["top_accounts"])
+    assert metrics["requests"]["total_30d"] == 13
 
 
 # ── failures breakdown ─────────────────────────────────────────────────────
@@ -296,7 +340,7 @@ async def test_markdown_output_has_all_sections(seeded_session, now_utc):
         "## Requests",
         "## Failures",
         "## Dead accounts",
-        "## Top accounts",
+        "## Top accounts (30d)",
     ):
         assert header in md, f"missing section: {header!r}"
 

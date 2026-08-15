@@ -324,6 +324,11 @@ async def test_product_metrics_excludes_archived_accounts_but_keeps_token_signal
             request_count=10,
             last_used_at=NOW - timedelta(days=1),
         ))
+        session.add(TokenUsageLog(
+            bearer_token_id=live_token.id,
+            event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
+            event_at=NOW - timedelta(days=1),
+        ))
         archived = await _account(session, "archived@example.com", age_days=60)
         archived.archived_at = NOW
         archived_token = await _token(session, archived, "archived")
