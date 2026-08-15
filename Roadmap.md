@@ -2840,7 +2840,7 @@ Workflow allowance (по согласованию с пользователем 
 - 171.4 Docs/metadata: tool description says use only when assistant already knows the phone; returned link is persistent/sensitive; access registry/scopes. — `done`
 - 171.5 Tests/checks: phone normalization, success shape, missing-phone shape, upstream/route error, tool-list absence for client-id variant, real `devtr6` smoke without logging full link, full suite, audit, review gates, AssumptionLog/self-attestation. — `done`
 
-## Этап 172. Production feedback follow-up: Report AI, debtors, average invoice — `todo`
+## Этап 172. Production feedback follow-up: Report AI, debtors, average invoice — `done`
 
 Источник: production feedback triage 2026-06-18, reports `#5`-`#11`.
 
@@ -2863,6 +2863,12 @@ Research summary:
 - 172.5 `#6 get_average_invoice`: за день с выручкой возвращает нули. Проблема: `get_revenue_summary` и admissions показывают данные за `2026-06-17`, а `get_average_invoice` считает 0; текущий code path фильтрует `invoice.create_date`, а бизнес-ожидание ближе к executed/paid/financial date. Решение: уточнить семантику и привести к `get_revenue_summary`: добавить `date_basis` (`create_date`, `invoice_date`, возможно `payment_create_date`/paid basis), дефолт выбрать под morning brief, вернуть `date_field`/warnings в output. — `done`
 - 172.6 `#5 get_debtors`: падает на большой базе до полезной пагинации. Проблема: tool сначала тянет всех ACTIVE clients через `paginate_all`, а `max_rows` срабатывает раньше, чем фильтр по отрицательному балансу. Решение: фильтровать `balance < 0` на стороне Vetmanager API, если поддерживается, и добавить фильтр по дате последнего визита клиента (`last_visit_date`); добавить параметры window/date filters и tests на server-side filter shape. — `done`
 - 172.7 `#9 get_report_ai_job`: job зависает в `queued`. Проблема: Report AI job больше 30 секунд остаётся `queued`, без причины/ошибки/updated_at. Решение: логировать и собирать такие данные: MCP metric/log для long-queued polls, safe output fields для age/status/update hints, operator query/runbook по stale in-progress jobs; upstream worker/cleanup diagnostics проверить отдельным research gate. — `done`
+
+MCP-scope этапа закрыт: все реализуемые подзадачи выполнены, а `172.3`
+остановлена осознанно, поскольку real API подтверждает внешний лимит
+`intent_text=1000`. Изменение этого лимита вынесено в backlog владельца
+Vetmanager API; MCP-only увеличение не разблокировало бы сценарий и вводило бы
+пользователя в заблуждение.
 
 ## Этап 173. ChatGPT Apps OAuth-compatible MCP connector — `done`
 
@@ -3802,6 +3808,11 @@ UX-принципы (Claude Opus review): один экран — одно де�
 
 ## Этап 211. Контракт и диагностика очереди Report AI — `done`
 
+MCP-scope завершён безопасным fallback. Это не означает, что `211.2` выполнена:
+машиночитаемый upstream contract для очереди, terminal failure/timeout,
+retry metadata и различения export blockers не получен и остаётся внешним API
+backlog до ответа Vetmanager.
+
 Первоначальный release gate для расширения public API contract остаётся в силе:
 TTL/SLA, новые поля, machine-readable queue diagnostics и автоматический retry
 нельзя добавлять без подтверждённого upstream contract на test contour.
@@ -3886,3 +3897,17 @@ Evidence из production feedback:
 - 212.3 Product report: считать top accounts по успешным запросам за 30 дней
   и честно обозначить период. — `done`
 - 212.4 Regression tests, полный suite, audit, review, commit/push и CI. — `done`
+
+## Этап 213. Синхронизация статусов Roadmap и PRD — `done`
+
+Цель: привести текущие управленческие артефакты к фактическому состоянию
+выполненных этапов и явно отделить закрытый MCP-scope от внешних upstream
+blockers.
+
+- 213.1 Сверить статусы всех этапов Roadmap с явными статусами и ссылками в
+  PRD; исправить подтверждённые рассинхронизации. — `done`
+- 213.2 Закрыть этап 172 в MCP-scope с ссылкой на внешний лимит
+  `intent_text=1000`; не выдавать остановленный upstream work за выполненный.
+  — `done`
+- 213.3 Уточнить статус 201, cross-references 196/197/199 и честную границу
+  завершённого MCP-scope этапа 211. — `done`

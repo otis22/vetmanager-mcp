@@ -11146,3 +11146,19 @@ Checks so far:
   review committed diff вернул валидный `{"findings":[]}`; находок не принято.
   Final targeted Docker report/observability suite: `20 passed`; full default
   Docker suite завершился успешно после final period-boundary audit.
+
+## Этап 213. Синхронизация статусов Roadmap и PRD
+
+- **Источник истины и граница closure**: Roadmap остаётся единственным
+  источником очереди. Этап 172 закрыт как `done` именно в MCP-scope: все
+  локально реализуемые подзадачи завершены, а `172.3` блокируется подтверждённым
+  upstream `intent_text=1000` и вынесена владельцу Vetmanager API. Это не
+  означает устранение внешнего лимита.
+
+- **Полная сверка**: сопоставлены все заголовки этапов Roadmap с явными
+  status cross-references в PRD. Исправлены текущие claims для 196/197/199 →
+  198, 201 и historical claim 163 → 162; этап 211 теперь прямо говорит, что
+  MCP-scope закрыт, но `211.2` остаётся внешним backlog. PRD 86 описывает
+  исторический переход, а PRD 165 — общее правило для будущих follow-up, поэтому
+  они не являются текущими рассинхронизациями. Codex review: documentation-only
+  stage, отдельный external-model gate не требуется по docs-only исключению.

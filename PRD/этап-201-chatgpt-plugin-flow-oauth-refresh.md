@@ -2,7 +2,8 @@
 
 ## Статус
 
-`in_progress`
+`done` — реализован, reviewed, deployed to production и smoke-verified;
+подробная release evidence находится в Roadmap этапа 201.
 
 ## Контекст
 

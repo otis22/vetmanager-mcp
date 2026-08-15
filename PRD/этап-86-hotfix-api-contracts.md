@@ -114,7 +114,7 @@ Commit message: `Stage 86: hot-fix create_admission payload + medical_cards owne
 ### 86.8 AssumptionLog + Roadmap
 
 - AssumptionLog: раздел про mapping стратегию (внешние имена сохранены, внутри мапим)
-- Roadmap: этап 86 `todo` → `done`
+- Roadmap: этап 86 закрыт после реализации и проверок
 
 ## Риски
 

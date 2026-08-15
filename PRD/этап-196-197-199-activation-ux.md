@@ -96,7 +96,7 @@ lowercase-паттерн домена + автокапитализация мо�
 ## Out of scope
 
 - Продуктовые события failed integration attempts в БД и Grafana-funnel по
-  новым аккаунтам — этап 198 (`todo`).
+  новым аккаунтам — этап 198 (`done`, deployed and smoke-verified).
 - Изменение дефолтов ручной формы токена (ip_mask prefill текущим IP в
   advanced-форме сохранён).
 - Локализация ошибок формы выпуска токена (валидационные ValueError остаются

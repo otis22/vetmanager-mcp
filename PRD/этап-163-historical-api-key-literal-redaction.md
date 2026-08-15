@@ -6,7 +6,8 @@ Security/privacy audit 2026-05-17 обнаружил в tracked historical notes
 
 Пользовательское решение: historical API literal убрать; security notes, review artifacts и исправленные замечания не прятать. Общий cleanup stage не нужен.
 
-Stage 162 остаётся `todo`, но Stage 163 взят раньше как user-directed critical security/privacy priority.
+На момент выполнения Stage 163 был user-directed critical security/privacy
+priority; Stage 162 с тех пор завершён (`done`).
 
 ## Цель
 
