@@ -215,6 +215,22 @@ def test_user_projection_keeps_only_verified_total_count_metadata():
     _assert_analytics_projection(projected["data"]["user"][0])
 
 
+def test_user_key_projects_record_without_known_field_names():
+    from tools.user import _project_user_response
+
+    projected = _project_user_response(
+        {
+            "success": True,
+            "data": {
+                "totalCount": 1,
+                "user": [{"uid": 1, "secret_token": "x"}],
+            },
+        }
+    )
+
+    assert projected["data"] == {"totalCount": 1, "user": [{}]}
+
+
 def test_user_projection_sanitizes_error_user_payload_without_losing_envelope():
     from tools.user import _project_user_response
 

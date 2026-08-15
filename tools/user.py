@@ -62,6 +62,15 @@ def _project_user_value(value: object) -> object:
     return value
 
 
+def _project_known_user_value(value: object) -> object:
+    """Project every record below the contract-guaranteed ``user`` key."""
+    if isinstance(value, dict):
+        return _project_user(value)
+    if isinstance(value, list):
+        return [_project_known_user_value(item) for item in value]
+    return value
+
+
 def _log_unexpected_user_data_shape() -> None:
     RUNTIME_LOGGER.warning(
         "user_projection_unexpected_data_shape",
@@ -80,7 +89,7 @@ def _project_user_data(data: object) -> object:
 
     users_key = next((key for key in ("user", "users") if key in data), None)
     if users_key is not None:
-        projected_data = {users_key: _project_user_value(data[users_key])}
+        projected_data = {users_key: _project_known_user_value(data[users_key])}
         for field in _USER_PAGINATION_FIELDS:
             if field in data:
                 projected_data[field] = data[field]
