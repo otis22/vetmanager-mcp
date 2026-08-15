@@ -11195,60 +11195,6 @@ Checks so far:
 
 ## Post-hoc review этапов 213–214 и правило бюджета review
 
-## Этап 215. Privacy-safe выдача сотрудников — блокировка PRD review
-
-- Создан PRD `PRD/этап-215-privacy-safe-user-output.md` для feedback report
-  `#39`. Проверенные source-of-truth: `components.schemas.user` в OpenAPI и
-  §2.34 entity reference. Решение: closed allowlist для кадровой аналитики,
-  включая безопасную вложенную projection `position` и `role`; исключаются
-  credential, access/auth metadata, контакты, SIP, ИНН и `role.super`.
-- Spark PRD-review: read-only sandbox не смог создать user namespace
-  (`bwrap: loopback: Failed RTM_NEWADDR`), same-model fallback с
-  `danger-full-access` и review-only prompt завершился валидным `[]`.
-- Ревью сторонней моделью PRD: три последовательные попытки Claude Opus с
-  inline context, отключёнными tools/MCP и required JSON schema вернули пустой
-  stdout. Это infrastructure failure, а не валидный verdict и не расходует
-  code/diff budget; попытки зафиксированы как `1/3`, `2/3`, `3/3`.
-- После третьей пустой попытки PRD-review gate помечен `blocked`; по workflow
-  реализация, тесты, code/diff review, commit и push этапа 215 не выполнялись.
-  Нужны решение пользователя или восстановление провайдера для продолжения.
-- Пользователь подтвердил внешний характер сбоя: тот же документированный
-  вызов Claude из обычной shell-сессии вернул валидный JSON за 31 секунду.
-  Поэтому он явно разрешил продолжить локальные реализацию, тесты и аудит, но
-  запретил push до восстановления strong-review gate. Для итогового diff
-  допускается только одна новая попытка; пустой stdout фиксируется как
-  infrastructure failure без повторов.
-- Backend source of truth уточнён пользователем из
-  `rest/protected/models/User.php::attributeLabels`: allowlist сужен ровно до
-  `id`, ФИО, `nickname`, `position_id`, `role_id`, `is_active`. В частности,
-  `calc_percents` исключён как данные о вознаграждении, а computed-поля из
-  OpenAPI/reference не добавляются без отдельного подтверждения.
-- Реализация применяет file-local closed projection ко всем read-путям
-  `tools/user.py`: обычный list, name-search merge и get-by-id. В тестовом
-  upstream payload есть намеренно добавленное неизвестное поле: оно тоже не
-  проходит allowlist. Targeted regression contour:
-  `uv run pytest -q tests/test_user_privacy.py tests/test_ergonomic_filters.py
-  tests/test_e2e_mock_entities.py tests/test_e2e_mock_crud.py` — `149 passed`.
-- Read-only аудит остальных прямых `crud_list` passthrough не менялся в scope
-  этапа. Потенциальные sensitive surfaces: `get_clients`/name-path — контакты,
-  адрес, паспорт, баланс и внутренние заметки; `get_pets`, `get_admissions`,
-  `get_invoices` и `get_hospitalizations` — вложенные client/owner данные и
-  clinical notes/diagnoses; `get_suppliers` — контакты, ИНН и банковские счета;
-  `get_clinics` — контактные данные и `ip_access`; `get_properties` —
-  произвольные installation settings; `get_roles` — `super`; `get_timesheets`
-  и `get_message_reports` — график сотрудников и названия кампаний. Эти
-  endpoints требуют отдельных contract-aware решений, global sanitizer не
-  вводился.
-- Локальный implementation commit: `2c83cdc`. Spark committed-diff review
-  вернул валидный `[]`. Единственная разрешённая пользователем попытка strong
-  code/diff review (Claude Opus, inline context, tools/MCP disabled, required
-  JSON schema) вернула пустой stdout без stderr-диагностики. Это
-  infrastructure failure; повтор не запускался. Push не выполнялся и ожидает
-  решения Владимира. Полный Docker run дошёл до завершающих 99% тестов без
-  показанных failures, но launcher отсоединился и удалил `--rm` container до
-  возврата итоговой summary/exit status; поэтому это не считается формальным
-  подтверждением полного contour, в отличие от targeted `149 passed`.
-
 - **Документационная коррекция после повторной сверки**: README действительно
   содержал три пропущенных примера с историческим production IP в разделе
   локального SSH-туннеля Grafana. Они заменены на `<your-server-ip>`; все
@@ -11322,3 +11268,35 @@ Checks so far:
   ограничена user-directed backfill 213–214. Все исправления внесены в этот
   commit. Strong code/diff budget израсходован двумя валидными verdict, поэтому
   третий запуск не выполнялся.
+
+## Этап 215. Privacy-safe выдача сотрудников
+
+- Для feedback report `#39` backend source of truth подтверждён пользователем:
+  `rest/protected/models/User.php::attributeLabels`. Closed allowlist ровно:
+  `id`, ФИО, `nickname`, `position_id`, `role_id`, `is_active`; в том числе
+  `calc_percents` исключён как данные о вознаграждении.
+- PRD strong-review был заблокирован тремя пустыми ответами внутри Codex
+  runtime; пользователь разрешил завершить локальную реализацию без push.
+  Spark committed-diff review вернул `[]`; пользователь затем получил валидный
+  external verdict из обычной shell-сессии и передал три finding'а.
+- Приняты все три finding'а: projection теперь shallow-copy сохраняет весь
+  upstream envelope и меняет только подтверждённые user-records; `update_user`
+  тоже проецирует ответ; секция этапа перенесена после содержимого post-hoc
+  review 213–214. Добавлены regressions для update response, error response
+  без `data` и non-user `data` error envelope.
+- Targeted contour после follow-up:
+  `uv run pytest -q tests/test_user_privacy.py tests/test_ergonomic_filters.py
+  tests/test_e2e_mock_crud.py tests/test_e2e_mock_entities.py` — `152 passed`.
+- Полный Docker contour повторён через PTY/polling, чтобы получить читаемый
+  terminal result: `1443 passed, 2 skipped, 65 deselected` за `204.98s`.
+- Docker launcher diagnosis: `docker compose --profile test run --rm test
+  sh -c 'exit 23'` корректно вернул `compose_probe_exit=23`. Следовательно,
+  Docker Compose передаёт exit status; прежний full run потерял summary из-за
+  отсоединения процесса в runtime orchestration после `exec` cell, а не из-за
+  `--rm` или compose launcher. Он не засчитывается как пройденный contour.
+- Read-only audit других direct `crud_list` passthrough не менялся в scope:
+  clients — контакты/паспорт/баланс/notes; pets/admissions/invoices/hospital —
+  nested client/owner и clinical data; suppliers — контакты/ИНН/банковские
+  счета; clinics — контакты/`ip_access`; properties — произвольные settings;
+  roles — `super`; timesheets/message reports — графики/кампании.
+- Push не выполнялся; внешний release gate ожидает решения Владимира.

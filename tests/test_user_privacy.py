@@ -111,3 +111,48 @@ async def test_get_user_by_id_returns_only_analytics_fields(monkeypatch):
 
     payload = result.structured_content or {}
     _assert_analytics_projection(payload["data"])
+
+
+@pytest.mark.asyncio
+async def test_update_user_returns_only_analytics_fields(monkeypatch):
+    import tools.user as user_module
+
+    async def fake_crud_update(*args, **kwargs):
+        return {"success": True, "data": _UPSTREAM_USER}
+
+    monkeypatch.setattr(user_module, "crud_update", fake_crud_update)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("update_user", {"user_id": 7, "last_name": "Иванова"})
+
+    payload = result.structured_content or {}
+    _assert_analytics_projection(payload["data"])
+
+
+def test_user_projection_preserves_error_envelope_without_data():
+    from tools.user import _project_user_response
+
+    upstream = {
+        "success": False,
+        "errors": [{"code": "UPSTREAM_FAILURE", "detail": "try later"}],
+        "hint": "retry",
+    }
+
+    projected = _project_user_response(upstream)
+
+    assert projected == upstream
+    assert "data" not in projected
+
+
+def test_user_projection_preserves_non_user_data_envelope():
+    from tools.user import _project_user_response
+
+    upstream = {
+        "success": False,
+        "data": {"error_code": "UPSTREAM_FAILURE", "retry_after": 30},
+        "errors": ["request failed"],
+        "hint": "retry",
+    }
+
+    assert _project_user_response(upstream) == upstream

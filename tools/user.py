@@ -27,29 +27,32 @@ def _project_user(user: dict) -> dict:
 
 
 def _project_user_response(response: dict) -> dict:
-    """Project user records while preserving the documented response envelope."""
-    data = response.get("data")
-    projected: dict = {key: response[key] for key in ("success", "message") if key in response}
+    """Project user records without changing an upstream response envelope."""
+    if not isinstance(response, dict) or "data" not in response:
+        return response
+
+    data = response["data"]
+    projected = dict(response)
 
     if isinstance(data, list):
-        projected["data"] = [_project_user(user) for user in data if isinstance(user, dict)]
+        projected["data"] = [
+            _project_user(user) if isinstance(user, dict) else user
+            for user in data
+        ]
     elif isinstance(data, dict) and ("user" in data or "users" in data):
         users_key = "user" if "user" in data else "users"
         users = data[users_key]
-        projected_data = {
-            users_key: [_project_user(user) for user in users if isinstance(user, dict)]
-            if isinstance(users, list)
-            else _project_user(users)
-            if isinstance(users, dict)
-            else users,
-        }
-        if "totalCount" in data:
-            projected_data["totalCount"] = data["totalCount"]
+        projected_data = dict(data)
+        if isinstance(users, list):
+            projected_data[users_key] = [
+                _project_user(user) if isinstance(user, dict) else user
+                for user in users
+            ]
+        elif isinstance(users, dict):
+            projected_data[users_key] = _project_user(users)
         projected["data"] = projected_data
-    elif isinstance(data, dict):
+    elif isinstance(data, dict) and "id" in data:
         projected["data"] = _project_user(data)
-    else:
-        projected["data"] = data
 
     return projected
 
@@ -205,4 +208,4 @@ def register(mcp: FastMCP) -> None:
             payload["role_id"] = role_id
         if is_active != -1:
             payload["is_active"] = is_active
-        return await crud_update("/rest/api/user", user_id, payload)
+        return _project_user_response(await crud_update("/rest/api/user", user_id, payload))
