@@ -34,7 +34,7 @@
 
 Правки в существующем `README.md`:
 - Добавить badges в шапку: CI status, license
-- Обезличить примеры: `342915.simplecloud.ru` → `<your-domain>`, `212.193.59.219` → `<your-server-ip>`
+- Обезличить примеры: `342915.simplecloud.ru` → `<your-domain>`, `<production-server-ip>` → `<your-server-ip>`
 - Добавить секцию **Self-hosted** — "проект open-source, можно развернуть у себя"
 - Добавить секцию **Contributing** — ссылка на issues
 - Добавить **English note** — краткое пояснение для англоязычной аудитории

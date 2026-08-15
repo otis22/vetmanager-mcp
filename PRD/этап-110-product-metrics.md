@@ -98,7 +98,7 @@ Prometheus-вывод через существующий endpoint `/metrics`. �
 
 Instructions для агента:
 - По умолчанию зовёт:
-  `ssh root@212.193.59.219 "cd /opt/vetmanager-mcp && docker compose --profile production exec -T mcp python scripts/product_metrics_report.py --format=markdown"`
+  `ssh root@<your-server-ip> "cd /opt/vetmanager-mcp && docker compose --profile production exec -T mcp python scripts/product_metrics_report.py --format=markdown"`
 - Опциональные args: `--top-n=20` (stage 116.1: `--window` флаг удалён)
 - Форматирует вывод в chat: заголовки `##`, tables, списки dead accounts
 - Если stdout содержит ошибку — покажи трассу и подскажи проверить

@@ -2739,7 +2739,7 @@ relationship cascade, поэтому cleanup не дублирует бизне�
   ошибки.
 
 **Локализация и hotfix в production:**
-- Через SSH на `root@212.193.59.219` сняты live-логи контейнера:
+- Через SSH на `root@<production-server-ip>` сняты live-логи контейнера:
   `docker compose logs --tail=120 mcp`
 - Точный root cause:
   `RuntimeError: Missing WEB_SESSION_SECRET for signed web sessions.`
@@ -2753,7 +2753,7 @@ relationship cascade, поэтому cleanup не дублирует бизне�
   - сервис перезапущен через `docker compose up -d`.
 
 **Результат после hotfix:**
-- `http://212.193.59.219:8000/healthz` -> `200 OK`
+- `http://<production-server-ip>:8000/healthz` -> `200 OK`
 - `https://342915.simplecloud.ru/register` -> `200 OK`
 - `https://342915.simplecloud.ru/login` -> `200 OK`
 
@@ -3201,7 +3201,7 @@ LOW (accepted): circular import via local import, process-local rate limiter, to
 **Решения:**
 
 - Лицензия: MIT — стандарт для open-source MCP-серверов, максимальная свобода использования.
-- README: обезличены все упоминания конкретного домена и IP в примерах (`342915.simplecloud.ru` → `<your-domain>`, `212.193.59.219` → `<your-server-ip>`). В deploy-скриптах хардкод оставлен — это дефолтные значения для production.
+- README: обезличены все упоминания конкретного домена и IP в примерах (`342915.simplecloud.ru` → `<your-domain>`, `<production-server-ip>` → `<your-server-ip>`). В deploy-скриптах хардкод оставлен — это дефолтные значения для production.
 - SECURITY.md: responsible disclosure через GitHub Security Advisories (preferred) или email.
 - README не переводится целиком на английский — слишком большой объём. Добавлена краткая English note в шапке.
 - Отдельный CONTRIBUTING.md не создаётся — достаточно секции в README.
@@ -5265,7 +5265,7 @@ Stage 128 закрыт фактическим production rollout. После в�
    - `docker compose --profile test run --rm test` → `802 passed, 57 deselected`;
    - PRD stage `128` очищен от устаревших предпосылок (`122-127`) и от допущения о code changes внутри deploy path.
 2. Pre-deploy safety checks:
-   - production host `root@212.193.59.219` снова доступен по SSH;
+   - production host `root@<production-server-ip>` снова доступен по SSH;
    - на сервере подтверждены `WEB_SESSION_SECRET` и `STORAGE_ENCRYPTION_KEY`;
    - перед deploy выполнен ручной backup ` /var/backups/vetmanager-postgres/vetmanager-20260423-012655.sql.gz`;
    - canonical deploy path также создал pre-deploy rollback point `/var/backups/vetmanager-postgres/pre-deploy-20260423-013059.sql.gz`.
@@ -6515,8 +6515,8 @@ UI кабинета и issuance flow переведены на preset-based то
 - После Claude Opus committed-diff fix: targeted deploy tests — `6 passed`; full Docker suite — `948 passed, 57 deselected`.
 - После финального Spark sanity fix: targeted deploy tests — `6 passed`; full Docker suite — `948 passed, 57 deselected`.
 - После Claude Opus committed-diff review 2 fix: targeted deploy tests — `6 passed`; full Docker suite — `948 passed, 57 deselected`.
-- GitHub Tests for `faf6ea1` — success; GitHub Deploy Prod from runner failed at rsync with `ssh: connect to host 212.193.59.219 port 22: Connection timed out`, while local TCP/22 and HTTPS health were available.
-- Local production deploy via `scripts/sync_and_deploy_server.sh root@212.193.59.219 /opt/vetmanager-mcp` — passed: backup created, migrations completed, MCP recreated, pepper exact-match verification passed, post-deploy smoke checks passed.
+- GitHub Tests for `faf6ea1` — success; GitHub Deploy Prod from runner failed at rsync with `ssh: connect to host <production-server-ip> port 22: Connection timed out`, while local TCP/22 and HTTPS health were available.
+- Local production deploy via `scripts/sync_and_deploy_server.sh root@<production-server-ip> /opt/vetmanager-mcp` — passed: backup created, migrations completed, MCP recreated, pepper exact-match verification passed, post-deploy smoke checks passed.
 - Public prod verification after local deploy: `https://vetmanager-mcp.vromanichev.ru/healthz` — `ok`; `https://vetmanager-mcp.vromanichev.ru/readyz` — `ok`, storage `ok`.
 
 ### Обратная связь
@@ -6828,7 +6828,7 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 
 - Локальный CLI smoke на пустой SQLite без миграций упал `no such table: known_issues`. Это expected precondition, не runtime bug: script рассчитан на мигрированную DB. README дополнен строкой “Run after DB migrations are applied”.
 - До follow-up production diagnostic/apply были заблокированы: не было явно выбранных `account_id`/`bearer_token_id`. После сообщения пользователя блок снят, результаты ниже.
-- Follow-up 2026-05-03: пользователь указал production account identity out-of-band; в артефактах фиксируем только non-secret DB ids. На prod `root@212.193.59.219` найден `account_id=3`; выбран самый свежий активный `bearer_token_id=8` без вывода raw bearer token/hash (raw token не хранится).
+- Follow-up 2026-05-03: пользователь указал production account identity out-of-band; в артефактах фиксируем только non-secret DB ids. На prod `root@<production-server-ip>` найден `account_id=3`; выбран самый свежий активный `bearer_token_id=8` без вывода raw bearer token/hash (raw token не хранится).
 - Production seed run:
   - `python scripts/seed_known_issues.py --dry-run` перед apply — `created=6 updated=0 unchanged=0 skipped=0`;
   - `python scripts/seed_known_issues.py --apply` — `created=6 updated=0 unchanged=0 skipped=0`;
@@ -9330,7 +9330,7 @@ Checks:
 - Post-review full uv suite: `uv run --group dev pytest -q` — `1235 passed, 71 skipped`.
 - Post-review Docker suite: `docker compose --profile test run --rm test` — `1241 passed, 1 skipped, 64 deselected`.
 - Pushed implementation commit `c53b2d3` to `main`.
-- Production deploy via `scripts/sync_and_deploy_server.sh root@212.193.59.219 /opt/vetmanager-mcp` completed after restoring the existing production `FEEDBACK_FINGERPRINT_PEPPER` line to a compose-parseable raw value; deploy checks passed, including migrations, health, readiness retry, TLS check and post-deploy `/mcp` smoke.
+- Production deploy via `scripts/sync_and_deploy_server.sh root@<production-server-ip> /opt/vetmanager-mcp` completed after restoring the existing production `FEEDBACK_FINGERPRINT_PEPPER` line to a compose-parseable raw value; deploy checks passed, including migrations, health, readiness retry, TLS check and post-deploy `/mcp` smoke.
 - Stage-specific production smoke inside the deployed MCP container called `get_medical_cards_by_date` for the latest real medical-card date. All-branches path returned a bounded page with `clinic_filter_applied=false`, `total_known=true`; optional branch path returned a bounded page with `clinic_filter_applied=true`, matching `clinic_id`, and `total_known=true`.
 - Production feedback report `#20` linked to known issue `#23` with status `fixed`.
 
@@ -9390,7 +9390,7 @@ Checks:
 - Claude Opus committed-diff review: `{"findings":[]}`.
 - Pushed implementation commit `26c8981` to `main`.
 - Production deploy via `scripts/sync_and_deploy_server.sh
-  root@212.193.59.219 /opt/vetmanager-mcp` completed after repairing an
+  root@<production-server-ip> /opt/vetmanager-mcp` completed after repairing an
   already malformed remote `FEEDBACK_FINGERPRINT_PEPPER` `.env` line to a
   Docker Compose-compatible raw value; deploy checks passed, including backup,
   migrations, health, readiness retry, TLS check and post-deploy smoke.
@@ -9561,7 +9561,7 @@ Checks so far:
   `{"findings":[]}`.
 - Commit `d579f6e` pushed to `main`.
 - Production deploy to `/opt/vetmanager-mcp` completed via
-  `scripts/sync_and_deploy_server.sh root@212.193.59.219 /opt/vetmanager-mcp`.
+  `scripts/sync_and_deploy_server.sh root@<production-server-ip> /opt/vetmanager-mcp`.
   Deploy script built the image, created a pre-deploy PostgreSQL backup, ran
   migrations, restarted the MCP container, verified DB tables/TLS, and passed
   post-deploy smoke checks. One initial `/readyz` attempt returned 503 during
@@ -10927,7 +10927,7 @@ Checks so far:
   `.config-card pre, .command-card pre` не задевает другие `<pre>`.
 - **Проверки**: Docker suite `1432 passed, 2 skipped, 65 deselected`.
 
-## Планирование этапа 211 — Report AI queue/export contract — 2026-08-04
+## Этап 211. Report AI queue/export contract — 2026-08-04
 
 - **Источник**: production feedback `#37` и исследование с `TEST_DOMAIN` /
   `TEST_API_KEY` на test contour. Созданный job `#116` оставался `queued`
@@ -11194,6 +11194,26 @@ Checks so far:
   default Docker contour прошли успешно.
 
 ## Post-hoc review этапов 213–214 и правило бюджета review
+
+- **Документационная коррекция после повторной сверки**: README действительно
+  содержал три пропущенных примера с историческим production IP в разделе
+  локального SSH-туннеля Grafana. Они заменены на `<your-server-ip>`; все
+  исторические вхождения IP в этом журнале и PRD также заменены на
+  `<production-server-ip>`/`<your-server-ip>`. Поэтому current tree не
+  раскрывает этот адрес.
+
+- **Review документационного diff**: Spark вернул `[]`. Первый Claude Opus
+  запуск завершился пустым output (`1/3`, infrastructure failure); повторный
+  валидный verdict нашёл неполную деперсонализацию IP в AssumptionLog. Finding
+  принят и исправлен заменой всех current-tree вхождений; потребуется повторная
+  проверка итогового diff.
+
+- **Итоговый code/diff gate документационной правки**: повторный Spark для
+  итогового diff вернул `[]`. Два последующих Claude Opus запуска вернули
+  пустой output (`2/3` и `3/3` infrastructure failure); valid JSON verdict
+  получить не удалось. Gate зафиксирован `blocked`, поэтому commit/push не
+  выполнялись. Это не finding продукта: локальный полный Docker contour после
+  правки прошёл успешно.
 
 - **Инфраструктурные сбои не расходуют budget**: уточнено правило `AGENTS.md`
   и согласованная Cursor-инструкция: слот strong review расходует только

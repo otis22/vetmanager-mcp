@@ -743,17 +743,17 @@ Production compose поднимает Prometheus и Grafana в профиле `p
 Доступ с рабочей машины — SSH-туннель (`-N` — только форвардинг, без shell):
 
 ```bash
-ssh -N -L 3000:127.0.0.1:3000 -L 9090:127.0.0.1:9090 root@212.193.59.219
+ssh -N -L 3000:127.0.0.1:3000 -L 9090:127.0.0.1:9090 root@<your-server-ip>
 ```
 
 После этого Grafana доступна на `http://127.0.0.1:3000`, Prometheus — на
 `http://127.0.0.1:9090`. Если порт занят (`Address already in use`) — туннель
-уже поднят, проверить: `pgrep -af "ssh.*212.193.59.219"`.
+уже поднят, проверить: `pgrep -af "ssh.*<your-server-ip>"`.
 
 Логин в Grafana — учётка админа из server `.env`:
 
 ```bash
-ssh root@212.193.59.219 'cd /opt/vetmanager-mcp && grep -E "^(GRAFANA_ADMIN_USER|GRAFANA_ADMIN_PASSWORD)=" .env'
+ssh root@<your-server-ip> 'cd /opt/vetmanager-mcp && grep -E "^(GRAFANA_ADMIN_USER|GRAFANA_ADMIN_PASSWORD)=" .env'
 ```
 
 `GRAFANA_ADMIN_USER` в `.env` может отсутствовать — тогда действует дефолт
