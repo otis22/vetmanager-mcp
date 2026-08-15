@@ -3,6 +3,7 @@ import asyncio
 from fastmcp import FastMCP
 
 from filters import eq as _filter_eq, like as _filter_like
+from observability_logging import RUNTIME_LOGGER
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_update
 from validators import LimitParam
 
@@ -20,9 +21,9 @@ _ANALYTICS_USER_FIELDS = frozenset(
     }
 )
 
-_USER_PAGINATION_FIELDS = frozenset(
-    {"totalCount", "total", "limit", "offset", "page", "pageSize", "hasMore", "nextPage", "prevPage"}
-)
+# Vetmanager ERestController::outputHelper (line 497) emits list data as
+# {"totalCount": ..., "user": [...]}; crud_list returns that response unchanged.
+_USER_PAGINATION_FIELDS = frozenset({"totalCount"})
 
 
 def _project_user(user: dict) -> dict:
@@ -30,7 +31,7 @@ def _project_user(user: dict) -> dict:
     return {field: user[field] for field in _ANALYTICS_USER_FIELDS if field in user}
 
 
-def _project_user_data(data: object) -> object:
+def _project_user_data(data: object, *, is_list_response: bool = False) -> object:
     """Return a fail-closed view of a successful user endpoint payload."""
     if isinstance(data, list):
         return [_project_user(user) if isinstance(user, dict) else user for user in data]
@@ -39,6 +40,12 @@ def _project_user_data(data: object) -> object:
 
     users_key = next((key for key in ("user", "users") if key in data), None)
     if users_key is None:
+        if is_list_response:
+            RUNTIME_LOGGER.warning(
+                "user_list_projection_unexpected_data_shape",
+                extra={"event_name": "user_list_projection_unexpected_data_shape"},
+            )
+            return {}
         # A sparse direct record need not have ``id``.  Treat every unknown
         # mapping as one and retain only its allowlisted fields.
         return _project_user(data)
@@ -63,7 +70,7 @@ def _project_user_data(data: object) -> object:
     return projected_data
 
 
-def _project_user_response(response: dict) -> dict:
+def _project_user_response(response: dict, *, is_list_response: bool = False) -> dict:
     """Project successful user payloads while preserving error envelopes."""
     if (
         not isinstance(response, dict)
@@ -73,7 +80,9 @@ def _project_user_response(response: dict) -> dict:
         return response
 
     projected = dict(response)
-    projected["data"] = _project_user_data(response["data"])
+    projected["data"] = _project_user_data(
+        response["data"], is_list_response=is_list_response
+    )
     return projected
 
 
@@ -124,7 +133,8 @@ def register(mcp: FastMCP) -> None:
                     offset=offset,
                     sort=sort,
                     filters=base_filters if base_filters else None,
-                )
+                ),
+                is_list_response=True,
             )
 
         # Name search: issue two parallel filter variants and merge by id.

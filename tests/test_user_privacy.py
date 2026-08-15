@@ -158,7 +158,7 @@ def test_user_projection_preserves_non_user_data_envelope():
     assert _project_user_response(upstream) == upstream
 
 
-def test_user_projection_fails_closed_for_unexpected_success_data_shape():
+def test_user_list_projection_fails_closed_and_logs_unexpected_data_shape(caplog):
     from tools.user import _project_user_response
 
     upstream = {
@@ -167,11 +167,17 @@ def test_user_projection_fails_closed_for_unexpected_success_data_shape():
         "hint": "unexpected upstream wrapper",
     }
 
-    projected = _project_user_response(upstream)
+    with caplog.at_level("WARNING", logger="vetmanager.runtime"):
+        projected = _project_user_response(upstream, is_list_response=True)
 
     assert projected["hint"] == upstream["hint"]
     assert projected["data"] == {}
     assert "passwd" not in str(projected["data"])
+    assert any(
+        record.message == "user_list_projection_unexpected_data_shape"
+        and record.event_name == "user_list_projection_unexpected_data_shape"
+        for record in caplog.records
+    )
 
 
 def test_user_projection_allows_sparse_direct_record_without_id():
@@ -182,3 +188,22 @@ def test_user_projection_allows_sparse_direct_record_without_id():
     )
 
     assert projected["data"] == {"first_name": "Анна"}
+
+
+def test_user_list_projection_keeps_only_verified_total_count_metadata():
+    from tools.user import _project_user_response
+
+    projected = _project_user_response(
+        {
+            "success": True,
+            "data": {
+                "user": [_UPSTREAM_USER],
+                "totalCount": 1,
+                "pageSize": 20,
+            },
+        },
+        is_list_response=True,
+    )
+
+    assert set(projected["data"]) == {"user", "totalCount"}
+    _assert_analytics_projection(projected["data"]["user"][0])

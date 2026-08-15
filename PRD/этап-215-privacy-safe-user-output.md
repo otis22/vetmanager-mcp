@@ -18,6 +18,9 @@
   `is_active`, `calc_percents`, `nickname`, `last_change_pwd_date`, `user_inn`.
   Он приоритетнее OpenAPI/reference, где также упоминаются непроверенные для
   backend-модели computed-поля.
+- `ERestController::outputHelper` Vetmanager (проверен пользователем, line 497)
+  задаёт точный list-конверт: `data = {totalCount, user}`. `crud_list` не
+  добавляет metadata и читает из него только `totalCount`.
 
 ## Scope
 
@@ -32,14 +35,17 @@
    `cell_phone`, `address`, `user_inn`, `calc_percents`: это credential/auth
    metadata, частные контакты, персональный налоговый идентификатор и данные о
    вознаграждении; они не нужны для заявленной аналитики.
-4. Сохранить transport envelope и scalar pagination metadata, но не
+4. Сохранить transport envelope и подтверждённый pagination metadata
+   `totalCount`, но не
    пробрасывать неизвестные поля успешного user payload. Неожиданная mapping
-   форма проецируется как sparse user record, поэтому новые upstream поля не
-   попадут в MCP-ответ автоматически.
+   форма list-ответа отбрасывается fail-closed и фиксируется штатным runtime
+   logger, поэтому новые upstream поля не попадут в MCP-ответ автоматически и
+   аномалия не останется неотличимой от пустого обычного результата: отличие
+   фиксируется только в логах.
 5. Добавить test-first регрессии: все точки выдачи не отдают `passwd`/`login`
    и сохраняют требуемые аналитические поля. Отдельно покрыть name-search
    ветку, поскольку она формирует ответ локально, и fail-closed неизвестную
-   форму успешного `data`.
+   форму успешного `data`, включая runtime-log fallback.
 6. Провести read-only аудит остальных callers `crud_list`; не менять их в этом
    этапе, а перечислить результат в handoff.
 
