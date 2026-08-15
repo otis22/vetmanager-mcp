@@ -1,0 +1,14 @@
+[run]
+branch = True
+source = .
+omit =
+    tests/*
+    scripts/*
+    alembic/*
+
+[report]
+show_missing = True
+skip_covered = True
+exclude_also =
+    if TYPE_CHECKING:
+    raise NotImplementedError

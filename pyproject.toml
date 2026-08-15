@@ -86,9 +86,11 @@ only-include = [
 
 [dependency-groups]
 dev = [
+    "coverage>=7.6.0,<8",
     "playwright>=1.54.0,<2",
     "pytest>=8.0.0,<9",
     "pytest-asyncio>=0.23.0,<0.24",
+    "pytest-cov>=5.0.0,<6",
     "pytest-httpx>=0.30.0",
     "respx>=0.21.0",
 ]

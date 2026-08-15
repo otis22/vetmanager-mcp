@@ -27,6 +27,10 @@ def main() -> int:
         "pytest",
         "tests/",
         "-v",
+        "--cov",
+        "--cov-config=.coveragerc",
+        "--cov-report=term-missing:skip-covered",
+        "--cov-report=xml:coverage.xml",
         "-m",
         DEFAULT_TEST_CONTOUR.marker_expression,
     ]

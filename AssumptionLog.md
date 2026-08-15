@@ -11162,3 +11162,32 @@ Checks so far:
   исторический переход, а PRD 165 — общее правило для будущих follow-up, поэтому
   они не являются текущими рассинхронизациями. Codex review: documentation-only
   stage, отдельный external-model gate не требуется по docs-only исключению.
+
+## Этап 214. Baseline покрытия тестами
+
+- **Scope baseline**: coverage измеряет весь product source tree (`source=.`),
+  исключая tests, scripts и Alembic environment. Порог намеренно отсутствует:
+  baseline публикуется как наблюдаемое число, а не как CI gate.
+
+- **Единый прогон**: default runner создаёт terminal file-level report и
+  `coverage.xml` за один pytest pass. GitHub Actions получает XML из уже
+  bind-mounted workspace, пишет total в job summary и загружает artifact;
+  второй full suite не запускается.
+
+- **Измерение**: default Docker contour завершился с `exit 0` и line coverage
+  `7464/8426` (88,58%). Сравнение на одной локальной Docker-среде: около 5:20
+  без coverage и 6:02 с ним — около +42 с (≈13%).
+
+- **PRD Spark pre-review**: первый read-only запуск `gpt-5.3-codex-spark`
+  остановился до чтения файлов на известной `bwrap` runtime error. Обязательный
+  review-only fallback прочитал PRD/diff, но вывод был усечён runtime launcher
+  до финального YAML; это зафиксировано как incomplete review output, не как
+  отсутствие findings. Ни одна находка не была принята без проверяемого
+  evidence.
+
+- **Committed-diff review**: Spark review inline committed diff вернул
+  `findings: []`. Два запуска Claude Opus с inline diff, отключёнными tools/MCP
+  и обязательной JSON schema завершились без output; это invalid review output,
+  не отсутствие findings. Strong code-review budget (2/2) исчерпан без
+  проверяемых finding; scope остался ограничен test tooling, а финальный audit
+  и full default Docker contour прошли успешно.

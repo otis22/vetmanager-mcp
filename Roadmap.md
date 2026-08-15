@@ -3911,3 +3911,15 @@ blockers.
   — `done`
 - 213.3 Уточнить статус 201, cross-references 196/197/199 и честную границу
   завершённого MCP-scope этапа 211. — `done`
+
+## Этап 214. Baseline покрытия тестами — `done`
+
+Цель: измерять coverage существующего test contour, публиковать читаемую сводку
+и XML-артефакт в CI без порога, который превращал бы baseline в build gate.
+
+- 214.1 PRD/research: определить scope исходников, формат отчётов и способ
+  публикации без заметного дублирования test run. — `done`
+- 214.2 Локальный test runner: запускать coverage, печатать summary и писать
+  `coverage.xml`; добавить конфигурацию и regression check. — `done`
+- 214.3 CI: вывести summary job и загрузить XML-артефакт. — `done`
+- 214.4 Full checks, audit, reviews, commit/push и измерение времени. — `done`

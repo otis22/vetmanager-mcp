@@ -14,14 +14,14 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Build Docker image
-        run: docker build --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp .
+        run: docker build --target test --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp-test .
 
       - name: Run fast contour
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/app" \
             -u 1001:1001 \
-            vetmanager-mcp \
+            vetmanager-mcp-test \
             python scripts/run_fast_test_suite.py
 
   default:
@@ -31,12 +31,35 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Build Docker image
-        run: docker build --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp .
+        run: docker build --target test --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp-test .
 
       - name: Run default contour
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/app" \
             -u 1001:1001 \
-            vetmanager-mcp \
+            vetmanager-mcp-test \
             python scripts/run_default_test_suite.py
+
+      - name: Publish coverage summary
+        if: always()
+        run: |
+          if [ -f coverage.xml ]; then
+            {
+              echo '## Test coverage'
+              echo
+              echo '```text'
+              python3 -c 'import xml.etree.ElementTree as ET; root = ET.parse("coverage.xml").getroot(); rate = root.attrib["line-rate"]; print(f"Total line coverage: {float(rate) * 100:.2f}%")'
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'coverage.xml was not produced; the default test run failed before coverage reporting.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload coverage XML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: warn
