@@ -11453,3 +11453,7 @@ Checks so far:
 - **Risk cleanup:** production host в product-metrics command заменён на
   обязательную переменную окружения; историческое упоминание приватной
   конфигурации Vetmanager заменено контрактным утверждением об API VmLink.
+- **Повторный strong code/diff review gate — blocked:** после исправления
+  исполняемого validator три запуска Claude Opus завершились без stdout и без
+  разбираемого verdict. Это infrastructure failures 1/3–3/3 нового gate;
+  push запрещён до решения пользователя или восстановления review runtime.
