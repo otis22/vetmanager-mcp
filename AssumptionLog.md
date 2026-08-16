@@ -11273,9 +11273,9 @@ Checks so far:
 ## Этап 215. Privacy-safe выдача сотрудников
 
 - Для feedback report `#39` backend source of truth подтверждён пользователем:
-  `rest/protected/models/User.php::attributeLabels`. Closed allowlist ровно:
-  `id`, ФИО, `nickname`, `position_id`, `role_id`, `is_active`; в том числе
-  `calc_percents` исключён как данные о вознаграждении.
+  `rest/protected/models/User.php::attributeLabels`. Closed allowlist: `id`,
+  ФИО, `nickname`, `position_id`, `role_id`, `is_active`, `email`, `phone`,
+  `cell_phone`; `calc_percents` исключён как данные о вознаграждении.
 - PRD strong-review был заблокирован тремя пустыми ответами внутри Codex
   runtime; пользователь разрешил завершить локальную реализацию без push.
   Spark committed-diff review вернул `[]`; пользователь затем получил валидный
@@ -11287,9 +11287,9 @@ Checks so far:
   без `data` и non-user `data` error envelope.
 - Targeted contour после последнего follow-up:
   `uv run pytest -q tests/test_user_privacy.py tests/test_ergonomic_filters.py
-  tests/test_e2e_mock_crud.py tests/test_e2e_mock_entities.py` — `158 passed`.
+  tests/test_e2e_mock_crud.py tests/test_e2e_mock_entities.py` — `161 passed`.
 - Полный Docker contour повторён через PTY/polling, чтобы получить читаемый
-  terminal result: `1449 passed, 2 skipped, 65 deselected` за `184.86s`.
+  terminal result: `1452 passed, 2 skipped, 65 deselected` за `259.47s`.
 - Docker launcher diagnosis: `docker compose --profile test run --rm test
   sh -c 'exit 23'` корректно вернул `compose_probe_exit=23`. Следовательно,
   Docker Compose передаёт exit status; прежний full run потерял summary из-за
@@ -11321,6 +11321,12 @@ Checks so far:
   если upstream переименует все известные поля. Regression покрывает record
   только с неизвестными `uid`/`secret_token`; он возвращается как пустой
   allowlist view.
+- Решение Владимира изменило business contract этапа: `email`, `phone` и
+  `cell_phone` возвращаются в allowlist сотрудников; `address` остаётся
+  скрытым. Для клиентов принят намеренно узкий denylist `passport_series` во
+  всех raw output paths `tools/client.py`, поскольку остальные client fields
+  нужны агентам. `get_suppliers` намеренно не меняется: ИНН и банковские
+  реквизиты требуются сценариям Владимира.
 - Read-only audit других direct `crud_list` passthrough не менялся в scope:
   clients — контакты/паспорт/баланс/notes; pets/admissions/invoices/hospital —
   nested client/owner и clinical data; suppliers — контакты/ИНН/банковские

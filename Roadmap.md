@@ -3939,3 +3939,6 @@ blockers.
   инструментов, проверки, review и release gate. — `done`
   (external review из обычной shell-сессии передал три finding'а; все приняты
   и исправлены. Push ожидает отдельного решения Владимира.)
+- 215.4 По решению Владимира: вернуть email/phone/cell_phone сотрудникам,
+  убрать только client.passport_series denylist-ом и зафиксировать сохранение
+  supplier ИНН/банковских реквизитов. — `done`

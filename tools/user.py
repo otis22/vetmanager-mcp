@@ -18,6 +18,9 @@ _ANALYTICS_USER_FIELDS = frozenset(
         "position_id",
         "role_id",
         "is_active",
+        "email",
+        "phone",
+        "cell_phone",
     }
 )
 

@@ -36,6 +36,9 @@ _ANALYTICS_FIELDS = {
     "position_id",
     "role_id",
     "is_active",
+    "email",
+    "phone",
+    "cell_phone",
 }
 
 
@@ -56,6 +59,9 @@ def _assert_analytics_projection(user: dict) -> None:
     assert user["position_id"] == _UPSTREAM_USER["position_id"]
     assert user["role_id"] == _UPSTREAM_USER["role_id"]
     assert user["is_active"] == _UPSTREAM_USER["is_active"]
+    assert user["email"] == _UPSTREAM_USER["email"]
+    assert user["phone"] == _UPSTREAM_USER["phone"]
+    assert user["cell_phone"] == _UPSTREAM_USER["cell_phone"]
     assert "login" not in user
     assert "passwd" not in user
 

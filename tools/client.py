@@ -30,6 +30,20 @@ _PERSONAL_ACCOUNT_LINK_WARNING = (
     "Personal account link is persistent and sensitive; show it only in the "
     "relevant known-phone client context."
 )
+_CLIENT_DENYLIST_FIELDS = frozenset({"passport_series"})
+
+
+def _redact_client_denied_fields(value):
+    """Remove only explicitly denied client fields while preserving all others."""
+    if isinstance(value, list):
+        return [_redact_client_denied_fields(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: _redact_client_denied_fields(item)
+            for key, item in value.items()
+            if key not in _CLIENT_DENYLIST_FIELDS
+        }
+    return value
 
 
 async def _search_client_phones(search_digits: str) -> list[int]:
@@ -364,7 +378,7 @@ def register(mcp: FastMCP) -> None:
                 if not all(token in name_text for token in tokens):
                     continue
                 seen_ids.add(client_id)
-                matches.append(client)
+                matches.append(_redact_client_denied_fields(client))
 
             _sort_merged_clients(matches, sort)
             return {
@@ -376,10 +390,14 @@ def register(mcp: FastMCP) -> None:
                 },
             }
 
-        return await crud_list(
-            "/rest/api/client", limit=limit, offset=offset,
-            sort=sort, filters=combined_filters if combined_filters else None,
+        response = await crud_list(
+            "/rest/api/client",
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            filters=combined_filters if combined_filters else None,
         )
+        return _redact_client_denied_fields(response)
 
     @mcp.tool
     async def get_debtors(
@@ -530,7 +548,9 @@ def register(mcp: FastMCP) -> None:
         Args:
             client_id: Unique numeric ID of the client.
         """
-        return await crud_get_by_id("/rest/api/client", client_id)
+        return _redact_client_denied_fields(
+            await crud_get_by_id("/rest/api/client", client_id)
+        )
 
     @mcp.tool
     async def get_personal_account_link_by_phone(phone: str) -> dict:
@@ -572,7 +592,8 @@ def register(mcp: FastMCP) -> None:
             payload["cell_phone"] = phone
         if email:
             payload["email"] = email
-        return await crud_create("/rest/api/client", payload)
+        response = await crud_create("/rest/api/client", payload)
+        return _redact_client_denied_fields(response)
 
     @mcp.tool
     async def update_client(
@@ -628,7 +649,9 @@ def register(mcp: FastMCP) -> None:
             payload["note"] = note
         if status:
             payload["status"] = status
-        return await crud_update("/rest/api/client", client_id, payload)
+        return _redact_client_denied_fields(
+            await crud_update("/rest/api/client", client_id, payload)
+        )
 
     @mcp.tool
     async def delete_client(
@@ -662,10 +685,12 @@ def register(mcp: FastMCP) -> None:
         Args:
             client_id: Unique numeric ID of the client.
         """
-        return await _instrument_call(
-            "/rest/api/client",
-            "GET",
-            lambda: _fetch_client_profile(client_id),
-            operation="aggregate_profile",
-            tool_name="get_client_profile",
+        return _redact_client_denied_fields(
+            await _instrument_call(
+                "/rest/api/client",
+                "GET",
+                lambda: _fetch_client_profile(client_id),
+                operation="aggregate_profile",
+                tool_name="get_client_profile",
+            )
         )
