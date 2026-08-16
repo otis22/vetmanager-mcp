@@ -34,13 +34,14 @@
 3. Исключить `login`, `passwd`, `last_change_pwd_date`, `address`, `user_inn`,
    `calc_percents`: credential/auth metadata, адрес (не входит в согласованные
    контакты), персональный налоговый идентификатор и данные о вознаграждении.
-4. В общем wrapper регистрации MCP-инструментов рекурсивно удалять только
-   `passport_series` из каждого результата до выдачи модели. Это покрывает
-   прямые client paths, вложенные `client`/`owner` и инструменты с прямым
-   `VetmanagerClient`, которые обходят `crud_*`; file-local denylist'ы не
-   дублировать. Allowlist здесь намеренно не применяется: клиентские поля
-   широки и нужны агентам, а решение касается одного подтверждённого
-   паспортного поля.
+4. В общем wrapper регистрации MCP-инструментов рекурсивно удалять
+   `passport_series` и staff auth/compensation fields `passwd`, `login`,
+   `last_change_pwd_date`, `user_inn`, `calc_percents` из каждого результата
+   до выдачи модели. Это покрывает прямые client paths, вложенные
+   `client`/`owner`/staff и инструменты с прямым `VetmanagerClient`, которые
+   обходят `crud_*`; file-local denylist'ы не дублировать. Для вложенных staff
+   намеренно выбран denylist: контекстные поля счёта/госпитализации нужны
+   сценариям, поэтому allowlist прямых user tools здесь применять нельзя.
 5. Сохранить transport envelope целиком независимо от `success` и всегда
    проецировать user records внутри `data`, в том числе во вложенных и error
    payload. Под контрактным ключом `user`/`users` projection безусловна и не
@@ -107,6 +108,9 @@ fail-closed поведение без нового решения Владими
   клиентские поля сохраняются, включая `get_debtors` и owner в
   `get_pet_profile`; это же правило действует для вложенных owner/client в
   результатах любых MCP-инструментов.
+- Вложенные staff objects не содержат `passwd`, `login`,
+  `last_change_pwd_date`, `user_inn`, `calc_percents`; прямые user tools
+  сохраняют свой более строгий analytics allowlist.
 - `get_suppliers` сохраняет ИНН и банковские реквизиты по явному решению
   Владимира.
 - Все targeted и полный mock test contours проходят.

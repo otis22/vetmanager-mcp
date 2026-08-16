@@ -6,7 +6,7 @@ from functools import wraps
 import depersonalization
 from agent_feedback_service import augment_tool_error, should_skip_report_hint
 from exceptions import AuthError
-from privacy_utils import redact_client_passport_series
+from privacy_utils import redact_sensitive_output_fields
 from runtime_auth import use_runtime_credentials
 from service_metrics import record_sanitizer_failure
 from tool_scope_security import (
@@ -47,7 +47,7 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
                 if should_skip_report_hint(exc):
                     raise
                 raise await augment_tool_error(resolved_tool_name, credentials, exc) from exc
-            result = redact_client_passport_series(result)
+            result = redact_sensitive_output_fields(result)
             if not credentials.is_depersonalized:
                 return result
             try:

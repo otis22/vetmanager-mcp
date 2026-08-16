@@ -12,15 +12,27 @@ likely subnet without leaking the full client IP.
 from __future__ import annotations
 
 
-def redact_client_passport_series(value):
-    """Recursively remove the confirmed sensitive Client.passport_series field."""
+_SENSITIVE_OUTPUT_FIELDS = frozenset(
+    {
+        "passport_series",
+        "passwd",
+        "login",
+        "last_change_pwd_date",
+        "user_inn",
+        "calc_percents",
+    }
+)
+
+
+def redact_sensitive_output_fields(value):
+    """Recursively remove confirmed sensitive client and staff output fields."""
     if isinstance(value, list):
-        return [redact_client_passport_series(item) for item in value]
+        return [redact_sensitive_output_fields(item) for item in value]
     if isinstance(value, dict):
         return {
-            key: redact_client_passport_series(item)
+            key: redact_sensitive_output_fields(item)
             for key, item in value.items()
-            if key != "passport_series"
+            if key not in _SENSITIVE_OUTPUT_FIELDS
         }
     return value
 

@@ -16,6 +16,19 @@ _UPSTREAM_CLIENT = {
     "custom_agent_field": "must be preserved",
 }
 
+_UPSTREAM_STAFF = {
+    "id": 7,
+    "first_name": "Анна",
+    "position_id": 3,
+    "email": "anna@example.test",
+    "login": "anna.admin",
+    "passwd": "0123456789abcdef0123456789abcdef",
+    "last_change_pwd_date": "2026-08-01",
+    "user_inn": "123456789012",
+    "calc_percents": 25,
+    "custom_invoice_context": "must be preserved",
+}
+
 
 def _runtime_patch():
     return patch_runtime_credentials(
@@ -32,6 +45,16 @@ def _assert_passport_redacted(client: dict) -> None:
     assert client["id"] == _UPSTREAM_CLIENT["id"]
     assert client["email"] == _UPSTREAM_CLIENT["email"]
     assert client["custom_agent_field"] == _UPSTREAM_CLIENT["custom_agent_field"]
+
+
+def _assert_staff_credentials_redacted(user: dict) -> None:
+    for field in ("passwd", "login", "last_change_pwd_date", "user_inn", "calc_percents"):
+        assert field not in user
+    assert user["id"] == _UPSTREAM_STAFF["id"]
+    assert user["first_name"] == _UPSTREAM_STAFF["first_name"]
+    assert user["position_id"] == _UPSTREAM_STAFF["position_id"]
+    assert user["email"] == _UPSTREAM_STAFF["email"]
+    assert user["custom_invoice_context"] == _UPSTREAM_STAFF["custom_invoice_context"]
 
 
 @pytest.mark.asyncio
@@ -191,3 +214,69 @@ async def test_get_invoices_redacts_nested_client_passport_series(monkeypatch):
 
     payload = result.structured_content or {}
     _assert_passport_redacted(payload["data"]["invoice"][0]["client"])
+
+
+@pytest.mark.asyncio
+async def test_get_invoices_redacts_nested_doctor_credentials(monkeypatch):
+    import tools.invoice as invoice_module
+
+    async def fake_crud_list(*args, **kwargs):
+        return {
+            "success": True,
+            "data": {"invoice": [{"id": 5, "doctor": _UPSTREAM_STAFF}], "totalCount": 1},
+        }
+
+    monkeypatch.setattr(invoice_module, "crud_list", fake_crud_list)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_invoices", {})
+
+    payload = result.structured_content or {}
+    _assert_staff_credentials_redacted(payload["data"]["invoice"][0]["doctor"])
+
+
+@pytest.mark.asyncio
+async def test_get_hospitalizations_redacts_nested_doctor_credentials(monkeypatch):
+    import tools.clinical as clinical_module
+
+    async def fake_crud_list(*args, **kwargs):
+        return {
+            "success": True,
+            "data": {
+                "hospital": [{"id": 6, "doctor_data": _UPSTREAM_STAFF}],
+                "totalCount": 1,
+            },
+        }
+
+    monkeypatch.setattr(clinical_module, "crud_list", fake_crud_list)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_hospitalizations", {})
+
+    payload = result.structured_content or {}
+    _assert_staff_credentials_redacted(payload["data"]["hospital"][0]["doctor_data"])
+
+
+@pytest.mark.asyncio
+async def test_get_cassa_closes_redacts_nested_closed_user_credentials(monkeypatch):
+    import tools.finance as finance_module
+
+    async def fake_crud_list(*args, **kwargs):
+        return {
+            "success": True,
+            "data": {
+                "cassaclose": [{"id": 8, "closedUser": _UPSTREAM_STAFF}],
+                "totalCount": 1,
+            },
+        }
+
+    monkeypatch.setattr(finance_module, "crud_list", fake_crud_list)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_cassa_closes", {})
+
+    payload = result.structured_content or {}
+    _assert_staff_credentials_redacted(payload["data"]["cassaclose"][0]["closedUser"])

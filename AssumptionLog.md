@@ -11369,6 +11369,17 @@ Checks so far:
   New nested privacy regressions и затронутый набор прошли (`256 passed`);
   полный Docker contour: `1458 passed, 2 skipped, 65 deselected`, exit status
   `0`, `188.64s`.
+- Спецификационный audit staff credentials: top-level полями они объявлены
+  только в schema `user`; вложенные examples с ними есть ровно в
+  `invoice.doctor`, `hospital.doctor_data` и `cassaclose.closedUser`.
+  Общий output denylist расширен на `passwd`, `login`, `last_change_pwd_date`,
+  `user_inn`, `calc_percents`; вложенные staff сохраняют остальные поля, а
+  `tools/user.py` остаётся отдельным strict allowlist. Passport field в
+  OpenAPI есть только у `client`; банковские реквизиты (`bank_*`, `inn`) —
+  только у `suppliers` (совпадения `partyAccount*` — складские сущности),
+  поэтому дополнительных правок не сделано.
+  Целевой набор регрессий прошёл (`259 passed`); полный Docker-контур:
+  `1461 passed, 2 skipped, 65 deselected`, exit status `0`, `184.61s`.
 - Диагностика Владимира уточнила strong-review failure mode: stdout Claude Code
   был JSON-конвертом, но `.result` пуст при `is_error=false`,
   `stop_reason=tool_use` и преобладании thinking tokens. `tool_use` штатен для
