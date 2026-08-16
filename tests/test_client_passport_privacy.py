@@ -88,12 +88,53 @@ _PREEXISTING_DESCRIPTION_FRAGMENTS = {
     "get_cassa_close_by_id": "Fetch one cash register closing record by ID. Use when the user",
 }
 
+_PRIVACY_CONTRACT_FRAGMENTS = {
+    "get_users": (
+        "response is limited to approved staff identity, role/activity, and contact fields",
+        "credentials, login, tax, and compensation fields are not returned",
+    ),
+    "get_user_by_id": (
+        "response is limited to approved staff identity, role/activity, and contact fields",
+        "credentials, login, tax, and compensation fields are not returned",
+    ),
+    "get_clients": ("client passport series is not returned",),
+    "get_client_by_id": ("client passport series is not returned",),
+    "get_debtors": ("client passport series is not returned",),
+    "get_client_profile": ("client passport series is not returned",),
+    "get_pets": ("returned owner context excludes client passport series",),
+    "get_pet_by_id": ("returned owner context excludes client passport series",),
+    "get_pet_profile": ("returned owner context excludes client passport series",),
+    "get_admissions": ("nested client context excludes client passport series",),
+    "get_admission_by_id": ("nested client context excludes client passport series",),
+    "get_invoices": (
+        "nested client context excludes client passport series",
+        "nested staff context excludes credentials, login, tax, and compensation fields",
+    ),
+    "get_invoice_by_id": (
+        "nested client context excludes client passport series",
+        "nested staff context excludes credentials, login, tax, and compensation fields",
+    ),
+    "get_hospitalizations": (
+        "nested staff context excludes credentials, login, tax, and compensation fields",
+    ),
+    "get_hospitalization_by_id": (
+        "nested staff context excludes credentials, login, tax, and compensation fields",
+    ),
+    "get_cassa_closes": (
+        "nested staff context excludes credentials, login, tax, and compensation fields",
+    ),
+    "get_cassa_close_by_id": (
+        "nested staff context excludes credentials, login, tax, and compensation fields",
+    ),
+}
+
 
 @pytest.mark.asyncio
 async def test_privacy_contract_reaches_live_tool_descriptions() -> None:
     tools_by_name = {tool.name: tool for tool in await mcp.list_tools()}
 
     assert set(_PREEXISTING_DESCRIPTION_FRAGMENTS) == set(PRIVACY_DESCRIPTION_SUFFIXES)
+    assert set(_PRIVACY_CONTRACT_FRAGMENTS) == set(PRIVACY_DESCRIPTION_SUFFIXES)
     generated_descriptions = {
         "get_client_by_id",
         "get_users",
@@ -113,10 +154,11 @@ async def test_privacy_contract_reaches_live_tool_descriptions() -> None:
     for tool_name, previous_fragment in _PREEXISTING_DESCRIPTION_FRAGMENTS.items():
         description = tools_by_name[tool_name].description
         assert previous_fragment in description
-        assert PRIVACY_DESCRIPTION_SUFFIXES[tool_name] in description
+        for privacy_fragment in _PRIVACY_CONTRACT_FRAGMENTS[tool_name]:
+            assert privacy_fragment in description
 
     assert "specific privacy-restricted fields stated in the relevant tool description" in (
-        SPECIAL_TOOL_DESCRIPTIONS["report_problem"]
+        tools_by_name["report_problem"].description
     )
 
 

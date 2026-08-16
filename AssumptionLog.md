@@ -37,6 +37,12 @@
   причину и не повторяет неизменённый intent. Наблюдение пользователя на одном
   контуре подтвердило поле: `INTENT_REJECTED` вернул русское
   `error_message_safe`.
+- Контракты staff различаются по форме ответа: прямые `get_users` и
+  `get_user_by_id` возвращают закрытый утверждённый набор identity,
+  role/activity и contact полей; во вложенном staff context остальных tools
+  сохраняются прочие поля, но исключаются credentials/login/tax/compensation.
+  Live-description regression asserts literal privacy wording, а не только
+  исходную константу суффиксов.
 
 - Free-text sanitizer follows an explicit privacy priority: e-mail and phone
   candidates are found before date preservation; a date is preserved only when
