@@ -173,62 +173,97 @@ def test_sanitize_text_scrubs_only_explicit_patterns():
     assert "Пациент чувствует себя лучше." in sanitized
 
 
-def test_sanitize_text_preserves_report_date_range():
-    text = "Количество приёмов по видам животных за период с 2024-01-01 по 2026-12-31."
-
-    assert sanitize_text(text) == text
-
-
 @pytest.mark.parametrize(
-    "text",
+    ("text", "hidden", "preserved", "placeholders"),
     [
-        "дата: 2024-10-23 17:50:51",
-        "Платёж создан: дата: 2024-10-23 17:50:51; статус проведён.",
-        "Период: 2024-01-01 2026-12-31",
-        "дата: 2024-10-23T17:50:51",
-        "дата: 2024-10-23T17:50:51+03:00",
+        (
+            "Количество приёмов за период с 2024-01-01 по 2026-12-31.",
+            (),
+            ("2024-01-01", "2026-12-31"),
+            (),
+        ),
+        ("дата: 2024-10-23 17:50:51", (), ("2024-10-23 17:50:51",), ()),
+        ("дата: 2024-10-23T17:50:51", (), ("2024-10-23T17:50:51",), ()),
+        (
+            "дата: 2024-10-23T17:50:51+03:00",
+            (),
+            ("2024-10-23T17:50:51+03:00",),
+            (),
+        ),
+        ("дата: 23.10.2024", (), ("23.10.2024",), ()),
+        (
+            "2024-10-23 17:50:51 89991234567",
+            ("89991234567",),
+            ("2024-10-23 17:50:51",),
+            (REDACTED_PHONE,),
+        ),
+        (
+            "2024-10-23-89991234567",
+            ("89991234567",),
+            ("2024-10-23",),
+            (REDACTED_PHONE,),
+        ),
+        (
+            "23.10.2024 +79161234567",
+            ("+79161234567",),
+            ("23.10.2024",),
+            (REDACTED_PHONE,),
+        ),
+        (
+            "дата: 2024-10-23 17:50:51, телефон: +7 (916) 123-45-67",
+            ("+7 (916) 123-45-67",),
+            ("2024-10-23 17:50:51",),
+            (REDACTED_PHONE,),
+        ),
+        (
+            "дата: 2024-10-23 17:50:51, телефон: 8-999-123-45-67",
+            ("8-999-123-45-67",),
+            ("2024-10-23 17:50:51",),
+            (REDACTED_PHONE,),
+        ),
+        (
+            "дата: 2024-10-23 17:50:51, телефон: 8 999 123 45 67",
+            ("8 999 123 45 67",),
+            ("2024-10-23 17:50:51",),
+            (REDACTED_PHONE,),
+        ),
+        (
+            "Телефон 8-4852-45-67-89",
+            ("8-4852-45-67-89",),
+            (),
+            (REDACTED_PHONE,),
+        ),
+        (
+            "Телефон +7 4852 45 67 89",
+            ("+7 4852 45 67 89",),
+            (),
+            (REDACTED_PHONE,),
+        ),
+        (
+            "Почта 79161234567@mail.ru",
+            ("79161234567@mail.ru",),
+            (),
+            (REDACTED_EMAIL,),
+        ),
+        (
+            "дата 2024-10-23, телефон 8-4852-45-67-89, почта 79161234567@mail.ru",
+            ("8-4852-45-67-89", "79161234567@mail.ru"),
+            ("2024-10-23",),
+            (REDACTED_PHONE, REDACTED_EMAIL),
+        ),
     ],
 )
-def test_sanitize_text_preserves_iso_date_time_and_date_ranges(text):
-    assert sanitize_text(text) == text
-
-
-@pytest.mark.parametrize(
-    "phone",
-    [
-        "+7 (916) 123-45-67",
-        "8-999-123-45-67",
-        "8 999 123 45 67",
-        "79161234567",
-    ],
-)
-def test_sanitize_text_still_redacts_phone_formats_near_date(phone):
-    text = f"дата: 2024-10-23 17:50:51, телефон: {phone}"
-
+def test_sanitize_text_prioritizes_pii_over_overlapping_dates(
+    text, hidden, preserved, placeholders
+):
     sanitized = sanitize_text(text)
 
-    assert "2024-10-23 17:50:51" in sanitized
-    assert phone not in sanitized
-    assert REDACTED_PHONE in sanitized
-
-
-@pytest.mark.parametrize(
-    ("date", "separator"),
-    [
-        ("2024-10-23 17:50:51", " "),
-        ("2024-10-23", "-"),
-        ("23.10.2024", " "),
-    ],
-)
-def test_sanitize_text_redacts_phone_immediately_after_date(date, separator):
-    phone = "89991234567"
-    text = f"{date}{separator}{phone}"
-
-    sanitized = sanitize_text(text)
-
-    assert date in sanitized
-    assert phone not in sanitized
-    assert REDACTED_PHONE in sanitized
+    for value in hidden:
+        assert value not in sanitized
+    for value in preserved:
+        assert value in sanitized
+    for placeholder in placeholders:
+        assert placeholder in sanitized
 
 
 def test_sanitize_text_scrubs_uppercase_owner_prefixes():

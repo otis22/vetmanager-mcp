@@ -6,10 +6,12 @@
 
 ## Этап 220: Report AI даты в обезличивании и дисциплина агента
 
-- Free-text phone sanitizer сохраняет ISO/local date-time фрагменты до
-  применения неизменённой phone mask к остальному тексту. Это сохраняет
-  business dates/time, включая диапазоны дат, и не допускает false negative
-  телефона непосредственно после даты. Structured phone key masking не менялся.
+- Free-text sanitizer follows an explicit privacy priority: e-mail and phone
+  candidates are found before date preservation; a date is preserved only when
+  it does not overlap accepted PII. Pure date/date-time candidates are excluded
+  from phone redaction. Therefore an ambiguous date-like fragment inside a
+  phone is redacted: distorted date is cosmetic, exposed PII is a leak.
+  Structured phone key masking не менялся.
 - Shared Report AI helper дополнен только MCP-наблюдаемыми правилами: empty
   result — ответ, direct read check перед повтором, explicit default без
   пользователя, один узкий последовательный job и наблюдаемый (не SLA) порядок
@@ -20,11 +22,16 @@
   Local `.review-evidence/` created by the earlier PRD review was removed by
   user direction; `scripts/run_claude_review.sh` now rejects an evidence path
   inside the repository before it reads a review object or writes a file.
-- Checks after the correction: targeted Docker `86 passed`; canonical
-  `docker compose --profile test run --rm test` passed (`1514 passed, 65
-  deselected`). The documented ShellCheck and Bash-syntax commands passed after
-  changing `scripts/run_claude_review.sh`. Production/SSH and push were not
-  performed; the user keeps external code review and push.
+- Follow-up review correctly found that date protection could split a phone
+  with a four-digit city code and that phone masking could break a phone-like
+  email. Both are fixed by the priority rule; the table-driven corpus includes
+  dates, adjacent phones, city-code phones, phone-like email and their combined
+  line.
+- Checks after the priority correction: table-driven privacy corpus `36 passed`;
+  canonical `docker compose --profile test run --rm test` passed (`1516 passed,
+  65 deselected`). The documented ShellCheck and Bash-syntax commands passed.
+  Production/SSH and push were not performed; the user keeps external code
+  review and push.
 
 ## Этап 219: Наблюдаемость Report AI и агентский workflow
 

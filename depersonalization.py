@@ -86,15 +86,42 @@ def sanitize_text(text: str) -> str:
     """Scrub only explicit PII patterns from whitelist free-text fields."""
     if not text:
         return text
+    date_spans = [match.span() for match in _DATE_OR_DATETIME_RE.finditer(text)]
+    email_spans = [match.span() for match in _EMAIL_RE.finditer(text)]
+    redactions = [(start, end, REDACTED_EMAIL) for start, end in email_spans]
+    phone_spans = [match.span() for match in _PHONE_RE.finditer(text)]
+    position = 0
+    for date_start, date_end in date_spans:
+        phone_spans.extend(
+            (position + match.start(), position + match.end())
+            for match in _PHONE_RE.finditer(text[position:date_start])
+        )
+        position = date_end
+    phone_spans.extend(
+        (position + match.start(), position + match.end())
+        for match in _PHONE_RE.finditer(text[position:])
+    )
+
+    for start, end in phone_spans:
+        if any(start < email_end and end > email_start for email_start, email_end in email_spans):
+            continue
+        if any(date_start <= start < date_end or date_start < end <= date_end for date_start, date_end in date_spans):
+            continue
+        date_free = _DATE_OR_DATETIME_RE.sub("", text[start:end])
+        if not any(char.isdigit() for char in date_free):
+            continue
+        redactions.append((start, end, REDACTED_PHONE))
+
     sanitized_parts: list[str] = []
     position = 0
-    for date_match in _DATE_OR_DATETIME_RE.finditer(text):
-        sanitized_parts.append(_PHONE_RE.sub(REDACTED_PHONE, text[position:date_match.start()]))
-        sanitized_parts.append(date_match.group())
-        position = date_match.end()
-    sanitized_parts.append(_PHONE_RE.sub(REDACTED_PHONE, text[position:]))
+    for start, end, replacement in sorted(redactions):
+        if start < position:
+            continue
+        sanitized_parts.append(text[position:start])
+        sanitized_parts.append(replacement)
+        position = end
+    sanitized_parts.append(text[position:])
     sanitized = "".join(sanitized_parts)
-    sanitized = _EMAIL_RE.sub(REDACTED_EMAIL, sanitized)
     sanitized = _OWNER_PHRASE_RE.sub(lambda _m: f"owner {REDACTED_NAME}", sanitized)
     sanitized = _INITIALS_RE.sub(REDACTED_NAME, sanitized)
     return sanitized

@@ -4014,4 +4014,5 @@ Report AI lifecycle и подготовить конкретные MCP-only ул
 - 220.4 Исправить findings external review: не допустить phone false negative
   после даты, покрыть ISO `T`/timezone, удалить local evidence и запретить
   evidence path в repo; затем пройти проверки, commit без push. — `done`
-  (external review и push по явному указанию пользователя остаются за ним)
+  (priority rule added after the next review found city-code/email leaks;
+  external review и push по явному указанию пользователя остаются за ним)
