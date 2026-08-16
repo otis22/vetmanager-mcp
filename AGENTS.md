@@ -35,6 +35,7 @@
 
 ## Тесты и проверки
 
+- ShellCheck и синтаксис Bash (обязательны перед commit при изменении `scripts/*.sh`): `find scripts/ -name '*.sh' -type f -print0 | xargs -0 shellcheck --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`
 - Unit + mock e2e: `docker compose --profile test run --rm test`
 - Real API e2e (нужны `TEST_DOMAIN`, `TEST_API_KEY`): `docker compose --profile test run --rm -e TEST_DOMAIN=<домен> -e TEST_API_KEY=<ключ> test`
 - В локальной среде real API credentials могут лежать в `.env`; не печатать секреты в ответах. Для Docker Compose `--env-file` ставится перед subcommand: `docker compose --env-file .env --profile test run --rm test python scripts/run_opt_in_real_test_suite.py`.

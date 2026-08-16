@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 usage() {
     cat <<'EOF'
@@ -88,8 +88,14 @@ started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 started_ns=$(date +%s%N)
 attempt_label=${attempt//\//-of-}
 safe_range=$(printf '%s' "$range" | tr '/.' '__' | tr -cd '[:alnum:]_-' | cut -c1-80)
-if [[ ! -d $(dirname "$evidence_dir") ]] && ! mkdir -p -m 700 "$(dirname "$evidence_dir")"; then
-    printf 'Could not create evidence parent directory: %s\n' "$(dirname "$evidence_dir")" >&2
+evidence_parent=$(dirname -- "$evidence_dir")
+if [[ -L $evidence_parent || ( -e $evidence_parent && ! -d $evidence_parent ) ]]; then
+    printf 'Evidence parent path must be a real directory: %s\n' "$evidence_parent" >&2
+    exit 73
+fi
+# mkdir -p -m affects only the leaf; umask makes every new parent private.
+if [[ ! -d $evidence_parent ]] && ! (umask 077; mkdir -p "$evidence_parent"); then
+    printf 'Could not create evidence parent directory: %s\n' "$evidence_parent" >&2
     exit 73
 fi
 if [[ -L $evidence_dir || ( -e $evidence_dir && ! -d $evidence_dir ) ]]; then
@@ -100,7 +106,7 @@ if [[ ! -e $evidence_dir ]] && ! mkdir -m 700 "$evidence_dir"; then
     printf 'Could not create evidence directory: %s\n' "$evidence_dir" >&2
     exit 73
 fi
-if [[ $(stat -c %u "$evidence_dir") != $EUID ]]; then
+if [[ $(stat -c %u "$evidence_dir") != "$EUID" ]]; then
     printf 'Evidence directory is not owned by the current user: %s\n' "$evidence_dir" >&2
     exit 73
 fi

@@ -139,4 +139,5 @@ def test_default_evidence_root_uses_xdg_data_home(tmp_path: Path) -> None:
 
     assert completed.returncode == 0
     assert evidence == tmp_path / "data" / "vetmanager-mcp-review-evidence"
+    assert oct((tmp_path / "data").stat().st_mode & 0o777) == "0o700"
     assert oct(evidence.stat().st_mode & 0o777) == "0o700"
