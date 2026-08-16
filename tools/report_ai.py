@@ -10,7 +10,16 @@ from exceptions import AuthError, VetmanagerError
 from observability_logging import RUNTIME_LOGGER
 from prompts import get_report_ai_prompt_helper_text
 from runtime_auth import get_current_runtime_credentials
-from service_metrics import record_report_ai_long_queued_poll
+from service_metrics import (
+    instrument_call,
+    record_report_ai_export,
+    record_report_ai_export_duration,
+    record_report_ai_job_created,
+    record_report_ai_job_stage_duration,
+    record_report_ai_job_terminal_outcome,
+    record_report_ai_job_transition,
+    record_report_ai_long_queued_poll,
+)
 from vetmanager_client import VetmanagerClient
 
 
@@ -45,6 +54,26 @@ _ReportAiQueueObservationKey = tuple[int | None, int | None, int]
 _REPORT_AI_QUEUE_OBSERVATIONS: OrderedDict[
     _ReportAiQueueObservationKey, dict[str, float]
 ] = OrderedDict()
+_REPORT_AI_LIFECYCLE_OBSERVATIONS: OrderedDict[
+    _ReportAiQueueObservationKey, dict[str, float | str]
+] = OrderedDict()
+_REPORT_AI_EXPORT_OBSERVATIONS: OrderedDict[
+    _ReportAiQueueObservationKey, float
+] = OrderedDict()
+_REPORT_AI_STAGE_BY_STATUS = {
+    "queued": "queued",
+    "recognizing": "recognized",
+    "building_preview": "preview",
+    "ready_to_save": "ready_to_save",
+    "needs_confirmation": "needs_confirmation",
+    "saved": "saved",
+    "existing_report_matched": "existing_report_matched",
+    "failed": "failed",
+    "rejected": "rejected",
+}
+_REPORT_AI_TERMINAL_OUTCOMES = frozenset({
+    "saved", "existing_report_matched", "failed", "rejected",
+})
 
 
 def _monotonic_seconds() -> float:
@@ -53,6 +82,8 @@ def _monotonic_seconds() -> float:
 
 def _reset_report_ai_queue_observations() -> None:
     _REPORT_AI_QUEUE_OBSERVATIONS.clear()
+    _REPORT_AI_LIFECYCLE_OBSERVATIONS.clear()
+    _REPORT_AI_EXPORT_OBSERVATIONS.clear()
 
 
 def _report_ai_queue_observation_count() -> int:
@@ -70,6 +101,50 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
     while len(_REPORT_AI_QUEUE_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
         _REPORT_AI_QUEUE_OBSERVATIONS.popitem(last=False)
 
+    expired_lifecycle_keys = [
+        key
+        for key, observation in _REPORT_AI_LIFECYCLE_OBSERVATIONS.items()
+        if now - float(observation["last_seen"]) > REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS
+    ]
+    for key in expired_lifecycle_keys:
+        observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.pop(key)
+        stage = str(observation["stage"])
+        stage_duration = now - float(observation["stage_started"])
+        record_report_ai_job_stage_duration(stage=stage, duration_seconds=stage_duration)
+        record_report_ai_job_terminal_outcome(
+            outcome="abandoned_wait",
+            duration_seconds=now - float(observation["first_seen"]),
+        )
+
+    while len(_REPORT_AI_LIFECYCLE_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
+        _, observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.popitem(last=False)
+        record_report_ai_job_stage_duration(
+            stage=str(observation["stage"]),
+            duration_seconds=now - float(observation["stage_started"]),
+        )
+        record_report_ai_job_terminal_outcome(
+            outcome="abandoned_wait",
+            duration_seconds=now - float(observation["first_seen"]),
+        )
+
+    expired_export_keys = [
+        key
+        for key, started_at in _REPORT_AI_EXPORT_OBSERVATIONS.items()
+        if now - started_at > REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS
+    ]
+    for key in expired_export_keys:
+        started_at = _REPORT_AI_EXPORT_OBSERVATIONS.pop(key)
+        record_report_ai_export(operation="poll", outcome="abandoned_wait")
+        record_report_ai_export_duration(
+            outcome="abandoned_wait", duration_seconds=now - started_at
+        )
+    while len(_REPORT_AI_EXPORT_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
+        _, started_at = _REPORT_AI_EXPORT_OBSERVATIONS.popitem(last=False)
+        record_report_ai_export(operation="poll", outcome="abandoned_wait")
+        record_report_ai_export_duration(
+            outcome="abandoned_wait", duration_seconds=now - started_at
+        )
+
 
 def _report_ai_queue_observation_key(job: dict) -> _ReportAiQueueObservationKey | None:
     job_id = job.get("id")
@@ -83,6 +158,28 @@ def _report_ai_queue_observation_key(job: dict) -> _ReportAiQueueObservationKey 
         credentials.connection_id if credentials is not None else None,
         normalized_job_id,
     )
+
+
+def _remember_report_ai_export(report_file_id: object) -> None:
+    key = _report_ai_queue_observation_key({"id": report_file_id})
+    if key is None:
+        return
+    now = _monotonic_seconds()
+    _cleanup_report_ai_queue_observations(now)
+    _REPORT_AI_EXPORT_OBSERVATIONS[key] = now
+    _REPORT_AI_EXPORT_OBSERVATIONS.move_to_end(key)
+
+
+def _complete_report_ai_export(report_file_id: object, *, outcome: str) -> None:
+    key = _report_ai_queue_observation_key({"id": report_file_id})
+    record_report_ai_export(operation="poll", outcome=outcome)
+    if key is None:
+        return
+    started_at = _REPORT_AI_EXPORT_OBSERVATIONS.pop(key, None)
+    if started_at is not None:
+        record_report_ai_export_duration(
+            outcome=outcome, duration_seconds=_monotonic_seconds() - started_at
+        )
 
 
 def _observe_report_ai_queue(job: dict, *, now: float | None = None) -> int | None:
@@ -109,6 +206,50 @@ def _observe_report_ai_queue(job: dict, *, now: float | None = None) -> int | No
 
     _cleanup_report_ai_queue_observations(current_time)
     return max(0, int(current_time - observation["first_seen"]))
+
+
+def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None:
+    """Record safe, process-local lifecycle observations for one Report AI job."""
+    observation_key = _report_ai_queue_observation_key(job)
+    if observation_key is None:
+        return
+    current_time = _monotonic_seconds() if now is None else now
+    _cleanup_report_ai_queue_observations(current_time)
+    stage = _REPORT_AI_STAGE_BY_STATUS.get(str(job.get("status") or ""), "unknown")
+    observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.get(observation_key)
+    if observation is None:
+        if stage in _REPORT_AI_TERMINAL_OUTCOMES:
+            record_report_ai_job_stage_duration(stage=stage, duration_seconds=0.0)
+            record_report_ai_job_terminal_outcome(outcome=stage, duration_seconds=0.0)
+            return
+        _REPORT_AI_LIFECYCLE_OBSERVATIONS[observation_key] = {
+            "first_seen": current_time,
+            "last_seen": current_time,
+            "stage": stage,
+            "stage_started": current_time,
+        }
+        return
+
+    previous_stage = str(observation["stage"])
+    observation["last_seen"] = current_time
+    _REPORT_AI_LIFECYCLE_OBSERVATIONS.move_to_end(observation_key)
+    if stage == previous_stage:
+        return
+
+    record_report_ai_job_stage_duration(
+        stage=previous_stage,
+        duration_seconds=current_time - float(observation["stage_started"]),
+    )
+    record_report_ai_job_transition(from_stage=previous_stage, to_stage=stage)
+    if stage in _REPORT_AI_TERMINAL_OUTCOMES:
+        record_report_ai_job_stage_duration(stage=stage, duration_seconds=0.0)
+        record_report_ai_job_terminal_outcome(
+            outcome=stage, duration_seconds=current_time - float(observation["first_seen"])
+        )
+        _REPORT_AI_LIFECYCLE_OBSERVATIONS.pop(observation_key, None)
+        return
+    observation["stage"] = stage
+    observation["stage_started"] = current_time
 
 
 def _queued_age_bucket(age_seconds: int) -> str:
@@ -163,13 +304,13 @@ def _annotate_report_ai_workarounds(payload: dict) -> dict:
     return payload
 
 
-def _annotate_report_ai_queue_diagnostics(payload: dict) -> dict:
+def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | None = None) -> dict:
     data = payload.get("data")
     job = data.get("job") if isinstance(data, dict) else payload.get("job")
     if not isinstance(job, dict):
         return payload
 
-    observed_age_seconds = _observe_report_ai_queue(job)
+    observed_age_seconds = _observe_report_ai_queue(job, now=now)
     if (
         observed_age_seconds is None
         or observed_age_seconds < REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS
@@ -206,7 +347,14 @@ def _annotate_report_ai_queue_diagnostics(payload: dict) -> dict:
 
 
 def _annotate_report_ai_job_payload(payload: dict) -> dict:
-    return _annotate_report_ai_queue_diagnostics(_annotate_report_ai_workarounds(payload))
+    observed_at = _monotonic_seconds()
+    annotated = _annotate_report_ai_queue_diagnostics(
+        _annotate_report_ai_workarounds(payload), now=observed_at
+    )
+    job = _extract_job(annotated)
+    if job:
+        _observe_report_ai_lifecycle(job, now=observed_at)
+    return annotated
 
 
 def _annotate_report_ai_data_payload(payload: dict) -> dict:
@@ -377,25 +525,44 @@ async def _call_vm(
     *,
     json: dict | None = None,
     params: dict | None = None,
+    tool_name: str,
 ) -> dict:
     client = VetmanagerClient()
-    try:
+
+    async def request() -> dict:
         if method == "GET":
             return await client.get(path, params=params)
         if method == "POST":
             return await client.post(path, json=json or {})
+        raise RuntimeError(f"Unsupported Report AI method: {method}")
+
+    try:
+        return await instrument_call(
+            path, method, request, tool_name=tool_name
+        )
     except VetmanagerError as exc:
         raise _tool_error_from_vm(exc) from None
-    raise RuntimeError(f"Unsupported Report AI method: {method}")
 
 
-async def _start_report_export(report_id: int, filter_json: str | None = None) -> dict:
+async def _start_report_export(
+    report_id: int, filter_json: str | None = None, *, tool_name: str
+) -> dict:
     params = _report_filter_params(report_id, filter_json)
     client = VetmanagerClient()
     try:
-        payload = await client.get("/rest/api/report/StartReport", params=params, retry=False)
-        return _ensure_start_report_payload(payload)
+        payload = await instrument_call(
+            "/rest/api/report/StartReport",
+            "GET",
+            lambda: client.get("/rest/api/report/StartReport", params=params, retry=False),
+            tool_name=tool_name,
+        )
+        payload = _ensure_start_report_payload(payload)
+        report_file_id = _extract_report(payload).get("report_file_id")
+        record_report_ai_export(operation="start", outcome="success")
+        _remember_report_ai_export(report_file_id)
+        return payload
     except VetmanagerError as exc:
+        record_report_ai_export(operation="start", outcome="error")
         raise _safe_export_error(exc, "Starting report export") from None
 
 
@@ -424,11 +591,16 @@ def register(mcp: FastMCP) -> None:
                 queued jobs without user consent.
         """
         intent = _validate_intent_text(intent_text)
-        return await _call_vm(
-            "POST",
-            "/rest/api/report-ai-job",
-            json={"intent_text": intent},
-        )
+        try:
+            payload = await _call_vm(
+                "POST", "/rest/api/report-ai-job", json={"intent_text": intent},
+                tool_name="create_report_ai_job",
+            )
+        except ToolError:
+            record_report_ai_job_created(outcome="error")
+            raise
+        record_report_ai_job_created(outcome="success")
+        return _annotate_report_ai_job_payload(payload)
 
     @mcp.tool
     async def get_report_ai_job(job_id: int) -> dict:
@@ -450,7 +622,9 @@ def register(mcp: FastMCP) -> None:
                 that processing is on the Vetmanager side and suggest checking
                 later or simplifying/splitting the report intent.
         """
-        payload = await _call_vm("GET", f"/rest/api/report-ai-job/{job_id}")
+        payload = await _call_vm(
+            "GET", f"/rest/api/report-ai-job/{job_id}", tool_name="get_report_ai_job"
+        )
         return _annotate_report_ai_job_payload(payload)
 
     @mcp.tool
@@ -463,11 +637,12 @@ def register(mcp: FastMCP) -> None:
                 A successful confirmation makes the job existing_report_matched;
                 call get_report_ai_job_data next when rows are needed.
         """
-        return await _call_vm(
+        return _annotate_report_ai_job_payload(await _call_vm(
             "POST",
             f"/rest/api/report-ai-job/{job_id}/confirm",
             json={"report_id": report_id},
-        )
+            tool_name="confirm_report_ai_job_candidate",
+        ))
 
     @mcp.tool
     async def get_report_ai_job_data(job_id: int) -> dict:
@@ -482,7 +657,9 @@ def register(mcp: FastMCP) -> None:
                 approach the cap, prefer narrowing the report or CSV/XLSX export
                 via the returned csv_export_url/report_id for bulk review.
         """
-        payload = await _call_vm("GET", f"/rest/api/report-ai-job/{job_id}/data")
+        payload = await _call_vm(
+            "GET", f"/rest/api/report-ai-job/{job_id}/data", tool_name="get_report_ai_job_data"
+        )
         return _annotate_report_ai_data_payload(payload)
 
     @mcp.tool
@@ -497,11 +674,12 @@ def register(mcp: FastMCP) -> None:
                 'MCP debtors by negative balance 2026-06-15'.
         """
         safe_title = _validate_report_title(title)
-        return await _call_vm(
+        return _annotate_report_ai_job_payload(await _call_vm(
             "POST",
             f"/rest/api/report-ai-job/{job_id}/save",
             json={"title": safe_title},
-        )
+            tool_name="save_report_ai_job_as_report",
+        ))
 
     @mcp.tool
     async def start_report_export(report_id: int, filter_json: str | None = None) -> dict:
@@ -512,7 +690,9 @@ def register(mcp: FastMCP) -> None:
             filter_json: Optional report-specific JSON filter. Omitted when empty;
                 MCP validates JSON syntax only, not report-specific semantics.
         """
-        return await _start_report_export(report_id, filter_json)
+        return await _start_report_export(
+            report_id, filter_json, tool_name="start_report_export"
+        )
 
     @mcp.tool
     async def get_report_export_file(report_file_id: int) -> dict:
@@ -526,9 +706,17 @@ def register(mcp: FastMCP) -> None:
         file_id = _validate_positive_int("report_file_id", report_file_id)
         client = VetmanagerClient()
         try:
-            payload = await client.get("/rest/api/report/reportFile", params={"file_id": file_id})
-            return _ensure_report_file_payload(payload)
+            payload = await instrument_call(
+                "/rest/api/report/reportFile",
+                "GET",
+                lambda: client.get("/rest/api/report/reportFile", params={"file_id": file_id}),
+                tool_name="get_report_export_file",
+            )
+            payload = _ensure_report_file_payload(payload)
+            _complete_report_ai_export(file_id, outcome="success")
+            return payload
         except VetmanagerError as exc:
+            _complete_report_ai_export(file_id, outcome="error")
             raise _safe_export_error(
                 exc, "Getting report export file", retry_on_conflict=True
             ) from None
@@ -545,7 +733,10 @@ def register(mcp: FastMCP) -> None:
                 start_report_export when non-empty.
         """
         safe_job_id = _validate_positive_int("job_id", job_id)
-        job_payload = await _call_vm("GET", f"/rest/api/report-ai-job/{safe_job_id}")
+        job_payload = await _call_vm(
+            "GET", f"/rest/api/report-ai-job/{safe_job_id}",
+            tool_name="get_report_ai_job_export",
+        )
         job = _extract_job(job_payload)
         status = str(job.get("status") or "")
         if status not in {"saved", "existing_report_matched"}:
@@ -556,4 +747,6 @@ def register(mcp: FastMCP) -> None:
         if not report_id:
             raise ToolError("Report AI job does not include report_id for export.")
         safe_report_id = _validate_positive_int("report_id", report_id)
-        return await _start_report_export(safe_report_id, filter_json)
+        return await _start_report_export(
+            safe_report_id, filter_json, tool_name="get_report_ai_job_export"
+        )

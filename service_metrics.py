@@ -48,6 +48,19 @@ _TOKEN_PRESET_ISSUED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _RATE_LIMIT_BACKEND_DEGRADED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _SANITIZER_FAILURES_TOTAL = 0
 _REPORT_AI_LONG_QUEUED_POLLS_TOTAL = 0
+_REPORT_AI_JOBS_TOTAL: DefaultDict[str, int] = defaultdict(int)
+_REPORT_AI_JOB_TRANSITIONS_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
+_REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL: DefaultDict[str, int] = defaultdict(int)
+_REPORT_AI_JOB_STAGE_DURATION_SECONDS: DefaultDict[str, LatencyAggregate] = defaultdict(
+    LatencyAggregate
+)
+_REPORT_AI_JOB_DURATION_SECONDS: DefaultDict[str, LatencyAggregate] = defaultdict(
+    LatencyAggregate
+)
+_REPORT_AI_EXPORTS_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
+_REPORT_AI_EXPORT_DURATION_SECONDS: DefaultDict[str, LatencyAggregate] = defaultdict(
+    LatencyAggregate
+)
 _ACCOUNT_LAST_REQUEST_AGE_HOURS: dict[int, float] = {}
 _ACTIVATION_FUNNEL_STAGES = (
     "registered",
@@ -93,6 +106,13 @@ def reset_service_metrics() -> None:
         _RATE_LIMIT_BACKEND_DEGRADED_TOTAL.clear()
         _SANITIZER_FAILURES_TOTAL = 0
         _REPORT_AI_LONG_QUEUED_POLLS_TOTAL = 0
+        _REPORT_AI_JOBS_TOTAL.clear()
+        _REPORT_AI_JOB_TRANSITIONS_TOTAL.clear()
+        _REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL.clear()
+        _REPORT_AI_JOB_STAGE_DURATION_SECONDS.clear()
+        _REPORT_AI_JOB_DURATION_SECONDS.clear()
+        _REPORT_AI_EXPORTS_TOTAL.clear()
+        _REPORT_AI_EXPORT_DURATION_SECONDS.clear()
         _BUSINESS_EVENTS_TOTAL.clear()
         _ACCOUNT_LAST_REQUEST_AGE_HOURS.clear()
         _ACTIVATION_FUNNEL_ACCOUNTS.clear()
@@ -287,6 +307,43 @@ def record_report_ai_long_queued_poll() -> None:
         _REPORT_AI_LONG_QUEUED_POLLS_TOTAL += 1
 
 
+def record_report_ai_job_created(*, outcome: str) -> None:
+    """Record one Report AI job creation attempt with a bounded outcome."""
+    with _LOCK:
+        _REPORT_AI_JOBS_TOTAL[outcome] += 1
+
+
+def record_report_ai_job_transition(*, from_stage: str, to_stage: str) -> None:
+    """Record one locally observed Report AI lifecycle transition."""
+    with _LOCK:
+        _REPORT_AI_JOB_TRANSITIONS_TOTAL[(from_stage, to_stage)] += 1
+
+
+def record_report_ai_job_terminal_outcome(*, outcome: str, duration_seconds: float) -> None:
+    """Record one terminal locally observed Report AI lifecycle outcome."""
+    with _LOCK:
+        _REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL[outcome] += 1
+        _REPORT_AI_JOB_DURATION_SECONDS[outcome].observe(max(0.0, duration_seconds))
+
+
+def record_report_ai_job_stage_duration(*, stage: str, duration_seconds: float) -> None:
+    """Record one completed locally observed Report AI stage duration."""
+    with _LOCK:
+        _REPORT_AI_JOB_STAGE_DURATION_SECONDS[stage].observe(max(0.0, duration_seconds))
+
+
+def record_report_ai_export(*, operation: str, outcome: str) -> None:
+    """Record one Report AI-related export start or file-poll outcome."""
+    with _LOCK:
+        _REPORT_AI_EXPORTS_TOTAL[(operation, outcome)] += 1
+
+
+def record_report_ai_export_duration(*, outcome: str, duration_seconds: float) -> None:
+    """Record duration from a successful export start to its observed outcome."""
+    with _LOCK:
+        _REPORT_AI_EXPORT_DURATION_SECONDS[outcome].observe(max(0.0, duration_seconds))
+
+
 def set_account_last_request_age_hours(values: dict[int, float]) -> None:
     """Replace account-level activation gauges with the latest DB snapshot."""
     with _LOCK:
@@ -359,6 +416,30 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
             ),
             "sanitizer_failures_total": _SANITIZER_FAILURES_TOTAL,
             "report_ai_long_queued_polls_total": _REPORT_AI_LONG_QUEUED_POLLS_TOTAL,
+            "report_ai_jobs_total": dict(sorted(_REPORT_AI_JOBS_TOTAL.items())),
+            "report_ai_job_transitions_total": {
+                f"{from_stage}|{to_stage}": count
+                for (from_stage, to_stage), count in sorted(_REPORT_AI_JOB_TRANSITIONS_TOTAL.items())
+            },
+            "report_ai_job_terminal_outcomes_total": dict(
+                sorted(_REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL.items())
+            ),
+            "report_ai_job_stage_duration_seconds": {
+                stage: asdict(aggregate)
+                for stage, aggregate in sorted(_REPORT_AI_JOB_STAGE_DURATION_SECONDS.items())
+            },
+            "report_ai_job_duration_seconds": {
+                outcome: asdict(aggregate)
+                for outcome, aggregate in sorted(_REPORT_AI_JOB_DURATION_SECONDS.items())
+            },
+            "report_ai_exports_total": {
+                f"{operation}|{outcome}": count
+                for (operation, outcome), count in sorted(_REPORT_AI_EXPORTS_TOTAL.items())
+            },
+            "report_ai_export_duration_seconds": {
+                outcome: asdict(aggregate)
+                for outcome, aggregate in sorted(_REPORT_AI_EXPORT_DURATION_SECONDS.items())
+            },
             "business_events_total": dict(sorted(_BUSINESS_EVENTS_TOTAL.items())),
             "account_last_request_age_hours": {
                 str(account_id): age_hours
@@ -540,6 +621,75 @@ def render_prometheus_metrics() -> str:
             f"vetmanager_report_ai_long_queued_polls_total {snapshot.get('report_ai_long_queued_polls_total', 0)}",
         ]
     )
+
+    lines.extend([
+        "# HELP vetmanager_report_ai_jobs_total Total Report AI job creation attempts by outcome.",
+        "# TYPE vetmanager_report_ai_jobs_total counter",
+    ])
+    for outcome, count in snapshot.get("report_ai_jobs_total", {}).items():
+        lines.append(f"vetmanager_report_ai_jobs_total{_labels_text(outcome=outcome)} {count}")
+
+    lines.extend([
+        "# HELP vetmanager_report_ai_job_transitions_total Total locally observed Report AI job stage transitions.",
+        "# TYPE vetmanager_report_ai_job_transitions_total counter",
+    ])
+    for key, count in snapshot.get("report_ai_job_transitions_total", {}).items():
+        from_stage, to_stage = key.split("|", 1)
+        lines.append(
+            f"vetmanager_report_ai_job_transitions_total"
+            f"{_labels_text(from_stage=from_stage, to_stage=to_stage)} {count}"
+        )
+
+    lines.extend([
+        "# HELP vetmanager_report_ai_job_terminal_outcomes_total Total locally observed Report AI terminal outcomes.",
+        "# TYPE vetmanager_report_ai_job_terminal_outcomes_total counter",
+    ])
+    for outcome, count in snapshot.get("report_ai_job_terminal_outcomes_total", {}).items():
+        lines.append(
+            f"vetmanager_report_ai_job_terminal_outcomes_total"
+            f"{_labels_text(outcome=outcome)} {count}"
+        )
+
+    for metric_name, snapshot_name, label_name, help_text in (
+        (
+            "vetmanager_report_ai_job_stage_duration_seconds",
+            "report_ai_job_stage_duration_seconds",
+            "stage",
+            "Completed locally observed Report AI stage durations.",
+        ),
+        (
+            "vetmanager_report_ai_job_duration_seconds",
+            "report_ai_job_duration_seconds",
+            "outcome",
+            "Completed locally observed Report AI job durations.",
+        ),
+        (
+            "vetmanager_report_ai_export_duration_seconds",
+            "report_ai_export_duration_seconds",
+            "outcome",
+            "Observed Report AI-related export durations.",
+        ),
+    ):
+        lines.extend([
+            f"# HELP {metric_name} {help_text}",
+            f"# TYPE {metric_name} summary",
+        ])
+        for label, value in snapshot.get(snapshot_name, {}).items():
+            labels = _labels_text(**{label_name: label})
+            lines.append(f"{metric_name}_count{labels} {value['count']}")
+            lines.append(f"{metric_name}_sum{labels} {value['sum_seconds']}")
+            lines.append(f"{metric_name}_max{labels} {value['max_seconds']}")
+
+    lines.extend([
+        "# HELP vetmanager_report_ai_exports_total Total Report AI-related export attempts by operation and outcome.",
+        "# TYPE vetmanager_report_ai_exports_total counter",
+    ])
+    for key, count in snapshot.get("report_ai_exports_total", {}).items():
+        operation, outcome = key.split("|", 1)
+        lines.append(
+            f"vetmanager_report_ai_exports_total"
+            f"{_labels_text(operation=operation, outcome=outcome)} {count}"
+        )
 
     # Stage 110.2: business events counter for product dashboard.
     # `_labels_text` escapes backslash + double-quote per Prometheus text

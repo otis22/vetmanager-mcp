@@ -633,6 +633,31 @@ def test_report_ai_queue_observations_are_bounded_and_ttl_evicted():
     )
 
 
+def test_report_ai_lifecycle_metrics_distinguish_transition_failure_and_abandonment():
+    report_ai._reset_report_ai_queue_observations()
+    service_metrics.reset_service_metrics()
+
+    report_ai._observe_report_ai_lifecycle({"id": 901, "status": "queued"}, now=0.0)
+    report_ai._observe_report_ai_lifecycle({"id": 901, "status": "recognizing"}, now=5.0)
+    report_ai._observe_report_ai_lifecycle({"id": 901, "status": "failed"}, now=8.0)
+    report_ai._observe_report_ai_lifecycle({"id": 902, "status": "queued"}, now=0.0)
+    report_ai._cleanup_report_ai_queue_observations(
+        report_ai.REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS + 1.0
+    )
+
+    snapshot = service_metrics.snapshot_service_metrics()
+    assert snapshot["report_ai_job_transitions_total"]["queued|recognized"] == 1
+    assert snapshot["report_ai_job_transitions_total"]["recognized|failed"] == 1
+    assert snapshot["report_ai_job_terminal_outcomes_total"] == {
+        "abandoned_wait": 1,
+        "failed": 1,
+    }
+    assert snapshot["report_ai_job_stage_duration_seconds"]["queued"]["sum_seconds"] == 3606.0
+    rendered = service_metrics.render_prometheus_metrics()
+    assert 'vetmanager_report_ai_job_terminal_outcomes_total{outcome="failed"} 1' in rendered
+    assert 'vetmanager_report_ai_job_terminal_outcomes_total{outcome="abandoned_wait"} 1' in rendered
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_confirm_report_ai_job_candidate_posts_strict_report_id_body():

@@ -57,12 +57,15 @@
 ### Evidence Claude review
 
 Каждую попытку Claude strong review запускать через
-`scripts/run_claude_review.sh --range <range> --attempt <N/3>`. Runner независимо
+`scripts/run_claude_review.sh (--range <range> | --file <review-file>) --attempt <N/3>`.
+Для committed/uncommitted diff использовать `--range`; для PRD, Architecture
+Critique и другого file-object review — `--file`. Runner независимо
 от exit сохраняет вне working copy raw envelope, stderr, prompt, schema и
 metadata в `${XDG_DATA_HOME:-~/.local/share}/vetmanager-mcp-review-evidence`
 (или `--evidence-dir`). В
 `AssumptionLog` указывать путь к `*.envelope.json` и `subtype`, `stop_reason`,
-`output_tokens`, `thinking_tokens`, `len(result)`; запись только «без output»
+`output_tokens`, `thinking_tokens`, `len(result)`; metadata содержит
+`attempt`, тип/цель review, repo, evidence dir и все параметры запуска. Запись только «без output»
 запрещена. Runner валидирует сохранённый envelope и возвращает non-zero при
 invalid verdict.
 

@@ -3985,3 +3985,14 @@ blockers.
 - 218.3 Полные проверки, audit, external review, commit и push. — `stop`
   (два валидных Claude code/diff review нашли и закрыли findings; перед push
   нужен новый clean review по решению пользователя).
+
+## Этап 219. Наблюдаемость Report AI и агентский workflow — `done`
+
+Источник: разбор 39 feedback reports. Цель — измерить полный MCP-наблюдаемый
+Report AI lifecycle и подготовить конкретные MCP-only улучшения поверхности,
+не реализуя предложения до изучения метрик.
+
+- 219.1 PRD, API-only исследование текущей поверхности и review gates. — `done`
+- 219.2 Инструментировать вызовы, lifecycle, terminal outcomes, stage/export duration; не менять существующий long-queued counter. — `done`
+- 219.3 Покрыть mock tests, README metrics contract, проверки и audit. — `done`
+- 219.4 Зафиксировать отдельные MCP-only предложения по feedback без их реализации. — `done`

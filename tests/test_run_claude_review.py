@@ -39,6 +39,7 @@ def _run(
     envelope: str,
     exit_code: int = 0,
     evidence_dir: Path | None = None,
+    review_file: Path | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
@@ -52,10 +53,12 @@ def _run(
     schema.write_text('{"type":"object"}\n')
     _fake_claude(fake_claude, exit_code)
     _fake_git(fake_git)
-    command = [
-        str(SCRIPT), "--repo", str(repo), "--range", "HEAD", "--attempt", "2/3",
-        "--prompt-file", str(prompt), "--schema-file", str(schema),
-    ]
+    command = [str(SCRIPT), "--repo", str(repo), "--attempt", "2/3"]
+    if review_file is None:
+        command.extend(["--range", "HEAD"])
+    else:
+        command.extend(["--file", str(review_file)])
+    command.extend(["--prompt-file", str(prompt), "--schema-file", str(schema)])
     if evidence_dir is not None:
         command.extend(["--evidence-dir", str(evidence)])
     completed = subprocess.run(
@@ -70,7 +73,10 @@ def _run(
             "XDG_DATA_HOME": str(tmp_path / "data"),
         },
     )
-    assert git_args_log.read_text().strip().endswith("show --find-renames --find-copies --format=fuller HEAD")
+    if review_file is None:
+        assert git_args_log.read_text().strip().endswith("show --find-renames --find-copies --format=fuller HEAD")
+    else:
+        assert not git_args_log.exists()
     return completed, evidence
 
 
@@ -87,7 +93,12 @@ def test_review_attempt_saves_complete_success_evidence(tmp_path: Path) -> None:
     assert Path(metadata["schema_file"]).read_text() == '{"type":"object"}\n'
     assert Path(metadata["stderr_file"]).read_text() == "fake stderr"
     assert "attempt-2-of-3" in envelope_path.name
+    assert metadata["attempt"] == "2/3"
+    assert metadata["review_kind"] == "git_range"
+    assert metadata["review_target"] == "HEAD"
     assert metadata["review_range"] == "HEAD"
+    assert metadata["repo"]
+    assert metadata["evidence_dir"] == str(evidence)
     assert metadata["stdin_bytes"] > 0
     assert metadata["stdin_lines"] > 1
     assert metadata["cli_version"] == "fake-claude 1.0"
@@ -99,6 +110,23 @@ def test_review_attempt_saves_complete_success_evidence(tmp_path: Path) -> None:
     assert metadata["output_tokens"] == 274
     assert metadata["thinking_tokens"] == 61
     assert metadata["result_length"] == 15
+
+
+def test_prd_file_review_saves_same_evidence_and_metadata(tmp_path: Path) -> None:
+    prd = tmp_path / "stage.md"
+    prd.write_text("# PRD\n\nContract text.\n")
+    completed, evidence = _run(
+        tmp_path,
+        '{"is_error": false, "result": "{\\"findings\\":[]}"}',
+        review_file=prd,
+    )
+
+    assert completed.returncode == 0
+    metadata = json.loads(next(evidence.rglob("*.metadata.json")).read_text())
+    assert metadata["review_kind"] == "file"
+    assert metadata["review_target"] == str(prd)
+    assert metadata["review_range"] is None
+    assert metadata["attempt"] == "2/3"
 
 
 def test_review_attempt_saves_empty_failed_stdout_and_metadata(tmp_path: Path) -> None:

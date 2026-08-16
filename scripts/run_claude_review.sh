@@ -7,9 +7,11 @@ script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 usage() {
     cat <<'EOF'
-Usage: scripts/run_claude_review.sh --range <git-range> --attempt <N/3> [options]
+Usage: scripts/run_claude_review.sh (--range <git-range> | --file <review-file>) --attempt <N/3> [options]
 
 Options:
+  --range <git-range>    Git revision/range for a diff review.
+  --file <review-file>   File supplied as the object of a non-diff review (for example PRD).
   --prompt-file <path>   Review prompt (default: built-in structured-review prompt).
   --schema-file <path>   JSON schema (default: findings schema).
   --evidence-dir <path>  Evidence root (default: XDG_DATA_HOME or ~/.local/share).
@@ -20,6 +22,7 @@ EOF
 }
 
 range=''
+review_file=''
 attempt=''
 prompt_file=''
 schema_file=''
@@ -32,6 +35,7 @@ timeout_seconds=1200
 while (($#)); do
     case $1 in
         --range) range=${2:?missing value for --range}; shift 2 ;;
+        --file) review_file=${2:?missing value for --file}; shift 2 ;;
         --attempt) attempt=${2:?missing value for --attempt}; shift 2 ;;
         --prompt-file) prompt_file=${2:?missing value for --prompt-file}; shift 2 ;;
         --schema-file) schema_file=${2:?missing value for --schema-file}; shift 2 ;;
@@ -44,14 +48,18 @@ while (($#)); do
     esac
 done
 
-if [[ -z $range || ! $attempt =~ ^[1-3]/3$ ]]; then
-    printf '%s\n' '--range and --attempt N/3 are required; N must be 1, 2, or 3.' >&2
+if [[ ( -z $range && -z $review_file ) || ( -n $range && -n $review_file ) || ! $attempt =~ ^[1-3]/3$ ]]; then
+    printf '%s\n' 'Exactly one of --range or --file and --attempt N/3 are required; N must be 1, 2, or 3.' >&2
     usage >&2
     exit 64
 fi
 
 if [[ ! -d $repo ]]; then
     printf 'Repository is not a directory: %s\n' "$repo" >&2
+    exit 64
+fi
+if [[ -n $review_file && ! -f $review_file ]]; then
+    printf 'Review file is not a readable regular file: %s\n' "$review_file" >&2
     exit 64
 fi
 
@@ -62,7 +70,7 @@ trap cleanup EXIT
 if [[ -z $prompt_file ]]; then
     prompt_file=$tmp_dir/default-prompt.txt
     cat > "$prompt_file" <<'EOF'
-Review only. Do not edit files. Do not run commands. Finish this review within 600 seconds. Review the supplied diff only. Think briefly, then return JSON matching the schema immediately. Findings should include only material correctness/security/regression issues; use an empty findings array if none.
+Review only. Do not edit files. Do not run commands. Finish this review within 600 seconds. Review the supplied material only. Think briefly, then return JSON matching the schema immediately. Findings should include only material correctness/security/regression issues; use an empty findings array if none.
 EOF
 fi
 
@@ -79,15 +87,26 @@ if [[ ! -r $prompt_file || ! -r $schema_file ]]; then
 fi
 
 stdin_file=$tmp_dir/review.stdin
-if ! { cat "$prompt_file"; printf '\n'; git -C "$repo" show --find-renames --find-copies --format=fuller "$range"; } > "$stdin_file"; then
-    printf 'Could not create review stdin for range: %s\n' "$range" >&2
-    exit 65
+if [[ -n $range ]]; then
+    review_kind='git_range'
+    review_target=$range
+    if ! { cat "$prompt_file"; printf '\n'; git -C "$repo" show --find-renames --find-copies --format=fuller "$range"; } > "$stdin_file"; then
+        printf 'Could not create review stdin for range: %s\n' "$range" >&2
+        exit 65
+    fi
+else
+    review_kind='file'
+    review_target=$review_file
+    if ! { cat "$prompt_file"; printf '\n=== REVIEW FILE: %s ===\n' "$review_file"; cat -- "$review_file"; } > "$stdin_file"; then
+        printf 'Could not create review stdin for file: %s\n' "$review_file" >&2
+        exit 65
+    fi
 fi
 
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 started_ns=$(date +%s%N)
 attempt_label=${attempt//\//-of-}
-safe_range=$(printf '%s' "$range" | tr '/.' '__' | tr -cd '[:alnum:]_-' | cut -c1-80)
+safe_target=$(printf '%s' "$review_kind-$review_target" | tr '/.' '__' | tr -cd '[:alnum:]_-' | cut -c1-80)
 evidence_parent=$(dirname -- "$evidence_dir")
 if [[ -e $evidence_parent && ! -d $evidence_parent ]]; then
     printf 'Evidence parent path must be a directory: %s\n' "$evidence_parent" >&2
@@ -116,7 +135,7 @@ if [[ $(stat -c %u "$evidence_dir") != "$EUID" ]]; then
     exit 73
 fi
 chmod 700 "$evidence_dir"
-evidence_path=$(mktemp -d "$evidence_dir/${started_at//[:]/}-${safe_range}-attempt-${attempt_label}.XXXXXX")
+evidence_path=$(mktemp -d "$evidence_dir/${started_at//[:]/}-${safe_target}-attempt-${attempt_label}.XXXXXX")
 prefix="$evidence_path/claude-review-attempt-${attempt_label}"
 envelope_file="$prefix.envelope.json"
 stderr_file="$prefix.stderr.txt"
@@ -156,16 +175,18 @@ stdin_bytes=$(wc -c < "$stdin_file")
 stdin_lines=$(wc -l < "$stdin_file")
 
 python3 - "$metadata_file" "$envelope_file" "$prompt_copy" "$schema_copy" "$stderr_file" \
-    "$started_at" "$duration_ms" "$range" "$stdin_bytes" "$stdin_lines" "$cli_version" \
-    "$cli_exit" "$model" "$timeout_seconds" "$validator_exit" "$verdict_file" "$validator_stderr_file" <<'PY'
+    "$started_at" "$duration_ms" "$review_kind" "$review_target" "$attempt" "$repo" "$evidence_dir" \
+    "$stdin_bytes" "$stdin_lines" "$cli_version" "$cli_exit" "$model" "$timeout_seconds" \
+    "$validator_exit" "$verdict_file" "$validator_stderr_file" <<'PY'
 import json
 import pathlib
 import sys
 
 (
     metadata_path, envelope_path, prompt_path, schema_path, stderr_path,
-    started_at, duration_ms, review_range, stdin_bytes, stdin_lines, cli_version,
-    cli_exit, model, timeout_seconds, validator_exit, verdict_file, validator_stderr_file,
+    started_at, duration_ms, review_kind, review_target, attempt, repo, evidence_dir,
+    stdin_bytes, stdin_lines, cli_version, cli_exit, model, timeout_seconds,
+    validator_exit, verdict_file, validator_stderr_file,
 ) = sys.argv[1:]
 
 raw = pathlib.Path(envelope_path).read_bytes()
@@ -181,7 +202,12 @@ result = envelope.get("result")
 metadata = {
     "started_at": started_at,
     "duration_ms": int(duration_ms),
-    "review_range": review_range,
+    "review_kind": review_kind,
+    "review_target": review_target,
+    "review_range": review_target if review_kind == "git_range" else None,
+    "attempt": attempt,
+    "repo": repo,
+    "evidence_dir": evidence_dir,
     "stdin_bytes": int(stdin_bytes),
     "stdin_lines": int(stdin_lines),
     "cli_version": cli_version,

@@ -56,8 +56,10 @@ Workflow адаптирован из `.cursor/rules/agent-workflow.mdc` с до�
 - Успех strong review: JSON-конверт Claude разобран, `is_error=false`, непустое поле `.result` разбирается по required findings schema. Валидатор вызывать напрямую как исполняемый `scripts/validate_review_result.py`, не через имя интерпретатора; CI проверяет этот вызов. Сбой: конверт не JSON, `is_error=true`, `.result` пусто/не разбирается/не соответствует schema либо provider/model error. `stop_reason` не участвует: при `--json-schema` structured result штатно доставляется tool call. Infrastructure failure не расходует слот, фиксируется отдельной строкой в `AssumptionLog.md` как неуспешная попытка `N/3`; для одного strong review gate допускается максимум три такие попытки всего (от `1/3` до `3/3`), смена prompt/schema счётчик не сбрасывает. После третьей неуспешной попытки gate фиксируется как blocked и push запрещён до пользовательского решения или восстановления провайдера; Spark имеет отдельный лимит и в этот счётчик не входит.
 
 Каждую попытку Claude strong review запускать через
-`scripts/run_claude_review.sh --range <range> --attempt <N/3>`. Runner сохраняет
-вне working copy raw envelope, stderr, prompt, schema, range, stdin bytes/lines,
+`scripts/run_claude_review.sh (--range <range> | --file <review-file>) --attempt <N/3>`.
+`--range` используется для diff, `--file` — для PRD/Architecture Critique.
+Runner сохраняет вне working copy raw envelope, stderr, prompt, schema, attempt,
+тип/цель review, repo, evidence dir, stdin bytes/lines,
 CLI version, start и duration. В `AssumptionLog.md` фиксировать ссылку на
 `*.envelope.json` и `subtype`, `stop_reason`, `output_tokens`,
 `thinking_tokens`, `len(result)` даже при пустом stdout; запись только «без

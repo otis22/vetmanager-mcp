@@ -4,6 +4,45 @@
 
 ---
 
+## Этап 219: Наблюдаемость Report AI и агентский workflow
+
+- Прямой путь `tools/report_ai.py` был вне `instrument_call`, поэтому Report AI
+  отсутствовал в обычных tool-call series. Он теперь использует тот же wrapper
+  с fixed tool names; отдельные lifecycle metrics не несут IDs, intent, rows,
+  URLs, title, domain, raw errors или SQL.
+- Lifecycle duration — process-local monotonic observation, не upstream SLA.
+  `abandoned_wait` означает отсутствие следующего MCP poll до local TTL; это
+  не состояние job и не доказательство намерений агента. Один local observation
+  finalizes один раз, поэтому abandonment и terminal API status не накладываются.
+- Existing `vetmanager_report_ai_long_queued_polls_total` сохранён без смены
+  name/semantics и не дублируется новым lifecycle counter.
+- Spark PRD review дал одну accepted finding: зафиксировать one-time
+  finalization для `abandoned_wait`; PRD исправлен. Claude Opus liveness
+  returned valid `{"findings":[]}`, но два structured PRD-review attempts с
+  concrete inline PRD завершились пустым stdout до verdict; это infrastructure
+  failure, не clean verdict и не расходует valid review slot. Evidence runner
+  не запускался, потому что пользователь запретил создавать файлы вне
+  репозитория.
+- Проверки: targeted Docker `82 passed`; canonical
+  `docker compose --profile test run --rm test` completed successfully
+  (1484 selected tests, 65 deselected). Production/SSH и push не выполнялись.
+
+### Follow-up: evidence для file-based strong review
+
+- `scripts/run_claude_review.sh` ранее принимал только `--range`, поэтому
+  recorded evidence был возможен для diff review, но не для PRD/Architecture
+  Critique. Runner теперь требует ровно один object: `--range` или `--file`;
+  оба пути сохраняют одинаковые envelope, stderr, prompt, schema, metadata и
+  запускают тот же validator.
+- Metadata теперь содержит machine-readable `attempt`, `review_kind`,
+  `review_target`, `repo` и `evidence_dir`; прежние model/timeout, input size,
+  CLI version, duration, envelope fields и validation result сохранены.
+- Прошлые PRD attempts не восстанавливаются. Будущий file-based invalid output
+  оставит полный evidence trail. ShellCheck, Bash syntax и full Docker suite
+  passed after this follow-up; push не выполнялся.
+
+---
+
 ## Этап 1–2: Каркас и MCP-инструменты
 
 > **[УСТАРЕЛО после этапа 22 — bearer-only runtime]**
