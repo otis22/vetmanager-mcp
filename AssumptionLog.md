@@ -28,12 +28,15 @@
   `create_report_ai_job` требует последовательного запуска и прямо включает
   разные отчёты; описание `get_report_ai_job_data` считает пустые строки
   валидным результатом и предлагает direct-read проверку вместо пересоздания.
-- Описания путей сотрудников и клиентов фиксируют публичный privacy-contract:
-  закрытый staff view не возвращает credentials/login/tax/compensation fields,
-  а client/owner contexts не возвращают passport series. `report_problem`
-  прямо исключает поля, удержанные privacy-contract, из дефектов. Для
+- Privacy-contract добавляется суффиксом к исходному описанию tool, не заменяя
+  его routing/filter guidance. Endpoint-level fixtures подтверждают redaction
+  каждого описанного client/owner и staff context; `report_problem` исключает
+  только конкретные privacy-restricted поля из релевантного описания, не
+  подавляя сообщения о других неожиданно отсутствующих данных. Для
   `failed`/`rejected` Report AI агент читает `error_message_safe`, объясняет
-  причину и не повторяет неизменённый intent.
+  причину и не повторяет неизменённый intent. Наблюдение пользователя на одном
+  контуре подтвердило поле: `INTENT_REJECTED` вернул русское
+  `error_message_safe`.
 
 - Free-text sanitizer follows an explicit privacy priority: e-mail and phone
   candidates are found before date preservation; a date is preserved only when

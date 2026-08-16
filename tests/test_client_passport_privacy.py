@@ -13,7 +13,7 @@ import pytest
 from privacy_utils import redact_sensitive_output_fields, redact_tool_error
 from server import mcp
 from tests.runtime_factories import make_runtime_credentials, patch_runtime_credentials
-from tool_descriptions import SPECIAL_TOOL_DESCRIPTIONS
+from tool_descriptions import PRIVACY_DESCRIPTION_SUFFIXES, SPECIAL_TOOL_DESCRIPTIONS
 import tools
 
 
@@ -68,48 +68,56 @@ def _assert_staff_credentials_redacted(user: dict) -> None:
     assert user["custom_invoice_context"] == _UPSTREAM_STAFF["custom_invoice_context"]
 
 
-def test_privacy_contract_reaches_relevant_tool_descriptions() -> None:
-    for tool_name in (
-        "get_clients",
-        "get_client_by_id",
-        "get_debtors",
-        "get_client_profile",
-        "get_pets",
-        "get_pet_by_id",
-        "get_pet_profile",
-        "get_admissions",
-        "get_admission_by_id",
-        "get_invoices",
-        "get_invoice_by_id",
-    ):
-        assert "passport series" in SPECIAL_TOOL_DESCRIPTIONS[tool_name]
-
-    for tool_name in ("get_users", "get_user_by_id"):
-        description = SPECIAL_TOOL_DESCRIPTIONS[tool_name]
-        assert "privacy-restricted staff view" in description
-        assert "login" in description
-
-    for tool_name in (
-        "get_invoices",
-        "get_invoice_by_id",
-        "get_hospitalizations",
-        "get_hospitalization_by_id",
-        "get_cassa_closes",
-        "get_cassa_close_by_id",
-    ):
-        assert "nested staff context excludes" in SPECIAL_TOOL_DESCRIPTIONS[tool_name].lower()
-
-    assert "fields explicitly withheld for privacy" in SPECIAL_TOOL_DESCRIPTIONS["report_problem"]
+_PREEXISTING_DESCRIPTION_FRAGMENTS = {
+    "get_users": "List or fetch staff / user records. Use when the user asks to search, browse",
+    "get_user_by_id": "Fetch one staff / user record by ID. Use when the user already knows",
+    "get_clients": "Use get_client_profile instead for one consolidated owner card",
+    "get_client_by_id": "Fetch one client / owner record by ID. Use when the user already knows",
+    "get_debtors": "negative-balance filtering",
+    "get_client_profile": "recent invoices, recent admissions, and the next scheduled visit",
+    "get_pets": "List or fetch pet / patient records. Use when the user asks to search, browse",
+    "get_pet_by_id": "Fetch one pet / patient record by ID. Use when the user already knows",
+    "get_pet_profile": "recent medical cards, vaccination context",
+    "get_admissions": "List or fetch admission / appointment records. Use when the user asks to search, browse",
+    "get_admission_by_id": "Fetch one admission / appointment record by ID. Use when the user already knows",
+    "get_invoices": "List or fetch invoice / bill records. Use when the user asks to search, browse",
+    "get_invoice_by_id": "Fetch one invoice / bill record by ID. Use when the user already knows",
+    "get_hospitalizations": "List or fetch hospitalization / inpatient records. Use when the user asks to search, browse",
+    "get_hospitalization_by_id": "Fetch one hospitalization / inpatient record by ID. Use when the user already knows",
+    "get_cassa_closes": "List or fetch cash register closing records. Use when the user asks",
+    "get_cassa_close_by_id": "Fetch one cash register closing record by ID. Use when the user",
+}
 
 
 @pytest.mark.asyncio
 async def test_privacy_contract_reaches_live_tool_descriptions() -> None:
     tools_by_name = {tool.name: tool for tool in await mcp.list_tools()}
 
-    assert "privacy-restricted staff view" in tools_by_name["get_users"].description
-    assert "passport series" in tools_by_name["get_admissions"].description
-    assert "nested staff context excludes" in tools_by_name["get_invoices"].description.lower()
-    assert "fields explicitly withheld for privacy" in tools_by_name["report_problem"].description
+    assert set(_PREEXISTING_DESCRIPTION_FRAGMENTS) == set(PRIVACY_DESCRIPTION_SUFFIXES)
+    generated_descriptions = {
+        "get_client_by_id",
+        "get_users",
+        "get_user_by_id",
+        "get_pets",
+        "get_pet_by_id",
+        "get_admissions",
+        "get_admission_by_id",
+        "get_invoices",
+        "get_invoice_by_id",
+        "get_hospitalizations",
+        "get_hospitalization_by_id",
+        "get_cassa_closes",
+        "get_cassa_close_by_id",
+    }
+    assert not generated_descriptions.intersection(SPECIAL_TOOL_DESCRIPTIONS)
+    for tool_name, previous_fragment in _PREEXISTING_DESCRIPTION_FRAGMENTS.items():
+        description = tools_by_name[tool_name].description
+        assert previous_fragment in description
+        assert PRIVACY_DESCRIPTION_SUFFIXES[tool_name] in description
+
+    assert "specific privacy-restricted fields stated in the relevant tool description" in (
+        SPECIAL_TOOL_DESCRIPTIONS["report_problem"]
+    )
 
 
 def test_redaction_scopes_generic_staff_fields_to_confirmed_containers() -> None:
@@ -293,6 +301,27 @@ async def test_get_debtors_redacts_passport_series(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_client_profile_redacts_passport_series(monkeypatch):
+    import tools.client as client_module
+
+    async def fake_fetch_client_profile(*args, **kwargs):
+        return {"client": _UPSTREAM_CLIENT, "invoices": [], "admissions": []}
+
+    async def fake_instrument_call(*args, **kwargs):
+        return await args[2]()
+
+    monkeypatch.setattr(client_module, "_fetch_client_profile", fake_fetch_client_profile)
+    monkeypatch.setattr(client_module, "_instrument_call", fake_instrument_call)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_client_profile", {"client_id": 42})
+
+    payload = result.structured_content or {}
+    _assert_passport_redacted(payload["client"])
+
+
+@pytest.mark.asyncio
 async def test_get_pet_profile_redacts_owner_passport_series(monkeypatch):
     import tools.pet as pet_module
 
@@ -334,6 +363,23 @@ async def test_get_pets_redacts_nested_owner_passport_series(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_pet_by_id_redacts_nested_owner_passport_series(monkeypatch):
+    import tools.pet as pet_module
+
+    async def fake_crud_get_by_id(*args, **kwargs):
+        return {"success": True, "data": {"id": 3, "owner": _UPSTREAM_CLIENT}}
+
+    monkeypatch.setattr(pet_module, "crud_get_by_id", fake_crud_get_by_id)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_pet_by_id", {"pet_id": 3})
+
+    payload = result.structured_content or {}
+    _assert_passport_redacted(payload["data"]["owner"])
+
+
+@pytest.mark.asyncio
 async def test_get_admissions_redacts_nested_client_passport_series(monkeypatch):
     import tools.admission as admission_module
 
@@ -354,6 +400,23 @@ async def test_get_admissions_redacts_nested_client_passport_series(monkeypatch)
 
     payload = result.structured_content or {}
     _assert_passport_redacted(payload["data"]["admission"][0]["client"])
+
+
+@pytest.mark.asyncio
+async def test_get_admission_by_id_redacts_nested_client_passport_series(monkeypatch):
+    import tools.admission as admission_module
+
+    async def fake_crud_get_by_id(*args, **kwargs):
+        return {"success": True, "data": {"id": 4, "client": _UPSTREAM_CLIENT}}
+
+    monkeypatch.setattr(admission_module, "crud_get_by_id", fake_crud_get_by_id)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_admission_by_id", {"admission_id": 4})
+
+    payload = result.structured_content or {}
+    _assert_passport_redacted(payload["data"]["client"])
 
 
 @pytest.mark.asyncio
@@ -397,6 +460,27 @@ async def test_get_invoices_redacts_nested_doctor_credentials(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_invoice_by_id_redacts_nested_client_and_staff(monkeypatch):
+    import tools.invoice as invoice_module
+
+    async def fake_crud_get_by_id(*args, **kwargs):
+        return {
+            "success": True,
+            "data": {"id": 5, "client": _UPSTREAM_CLIENT, "doctor": _UPSTREAM_STAFF},
+        }
+
+    monkeypatch.setattr(invoice_module, "crud_get_by_id", fake_crud_get_by_id)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_invoice_by_id", {"invoice_id": 5})
+
+    payload = result.structured_content or {}
+    _assert_passport_redacted(payload["data"]["client"])
+    _assert_staff_credentials_redacted(payload["data"]["doctor"])
+
+
+@pytest.mark.asyncio
 async def test_get_hospitalizations_redacts_nested_doctor_credentials(monkeypatch):
     import tools.clinical as clinical_module
 
@@ -420,6 +504,23 @@ async def test_get_hospitalizations_redacts_nested_doctor_credentials(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_get_hospitalization_by_id_redacts_nested_doctor_credentials(monkeypatch):
+    import tools.clinical as clinical_module
+
+    async def fake_crud_get_by_id(*args, **kwargs):
+        return {"success": True, "data": {"id": 6, "doctor_data": _UPSTREAM_STAFF}}
+
+    monkeypatch.setattr(clinical_module, "crud_get_by_id", fake_crud_get_by_id)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_hospitalization_by_id", {"hospital_id": 6})
+
+    payload = result.structured_content or {}
+    _assert_staff_credentials_redacted(payload["data"]["doctor_data"])
+
+
+@pytest.mark.asyncio
 async def test_get_cassa_closes_redacts_nested_closed_user_credentials(monkeypatch):
     import tools.finance as finance_module
 
@@ -440,3 +541,20 @@ async def test_get_cassa_closes_redacts_nested_closed_user_credentials(monkeypat
 
     payload = result.structured_content or {}
     _assert_staff_credentials_redacted(payload["data"]["cassaclose"][0]["closedUser"])
+
+
+@pytest.mark.asyncio
+async def test_get_cassa_close_by_id_redacts_nested_closed_user_credentials(monkeypatch):
+    import tools.finance as finance_module
+
+    async def fake_crud_get_by_id(*args, **kwargs):
+        return {"success": True, "data": {"id": 8, "closedUser": _UPSTREAM_STAFF}}
+
+    monkeypatch.setattr(finance_module, "crud_get_by_id", fake_crud_get_by_id)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_cassa_close_by_id", {"close_id": 8})
+
+    payload = result.structured_content or {}
+    _assert_staff_credentials_redacted(payload["data"]["closedUser"])

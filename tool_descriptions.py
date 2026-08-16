@@ -606,8 +606,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "was necessary because no direct tool or parameter exists; successful response "
         "is suspicious, inconsistent, or not enough to answer. Do not call report_problem "
         "for legitimately empty results, expected pagination endings, correct rejections "
-        "of invalid user input, normal multi-step composition, or fields explicitly "
-        "withheld for privacy. Do not paste raw tool "
+        "of invalid user input, normal multi-step composition, or the specific privacy-"
+        "restricted fields stated in the relevant tool description. Do not paste raw tool "
         "response bodies, raw record IDs, user's verbatim message, or full error payloads. "
         "Do not include secrets, raw clinic payloads, client names, patient names, phones, "
         "or addresses. Describe the shape of the problem, not the data. Use placeholders "
@@ -625,15 +625,13 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_debtors": (
         "Find one stable paginated page of ACTIVE debtors using server-side "
         "negative-balance filtering. Use limit/offset for more pages and "
-        "last_visit_date_from/to to narrow large debtor lists. Client passport "
-        "series is never returned for privacy. Domain synonyms: "
+        "last_visit_date_from/to to narrow large debtor lists. Domain synonyms: "
         "клиент, владелец, хозяин, контакт, клиентская база, client."
     ),
     "get_client_profile": (
         "Build a full client / owner profile in one call: client data, recent "
         "invoices, recent admissions, and the next scheduled visit. Use when the "
-        "user asks for a full owner card or consolidated client context. Client "
-        "passport series is never returned for privacy. Domain "
+        "user asks for a full owner card or consolidated client context. Domain "
         "synonyms: клиент, владелец, хозяин, хозяин питомца, контакт, "
         "клиентская база, client."
     ),
@@ -642,34 +640,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "filters, and paginated client lists. Use get_client_profile instead for "
         "one consolidated owner card with invoices/admissions, get_debtors for "
         "negative-balance debtor lists, and get_inactive_clients for reactivation "
-        "segments. Client passport series is never returned for privacy. Domain "
-        "synonyms: клиент, владелец, хозяин, контакт, "
+        "segments. Domain synonyms: клиент, владелец, хозяин, контакт, "
         "клиентская база, client."
-    ),
-    "get_client_by_id": (
-        "Fetch one client / owner by ID. Client passport series is never returned "
-        "for privacy. Domain synonyms: клиент, владелец, хозяин, контакт, "
-        "клиентская база, client."
-    ),
-    "get_users": (
-        "List clinic users / staff. Returns a privacy-restricted staff view: "
-        "credentials, login, tax, and compensation fields are never returned. "
-        "Domain synonyms: сотрудник, ветеринар, врач, персонал, user, staff."
-    ),
-    "get_user_by_id": (
-        "Fetch one clinic user / staff member by ID. Returns a privacy-restricted "
-        "staff view: credentials, login, tax, and compensation fields are never "
-        "returned. Domain synonyms: сотрудник, ветеринар, врач, персонал, user, staff."
-    ),
-    "get_pets": (
-        "List or search pets / patients. Any returned owner context excludes the "
-        "client passport series for privacy. Domain synonyms: питомец, пациент, "
-        "животное, pet, animal."
-    ),
-    "get_pet_by_id": (
-        "Fetch one pet / patient by ID. Any returned owner context excludes the "
-        "client passport series for privacy. Domain synonyms: питомец, пациент, "
-        "животное, pet, animal."
     ),
     "create_client": (
         "Create a new client / owner record only after checking whether the owner "
@@ -690,49 +662,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "when permitted, recent medical cards, vaccination context, and recent "
         "invoices with goods/services line items when finance access is permitted. "
         "Use when the user asks for a full patient card, medical profile, or "
-        "consolidated pet history. Owner context excludes the client passport "
-        "series for privacy. Domain synonyms: питомец, пациент, животное, "
+        "consolidated pet history. Domain synonyms: питомец, пациент, животное, "
         "кот, собака, пациент клиники, медицинский профиль, pet, animal."
-    ),
-    "get_admissions": (
-        "List or search clinic admissions / visits. Nested client context excludes "
-        "the client passport series for privacy. Domain synonyms: приём, визит, "
-        "запись, запись на приём, appointment."
-    ),
-    "get_admission_by_id": (
-        "Fetch one clinic admission / visit by ID. Nested client context excludes "
-        "the client passport series for privacy. Domain synonyms: приём, визит, "
-        "запись, запись на приём, appointment."
-    ),
-    "get_invoices": (
-        "List or search invoices. Nested client context excludes the client passport "
-        "series, and nested staff context excludes credentials, login, tax, and "
-        "compensation fields, for privacy. Domain synonyms: счёт, invoice, bill."
-    ),
-    "get_invoice_by_id": (
-        "Fetch one invoice by ID. Nested client context excludes the client passport "
-        "series, and nested staff context excludes credentials, login, tax, and "
-        "compensation fields, for privacy. Domain synonyms: счёт, invoice, bill."
-    ),
-    "get_hospitalizations": (
-        "List or search hospitalizations. Nested staff context excludes credentials, "
-        "login, tax, and compensation fields for privacy. Domain synonyms: "
-        "госпитализация, стационар, hospitalization."
-    ),
-    "get_hospitalization_by_id": (
-        "Fetch one hospitalization by ID. Nested staff context excludes credentials, "
-        "login, tax, and compensation fields for privacy. Domain synonyms: "
-        "госпитализация, стационар, hospitalization."
-    ),
-    "get_cassa_closes": (
-        "List or search cash-register closing records. Nested staff context excludes "
-        "credentials, login, tax, and compensation fields for privacy. Domain "
-        "synonyms: закрытие кассы, кассовая смена, cassa close."
-    ),
-    "get_cassa_close_by_id": (
-        "Fetch one cash-register closing record by ID. Nested staff context excludes "
-        "credentials, login, tax, and compensation fields for privacy. Domain "
-        "synonyms: закрытие кассы, кассовая смена, cassa close."
     ),
     "create_pet": (
         "Register a new pet / patient only after resolving owner_id with "
@@ -1040,6 +971,53 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
 }
 
 
+PRIVACY_DESCRIPTION_SUFFIXES: dict[str, str] = {
+    "get_users": (
+        "Privacy contract: the response is limited to approved staff identity, "
+        "role/activity, and contact fields; credentials, login, tax, and "
+        "compensation fields are not returned."
+    ),
+    "get_user_by_id": (
+        "Privacy contract: the response is limited to approved staff identity, "
+        "role/activity, and contact fields; credentials, login, tax, and "
+        "compensation fields are not returned."
+    ),
+    "get_clients": "Privacy contract: client passport series is not returned.",
+    "get_client_by_id": "Privacy contract: client passport series is not returned.",
+    "get_debtors": "Privacy contract: client passport series is not returned.",
+    "get_client_profile": "Privacy contract: client passport series is not returned.",
+    "get_pets": "Privacy contract: returned owner context excludes client passport series.",
+    "get_pet_by_id": "Privacy contract: returned owner context excludes client passport series.",
+    "get_pet_profile": "Privacy contract: returned owner context excludes client passport series.",
+    "get_admissions": "Privacy contract: nested client context excludes client passport series.",
+    "get_admission_by_id": "Privacy contract: nested client context excludes client passport series.",
+    "get_invoices": (
+        "Privacy contract: nested client context excludes client passport series; "
+        "nested staff context excludes credentials, login, tax, and compensation fields."
+    ),
+    "get_invoice_by_id": (
+        "Privacy contract: nested client context excludes client passport series; "
+        "nested staff context excludes credentials, login, tax, and compensation fields."
+    ),
+    "get_hospitalizations": (
+        "Privacy contract: nested staff context excludes credentials, login, tax, "
+        "and compensation fields."
+    ),
+    "get_hospitalization_by_id": (
+        "Privacy contract: nested staff context excludes credentials, login, tax, "
+        "and compensation fields."
+    ),
+    "get_cassa_closes": (
+        "Privacy contract: nested staff context excludes credentials, login, tax, "
+        "and compensation fields."
+    ),
+    "get_cassa_close_by_id": (
+        "Privacy contract: nested staff context excludes credentials, login, tax, "
+        "and compensation fields."
+    ),
+}
+
+
 def _domain_synonyms(entity_key: str) -> str:
     synonyms = ENTITY_METADATA[entity_key]["synonyms"]
     return ", ".join(str(item) for item in synonyms)
@@ -1103,6 +1081,9 @@ def enhance_tool_descriptions(mcp: FastMCP) -> None:
         description = SPECIAL_TOOL_DESCRIPTIONS.get(component.name)
         if description is None:
             description = _build_generic_description(component.name)
+        privacy_suffix = PRIVACY_DESCRIPTION_SUFFIXES.get(component.name)
+        if description and privacy_suffix:
+            description = f"{description} {privacy_suffix}"
         if not description:
             continue
 

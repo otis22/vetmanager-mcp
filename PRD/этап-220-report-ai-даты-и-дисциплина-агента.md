@@ -29,6 +29,10 @@
   реальных строк проверить состав и типы колонок, группировку и соответствие
   ожидаемой структуре; его значения не являются данными клиники и не должны
   пересказываться пользователю.
+- Наблюдение пользователя на одном контуре: terminal job с
+  `status="failed"` и `error_code="INTENT_REJECTED"` вернул русское
+  объяснение в `error_message_safe`. Это подтверждённое безопасное поле
+  контракта для объяснения причины отказа перед изменением intent.
 
 ## Scope
 
@@ -49,6 +53,10 @@
   строк.
 - Дополнить `get_report_ai_job` general rule для `failed`/`rejected`: читать
   безопасное объяснение и не пересоздавать неизменённый intent.
+- Дополнять, а не заменять, исходные описания tools проверяемыми privacy
+  контрактами; покрыть каждый описанный путь поведенческой фикстурой
+  redaction. В `report_problem` исключать только конкретные поля, прямо
+  обозначенные в описании соответствующего tool.
 - Оценить в этом PRD, но не реализовывать, возможную MCP-защиту от
   параллельного создания незавершённых Report AI jobs одним арендатором.
 - Добавить focused regression tests.
@@ -212,6 +220,9 @@ privacy-regex regression и static advisory text.
    и их regression assertions. ≤150 LOC.
 7. 220.7: отразить в описаниях итоговый privacy-contract и безопасную
    обработку отказа Report AI. ≤150 LOC.
+8. 220.8: после review сохранить исходный routing guidance descriptions,
+   добавить privacy только суффиксом и доказать заявленные пути redaction
+   endpoint-level tests. ≤150 LOC.
 
 ## Acceptance criteria
 
@@ -250,6 +261,10 @@ privacy-regex regression и static advisory text.
     валидным результатом и запрещает пересоздавать job до direct-read проверки.
 4d. `get_report_ai_job` для `failed`/`rejected` требует прочесть
     `error_message_safe`, объяснить причину и изменить intent до новой попытки.
+4e. Каждый tool с privacy-contract сохраняет исходное описание и добавляет
+    только контрактный суффикс; endpoint-level tests доказывают redaction
+    каждого заявленного client/owner или staff context. `report_problem` не
+    подавляет сообщения о прочих неожиданно отсутствующих данных.
 5. Tool и MCP prompt helper остаются идентичными.
 6. Focused и полный Docker suite, ShellCheck и Bash syntax проходят.
 7. `run_claude_review.sh` возвращает отказ до вызова `git`/reviewer, если

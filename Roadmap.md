@@ -4022,3 +4022,6 @@ Report AI lifecycle и подготовить конкретные MCP-only ул
 - 220.7 Сверить описания с privacy-contract и добавить правило для отказа
   Report AI. — `done` (проверки и commit выполнены локально; ревью и push
   остаются за пользователем)
+- 220.8 После review сохранить прежний routing guidance в описаниях и
+  подтвердить privacy-contract endpoint-level regression fixtures. — `done`
+  (проверки и commit выполнены локально; ревью и push остаются за пользователем)
