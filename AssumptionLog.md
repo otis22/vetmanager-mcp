@@ -11272,8 +11272,8 @@ Checks so far:
 
 ## Этап 215. Privacy-safe выдача сотрудников
 
-- Для feedback report `#39` backend source of truth подтверждён пользователем:
-  `rest/protected/models/User.php::attributeLabels`. Closed allowlist: `id`,
+- Для feedback report `#39` пользователь подтвердил контракт полей записи
+  пользователя в ответе API. Closed allowlist: `id`,
   ФИО, `nickname`, `position_id`, `role_id`, `is_active`, `email`, `phone`,
   `cell_phone`; `calc_percents` исключён как данные о вознаграждении.
 - PRD strong-review был заблокирован тремя пустыми ответами внутри Codex
@@ -11303,7 +11303,7 @@ Checks so far:
   исторического IP; остающееся historical решение о deploy defaults не
   переопределялось этим этапом.
 - Финальный range-review передал два принятых finding'а. По подтверждённому
-  `ERestController::outputHelper` contract у list `data` есть только
+  контракту API у list `data` есть только
   `totalCount` и `user`; угаданные pagination keys удалены. Аномальный успешный
   list-конверт без `user` остаётся fail-closed, но записывает
   `user_projection_unexpected_data_shape` через `RUNTIME_LOGGER`, не
@@ -11328,8 +11328,8 @@ Checks so far:
   нужны агентам. `get_suppliers` намеренно не меняется: ИНН и банковские
   реквизиты требуются сценариям Владимира.
 - Владимир также выбрал пропускать неизвестную форму user `data` как есть с
-  runtime warning. Принятый риск: при одновременном нарушении `outputHelper`
-  contract и переименовании всех user fields запись может раскрыться целиком;
+  runtime warning. Принятый риск: при одновременном нарушении контракта API
+  конверта и переименовании всех user fields запись может раскрыться целиком;
   это реже, чем регулярная потеря диагностических/error payload при fail-closed
   обработке. Контрактные `data.user`/`data.users` и известные прямые user
   responses по-прежнему проходят безусловный allowlist.
@@ -11347,7 +11347,7 @@ Checks so far:
   65 deselected` за `230.85s`.
 - Повторный review подтвердил functional regression: `crud_get_by_id` и
   `crud_update` сохраняют single-record envelope `data = {totalCount, user}`
-  от `ERestController::outputHelper`, а не разворачивают user record. Прямая
+  по контракту API, а не разворачивают user record. Прямая
   ветка projection теперь сначала распознаёт контрактный ключ и использует
   общую projection логику; bare record оставлен только как legacy fallback.
   Privacy-фикстуры и mock CRUD/filter tests приведены к тому же контракту.
@@ -11428,11 +11428,11 @@ Checks so far:
   счета; clinics — контакты/`ip_access`; properties — произвольные settings;
   roles — `super`; timesheets/message reports — графики/кампании.
 - Push не выполнялся; внешний release gate ожидает решения Владимира.
-- Lesson learned этапа 217: OpenAPI — лишь указатель, но в этой задаче
-  расхождений с backend models/controllers не найдено, потому что review gate
-  и known-issue matching не используют Vetmanager entity/API contract. Перед
-  будущими изменениями entity fields OpenAPI будет сверяться с backend code и
-  каждое расхождение фиксироваться отдельной записью.
+- Lesson learned этапа 217: OpenAPI — лишь указатель, но review gate и
+  known-issue matching не используют контракт сущностей Vetmanager API.
+  Перед будущими изменениями полей сущностей OpenAPI будет сверяться с
+  фактическими ответами API, а каждое расхождение фиксироваться отдельной
+  контрактной записью.
 - Review envelope validation вынесена из markdown jq в CI-покрытый Python
   script. SQL prefilter по точному `related_tool` был удалён: он отбрасывал
   issue `create_report_ai_job/get_report_ai_job` до exact fingerprint/rules

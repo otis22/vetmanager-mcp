@@ -10,15 +10,15 @@
 - `tools/user.py` вызывает `/rest/api/user` через `crud_list` в обычной и
   name-search ветках, а `/rest/api/user/{ID}` через `crud_get_by_id`; до этапа
   ответы возвращаются без projection.
-- Подтверждённый пользователем backend source of truth —
-  `rest/protected/models/User.php::attributeLabels` Vetmanager. Полная сущность:
+- Подтверждённый пользователем контракт ответа API для записи пользователя
+  включает поля:
   `id`, `last_name`, `first_name`, `middle_name`, `login`, `passwd`,
   `position_id`, `email`, `phone`, `cell_phone`, `address`, `role_id`,
   `is_active`, `calc_percents`, `nickname`, `last_change_pwd_date`, `user_inn`.
-  Он приоритетнее OpenAPI/reference, где также упоминаются непроверенные для
-  backend-модели computed-поля.
-- `ERestController::outputHelper` Vetmanager (проверен пользователем, line 497)
-  задаёт точный конверт для list и single-record ответов:
+  Список зафиксирован как API-контракт для projection; дополнительные поля из
+  OpenAPI/reference не считаются подтверждёнными без отдельной проверки.
+- Подтверждённый контракт успешных list и single-record ответов API задаёт
+  конверт:
   `data = {totalCount, user}`. `crud_list`, `crud_get_by_id` и `crud_update`
   не разворачивают его; сами metadata не добавляют.
 
@@ -104,8 +104,8 @@ denylist: поле, добавленное Vetmanager позднее, не по�
 ### Принятый риск: неизвестная форма `data`
 
 Владимир выбрал пропускать неузнанный `data` без изменений, сохраняя warning в
-runtime log. Цена решения: если upstream одновременно нарушит подтверждённый
-`outputHelper` contract, переименует ключ `user` и все поля user record, такая
+runtime log. Цена решения: если API одновременно нарушит подтверждённый
+контракт конверта, переименует ключ `user` и все поля user record, такая
 запись может выйти целиком, включая `passwd`. Это редкое нарушение контракта.
 Альтернатива — выпотрошить диагностические и error responses — регулярно
 лишает агентов причины сбоя и мешает рабочим сценариям. Поэтому диагностическая

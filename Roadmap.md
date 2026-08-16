@@ -3932,7 +3932,7 @@ blockers.
 
 - 215.1 PRD, сверка схемы `user`, privacy projection и regression design. — `done`
   (после внешней причины блокировки пользователь явно разрешил локальную
-  реализацию без push; source of truth дополнен backend-моделью Vetmanager)
+  реализацию без push; контракт полей ответа API уточнён пользователем)
 - 215.2 Проецировать все read-ответы `tools/user.py` на allowlist аналитических
   полей. — `done`
 - 215.3 Добавить регрессии обеих read-ручек, аудит соседних `crud_list`
@@ -3947,7 +3947,7 @@ blockers.
 - 215.6 Endpoint-аудит client/user output: закрыть passport_series в debtors
   и owner pet profile; сохранить error diagnostics прямых user responses. — `done`
 - 215.7 Исправить projection одиночного user response под подтверждённый
-  `outputHelper` envelope и выровнять contract fixtures. — `done`
+  API envelope и выровнять contract fixtures. — `done`
 - 215.8 Централизовать рекурсивное удаление `passport_series` в output wrapper
   всех MCP-инструментов; убрать локальные дубли и покрыть nested records. — `done`
 - 215.9 Централизовать denylist вложенных учётных полей staff по OpenAPI и
