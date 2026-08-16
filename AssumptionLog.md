@@ -11516,3 +11516,9 @@ Checks so far:
   образ ShellCheck был скачан Docker автоматически. Обычный Docker contour
   завершился `1480 passed, 2 skipped, 65 deselected`; условный real contour,
   запущенный из `.env` с test credentials, завершился Docker exit `0`.
+- **Follow-up внешнего review:** parent evidence directory может быть symlink
+  в пользовательских dotfiles/stow setups, поэтому runner канонизирует parent
+  через `realpath -e`, но по-прежнему отвергает symlink конечного evidence
+  directory. Regression покрывает symlinked parent. Правило о проверке
+  документированных команд оформлено continuation пункта 13 Core Loop, чтобы
+  не разрывать нумерацию шагов 19–21.

@@ -89,8 +89,8 @@ started_ns=$(date +%s%N)
 attempt_label=${attempt//\//-of-}
 safe_range=$(printf '%s' "$range" | tr '/.' '__' | tr -cd '[:alnum:]_-' | cut -c1-80)
 evidence_parent=$(dirname -- "$evidence_dir")
-if [[ -L $evidence_parent || ( -e $evidence_parent && ! -d $evidence_parent ) ]]; then
-    printf 'Evidence parent path must be a real directory: %s\n' "$evidence_parent" >&2
+if [[ -e $evidence_parent && ! -d $evidence_parent ]]; then
+    printf 'Evidence parent path must be a directory: %s\n' "$evidence_parent" >&2
     exit 73
 fi
 # mkdir -p -m affects only the leaf; umask makes every new parent private.
@@ -98,6 +98,11 @@ if [[ ! -d $evidence_parent ]] && ! (umask 077; mkdir -p "$evidence_parent"); th
     printf 'Could not create evidence parent directory: %s\n' "$evidence_parent" >&2
     exit 73
 fi
+if ! evidence_parent=$(realpath -e -- "$evidence_parent"); then
+    printf 'Could not resolve evidence parent directory: %s\n' "$(dirname -- "$evidence_dir")" >&2
+    exit 73
+fi
+evidence_dir=$evidence_parent/$(basename -- "$evidence_dir")
 if [[ -L $evidence_dir || ( -e $evidence_dir && ! -d $evidence_dir ) ]]; then
     printf 'Evidence path must be a real directory: %s\n' "$evidence_dir" >&2
     exit 73

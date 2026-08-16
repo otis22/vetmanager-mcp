@@ -141,3 +141,23 @@ def test_default_evidence_root_uses_xdg_data_home(tmp_path: Path) -> None:
     assert evidence == tmp_path / "data" / "vetmanager-mcp-review-evidence"
     assert oct((tmp_path / "data").stat().st_mode & 0o777) == "0o700"
     assert oct(evidence.stat().st_mode & 0o777) == "0o700"
+
+
+def test_review_attempt_resolves_symlinked_evidence_parent(tmp_path: Path) -> None:
+    real_data = tmp_path / "real-data"
+    real_data.mkdir(mode=0o700)
+    linked_data = tmp_path / "linked-data"
+    linked_data.symlink_to(real_data, target_is_directory=True)
+    evidence = linked_data / "vetmanager-mcp-review-evidence"
+
+    completed, _ = _run(
+        tmp_path,
+        '{"is_error": false, "result": "{\\"findings\\":[]}"}',
+        evidence_dir=evidence,
+    )
+
+    assert completed.returncode == 0
+    resolved_evidence = real_data / "vetmanager-mcp-review-evidence"
+    metadata_path = next(resolved_evidence.rglob("*.metadata.json"))
+    metadata = json.loads(metadata_path.read_text())
+    assert Path(metadata["envelope_file"]).is_relative_to(resolved_evidence)
