@@ -12,14 +12,26 @@ Your task is to convert the user's business question into a clear Russian `inten
 - Report AI jobs are async. After creating a job, poll the job status instead of expecting immediate rows.
 - Наблюдаемый порядок ожидания до `ready_to_save` на одном контуре — от одной до трёх минут, не гарантия. Диагностика queued появляется через 30 секунд,
   но сама по себе не означает поломку: продолжайте ограниченный polling.
-- Не создавайте задания пачкой: запускайте следующий job после завершения
-  предыдущего. Один вопрос — один отчёт: делайте его узким; многочастный вопрос разбивайте
-  на несколько отчётов с явными полями, группировкой и сортировкой.
+- Один вопрос — один отчёт. Создавайте jobs последовательно.
+- Дождитесь завершения предыдущего job, прежде чем создавать следующий. Не запускайте несколько отчётов одновременно.
+- Если нужны несколько разрезов, сначала попробуйте один отчёт с нужной группировкой; если нужны отдельные отчёты, создавайте их по очереди. Наблюдение одного
+  контура: одиночный job доходил до `ready_to_save` за 60–90 секунд, три jobs,
+  созданные подряд, — примерно за 3–3,5 минуты каждый, а при плотной работе —
+  до 4 минут 43 секунд. Это порядок величины, а не гарантия API.
 - `ready_to_save` does not expose report rows. It exposes safe recognized structure and preview summary only.
 - Rows are available only after `saved` or `existing_report_matched`.
 - If rows are needed from `ready_to_save`, use an explicit save step with a meaningful report title.
 - If status is `needs_confirmation`, show the user `job.candidates` and confirm only a `report_id` from that list with `confirm_report_ai_job_candidate`. After confirmation, rows are available through `get_report_ai_job_data` without saving a new report.
-- `recognized.preview_example_row`, when present, is LLM-generated example preview metadata. Do not treat it as a verified live clinic row.
+- `recognized.preview_example_row`, если присутствует, содержит намеренно
+  выдуманные правдоподобные значения, а не данные клиники и не реальную строку.
+  Используйте его только до получения реальных строк, чтобы проверить структуру
+  таблицы: нужные ли колонки, их типы, группировку и соответствие ожидаемому
+  отчёту. Если структура не совпала с ожиданием, переформулируйте `intent_text`
+  до сохранения отчёта, а не получайте строки, чтобы обнаружить несоответствие
+  потом. Никогда не пересказывайте значения preview пользователю: они выглядят
+  настоящими, хотя выдуманы. Например, preview может показать «Собаки — 1250»,
+  а реальные строки — «Кошки — 48»; preview выполнил задачу, если структура
+  таблицы совпала.
 - `intent_text` can be up to 20000 characters. Longer is not better by itself: keep the request structured around period, filters, metrics, grouping, and sorting.
 - A saved report is visible in Vetmanager. Use concise titles that explain the question, period, and MCP origin, for example: `MCP debtors by negative balance 2026-06-15`.
 

@@ -864,7 +864,11 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "the report constructor. The intent is limited to 20000 characters and "
         "jobs must be polled with get_report_ai_job. For complex or "
         "multi-condition reports, prefer narrower periods and simpler grouped "
-        "requests; if a job stays queued, do not create duplicate jobs without "
+        "requests. Create jobs sequentially: wait for the previous job to finish; "
+        "do not run reports in parallel, even different ones, because this noticeably "
+        "slows each job. "
+        "user consent. "
+        "If a job stays queued, do not create duplicate jobs without user consent. "
         "user consent. "
         "Domain synonyms: отчёт, отчет, ИИ отчёт, AI report, конструктор отчётов, "
         "аналитика, report ai."
@@ -891,8 +895,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "before reading rows. Handle needs_confirmation and ready_to_save in the "
         "current workflow: Vetmanager returns no expiry or retry metadata. "
         "Successful confirmation enables data reads without "
-        "saving a new report. recognized.preview_example_row is LLM-generated "
-        "example preview metadata, not a verified live clinic row. It does not expose raw SQL. Domain synonyms: отчёт, "
+        "saving a new report. recognized.preview_example_row contains invented "
+        "example values, not clinic data: use its columns and types only to check "
+        "the expected table structure, and never repeat its values to the user. It does not expose raw SQL. Domain synonyms: отчёт, "
         "отчет, ИИ отчёт, AI report, конструктор отчётов, аналитика, report ai."
     ),
     "confirm_report_ai_job_candidate": (
@@ -912,6 +917,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "pasting huge tables into chat; narrow/refine the report or use CSV/XLSX "
         "export with get_report_ai_job_export when the user needs bulk review and "
         "a report_id is available. "
+        "An empty rows result is valid: do not recreate the job; first verify source "
+        "records for the period with an applicable direct read tool. "
         "Domain synonyms: отчёт, отчет, ИИ отчёт, AI report, "
         "конструктор отчётов, аналитика, report ai."
     ),

@@ -679,8 +679,10 @@ def register(mcp: FastMCP) -> None:
                 report_id values accepted by confirm_report_ai_job_candidate.
                 After successful confirmation the job becomes existing_report_matched,
                 and rows can be read with get_report_ai_job_data without saving a
-                new report. recognized.preview_example_row is LLM-generated example
-                preview metadata, not a verified live clinic row.
+                new report. recognized.preview_example_row contains deliberately
+                invented example values, not clinic data; use its columns and
+                value types only to check the expected table structure, and
+                never repeat its values to the user.
                 If MCP observes the same job queued for 30+ seconds, the safe
                 job payload includes mcp_queue_diagnostics with operator hints.
                 Keep polling bounded. If a complex report remains queued, explain

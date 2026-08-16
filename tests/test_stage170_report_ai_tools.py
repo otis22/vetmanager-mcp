@@ -76,6 +76,10 @@ async def test_report_ai_prompt_helper_registered_and_mentions_data_boundary():
     assert "Пустой результат — это результат" in body
     assert "Один вопрос — один отчёт" in body
     assert "от одной до трёх минут" in body
+    assert "намеренно" in body
+    assert "выдуманные правдоподобные значения" in body
+    assert "Никогда не пересказывайте значения preview пользователю" in body
+    assert "Создавайте jobs последовательно" in body
 
 
 @pytest.mark.asyncio
@@ -102,6 +106,10 @@ async def test_get_report_ai_prompt_helper_tool_matches_prompt_body():
     assert "Пустой результат — это результат" in helper_text
     assert "Источник — оплаченные платежи (полученные деньги)" in helper_text
     assert "30 секунд" in helper_text
+    assert "а не данные клиники" in helper_text
+    assert "проверить структуру" in helper_text
+    assert "таблицы:" in helper_text
+    assert "Не запускайте несколько отчётов одновременно" in helper_text
 
 
 @pytest.mark.asyncio
@@ -141,6 +149,8 @@ def test_report_ai_guidance_descriptions_name_helper_and_fallback_policy():
     assert "complex or multi-condition reports" in create_description
     assert "20000" in create_description
     assert "duplicate jobs" in create_description
+    assert "Create jobs sequentially" in create_description
+    assert "even different ones" in create_description
     assert "ABC" not in create_description
     assert "XYZ" not in create_description
 
@@ -159,6 +169,8 @@ def test_report_ai_guidance_descriptions_name_helper_and_fallback_policy():
     assert "limited=true" in data_description
     assert "10000" in data_description
     assert "csv_export_url" in data_description
+    assert "empty rows result is valid" in data_description
+    assert "do not recreate the job" in data_description
     assert "narrow" in data_description.lower() or "refine" in data_description.lower()
     assert "bulk" in data_description.lower()
 
@@ -194,6 +206,8 @@ async def test_report_ai_guidance_reaches_live_tool_descriptions():
     assert "report_ai_prompt_helper" in create_description
     assert "complex or multi-condition reports" in create_description
     assert "20000" in create_description
+    assert "Create jobs sequentially" in create_description
+    assert "even different ones" in create_description
     assert "ABC" not in create_description
     assert "XYZ" not in create_description
 
@@ -211,6 +225,8 @@ async def test_report_ai_guidance_reaches_live_tool_descriptions():
     assert "limited=true" in data_description
     assert "10000" in data_description
     assert "csv_export_url" in data_description
+    assert "empty rows result is valid" in data_description
+    assert "do not recreate the job" in data_description
 
     assert "supported" in tools_by_name["get_report_ai_job_export"].description.lower()
 
