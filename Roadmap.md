@@ -3952,6 +3952,8 @@ blockers.
   всех MCP-инструментов; убрать локальные дубли и покрыть nested records. — `done`
 - 215.9 Централизовать denylist вложенных учётных полей staff по OpenAPI и
   покрыть invoice/hospital/cassaclose regressions. — `done`
+- 215.10 Уточнить границы глобального privacy wrapper: scoped staff keys,
+  сериализуемые значения и структурные ToolError до augmentation. — `done`
 
 ## Этап 216. Корректная оценка structured output внешнего ревью — `done`
 

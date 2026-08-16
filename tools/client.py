@@ -30,6 +30,8 @@ _PERSONAL_ACCOUNT_LINK_WARNING = (
     "Personal account link is persistent and sensitive; show it only in the "
     "relevant known-phone client context."
 )
+
+
 async def _search_client_phones(search_digits: str) -> list[int]:
     """Phase-1 helper: return client_ids whose clean_phone LIKE search_digits.
 
@@ -374,14 +376,13 @@ def register(mcp: FastMCP) -> None:
                 },
             }
 
-        response = await crud_list(
+        return await crud_list(
             "/rest/api/client",
             limit=limit,
             offset=offset,
             sort=sort,
             filters=combined_filters if combined_filters else None,
         )
-        return response
 
     @mcp.tool
     async def get_debtors(

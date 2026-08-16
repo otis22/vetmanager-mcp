@@ -35,13 +35,20 @@
    `calc_percents`: credential/auth metadata, адрес (не входит в согласованные
    контакты), персональный налоговый идентификатор и данные о вознаграждении.
 4. В общем wrapper регистрации MCP-инструментов рекурсивно удалять
-   `passport_series` и staff auth/compensation fields `passwd`, `login`,
-   `last_change_pwd_date`, `user_inn`, `calc_percents` из каждого результата
-   до выдачи модели. Это покрывает прямые client paths, вложенные
-   `client`/`owner`/staff и инструменты с прямым `VetmanagerClient`, которые
-   обходят `crud_*`; file-local denylist'ы не дублировать. Для вложенных staff
-   намеренно выбран denylist: контекстные поля счёта/госпитализации нужны
-   сценариям, поэтому allowlist прямых user tools здесь применять нельзя.
+   `passport_series`, `passwd` и `last_change_pwd_date` из JSON-like
+   результатов. `login`, `user_inn`, `calc_percents` удалять только из
+   подтверждённых OpenAPI staff-контейнеров `user`, `users`, `doctor`,
+   `doctor_data`, `closedUser`: эти имена могут быть легитимными полями
+   настроек вне staff-record. Обработка охватывает mapping/list/tuple,
+   последовательности и Pydantic `model_dump()` values; структурные аргументы
+   `ToolError` очищаются до feedback augmentation. Произвольный объект без
+   поддерживаемой сериализации и свободный текст ошибки не имеют безопасной
+   структурной проекции и остаются вне этой гарантии. Это покрывает прямые
+   client paths, вложенные `client`/`owner`/staff и инструменты с прямым
+   `VetmanagerClient`, которые обходят `crud_*`; file-local denylist'ы не
+   дублировать. Для вложенных staff намеренно выбран denylist: контекстные поля
+   счёта/госпитализации нужны сценариям, поэтому allowlist прямых user tools
+   здесь применять нельзя.
 5. Сохранить transport envelope целиком независимо от `success` и всегда
    проецировать user records внутри `data`, в том числе во вложенных и error
    payload. Под контрактным ключом `user`/`users` projection безусловна и не
@@ -108,9 +115,10 @@ fail-closed поведение без нового решения Владими
   клиентские поля сохраняются, включая `get_debtors` и owner в
   `get_pet_profile`; это же правило действует для вложенных owner/client в
   результатах любых MCP-инструментов.
-- Вложенные staff objects не содержат `passwd`, `login`,
-  `last_change_pwd_date`, `user_inn`, `calc_percents`; прямые user tools
-  сохраняют свой более строгий analytics allowlist.
+- Вложенные staff objects под подтверждёнными контейнерами не содержат
+  `passwd`, `login`, `last_change_pwd_date`, `user_inn`, `calc_percents`;
+  `login` и прочие generic staff-only keys вне этих контейнеров сохраняются.
+  Прямые user tools сохраняют свой более строгий analytics allowlist.
 - `get_suppliers` сохраняет ИНН и банковские реквизиты по явному решению
   Владимира.
 - Все targeted и полный mock test contours проходят.

@@ -11,30 +11,78 @@ likely subnet without leaking the full client IP.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping, Sequence
 
-_SENSITIVE_OUTPUT_FIELDS = frozenset(
-    {
-        "passport_series",
-        "passwd",
-        "login",
-        "last_change_pwd_date",
-        "user_inn",
-        "calc_percents",
-    }
-)
+from fastmcp.exceptions import ToolError
 
 
-def redact_sensitive_output_fields(value):
-    """Recursively remove confirmed sensitive client and staff output fields."""
-    if isinstance(value, list):
-        return [redact_sensitive_output_fields(item) for item in value]
-    if isinstance(value, dict):
+_GLOBAL_SENSITIVE_OUTPUT_FIELDS = frozenset({
+    "passport_series",
+    "passwd",
+    "last_change_pwd_date",
+})
+_STAFF_SENSITIVE_OUTPUT_FIELDS = frozenset({"login", "user_inn", "calc_percents"})
+_STAFF_CONTAINER_FIELDS = frozenset({"user", "users", "doctor", "doctor_data", "closedUser"})
+
+
+def redact_sensitive_output_fields(value, *, _staff_record: bool = False):
+    """Redact confirmed output fields from JSON-like and Pydantic values.
+
+    ``passport_series``, ``passwd`` and ``last_change_pwd_date`` are globally
+    unambiguous. The generic names ``login``, ``user_inn`` and ``calc_percents``
+    are removed only from staff containers confirmed by the OpenAPI contract.
+    """
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        try:
+            return redact_sensitive_output_fields(
+                model_dump(mode="python"), _staff_record=_staff_record,
+            )
+        except Exception:
+            # Keep an object whose serializer has a non-standard signature or
+            # rejects Python mode; the wrapper must not break its tool result.
+            return value
+    if isinstance(value, Mapping):
         return {
-            key: redact_sensitive_output_fields(item)
+            key: redact_sensitive_output_fields(
+                item, _staff_record=key in _STAFF_CONTAINER_FIELDS,
+            )
             for key, item in value.items()
-            if key not in _SENSITIVE_OUTPUT_FIELDS
+            if key not in _GLOBAL_SENSITIVE_OUTPUT_FIELDS
+            and not (_staff_record and key in _STAFF_SENSITIVE_OUTPUT_FIELDS)
         }
+    if isinstance(value, tuple):
+        return tuple(
+            redact_sensitive_output_fields(item, _staff_record=_staff_record)
+            for item in value
+        )
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [
+            redact_sensitive_output_fields(item, _staff_record=_staff_record)
+            for item in value
+        ]
     return value
+
+
+def redact_tool_error(exc: ToolError) -> ToolError:
+    """Redact structured ToolError arguments before feedback augmentation stringifies them."""
+    redacted_args = tuple(_redact_error_argument(value) for value in exc.args)
+    return ToolError(*redacted_args)
+
+
+def _redact_error_argument(value):
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            return value
+        if not isinstance(decoded, (dict, list)):
+            return value
+        return json.dumps(
+            redact_sensitive_output_fields(decoded), ensure_ascii=False, sort_keys=True,
+        )
+    return redact_sensitive_output_fields(value)
 
 
 def mask_email(email: str | None) -> str:

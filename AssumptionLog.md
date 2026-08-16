@@ -11360,10 +11360,12 @@ Checks so far:
   records. Centralization в `crud_helpers` недостаточна: агрегаторы и часть
   tools используют `VetmanagerClient` напрямую. Поэтому recursive scoped
   denylist применён в общем wrapper регистрации MCP-инструментов к финальному
-  result до выдачи модели; это закрывает все зарегистрированные текущие и
-  будущие tools, независимо от transport path. Локальные вызовы в
-  `tools/client.py` и `tools/pet.py` удалены как дубли. Цена — O(n) обход и
-  копирование JSON-подобного ответа; размер tool result уже ограничен
+  result до выдачи модели. Он покрывает mapping/list/tuple,
+  последовательности и Pydantic `model_dump()` values, а структурные аргументы
+  `ToolError` — до feedback augmentation; произвольные не-сериализуемые
+  объекты и свободный текст ошибки этой гарантией не охвачены. Локальные
+  вызовы в `tools/client.py` и `tools/pet.py` удалены как дубли. Цена — O(n)
+  обход и копирование JSON-подобного ответа; размер tool result уже ограничен
   pagination, а имя поля подтверждено только как Client.passport_series в
   reference/OpenAPI, поэтому риск semantic collision признан приемлемым.
   New nested privacy regressions и затронутый набор прошли (`256 passed`);
@@ -11372,14 +11374,28 @@ Checks so far:
 - Спецификационный audit staff credentials: top-level полями они объявлены
   только в schema `user`; вложенные examples с ними есть ровно в
   `invoice.doctor`, `hospital.doctor_data` и `cassaclose.closedUser`.
-  Общий output denylist расширен на `passwd`, `login`, `last_change_pwd_date`,
-  `user_inn`, `calc_percents`; вложенные staff сохраняют остальные поля, а
-  `tools/user.py` остаётся отдельным strict allowlist. Passport field в
+  Глобально удаляются однозначные `passwd` и `last_change_pwd_date`; generic
+  `login`, `user_inn`, `calc_percents` удаляются только под этими staff keys,
+  чтобы не ломать одноимённые integration/clinic settings. Вложенные staff
+  сохраняют остальные поля, а `tools/user.py` остаётся отдельным strict
+  allowlist. Passport field в
   OpenAPI есть только у `client`; банковские реквизиты (`bank_*`, `inn`) —
   только у `suppliers` (совпадения `partyAccount*` — складские сущности),
   поэтому дополнительных правок не сделано.
   Целевой набор регрессий прошёл (`259 passed`); полный Docker-контур:
   `1461 passed, 2 skipped, 65 deselected`, exit status `0`, `184.61s`.
+- Финальное уточнение privacy wrapper: глобальными остаются только
+  `passport_series`, `passwd`, `last_change_pwd_date`; неоднозначные `login`,
+  `user_inn`, `calc_percents` удаляются лишь в подтверждённых OpenAPI
+  staff-контейнерах `user`, `users`, `doctor`, `doctor_data`, `closedUser`.
+  Wrapper очищает mapping/list/tuple, другие последовательности, Pydantic
+  `model_dump()` и структурные `ToolError.args` до augmentation; свободный
+  текст и произвольные не-сериализуемые объекты не имеют безопасной
+  структурной обработки. Docker использует `ToolError` без keyword
+  `log_level`, поэтому пересоздание ошибки сохраняет очищенные args, но не
+  опирается на необязательный внутренний атрибут. Проверены настройка с
+  допустимым `login`, staff record, tuple/Pydantic и error path. Контур:
+  `1464 passed, 2 skipped, 65 deselected`, exit status `0`, `301.38s`.
 - Диагностика Владимира уточнила strong-review failure mode: stdout Claude Code
   был JSON-конвертом, но `.result` пуст при `is_error=false`,
   `stop_reason=tool_use` и преобладании thinking tokens. `tool_use` штатен для

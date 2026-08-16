@@ -347,4 +347,4 @@ def test_shared_tool_wrapper_still_calls_augment_tool_error() -> None:
     source = Path("tools/__init__.py").read_text(encoding="utf-8")
 
     assert "augment_tool_error" in source
-    assert "raise await augment_tool_error" in source
+    assert "augmented_exc = await augment_tool_error" in source

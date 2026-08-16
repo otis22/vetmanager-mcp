@@ -6,7 +6,7 @@ from functools import wraps
 import depersonalization
 from agent_feedback_service import augment_tool_error, should_skip_report_hint
 from exceptions import AuthError
-from privacy_utils import redact_sensitive_output_fields
+from privacy_utils import redact_sensitive_output_fields, redact_tool_error
 from runtime_auth import use_runtime_credentials
 from service_metrics import record_sanitizer_failure
 from tool_scope_security import (
@@ -42,11 +42,15 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
             try:
                 result = await tool_func(*args, **kwargs)
             except ToolError as exc:
+                sanitized_exc = redact_tool_error(exc)
                 if resolved_tool_name in BASELINE_ALLOWED_TOOLS:
-                    raise
-                if should_skip_report_hint(exc):
-                    raise
-                raise await augment_tool_error(resolved_tool_name, credentials, exc) from exc
+                    raise sanitized_exc from None
+                if should_skip_report_hint(sanitized_exc):
+                    raise sanitized_exc from None
+                augmented_exc = await augment_tool_error(
+                    resolved_tool_name, credentials, sanitized_exc,
+                )
+                raise redact_tool_error(augmented_exc) from sanitized_exc
             result = redact_sensitive_output_fields(result)
             if not credentials.is_depersonalized:
                 return result

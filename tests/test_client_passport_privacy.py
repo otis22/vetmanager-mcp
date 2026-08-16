@@ -1,9 +1,15 @@
-"""Regression coverage for passport redaction in client output tools."""
+"""Regression coverage for client and nested-staff output redaction."""
 
+from unittest.mock import AsyncMock
+
+from fastmcp.exceptions import ToolError
+from pydantic import create_model
 import pytest
 
+from privacy_utils import redact_sensitive_output_fields
 from server import mcp
-from tests.runtime_factories import patch_runtime_credentials
+from tests.runtime_factories import make_runtime_credentials, patch_runtime_credentials
+import tools
 
 
 _UPSTREAM_CLIENT = {
@@ -55,6 +61,49 @@ def _assert_staff_credentials_redacted(user: dict) -> None:
     assert user["position_id"] == _UPSTREAM_STAFF["position_id"]
     assert user["email"] == _UPSTREAM_STAFF["email"]
     assert user["custom_invoice_context"] == _UPSTREAM_STAFF["custom_invoice_context"]
+
+
+def test_redaction_scopes_generic_staff_fields_to_confirmed_containers() -> None:
+    result = redact_sensitive_output_fields(
+        {
+            "settings": {"login": "integration-login", "calc_percents": 15},
+            "doctor": _UPSTREAM_STAFF,
+        }
+    )
+
+    assert result["settings"] == {"login": "integration-login", "calc_percents": 15}
+    _assert_staff_credentials_redacted(result["doctor"])
+
+
+def test_redaction_handles_tuple_and_pydantic_model_values() -> None:
+    payload_model = create_model("Payload", user=(dict, ...))(user=_UPSTREAM_STAFF)
+
+    result = redact_sensitive_output_fields((payload_model, {"login": "allowed-setting"}))
+
+    assert isinstance(result, tuple)
+    _assert_staff_credentials_redacted(result[0]["user"])
+    assert result[1]["login"] == "allowed-setting"
+
+
+@pytest.mark.asyncio
+async def test_wrapper_redacts_structured_tool_error_before_augmentation(monkeypatch) -> None:
+    credentials = make_runtime_credentials("testclinic", "test-key-mock")
+    monkeypatch.setattr(tools, "resolve_runtime_credentials", AsyncMock(return_value=credentials))
+
+    async def preserve_sanitized_error(*_args):
+        return _args[-1]
+
+    monkeypatch.setattr(tools, "augment_tool_error", preserve_sanitized_error)
+
+    async def failing_tool():
+        raise ToolError({"data": {"doctor": _UPSTREAM_STAFF}})
+
+    wrapped = tools._wrap_tool_with_depersonalization(failing_tool, tool_name="get_invoices")
+    with pytest.raises(ToolError) as exc_info:
+        await wrapped()
+
+    payload = exc_info.value.args[0]
+    _assert_staff_credentials_redacted(payload["data"]["doctor"])
 
 
 @pytest.mark.asyncio
