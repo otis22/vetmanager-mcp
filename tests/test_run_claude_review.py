@@ -41,7 +41,7 @@ def _run(
     evidence_dir: Path | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     repo = tmp_path / "repo"
-    repo.mkdir()
+    repo.mkdir(parents=True)
     prompt = tmp_path / "prompt.txt"
     schema = tmp_path / "schema.json"
     fake_claude = tmp_path / "claude"
@@ -115,6 +115,23 @@ def test_review_attempt_saves_empty_failed_stdout_and_metadata(tmp_path: Path) -
     assert metadata["output_tokens"] is None
     assert metadata["thinking_tokens"] is None
     assert metadata["result_length"] == 0
+
+
+def test_review_attempt_saves_valid_non_object_json_envelopes(tmp_path: Path) -> None:
+    for label, envelope in (("array", "[]"), ("null", "null")):
+        completed, evidence = _run(tmp_path / label, envelope)
+
+        assert completed.returncode == 2
+        metadata_path = next(evidence.rglob("*.metadata.json"))
+        metadata = json.loads(metadata_path.read_text())
+        assert Path(metadata["envelope_file"]).read_text() == envelope
+        assert metadata["cli_exit"] == 0
+        assert metadata["validator_exit"] == 2
+        assert metadata["subtype"] is None
+        assert metadata["stop_reason"] is None
+        assert metadata["output_tokens"] is None
+        assert metadata["thinking_tokens"] is None
+        assert metadata["result_length"] == 0
 
 
 def test_default_evidence_root_uses_xdg_data_home(tmp_path: Path) -> None:

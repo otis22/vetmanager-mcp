@@ -160,7 +160,9 @@ import sys
 raw = pathlib.Path(envelope_path).read_bytes()
 try:
     envelope = json.loads(raw)
-except (UnicodeDecodeError, json.JSONDecodeError):
+except Exception:
+    envelope = {}
+if not isinstance(envelope, dict):
     envelope = {}
 usage = envelope.get("usage") if isinstance(envelope.get("usage"), dict) else {}
 details = usage.get("output_tokens_details") if isinstance(usage.get("output_tokens_details"), dict) else {}
