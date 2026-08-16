@@ -288,6 +288,34 @@ async def test_get_report_export_file_turns_not_ready_into_retry_guidance():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_export_retry_classification_matches_tool_error_and_metric(monkeypatch):
+    report_ai._reset_report_ai_queue_observations()
+    service_metrics.reset_service_metrics()
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/report/StartReport").mock(
+        return_value=httpx.Response(200, json={"data": {"report": {"report_file_id": 127}}})
+    )
+    respx.get(f"{BASE}/rest/api/report/reportFile").mock(
+        return_value=httpx.Response(
+            401, json={"success": False, "message": "Error: build in progress."}
+        )
+    )
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: 10.0)
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("start_report_export", {"report_id": 88})
+        with pytest.raises(ToolError, match="not ready"):
+            await mcp.call_tool("get_report_export_file", {"report_file_id": 127})
+
+    assert service_metrics.snapshot_service_metrics()["report_ai_exports_total"] == {
+        "poll|not_ready": 1,
+        "start|success": 1,
+    }
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_get_report_export_file_treats_409_as_retryable_without_message():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/report/reportFile").mock(

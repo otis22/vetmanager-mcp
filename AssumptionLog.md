@@ -76,6 +76,22 @@
 - Targeted Docker tests passed (`72 passed`), including repeated terminal poll
   and malformed 200 payload regressions.
 
+### Follow-up: shared retry classification and finalized-status ordering
+
+- `_is_retryable_export_file_error()` is now the single classifier used both
+  for `get_report_export_file` ToolError guidance and metric finalization.
+  The fixed upstream markers remain intentionally supported alongside HTTP 409;
+  both user-facing and metric paths classify them identically as `not_ready`.
+- Any status after a locally finalized job is ignored until the finalized key
+  leaves bounded TTL/LRU memory; this includes unknown/non-terminal status
+  followed by another terminal response. Refreshing the key also moves it to
+  the LRU tail.
+- A second terminal outcome remains possible only after process restart, TTL
+  expiry without polling, or LRU eviction. No in-process status sequence while
+  the finalized key is retained can produce a duplicate terminal sample.
+- Targeted Docker tests passed (`74 passed`), including fixed-marker parity and
+  terminal → unknown → terminal ordering.
+
 ---
 
 ## Этап 1–2: Каркас и MCP-инструменты

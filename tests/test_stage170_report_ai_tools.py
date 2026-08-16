@@ -755,6 +755,20 @@ def test_repeated_terminal_job_poll_does_not_repeat_outcome_or_zero_duration():
     ]["saved"]
 
 
+def test_late_non_terminal_status_after_finalization_cannot_restart_lifecycle():
+    report_ai._reset_report_ai_queue_observations()
+    service_metrics.reset_service_metrics()
+
+    report_ai._observe_report_ai_lifecycle({"id": 904, "status": "saved"}, now=10.0)
+    report_ai._observe_report_ai_lifecycle({"id": 905, "status": "failed"}, now=11.0)
+    report_ai._observe_report_ai_lifecycle({"id": 904, "status": "unexpected_status"}, now=12.0)
+    report_ai._observe_report_ai_lifecycle({"id": 904, "status": "saved"}, now=13.0)
+
+    snapshot = service_metrics.snapshot_service_metrics()
+    assert snapshot["report_ai_job_terminal_outcomes_total"] == {"failed": 1, "saved": 1}
+    assert list(report_ai._REPORT_AI_FINALIZED_OBSERVATIONS)[-1][2] == 904
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_confirm_report_ai_job_candidate_posts_strict_report_id_body():

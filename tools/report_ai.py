@@ -199,6 +199,16 @@ def _record_pending_report_ai_export_poll() -> None:
     record_report_ai_export(operation="poll", outcome="not_ready")
 
 
+def _remember_finalized_report_ai_job(
+    observation_key: _ReportAiQueueObservationKey, *, now: float
+) -> None:
+    """Keep a bounded, recently-finalized job key to deduplicate later polls."""
+    _REPORT_AI_FINALIZED_OBSERVATIONS[observation_key] = now
+    _REPORT_AI_FINALIZED_OBSERVATIONS.move_to_end(observation_key)
+    while len(_REPORT_AI_FINALIZED_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
+        _REPORT_AI_FINALIZED_OBSERVATIONS.popitem(last=False)
+
+
 def _observe_report_ai_queue(job: dict, *, now: float | None = None) -> int | None:
     observation_key = _report_ai_queue_observation_key(job)
 
@@ -232,17 +242,16 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
         return
     current_time = _monotonic_seconds() if now is None else now
     _cleanup_report_ai_queue_observations(current_time)
+    if observation_key in _REPORT_AI_FINALIZED_OBSERVATIONS:
+        _remember_finalized_report_ai_job(observation_key, now=current_time)
+        return
     stage = _REPORT_AI_STAGE_BY_STATUS.get(str(job.get("status") or ""), "unknown")
     observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.get(observation_key)
     if observation is None:
         if stage in _REPORT_AI_TERMINAL_OUTCOMES:
-            if observation_key in _REPORT_AI_FINALIZED_OBSERVATIONS:
-                _REPORT_AI_FINALIZED_OBSERVATIONS[observation_key] = current_time
-                _REPORT_AI_FINALIZED_OBSERVATIONS.move_to_end(observation_key)
-                return
             record_report_ai_job_stage_duration(stage=stage, duration_seconds=0.0)
             record_report_ai_job_terminal_outcome(outcome=stage, duration_seconds=0.0)
-            _REPORT_AI_FINALIZED_OBSERVATIONS[observation_key] = current_time
+            _remember_finalized_report_ai_job(observation_key, now=current_time)
             return
         _REPORT_AI_LIFECYCLE_OBSERVATIONS[observation_key] = {
             "first_seen": current_time,
@@ -269,7 +278,7 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
             outcome=stage, duration_seconds=current_time - float(observation["first_seen"])
         )
         _REPORT_AI_LIFECYCLE_OBSERVATIONS.pop(observation_key, None)
-        _REPORT_AI_FINALIZED_OBSERVATIONS[observation_key] = current_time
+        _remember_finalized_report_ai_job(observation_key, now=current_time)
         return
     observation["stage"] = stage
     observation["stage_started"] = current_time
@@ -509,7 +518,7 @@ def _safe_export_error(
     status = f" HTTP {exc.status_code}" if exc.status_code is not None else ""
     code = f" ({exc.error_code})" if exc.error_code else ""
     lowered = str(exc).lower()
-    if retry_on_conflict and exc.status_code == 409:
+    if retry_on_conflict and _is_retryable_export_file_error(exc):
         return ToolError(
             "Report export is not ready yet; call get_report_export_file again after a delay."
         )
@@ -543,7 +552,7 @@ def _safe_export_error(
 
 
 def _is_retryable_export_file_error(exc: VetmanagerError) -> bool:
-    """Return whether the documented file-poll error permits another poll."""
+    """Return the single retryable classification shared by tool and metrics."""
     lowered = str(exc).lower()
     return exc.status_code == 409 or "build in progress" in lowered or "not started" in lowered
 
