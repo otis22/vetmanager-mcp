@@ -153,7 +153,9 @@ privacy-regex regression и static advisory text.
    `8-999-123-45-67`) и compact digits. ISO date, ISO `T`/timezone date-time,
    local `DD.MM.YYYY` date и date range не маскируются.
 3a. Phone с четырёхзначным кодом города и phone-like e-mail маскируются;
-    при совпадении date-like fragment внутри телефона побеждает redaction.
+    при частичном пересечении phone и e-mail скрываются e-mail и остаток
+    phone. При совпадении date-like fragment внутри телефона побеждает
+    redaction.
 3b. Phone рядом с датой либо перед датами может скрыть соседние ISO dates одним
     жадным совпадением; это ожидаемое безопасное поведение и покрыто
     table-driven test.

@@ -91,8 +91,6 @@ def sanitize_text(text: str) -> str:
     redactions = [(start, end, REDACTED_EMAIL) for start, end in email_spans]
     for phone_match in _PHONE_RE.finditer(text):
         start, end = phone_match.span()
-        if any(start < email_end and end > email_start for email_start, email_end in email_spans):
-            continue
         if any(
             date_start <= start and end <= date_end
             for date_start, date_end in date_spans
@@ -101,7 +99,23 @@ def sanitize_text(text: str) -> str:
         date_free = _DATE_OR_DATETIME_RE.sub("", text[start:end])
         if not any(char.isdigit() for char in date_free):
             continue
-        redactions.append((start, end, REDACTED_PHONE))
+
+        phone_fragments = [(start, end)]
+        for email_start, email_end in email_spans:
+            fragments_without_email: list[tuple[int, int]] = []
+            for fragment_start, fragment_end in phone_fragments:
+                if fragment_end <= email_start or fragment_start >= email_end:
+                    fragments_without_email.append((fragment_start, fragment_end))
+                    continue
+                if fragment_start < email_start:
+                    fragments_without_email.append((fragment_start, email_start))
+                if email_end < fragment_end:
+                    fragments_without_email.append((email_end, fragment_end))
+            phone_fragments = fragments_without_email
+        redactions.extend(
+            (fragment_start, fragment_end, REDACTED_PHONE)
+            for fragment_start, fragment_end in phone_fragments
+        )
 
     sanitized_parts: list[str] = []
     position = 0

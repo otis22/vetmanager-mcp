@@ -263,6 +263,12 @@ def test_sanitize_text_scrubs_only_explicit_patterns():
             (REDACTED_EMAIL,),
         ),
         (
+            "Почта 8 999 123 45 67ivan@mail.ru",
+            ("8 999 123 45", "67ivan@mail.ru"),
+            (),
+            (REDACTED_PHONE, REDACTED_EMAIL),
+        ),
+        (
             "дата 2024-10-23, телефон 8-4852-45-67-89, почта 79161234567@mail.ru",
             ("8-4852-45-67-89", "79161234567@mail.ru"),
             ("2024-10-23",),

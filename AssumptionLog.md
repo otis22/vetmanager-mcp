@@ -40,6 +40,13 @@
   (`1524 selected`, `65 deselected`); documented ShellCheck and Bash-syntax
   commands passed. Production/SSH and push are not performed; external code
   review and push remain with the user.
+- A later review found a regression only for partial overlap of a phone and an
+  e-mail without a separator. The sanitizer now keeps the e-mail redaction and
+  redacts every non-e-mail fragment of the phone candidate; the table includes
+  `8 999 123 45 67ivan@mail.ru`. This preserves the privacy-first priority
+  without reopening date-format scope. Targeted corpus: `45 passed`; canonical
+  Docker suite completed successfully (`1525 selected`, `65 deselected`), and
+  documented ShellCheck and Bash-syntax commands passed.
 
 ## Этап 219: Наблюдаемость Report AI и агентский workflow
 
