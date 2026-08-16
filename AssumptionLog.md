@@ -11333,6 +11333,18 @@ Checks so far:
   это реже, чем регулярная потеря диагностических/error payload при fail-closed
   обработке. Контрактные `data.user`/`data.users` и известные прямые user
   responses по-прежнему проходят безусловный allowlist.
+- Endpoint-аудит по всем production callers `/rest/api/client` и
+  `/rest/api/user`: `get_debtors` использует тот же client denylist; owner в
+  `get_pet_profile` также redacted общей scoped helper. `get_inactive_clients`
+  и `get_inactive_pets` возвращают только собственные ограниченные объекты,
+  поэтому passport field туда не попадает. У user закрыты обычный/name-search
+  `get_users`, `get_user_by_id` и `update_user`; `/rest/api/user/anonymousList`
+  — отдельный анонимный summary, не user record. Для прямых user tools
+  non-success diagnostics пропускаются с warning, успешная запись остаётся на
+  allowlist.
+- Проверки endpoint-аудита: расширенный targeted contour — `192 passed`;
+  полный Docker contour с читаемым exit status `0` — `1454 passed, 2 skipped,
+  65 deselected` за `230.85s`.
 - Read-only audit других direct `crud_list` passthrough не менялся в scope:
   clients — контакты/паспорт/баланс/notes; pets/admissions/invoices/hospital —
   nested client/owner и clinical data; suppliers — контакты/ИНН/банковские

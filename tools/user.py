@@ -73,11 +73,10 @@ def _project_user_response(response: dict, *, data_is_user_record: bool = False)
         return response
 
     projected = dict(response)
-    projected["data"] = (
-        _project_known_user_value(response["data"])
-        if data_is_user_record
-        else _project_user_data(response["data"])
-    )
+    if data_is_user_record and response.get("success") is not False:
+        projected["data"] = _project_known_user_value(response["data"])
+    else:
+        projected["data"] = _project_user_data(response["data"])
     return projected
 
 

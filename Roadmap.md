@@ -3944,3 +3944,5 @@ blockers.
   supplier ИНН/банковских реквизитов. — `done`
 - 215.5 По решению Владимира: пропускать неизвестную форму user `data` с
   runtime warning; контрактные `user`/`users` оставить на allowlist. — `done`
+- 215.6 Endpoint-аудит client/user output: закрыть passport_series в debtors
+  и owner pet profile; сохранить error diagnostics прямых user responses. — `done`

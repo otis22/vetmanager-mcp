@@ -83,3 +83,48 @@ async def test_get_client_by_id_redacts_passport_series(monkeypatch):
 
     payload = result.structured_content or {}
     _assert_passport_redacted(payload["data"])
+
+
+@pytest.mark.asyncio
+async def test_get_debtors_redacts_passport_series(monkeypatch):
+    import tools.client as client_module
+
+    async def fake_crud_list(*args, **kwargs):
+        return {
+            "success": True,
+            "data": {
+                "client": [{**_UPSTREAM_CLIENT, "balance": "-100.00"}],
+                "totalCount": 1,
+            },
+        }
+
+    monkeypatch.setattr(client_module, "crud_list", fake_crud_list)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_debtors", {})
+
+    payload = result.structured_content or {}
+    assert "passport_series" not in payload["debtors"][0]
+    assert payload["debtors"][0]["id"] == _UPSTREAM_CLIENT["id"]
+
+
+@pytest.mark.asyncio
+async def test_get_pet_profile_redacts_owner_passport_series(monkeypatch):
+    import tools.pet as pet_module
+
+    async def fake_fetch_pet_profile(*args, **kwargs):
+        return {"pet": {"id": 3}, "owner": _UPSTREAM_CLIENT}
+
+    async def fake_instrument_call(*args, **kwargs):
+        return await args[2]()
+
+    monkeypatch.setattr(pet_module, "_fetch_pet_profile", fake_fetch_pet_profile)
+    monkeypatch.setattr(pet_module, "_instrument_call", fake_instrument_call)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_pet_profile", {"pet_id": 3})
+
+    payload = result.structured_content or {}
+    _assert_passport_redacted(payload["owner"])

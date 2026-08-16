@@ -120,6 +120,38 @@ async def test_get_user_by_id_returns_only_analytics_fields(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_direct_user_tools_preserve_error_diagnostics(monkeypatch, caplog):
+    import tools.user as user_module
+
+    upstream = {
+        "success": False,
+        "data": {"error_code": "UPSTREAM_FAILURE", "detail": "try later"},
+        "errors": ["request failed"],
+    }
+
+    async def fake_crud_get_by_id(*args, **kwargs):
+        return upstream
+
+    async def fake_crud_update(*args, **kwargs):
+        return upstream
+
+    monkeypatch.setattr(user_module, "crud_get_by_id", fake_crud_get_by_id)
+    monkeypatch.setattr(user_module, "crud_update", fake_crud_update)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch, caplog.at_level("WARNING", logger="vetmanager.runtime"):
+        by_id = await mcp.call_tool("get_user_by_id", {"user_id": 7})
+        updated = await mcp.call_tool("update_user", {"user_id": 7, "last_name": "Иванова"})
+
+    assert (by_id.structured_content or {})["data"] == upstream["data"]
+    assert (updated.structured_content or {})["data"] == upstream["data"]
+    assert sum(
+        record.message == "user_projection_unexpected_data_shape"
+        for record in caplog.records
+    ) == 2
+
+
+@pytest.mark.asyncio
 async def test_update_user_returns_only_analytics_fields(monkeypatch):
     import tools.user as user_module
 

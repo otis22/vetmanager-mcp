@@ -12,6 +12,19 @@ likely subnet without leaking the full client IP.
 from __future__ import annotations
 
 
+def redact_client_passport_series(value):
+    """Remove Client.passport_series while preserving every other value."""
+    if isinstance(value, list):
+        return [redact_client_passport_series(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: redact_client_passport_series(item)
+            for key, item in value.items()
+            if key != "passport_series"
+        }
+    return value
+
+
 def mask_email(email: str | None) -> str:
     """Return a PII-friendly masked email: `al***@ex***.com`."""
     if not email or "@" not in email:

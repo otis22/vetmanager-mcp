@@ -13,6 +13,7 @@ from filters import (
     lt as _filter_lt,
     lte as _filter_lte,
 )
+from privacy_utils import redact_client_passport_series
 from resources.client_profile import fetch as _fetch_client_profile
 from service_metrics import instrument_call as _instrument_call
 from tools._inactive_helpers import fetch_inactive_clients_page
@@ -30,22 +31,6 @@ _PERSONAL_ACCOUNT_LINK_WARNING = (
     "Personal account link is persistent and sensitive; show it only in the "
     "relevant known-phone client context."
 )
-_CLIENT_DENYLIST_FIELDS = frozenset({"passport_series"})
-
-
-def _redact_client_denied_fields(value):
-    """Remove only explicitly denied client fields while preserving all others."""
-    if isinstance(value, list):
-        return [_redact_client_denied_fields(item) for item in value]
-    if isinstance(value, dict):
-        return {
-            key: _redact_client_denied_fields(item)
-            for key, item in value.items()
-            if key not in _CLIENT_DENYLIST_FIELDS
-        }
-    return value
-
-
 async def _search_client_phones(search_digits: str) -> list[int]:
     """Phase-1 helper: return client_ids whose clean_phone LIKE search_digits.
 
@@ -378,7 +363,7 @@ def register(mcp: FastMCP) -> None:
                 if not all(token in name_text for token in tokens):
                     continue
                 seen_ids.add(client_id)
-                matches.append(_redact_client_denied_fields(client))
+                matches.append(redact_client_passport_series(client))
 
             _sort_merged_clients(matches, sort)
             return {
@@ -397,7 +382,7 @@ def register(mcp: FastMCP) -> None:
             sort=sort,
             filters=combined_filters if combined_filters else None,
         )
-        return _redact_client_denied_fields(response)
+        return redact_client_passport_series(response)
 
     @mcp.tool
     async def get_debtors(
@@ -444,7 +429,9 @@ def register(mcp: FastMCP) -> None:
             filters=combined_filters,
         )
         data = response.get("data", {}) if isinstance(response, dict) else {}
-        clients = data.get("client", []) if isinstance(data, dict) else []
+        clients = redact_client_passport_series(
+            data.get("client", []) if isinstance(data, dict) else []
+        )
         try:
             total_count = int(data.get("totalCount", 0)) if isinstance(data, dict) else 0
         except (TypeError, ValueError):
@@ -548,7 +535,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             client_id: Unique numeric ID of the client.
         """
-        return _redact_client_denied_fields(
+        return redact_client_passport_series(
             await crud_get_by_id("/rest/api/client", client_id)
         )
 
@@ -593,7 +580,7 @@ def register(mcp: FastMCP) -> None:
         if email:
             payload["email"] = email
         response = await crud_create("/rest/api/client", payload)
-        return _redact_client_denied_fields(response)
+        return redact_client_passport_series(response)
 
     @mcp.tool
     async def update_client(
@@ -649,7 +636,7 @@ def register(mcp: FastMCP) -> None:
             payload["note"] = note
         if status:
             payload["status"] = status
-        return _redact_client_denied_fields(
+        return redact_client_passport_series(
             await crud_update("/rest/api/client", client_id, payload)
         )
 
@@ -685,7 +672,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             client_id: Unique numeric ID of the client.
         """
-        return _redact_client_denied_fields(
+        return redact_client_passport_series(
             await _instrument_call(
                 "/rest/api/client",
                 "GET",
