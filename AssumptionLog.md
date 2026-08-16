@@ -58,6 +58,24 @@
   regressions cover stable labels/no IDs, public payload preservation, retryable
   export duration and string file ID. Targeted Docker tests passed (`80 passed`).
 
+### Follow-up: terminal lifecycle and malformed export responses
+
+- Finalized Report AI jobs now use a tenant-scoped bounded TTL/LRU cache. A
+  repeated terminal poll refreshes only local `last_seen`, so it cannot add a
+  second outcome or zero-duration sample. A duplicate can be observed again
+  only after process restart, no poll for the local TTL, or LRU eviction under
+  the fixed cap; process-local metrics do not claim cross-process exactly-once.
+- A local malformed successful export payload is now a terminal `error`, not
+  `abandoned_wait`: both StartReport and reportFile `ToolError` paths record
+  the appropriate outcome and close an already-started export duration.
+- Code-path audit: all controlled post-start exceptions are `VetmanagerError`
+  or local `ToolError` and now finalize or preserve retryable observation as
+  required. Validation/precondition failures happen before an observation is
+  started and intentionally do not close another export. Process cancellation
+  or termination can still bypass in-memory finalization by design.
+- Targeted Docker tests passed (`72 passed`), including repeated terminal poll
+  and malformed 200 payload regressions.
+
 ---
 
 ## Этап 1–2: Каркас и MCP-инструменты

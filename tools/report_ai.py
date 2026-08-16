@@ -57,6 +57,7 @@ _REPORT_AI_QUEUE_OBSERVATIONS: OrderedDict[
 _REPORT_AI_LIFECYCLE_OBSERVATIONS: OrderedDict[
     _ReportAiQueueObservationKey, dict[str, float | str]
 ] = OrderedDict()
+_REPORT_AI_FINALIZED_OBSERVATIONS: OrderedDict[_ReportAiQueueObservationKey, float] = OrderedDict()
 _REPORT_AI_EXPORT_OBSERVATIONS: OrderedDict[
     _ReportAiQueueObservationKey, float
 ] = OrderedDict()
@@ -83,6 +84,7 @@ def _monotonic_seconds() -> float:
 def _reset_report_ai_queue_observations() -> None:
     _REPORT_AI_QUEUE_OBSERVATIONS.clear()
     _REPORT_AI_LIFECYCLE_OBSERVATIONS.clear()
+    _REPORT_AI_FINALIZED_OBSERVATIONS.clear()
     _REPORT_AI_EXPORT_OBSERVATIONS.clear()
 
 
@@ -126,6 +128,16 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
             outcome="abandoned_wait",
             duration_seconds=now - float(observation["first_seen"]),
         )
+
+    expired_finalized_keys = [
+        key
+        for key, last_seen in _REPORT_AI_FINALIZED_OBSERVATIONS.items()
+        if now - last_seen > REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS
+    ]
+    for key in expired_finalized_keys:
+        _REPORT_AI_FINALIZED_OBSERVATIONS.pop(key, None)
+    while len(_REPORT_AI_FINALIZED_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
+        _REPORT_AI_FINALIZED_OBSERVATIONS.popitem(last=False)
 
     expired_export_keys = [
         key
@@ -224,8 +236,13 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
     observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.get(observation_key)
     if observation is None:
         if stage in _REPORT_AI_TERMINAL_OUTCOMES:
+            if observation_key in _REPORT_AI_FINALIZED_OBSERVATIONS:
+                _REPORT_AI_FINALIZED_OBSERVATIONS[observation_key] = current_time
+                _REPORT_AI_FINALIZED_OBSERVATIONS.move_to_end(observation_key)
+                return
             record_report_ai_job_stage_duration(stage=stage, duration_seconds=0.0)
             record_report_ai_job_terminal_outcome(outcome=stage, duration_seconds=0.0)
+            _REPORT_AI_FINALIZED_OBSERVATIONS[observation_key] = current_time
             return
         _REPORT_AI_LIFECYCLE_OBSERVATIONS[observation_key] = {
             "first_seen": current_time,
@@ -252,6 +269,7 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
             outcome=stage, duration_seconds=current_time - float(observation["first_seen"])
         )
         _REPORT_AI_LIFECYCLE_OBSERVATIONS.pop(observation_key, None)
+        _REPORT_AI_FINALIZED_OBSERVATIONS[observation_key] = current_time
         return
     observation["stage"] = stage
     observation["stage_started"] = current_time
@@ -576,6 +594,9 @@ async def _start_report_export(
     except VetmanagerError as exc:
         record_report_ai_export(operation="start", outcome="error")
         raise _safe_export_error(exc, "Starting report export") from None
+    except ToolError:
+        record_report_ai_export(operation="start", outcome="error")
+        raise
 
 
 def register(mcp: FastMCP) -> None:
@@ -745,6 +766,9 @@ def register(mcp: FastMCP) -> None:
             raise _safe_export_error(
                 exc, "Getting report export file", retry_on_conflict=True
             ) from None
+        except ToolError:
+            _complete_report_ai_export(file_id, outcome="error")
+            raise
 
     @mcp.tool
     async def get_report_ai_job_export(job_id: int, filter_json: str | None = None) -> dict:

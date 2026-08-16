@@ -734,6 +734,27 @@ def test_report_ai_lifecycle_metrics_distinguish_transition_failure_and_abandonm
     assert 'vetmanager_report_ai_job_terminal_outcomes_total{outcome="abandoned_wait"} 1' in rendered
 
 
+def test_repeated_terminal_job_poll_does_not_repeat_outcome_or_zero_duration():
+    report_ai._reset_report_ai_queue_observations()
+    service_metrics.reset_service_metrics()
+
+    report_ai._observe_report_ai_lifecycle({"id": 903, "status": "saved"}, now=10.0)
+    first = service_metrics.snapshot_service_metrics()
+    report_ai._observe_report_ai_lifecycle({"id": 903, "status": "saved"}, now=11.0)
+    second = service_metrics.snapshot_service_metrics()
+
+    assert first["report_ai_job_terminal_outcomes_total"] == {"saved": 1}
+    assert second["report_ai_job_terminal_outcomes_total"] == {"saved": 1}
+    assert first["report_ai_job_duration_seconds"]["saved"] == {
+        "count": 1,
+        "sum_seconds": 0.0,
+        "max_seconds": 0.0,
+    }
+    assert second["report_ai_job_duration_seconds"]["saved"] == first[
+        "report_ai_job_duration_seconds"
+    ]["saved"]
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_confirm_report_ai_job_candidate_posts_strict_report_id_body():
