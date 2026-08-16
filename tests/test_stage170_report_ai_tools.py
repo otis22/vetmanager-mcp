@@ -159,6 +159,8 @@ def test_report_ai_guidance_descriptions_name_helper_and_fallback_policy():
     assert "Vetmanager side" in job_description
     assert "simplifying/splitting" in job_description
     assert "preview_example_row" in job_description
+    assert "error_message_safe" in job_description
+    assert "do not recreate an unchanged intent" in job_description
     assert "existing_report_matched" in job_description
     assert "queued/recognizing/building_preview" in job_description
     assert "no expiry or retry metadata" in job_description
@@ -216,6 +218,8 @@ async def test_report_ai_guidance_reaches_live_tool_descriptions():
     assert "Vetmanager side" in job_description
     assert "simplifying/splitting" in job_description
     assert "preview_example_row" in job_description
+    assert "error_message_safe" in job_description
+    assert "do not recreate an unchanged intent" in job_description
     assert "queued/recognizing/building_preview" in job_description
     assert "no expiry or retry metadata" in job_description
     assert "ABC" not in job_description

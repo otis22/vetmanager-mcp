@@ -47,6 +47,8 @@
   `get_report_ai_job_data` только guardrails, отсутствие которых приводит к
   ошибочному действию: последовательность jobs и корректная обработка пустых
   строк.
+- Дополнить `get_report_ai_job` general rule для `failed`/`rejected`: читать
+  безопасное объяснение и не пересоздавать неизменённый intent.
 - Оценить в этом PRD, но не реализовывать, возможную MCP-защиту от
   параллельного создания незавершённых Report AI jobs одним арендатором.
 - Добавить focused regression tests.
@@ -208,6 +210,8 @@ privacy-regex regression и static advisory text.
    будущую MCP-защиту без её реализации. ≤2h.
 6. 220.6: добавить компактные always-visible guardrails в tool descriptions
    и их regression assertions. ≤150 LOC.
+7. 220.7: отразить в описаниях итоговый privacy-contract и безопасную
+   обработку отказа Report AI. ≤150 LOC.
 
 ## Acceptance criteria
 
@@ -244,6 +248,8 @@ privacy-regex regression и static advisory text.
 4c. `create_report_ai_job` всегда видимо требует последовательного запуска
     даже разных отчётов; `get_report_ai_job_data` считает пустые строки
     валидным результатом и запрещает пересоздавать job до direct-read проверки.
+4d. `get_report_ai_job` для `failed`/`rejected` требует прочесть
+    `error_message_safe`, объяснить причину и изменить intent до новой попытки.
 5. Tool и MCP prompt helper остаются идентичными.
 6. Focused и полный Docker suite, ShellCheck и Bash syntax проходят.
 7. `run_claude_review.sh` возвращает отказ до вызова `git`/reviewer, если

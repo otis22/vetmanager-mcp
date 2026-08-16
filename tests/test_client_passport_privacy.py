@@ -13,6 +13,7 @@ import pytest
 from privacy_utils import redact_sensitive_output_fields, redact_tool_error
 from server import mcp
 from tests.runtime_factories import make_runtime_credentials, patch_runtime_credentials
+from tool_descriptions import SPECIAL_TOOL_DESCRIPTIONS
 import tools
 
 
@@ -65,6 +66,50 @@ def _assert_staff_credentials_redacted(user: dict) -> None:
     assert user["position_id"] == _UPSTREAM_STAFF["position_id"]
     assert user["email"] == _UPSTREAM_STAFF["email"]
     assert user["custom_invoice_context"] == _UPSTREAM_STAFF["custom_invoice_context"]
+
+
+def test_privacy_contract_reaches_relevant_tool_descriptions() -> None:
+    for tool_name in (
+        "get_clients",
+        "get_client_by_id",
+        "get_debtors",
+        "get_client_profile",
+        "get_pets",
+        "get_pet_by_id",
+        "get_pet_profile",
+        "get_admissions",
+        "get_admission_by_id",
+        "get_invoices",
+        "get_invoice_by_id",
+    ):
+        assert "passport series" in SPECIAL_TOOL_DESCRIPTIONS[tool_name]
+
+    for tool_name in ("get_users", "get_user_by_id"):
+        description = SPECIAL_TOOL_DESCRIPTIONS[tool_name]
+        assert "privacy-restricted staff view" in description
+        assert "login" in description
+
+    for tool_name in (
+        "get_invoices",
+        "get_invoice_by_id",
+        "get_hospitalizations",
+        "get_hospitalization_by_id",
+        "get_cassa_closes",
+        "get_cassa_close_by_id",
+    ):
+        assert "nested staff context excludes" in SPECIAL_TOOL_DESCRIPTIONS[tool_name].lower()
+
+    assert "fields explicitly withheld for privacy" in SPECIAL_TOOL_DESCRIPTIONS["report_problem"]
+
+
+@pytest.mark.asyncio
+async def test_privacy_contract_reaches_live_tool_descriptions() -> None:
+    tools_by_name = {tool.name: tool for tool in await mcp.list_tools()}
+
+    assert "privacy-restricted staff view" in tools_by_name["get_users"].description
+    assert "passport series" in tools_by_name["get_admissions"].description
+    assert "nested staff context excludes" in tools_by_name["get_invoices"].description.lower()
+    assert "fields explicitly withheld for privacy" in tools_by_name["report_problem"].description
 
 
 def test_redaction_scopes_generic_staff_fields_to_confirmed_containers() -> None:
