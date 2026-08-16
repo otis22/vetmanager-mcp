@@ -13,7 +13,7 @@ from __future__ import annotations
 
 
 def redact_client_passport_series(value):
-    """Remove Client.passport_series while preserving every other value."""
+    """Recursively remove the confirmed sensitive Client.passport_series field."""
     if isinstance(value, list):
         return [redact_client_passport_series(item) for item in value]
     if isinstance(value, dict):

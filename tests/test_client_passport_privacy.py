@@ -128,3 +128,66 @@ async def test_get_pet_profile_redacts_owner_passport_series(monkeypatch):
 
     payload = result.structured_content or {}
     _assert_passport_redacted(payload["owner"])
+
+
+@pytest.mark.asyncio
+async def test_get_pets_redacts_nested_owner_passport_series(monkeypatch):
+    import tools.pet as pet_module
+
+    async def fake_crud_list(*args, **kwargs):
+        return {
+            "success": True,
+            "data": {"pet": [{"id": 3, "owner": _UPSTREAM_CLIENT}], "totalCount": 1},
+        }
+
+    monkeypatch.setattr(pet_module, "crud_list", fake_crud_list)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_pets", {})
+
+    payload = result.structured_content or {}
+    _assert_passport_redacted(payload["data"]["pet"][0]["owner"])
+
+
+@pytest.mark.asyncio
+async def test_get_admissions_redacts_nested_client_passport_series(monkeypatch):
+    import tools.admission as admission_module
+
+    async def fake_crud_list(*args, **kwargs):
+        return {
+            "success": True,
+            "data": {
+                "admission": [{"id": 4, "client": _UPSTREAM_CLIENT}],
+                "totalCount": 1,
+            },
+        }
+
+    monkeypatch.setattr(admission_module, "crud_list", fake_crud_list)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_admissions", {})
+
+    payload = result.structured_content or {}
+    _assert_passport_redacted(payload["data"]["admission"][0]["client"])
+
+
+@pytest.mark.asyncio
+async def test_get_invoices_redacts_nested_client_passport_series(monkeypatch):
+    import tools.invoice as invoice_module
+
+    async def fake_crud_list(*args, **kwargs):
+        return {
+            "success": True,
+            "data": {"invoice": [{"id": 5, "client": _UPSTREAM_CLIENT}], "totalCount": 1},
+        }
+
+    monkeypatch.setattr(invoice_module, "crud_list", fake_crud_list)
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_invoices", {})
+
+    payload = result.structured_content or {}
+    _assert_passport_redacted(payload["data"]["invoice"][0]["client"])

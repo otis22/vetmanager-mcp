@@ -13,7 +13,6 @@ from filters import (
     lt as _filter_lt,
     lte as _filter_lte,
 )
-from privacy_utils import redact_client_passport_series
 from resources.client_profile import fetch as _fetch_client_profile
 from service_metrics import instrument_call as _instrument_call
 from tools._inactive_helpers import fetch_inactive_clients_page
@@ -363,7 +362,7 @@ def register(mcp: FastMCP) -> None:
                 if not all(token in name_text for token in tokens):
                     continue
                 seen_ids.add(client_id)
-                matches.append(redact_client_passport_series(client))
+                matches.append(client)
 
             _sort_merged_clients(matches, sort)
             return {
@@ -382,7 +381,7 @@ def register(mcp: FastMCP) -> None:
             sort=sort,
             filters=combined_filters if combined_filters else None,
         )
-        return redact_client_passport_series(response)
+        return response
 
     @mcp.tool
     async def get_debtors(
@@ -429,9 +428,7 @@ def register(mcp: FastMCP) -> None:
             filters=combined_filters,
         )
         data = response.get("data", {}) if isinstance(response, dict) else {}
-        clients = redact_client_passport_series(
-            data.get("client", []) if isinstance(data, dict) else []
-        )
+        clients = data.get("client", []) if isinstance(data, dict) else []
         try:
             total_count = int(data.get("totalCount", 0)) if isinstance(data, dict) else 0
         except (TypeError, ValueError):
@@ -535,9 +532,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             client_id: Unique numeric ID of the client.
         """
-        return redact_client_passport_series(
-            await crud_get_by_id("/rest/api/client", client_id)
-        )
+        return await crud_get_by_id("/rest/api/client", client_id)
 
     @mcp.tool
     async def get_personal_account_link_by_phone(phone: str) -> dict:
@@ -580,7 +575,7 @@ def register(mcp: FastMCP) -> None:
         if email:
             payload["email"] = email
         response = await crud_create("/rest/api/client", payload)
-        return redact_client_passport_series(response)
+        return response
 
     @mcp.tool
     async def update_client(
@@ -636,9 +631,7 @@ def register(mcp: FastMCP) -> None:
             payload["note"] = note
         if status:
             payload["status"] = status
-        return redact_client_passport_series(
-            await crud_update("/rest/api/client", client_id, payload)
-        )
+        return await crud_update("/rest/api/client", client_id, payload)
 
     @mcp.tool
     async def delete_client(
@@ -672,12 +665,10 @@ def register(mcp: FastMCP) -> None:
         Args:
             client_id: Unique numeric ID of the client.
         """
-        return redact_client_passport_series(
-            await _instrument_call(
-                "/rest/api/client",
-                "GET",
-                lambda: _fetch_client_profile(client_id),
-                operation="aggregate_profile",
-                tool_name="get_client_profile",
-            )
+        return await _instrument_call(
+            "/rest/api/client",
+            "GET",
+            lambda: _fetch_client_profile(client_id),
+            operation="aggregate_profile",
+            tool_name="get_client_profile",
         )

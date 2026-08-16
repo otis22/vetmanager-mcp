@@ -11356,6 +11356,19 @@ Checks so far:
   GET/PUT `/rest/api/user/{ID}`. После исправления расширенный targeted contour
   прошёл (`193 passed`), полный Docker contour: `1455 passed, 2 skipped,
   65 deselected`, exit status `0`, `183.88s`.
+- Владимир расширил правило `passport_series` на вложенные client/owner
+  records. Centralization в `crud_helpers` недостаточна: агрегаторы и часть
+  tools используют `VetmanagerClient` напрямую. Поэтому recursive scoped
+  denylist применён в общем wrapper регистрации MCP-инструментов к финальному
+  result до выдачи модели; это закрывает все зарегистрированные текущие и
+  будущие tools, независимо от transport path. Локальные вызовы в
+  `tools/client.py` и `tools/pet.py` удалены как дубли. Цена — O(n) обход и
+  копирование JSON-подобного ответа; размер tool result уже ограничен
+  pagination, а имя поля подтверждено только как Client.passport_series в
+  reference/OpenAPI, поэтому риск semantic collision признан приемлемым.
+  New nested privacy regressions и затронутый набор прошли (`256 passed`);
+  полный Docker contour: `1458 passed, 2 skipped, 65 deselected`, exit status
+  `0`, `188.64s`.
 - Read-only audit других direct `crud_list` passthrough не менялся в scope:
   clients — контакты/паспорт/баланс/notes; pets/admissions/invoices/hospital —
   nested client/owner и clinical data; suppliers — контакты/ИНН/банковские

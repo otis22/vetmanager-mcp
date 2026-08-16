@@ -3948,3 +3948,5 @@ blockers.
   и owner pet profile; сохранить error diagnostics прямых user responses. — `done`
 - 215.7 Исправить projection одиночного user response под подтверждённый
   `outputHelper` envelope и выровнять contract fixtures. — `done`
+- 215.8 Централизовать рекурсивное удаление `passport_series` в output wrapper
+  всех MCP-инструментов; убрать локальные дубли и покрыть nested records. — `done`

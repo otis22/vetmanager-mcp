@@ -1,7 +1,6 @@
 from fastmcp import FastMCP
 
 from filters import eq as _filter_eq, like as _filter_like
-from privacy_utils import redact_client_passport_series
 from resources.pet_profile import fetch as _fetch_pet_profile
 from service_metrics import instrument_call as _instrument_call
 from tools._inactive_helpers import (
@@ -195,14 +194,12 @@ def register(mcp: FastMCP) -> None:
         Args:
             pet_id: Unique numeric ID of the pet.
         """
-        return redact_client_passport_series(
-            await _instrument_call(
-                "/rest/api/pet",
-                "GET",
-                lambda: _fetch_pet_profile(pet_id),
-                operation="aggregate_profile",
-                tool_name="get_pet_profile",
-            )
+        return await _instrument_call(
+            "/rest/api/pet",
+            "GET",
+            lambda: _fetch_pet_profile(pet_id),
+            operation="aggregate_profile",
+            tool_name="get_pet_profile",
         )
 
     @mcp.tool

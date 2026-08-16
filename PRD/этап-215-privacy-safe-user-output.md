@@ -34,12 +34,13 @@
 3. Исключить `login`, `passwd`, `last_change_pwd_date`, `address`, `user_inn`,
    `calc_percents`: credential/auth metadata, адрес (не входит в согласованные
    контакты), персональный налоговый идентификатор и данные о вознаграждении.
-4. В `tools/client.py` использовать узкий denylist только для
-   `passport_series` во всех путях выдачи клиента, включая обычный и name-search
-   `get_clients`, `get_debtors`, `get_client_by_id`, write responses и
-   `get_client_profile`; также применить его к owner в `get_pet_profile`.
-   Allowlist здесь намеренно не применяется: клиентские поля широки и нужны
-   агентам, а решение касается одного подтверждённого паспортного поля.
+4. В общем wrapper регистрации MCP-инструментов рекурсивно удалять только
+   `passport_series` из каждого результата до выдачи модели. Это покрывает
+   прямые client paths, вложенные `client`/`owner` и инструменты с прямым
+   `VetmanagerClient`, которые обходят `crud_*`; file-local denylist'ы не
+   дублировать. Allowlist здесь намеренно не применяется: клиентские поля
+   широки и нужны агентам, а решение касается одного подтверждённого
+   паспортного поля.
 5. Сохранить transport envelope целиком независимо от `success` и всегда
    проецировать user records внутри `data`, в том числе во вложенных и error
    payload. Под контрактным ключом `user`/`users` projection безусловна и не
@@ -104,7 +105,8 @@ fail-closed поведение без нового решения Владими
   `role.super`; нужные аналитические поля и pagination сохраняются.
 - Во всех путях выдачи клиента отсутствует `passport_series`, а остальные
   клиентские поля сохраняются, включая `get_debtors` и owner в
-  `get_pet_profile`.
+  `get_pet_profile`; это же правило действует для вложенных owner/client в
+  результатах любых MCP-инструментов.
 - `get_suppliers` сохраняет ИНН и банковские реквизиты по явному решению
   Владимира.
 - Все targeted и полный mock test contours проходят.
