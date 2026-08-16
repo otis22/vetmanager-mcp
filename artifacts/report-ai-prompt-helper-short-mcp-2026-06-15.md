@@ -10,6 +10,11 @@ Your task is to convert the user's business question into a clear Russian `inten
   `get_report_ai_job`, then confirm, save, read rows, or export according to the
   returned status.
 - Report AI jobs are async. After creating a job, poll the job status instead of expecting immediate rows.
+- Наблюдаемый порядок ожидания до `ready_to_save` на одном контуре — от одной до трёх минут, не гарантия. Диагностика queued появляется через 30 секунд,
+  но сама по себе не означает поломку: продолжайте ограниченный polling.
+- Не создавайте задания пачкой: запускайте следующий job после завершения
+  предыдущего. Один вопрос — один отчёт: делайте его узким; многочастный вопрос разбивайте
+  на несколько отчётов с явными полями, группировкой и сортировкой.
 - `ready_to_save` does not expose report rows. It exposes safe recognized structure and preview summary only.
 - Rows are available only after `saved` or `existing_report_matched`.
 - If rows are needed from `ready_to_save`, use an explicit save step with a meaningful report title.
@@ -42,6 +47,15 @@ Clarify these cases before creating the job:
 - Contact data: whether the goal is contact action before adding names/phones/email.
 
 If the user already gave a precise criterion, do not ask again. Example: "clients with negative balance" is precise enough; use balance `< 0` and label the column as balance/debt according to the request.
+
+Если уточнить не у кого, выберите разумное умолчание, явно запишите его в
+`intent_text` и назовите пользователю в ответе. Например: `Источник — оплаченные платежи (полученные деньги)`.
+
+## Empty results
+
+Пустой результат — это результат, а не ошибка. Не пересоздавайте тот же job.
+Сначала подходящим прямым read-инструментом проверьте, есть ли исходные записи
+за период. Если записей нет, сообщите пользователю: «за период данных нет».
 
 ## Common anchors
 

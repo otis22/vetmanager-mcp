@@ -58,6 +58,12 @@ if [[ ! -d $repo ]]; then
     printf 'Repository is not a directory: %s\n' "$repo" >&2
     exit 64
 fi
+repo=$(realpath -e -- "$repo")
+evidence_candidate=$(realpath -ms -- "$evidence_dir")
+if [[ $evidence_candidate == "$repo" || $evidence_candidate == "$repo/"* ]]; then
+    printf 'Evidence directory must be outside the repository working tree: %s\n' "$evidence_candidate" >&2
+    exit 73
+fi
 if [[ -n $review_file && ! -f $review_file ]]; then
     printf 'Review file is not a readable regular file: %s\n' "$review_file" >&2
     exit 64
@@ -122,6 +128,10 @@ if ! evidence_parent=$(realpath -e -- "$evidence_parent"); then
     exit 73
 fi
 evidence_dir=$evidence_parent/$(basename -- "$evidence_dir")
+if [[ $evidence_dir == "$repo" || $evidence_dir == "$repo/"* ]]; then
+    printf 'Evidence directory must be outside the repository working tree: %s\n' "$evidence_dir" >&2
+    exit 73
+fi
 if [[ -L $evidence_dir || ( -e $evidence_dir && ! -d $evidence_dir ) ]]; then
     printf 'Evidence path must be a real directory: %s\n' "$evidence_dir" >&2
     exit 73

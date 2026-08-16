@@ -48,6 +48,12 @@ _FREE_TEXT_KEYS = frozenset({
 })
 
 _EMAIL_RE = re.compile(r"(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b")
+_DATE_OR_DATETIME_RE = re.compile(
+    r"(?<!\d)(?:"
+    r"\d{4}-\d{2}-\d{2}"
+    r"|\d{2}\.\d{2}\.\d{4}"
+    r")(?:[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?(?!\d)"
+)
 _PHONE_RE = re.compile(r"(?<!\[redacted-phone\])(?:\+?\d[\d\-\s().]{8,}\d)")
 _OWNER_PHRASE_RE = re.compile(
     r"(?u)\b(?i:(?:владелец|хозяин|owner))\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё.\-]+(?:\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё.\-]+){0,2}"
@@ -80,9 +86,15 @@ def sanitize_text(text: str) -> str:
     """Scrub only explicit PII patterns from whitelist free-text fields."""
     if not text:
         return text
-    sanitized = text
+    sanitized_parts: list[str] = []
+    position = 0
+    for date_match in _DATE_OR_DATETIME_RE.finditer(text):
+        sanitized_parts.append(_PHONE_RE.sub(REDACTED_PHONE, text[position:date_match.start()]))
+        sanitized_parts.append(date_match.group())
+        position = date_match.end()
+    sanitized_parts.append(_PHONE_RE.sub(REDACTED_PHONE, text[position:]))
+    sanitized = "".join(sanitized_parts)
     sanitized = _EMAIL_RE.sub(REDACTED_EMAIL, sanitized)
-    sanitized = _PHONE_RE.sub(REDACTED_PHONE, sanitized)
     sanitized = _OWNER_PHRASE_RE.sub(lambda _m: f"owner {REDACTED_NAME}", sanitized)
     sanitized = _INITIALS_RE.sub(REDACTED_NAME, sanitized)
     return sanitized

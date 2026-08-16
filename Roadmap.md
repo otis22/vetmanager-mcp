@@ -3996,3 +3996,22 @@ Report AI lifecycle и подготовить конкретные MCP-only ул
 - 219.2 Инструментировать вызовы, lifecycle, terminal outcomes, stage/export duration; не менять существующий long-queued counter. — `done`
 - 219.3 Покрыть mock tests, README metrics contract, проверки и audit. — `done`
 - 219.4 Зафиксировать отдельные MCP-only предложения по feedback без их реализации. — `done`
+
+## Этап 220. Report AI: даты в обезличивании и дисциплина агента — `stop`
+
+Источник: живая проверка шести Report AI отчётов 2026-08-16. Цель: сохранить
+даты/время в свободном тексте обезличенного MCP-ответа и дать агентам короткие
+практические правила работы с пустыми результатами и асинхронной очередью.
+
+- 220.1 PRD, review gates и test-first регрессии для форматов даты/времени,
+  телефона рядом с датой и helper-текста. — `done`
+- 220.2 Сузить free-text phone redaction, чтобы он не принимал `YYYY-MM-DD` и
+  `YYYY-MM-DD HH:MM:SS` за телефон, сохранив маскирование настоящих телефонов.
+  — `done`
+- 220.3 Кратко обновить `get_report_ai_prompt_helper`: zero rows как
+  результат, проверка исходных записей, default при недоступном уточнении,
+  узкие последовательные jobs и наблюдаемый порядок ожидания. — `done`
+- 220.4 Исправить findings external review: не допустить phone false negative
+  после даты, покрыть ISO `T`/timezone, удалить local evidence и запретить
+  evidence path в repo; затем пройти проверки, commit без push. — `done`
+  (external review и push по явному указанию пользователя остаются за ним)

@@ -189,3 +189,36 @@ def test_review_attempt_resolves_symlinked_evidence_parent(tmp_path: Path) -> No
     metadata_path = next(resolved_evidence.rglob("*.metadata.json"))
     metadata = json.loads(metadata_path.read_text())
     assert Path(metadata["envelope_file"]).is_relative_to(resolved_evidence)
+
+
+def test_review_attempt_rejects_evidence_directory_inside_repository(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    prompt = tmp_path / "prompt.txt"
+    schema = tmp_path / "schema.json"
+    prompt.write_text("Review only.\n")
+    schema.write_text('{"type":"object"}\n')
+
+    completed = subprocess.run(
+        [
+            str(SCRIPT),
+            "--repo",
+            str(repo),
+            "--range",
+            "HEAD",
+            "--attempt",
+            "1/3",
+            "--prompt-file",
+            str(prompt),
+            "--schema-file",
+            str(schema),
+            "--evidence-dir",
+            str(repo / ".review-evidence"),
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert completed.returncode == 73
+    assert "outside the repository working tree" in completed.stderr
+    assert not (repo / ".review-evidence").exists()

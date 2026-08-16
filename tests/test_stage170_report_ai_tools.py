@@ -73,6 +73,9 @@ async def test_report_ai_prompt_helper_registered_and_mentions_data_boundary():
     assert "Do not write SQL" in body
     assert "good.id" in body
     assert "код/артикул/наименование товара" in body
+    assert "Пустой результат — это результат" in body
+    assert "Один вопрос — один отчёт" in body
+    assert "от одной до трёх минут" in body
 
 
 @pytest.mark.asyncio
@@ -96,6 +99,9 @@ async def test_get_report_ai_prompt_helper_tool_matches_prompt_body():
     assert "Do not write SQL" in helper_text
     assert "good.id" in helper_text
     assert "код/артикул/наименование товара" in helper_text
+    assert "Пустой результат — это результат" in helper_text
+    assert "Источник — оплаченные платежи (полученные деньги)" in helper_text
+    assert "30 секунд" in helper_text
 
 
 @pytest.mark.asyncio

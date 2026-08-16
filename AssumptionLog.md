@@ -4,6 +4,28 @@
 
 ---
 
+## Этап 220: Report AI даты в обезличивании и дисциплина агента
+
+- Free-text phone sanitizer сохраняет ISO/local date-time фрагменты до
+  применения неизменённой phone mask к остальному тексту. Это сохраняет
+  business dates/time, включая диапазоны дат, и не допускает false negative
+  телефона непосредственно после даты. Structured phone key masking не менялся.
+- Shared Report AI helper дополнен только MCP-наблюдаемыми правилами: empty
+  result — ответ, direct read check перед повтором, explicit default без
+  пользователя, один узкий последовательный job и наблюдаемый (не SLA) порядок
+  ожидания 1–3 минуты; 30 секунд — local queue diagnostic, не failure.
+- External review correctly found that the intermediate boundary lookbehinds
+  could leak a phone after a date and that ISO `T` timestamps were not covered.
+  Both findings accepted and fixed with protected date segments plus regressions.
+  Local `.review-evidence/` created by the earlier PRD review was removed by
+  user direction; `scripts/run_claude_review.sh` now rejects an evidence path
+  inside the repository before it reads a review object or writes a file.
+- Checks after the correction: targeted Docker `86 passed`; canonical
+  `docker compose --profile test run --rm test` passed (`1514 passed, 65
+  deselected`). The documented ShellCheck and Bash-syntax commands passed after
+  changing `scripts/run_claude_review.sh`. Production/SSH and push were not
+  performed; the user keeps external code review and push.
+
 ## Этап 219: Наблюдаемость Report AI и агентский workflow
 
 - Прямой путь `tools/report_ai.py` был вне `instrument_call`, поэтому Report AI
