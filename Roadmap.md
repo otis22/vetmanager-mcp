@@ -3964,7 +3964,8 @@ blockers.
 ## Этап 217. Тестируемый review-gate и known issue matching — `done`
 
 - 217.1 Вынести validation review envelope в CI-покрытый скрипт. — `done`
-- 217.2 Убрать tool-equality prefilter перед fingerprint matching. — `done`
+- 217.2 Сохранить tool-equality prefilter для rules matching и допустить
+  exact fingerprint matching как отдельную альтернативу. — `done`
 - 217.3 Вызывать review validator как исполняемый скрипт и покрыть
   документированную команду smoke-тестом. — `done`
 - 217.4 Сохранить tool boundary для rules matching, допуская multi-tool issue

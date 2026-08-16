@@ -57,7 +57,7 @@ argument-hint: "[--top-n=M] [--format=markdown|json]"
    ```
 
 4. Если stdout пустой или ненулевой exit code:
-   - Проверь `curl -sf https://vetmanager-mcp.vromanichev.ru/healthz` — если сервис лёг, скажи пользователю.
+   - Проверь `curl -sf "${VETMANAGER_MCP_HEALTH_URL:?set VETMANAGER_MCP_HEALTH_URL}"` — если сервис лёг, скажи пользователю.
    - Если healthy, но скрипт упал — покажи stderr, предложи пересобрать образ: `./scripts/deploy_server.sh "root@${VETMANAGER_MCP_PROD_HOST:?set VETMANAGER_MCP_PROD_HOST}" /opt/vetmanager-mcp`.
    - НЕ пытайся 3+ раза — one failure → diagnose → пользователь решает.
 
