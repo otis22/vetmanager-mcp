@@ -129,14 +129,14 @@ Claude Opus review из Codex runtime:
   elif (.result | type != "string" or length == 0) then error("empty Claude result")
   else (.result | fromjson) as $review
   | if ($review | type) != "object" or ($review.findings | type) != "array"
-      or ($review.findings | all(.[];
+      or (($review.findings | all(.[];
         type == "object"
         and (keys | sort == ["file", "line", "reason", "severity"])
         and (.severity | type == "string")
         and (.file | type == "string")
         and (.line | type == "number")
         and (.reason | type == "string")
-      )) | not
+      )) | not)
     then error("review result does not match findings schema")
     else $review
     end

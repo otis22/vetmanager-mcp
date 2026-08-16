@@ -3955,3 +3955,5 @@ blockers.
 
 - 216.1 Исправить criteria и эталонный Claude structured-review pipeline по
   JSON-конверту `.result`; добавить prompt constraint на thinking. — `done`
+- 216.2 Исправить приоритет отрицания schema-проверки; проверить пять
+  acceptance cases через `jq`. — `done`

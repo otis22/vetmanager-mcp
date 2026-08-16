@@ -11378,6 +11378,13 @@ Checks so far:
   immediate JSON. Исторические записи AssumptionLog содержат лишь описания
   «без output»/«пустой output», без raw envelope/result, поэтому ни одна из них
   не может быть проверяемо переклассифицирована как успешный review.
+- Follow-up исправил precedence bug в documentation-only `jq`: отрицание теперь
+  применяется только к `all(...)`, а не ко всей дизъюнкции. Пять проверок
+  фактически дали: valid finding — passed; valid empty findings — passed;
+  finding без `reason` — rejected; `findings` не array — rejected; result не
+  object — rejected. Надёжнее вынести gate в repository script с fixture tests
+  и CI, но это отложено до отдельного решения Владимира, чтобы не добавлять
+  новый поддерживаемый artefact молча.
 - Read-only audit других direct `crud_list` passthrough не менялся в scope:
   clients — контакты/паспорт/баланс/notes; pets/admissions/invoices/hospital —
   nested client/owner и clinical data; suppliers — контакты/ИНН/банковские
