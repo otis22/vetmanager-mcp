@@ -3946,3 +3946,5 @@ blockers.
   runtime warning; контрактные `user`/`users` оставить на allowlist. — `done`
 - 215.6 Endpoint-аудит client/user output: закрыть passport_series в debtors
   и owner pet profile; сохранить error diagnostics прямых user responses. — `done`
+- 215.7 Исправить projection одиночного user response под подтверждённый
+  `outputHelper` envelope и выровнять contract fixtures. — `done`

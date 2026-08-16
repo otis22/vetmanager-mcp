@@ -107,7 +107,7 @@ async def test_get_user_by_id_returns_only_analytics_fields(monkeypatch):
     import tools.user as user_module
 
     async def fake_crud_get_by_id(*args, **kwargs):
-        return {"success": True, "data": _UPSTREAM_USER}
+        return {"success": True, "data": {"totalCount": 1, "user": _UPSTREAM_USER}}
 
     monkeypatch.setattr(user_module, "crud_get_by_id", fake_crud_get_by_id)
 
@@ -116,7 +116,8 @@ async def test_get_user_by_id_returns_only_analytics_fields(monkeypatch):
         result = await mcp.call_tool("get_user_by_id", {"user_id": 7})
 
     payload = result.structured_content or {}
-    _assert_analytics_projection(payload["data"])
+    assert payload["data"]["totalCount"] == 1
+    _assert_analytics_projection(payload["data"]["user"])
 
 
 @pytest.mark.asyncio
@@ -156,7 +157,7 @@ async def test_update_user_returns_only_analytics_fields(monkeypatch):
     import tools.user as user_module
 
     async def fake_crud_update(*args, **kwargs):
-        return {"success": True, "data": _UPSTREAM_USER}
+        return {"success": True, "data": {"totalCount": 1, "user": _UPSTREAM_USER}}
 
     monkeypatch.setattr(user_module, "crud_update", fake_crud_update)
 
@@ -165,7 +166,8 @@ async def test_update_user_returns_only_analytics_fields(monkeypatch):
         result = await mcp.call_tool("update_user", {"user_id": 7, "last_name": "Иванова"})
 
     payload = result.structured_content or {}
-    _assert_analytics_projection(payload["data"])
+    assert payload["data"]["totalCount"] == 1
+    _assert_analytics_projection(payload["data"]["user"])
 
 
 def test_user_projection_preserves_error_envelope_without_data():

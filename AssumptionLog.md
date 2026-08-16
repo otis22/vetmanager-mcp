@@ -11345,6 +11345,17 @@ Checks so far:
 - Проверки endpoint-аудита: расширенный targeted contour — `192 passed`;
   полный Docker contour с читаемым exit status `0` — `1454 passed, 2 skipped,
   65 deselected` за `230.85s`.
+- Повторный review подтвердил functional regression: `crud_get_by_id` и
+  `crud_update` сохраняют single-record envelope `data = {totalCount, user}`
+  от `ERestController::outputHelper`, а не разворачивают user record. Прямая
+  ветка projection теперь сначала распознаёт контрактный ключ и использует
+  общую projection логику; bare record оставлен только как legacy fallback.
+  Privacy-фикстуры и mock CRUD/filter tests приведены к тому же контракту.
+  Источник первоначальной ошибки — старые упрощённые e2e mocks, а не
+  подтверждённый API contract; OpenAPI фиксирует `data.user`/`totalCount` для
+  GET/PUT `/rest/api/user/{ID}`. После исправления расширенный targeted contour
+  прошёл (`193 passed`), полный Docker contour: `1455 passed, 2 skipped,
+  65 deselected`, exit status `0`, `183.88s`.
 - Read-only audit других direct `crud_list` passthrough не менялся в scope:
   clients — контакты/паспорт/баланс/notes; pets/admissions/invoices/hospital —
   nested client/owner и clinical data; suppliers — контакты/ИНН/банковские

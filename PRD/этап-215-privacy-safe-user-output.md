@@ -18,8 +18,9 @@
   Он приоритетнее OpenAPI/reference, где также упоминаются непроверенные для
   backend-модели computed-поля.
 - `ERestController::outputHelper` Vetmanager (проверен пользователем, line 497)
-  задаёт точный list-конверт: `data = {totalCount, user}`. `crud_list` не
-  добавляет metadata и читает из него только `totalCount`.
+  задаёт точный конверт для list и single-record ответов:
+  `data = {totalCount, user}`. `crud_list`, `crud_get_by_id` и `crud_update`
+  не разворачивают его; сами metadata не добавляют.
 
 ## Scope
 
@@ -45,8 +46,9 @@
    зависит от набора полей записи. `totalCount` сохраняется во всех формах.
    Неизвестная форма `data` пропускается дословно и фиксируется штатным runtime
    logger; на неё не распространяется эвристическая projection. Прямые ответы
-   `get_user_by_id` и `update_user` известны вызывающему контракту как user
-   record и проецируются безусловно, как и `data.user`.
+   Успешные `get_user_by_id` и `update_user` сначала обрабатывают контрактный
+   `data.user`/`data.users`; bare record поддерживается только как legacy
+   fallback. Неуспешный diagnostic `data` проходит без изменений с warning.
 6. Добавить test-first регрессии: все точки выдачи не отдают `passwd`/`login`
    и сохраняют требуемые аналитические поля. Отдельно покрыть name-search
    ветку, поскольку она формирует ответ локально, и дословный passthrough

@@ -412,10 +412,12 @@ async def test_get_good_by_id():
 async def test_get_users():
     billing_mock()
     respx.get(f"{BASE}/rest/api/user").mock(
-        return_value=httpx.Response(200, json={"data": [{"id": 1, "login": "dr.smith"}]})
+        return_value=httpx.Response(
+            200, json={"data": {"totalCount": 1, "user": [{"id": 1, "login": "dr.smith"}]}}
+        )
     )
     result = await client().get("/rest/api/user", params={"limit": 20, "offset": 0})
-    assert result["data"][0]["login"] == "dr.smith"
+    assert result["data"]["user"][0]["login"] == "dr.smith"
 
 
 @pytest.mark.asyncio
@@ -423,10 +425,12 @@ async def test_get_users():
 async def test_get_user_by_id():
     billing_mock()
     respx.get(f"{BASE}/rest/api/user/1").mock(
-        return_value=httpx.Response(200, json={"data": {"id": 1, "login": "dr.smith"}})
+        return_value=httpx.Response(
+            200, json={"data": {"totalCount": 1, "user": {"id": 1, "login": "dr.smith"}}}
+        )
     )
     result = await client().get("/rest/api/user/1")
-    assert result["data"]["id"] == 1
+    assert result["data"]["user"]["id"] == 1
 
 
 # ── Reference: Breed ──────────────────────────────────────────────────────────
@@ -698,4 +702,3 @@ async def test_get_clients_with_sort_and_filter_params():
     request = route.calls.last.request
     assert request.url.params.get("sort") == params["sort"]
     assert request.url.params.get("filter") == params["filter"]
-

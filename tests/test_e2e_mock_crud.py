@@ -86,10 +86,12 @@ async def test_update_invoice_tool():
 async def test_update_user():
     billing_mock()
     respx.put(f"{BASE}/rest/api/user/5").mock(
-        return_value=httpx.Response(200, json={"data": {"id": 5, "last_name": "Ivanov"}})
+        return_value=httpx.Response(
+            200, json={"data": {"totalCount": 1, "user": {"id": 5, "last_name": "Ivanov"}}}
+        )
     )
     result = await client().put("/rest/api/user/5", json={"last_name": "Ivanov"})
-    assert result["data"]["last_name"] == "Ivanov"
+    assert result["data"]["user"]["last_name"] == "Ivanov"
 
 
 @pytest.mark.asyncio
@@ -97,7 +99,9 @@ async def test_update_user():
 async def test_update_user_tool():
     billing_mock()
     route = respx.put(f"{BASE}/rest/api/user/5").mock(
-        return_value=httpx.Response(200, json={"data": {"id": 5, "last_name": "Ivanov"}})
+        return_value=httpx.Response(
+            200, json={"data": {"totalCount": 1, "user": {"id": 5, "last_name": "Ivanov"}}}
+        )
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:

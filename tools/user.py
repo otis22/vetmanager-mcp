@@ -24,8 +24,8 @@ _ANALYTICS_USER_FIELDS = frozenset(
     }
 )
 
-# Vetmanager ERestController::outputHelper (line 497) emits list data as
-# {"totalCount": ..., "user": [...]}; crud_list returns that response unchanged.
+# Vetmanager ERestController::outputHelper (line 497) emits every user response
+# as {"totalCount": ..., "user": ...}; CRUD helpers return it unchanged.
 _USER_PAGINATION_FIELDS = frozenset({"totalCount"})
 
 
@@ -73,10 +73,18 @@ def _project_user_response(response: dict, *, data_is_user_record: bool = False)
         return response
 
     projected = dict(response)
-    if data_is_user_record and response.get("success") is not False:
-        projected["data"] = _project_known_user_value(response["data"])
+    data = response["data"]
+    has_contract_user_key = isinstance(data, dict) and any(
+        key in data for key in ("user", "users")
+    )
+    if (
+        data_is_user_record
+        and response.get("success") is not False
+        and not has_contract_user_key
+    ):
+        projected["data"] = _project_known_user_value(data)
     else:
-        projected["data"] = _project_user_data(response["data"])
+        projected["data"] = _project_user_data(data)
     return projected
 
 

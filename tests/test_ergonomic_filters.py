@@ -707,7 +707,7 @@ async def test_get_users_name_filter_merges_last_and_first_name():
     route = respx.get(f"{BASE}/rest/api/user").mock(
         return_value=httpx.Response(
             200,
-            json={"data": {"user": [{"id": 7, "last_name": "Иванова"}]}},
+            json={"data": {"totalCount": 1, "user": [{"id": 7, "last_name": "Иванова"}]}},
         )
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
@@ -730,7 +730,7 @@ async def test_get_users_name_filter_merges_last_and_first_name():
 async def test_get_users_is_active_default_true():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/user").mock(
-        return_value=httpx.Response(200, json={"data": []})
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "user": []}})
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
@@ -745,7 +745,7 @@ async def test_get_users_is_active_default_true():
 async def test_get_users_is_active_false_filters_inactive_only():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/user").mock(
-        return_value=httpx.Response(200, json={"data": []})
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "user": []}})
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
@@ -760,7 +760,7 @@ async def test_get_users_is_active_false_filters_inactive_only():
 async def test_get_users_is_active_none_no_filter():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/user").mock(
-        return_value=httpx.Response(200, json={"data": []})
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "user": []}})
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
@@ -778,7 +778,7 @@ async def test_get_users_is_active_none_no_filter():
 async def test_get_users_position_id_filter():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/user").mock(
-        return_value=httpx.Response(200, json={"data": []})
+        return_value=httpx.Response(200, json={"data": {"totalCount": 0, "user": []}})
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
