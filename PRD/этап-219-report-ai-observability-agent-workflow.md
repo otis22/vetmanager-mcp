@@ -58,10 +58,11 @@ MCP-only улучшения поверхности для надёжной ра�
    terminal failure — `failed`/`rejected`. Если observer state истёк после
    отсутствия следующего job poll, записать `abandoned_wait`: это означает
    только «MCP более не наблюдал polling до local TTL», а не утверждение о
-   состоянии job или намерениях агента. Каждый observation finalizes exactly
-   once: `abandoned_wait` удаляет local observation и последующий новый poll
-   начинает отдельное observation, поэтому один lifecycle sample не получает
-   одновременно abandonment и API terminal outcome.
+   состоянии job или намерениях агента. Метрики lifecycle считают local
+   observations, не уникальные jobs: каждый observation finalizes exactly
+   once, но `abandoned_wait` удаляет local observation и следующий poll после
+   TTL начинает новый observation. Поэтому одно job может дать отдельные
+   `abandoned_wait` и later terminal samples; это не exactly-once job metric.
 6. Export измерять отдельно: старт export и polling export file; successful
    file response завершает observed export. Для convenience path связывать
    report-AI job с export attempt только в памяти; direct known-`report_id`

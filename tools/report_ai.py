@@ -522,10 +522,6 @@ def _safe_export_error(
         return ToolError(
             "Report export is not ready yet; call get_report_export_file again after a delay."
         )
-    if "build in progress" in lowered or "not started" in lowered:
-        return ToolError(
-            "Report export is not ready yet; call get_report_export_file again after a delay."
-        )
     if exc.status_code == 403:
         if "report creating in progress" in lowered:
             return ToolError(
@@ -553,8 +549,7 @@ def _safe_export_error(
 
 def _is_retryable_export_file_error(exc: VetmanagerError) -> bool:
     """Return the single retryable classification shared by tool and metrics."""
-    lowered = str(exc).lower()
-    return exc.status_code == 409 or "build in progress" in lowered or "not started" in lowered
+    return exc.status_code == 409
 
 
 async def _call_vm(

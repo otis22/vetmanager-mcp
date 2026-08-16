@@ -92,6 +92,18 @@
 - Targeted Docker tests passed (`74 passed`), including fixed-marker parity and
   terminal → unknown → terminal ordering.
 
+### Follow-up: retry narrowed to HTTP 409 and observation semantics
+
+- A retryable export-file poll is now exactly HTTP 409. Message text never
+  upgrades 403/5xx/other statuses to retryable; ToolError and metric outcome
+  use this same predicate. A non-409 marker regression records `poll|error`.
+- Lifecycle series are explicitly observation metrics, not unique-job metrics.
+  After TTL abandonment, a resumed poll starts a new observation, so the same
+  job can legitimately produce `abandoned_wait` and a later terminal sample.
+  This preserves the truthful meaning of abandonment rather than suppressing
+  the later observed outcome.
+- Targeted Docker tests passed (`74 passed`), including non-409 marker error.
+
 ---
 
 ## Этап 1–2: Каркас и MCP-инструменты
