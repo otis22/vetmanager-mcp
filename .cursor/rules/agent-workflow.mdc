@@ -153,7 +153,7 @@ scripts/run_claude_review.sh --range HEAD^..HEAD --attempt 1/3
 10. Оценка PRD на простоту → при изменении PRD повторить PRD-review gates
 11. Написать тесты
 12. Red → Green
-13. Запустить все проверки: при изменении `scripts/*.sh` выполнить `find scripts/ -name '*.sh' -type f -print0 | xargs -0 shellcheck --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`, затем `docker compose --profile test run --rm test`
+13. Запустить все проверки: при изменении `scripts/*.sh` выполнить `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`, затем `docker compose --profile test run --rm test`
 14. Провести аудит изменений:
    - проверить, не появились ли legacy-паттерны, дублирование, рассинхрон со свежим контрактом
    - при необходимости выполнить рефакторинг под новые изменения
@@ -162,6 +162,10 @@ scripts/run_claude_review.sh --range HEAD^..HEAD --attempt 1/3
 17. Spark-review committed diff → проверить адекватность findings → устранить только адекватные и важные findings
 18. Ревью сторонней моделью на committed diff до push → устранение адекватных findings → повтор tests/audit/commit/review в пределах бюджета
 19. Push
+
+Команда может попасть в процессную документацию только после запуска ровно в
+записанном виде: перед commit агент копирует её из документации, выполняет и
+проверяет реальный exit code. Эквивалентная команда не считается проверкой.
 20. Заполнить self-attestation checklist и показать пользователю
 21. Обновить `Roadmap.md` и `AssumptionLog.md`
 

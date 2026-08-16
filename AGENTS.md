@@ -35,10 +35,9 @@
 
 ## Тесты и проверки
 
-- ShellCheck и синтаксис Bash (обязательны перед commit при изменении `scripts/*.sh`): `find scripts/ -name '*.sh' -type f -print0 | xargs -0 shellcheck --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`
+- ShellCheck и синтаксис Bash (обязательны перед commit при изменении `scripts/*.sh`): `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`. Первая команда сама скачивает официальный образ при чистой Docker-сессии и фиксирована на версии CI.
 - Unit + mock e2e: `docker compose --profile test run --rm test`
-- Real API e2e (нужны `TEST_DOMAIN`, `TEST_API_KEY`): `docker compose --profile test run --rm -e TEST_DOMAIN=<домен> -e TEST_API_KEY=<ключ> test`
-- В локальной среде real API credentials могут лежать в `.env`; не печатать секреты в ответах. Для Docker Compose `--env-file` ставится перед subcommand: `docker compose --env-file .env --profile test run --rm test python scripts/run_opt_in_real_test_suite.py`.
+- Real API e2e (только если в `.env` есть test `TEST_DOMAIN` и `TEST_API_KEY`; секреты не печатать): `docker compose --env-file .env --profile test run --rm test python scripts/run_opt_in_real_test_suite.py`
 - CI: `.github/workflows/test.yml` (unit + mock); `test-real.yml` — ручной запуск с секретом.
 
 Задача не считается завершённой без прохождения проверок и записи в AssumptionLog.
@@ -46,6 +45,7 @@
 Дополнение к workflow:
 - Перед `commit`/`push` агент обязан сделать аудит внесённых изменений.
 - Если аудит потребовал рефакторинга, после него обязателен новый полный прогон тестов и проверок.
+- Команда попадает в процессную документацию только после запуска в точно записанном виде: перед commit агент копирует её из документации и проверяет реальный exit code. Эквивалентная команда не заменяет эту проверку.
 - Ревью сторонней моделью: Claude-агент проверяется Codex `gpt-5.5`, Codex-агент проверяется Claude Opus.
 - Бюджет сторонней модели: 2 валидных запуска на PRD-review и 2 валидных запуска на code/diff review; валидным является только запуск с разбираемым вердиктом — findings или явный пустой список. `gpt-5.3-codex-spark` как обычный scout/subagent безлимитен и не расходует бюджет. Для Spark-review перед конкретным review gate действует отдельный лимит: максимум 3 запуска.
 - Перед каждым PRD/code review агент делает Spark-review `gpt-5.3-codex-spark`, затем более сильное ревью. `gpt-5.3-spark` — неправильное/неполное имя модели; использовать только `gpt-5.3-codex-spark`.
