@@ -4005,14 +4005,11 @@ Report AI lifecycle и подготовить конкретные MCP-only ул
 
 - 220.1 PRD, review gates и test-first регрессии для форматов даты/времени,
   телефона рядом с датой и helper-текста. — `done`
-- 220.2 Сузить free-text phone redaction, чтобы он не принимал `YYYY-MM-DD` и
-  `YYYY-MM-DD HH:MM:SS` за телефон, сохранив маскирование настоящих телефонов.
-  — `done`
+- 220.2 Защищать от phone redaction только даты с допустимыми числовыми
+  диапазонами, сохранив privacy-first при пересечении. — `done`
 - 220.3 Кратко обновить `get_report_ai_prompt_helper`: zero rows как
   результат, проверка исходных записей, default при недоступном уточнении,
   узкие последовательные jobs и наблюдаемый порядок ожидания. — `done`
-- 220.4 Исправить findings external review: не допустить phone false negative
-  после даты, покрыть ISO `T`/timezone, удалить local evidence и запретить
-  evidence path в repo; затем пройти проверки, commit без push. — `done`
-  (priority rule added after the next review found city-code/email leaks;
-  external review и push по явному указанию пользователя остаются за ним)
+- 220.4 Пройти table-driven regression, full local checks и commit без push.
+  — `done` (external review и push по явному указанию пользователя
+  остаются за ним)

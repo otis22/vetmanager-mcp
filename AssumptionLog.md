@@ -8,30 +8,38 @@
 
 - Free-text sanitizer follows an explicit privacy priority: e-mail and phone
   candidates are found before date preservation; a date is preserved only when
-  it does not overlap accepted PII. Pure date/date-time candidates are excluded
-  from phone redaction. Therefore an ambiguous date-like fragment inside a
-  phone is redacted: distorted date is cosmetic, exposed PII is a leak.
-  Structured phone key masking не менялся.
+  it does not overlap accepted PII. A protected date must also pass the agreed
+  numeric ranges: year 1900–2100, month 01–12, day 01–31 and, when present,
+  time 00:00:00–23:59:59. An out-of-range date-like fragment is ordinary text.
+  Pure valid date/date-time candidates are excluded from phone redaction.
+  Therefore an ambiguous fragment inside a phone is redacted: distorted date is
+  cosmetic, exposed PII is a leak. Structured phone key masking не менялся.
 - Shared Report AI helper дополнен только MCP-наблюдаемыми правилами: empty
   result — ответ, direct read check перед повтором, explicit default без
   пользователя, один узкий последовательный job и наблюдаемый (не SLA) порядок
   ожидания 1–3 минуты; 30 секунд — local queue diagnostic, не failure.
-- External review correctly found that the intermediate boundary lookbehinds
-  could leak a phone after a date and that ISO `T` timestamps were not covered.
-  Both findings accepted and fixed with protected date segments plus regressions.
+- External review correctly found that intermediate boundary lookbehinds could
+  leak a phone after a date and that ISO `T` timestamps were not covered. The
+  superseding implementation removes those lookbehinds and uses range-valid
+  date recognition, including `T` and timezone forms.
   Local `.review-evidence/` created by the earlier PRD review was removed by
   user direction; `scripts/run_claude_review.sh` now rejects an evidence path
   inside the repository before it reads a review object or writes a file.
 - Follow-up review correctly found that date protection could split a phone
   with a four-digit city code and that phone masking could break a phone-like
-  email. Both are fixed by the priority rule; the table-driven corpus includes
-  dates, adjacent phones, city-code phones, phone-like email and their combined
-  line.
-- Checks after the priority correction: table-driven privacy corpus `36 passed`;
-  canonical `docker compose --profile test run --rm test` passed (`1516 passed,
-  65 deselected`). The documented ShellCheck and Bash-syntax commands passed.
-  Production/SSH and push were not performed; the user keeps external code
-  review and push.
+  email. The priority rule and range validation address both: `4852-45-67-89`
+  does not pass date ranges, while e-mail is accepted before overlapping phone
+  candidates. The table-driven corpus includes valid and invalid date ranges,
+  adjacent phones, city-code phones, phone-like e-mail and their combined line.
+- Accepted residual boundary: only numeric ranges are checked, not calendar
+  validity; other date layouts, partial dates, time without seconds, exotic
+  timezones and arbitrary phone layouts are not covered. A greedy phone match
+  may also hide a neighbouring otherwise-valid date; this is intentional.
+- Targeted corpus after the range-validation revision: `44 passed`. Canonical
+  `docker compose --profile test run --rm test` completed successfully
+  (`1524 selected`, `65 deselected`); documented ShellCheck and Bash-syntax
+  commands passed. Production/SSH and push are not performed; external code
+  review and push remain with the user.
 
 ## Этап 219: Наблюдаемость Report AI и агентский workflow
 

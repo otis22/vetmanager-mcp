@@ -50,9 +50,9 @@ _FREE_TEXT_KEYS = frozenset({
 _EMAIL_RE = re.compile(r"(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b")
 _DATE_OR_DATETIME_RE = re.compile(
     r"(?<!\d)(?:"
-    r"\d{4}-\d{2}-\d{2}"
-    r"|\d{2}\.\d{2}\.\d{4}"
-    r")(?:[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?(?!\d)"
+    r"(?:19\d{2}|20\d{2}|2100)-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])"
+    r"|(?:0[1-9]|[12]\d|3[01])\.(?:0[1-9]|1[0-2])\.(?:19\d{2}|20\d{2}|2100)"
+    r")(?:[T\s](?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):?[0-5]\d)?)?(?!\d)"
 )
 _PHONE_RE = re.compile(r"(?<!\[redacted-phone\])(?:\+?\d[\d\-\s().]{8,}\d)")
 _OWNER_PHRASE_RE = re.compile(
@@ -89,23 +89,14 @@ def sanitize_text(text: str) -> str:
     date_spans = [match.span() for match in _DATE_OR_DATETIME_RE.finditer(text)]
     email_spans = [match.span() for match in _EMAIL_RE.finditer(text)]
     redactions = [(start, end, REDACTED_EMAIL) for start, end in email_spans]
-    phone_spans = [match.span() for match in _PHONE_RE.finditer(text)]
-    position = 0
-    for date_start, date_end in date_spans:
-        phone_spans.extend(
-            (position + match.start(), position + match.end())
-            for match in _PHONE_RE.finditer(text[position:date_start])
-        )
-        position = date_end
-    phone_spans.extend(
-        (position + match.start(), position + match.end())
-        for match in _PHONE_RE.finditer(text[position:])
-    )
-
-    for start, end in phone_spans:
+    for phone_match in _PHONE_RE.finditer(text):
+        start, end = phone_match.span()
         if any(start < email_end and end > email_start for email_start, email_end in email_spans):
             continue
-        if any(date_start <= start < date_end or date_start < end <= date_end for date_start, date_end in date_spans):
+        if any(
+            date_start <= start and end <= date_end
+            for date_start, date_end in date_spans
+        ):
             continue
         date_free = _DATE_OR_DATETIME_RE.sub("", text[start:end])
         if not any(char.isdigit() for char in date_free):
@@ -114,7 +105,7 @@ def sanitize_text(text: str) -> str:
 
     sanitized_parts: list[str] = []
     position = 0
-    for start, end, replacement in sorted(redactions):
+    for start, end, replacement in sorted(redactions, key=lambda item: (item[0], -item[1])):
         if start < position:
             continue
         sanitized_parts.append(text[position:start])
