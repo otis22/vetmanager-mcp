@@ -11369,6 +11369,15 @@ Checks so far:
   New nested privacy regressions и затронутый набор прошли (`256 passed`);
   полный Docker contour: `1458 passed, 2 skipped, 65 deselected`, exit status
   `0`, `188.64s`.
+- Диагностика Владимира уточнила strong-review failure mode: stdout Claude Code
+  был JSON-конвертом, но `.result` пуст при `is_error=false`,
+  `stop_reason=tool_use` и преобладании thinking tokens. `tool_use` штатен для
+  `--json-schema`, поэтому criteria в Cursor rule, AGENTS и CLAUDE изменены на
+  envelope + `.result` + schema; `stop_reason` исключён. Эталонный pipeline
+  теперь извлекает `.result` через `jq -e`, а prompt требует brief thinking и
+  immediate JSON. Исторические записи AssumptionLog содержат лишь описания
+  «без output»/«пустой output», без raw envelope/result, поэтому ни одна из них
+  не может быть проверяемо переклассифицирована как успешный review.
 - Read-only audit других direct `crud_list` passthrough не менялся в scope:
   clients — контакты/паспорт/баланс/notes; pets/admissions/invoices/hospital —
   nested client/owner и clinical data; suppliers — контакты/ИНН/банковские

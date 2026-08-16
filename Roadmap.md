@@ -3950,3 +3950,8 @@ blockers.
   `outputHelper` envelope и выровнять contract fixtures. — `done`
 - 215.8 Централизовать рекурсивное удаление `passport_series` в output wrapper
   всех MCP-инструментов; убрать локальные дубли и покрыть nested records. — `done`
+
+## Этап 216. Корректная оценка structured output внешнего ревью — `done`
+
+- 216.1 Исправить criteria и эталонный Claude structured-review pipeline по
+  JSON-конверту `.result`; добавить prompt constraint на thinking. — `done`
