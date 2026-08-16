@@ -37,7 +37,7 @@ def redact_sensitive_output_fields(value, *, _staff_record: bool = False):
     if callable(model_dump):
         try:
             return redact_sensitive_output_fields(
-                model_dump(mode="python"), _staff_record=_staff_record,
+                model_dump(mode="json"), _staff_record=_staff_record,
             )
         except Exception:
             # Keep an object whose serializer has a non-standard signature or
@@ -66,7 +66,9 @@ def redact_sensitive_output_fields(value, *, _staff_record: bool = False):
 
 
 def redact_tool_error(exc: ToolError) -> ToolError:
-    """Redact structured ToolError arguments before feedback augmentation stringifies them."""
+    """Redact structured base ToolError arguments without changing subclasses."""
+    if type(exc) is not ToolError:
+        return exc
     redacted_args = tuple(_redact_error_argument(value) for value in exc.args)
     return ToolError(*redacted_args)
 
@@ -79,9 +81,10 @@ def _redact_error_argument(value):
             return value
         if not isinstance(decoded, (dict, list)):
             return value
-        return json.dumps(
-            redact_sensitive_output_fields(decoded), ensure_ascii=False, sort_keys=True,
-        )
+        redacted = redact_sensitive_output_fields(decoded)
+        if redacted == decoded:
+            return value
+        return json.dumps(redacted, ensure_ascii=False, sort_keys=True)
     return redact_sensitive_output_fields(value)
 
 

@@ -42,15 +42,17 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
             try:
                 result = await tool_func(*args, **kwargs)
             except ToolError as exc:
-                sanitized_exc = redact_tool_error(exc)
                 if resolved_tool_name in BASELINE_ALLOWED_TOOLS:
-                    raise sanitized_exc from None
-                if should_skip_report_hint(sanitized_exc):
-                    raise sanitized_exc from None
+                    raise
+                if should_skip_report_hint(exc):
+                    raise
+                if type(exc) is not ToolError:
+                    raise
+                sanitized_exc = redact_tool_error(exc)
                 augmented_exc = await augment_tool_error(
                     resolved_tool_name, credentials, sanitized_exc,
                 )
-                raise redact_tool_error(augmented_exc) from sanitized_exc
+                raise redact_tool_error(augmented_exc) from exc
             result = redact_sensitive_output_fields(result)
             if not credentials.is_depersonalized:
                 return result

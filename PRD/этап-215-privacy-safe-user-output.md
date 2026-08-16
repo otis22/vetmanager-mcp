@@ -40,11 +40,13 @@
    подтверждённых OpenAPI staff-контейнеров `user`, `users`, `doctor`,
    `doctor_data`, `closedUser`: эти имена могут быть легитимными полями
    настроек вне staff-record. Обработка охватывает mapping/list/tuple,
-   последовательности и Pydantic `model_dump()` values; структурные аргументы
-   `ToolError` очищаются до feedback augmentation. Произвольный объект без
+   последовательности и Pydantic `model_dump(mode="json")` values; структурные
+   аргументы только базового `ToolError` очищаются до feedback augmentation.
+   Подклассы `ToolError`, baseline errors, произвольный объект без
    поддерживаемой сериализации и свободный текст ошибки не имеют безопасной
-   структурной проекции и остаются вне этой гарантии. Это покрывает прямые
-   client paths, вложенные `client`/`owner`/staff и инструменты с прямым
+   структурной проекции и остаются вне этой гарантии: сохранность их типа,
+   атрибутов и traceback важнее редкой структурной payload в ошибке. Это
+   покрывает прямые client paths, вложенные `client`/`owner`/staff и инструменты с прямым
    `VetmanagerClient`, которые обходят `crud_*`; file-local denylist'ы не
    дублировать. Для вложенных staff намеренно выбран denylist: контекстные поля
    счёта/госпитализации нужны сценариям, поэтому allowlist прямых user tools

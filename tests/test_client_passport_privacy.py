@@ -1,12 +1,16 @@
 """Regression coverage for client and nested-staff output redaction."""
 
+from datetime import date
+from decimal import Decimal
+from enum import Enum
 from unittest.mock import AsyncMock
+from uuid import UUID
 
 from fastmcp.exceptions import ToolError
 from pydantic import create_model
 import pytest
 
-from privacy_utils import redact_sensitive_output_fields
+from privacy_utils import redact_sensitive_output_fields, redact_tool_error
 from server import mcp
 from tests.runtime_factories import make_runtime_credentials, patch_runtime_credentials
 import tools
@@ -75,14 +79,76 @@ def test_redaction_scopes_generic_staff_fields_to_confirmed_containers() -> None
     _assert_staff_credentials_redacted(result["doctor"])
 
 
-def test_redaction_handles_tuple_and_pydantic_model_values() -> None:
-    payload_model = create_model("Payload", user=(dict, ...))(user=_UPSTREAM_STAFF)
+def test_redaction_handles_tuple_and_json_serializable_pydantic_values() -> None:
+    class Status(Enum):
+        READY = "ready"
+
+    payload_model = create_model(
+        "Payload",
+        user=(dict, ...),
+        date_value=(date, ...),
+        amount=(Decimal, ...),
+        request_id=(UUID, ...),
+        status=(Status, ...),
+    )(
+        user=_UPSTREAM_STAFF,
+        date_value=date(2026, 8, 16),
+        amount=Decimal("12.50"),
+        request_id=UUID("12345678-1234-5678-1234-567812345678"),
+        status=Status.READY,
+    )
 
     result = redact_sensitive_output_fields((payload_model, {"login": "allowed-setting"}))
 
     assert isinstance(result, tuple)
     _assert_staff_credentials_redacted(result[0]["user"])
+    assert result[0] == {
+        "user": result[0]["user"],
+        "date_value": "2026-08-16",
+        "amount": "12.50",
+        "request_id": "12345678-1234-5678-1234-567812345678",
+        "status": "ready",
+    }
     assert result[1]["login"] == "allowed-setting"
+
+
+def test_redaction_keeps_unchanged_json_error_string_byte_for_byte() -> None:
+    source = '{ "second": 2, "first": 1 }'
+
+    redacted = redact_tool_error(ToolError(source))
+
+    assert redacted.args == (source,)
+
+
+@pytest.mark.asyncio
+async def test_wrapper_preserves_subclass_error_and_skip_hint_input(monkeypatch) -> None:
+    credentials = make_runtime_credentials("testclinic", "test-key-mock")
+    monkeypatch.setattr(tools, "resolve_runtime_credentials", AsyncMock(return_value=credentials))
+    seen = []
+
+    class SpecializedToolError(ToolError):
+        def __init__(self, message, marker):
+            super().__init__(message)
+            self.marker = marker
+
+    original = SpecializedToolError("upstream failed", marker="keep")
+
+    def skip_hint(exc):
+        seen.append(exc)
+        return False
+
+    monkeypatch.setattr(tools, "should_skip_report_hint", skip_hint)
+
+    async def failing_tool():
+        raise original
+
+    wrapped = tools._wrap_tool_with_depersonalization(failing_tool, tool_name="get_invoices")
+    with pytest.raises(SpecializedToolError) as exc_info:
+        await wrapped()
+
+    assert exc_info.value is original
+    assert exc_info.value.marker == "keep"
+    assert seen == [original]
 
 
 @pytest.mark.asyncio

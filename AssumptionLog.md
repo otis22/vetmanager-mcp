@@ -11361,9 +11361,8 @@ Checks so far:
   tools используют `VetmanagerClient` напрямую. Поэтому recursive scoped
   denylist применён в общем wrapper регистрации MCP-инструментов к финальному
   result до выдачи модели. Он покрывает mapping/list/tuple,
-  последовательности и Pydantic `model_dump()` values, а структурные аргументы
-  `ToolError` — до feedback augmentation; произвольные не-сериализуемые
-  объекты и свободный текст ошибки этой гарантией не охвачены. Локальные
+  последовательности и Pydantic `model_dump(mode="json")` values; error path
+  намеренно не входит в первоначальную гарантию. Локальные
   вызовы в `tools/client.py` и `tools/pet.py` удалены как дубли. Цена — O(n)
   обход и копирование JSON-подобного ответа; размер tool result уже ограничен
   pagination, а имя поля подтверждено только как Client.passport_series в
@@ -11388,14 +11387,16 @@ Checks so far:
   `passport_series`, `passwd`, `last_change_pwd_date`; неоднозначные `login`,
   `user_inn`, `calc_percents` удаляются лишь в подтверждённых OpenAPI
   staff-контейнерах `user`, `users`, `doctor`, `doctor_data`, `closedUser`.
-  Wrapper очищает mapping/list/tuple, другие последовательности, Pydantic
-  `model_dump()` и структурные `ToolError.args` до augmentation; свободный
-  текст и произвольные не-сериализуемые объекты не имеют безопасной
-  структурной обработки. Docker использует `ToolError` без keyword
-  `log_level`, поэтому пересоздание ошибки сохраняет очищенные args, но не
-  опирается на необязательный внутренний атрибут. Проверены настройка с
-  допустимым `login`, staff record, tuple/Pydantic и error path. Контур:
-  `1464 passed, 2 skipped, 65 deselected`, exit status `0`, `301.38s`.
+  Wrapper очищает mapping/list/tuple, другие последовательности и Pydantic
+  `model_dump(mode="json")`. Структурные args очищаются только у базового
+  `ToolError` до augmentation; подклассы и baseline errors пробрасываются
+  исходным объектом с тем же traceback и не очищаются. Это ограничение выбрано
+  сознательно: тип/атрибуты exception важнее маловероятной structured payload
+  в error message. JSON-строка без удаления поля возвращается byte-for-byte.
+  Проверены допустимый settings `login`, staff record, JSON-native
+  date/Decimal/UUID/Enum, subclass error и error path.
+  Полный Docker-контур после исправления: `1466 passed, 2 skipped,
+  65 deselected`, exit status `0`, `186.29s`.
 - Диагностика Владимира уточнила strong-review failure mode: stdout Claude Code
   был JSON-конвертом, но `.result` пуст при `is_error=false`,
   `stop_reason=tool_use` и преобладании thinking tokens. `tool_use` штатен для

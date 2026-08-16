@@ -3954,6 +3954,8 @@ blockers.
   покрыть invoice/hospital/cassaclose regressions. — `done`
 - 215.10 Уточнить границы глобального privacy wrapper: scoped staff keys,
   сериализуемые значения и структурные ToolError до augmentation. — `done`
+- 215.11 Сохранить type/traceback подклассов ToolError и JSON-сериализацию
+  Pydantic output в глобальном privacy wrapper. — `done`
 
 ## Этап 216. Корректная оценка structured output внешнего ревью — `done`
 
