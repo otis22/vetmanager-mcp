@@ -15,7 +15,7 @@ import re
 from typing import Any
 
 from fastmcp.exceptions import ToolError
-from sqlalchemy import func, select, update
+from sqlalchemy import false, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from observability_logging import RUNTIME_LOGGER
@@ -454,10 +454,20 @@ async def _ordered_known_issue_candidates(
     statuses: tuple[str, ...],
 ) -> AsyncIterator[KnownIssue]:
     fingerprint_hash = build_error_fingerprint_hash(incident)
+    fingerprint_matches = (
+        KnownIssue.error_fingerprint_hash == fingerprint_hash
+        if fingerprint_hash
+        else false()
+    )
     candidates = (
         await session.execute(
             select(KnownIssue)
             .where(KnownIssue.status.in_(statuses))
+            .where(
+                (KnownIssue.related_tool == incident.related_tool)
+                | (KnownIssue.related_tool.is_(None))
+                | fingerprint_matches
+            )
             .order_by(KnownIssue.priority.asc(), KnownIssue.updated_at.desc(), KnownIssue.id.asc())
         )
     ).scalars().all()

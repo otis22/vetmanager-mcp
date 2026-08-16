@@ -7856,11 +7856,8 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Создан PRD `PRD/этап-171-vmlink-personal-account-link-by-phone.md`.
 - В `Roadmap.md` добавлен Stage 171.
 - `artifacts/openapi-diff-2026-06-15-remote-vs-local.md` дополнен product decisions и VmLink research notes.
-- Проверен source of truth в `/home/otis/myprojects/vetmanager-extjs`:
-  - `rest/protected/controllers/VmLinkController.php`
-  - `application/src/ServiceIntegration/VmLink.php`
-  - `rest/protected/config/services.php`
-  - `rest/protected/config/services_private.php`
+- Проверены контрактные факты API VmLink и интеграции, влияющие на форму
+  ответа и нормализацию телефона.
 - Проведён real probe на `devtr6` без записи полного телефона/ссылки в артефакты.
 
 ### Решения и обоснования
@@ -11433,9 +11430,26 @@ Checks so far:
   Перед будущими изменениями полей сущностей OpenAPI будет сверяться с
   фактическими ответами API, а каждое расхождение фиксироваться отдельной
   контрактной записью.
-- Review envelope validation вынесена из markdown jq в CI-покрытый Python
-  script. SQL prefilter по точному `related_tool` был удалён: он отбрасывал
-  issue `create_report_ai_job/get_report_ai_job` до exact fingerprint/rules
-  match для incident `create_report_ai_job`. Аудит candidate selection нашёл
-  этот единственный related-tool prefilter в `_ordered_known_issue_candidates`;
-  другие callers используют тот же helper.
+- Review envelope validation вынесена из markdown jq в CI-покрытый исполняемый
+  Python script. Candidate prefilter сохраняет границу `related_tool` для
+  rules-based matching и дополнительно допускает exact fingerprint match:
+  issue `create_report_ai_job/get_report_ai_job` проходит для incident
+  `create_report_ai_job` с тем же fingerprint. Аудит candidate selection нашёл
+  этот единственный related-tool prefilter; другие callers используют тот же
+  helper.
+- **Strong code/diff review gate — blocked:** попытка 1/3 остановилась до
+  ревью из-за отсутствующего в shell алиаса `python`; повторные попытки 2/3 и
+  3/3 с `python3` завершились без stdout и без разбираемого verdict. По
+  правилу инфраструктурных попыток push запрещён до решения пользователя или
+  восстановления провайдера/review runtime.
+- **Follow-up этапа 217:** validator стал исполняемым и вызывается напрямую
+  из workflow-документации; smoke-тест в CI запускает именно эту команду.
+  Схема `line` синхронизирована с JSON schema и принимает только целое число.
+- **Tool boundary:** SQL candidate prefilter сохраняет same-tool/`NULL`
+  границу для rules matching и добавляет exact fingerprint как отдельную
+  альтернативу. Позитивная регрессия использует test pepper и доказывает
+  именно fingerprint match для multi-tool issue; отрицательная — запрещает
+  нестрогим rules чужого инструмента выдать playbook.
+- **Risk cleanup:** production host в product-metrics command заменён на
+  обязательную переменную окружения; историческое упоминание приватной
+  конфигурации Vetmanager заменено контрактным утверждением об API VmLink.

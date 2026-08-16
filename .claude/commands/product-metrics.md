@@ -19,7 +19,7 @@ argument-hint: "[--top-n=M] [--format=markdown|json]"
 
 2. Выполни через Bash:
    ```
-   ssh root@212.193.59.219 'cd /opt/vetmanager-mcp && docker compose --profile production exec -T mcp python scripts/product_metrics_report.py {validated_args}'
+   ssh "root@${VETMANAGER_MCP_PROD_HOST:?set VETMANAGER_MCP_PROD_HOST}" 'cd /opt/vetmanager-mcp && docker compose --profile production exec -T mcp python scripts/product_metrics_report.py {validated_args}'
    ```
    (одинарные кавычки: никакой intermediate shell-эвалюации не нужно)
 
@@ -42,8 +42,8 @@ argument-hint: "[--top-n=M] [--format=markdown|json]"
 
    Удобные команды:
    ```
-   ssh root@212.193.59.219 'cd /opt/vetmanager-mcp && docker compose --profile production ps mcp --format json'
-   ssh root@212.193.59.219 'curl -fsS http://127.0.0.1:8000/metrics' | rg '^vetmanager_tool_calls_total'
+   ssh "root@${VETMANAGER_MCP_PROD_HOST:?set VETMANAGER_MCP_PROD_HOST}" 'cd /opt/vetmanager-mcp && docker compose --profile production ps mcp --format json'
+   ssh "root@${VETMANAGER_MCP_PROD_HOST:?set VETMANAGER_MCP_PROD_HOST}" 'curl -fsS http://127.0.0.1:8000/metrics' | rg '^vetmanager_tool_calls_total'
    ```
 
    Секцию добавляй после основного Markdown отчёта:
@@ -58,7 +58,7 @@ argument-hint: "[--top-n=M] [--format=markdown|json]"
 
 4. Если stdout пустой или ненулевой exit code:
    - Проверь `curl -sf https://vetmanager-mcp.vromanichev.ru/healthz` — если сервис лёг, скажи пользователю.
-   - Если healthy, но скрипт упал — покажи stderr, предложи пересобрать образ: `./scripts/deploy_server.sh root@212.193.59.219 /opt/vetmanager-mcp`.
+   - Если healthy, но скрипт упал — покажи stderr, предложи пересобрать образ: `./scripts/deploy_server.sh "root@${VETMANAGER_MCP_PROD_HOST:?set VETMANAGER_MCP_PROD_HOST}" /opt/vetmanager-mcp`.
    - НЕ пытайся 3+ раза — one failure → diagnose → пользователь решает.
 
 5. Markdown output от скрипта уже готов к показу. Просто отрежь шум деплоя (если есть), добавь только секцию `Tool calls top-5` из шага 3 и покажи чистый отчёт в ответе пользователю. **Не добавляй свои заголовки** — скрипт форматирует сам.

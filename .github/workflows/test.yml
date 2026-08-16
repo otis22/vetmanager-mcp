@@ -24,7 +24,7 @@ jobs:
             vetmanager-mcp-test \
             python scripts/run_fast_test_suite.py
 
-      - name: Validate structured review gate
+      - name: Validate executable structured review gate
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/app" \

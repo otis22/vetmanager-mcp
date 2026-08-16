@@ -633,6 +633,7 @@ async def test_exact_fingerprint_matches_issue_with_multi_tool_related_tool(
     sqlite_session_factory_builder,
     tmp_path,
     monkeypatch,
+    feedback_pepper,
 ):
     session_factory = await sqlite_session_factory_builder(tmp_path / "report-ai-fingerprint.db")
     monkeypatch.setattr(feedback, "get_session_factory", lambda: session_factory)
@@ -674,3 +675,43 @@ async def test_exact_fingerprint_matches_issue_with_multi_tool_related_tool(
     assert match is not None
     assert match.title == "Report AI creation and polling issue"
     assert match.fingerprint_hash == fingerprint
+
+
+@pytest.mark.asyncio
+async def test_rules_match_does_not_cross_related_tool_boundary(
+    sqlite_session_factory_builder,
+    tmp_path,
+):
+    session_factory = await sqlite_session_factory_builder(tmp_path / "related-tool-boundary.db")
+    incident = feedback.FeedbackIncident(
+        related_tool="create_report_ai_job",
+        error_code="ToolError",
+        error_excerpt="Report AI upstream response is malformed.",
+    )
+    playbook = {
+        "version": 1,
+        "summary": "Wrong playbook if tool boundary is ignored.",
+        "steps": ["Do not return this playbook."],
+        "do_not_do": [],
+        "recommended_tool_sequence": ["get_report_ai_job"],
+        "safe_to_retry": False,
+    }
+    permissive_rules = {
+        "version": 1,
+        "all": [{"field": "error_code", "op": "eq", "value": "ToolError"}],
+    }
+
+    async with session_factory() as session:
+        session.add(KnownIssue(
+            status="workaround_available",
+            category="bug",
+            severity="medium",
+            title="Polling-only issue",
+            related_tool="get_report_ai_job",
+            match_rules_json=json.dumps(permissive_rules),
+            agent_playbook_json=json.dumps(playbook),
+        ))
+        await session.commit()
+        match = await feedback.find_known_issue_match(session, incident)
+
+    assert match is None

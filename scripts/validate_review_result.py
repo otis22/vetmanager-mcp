@@ -19,7 +19,7 @@ def _is_finding(value: Any) -> bool:
         and set(value) == {"severity", "file", "line", "reason"}
         and isinstance(value["severity"], str)
         and isinstance(value["file"], str)
-        and isinstance(value["line"], (int, float))
+        and isinstance(value["line"], int)
         and not isinstance(value["line"], bool)
         and isinstance(value["reason"], str)
     )
