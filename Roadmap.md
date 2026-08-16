@@ -3961,6 +3961,11 @@ blockers.
 
 ## Этап 216. Корректная оценка structured output внешнего ревью — `done`
 
+## Этап 217. Тестируемый review-gate и known issue matching — `done`
+
+- 217.1 Вынести validation review envelope в CI-покрытый скрипт. — `done`
+- 217.2 Убрать tool-equality prefilter перед fingerprint matching. — `done`
+
 - 216.1 Исправить criteria и эталонный Claude structured-review pipeline по
   JSON-конверту `.result`; добавить prompt constraint на thinking. — `done`
 - 216.2 Исправить приоритет отрицания schema-проверки; проверить пять

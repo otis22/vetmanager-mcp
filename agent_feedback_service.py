@@ -458,7 +458,6 @@ async def _ordered_known_issue_candidates(
         await session.execute(
             select(KnownIssue)
             .where(KnownIssue.status.in_(statuses))
-            .where((KnownIssue.related_tool == incident.related_tool) | (KnownIssue.related_tool.is_(None)))
             .order_by(KnownIssue.priority.asc(), KnownIssue.updated_at.desc(), KnownIssue.id.asc())
         )
     ).scalars().all()

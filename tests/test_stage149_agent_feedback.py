@@ -626,3 +626,51 @@ async def test_triage_promote_validates_rules_and_sanitizes_agent_fields(
     assert "secret-1234567890" not in (issue.agent_playbook_json or "")
     assert feedback.validate_match_rules_json(issue.match_rules_json) is not None
     assert feedback.validate_agent_playbook(issue.agent_playbook_json) is not None
+
+
+@pytest.mark.asyncio
+async def test_exact_fingerprint_matches_issue_with_multi_tool_related_tool(
+    sqlite_session_factory_builder,
+    tmp_path,
+    monkeypatch,
+):
+    session_factory = await sqlite_session_factory_builder(tmp_path / "report-ai-fingerprint.db")
+    monkeypatch.setattr(feedback, "get_session_factory", lambda: session_factory)
+    incident = feedback.FeedbackIncident(
+        related_tool="create_report_ai_job",
+        error_code="ToolError",
+        error_excerpt="Report AI upstream response is malformed.",
+    )
+    fingerprint = feedback.build_error_fingerprint_hash(incident)
+    playbook = {
+        "version": 1,
+        "summary": "Retry report creation later.",
+        "steps": ["Call create_report_ai_job again."],
+        "do_not_do": [],
+        "recommended_tool_sequence": ["create_report_ai_job", "get_report_ai_job"],
+        "safe_to_retry": True,
+    }
+    rules = {
+        "version": 1,
+        "all": [{"field": "related_tool", "op": "in", "value": [
+            "create_report_ai_job", "get_report_ai_job",
+        ]}],
+    }
+
+    async with session_factory() as session:
+        session.add(KnownIssue(
+            status="workaround_available",
+            category="bug",
+            severity="medium",
+            title="Report AI creation and polling issue",
+            related_tool="create_report_ai_job/get_report_ai_job",
+            error_fingerprint_hash=fingerprint,
+            match_rules_json=json.dumps(rules),
+            agent_playbook_json=json.dumps(playbook),
+        ))
+        await session.commit()
+        match = await feedback.find_known_issue_match(session, incident)
+
+    assert match is not None
+    assert match.title == "Report AI creation and polling issue"
+    assert match.fingerprint_hash == fingerprint

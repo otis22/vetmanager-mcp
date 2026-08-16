@@ -11428,3 +11428,14 @@ Checks so far:
   счета; clinics — контакты/`ip_access`; properties — произвольные settings;
   roles — `super`; timesheets/message reports — графики/кампании.
 - Push не выполнялся; внешний release gate ожидает решения Владимира.
+- Lesson learned этапа 217: OpenAPI — лишь указатель, но в этой задаче
+  расхождений с backend models/controllers не найдено, потому что review gate
+  и known-issue matching не используют Vetmanager entity/API contract. Перед
+  будущими изменениями entity fields OpenAPI будет сверяться с backend code и
+  каждое расхождение фиксироваться отдельной записью.
+- Review envelope validation вынесена из markdown jq в CI-покрытый Python
+  script. SQL prefilter по точному `related_tool` был удалён: он отбрасывал
+  issue `create_report_ai_job/get_report_ai_job` до exact fingerprint/rules
+  match для incident `create_report_ai_job`. Аудит candidate selection нашёл
+  этот единственный related-tool prefilter в `_ordered_known_issue_candidates`;
+  другие callers используют тот же helper.

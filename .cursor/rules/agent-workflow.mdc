@@ -124,27 +124,10 @@ Claude Opus review из Codex runtime:
 - Пример вызова для inline diff/context review:
 
 ```bash
-{ printf '%s\n' 'Review only. Do not edit files. Do not run commands. Finish this review within 600 seconds. Review the supplied diff only. Think briefly, then return JSON matching the schema immediately. Findings should include only material correctness/security/regression issues; use an empty findings array if none.'; git show --find-renames --find-copies --format=fuller HEAD; } | timeout 1200 claude -p --model opus --strict-mcp-config --mcp-config '{"mcpServers":{}}' --tools "" --output-format json --json-schema '{"type":"object","properties":{"findings":{"type":"array","items":{"type":"object","properties":{"severity":{"type":"string"},"file":{"type":"string"},"line":{"type":"integer"},"reason":{"type":"string"}},"required":["severity","file","line","reason"],"additionalProperties":false}}},"required":["findings"],"additionalProperties":false}' | jq -e '
-  if type != "object" or .is_error != false then error("invalid Claude envelope")
-  elif (.result | type != "string" or length == 0) then error("empty Claude result")
-  else (.result | fromjson) as $review
-  | if ($review | type) != "object" or ($review.findings | type) != "array"
-      or (($review.findings | all(.[];
-        type == "object"
-        and (keys | sort == ["file", "line", "reason", "severity"])
-        and (.severity | type == "string")
-        and (.file | type == "string")
-        and (.line | type == "number")
-        and (.reason | type == "string")
-      )) | not)
-    then error("review result does not match findings schema")
-    else $review
-    end
-  end
-'
+{ printf '%s\n' 'Review only. Do not edit files. Do not run commands. Finish this review within 600 seconds. Review the supplied diff only. Think briefly, then return JSON matching the schema immediately. Findings should include only material correctness/security/regression issues; use an empty findings array if none.'; git show --find-renames --find-copies --format=fuller HEAD; } | timeout 1200 claude -p --model opus --strict-mcp-config --mcp-config '{"mcpServers":{}}' --tools "" --output-format json --json-schema '{"type":"object","properties":{"findings":{"type":"array","items":{"type":"object","properties":{"severity":{"type":"string"},"file":{"type":"string"},"line":{"type":"integer"},"reason":{"type":"string"}},"required":["severity","file","line","reason"],"additionalProperties":false}}},"required":["findings"],"additionalProperties":false}' | python scripts/validate_review_result.py
 ```
 
-`jq -e` печатает уже извлечённый verdict, а non-zero exit означает infrastructure failure. Не оценивать сырой stdout или `stop_reason` вместо `.result`.
+`scripts/validate_review_result.py` печатает уже извлечённый verdict, а non-zero exit означает infrastructure failure. Скрипт покрыт CI fixtures; не оценивать сырой stdout или `stop_reason` вместо `.result`.
 
 ## 4. Core Loop агента
 
