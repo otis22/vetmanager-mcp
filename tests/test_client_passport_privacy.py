@@ -121,7 +121,7 @@ def test_redaction_keeps_unchanged_json_error_string_byte_for_byte() -> None:
 
 
 @pytest.mark.asyncio
-async def test_wrapper_preserves_subclass_error_and_skip_hint_input(monkeypatch) -> None:
+async def test_wrapper_preserves_subclass_error_when_skip_hint_bypasses_augmentation(monkeypatch) -> None:
     credentials = make_runtime_credentials("testclinic", "test-key-mock")
     monkeypatch.setattr(tools, "resolve_runtime_credentials", AsyncMock(return_value=credentials))
     seen = []
@@ -135,7 +135,7 @@ async def test_wrapper_preserves_subclass_error_and_skip_hint_input(monkeypatch)
 
     def skip_hint(exc):
         seen.append(exc)
-        return False
+        return True
 
     monkeypatch.setattr(tools, "should_skip_report_hint", skip_hint)
 

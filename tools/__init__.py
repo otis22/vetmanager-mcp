@@ -46,13 +46,16 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
                     raise
                 if should_skip_report_hint(exc):
                     raise
-                if type(exc) is not ToolError:
-                    raise
-                sanitized_exc = redact_tool_error(exc)
+                to_augment = redact_tool_error(exc) if type(exc) is ToolError else exc
                 augmented_exc = await augment_tool_error(
-                    resolved_tool_name, credentials, sanitized_exc,
+                    resolved_tool_name, credentials, to_augment,
                 )
-                raise redact_tool_error(augmented_exc) from exc
+                final_exc = (
+                    redact_tool_error(augmented_exc)
+                    if type(augmented_exc) is ToolError
+                    else augmented_exc
+                )
+                raise final_exc from exc
             result = redact_sensitive_output_fields(result)
             if not credentials.is_depersonalized:
                 return result

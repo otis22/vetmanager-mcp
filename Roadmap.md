@@ -3956,6 +3956,8 @@ blockers.
   сериализуемые значения и структурные ToolError до augmentation. — `done`
 - 215.11 Сохранить type/traceback подклассов ToolError и JSON-сериализацию
   Pydantic output в глобальном privacy wrapper. — `done`
+- 215.12 Восстановить feedback augmentation для подклассов ToolError и
+  заменить source-grep проверкой поведения wrapper. — `done`
 
 ## Этап 216. Корректная оценка structured output внешнего ревью — `done`
 

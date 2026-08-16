@@ -11389,14 +11389,23 @@ Checks so far:
   staff-контейнерах `user`, `users`, `doctor`, `doctor_data`, `closedUser`.
   Wrapper очищает mapping/list/tuple, другие последовательности и Pydantic
   `model_dump(mode="json")`. Структурные args очищаются только у базового
-  `ToolError` до augmentation; подклассы и baseline errors пробрасываются
-  исходным объектом с тем же traceback и не очищаются. Это ограничение выбрано
-  сознательно: тип/атрибуты exception важнее маловероятной structured payload
-  в error message. JSON-строка без удаления поля возвращается byte-for-byte.
-  Проверены допустимый settings `login`, staff record, JSON-native
-  date/Decimal/UUID/Enum, subclass error и error path.
+  `ToolError` до augmentation; все non-baseline/non-skip подклассы по-прежнему
+  передаются в `augment_tool_error` исходным объектом. Этот helper сам всегда
+  возвращает базовый `ToolError`, так что после augmentation тип уже схлопывался
+  в исходном поведении; wrapper не добавляет нового преобразования подкласса.
+  JSON-строка без удаления поля возвращается byte-for-byte. Проверены
+  допустимый settings `login`, staff record, JSON-native date/Decimal/UUID/Enum,
+  subclass error и error path.
   Полный Docker-контур после исправления: `1466 passed, 2 skipped,
   65 deselected`, exit status `0`, `186.29s`.
+- Последующий review восстановил исходный feedback flow: все
+  non-baseline/non-skip `ToolError`, включая подклассы, снова передаются в
+  `augment_tool_error`; wrapper очищает только базовый тип. `augment_tool_error`
+  сам возвращает базовый `ToolError`, поэтому схлопывание type после enrichment
+  было и до этой серии правок. Source-grep тест заменён поведенческой проверкой
+  передачи subclass в helper. AST-аудит всех registered MCP tools подтвердил
+  return annotation `dict` у каждого; Pydantic return model отсутствуют.
+  Targeted проверка: `57 passed`.
 - Диагностика Владимира уточнила strong-review failure mode: stdout Claude Code
   был JSON-конвертом, но `.result` пуст при `is_error=false`,
   `stop_reason=tool_use` и преобладании thinking tokens. `tool_use` штатен для

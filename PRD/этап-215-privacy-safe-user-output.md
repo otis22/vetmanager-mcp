@@ -42,15 +42,20 @@
    настроек вне staff-record. Обработка охватывает mapping/list/tuple,
    последовательности и Pydantic `model_dump(mode="json")` values; структурные
    аргументы только базового `ToolError` очищаются до feedback augmentation.
-   Подклассы `ToolError`, baseline errors, произвольный объект без
-   поддерживаемой сериализации и свободный текст ошибки не имеют безопасной
-   структурной проекции и остаются вне этой гарантии: сохранность их типа,
-   атрибутов и traceback важнее редкой структурной payload в ошибке. Это
-   покрывает прямые client paths, вложенные `client`/`owner`/staff и инструменты с прямым
+   Все non-baseline/non-skip `ToolError`, включая подклассы, сохраняют прежний
+   путь через feedback augmentation; подклассы не пересобираются wrapper'ом.
+   Сам `augment_tool_error` исторически возвращает базовый `ToolError`, поэтому
+   после augmentation тип и прежде схлопывался. Baseline errors, произвольный
+   объект без поддерживаемой сериализации и свободный текст ошибки не имеют
+   безопасной структурной проекции и остаются вне этой гарантии. Это покрывает
+   прямые client paths, вложенные `client`/`owner`/staff и инструменты с прямым
    `VetmanagerClient`, которые обходят `crud_*`; file-local denylist'ы не
    дублировать. Для вложенных staff намеренно выбран denylist: контекстные поля
    счёта/госпитализации нужны сценариям, поэтому allowlist прямых user tools
    здесь применять нельзя.
+   Аудит всех зарегистрированных MCP tool annotations подтвердил `-> dict`;
+   инструментов с Pydantic model return type нет, поэтому JSON-dump не меняет
+   объявленный FastMCP return contract.
 5. Сохранить transport envelope целиком независимо от `success` и всегда
    проецировать user records внутри `data`, в том числе во вложенных и error
    payload. Под контрактным ключом `user`/`users` projection безусловна и не

@@ -5,12 +5,16 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 import sys
+from unittest.mock import AsyncMock
 
+from fastmcp.exceptions import ToolError
 import pytest
 from sqlalchemy import func, select
 
 import agent_feedback_service as feedback
 from storage_models import Account, AgentFeedbackReport, KnownIssue, KnownIssueMatchEvent, ServiceBearerToken
+from tests.runtime_factories import make_runtime_credentials
+import tools
 
 
 @pytest.fixture
@@ -343,8 +347,30 @@ def test_generated_run_ids_survive_normalization_uniquely() -> None:
     assert feedback.normalize_error_text(run_id_a) != feedback.normalize_error_text(run_id_b)
 
 
-def test_shared_tool_wrapper_still_calls_augment_tool_error() -> None:
-    source = Path("tools/__init__.py").read_text(encoding="utf-8")
+@pytest.mark.asyncio
+async def test_shared_tool_wrapper_augments_tool_error_subclasses(monkeypatch) -> None:
+    credentials = make_runtime_credentials("clinic", "secret")
+    monkeypatch.setattr(tools, "resolve_runtime_credentials", AsyncMock(return_value=credentials))
+    monkeypatch.setattr(tools, "should_skip_report_hint", lambda _exc: False)
+    received = []
 
-    assert "augment_tool_error" in source
-    assert "augmented_exc = await augment_tool_error" in source
+    class SpecializedToolError(ToolError):
+        pass
+
+    original = SpecializedToolError("upstream failed")
+
+    async def fake_augment(_tool_name, _credentials, exc):
+        received.append(exc)
+        return ToolError("augmented error")
+
+    monkeypatch.setattr(tools, "augment_tool_error", fake_augment)
+
+    async def failing_tool():
+        raise original
+
+    wrapped = tools._wrap_tool_with_depersonalization(failing_tool, tool_name="get_clients")
+    with pytest.raises(ToolError, match="augmented error") as exc_info:
+        await wrapped()
+
+    assert received == [original]
+    assert exc_info.value.__cause__ is original
