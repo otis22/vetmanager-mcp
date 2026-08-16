@@ -73,7 +73,11 @@ MCP-only улучшения поверхности для надёжной ра�
    `not started` действуют только внутри наблюдённых статусов 401/409; за их
    пределами текст не означает готовность. При local TTL/LRU abandonment
    export без file poll учитывается как `start|abandoned_wait`, после хотя бы
-   одного file poll — как `poll|abandoned_wait`.
+   одного file poll — как `poll|abandoned_wait`; TTL обновляется на каждом
+   file poll. Известное ограничение: сумма по `operation,outcome` считает
+   события наблюдения, не попытки — одна попытка может дать несколько samples
+   (`start|success` и `start|abandoned_wait`, либо `poll|not_ready` и поздний
+   terminal/abandoned outcome).
 7. Добавить targeted tests и README contract, включая отсутствие sensitive
    labels/payload data и сохранение legacy long-queued metric.
 8. В PRD описать фактический agent journey и MCP-only предложения. Не менять

@@ -183,7 +183,7 @@ async def test_malformed_export_responses_are_recorded_as_errors_not_abandonment
     file_route = respx.get(f"{BASE}/rest/api/report/reportFile").mock(
         return_value=httpx.Response(200, json={"success": True, "data": {"report": {}}})
     )
-    observed_times = iter([10.0, 17.0])
+    observed_times = iter([10.0, 17.0, 17.0])
     monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: next(observed_times))
 
     headers_patch, runtime_patch = bearer_runtime_patch()
@@ -380,6 +380,24 @@ def test_export_abandonment_uses_start_until_first_file_poll(monkeypatch):
     }
 
 
+def test_active_export_polls_refresh_abandonment_ttl(monkeypatch):
+    report_ai._reset_report_ai_queue_observations()
+    service_metrics.reset_service_metrics()
+    now = [0.0]
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: now[0])
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        report_ai._remember_report_ai_export(203)
+        now[0] = report_ai.REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS * 0.6
+        report_ai._mark_report_ai_export_poll(203)
+        report_ai._cleanup_report_ai_queue_observations(now[0])
+        now[0] = report_ai.REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS * 1.2
+        report_ai._mark_report_ai_export_poll(203)
+        report_ai._cleanup_report_ai_queue_observations(now[0])
+
+    assert service_metrics.snapshot_service_metrics()["report_ai_exports_total"] == {}
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_get_report_export_file_treats_409_as_retryable_without_message():
@@ -411,7 +429,7 @@ async def test_retryable_export_poll_keeps_observation_until_string_file_id_succ
             httpx.Response(200, json={"data": {"report": {"csv_file": "report.csv"}}}),
         ]
     )
-    observed_times = iter([10.0, 17.0])
+    observed_times = iter([10.0, 12.0, 15.0, 17.0])
     monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: next(observed_times))
 
     headers_patch, runtime_patch = bearer_runtime_patch()

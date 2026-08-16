@@ -142,7 +142,7 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
     expired_export_keys = [
         key
         for key, observation in _REPORT_AI_EXPORT_OBSERVATIONS.items()
-        if now - float(observation["started_at"])
+        if now - float(observation["last_seen"])
         > REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS
     ]
     for key in expired_export_keys:
@@ -173,7 +173,11 @@ def _remember_report_ai_export(report_file_id: object) -> None:
         return
     now = _monotonic_seconds()
     _cleanup_report_ai_queue_observations(now)
-    _REPORT_AI_EXPORT_OBSERVATIONS[key] = {"started_at": now, "has_polled": False}
+    _REPORT_AI_EXPORT_OBSERVATIONS[key] = {
+        "started_at": now,
+        "last_seen": now,
+        "has_polled": False,
+    }
     _REPORT_AI_EXPORT_OBSERVATIONS.move_to_end(key)
 
 
@@ -194,6 +198,7 @@ def _mark_report_ai_export_poll(report_file_id: object) -> None:
     observation = _REPORT_AI_EXPORT_OBSERVATIONS.get(key)
     if observation is not None:
         observation["has_polled"] = True
+        observation["last_seen"] = _monotonic_seconds()
         _REPORT_AI_EXPORT_OBSERVATIONS.move_to_end(key)
 
 

@@ -103,7 +103,8 @@
 - Export observer state records whether at least one `reportFile` poll
   occurred. TTL/LRU abandonment is `start|abandoned_wait` before a poll and
   `poll|abandoned_wait` afterward, preserving the separate start and poll
-  dimensions.
+  dimensions. Its local TTL is refreshed by every file poll, while duration
+  remains measured from successful export start.
 - Lifecycle series are explicitly observation metrics, not unique-job metrics.
   After TTL abandonment, a resumed poll starts a new observation, so the same
   job can legitimately produce `abandoned_wait` and a later terminal sample.
