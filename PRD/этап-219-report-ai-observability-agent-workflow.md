@@ -66,7 +66,13 @@ MCP-only улучшения поверхности для надёжной ра�
 6. Export измерять отдельно: старт export и polling export file; successful
    file response завершает observed export. Для convenience path связывать
    report-AI job с export attempt только в памяти; direct known-`report_id`
-   export остаётся export-only и не выдумывает job transition.
+   export остаётся export-only и не выдумывает job transition. Наблюдаемый
+   API-контракт `reportFile`: «export ещё не готов» приходит как HTTP 409 или
+   как HTTP 401 с сообщением `build in progress`; MCP использует единый
+   fixed classifier для guidance и метрик, также включая фиксированный маркер
+   `not started`. Это не произвольный поиск по тексту: ложное совпадение на
+   постоянном отказе с таким маркером остаётся принятым риском ради
+   подтверждённого сигнала готовности.
 7. Добавить targeted tests и README contract, включая отсутствие sensitive
    labels/payload data и сохранение legacy long-queued metric.
 8. В PRD описать фактический agent journey и MCP-only предложения. Не менять

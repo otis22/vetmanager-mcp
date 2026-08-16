@@ -92,17 +92,22 @@
 - Targeted Docker tests passed (`74 passed`), including fixed-marker parity and
   terminal → unknown → terminal ordering.
 
-### Follow-up: retry narrowed to HTTP 409 and observation semantics
+### Follow-up: observed export readiness contract and observation semantics
 
-- A retryable export-file poll is now exactly HTTP 409. Message text never
-  upgrades 403/5xx/other statuses to retryable; ToolError and metric outcome
-  use this same predicate. A non-409 marker regression records `poll|error`.
+- Observed API contract for `reportFile`: export-not-ready is returned either
+  as HTTP 409 or as HTTP 401 with `build in progress`. The shared classifier
+  for ToolError guidance and metric outcome therefore uses HTTP 409 plus the
+  fixed `build in progress` / `not started` markers. This is not arbitrary
+  text matching; the accepted risk is that a permanent error with an identical
+  marker is classified `not_ready`, because the observed readiness signal is
+  more important than that hypothetical collision.
 - Lifecycle series are explicitly observation metrics, not unique-job metrics.
   After TTL abandonment, a resumed poll starts a new observation, so the same
   job can legitimately produce `abandoned_wait` and a later terminal sample.
   This preserves the truthful meaning of abandonment rather than suppressing
   the later observed outcome.
-- Targeted Docker tests passed (`74 passed`), including non-409 marker error.
+- Regression tests cover both foundations (HTTP 409 and HTTP 401 fixed marker)
+  for matching ToolError guidance and `poll|not_ready` metrics.
 
 ---
 
