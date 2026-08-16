@@ -3961,6 +3961,11 @@ blockers.
 
 ## Этап 216. Корректная оценка structured output внешнего ревью — `done`
 
+- 216.1 Исправить criteria и эталонный Claude structured-review pipeline по
+  JSON-конверту `.result`; добавить prompt constraint на thinking. — `done`
+- 216.2 Исправить приоритет отрицания schema-проверки; проверить пять
+  acceptance cases через `jq`. — `done`
+
 ## Этап 217. Тестируемый review-gate и known issue matching — `done`
 
 - 217.1 Вынести validation review envelope в CI-покрытый скрипт. — `done`
@@ -3971,7 +3976,12 @@ blockers.
 - 217.4 Сохранить tool boundary для rules matching, допуская multi-tool issue
   только при exact fingerprint; добавить отрицательную регрессию. — `done`
 
-- 216.1 Исправить criteria и эталонный Claude structured-review pipeline по
-  JSON-конверту `.result`; добавить prompt constraint на thinking. — `done`
-- 216.2 Исправить приоритет отрицания schema-проверки; проверить пять
-  acceptance cases через `jq`. — `done`
+## Этап 218. Evidence попыток внешнего ревью — `stop`
+
+- 218.1 Добавить runner, который сохраняет raw envelope и context каждой
+  попытки вне рабочей копии. — `done`
+- 218.2 Покрыть успешный и неуспешный outcome, обновить workflow и зафиксировать
+  измеренный запас output budget. — `done`
+- 218.3 Полные проверки, audit, external review, commit и push. — `stop`
+  (два валидных Claude code/diff review нашли и закрыли findings; перед push
+  нужен новый clean review по решению пользователя).

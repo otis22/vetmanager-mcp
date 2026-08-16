@@ -53,6 +53,17 @@
 - Правильный вызов Spark-review из Codex runtime: `timeout 1200 codex exec -m gpt-5.3-codex-spark -s read-only -C "$PWD" -`. Если read-only падает до чтения файлов из-за sandbox/runtime ошибки (`bwrap`, user namespace и т.п.), остановить зависший запуск и один раз повторить ту же модель с `-s danger-full-access` и review-only prompt: `Review only. Do not edit files. Do not run write commands.` Fallback на другую модель разрешён только при явной model/provider failure, не при sandbox/runtime failure. Итог Spark-review (`[]` или принятые/отклонённые findings) фиксируется в AssumptionLog.
 - Claude Opus review из Codex runtime: real shell timeout должен быть минимум в 2 раза больше prompt deadline; default `timeout 1200`, в prompt писать `Finish this review within 600 seconds`, реальный timeout Claude не сообщать. Для inline diff/context отключать tools/MCP (`--strict-mcp-config --mcp-config '{"mcpServers":{}}' --tools ""`), запрещать правки/commands, требовать structured JSON findings через `--output-format json` + schema и писать `Think briefly, then return JSON matching the schema immediately`. Успех: JSON-конверт разобран, `is_error=false`, непустое поле `.result` разбирается по required schema. Валидатор вызывать напрямую как исполняемый `scripts/validate_review_result.py`, не через имя интерпретатора; CI проверяет этот вызов. Сбой: конверт не JSON, `is_error=true`, `.result` пусто/не разбирается/не соответствует schema либо provider/model error. `stop_reason` не участвует: при `--json-schema` structured result штатно доставляется tool call. Infrastructure failure не расходует слот и фиксируется отдельной строкой в `AssumptionLog` как `N/3`; максимум три таких попытки на strong review gate, затем `blocked` и push запрещён. Только запуск с разбираемым verdict расходует слот бюджета.
 
+### Evidence Claude review
+
+Каждую попытку Claude strong review запускать через
+`scripts/run_claude_review.sh --range <range> --attempt <N/3>`. Runner независимо
+от exit сохраняет вне working copy raw envelope, stderr, prompt, schema и
+metadata в `/tmp/vetmanager-mcp-review-evidence` (или `--evidence-dir`). В
+`AssumptionLog` указывать путь к `*.envelope.json` и `subtype`, `stop_reason`,
+`output_tokens`, `thinking_tokens`, `len(result)`; запись только «без output»
+запрещена. Runner валидирует сохранённый envelope и возвращает non-zero при
+invalid verdict.
+
 ## Feedback triage и `known_issues`
 
 Production feedback triage — это операционная работа, а не изменение репозитория.

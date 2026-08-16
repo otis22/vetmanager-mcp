@@ -11457,3 +11457,41 @@ Checks so far:
   исполняемого validator три запуска Claude Opus завершились без stdout и без
   разбираемого verdict. Это infrastructure failures 1/3–3/3 нового gate;
   push запрещён до решения пользователя или восстановления review runtime.
+
+## Этап 218. Evidence попыток внешнего ревью
+
+- **Наблюдение о запасе structured output:** в диагностической лестнице Claude
+  сохранил schema-valid result на входах до 127 793 байт, однако доля thinking
+  в output budget выросла с `61/274` (22%, около 1 KiB) до `4 558/5 496` (83%,
+  41 KiB), `11 527/12 666` (91%, 107 KiB) и `13 410/13 932` (96%, 128 KiB).
+  Это не доказывает порог failure и не меняет глубину review, но показывает,
+  что на больших inline diff структурный verdict получает небольшой остаток
+  output budget. Эталонный prompt сохраняет `Think briefly, then return JSON
+  matching the schema immediately` как измеренную меру запаса.
+- **Решение evidence:** с этапа 218 каждая успешная и неуспешная попытка Claude
+  review сохраняет raw envelope и контекст вызова вне working copy; дальнейшие
+  записи о попытках ссылаются на envelope и перечисляют ключевые поля вместо
+  неподтверждаемой формулировки «без output».
+- **Spark code-review этапа 218:** read-only pass не прочитал файлы из-за
+  runtime `bwrap` error; разрешённый review-only fallback вернул `[]`.
+  Candidate findings отсутствуют.
+- **Claude code/diff review 218, попытка 1/3:** evidence
+  `/tmp/vetmanager-mcp-review-evidence/2026-08-16T140543Z-HEAD__HEAD-attempt-1-of-3.RcOuYj/claude-review-attempt-1-of-3.envelope.json`;
+  `subtype=success`, `stop_reason=tool_use`, `output_tokens=6015`,
+  `thinking_tokens=3817`, `len(result)=2639`. Приняты findings: committed diff
+  должен формироваться через `git show` с rename/copy detection, а regression
+  обязан проверять эту git-команду. Отклонено замечание о неизвестном пути
+  `thinking_tokens`: raw envelope этой попытки подтверждает
+  `usage.output_tokens_details.thinking_tokens`. Принято hardening evidence
+  root: он принадлежит текущему пользователю и закрыт mode `0700`.
+- **Claude code/diff review 218, попытка 2/3:** evidence
+  `/tmp/vetmanager-mcp-review-evidence/2026-08-16T141232Z-HEAD__HEAD-attempt-2-of-3.wWgmZi/claude-review-attempt-2-of-3.envelope.json`;
+  `subtype=success`, `stop_reason=tool_use`, `output_tokens=3724`,
+  `thinking_tokens=3033`, `len(result)=1766`. Приняты findings: evidence root
+  отказывает symlink/non-directory и чужому владельцу, runner сам валидирует
+  сохранённый envelope и возвращает validation exit; Stage 218 перенесён после
+  completed 216 items. Это второй валидный code/diff verdict из двух; после
+  исправлений новый Claude review не запускается, push запрещён до clean review
+  по решению пользователя.
+- **Проверки после follow-up:** targeted Docker `10 passed`; полный Docker
+  contour `1478 passed, 2 skipped, 65 deselected`, exit `0`.
