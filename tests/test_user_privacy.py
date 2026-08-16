@@ -172,7 +172,7 @@ def test_user_projection_preserves_non_user_error_data_and_logs_anomaly(caplog):
     )
 
 
-def test_user_projection_sanitizes_nested_records_and_logs_unexpected_data_shape(caplog):
+def test_user_projection_passes_through_unknown_data_shape_and_logs_anomaly(caplog):
     from tools.user import _project_user_response
 
     upstream = {
@@ -185,7 +185,8 @@ def test_user_projection_sanitizes_nested_records_and_logs_unexpected_data_shape
         projected = _project_user_response(upstream)
 
     assert projected["hint"] == upstream["hint"]
-    assert projected["data"] == {"staff": [{"first_name": "Анна"}]}
+    assert projected["data"] is upstream["data"]
+    assert projected["data"] == upstream["data"]
     assert any(
         record.message == "user_projection_unexpected_data_shape"
         and record.event_name == "user_projection_unexpected_data_shape"
@@ -193,14 +194,14 @@ def test_user_projection_sanitizes_nested_records_and_logs_unexpected_data_shape
     )
 
 
-def test_user_projection_allows_sparse_direct_record_without_id():
+def test_user_projection_passes_through_unknown_sparse_mapping():
     from tools.user import _project_user_response
 
     projected = _project_user_response(
         {"success": True, "data": {"first_name": "Анна", "passwd": "secret"}}
     )
 
-    assert projected["data"] == {"first_name": "Анна"}
+    assert projected["data"] == {"first_name": "Анна", "passwd": "secret"}
 
 
 def test_user_projection_keeps_only_verified_total_count_metadata():
@@ -270,7 +271,8 @@ def test_user_projection_keeps_total_count_in_unexpected_data_shape(caplog):
         projected = _project_user_response(upstream)
 
     assert projected["data"]["totalCount"] == 1
-    _assert_analytics_projection(projected["data"]["staff"][0])
+    assert projected["data"] is upstream["data"]
+    assert projected["data"]["staff"] == [_UPSTREAM_USER]
     assert any(
         record.message == "user_projection_unexpected_data_shape"
         for record in caplog.records

@@ -11289,7 +11289,7 @@ Checks so far:
   `uv run pytest -q tests/test_user_privacy.py tests/test_ergonomic_filters.py
   tests/test_e2e_mock_crud.py tests/test_e2e_mock_entities.py` — `161 passed`.
 - Полный Docker contour повторён через PTY/polling, чтобы получить читаемый
-  terminal result: `1452 passed, 2 skipped, 65 deselected` за `259.47s`.
+  terminal result: `1452 passed, 2 skipped, 65 deselected` за `184.08s`.
 - Docker launcher diagnosis: `docker compose --profile test run --rm test
   sh -c 'exit 23'` корректно вернул `compose_probe_exit=23`. Следовательно,
   Docker Compose передаёт exit status; прежний full run потерял summary из-за
@@ -11327,6 +11327,12 @@ Checks so far:
   всех raw output paths `tools/client.py`, поскольку остальные client fields
   нужны агентам. `get_suppliers` намеренно не меняется: ИНН и банковские
   реквизиты требуются сценариям Владимира.
+- Владимир также выбрал пропускать неизвестную форму user `data` как есть с
+  runtime warning. Принятый риск: при одновременном нарушении `outputHelper`
+  contract и переименовании всех user fields запись может раскрыться целиком;
+  это реже, чем регулярная потеря диагностических/error payload при fail-closed
+  обработке. Контрактные `data.user`/`data.users` и известные прямые user
+  responses по-прежнему проходят безусловный allowlist.
 - Read-only audit других direct `crud_list` passthrough не менялся в scope:
   clients — контакты/паспорт/баланс/notes; pets/admissions/invoices/hospital —
   nested client/owner и clinical data; suppliers — контакты/ИНН/банковские

@@ -27,42 +27,11 @@ _ANALYTICS_USER_FIELDS = frozenset(
 # Vetmanager ERestController::outputHelper (line 497) emits list data as
 # {"totalCount": ..., "user": [...]}; crud_list returns that response unchanged.
 _USER_PAGINATION_FIELDS = frozenset({"totalCount"})
-_USER_RECORD_FIELDS = _ANALYTICS_USER_FIELDS | frozenset(
-    {
-        "login",
-        "passwd",
-        "last_change_pwd_date",
-        "email",
-        "phone",
-        "cell_phone",
-        "address",
-        "user_inn",
-        "calc_percents",
-    }
-)
 
 
 def _project_user(user: dict) -> dict:
     """Return the closed analytics-safe view of one Vetmanager user."""
     return {field: user[field] for field in _ANALYTICS_USER_FIELDS if field in user}
-
-
-def _looks_like_user_record(value: object) -> bool:
-    return isinstance(value, dict) and bool(value.keys() & _USER_RECORD_FIELDS)
-
-
-def _project_user_value(value: object) -> object:
-    """Project user records recursively without changing non-user values."""
-    if _looks_like_user_record(value):
-        projected = _project_user(value)
-        if "totalCount" in value:
-            projected["totalCount"] = value["totalCount"]
-        return projected
-    if isinstance(value, list):
-        return [_project_user_value(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _project_user_value(item) for key, item in value.items()}
-    return value
 
 
 def _project_known_user_value(value: object) -> object:
@@ -82,35 +51,33 @@ def _log_unexpected_user_data_shape() -> None:
 
 
 def _project_user_data(data: object) -> object:
-    """Project user records in any data shape and retain the response metadata."""
-    if isinstance(data, list):
-        _log_unexpected_user_data_shape()
-        return _project_user_value(data)
-    if not isinstance(data, dict):
-        _log_unexpected_user_data_shape()
-        return data
-
-    users_key = next((key for key in ("user", "users") if key in data), None)
+    """Project contract user records; warn and pass through unknown data shapes."""
+    if isinstance(data, dict):
+        users_key = next((key for key in ("user", "users") if key in data), None)
+    else:
+        users_key = None
     if users_key is not None:
         projected_data = {users_key: _project_known_user_value(data[users_key])}
         for field in _USER_PAGINATION_FIELDS:
             if field in data:
                 projected_data[field] = data[field]
         return projected_data
-    if _looks_like_user_record(data):
-        return _project_user_value(data)
 
     _log_unexpected_user_data_shape()
-    return _project_user_value(data)
+    return data
 
 
-def _project_user_response(response: dict) -> dict:
+def _project_user_response(response: dict, *, data_is_user_record: bool = False) -> dict:
     """Preserve every envelope key and project any user records in ``data``."""
     if not isinstance(response, dict) or "data" not in response:
         return response
 
     projected = dict(response)
-    projected["data"] = _project_user_data(response["data"])
+    projected["data"] = (
+        _project_known_user_value(response["data"])
+        if data_is_user_record
+        else _project_user_data(response["data"])
+    )
     return projected
 
 
@@ -215,7 +182,10 @@ def register(mcp: FastMCP) -> None:
         Args:
             user_id: Unique numeric ID of the user.
         """
-        return _project_user_response(await crud_get_by_id("/rest/api/user", user_id))
+        return _project_user_response(
+            await crud_get_by_id("/rest/api/user", user_id),
+            data_is_user_record=True,
+        )
 
     @mcp.tool
     async def update_user(
@@ -265,4 +235,7 @@ def register(mcp: FastMCP) -> None:
             payload["role_id"] = role_id
         if is_active != -1:
             payload["is_active"] = is_active
-        return _project_user_response(await crud_update("/rest/api/user", user_id, payload))
+        return _project_user_response(
+            await crud_update("/rest/api/user", user_id, payload),
+            data_is_user_record=True,
+        )

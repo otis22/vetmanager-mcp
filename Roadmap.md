@@ -3942,3 +3942,5 @@ blockers.
 - 215.4 По решению Владимира: вернуть email/phone/cell_phone сотрудникам,
   убрать только client.passport_series denylist-ом и зафиксировать сохранение
   supplier ИНН/банковских реквизитов. — `done`
+- 215.5 По решению Владимира: пропускать неизвестную форму user `data` с
+  runtime warning; контрактные `user`/`users` оставить на allowlist. — `done`
