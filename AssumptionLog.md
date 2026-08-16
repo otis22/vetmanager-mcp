@@ -96,11 +96,14 @@
 
 - Observed API contract for `reportFile`: export-not-ready is returned either
   as HTTP 409 or as HTTP 401 with `build in progress`. The shared classifier
-  for ToolError guidance and metric outcome therefore uses HTTP 409 plus the
-  fixed `build in progress` / `not started` markers. This is not arbitrary
-  text matching; the accepted risk is that a permanent error with an identical
-  marker is classified `not_ready`, because the observed readiness signal is
-  more important than that hypothetical collision.
+  for ToolError guidance and metric outcome permits the fixed `build in
+  progress` / `not started` markers only within HTTP 401/409. A 403/5xx or
+  other status with the same text is terminal `error`, so the previous
+  open-ended marker-collision risk is eliminated.
+- Export observer state records whether at least one `reportFile` poll
+  occurred. TTL/LRU abandonment is `start|abandoned_wait` before a poll and
+  `poll|abandoned_wait` afterward, preserving the separate start and poll
+  dimensions.
 - Lifecycle series are explicitly observation metrics, not unique-job metrics.
   After TTL abandonment, a resumed poll starts a new observation, so the same
   job can legitimately produce `abandoned_wait` and a later terminal sample.

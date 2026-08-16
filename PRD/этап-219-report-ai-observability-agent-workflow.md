@@ -68,11 +68,12 @@ MCP-only улучшения поверхности для надёжной ра�
    report-AI job с export attempt только в памяти; direct known-`report_id`
    export остаётся export-only и не выдумывает job transition. Наблюдаемый
    API-контракт `reportFile`: «export ещё не готов» приходит как HTTP 409 или
-   как HTTP 401 с сообщением `build in progress`; MCP использует единый
-   fixed classifier для guidance и метрик, также включая фиксированный маркер
-   `not started`. Это не произвольный поиск по тексту: ложное совпадение на
-   постоянном отказе с таким маркером остаётся принятым риском ради
-   подтверждённого сигнала готовности.
+   как HTTP 401 с фиксированным сообщением `build in progress`; MCP использует
+   единый classifier для guidance и метрик. Маркеры `build in progress` и
+   `not started` действуют только внутри наблюдённых статусов 401/409; за их
+   пределами текст не означает готовность. При local TTL/LRU abandonment
+   export без file poll учитывается как `start|abandoned_wait`, после хотя бы
+   одного file poll — как `poll|abandoned_wait`.
 7. Добавить targeted tests и README contract, включая отсутствие sensitive
    labels/payload data и сохранение legacy long-queued metric.
 8. В PRD описать фактический agent journey и MCP-only предложения. Не менять

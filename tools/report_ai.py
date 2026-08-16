@@ -59,7 +59,7 @@ _REPORT_AI_LIFECYCLE_OBSERVATIONS: OrderedDict[
 ] = OrderedDict()
 _REPORT_AI_FINALIZED_OBSERVATIONS: OrderedDict[_ReportAiQueueObservationKey, float] = OrderedDict()
 _REPORT_AI_EXPORT_OBSERVATIONS: OrderedDict[
-    _ReportAiQueueObservationKey, float
+    _ReportAiQueueObservationKey, dict[str, float | bool]
 ] = OrderedDict()
 _REPORT_AI_STAGE_BY_STATUS = {
     "queued": "queued",
@@ -141,21 +141,16 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
 
     expired_export_keys = [
         key
-        for key, started_at in _REPORT_AI_EXPORT_OBSERVATIONS.items()
-        if now - started_at > REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS
+        for key, observation in _REPORT_AI_EXPORT_OBSERVATIONS.items()
+        if now - float(observation["started_at"])
+        > REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS
     ]
     for key in expired_export_keys:
-        started_at = _REPORT_AI_EXPORT_OBSERVATIONS.pop(key)
-        record_report_ai_export(operation="poll", outcome="abandoned_wait")
-        record_report_ai_export_duration(
-            outcome="abandoned_wait", duration_seconds=now - started_at
-        )
+        observation = _REPORT_AI_EXPORT_OBSERVATIONS.pop(key)
+        _record_abandoned_report_ai_export(observation, now=now)
     while len(_REPORT_AI_EXPORT_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
-        _, started_at = _REPORT_AI_EXPORT_OBSERVATIONS.popitem(last=False)
-        record_report_ai_export(operation="poll", outcome="abandoned_wait")
-        record_report_ai_export_duration(
-            outcome="abandoned_wait", duration_seconds=now - started_at
-        )
+        _, observation = _REPORT_AI_EXPORT_OBSERVATIONS.popitem(last=False)
+        _record_abandoned_report_ai_export(observation, now=now)
 
 
 def _report_ai_queue_observation_key(job: dict) -> _ReportAiQueueObservationKey | None:
@@ -178,8 +173,28 @@ def _remember_report_ai_export(report_file_id: object) -> None:
         return
     now = _monotonic_seconds()
     _cleanup_report_ai_queue_observations(now)
-    _REPORT_AI_EXPORT_OBSERVATIONS[key] = now
+    _REPORT_AI_EXPORT_OBSERVATIONS[key] = {"started_at": now, "has_polled": False}
     _REPORT_AI_EXPORT_OBSERVATIONS.move_to_end(key)
+
+
+def _record_abandoned_report_ai_export(
+    observation: dict[str, float | bool], *, now: float
+) -> None:
+    operation = "poll" if observation["has_polled"] else "start"
+    record_report_ai_export(operation=operation, outcome="abandoned_wait")
+    record_report_ai_export_duration(
+        outcome="abandoned_wait", duration_seconds=now - float(observation["started_at"])
+    )
+
+
+def _mark_report_ai_export_poll(report_file_id: object) -> None:
+    key = _report_ai_queue_observation_key({"id": report_file_id})
+    if key is None:
+        return
+    observation = _REPORT_AI_EXPORT_OBSERVATIONS.get(key)
+    if observation is not None:
+        observation["has_polled"] = True
+        _REPORT_AI_EXPORT_OBSERVATIONS.move_to_end(key)
 
 
 def _complete_report_ai_export(report_file_id: object, *, outcome: str) -> None:
@@ -187,10 +202,11 @@ def _complete_report_ai_export(report_file_id: object, *, outcome: str) -> None:
     record_report_ai_export(operation="poll", outcome=outcome)
     if key is None:
         return
-    started_at = _REPORT_AI_EXPORT_OBSERVATIONS.pop(key, None)
-    if started_at is not None:
+    observation = _REPORT_AI_EXPORT_OBSERVATIONS.pop(key, None)
+    if observation is not None:
         record_report_ai_export_duration(
-            outcome=outcome, duration_seconds=_monotonic_seconds() - started_at
+            outcome=outcome,
+            duration_seconds=_monotonic_seconds() - float(observation["started_at"]),
         )
 
 
@@ -550,8 +566,10 @@ def _safe_export_error(
 def _is_retryable_export_file_error(exc: VetmanagerError) -> bool:
     """Return the single retryable classification shared by tool and metrics."""
     lowered = str(exc).lower()
-    return exc.status_code == 409 or (
-        "build in progress" in lowered or "not started" in lowered
+    return exc.status_code in {401, 409} and (
+        exc.status_code == 409
+        or "build in progress" in lowered
+        or "not started" in lowered
     )
 
 
@@ -754,6 +772,7 @@ def register(mcp: FastMCP) -> None:
                 tool after a delay.
         """
         file_id = _validate_positive_int("report_file_id", report_file_id)
+        _mark_report_ai_export_poll(file_id)
         client = VetmanagerClient()
         try:
             payload = await instrument_call(

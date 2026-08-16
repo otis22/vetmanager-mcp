@@ -328,6 +328,60 @@ async def test_export_retry_classification_matches_tool_error_and_metric(
 
 @pytest.mark.asyncio
 @respx.mock
+@pytest.mark.parametrize("status_code", [403, 500])
+async def test_export_marker_is_not_retryable_outside_observed_statuses(
+    monkeypatch, status_code
+):
+    report_ai._reset_report_ai_queue_observations()
+    service_metrics.reset_service_metrics()
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/report/StartReport").mock(
+        return_value=httpx.Response(200, json={"data": {"report": {"report_file_id": 127}}})
+    )
+    respx.get(f"{BASE}/rest/api/report/reportFile").mock(
+        return_value=httpx.Response(
+            status_code, json={"success": False, "message": "Error: build in progress."}
+        )
+    )
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: 10.0)
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("start_report_export", {"report_id": 88})
+        with pytest.raises(ToolError) as error:
+            await mcp.call_tool("get_report_export_file", {"report_file_id": 127})
+
+    assert "not ready" not in str(error.value).lower()
+    assert service_metrics.snapshot_service_metrics()["report_ai_exports_total"] == {
+        "poll|error": 1,
+        "start|success": 1,
+    }
+
+
+def test_export_abandonment_uses_start_until_first_file_poll(monkeypatch):
+    report_ai._reset_report_ai_queue_observations()
+    service_metrics.reset_service_metrics()
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: 0.0)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        report_ai._remember_report_ai_export(201)
+        report_ai._cleanup_report_ai_queue_observations(
+            report_ai.REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS + 1.0
+        )
+        report_ai._remember_report_ai_export(202)
+        report_ai._mark_report_ai_export_poll(202)
+        report_ai._cleanup_report_ai_queue_observations(
+            report_ai.REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS + 2.0
+        )
+
+    assert service_metrics.snapshot_service_metrics()["report_ai_exports_total"] == {
+        "poll|abandoned_wait": 1,
+        "start|abandoned_wait": 1,
+    }
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_get_report_export_file_treats_409_as_retryable_without_message():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/report/reportFile").mock(
