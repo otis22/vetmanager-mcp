@@ -1,6 +1,7 @@
 import json
 import asyncio
 import logging
+from copy import deepcopy
 from pathlib import Path
 
 import httpx
@@ -263,6 +264,81 @@ async def test_create_report_ai_job_posts_strict_intent_body():
     payload = _structured(result)
     assert payload["data"]["is_deduplicated"] is False
     assert payload["data"]["job"]["status"] == "queued"
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(
+    ("tool_name", "arguments", "method", "path", "payload"),
+    [
+        (
+            "create_report_ai_job",
+            {"intent_text": "Количество счетов за май 2026"},
+            "post",
+            "/rest/api/report-ai-job",
+            {"success": True, "data": {"job": {"id": 610, "status": "queued"}}},
+        ),
+        (
+            "confirm_report_ai_job_candidate",
+            {"job_id": 611, "report_id": 84},
+            "post",
+            "/rest/api/report-ai-job/611/confirm",
+            {"success": True, "data": {"job": {"id": 611, "status": "existing_report_matched"}}},
+        ),
+        (
+            "save_report_ai_job_as_report",
+            {"job_id": 612, "title": "MCP invoices by month May 2026"},
+            "post",
+            "/rest/api/report-ai-job/612/save",
+            {"success": True, "data": {"job": {"id": 612, "status": "saved"}}},
+        ),
+    ],
+)
+async def test_report_ai_lifecycle_observation_does_not_change_mutation_response(
+    tool_name, arguments, method, path, payload
+):
+    billing_mock()
+    getattr(respx, method)(f"{BASE}{path}").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE))
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(tool_name, arguments)
+
+    assert _structured(result) == deepcopy(payload)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_report_ai_tool_metric_uses_constant_job_path_template():
+    report_ai._reset_report_ai_queue_observations()
+    service_metrics.reset_service_metrics()
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/report-ai-job/987654").mock(
+        return_value=httpx.Response(
+            200, json={"success": True, "data": {"job": {"id": 987654, "status": "queued"}}}
+        )
+    )
+
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("get_report_ai_job", {"job_id": 987654})
+
+    metrics = service_metrics.snapshot_service_metrics()["tool_calls_total"]
+    assert "/rest/api/report-ai-job/{id}:get_report_ai_job|GET|success" in metrics
+    assert all("987654" not in metric for metric in metrics)
+
+
+@pytest.mark.asyncio
+async def test_invalid_report_ai_job_creation_counts_as_error_attempt():
+    service_metrics.reset_service_metrics()
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="intent_text"):
+            await mcp.call_tool("create_report_ai_job", {"intent_text": ""})
+
+    assert service_metrics.snapshot_service_metrics()["report_ai_jobs_total"] == {"error": 1}
 
 
 @pytest.mark.asyncio

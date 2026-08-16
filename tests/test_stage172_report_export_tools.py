@@ -3,6 +3,8 @@ import pytest
 import respx
 from fastmcp.exceptions import ToolError
 
+import service_metrics
+import tools.report_ai as report_ai
 from server import mcp
 from tests.runtime_factories import patch_runtime_credentials
 from token_scopes import SCOPE_ANALYTICS_READ
@@ -261,6 +263,42 @@ async def test_get_report_export_file_treats_409_as_retryable_without_message():
             await mcp.call_tool("get_report_export_file", {"report_file_id": 123})
 
     assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_retryable_export_poll_keeps_observation_until_string_file_id_succeeds(monkeypatch):
+    report_ai._reset_report_ai_queue_observations()
+    service_metrics.reset_service_metrics()
+    billing_mock()
+    start_route = respx.get(f"{BASE}/rest/api/report/StartReport").mock(
+        return_value=httpx.Response(200, json={"data": {"report": {"report_file_id": "123"}}})
+    )
+    file_route = respx.get(f"{BASE}/rest/api/report/reportFile").mock(
+        side_effect=[
+            httpx.Response(409, json={"success": False, "message": ""}),
+            httpx.Response(200, json={"data": {"report": {"csv_file": "report.csv"}}}),
+        ]
+    )
+    observed_times = iter([10.0, 17.0])
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: next(observed_times))
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("start_report_export", {"report_id": 88})
+        with pytest.raises(ToolError, match="not ready"):
+            await mcp.call_tool("get_report_export_file", {"report_file_id": 123})
+        await mcp.call_tool("get_report_export_file", {"report_file_id": 123})
+
+    assert start_route.call_count == 1
+    assert file_route.call_count == 2
+    snapshot = service_metrics.snapshot_service_metrics()
+    assert snapshot["report_ai_exports_total"] == {
+        "poll|not_ready": 1,
+        "poll|success": 1,
+        "start|success": 1,
+    }
+    assert snapshot["report_ai_export_duration_seconds"]["success"]["sum_seconds"] == 7.0
 
 
 @pytest.mark.asyncio

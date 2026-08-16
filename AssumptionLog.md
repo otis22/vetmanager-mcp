@@ -41,6 +41,23 @@
   оставит полный evidence trail. ShellCheck, Bash syntax и full Docker suite
   passed after this follow-up; push не выполнялся.
 
+### Follow-up: review findings for Report AI metrics
+
+- `instrument_call` получает только constant Report AI metric templates;
+  request path с job ID остаётся исключительно transport path. Audit всех
+  direct call sites не нашёл других interpolated path: CRUD/profile callers
+  передают static endpoint labels.
+- Lifecycle observation вызывается отдельно от response annotation для create,
+  confirm и save, поэтому их public payload остаётся upstream payload.
+- Retryable export-file responses учитываются как `not_ready`, но не завершают
+  observation; terminal success/error закрывают duration. Existing fixtures
+  наблюдают integer `report_file_id`; public OpenAPI не описывает response
+  schema, поэтому string-ID regression подтверждает текущую local normalization
+  without adding an upstream type claim.
+- Create attempts include client validation and all `Exception` outcomes. New
+  regressions cover stable labels/no IDs, public payload preservation, retryable
+  export duration and string file ID. Targeted Docker tests passed (`80 passed`).
+
 ---
 
 ## Этап 1–2: Каркас и MCP-инструменты

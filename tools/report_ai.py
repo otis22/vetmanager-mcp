@@ -182,6 +182,11 @@ def _complete_report_ai_export(report_file_id: object, *, outcome: str) -> None:
         )
 
 
+def _record_pending_report_ai_export_poll() -> None:
+    """Count a retryable export-file poll without ending its observation."""
+    record_report_ai_export(operation="poll", outcome="not_ready")
+
+
 def _observe_report_ai_queue(job: dict, *, now: float | None = None) -> int | None:
     observation_key = _report_ai_queue_observation_key(job)
 
@@ -519,6 +524,12 @@ def _safe_export_error(
     return ToolError(f"{action} failed{status}{code}.")
 
 
+def _is_retryable_export_file_error(exc: VetmanagerError) -> bool:
+    """Return whether the documented file-poll error permits another poll."""
+    lowered = str(exc).lower()
+    return exc.status_code == 409 or "build in progress" in lowered or "not started" in lowered
+
+
 async def _call_vm(
     method: str,
     path: str,
@@ -526,6 +537,7 @@ async def _call_vm(
     json: dict | None = None,
     params: dict | None = None,
     tool_name: str,
+    metric_endpoint: str,
 ) -> dict:
     client = VetmanagerClient()
 
@@ -538,7 +550,7 @@ async def _call_vm(
 
     try:
         return await instrument_call(
-            path, method, request, tool_name=tool_name
+            metric_endpoint, method, request, tool_name=tool_name
         )
     except VetmanagerError as exc:
         raise _tool_error_from_vm(exc) from None
@@ -590,17 +602,19 @@ def register(mcp: FastMCP) -> None:
                 periods and simpler grouped requests; do not create duplicate
                 queued jobs without user consent.
         """
-        intent = _validate_intent_text(intent_text)
         try:
+            intent = _validate_intent_text(intent_text)
             payload = await _call_vm(
                 "POST", "/rest/api/report-ai-job", json={"intent_text": intent},
                 tool_name="create_report_ai_job",
+                metric_endpoint="/rest/api/report-ai-job",
             )
-        except ToolError:
+        except Exception:
             record_report_ai_job_created(outcome="error")
             raise
         record_report_ai_job_created(outcome="success")
-        return _annotate_report_ai_job_payload(payload)
+        _observe_report_ai_lifecycle(_extract_job(payload))
+        return payload
 
     @mcp.tool
     async def get_report_ai_job(job_id: int) -> dict:
@@ -623,7 +637,8 @@ def register(mcp: FastMCP) -> None:
                 later or simplifying/splitting the report intent.
         """
         payload = await _call_vm(
-            "GET", f"/rest/api/report-ai-job/{job_id}", tool_name="get_report_ai_job"
+            "GET", f"/rest/api/report-ai-job/{job_id}", tool_name="get_report_ai_job",
+            metric_endpoint="/rest/api/report-ai-job/{id}",
         )
         return _annotate_report_ai_job_payload(payload)
 
@@ -637,12 +652,15 @@ def register(mcp: FastMCP) -> None:
                 A successful confirmation makes the job existing_report_matched;
                 call get_report_ai_job_data next when rows are needed.
         """
-        return _annotate_report_ai_job_payload(await _call_vm(
+        payload = await _call_vm(
             "POST",
             f"/rest/api/report-ai-job/{job_id}/confirm",
             json={"report_id": report_id},
             tool_name="confirm_report_ai_job_candidate",
-        ))
+            metric_endpoint="/rest/api/report-ai-job/{id}/confirm",
+        )
+        _observe_report_ai_lifecycle(_extract_job(payload))
+        return payload
 
     @mcp.tool
     async def get_report_ai_job_data(job_id: int) -> dict:
@@ -658,7 +676,8 @@ def register(mcp: FastMCP) -> None:
                 via the returned csv_export_url/report_id for bulk review.
         """
         payload = await _call_vm(
-            "GET", f"/rest/api/report-ai-job/{job_id}/data", tool_name="get_report_ai_job_data"
+            "GET", f"/rest/api/report-ai-job/{job_id}/data", tool_name="get_report_ai_job_data",
+            metric_endpoint="/rest/api/report-ai-job/{id}/data",
         )
         return _annotate_report_ai_data_payload(payload)
 
@@ -674,12 +693,15 @@ def register(mcp: FastMCP) -> None:
                 'MCP debtors by negative balance 2026-06-15'.
         """
         safe_title = _validate_report_title(title)
-        return _annotate_report_ai_job_payload(await _call_vm(
+        payload = await _call_vm(
             "POST",
             f"/rest/api/report-ai-job/{job_id}/save",
             json={"title": safe_title},
             tool_name="save_report_ai_job_as_report",
-        ))
+            metric_endpoint="/rest/api/report-ai-job/{id}/save",
+        )
+        _observe_report_ai_lifecycle(_extract_job(payload))
+        return payload
 
     @mcp.tool
     async def start_report_export(report_id: int, filter_json: str | None = None) -> dict:
@@ -716,7 +738,10 @@ def register(mcp: FastMCP) -> None:
             _complete_report_ai_export(file_id, outcome="success")
             return payload
         except VetmanagerError as exc:
-            _complete_report_ai_export(file_id, outcome="error")
+            if _is_retryable_export_file_error(exc):
+                _record_pending_report_ai_export_poll()
+            else:
+                _complete_report_ai_export(file_id, outcome="error")
             raise _safe_export_error(
                 exc, "Getting report export file", retry_on_conflict=True
             ) from None
@@ -736,6 +761,7 @@ def register(mcp: FastMCP) -> None:
         job_payload = await _call_vm(
             "GET", f"/rest/api/report-ai-job/{safe_job_id}",
             tool_name="get_report_ai_job_export",
+            metric_endpoint="/rest/api/report-ai-job/{id}",
         )
         job = _extract_job(job_payload)
         status = str(job.get("status") or "")
