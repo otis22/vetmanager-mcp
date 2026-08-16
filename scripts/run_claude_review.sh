@@ -12,7 +12,7 @@ Usage: scripts/run_claude_review.sh --range <git-range> --attempt <N/3> [options
 Options:
   --prompt-file <path>   Review prompt (default: built-in structured-review prompt).
   --schema-file <path>   JSON schema (default: findings schema).
-  --evidence-dir <path>  Evidence root (default: /tmp/vetmanager-mcp-review-evidence).
+  --evidence-dir <path>  Evidence root (default: XDG_DATA_HOME or ~/.local/share).
   --repo <path>          Repository used for git diff (default: current directory).
   --model <name>         Claude model (default: opus).
   --timeout <seconds>    CLI timeout (default: 1200).
@@ -23,7 +23,8 @@ range=''
 attempt=''
 prompt_file=''
 schema_file=''
-evidence_dir=/tmp/vetmanager-mcp-review-evidence
+data_home=${XDG_DATA_HOME:-"$HOME/.local/share"}
+evidence_dir=$data_home/vetmanager-mcp-review-evidence
 repo=$PWD
 model=opus
 timeout_seconds=1200
@@ -87,6 +88,10 @@ started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 started_ns=$(date +%s%N)
 attempt_label=${attempt//\//-of-}
 safe_range=$(printf '%s' "$range" | tr '/.' '__' | tr -cd '[:alnum:]_-' | cut -c1-80)
+if [[ ! -d $(dirname "$evidence_dir") ]] && ! mkdir -p -m 700 "$(dirname "$evidence_dir")"; then
+    printf 'Could not create evidence parent directory: %s\n' "$(dirname "$evidence_dir")" >&2
+    exit 73
+fi
 if [[ -L $evidence_dir || ( -e $evidence_dir && ! -d $evidence_dir ) ]]; then
     printf 'Evidence path must be a real directory: %s\n' "$evidence_dir" >&2
     exit 73

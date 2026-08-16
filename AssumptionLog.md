@@ -11476,7 +11476,7 @@ Checks so far:
   runtime `bwrap` error; разрешённый review-only fallback вернул `[]`.
   Candidate findings отсутствуют.
 - **Claude code/diff review 218, попытка 1/3:** evidence
-  `/tmp/vetmanager-mcp-review-evidence/2026-08-16T140543Z-HEAD__HEAD-attempt-1-of-3.RcOuYj/claude-review-attempt-1-of-3.envelope.json`;
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-16T140543Z-HEAD__HEAD-attempt-1-of-3.RcOuYj/claude-review-attempt-1-of-3.envelope.json`;
   `subtype=success`, `stop_reason=tool_use`, `output_tokens=6015`,
   `thinking_tokens=3817`, `len(result)=2639`. Приняты findings: committed diff
   должен формироваться через `git show` с rename/copy detection, а regression
@@ -11485,7 +11485,7 @@ Checks so far:
   `usage.output_tokens_details.thinking_tokens`. Принято hardening evidence
   root: он принадлежит текущему пользователю и закрыт mode `0700`.
 - **Claude code/diff review 218, попытка 2/3:** evidence
-  `/tmp/vetmanager-mcp-review-evidence/2026-08-16T141232Z-HEAD__HEAD-attempt-2-of-3.wWgmZi/claude-review-attempt-2-of-3.envelope.json`;
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-16T141232Z-HEAD__HEAD-attempt-2-of-3.wWgmZi/claude-review-attempt-2-of-3.envelope.json`;
   `subtype=success`, `stop_reason=tool_use`, `output_tokens=3724`,
   `thinking_tokens=3033`, `len(result)=1766`. Приняты findings: evidence root
   отказывает symlink/non-directory и чужому владельцу, runner сам валидирует
@@ -11495,3 +11495,8 @@ Checks so far:
   по решению пользователя.
 - **Проверки после follow-up:** targeted Docker `10 passed`; полный Docker
   contour `1478 passed, 2 skipped, 65 deselected`, exit `0`.
+- **Миграция evidence:** четыре существующих review package из временного
+  `/tmp/vetmanager-mcp-review-evidence` скопированы без удаления источников в
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence` с mode `0700`;
+  ссылки двух попыток этапа 218 обновлены на реально существующие persistent
+  копии. Будущие package по умолчанию создаются в XDG data directory.

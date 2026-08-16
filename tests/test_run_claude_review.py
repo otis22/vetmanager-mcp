@@ -34,7 +34,12 @@ def _fake_claude(path: Path, exit_code: int) -> None:
     path.chmod(0o755)
 
 
-def _run(tmp_path: Path, envelope: str, exit_code: int = 0) -> tuple[subprocess.CompletedProcess[str], Path]:
+def _run(
+    tmp_path: Path,
+    envelope: str,
+    exit_code: int = 0,
+    evidence_dir: Path | None = None,
+) -> tuple[subprocess.CompletedProcess[str], Path]:
     repo = tmp_path / "repo"
     repo.mkdir()
     prompt = tmp_path / "prompt.txt"
@@ -42,17 +47,19 @@ def _run(tmp_path: Path, envelope: str, exit_code: int = 0) -> tuple[subprocess.
     fake_claude = tmp_path / "claude"
     fake_git = tmp_path / "git"
     git_args_log = tmp_path / "git-args.txt"
-    evidence = tmp_path / "evidence"
+    evidence = evidence_dir or tmp_path / "data" / "vetmanager-mcp-review-evidence"
     prompt.write_text("Review only. Think briefly, then return JSON matching the schema immediately.\n")
     schema.write_text('{"type":"object"}\n')
     _fake_claude(fake_claude, exit_code)
     _fake_git(fake_git)
+    command = [
+        str(SCRIPT), "--repo", str(repo), "--range", "HEAD", "--attempt", "2/3",
+        "--prompt-file", str(prompt), "--schema-file", str(schema),
+    ]
+    if evidence_dir is not None:
+        command.extend(["--evidence-dir", str(evidence)])
     completed = subprocess.run(
-        [
-            str(SCRIPT), "--repo", str(repo), "--range", "HEAD", "--attempt", "2/3",
-            "--prompt-file", str(prompt), "--schema-file", str(schema),
-            "--evidence-dir", str(evidence),
-        ],
+        command,
         text=True,
         capture_output=True,
         env={
@@ -60,6 +67,7 @@ def _run(tmp_path: Path, envelope: str, exit_code: int = 0) -> tuple[subprocess.
             "CLAUDE_BIN": str(fake_claude),
             "FAKE_ENVELOPE": envelope,
             "GIT_ARGS_LOG": str(git_args_log),
+            "XDG_DATA_HOME": str(tmp_path / "data"),
         },
     )
     assert git_args_log.read_text().strip().endswith("show --find-renames --find-copies --format=fuller HEAD")
@@ -107,3 +115,11 @@ def test_review_attempt_saves_empty_failed_stdout_and_metadata(tmp_path: Path) -
     assert metadata["output_tokens"] is None
     assert metadata["thinking_tokens"] is None
     assert metadata["result_length"] == 0
+
+
+def test_default_evidence_root_uses_xdg_data_home(tmp_path: Path) -> None:
+    completed, evidence = _run(tmp_path, '{"is_error": false, "result": "{\\"findings\\":[]}"}')
+
+    assert completed.returncode == 0
+    assert evidence == tmp_path / "data" / "vetmanager-mcp-review-evidence"
+    assert oct(evidence.stat().st_mode & 0o777) == "0o700"

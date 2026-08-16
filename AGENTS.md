@@ -58,7 +58,8 @@
 Каждую попытку Claude strong review запускать через
 `scripts/run_claude_review.sh --range <range> --attempt <N/3>`. Runner независимо
 от exit сохраняет вне working copy raw envelope, stderr, prompt, schema и
-metadata в `/tmp/vetmanager-mcp-review-evidence` (или `--evidence-dir`). В
+metadata в `${XDG_DATA_HOME:-~/.local/share}/vetmanager-mcp-review-evidence`
+(или `--evidence-dir`). В
 `AssumptionLog` указывать путь к `*.envelope.json` и `subtype`, `stop_reason`,
 `output_tokens`, `thinking_tokens`, `len(result)`; запись только «без output»
 запрещена. Runner валидирует сохранённый envelope и возвращает non-zero при
