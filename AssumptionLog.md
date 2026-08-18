@@ -11761,3 +11761,8 @@ Checks so far:
   from `gather_sections` failure. `pet` circuit-breaker/transport failures now
   return only retryable structured `section_errors.pet` and short-circuit all
   downstream requests; only a successful empty response becomes NotFoundError.
+- Follow-up: `vetmanager-extjs` normalizes an empty `diagnos` to `0` and
+  excludes both `''` and `'0'` from diagnosis resolution. Profile treats
+  missing, empty, numeric `0`, and string `'0'` as the normal absence of a
+  diagnosis, not as unresolved; any other ID lacking an active
+  `AllDiagnoses` title remains explicitly unresolved (including inactive IDs).

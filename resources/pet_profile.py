@@ -64,22 +64,37 @@ def _sort_invoices(invoices: list[dict]) -> list[dict]:
     )
 
 
+def _diagnosis_identifier(identifier: object) -> str | None:
+    """Return an actual diagnosis reference, excluding Vetmanager's no-value forms."""
+    if identifier is None or isinstance(identifier, bool):
+        return None
+    if isinstance(identifier, (int, float)) and identifier == 0:
+        return None
+    normalized = str(identifier).strip()
+    return normalized if normalized not in ("", "0") else None
+
+
 def _diagnosis_titles(card: dict, titles_by_id: dict[str, str]) -> tuple[list[str], list[str]]:
-    """Resolve known diagnosis IDs from both documented card representations."""
+    """Resolve known diagnosis IDs while keeping absent diagnoses distinct from gaps."""
     identifiers: list[object] = [card.get("diagnos")]
     diagnoses = card.get("diagnoses")
     if isinstance(diagnoses, list):
         identifiers.extend(
             item.get("id") for item in diagnoses if isinstance(item, dict)
         )
+    diagnosis_ids = [
+        diagnosis_id
+        for identifier in identifiers
+        if (diagnosis_id := _diagnosis_identifier(identifier)) is not None
+    ]
     titles: list[str] = []
-    for identifier in identifiers:
-        title = titles_by_id.get(str(identifier))
+    for diagnosis_id in diagnosis_ids:
+        title = titles_by_id.get(diagnosis_id)
         if title and title not in titles:
             titles.append(title)
     unresolved = [
-        str(identifier) for identifier in identifiers
-        if identifier not in (None, "") and str(identifier) not in titles_by_id
+        diagnosis_id for diagnosis_id in diagnosis_ids
+        if diagnosis_id not in titles_by_id
     ]
     return titles, list(dict.fromkeys(unresolved))
 
