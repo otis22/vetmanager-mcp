@@ -11781,3 +11781,18 @@ Checks so far:
   помечает embedded owner nullable. Это устраняет normal-path N+1.
   Titles вида и породы возвращаются рядом с IDs, чтобы в depersonalized режиме
   сохранялись человекочитаемые не-PII признаки для уточнения пациента.
+- Follow-up: расширение истории до 100 карт выявило response-size риск.
+  Embedded `MedicalCard.patient` повторяет top-level profile `pet` в каждой
+  карте (на Мусе: 2 401 из 7 149 bytes списка карт), поэтому удаляется как
+  единственный доказанный служебный дубль. Сохраняются clinical text,
+  measurements, dates и IDs карты/пациента/визита/врача/клиники: это либо
+  clinical evidence, либо адрес следующего вызова. Если 100 карт останутся
+  чрезмерны после этой дедупликации, следующий вариант — явная pagination или
+  compact clinical contract, а не silent limit reduction.
+- **Response-size probe (2026-08-18):** на доступном `devslon67` пациент 448
+  имеет 27 карт. Один и тот же real profile, измеренный как compact UTF-8 JSON,
+  уменьшился с 45 247 до 35 635 bytes; `last_medical_cards` — с 26 098 до
+  16 486 bytes. До изменения 27/27 карт содержали `patient`, после — 0/27, а
+  набор card IDs совпал. Точный замер упомянутого production пациента требует
+  его `pet_id` и доступа к production connector; число из другого контура не
+  подменяет его измерение.
