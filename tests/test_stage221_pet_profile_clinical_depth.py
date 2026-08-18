@@ -54,6 +54,43 @@ async def test_profile_exposes_fullness_and_resolved_diagnosis_titles():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_profile_deduplicates_card_patient_without_losing_clinical_fields():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/pet/740").mock(return_value=httpx.Response(
+        200, json={"data": {"pet": {"id": 740, "alias": "Муся"}}}
+    ))
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(return_value=httpx.Response(
+        200, json={"data": {"totalCount": 1, "medicalCards": [{
+            "id": 7, "patient_id": 740, "admission_id": 55,
+            "patient": {"id": 740, "alias": "Муся", "weight": "3.9"},
+            "weight": "3.9", "temperature": "38.4",
+            "description": "Креатинин 251", "recomendation": "Почечная диета",
+            "diagnos": "124",
+        }]}}
+    ))
+    respx.get(f"{BASE}/rest/api/MedicalCards/AllDiagnoses").mock(return_value=httpx.Response(
+        200, json={"data": {"diagnoses": [{"id": 124, "title": "Почечная недостаточность"}]}}
+    ))
+    respx.get(f"{BASE}/rest/api/MedicalCards/Vaccinations").mock(
+        return_value=httpx.Response(200, json={"data": {"medicalcards": []}})
+    )
+    headers, runtime = patch_runtime_credentials(DOMAIN, API_KEY)
+    with headers, runtime:
+        payload = (await mcp.call_tool("get_pet_profile", {"pet_id": 740})).structured_content
+
+    card = payload["last_medical_cards"][0]
+    assert "patient" not in card
+    assert card["patient_id"] == 740
+    assert card["admission_id"] == 55
+    assert card["weight"] == "3.9"
+    assert card["temperature"] == "38.4"
+    assert card["description"] == "Креатинин 251"
+    assert card["recomendation"] == "Почечная диета"
+    assert card["diagnosis_titles"] == ["Почечная недостаточность"]
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_profile_makes_unresolved_diagnosis_id_explicit():
     billing_mock()
     respx.get(f"{BASE}/rest/api/pet/740").mock(return_value=httpx.Response(

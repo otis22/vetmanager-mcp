@@ -1,6 +1,6 @@
 """Pet profile aggregator (stage 103c).
 
-Composes the pet's full record with owner, last 5 medical card entries, recent
+Composes the pet's full record with owner, up to 100 medical card entries, recent
 invoices with line items, and vaccination records into a single response. Owns
 entity-specific field
 mapping (`patient_id` filter for MedicalCards — NOT `pet_id`), response
@@ -97,6 +97,11 @@ def _diagnosis_titles(card: dict, titles_by_id: dict[str, str]) -> tuple[list[st
         if diagnosis_id not in titles_by_id
     ]
     return titles, list(dict.fromkeys(unresolved))
+
+
+def _deduplicate_medical_card_patient(card: dict) -> None:
+    """Remove the card-local patient copy already represented by profile.pet."""
+    card.pop("patient", None)
 
 
 async def fetch(pet_id: int) -> dict:
@@ -247,6 +252,7 @@ async def fetch(pet_id: int) -> dict:
     for card in medical_cards:
         if not isinstance(card, dict):
             continue
+        _deduplicate_medical_card_patient(card)
         titles, unresolved = _diagnosis_titles(card, titles_by_id)
         card["diagnosis_titles"] = titles
         card["unresolved_diagnosis_ids"] = unresolved
