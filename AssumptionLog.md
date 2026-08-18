@@ -11774,3 +11774,10 @@ Checks so far:
   privacy-wrapper маскирует name/phone; остаются ID, вид/порода, дата рождения
   и статус. Если их недостаточно, модель обязана запросить уточнение, а не
   выбрать первый candidate.
+- Follow-up: real `GET /rest/api/pet` alias probe показал embedded `owner`,
+  `type` и `breed` в каждом list row. Alias-search теперь проецирует owner
+  непосредственно из row (узко: name/phone), а `/client/{owner_id}` вызывает
+  только если embedded owner отсутствует; это не speculative fallback: OpenAPI
+  помечает embedded owner nullable. Это устраняет normal-path N+1.
+  Titles вида и породы возвращаются рядом с IDs, чтобы в depersonalized режиме
+  сохранялись человекочитаемые не-PII признаки для уточнения пациента.

@@ -120,20 +120,20 @@ async def test_profile_empty_pet_is_explicit_not_found_without_fanout():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_find_pets_by_alias_returns_owner_context_for_disambiguation():
+async def test_find_pets_by_alias_uses_embedded_context_without_owner_n_plus_one():
     billing_mock()
     respx.get(f"{BASE}/rest/api/pet").mock(return_value=httpx.Response(
         200, json={"data": {"totalCount": 2, "pet": [{
             "id": 740, "alias": "Муся", "owner_id": 662, "type_id": 1,
             "breed_id": 1, "birthday": "2012-06-15", "status": "alive",
+            "owner": {
+                "id": 662, "last_name": "Иванова", "first_name": "Анна",
+                "middle_name": "Сергеевна", "cell_phone": "+79990000000",
+                "passport_series": "1234 567890",
+            },
+            "type": {"id": 1, "title": "Кошки"},
+            "breed": {"id": 1, "title": "Беспородная"},
         }]}}
-    ))
-    respx.get(f"{BASE}/rest/api/client/662").mock(return_value=httpx.Response(
-        200, json={"data": {"client": {
-            "id": 662, "last_name": "Иванова", "first_name": "Анна",
-            "middle_name": "Сергеевна", "cell_phone": "+79990000000",
-            "passport_series": "1234 567890",
-        }}}
     ))
     headers, runtime = patch_runtime_credentials(DOMAIN, API_KEY)
     with headers, runtime:
@@ -143,8 +143,36 @@ async def test_find_pets_by_alias_returns_owner_context_for_disambiguation():
     assert payload["data"]["pets"] == [{
         "id": 740, "alias": "Муся", "owner_id": 662, "type_id": 1,
         "breed_id": 1, "birthday": "2012-06-15", "status": "alive",
+        "type": "Кошки", "breed": "Беспородная",
         "owner": {"name": "Иванова Анна Сергеевна", "phone": "+79990000000"},
     }]
+    assert all("/rest/api/client/" not in str(call.request.url) for call in respx.calls)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_find_pets_by_alias_fetches_owner_only_when_embedded_owner_is_missing():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/pet").mock(return_value=httpx.Response(
+        200, json={"data": {"totalCount": 1, "pet": [{
+            "id": 740, "alias": "Муся", "owner_id": 662, "type_id": 1,
+            "breed_id": 1, "birthday": "2012-06-15", "status": "alive",
+            "type": {"id": 1, "title": "Кошки"},
+            "breed": {"id": 1, "title": "Беспородная"},
+        }]}}
+    ))
+    owner_route = respx.get(f"{BASE}/rest/api/client/662").mock(return_value=httpx.Response(
+        200, json={"data": {"client": {
+            "id": 662, "last_name": "Иванова", "first_name": "Анна",
+            "cell_phone": "+79990000000",
+        }}}
+    ))
+    headers, runtime = patch_runtime_credentials(DOMAIN, API_KEY)
+    with headers, runtime:
+        payload = (await mcp.call_tool("find_pets_by_alias", {"alias": "Муся"})).structured_content
+
+    assert owner_route.call_count == 1
+    assert payload["data"]["pets"][0]["owner"] == {"name": "Иванова Анна", "phone": "+79990000000"}
 
 
 @pytest.mark.asyncio
@@ -155,14 +183,13 @@ async def test_find_pets_by_alias_uses_global_depersonalization_wrapper(monkeypa
         return {"success": True, "data": {"pet": [{
             "id": 740, "alias": "Муся", "owner_id": 662, "type_id": 1,
             "breed_id": 1, "birthday": "2012-06-15", "status": "alive",
+            "owner": {"id": 662, "last_name": "Иванова", "first_name": "Анна", "cell_phone": "+79990000000"},
+            "type": {"id": 1, "title": "Кошки"},
+            "breed": {"id": 1, "title": "Беспородная"},
         }], "totalCount": 1}}
 
     async def fake_get(self, path, **kwargs):
-        assert path == "/rest/api/client/662"
-        return {"data": {"client": {
-            "id": 662, "last_name": "Иванова", "first_name": "Анна",
-            "cell_phone": "+79990000000", "passport_series": "1234 567890",
-        }}}
+        raise AssertionError(f"unexpected owner fallback request: {path}")
 
     monkeypatch.setattr(pet_module, "crud_list", fake_crud_list)
     monkeypatch.setattr(pet_module.VetmanagerClient, "get", fake_get)
@@ -172,5 +199,7 @@ async def test_find_pets_by_alias_uses_global_depersonalization_wrapper(monkeypa
 
     candidate = payload["data"]["pets"][0]
     assert candidate["owner_id"] == 662
+    assert candidate["type"] == "Кошки"
+    assert candidate["breed"] == "Беспородная"
     assert candidate["owner"] == {"name": "[redacted-name]", "phone": "[redacted-phone]"}
     assert "passport_series" not in candidate["owner"]

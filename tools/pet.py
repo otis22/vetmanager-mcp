@@ -39,6 +39,13 @@ def _positive_owner_id(value: object) -> int | None:
     return owner_id if owner_id > 0 else None
 
 
+def _reference_title(value: object) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    title = value.get("title")
+    return str(title) if title else None
+
+
 async def _fetch_owner_summary(vc: VetmanagerClient, owner_id: int) -> tuple[int, dict]:
     payload = await vc.get(f"/rest/api/client/{owner_id}")
     data = payload.get("data", {}) if isinstance(payload, dict) else {}
@@ -111,7 +118,10 @@ def register(mcp: FastMCP) -> None:
         кличка животного, find pet by name, patient lookup.
 
         Pet nicknames are not unique. Each candidate includes owner_id and
-        projected owner name/phone, plus pet type, breed, birthday, and status.
+        projected owner name/phone, plus human-readable pet type, breed,
+        birthday, and status. Owner, type, and breed are taken from the
+        embedded list response; the client endpoint is a compatibility fallback
+        only when a particular upstream response omits its embedded owner.
         Never choose the first candidate when several remain plausible: ask a
         clarifying question using the available distinguishing facts. In a
         depersonalized runtime owner name and phone are masked by the global
@@ -130,21 +140,26 @@ def register(mcp: FastMCP) -> None:
         rows = data.get("pet", []) if isinstance(data, dict) else []
         total = int(data.get("totalCount", len(rows)) or 0) if isinstance(data, dict) else 0
         pets = [pet for pet in rows if isinstance(pet, dict)]
-        owner_ids = list(dict.fromkeys(
+        fallback_owner_ids = list(dict.fromkeys(
             owner_id for pet in pets
-            if (owner_id := _positive_owner_id(pet.get("owner_id"))) is not None
+            if not isinstance(pet.get("owner"), dict)
+            and (owner_id := _positive_owner_id(pet.get("owner_id"))) is not None
         ))
-        vc = VetmanagerClient()
-        owners = dict(await asyncio.gather(*(
-            _fetch_owner_summary(vc, owner_id) for owner_id in owner_ids
-        )))
+        fallback_owners: dict[int, dict] = {}
+        if fallback_owner_ids:
+            vc = VetmanagerClient()
+            fallback_owners = dict(await asyncio.gather(*(
+                _fetch_owner_summary(vc, owner_id) for owner_id in fallback_owner_ids
+            )))
         candidates = [
             {
                 **{
                     key: pet.get(key)
                     for key in ("id", "alias", "owner_id", "type_id", "breed_id", "birthday", "status")
                 },
-                "owner": owners.get(
+                "type": _reference_title(pet.get("type")),
+                "breed": _reference_title(pet.get("breed")),
+                "owner": _owner_summary(pet.get("owner")) if isinstance(pet.get("owner"), dict) else fallback_owners.get(
                     _positive_owner_id(pet.get("owner_id")),
                     {"name": None, "phone": None},
                 ),
