@@ -2,7 +2,7 @@ import asyncio
 
 from fastmcp import FastMCP
 
-from filters import eq as _filter_eq, like as _filter_like
+from filters import build_list_query_params, eq as _filter_eq, in_ as _filter_in, like as _filter_like
 from resources.pet_profile import fetch as _fetch_pet_profile
 from service_metrics import instrument_call as _instrument_call
 from token_scopes import SCOPE_CLIENTS_READ
@@ -420,7 +420,14 @@ def register(mcp: FastMCP) -> None:
             if pet.get("doctor_resolution") == "unresolved" and str(pet.get("doctor_id", "")).isdigit()
         })
         if unresolved_doctor_ids:
-            users_payload = await vc.get("/rest/api/user", params={"limit": 100, "offset": 0})
+            users_payload = await vc.get(
+                "/rest/api/user",
+                params=build_list_query_params(
+                    limit=len(unresolved_doctor_ids),
+                    offset=0,
+                    filters=[_filter_in("id", unresolved_doctor_ids)],
+                ),
+            )
             users_data = users_payload.get("data", {}) if isinstance(users_payload, dict) else {}
             users = users_data.get("user", []) if isinstance(users_data, dict) else []
             users_by_id = {user.get("id"): user for user in users if isinstance(user, dict)}
