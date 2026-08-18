@@ -2,7 +2,7 @@ import asyncio
 
 from fastmcp import FastMCP
 
-from filters import eq as _filter_eq, like as _filter_like
+from filters import build_list_query_params, eq as _filter_eq, in_ as _filter_in, like as _filter_like
 from resources.pet_profile import fetch as _fetch_pet_profile
 from service_metrics import instrument_call as _instrument_call
 from token_scopes import SCOPE_CLIENTS_READ
@@ -392,6 +392,11 @@ def register(mcp: FastMCP) -> None:
                         "owner_phone": client.get("cell_phone", ""),
                         "last_visit_date": last_visit,
                         "visit_source": pet.get("visit_source"),
+                        "doctor_id": pet.get("visit_doctor_id"),
+                        "doctor_name": pet.get("visit_doctor_name"),
+                        "doctor_resolution": "resolved" if pet.get("visit_doctor_name") else (
+                            "not_specified" if not pet.get("visit_doctor_id") else "unresolved"
+                        ),
                     })
                     if len(result_pets) >= limit:
                         break
@@ -409,6 +414,32 @@ def register(mcp: FastMCP) -> None:
             offset += CLIENT_PAGE_SIZE
             if page_num + 1 == MAX_CLIENT_PAGES:
                 SAFETY_CAP_REACHED = True
+
+        unresolved_doctor_ids = list({
+            int(pet["doctor_id"]) for pet in result_pets
+            if pet.get("doctor_resolution") == "unresolved" and str(pet.get("doctor_id", "")).isdigit()
+        })
+        if unresolved_doctor_ids:
+            users_payload = await vc.get(
+                "/rest/api/user",
+                params=build_list_query_params(
+                    limit=len(unresolved_doctor_ids),
+                    offset=0,
+                    filters=[_filter_in("id", unresolved_doctor_ids)],
+                ),
+            )
+            users_data = users_payload.get("data", {}) if isinstance(users_payload, dict) else {}
+            users = users_data.get("user", []) if isinstance(users_data, dict) else []
+            users_by_id = {user.get("id"): user for user in users if isinstance(user, dict)}
+            for pet in result_pets:
+                if pet.get("doctor_resolution") != "unresolved":
+                    continue
+                user = users_by_id.get(pet.get("doctor_id"))
+                if user:
+                    pet["doctor_name"] = " ".join(str(user.get(k) or "") for k in ("last_name", "first_name", "middle_name")).strip() or None
+                    pet["doctor_resolution"] = "resolved" if pet["doctor_name"] else "not_found"
+                else:
+                    pet["doctor_resolution"] = "not_found"
 
         return {
             "inactive_pets": result_pets,
