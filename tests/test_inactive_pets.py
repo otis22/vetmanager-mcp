@@ -145,6 +145,46 @@ async def test_get_inactive_pets_falls_back_to_medcard_when_no_invoice():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_inactive_pets_doctor_sources_are_projected_without_page_cutoff():
+    """Invoice embeds a doctor; medcard ID is resolved by targeted user IN lookup."""
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/client").mock(return_value=_client_response([{
+        "id": 1, "last_visit_date": "2024-12-15", "last_name": "Owner",
+    }]))
+    respx.get(f"{BASE}/rest/api/pet").mock(return_value=_pet_response([
+        {"id": 10, "alias": "Invoice", "owner_id": 1, "status": "alive"},
+        {"id": 11, "alias": "Medcard", "owner_id": 1, "status": "alive"},
+        {"id": 12, "alias": "No doctor", "owner_id": 1, "status": "alive"},
+        {"id": 13, "alias": "Missing doctor", "owner_id": 1, "status": "alive"},
+    ]))
+    respx.get(f"{BASE}/rest/api/invoice").mock(return_value=_invoice_response([
+        {"pet_id": 10, "doctor_id": 7, "doctor": {"last_name": "Иванов", "first_name": "Иван", "passwd": "secret", "user_inn": "x"}},
+    ]))
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(return_value=_medcards_response([
+        {"patient_id": 11, "doctor_id": 105}, {"patient_id": 12, "doctor_id": 0}, {"patient_id": 13, "doctor_id": 999},
+    ]))
+    users_route = respx.get(f"{BASE}/rest/api/user").mock(return_value=httpx.Response(200, json={"data": {"totalCount": 106, "user": [
+        {"id": 105, "last_name": "Петров", "first_name": "Пётр", "login": "private", "user_inn": "private"},
+    ]}}))
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_inactive_pets", {})
+    pets = {pet["id"]: pet for pet in json.loads(result.content[0].text)["inactive_pets"]}
+    assert pets[10]["doctor_name"] == "Иванов Иван" and pets[10]["doctor_resolution"] == "resolved"
+    assert pets[11]["doctor_name"] == "Петров Пётр" and pets[11]["doctor_resolution"] == "resolved"
+    assert pets[12]["doctor_resolution"] == "not_specified"
+    assert pets[13]["doctor_resolution"] == "not_found"
+    assert "login" not in pets[10] and "user_inn" not in pets[11]
+    assert "passwd" not in pets[10] and "user_inn" not in pets[10]
+    user_query = parse_qs(urlparse(str(users_route.calls[0].request.url)).query)
+    assert user_query["limit"] == ["2"]
+    assert json.loads(user_query["filter"][0]) == [
+        {"property": "id", "operator": "IN", "value": [105, 999]}
+    ]
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_get_inactive_pets_excludes_pets_not_at_last_visit():
     """Pet without invoice or medcard for the visit date is excluded."""
     billing_mock()
