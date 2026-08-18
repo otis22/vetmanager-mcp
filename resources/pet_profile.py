@@ -104,6 +104,33 @@ async def fetch(pet_id: int) -> dict:
         sections=[("pet", vc.get(f"/rest/api/pet/{pet_id}"), {"data": {"pet": {}}})],
     )
     pet_data = pet_payloads[0].get("data", {}).get("pet", {})
+    if pet_errors:
+        # The preliminary lookup is deliberately sequential: a transport or
+        # breaker failure must stay retryable, but must not fan out into cards,
+        # invoices or dictionaries. Only a successful empty pet envelope is
+        # authoritative evidence for not-found.
+        return {
+            "pet": {},
+            "owner": {},
+            "last_medical_cards": [],
+            "medical_cards_total": None,
+            "medical_cards_returned": 0,
+            "medical_cards_truncated": False,
+            "diagnoses": [],
+            "unresolved_diagnosis_ids": [],
+            "diagnoses_reference": {
+                "returned": 0,
+                "total_known": False,
+                "pagination_supported": False,
+            },
+            "last_invoices": [],
+            "last_invoices_total": None,
+            "vaccinations": [],
+            "last_vaccination_date": None,
+            "next_vaccination_date": None,
+            "partial": True,
+            "section_errors": pet_errors,
+        }
     if not isinstance(pet_data, dict) or not pet_data.get("id"):
         raise NotFoundError(f"Pet {pet_id} not found")
 

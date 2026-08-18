@@ -144,6 +144,7 @@ async def test_section_errors_classify_upstream_unavailable_as_retryable():
     # upstream_unavailable with retryable=True.
     assert structured.get("partial") is True
     assert errors, f"expected section_errors, got {structured!r}"
+    assert set(errors) == {"pet"}
     for name, err in errors.items():
         assert err["error_type"] == "upstream_unavailable", (
             f"section {name!r}: expected upstream_unavailable, got {err}"

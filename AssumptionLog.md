@@ -11757,3 +11757,7 @@ Checks so far:
   сохраняет raw evidence до validation; малая local fix отсутствует, причиной
   является внешний Claude runtime, известный backlog. Пользователь явно
   разрешил push feature branch без valid external verdict; main не затрагивать.
+- Follow-up: preliminary pet lookup distinguishes a successful empty envelope
+  from `gather_sections` failure. `pet` circuit-breaker/transport failures now
+  return only retryable structured `section_errors.pet` and short-circuit all
+  downstream requests; only a successful empty response becomes NotFoundError.
