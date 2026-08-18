@@ -4035,4 +4035,4 @@ Report AI lifecycle и подготовить конкретные MCP-only ул
 - 221.2 Полная bounded история, метаданные полноты и титулы диагнозов в
   `get_pet_profile`. — `done`
 - 221.3 Безопасный поиск пациента по кличке с явной неоднозначностью. — `done`
-- 221.4 Регрессии, полный mock/real contour, audit, review, commit и push. — `in_progress`
+- 221.4 Регрессии, полный mock/real contour, audit, review, commit и push. — `done`

@@ -25,6 +25,7 @@ _INVOICE_LOOKUP_LIMIT = 20
 _INVOICE_RESULT_LIMIT = 5
 _INVOICE_DOCUMENT_LIMIT = 50
 _MEDICAL_CARDS_LIMIT = 100
+_DIAGNOSES_REFERENCE_LIMIT = 100
 
 
 def _section_error(error_type: str, message: str, *, retryable: bool = False) -> dict:
@@ -63,7 +64,7 @@ def _sort_invoices(invoices: list[dict]) -> list[dict]:
     )
 
 
-def _diagnosis_titles(card: dict, titles_by_id: dict[str, str]) -> list[str]:
+def _diagnosis_titles(card: dict, titles_by_id: dict[str, str]) -> tuple[list[str], list[str]]:
     """Resolve known diagnosis IDs from both documented card representations."""
     identifiers: list[object] = [card.get("diagnos")]
     diagnoses = card.get("diagnoses")
@@ -76,7 +77,11 @@ def _diagnosis_titles(card: dict, titles_by_id: dict[str, str]) -> list[str]:
         title = titles_by_id.get(str(identifier))
         if title and title not in titles:
             titles.append(title)
-    return titles
+    unresolved = [
+        str(identifier) for identifier in identifiers
+        if identifier not in (None, "") and str(identifier) not in titles_by_id
+    ]
+    return titles, list(dict.fromkeys(unresolved))
 
 
 async def fetch(pet_id: int) -> dict:
@@ -126,7 +131,7 @@ async def fetch(pet_id: int) -> dict:
         ), {"data": {"medicalCards": []}}),
         ("diagnoses", vc.get(
             "/rest/api/MedicalCards/AllDiagnoses",
-            params={"limit": _MEDICAL_CARDS_LIMIT, "offset": 0},
+            params={"limit": _DIAGNOSES_REFERENCE_LIMIT, "offset": 0},
         ), {"data": {"diagnoses": []}}),
         ("vaccinations", vc.get(
             "/rest/api/MedicalCards/Vaccinations",
@@ -196,14 +201,19 @@ async def fetch(pet_id: int) -> dict:
         for row in diagnoses_rows if isinstance(row, dict) and row.get("id") is not None and row.get("title")
     }
     profile_diagnoses: list[str] = []
+    unresolved_diagnosis_ids: list[str] = []
     for card in medical_cards:
         if not isinstance(card, dict):
             continue
-        titles = _diagnosis_titles(card, titles_by_id)
+        titles, unresolved = _diagnosis_titles(card, titles_by_id)
         card["diagnosis_titles"] = titles
+        card["unresolved_diagnosis_ids"] = unresolved
         for title in titles:
             if title not in profile_diagnoses:
                 profile_diagnoses.append(title)
+        for identifier in unresolved:
+            if identifier not in unresolved_diagnosis_ids:
+                unresolved_diagnosis_ids.append(identifier)
 
     vaccinations_raw = vacc_payload.get("data", {}).get("medicalcards", [])
     vaccinations = [
@@ -292,6 +302,12 @@ async def fetch(pet_id: int) -> dict:
             medical_cards_total is not None and medical_cards_total > len(medical_cards)
         ),
         "diagnoses": profile_diagnoses,
+        "unresolved_diagnosis_ids": unresolved_diagnosis_ids,
+        "diagnoses_reference": {
+            "returned": len(titles_by_id),
+            "total_known": False,
+            "pagination_supported": False,
+        },
         "last_invoices": invoices,
         "last_invoices_total": invoices_total,
         "vaccinations": vaccinations,

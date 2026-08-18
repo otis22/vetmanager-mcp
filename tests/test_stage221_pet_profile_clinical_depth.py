@@ -45,7 +45,34 @@ async def test_profile_exposes_fullness_and_resolved_diagnosis_titles():
     assert payload["medical_cards_returned"] == 2
     assert payload["medical_cards_truncated"] is True
     assert payload["diagnoses"] == ["Хроническая болезнь почек"]
+    assert payload["unresolved_diagnosis_ids"] == []
+    assert payload["diagnoses_reference"] == {
+        "returned": 1, "total_known": False, "pagination_supported": False,
+    }
     assert all(card["diagnosis_titles"] == ["Хроническая болезнь почек"] for card in payload["last_medical_cards"])
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_profile_makes_unresolved_diagnosis_id_explicit():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/pet/740").mock(return_value=httpx.Response(
+        200, json={"data": {"pet": {"id": 740, "alias": "Муся"}}}
+    ))
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(return_value=httpx.Response(
+        200, json={"data": {"totalCount": 1, "medicalCards": [{"id": 1, "diagnos": "999"}]}}
+    ))
+    respx.get(f"{BASE}/rest/api/MedicalCards/AllDiagnoses").mock(
+        return_value=httpx.Response(200, json={"data": {"diagnoses": []}})
+    )
+    respx.get(f"{BASE}/rest/api/MedicalCards/Vaccinations").mock(
+        return_value=httpx.Response(200, json={"data": {"medicalcards": []}})
+    )
+    headers, runtime = patch_runtime_credentials(DOMAIN, API_KEY)
+    with headers, runtime:
+        payload = (await mcp.call_tool("get_pet_profile", {"pet_id": 740})).structured_content
+    assert payload["unresolved_diagnosis_ids"] == ["999"]
+    assert payload["last_medical_cards"][0]["unresolved_diagnosis_ids"] == ["999"]
 
 
 @pytest.mark.asyncio

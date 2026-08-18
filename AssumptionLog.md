@@ -11740,3 +11740,20 @@ Checks so far:
   получает все source facts одним profile call.
 - Spark Architecture Critique дважды прочитал объект, но не выдал
   разбираемый YAML verdict; findings не приняты (review-output failure).
+- **AllDiagnoses contract probe (2026-08-18):** OpenAPI декларирует
+  `limit/offset/sort/filter`, но `devslon67` вернул идентичные 127 active
+  diagnoses для `limit=1`, `limit=100` и `offset=100`; `totalCount` отсутствует.
+  Следовательно, endpoint фактически непагинируемый и его полнота не доказуема.
+  Профиль использует отдельный `_DIAGNOSES_REFERENCE_LIMIT`, возвращает
+  `diagnoses_reference={returned,total_known:false,pagination_supported:false}`
+  и `unresolved_diagnosis_ids` top-level/per card. Отсутствующий title теперь
+  явен, а не silent.
+- **External code review gate / user-authorized exception:** штатная повторная
+  попытка `scripts/run_claude_review.sh --range HEAD~1..HEAD --attempt 1/3`
+  создала evidence package
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-18T075014Z-git_range-HEAD1__HEAD-attempt-1-of-3.sLidZQ/claude-review-attempt-1-of-3.envelope.json`.
+  `envelope.json` и `stderr` имеют 0 bytes; verdict/metadata не созданы.
+  Прямой Claude invocation ранее проявил тот же silent-empty outcome. Runner
+  сохраняет raw evidence до validation; малая local fix отсутствует, причиной
+  является внешний Claude runtime, известный backlog. Пользователь явно
+  разрешил push feature branch без valid external verdict; main не затрагивать.

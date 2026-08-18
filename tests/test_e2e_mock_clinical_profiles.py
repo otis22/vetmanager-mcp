@@ -683,7 +683,10 @@ async def test_get_pet_profile_owner_failure_keeps_profile_partial():
     assert payload["partial"] is True
     assert payload["pet"]["id"] == 14
     assert payload["owner"] == {}
-    assert payload["last_medical_cards"] == [{"id": 1, "patient_id": 14, "diagnosis_titles": []}]
+    assert payload["last_medical_cards"] == [{
+        "id": 1, "patient_id": 14, "diagnosis_titles": [],
+        "unresolved_diagnosis_ids": [],
+    }]
     assert payload["section_errors"]["owner"]["error_type"] == "vetmanager_error"
     assert payload["section_errors"]["owner"]["retryable"] is True
 

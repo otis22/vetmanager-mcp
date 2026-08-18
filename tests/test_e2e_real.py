@@ -385,6 +385,7 @@ async def test_real_report_ai_data_from_existing_saved_fixture_when_available():
         "HTTP 404",
         "NOT_FOUND",
         "INVALID_TRANSITION",
+        "Resource not found",
     )
     for job_id in (2, 4):
         headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
