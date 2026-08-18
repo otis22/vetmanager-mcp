@@ -1,8 +1,11 @@
+import asyncio
+
 from fastmcp import FastMCP
 
 from filters import eq as _filter_eq, like as _filter_like
 from resources.pet_profile import fetch as _fetch_pet_profile
 from service_metrics import instrument_call as _instrument_call
+from token_scopes import SCOPE_CLIENTS_READ
 from tools._inactive_helpers import (
     fetch_inactive_clients_page,
     find_pets_for_clients_last_visit,
@@ -10,6 +13,39 @@ from tools._inactive_helpers import (
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
+
+
+def _owner_summary(client: object) -> dict:
+    """Project only the owner fields required to disambiguate a pet candidate."""
+    if not isinstance(client, dict):
+        return {"name": None, "phone": None}
+    name = " ".join(
+        str(client.get(field) or "").strip()
+        for field in ("last_name", "first_name", "middle_name")
+    ).strip()
+    return {
+        "name": name or None,
+        "phone": client.get("cell_phone") or client.get("home_phone") or None,
+    }
+
+
+def _positive_owner_id(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        owner_id = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return owner_id if owner_id > 0 else None
+
+
+async def _fetch_owner_summary(vc: VetmanagerClient, owner_id: int) -> tuple[int, dict]:
+    payload = await vc.get(f"/rest/api/client/{owner_id}")
+    data = payload.get("data", {}) if isinstance(payload, dict) else {}
+    client = data.get("client") if isinstance(data, dict) else None
+    if isinstance(client, list):
+        client = client[0] if client else None
+    return owner_id, _owner_summary(client)
 
 
 def register(mcp: FastMCP) -> None:
@@ -69,14 +105,18 @@ def register(mcp: FastMCP) -> None:
         limit: LimitParam = 20,
         offset: int = 0,
     ) -> dict:
-        """Find candidate patients by nickname without exposing owner data.
+        """Find candidate patients by nickname with owner context for disambiguation.
 
         Domain synonyms: найти питомца, найти пациента, поиск по кличке,
         кличка животного, find pet by name, patient lookup.
 
-        Pet nicknames are not unique. Use the returned `totalCount` and the
-        clinical context to select an ID, or ask a clarifying question when
-        multiple candidates match.
+        Pet nicknames are not unique. Each candidate includes owner_id and
+        projected owner name/phone, plus pet type, breed, birthday, and status.
+        Never choose the first candidate when several remain plausible: ask a
+        clarifying question using the available distinguishing facts. In a
+        depersonalized runtime owner name and phone are masked by the global
+        privacy wrapper; use the non-PII pet facts and ask for clarification
+        rather than guessing.
         """
         if not alias.strip():
             raise ValueError("alias is required")
@@ -89,12 +129,27 @@ def register(mcp: FastMCP) -> None:
         data = payload.get("data", {}) if isinstance(payload, dict) else {}
         rows = data.get("pet", []) if isinstance(data, dict) else []
         total = int(data.get("totalCount", len(rows)) or 0) if isinstance(data, dict) else 0
+        pets = [pet for pet in rows if isinstance(pet, dict)]
+        owner_ids = list(dict.fromkeys(
+            owner_id for pet in pets
+            if (owner_id := _positive_owner_id(pet.get("owner_id"))) is not None
+        ))
+        vc = VetmanagerClient()
+        owners = dict(await asyncio.gather(*(
+            _fetch_owner_summary(vc, owner_id) for owner_id in owner_ids
+        )))
         candidates = [
             {
-                key: pet.get(key)
-                for key in ("id", "alias", "type_id", "breed_id", "birthday", "status")
+                **{
+                    key: pet.get(key)
+                    for key in ("id", "alias", "owner_id", "type_id", "breed_id", "birthday", "status")
+                },
+                "owner": owners.get(
+                    _positive_owner_id(pet.get("owner_id")),
+                    {"name": None, "phone": None},
+                ),
             }
-            for pet in rows if isinstance(pet, dict)
+            for pet in pets
         ]
         return {
             "success": True,

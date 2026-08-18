@@ -120,7 +120,7 @@ async def test_profile_empty_pet_is_explicit_not_found_without_fanout():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_find_pets_by_alias_projects_candidates_without_owner_data():
+async def test_find_pets_by_alias_returns_owner_context_for_disambiguation():
     billing_mock()
     respx.get(f"{BASE}/rest/api/pet").mock(return_value=httpx.Response(
         200, json={"data": {"totalCount": 2, "pet": [{
@@ -128,12 +128,49 @@ async def test_find_pets_by_alias_projects_candidates_without_owner_data():
             "breed_id": 1, "birthday": "2012-06-15", "status": "alive",
         }]}}
     ))
+    respx.get(f"{BASE}/rest/api/client/662").mock(return_value=httpx.Response(
+        200, json={"data": {"client": {
+            "id": 662, "last_name": "Иванова", "first_name": "Анна",
+            "middle_name": "Сергеевна", "cell_phone": "+79990000000",
+            "passport_series": "1234 567890",
+        }}}
+    ))
     headers, runtime = patch_runtime_credentials(DOMAIN, API_KEY)
     with headers, runtime:
         payload = (await mcp.call_tool("find_pets_by_alias", {"alias": "Муся"})).structured_content
     assert payload["data"]["totalCount"] == 2
     assert payload["has_more"] is True
     assert payload["data"]["pets"] == [{
-        "id": 740, "alias": "Муся", "type_id": 1, "breed_id": 1,
-        "birthday": "2012-06-15", "status": "alive",
+        "id": 740, "alias": "Муся", "owner_id": 662, "type_id": 1,
+        "breed_id": 1, "birthday": "2012-06-15", "status": "alive",
+        "owner": {"name": "Иванова Анна Сергеевна", "phone": "+79990000000"},
     }]
+
+
+@pytest.mark.asyncio
+async def test_find_pets_by_alias_uses_global_depersonalization_wrapper(monkeypatch):
+    import tools.pet as pet_module
+
+    async def fake_crud_list(*args, **kwargs):
+        return {"success": True, "data": {"pet": [{
+            "id": 740, "alias": "Муся", "owner_id": 662, "type_id": 1,
+            "breed_id": 1, "birthday": "2012-06-15", "status": "alive",
+        }], "totalCount": 1}}
+
+    async def fake_get(self, path, **kwargs):
+        assert path == "/rest/api/client/662"
+        return {"data": {"client": {
+            "id": 662, "last_name": "Иванова", "first_name": "Анна",
+            "cell_phone": "+79990000000", "passport_series": "1234 567890",
+        }}}
+
+    monkeypatch.setattr(pet_module, "crud_list", fake_crud_list)
+    monkeypatch.setattr(pet_module.VetmanagerClient, "get", fake_get)
+    headers, runtime = patch_runtime_credentials(DOMAIN, API_KEY, is_depersonalized=True)
+    with headers, runtime:
+        payload = (await mcp.call_tool("find_pets_by_alias", {"alias": "Муся"})).structured_content
+
+    candidate = payload["data"]["pets"][0]
+    assert candidate["owner_id"] == 662
+    assert candidate["owner"] == {"name": "[redacted-name]", "phone": "[redacted-phone]"}
+    assert "passport_series" not in candidate["owner"]

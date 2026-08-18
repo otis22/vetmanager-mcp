@@ -11766,3 +11766,11 @@ Checks so far:
   missing, empty, numeric `0`, and string `'0'` as the normal absence of a
   diagnosis, not as unresolved; any other ID lacking an active
   `AllDiagnoses` title remains explicitly unresolved (including inactive IDs).
+- Follow-up: первоначальный alias-search без владельца был развёрнут по
+  product feedback: повторяющаяся кличка без owner context провоцирует выбор
+  пациента наугад. `find_pets_by_alias` теперь требует `clients.read` и
+  проецирует owner_id, name и phone вместе с pet-discriminators, не передавая
+  passport или прочие поля клиента. В depersonalized runtime глобальный
+  privacy-wrapper маскирует name/phone; остаются ID, вид/порода, дата рождения
+  и статус. Если их недостаточно, модель обязана запросить уточнение, а не
+  выбрать первый candidate.
