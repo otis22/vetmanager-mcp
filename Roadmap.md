@@ -4025,7 +4025,7 @@ Report AI lifecycle и подготовить конкретные MCP-only ул
 - 220.8 После review сохранить прежний routing guidance в описаниях и
   подтвердить privacy-contract endpoint-level regression fixtures. — `done`
 
-## Этап 221. Клиническая глубина профиля пациента для демо — `in_progress`
+## Этап 221. Клиническая глубина профиля пациента для демо — `done`
 
 Цель: к вебинару 20.08.2026 вернуть в `get_pet_profile` полную доступную
 клиническую историю с проверяемой полнотой и человекочитаемыми диагнозами,
@@ -4036,3 +4036,23 @@ Report AI lifecycle и подготовить конкретные MCP-only ул
   `get_pet_profile`. — `done`
 - 221.3 Безопасный поиск пациента по кличке с явной неоднозначностью. — `done`
 - 221.4 Регрессии, полный mock/real contour, audit, review, commit и push. — `done`
+
+## Этап 222. Врач последнего визита в inactive pets — `in_progress`
+
+- 222.1 Вернуть doctor_id/name из invoice и medical-card путей без per-pet calls. — `in_progress`
+
+## Этап 223. Полнота выдачи inactive pets — `todo`
+
+- 223.1 Добавить total/truncated metadata без silent limit. — `todo`
+
+## Этап 224. Размер длинного pet profile — `todo`
+
+- 224.1 Спроектировать cursor pagination или compact clinical contract. — `todo`
+
+## Этап 225. Диагнозы в update_medical_card — `todo`
+
+- 225.1 Обработать upstream 500 для карт с diagnosis. — `todo`
+
+## Этап 226. Надёжность внешнего Claude review — `todo`
+
+- 226.1 Починить пустой verdict evidence в review runner. — `todo`

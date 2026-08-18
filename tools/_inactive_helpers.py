@@ -313,7 +313,11 @@ async def find_pets_at_client_last_visit(
         if pet is None:
             continue
         pets_with_invoice.add(pid_int)
-        visited.append({**pet, "visit_source": "invoice"})
+        doctor = inv.get("doctor") if isinstance(inv.get("doctor"), dict) else {}
+        visited.append({
+            **pet, "visit_source": "invoice", "visit_doctor_id": inv.get("doctor_id"),
+            "visit_doctor_name": " ".join(str(doctor.get(k) or "") for k in ("last_name", "first_name", "middle_name")).strip() or None,
+        })
 
     # Step 3: fallback to medical cards for pets WITHOUT an invoice match.
     # Batched with IN operator, same window.
@@ -345,7 +349,7 @@ async def find_pets_at_client_last_visit(
         if pet is None:
             continue
         pets_with_medcard.add(pid_int)
-        visited.append({**pet, "visit_source": "medcard"})
+        visited.append({**pet, "visit_source": "medcard", "visit_doctor_id": mc.get("doctor_id"), "visit_doctor_name": None})
 
     return visited
 
