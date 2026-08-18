@@ -489,6 +489,9 @@ async def test_get_pet_profile_returns_owner_medical_cards_and_invoice_line_item
             },
         })
     )
+    respx.get(f"{BASE}/rest/api/MedicalCards/AllDiagnoses").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {"diagnoses": []}})
+    )
     respx.get(f"{BASE}/rest/api/MedicalCards/Vaccinations").mock(
         return_value=httpx.Response(200, json={
             "success": True,
@@ -609,6 +612,9 @@ async def test_get_pet_profile_old_scopes_keep_base_profile_with_optional_sectio
             "data": {"totalCount": 0, "medicalCards": []},
         })
     )
+    respx.get(f"{BASE}/rest/api/MedicalCards/AllDiagnoses").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {"diagnoses": []}})
+    )
     respx.get(f"{BASE}/rest/api/MedicalCards/Vaccinations").mock(
         return_value=httpx.Response(200, json={
             "success": True,
@@ -652,6 +658,9 @@ async def test_get_pet_profile_owner_failure_keeps_profile_partial():
             "data": {"medicalCards": [{"id": 1, "patient_id": 14}]},
         })
     )
+    respx.get(f"{BASE}/rest/api/MedicalCards/AllDiagnoses").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {"diagnoses": []}})
+    )
     respx.get(f"{BASE}/rest/api/MedicalCards/Vaccinations").mock(
         return_value=httpx.Response(200, json={"success": True, "data": {"medicalcards": []}})
     )
@@ -674,7 +683,10 @@ async def test_get_pet_profile_owner_failure_keeps_profile_partial():
     assert payload["partial"] is True
     assert payload["pet"]["id"] == 14
     assert payload["owner"] == {}
-    assert payload["last_medical_cards"] == [{"id": 1, "patient_id": 14}]
+    assert payload["last_medical_cards"] == [{
+        "id": 1, "patient_id": 14, "diagnosis_titles": [],
+        "unresolved_diagnosis_ids": [],
+    }]
     assert payload["section_errors"]["owner"]["error_type"] == "vetmanager_error"
     assert payload["section_errors"]["owner"]["retryable"] is True
 
@@ -693,6 +705,9 @@ async def test_get_pet_profile_preserves_successful_invoice_documents_when_one_f
     )
     respx.get(f"{BASE}/rest/api/MedicalCards").mock(
         return_value=httpx.Response(200, json={"success": True, "data": {"medicalCards": []}})
+    )
+    respx.get(f"{BASE}/rest/api/MedicalCards/AllDiagnoses").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {"diagnoses": []}})
     )
     respx.get(f"{BASE}/rest/api/MedicalCards/Vaccinations").mock(
         return_value=httpx.Response(200, json={"success": True, "data": {"medicalcards": []}})

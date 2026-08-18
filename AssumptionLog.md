@@ -11715,3 +11715,69 @@ Checks so far:
   directory. Regression покрывает symlinked parent. Правило о проверке
   документированных команд оформлено continuation пункта 13 Core Loop, чтобы
   не разрывать нумерацию шагов 19–21.
+
+## Этап 221. Клиническая глубина профиля пациента для демо
+
+- Read-only real probe `devslon67` подтвердил: Муся (`pet_id=740`) имеет 7
+  MedicalCards; API отдаёт `totalCount=7`, а первые две карты содержат 5,2 кг
+  и креатинин 168 мкмоль/л. Профиль теперь сообщает total/returned/truncated,
+  поэтому bounded `limit=100` не маскируется как полная история.
+- Сервер соединяет только детерминированные API факты (карты, totalCount,
+  `diagnos` → AllDiagnoses.title). Вес остаётся structured source field;
+  креатинин, IRIS и назначения — свободный текст для модели/врача, без regex.
+- Персик 744, Ника 746 и Тимоша 748 подтвердили тот же scalar-ID диагнозов.
+  Пустой upstream pet envelope преобразован в NotFoundError до fan-out.
+- `find_pets_by_alias` отделён от owner-required `get_pets`: он возвращает
+  minimal candidates/pagination facts под `pets.read`, без owner data. Реальный
+  поиск «Муся» вернул единственный candidate `id=740`.
+- Для demo questions 1–3: schedule на 20.08 вернул 12 active admissions;
+  две предшествующие недели — 65 и 70 raw admissions. `get_inactive_pets`
+  вернул 67 пациентов, но не врача; группировка по врачу остаётся post-demo
+  analytics contract, не profile behavior.
+- Из этого же real schedule получены Муся 740 и Рекс 742. У Рекса 7 карт;
+  профиль показал послеоперационный путь (контроль, реабилитация, рентген) и
+  следующий контроль «через 4 месяца после операции», поэтому шестой вопрос
+  получает все source facts одним profile call.
+- Spark Architecture Critique дважды прочитал объект, но не выдал
+  разбираемый YAML verdict; findings не приняты (review-output failure).
+- **AllDiagnoses contract probe (2026-08-18):** OpenAPI декларирует
+  `limit/offset/sort/filter`, но `devslon67` вернул идентичные 127 active
+  diagnoses для `limit=1`, `limit=100` и `offset=100`; `totalCount` отсутствует.
+  Следовательно, endpoint фактически непагинируемый и его полнота не доказуема.
+  Профиль использует отдельный `_DIAGNOSES_REFERENCE_LIMIT`, возвращает
+  `diagnoses_reference={returned,total_known:false,pagination_supported:false}`
+  и `unresolved_diagnosis_ids` top-level/per card. Отсутствующий title теперь
+  явен, а не silent.
+- **External code review gate / user-authorized exception:** штатная повторная
+  попытка `scripts/run_claude_review.sh --range HEAD~1..HEAD --attempt 1/3`
+  создала evidence package
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-18T075014Z-git_range-HEAD1__HEAD-attempt-1-of-3.sLidZQ/claude-review-attempt-1-of-3.envelope.json`.
+  `envelope.json` и `stderr` имеют 0 bytes; verdict/metadata не созданы.
+  Прямой Claude invocation ранее проявил тот же silent-empty outcome. Runner
+  сохраняет raw evidence до validation; малая local fix отсутствует, причиной
+  является внешний Claude runtime, известный backlog. Пользователь явно
+  разрешил push feature branch без valid external verdict; main не затрагивать.
+- Follow-up: preliminary pet lookup distinguishes a successful empty envelope
+  from `gather_sections` failure. `pet` circuit-breaker/transport failures now
+  return only retryable structured `section_errors.pet` and short-circuit all
+  downstream requests; only a successful empty response becomes NotFoundError.
+- Follow-up: `vetmanager-extjs` normalizes an empty `diagnos` to `0` and
+  excludes both `''` and `'0'` from diagnosis resolution. Profile treats
+  missing, empty, numeric `0`, and string `'0'` as the normal absence of a
+  diagnosis, not as unresolved; any other ID lacking an active
+  `AllDiagnoses` title remains explicitly unresolved (including inactive IDs).
+- Follow-up: первоначальный alias-search без владельца был развёрнут по
+  product feedback: повторяющаяся кличка без owner context провоцирует выбор
+  пациента наугад. `find_pets_by_alias` теперь требует `clients.read` и
+  проецирует owner_id, name и phone вместе с pet-discriminators, не передавая
+  passport или прочие поля клиента. В depersonalized runtime глобальный
+  privacy-wrapper маскирует name/phone; остаются ID, вид/порода, дата рождения
+  и статус. Если их недостаточно, модель обязана запросить уточнение, а не
+  выбрать первый candidate.
+- Follow-up: real `GET /rest/api/pet` alias probe показал embedded `owner`,
+  `type` и `breed` в каждом list row. Alias-search теперь проецирует owner
+  непосредственно из row (узко: name/phone), а `/client/{owner_id}` вызывает
+  только если embedded owner отсутствует; это не speculative fallback: OpenAPI
+  помечает embedded owner nullable. Это устраняет normal-path N+1.
+  Titles вида и породы возвращаются рядом с IDs, чтобы в depersonalized режиме
+  сохранялись человекочитаемые не-PII признаки для уточнения пациента.
