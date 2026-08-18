@@ -64,6 +64,47 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool
+    async def find_pets_by_alias(
+        alias: str,
+        limit: LimitParam = 20,
+        offset: int = 0,
+    ) -> dict:
+        """Find candidate patients by nickname without exposing owner data.
+
+        Domain synonyms: найти питомца, найти пациента, поиск по кличке,
+        кличка животного, find pet by name, patient lookup.
+
+        Pet nicknames are not unique. Use the returned `totalCount` and the
+        clinical context to select an ID, or ask a clarifying question when
+        multiple candidates match.
+        """
+        if not alias.strip():
+            raise ValueError("alias is required")
+        payload = await crud_list(
+            "/rest/api/pet",
+            limit=limit,
+            offset=offset,
+            filters=[_filter_like("alias", alias)],
+        )
+        data = payload.get("data", {}) if isinstance(payload, dict) else {}
+        rows = data.get("pet", []) if isinstance(data, dict) else []
+        total = int(data.get("totalCount", len(rows)) or 0) if isinstance(data, dict) else 0
+        candidates = [
+            {
+                key: pet.get(key)
+                for key in ("id", "alias", "type_id", "breed_id", "birthday", "status")
+            }
+            for pet in rows if isinstance(pet, dict)
+        ]
+        return {
+            "success": True,
+            "data": {"pets": candidates, "totalCount": total},
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + len(candidates) < total,
+        }
+
+    @mcp.tool
     async def get_pet_by_id(
         pet_id: int,
     ) -> dict:
@@ -184,7 +225,8 @@ def register(mcp: FastMCP) -> None:
         Aggregates:
         - Full pet record (with breed and type data)
         - Owner/client record when the runtime token has clients.read
-        - Last 5 medical card records
+        - Up to 100 latest medical card records, with total/truncation metadata
+        - Resolved diagnosis titles when the reference section is available
         - Last 5 invoices with line items when the runtime token has finance.read
         - All vaccination records (date, next vaccination date, vaccine name)
         - Computed last_vaccination_date and next_vaccination_date

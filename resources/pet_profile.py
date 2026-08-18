@@ -17,12 +17,14 @@ from filters import build_list_query_params, eq as _filter_eq
 from resources._aggregation import gather_sections
 from runtime_auth import get_current_runtime_credentials
 from token_scopes import SCOPE_CLIENTS_READ, SCOPE_FINANCE_READ
+from exceptions import NotFoundError
 from vetmanager_client import VetmanagerClient
 
 
 _INVOICE_LOOKUP_LIMIT = 20
 _INVOICE_RESULT_LIMIT = 5
 _INVOICE_DOCUMENT_LIMIT = 50
+_MEDICAL_CARDS_LIMIT = 100
 
 
 def _section_error(error_type: str, message: str, *, retryable: bool = False) -> dict:
@@ -61,12 +63,28 @@ def _sort_invoices(invoices: list[dict]) -> list[dict]:
     )
 
 
+def _diagnosis_titles(card: dict, titles_by_id: dict[str, str]) -> list[str]:
+    """Resolve known diagnosis IDs from both documented card representations."""
+    identifiers: list[object] = [card.get("diagnos")]
+    diagnoses = card.get("diagnoses")
+    if isinstance(diagnoses, list):
+        identifiers.extend(
+            item.get("id") for item in diagnoses if isinstance(item, dict)
+        )
+    titles: list[str] = []
+    for identifier in identifiers:
+        title = titles_by_id.get(str(identifier))
+        if title and title not in titles:
+            titles.append(title)
+    return titles
+
+
 async def fetch(pet_id: int) -> dict:
     """Build a comprehensive pet profile.
 
     Aggregates:
     - Full pet record (`/rest/api/pet/{id}`).
-    - Last 5 medical card entries (filter by `patient_id`, sort id DESC).
+    - Up to 100 latest medical card entries (filter by `patient_id`, sort id DESC).
     - All vaccination records (`/rest/api/MedicalCards/Vaccinations`).
 
     Derives `last_vaccination_date` (date part of the latest vaccination)
@@ -75,8 +93,17 @@ async def fetch(pet_id: int) -> dict:
     list to answer "when is the next vaccination due".
     """
     vc = VetmanagerClient()
+    pet_payloads, pet_errors = await gather_sections(
+        tool_name="get_pet_profile",
+        context={"pet_id": pet_id},
+        sections=[("pet", vc.get(f"/rest/api/pet/{pet_id}"), {"data": {"pet": {}}})],
+    )
+    pet_data = pet_payloads[0].get("data", {}).get("pet", {})
+    if not isinstance(pet_data, dict) or not pet_data.get("id"):
+        raise NotFoundError(f"Pet {pet_id} not found")
+
     medical_cards_params = build_list_query_params(
-        limit=5,
+        limit=_MEDICAL_CARDS_LIMIT,
         offset=0,
         sort=[{"property": "id", "direction": "DESC"}],
         filters=[_filter_eq("patient_id", str(pet_id))],
@@ -93,12 +120,14 @@ async def fetch(pet_id: int) -> dict:
     include_invoices = _has_scope(SCOPE_FINANCE_READ)
 
     sections = [
-        ("pet", vc.get(f"/rest/api/pet/{pet_id}"),
-         {"data": {"pet": {}}}),
         ("medical_cards", vc.get(
             "/rest/api/MedicalCards",
             params=medical_cards_params,
         ), {"data": {"medicalCards": []}}),
+        ("diagnoses", vc.get(
+            "/rest/api/MedicalCards/AllDiagnoses",
+            params={"limit": _MEDICAL_CARDS_LIMIT, "offset": 0},
+        ), {"data": {"diagnoses": []}}),
         ("vaccinations", vc.get(
             "/rest/api/MedicalCards/Vaccinations",
             params={"pet_id": pet_id, "limit": 100},
@@ -114,8 +143,8 @@ async def fetch(pet_id: int) -> dict:
         context={"pet_id": pet_id},
         sections=sections,
     )
-    pet_payload = payloads[0]
-    mc_payload = payloads[1]
+    mc_payload = payloads[0]
+    diagnoses_payload = payloads[1]
     vacc_payload = payloads[2]
     invoices_payload = payloads[3] if include_invoices else {"data": {"invoice": []}}
     if not include_invoices:
@@ -124,7 +153,7 @@ async def fetch(pet_id: int) -> dict:
             f"Missing optional scope for invoice section: {SCOPE_FINANCE_READ}",
         )
 
-    pet_data = pet_payload.get("data", {}).get("pet", {})
+    section_errors.update(pet_errors)
     owner: dict = {}
     if _has_scope(SCOPE_CLIENTS_READ):
         owner_id = pet_data.get("owner_id") if isinstance(pet_data, dict) else None
@@ -151,11 +180,30 @@ async def fetch(pet_id: int) -> dict:
         )
 
     mc_data = mc_payload.get("data", {})
-    medical_cards = (
+    medical_cards, medical_cards_total = _extract_rows(mc_payload, "medicalCards")
+    if not medical_cards:
+        medical_cards, medical_cards_total = _extract_rows(mc_payload, "medicalcards")
+    if not medical_cards:
+        medical_cards = (
         mc_data.get("medicalCards")
         or mc_data.get("medicalcards")
         or []
     ) if isinstance(mc_data, dict) else []
+    diagnoses_data = diagnoses_payload.get("data", {})
+    diagnoses_rows = diagnoses_data.get("diagnoses", []) if isinstance(diagnoses_data, dict) else []
+    titles_by_id = {
+        str(row.get("id")): str(row.get("title"))
+        for row in diagnoses_rows if isinstance(row, dict) and row.get("id") is not None and row.get("title")
+    }
+    profile_diagnoses: list[str] = []
+    for card in medical_cards:
+        if not isinstance(card, dict):
+            continue
+        titles = _diagnosis_titles(card, titles_by_id)
+        card["diagnosis_titles"] = titles
+        for title in titles:
+            if title not in profile_diagnoses:
+                profile_diagnoses.append(title)
 
     vaccinations_raw = vacc_payload.get("data", {}).get("medicalcards", [])
     vaccinations = [
@@ -238,6 +286,12 @@ async def fetch(pet_id: int) -> dict:
         "pet": pet_data,
         "owner": owner,
         "last_medical_cards": medical_cards,
+        "medical_cards_total": medical_cards_total,
+        "medical_cards_returned": len(medical_cards),
+        "medical_cards_truncated": (
+            medical_cards_total is not None and medical_cards_total > len(medical_cards)
+        ),
+        "diagnoses": profile_diagnoses,
         "last_invoices": invoices,
         "last_invoices_total": invoices_total,
         "vaccinations": vaccinations,

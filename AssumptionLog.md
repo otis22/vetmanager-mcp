@@ -11715,3 +11715,28 @@ Checks so far:
   directory. Regression покрывает symlinked parent. Правило о проверке
   документированных команд оформлено continuation пункта 13 Core Loop, чтобы
   не разрывать нумерацию шагов 19–21.
+
+## Этап 221. Клиническая глубина профиля пациента для демо
+
+- Read-only real probe `devslon67` подтвердил: Муся (`pet_id=740`) имеет 7
+  MedicalCards; API отдаёт `totalCount=7`, а первые две карты содержат 5,2 кг
+  и креатинин 168 мкмоль/л. Профиль теперь сообщает total/returned/truncated,
+  поэтому bounded `limit=100` не маскируется как полная история.
+- Сервер соединяет только детерминированные API факты (карты, totalCount,
+  `diagnos` → AllDiagnoses.title). Вес остаётся structured source field;
+  креатинин, IRIS и назначения — свободный текст для модели/врача, без regex.
+- Персик 744, Ника 746 и Тимоша 748 подтвердили тот же scalar-ID диагнозов.
+  Пустой upstream pet envelope преобразован в NotFoundError до fan-out.
+- `find_pets_by_alias` отделён от owner-required `get_pets`: он возвращает
+  minimal candidates/pagination facts под `pets.read`, без owner data. Реальный
+  поиск «Муся» вернул единственный candidate `id=740`.
+- Для demo questions 1–3: schedule на 20.08 вернул 12 active admissions;
+  две предшествующие недели — 65 и 70 raw admissions. `get_inactive_pets`
+  вернул 67 пациентов, но не врача; группировка по врачу остаётся post-demo
+  analytics contract, не profile behavior.
+- Из этого же real schedule получены Муся 740 и Рекс 742. У Рекса 7 карт;
+  профиль показал послеоперационный путь (контроль, реабилитация, рентген) и
+  следующий контроль «через 4 месяца после операции», поэтому шестой вопрос
+  получает все source facts одним profile call.
+- Spark Architecture Critique дважды прочитал объект, но не выдал
+  разбираемый YAML verdict; findings не приняты (review-output failure).
