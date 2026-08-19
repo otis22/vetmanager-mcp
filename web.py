@@ -12,7 +12,7 @@ import json
 import os
 from secrets import token_urlsafe
 import time
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit
 from functools import wraps
 
 from fastmcp import FastMCP
@@ -69,18 +69,46 @@ def _resolve_csrf_token(request: Request) -> str:
     return read_csrf_token(request.cookies.get(CSRF_COOKIE_NAME)) or create_csrf_token()
 
 
+def _extract_oauth_redirect_origin(redirect_uri: str) -> str | None:
+    """Return the one CSP-safe origin allowed for a validated OAuth callback."""
+    if not redirect_uri or not redirect_uri.isascii() or any(char.isspace() for char in redirect_uri):
+        return None
+    if ";" in redirect_uri or "\\" in redirect_uri:
+        return None
+    try:
+        parsed = urlsplit(redirect_uri)
+        port = parsed.port
+    except ValueError:
+        return None
+    scheme = parsed.scheme.lower()
+    hostname = parsed.hostname
+    if (
+        scheme not in {"https", "http"}
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or not all(char.isalnum() or char in ".-:" for char in hostname)
+        or (scheme == "http" and hostname.lower() != "localhost")
+    ):
+        return None
+    host = hostname.lower()
+    if ":" in host:
+        host = f"[{host}]"
+    return f"{scheme}://{host}{f':{port}' if port is not None else ''}"
+
+
 def _apply_security_headers(
     response: HTMLResponse | RedirectResponse,
     *,
     script_nonce: str | None = None,
-    allow_chatgpt_form_action: bool = False,
+    form_action_origins: tuple[str, ...] = (),
 ) -> None:
     script_src = "script-src 'self'"
     if script_nonce:
         script_src += f" 'nonce-{script_nonce}'"
     form_action = "form-action 'self'"
-    if allow_chatgpt_form_action:
-        form_action += " https://chatgpt.com https://chat.openai.com"
+    if form_action_origins:
+        form_action += " " + " ".join(form_action_origins)
     csp = (
         "default-src 'self'; "
         f"{script_src}; "
@@ -117,12 +145,13 @@ def _html_response(
     csrf_token: str | None = None,
     script_nonce: str | None = None,
     no_store: bool = False,
+    form_action_origins: tuple[str, ...] = (),
 ) -> HTMLResponse:
     response = HTMLResponse(content, status_code=status_code)
     _apply_security_headers(
         response,
         script_nonce=script_nonce,
-        allow_chatgpt_form_action=request.url.path.startswith("/oauth/authorize"),
+        form_action_origins=form_action_origins,
     )
     if no_store:
         _apply_no_store_headers(response)
@@ -141,11 +170,12 @@ def _redirect_response(
     url: str,
     status_code: int = 303,
     with_csrf_cookie: bool = False,
+    form_action_origins: tuple[str, ...] = (),
 ) -> RedirectResponse:
     response = RedirectResponse(url=url, status_code=status_code)
     _apply_security_headers(
         response,
-        allow_chatgpt_form_action=request.url.path.startswith("/oauth/authorize"),
+        form_action_origins=form_action_origins,
     )
     attach_request_context_headers(response, request)
     if with_csrf_cookie:
@@ -583,6 +613,7 @@ def register_web_routes(mcp: FastMCP) -> None:
         read_form=_read_form,
         get_account_id_from_request=_get_account_id_from_request,
         resolve_csrf_token=_resolve_csrf_token,
+        extract_redirect_origin=_extract_oauth_redirect_origin,
     )
 
     register_account_routes(

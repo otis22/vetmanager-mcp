@@ -4056,3 +4056,11 @@ Report AI lifecycle и подготовить конкретные MCP-only ул
 ## Этап 226. Надёжность внешнего Claude review — `todo`
 
 - 226.1 Починить пустой verdict evidence в review runner. — `todo`
+
+## Этап 227. Универсальный OAuth consent для MCP-клиентов — `stop`
+
+- 227.1 Передавать в CSP consent flow только origin валидированного redirect URI. — `done`
+- 227.2 Сделать consent и кабинетные инструкции нейтральными к MCP-клиенту. — `done`
+- 227.3 Добавить CSP/UI регрессии, полный Docker прогон, аудит и commit без push. — `stop`
+  (targeted Docker regression прошёл; точный полный runner блокирован stale
+  локальным test image без `pytest-cov`, exit `4` до collection)

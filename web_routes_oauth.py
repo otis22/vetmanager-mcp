@@ -48,6 +48,7 @@ def register_oauth_routes(
     read_form,
     get_account_id_from_request,
     resolve_csrf_token,
+    extract_redirect_origin,
 ) -> None:
     """Register public OAuth discovery routes."""
 
@@ -183,6 +184,7 @@ def register_oauth_routes(
                 },
                 status_code=exc.status_code,
             )
+        form_action_origin = extract_redirect_origin(request_data["redirect_uri"])
 
         account_id = get_account_id_from_request(request)
         if account_id is None:
@@ -217,6 +219,7 @@ def register_oauth_routes(
                 with_csrf_cookie=True,
                 csrf_token=resolve_csrf_token(request),
                 no_store=True,
+                form_action_origins=(form_action_origin,) if form_action_origin else (),
             )
 
         csrf_token = resolve_csrf_token(request)
@@ -236,6 +239,7 @@ def register_oauth_routes(
             with_csrf_cookie=True,
             csrf_token=csrf_token,
             no_store=True,
+            form_action_origins=(form_action_origin,) if form_action_origin else (),
         )
 
     @observed_route(
@@ -264,7 +268,7 @@ def register_oauth_routes(
                 render_oauth_consent_page(
                     csrf_token=csrf_token,
                     request_state=form.get("request_state", ""),
-                    client_name=str(request_data.get("client_name") or "ChatGPT"),
+                    client_name=str(request_data.get("client_name") or ""),
                     scopes=list(request_data.get("scopes") or []),
                     connections=[],
                     error=str(exc),
@@ -276,6 +280,8 @@ def register_oauth_routes(
                 csrf_token=csrf_token,
                 no_store=True,
             )
+
+        form_action_origin = extract_redirect_origin(request_data["redirect_uri"])
 
         account_id = get_account_id_from_request(request)
         if account_id is None:
@@ -296,7 +302,7 @@ def register_oauth_routes(
                     render_oauth_consent_page(
                         csrf_token=csrf_token,
                         request_state=form.get("request_state", ""),
-                        client_name=str(request_data.get("client_name") or "ChatGPT"),
+                        client_name=str(request_data.get("client_name") or ""),
                         scopes=list(request_data.get("scopes") or []),
                         connections=[],
                         error="Selected Vetmanager connection is not active.",
@@ -309,6 +315,7 @@ def register_oauth_routes(
                     with_csrf_cookie=True,
                     csrf_token=csrf_token,
                     no_store=True,
+                    form_action_origins=(form_action_origin,) if form_action_origin else (),
                 )
             raw_code = await create_oauth_authorization_code(
                 session,
@@ -325,6 +332,7 @@ def register_oauth_routes(
                 state=str(request_data.get("state") or ""),
             ),
             status_code=303,
+            form_action_origins=(form_action_origin,) if form_action_origin else (),
         )
 
     @observed_route(

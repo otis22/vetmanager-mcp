@@ -53,12 +53,42 @@ from web_auth import (
     create_account_session_token,
     register_account,
 )
+from web_html import render_oauth_consent_page
 from web_security import reset_web_security_state
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
 CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
 REQUEST_STATE_RE = re.compile(r'name="request_state" value="([^"]+)"')
 CONNECTION_ID_RE = re.compile(r'name="connection_id" value="([^"]+)"')
+
+
+@pytest.mark.parametrize(
+    ("redirect_uri", "expected_origin"),
+    [
+        ("https://claude.ai/api/mcp/auth_callback", "https://claude.ai"),
+        ("https://claude.ai:8443/api/mcp/auth_callback", "https://claude.ai:8443"),
+        ("http://localhost:3000/callback", "http://localhost:3000"),
+        ("http://example.com/callback", None),
+        ("https://claude.ai; script-src https://evil.example/callback", None),
+        ("https://claude.ai\nscript-src https://evil.example/callback", None),
+        ("https://user@claude.ai/callback", None),
+    ],
+)
+def test_oauth_redirect_origin_is_strict_and_csp_safe(redirect_uri, expected_origin):
+    assert web._extract_oauth_redirect_origin(redirect_uri) == expected_origin
+
+
+def test_oauth_consent_uses_neutral_client_name_fallback():
+    page = render_oauth_consent_page(
+        csrf_token="csrf",
+        request_state="state",
+        client_name="",
+        scopes=[],
+        connections=[],
+    )
+    assert "Доступ для помощника" in page
+    assert "<strong>помощник</strong> просит доступ к данным Vetmanager" in page
+    assert "ChatGPT" not in page
 
 
 def _pkce_challenge(verifier: str) -> str:
@@ -107,12 +137,14 @@ async def _register_oauth_client(
     client: httpx.AsyncClient,
     *,
     scope: str = "clients.read pets.read",
+    client_name: str = "ChatGPT",
+    redirect_uri: str = "https://chat.openai.com/aip/callback",
 ) -> str:
     response = await client.post(
         "/oauth/register",
         json={
-            "client_name": "ChatGPT",
-            "redirect_uris": ["https://chat.openai.com/aip/callback"],
+            "client_name": client_name,
+            "redirect_uris": [redirect_uri],
             "scope": scope,
         },
     )
@@ -737,13 +769,17 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
             create_account_session_token(account_id),
             path="/",
         )
-        client_id = await _register_oauth_client(client)
+        client_id = await _register_oauth_client(
+            client,
+            client_name="Claude",
+            redirect_uri="https://claude.ai/api/mcp/auth_callback",
+        )
         consent_response = await client.get(
             "/oauth/authorize",
             params={
                 "response_type": "code",
                 "client_id": client_id,
-                "redirect_uri": "https://chat.openai.com/aip/callback",
+                "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
                 "resource": "https://test.example.com/mcp",
                 "scope": "clients.read pets.read",
                 "state": "state-456",
@@ -767,8 +803,11 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
 
     assert consent_response.status_code == 200
     consent_csp = consent_response.headers["content-security-policy"]
-    assert "form-action 'self' https://chatgpt.com https://chat.openai.com" in consent_csp
-    assert "Доступ ChatGPT" in consent_response.text
+    assert "form-action 'self' https://claude.ai" in consent_csp
+    assert "https://chatgpt.com" not in consent_csp
+    assert "https://chat.openai.com" not in consent_csp
+    assert "Доступ для Claude" in consent_response.text
+    assert "Доступ ChatGPT" not in consent_response.text
     assert 'data-testid="oauth-access-preset"' in consent_response.text
     assert 'data-testid="oauth-effective-scope-preview"' in consent_response.text
     assert 'data-testid="oauth-privacy-mode"' in consent_response.text
@@ -777,7 +816,7 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
     assert 'data-testid="oauth-requested-scopes-technical"' in consent_response.text
     assert 'data-testid="oauth-granted-scopes-technical"' in consent_response.text
     assert "Технические scopes" in consent_response.text
-    assert "Если выбрать уровень шире запроса ChatGPT" in consent_response.text
+    assert "Если выбрать уровень шире технического запроса" in consent_response.text
     assert "report_ai.write" in consent_response.text
     assert "font-size: 0.72rem" in consent_response.text
     assert "Аналитик" in consent_response.text
@@ -788,11 +827,13 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
     assert f'value="{PRESET_REPORT_AI}" selected' in consent_response.text
     assert callback_response.status_code == 303
     callback_csp = callback_response.headers["content-security-policy"]
-    assert "form-action 'self' https://chatgpt.com https://chat.openai.com" in callback_csp
+    assert "form-action 'self' https://claude.ai" in callback_csp
+    assert "https://chatgpt.com" not in callback_csp
+    assert "https://chat.openai.com" not in callback_csp
     callback_url = urlparse(callback_response.headers["location"])
     callback_query = parse_qs(callback_url.query)
     assert callback_url.scheme == "https"
-    assert callback_url.netloc == "chat.openai.com"
+    assert callback_url.netloc == "claude.ai"
     assert callback_query["state"] == ["state-456"]
     raw_code = callback_query["code"][0]
     assert raw_code.startswith("vm_oac_")
@@ -803,7 +844,7 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
     assert stored_code is not None
     assert stored_code.code_prefix == raw_code[:12]
     assert stored_code.client_id == client_id
-    assert stored_code.redirect_uri == "https://chat.openai.com/aip/callback"
+    assert stored_code.redirect_uri == "https://claude.ai/api/mcp/auth_callback"
     assert stored_code.resource == "https://test.example.com/mcp"
     assert stored_code.scope == " ".join(TOKEN_PRESET_SCOPES[PRESET_READ_ONLY])
     assert stored_code.access_preset == PRESET_READ_ONLY

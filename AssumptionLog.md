@@ -11806,3 +11806,17 @@ Checks so far:
   подтвердил оба пути: медкарта — Эмма (276), `doctor_id=14`, «Захарова Ольга
   Романовна», `resolved`; счёт — Нора (730), тот же ID/ФИО и `resolved`.
   В ответ не проецируются учётные и платёжные поля врача.
+
+- Этап 227: CSP `form-action` строится только из origin уже валидированного
+  `redirect_uri`: GET `/oauth/authorize` использует validated request data,
+  POST `/oauth/authorize/consent` — verified signed `request_state`, включая
+  финальный `303`. Helper принимает HTTPS и HTTP только для `localhost`,
+  отклоняет whitespace, `;`, обратный слеш, userinfo и небезопасный host, чтобы
+  origin не мог инъецировать CSP. Стандартный CSP остальных страниц остаётся
+  `form-action 'self'`. Consent fallback — «помощник»; существующие ChatGPT
+  ids/buttons сохранены. Внешние review-gates не запускались по прямому
+  ограничению задачи. Targeted Docker regression: `10 passed in 1.11s`, exit
+  `0`. Обязательная точная команда `docker compose --profile test run --rm
+  test` остановилась до collection с exit `4`: текущий локальный test image не
+  содержит `pytest-cov`, хотя Dockerfile его объявляет; репозиторные файлы для
+  обхода этой инфраструктурной проблемы не менялись.

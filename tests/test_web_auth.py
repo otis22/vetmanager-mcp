@@ -1352,7 +1352,16 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
         assert 'data-testid="token-is-depersonalized"' in account_page.text
         assert 'data-testid="chatgpt-connect-instructions"' in account_page.text
         assert 'data-testid="chatgpt-mcp-url"' in account_page.text
+        assert 'data-testid="mcp-data-section"' in account_page.text
+        assert 'data-testid="mcp-url"' in account_page.text
+        assert 'data-testid="claude-connect-instructions"' in account_page.text
+        assert 'data-testid="mcp-universal-instructions"' in account_page.text
         assert "https://clinic.example.com/custom/mcp" in account_page.text
+        assert "Данные MCP" in account_page.text
+        assert "единый адрес подключения для всех помощников" in account_page.text
+        assert "Connectors" in account_page.text
+        assert "Add custom connector" in account_page.text
+        assert "Manus" in account_page.text
         assert "ChatGPT Plugin directory" in account_page.text
         assert "своё имя или аватар" in account_page.text
         assert "Settings" in account_page.text

@@ -990,6 +990,8 @@ def render_oauth_consent_page(
     selected_access_preset: str = PRESET_REPORT_AI,
     selected_privacy_mode: str = "depersonalized",
 ) -> str:
+    client_display_name = client_name.strip() or "помощник"
+    consent_title = f"Доступ для {client_display_name}" if client_name.strip() else "Доступ для помощника"
     error_html = f'<div class="error">{escape(error)}</div>' if error else ""
     scope_items = "".join(f"<li><code>{escape(scope)}</code></li>" for scope in scopes) or "<li>не переданы</li>"
     access_options = "".join(
@@ -1037,17 +1039,17 @@ def render_oauth_consent_page(
           </label>
         """
     return render_shell(
-        "Доступ ChatGPT",
+        consent_title,
         f"""
-        <h1>Доступ ChatGPT</h1>
-        <p><strong>{escape(client_name)}</strong> просит подключить ChatGPT к данным Vetmanager.</p>
+        <h1>{escape(consent_title)}</h1>
+        <p><strong>{escape(client_display_name)}</strong> просит доступ к данным Vetmanager.</p>
         {error_html}
         <section class="metric" data-testid="oauth-effective-scope-preview">
           <span>Что означают уровни доступа</span>
           <ul>{effective_preview_html}</ul>
         </section>
         <section class="metric" data-testid="oauth-requested-scopes-technical" style="font-size: 0.72rem; color: var(--muted);">
-          <span>Технические scopes, которые передал ChatGPT</span>
+          <span>Технические scopes, которые передал {escape(client_display_name)}</span>
           <ul>{scope_items}</ul>
         </section>
         <details class="metric" data-testid="oauth-granted-scopes-technical" style="font-size: 0.72rem; color: var(--muted);">
@@ -1062,8 +1064,8 @@ def render_oauth_consent_page(
             <select name="access_preset" required data-testid="oauth-access-preset">
               {access_options}
             </select>
-            <small style="color: var(--muted); font-size: 0.85rem;">ChatGPT получит права выбранного уровня; это может быть больше технического запроса ChatGPT. Полный доступ требует отдельного подтверждения.</small>
-            <small style="display: block; color: var(--muted); font-size: 0.85rem;">Если выбрать уровень шире запроса ChatGPT, будут выданы права выбранного уровня.</small>
+            <small style="color: var(--muted); font-size: 0.85rem;">{escape(client_display_name)} получит права выбранного уровня; это может быть больше технического запроса клиента. Полный доступ требует отдельного подтверждения.</small>
+            <small style="display: block; color: var(--muted); font-size: 0.85rem;">Если выбрать уровень шире технического запроса, будут выданы права выбранного уровня.</small>
           </label>
           <fieldset class="metric" style="border: 1px solid var(--line); margin: 16px 0;" data-testid="oauth-privacy-mode">
             <legend>Персональные данные</legend>
@@ -1071,14 +1073,14 @@ def render_oauth_consent_page(
               <input type="radio" name="privacy_mode" value="depersonalized" {depersonalized_checked} data-testid="oauth-privacy-depersonalized" style="width: auto; margin-top: 6px;">
               <span>
                 <strong style="display: block; color: var(--ink);">Без персональных данных</strong>
-                <small style="color: var(--muted); font-size: 0.85rem;">ФИО, телефоны, email и адреса будут скрыты в ответах ChatGPT.</small>
+                <small style="color: var(--muted); font-size: 0.85rem;">ФИО, телефоны, email и адреса будут скрыты в ответах помощника.</small>
               </span>
             </label>
             <label style="display: flex; gap: 10px; align-items: start;">
               <input type="radio" name="privacy_mode" value="personal_data" {personal_data_checked} data-testid="oauth-privacy-personal-data" style="width: auto; margin-top: 6px;">
               <span>
                 <strong style="display: block; color: var(--ink);">Разрешить персональные данные</strong>
-                <small style="color: var(--muted); font-size: 0.85rem;">ChatGPT сможет видеть имена клиентов, телефоны, email и похожие поля, если выбранные права разрешают такой tool call.</small>
+                <small style="color: var(--muted); font-size: 0.85rem;">{escape(client_display_name)} сможет видеть имена клиентов, телефоны, email и похожие поля, если выбранные права разрешают такой tool call.</small>
               </span>
             </label>
           </fieldset>
@@ -1779,6 +1781,28 @@ def render_account_page(
         <p>В списке видны только безопасные сведения. Сам ключ показывается один раз — сразу после создания.</p>
         {token_list_html}
         </details>
+        <section class="section-block" id="mcp-data-section" data-testid="mcp-data-section">
+          <h2>Данные MCP</h2>
+          <p>Это единый адрес подключения для всех помощников, поддерживающих MCP с OAuth.</p>
+          <code class="token-flash-value" id="mcp-url" data-testid="mcp-url">{escape(chatgpt_mcp_url)}</code>
+          <div class="copy-row">
+            <button class="copy-button" id="mcp-copy-button" type="button" data-copy-source="mcp-url" data-copy-kind="mcp_url" data-copy-status="mcp-copy-status" data-copied-text="URL скопирован в буфер обмена.">Скопировать URL</button>
+            <span class="copy-status" id="mcp-copy-status" aria-live="polite"></span>
+          </div>
+        </section>
+        <section class="section-block" id="claude-section" data-testid="claude-connect-instructions">
+          <h2>Подключение Claude</h2>
+          <ol>
+            <li>Нажмите на профиль и откройте Settings.</li>
+            <li>Откройте Connectors и выберите Add custom connector.</li>
+            <li>Вставьте URL выше и нажмите Connect.</li>
+            <li>Откроется вход в этот кабинет и выбор уровня доступа.</li>
+          </ol>
+        </section>
+        <section class="section-block" id="mcp-universal-section" data-testid="mcp-universal-instructions">
+          <h2>Другие помощники</h2>
+          <p>Для Manus и других клиентов используйте тот же URL: добавьте его как custom MCP connector с OAuth.</p>
+        </section>
         <details class="section-block" id="chatgpt-section" data-testid="chatgpt-section" {chatgpt_open}>
         <summary><h2>Подключения ChatGPT</h2></summary>
         <div class="panel-card" data-testid="chatgpt-connect-instructions">
