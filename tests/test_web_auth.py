@@ -1356,12 +1356,20 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
         assert 'data-testid="mcp-url"' in account_page.text
         assert 'data-testid="claude-connect-instructions"' in account_page.text
         assert 'data-testid="mcp-universal-instructions"' in account_page.text
+        assert 'id="mcp-data-section" data-testid="mcp-data-section" open' in account_page.text
+        assert 'id="claude-section" data-testid="claude-connect-instructions" open' in account_page.text
+        assert 'id="mcp-universal-section" data-testid="mcp-universal-instructions">' in account_page.text
+        assert 'id="claude-mcp-copy-button"' in account_page.text
+        assert 'data-copy-kind="mcp_url"' in account_page.text
         assert "https://clinic.example.com/custom/mcp" in account_page.text
         assert "Данные MCP" in account_page.text
         assert "единый адрес подключения для всех помощников" in account_page.text
         assert "Connectors" in account_page.text
         assert "Add custom connector" in account_page.text
         assert "Manus" in account_page.text
+        assert account_page.text.index('id="mcp-data-section"') < account_page.text.index('id="claude-section"')
+        assert account_page.text.index('id="claude-section"') < account_page.text.index('id="chatgpt-section"')
+        assert account_page.text.index('id="chatgpt-section"') < account_page.text.index('id="mcp-universal-section"')
         assert "ChatGPT Plugin directory" in account_page.text
         assert "своё имя или аватар" in account_page.text
         assert "Settings" in account_page.text

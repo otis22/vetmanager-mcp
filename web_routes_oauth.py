@@ -49,6 +49,7 @@ def register_oauth_routes(
     get_account_id_from_request,
     resolve_csrf_token,
     extract_redirect_origin,
+    generate_csp_nonce,
 ) -> None:
     """Register public OAuth discovery routes."""
 
@@ -205,6 +206,7 @@ def register_oauth_routes(
                 )
             ).scalars().all()
         if not connections:
+            script_nonce = generate_csp_nonce()
             return html_response(
                 request,
                 render_oauth_consent_page(
@@ -214,15 +216,18 @@ def register_oauth_routes(
                     scopes=request_data["scopes"],
                     connections=[],
                     error="No active Vetmanager connection is available for this account.",
+                    script_nonce=script_nonce,
                 ),
                 status_code=400,
                 with_csrf_cookie=True,
                 csrf_token=resolve_csrf_token(request),
                 no_store=True,
+                script_nonce=script_nonce,
                 form_action_origins=(form_action_origin,) if form_action_origin else (),
             )
 
         csrf_token = resolve_csrf_token(request)
+        script_nonce = generate_csp_nonce()
         return html_response(
             request,
             render_oauth_consent_page(
@@ -235,10 +240,12 @@ def register_oauth_routes(
                     for connection in connections
                 ],
                 selected_access_preset=default_oauth_consent_access_preset(),
+                script_nonce=script_nonce,
             ),
             with_csrf_cookie=True,
             csrf_token=csrf_token,
             no_store=True,
+            script_nonce=script_nonce,
             form_action_origins=(form_action_origin,) if form_action_origin else (),
         )
 
@@ -263,6 +270,7 @@ def register_oauth_routes(
             )
         except (OAuthRequestError, ValueError) as exc:
             csrf_token = resolve_csrf_token(request)
+            script_nonce = generate_csp_nonce()
             return html_response(
                 request,
                 render_oauth_consent_page(
@@ -274,11 +282,13 @@ def register_oauth_routes(
                     error=str(exc),
                     selected_access_preset=form.get("access_preset") or default_oauth_consent_access_preset(),
                     selected_privacy_mode=form.get("privacy_mode", "depersonalized"),
+                    script_nonce=script_nonce,
                 ),
                 status_code=400,
                 with_csrf_cookie=True,
                 csrf_token=csrf_token,
                 no_store=True,
+                script_nonce=script_nonce,
             )
 
         form_action_origin = extract_redirect_origin(request_data["redirect_uri"])
@@ -297,6 +307,7 @@ def register_oauth_routes(
             )
             if connection is None:
                 csrf_token = resolve_csrf_token(request)
+                script_nonce = generate_csp_nonce()
                 return html_response(
                     request,
                     render_oauth_consent_page(
@@ -310,11 +321,13 @@ def register_oauth_routes(
                             request_data.get("access_preset") or default_oauth_consent_access_preset()
                         ),
                         selected_privacy_mode=str(request_data.get("privacy_mode") or "depersonalized"),
+                        script_nonce=script_nonce,
                     ),
                     status_code=400,
                     with_csrf_cookie=True,
                     csrf_token=csrf_token,
                     no_store=True,
+                    script_nonce=script_nonce,
                     form_action_origins=(form_action_origin,) if form_action_origin else (),
                 )
             raw_code = await create_oauth_authorization_code(

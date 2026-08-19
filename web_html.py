@@ -611,7 +611,7 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
       padding: 16px;
       background: rgba(255,255,255,0.64);
     }}
-    .metric strong {{
+    .metric > strong {{
       display: block;
       font-size: 1.8rem;
       color: var(--ink);
@@ -986,6 +986,7 @@ def render_oauth_consent_page(
     client_name: str,
     scopes: list[str],
     connections: list[dict[str, str | int]],
+    script_nonce: str,
     error: str | None = None,
     selected_access_preset: str = PRESET_REPORT_AI,
     selected_privacy_mode: str = "depersonalized",
@@ -1084,7 +1085,7 @@ def render_oauth_consent_page(
               </span>
             </label>
           </fieldset>
-          <label style="display: flex; gap: 10px; align-items: start;">
+          <label id="oauth-confirm-full-access-row" style="display: flex; gap: 10px; align-items: start;" hidden>
               <input type="checkbox" name="confirm_full_access" value="1" data-testid="oauth-confirm-full-access" style="width: auto; margin-top: 6px;">
             <span>
               <strong style="display: block; color: var(--ink);">Подтвердить полный доступ</strong>
@@ -1093,6 +1094,20 @@ def render_oauth_consent_page(
           </label>
           <button type="submit" class="primary">Разрешить</button>
         </form>
+        <script nonce="{escape(script_nonce)}">
+          (() => {{
+            const preset = document.querySelector('[data-testid="oauth-access-preset"]');
+            const confirmation = document.querySelector('[data-testid="oauth-confirm-full-access"]');
+            const confirmationRow = document.getElementById('oauth-confirm-full-access-row');
+            const syncFullAccessConfirmation = () => {{
+              const requiresConfirmation = preset.value === '{PRESET_FULL_ACCESS}';
+              confirmationRow.hidden = !requiresConfirmation;
+              if (!requiresConfirmation) confirmation.checked = false;
+            }};
+            preset.addEventListener('change', syncFullAccessConfirmation);
+            syncFullAccessConfirmation();
+          }})();
+        </script>
         """,
     )
 
@@ -1781,28 +1796,29 @@ def render_account_page(
         <p>В списке видны только безопасные сведения. Сам ключ показывается один раз — сразу после создания.</p>
         {token_list_html}
         </details>
-        <section class="section-block" id="mcp-data-section" data-testid="mcp-data-section">
-          <h2>Данные MCP</h2>
+        <details class="section-block" id="mcp-data-section" data-testid="mcp-data-section" open>
+          <summary><h2>Данные MCP</h2></summary>
           <p>Это единый адрес подключения для всех помощников, поддерживающих MCP с OAuth.</p>
           <code class="token-flash-value" id="mcp-url" data-testid="mcp-url">{escape(chatgpt_mcp_url)}</code>
           <div class="copy-row">
             <button class="copy-button" id="mcp-copy-button" type="button" data-copy-source="mcp-url" data-copy-kind="mcp_url" data-copy-status="mcp-copy-status" data-copied-text="URL скопирован в буфер обмена.">Скопировать URL</button>
             <span class="copy-status" id="mcp-copy-status" aria-live="polite"></span>
           </div>
-        </section>
-        <section class="section-block" id="claude-section" data-testid="claude-connect-instructions">
-          <h2>Подключение Claude</h2>
+        </details>
+        <details class="section-block" id="claude-section" data-testid="claude-connect-instructions" open>
+          <summary><h2>Подключение Claude</h2></summary>
           <ol>
             <li>Нажмите на профиль и откройте Settings.</li>
             <li>Откройте Connectors и выберите Add custom connector.</li>
-            <li>Вставьте URL выше и нажмите Connect.</li>
+            <li>Вставьте URL ниже и нажмите Connect.</li>
             <li>Откроется вход в этот кабинет и выбор уровня доступа.</li>
           </ol>
-        </section>
-        <section class="section-block" id="mcp-universal-section" data-testid="mcp-universal-instructions">
-          <h2>Другие помощники</h2>
-          <p>Для Manus и других клиентов используйте тот же URL: добавьте его как custom MCP connector с OAuth.</p>
-        </section>
+          <code class="token-flash-value" id="claude-mcp-url" data-testid="claude-mcp-url">{escape(chatgpt_mcp_url)}</code>
+          <div class="copy-row">
+            <button class="copy-button" id="claude-mcp-copy-button" type="button" data-copy-source="claude-mcp-url" data-copy-kind="mcp_url" data-copy-status="claude-mcp-copy-status" data-copied-text="URL скопирован в буфер обмена.">Скопировать URL</button>
+            <span class="copy-status" id="claude-mcp-copy-status" aria-live="polite"></span>
+          </div>
+        </details>
         <details class="section-block" id="chatgpt-section" data-testid="chatgpt-section" {chatgpt_open}>
         <summary><h2>Подключения ChatGPT</h2></summary>
         <div class="panel-card" data-testid="chatgpt-connect-instructions">
@@ -1827,6 +1843,10 @@ def render_account_page(
           <p class="hint">По умолчанию помощник получает аналитику без персональных данных — этого хватает для отчётов. Полный доступ и персональные данные нужно выбирать отдельно и явно.</p>
         </div>
         {oauth_grants_html}
+        </details>
+        <details class="section-block" id="mcp-universal-section" data-testid="mcp-universal-instructions">
+          <summary><h2>Другие помощники</h2></summary>
+          <p>Для Manus и других клиентов используйте тот же URL: добавьте его как custom MCP connector с OAuth.</p>
         </details>
         <div class="actions">
           <a class="link" href="/">На лендинг</a>

@@ -87,10 +87,18 @@ def test_oauth_consent_uses_neutral_client_name_fallback():
         client_name="",
         scopes=[],
         connections=[],
+        script_nonce="test-consent-nonce",
     )
     assert "Доступ для помощника" in page
     assert "<strong>помощник</strong> просит доступ к данным Vetmanager" in page
     assert "ChatGPT" not in page
+    assert ".metric > strong" in page
+    assert ".metric strong" not in page
+    assert 'id="oauth-confirm-full-access-row"' in page
+    assert 'id="oauth-confirm-full-access-row" style="display: flex; gap: 10px; align-items: start;" hidden' in page
+    assert 'nonce="test-consent-nonce"' in page
+    assert f"preset.value === '{PRESET_FULL_ACCESS}'" in page
+    assert "confirmation.checked = false" in page
 
 
 def _pkce_challenge(verifier: str) -> str:
@@ -818,6 +826,9 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(
     for other_origin in {"https://chatgpt.com", "https://chat.openai.com", "https://claude.ai"} - {expected_origin}:
         assert other_origin not in consent_csp
     assert f"Доступ для {client_name}" in consent_response.text
+    nonce_match = re.search(r"script-src 'self' 'nonce-([^']+)'", consent_csp)
+    assert nonce_match is not None
+    assert f'<script nonce="{nonce_match.group(1)}">' in consent_response.text
     assert 'data-testid="oauth-access-preset"' in consent_response.text
     assert 'data-testid="oauth-effective-scope-preview"' in consent_response.text
     assert 'data-testid="oauth-privacy-mode"' in consent_response.text

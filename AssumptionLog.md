@@ -11824,3 +11824,16 @@ Checks so far:
   пересобран пользователем: exact full runner дал exit `0`, `1548 passed, 2
   skipped, 65 deselected in 188.31s (0:03:08)`, но его рабочее дерево менялось
   во время прогона. Нужен повтор на зафиксированном commit.
+
+- Этап 228: `.metric > strong` сохраняет крупный кегль только у прямых
+  summary-плиток кабинета; nested consent labels и scope rows возвращаются к
+  обычной иерархии. Full-access checkbox скрывается и сбрасывается вне
+  `full_access` только в браузере: серверная проверка `confirm_full_access`
+  не менялась. Каждый consent render получает новый nonce одновременно в
+  `script-src` CSP и inline handler. MCP sections теперь `details`: Data MCP и
+  Claude открыты, Other assistants свёрнут и расположен после ChatGPT; Claude
+  copy использует существующий `mcp_url` telemetry kind. Targeted Docker
+  regression: `4 passed in 1.76s`, exit `0`. Full exact command `docker
+  compose --profile test run --rm test` завершилась exit `0` на текущем
+  рабочем дереве; collection: `1618 items / 65 deselected / 1553 selected`.
+  Внешние review-gates не запускались по прямому ограничению задачи.

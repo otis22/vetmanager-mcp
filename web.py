@@ -614,6 +614,7 @@ def register_web_routes(mcp: FastMCP) -> None:
         get_account_id_from_request=_get_account_id_from_request,
         resolve_csrf_token=_resolve_csrf_token,
         extract_redirect_origin=_extract_oauth_redirect_origin,
+        generate_csp_nonce=_generate_csp_nonce,
     )
 
     register_account_routes(
