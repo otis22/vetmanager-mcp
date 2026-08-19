@@ -11810,13 +11810,17 @@ Checks so far:
 - Этап 227: CSP `form-action` строится только из origin уже валидированного
   `redirect_uri`: GET `/oauth/authorize` использует validated request data,
   POST `/oauth/authorize/consent` — verified signed `request_state`, включая
-  финальный `303`. Helper принимает HTTPS и HTTP только для `localhost`,
+  финальный `303`. Helper принимает HTTPS и HTTP только для loopback
+  `localhost`/`127.0.0.1`/`::1`,
   отклоняет whitespace, `;`, обратный слеш, userinfo и небезопасный host, чтобы
   origin не мог инъецировать CSP. Стандартный CSP остальных страниц остаётся
   `form-action 'self'`. Consent fallback — «помощник»; существующие ChatGPT
   ids/buttons сохранены. Внешние review-gates не запускались по прямому
-  ограничению задачи. Targeted Docker regression: `10 passed in 1.11s`, exit
-  `0`. Обязательная точная команда `docker compose --profile test run --rm
-  test` остановилась до collection с exit `4`: текущий локальный test image не
-  содержит `pytest-cov`, хотя Dockerfile его объявляет; репозиторные файлы для
-  обхода этой инфраструктурной проблемы не менялись.
+  ограничению задачи. Follow-up targeted Docker regression: `13 passed in
+  1.85s`, exit `0`, включая `127.0.0.1`/`::1` и parameterized ChatGPT/Claude
+  authorize→consent→303 flow. Первый запуск обязательной точной команды `docker compose --profile
+  test run --rm test` завершился exit `4` до collection из-за устаревшего
+  локального test image; `pytest-cov` уже объявлен в Dockerfile. Образ
+  пересобран пользователем: exact full runner дал exit `0`, `1548 passed, 2
+  skipped, 65 deselected in 188.31s (0:03:08)`, но его рабочее дерево менялось
+  во время прогона. Нужен повтор на зафиксированном commit.

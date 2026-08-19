@@ -29,7 +29,8 @@ control characters. OAuth, storage, scopes и privacy semantics не меняю�
 Варианты: (a) расширять список известных клиентов — отклонён, не универсален и
 даёт лишние origins; (b) убрать `form-action` — отклонён, ослабляет CSP;
 (c) извлекать origin конкретного валидированного URI — выбран. Разрешён HTTPS;
-HTTP допускается только для `localhost` ради локальных OAuth-тестов.
+HTTP допускается только для loopback `localhost`/`127.0.0.1`/`::1` ради
+локальных OAuth-клиентов.
 
 Инварианты: обычные страницы имеют `form-action 'self'`; OAuth response
 содержит только `'self'` и origin данного клиента; на POST origin берётся

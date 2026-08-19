@@ -88,7 +88,7 @@ def _extract_oauth_redirect_origin(redirect_uri: str) -> str | None:
         or parsed.username is not None
         or parsed.password is not None
         or not all(char.isalnum() or char in ".-:" for char in hostname)
-        or (scheme == "http" and hostname.lower() != "localhost")
+        or (scheme == "http" and hostname.lower() not in {"localhost", "127.0.0.1", "::1"})
     ):
         return None
     host = hostname.lower()

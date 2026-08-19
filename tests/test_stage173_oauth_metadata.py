@@ -68,6 +68,8 @@ CONNECTION_ID_RE = re.compile(r'name="connection_id" value="([^"]+)"')
         ("https://claude.ai/api/mcp/auth_callback", "https://claude.ai"),
         ("https://claude.ai:8443/api/mcp/auth_callback", "https://claude.ai:8443"),
         ("http://localhost:3000/callback", "http://localhost:3000"),
+        ("http://127.0.0.1:3000/oauth/callback", "http://127.0.0.1:3000"),
+        ("http://[::1]:3000/oauth/callback", "http://[::1]:3000"),
         ("http://example.com/callback", None),
         ("https://claude.ai; script-src https://evil.example/callback", None),
         ("https://claude.ai\nscript-src https://evil.example/callback", None),
@@ -756,7 +758,16 @@ async def test_oauth_authorize_accepts_offline_access_for_legacy_registered_clie
 
 
 @pytest.mark.asyncio
-async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("client_name", "redirect_uri", "expected_origin"),
+    [
+        ("ChatGPT", "https://chat.openai.com/aip/callback", "https://chat.openai.com"),
+        ("Claude", "https://claude.ai/api/mcp/auth_callback", "https://claude.ai"),
+    ],
+)
+async def test_oauth_authorize_consent_creates_code_bound_to_connection(
+    tmp_path, monkeypatch, client_name, redirect_uri, expected_origin
+):
     engine = await _prepare_oauth_db(tmp_path, monkeypatch)
     monkeypatch.setenv("SITE_BASE_URL", "https://test.example.com")
     account_id = await _register_account_with_connection()
@@ -771,15 +782,15 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
         )
         client_id = await _register_oauth_client(
             client,
-            client_name="Claude",
-            redirect_uri="https://claude.ai/api/mcp/auth_callback",
+            client_name=client_name,
+            redirect_uri=redirect_uri,
         )
         consent_response = await client.get(
             "/oauth/authorize",
             params={
                 "response_type": "code",
                 "client_id": client_id,
-                "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+                "redirect_uri": redirect_uri,
                 "resource": "https://test.example.com/mcp",
                 "scope": "clients.read pets.read",
                 "state": "state-456",
@@ -803,11 +814,10 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
 
     assert consent_response.status_code == 200
     consent_csp = consent_response.headers["content-security-policy"]
-    assert "form-action 'self' https://claude.ai" in consent_csp
-    assert "https://chatgpt.com" not in consent_csp
-    assert "https://chat.openai.com" not in consent_csp
-    assert "Доступ для Claude" in consent_response.text
-    assert "Доступ ChatGPT" not in consent_response.text
+    assert f"form-action 'self' {expected_origin}" in consent_csp
+    for other_origin in {"https://chatgpt.com", "https://chat.openai.com", "https://claude.ai"} - {expected_origin}:
+        assert other_origin not in consent_csp
+    assert f"Доступ для {client_name}" in consent_response.text
     assert 'data-testid="oauth-access-preset"' in consent_response.text
     assert 'data-testid="oauth-effective-scope-preview"' in consent_response.text
     assert 'data-testid="oauth-privacy-mode"' in consent_response.text
@@ -827,13 +837,13 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
     assert f'value="{PRESET_REPORT_AI}" selected' in consent_response.text
     assert callback_response.status_code == 303
     callback_csp = callback_response.headers["content-security-policy"]
-    assert "form-action 'self' https://claude.ai" in callback_csp
-    assert "https://chatgpt.com" not in callback_csp
-    assert "https://chat.openai.com" not in callback_csp
+    assert f"form-action 'self' {expected_origin}" in callback_csp
+    for other_origin in {"https://chatgpt.com", "https://chat.openai.com", "https://claude.ai"} - {expected_origin}:
+        assert other_origin not in callback_csp
     callback_url = urlparse(callback_response.headers["location"])
     callback_query = parse_qs(callback_url.query)
     assert callback_url.scheme == "https"
-    assert callback_url.netloc == "claude.ai"
+    assert callback_url.netloc == urlparse(redirect_uri).netloc
     assert callback_query["state"] == ["state-456"]
     raw_code = callback_query["code"][0]
     assert raw_code.startswith("vm_oac_")
@@ -844,7 +854,7 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(tmp_path
     assert stored_code is not None
     assert stored_code.code_prefix == raw_code[:12]
     assert stored_code.client_id == client_id
-    assert stored_code.redirect_uri == "https://claude.ai/api/mcp/auth_callback"
+    assert stored_code.redirect_uri == redirect_uri
     assert stored_code.resource == "https://test.example.com/mcp"
     assert stored_code.scope == " ".join(TOKEN_PRESET_SCOPES[PRESET_READ_ONLY])
     assert stored_code.access_preset == PRESET_READ_ONLY

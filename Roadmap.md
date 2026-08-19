@@ -4057,10 +4057,11 @@ Report AI lifecycle и подготовить конкретные MCP-only ул
 
 - 226.1 Починить пустой verdict evidence в review runner. — `todo`
 
-## Этап 227. Универсальный OAuth consent для MCP-клиентов — `stop`
+## Этап 227. Универсальный OAuth consent для MCP-клиентов — `in_progress`
 
 - 227.1 Передавать в CSP consent flow только origin валидированного redirect URI. — `done`
 - 227.2 Сделать consent и кабинетные инструкции нейтральными к MCP-клиенту. — `done`
-- 227.3 Добавить CSP/UI регрессии, полный Docker прогон, аудит и commit без push. — `stop`
-  (targeted Docker regression прошёл; точный полный runner блокирован stale
-  локальным test image без `pytest-cov`, exit `4` до collection)
+- 227.3 Добавить CSP/UI регрессии, полный Docker прогон, аудит и commit без push. — `in_progress`
+  (локальный test image был устаревшим; `pytest-cov` уже присутствует в
+  Dockerfile; полный runner с exit `0` прошёл на изменявшемся рабочем дереве,
+  поэтому требуется повтор на зафиксированном commit)
