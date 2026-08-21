@@ -11,6 +11,8 @@ likely subnet without leaking the full client IP.
 
 from __future__ import annotations
 
+import ipaddress
+
 import json
 from collections.abc import Mapping, Sequence
 
@@ -115,3 +117,15 @@ def extract_client_ip_tail(ip: str | None) -> str:
     if "." in ip:
         return ip.split(".")[-1]
     return "unknown"
+
+
+def mask_ip_to_network(ip: str | None) -> str:
+    """Keep a diagnostic network while removing an individual host address."""
+    if not ip or ip == "unknown":
+        return "unknown"
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return "unknown"
+    prefix = 24 if address.version == 4 else 64
+    return str(ipaddress.ip_network(f"{address}/{prefix}", strict=False).network_address)

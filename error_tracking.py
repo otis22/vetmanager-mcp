@@ -23,6 +23,10 @@ _SENSITIVE_KEY_PATTERNS = (
     "signature", "jwt", "hmac", "otp", "passphrase",
     # Stage 100.4: OAuth2 DPoP proof-of-possession + generic "signed" prefix
     "dpop", "signed",
+    # Personal/request routing data. Clinic domain deliberately is not here:
+    # owner approved it as incident-diagnostic metadata for stage 233.5.
+    "client_ip", "x-forwarded-for", "x-real-ip", "remote_addr", "ip_address",
+    "email", "phone", "login", "password", "name",
 )
 
 # Exact allowlist of keys that would match a sensitive pattern but are
@@ -87,7 +91,7 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
         # Starlette may attach the submitted form/request automatically. This
         # handled route event is diagnostic only; account_id + stack frames are
         # sufficient and avoid domains, emails, logins and credentials.
-        for key in ("request", "user", "contexts", "breadcrumbs", "extra"):
+        for key in ("user", "contexts", "breadcrumbs", "extra"):
             event.pop(key, None)
     request = event.get("request")
     if isinstance(request, dict):

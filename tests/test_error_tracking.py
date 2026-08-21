@@ -54,7 +54,21 @@ def test_handled_connection_event_keeps_stack_but_redacts_message_and_locals():
     assert sanitized["exception"]["values"][0]["value"] == "[Filtered]"
     assert frame["vars"] == {"domain": "[Filtered]", "login": "[Filtered]", "password": "[Filtered]"}
     assert sanitized["tags"]["account_id"] == "42"
-    assert "request" not in sanitized
+    assert sanitized["request"]["data"]["domain"] == "clinic.example"
+    assert sanitized["request"]["data"]["vm_login"] == "[Filtered]"
+
+
+def test_sanitize_event_redacts_ip_address_keys_but_not_clinic_domain():
+    event = {"request": {"data": {
+        "domain": "clinic.example", "client_ip": "203.0.113.42", "remote_addr": "2001:db8::42"
+    }}, "user": {"ip_address": "203.0.113.42"}}
+
+    sanitized = error_tracking._sanitize_event(event, hint={})
+
+    assert sanitized["request"]["data"] == {
+        "domain": "clinic.example", "client_ip": "[Filtered]", "remote_addr": "[Filtered]"
+    }
+    assert sanitized["user"]["ip_address"] == "[Filtered]"
 
 
 def test_sanitize_event_redacts_sensitive_request_headers():
