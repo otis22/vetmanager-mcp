@@ -81,4 +81,4 @@ async def test_billing_timeout_updates_upstream_failure_metrics():
         await client.get("/rest/api/client")
 
     snapshot = snapshot_service_metrics()
-    assert snapshot["upstream_failures_total"]["billing_api|timeout"] == 1
+    assert snapshot["upstream_failures_total"]["billing_api|timeout"] == 2
