@@ -92,3 +92,11 @@ jobs:
           FEEDBACK_FINGERPRINT_PEPPER="${FEEDBACK_FINGERPRINT_PEPPER}" \
           SSH_KEEPALIVE=1 \
             ./scripts/deploy_server.sh "${PROD_SSH_TARGET}" "${REMOTE_DIR}"
+
+      - name: Verify public MCP read-only tool
+        env:
+          PROD_SMOKE_BEARER_TOKEN: ${{ secrets.PROD_SMOKE_BEARER_TOKEN }}
+          PROD_SSL_DOMAIN: ${{ secrets.PROD_SSL_DOMAIN }}
+        run: |
+          python -m pip install --disable-pip-version-check httpx
+          python scripts/post_deploy_mcp_tool_smoke.py "https://${PROD_SSL_DOMAIN:-vetmanager-mcp.vromanichev.ru}"

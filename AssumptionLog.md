@@ -2,6 +2,38 @@
 
 Журнал допущений, неясностей и архитектурных решений по проекту vetmanager-mcp.
 
+## Этапы 227a–229 (2026-08-21)
+
+- PostgreSQL aggregate uses one unlabelled expression; dedicated CI regression
+  protects the dialect-specific GROUP BY contract.
+- Dashboard retention is best-effort 365d under 1GB cap; empty account-age is
+  intentionally No data. MCP smoke is read-only, checks `isError`, supports
+  streamable SSE, and never logs token, headers or response bodies.
+- Spark PRD/code scouts for all three stages were either empty or produced only
+  verified candidates. Accepted: PostgreSQL-only regression, PromQL
+  `$__rate_interval`/integer stat value, retryable deploy edge cases, SSE and
+  MCP `isError` validation. Rejected: speculative dashboard-unit concern and
+  adding a secret-existence check (repository secret was explicitly confirmed).
+- Claude Architecture/PRD reviews returned valid `tool_use` verdicts (no
+  infrastructure failures): 227 attempts `1/3`, `2/3`, `2/3` at
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-21T100237Z-file-PRD_-227-postgres-activation-telemetry_md-attempt-1-of-3.loMDmt/claude-review-attempt-1-of-3.envelope.json`,
+  `2026-08-21T100440Z-file-PRD_-227-postgres-activation-telemetry_md-attempt-2-of-3.YVPyDh/claude-review-attempt-2-of-3.envelope.json`,
+  `2026-08-21T100547Z-file-PRD_-227-postgres-activation-telemetry_md-attempt-2-of-3.S5w9VB/claude-review-attempt-2-of-3.envelope.json`;
+  228: `2026-08-21T102638Z-file-PRD_-228-tool-call-observability_md-attempt-1-of-3.DmUn3j/claude-review-attempt-1-of-3.envelope.json`,
+  `2026-08-21T102851Z-file-PRD_-228-tool-call-observability_md-attempt-2-of-3.JFgUMS/claude-review-attempt-2-of-3.envelope.json`;
+  229: `2026-08-21T103505Z-file-PRD_-229-post-deploy-mcp-tool-smoke_md-attempt-1-of-3.hjL3Ud/claude-review-attempt-1-of-3.envelope.json`,
+  `2026-08-21T103719Z-file-PRD_-229-post-deploy-mcp-tool-smoke_md-attempt-2-of-3.gVUNIa/claude-review-attempt-2-of-3.envelope.json`.
+- Claude code reviews also returned valid `tool_use` verdicts: 227 attempts
+  `1/3` (output/thinking/result `3885/3166/837`) and `2/3`
+  (`4054/3529/1325`) at `2026-08-21T101456Z-git_range-HEAD__HEAD-attempt-1-of-3.zheBwJ/claude-review-attempt-1-of-3.envelope.json`,
+  `2026-08-21T101719Z-git_range-HEAD__HEAD-attempt-2-of-3.OgkKoh/claude-review-attempt-2-of-3.envelope.json`; 228:
+  `2286/1981/640`, then empty findings `2651/2202/15`, at
+  `2026-08-21T103016Z-git_range-HEAD__HEAD-attempt-1-of-3.SmD57m/claude-review-attempt-1-of-3.envelope.json`,
+  `2026-08-21T103230Z-git_range-HEAD__HEAD-attempt-2-of-3.O7FZ5v/claude-review-attempt-2-of-3.envelope.json`; 229:
+  `2392/1166/3096`, `2987/2200/2037`, at
+  `2026-08-21T103926Z-git_range-HEAD__HEAD-attempt-1-of-3.58QxKw/claude-review-attempt-1-of-3.envelope.json`,
+  `2026-08-21T104135Z-git_range-HEAD__HEAD-attempt-2-of-3.jg27lk/claude-review-attempt-2-of-3.envelope.json`.
+
 ---
 
 ## Этап 220: Report AI даты в обезличивании и дисциплина агента

@@ -259,13 +259,14 @@ async def scan_activation_telemetry(
             "first_mcp_request": len(integration_saved_ids & first_mcp_request_ids),
         }
         set_activation_funnel_accounts(funnel_values)
+        reason = func.coalesce(ActivationEvent.reason_class, "none")
         event_rows = (
             await session.execute(
                 select(
                     ActivationEvent.event_name,
                     ActivationEvent.device_class,
                     ActivationEvent.auth_mode,
-                    func.coalesce(ActivationEvent.reason_class, "none").label("reason"),
+                    reason.label("reason"),
                     func.count(distinct(ActivationEvent.account_id)).label("account_count"),
                 )
                 .join(Account, Account.id == ActivationEvent.account_id)
@@ -277,7 +278,7 @@ async def scan_activation_telemetry(
                     ActivationEvent.event_name,
                     ActivationEvent.device_class,
                     ActivationEvent.auth_mode,
-                    func.coalesce(ActivationEvent.reason_class, "none"),
+                    reason,
                 )
             )
         ).all()

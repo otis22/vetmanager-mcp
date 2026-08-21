@@ -16,13 +16,13 @@ class TestContour:
 
 FAST_TEST_CONTOUR = TestContour(
     name="fast",
-    marker_expression="not browser and not real_api and not real_browser",
+    marker_expression="not browser and not real_api and not real_browser and not postgres",
     description="Fast inner-loop suite without browser or real contour tests.",
 )
 
 DEFAULT_TEST_CONTOUR = TestContour(
     name="default",
-    marker_expression="not real_api and not real_browser",
+    marker_expression="not real_api and not real_browser and not postgres",
     description="Required suite with unit/mock/live-browser coverage but no real contour.",
 )
 
