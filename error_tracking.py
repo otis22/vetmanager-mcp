@@ -26,7 +26,7 @@ _SENSITIVE_KEY_PATTERNS = (
     # Personal/request routing data. Clinic domain deliberately is not here:
     # owner approved it as incident-diagnostic metadata for stage 233.5.
     "client_ip", "x-forwarded-for", "x-real-ip", "remote_addr", "ip_address",
-    "email", "phone", "login", "password", "name",
+    "email", "phone", "login", "password",
 )
 
 # Exact allowlist of keys that would match a sensitive pattern but are
@@ -65,7 +65,9 @@ def _is_sensitive_key(name: object) -> bool:
     lowered = name.lower()
     if lowered in _SAFE_KEY_WHITELIST:
         return False
-    return any(pattern in lowered for pattern in _SENSITIVE_KEY_PATTERNS)
+    return lowered in {"name", "first_name", "last_name", "full_name"} or any(
+        pattern in lowered for pattern in _SENSITIVE_KEY_PATTERNS
+    )
 
 
 def _redact_mapping(mapping: dict[str, Any]) -> dict[str, Any]:
@@ -91,7 +93,12 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
         # Starlette may attach the submitted form/request automatically. This
         # handled route event is diagnostic only; account_id + stack frames are
         # sufficient and avoid domains, emails, logins and credentials.
-        for key in ("user", "contexts", "breadcrumbs", "extra"):
+        request = event.get("request")
+        request_data = request.get("data") if isinstance(request, dict) else None
+        domain = request_data.get("domain") if isinstance(request_data, dict) else None
+        if isinstance(domain, str) and domain:
+            event.setdefault("tags", {})["clinic_domain"] = domain
+        for key in ("request", "user", "contexts", "breadcrumbs", "extra"):
             event.pop(key, None)
     request = event.get("request")
     if isinstance(request, dict):

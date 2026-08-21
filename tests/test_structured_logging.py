@@ -22,6 +22,8 @@ from privacy_utils import mask_ip_to_network
 def test_structured_log_ip_values_are_masked_to_network():
     assert mask_ip_to_network("203.0.113.42") == "203.0.113.0"
     assert mask_ip_to_network("2001:db8:1:2::42") == "2001:db8:1:2::"
+    assert mask_ip_to_network("203.0.113.42, 10.0.0.1") == "203.0.113.0"
+    assert mask_ip_to_network("203.0.113.42:1234") == "203.0.113.0"
 
 
 def test_get_log_format_defaults_to_text(monkeypatch):

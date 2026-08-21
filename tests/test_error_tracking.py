@@ -54,8 +54,8 @@ def test_handled_connection_event_keeps_stack_but_redacts_message_and_locals():
     assert sanitized["exception"]["values"][0]["value"] == "[Filtered]"
     assert frame["vars"] == {"domain": "[Filtered]", "login": "[Filtered]", "password": "[Filtered]"}
     assert sanitized["tags"]["account_id"] == "42"
-    assert sanitized["request"]["data"]["domain"] == "clinic.example"
-    assert sanitized["request"]["data"]["vm_login"] == "[Filtered]"
+    assert "request" not in sanitized
+    assert sanitized["tags"]["clinic_domain"] == "clinic.example"
 
 
 def test_sanitize_event_redacts_ip_address_keys_but_not_clinic_domain():
