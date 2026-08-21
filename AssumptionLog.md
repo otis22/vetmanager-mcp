@@ -11895,3 +11895,23 @@ Checks so far:
   устарели после принятого изменения; claim о новом PII-safe sink отклонён как
   неверно расширяющий scope — persistent sink сохраняет тот же structured stdout
   и доступен только Docker-администратору.
+- **Этап 233 (2026-08-21):** Новые activation failures классифицируются в
+  `upstream_4xx`/`upstream_5xx`/`network`/`internal`; `vetmanager_error`
+  сохранён в constraint исключительно для historical rows. Downgrade сворачивает
+  новые values обратно в legacy value. Billing resolver считает каждую
+  неуспешную фактическую попытку; это осознанно меняет semantics failure counter.
+  Handled connection errors попадают в Sentry только при configured SDK, не
+  меняют HTTP response; stack frames сохранены, locals/messages/request PII
+  очищены, clinic domain сохранён как owner-approved incident metadata. IP keys
+  в Sentry redacted, в logs IPv4 маскируется до /24 и IPv6 до /64.
+  PRD Architecture Critique: Claude Opus attempt 1/3 valid, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-21T135632Z-file-PRD_-233---_md-attempt-1-of-3.7nMN2H/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=7219, thinking_tokens=5162,
+  len(result)=5692. Приняты populated-downgrade, exact-once metric, privacy и
+  classifier findings; отклонены только требующие отдельных dashboard changes.
+  Code review Claude Opus attempt 2/3 valid, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-21T141239Z-git_range-origin_main__HEAD-attempt-2-of-3.fC6fWt/claude-review-attempt-2-of-3.envelope.json`;
+  приняты PII request и network classification findings, domain policy затем
+  уточнена владельцем; alert-semantics finding принят как документированное
+  изменение counter. Spark был недоступен: лимит модели исчерпан, fallback не
+  выдал валидный verdict.
