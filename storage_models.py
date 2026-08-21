@@ -53,6 +53,11 @@ ACTIVATION_DEVICE_CLASSES = ("mobile", "desktop", "unknown")
 ACTIVATION_REASON_CLASSES = (
     "auth_error",
     "host_resolution_error",
+    "upstream_4xx",
+    "upstream_5xx",
+    "network",
+    "internal",
+    # Kept for historical rows written before stage 233. New writes must not use it.
     "vetmanager_error",
     "validation_error",
     "unknown",

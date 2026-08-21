@@ -78,7 +78,10 @@ def test_stage198_classification_is_closed_and_privacy_safe() -> None:
 
     assert classify_activation_reason(AuthError("bad key")) == "auth_error"
     assert classify_activation_reason(HostResolutionError("no host")) == "host_resolution_error"
-    assert classify_activation_reason(VetmanagerError("boom")) == "vetmanager_error"
+    assert classify_activation_reason(VetmanagerError("boom", status_code=404)) == "upstream_4xx"
+    assert classify_activation_reason(VetmanagerError("boom", status_code=503)) == "upstream_5xx"
+    assert classify_activation_reason(VetmanagerTimeoutError("timeout")) == "network"
+    assert classify_activation_reason(VetmanagerError("boom")) == "internal"
     assert classify_activation_reason(ValueError("bad form")) == "validation_error"
     assert classify_activation_reason(RuntimeError("unknown")) == "unknown"
 
@@ -170,7 +173,7 @@ async def test_stage198_csrf_rejection_does_not_persist_product_event(
 
 @pytest.mark.asyncio
 async def test_stage198_transient_vetmanager_failure_does_not_persist_product_event(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog
 ) -> None:
     engine = await _prepare_web_db(tmp_path, monkeypatch)
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
@@ -197,6 +200,11 @@ async def test_stage198_transient_vetmanager_failure_does_not_persist_product_ev
 
     assert response.status_code == 400
     assert await _events_for("stage198-timeout@example.com") == []
+    failure_log = next(record for record in caplog.records if record.event_name == "integration_save_failed")
+    assert failure_log.account_id
+    assert failure_log.error_class == "VetmanagerTimeoutError"
+    assert failure_log.status_code is None
+    assert "secret-key" not in failure_log.getMessage()
 
     await engine.dispose()
     storage.reset_storage_state()

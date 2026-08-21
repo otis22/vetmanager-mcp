@@ -1,6 +1,6 @@
 """Regression coverage for optional error tracking bootstrap."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import error_tracking
 
@@ -10,6 +10,49 @@ def test_configure_error_tracking_noops_without_dsn(monkeypatch):
     monkeypatch.delenv("SENTRY_DSN", raising=False)
 
     assert error_tracking.configure_error_tracking() is False
+
+
+def test_handled_connection_capture_noops_when_tracking_is_disabled(monkeypatch):
+    monkeypatch.setattr(error_tracking, "_configured", False)
+    with patch.object(error_tracking.sentry_sdk, "capture_exception") as capture:
+        error_tracking.capture_handled_connection_failure(RuntimeError("boom"), account_id=42)
+    capture.assert_not_called()
+
+
+def test_handled_connection_capture_uses_only_account_id_tag(monkeypatch):
+    scope = MagicMock()
+    scope_context = MagicMock()
+    scope_context.__enter__.return_value = scope
+    monkeypatch.setattr(error_tracking, "_configured", True)
+    monkeypatch.setattr(error_tracking.sentry_sdk, "is_initialized", lambda: True)
+    with (
+        patch.object(error_tracking.sentry_sdk, "push_scope", return_value=scope_context),
+        patch.object(error_tracking.sentry_sdk, "capture_exception") as capture,
+    ):
+        error_tracking.capture_handled_connection_failure(RuntimeError("clinic.example secret"), account_id=42)
+
+    scope.set_tag.assert_any_call("handled_connection_failure", "true")
+    scope.set_tag.assert_any_call("account_id", "42")
+    scope.clear_breadcrumbs.assert_called_once_with()
+    capture.assert_called_once()
+
+
+def test_handled_connection_event_keeps_stack_but_redacts_message_and_locals():
+    event = {
+        "tags": {"handled_connection_failure": "true", "account_id": "42"},
+        "exception": {"values": [{"value": "https://clinic.example secret", "stacktrace": {
+            "frames": [{"filename": "service.py", "vars": {
+                "domain": "clinic.example", "login": "alice@example.com", "password": "secret"
+            }}]
+        }}]},
+    }
+
+    sanitized = error_tracking._sanitize_event(event, hint={})
+
+    frame = sanitized["exception"]["values"][0]["stacktrace"]["frames"][0]
+    assert sanitized["exception"]["values"][0]["value"] == "[Filtered]"
+    assert frame["vars"] == {"domain": "[Filtered]", "login": "[Filtered]", "password": "[Filtered]"}
+    assert sanitized["tags"]["account_id"] == "42"
 
 
 def test_sanitize_event_redacts_sensitive_request_headers():
@@ -51,3 +94,4 @@ def test_configure_error_tracking_initializes_sentry(monkeypatch):
     assert kwargs["before_send"] is error_tracking._sanitize_event
     assert len(kwargs["integrations"]) == 1
     assert type(kwargs["integrations"][0]).__name__ == "StarletteIntegration"
+    monkeypatch.setattr(error_tracking, "_configured", False)

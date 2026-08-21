@@ -280,14 +280,14 @@ async def _resolve_vetmanager_host_uncached(
             return validated
         except httpx.TimeoutException as exc:
             elapsed = time.monotonic() - started
-            if attempt < max_retries:
-                await asyncio.sleep(0.1 * (attempt + 1))
-                continue
             reason = classify_transport_error(exc)
             record_upstream_failure(target="billing_api", reason=reason)
             record_upstream_request(
                 target="billing_api", status=reason, duration_seconds=elapsed,
             )
+            if attempt < max_retries:
+                await asyncio.sleep(0.1 * (attempt + 1))
+                continue
             RUNTIME_LOGGER.warning(
                 "Billing API transport failure",
                 extra={"event_name": "billing_api_transport_failure", "domain": domain,
@@ -299,14 +299,14 @@ async def _resolve_vetmanager_host_uncached(
             ) from exc
         except httpx.RequestError as exc:
             elapsed = time.monotonic() - started
-            if attempt < max_retries:
-                await asyncio.sleep(0.1 * (attempt + 1))
-                continue
             reason = classify_transport_error(exc)
             record_upstream_failure(target="billing_api", reason=reason)
             record_upstream_request(
                 target="billing_api", status=reason, duration_seconds=elapsed,
             )
+            if attempt < max_retries:
+                await asyncio.sleep(0.1 * (attempt + 1))
+                continue
             RUNTIME_LOGGER.warning(
                 "Billing API transport failure",
                 extra={"event_name": "billing_api_transport_failure", "domain": domain,

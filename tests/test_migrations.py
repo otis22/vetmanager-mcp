@@ -228,6 +228,30 @@ def test_activation_events_migration_round_trip(tmp_path: Path):
     assert "activation_events" in set(inspector.get_table_names())
 
 
+def test_activation_reason_class_migration_keeps_legacy_and_downgrades_new_values(tmp_path: Path):
+    from sqlalchemy import text as _text
+
+    config = _make_alembic_config(tmp_path)
+    command.upgrade(config, "20260710_000018")
+    engine = create_engine(config.get_main_option("sqlalchemy.url"))
+    with engine.begin() as conn:
+        conn.execute(_text("INSERT INTO accounts (email, status) VALUES ('stage233@example.test', 'active')"))
+        conn.execute(_text(
+            "INSERT INTO activation_events (account_id, event_name, auth_mode, device_class, reason_class) "
+            "VALUES (1, 'integration_failed', 'unknown', 'unknown', 'vetmanager_error')"
+        ))
+    command.upgrade(config, "head")
+    with engine.begin() as conn:
+        conn.execute(_text(
+            "INSERT INTO activation_events (account_id, event_name, auth_mode, device_class, reason_class) "
+            "VALUES (1, 'integration_failed', 'unknown', 'unknown', 'upstream_5xx')"
+        ))
+    command.downgrade(config, "20260710_000018")
+    with engine.connect() as conn:
+        reasons = conn.execute(_text("SELECT reason_class FROM activation_events ORDER BY id")).scalars().all()
+    assert reasons == ["vetmanager_error", "vetmanager_error"]
+
+
 def test_depersonalized_flag_migration_defaults_existing_tokens_to_false(tmp_path: Path):
     """Upgrade must keep legacy tokens standard when adding depersonalization policy."""
     from sqlalchemy import text as _text

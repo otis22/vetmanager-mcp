@@ -62,6 +62,22 @@ async def test_retry_on_timeout():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_each_retryable_billing_failure_records_one_metric_attempt():
+    from service_metrics import snapshot_service_metrics
+
+    respx.get(BILLING_URL).mock(
+        side_effect=[httpx.ConnectError("unreachable"), httpx.ConnectError("unreachable")]
+    )
+    with pytest.raises(VetmanagerError):
+        await resolve_vetmanager_host(DOMAIN, max_retries=1)
+
+    metrics = snapshot_service_metrics()
+    assert metrics["upstream_requests_total"]["billing_api|connect_error"] == 2
+    assert metrics["upstream_failures_total"]["billing_api|connect_error"] == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_all_retries_exhausted_raises_timeout():
     respx.get(BILLING_URL).mock(side_effect=httpx.ReadTimeout("timeout"))
     with pytest.raises(VetmanagerTimeoutError, match="Timeout"):
