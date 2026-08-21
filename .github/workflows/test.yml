@@ -71,3 +71,35 @@ jobs:
           name: coverage-xml
           path: coverage.xml
           if-no-files-found: warn
+
+  postgres-activation-telemetry:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: vetmanager_test
+          POSTGRES_USER: vetmanager
+          POSTGRES_PASSWORD: vetmanager
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vetmanager -d vetmanager_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build Docker image
+        run: docker build --target test --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp-test .
+
+      - name: Run mandatory PostgreSQL activation telemetry regression
+        run: |
+          docker run --rm --network host \
+            -e POSTGRES_TEST_DATABASE_URL=postgresql+asyncpg://vetmanager:vetmanager@127.0.0.1:5432/vetmanager_test \
+            -v "${{ github.workspace }}:/app" \
+            -u 1001:1001 \
+            vetmanager-mcp-test \
+            pytest -q tests/test_stage227_postgres_activation_telemetry.py
