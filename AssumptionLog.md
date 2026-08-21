@@ -2,6 +2,14 @@
 
 Журнал допущений, неясностей и архитектурных решений по проекту vetmanager-mcp.
 
+## Этапы 227a–229 (2026-08-21)
+
+- PostgreSQL aggregate uses one unlabelled expression; dedicated CI regression
+  protects the dialect-specific GROUP BY contract.
+- Dashboard retention is best-effort 365d under 1GB cap; empty account-age is
+  intentionally No data. MCP smoke is read-only, checks `isError`, supports
+  streamable SSE, and never logs token, headers or response bodies.
+
 ---
 
 ## Этап 220: Report AI даты в обезличивании и дисциплина агента

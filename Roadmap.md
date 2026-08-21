@@ -4073,6 +4073,18 @@ Report AI lifecycle и подготовить конкретные MCP-only ул
 
 ## Этап 227a. Активационная телеметрия PostgreSQL — `done`
 
+- Regression на PostgreSQL и CI job. — `done`
+
+## Этап 228a. Наблюдаемость вызовов инструментов — `done`
+
+- Dashboard, retention и No data contract. — `done`
+
+## Этап 229. Post-deploy MCP tool smoke — `done`
+
+- Read-only protocol smoke после deploy. — `done`
+
+## Этап 227a. Активационная телеметрия PostgreSQL — `done`
+
 - Один expression `coalesce` для select/group_by, PostgreSQL regression и CI job. — `done`
 
 ## Этап 228a. Наблюдаемость вызовов инструментов — `done`
