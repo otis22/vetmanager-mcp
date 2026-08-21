@@ -4070,3 +4070,19 @@ Report AI lifecycle и подготовить конкретные MCP-only ул
 - 228.1 Исправить типографику metric и conditional full-access confirmation с CSP nonce. — `done`
 - 228.2 Упорядочить и унифицировать секции MCP-кабинета, добавить Claude copy. — `done`
 - 228.3 Добавить регрессии, полный Docker прогон, аудит и commit без push. — `done`
+
+## Этап 227a. Активационная телеметрия PostgreSQL — `done`
+
+- Один expression `coalesce` для select/group_by, PostgreSQL regression и CI job. — `done`
+
+## Этап 228a. Наблюдаемость вызовов инструментов — `done`
+
+- Tool-call dashboard, retention 365d и No data для account-age. — `done`
+
+## Этап 229. Post-deploy проверка живым вызовом инструмента — `done`
+
+- Public MCP initialize → tools/list → read-only tools/call после deploy. — `done`
+
+## Этап 230. Рестарт не рвёт клиентские сессии — `todo`
+
+## Этап 231. Развести деплой кода и деплой наблюдаемости — `todo`
