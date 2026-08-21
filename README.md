@@ -42,8 +42,9 @@ docker compose up -d          # запустить MCP-сервер
 - `WEB_SESSION_MAX_AGE_SECONDS` — срок жизни web session cookie. По умолчанию 86 400 (24 часа).
 - `WEB_TRUSTED_PROXY_IPS` — список доверенных reverse proxy IP/host через запятую; только для них сервис учитывает `X-Forwarded-For`.
 - `SITE_BASE_URL` — базовый URL self-hosted инсталляции (используется в canonical/og:url лендинга и в mcp.json snippet на странице аккаунта). По умолчанию `https://vetmanager-mcp.vromanichev.ru` (prod). Для self-hosted — задайте свой домен (без trailing slash).
-- `ERROR_TRACKING_DSN` / `SENTRY_DSN` — opt-in DSN для отправки unhandled errors в Sentry.
-- `ERROR_TRACKING_ENVIRONMENT`, `ERROR_TRACKING_RELEASE`, `ERROR_TRACKING_TRACES_SAMPLE_RATE` — knobs для error tracking bootstrap.
+- `ERROR_TRACKING_DSN` — opt-in DSN для отправки unhandled errors в Sentry; пустое значение оставляет tracking выключенным. `SENTRY_DSN` остаётся совместимым alias для запусков вне Compose.
+- `ERROR_TRACKING_ENVIRONMENT` — окружение Sentry, по умолчанию `production`; `ERROR_TRACKING_TRACES_SAMPLE_RATE` — доля traces, по умолчанию `0` (exception-only). `ERROR_TRACKING_RELEASE` — необязательный release tag.
+- `PERSISTENT_LOG_PATH` — каталог persistent structured application logs; Compose использует named volume с bounded файлами (до 14 × 10 MiB) и хранением не старше 14 UTC-дней. Не задавайте путь вне управляемого volume.
 - `PORT`, `MCP_PATH`, `LOG_LEVEL` — стандартные настройки MCP HTTP runtime.
 
 Operational helpers:

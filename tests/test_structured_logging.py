@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 from structured_logging import (
     DEFAULT_LOG_FORMAT,
@@ -11,6 +12,7 @@ from structured_logging import (
     RequestContextLogFilter,
     STRUCTURED_LOG_RECORD_FIELDS,
     TextLogFormatter,
+    PersistentRotatingFileHandler,
     build_log_formatter,
     get_log_format,
 )
@@ -97,3 +99,33 @@ def test_request_context_log_filter_attaches_request_fields(monkeypatch):
 
     assert record.request_id == "req-1"
     assert record.correlation_id == "corr-1"
+
+
+def test_persistent_log_handler_rotates_and_bounds_files(tmp_path, monkeypatch):
+    monkeypatch.setattr("structured_logging.PERSISTENT_LOG_MAX_BYTES", 1)
+    monkeypatch.setattr("structured_logging.PERSISTENT_LOG_MAX_FILES", 2)
+    handler = PersistentRotatingFileHandler(str(tmp_path))
+    handler.setFormatter(logging.Formatter("%(message)s"))
+
+    for message in ("one", "two", "three"):
+        handler.emit(logging.makeLogRecord({"msg": message, "args": ()}))
+
+    files = sorted(Path(tmp_path).glob("runtime-*.log"))
+    assert len(files) == 2
+    assert [path.read_text().strip() for path in files] == ["two", "three"]
+
+
+def test_mcp_compose_contract_enables_persistent_and_error_tracking_envs():
+    compose = Path("docker-compose.yml").read_text()
+
+    for value in (
+        "PERSISTENT_LOG_PATH: /var/log/vetmanager-mcp",
+        "ERROR_TRACKING_DSN: ${ERROR_TRACKING_DSN:-}",
+        "ERROR_TRACKING_ENVIRONMENT: ${ERROR_TRACKING_ENVIRONMENT:-production}",
+        "ERROR_TRACKING_TRACES_SAMPLE_RATE: ${ERROR_TRACKING_TRACES_SAMPLE_RATE:-0}",
+        "mcp-logs:/var/log/vetmanager-mcp",
+        "driver: json-file",
+        "max-size: 10m",
+        'max-file: "3"',
+    ):
+        assert value in compose

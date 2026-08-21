@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from request_context import get_current_request_context
@@ -125,6 +126,61 @@ def build_log_formatter(*, log_format: str | None = None) -> logging.Formatter:
 
 
 _HANDLER_MARKER = "_vm_structured_logging_handler"
+PERSISTENT_LOG_MAX_BYTES = 10 * 1024 * 1024
+PERSISTENT_LOG_MAX_FILES = 14
+
+
+class PersistentRotatingFileHandler(logging.Handler):
+    """Bounded UTC-day log files in a Docker named volume."""
+
+    def __init__(self, directory: str) -> None:
+        super().__init__()
+        self.directory = Path(directory)
+        self.directory.mkdir(parents=True, exist_ok=True)
+        if not self.directory.is_dir():
+            raise RuntimeError(f"Persistent log path is not a directory: {directory}")
+        probe_path = self.directory / f".write-probe-{os.getpid()}"
+        with probe_path.open("x", encoding="utf-8"):
+            pass
+        probe_path.unlink()
+        self.current_path: Path | None = None
+
+    def _next_path(self) -> Path:
+        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        existing = sorted(self.directory.glob(f"runtime-{day}-*.log"))
+        index = len(existing) + 1
+        return self.directory / f"runtime-{day}-{index:03d}.log"
+
+    def _path_for_record(self, rendered: str) -> Path:
+        encoded_size = len((rendered + "\n").encode("utf-8"))
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if (
+            self.current_path is None
+            or f"runtime-{today}-" not in self.current_path.name
+            or (self.current_path.exists() and self.current_path.stat().st_size + encoded_size > PERSISTENT_LOG_MAX_BYTES)
+        ):
+            self.current_path = self._next_path()
+        return self.current_path
+
+    def _prune(self) -> None:
+        files = sorted(self.directory.glob("runtime-????-??-??-*.log"))
+        oldest_day = (datetime.now(timezone.utc) - timedelta(days=13)).date()
+        for path in files:
+            file_day = datetime.strptime(path.name[8:18], "%Y-%m-%d").date()
+            if file_day < oldest_day:
+                path.unlink(missing_ok=True)
+        files = sorted(self.directory.glob("runtime-????-??-??-*.log"))
+        for path in files[:-PERSISTENT_LOG_MAX_FILES]:
+            path.unlink(missing_ok=True)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            path = self._path_for_record(self.format(record))
+            with path.open("a", encoding="utf-8") as stream:
+                stream.write(self.format(record) + "\n")
+            self._prune()
+        except Exception:
+            self.handleError(record)
 
 
 def _is_our_handler(handler: logging.Handler) -> bool:
@@ -163,3 +219,11 @@ def configure_logging() -> None:
     stream_handler.addFilter(context_filter)
     setattr(stream_handler, _HANDLER_MARKER, True)
     root.addHandler(stream_handler)
+
+    persistent_log_path = (os.environ.get("PERSISTENT_LOG_PATH") or "").strip()
+    if persistent_log_path:
+        persistent_handler = PersistentRotatingFileHandler(persistent_log_path)
+        persistent_handler.setFormatter(formatter)
+        persistent_handler.addFilter(context_filter)
+        setattr(persistent_handler, _HANDLER_MARKER, True)
+        root.addHandler(persistent_handler)
