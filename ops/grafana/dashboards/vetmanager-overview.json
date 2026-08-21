@@ -303,8 +303,8 @@
       "id": 21,
       "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {"expr": "avg(vetmanager_account_last_request_age_hours) or vector(0)", "legendFormat": "avg", "refId": "A"},
-        {"expr": "quantile(0.95, vetmanager_account_last_request_age_hours) or vector(0)", "legendFormat": "p95", "refId": "B"}
+        {"expr": "avg(vetmanager_account_last_request_age_hours)", "legendFormat": "avg", "refId": "A"},
+        {"expr": "quantile(0.95, vetmanager_account_last_request_age_hours)", "legendFormat": "p95", "refId": "B"}
       ],
       "title": "Account last request age",
       "type": "timeseries"
@@ -324,6 +324,26 @@
       "targets": [{"expr": "sum by (event, reason) (vetmanager_activation_event_accounts{event=~\"integration_failed|integration_saved|token_copied\"})", "instant": true, "legendFormat": "{{event}} {{reason}}", "refId": "A"}],
       "title": "Activation events",
       "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 59},
+      "id": 23,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "sum(round(increase(vetmanager_tool_calls_total[$__range])))", "instant": true, "legendFormat": "calls", "refId": "A"}],
+      "title": "Total tool calls in range",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 59},
+      "id": 24,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (tool) (increase(vetmanager_tool_calls_total[$__rate_interval]))", "legendFormat": "{{tool}}", "refId": "A"}],
+      "title": "Tool calls by tool",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
