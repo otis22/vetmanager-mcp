@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from request_context import get_current_request_context
+from privacy_utils import mask_ip_to_network
 
 DEFAULT_LOG_FORMAT = "text"
 SUPPORTED_LOG_FORMATS = {"json", "text"}
@@ -62,7 +63,11 @@ def _extra_fields(record: logging.LogRecord) -> dict[str, Any]:
     for key, value in record.__dict__.items():
         if key in _RESERVED_LOG_RECORD_ATTRS or key.startswith("_"):
             continue
-        extra[key] = value
+        extra[key] = (
+            mask_ip_to_network(value) if key.lower() in {
+                "client_ip", "x-forwarded-for", "x-real-ip", "remote_addr", "ip_address"
+            } else value
+        )
     return extra
 
 

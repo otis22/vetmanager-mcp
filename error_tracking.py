@@ -11,6 +11,8 @@ from sentry_sdk.integrations.starlette import StarletteIntegration
 
 SUPPORTED_ERROR_TRACKING_BACKENDS = {"sentry"}
 _REDACTED = "[Filtered]"
+_HANDLED_CONNECTION_FAILURE_TAG = "handled_connection_failure"
+_configured = False
 
 # Substrings matched case-insensitively against header/cookie/body keys.
 # Any key containing one of these is replaced with _REDACTED.
@@ -21,6 +23,10 @@ _SENSITIVE_KEY_PATTERNS = (
     "signature", "jwt", "hmac", "otp", "passphrase",
     # Stage 100.4: OAuth2 DPoP proof-of-possession + generic "signed" prefix
     "dpop", "signed",
+    # Personal/request routing data. Clinic domain deliberately is not here:
+    # owner approved it as incident-diagnostic metadata for stage 233.5.
+    "client_ip", "x-forwarded-for", "x-real-ip", "remote_addr", "ip_address",
+    "email", "phone", "login", "password",
 )
 
 # Exact allowlist of keys that would match a sensitive pattern but are
@@ -59,7 +65,9 @@ def _is_sensitive_key(name: object) -> bool:
     lowered = name.lower()
     if lowered in _SAFE_KEY_WHITELIST:
         return False
-    return any(pattern in lowered for pattern in _SENSITIVE_KEY_PATTERNS)
+    return lowered in {"name", "first_name", "last_name", "full_name"} or any(
+        pattern in lowered for pattern in _SENSITIVE_KEY_PATTERNS
+    )
 
 
 def _redact_mapping(mapping: dict[str, Any]) -> dict[str, Any]:
@@ -81,6 +89,17 @@ def _resolve_release() -> str:
 
 
 def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[str, Any]:
+    if event.get("tags", {}).get(_HANDLED_CONNECTION_FAILURE_TAG) == "true":
+        # Starlette may attach the submitted form/request automatically. This
+        # handled route event is diagnostic only; account_id + stack frames are
+        # sufficient and avoid domains, emails, logins and credentials.
+        request = event.get("request")
+        request_data = request.get("data") if isinstance(request, dict) else None
+        domain = request_data.get("domain") if isinstance(request_data, dict) else None
+        if isinstance(domain, str) and domain:
+            event.setdefault("tags", {})["clinic_domain"] = domain
+        for key in ("request", "user", "contexts", "breadcrumbs", "extra"):
+            event.pop(key, None)
     request = event.get("request")
     if isinstance(request, dict):
         headers = request.get("headers")
@@ -130,6 +149,8 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
             for exc_v in exc_values:
                 if not isinstance(exc_v, dict):
                     continue
+                if event.get("tags", {}).get(_HANDLED_CONNECTION_FAILURE_TAG) == "true":
+                    exc_v["value"] = _REDACTED
                 st = exc_v.get("stacktrace")
                 if not isinstance(st, dict):
                     continue
@@ -140,7 +161,11 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
                     if isinstance(frame, dict):
                         f_vars = frame.get("vars")
                         if isinstance(f_vars, dict):
-                            frame["vars"] = _redact_mapping(f_vars)
+                            frame["vars"] = (
+                                {key: _REDACTED for key in f_vars}
+                                if event.get("tags", {}).get(_HANDLED_CONNECTION_FAILURE_TAG) == "true"
+                                else _redact_mapping(f_vars)
+                            )
 
     # Stage 100.1: contexts and user scope carry runtime metadata.
     contexts = event.get("contexts")
@@ -162,8 +187,10 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
 
 def configure_error_tracking() -> bool:
     """Initialize optional error tracking backend if runtime config is present."""
+    global _configured
     dsn = (os.environ.get("ERROR_TRACKING_DSN") or os.environ.get("SENTRY_DSN") or "").strip()
     if not dsn:
+        _configured = False
         return False
 
     backend = (os.environ.get("ERROR_TRACKING_BACKEND") or "sentry").strip().lower()
@@ -180,4 +207,20 @@ def configure_error_tracking() -> bool:
         integrations=[StarletteIntegration()],
         before_send=_sanitize_event,
     )
+    _configured = True
     return True
+
+
+def capture_handled_connection_failure(exc: BaseException, *, account_id: int) -> None:
+    """Capture a safe handled connection failure without changing route behavior."""
+    if not _configured or not sentry_sdk.is_initialized():
+        return
+    try:
+        with sentry_sdk.push_scope() as scope:
+            scope.set_tag(_HANDLED_CONNECTION_FAILURE_TAG, "true")
+            scope.set_tag("account_id", str(account_id))
+            scope.clear_breadcrumbs()
+            sentry_sdk.capture_exception(exc)
+    except Exception:
+        # Error tracking must never alter a user-visible handled failure.
+        return
