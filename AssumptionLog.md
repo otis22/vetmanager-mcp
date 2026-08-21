@@ -11869,3 +11869,29 @@ Checks so far:
   compose --profile test run --rm test` завершилась exit `0` на текущем
   рабочем дереве; collection: `1618 items / 65 deselected / 1553 selected`.
   Внешние review-gates не запускались по прямому ограничению задачи.
+
+- **Этап 234 (2026-08-21):** `server.py:48` подтверждённо вызывает
+  `configure_error_tracking`; при пустых `ERROR_TRACKING_DSN` и `SENTRY_DSN`
+  bootstrap возвращает `False`, то есть не ломает старт. Compose явно
+  пробрасывает запрошенные `ERROR_TRACKING_DSN`, environment с default
+  `production` и traces sample rate с default `0`; `SENTRY_DSN` остаётся
+  backward-compatible alias вне Compose, поскольку scope этапа задаёт именно
+  `ERROR_TRACKING_DSN`.
+- **Этап 234 / Architecture Critique:** Spark pass сначала упал на известном
+  read-only `bwrap` runtime, danger-full-access retry прочитал PRD, но не выдал
+  разбираемый YAML verdict; candidate findings отсутствуют. Claude Opus attempt
+  1/3 — valid: evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-21T124940Z-file-PRD_-234-----_md-attempt-1-of-3.OgUc7Y/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=`success`, stop_reason=`tool_use`, output_tokens=3947,
+  thinking_tokens=2667, len(result)=3399. Приняты: persistent sink должен быть
+  bounded по размеру и количеству, а mount point обязан иметь детерминированные
+  UID/GID. Отклонён: требование пробросить `SENTRY_DSN` — противоречит прямому
+  scope 234.1. Claude attempt 2/3 — valid: evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-21T125027Z-file-PRD_-234-----_md-attempt-2-of-3.jmBeyP/claude-review-attempt-2-of-3.envelope.json`,
+  subtype=`success`, stop_reason=`tool_use`, output_tokens=5245,
+  thinking_tokens=3707, len(result)=4151;
+  принят finding сохранить `json-file`, чтобы не сломать возможный collector,
+  вместо смены driver на `local`. Findings об unbounded/TimedRotating handler
+  устарели после принятого изменения; claim о новом PII-safe sink отклонён как
+  неверно расширяющий scope — persistent sink сохраняет тот же structured stdout
+  и доступен только Docker-администратору.

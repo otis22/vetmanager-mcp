@@ -32,7 +32,8 @@ FROM base AS production
 
 COPY . .
 
-RUN mkdir -p /app/data && chown app:app /app/data
+RUN mkdir -p /app/data /var/log/vetmanager-mcp && \
+    chown app:app /app/data /var/log/vetmanager-mcp
 
 USER app
 

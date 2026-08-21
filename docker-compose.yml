@@ -57,6 +57,10 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PERSISTENT_LOG_PATH: /var/log/vetmanager-mcp
+      ERROR_TRACKING_DSN: ${ERROR_TRACKING_DSN:-}
+      ERROR_TRACKING_ENVIRONMENT: ${ERROR_TRACKING_ENVIRONMENT:-production}
+      ERROR_TRACKING_TRACES_SAMPLE_RATE: ${ERROR_TRACKING_TRACES_SAMPLE_RATE:-0}
       MCP_TRANSPORT: ${MCP_TRANSPORT:-streamable-http}
       MCP_HOST: ${MCP_HOST:-0.0.0.0}
       MCP_PATH: ${MCP_PATH:-/mcp}
@@ -76,8 +80,14 @@ services:
     volumes:
       - .:/app
       - mcp-data:/app/data  # SQLite fallback for local dev
+      - mcp-logs:/var/log/vetmanager-mcp
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
     depends_on:
       postgres:
         condition: service_healthy
@@ -186,5 +196,6 @@ services:
 
 volumes:
   mcp-data:
+  mcp-logs:
   prometheus-data:
   grafana-data:
