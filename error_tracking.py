@@ -83,6 +83,12 @@ def _resolve_release() -> str:
 
 
 def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[str, Any]:
+    if event.get("tags", {}).get(_HANDLED_CONNECTION_FAILURE_TAG) == "true":
+        # Starlette may attach the submitted form/request automatically. This
+        # handled route event is diagnostic only; account_id + stack frames are
+        # sufficient and avoid domains, emails, logins and credentials.
+        for key in ("request", "user", "contexts", "breadcrumbs", "extra"):
+            event.pop(key, None)
     request = event.get("request")
     if isinstance(request, dict):
         headers = request.get("headers")

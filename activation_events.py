@@ -8,7 +8,7 @@ from typing import Mapping
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from exceptions import AuthError, HostResolutionError, VetmanagerError, VetmanagerTimeoutError
+from exceptions import AuthError, HostResolutionError, VetmanagerError, VetmanagerTimeoutError, VetmanagerUpstreamUnavailable
 from observability_logging import RUNTIME_LOGGER
 from storage_models import (
     ACTIVATION_AUTH_MODES,
@@ -80,7 +80,7 @@ def classify_activation_reason(exc: BaseException) -> str:
         return "auth_error"
     if isinstance(exc, HostResolutionError):
         return "host_resolution_error"
-    if isinstance(exc, VetmanagerTimeoutError):
+    if isinstance(exc, (VetmanagerTimeoutError, VetmanagerUpstreamUnavailable)):
         return "network"
     if isinstance(exc, VetmanagerError):
         status_code = exc.status_code

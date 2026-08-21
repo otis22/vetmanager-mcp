@@ -260,7 +260,8 @@ def register_account_routes(
                         encryption_key=get_storage_encryption_key(),
                     )
         except (ValueError, AuthError, HostResolutionError, VetmanagerError) as exc:
-            capture_handled_connection_failure(exc, account_id=account_id)
+            if not isinstance(exc, ValueError):
+                capture_handled_connection_failure(exc, account_id=account_id)
             if not isinstance(exc, (VetmanagerTimeoutError, VetmanagerUpstreamUnavailable)):
                 await _record_activation_event_for_account(
                     account_id=account_id,
@@ -351,7 +352,8 @@ def register_account_routes(
                         encryption_key=get_storage_encryption_key(),
                     )
         except (ValueError, AuthError, HostResolutionError, VetmanagerError) as exc:
-            capture_handled_connection_failure(exc, account_id=account_id)
+            if not isinstance(exc, ValueError):
+                capture_handled_connection_failure(exc, account_id=account_id)
             # Stage 112.2: same pattern as account_integration_submit above.
             RUNTIME_LOGGER.warning(
                 "Integration reauth failed",

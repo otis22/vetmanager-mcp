@@ -20,7 +20,7 @@ from activation_events import (
     record_activation_event_best_effort,
     reset_activation_event_state,
 )
-from exceptions import AuthError, HostResolutionError, VetmanagerError, VetmanagerTimeoutError
+from exceptions import AuthError, HostResolutionError, VetmanagerError, VetmanagerTimeoutError, VetmanagerUpstreamUnavailable
 from server import mcp
 from service_metrics import render_prometheus_metrics, snapshot_service_metrics
 from storage import Base, create_database_engine
@@ -81,6 +81,7 @@ def test_stage198_classification_is_closed_and_privacy_safe() -> None:
     assert classify_activation_reason(VetmanagerError("boom", status_code=404)) == "upstream_4xx"
     assert classify_activation_reason(VetmanagerError("boom", status_code=503)) == "upstream_5xx"
     assert classify_activation_reason(VetmanagerTimeoutError("timeout")) == "network"
+    assert classify_activation_reason(VetmanagerUpstreamUnavailable("unavailable")) == "network"
     assert classify_activation_reason(VetmanagerError("boom")) == "internal"
     assert classify_activation_reason(ValueError("bad form")) == "validation_error"
     assert classify_activation_reason(RuntimeError("unknown")) == "unknown"
@@ -200,7 +201,10 @@ async def test_stage198_transient_vetmanager_failure_does_not_persist_product_ev
 
     assert response.status_code == 400
     assert await _events_for("stage198-timeout@example.com") == []
-    failure_log = next(record for record in caplog.records if record.event_name == "integration_save_failed")
+    failure_log = next(
+        record for record in caplog.records
+        if getattr(record, "event_name", None) == "integration_save_failed"
+    )
     assert failure_log.account_id
     assert failure_log.error_class == "VetmanagerTimeoutError"
     assert failure_log.status_code is None

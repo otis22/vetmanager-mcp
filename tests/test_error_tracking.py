@@ -45,6 +45,7 @@ def test_handled_connection_event_keeps_stack_but_redacts_message_and_locals():
                 "domain": "clinic.example", "login": "alice@example.com", "password": "secret"
             }}]
         }}]},
+        "request": {"data": {"domain": "clinic.example", "vm_login": "alice@example.com"}},
     }
 
     sanitized = error_tracking._sanitize_event(event, hint={})
@@ -53,6 +54,7 @@ def test_handled_connection_event_keeps_stack_but_redacts_message_and_locals():
     assert sanitized["exception"]["values"][0]["value"] == "[Filtered]"
     assert frame["vars"] == {"domain": "[Filtered]", "login": "[Filtered]", "password": "[Filtered]"}
     assert sanitized["tags"]["account_id"] == "42"
+    assert "request" not in sanitized
 
 
 def test_sanitize_event_redacts_sensitive_request_headers():
@@ -94,4 +96,4 @@ def test_configure_error_tracking_initializes_sentry(monkeypatch):
     assert kwargs["before_send"] is error_tracking._sanitize_event
     assert len(kwargs["integrations"]) == 1
     assert type(kwargs["integrations"][0]).__name__ == "StarletteIntegration"
-    monkeypatch.setattr(error_tracking, "_configured", False)
+    error_tracking._configured = False
