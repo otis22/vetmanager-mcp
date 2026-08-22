@@ -58,9 +58,9 @@ def validate_filter_properties(
     if not filter_contract_validation_enabled():
         return
     for item in filters or ():
-        if not isinstance(item, dict):
-            continue
-        property_name = item.get("property")
+        property_name = item.property if isinstance(item, Filter) else (
+            item.get("property") if isinstance(item, dict) else None
+        )
         if isinstance(property_name, str) and property_name not in allowed_properties:
             raise ValueError(
                 f"Unknown filter property '{property_name}'. Allowed properties: "

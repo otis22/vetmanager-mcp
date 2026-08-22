@@ -72,6 +72,30 @@ async def test_get_cassa_closes_rejects_incident_filter_before_http():
 @pytest.mark.asyncio
 @respx.mock
 @pytest.mark.parametrize(
+    ("tool_name", "endpoint"),
+    [
+        ("get_payments", "/rest/api/payment"),
+        ("get_invoices", "/rest/api/invoice"),
+    ],
+)
+async def test_other_finance_tools_reject_unknown_filter_before_http(tool_name, endpoint):
+    route = respx.get(f"{BASE}{endpoint}").mock(
+        return_value=httpx.Response(200, json={"data": {}})
+    )
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="close_date"):
+            await mcp.call_tool(
+                tool_name,
+                {"filter": [{"property": "close_date", "operator": "=", "value": "x"}]},
+            )
+
+    assert not route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(
     ("tool_name", "endpoint", "entity", "property_name"),
     [
         ("get_cassa_closes", "/rest/api/cassaclose", "cassaclose", "date"),
