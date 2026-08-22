@@ -2,7 +2,7 @@ from datetime import date as _date, timedelta as _td
 
 from fastmcp import FastMCP
 
-from filters import eq as _filter_eq, gte as _filter_gte, in_ as _filter_in, lt as _filter_lt
+from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, gte as _filter_gte, in_ as _filter_in, lt as _filter_lt
 from resources.admission_status import ACTIVE_ADMISSION_STATUSES  # noqa: F401 — BC re-export
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import (
@@ -91,6 +91,10 @@ def register(mcp: FastMCP) -> None:
             sort: Sort specification, e.g. [{"property": "admission_date",
                 "direction": "ASC"}].
             filter: Additional raw filter conditions (merged with named filters).
+                Allowed properties: admission_date, admission_length, client_id,
+                clinic_id, confirmation, create_date, creator_id, description,
+                direct_direction, escorter_id, id, invoices_sum, is_auto_create,
+                patient_id, reception_write_channel, status, type_id, user_id.
         """
         if date and (date_from or date_to):
             raise ValueError(
@@ -128,6 +132,7 @@ def register(mcp: FastMCP) -> None:
         return await crud_list(
             "/rest/api/admission", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["admission"],
         )
 
     def _validate_admission_status(status: str) -> None:

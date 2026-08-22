@@ -335,9 +335,14 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter: Optional raw filters. Allowed properties: client_id,
+                create_date, id, minus_amount, minus_document_id,
+                minus_type_document, plus_amount, plus_document_id,
+                plus_type_document.
         """
         return await crud_list(
             "/rest/api/closingOfInvoices", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["closingOfInvoices"],
         )
 
     @mcp.tool
@@ -406,9 +411,15 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter: Optional raw filters. Allowed properties: assigned_user_id,
+                cashless_to_cassa_id, client_cass, clinic_id,
+                has_unfinished_docs, id, inventarization_date, is_blocked,
+                is_system, main_cassa, operating_cassa_id, show_in_cashflow,
+                status, summa_cash, summa_cashless, title, type.
         """
         return await crud_list(
             "/rest/api/cassa", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["cassa"],
         )
 
     @mcp.tool

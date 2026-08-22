@@ -11968,6 +11968,30 @@ Checks so far:
   изменение counter. Spark был недоступен: лимит модели исчерпан, fallback не
   выдал валидный verdict.
 
+## Этап 235.5. Раскатка контракта фильтров
+
+- Read-only пробы на `devtr6` 23.08.2026 проведены пятью пачками до правок;
+  stdout содержал только endpoint, поле и HTTP status. `filter-contracts-list.json`
+  содержит только дату, источник и подтверждённые имена полей. В реестр вошли
+  только 22 endpoint'а, для которых каждое включённое скалярное поле вернуло
+  HTTP 200.
+- `admission.wait_time` и `hospital.in_hospital_time` возвращаются list API,
+  но их фильтрация получила HTTP 406, поэтому это response-only вычисляемые
+  поля, не public filter contract. `get_diagnoses` и `get_anonymous_clients`
+  тоже не ужесточались: путь, сначала использованный для пробы, не совпадает
+  с MCP endpoint. Девять endpoint'ов без записей оставлены passthrough; все
+  11 инструментов перечислены в Roadmap 235.7 для повторной пробы.
+- `allowed_filter_properties` добавлен explicit на каждый подтверждённый
+  passthrough path. `get_goods(name=...)` проверен regression-тестом: `name`
+  остаётся top-level `extra`, а filter allowlist касается только `filter`.
+- Исправление после CI/privacy review: API acceptance не означает публичное
+  разрешение. Existing user projection `_ANALYTICS_USER_FIELDS` подтверждает
+  закрытие credentials/login/tax/compensation; `passport_series` уже удаляется
+  privacy wrapper'ом client output. Эти поля исключены из allowlist и
+  docstring, а `public_excluded_fields` в probe artifact документирует разницу
+  между read-only probe и публичным filter contract. Local rejection тестирует
+  `passwd LIKE` и `passport_series LIKE` до HTTP.
+
 ## Этап 236. Полезный контекст в событиях трекинга
 
 - Tool failure capture располагается inner относительно OAuth FastMCP middleware,

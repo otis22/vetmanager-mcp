@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from fastmcp import FastMCP
 from pydantic import Field
-from filters import eq as _filter_eq, gt as _filter_gt, lt as _filter_lt
+from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, gt as _filter_gt, lt as _filter_lt
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
@@ -36,9 +36,14 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter: Optional raw filters. Allowed properties: address, city_id,
+                email, end_time, guest_client_id, id, internet_address,
+                logo_url, phone, start_time, status, telegram, time_zone,
+                title, whatsapp.
         """
         return await crud_list(
             "/rest/api/clinics", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["clinics"],
         )
 
     @mcp.tool
@@ -67,6 +72,9 @@ def register(mcp: FastMCP) -> None:
             doctor_id: Filter by staff doctor ID (0 = no filter). Vetmanager
                 timesheet entity uses `doctor_id` as FK to user.id.
             date: Filter by date in YYYY-MM-DD format (optional).
+            filter: Optional raw filters. Allowed properties: action_id, all_day,
+                begin_datetime, clinic_id, doctor_id, end_datetime, id, night,
+                shedule_id, shift, title, type.
         """
         combined_filters: list = list(filter or [])
         if doctor_id:
@@ -84,6 +92,7 @@ def register(mcp: FastMCP) -> None:
             "/rest/api/timesheet", limit=limit, offset=offset,
             sort=sort,
             filters=combined_filters if combined_filters else None,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["timesheet"],
         )
 
     @mcp.tool
@@ -142,9 +151,12 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter: Optional raw filters. Allowed properties: clinic_id, id,
+                property_name, property_title, property_value.
         """
         return await crud_list(
             "/rest/api/properties", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["properties"],
         )
 
     @mcp.tool

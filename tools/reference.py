@@ -2,7 +2,7 @@
 Role, UserPosition, ComboManualName, ComboManualItem."""
 
 from fastmcp import FastMCP
-from filters import eq as _filter_eq, like as _filter_like
+from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, like as _filter_like
 from tools.crud_helpers import crud_list, crud_get_by_id
 from validators import LimitParam
 
@@ -23,6 +23,8 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
             pet_type_id: Filter by animal type ID (0 = no filter).
+            filter: Optional raw filters. Allowed properties: id, pet_type_id,
+                title.
         """
         combined_filters: list = list(filter or [])
         if pet_type_id:
@@ -30,6 +32,7 @@ def register(mcp: FastMCP) -> None:
         return await crud_list(
             "/rest/api/breed", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["breed"],
         )
 
     @mcp.tool
@@ -53,9 +56,12 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter: Optional raw filters. Allowed properties: id, picture,
+                title, type.
         """
         return await crud_list(
             "/rest/api/petType", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["petType"],
         )
 
     @mcp.tool
@@ -81,6 +87,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
             title: Filter by city name (partial match, optional).
+            filter: Optional raw filters. Allowed properties: id, title, type_id.
         """
         combined_filters: list = list(filter or [])
         if title:
@@ -88,6 +95,7 @@ def register(mcp: FastMCP) -> None:
         return await crud_list(
             "/rest/api/city", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["city"],
         )
 
     @mcp.tool
@@ -111,9 +119,11 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter: Optional raw filters. Allowed properties: id, title.
         """
         return await crud_list(
             "/rest/api/cityType", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["cityType"],
         )
 
     @mcp.tool
@@ -130,6 +140,8 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
             city_id: Filter by city ID (0 = no filter).
+            filter: Optional raw filters. Allowed properties: city_id, id,
+                title, type.
         """
         combined_filters: list = list(filter or [])
         if city_id:
@@ -137,6 +149,7 @@ def register(mcp: FastMCP) -> None:
         return await crud_list(
             "/rest/api/street", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["street"],
         )
 
     @mcp.tool
@@ -160,9 +173,11 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter: Optional raw filters. Allowed properties: id, status, title.
         """
         return await crud_list(
             "/rest/api/unit", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["unit"],
         )
 
     @mcp.tool
@@ -186,9 +201,11 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter: Optional raw filters. Allowed properties: id, name, super.
         """
         return await crud_list(
             "/rest/api/role", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["role"],
         )
 
     @mcp.tool
@@ -212,9 +229,12 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter: Optional raw filters. Allowed properties: admission_length,
+                id, title.
         """
         return await crud_list(
             "/rest/api/userPosition", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["userPosition"],
         )
 
     @mcp.tool

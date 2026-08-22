@@ -2,7 +2,7 @@
 PartyAccountDoc, StoreDocument, Suppliers."""
 
 from fastmcp import FastMCP
-from filters import eq as _filter_eq
+from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
@@ -50,6 +50,10 @@ def register(mcp: FastMCP) -> None:
             good_id: ID of the good/service.
             limit: Max records to return.
             offset: Pagination offset.
+            filter: Optional raw filters. Allowed properties: barcode, clinic_id,
+                coefficient, good_id, id, is_partial_sale, is_skip_marking,
+                markup, max_price, min_price, price, price_formation, status,
+                unit_sale_id.
         """
         combined_filters: list = list(filter or [])
         if good_id:
@@ -57,6 +61,7 @@ def register(mcp: FastMCP) -> None:
         return await crud_list(
             "/rest/api/goodSaleParam", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["goodSaleParam"],
         )
 
     @mcp.tool

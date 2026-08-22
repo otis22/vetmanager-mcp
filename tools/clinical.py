@@ -1,7 +1,7 @@
 """Clinical entity tools: Hospital, HospitalBlock, Diagnoses."""
 
 from fastmcp import FastMCP
-from filters import eq as _filter_eq
+from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam
 from vm_datetime import normalize_vm_datetime
@@ -23,6 +23,9 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
             pet_id: Filter by pet ID (0 = no filter).
+            filter: Optional raw filters. Allowed properties: admission_id,
+                client_id, clinic_id, description, end_date, hospital_block_id,
+                id, invoice_id, pet_id, place, start_date, status, user_id.
         """
         combined_filters: list = list(filter or [])
         if pet_id:
@@ -30,6 +33,7 @@ def register(mcp: FastMCP) -> None:
         return await crud_list(
             "/rest/api/hospital", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["hospital"],
         )
 
     @mcp.tool
@@ -109,9 +113,13 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter: Optional raw filters. Allowed properties: clinic_id, id,
+                is_daily_payment, is_hourly_payment, places_count,
+                reserved_places_count, status, title.
         """
         return await crud_list(
             "/rest/api/HospitalBlock", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["hospitalBlock"],
         )
 
     @mcp.tool

@@ -4156,7 +4156,7 @@ Claude и ChatGPT по streamable-http, и каждая выкатка рвёт 
 - 234.3 Проверить на живом событии, что в трекинг не утекают домены клиник,
   email и токены. — `supervisor_pending`
 
-## Этап 235. Контракт фильтров у list-инструментов — `done`
+## Этап 235. Контракт фильтров у list-инструментов — `in_progress`
 
 Источник: Sentry PYTHON-5, два независимых инцидента 22.08.2026 (03:56 и 12:59
 МСК). Клиент фильтровал `get_cassa_closes` по полю `close_date`, upstream ответил
@@ -4201,9 +4201,16 @@ Probe-эталон на `devtr6` от 22.08.2026: у `cassaclose`, `payment` и 
 - 235.5 Остальные сущности пачками по 5–7; каждая пачка — своя проба на
   `devtr6` перед правкой докстринга. Инструмент, чью реализацию в MCP или
   поведение в Vetmanager не удалось подтвердить, остаётся без изменений и
-  выносится в отдельный пункт. — `todo`
+  выносится в отдельный пункт. Проба 23.08.2026 подтвердила 22 endpoint'а;
+  их allowlist'ы, docstrings и provenance-артефакт добавлены. — `done`
 - 235.6 Регрессионный тест на исходный кейс: фильтр `close_date` у
   `get_cassa_closes` отвечает подсказкой с именем `date`, а не 406. — `done`
+- 235.7 Повторить probe на endpoint'ах без записей либо с неподтверждённым
+  соответствием tool → endpoint: `get_medical_cards`, `get_diagnoses`,
+  `get_anonymous_clients`, `get_combo_manual_names`, `get_combo_manual_items`,
+  `get_message_reports`, `get_good_groups`, `get_party_accounts`,
+  `get_party_account_docs`, `get_store_documents`, `get_suppliers`. До этого
+  оставить их raw `filter` passthrough без allowlist. — `todo`
 
 ## Этап 236. Полезный контекст в событиях трекинга — `done`
 

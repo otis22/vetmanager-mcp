@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "probed_at": "2026-08-23",
+  "source": "devtr6 read-only scalar-field filter probe",
+  "entities": {
+    "closingOfInvoices": ["client_id", "create_date", "id", "minus_amount", "minus_document_id", "minus_type_document", "plus_amount", "plus_document_id", "plus_type_document"],
+    "cassa": ["assigned_user_id", "cashless_to_cassa_id", "client_cass", "clinic_id", "has_unfinished_docs", "id", "inventarization_date", "is_blocked", "is_system", "main_cassa", "operating_cassa_id", "show_in_cashflow", "status", "summa_cash", "summa_cashless", "title", "type"],
+    "admission": ["admission_date", "admission_length", "client_id", "clinic_id", "confirmation", "create_date", "creator_id", "description", "direct_direction", "escorter_id", "id", "invoices_sum", "is_auto_create", "patient_id", "reception_write_channel", "status", "type_id", "user_id"],
+    "client": ["address", "apartment", "balance", "cell_phone", "city", "city_id", "date_register", "discount", "email", "first_name", "has_contract", "home_phone", "how_find", "id", "in_blacklist", "lab_number", "last_name", "last_visit_date", "middle_name", "note", "number_of_journal", "passport_series", "phone_prefix", "registration_index", "status", "street_id", "type_id", "unsubscribe", "vip", "work_phone", "zip"],
+    "hospital": ["admission_id", "client_id", "clinic_id", "description", "end_date", "hospital_block_id", "id", "invoice_id", "pet_id", "place", "start_date", "status", "user_id"],
+    "hospitalBlock": ["clinic_id", "id", "is_daily_payment", "is_hourly_payment", "places_count", "reserved_places_count", "status", "title"],
+    "pet": ["alias", "birthday", "breed_id", "chip_number", "color_id", "date_register", "deathdate", "deathnote", "edit_date", "id", "lab_number", "note", "old_id", "owner_id", "picture", "sex", "status", "type_id", "weight"],
+    "user": ["address", "calc_percents", "cell_phone", "email", "first_name", "id", "is_active", "is_limited", "last_change_pwd_date", "last_name", "login", "middle_name", "nickname", "passwd", "phone", "position_id", "role_id", "sip_number", "user_inn"],
+    "clinics": ["address", "city_id", "email", "end_time", "guest_client_id", "id", "internet_address", "logo_url", "phone", "start_time", "status", "telegram", "time_zone", "title", "whatsapp"],
+    "timesheet": ["action_id", "all_day", "begin_datetime", "clinic_id", "doctor_id", "end_datetime", "id", "night", "shedule_id", "shift", "title", "type"],
+    "properties": ["clinic_id", "id", "property_name", "property_title", "property_value"],
+    "breed": ["id", "pet_type_id", "title"],
+    "petType": ["id", "picture", "title", "type"],
+    "city": ["id", "title", "type_id"],
+    "cityType": ["id", "title"],
+    "street": ["city_id", "id", "title", "type"],
+    "unit": ["id", "status", "title"],
+    "role": ["id", "name", "super"],
+    "userPosition": ["admission_length", "id", "title"],
+    "goodSaleParam": ["barcode", "clinic_id", "coefficient", "good_id", "id", "is_partial_sale", "is_skip_marking", "markup", "max_price", "min_price", "price", "price_formation", "status", "unit_sale_id"],
+    "good": ["barcode", "category_id", "code", "create_date", "description", "for_combination", "group_id", "id", "is_active", "is_call", "is_for_sale", "is_marking", "is_recipe", "is_warehouse_account", "prime_cost", "title", "unit_storage_id"]
+  },
+  "public_excluded_fields": {
+    "client": ["passport_series"],
+    "user": ["calc_percents", "last_change_pwd_date", "login", "passwd", "user_inn"]
+  }
+}

@@ -6,6 +6,7 @@ from fastmcp.exceptions import ToolError
 
 from exceptions import NotFoundError, VetmanagerError
 from filters import (
+    FILTER_FIELDS_BY_ENTITY,
     eq as _filter_eq,
     gte as _filter_gte,
     in_ as _filter_in,
@@ -265,6 +266,13 @@ def register(mcp: FastMCP) -> None:
             email: Filter by email address (LIKE match).
             status: Filter by client status: 'ACTIVE' (default), 'DELETED',
                     'INACTIVE', or '' for all.
+            filter: Extra raw filters. Allowed properties: address, apartment,
+                balance, cell_phone, city, city_id, date_register, discount,
+                email, first_name, has_contract, home_phone, how_find, id,
+                in_blacklist, lab_number, last_name, last_visit_date,
+                middle_name, note, number_of_journal, phone_prefix,
+                registration_index, status, street_id, type_id,
+                unsubscribe, vip, work_phone, zip.
         """
         if name and offset:
             raise ValueError(
@@ -321,6 +329,7 @@ def register(mcp: FastMCP) -> None:
                     offset=0,
                     sort=sort,
                     filters=combined_filters + [_filter_like(field_name, f"%{token}%")],
+                    allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["client"],
                 )
                 for token in query_values
                 for field_name in field_names
@@ -382,6 +391,7 @@ def register(mcp: FastMCP) -> None:
             offset=offset,
             sort=sort,
             filters=combined_filters if combined_filters else None,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["client"],
         )
 
     @mcp.tool

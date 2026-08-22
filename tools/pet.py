@@ -2,7 +2,7 @@ import asyncio
 
 from fastmcp import FastMCP
 
-from filters import build_list_query_params, eq as _filter_eq, in_ as _filter_in, like as _filter_like
+from filters import FILTER_FIELDS_BY_ENTITY, build_list_query_params, eq as _filter_eq, in_ as _filter_in, like as _filter_like
 from resources.pet_profile import fetch as _fetch_pet_profile
 from service_metrics import instrument_call as _instrument_call
 from token_scopes import SCOPE_CLIENTS_READ
@@ -84,7 +84,10 @@ def register(mcp: FastMCP) -> None:
                 combined with owner_id — standalone alias search is rejected
                 to prevent wrong-patient results.
             sort: Optional sort spec (forwarded to API).
-            filter: Optional filter spec (forwarded to API).
+            filter: Optional filter spec. Allowed properties: alias, birthday,
+                breed_id, chip_number, color_id, date_register, deathdate,
+                deathnote, edit_date, id, lab_number, note, old_id, owner_id,
+                picture, sex, status, type_id, weight.
         """
         if alias and not owner_id:
             raise ValueError(
@@ -104,6 +107,7 @@ def register(mcp: FastMCP) -> None:
             offset=offset,
             sort=sort,
             filters=combined_filters if combined_filters else None,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["pet"],
         )
 
     @mcp.tool
