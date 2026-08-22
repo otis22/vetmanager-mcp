@@ -4,6 +4,7 @@ from datetime import date, timedelta
 
 from fastmcp import FastMCP
 from filters import (
+    FILTER_FIELDS_BY_ENTITY,
     eq as _filter_eq,
     gte as _filter_gte,
     in_ as _filter_in,
@@ -174,6 +175,10 @@ def register(mcp: FastMCP) -> None:
             date_to: Filter payments through this local clinic date (inclusive);
                 implemented as create_date < next day's 00:00:00. Same accepted
                 formats as `date_from`.
+            filter: Optional raw filters. Allowed properties: amount, cassa_id,
+                cassaclose_id, create_date, description, id, invoice_id,
+                parent_id, payed_user, payment_type, status. `client_id` is
+                deliberately unsupported; use get_client_payment_applications.
         """
         if status and status not in _PAYMENT_STATUSES:
             raise ValueError(
@@ -186,7 +191,6 @@ def register(mcp: FastMCP) -> None:
                 "client-scoped payment applications."
             )
         _reject_payment_client_filter(filter)
-
         resolved_date_from, resolved_date_to = _parse_date_range(
             date_from, date_to, label="date"
         )
@@ -205,6 +209,7 @@ def register(mcp: FastMCP) -> None:
         return await crud_list(
             "/rest/api/payment", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["payment"],
         )
 
     @mcp.tool
@@ -427,9 +432,12 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter: Optional raw filters. Allowed properties: amount,
+                amount_cashless, closed_user_id, date, id, id_cassa, status.
         """
         return await crud_list(
             "/rest/api/cassaclose", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["cassaclose"],
         )
 
     @mcp.tool

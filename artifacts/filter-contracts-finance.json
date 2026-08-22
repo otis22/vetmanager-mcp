@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "probed_at": "2026-08-22",
+  "source": "devtr6 read-only scalar-field filter probe",
+  "entities": {
+    "cassaclose": ["amount", "amount_cashless", "closed_user_id", "date", "id", "id_cassa", "status"],
+    "payment": ["amount", "cassa_id", "cassaclose_id", "create_date", "description", "id", "invoice_id", "parent_id", "payed_user", "payment_type", "status"],
+    "invoice": ["amount", "call", "client_id", "clinic_id", "create_date", "creator_id", "description", "discount", "doctor_id", "fiscal_section_id", "id", "increase", "invoice_date", "night", "old_id", "paid_amount", "payment_status", "percent", "pet_id", "status"]
+  }
+}

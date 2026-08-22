@@ -3,8 +3,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
 from fastmcp import FastMCP
-
-from filters import build_list_query_params, eq as _filter_eq, gte as _filter_gte, lt as _filter_lt, lte as _filter_lte
+from filters import FILTER_FIELDS_BY_ENTITY, build_list_query_params, eq as _filter_eq, gte as _filter_gte, lt as _filter_lt, lte as _filter_lte
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_update, crud_delete, paginate_all
 from validators import LimitParam, parse_date_param
 from vetmanager_client import VetmanagerClient
@@ -112,6 +111,11 @@ def register(mcp: FastMCP) -> None:
             paid_amount_max: Maximum paid amount filter.
             amount_min: Minimum invoice amount filter.
             amount_max: Maximum invoice amount filter.
+            filter: Optional raw filters. Allowed properties: amount, call,
+                client_id, clinic_id, create_date, creator_id, description,
+                discount, doctor_id, fiscal_section_id, id, increase,
+                invoice_date, night, old_id, paid_amount, payment_status,
+                percent, pet_id, status.
         """
         if payment_status and payment_status not in _INVOICE_PAYMENT_STATUSES:
             raise ValueError(
@@ -178,6 +182,7 @@ def register(mcp: FastMCP) -> None:
         return await crud_list(
             "/rest/api/invoice", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["invoice"],
         )
 
     @mcp.tool
