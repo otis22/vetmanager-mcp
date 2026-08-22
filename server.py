@@ -19,6 +19,8 @@ from tool_descriptions import enhance_tool_descriptions
 from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
 
+SHUTDOWN_STEP_TIMEOUT_SECONDS = 3
+
 
 def _log_startup_aborted(exc: Exception, *, step: str) -> None:
     RUNTIME_LOGGER.critical(
@@ -48,7 +50,7 @@ def _load_runtime_config() -> tuple[str, str, int, str]:
 
 async def _close_step(name, operation) -> None:
     try:
-        await asyncio.wait_for(operation(), timeout=5)
+        await asyncio.wait_for(operation(), timeout=SHUTDOWN_STEP_TIMEOUT_SECONDS)
     except Exception:
         RUNTIME_LOGGER.warning("Graceful shutdown error", extra={"event_name": "shutdown_error", "step": name}, exc_info=True)
 
@@ -70,7 +72,7 @@ async def _runtime_lifespan(_server):
             await bootstrap_storage_schema()
         yield
     finally:
-        await asyncio.wait_for(_graceful_shutdown(), timeout=15)
+        await _graceful_shutdown()
 
 
 class _DrainingUvicornServer(uvicorn.Server):
@@ -78,6 +80,24 @@ class _DrainingUvicornServer(uvicorn.Server):
         begin_draining()
         RUNTIME_LOGGER.info("Shutdown drain started", extra={"event_name": "shutdown_drain_started", "signal": sig})
         super().handle_exit(sig, frame)
+
+
+def _run_http_server(*, transport: str, host: str, port: int, path: str) -> None:
+    """Run the FastMCP HTTP app while preserving FastMCP's Uvicorn defaults."""
+    app = mcp.http_app(path=path, transport=transport)
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        lifespan="on",
+        timeout_graceful_shutdown=20,
+        ws="websockets-sansio",
+        log_level=os.environ.get("FASTMCP_LOG_LEVEL", "INFO").lower(),
+        access_log=True,
+        proxy_headers=True,
+        forwarded_allow_ips=os.environ.get("FORWARDED_ALLOW_IPS"),
+    )
+    asyncio.run(_DrainingUvicornServer(config).serve())
 
 
 configure_logging()
@@ -135,6 +155,7 @@ if __name__ == "__main__":
     if transport not in {"http", "streamable-http", "sse"}:
         mcp.run(transport=transport, host=host, port=port, path=path)
     else:
-        app = mcp.http_app(path=path, transport=transport)
-        config = uvicorn.Config(app, host=host, port=port, lifespan="on", timeout_graceful_shutdown=20)
-        asyncio.run(_DrainingUvicornServer(config).serve())
+        _run_startup_step(
+            "mcp_run",
+            lambda: _run_http_server(transport=transport, host=host, port=port, path=path),
+        )

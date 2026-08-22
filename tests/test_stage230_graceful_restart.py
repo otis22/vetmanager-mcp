@@ -3,7 +3,7 @@ import pytest
 
 import shutdown_state
 import storage
-from server import _DrainingUvicornServer, mcp
+from server import SHUTDOWN_STEP_TIMEOUT_SECONDS, _DrainingUvicornServer, mcp
 
 
 @pytest.mark.asyncio
@@ -38,3 +38,8 @@ def test_uvicorn_signal_handler_sets_draining_before_parent(monkeypatch):
     _DrainingUvicornServer.handle_exit(object.__new__(_DrainingUvicornServer), 15, None)
     assert observed == [True]
     shutdown_state.reset_draining()
+
+
+def test_shutdown_budget_fits_docker_cleanup_window():
+    assert SHUTDOWN_STEP_TIMEOUT_SECONDS == 3
+    assert SHUTDOWN_STEP_TIMEOUT_SECONDS * 5 == 15
