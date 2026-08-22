@@ -11870,6 +11870,58 @@ Checks so far:
   рабочем дереве; collection: `1618 items / 65 deselected / 1553 selected`.
   Внешние review-gates не запускались по прямому ограничению задачи.
 
+## Этап 235. Контракт фильтров у list-инструментов
+
+- Инвентарь исходного кода на 22.08.2026 нашёл 36 функций с public raw
+  `filter`, тогда как Roadmap исторически говорит о 38. Для пилота это не
+  меняет scope: изменены только `get_cassa_closes`, `get_payments` и
+  `get_invoices`; 235.5 оставлен `todo`. Специальные mapping-инструменты не
+  менялись.
+- Read-only devtr6 probe подтвердил HTTP 200 для всех 38 scalar fields
+  пилота: cassaclose=7, payment=11, invoice=20. Контрольный `close_date` для
+  cassaclose вернул 406. Committed artifact содержит только names, а probe
+  использует константу `0`, печатает только `entity field status`, ограничен
+  TEST_DOMAIN=devtr6 и не сохраняет значения rows/keys/secrets.
+- Validation находится в существующей filter/list boundary:
+  `filters.validate_filter_properties` вызывается из `crud_list` только при
+  переданном allowlist. Имена strict/case-sensitive; empty/missing/non-string
+  property сохраняет старую downstream semantics. `get_payments` сохраняет
+  более специальную подсказку для raw `client_id`. Named constraints пилота
+  проходят через тот же allowlist. `FILTER_CONTRACT_VALIDATION_ENABLED=0`,
+  `false`, `no`, `off` — аварийный rollback к passthrough; unset/other values
+  включают validation, значение читается per-call.
+- **Spark перед Architecture Critique:** `gpt-5.3-codex-spark` недоступен по
+  provider usage limit; разрешённый fallback `gpt-5.4-mini` сначала упал до
+  чтения в read-only sandbox, затем прочитал PRD в danger-full-access, но не
+  выдал YAML verdict. Candidate findings отсутствуют; это review-output/runtime
+  failure, не finding продукта.
+- **Architecture Critique, Claude Opus:** valid attempt 2/3, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-22T184907Z-file-PRD_-235---list-_md-attempt-2-of-3.ICIaN9/claude-review-attempt-2-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=6617,
+  thinking_tokens=4592, len(result)=5686. Приняты: validation в existing
+  `filters`/`crud_list`, runtime kill switch, безопасное probe value и pacing,
+  named-filter regressions, real probe как freshness signal. Отклонены как
+  противоречащие подтверждённому stage scope: требование заменять hard reject
+  warning-only или расширять sampling за пределы возвращаемых scalar fields;
+  проектный контракт требует именно локальный reject по devtr6-probed fields.
+- **PRD review, Claude Opus:** valid attempt 1/3, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-22T185424Z-file-PRD_-235---list-_md-attempt-1-of-3.dQm8Rp/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=10351,
+  thinking_tokens=7469, len(result)=7353. Приняты: exact kill-switch contract,
+  per-call behaviour, standard ToolError message, devtr6-only guard and honest
+  request count. Отклонены: multi-record/custom-field expansion и warning-only
+  fallback расширяют user-approved contract; `0` type-risk опровергнут повторной
+  real probe (38/38 HTTP 200). Inventory issue is documented as historical
+  source/code mismatch; `get_invoice_documents` remains explicitly untouched.
+- **Committed-diff review, Claude Opus:** valid attempt 1/3, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-22T190909Z-git_range-HEAD__HEAD-attempt-1-of-3.WzlVZL/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=6306,
+  thinking_tokens=4980, len(result)=2332. Принят typed-`Filter` bypass:
+  validator теперь читает `.property` у `Filter`, а tests доказывают local
+  rejection до HTTP для payment и invoice. Finding о dynamic/custom fields
+  отклонён по зафиксированной user scope (ровно scalar fields devtr6) и
+  аварийному kill switch; mapping tools не передают allowlist и не изменены.
+
 - **Этап 234 (2026-08-21):** `server.py:48` подтверждённо вызывает
   `configure_error_tracking`; при пустых `ERROR_TRACKING_DSN` и `SENTRY_DSN`
   bootstrap возвращает `False`, то есть не ломает старт. Compose явно

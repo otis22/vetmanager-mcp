@@ -19,9 +19,53 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Iterable
+
+
+# Stage 235: public fields confirmed by the read-only devtr6 probe. Unprobed
+# endpoints deliberately have no entry and retain their existing behaviour.
+FILTER_FIELDS_BY_ENTITY: dict[str, frozenset[str]] = {
+    "cassaclose": frozenset({
+        "amount", "amount_cashless", "closed_user_id", "date", "id", "id_cassa", "status",
+    }),
+    "payment": frozenset({
+        "amount", "cassa_id", "cassaclose_id", "create_date", "description", "id",
+        "invoice_id", "parent_id", "payed_user", "payment_type", "status",
+    }),
+    "invoice": frozenset({
+        "amount", "call", "client_id", "clinic_id", "create_date", "creator_id",
+        "description", "discount", "doctor_id", "fiscal_section_id", "id", "increase",
+        "invoice_date", "night", "old_id", "paid_amount", "payment_status", "percent",
+        "pet_id", "status",
+    }),
+}
+
+
+def filter_contract_validation_enabled() -> bool:
+    """Return the runtime kill switch for stage-235 local rejection."""
+    return os.environ.get("FILTER_CONTRACT_VALIDATION_ENABLED", "1").lower() not in {
+        "0", "false", "no", "off",
+    }
+
+
+def validate_filter_properties(
+    filters: Iterable[Any] | None, allowed_properties: frozenset[str]
+) -> None:
+    """Reject unknown raw filter names before an upstream list request."""
+    if not filter_contract_validation_enabled():
+        return
+    for item in filters or ():
+        property_name = item.property if isinstance(item, Filter) else (
+            item.get("property") if isinstance(item, dict) else None
+        )
+        if isinstance(property_name, str) and property_name not in allowed_properties:
+            raise ValueError(
+                f"Unknown filter property '{property_name}'. Allowed properties: "
+                f"{', '.join(sorted(allowed_properties))}."
+            )
 
 
 class FilterOp(str, Enum):
