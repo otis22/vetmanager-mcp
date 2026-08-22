@@ -33,6 +33,7 @@ only-include = [
     "domain_validation.py",
     "env_utils.py",
     "error_tracking.py",
+    "tool_error_tracking.py",
     "exceptions.py",
     "filters.py",
     "host_resolver.py",

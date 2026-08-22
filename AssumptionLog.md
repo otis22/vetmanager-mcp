@@ -11992,3 +11992,16 @@ Checks so far:
   session integration rejected after it leaked storage state into unrelated
   FastMCP lifecycle tests, while existing direct FastMCP contract regressions
   preserve tool result without transport change.
+- Claude committed-diff review attempt 2/3: success, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-22T214436Z-git_range-HEAD__HEAD-attempt-2-of-3.8O4Xaj/claude-review-attempt-2-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=9878, thinking_tokens=7386,
+  len(result)=3317. Принят finding: сбой чтения request-local credentials не
+  должен менять исходный `ToolError`, поэтому lookup изолирован. `__cause__`
+  (без `__context__`) подтверждён текущим FastMCP wrapping `raise ToolError(...) from e`.
+  Два valid code-review slots исчерпаны; final Spark committed pass дал `[]`.
+- Первый PR CI выявил packaging gate: новый flat runtime module отсутствовал в
+  Hatch `only-include`. Добавлен `tool_error_tracking.py`; targeted packaging
+  test прошёл (`2 passed`, exit 0). ShellCheck и Bash syntax checks прошли с
+  exit 0. После исправления локальный canonical Docker contour завершился
+  `1584 passed, 2 skipped, 66 deselected`; предыдущая попытка была загрязнена
+  root-owned пустым `data/`, поэтому не учитывается как успешная проверка.
