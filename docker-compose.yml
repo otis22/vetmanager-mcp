@@ -83,6 +83,7 @@ services:
       - mcp-logs:/var/log/vetmanager-mcp
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
+    stop_grace_period: 45s
     logging:
       driver: json-file
       options:

@@ -19,6 +19,8 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
+from shutdown_state import is_draining
+
 DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./data/vetmanager.db"
 
 
@@ -92,6 +94,8 @@ def create_database_engine(database_url: str | None = None) -> AsyncEngine:
 @lru_cache(maxsize=1)
 def get_engine() -> AsyncEngine:
     """Return process-level async engine for storage access."""
+    if is_draining():
+        raise StorageError("Storage is shutting down.")
     return create_database_engine(get_database_url())
 
 
@@ -123,6 +127,15 @@ async def bootstrap_storage_schema() -> None:
             await conn.run_sync(Base.metadata.create_all)
     except SQLAlchemyError as exc:
         raise StorageError("Failed to bootstrap storage schema.") from exc
+
+
+async def shutdown_storage() -> None:
+    """Dispose the cached engine on its owning, still-running event loop."""
+    cached_engine: AsyncEngine | None = get_engine() if get_engine.cache_info().currsize else None
+    get_session_factory.cache_clear()
+    get_engine.cache_clear()
+    if cached_engine is not None:
+        await cached_engine.dispose()
 
 
 def reset_storage_state() -> None:
