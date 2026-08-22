@@ -11967,3 +11967,28 @@ Checks so far:
   уточнена владельцем; alert-semantics finding принят как документированное
   изменение counter. Spark был недоступен: лимит модели исчерпан, fallback не
   выдал валидный verdict.
+
+## Этап 236. Полезный контекст в событиях трекинга
+
+- Tool failure capture располагается inner относительно OAuth FastMCP middleware,
+  поэтому `account_id` читается из request-local RuntimeCredentials. Один manual
+  Sentry event получает tool/account/status/transaction; automatic duplicate
+  подавляется только marker-ом того же ToolError в `before_send`.
+- `Unknown filter property` — FilterPropertyValidationError, fixed business
+  metric `filter_property_rejected` и warning с именем поля, без Sentry error.
+- Spark Architecture/PRD/test reviews: bwrap read-only fallback использовал
+  danger-full-access review-only. Приняты exact suppression, release build-only,
+  privacy и test findings; отклонены scope-expanding production/dashboard asks.
+- Claude Architecture Critique attempt 1/3: success, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-22T211655Z-file-PRD_-236-----_md-attempt-1-of-3.YREC0p/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=7397, thinking_tokens=4768, len(result)=5495.
+- Claude PRD review attempt 2/3: success, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-22T212136Z-file-PRD_-236-----_md-attempt-2-of-3.bxpcoK/claude-review-attempt-2-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=9014, thinking_tokens=7487, len(result)=4154.
+- Claude uncommitted test/diff review attempt 1/3: success, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-22T213041Z-file-_tmp_stage236-uncommitted-diff_patch-attempt-1-of-3.lvlG7H/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=15540, thinking_tokens=8432, len(result)=7752. Приняты
+  marker только по explicit cause (не context) и targeted regressions; HTTP
+  session integration rejected after it leaked storage state into unrelated
+  FastMCP lifecycle tests, while existing direct FastMCP contract regressions
+  preserve tool result without transport change.

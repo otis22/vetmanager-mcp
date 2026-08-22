@@ -131,6 +131,8 @@ _ALLOWED_BUSINESS_EVENTS = frozenset({
     # Stage 197: user copied the issued token / ready-made client config.
     "token_copied",
     "oauth_grant_revoked",
+    # Stage 236: fixed-name signal for local stage-235 filter rejections.
+    "filter_property_rejected",
     # Stage 154: per-threshold expiry warnings (cardinality 3 — safe).
     "token_expiry_warning_1d",
     "token_expiry_warning_7d",

@@ -19,6 +19,8 @@ def test_deploy_server_has_compose_helper_and_postgres_support() -> None:
     assert 'compose run -T --rm mcp alembic upgrade head </dev/null' in script_text
     assert 'pre-deploy' in script_text
     assert 'compose up -d --force-recreate --no-build mcp' in script_text
+    assert 'git rev-parse --verify HEAD' in script_text
+    assert '--build-arg ERROR_TRACKING_RELEASE="${DEPLOY_GIT_SHA}"' in script_text
     assert 'post_deploy_smoke_checks.sh' in script_text
 
 

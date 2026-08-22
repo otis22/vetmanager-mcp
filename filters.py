@@ -24,6 +24,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Iterable
 
+from observability_logging import RUNTIME_LOGGER
+from service_metrics import record_business_event
+
 
 # Stage 235: public fields confirmed by the read-only devtr6 probe. Unprobed
 # endpoints deliberately have no entry and retain their existing behaviour.
@@ -44,6 +47,10 @@ FILTER_FIELDS_BY_ENTITY: dict[str, frozenset[str]] = {
 }
 
 
+class FilterPropertyValidationError(ValueError):
+    """Expected local rejection of a filter field not probed for this tool."""
+
+
 def filter_contract_validation_enabled() -> bool:
     """Return the runtime kill switch for stage-235 local rejection."""
     return os.environ.get("FILTER_CONTRACT_VALIDATION_ENABLED", "1").lower() not in {
@@ -62,7 +69,15 @@ def validate_filter_properties(
             item.get("property") if isinstance(item, dict) else None
         )
         if isinstance(property_name, str) and property_name not in allowed_properties:
-            raise ValueError(
+            record_business_event("filter_property_rejected")
+            RUNTIME_LOGGER.warning(
+                "Unknown filter property rejected locally",
+                extra={
+                    "event_name": "filter_property_rejected",
+                    "filter_property": property_name,
+                },
+            )
+            raise FilterPropertyValidationError(
                 f"Unknown filter property '{property_name}'. Allowed properties: "
                 f"{', '.join(sorted(allowed_properties))}."
             )

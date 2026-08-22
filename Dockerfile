@@ -4,6 +4,9 @@ FROM python:3.12-slim AS base
 # preventing permission issues with bind-mounted source code.
 ARG UID=1000
 ARG GID=1000
+ARG ERROR_TRACKING_RELEASE=unknown
+
+ENV ERROR_TRACKING_RELEASE=${ERROR_TRACKING_RELEASE}
 
 RUN groupadd -g "${GID}" app && \
     useradd -u "${UID}" -g "${GID}" -m -s /bin/bash app

@@ -137,3 +137,13 @@ def test_mcp_compose_contract_enables_persistent_and_error_tracking_envs():
         'max-file: "3"',
     ):
         assert value in compose
+
+
+def test_release_is_a_build_arg_not_a_runtime_compose_override():
+    compose = Path("docker-compose.yml").read_text()
+    dockerfile = Path("Dockerfile").read_text()
+
+    assert "ARG ERROR_TRACKING_RELEASE=unknown" in dockerfile
+    assert "ENV ERROR_TRACKING_RELEASE=${ERROR_TRACKING_RELEASE}" in dockerfile
+    assert "ERROR_TRACKING_RELEASE: ${GIT_SHA:-unknown}" in compose
+    assert "ERROR_TRACKING_RELEASE: ${ERROR_TRACKING_RELEASE:-}" not in compose

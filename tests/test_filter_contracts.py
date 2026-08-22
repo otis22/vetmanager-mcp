@@ -8,7 +8,8 @@ import pytest
 import respx
 from fastmcp.exceptions import ToolError
 
-from filters import FILTER_FIELDS_BY_ENTITY, validate_filter_properties
+from filters import FILTER_FIELDS_BY_ENTITY, FilterPropertyValidationError, validate_filter_properties
+from service_metrics import snapshot_service_metrics
 from server import mcp
 from tests.runtime_factories import patch_runtime_credentials
 
@@ -37,11 +38,12 @@ def test_finance_filter_allowlists_match_real_probe_artifact():
 
 
 def test_filter_validation_lists_allowed_properties():
-    with pytest.raises(ValueError, match="Unknown filter property 'close_date'.*date"):
+    with pytest.raises(FilterPropertyValidationError, match="Unknown filter property 'close_date'.*date"):
         validate_filter_properties(
             [{"property": "close_date", "operator": "=", "value": 1}],
             FILTER_FIELDS_BY_ENTITY["cassaclose"],
         )
+    assert snapshot_service_metrics()["business_events_total"]["filter_property_rejected"] == 1
 
 
 def test_filter_validation_kill_switch_restores_passthrough(monkeypatch):
@@ -50,6 +52,7 @@ def test_filter_validation_kill_switch_restores_passthrough(monkeypatch):
         [{"property": "close_date", "operator": "=", "value": 1}],
         FILTER_FIELDS_BY_ENTITY["cassaclose"],
     )
+    assert "filter_property_rejected" not in snapshot_service_metrics()["business_events_total"]
 
 
 @pytest.mark.asyncio
@@ -67,6 +70,7 @@ async def test_get_cassa_closes_rejects_incident_filter_before_http():
             )
 
     assert not route.called
+    assert snapshot_service_metrics()["business_events_total"]["filter_property_rejected"] == 1
 
 
 @pytest.mark.asyncio

@@ -15,6 +15,7 @@ from storage import bootstrap_storage_schema, get_database_url, initialize_stora
 from shutdown_state import begin_draining, reset_draining
 from structured_logging import configure_logging
 from tool_oauth_security import OAuthChallengeMiddleware, apply_tool_oauth_security_metadata
+from tool_error_tracking import ToolErrorTrackingMiddleware
 from tool_descriptions import enhance_tool_descriptions
 from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
@@ -127,6 +128,9 @@ mcp = FastMCP(
     lifespan=_runtime_lifespan,
 )
 mcp.add_middleware(OAuthChallengeMiddleware())
+# Must remain after OAuth middleware: its call_next executes inside the
+# request-local RuntimeCredentials context, which supplies account_id safely.
+mcp.add_middleware(ToolErrorTrackingMiddleware())
 
 from tools import register_all  # noqa: E402
 from prompts import register_prompts  # noqa: E402

@@ -55,13 +55,15 @@ if [ -z "${REMOTE_PEPPER_FILE}" ]; then
   exit 1
 fi
 
-ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" bash -s "${REMOTE_DIR}" "${SSL_DOMAIN}" "${SKIP_GIT_PULL}" "${CERTBOT_EMAIL_ARG}" "${REMOTE_PEPPER_FILE}" << 'REMOTE'
+DEPLOY_GIT_SHA="${GIT_SHA:-}"
+ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" bash -s "${REMOTE_DIR}" "${SSL_DOMAIN}" "${SKIP_GIT_PULL}" "${CERTBOT_EMAIL_ARG}" "${REMOTE_PEPPER_FILE}" "${DEPLOY_GIT_SHA}" << 'REMOTE'
 set -euo pipefail
 REMOTE_DIR="$1"
 SSL_DOMAIN="$2"
 SKIP_GIT_PULL="$3"
 CERTBOT_EMAIL="$4"
 REMOTE_PEPPER_FILE="$5"
+DEPLOY_GIT_SHA="$6"
 if [ "${CERTBOT_EMAIL}" = "__EMPTY__" ]; then
   CERTBOT_EMAIL=""
 fi
@@ -189,8 +191,21 @@ case "${GRAFANA_ADMIN_PASSWORD}" in
 esac
 
 # ── Build image once ─────────────────────────────────────────────────────────
+if [ -z "${DEPLOY_GIT_SHA}" ]; then
+  if ! DEPLOY_GIT_SHA="$(git rev-parse --verify HEAD)"; then
+    echo "ERROR: GIT_SHA is required when the deployed source has no verified git HEAD."
+    exit 1
+  fi
+fi
+case "${DEPLOY_GIT_SHA}" in
+  *[!0-9a-f]*|"")
+    echo "ERROR: GIT_SHA must be a lowercase hexadecimal commit SHA."
+    exit 1
+    ;;
+esac
 echo "--> Building Docker image..."
-docker build --target production --build-arg UID="${UID_VAL}" --build-arg GID="${GID_VAL}" -t vetmanager-mcp .
+docker build --target production --build-arg UID="${UID_VAL}" --build-arg GID="${GID_VAL}" \
+  --build-arg ERROR_TRACKING_RELEASE="${DEPLOY_GIT_SHA}" -t vetmanager-mcp .
 
 # ── Pre-deploy PostgreSQL backup ─────────────────────────────────────────────
 BACKUP_DIR="/var/backups/vetmanager-postgres"
