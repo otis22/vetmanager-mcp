@@ -11913,6 +11913,14 @@ Checks so far:
   fallback расширяют user-approved contract; `0` type-risk опровергнут повторной
   real probe (38/38 HTTP 200). Inventory issue is documented as historical
   source/code mismatch; `get_invoice_documents` remains explicitly untouched.
+- **Committed-diff review, Claude Opus:** valid attempt 1/3, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-22T190909Z-git_range-HEAD__HEAD-attempt-1-of-3.WzlVZL/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=6306,
+  thinking_tokens=4980, len(result)=2332. Принят typed-`Filter` bypass:
+  validator теперь читает `.property` у `Filter`, а tests доказывают local
+  rejection до HTTP для payment и invoice. Finding о dynamic/custom fields
+  отклонён по зафиксированной user scope (ровно scalar fields devtr6) и
+  аварийному kill switch; mapping tools не передают allowlist и не изменены.
 
 - **Этап 234 (2026-08-21):** `server.py:48` подтверждённо вызывает
   `configure_error_tracking`; при пустых `ERROR_TRACKING_DSN` и `SENTRY_DSN`
