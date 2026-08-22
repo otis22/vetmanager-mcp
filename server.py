@@ -1,7 +1,8 @@
-import atexit
 import asyncio
 import os
-import signal
+from contextlib import asynccontextmanager
+
+import uvicorn
 
 from fastmcp import FastMCP
 
@@ -10,12 +11,15 @@ from error_tracking import configure_error_tracking
 from host_resolver import reset_billing_resolver
 from observability_logging import RUNTIME_LOGGER
 from rate_limit_backend import shutdown_rate_limit_backend
-from storage import bootstrap_storage_schema, get_database_url, initialize_storage
+from storage import bootstrap_storage_schema, get_database_url, initialize_storage, shutdown_storage
+from shutdown_state import begin_draining, reset_draining
 from structured_logging import configure_logging
 from tool_oauth_security import OAuthChallengeMiddleware, apply_tool_oauth_security_metadata
 from tool_descriptions import enhance_tool_descriptions
 from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
+
+SHUTDOWN_STEP_TIMEOUT_SECONDS = 3
 
 
 def _log_startup_aborted(exc: Exception, *, step: str) -> None:
@@ -44,6 +48,58 @@ def _load_runtime_config() -> tuple[str, str, int, str]:
     )
 
 
+async def _close_step(name, operation) -> None:
+    try:
+        await asyncio.wait_for(operation(), timeout=SHUTDOWN_STEP_TIMEOUT_SECONDS)
+    except Exception:
+        RUNTIME_LOGGER.warning("Graceful shutdown error", extra={"event_name": "shutdown_error", "step": name}, exc_info=True)
+
+
+async def _graceful_shutdown() -> None:
+    await _close_step("shutdown_storage", shutdown_storage)
+    await _close_step("reset_shared_http_client", reset_shared_http_client)
+    await _close_step("reset_breakers", reset_breakers)
+    await _close_step("reset_billing_resolver", reset_billing_resolver)
+    await _close_step("shutdown_rate_limit_backend", shutdown_rate_limit_backend)
+
+
+@asynccontextmanager
+async def _runtime_lifespan(_server):
+    reset_draining()
+    try:
+        await initialize_storage()
+        if get_database_url().startswith("sqlite"):
+            await bootstrap_storage_schema()
+        yield
+    finally:
+        await _graceful_shutdown()
+
+
+class _DrainingUvicornServer(uvicorn.Server):
+    def handle_exit(self, sig, frame) -> None:
+        begin_draining()
+        RUNTIME_LOGGER.info("Shutdown drain started", extra={"event_name": "shutdown_drain_started", "signal": sig})
+        super().handle_exit(sig, frame)
+
+
+def _run_http_server(*, transport: str, host: str, port: int, path: str) -> None:
+    """Run the FastMCP HTTP app while preserving FastMCP's Uvicorn defaults."""
+    app = mcp.http_app(path=path, transport=transport)
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        lifespan="on",
+        timeout_graceful_shutdown=20,
+        ws="websockets-sansio",
+        log_level=os.environ.get("FASTMCP_LOG_LEVEL", "INFO").lower(),
+        access_log=True,
+        proxy_headers=True,
+        forwarded_allow_ips=os.environ.get("FORWARDED_ALLOW_IPS"),
+    )
+    asyncio.run(_DrainingUvicornServer(config).serve())
+
+
 configure_logging()
 _run_startup_step("configure_error_tracking", configure_error_tracking)
 
@@ -68,6 +124,7 @@ mcp = FastMCP(
         "Replace names, patients, phones, and addresses with <client>, <owner>, <patient>, "
         "<phone>, and <address>."
     ),
+    lifespan=_runtime_lifespan,
 )
 mcp.add_middleware(OAuthChallengeMiddleware())
 
@@ -80,78 +137,6 @@ register_web_routes(mcp)
 enhance_tool_descriptions(mcp)
 apply_tool_oauth_security_metadata(mcp)
 
-async def _graceful_shutdown() -> None:
-    """Stage 99.3: close shared httpx.AsyncClient keep-alive sockets with
-    FIN instead of RST on SIGTERM / process exit. Also drop breaker state
-    so a future in-process restart starts clean.
-
-    Stage 107.8 (obs): structured logs via RUNTIME_LOGGER with event_name
-    so operators can grep shutdown paths; the `reset_breakers` branch
-    was previously silent on failure.
-    """
-    try:
-        await reset_shared_http_client()
-    except Exception:
-        RUNTIME_LOGGER.warning(
-            "Graceful shutdown error",
-            extra={"event_name": "shutdown_error", "step": "reset_shared_http_client"},
-            exc_info=True,
-        )
-    try:
-        await reset_breakers()
-    except Exception:
-        RUNTIME_LOGGER.warning(
-            "Graceful shutdown error",
-            extra={"event_name": "shutdown_error", "step": "reset_breakers"},
-            exc_info=True,
-        )
-    # Stage 113.F7: close billing-api resolver client + drop TTL cache.
-    try:
-        await reset_billing_resolver()
-    except Exception:
-        RUNTIME_LOGGER.warning(
-            "Graceful shutdown error",
-            extra={"event_name": "shutdown_error", "step": "reset_billing_resolver"},
-            exc_info=True,
-        )
-    try:
-        await shutdown_rate_limit_backend()
-    except Exception:
-        RUNTIME_LOGGER.warning(
-            "Graceful shutdown error",
-            extra={"event_name": "shutdown_error", "step": "shutdown_rate_limit_backend"},
-            exc_info=True,
-        )
-
-
-def _install_shutdown_handlers() -> None:
-    """Register SIGTERM/SIGINT handlers that drain the http pool cleanly.
-
-    FastMCP's internal uvicorn runner already handles SIGINT — we wrap it
-    only to guarantee shared-client cleanup. Uses `atexit` as a final
-    backstop for unusual exit paths (test runners, embedded use).
-    """
-
-    def _run_once() -> None:
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(_graceful_shutdown())
-            else:
-                loop.run_until_complete(_graceful_shutdown())
-        except Exception:
-            pass
-
-    atexit.register(_run_once)
-    # SIGTERM (docker stop) and SIGINT (Ctrl+C).
-    try:
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            signal.signal(sig, lambda *_: _run_once())
-    except (ValueError, OSError):
-        # Not main thread or unsupported platform — atexit is sufficient.
-        pass
-
-
 if __name__ == "__main__":
     from secret_manager import SecretManagerError, validate_required_secrets
 
@@ -159,22 +144,18 @@ if __name__ == "__main__":
         _run_startup_step("validate_required_secrets", validate_required_secrets)
     except SecretManagerError as exc:
         raise SystemExit(1) from exc
-    _run_startup_step("initialize_storage", lambda: asyncio.run(initialize_storage()))
     _run_startup_step(
         "validate_feedback_runtime_config",
         lambda: validate_feedback_runtime_config(database_url=get_database_url()),
     )
-    if get_database_url().startswith("sqlite"):
-        _run_startup_step(
-            "bootstrap_storage_schema",
-            lambda: asyncio.run(bootstrap_storage_schema()),
-        )
-    _install_shutdown_handlers()
     transport, host, port, path = _run_startup_step(
         "transport_config",
         _load_runtime_config,
     )
-    _run_startup_step(
-        "mcp_run",
-        lambda: mcp.run(transport=transport, host=host, port=port, path=path),
-    )
+    if transport not in {"http", "streamable-http", "sse"}:
+        mcp.run(transport=transport, host=host, port=port, path=path)
+    else:
+        _run_startup_step(
+            "mcp_run",
+            lambda: _run_http_server(transport=transport, host=host, port=port, path=path),
+        )

@@ -53,6 +53,7 @@ only-include = [
     "runtime_auth.py",
     "secret_manager.py",
     "server.py",
+    "shutdown_state.py",
     "service_metrics.py",
     "service_token_service.py",
     "storage.py",
