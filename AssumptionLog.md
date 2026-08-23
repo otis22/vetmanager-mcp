@@ -12264,6 +12264,28 @@ Checks so far:
   findings отсутствуют. После commit будет выполнен committed-diff review
   runner'ом как подтверждение исправления.
 
+## Этап 250. Реальный тест закрытий счёта (2026-08-24)
+
+- Реальный opt-in test закрепляет fixture devtr6 invoice `8`: raw filters для
+  `minus_document_id` и `plus_document_id` должны вернуть непустые наборы;
+  tool result обязан равняться их union без повторов. Fixture исчезла бы только
+  при намеренном изменении тестовых данных, тогда test честно skip'ается вместо
+  ложного утверждения о двухсторонности.
+
+## Этап 253. Один ключ списка медкарт (2026-08-24)
+
+- Alias `medicalcards` добавлен в `ef446dd` одновременно с исправлением
+  endpoint как временная совместимость. Он не нужен для outgoing response:
+  canonical REST key — `medicalCards`, а fallback reads остаются только для
+  upstream variants. `unwrap_single_record(..., "medicalCards")` в update
+  намеренно не менялся.
+- Static search `data\s*\[[^]]+\]\s*=` по `tools/` не нашёл других
+  list-response alias mutations; единственное оставшееся присваивание в
+  `tools/user.py` — projection разрешённых полей, не дублирование списка.
+- Полный mock/container contour после изменения: `1626 passed, 2 skipped,
+  67 deselected`, exit 0. Opt-in real contour с devtr6 credentials завершился
+  без печати credentials; regression invoice 8 прошёл в его первой части.
+
 - `possible_pii=true` не означает, что персональные данные лежат в базе:
   санитайзер отрабатывает **до** записи и уже заменил их на `[REDACTED]`.
   Флаг — след того, что чистка была. Поэтому `redact` нужен не для «удалить

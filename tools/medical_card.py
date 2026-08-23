@@ -91,11 +91,6 @@ def register(mcp: FastMCP) -> None:
             filters=combined_filters,
         )
         result = await vc.get(_MC_ENDPOINT, params=params)
-        # Normalise response: expose records under both "medicalCards" and "medicalcards"
-        # so that existing assistant code that checks either key keeps working.
-        data = result.get("data", {})
-        if isinstance(data, dict) and _MC_KEY in data and "medicalcards" not in data:
-            data["medicalcards"] = data[_MC_KEY]
         return result
 
     @mcp.tool
