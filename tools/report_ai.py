@@ -4,6 +4,7 @@ import json
 import time
 from collections import OrderedDict
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
@@ -64,6 +65,7 @@ _REPORT_AI_FINALIZED_OBSERVATIONS: OrderedDict[_ReportAiQueueObservationKey, flo
 _REPORT_AI_EXPORT_OBSERVATIONS: OrderedDict[
     _ReportAiQueueObservationKey, dict[str, float | bool]
 ] = OrderedDict()
+_REPORT_AI_CLINIC_TIMEZONES: OrderedDict[tuple[int | None, int | None, int], str] = OrderedDict()
 _REPORT_AI_STAGE_BY_STATUS = {
     "queued": "queued",
     "recognizing": "recognized",
@@ -88,16 +90,32 @@ def _unix_seconds() -> float:
     return time.time()
 
 
-def _upstream_job_age_seconds(job: dict) -> int | None:
-    """Return safe wall-clock age from Vetmanager-created timestamp when parseable."""
+async def _upstream_job_age_seconds(job: dict) -> int | None:
+    """Use clinic-local created_at only with a verified IANA clinic timezone."""
     created_at = job.get("created_at")
-    if not isinstance(created_at, str):
+    clinic_id = job.get("clinic_id")
+    key = _report_ai_queue_observation_key({"id": clinic_id})
+    if not isinstance(created_at, str) or key is None:
         return None
+    timezone_name = _REPORT_AI_CLINIC_TIMEZONES.get(key)
+    if timezone_name is None:
+        try:
+            payload = await VetmanagerClient().get(f"/rest/api/clinics/{key[2]}")
+        except VetmanagerError:
+            RUNTIME_LOGGER.warning("report_ai_queue_age_timezone_unavailable", extra={"event_name": "report_ai_queue_age_timezone_unavailable"})
+            return None
+        data = payload.get("data") if isinstance(payload, dict) else None
+        clinic = data.get("clinics") if isinstance(data, dict) else None
+        if isinstance(clinic, list):
+            clinic = clinic[0] if clinic else None
+        timezone_name = clinic.get("time_zone") if isinstance(clinic, dict) else None
+        if not isinstance(timezone_name, str) or not timezone_name:
+            RUNTIME_LOGGER.warning("report_ai_queue_age_timezone_unavailable", extra={"event_name": "report_ai_queue_age_timezone_unavailable"})
+            return None
+        _REPORT_AI_CLINIC_TIMEZONES[key] = timezone_name
     try:
-        created = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").replace(
-            tzinfo=timezone.utc
-        )
-    except ValueError:
+        created = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZoneInfo(timezone_name))
+    except (ValueError, ZoneInfoNotFoundError):
         return None
     return max(0, int(_unix_seconds() - created.timestamp()))
 
@@ -107,6 +125,7 @@ def _reset_report_ai_queue_observations() -> None:
     _REPORT_AI_LIFECYCLE_OBSERVATIONS.clear()
     _REPORT_AI_FINALIZED_OBSERVATIONS.clear()
     _REPORT_AI_EXPORT_OBSERVATIONS.clear()
+    _REPORT_AI_CLINIC_TIMEZONES.clear()
 
 
 def _report_ai_queue_observation_count() -> int:
@@ -388,14 +407,14 @@ def _annotate_report_ai_workarounds(payload: dict) -> dict:
     return payload
 
 
-def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | None = None) -> dict:
+async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | None = None) -> dict:
     data = payload.get("data")
     job = data.get("job") if isinstance(data, dict) else payload.get("job")
     if not isinstance(job, dict):
         return payload
 
     observed_age_seconds = _observe_report_ai_queue(job, now=now)
-    upstream_age_seconds = _upstream_job_age_seconds(job)
+    upstream_age_seconds = await _upstream_job_age_seconds(job)
     diagnostic_age_seconds = upstream_age_seconds if upstream_age_seconds is not None else observed_age_seconds
     if (
         diagnostic_age_seconds is None
@@ -447,9 +466,9 @@ def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | None = 
     return payload
 
 
-def _annotate_report_ai_job_payload(payload: dict) -> dict:
+async def _annotate_report_ai_job_payload(payload: dict) -> dict:
     observed_at = _monotonic_seconds()
-    annotated = _annotate_report_ai_queue_diagnostics(
+    annotated = await _annotate_report_ai_queue_diagnostics(
         _annotate_report_ai_workarounds(payload), now=observed_at
     )
     job = _extract_job(annotated)
@@ -744,7 +763,7 @@ def register(mcp: FastMCP) -> None:
             "GET", f"/rest/api/report-ai-job/{job_id}", tool_name="get_report_ai_job",
             metric_endpoint="/rest/api/report-ai-job/{id}",
         )
-        return _annotate_report_ai_job_payload(payload)
+        return await _annotate_report_ai_job_payload(payload)
 
     @mcp.tool
     async def confirm_report_ai_job_candidate(job_id: int, report_id: int) -> dict:
