@@ -1,5 +1,6 @@
 """Financial entity tools: Payment, ClosingOfInvoices, InvoiceDocument, Cassa, CassaClose."""
 
+import asyncio
 from datetime import date, timedelta
 
 from fastmcp import FastMCP
@@ -66,6 +67,25 @@ def register(mcp: FastMCP) -> None:
                     "it is converted to document_id internally. Do not also pass "
                     "invoice_id/invoiceId/documentId/document_id in filter."
                 )
+
+    def _reject_closing_invoice_filter_conflict(filters: list[dict] | None) -> None:
+        for item in filters or []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("property") in {"minus_document_id", "plus_document_id"}:
+                raise ValueError(
+                    "Do not pass minus_document_id or plus_document_id together with "
+                    "invoice_id; invoice_id searches both sides."
+                )
+
+    def _closing_rows(response: dict) -> list[dict]:
+        data = response.get("data") if isinstance(response, dict) else None
+        if isinstance(data, list):
+            return [row for row in data if isinstance(row, dict)]
+        if isinstance(data, dict):
+            rows = data.get("closingOfInvoices") or []
+            return [row for row in rows if isinstance(row, dict)]
+        return []
 
     def _extract_entity_rows(resp: dict, entity_key: str) -> tuple[list[dict], int | None]:
         data = resp.get("data", {}) if isinstance(resp, dict) else {}
@@ -327,23 +347,59 @@ def register(mcp: FastMCP) -> None:
     async def get_closing_of_invoices(
         limit: LimitParam = 20,
         offset: int = 0,
+        invoice_id: int = 0,
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
     ) -> dict:
         """List invoice closing records (payments applied to invoices).
 
+        An invoice can occur on either document side; use `invoice_id` rather
+        than guessing from minus/plus fields.
+
         Args:
             limit: Max records to return.
-            offset: Pagination offset.
+            offset: Pagination offset. With invoice_id it is applied after both
+                document sides are merged.
+            invoice_id: Optional invoice ID. Searches both plus and minus
+                document sides, merges results, and removes duplicate IDs.
             filter/sort: Optional raw clauses. Allowed properties for both: client_id,
                 create_date, id, minus_amount, minus_document_id,
                 minus_type_document, plus_amount, plus_document_id,
                 plus_type_document.
         """
-        return await crud_list(
-            "/rest/api/closingOfInvoices", limit=limit, offset=offset, sort=sort, filters=filter,
-            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["closingOfInvoices"],
+        if not invoice_id:
+            return await crud_list(
+                "/rest/api/closingOfInvoices", limit=limit, offset=offset, sort=sort, filters=filter,
+                allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["closingOfInvoices"],
+            )
+        _reject_closing_invoice_filter_conflict(filter)
+        base_filters = list(filter or [])
+        minus, plus = await asyncio.gather(
+            crud_list(
+                "/rest/api/closingOfInvoices", limit=100, offset=0, sort=sort,
+                filters=base_filters + [_filter_eq("minus_document_id", invoice_id)],
+                allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["closingOfInvoices"],
+            ),
+            crud_list(
+                "/rest/api/closingOfInvoices", limit=100, offset=0, sort=sort,
+                filters=base_filters + [_filter_eq("plus_document_id", invoice_id)],
+                allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["closingOfInvoices"],
+            ),
         )
+        seen_ids: set[object] = set()
+        merged: list[dict] = []
+        for row in _closing_rows(minus) + _closing_rows(plus):
+            row_id = row.get("id")
+            dedupe_key = row_id if row_id is not None else id(row)
+            if dedupe_key not in seen_ids:
+                seen_ids.add(dedupe_key)
+                merged.append(row)
+        return {
+            "data": {
+                "closingOfInvoices": merged[offset:offset + limit],
+                "totalCount": len(merged),
+            }
+        }
 
     @mcp.tool
     async def get_closing_of_invoice_by_id(closing_id: int) -> dict:

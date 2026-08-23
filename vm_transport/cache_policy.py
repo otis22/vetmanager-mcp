@@ -18,11 +18,12 @@ CACHE_TTL_SHORT_SECONDS = 60.0
 # Entities that change often and should use the short TTL.
 SHORT_TTL_ENTITIES = frozenset({
     "admission",
-    "medicalcard",
+    "medicalcards",
     "invoice",
     "client",
     "pet",
     "payment",
+    "hospital",
     "report-ai-job",
 })
 

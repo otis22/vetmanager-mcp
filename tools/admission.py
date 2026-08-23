@@ -1,10 +1,10 @@
-from datetime import date as _date, timedelta as _td
+from datetime import date as _date, datetime as _datetime, timedelta as _td
 
 from fastmcp import FastMCP
 
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, gte as _filter_gte, in_ as _filter_in, lt as _filter_lt
 from resources.admission_status import ACTIVE_ADMISSION_STATUSES  # noqa: F401 — BC re-export
-from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, unwrap_single_record
 from validators import (
     LimitParam,
     VETMANAGER_MAX_OFFSET,
@@ -362,10 +362,30 @@ def register(mcp: FastMCP) -> None:
             clinic_id: New clinic ID (0 = no change).
             admission_type: Admission type (leave empty to keep current).
         """
-        payload: dict = {}
+        current_response = await crud_get_by_id("/rest/api/admission", admission_id)
+        current = unwrap_single_record(current_response, "admission")
+        if current is None:
+            raise ValueError("Admission read returned no record; update was not sent.")
+        required_context = ("clinic_id", "admission_date", "admission_length")
+        missing_context = [field for field in required_context if current.get(field) is None]
+        if missing_context:
+            raise ValueError("Admission lacks required update context: " + ", ".join(missing_context))
+        try:
+            start = _datetime.strptime(current["admission_date"], "%Y-%m-%d %H:%M:%S")
+            hours, minutes, seconds = (int(part) for part in current["admission_length"].split(":"))
+        except (TypeError, ValueError):
+            raise ValueError("Admission has invalid admission_date or admission_length; update was not sent.") from None
+        duration = _td(hours=hours, minutes=minutes, seconds=seconds)
+        payload: dict = {
+            "clinic_id": current["clinic_id"],
+            "start": start.strftime("%Y-%m-%d %H:%M:%S"),
+            "end": (start + duration).strftime("%Y-%m-%d %H:%M:%S"),
+        }
         _validate_admission_status(status)
         if date:
-            payload["admission_date"] = normalize_vm_datetime(date, field_name="admission_date")
+            payload["start"] = normalize_vm_datetime(date, field_name="admission_date")
+            new_start = _datetime.strptime(payload["start"], "%Y-%m-%d %H:%M:%S")
+            payload["end"] = (new_start + duration).strftime("%Y-%m-%d %H:%M:%S")
         if doctor_id:
             payload["user_id"] = doctor_id
         if client_id:

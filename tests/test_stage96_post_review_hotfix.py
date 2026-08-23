@@ -67,6 +67,12 @@ async def test_update_admission_maps_fields_to_api_contract():
     """Same boundary mapping as create_admission (stage 86): external
     pet_id/doctor_id/date → patient_id/user_id/admission_date in payload."""
     billing_mock()
+    respx.get(f"{BASE}/rest/api/admission/42").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 1, "admission": {
+            "id": 42, "clinic_id": 9, "admission_date": "2026-05-01 09:00:00",
+            "admission_length": "00:30:00",
+        }}})
+    )
     route = respx.put(f"{BASE}/rest/api/admission/42").mock(
         return_value=httpx.Response(200, json={"data": {"id": 42}})
     )
@@ -85,8 +91,10 @@ async def test_update_admission_maps_fields_to_api_contract():
     body = _body_of(route)
     assert body["patient_id"] == 5
     assert body["user_id"] == 3
-    assert body["admission_date"] == "2026-05-01 10:00:00"
+    assert body["start"] == "2026-05-01 10:00:00"
+    assert body["end"] == "2026-05-01 10:30:00"
     assert body["status"] == "accepted"
+    assert body["clinic_id"] == 9
     assert "pet_id" not in body
     assert "doctor_id" not in body
     assert "date" not in body
@@ -96,6 +104,12 @@ async def test_update_admission_maps_fields_to_api_contract():
 @respx.mock
 async def test_update_admission_only_sends_provided_fields():
     billing_mock()
+    respx.get(f"{BASE}/rest/api/admission/42").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 1, "admission": {
+            "id": 42, "clinic_id": 9, "admission_date": "2026-05-01 09:00:00",
+            "admission_length": "00:30:00",
+        }}})
+    )
     route = respx.put(f"{BASE}/rest/api/admission/42").mock(
         return_value=httpx.Response(200, json={"data": {"id": 42}})
     )
@@ -106,7 +120,10 @@ async def test_update_admission_only_sends_provided_fields():
             {"admission_id": 42, "status": "not_confirmed"},
         )
     body = _body_of(route)
-    assert body == {"status": "not_confirmed"}
+    assert body == {
+        "clinic_id": 9, "start": "2026-05-01 09:00:00",
+        "end": "2026-05-01 09:30:00", "status": "not_confirmed",
+    }
 
 
 # ── 96.2 get_client_profile status IN tuple ─────────────────────────────────

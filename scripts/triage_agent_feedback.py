@@ -519,6 +519,9 @@ async def _link(args: argparse.Namespace) -> None:
             report = await session.get(AgentFeedbackReport, report_id)
             if report is None:
                 raise SystemExit(f"Report not found: {report_id}")
+            if report.known_issue_id == issue.id:
+                print(f"report #{report.id} already linked to known_issue #{issue.id}")
+                continue
             report.known_issue_id = issue.id
             report.status = FEEDBACK_STATUS_LINKED
             issue.report_count = (issue.report_count or 0) + 1
