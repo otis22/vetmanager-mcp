@@ -12348,3 +12348,17 @@ Checks so far:
 - Ошибка явно сообщает, что запись не сохранена, и запрещает опасный workaround
   со стиранием диагноза. На devslon67 live validation требует REST-ключа у
   супервизора; локально покрыт точный upstream response и non-matching 500.
+
+### Follow-up review — 2026-08-23
+
+- **Этап 254**: сравнение с `HEAD_SHA^` оказалось недостаточным для direct
+  push из нескольких commit'ов, если последний documentation-only. Базой теперь
+  служит `head_sha` последнего workflow run, у которого job `deploy` завершился
+  `success`; checkout получает полную историю. При первом запуске, недоступном
+  GitHub API или отсутствии доказанного baseline workflow делает deploy
+  (`should_deploy=true`), а не рискует тихо пропустить код.
+- **Этап 258**: default wildcard допустим только когда пользователь не выбирал
+  более узкую политику. При явном `quick_ip_choice=current` и `request_ip ==
+  "unknown"` route возвращает 400 и не создаёт token; текст предлагает выбрать
+  любой IP осознанно или указать mask вручную. Ручная непустая invalid mask не
+  расширяется: она доходит до `validate_ip_mask` и остаётся `ValueError`/400.

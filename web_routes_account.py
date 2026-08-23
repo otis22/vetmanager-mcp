@@ -437,7 +437,22 @@ def register_account_routes(
             if quick_ip_choice == "any":
                 ip_mask_raw = "*.*.*.*"
             else:
-                ip_mask_raw = "" if request_ip == "unknown" else request_ip
+                if request_ip == "unknown":
+                    return await render_account_dashboard_response(
+                        request,
+                        account_id,
+                        status_code=400,
+                        token_error=(
+                            "Не удалось определить ваш IP-адрес, поэтому токен с "
+                            "ограничением по текущему IP не выпущен. Выберите любой IP "
+                            "или укажите маску вручную."
+                        ),
+                        token_name=token_name,
+                        token_expiry_days=expiry_raw,
+                        token_access_preset=access_preset,
+                        token_is_depersonalized=is_depersonalized,
+                    )
+                ip_mask_raw = request_ip
         if not ip_mask_raw:
             ip_mask_raw = "*.*.*.*"
 
