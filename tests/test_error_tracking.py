@@ -140,6 +140,7 @@ async def test_tool_failure_middleware_captures_one_safe_semantic_event(monkeypa
 
     assert raised.value is tool_error
     assert getattr(tool_error, "_vetmanager_mcp_error_tracking_handled") is True
+    assert getattr(domain_error, "_vetmanager_mcp_error_tracking_handled") is True
     capture.assert_called_once_with(tool_error, tool_name="get_payments", account_id=42)
 
 
@@ -197,6 +198,7 @@ def test_capture_tool_failure_sets_semantic_tags_transaction_and_status(monkeypa
         error_tracking.capture_tool_failure(tool_error, tool_name="get_payments", account_id=42)
 
     scope.set_tag.assert_any_call("mcp_tool_failure_capture", "manual")
+    scope.set_tag.assert_any_call("mcp_safe_upstream_text", "true")
     scope.set_tag.assert_any_call("tool", "get_payments")
     scope.set_tag.assert_any_call("account_id", "42")
     scope.set_tag.assert_any_call("upstream_status", "502")
@@ -224,6 +226,100 @@ def test_sanitizer_drops_only_marked_automatic_tool_error_and_keeps_manual_event
     assert manual["tags"]["tool"] == "get_payments"
     for key in ("request", "extra", "breadcrumbs", "contexts", "user"):
         assert key not in manual
+
+
+def test_manual_tool_failure_keeps_upstream_406_validation_text():
+    upstream_error = VetmanagerError(
+        "Upstream API error (HTTP 406) — Invalid sort item name: <date_admission>",
+        status_code=406,
+    )
+    tool_error = ToolError(str(upstream_error))
+    tool_error.__cause__ = upstream_error
+    error_tracking.mark_tool_error_as_handled(tool_error)
+
+    manual = error_tracking._sanitize_event(
+        {
+            "tags": {
+                "mcp_tool_failure_capture": "manual",
+                "mcp_safe_upstream_text": "true",
+                "account_id": "6",
+            },
+            "exception": {"values": [{"value": str(tool_error), "stacktrace": {
+                "frames": [{"vars": {"api_key": "secret", "client_ip": "203.0.113.42"}}]
+            }}]},
+            "request": {"data": {"filter": "private"}},
+        },
+        {"exc_info": (ToolError, tool_error, None)},
+    )
+
+    assert manual["exception"]["values"][0]["value"] == str(upstream_error)
+    assert manual["exception"]["values"][0]["stacktrace"]["frames"][0]["vars"] == {
+        "api_key": "[Filtered]", "client_ip": "[Filtered]",
+    }
+    assert manual["tags"]["account_id"] == "6"
+    assert "mcp_safe_upstream_text" not in manual["tags"]
+    assert "request" not in manual
+
+
+def test_manual_tool_failure_redacts_secrets_and_pii_from_exception_text():
+    event = {
+        "tags": {"mcp_tool_failure_capture": "manual", "mcp_safe_upstream_text": "true"},
+        "exception": {"values": [{
+            "value": (
+                "Upstream API error (HTTP 406) — invalid filter; "
+                "api_key=secret-value email=owner@example.test "
+                "client_ip=203.0.113.42 remote_addr=2001:db8::42 "
+                "first_name=Alice phone=+7 999 123-45-67 "
+                "Authorization: Bearer token-value invalid token Bearer raw-token "
+                "date=2026-08-23 id=1234567890123"
+            ),
+        }]},
+    }
+
+    sanitized = error_tracking._sanitize_event(event, hint={})
+
+    assert sanitized["exception"]["values"][0]["value"] == (
+        "Upstream API error (HTTP 406) — invalid filter; "
+        "api_key=[Filtered] email=[Filtered] "
+        "client_ip=[Filtered] remote_addr=[Filtered] "
+        "first_name=[Filtered] phone=[Filtered] "
+        "Authorization: [Filtered] invalid token [Filtered] "
+        "date=2026-08-23 id=1234567890123"
+    )
+
+
+def test_one_tool_failure_emits_manual_event_and_drops_domain_exception_duplicate(monkeypatch):
+    scope = MagicMock()
+    scope_context = MagicMock()
+    scope_context.__enter__.return_value = scope
+    domain_error = VetmanagerError("Upstream API error (HTTP 406) — invalid field", status_code=406)
+    tool_error = ToolError(str(domain_error))
+    tool_error.__cause__ = domain_error
+    monkeypatch.setattr(error_tracking, "_configured", True)
+    monkeypatch.setattr(error_tracking.sentry_sdk, "is_initialized", lambda: True)
+
+    with (
+        patch.object(error_tracking.sentry_sdk, "push_scope", return_value=scope_context),
+        patch.object(error_tracking.sentry_sdk, "capture_exception") as capture,
+    ):
+        error_tracking.mark_tool_error_as_handled(tool_error)
+        error_tracking.capture_tool_failure(tool_error, tool_name="get_hospitalizations", account_id=6)
+
+    capture.assert_called_once_with(tool_error)
+    assert error_tracking._sanitize_event(
+        {"tags": {}}, {"exc_info": (VetmanagerError, domain_error, None)}
+    ) is None
+
+
+def test_manual_event_without_tool_text_opt_in_keeps_exception_value_redacted():
+    event = {
+        "tags": {"mcp_tool_failure_capture": "manual"},
+        "exception": {"values": [{"value": "potentially private upstream message"}]},
+    }
+
+    sanitized = error_tracking._sanitize_event(event, hint={})
+
+    assert sanitized["exception"]["values"][0]["value"] == "[Filtered]"
 
 
 def test_sanitizer_marker_lookup_uses_explicit_cause_and_missing_exc_info():
