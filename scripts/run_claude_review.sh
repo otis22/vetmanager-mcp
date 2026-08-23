@@ -18,6 +18,7 @@ Options:
   --repo <path>          Repository used for git diff (default: current directory).
   --model <name>         Claude model (default: opus).
   --timeout <seconds>    CLI timeout (default: 1200).
+  --kill-grace <seconds> Send KILL after this grace period (default: 10).
 EOF
 }
 
@@ -31,6 +32,7 @@ evidence_dir=$data_home/vetmanager-mcp-review-evidence
 repo=$PWD
 model=opus
 timeout_seconds=1200
+kill_grace_seconds=10
 
 while (($#)); do
     case $1 in
@@ -43,6 +45,7 @@ while (($#)); do
         --repo) repo=${2:?missing value for --repo}; shift 2 ;;
         --model) model=${2:?missing value for --model}; shift 2 ;;
         --timeout) timeout_seconds=${2:?missing value for --timeout}; shift 2 ;;
+        --kill-grace) kill_grace_seconds=${2:?missing value for --kill-grace}; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) printf 'Unknown argument: %s\n' "$1" >&2; usage >&2; exit 64 ;;
     esac
@@ -51,6 +54,10 @@ done
 if [[ ( -z $range && -z $review_file ) || ( -n $range && -n $review_file ) || ! $attempt =~ ^[1-3]/3$ ]]; then
     printf '%s\n' 'Exactly one of --range or --file and --attempt N/3 are required; N must be 1, 2, or 3.' >&2
     usage >&2
+    exit 64
+fi
+if ! [[ $timeout_seconds =~ ^[1-9][0-9]*$ ]] || ! [[ $kill_grace_seconds =~ ^([1-9][0-9]*|0\.[0-9]+)$ ]]; then
+    printf '%s\n' '--timeout must be a positive integer and --kill-grace must be a positive number.' >&2
     exit 64
 fi
 
@@ -161,7 +168,9 @@ cli_version=$($claude_bin --version 2>&1 || true)
 schema=$(cat "$schema_file")
 
 set +e
-timeout "$timeout_seconds" "$claude_bin" -p --model "$model" --strict-mcp-config \
+# GNU timeout returns after KILL even if Claude ignores TERM.  -v is deliberately
+# retained in evidence so an empty envelope has an observable termination cause.
+timeout --verbose --kill-after="${kill_grace_seconds}s" "${timeout_seconds}s" "$claude_bin" -p --model "$model" --strict-mcp-config \
     --mcp-config '{"mcpServers":{}}' --tools '' --output-format json \
     --json-schema "$schema" < "$stdin_file" > "$envelope_file" 2> "$stderr_file"
 cli_exit=$?
@@ -187,7 +196,7 @@ stdin_lines=$(wc -l < "$stdin_file")
 python3 - "$metadata_file" "$envelope_file" "$prompt_copy" "$schema_copy" "$stderr_file" \
     "$started_at" "$duration_ms" "$review_kind" "$review_target" "$attempt" "$repo" "$evidence_dir" \
     "$stdin_bytes" "$stdin_lines" "$cli_version" "$cli_exit" "$model" "$timeout_seconds" \
-    "$validator_exit" "$verdict_file" "$validator_stderr_file" <<'PY'
+    "$kill_grace_seconds" "$validator_exit" "$verdict_file" "$validator_stderr_file" <<'PY'
 import json
 import pathlib
 import sys
@@ -196,7 +205,7 @@ import sys
     metadata_path, envelope_path, prompt_path, schema_path, stderr_path,
     started_at, duration_ms, review_kind, review_target, attempt, repo, evidence_dir,
     stdin_bytes, stdin_lines, cli_version, cli_exit, model, timeout_seconds,
-    validator_exit, verdict_file, validator_stderr_file,
+    kill_grace_seconds, validator_exit, verdict_file, validator_stderr_file,
 ) = sys.argv[1:]
 
 raw = pathlib.Path(envelope_path).read_bytes()
@@ -209,6 +218,21 @@ if not isinstance(envelope, dict):
 usage = envelope.get("usage") if isinstance(envelope.get("usage"), dict) else {}
 details = usage.get("output_tokens_details") if isinstance(usage.get("output_tokens_details"), dict) else {}
 result = envelope.get("result")
+stderr = pathlib.Path(stderr_path).read_text(encoding="utf-8", errors="replace")
+timeout_term = "timeout: sending signal TERM" in stderr
+timeout_kill = "timeout: sending signal KILL" in stderr
+if int(cli_exit) == 0 and int(validator_exit or 0) == 0:
+    outcome = "valid_verdict"
+elif timeout_kill:
+    outcome = "timeout_killed_after_grace"
+elif timeout_term or int(cli_exit) == 124:
+    outcome = "timeout"
+elif int(cli_exit) == 0:
+    outcome = "invalid_verdict"
+elif int(cli_exit) >= 128:
+    outcome = f"terminated_by_signal_{int(cli_exit) - 128}"
+else:
+    outcome = "cli_error"
 metadata = {
     "started_at": started_at,
     "duration_ms": int(duration_ms),
@@ -224,6 +248,8 @@ metadata = {
     "cli_exit": int(cli_exit),
     "model": model,
     "timeout_seconds": int(timeout_seconds),
+    "kill_grace_seconds": float(kill_grace_seconds),
+    "outcome": outcome,
     "validator_exit": int(validator_exit) if validator_exit else None,
     "verdict_file": verdict_file or None,
     "validator_stderr_file": validator_stderr_file or None,
@@ -241,13 +267,20 @@ metadata = {
 }
 pathlib.Path(metadata_path).write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n")
 print(
-    "review evidence: {envelope}; subtype={subtype}; stop_reason={stop_reason}; "
+    "review evidence: {envelope}; outcome={outcome}; subtype={subtype}; stop_reason={stop_reason}; "
     "output_tokens={output_tokens}; thinking_tokens={thinking_tokens}; "
     "len(result)={result_length}".format(envelope=envelope_path, **metadata)
 )
 PY
 
 if ((cli_exit != 0)); then
+    printf 'review gate: Claude CLI failed; outcome=%s; cli_exit=%s; evidence=%s\n' \
+        "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["outcome"])' "$metadata_file")" \
+        "$cli_exit" "$envelope_file" >&2
     exit "$cli_exit"
+fi
+if ((validator_exit != 0)); then
+    printf 'review gate: Claude verdict rejected; outcome=invalid_verdict; validator_exit=%s; evidence=%s\n' \
+        "$validator_exit" "$envelope_file" >&2
 fi
 exit "$validator_exit"

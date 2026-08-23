@@ -12246,6 +12246,24 @@ Checks so far:
 - `invoice_id` делает две выборки, дедуплицирует non-null `id`, применяет
   pagination после merge и не смотрит на type, поэтому пустой type безопасен.
 
+## Этап 226. Надёжность внешнего Claude review (2026-08-24)
+
+- Воспроизведён failure: запуск `scripts/run_claude_review.sh` для PRD 226
+  создал пустой envelope и не завершился за ~50 секунд. После SIGTERM Claude
+  runner завершился с `cli_exit=143`; evidence:
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T205921Z-file-PRD_-226--claude-review_md-attempt-1-of-3.jp6s9d/claude-review-attempt-1-of-3.envelope.json`;
+  `subtype=null`, `stop_reason=null`, `output_tokens=null`,
+  `thinking_tokens=null`, `len(result)=0`. Это infrastructure failure 1/3,
+  не verdict.
+- Причина бесконечного ожидания в runner: GNU `timeout` посылал только TERM и
+  не имел `--kill-after`; CLI, который игнорирует/не обрабатывает TERM, мог
+  жить дальше. Runner теперь использует явный TERM deadline и короткий KILL
+  grace, сохраняет raw evidence и outcome (`timeout`,
+  `timeout_killed_after_grace`, `invalid_verdict`, signal или `cli_error`).
+- Spark PRD pass не запущен из-за provider usage limit до чтения файлов;
+  findings отсутствуют. После commit будет выполнен committed-diff review
+  runner'ом как подтверждение исправления.
+
 - `possible_pii=true` не означает, что персональные данные лежат в базе:
   санитайзер отрабатывает **до** записи и уже заменил их на `[REDACTED]`.
   Флаг — след того, что чистка была. Поэтому `redact` нужен не для «удалить

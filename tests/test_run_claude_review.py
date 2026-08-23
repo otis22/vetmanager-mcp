@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
+import time
 
 
 SCRIPT = Path("scripts/run_claude_review.sh")
@@ -30,6 +31,16 @@ def _fake_claude(path: Path, exit_code: int) -> None:
         "printf '%s' \"$FAKE_ENVELOPE\"\n"
         "printf 'fake stderr' >&2\n"
         f"exit {exit_code}\n",
+    )
+    path.chmod(0o755)
+
+
+def _term_ignoring_claude(path: Path) -> None:
+    path.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ ${1:-} == --version ]]; then echo 'fake-claude 1.0'; exit 0; fi\n"
+        "trap '' TERM\n"
+        "while :; do sleep 0.05; done\n",
     )
     path.chmod(0o755)
 
@@ -143,6 +154,55 @@ def test_review_attempt_saves_empty_failed_stdout_and_metadata(tmp_path: Path) -
     assert metadata["output_tokens"] is None
     assert metadata["thinking_tokens"] is None
     assert metadata["result_length"] == 0
+
+
+def test_review_attempt_rejects_empty_verdict_with_diagnostic(tmp_path: Path) -> None:
+    completed, evidence = _run(tmp_path, '{"is_error": false, "result": ""}')
+
+    assert completed.returncode == 2
+    assert "outcome=invalid_verdict" in completed.stderr
+    metadata = json.loads(next(evidence.rglob("*.metadata.json")).read_text())
+    assert metadata["outcome"] == "invalid_verdict"
+    assert metadata["validator_exit"] == 2
+
+
+def test_review_attempt_kills_cli_that_ignores_term_after_grace(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    prompt = tmp_path / "prompt.txt"
+    schema = tmp_path / "schema.json"
+    fake_claude = tmp_path / "claude"
+    fake_git = tmp_path / "git"
+    evidence = tmp_path / "evidence"
+    prompt.write_text("Review only.\n")
+    schema.write_text('{"type":"object"}\n')
+    _term_ignoring_claude(fake_claude)
+    _fake_git(fake_git)
+
+    started = time.monotonic()
+    completed = subprocess.run(
+        [
+            str(SCRIPT), "--repo", str(repo), "--range", "HEAD", "--attempt", "1/3",
+            "--prompt-file", str(prompt), "--schema-file", str(schema),
+            "--evidence-dir", str(evidence), "--timeout", "1", "--kill-grace", "0.1",
+        ],
+        text=True,
+        capture_output=True,
+        env={
+            "PATH": f"{tmp_path}:/usr/local/bin:/usr/bin:/bin",
+            "CLAUDE_BIN": str(fake_claude),
+            "GIT_ARGS_LOG": str(tmp_path / "git-args.txt"),
+            "XDG_DATA_HOME": str(tmp_path / "data"),
+        },
+        timeout=5,
+    )
+
+    assert time.monotonic() - started < 5
+    assert completed.returncode != 0
+    assert "outcome=timeout_killed_after_grace" in completed.stderr
+    metadata = json.loads(next(evidence.rglob("*.metadata.json")).read_text())
+    assert metadata["outcome"] == "timeout_killed_after_grace"
+    assert metadata["kill_grace_seconds"] == 0.1
 
 
 def test_review_attempt_saves_valid_non_object_json_envelopes(tmp_path: Path) -> None:

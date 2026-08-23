@@ -4084,9 +4084,9 @@ Cannot assign int to property Entity\MedicalCard\Diagnoses::$diagnoses of type a
   Восстанавливать не нужно — решение владельца: стенд тестовый, данные там
   расходный материал. — `stop`
 
-## Этап 226. Надёжность внешнего Claude review — `todo`
+## Этап 226. Надёжность внешнего Claude review — `in_progress`
 
-- 226.1 Починить пустой verdict evidence в review runner. — `todo`
+- 226.1 Починить пустой verdict evidence в review runner. — `in_progress`
 
 ## Этап 227. Универсальный OAuth consent для MCP-клиентов — `done`
 
