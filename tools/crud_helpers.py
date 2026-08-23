@@ -26,6 +26,23 @@ T = TypeVar("T")
 # (and for tests that may import _instrumented_call from crud_helpers).
 
 
+def unwrap_single_record(response: dict, *entity_keys: str) -> dict | None:
+    """Return one entity record from a Vetmanager GET-by-id response.
+
+    Controllers do not consistently case their singleton container keys
+    (for example, ``medicalCards`` versus ``admission``).  Callers provide
+    the API-confirmed key(s), avoiding an unsafe fallback to response metadata.
+    """
+    data = response.get("data") if isinstance(response, dict) else None
+    if not isinstance(data, dict):
+        return None
+    for entity_key in entity_keys:
+        record = data.get(entity_key)
+        if isinstance(record, dict):
+            return record
+    return None
+
+
 async def crud_list(
     endpoint: str,
     *,

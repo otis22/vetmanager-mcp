@@ -829,13 +829,15 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "Send an in-app notification campaign to all clinic users. This notifies "
         "every clinic user, so confirm the user really wants a clinic-wide "
         "broadcast before calling. Use send_message_to_roles for role-scoped "
-        "broadcasts and send_message_to_users for selected recipients. Domain "
+        "broadcasts and send_message_to_users for selected recipients. Sending is "
+        "irreversible: the API cannot cancel or recall a sent message. Domain "
         "synonyms: уведомление, рассылка, сообщение в программу, уведомление "
         "пользователям, push в программу, messages."
     ),
     "send_message_to_users": (
         "Send an in-app notification campaign to specific users by ID. Use when "
         "the user wants to notify selected employees or a concrete recipient list. "
+        "Sending is irreversible: the API cannot cancel or recall a sent message. "
         "Domain synonyms: уведомление, рассылка, сообщение в программу, "
         "уведомление пользователям, push в программу, messages."
     ),
@@ -849,7 +851,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     "send_message_to_roles": (
         "Send an in-app notification campaign to all users with selected roles. "
         "Use when the user wants to notify all veterinarians, administrators, or "
-        "another staff role group. Domain synonyms: уведомление, рассылка, "
+        "another staff role group. Sending is irreversible: the API cannot cancel "
+        "or recall a sent message. Domain synonyms: уведомление, рассылка, "
         "сообщение в программу, уведомление пользователям, push в программу, "
         "messages."
     ),

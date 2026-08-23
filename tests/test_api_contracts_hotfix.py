@@ -193,6 +193,11 @@ async def test_create_medical_card_maps_fields_to_api_contract():
 @respx.mock
 async def test_update_medical_card_maps_fields_to_api_contract():
     billing_mock()
+    respx.get(f"{BASE}/rest/api/MedicalCards/42").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 1, "medicalCards": {
+            "id": 42, "patient_id": 7, "doctor_id": 8, "clinic_id": 9,
+        }}})
+    )
     route = respx.put(f"{BASE}/rest/api/MedicalCards/42").mock(
         return_value=httpx.Response(200, json={"data": {"id": 42}})
     )
@@ -210,6 +215,9 @@ async def test_update_medical_card_maps_fields_to_api_contract():
 
     body = _body_of(route)
     assert body == {
+        "patient_id": 7,
+        "doctor_id": 8,
+        "clinic_id": 9,
         "description": "Updated",
         "diagnos": "Recovered",
         "temperature": 38.5,

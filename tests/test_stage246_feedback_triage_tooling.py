@@ -140,6 +140,29 @@ async def test_link_rejects_an_unknown_issue(
 
 
 @pytest.mark.asyncio
+async def test_link_is_idempotent_for_duplicate_and_already_linked_report(
+    sqlite_session_factory_builder, tmp_path, monkeypatch, capsys,
+) -> None:
+    session_factory = await sqlite_session_factory_builder(tmp_path / "stage246-idempotent.db")
+    monkeypatch.setattr(triage_cli, "get_session_factory", lambda: session_factory)
+    report_id = await _seed(session_factory, _report())
+    await triage_cli._promote(SimpleNamespace(
+        report_id=report_id, title="existing", status="acknowledged",
+        public_summary=None, workaround=None, playbook_json=None, match_rules_json=None,
+    ))
+    async with session_factory() as session:
+        issue = (await session.execute(select(KnownIssue))).scalar_one()
+        issue_id = issue.id
+
+    await triage_cli._link(SimpleNamespace(known_issue_id=issue_id, report_ids=[report_id, report_id]))
+
+    assert capsys.readouterr().out.count("already linked") == 2
+    async with session_factory() as session:
+        issue = await session.get(KnownIssue, issue_id)
+        assert issue.report_count == 1
+
+
+@pytest.mark.asyncio
 async def test_redact_skips_a_row_that_would_lose_a_required_field(
     sqlite_session_factory_builder, tmp_path, monkeypatch, capsys,
 ) -> None:

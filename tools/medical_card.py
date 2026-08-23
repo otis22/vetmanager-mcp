@@ -10,7 +10,7 @@ from filters import (
     in_ as _filter_in,
     lt as _filter_lt,
 )
-from tools.crud_helpers import crud_get_by_id, crud_create, crud_update
+from tools.crud_helpers import crud_get_by_id, crud_create, crud_update, unwrap_single_record
 from validators import LimitParam, parse_date_param
 from vetmanager_client import VetmanagerClient
 
@@ -359,6 +359,10 @@ def register(mcp: FastMCP) -> None:
     ) -> dict:
         """Update an existing medical card record.
 
+        Do not use `date_edit` to verify this update: Vetmanager may leave that
+        field unchanged even after a successful write. Read the changed field
+        back instead.
+
         Args:
             card_id: ID of the medical card record to update.
             description: Updated clinical description/anamnesis.
@@ -368,7 +372,17 @@ def register(mcp: FastMCP) -> None:
             weight: Updated animal weight in kg (0 = no change).
             temperature: Updated body temperature in °C (0 = no change).
         """
-        payload: dict = {}
+        current_response = await crud_get_by_id(_MC_ENDPOINT, card_id)
+        current = unwrap_single_record(current_response, "medicalCards")
+        if current is None:
+            raise ValueError("Medical card read returned no record; update was not sent.")
+        required_context = ("patient_id", "doctor_id", "clinic_id")
+        missing_context = [field for field in required_context if not current.get(field)]
+        if missing_context:
+            raise ValueError(
+                "Medical card lacks required update context: " + ", ".join(missing_context)
+            )
+        payload: dict = {field: current[field] for field in required_context}
         if description:
             payload["description"] = description
         if diagnosis:

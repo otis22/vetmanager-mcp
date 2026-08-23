@@ -120,9 +120,9 @@ def register(mcp: FastMCP) -> None:
                 False = inactive only, None = all.
             sort: Optional sort spec.
             filter: Optional extra filter spec (merged with named filters).
-                Allowed properties: address, calc_percents, cell_phone, email,
-                first_name, id, is_active, is_limited, last_name, middle_name,
-                nickname, phone, position_id, role_id, sip_number.
+                Allowed properties: address, cell_phone, email, first_name, id,
+                is_active, is_limited, last_name, middle_name, nickname, phone,
+                position_id, role_id, sip_number.
         """
         base_filters: list = list(filter or [])
         if position_id:

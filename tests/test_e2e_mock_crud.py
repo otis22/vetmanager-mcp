@@ -454,6 +454,12 @@ async def test_update_admission_extended_fields():
     # to canonical VM API names (patient_id/user_id/admission_date). Only
     # client_id and clinic_id keep their literal keys; pet_id is translated.
     billing_mock()
+    respx.get(f"{BASE}/rest/api/admission/1").mock(
+        return_value=httpx.Response(200, json={"data": {"totalCount": 1, "admission": {
+            "id": 1, "clinic_id": 2, "admission_date": "2026-05-01 09:00:00",
+            "admission_length": "00:30:00",
+        }}})
+    )
     route = respx.put(f"{BASE}/rest/api/admission/1").mock(
         return_value=httpx.Response(200, json={"data": {"id": 1}})
     )
@@ -469,6 +475,8 @@ async def test_update_admission_extended_fields():
     assert route.calls.last.request.method == "PUT"
     assert str(route.calls.last.request.url) == f"{BASE}/rest/api/admission/1"
     assert _body_of(route) == {
+        "start": "2026-05-01 09:00:00",
+        "end": "2026-05-01 09:30:00",
         "client_id": 10,
         "patient_id": 5,
         "clinic_id": 2,

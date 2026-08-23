@@ -12202,6 +12202,50 @@ Checks so far:
   `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T104934Z-file-PRD_-239---list-_md-attempt-1-of-3.SOqnxt/claude-review-attempt-1-of-3.envelope.json`; subtype=success, stop_reason=tool_use, output_tokens=7430, thinking_tokens=6033, len(result)=3794.
 ## Этап 246. Инструмент разбора обратной связи (2026-08-23)
 
+- Post-merge review: принят дефект `link`: повторный report id или уже
+  привязанный отчёт увеличивал `KnownIssue.report_count`. Команда стала
+  идемпотентной для целевого issue; добавлен regression test.
+- Отклонено: `show` выводит account_id и params_shape намеренно — это
+  предусмотренный PRD операторский контекст, а не необработанные text fields.
+
+## Этап 245. Обновление медкарты и приёма (2026-08-23)
+
+- MedicalCardsController требует `patient_id`, `doctor_id`, `clinic_id` до
+  merge, поэтому MCP читает карту и переносит их в PUT. Пустой read не пишет.
+- AdmissionController имеет такой же barrier для `clinic_id`, `start`, `end`;
+  update_admission переносит их после GET. Invoice и Hospital используют base
+  controller, аналогичного local preflight не найдено.
+- Supervisor committed-diff review found two accepted blockers in the first
+  version: real singleton responses are `data.medicalCards` and
+  `data.admission`, rather than flat `data`; admission has no `start`/`end`.
+  `unwrap_single_record` now requires explicit API-confirmed container keys;
+  admission derives start/end from `admission_date` + `admission_length` and
+  preserves that duration if `date` changes. Mocks match the live shape.
+- devtr6 live verification: MedicalCards/6 write+restore returned 201/201.
+  Admission/2 is accepted and rejects edits as designed; editable admission/74
+  write+restore with the minimal derived context returned 201/201. No values or
+  credentials were recorded.
+
+## Этап 247. TTL медкарт и госпитализаций (2026-08-23)
+
+- Canonical parser возвращает `medicalcards`; этот ключ и `hospital` внесены в
+  short TTL, а тест сверяет весь набор с фактическими путями tools.
+
+## Этап 244. Контракт фильтров list-инструментов (2026-08-23)
+
+- `calc_percents` удалён. Полная генерация всех docstrings не выбрана: tool
+  decorators захватывают literal description; AST-test проверяет оба набора.
+
+## Этап 248. Необратимость рассылки (2026-08-23)
+
+- Предупреждение добавлено и в docstrings, и в canonical tool_descriptions,
+  поскольку опубликованное описание подменяется вторым слоем.
+
+## Этап 250. Закрытия счёта с двух сторон (2026-08-23)
+
+- `invoice_id` делает две выборки, дедуплицирует non-null `id`, применяет
+  pagination после merge и не смотрит на type, поэтому пустой type безопасен.
+
 - `possible_pii=true` не означает, что персональные данные лежат в базе:
   санитайзер отрабатывает **до** записи и уже заменил их на `[REDACTED]`.
   Флаг — след того, что чистка была. Поэтому `redact` нужен не для «удалить

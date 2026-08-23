@@ -181,7 +181,11 @@ def register(mcp: FastMCP) -> None:
         message: str,
         campaign: str,
     ) -> dict:
-        """Send an in-app notification to all clinic users."""
+        """Send an in-app notification to all clinic users.
+
+        WARNING: Sending is irreversible; the Vetmanager API cannot cancel or
+        recall a sent message.
+        """
         payload = {"message": message, "campaign": campaign}
         return await VetmanagerClient().post("/rest/api/messages/all", json=payload)
 
@@ -191,7 +195,11 @@ def register(mcp: FastMCP) -> None:
         campaign: str,
         user_ids: UserIdsParam,
     ) -> dict:
-        """Send an in-app notification to specific users by ID."""
+        """Send an in-app notification to specific users by ID.
+
+        WARNING: Sending is irreversible; the Vetmanager API cannot cancel or
+        recall a sent message.
+        """
         payload = {
             "message": message,
             "campaign": campaign,
@@ -222,7 +230,11 @@ def register(mcp: FastMCP) -> None:
         campaign: str,
         roles: RolesParam,
     ) -> dict:
-        """Send an in-app notification to all users with the specified roles."""
+        """Send an in-app notification to all users with the specified roles.
+
+        WARNING: Sending is irreversible; the Vetmanager API cannot cancel or
+        recall a sent message.
+        """
         payload = {
             "message": message,
             "campaign": campaign,
