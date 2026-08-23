@@ -50,7 +50,7 @@ def register(mcp: FastMCP) -> None:
             good_id: ID of the good/service.
             limit: Max records to return.
             offset: Pagination offset.
-            filter: Optional raw filters. Allowed properties: barcode, clinic_id,
+            filter/sort: Optional raw clauses. Allowed properties for both: barcode, clinic_id,
                 coefficient, good_id, id, is_partial_sale, is_skip_marking,
                 markup, max_price, min_price, price, price_formation, status,
                 unit_sale_id.

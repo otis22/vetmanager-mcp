@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in read-only probe for scalar list-filter field names.
+"""Opt-in read-only probe for scalar list filter/sort field names.
 
 Requires TEST_DOMAIN and TEST_API_KEY. Output deliberately contains only an
 entity name, a field name and an HTTP status; values and credentials never
@@ -29,6 +29,15 @@ ENTITIES = {
     "cassaclose": "/rest/api/cassaclose",
     "payment": "/rest/api/payment",
     "invoice": "/rest/api/invoice",
+    "closingOfInvoices": "/rest/api/closingOfInvoices", "cassa": "/rest/api/cassa",
+    "admission": "/rest/api/admission", "client": "/rest/api/client",
+    "hospital": "/rest/api/hospital", "hospitalBlock": "/rest/api/HospitalBlock",
+    "pet": "/rest/api/pet", "user": "/rest/api/user", "clinics": "/rest/api/clinics",
+    "timesheet": "/rest/api/timesheet", "properties": "/rest/api/properties",
+    "breed": "/rest/api/breed", "petType": "/rest/api/petType", "city": "/rest/api/city",
+    "cityType": "/rest/api/cityType", "street": "/rest/api/street", "unit": "/rest/api/unit",
+    "role": "/rest/api/role", "userPosition": "/rest/api/userPosition",
+    "goodSaleParam": "/rest/api/goodSaleParam", "good": "/rest/api/good",
 }
 PROBE_VALUE = 0
 REQUEST_GAP_SECONDS = 0.1
@@ -48,7 +57,7 @@ def _rows(payload: Any, entity: str) -> list[dict[str, Any]]:
 
 
 async def _probe_entity(
-    client: httpx.AsyncClient, base_url: str, entity: str, path: str
+    client: httpx.AsyncClient, base_url: str, entity: str, path: str, mode: str
 ) -> None:
     response = await client.get(f"{base_url}{path}", params={"limit": 1, "offset": 0})
     if response.status_code != 200:
@@ -64,7 +73,9 @@ async def _probe_entity(
             params={
                 "limit": 1,
                 "offset": 0,
-                "filter": json.dumps(
+                mode: json.dumps(
+                    [{"property": field, "direction": "ASC"}]
+                    if mode == "sort" else
                     [{"property": field, "operator": "=", "value": PROBE_VALUE}],
                     separators=(",", ":"),
                 ),
@@ -81,6 +92,9 @@ async def main() -> None:
         raise SystemExit("TEST_DOMAIN and TEST_API_KEY are required")
     if domain != "devtr6":
         raise SystemExit("This probe is restricted to TEST_DOMAIN=devtr6")
+    mode = os.environ.get("PROBE_LIST_CONTRACT_MODE", "filter")
+    if mode not in {"filter", "sort"}:
+        raise SystemExit("PROBE_LIST_CONTRACT_MODE must be filter or sort")
     base_url = await resolve_vetmanager_host(domain)
     auth = VetmanagerAuthContext(
         auth_mode=VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
@@ -89,7 +103,7 @@ async def main() -> None:
     )
     async with httpx.AsyncClient(headers=auth.build_headers(), timeout=30.0) as client:
         for entity, path in ENTITIES.items():
-            await _probe_entity(client, base_url, entity, path)
+            await _probe_entity(client, base_url, entity, path, mode)
 
 
 if __name__ == "__main__":

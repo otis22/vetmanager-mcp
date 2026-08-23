@@ -84,7 +84,7 @@ def register(mcp: FastMCP) -> None:
                 combined with owner_id — standalone alias search is rejected
                 to prevent wrong-patient results.
             sort: Optional sort spec (forwarded to API).
-            filter: Optional filter spec. Allowed properties: alias, birthday,
+            filter/sort: Optional raw clauses. Allowed properties for both: alias, birthday,
                 breed_id, chip_number, color_id, date_register, deathdate,
                 deathnote, edit_date, id, lab_number, note, old_id, owner_id,
                 picture, sex, status, type_id, weight.

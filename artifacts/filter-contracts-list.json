@@ -2,6 +2,13 @@
   "schema_version": 1,
   "probed_at": "2026-08-23",
   "source": "devtr6 read-only scalar-field filter probe",
+  "sort_probe": {
+    "probed_at": "2026-08-23",
+    "domain": "devtr6",
+    "direction": "ASC",
+    "accepted_scalar_fields": 222,
+    "rejected_response_only_fields": ["admission.wait_time", "hospital.in_hospital_time"]
+  },
   "entities": {
     "closingOfInvoices": ["client_id", "create_date", "id", "minus_amount", "minus_document_id", "minus_type_document", "plus_amount", "plus_document_id", "plus_type_document"],
     "cassa": ["assigned_user_id", "cashless_to_cassa_id", "client_cass", "clinic_id", "has_unfinished_docs", "id", "inventarization_date", "is_blocked", "is_system", "main_cassa", "operating_cassa_id", "show_in_cashflow", "status", "summa_cash", "summa_cashless", "title", "type"],

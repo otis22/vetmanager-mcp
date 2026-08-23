@@ -12,7 +12,10 @@ proxy label for `vetmanager_tool_call_latency_seconds` and
 import json
 from typing import Any, Awaitable, Callable, TypeVar
 
-from filters import as_dict_list, build_list_query_params, validate_filter_properties
+from filters import (
+    as_dict_list, build_list_query_params, validate_filter_properties,
+    validate_sort_properties,
+)
 from service_metrics import instrument_call as _instrumented_call
 from vetmanager_client import VetmanagerClient
 
@@ -36,6 +39,7 @@ async def crud_list(
     """Build query params and GET a list endpoint."""
     if allowed_filter_properties is not None:
         validate_filter_properties(filters, allowed_filter_properties)
+        validate_sort_properties(sort, allowed_filter_properties)
     params = build_list_query_params(
         limit=limit,
         offset=offset,

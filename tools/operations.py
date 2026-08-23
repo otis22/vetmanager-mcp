@@ -36,7 +36,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
-            filter: Optional raw filters. Allowed properties: address, city_id,
+            filter/sort: Optional raw clauses. Allowed properties for both: address, city_id,
                 email, end_time, guest_client_id, id, internet_address,
                 logo_url, phone, start_time, status, telegram, time_zone,
                 title, whatsapp.
@@ -72,7 +72,7 @@ def register(mcp: FastMCP) -> None:
             doctor_id: Filter by staff doctor ID (0 = no filter). Vetmanager
                 timesheet entity uses `doctor_id` as FK to user.id.
             date: Filter by date in YYYY-MM-DD format (optional).
-            filter: Optional raw filters. Allowed properties: action_id, all_day,
+            filter/sort: Optional raw clauses. Allowed properties for both: action_id, all_day,
                 begin_datetime, clinic_id, doctor_id, end_datetime, id, night,
                 shedule_id, shift, title, type.
         """
@@ -151,7 +151,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
-            filter: Optional raw filters. Allowed properties: clinic_id, id,
+            filter/sort: Optional raw clauses. Allowed properties for both: clinic_id, id,
                 property_name, property_title, property_value.
         """
         return await crud_list(

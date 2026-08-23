@@ -175,7 +175,7 @@ def register(mcp: FastMCP) -> None:
             date_to: Filter payments through this local clinic date (inclusive);
                 implemented as create_date < next day's 00:00:00. Same accepted
                 formats as `date_from`.
-            filter: Optional raw filters. Allowed properties: amount, cassa_id,
+            filter/sort: Optional raw clauses. Allowed properties for both: amount, cassa_id,
                 cassaclose_id, create_date, description, id, invoice_id,
                 parent_id, payed_user, payment_type, status. `client_id` is
                 deliberately unsupported; use get_client_payment_applications.
@@ -335,7 +335,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
-            filter: Optional raw filters. Allowed properties: client_id,
+            filter/sort: Optional raw clauses. Allowed properties for both: client_id,
                 create_date, id, minus_amount, minus_document_id,
                 minus_type_document, plus_amount, plus_document_id,
                 plus_type_document.
@@ -411,7 +411,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
-            filter: Optional raw filters. Allowed properties: assigned_user_id,
+            filter/sort: Optional raw clauses. Allowed properties for both: assigned_user_id,
                 cashless_to_cassa_id, client_cass, clinic_id,
                 has_unfinished_docs, id, inventarization_date, is_blocked,
                 is_system, main_cassa, operating_cassa_id, show_in_cashflow,
@@ -443,7 +443,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
-            filter: Optional raw filters. Allowed properties: amount,
+            filter/sort: Optional raw clauses. Allowed properties for both: amount,
                 amount_cashless, closed_user_id, date, id, id_cassa, status.
         """
         return await crud_list(

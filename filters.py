@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+from difflib import get_close_matches
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Iterable
@@ -72,9 +73,20 @@ class FilterPropertyValidationError(ValueError):
     """Expected local rejection of a filter field not probed for this tool."""
 
 
+class SortPropertyValidationError(ValueError):
+    """Expected local rejection of a sort field not probed for this tool."""
+
+
 def filter_contract_validation_enabled() -> bool:
     """Return the runtime kill switch for stage-235 local rejection."""
     return os.environ.get("FILTER_CONTRACT_VALIDATION_ENABLED", "1").lower() not in {
+        "0", "false", "no", "off",
+    }
+
+
+def sort_contract_validation_enabled() -> bool:
+    """Return the independent runtime kill switch for stage-239 sort rejection."""
+    return os.environ.get("SORT_CONTRACT_VALIDATION_ENABLED", "1").lower() not in {
         "0", "false", "no", "off",
     }
 
@@ -100,6 +112,23 @@ def validate_filter_properties(
             )
             raise FilterPropertyValidationError(
                 f"Unknown filter property '{property_name}'. Allowed properties: "
+                f"{', '.join(sorted(allowed_properties))}."
+            )
+
+
+def validate_sort_properties(
+    sort: Iterable[Any] | None, allowed_properties: frozenset[str]
+) -> None:
+    """Reject unknown raw sort names before an upstream list request."""
+    if not sort_contract_validation_enabled():
+        return
+    for item in sort or ():
+        property_name = item.get("property") if isinstance(item, dict) else None
+        if isinstance(property_name, str) and property_name not in allowed_properties:
+            suggestion = get_close_matches(property_name, sorted(allowed_properties), n=1, cutoff=0.6)
+            hint = f" Did you mean '{suggestion[0]}'?" if suggestion else ""
+            raise SortPropertyValidationError(
+                f"Unknown sort property '{property_name}'.{hint} Allowed properties: "
                 f"{', '.join(sorted(allowed_properties))}."
             )
 

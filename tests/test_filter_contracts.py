@@ -8,7 +8,10 @@ import pytest
 import respx
 from fastmcp.exceptions import ToolError
 
-from filters import FILTER_FIELDS_BY_ENTITY, FilterPropertyValidationError, validate_filter_properties
+from filters import (
+    FILTER_FIELDS_BY_ENTITY, FilterPropertyValidationError, SortPropertyValidationError,
+    validate_filter_properties, validate_sort_properties,
+)
 from service_metrics import snapshot_service_metrics
 from server import mcp
 from tests.runtime_factories import patch_runtime_credentials
@@ -64,6 +67,19 @@ def test_filter_validation_kill_switch_restores_passthrough(monkeypatch):
     assert "filter_property_rejected" not in snapshot_service_metrics()["business_events_total"]
 
 
+def test_sort_validation_suggests_canonical_property_and_has_independent_switch(monkeypatch):
+    with pytest.raises(SortPropertyValidationError, match="date_admission.*admission_date"):
+        validate_sort_properties(
+            [{"property": "date_admission", "direction": "ASC"}],
+            FILTER_FIELDS_BY_ENTITY["admission"],
+        )
+    monkeypatch.setenv("SORT_CONTRACT_VALIDATION_ENABLED", "0")
+    validate_sort_properties(
+        [{"property": "date_admission", "direction": "ASC"}],
+        FILTER_FIELDS_BY_ENTITY["admission"],
+    )
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_get_cassa_closes_rejects_incident_filter_before_http():
@@ -80,6 +96,37 @@ async def test_get_cassa_closes_rejects_incident_filter_before_http():
 
     assert not route.called
     assert snapshot_service_metrics()["business_events_total"]["filter_property_rejected"] == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_admissions_rejects_incident_sort_before_http_with_canonical_hint():
+    route = respx.get(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(200, json={"data": {"admission": []}})
+    )
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="Did you mean 'admission_date'\\?"):
+            await mcp.call_tool(
+                "get_admissions",
+                {"sort": [{"property": "date_admission", "direction": "ASC"}]},
+            )
+    assert not route.called
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_name", "endpoint", "property_name"),
+    [("get_users", "/rest/api/user", "passwd"), ("get_clients", "/rest/api/client", "passport_series")],
+)
+@respx.mock
+async def test_sensitive_sort_properties_are_rejected_before_http(tool_name, endpoint, property_name):
+    route = respx.get(f"{BASE}{endpoint}").mock(return_value=httpx.Response(200, json={"data": {}}))
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match=property_name):
+            await mcp.call_tool(tool_name, {"sort": [{"property": property_name, "direction": "ASC"}]})
+    assert not route.called
 
 
 @pytest.mark.asyncio

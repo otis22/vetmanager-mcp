@@ -2,6 +2,13 @@
   "schema_version": 1,
   "probed_at": "2026-08-22",
   "source": "devtr6 read-only scalar-field filter probe",
+  "sort_probe": {
+    "probed_at": "2026-08-23",
+    "domain": "devtr6",
+    "direction": "ASC",
+    "accepted_scalar_fields": 38,
+    "rejected_response_only_fields": []
+  },
   "entities": {
     "cassaclose": ["amount", "amount_cashless", "closed_user_id", "date", "id", "id_cassa", "status"],
     "payment": ["amount", "cassa_id", "cassaclose_id", "create_date", "description", "id", "invoice_id", "parent_id", "payed_user", "payment_type", "status"],
