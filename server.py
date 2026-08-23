@@ -81,8 +81,12 @@ def _streamable_http_drain_enabled() -> bool:
     return os.environ.get(STREAMABLE_HTTP_DRAIN_ENABLED_ENV, "true").lower() not in {"0", "false", "no"}
 
 
-def _get_streamable_session_manager(app, *, path: str):
-    """Return the FastMCP streamable-session manager owned by this HTTP app."""
+def _get_streamable_session_manager(app, *, path: str, report_missing: bool = False):
+    """Return the FastMCP streamable-session manager owned by this HTTP app.
+
+    Direct lookup is diagnostic and intentionally quiet before lifespan starts.
+    The shutdown runtime path opts into an ERROR when drain support is missing.
+    """
     route = next((route for route in app.routes if getattr(route, "path", None) == path), None)
     endpoints = [getattr(route, "endpoint", None)]
     manager = None
@@ -102,7 +106,7 @@ def _get_streamable_session_manager(app, *, path: str):
             for value in vars(endpoint).values() if value is not endpoint
         ) if hasattr(endpoint, "__dict__") else None
         endpoints.extend(getattr(endpoint, attribute, None) for attribute in ("app", "endpoint", "__wrapped__", "func"))
-    if manager is None:
+    if manager is None and report_missing:
         RUNTIME_LOGGER.error(
             "Streamable HTTP drain is unavailable",
             extra={"event_name": "streamable_http_drain_unsupported"},
@@ -170,6 +174,7 @@ class _DrainingUvicornServer(uvicorn.Server):
                 session_manager = _get_streamable_session_manager(
                     self._streamable_http_app,
                     path=self._streamable_http_path,
+                    report_missing=True,
                 )
             except Exception:
                 RUNTIME_LOGGER.error(

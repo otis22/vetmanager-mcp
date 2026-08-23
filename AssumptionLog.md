@@ -2,6 +2,48 @@
 
 Журнал допущений, неясностей и архитектурных решений по проекту vetmanager-mcp.
 
+## Этап 238 и 242. Инструментальная гигиена
+
+- Packaging guard теперь называет отсутствующие mandatory/root runtime-модули и
+  `pyproject.toml`, вместо печати целых множеств. Opt-in installer существующих
+  local gates создаёт pre-push только для `tests/test_packaging_metadata.py`;
+  он запускает Docker без TTY и с `/dev/null`, а existing pre-push backup-ит.
+- Direct `_get_streamable_session_manager` остаётся тихим diagnostic lookup без
+  lifespan; единственный shutdown runtime call-site передаёт
+  `report_missing=True`, поэтому реальный отказ по-прежнему даёт ERROR event.
+- Инвентарь `RUNTIME_LOGGER.error`: stage 242 исправил единственный штатный
+  path. Strict Redis failure, unknown internal metric event и custom-route 500
+  остаются аварийными, уровни не понижались и новые Roadmap items не нужны.
+- PRD Spark: read-only runtime/bwrap failure, затем неразбираемый output и
+  provider usage-limit; budget исчерпан без принятого finding. Claude PRD
+  1/3: `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T122545Z-file-PRD_-238-242--_md-attempt-1-of-3.eBwl9W/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=`success`, stop_reason=`tool_use`, output_tokens=3008,
+  thinking_tokens=2125, len(result)=2402; Claude PRD 2/3:
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T122626Z-file-PRD_-238-242--_md-attempt-2-of-3.rk98cc/claude-review-attempt-2-of-3.envelope.json`,
+  subtype=`success`, stop_reason=`tool_use`, output_tokens=4347,
+  thinking_tokens=2564, len(result)=2877. Приняты detached stdin/`-T` и backup;
+  default-loud lookup отклонён: прямой probe без аргумента по задаче должен быть
+  quiet, runtime покрыт explicit `True` regression.
+- Focused Docker tests: `11 passed in 0.14s`, exit code 0.
+- Full Docker tests before audit: `1604 passed, 2 skipped, 66 deselected in
+  220.62s`, exit code 0. После accepted code-review fix повторный полный suite:
+  `1604 passed, 2 skipped, 66 deselected in 211.52s`, exit code 0; ShellCheck и
+  Bash syntax оба exit code 0.
+- Code Spark не запущен из-за явного provider usage-limit после исчерпания PRD
+  Spark budget. Claude code review 1/3:
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T124034Z-git_range-HEAD__HEAD-attempt-1-of-3.hBloNL/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=`success`, stop_reason=`tool_use`, output_tokens=10371,
+  thinking_tokens=9563, len(result)=572. Принят low finding: installer test
+  теперь anchor-ит `scripts/install_git_hooks.sh` от `__file__`, а не cwd.
+- Claude code review 2/3:
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T124759Z-git_range-HEAD__HEAD-attempt-2-of-3.a5JaQt/claude-review-attempt-2-of-3.envelope.json`,
+  subtype=`success`, stop_reason=`tool_use`, output_tokens=5063,
+  thinking_tokens=4510, len(result)=767. Low finding о foreign pre-push
+  отклонён: выбранная и проверенная PRD policy сохраняет timestamped backup и
+  печатает путь; это обратимо и согласовано с существующим installer, который
+  уже заменяет управляемые commit hooks. Дополнительное chaining/detection
+  меняло бы scope локального gate без требования задачи.
+
 ## Этапы 227a–229 (2026-08-21)
 
 - PostgreSQL aggregate uses one unlabelled expression; dedicated CI regression

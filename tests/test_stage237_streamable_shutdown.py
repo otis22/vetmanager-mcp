@@ -1,4 +1,6 @@
 import asyncio
+import logging
+from types import SimpleNamespace
 
 import anyio
 import pytest
@@ -39,6 +41,14 @@ def test_drain_closes_only_held_get_streams_and_honors_kill_switch(monkeypatch):
     assert (first.close_calls, second.close_calls) == (1, 1)
 
 
+def test_diagnostic_session_manager_lookup_without_lifespan_does_not_log_error(caplog):
+    app = SimpleNamespace(routes=[SimpleNamespace(path="/mcp", endpoint=object())])
+
+    caplog.set_level(logging.ERROR, logger="vetmanager.runtime")
+    assert _get_streamable_session_manager(app, path="/mcp") is None
+
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+
 @pytest.mark.asyncio
 async def test_uvicorn_shutdown_closes_streams_before_parent(monkeypatch):
     transport = _Transport()
@@ -76,6 +86,27 @@ async def test_uvicorn_shutdown_preserves_parent_lifecycle_when_session_manager_
     await _DrainingUvicornServer.shutdown(server)
 
     assert observed == [True]
+
+
+@pytest.mark.asyncio
+async def test_uvicorn_shutdown_logs_error_when_session_manager_is_unavailable(monkeypatch, caplog):
+    app = SimpleNamespace(routes=[SimpleNamespace(path="/mcp", endpoint=object())])
+    server = object.__new__(_DrainingUvicornServer)
+    server._streamable_session_manager = None
+    server._streamable_http_app = app
+    server._streamable_http_path = "/mcp"
+
+    async def parent_shutdown(self, sockets=None):
+        return None
+
+    monkeypatch.setattr("uvicorn.Server.shutdown", parent_shutdown)
+    caplog.set_level(logging.ERROR, logger="vetmanager.runtime")
+    await _DrainingUvicornServer.shutdown(server)
+
+    assert any(
+        record.__dict__.get("event_name") == "streamable_http_drain_unsupported"
+        for record in caplog.records
+    )
 
 
 @pytest.mark.asyncio
