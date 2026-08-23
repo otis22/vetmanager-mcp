@@ -427,25 +427,19 @@ def register_account_routes(
             access_preset = "doctor"
         is_depersonalized = form.get("is_depersonalized") == "1"
         confirm_full_access = form.get("confirm_full_access") == "1"
-        confirm_wildcard_ip = form.get("confirm_wildcard_ip") == "1"
-        # Stage 197.2: one-click issuance. The quick form carries an explicit
-        # IP-scope radio; choosing "any" IS the wildcard confirmation (the
-        # stage-155 explicit-ip_mask service contract stays intact — the
-        # wildcard warning log still fires in issue_service_bearer_token).
+        # Stage 258: the explicit stage-155 service contract remains intact,
+        # but unrestricted IP is the product default rather than an exceptional
+        # choice requiring a browser-IP fallback or confirmation checkbox.
         quick_ip_choice = form.get("quick_ip_choice", "").strip()
         if quick_ip_choice:
             if not token_name.strip():
                 token_name = QUICK_TOKEN_NAME
             if quick_ip_choice == "any":
                 ip_mask_raw = "*.*.*.*"
-                confirm_wildcard_ip = True
             else:
                 ip_mask_raw = "" if request_ip == "unknown" else request_ip
         if not ip_mask_raw:
-            if request_ip == "unknown":
-                ip_mask_raw = ""
-            else:
-                ip_mask_raw = request_ip
+            ip_mask_raw = "*.*.*.*"
 
         if active_connection is None or integration_health_status != INTEGRATION_HEALTH_ACTIVE:
             return await render_account_dashboard_response(
@@ -466,12 +460,8 @@ def register_account_routes(
 
         try:
             expires_in_days = int(expiry_raw) if expiry_raw else 30
-            if not ip_mask_raw:
-                raise ValueError("IP mask is required when request IP is unavailable.")
             if access_preset == PRESET_FULL_ACCESS and not confirm_full_access:
                 raise ValueError("Confirm full access before issuing this token.")
-            if ip_mask_raw == "*.*.*.*" and not confirm_wildcard_ip:
-                raise ValueError("Confirm unrestricted IP access before issuing this token.")
             async with get_session_factory()() as session:
                 token_row, raw_token = await issue_service_bearer_token(
                     session,

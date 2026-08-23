@@ -6,8 +6,37 @@ on:
     types: [completed]
 
 jobs:
-  deploy:
+  changes:
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.scope.outputs.should_deploy }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      - id: scope
+        name: Check whether the completed commit needs an image deploy
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          parent_sha="$(git rev-parse "${HEAD_SHA}^")"
+          changed_paths="$(git diff --name-only "${parent_sha}" "${HEAD_SHA}")"
+          if [ -z "${changed_paths}" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if printf '%s\n' "${changed_paths}" | grep -Eqv '(^PRD/|^docs/|\.md$)'; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: changes
+    if: ${{ needs.changes.outputs.should_deploy == 'true' }}
     runs-on: ubuntu-latest
 
     steps:
