@@ -2,6 +2,7 @@ import json
 from datetime import date, timedelta
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 
 from filters import (
     build_list_query_params,
@@ -12,7 +13,7 @@ from filters import (
 )
 from tools.crud_helpers import crud_get_by_id, crud_create, crud_update, unwrap_single_record
 from validators import LimitParam, parse_date_param
-from vetmanager_client import VetmanagerClient
+from vetmanager_client import VetmanagerClient, VetmanagerError
 
 # The correct Vetmanager REST endpoint for medical cards is /rest/api/MedicalCards
 # (capital M and C, plural). The response key is "medicalCards" (camelCase).
@@ -25,6 +26,19 @@ _DEFAULT_DATE_SORT = [
     {"property": "date_create", "direction": "ASC"},
     {"property": "id", "direction": "ASC"},
 ]
+
+_DIAGNOSES_TYPE_ERROR = "Cannot assign int to property Entity\\MedicalCard\\Diagnoses::$diagnoses of type array"
+
+
+def _medical_card_update_error(exc: VetmanagerError) -> ToolError | None:
+    """Translate the confirmed upstream Diagnoses type defect, and nothing else."""
+    if exc.status_code == 500 and _DIAGNOSES_TYPE_ERROR in str(exc):
+        return ToolError(
+            "Vetmanager did not update this medical card: its current diagnosis triggers "
+            "a known upstream compatibility error. The record was not saved; do not clear "
+            "the diagnosis to retry. Contact Vetmanager support or retry after their fix."
+        )
+    return None
 
 
 def _next_day_start(value: str) -> str:
@@ -395,7 +409,13 @@ def register(mcp: FastMCP) -> None:
             payload["weight"] = weight
         if temperature:
             payload["temperature"] = temperature
-        return await crud_update(_MC_ENDPOINT, card_id, payload)
+        try:
+            return await crud_update(_MC_ENDPOINT, card_id, payload)
+        except VetmanagerError as exc:
+            mapped_error = _medical_card_update_error(exc)
+            if mapped_error is not None:
+                raise mapped_error from None
+            raise
 
     @mcp.tool
     async def get_vaccinations(

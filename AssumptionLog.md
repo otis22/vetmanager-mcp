@@ -12307,3 +12307,69 @@ Checks so far:
 - Проверка выполнена на контуре bearer-токена, а не на devtr6 — но проверялся
   наш код проекции, а не данные стенда, поэтому выбор контура на вывод не
   влияет. Разведение контуров вынесено в этап 255.
+
+## Этап 254. Документация без Deploy Prod (2026-08-23)
+
+- `Deploy Prod` по-прежнему получает event только после успешного `Tests` с
+  `workflow_run.head_branch == 'main'`. Новый changes-job сравнивает parent и
+  `workflow_run.head_sha`: если все пути — `*.md`, `PRD/` или `docs/`, deploy-job
+  skip'ается до выдачи ему secrets и remote commands.
+- Следующий code commit не зависит от пропущенного запуска: GitHub создаёт
+  отдельный workflow_run с новым immutable `head_sha`, его diff содержит code,
+  и `should_deploy=true`. Цепочка `Tests → workflow_run` не менялась.
+- Targeted container regression: `2 passed`, exit 0. Spark PRD pass недоступен
+  из-за provider usage limit; Claude runner attempts 1/3 and 2/3 создали
+  zero-byte envelope без stderr (известная infrastructure problem этапа 226),
+  поэтому verdict не приписывается.
+
+## Этап 257. Ясное имя ручного выпуска Bearer-токена (2026-08-23)
+
+- Ручной блок и подсказка теперь называют результат: «Выпустить Bearer-токен
+  вручную». Остальные подписи на токеновой странице уже говорят о ключе,
+  токене, доступе или конкретном результате; лишний copy churn не вносился.
+
+## Этап 258. Любой IP по умолчанию (2026-08-23)
+
+- Этап 155 защищал не обязательное IP-ограничение как таковое, а ошибочный
+  implicit wildcard: `NULL` превращался в unrestricted token при забытом mask.
+  Его существенный инвариант сохранён: `allowed_ip_mask NOT NULL`, сервис
+  принимает и хранит явную строку `*.*.*.*`, а warning
+  `token_created_with_wildcard_ip` остаётся.
+- Риск новой нормы: скомпрометированный token можно использовать не только с
+  browser IP. Это осознанное решение владельца для server-to-server MCP;
+  ограниченная mask всё ещё доступна, а wildcard наблюдаем оператором.
+
+## Этап 225.3. Понятный отказ при дефекте диагнозов Vetmanager (2026-08-23)
+
+- Выбран narrow mapper только для HTTP 500 с подтверждённой сигнатурой
+  `Entity\\MedicalCard\\Diagnoses::$diagnoses ... type array`. Общий rewrite
+  upstream 500 отвергнут: он не может правдиво назвать причину и ухудшит
+  диагностику других дефектов.
+- Ошибка явно сообщает, что запись не сохранена, и запрещает опасный workaround
+  со стиранием диагноза. На devslon67 live validation требует REST-ключа у
+  супервизора; локально покрыт точный upstream response и non-matching 500.
+
+### Follow-up review — 2026-08-23
+
+- **Этап 254**: сравнение с `HEAD_SHA^` оказалось недостаточным для direct
+  push из нескольких commit'ов, если последний documentation-only. Базой теперь
+  служит `head_sha` последнего workflow run, у которого job `deploy` завершился
+  `success`; checkout получает полную историю. При первом запуске, недоступном
+  GitHub API или отсутствии доказанного baseline workflow делает deploy
+  (`should_deploy=true`), а не рискует тихо пропустить код.
+- **Этап 258**: default wildcard допустим только когда пользователь не выбирал
+  более узкую политику. При явном `quick_ip_choice=current` и `request_ip ==
+  "unknown"` route возвращает 400 и не создаёт token; текст предлагает выбрать
+  любой IP осознанно или указать mask вручную. Ручная непустая invalid mask не
+  расширяется: она доходит до `validate_ip_mask` и остаётся `ValueError`/400.
+
+### Browser follow-up — 2026-08-23
+
+- Удалены все текущие ссылки на `token-confirm-wildcard-ip`: три browser
+  happy-path/cleanup теста, web/e2e payload и opt-in browser tests больше не
+  пытаются отметить несуществующую галочку. Historical PRD этапа 137 остаётся
+  историей прежнего контракта, а active PRD 258 описывает её удаление.
+- Browser tests теперь выпускают token с пустым ручным `ip_mask` и проверяют
+  отображение `*.*.*.*` после выпуска; targeted browser+current-IP regression:
+  `4 passed`, exit 0. Ручная форма также перестала prefill'ить browser IP —
+  иначе UI продолжал бы навязывать старый опасный default несмотря на route.

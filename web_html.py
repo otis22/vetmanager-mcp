@@ -1584,7 +1584,7 @@ def render_account_page(
                 <span class="form-status" data-submit-status aria-live="polite"></span>
               </div>
             </form>
-            <p class="hint">Нужны другие права, срок или IP-маска — раскройте «Настроить вручную» ниже.</p>
+            <p class="hint">Нужны другие права, срок или IP-маска — раскройте «Выпустить Bearer-токен вручную» ниже.</p>
           </div>
         """
     manual_form_open = "" if (quick_issue_html and token_error is None) else "open"
@@ -1744,7 +1744,7 @@ def render_account_page(
         {token_note}
         {quick_issue_html}
         <details class="panel-card" data-testid="token-manual-form" {manual_form_open}>
-        <summary>Настроить вручную</summary>
+        <summary>Выпустить Bearer-токен вручную</summary>
         <form method="post" action="/account/tokens" data-submit-lock="Выпускаем токен…" data-testid="token-form">
           {hidden_csrf_input(csrf_token)}
           <label>Token name
@@ -1768,20 +1768,13 @@ def render_account_page(
           </label>
           <label>Ограничение по IP
             <input type="text" name="ip_mask" value="{escape(ip_mask)}" placeholder="45.67.89.123" {token_disabled} data-testid="token-ip-mask">
-            <small style="color: var(--muted); font-size: 0.85rem;">Маска IP: 45.67.89.123 — точный IP, 85.90.100.* — подсеть, *.*.*.* — любой IP после подтверждения ниже</small>
+            <small style="color: var(--muted); font-size: 0.85rem;">Необязательно. Оставьте пустым для любого IP; 45.67.89.123 — точный IP, 85.90.100.* — подсеть.</small>
           </label>
           <label style="display: flex; gap: 10px; align-items: start;">
             <input type="checkbox" name="confirm_full_access" value="1" {token_disabled} data-testid="token-confirm-full-access" style="width: auto; margin-top: 6px;">
             <span>
               <strong style="display: block; color: var(--ink);">Подтвердить полный доступ</strong>
               <small style="color: var(--muted); font-size: 0.85rem;">Нужно только для полного доступа.</small>
-            </span>
-          </label>
-          <label style="display: flex; gap: 10px; align-items: start;">
-            <input type="checkbox" name="confirm_wildcard_ip" value="1" {token_disabled} data-testid="token-confirm-wildcard-ip" style="width: auto; margin-top: 6px;">
-            <span>
-              <strong style="display: block; color: var(--ink);">Подтвердить доступ с любого IP</strong>
-              <small style="color: var(--muted); font-size: 0.85rem;">Нужно только для маски *.*.*.*.</small>
             </span>
           </label>
           <div class="actions">

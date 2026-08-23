@@ -44,13 +44,13 @@ def test_browser_domain_api_key_flow_can_issue_bearer_and_call_mcp(
     page.get_by_test_id("token-manual-form").locator("summary").click()
     page.get_by_test_id("token-name").fill("Browser API token")
     page.get_by_test_id("token-expires-in-days").fill("7")
-    page.get_by_test_id("token-ip-mask").fill("*.*.*.*")
-    page.get_by_test_id("token-confirm-wildcard-ip").check()
+    assert page.get_by_test_id("token-ip-mask").input_value() == ""
     page.get_by_test_id("token-submit").click()
     page.wait_for_load_state("networkidle")
 
     raw_token = page.get_by_test_id("issued-token-value").text_content()
     assert raw_token.startswith("vm_st_")
+    assert "*.*.*.*" in page.content()
     assert mocked.api_key not in page.content()
 
     with patch.object(

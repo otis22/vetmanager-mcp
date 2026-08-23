@@ -206,6 +206,35 @@ async def test_quick_issue_current_ip_binds_to_request_ip(
     storage.reset_storage_state()
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_quick_issue_current_ip_rejects_unknown_request_ip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA=")
+    monkeypatch.setattr("web_routes_account.get_request_ip", lambda _request: "unknown")
+    await _register_account_with_active_connection(email="quick-current-unknown@example.com")
+    _mock_active_connection_health("clinic")
+
+    async with _app_client() as client:
+        await _login_client(client, "quick-current-unknown@example.com")
+        response = await _post_with_csrf(
+            client,
+            "/account/tokens",
+            data={"quick_ip_choice": "current", "access_preset": "report_ai"},
+            page_path="/account",
+        )
+
+    assert response.status_code == 400
+    assert "не удалось определить ваш ip-адрес" in response.text.lower()
+    async with storage.get_session_factory()() as session:
+        assert (await session.execute(select(ServiceBearerToken))).scalars().all() == []
+
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
 # ── 197.3: issued panel config copy + instructions ───────────────────────────
 
 

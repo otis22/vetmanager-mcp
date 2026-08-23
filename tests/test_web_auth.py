@@ -865,7 +865,6 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
                 "token_name": "Cursor prod",
                 "expires_in_days": "30",
                 "ip_mask": "*.*.*.*",
-                "confirm_wildcard_ip": "1",
             },
             page_path="/account",
         )
@@ -1042,7 +1041,7 @@ async def test_account_token_issue_uses_analytics_web_defaults(tmp_path: Path, m
 
     assert token is not None
     assert token.get_scopes() == list(TOKEN_PRESET_SCOPES[PRESET_REPORT_AI])
-    assert token.allowed_ip_mask == "127.0.0.1"
+    assert token.allowed_ip_mask == "*.*.*.*"
     assert token.expires_at is not None
     expires_at = token.expires_at
     if expires_at.tzinfo is None:
@@ -1161,7 +1160,7 @@ async def test_account_token_issue_rejects_full_access_without_confirmation(tmp_
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_account_token_issue_rejects_wildcard_ip_without_confirmation(tmp_path: Path, monkeypatch):
+async def test_account_token_issue_allows_wildcard_ip_without_confirmation(tmp_path: Path, monkeypatch):
     engine = await _prepare_web_db(tmp_path, monkeypatch)
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
     domain = "clinic-wildcard-denied"
@@ -1188,7 +1187,7 @@ async def test_account_token_issue_rejects_wildcard_ip_without_confirmation(tmp_
             client,
             "/account/tokens",
             data={
-                "token_name": "Wildcard denied",
+                "token_name": "Wildcard allowed",
                 "expires_in_days": "30",
                 "ip_mask": "*.*.*.*",
                 "access_preset": PRESET_READ_ONLY,
@@ -1196,13 +1195,13 @@ async def test_account_token_issue_rejects_wildcard_ip_without_confirmation(tmp_
             page_path="/account",
         )
 
-    assert response.status_code == 400
-    assert "Confirm unrestricted IP access before issuing this token." in response.text
+    assert response.status_code == 200
     async with storage.get_session_factory()() as session:
         token = await session.scalar(
-            select(ServiceBearerToken).where(ServiceBearerToken.name == "Wildcard denied")
+            select(ServiceBearerToken).where(ServiceBearerToken.name == "Wildcard allowed")
         )
-    assert token is None
+    assert token is not None
+    assert token.allowed_ip_mask == "*.*.*.*"
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -1210,7 +1209,7 @@ async def test_account_token_issue_rejects_wildcard_ip_without_confirmation(tmp_
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_account_token_issue_rejects_blank_ip_when_request_ip_unknown(tmp_path: Path, monkeypatch):
+async def test_account_token_issue_defaults_to_wildcard_when_request_ip_unknown(tmp_path: Path, monkeypatch):
     engine = await _prepare_web_db(tmp_path, monkeypatch)
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
     monkeypatch.setattr(web_routes_account, "get_request_ip", lambda _request: "unknown")
@@ -1245,13 +1244,13 @@ async def test_account_token_issue_rejects_blank_ip_when_request_ip_unknown(tmp_
             page_path="/account",
         )
 
-    assert response.status_code == 400
-    assert "IP mask is required when request IP is unavailable." in response.text
+    assert response.status_code == 200
     async with storage.get_session_factory()() as session:
         token = await session.scalar(
             select(ServiceBearerToken).where(ServiceBearerToken.name == "Unknown IP token")
         )
-    assert token is None
+    assert token is not None
+    assert token.allowed_ip_mask == "*.*.*.*"
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -1294,7 +1293,6 @@ async def test_account_token_issue_allows_confirmed_full_access_and_wildcard_ip(
                 "ip_mask": "*.*.*.*",
                 "access_preset": PRESET_FULL_ACCESS,
                 "confirm_full_access": "1",
-                "confirm_wildcard_ip": "1",
             },
             page_path="/account",
         )

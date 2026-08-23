@@ -555,7 +555,6 @@ def test_real_web_account_can_issue_bearer_and_call_tool(live_server_url: str, r
                 "token_name": "Real E2E token",
                 "expires_in_days": "7",
                 "ip_mask": "*.*.*.*",
-                "confirm_wildcard_ip": "1",
             },
             page_path="/account",
         )

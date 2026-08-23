@@ -37,12 +37,12 @@ def test_browser_cleanup_removes_account_and_related_entities(
     page.get_by_test_id("token-manual-form").locator("summary").click()
     page.get_by_test_id("token-name").fill("Browser cleanup token")
     page.get_by_test_id("token-expires-in-days").fill("7")
-    page.get_by_test_id("token-ip-mask").fill("*.*.*.*")
-    page.get_by_test_id("token-confirm-wildcard-ip").check()
+    assert page.get_by_test_id("token-ip-mask").input_value() == ""
     page.get_by_test_id("token-submit").click()
     page.wait_for_load_state("networkidle")
 
     raw_token = page.get_by_test_id("issued-token-value").text_content()
+    assert "*.*.*.*" in page.content()
     with patch.object(
         auth_request,
         "_get_request_headers",
