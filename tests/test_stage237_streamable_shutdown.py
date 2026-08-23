@@ -56,37 +56,43 @@ async def test_uvicorn_shutdown_closes_streams_before_parent(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_real_streamable_transport_finishes_held_get_stream_without_terminating_session():
+async def test_real_streamable_transport_finishes_all_simultaneous_held_get_streams_without_terminating_sessions():
     mcp = FastMCP("stage237-test")
     app = mcp.http_app(path="/mcp", transport="streamable-http")
     manager = _get_streamable_session_manager(app, path="/mcp")
     assert manager is not None
     assert _get_streamable_session_manager(app, path="/mcp") is manager
-    transport = StreamableHTTPServerTransport(mcp_session_id="held-session")
-    send_stream, receive_stream = anyio.create_memory_object_stream(0)
-    transport._request_streams[GET_STREAM_KEY] = (send_stream, receive_stream)
-    manager._server_instances["held-session"] = transport
+    held_session_count = 5
+    transports = []
+    held_get_done = []
 
-    normal_response_done = asyncio.Event()
-    normal_response_done.set()
-    held_get_done = asyncio.Event()
-
-    async def read_held_get():
+    async def read_held_get(receive_stream, done):
         try:
             async with receive_stream:
                 async for _ in receive_stream:
                     pass
         except anyio.ClosedResourceError:
             pass
-        held_get_done.set()
+        done.set()
 
-    held_get = asyncio.create_task(read_held_get())
+    held_gets = []
+    for index in range(held_session_count):
+        session_id = f"held-session-{index}"
+        transport = StreamableHTTPServerTransport(mcp_session_id=session_id)
+        send_stream, receive_stream = anyio.create_memory_object_stream(0)
+        transport._request_streams[GET_STREAM_KEY] = (send_stream, receive_stream)
+        manager._server_instances[session_id] = transport
+        done = asyncio.Event()
+        transports.append(transport)
+        held_get_done.append(done)
+        held_gets.append(asyncio.create_task(read_held_get(receive_stream, done)))
+
     await asyncio.sleep(0)
-    assert normal_response_done.is_set()
-    assert not held_get_done.is_set()
+    assert not any(done.is_set() for done in held_get_done)
 
-    assert _close_standalone_sse_streams(manager) == 1
-    await asyncio.wait_for(held_get, timeout=1)
-    assert held_get_done.is_set()
-    assert manager._server_instances["held-session"] is transport
-    assert not transport.is_terminated
+    assert _close_standalone_sse_streams(manager) == held_session_count
+    await asyncio.wait_for(asyncio.gather(*held_gets), timeout=1)
+    assert all(done.is_set() for done in held_get_done)
+    for index, transport in enumerate(transports):
+        assert manager._server_instances[f"held-session-{index}"] is transport
+        assert not transport.is_terminated

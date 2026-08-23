@@ -12072,3 +12072,11 @@ Checks so far:
   затем после окна обычной client activity убедиться, что он не вырос. Рост
   или новый `ASGI callable returned without completing response` — основание
   задать kill switch/revert; до evidence не закрывать 237.3 и 230.4.
+- Claude Opus code/diff review, valid attempt 1/3, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T095046Z-git_range-origin_main__HEAD-attempt-1-of-3.zd196r/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=3584,
+  thinking_tokens=2897, len(result)=1712. Приняты два low findings: отсутствие
+  manager больше не логируется для non-streamable режима, а тест не называет
+  unit override реальным Uvicorn lifecycle. После production evidence добавлен
+  real-SDK regression на пять одновременно удерживаемых GET SSE: один drain
+  закрывает все пять, не terminate-ит ни одну session transport.
