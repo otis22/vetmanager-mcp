@@ -12080,3 +12080,9 @@ Checks so far:
   unit override реальным Uvicorn lifecycle. После production evidence добавлен
   real-SDK regression на пять одновременно удерживаемых GET SSE: один drain
   закрывает все пять, не terminate-ит ни одну session transport.
+- CI resolved FastMCP 3.4.7, где `http_app()` создаёт endpoint с
+  `session_manager=None`, а manager появляется только в Starlette lifespan.
+  Поэтому shutdown извлекает его непосредственно перед `super().shutdown()`,
+  когда lifespan ещё жив; извлечение при construction было бы no-op и не
+  закрывало бы production SSE. Контейнер с теми же dependency bounds подтвердил
+  regression (`3 passed`, exit 0).

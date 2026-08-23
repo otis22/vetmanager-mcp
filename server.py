@@ -148,9 +148,11 @@ def _close_standalone_sse_streams(session_manager) -> int:
 
 
 class _DrainingUvicornServer(uvicorn.Server):
-    def __init__(self, config, *, session_manager=None) -> None:
+    def __init__(self, config, *, session_manager=None, streamable_http_app=None, path: str | None = None) -> None:
         super().__init__(config)
         self._streamable_session_manager = session_manager
+        self._streamable_http_app = streamable_http_app
+        self._streamable_http_path = path
 
     def handle_exit(self, sig, frame) -> None:
         begin_draining()
@@ -158,7 +160,13 @@ class _DrainingUvicornServer(uvicorn.Server):
         super().handle_exit(sig, frame)
 
     async def shutdown(self, sockets=None) -> None:
-        _close_standalone_sse_streams(self._streamable_session_manager)
+        session_manager = self._streamable_session_manager
+        if self._streamable_http_app is not None and self._streamable_http_path is not None:
+            session_manager = _get_streamable_session_manager(
+                self._streamable_http_app,
+                path=self._streamable_http_path,
+            )
+        _close_standalone_sse_streams(session_manager)
         await asyncio.sleep(0)
         await super().shutdown(sockets=sockets)
 
@@ -166,7 +174,6 @@ class _DrainingUvicornServer(uvicorn.Server):
 def _run_http_server(*, transport: str, host: str, port: int, path: str) -> None:
     """Run the FastMCP HTTP app while preserving FastMCP's Uvicorn defaults."""
     app = mcp.http_app(path=path, transport=transport)
-    session_manager = _get_streamable_session_manager(app, path=path) if transport == "streamable-http" else None
     config = uvicorn.Config(
         app,
         host=host,
@@ -179,7 +186,13 @@ def _run_http_server(*, transport: str, host: str, port: int, path: str) -> None
         proxy_headers=True,
         forwarded_allow_ips=os.environ.get("FORWARDED_ALLOW_IPS"),
     )
-    asyncio.run(_DrainingUvicornServer(config, session_manager=session_manager).serve())
+    asyncio.run(
+        _DrainingUvicornServer(
+            config,
+            streamable_http_app=app if transport == "streamable-http" else None,
+            path=path if transport == "streamable-http" else None,
+        ).serve()
+    )
 
 
 configure_logging()
