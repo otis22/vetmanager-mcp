@@ -869,6 +869,44 @@ async def test_real_get_closing_of_invoices():
 @skip_if_no_creds
 @skip_if_not_devtr6
 @pytest.mark.asyncio
+async def test_real_get_closing_of_invoices_invoice_id_searches_both_sides() -> None:
+    """devtr6 fixture invoice 8 has a closing record on both document sides."""
+    invoice_id = 8
+
+    async def raw_ids(property_name: str) -> set[object]:
+        response = await call(vc().get(
+            "/rest/api/closingOfInvoices",
+            params={
+                "limit": 100,
+                "offset": 0,
+                "filter": json.dumps([
+                    {"property": property_name, "value": str(invoice_id), "operator": "="},
+                ]),
+            },
+        ))
+        rows = response.get("data", {}).get("closingOfInvoices", [])
+        return {row["id"] for row in rows if isinstance(row, dict) and row.get("id") is not None}
+
+    minus_ids = await raw_ids("minus_document_id")
+    plus_ids = await raw_ids("plus_document_id")
+    if not minus_ids or not plus_ids:
+        pytest.skip("devtr6 invoice 8 no longer has closing records on both sides")
+
+    headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+    with headers_patch, runtime_patch:
+        result = await call(mcp.call_tool(
+            "get_closing_of_invoices", {"invoice_id": invoice_id, "limit": 100},
+        ))
+
+    rows = _tool_payload(result)["data"]["closingOfInvoices"]
+    result_ids = [row["id"] for row in rows if isinstance(row, dict) and row.get("id") is not None]
+    assert set(result_ids) == minus_ids | plus_ids
+    assert len(result_ids) == len(set(result_ids))
+
+
+@skip_if_no_creds
+@skip_if_not_devtr6
+@pytest.mark.asyncio
 async def test_real_get_client_payment_applications_uses_closing_contract():
     filters = json.dumps([
         {"property": "plus_type_document", "value": "payment", "operator": "="},

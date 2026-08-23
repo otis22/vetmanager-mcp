@@ -634,21 +634,21 @@ async def test_update_medical_card():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_get_medical_cards_normalizes_response_key():
-    """get_medical_cards tool normalizes both 'medicalCards' and 'medicalcards' keys."""
+async def test_get_medical_cards_keeps_single_upstream_response_key():
+    """The tool must not duplicate the canonical upstream medicalCards list."""
     billing_mock()
     respx.get(f"{BASE}/rest/api/MedicalCards").mock(
         return_value=httpx.Response(200, json={
             "data": {"totalCount": 1, "medicalCards": [{"id": 1}]}
         })
     )
-    result = await client().get(
-        "/rest/api/MedicalCards",
-        params={"filter": '[{"property":"patient_id","value":"5","operator":"="}]', "limit": 20, "offset": 0},
-    )
-    data = result["data"]
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_medical_cards", {"pet_id": 5})
+    data = result.structured_content["data"]
     assert "medicalCards" in data
     assert data["medicalCards"][0]["id"] == 1
+    assert "medicalcards" not in data
 
 
 # ── 68.2 Error scenario tests ───────────────────────────────────────────────
