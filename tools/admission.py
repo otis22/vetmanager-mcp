@@ -90,7 +90,7 @@ def register(mcp: FastMCP) -> None:
                 in_treatment, not_confirmed.
             sort: Sort specification, e.g. [{"property": "admission_date",
                 "direction": "ASC"}].
-            filter: Additional raw filter conditions (merged with named filters).
+            filter/sort: Additional raw clauses; allowed properties for both are admission_date, admission_length, client_id, clinic_id, confirmation, create_date, creator_id, description, direct_direction, escorter_id, id, invoices_sum, is_auto_create, patient_id, reception_write_channel, status, type_id, user_id.
                 Allowed properties: admission_date, admission_length, client_id,
                 clinic_id, confirmation, create_date, creator_id, description,
                 direct_direction, escorter_id, id, invoices_sum, is_auto_create,

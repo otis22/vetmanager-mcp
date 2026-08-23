@@ -23,7 +23,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
             pet_id: Filter by pet ID (0 = no filter).
-            filter: Optional raw filters. Allowed properties: admission_id,
+            filter/sort: Optional raw clauses. Allowed properties for both: admission_id,
                 client_id, clinic_id, description, end_date, hospital_block_id,
                 id, invoice_id, pet_id, place, start_date, status, user_id.
         """
@@ -113,7 +113,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
-            filter: Optional raw filters. Allowed properties: clinic_id, id,
+            filter/sort: Optional raw clauses. Allowed properties for both: clinic_id, id,
                 is_daily_payment, is_hourly_payment, places_count,
                 reserved_places_count, status, title.
         """

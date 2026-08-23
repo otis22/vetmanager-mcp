@@ -12,8 +12,7 @@
   cleanup asyncpg на живом event loop из этапа 230 работает.
 - В ту же остановку PYTHON-6 вырос с 1 до 2. Его прислал останавливаемый
   контейнер с кодом этапа 230, поэтому это не регресс release-тегов этапа 236.
-- Runtime использует FastMCP 3.2.0 и `mcp` 1.29.0 (проверено командой Docker
-  против lockfile). Его stateful
+- Runtime использует FastMCP 3.2.0 и `mcp` 1.29.0. Его stateful
   `StreamableHTTPSessionManager` хранит сессии в `_server_instances`; у сессии
   открыт GET SSE stream. Менеджер завершает все эти сессии только в собственном
   lifespan shutdown, который Uvicorn начинает после завершения или отмены
@@ -36,7 +35,7 @@
    остаётся завершённым, а удерживаемый SSE GET существует до drain и получает
    корректный `http.response.body` с `more_body=false` после него.
 2. **237.2 — session drain (≤150 LOC).** При SIGTERM до передачи управления
-   Uvicorn на живом event loop закрыть только standalone GET SSE stream у snapshot
+   Uvicorn синхронно закрыть только standalone GET SSE stream у snapshot
    stateful transports, не завершая transport и не трогая in-flight POST tool
    calls. Записать безопасный structured outcome. Новые соединения
    по-прежнему перестаёт принимать Uvicorn; transport/path/auth не меняются.
@@ -57,7 +56,7 @@ task до отправки финального body event.
 
 FastMCP 3.2.0 не предоставляет public API для обхода всех manager sessions,
 поэтому snapshot реестра `_server_instances` изолирован в одном helper. Зато
-у `mcp` 1.29.0 transport есть public синхронный
+у каждого transport есть документированный синхронный
 `close_standalone_sse_stream()`: он закрывает только GET SSE connection,
 оставляя сам transport и его POST request streams живыми. Это предотвращает
 обрыв активного tool call той же MCP-сессии. Helper валидирует наличие нужных
@@ -84,32 +83,29 @@ FastMCP 3.2.0 не предоставляет public API для обхода в�
 
 Выбран вариант 4. Server строит HTTP app один раз, извлекает live session
 manager из созданного streamable route и передаёт его тонкому Uvicorn subclass.
-`handle_exit` только выставляет draining и вызывает исходный Uvicorn handler.
-Переопределённый async `shutdown()` на живом loop вызывает helper для snapshot
-stateful transports, даёт пробуждённым EventSourceResponse один scheduling
-turn, и лишь затем вызывает `super().shutdown()`, закрывающий listener и
-ожидающий уже конечный ASGI task. Нельзя завершать transport или удалять
-session: это оборвало бы активный POST tool call. Повторный SIGTERM оставляет
-обычный Uvicorn force-exit semantics вне гарантий этого graceful-stage.
+`handle_exit` сначала выставляет draining, затем синхронно вызывает helper для
+snapshot stateful transports и только после этого вызывает исходный Uvicorn
+handler. У helper нет await и нет зависимости от running loop: закрытие
+memory stream немедленно разблокирует EventSourceResponse, а `super()` затем
+закрывает listener и ждёт уже конечный ASGI task. Повторный SIGTERM безопасен,
+потому что SDK method — no-op без GET stream. Нельзя завершать transport или
+удалять session: это оборвало бы активный POST tool call.
 
 ### Инварианты
 
 - `streamable-http`, `/mcp`, OAuth и существующие headers не меняются.
 - Обычный и in-flight POST MCP response не закрывается принудительно.
 - Удерживаемый session stream завершает ASGI response до общего Uvicorn
-  timeout. Завершение GET — ожидаемое контролируемое отключение: после
-  restart MCP-клиент устанавливает новую сессию; server-initiated messages на
-  старом GET не обещаны во время deploy.
-- Shutdown helper запускается только из `Uvicorn.shutdown()` на живом loop и
-  не вмешивается в cleanup
+  timeout; последующий запрос с его session ID получает штатный 404.
+- Shutdown helper не создаёт/не требует event loop и не вмешивается в cleanup
   ресурсов этапа 230.
 - Ошибка или SDK drift одной сессии не блокируют остальные и не раскрывают IDs.
 
 ### Rollback/fallback
 
-Один revert возвращает прежний порядок Uvicorn. Для следующей выкатки оператор
-может задать `STREAMABLE_HTTP_DRAIN_ENABLED=false` (по умолчанию `true`), что
-отключает только новый helper, не меняя transport или startup. Если FastMCP/MCP меняет нужные
+Один revert возвращает прежний порядок Uvicorn. До revert оператор может
+задать `STREAMABLE_HTTP_DRAIN_ENABLED=false`, что отключает только новый
+helper, не меняя transport или startup. Если FastMCP/MCP меняет нужные
 атрибуты/метод, helper оставляет прежний lifecycle и пишет безопасное
 наблюдаемое событие; адаптация требует отдельного PRD, а не тихого обращения
 к другой private структуре.
@@ -120,14 +116,11 @@ session: это оборвало бы активный POST tool call. Повт�
   удерживаемым stateful SSE GET; второй после drain посылает final ASGI body,
   не остаётся pending и не выдаёт `ASGI callable returned without completing
   response`.
-- При SIGTERM Uvicorn вызывает helper до своего `super().shutdown()`; все
-  удерживаемые GET SSE streams закрываются idempotently и без session IDs в
-  логах, существующий in-flight POST не закрывается и получает время прежнего
-  20-second drain. Regression проверяет порядок override перед parent
-  `Uvicorn.shutdown()` и завершение реального SDK memory stream.
+- При SIGTERM до вызова parent Uvicorn handler закрываются все удерживаемые
+  GET SSE streams, idempotently и без session IDs в логах; существующий
+  in-flight POST не закрывается и получает время прежнего 20-second drain.
 - Test доказывает identity извлечённого manager, normal no-op при отсутствии
-  GET stream, public method на реальном установленном SDK и безопасный kill
-  switch/SDK-compatibility fallback; stateless manager даёт корректный no-op.
+  GET stream и безопасный kill switch/SDK-compatibility fallback.
 - Полный Docker test contour проходит; новый runtime module (если появится)
   добавлен в wheel allowlist.
 - PR открыт сразу после первого push. Для 237.3 супервизор сверяет baseline

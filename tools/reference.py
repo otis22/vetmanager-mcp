@@ -23,7 +23,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
             pet_type_id: Filter by animal type ID (0 = no filter).
-            filter: Optional raw filters. Allowed properties: id, pet_type_id,
+            filter/sort: Optional raw clauses. Allowed properties for both: id, pet_type_id,
                 title.
         """
         combined_filters: list = list(filter or [])
@@ -56,7 +56,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
-            filter: Optional raw filters. Allowed properties: id, picture,
+            filter/sort: Optional raw clauses. Allowed properties for both: id, picture,
                 title, type.
         """
         return await crud_list(
@@ -87,7 +87,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
             title: Filter by city name (partial match, optional).
-            filter: Optional raw filters. Allowed properties: id, title, type_id.
+            filter/sort: Optional raw clauses. Allowed properties for both: id, title, type_id.
         """
         combined_filters: list = list(filter or [])
         if title:
@@ -119,7 +119,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
-            filter: Optional raw filters. Allowed properties: id, title.
+            filter/sort: Optional raw clauses. Allowed properties for both: id, title.
         """
         return await crud_list(
             "/rest/api/cityType", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -140,7 +140,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
             city_id: Filter by city ID (0 = no filter).
-            filter: Optional raw filters. Allowed properties: city_id, id,
+            filter/sort: Optional raw clauses. Allowed properties for both: city_id, id,
                 title, type.
         """
         combined_filters: list = list(filter or [])
@@ -173,7 +173,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
-            filter: Optional raw filters. Allowed properties: id, status, title.
+            filter/sort: Optional raw clauses. Allowed properties for both: id, status, title.
         """
         return await crud_list(
             "/rest/api/unit", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -201,7 +201,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
-            filter: Optional raw filters. Allowed properties: id, name, super.
+            filter/sort: Optional raw clauses. Allowed properties for both: id, name, super.
         """
         return await crud_list(
             "/rest/api/role", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -229,7 +229,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Max records to return.
             offset: Pagination offset.
-            filter: Optional raw filters. Allowed properties: admission_length,
+            filter/sort: Optional raw clauses. Allowed properties for both: admission_length,
                 id, title.
         """
         return await crud_list(

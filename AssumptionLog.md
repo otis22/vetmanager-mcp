@@ -12092,3 +12092,18 @@ Checks so far:
   thinking_tokens=2790, len(result)=1578. Приняты оба findings: ошибка
   reflective SDK lookup не может пропустить `super().shutdown()` (и lifecycle
   cleanup), а kill switch обходит lookup полностью.
+# Этап 239 — контракт сортировки list-инструментов (2026-08-23)
+
+- Read-only `devtr6` probe: 24 сущности, 262 scalar keys; 260 сортируются с
+  HTTP 200. Только response-only `admission.wait_time` и
+  `hospital.in_hospital_time` дали 406, поэтому sort и filter registry
+  совпадают. Приватные исключения registry общие для обоих параметров.
+- `crud_list` выводит sort guard из существующего `allowed_filter_properties`,
+  чтобы не создать fail-open второй параметр. Rollback независим:
+  `SORT_CONTRACT_VALIDATION_ENABLED=0` не выключает filter guard.
+- Spark PRD prepass: accepted provenance/two-way probe, single allowlist,
+  independent rollback и exact hint; rejected aliases (инцидент требует
+  rejection) и расширение на unprobed tools (вне подтверждённого scope).
+- Claude Architecture Critique attempt 1/3: valid verdict; accepted findings
+  учтены в PRD. Evidence:
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T104934Z-file-PRD_-239---list-_md-attempt-1-of-3.SOqnxt/claude-review-attempt-1-of-3.envelope.json`; subtype=success, stop_reason=tool_use, output_tokens=7430, thinking_tokens=6033, len(result)=3794.
