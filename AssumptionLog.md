@@ -12246,46 +12246,6 @@ Checks so far:
 - `invoice_id` делает две выборки, дедуплицирует non-null `id`, применяет
   pagination после merge и не смотрит на type, поэтому пустой type безопасен.
 
-## Этап 226. Надёжность внешнего Claude review (2026-08-24)
-
-- Воспроизведён failure: запуск `scripts/run_claude_review.sh` для PRD 226
-  создал пустой envelope и не завершился за ~50 секунд. После SIGTERM Claude
-  runner завершился с `cli_exit=143`; evidence:
-  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T205921Z-file-PRD_-226--claude-review_md-attempt-1-of-3.jp6s9d/claude-review-attempt-1-of-3.envelope.json`;
-  `subtype=null`, `stop_reason=null`, `output_tokens=null`,
-  `thinking_tokens=null`, `len(result)=0`. Это infrastructure failure 1/3,
-  не verdict.
-- Причина бесконечного ожидания в runner: GNU `timeout` посылал только TERM и
-  не имел `--kill-after`; CLI, который игнорирует/не обрабатывает TERM, мог
-  жить дальше. Runner теперь использует явный TERM deadline и короткий KILL
-  grace, сохраняет raw evidence и outcome (`timeout`,
-  `timeout_killed_after_grace`, `invalid_verdict`, signal или `cli_error`).
-- Spark PRD pass не запущен из-за provider usage limit до чтения файлов;
-  findings отсутствуют. После commit будет выполнен committed-diff review
-  runner'ом как подтверждение исправления.
-
-## Этап 250. Реальный тест закрытий счёта (2026-08-24)
-
-- Реальный opt-in test закрепляет fixture devtr6 invoice `8`: raw filters для
-  `minus_document_id` и `plus_document_id` должны вернуть непустые наборы;
-  tool result обязан равняться их union без повторов. Fixture исчезла бы только
-  при намеренном изменении тестовых данных, тогда test честно skip'ается вместо
-  ложного утверждения о двухсторонности.
-
-## Этап 253. Один ключ списка медкарт (2026-08-24)
-
-- Alias `medicalcards` добавлен в `ef446dd` одновременно с исправлением
-  endpoint как временная совместимость. Он не нужен для outgoing response:
-  canonical REST key — `medicalCards`, а fallback reads остаются только для
-  upstream variants. `unwrap_single_record(..., "medicalCards")` в update
-  намеренно не менялся.
-- Static search `data\s*\[[^]]+\]\s*=` по `tools/` не нашёл других
-  list-response alias mutations; единственное оставшееся присваивание в
-  `tools/user.py` — projection разрешённых полей, не дублирование списка.
-- Полный mock/container contour после изменения: `1626 passed, 2 skipped,
-  67 deselected`, exit 0. Opt-in real contour с devtr6 credentials завершился
-  без печати credentials; regression invoice 8 прошёл в его первой части.
-
 - `possible_pii=true` не означает, что персональные данные лежат в базе:
   санитайзер отрабатывает **до** записи и уже заменил их на `[REDACTED]`.
   Флаг — след того, что чистка была. Поэтому `redact` нужен не для «удалить
@@ -12312,6 +12272,48 @@ Checks so far:
   сводит только управляющие символы, но правило, которое удаляет вместо
   маскирования, сделало бы это и с обычным текстом — а именно ради поумневшего
   санитайзера команда и существует.
+
+## Этап 226. Надёжность внешнего Claude review (2026-08-24)
+
+- Воспроизведён failure: запуск `scripts/run_claude_review.sh` для PRD 226
+  создал пустой envelope и не завершился за ~50 секунд. После SIGTERM Claude
+  runner завершился с `cli_exit=143`; evidence:
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T205921Z-file-PRD_-226--claude-review_md-attempt-1-of-3.jp6s9d/claude-review-attempt-1-of-3.envelope.json`;
+  `subtype=null`, `stop_reason=null`, `output_tokens=null`,
+  `thinking_tokens=null`, `len(result)=0`. Это infrastructure failure 1/3,
+  не verdict.
+- Причина бесконечного ожидания в runner: GNU `timeout` посылал только TERM и
+  не имел `--kill-after`; CLI, который игнорирует/не обрабатывает TERM, мог
+  жить дальше. Runner теперь использует явный TERM deadline и короткий KILL
+  grace, сохраняет raw evidence и outcome (`timeout`,
+  `timeout_killed_after_grace`, `invalid_verdict`, signal или `cli_error`).
+- Spark PRD pass не запущен из-за provider usage limit до чтения файлов;
+  findings отсутствуют. Committed diff review прошёл: evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T211753Z-git_range-c60943b__HEAD-attempt-1-of-3.DcKVRW/claude-review-attempt-1-of-3.envelope.json`,
+  `subtype=success`, `stop_reason=tool_use`, `output_tokens=2780`,
+  `thinking_tokens=1518`, `len(result)=1543`.
+
+## Этап 250. Реальный тест закрытий счёта (2026-08-24)
+
+- Реальный opt-in test закрепляет fixture devtr6 invoice `8`: raw filters для
+  `minus_document_id` и `plus_document_id` должны вернуть непустые наборы;
+  tool result обязан равняться их union без повторов. Fixture исчезла бы только
+  при намеренном изменении тестовых данных, тогда test честно skip'ается вместо
+  ложного утверждения о двухсторонности.
+
+## Этап 253. Один ключ списка медкарт (2026-08-24)
+
+- Alias `medicalcards` добавлен в `ef446dd` одновременно с исправлением
+  endpoint как временная совместимость. Он не нужен для outgoing response:
+  canonical REST key — `medicalCards`, а fallback reads остаются только для
+  upstream variants. `unwrap_single_record(..., "medicalCards")` в update
+  намеренно не менялся.
+- Static search `data\s*\[[^]]+\]\s*=` по `tools/` не нашёл других
+  list-response alias mutations; единственное оставшееся присваивание в
+  `tools/user.py` — projection разрешённых полей, не дублирование списка.
+- Полный mock/container contour после изменения: `1626 passed, 2 skipped,
+  67 deselected`, exit 0. Opt-in real contour с devtr6 credentials завершился
+  без печати credentials; regression invoice 8 прошёл в его первой части.
 
 ## Этап 240. Санитайзер съедает текст ошибки (2026-08-23)
 

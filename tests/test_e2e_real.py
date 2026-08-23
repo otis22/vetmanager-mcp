@@ -880,7 +880,7 @@ async def test_real_get_closing_of_invoices_invoice_id_searches_both_sides() -> 
                 "limit": 100,
                 "offset": 0,
                 "filter": json.dumps([
-                    {"property": property_name, "value": invoice_id, "operator": "="},
+                    {"property": property_name, "value": str(invoice_id), "operator": "="},
                 ]),
             },
         ))
