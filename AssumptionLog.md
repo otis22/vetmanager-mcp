@@ -12030,6 +12030,57 @@ Checks so far:
   `1584 passed, 2 skipped, 66 deselected`; предыдущая попытка была загрязнена
   root-owned пустым `data/`, поэтому не учитывается как успешная проверка.
 
+## Этапы 240–241. Качество событий трекинга
+
+- Причина `[Filtered]` в PYTHON-9/PYTHON-A подтверждена: `_is_private_handled_event`
+  объединял manual tool failure с handled connection failure и заменял
+  `exception.values[*].value` целиком. Automatic PYTHON-8 не имеет manual tag,
+  поэтому это правило его не затрагивало.
+- `capture_tool_failure` теперь ставит transient opt-in tag только на своём
+  событии. Sanitize сохраняет upstream status/code/field/validation text,
+  маскирует known secret/labelled-PII/email/IP/phone values, по-прежнему удаляет
+  request/user/context/breadcrumb/extra и полностью redacts frame locals. Tag
+  удаляется перед отправкой; generic manual и handled connection events
+  сохраняют full exception redaction.
+- Дубликат шёл от исходного `VetmanagerError` в explicit `__cause__`: marker
+  стоял лишь на оборачивающем `ToolError`, поэтому Sentry не видел его на
+  domain event. Marker теперь ставится по cycle-safe explicit cause-chain.
+  `__context__` намеренно не подавляется: текущий tool wrapper использует
+  `raise ... from exc`, а implicit context может быть несвязанным exception.
+- Spark PRD review: read-only sandbox failed before reads (`bwrap`), same-model
+  danger-full-access review-only fallback дал два accepted findings (separate
+  tool text from connection redaction; propagate marker through explicit
+  causes). Query-string and recursive-redaction remarks относятся к existing
+  general sanitizer path и не были приняты как scope-expanding changes.
+- Claude Architecture/PRD review attempt 1/3: success, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T113425Z-file-PRD_-240-241---_md-attempt-1-of-3.k27zRZ/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=2588, thinking_tokens=1756,
+  len(result)=1971. Принят privacy finding: raw exception text нельзя simply
+  unredact; добавлен targeted scrub.
+- Claude PRD review attempt 2/3: success, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T113857Z-file-PRD_-240-241---_md-attempt-2-of-3.rQUJZs/claude-review-attempt-2-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=3131, thinking_tokens=2389,
+  len(result)=1761. Приняты opt-in only для tool path и explicit-cause contract;
+  finding о persistent marker отклонён как уже существующий request-scoped
+  lifecycle marker, не расширяемый этой задачей.
+- Regression suite: `18 passed` (exit 0). Canonical full contour:
+  `1600 passed, 2 skipped, 66 deselected in 276.37s` (exit 0). Этап 241.3
+  остаётся todo до отдельной разрешённой живой выкаты; production server в этой
+  задаче не трогался.
+- Claude committed-diff review attempt 1/3: success, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T115631Z-git_range-origin_main__HEAD-attempt-1-of-3.KoBUEM/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=8111, thinking_tokens=7064,
+  len(result)=1375. Принят medium finding: `Authorization: Bearer/Basic <value>`
+  must redact the credential, not only the scheme; test added. Low finding о
+  too-broad phone regex также принят: pattern narrowed so dates and numeric IDs
+  remain diagnostic text.
+- Claude committed-diff review attempt 2/3: success, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T120300Z-git_range-origin_main__HEAD-attempt-2-of-3.CDXXDm/claude-review-attempt-2-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=5758, thinking_tokens=4737,
+  len(result)=1461. Принят remaining medium finding: standalone `Bearer/Basic`
+  credentials are scrubbed even without `=`/`:` key separator. Low phone finding
+  принят: separator is required for non-`+` phone form, preserving long IDs.
+
 ## Этап 237. Осмысленное завершение streamable-HTTP сессий
 
 - Локальный runtime FastMCP 3.2.0 / `mcp` 1.29.0 подтвердил настоящую причину

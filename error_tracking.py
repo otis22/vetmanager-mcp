@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import re
+from ipaddress import ip_address
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
@@ -14,6 +16,7 @@ _REDACTED = "[Filtered]"
 _HANDLED_CONNECTION_FAILURE_TAG = "handled_connection_failure"
 _MANUAL_TOOL_FAILURE_TAG = "mcp_tool_failure_capture"
 _MANUAL_TOOL_FAILURE_VALUE = "manual"
+_MANUAL_TOOL_FAILURE_TEXT_TAG = "mcp_safe_upstream_text"
 _TOOL_ERROR_CAPTURE_MARKER = "_vetmanager_mcp_error_tracking_handled"
 _configured = False
 
@@ -61,6 +64,43 @@ _SAFE_KEY_WHITELIST = frozenset({
     "if-modified-since",
 })
 
+_SENSITIVE_EXCEPTION_VALUE_RE = re.compile(
+    r"(?ix)"
+    r"(\b(?:access[_-]?token|api[_-]?key|authorization|bearer|client_ip|cookie|credential|"
+    r"csrf|dpop|email|first[_-]?name|full[_-]?name|hmac|jwt|last[_-]?name|login|otp|"
+    r"pass(?:word|phrase)|phone|secret|session|signature|token)\b"
+    r"\s*(?:=|:)\s*)"
+    r"(?:(?:Bearer|Basic)\s+[^\s,;&]+|\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
+)
+_BARE_CREDENTIAL_RE = re.compile(r"(?i)\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+")
+_EMAIL_RE = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
+_IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+_IPV6_CANDIDATE_RE = re.compile(r"(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{0,4}:){2,}[0-9A-Fa-f:]+")
+_PHONE_RE = re.compile(
+    r"(?<!\w)(?:\+\d[\d .()/-]{6,}\d|\d{1,3}[ -]\(?\d{3}\)?[ -]?\d{3}[ -]?\d{2}[ -]?\d{2})(?!\w)"
+)
+
+
+def _redact_exception_value(value: object) -> object:
+    """Keep diagnostic upstream text while removing common secret and PII values."""
+    if not isinstance(value, str):
+        return value
+    value = _PHONE_RE.sub(_REDACTED, value)
+    value = _BARE_CREDENTIAL_RE.sub(_REDACTED, value)
+    value = _SENSITIVE_EXCEPTION_VALUE_RE.sub(r"\1" + _REDACTED, value)
+    value = _EMAIL_RE.sub(_REDACTED, value)
+    value = _IPV4_RE.sub(_REDACTED, value)
+    value = _IPV6_CANDIDATE_RE.sub(_redact_ip_literal, value)
+    return value
+
+
+def _redact_ip_literal(match: re.Match[str]) -> str:
+    try:
+        ip_address(match.group())
+    except ValueError:
+        return match.group()
+    return _REDACTED
+
 
 def _is_sensitive_key(name: object) -> bool:
     if not isinstance(name, str):
@@ -96,7 +136,7 @@ def _resolve_release() -> str:
 
 
 def _exception_chain_contains_marker(exc: BaseException | None) -> bool:
-    """Return whether an exception/cause/context chain was handled by MCP."""
+    """Return whether an exception or its explicit cause was handled by MCP."""
     seen: set[int] = set()
     while exc is not None and id(exc) not in seen:
         seen.add(id(exc))
@@ -122,6 +162,16 @@ def _is_private_handled_event(event: dict[str, Any]) -> bool:
         tags.get(_HANDLED_CONNECTION_FAILURE_TAG) == "true"
         or tags.get(_MANUAL_TOOL_FAILURE_TAG) == _MANUAL_TOOL_FAILURE_VALUE
     )
+
+
+def _is_handled_connection_failure_event(event: dict[str, Any]) -> bool:
+    tags = event.get("tags")
+    return isinstance(tags, dict) and tags.get(_HANDLED_CONNECTION_FAILURE_TAG) == "true"
+
+
+def _has_safe_manual_tool_failure_text(event: dict[str, Any]) -> bool:
+    tags = event.get("tags")
+    return isinstance(tags, dict) and tags.get(_MANUAL_TOOL_FAILURE_TEXT_TAG) == "true"
 
 
 def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -199,7 +249,11 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
             for exc_v in exc_values:
                 if not isinstance(exc_v, dict):
                     continue
-                if _is_private_handled_event(event):
+                if _is_handled_connection_failure_event(event):
+                    exc_v["value"] = _REDACTED
+                elif _has_safe_manual_tool_failure_text(event):
+                    exc_v["value"] = _redact_exception_value(exc_v.get("value"))
+                elif _is_private_handled_event(event):
                     exc_v["value"] = _REDACTED
                 st = exc_v.get("stacktrace")
                 if not isinstance(st, dict):
@@ -230,6 +284,9 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
 
     tags = event.get("tags")
     if isinstance(tags, dict):
+        # Internal opt-in controls sanitizer behaviour but is not useful as an
+        # indexed Sentry tag after the event has been made safe.
+        tags.pop(_MANUAL_TOOL_FAILURE_TEXT_TAG, None)
         event["tags"] = _redact_mapping(tags)
 
     return event
@@ -277,12 +334,20 @@ def capture_handled_connection_failure(exc: BaseException, *, account_id: int) -
 
 
 def mark_tool_error_as_handled(exc: BaseException) -> None:
-    """Mark one terminal MCP error so automatic capture can drop its duplicate."""
-    try:
-        setattr(exc, _TOOL_ERROR_CAPTURE_MARKER, True)
-    except Exception:
-        # A marker is an optimisation for duplicate suppression only.
-        return
+    """Mark a terminal MCP error and its explicit causes for deduplication."""
+    seen: set[int] = set()
+    while id(exc) not in seen:
+        seen.add(id(exc))
+        try:
+            setattr(exc, _TOOL_ERROR_CAPTURE_MARKER, True)
+        except Exception:
+            # The marker is an optimisation; immutable unusual exceptions do
+            # not alter the user-visible failure or traversal of its cause.
+            pass
+        next_exc = exc.__cause__
+        if not isinstance(next_exc, BaseException):
+            return
+        exc = next_exc
 
 
 def _upstream_status_from_exception(exc: BaseException) -> int | None:
@@ -311,6 +376,7 @@ def capture_tool_failure(
     try:
         with sentry_sdk.push_scope() as scope:
             scope.set_tag(_MANUAL_TOOL_FAILURE_TAG, _MANUAL_TOOL_FAILURE_VALUE)
+            scope.set_tag(_MANUAL_TOOL_FAILURE_TEXT_TAG, "true")
             scope.set_tag("tool", tool_name)
             if account_id is not None:
                 scope.set_tag("account_id", str(account_id))
