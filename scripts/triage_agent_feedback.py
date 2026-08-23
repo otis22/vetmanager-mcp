@@ -468,16 +468,29 @@ async def _redact(args: argparse.Namespace) -> None:
         for report in rows:
             redactions: set[str] = set()
             changed: list[str] = []
+            emptied: list[str] = []
             for field, limit, required in _REDACTABLE_FIELDS:
                 before = getattr(report, field)
                 if before is None:
                     continue
-                result = sanitize_text_with_metadata(before, limit=limit, required=required)
+                try:
+                    result = sanitize_text_with_metadata(before, limit=limit, required=required)
+                except ToolError:
+                    # A required field can sanitize down to nothing once the
+                    # patterns improve — exactly the case this command exists
+                    # for. Report it and leave the row alone rather than
+                    # aborting the whole batch.
+                    emptied.append(field)
+                    continue
                 redactions.update(result.redactions)
                 if result.text != before:
                     changed.append(field)
                     if not args.dry_run:
                         setattr(report, field, result.text)
+            if emptied:
+                print(f"#{report.id}: SKIPPED, would empty required {emptied}")
+                session.expunge(report)
+                continue
             possible_pii = bool(PRIVACY_REDACTIONS.intersection(redactions))
             if not args.dry_run:
                 report.possible_pii = possible_pii

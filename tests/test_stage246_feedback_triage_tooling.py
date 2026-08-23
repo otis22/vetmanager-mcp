@@ -137,3 +137,29 @@ async def test_link_rejects_an_unknown_issue(
 
     with pytest.raises(SystemExit):
         await triage_cli._link(SimpleNamespace(known_issue_id=4242, report_ids=[report_id]))
+
+
+@pytest.mark.asyncio
+async def test_redact_skips_a_row_that_would_lose_a_required_field(
+    sqlite_session_factory_builder, tmp_path, monkeypatch, capsys,
+) -> None:
+    """A sharper sanitizer can swallow a whole required field.
+
+    Control characters are the one input the current sanitizer reduces to
+    nothing; a future rule that deletes rather than masks would do the same to
+    ordinary text. Either way the batch must survive: report the row, leave it
+    alone, keep going.
+    """
+    session_factory = await sqlite_session_factory_builder(tmp_path / "stage246-empty.db")
+    monkeypatch.setattr(triage_cli, "get_session_factory", lambda: session_factory)
+    first = await _seed(session_factory, _report(details="\x01\x02\x03"))
+    second = await _seed(session_factory, _report(details="Plain shape-only text."))
+
+    await triage_cli._redact(SimpleNamespace(report_ids=[first, second], dry_run=False))
+
+    output = capsys.readouterr().out
+    assert f"#{first}: SKIPPED, would empty required ['details']" in output
+    assert f"#{second}: updated" in output
+    async with session_factory() as session:
+        untouched = await session.get(AgentFeedbackReport, first)
+        assert untouched.details == "\x01\x02\x03"
