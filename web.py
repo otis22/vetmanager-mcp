@@ -539,9 +539,10 @@ async def _render_account_dashboard_response(
         response = _redirect_response(request, url="/login", status_code=303)
         clear_account_session_cookie(response)
         return response
-    default_ip_mask = ip_mask if ip_mask is not None else get_request_ip(request)
-    if default_ip_mask == "unknown":
-        default_ip_mask = ""
+    # Stage 258: an empty manual field means the explicit wildcard default.
+    # Do not prefill the browser address: it looks like a chosen restriction
+    # and can turn a normal server-to-server token into a dead token.
+    default_ip_mask = ip_mask if ip_mask is not None else ""
     return _html_response(
         request,
         render_account_page(

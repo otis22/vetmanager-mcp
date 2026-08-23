@@ -865,7 +865,6 @@ async def test_account_token_issue_shows_raw_token_once_and_stores_only_hash(tmp
                 "token_name": "Cursor prod",
                 "expires_in_days": "30",
                 "ip_mask": "*.*.*.*",
-                "confirm_wildcard_ip": "1",
             },
             page_path="/account",
         )

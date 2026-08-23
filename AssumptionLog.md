@@ -12362,3 +12362,14 @@ Checks so far:
   "unknown"` route возвращает 400 и не создаёт token; текст предлагает выбрать
   любой IP осознанно или указать mask вручную. Ручная непустая invalid mask не
   расширяется: она доходит до `validate_ip_mask` и остаётся `ValueError`/400.
+
+### Browser follow-up — 2026-08-23
+
+- Удалены все текущие ссылки на `token-confirm-wildcard-ip`: три browser
+  happy-path/cleanup теста, web/e2e payload и opt-in browser tests больше не
+  пытаются отметить несуществующую галочку. Historical PRD этапа 137 остаётся
+  историей прежнего контракта, а active PRD 258 описывает её удаление.
+- Browser tests теперь выпускают token с пустым ручным `ip_mask` и проверяют
+  отображение `*.*.*.*` после выпуска; targeted browser+current-IP regression:
+  `4 passed`, exit 0. Ручная форма также перестала prefill'ить browser IP —
+  иначе UI продолжал бы навязывать старый опасный default несмотря на route.
