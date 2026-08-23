@@ -161,11 +161,22 @@ class _DrainingUvicornServer(uvicorn.Server):
 
     async def shutdown(self, sockets=None) -> None:
         session_manager = self._streamable_session_manager
-        if self._streamable_http_app is not None and self._streamable_http_path is not None:
-            session_manager = _get_streamable_session_manager(
-                self._streamable_http_app,
-                path=self._streamable_http_path,
-            )
+        if (
+            _streamable_http_drain_enabled()
+            and self._streamable_http_app is not None
+            and self._streamable_http_path is not None
+        ):
+            try:
+                session_manager = _get_streamable_session_manager(
+                    self._streamable_http_app,
+                    path=self._streamable_http_path,
+                )
+            except Exception:
+                RUNTIME_LOGGER.error(
+                    "Streamable HTTP drain is unavailable",
+                    extra={"event_name": "streamable_http_drain_unsupported"},
+                    exc_info=True,
+                )
         _close_standalone_sse_streams(session_manager)
         await asyncio.sleep(0)
         await super().shutdown(sockets=sockets)

@@ -12086,3 +12086,9 @@ Checks so far:
   когда lifespan ещё жив; извлечение при construction было бы no-op и не
   закрывало бы production SSE. Контейнер с теми же dependency bounds подтвердил
   regression (`3 passed`, exit 0).
+- Claude Opus final code/diff review, valid attempt 2/3, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T102021Z-git_range-origin_main__HEAD-attempt-2-of-3.sp9QvS/claude-review-attempt-2-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=4166,
+  thinking_tokens=2790, len(result)=1578. Приняты оба findings: ошибка
+  reflective SDK lookup не может пропустить `super().shutdown()` (и lifecycle
+  cleanup), а kill switch обходит lookup полностью.

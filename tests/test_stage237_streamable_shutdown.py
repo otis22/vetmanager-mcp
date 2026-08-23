@@ -58,6 +58,49 @@ async def test_uvicorn_shutdown_closes_streams_before_parent(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_uvicorn_shutdown_preserves_parent_lifecycle_when_session_manager_lookup_fails(monkeypatch):
+    server = object.__new__(_DrainingUvicornServer)
+    server._streamable_session_manager = None
+    server._streamable_http_app = object()
+    server._streamable_http_path = "/mcp"
+    observed = []
+
+    def lookup_fails(*_args, **_kwargs):
+        raise RuntimeError("SDK wrapper failure")
+
+    async def parent_shutdown(self, sockets=None):
+        observed.append(True)
+
+    monkeypatch.setattr("server._get_streamable_session_manager", lookup_fails)
+    monkeypatch.setattr("uvicorn.Server.shutdown", parent_shutdown)
+    await _DrainingUvicornServer.shutdown(server)
+
+    assert observed == [True]
+
+
+@pytest.mark.asyncio
+async def test_uvicorn_shutdown_kill_switch_skips_session_manager_lookup(monkeypatch):
+    server = object.__new__(_DrainingUvicornServer)
+    server._streamable_session_manager = None
+    server._streamable_http_app = object()
+    server._streamable_http_path = "/mcp"
+    observed = []
+
+    async def parent_shutdown(self, sockets=None):
+        observed.append(True)
+
+    monkeypatch.setenv(STREAMABLE_HTTP_DRAIN_ENABLED_ENV, "false")
+    monkeypatch.setattr(
+        "server._get_streamable_session_manager",
+        lambda *_args, **_kwargs: pytest.fail("lookup must be disabled by the kill switch"),
+    )
+    monkeypatch.setattr("uvicorn.Server.shutdown", parent_shutdown)
+    await _DrainingUvicornServer.shutdown(server)
+
+    assert observed == [True]
+
+
+@pytest.mark.asyncio
 async def test_real_streamable_transport_finishes_all_simultaneous_held_get_streams_without_terminating_sessions():
     mcp = FastMCP("stage237-test")
     app = mcp.http_app(path="/mcp", transport="streamable-http")
