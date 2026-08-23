@@ -19,7 +19,14 @@ if str(ROOT) not in sys.path:
 from fastmcp.exceptions import ToolError
 from sqlalchemy import case, delete, func, select
 
-from agent_feedback_service import sanitize_text, validate_agent_playbook, validate_match_rules_json
+from agent_feedback_service import (
+    PRIVACY_REDACTIONS,
+    REDACTION_VERSION,
+    sanitize_text,
+    sanitize_text_with_metadata,
+    validate_agent_playbook,
+    validate_match_rules_json,
+)
 from storage import get_session_factory
 from storage_models import (
     AgentFeedbackReport,
@@ -391,6 +398,123 @@ async def _match_effectiveness(args: argparse.Namespace) -> None:
         )
 
 
+def _report_body_lines(report: AgentFeedbackReport) -> list[str]:
+    """Full stored text of one report.
+
+    `recent`/`group`/`export-markdown` print only `summary`, which is not
+    enough to triage: the reproduction steps and the suggested fix live in
+    `details`/`reproduce`/`suggested_fix`. Stage 246.
+    """
+    return [
+        f"#{report.id} [{report.status}] {report.severity}/{report.category}",
+        f"  created_at      : {report.created_at}",
+        f"  source          : {report.source}",
+        f"  related_tool    : {report.related_tool or '-'}",
+        f"  account_id      : {report.account_id}",
+        f"  http_status     : {report.http_status}",
+        f"  error_code      : {report.error_code or '-'}",
+        f"  params_shape    : {report.params_shape_json or '-'}",
+        f"  fingerprint     : {report.error_fingerprint_hash or '-'}",
+        f"  known_issue_id  : {report.known_issue_id}",
+        f"  possible_pii    : {str(report.possible_pii).lower()}",
+        f"  redaction_ver   : {report.redaction_version}",
+        f"  summary         : {report.summary}",
+        f"  details         : {report.details}",
+        f"  reproduce       : {report.reproduce or '-'}",
+        f"  suggested_fix   : {report.suggested_fix or '-'}",
+    ]
+
+
+async def _show(args: argparse.Namespace) -> None:
+    async with get_session_factory()() as session:
+        rows = (
+            await session.execute(
+                select(AgentFeedbackReport)
+                .where(AgentFeedbackReport.id.in_(args.report_ids))
+                .order_by(AgentFeedbackReport.id)
+            )
+        ).scalars().all()
+        found = {row.id for row in rows}
+        for report in rows:
+            print("\n".join(_report_body_lines(report)))
+            print("-" * 70)
+        for missing in sorted(set(args.report_ids) - found):
+            print(f"#{missing}: not found")
+
+
+_REDACTABLE_FIELDS = (
+    ("summary", 240, True),
+    ("details", 8000, True),
+    ("reproduce", 4000, False),
+    ("suggested_fix", 4000, False),
+)
+
+
+async def _redact(args: argparse.Namespace) -> None:
+    """Re-run the current sanitizer over stored text.
+
+    Reports are sanitized on write, so this only matters when the sanitizer
+    itself improves: `REDACTION_VERSION` moves and older rows keep whatever
+    the previous patterns let through. Stage 246.
+    """
+    async with get_session_factory()() as session:
+        rows = (
+            await session.execute(
+                select(AgentFeedbackReport)
+                .where(AgentFeedbackReport.id.in_(args.report_ids))
+                .order_by(AgentFeedbackReport.id)
+            )
+        ).scalars().all()
+        for report in rows:
+            redactions: set[str] = set()
+            changed: list[str] = []
+            for field, limit, required in _REDACTABLE_FIELDS:
+                before = getattr(report, field)
+                if before is None:
+                    continue
+                result = sanitize_text_with_metadata(before, limit=limit, required=required)
+                redactions.update(result.redactions)
+                if result.text != before:
+                    changed.append(field)
+                    if not args.dry_run:
+                        setattr(report, field, result.text)
+            possible_pii = bool(PRIVACY_REDACTIONS.intersection(redactions))
+            if not args.dry_run:
+                report.possible_pii = possible_pii
+                report.redaction_version = REDACTION_VERSION
+            prefix = "would update" if args.dry_run else "updated"
+            print(
+                f"#{report.id}: {prefix} fields={changed or '-'} "
+                f"possible_pii={str(possible_pii).lower()} "
+                f"redactions={sorted(redactions) or '-'}"
+            )
+        if not args.dry_run:
+            await session.commit()
+
+
+async def _link(args: argparse.Namespace) -> None:
+    """Attach an existing report to an existing known issue.
+
+    `promote` and `resolve-report` each create a *new* known issue, so one bug
+    reported under several fingerprints ends up as several issues. Stage 246.
+    """
+    async with get_session_factory()() as session:
+        issue = await session.get(KnownIssue, args.known_issue_id)
+        if issue is None:
+            raise SystemExit(f"Known issue not found: {args.known_issue_id}")
+        for report_id in args.report_ids:
+            report = await session.get(AgentFeedbackReport, report_id)
+            if report is None:
+                raise SystemExit(f"Report not found: {report_id}")
+            report.known_issue_id = issue.id
+            report.status = FEEDBACK_STATUS_LINKED
+            issue.report_count = (issue.report_count or 0) + 1
+            issue.last_seen_at = _now()
+            print(f"linked report #{report.id} to known_issue #{issue.id}")
+        await session.commit()
+
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Triage DB-backed agent feedback.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -428,6 +552,29 @@ def _build_parser() -> argparse.ArgumentParser:
     resolve.add_argument("--public-summary", default=argparse.SUPPRESS)
     resolve.add_argument("--workaround", default=argparse.SUPPRESS)
     resolve.set_defaults(func=_resolve_report)
+
+    show = sub.add_parser(
+        "show",
+        help="Stage 246: full stored body of one or more reports.",
+    )
+    show.add_argument("report_ids", type=int, nargs="+")
+    show.set_defaults(func=_show)
+
+    redact = sub.add_parser(
+        "redact",
+        help="Stage 246: re-run the current sanitizer over stored report text.",
+    )
+    redact.add_argument("report_ids", type=int, nargs="+")
+    redact.add_argument("--dry-run", action="store_true")
+    redact.set_defaults(func=_redact)
+
+    link = sub.add_parser(
+        "link",
+        help="Stage 246: attach reports to an existing known issue.",
+    )
+    link.add_argument("known_issue_id", type=int)
+    link.add_argument("report_ids", type=int, nargs="+")
+    link.set_defaults(func=_link)
 
     export = sub.add_parser("export-markdown")
     export.add_argument("--limit", type=int, default=500)
