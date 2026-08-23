@@ -327,7 +327,10 @@ def register(mcp: FastMCP) -> None:
                     "/rest/api/client",
                     limit=100,
                     offset=0,
-                    sort=sort,
+                    # Name search merges several upstream requests and sorts
+                    # locally afterwards; its legacy local-only keys (for
+                    # example external_id) must not enter the upstream guard.
+                    sort=None,
                     filters=combined_filters + [_filter_like(field_name, f"%{token}%")],
                     allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["client"],
                 )
