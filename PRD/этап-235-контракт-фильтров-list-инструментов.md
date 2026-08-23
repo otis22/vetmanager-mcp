@@ -59,6 +59,33 @@ Vetmanager как HTTP 406.
 5. Оставить 235.5 `todo`: остальные сущности требуют отдельной проверки
    реализации и поведения по пачкам 5–7.
 
+### Выполнение 235.5 (2026-08-23)
+
+Пять read-only пачек на `devtr6` предваряли правки. Для 22 endpoint'ов
+скалярные поля записи `limit=1` получили HTTP 200 при отдельном `filter`; они
+записаны в `artifacts/filter-contracts-list.json`, добавлены в реестр,
+docstring и explicit `allowed_filter_properties`. Вычисляемые response-поля
+`admission.wait_time` и `hospital.in_hospital_time` дали HTTP 406 и намеренно
+не включены.
+
+Без изменения остались `get_medical_cards`, `get_combo_manual_names`,
+`get_combo_manual_items`, `get_message_reports`, `get_good_groups`,
+`get_party_accounts`, `get_party_account_docs`, `get_store_documents` и
+`get_suppliers`: у probe не было записей. `get_diagnoses` и
+`get_anonymous_clients` также оставлены passthrough: первоначально проверенные
+endpoint'ы не совпали с endpoint'ами MCP-инструментов, следовательно их
+контракт не подтверждён. Перечень вынесен в Roadmap 235.7.
+
+`get_goods` остаётся с `extra={"name": ...}`; allowlist применяется лишь к
+`filter`, поэтому legacy named query parameter сохранён. `get_message_reports`
+с `extra={"campaign": ...}` не менялся, так как endpoint пустой.
+
+Privacy is an independent gate over API filterability. Probe artifacts retain
+the API-accepted scalar field names and separately declare
+`public_excluded_fields`; the public allowlist is their difference. This makes
+excluded credential, tax, compensation and passport fields fail locally before
+an upstream `LIKE` request, instead of silently preserving passthrough.
+
 ## Архитектурное решение
 
 ### Проблема и ограничения

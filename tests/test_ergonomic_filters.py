@@ -792,7 +792,10 @@ async def test_get_users_position_id_filter():
 async def test_get_users_name_search_runs_last_and_first_name_in_parallel(monkeypatch):
     import tools.user as user_module
 
-    async def fake_crud_list(endpoint, *, limit, offset, sort=None, filters=None, extra=None):
+    async def fake_crud_list(
+        endpoint, *, limit, offset, sort=None, filters=None, extra=None,
+        allowed_filter_properties=None,
+    ):
         await asyncio.sleep(0.05)
         props = {
             f["property"] if isinstance(f, dict) else getattr(f, "property", None)

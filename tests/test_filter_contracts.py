@@ -28,13 +28,22 @@ def _billing_mock():
         return_value=httpx.Response(200, json={"data": {"url": BASE}})
     )
 
-def test_finance_filter_allowlists_match_real_probe_artifact():
-    artifact = json.loads(
-        (Path(__file__).parents[1] / "artifacts/filter-contracts-finance.json").read_text()
-    )
+def test_filter_allowlists_match_real_probe_artifacts():
+    artifact_dir = Path(__file__).parents[1] / "artifacts"
+    artifacts = [
+        json.loads((artifact_dir / "filter-contracts-finance.json").read_text()),
+        json.loads((artifact_dir / "filter-contracts-list.json").read_text()),
+    ]
+    expected = {}
+    for artifact in artifacts:
+        excluded = artifact.get("public_excluded_fields", {})
+        expected.update({
+            entity: sorted(set(fields) - set(excluded.get(entity, [])))
+            for entity, fields in artifact["entities"].items()
+        })
     assert {
         entity: sorted(fields) for entity, fields in FILTER_FIELDS_BY_ENTITY.items()
-    } == artifact["entities"]
+    } == expected
 
 
 def test_filter_validation_lists_allowed_properties():
@@ -145,3 +154,47 @@ async def test_named_finance_filters_stay_within_verified_contract(
         await mcp.call_tool(tool_name, arguments)
 
     assert route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_goods_keeps_name_extra_parameter_with_filter_validation():
+    _billing_mock()
+    route = respx.get(f"{BASE}/rest/api/good").mock(
+        return_value=httpx.Response(200, json={"data": {"good": []}})
+    )
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool(
+            "get_goods",
+            {
+                "name": "legacy name",
+                "filter": [{"property": "title", "operator": "=", "value": "x"}],
+            },
+        )
+
+    assert route.called
+    assert route.calls[0].request.url.params["name"] == "legacy name"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_name", "endpoint", "property_name"),
+    [
+        ("get_users", "/rest/api/user", "passwd"),
+        ("get_clients", "/rest/api/client", "passport_series"),
+    ],
+)
+@respx.mock
+async def test_sensitive_filter_properties_are_rejected_before_http(
+    tool_name, endpoint, property_name
+):
+    route = respx.get(f"{BASE}{endpoint}").mock(return_value=httpx.Response(200, json={"data": {}}))
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match=property_name):
+            await mcp.call_tool(
+                tool_name,
+                {"filter": [{"property": property_name, "operator": "LIKE", "value": "a%"}]},
+            )
+    assert not route.called

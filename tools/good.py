@@ -4,7 +4,7 @@ from typing import Any
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from filters import eq as _filter_eq, like as _filter_like
+from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, like as _filter_like
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam, validate_list_params
 from exceptions import VetmanagerError
@@ -362,7 +362,11 @@ def register(mcp: FastMCP) -> None:
             is_active: Filter by active status. None = no filter (default),
                 True = only active, False = only inactive.
             sort: Optional sort spec.
-            filter: Optional extra filter spec.
+            filter: Optional extra filter spec. Allowed properties: barcode,
+                category_id, code, create_date, description, for_combination,
+                group_id, id, is_active, is_call, is_for_sale, is_marking,
+                is_recipe, is_warehouse_account, prime_cost, title,
+                unit_storage_id. The legacy `name` query parameter is separate.
         """
         combined_filters: list = list(filter or [])
         if title:
@@ -376,6 +380,7 @@ def register(mcp: FastMCP) -> None:
             sort=sort,
             filters=combined_filters if combined_filters else None,
             extra={"name": name},
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["good"],
         )
 
     @mcp.tool

@@ -2,7 +2,7 @@ import asyncio
 
 from fastmcp import FastMCP
 
-from filters import eq as _filter_eq, like as _filter_like
+from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, like as _filter_like
 from observability_logging import RUNTIME_LOGGER
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_update
 from validators import LimitParam
@@ -120,6 +120,9 @@ def register(mcp: FastMCP) -> None:
                 False = inactive only, None = all.
             sort: Optional sort spec.
             filter: Optional extra filter spec (merged with named filters).
+                Allowed properties: address, calc_percents, cell_phone, email,
+                first_name, id, is_active, is_limited, last_name, middle_name,
+                nickname, phone, position_id, role_id, sip_number.
         """
         base_filters: list = list(filter or [])
         if position_id:
@@ -135,6 +138,7 @@ def register(mcp: FastMCP) -> None:
                     offset=offset,
                     sort=sort,
                     filters=base_filters if base_filters else None,
+                    allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["user"],
                 )
             )
 
@@ -149,6 +153,7 @@ def register(mcp: FastMCP) -> None:
                 offset=0,
                 sort=sort,
                 filters=last_name_filters,
+                allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["user"],
             ),
             crud_list(
                 "/rest/api/user",
@@ -156,6 +161,7 @@ def register(mcp: FastMCP) -> None:
                 offset=0,
                 sort=sort,
                 filters=first_name_filters,
+                allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["user"],
             ),
         )
 
