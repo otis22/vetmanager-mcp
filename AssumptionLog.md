@@ -12029,3 +12029,66 @@ Checks so far:
   exit 0. После исправления локальный canonical Docker contour завершился
   `1584 passed, 2 skipped, 66 deselected`; предыдущая попытка была загрязнена
   root-owned пустым `data/`, поэтому не учитывается как успешная проверка.
+
+## Этап 237. Осмысленное завершение streamable-HTTP сессий
+
+- Локальный runtime FastMCP 3.2.0 / `mcp` 1.29.0 подтвердил настоящую причину
+  PYTHON-6: POST response конечен, а standalone GET SSE stateful-сессии ждут
+  бесконечно; Uvicorn по истечении 20 секунд отменяет ASGI task до lifespan
+  manager shutdown. Новый путь закрывает только public
+  `close_standalone_sse_stream()` у snapshot `_server_instances`, не transport:
+  active POST той же сессии остаётся в обычном 20-second drain. Вызов идёт из
+  overridden `Uvicorn.shutdown()` на живом loop перед `super().shutdown()`, а
+  не из OS signal handler. После restart клиент создаёт новую MCP-сессию;
+  server-initiated messages на старом SSE во время deploy сознательно не
+  гарантируются.
+- `STREAMABLE_HTTP_DRAIN_ENABLED` читается на входе в shutdown; unset=true,
+  `0`/`false`/`no` отключают только новый drain для следующей выкатки. При
+  несовместимой SDK helper пишет safe structured event и сохраняет прежний
+  lifecycle. Новый root runtime module не создавался, поэтому wheel allowlist
+  в `pyproject.toml` не менялся.
+- Spark PRD/Architecture scout: read-only sandbox сначала упал до чтения из-за
+  bwrap, same-model danger-full-access retry дал candidates. Приняты: не
+  terminate весь transport, bounded/loop-safe порядок shutdown и проверка
+  реального SDK; отклонены hard-fail startup, batching и отдельный signal
+  handler как создающие outage/лишнее владение. Повторный Spark после правок
+  не дал надёжного финального verdict и был остановлен; это runtime/output
+  limitation, не finding продукта.
+- Claude Opus Architecture Critique / PRD review, valid attempt 1/3, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T090600Z-file-PRD_-237---streamable-http-_md-attempt-1-of-3.G6uSn0/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=7134,
+  thinking_tokens=4895, len(result)=6105. Приняты: не закрывать transport,
+  использовать GET-specific SDK method, закрывать на живом loop, добавить
+  реальный Uvicorn regression, SDK fallback и deployment handoff.
+- Claude Opus PRD review, valid attempt 2/3, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T090952Z-file-PRD_-237---streamable-http-_md-attempt-2-of-3.3lQ8bZ/claude-review-attempt-2-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=9286,
+  thinking_tokens=6957, len(result)=5563. Приняты: exact installed-SDK test,
+  no claim of 404 while old process lives, signal-safe `shutdown()` ordering,
+  explicit deployment semantics for server-initiated SSE. Второй PRD budget
+  исчерпан; последующие PRD wording fixes реализуют эти findings без смены
+  выбранного решения.
+- 237.3 остаётся за супервизором: перед deploy зафиксировать baseline PYTHON-6,
+  затем после окна обычной client activity убедиться, что он не вырос. Рост
+  или новый `ASGI callable returned without completing response` — основание
+  задать kill switch/revert; до evidence не закрывать 237.3 и 230.4.
+- Claude Opus code/diff review, valid attempt 1/3, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T095046Z-git_range-origin_main__HEAD-attempt-1-of-3.zd196r/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=3584,
+  thinking_tokens=2897, len(result)=1712. Приняты два low findings: отсутствие
+  manager больше не логируется для non-streamable режима, а тест не называет
+  unit override реальным Uvicorn lifecycle. После production evidence добавлен
+  real-SDK regression на пять одновременно удерживаемых GET SSE: один drain
+  закрывает все пять, не terminate-ит ни одну session transport.
+- CI resolved FastMCP 3.4.7, где `http_app()` создаёт endpoint с
+  `session_manager=None`, а manager появляется только в Starlette lifespan.
+  Поэтому shutdown извлекает его непосредственно перед `super().shutdown()`,
+  когда lifespan ещё жив; извлечение при construction было бы no-op и не
+  закрывало бы production SSE. Контейнер с теми же dependency bounds подтвердил
+  regression (`3 passed`, exit 0).
+- Claude Opus final code/diff review, valid attempt 2/3, evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-08-23T102021Z-git_range-origin_main__HEAD-attempt-2-of-3.sp9QvS/claude-review-attempt-2-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=4166,
+  thinking_tokens=2790, len(result)=1578. Приняты оба findings: ошибка
+  reflective SDK lookup не может пропустить `super().shutdown()` (и lifecycle
+  cleanup), а kill switch обходит lookup полностью.
