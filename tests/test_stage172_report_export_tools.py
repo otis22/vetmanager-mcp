@@ -429,7 +429,7 @@ async def test_retryable_export_poll_keeps_observation_until_string_file_id_succ
             httpx.Response(200, json={"data": {"report": {"csv_file": "report.csv"}}}),
         ]
     )
-    observed_times = iter([10.0, 12.0, 15.0, 17.0])
+    observed_times = iter([10.0, 12.0, 15.0, 17.0, 17.0])
     monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: next(observed_times))
 
     headers_patch, runtime_patch = bearer_runtime_patch()
@@ -448,6 +448,40 @@ async def test_retryable_export_poll_keeps_observation_until_string_file_id_succ
         "start|success": 1,
     }
     assert snapshot["report_ai_export_duration_seconds"]["success"]["sum_seconds"] == 7.0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_export_wait_limit_stops_automatic_polling_but_keeps_build_observable(monkeypatch):
+    report_ai._reset_report_ai_queue_observations()
+    service_metrics.reset_service_metrics()
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/report/StartReport").mock(
+        return_value=httpx.Response(200, json={"data": {"report": {"report_file_id": 127}}})
+    )
+    route = respx.get(f"{BASE}/rest/api/report/reportFile").mock(
+        side_effect=[
+            httpx.Response(409, json={"success": False, "message": ""}),
+            httpx.Response(200, json={"data": {"report": {"csv_file": "report.csv"}}}),
+        ]
+    )
+    now = [0.0]
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: now[0])
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("start_report_export", {"report_id": 88})
+        now[0] = report_ai.REPORT_AI_EXPORT_WAIT_LIMIT_SECONDS
+        with pytest.raises(ToolError, match="Stop automatic polling"):
+            await mcp.call_tool("get_report_export_file", {"report_file_id": 127})
+        later = await mcp.call_tool("get_report_export_file", {"report_file_id": 127})
+
+    assert route.call_count == 2
+    assert _structured(later)["data"]["report"]["csv_file"] == "report.csv"
+    assert service_metrics.snapshot_service_metrics()["report_ai_exports_total"] == {
+        "poll|success": 1,
+        "poll|wait_limit_reached": 1,
+        "start|success": 1,
+    }
 
 
 @pytest.mark.asyncio

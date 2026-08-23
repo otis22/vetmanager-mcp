@@ -12415,3 +12415,14 @@ Checks so far:
   отображение `*.*.*.*` после выпуска; targeted browser+current-IP regression:
   `4 passed`, exit 0. Ручная форма также перестала prefill'ить browser IP —
   иначе UI продолжал бы навязывать старый опасный default несмотря на route.
+## Этап 251. Экспорт большого отчёта не завершается — 2026-08-24
+
+- Reproduction on devtr6 did not reproduce #38: an all-time medical-card Report AI export returned file fields on second poll after one `401 build in progress` response.
+- `INVALID_ARGUMENT` is not emitted by this repository's export path; without raw call evidence it cannot be attributed to upstream not-ready state.
+- Chosen guard is MCP-observed only: 30 minutes stops automatic polling but later poll of the same file id remains valid; no new export is suggested automatically.
+
+## Этап 252. Задания Report AI зависают в очереди — 2026-08-24
+
+- Reproduction on devtr6 did not reproduce #37: queued job reached ready_to_save in under 30 seconds.
+- Existing long-queue event is process-local and fires only after a repeated queued poll; production zero cannot distinguish no calls, no qualifying polls, restart, or log ingestion loss.
+- Invoice fallback works technically but must fully paginate before aggregating `amount` by `doctor_id`; direct aggregate is proposed as Roadmap stage 259.

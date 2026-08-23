@@ -3,6 +3,8 @@
 import json
 import time
 from collections import OrderedDict
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
@@ -27,6 +29,8 @@ INTENT_MAX_LENGTH = 20000
 REPORT_AI_DATA_ROW_LIMIT = 10000
 REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD = 9000
 REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS = 30
+REPORT_AI_QUEUE_WAIT_LIMIT_SECONDS = 15 * 60
+REPORT_AI_EXPORT_WAIT_LIMIT_SECONDS = 30 * 60
 REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS = 3600
 REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES = 4096
 REPORT_AI_GOODS_GOOD_ID_WORKAROUND_CODE = "report_ai_goods_good_id_preview_failed"
@@ -61,6 +65,7 @@ _REPORT_AI_FINALIZED_OBSERVATIONS: OrderedDict[_ReportAiQueueObservationKey, flo
 _REPORT_AI_EXPORT_OBSERVATIONS: OrderedDict[
     _ReportAiQueueObservationKey, dict[str, float | bool]
 ] = OrderedDict()
+_REPORT_AI_CLINIC_TIMEZONES: OrderedDict[tuple[int | None, int | None, int], str] = OrderedDict()
 _REPORT_AI_STAGE_BY_STATUS = {
     "queued": "queued",
     "recognizing": "recognized",
@@ -81,11 +86,46 @@ def _monotonic_seconds() -> float:
     return time.monotonic()
 
 
+def _unix_seconds() -> float:
+    return time.time()
+
+
+async def _upstream_job_age_seconds(job: dict) -> int | None:
+    """Use clinic-local created_at only with a verified IANA clinic timezone."""
+    created_at = job.get("created_at")
+    clinic_id = job.get("clinic_id")
+    key = _report_ai_queue_observation_key({"id": clinic_id})
+    if not isinstance(created_at, str) or key is None:
+        return None
+    timezone_name = _REPORT_AI_CLINIC_TIMEZONES.get(key)
+    if timezone_name is None:
+        try:
+            payload = await VetmanagerClient().get(f"/rest/api/clinics/{key[2]}")
+        except VetmanagerError:
+            RUNTIME_LOGGER.warning("report_ai_queue_age_timezone_unavailable", extra={"event_name": "report_ai_queue_age_timezone_unavailable"})
+            return None
+        data = payload.get("data") if isinstance(payload, dict) else None
+        clinic = data.get("clinics") if isinstance(data, dict) else None
+        if isinstance(clinic, list):
+            clinic = clinic[0] if clinic else None
+        timezone_name = clinic.get("time_zone") if isinstance(clinic, dict) else None
+        if not isinstance(timezone_name, str) or not timezone_name:
+            RUNTIME_LOGGER.warning("report_ai_queue_age_timezone_unavailable", extra={"event_name": "report_ai_queue_age_timezone_unavailable"})
+            return None
+        _REPORT_AI_CLINIC_TIMEZONES[key] = timezone_name
+    try:
+        created = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZoneInfo(timezone_name))
+    except (ValueError, ZoneInfoNotFoundError):
+        return None
+    return max(0, int(_unix_seconds() - created.timestamp()))
+
+
 def _reset_report_ai_queue_observations() -> None:
     _REPORT_AI_QUEUE_OBSERVATIONS.clear()
     _REPORT_AI_LIFECYCLE_OBSERVATIONS.clear()
     _REPORT_AI_FINALIZED_OBSERVATIONS.clear()
     _REPORT_AI_EXPORT_OBSERVATIONS.clear()
+    _REPORT_AI_CLINIC_TIMEZONES.clear()
 
 
 def _report_ai_queue_observation_count() -> int:
@@ -200,6 +240,16 @@ def _mark_report_ai_export_poll(report_file_id: object) -> None:
         observation["has_polled"] = True
         observation["last_seen"] = _monotonic_seconds()
         _REPORT_AI_EXPORT_OBSERVATIONS.move_to_end(key)
+
+
+def _report_ai_export_observed_wait_seconds(report_file_id: object) -> int | None:
+    key = _report_ai_queue_observation_key({"id": report_file_id})
+    if key is None:
+        return None
+    observation = _REPORT_AI_EXPORT_OBSERVATIONS.get(key)
+    if observation is None:
+        return None
+    return max(0, int(_monotonic_seconds() - float(observation["started_at"])))
 
 
 def _complete_report_ai_export(report_file_id: object, *, outcome: str) -> None:
@@ -357,32 +407,47 @@ def _annotate_report_ai_workarounds(payload: dict) -> dict:
     return payload
 
 
-def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | None = None) -> dict:
+async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | None = None) -> dict:
     data = payload.get("data")
     job = data.get("job") if isinstance(data, dict) else payload.get("job")
     if not isinstance(job, dict):
         return payload
 
     observed_age_seconds = _observe_report_ai_queue(job, now=now)
+    upstream_age_seconds = await _upstream_job_age_seconds(job)
+    diagnostic_age_seconds = upstream_age_seconds if upstream_age_seconds is not None else observed_age_seconds
     if (
-        observed_age_seconds is None
-        or observed_age_seconds < REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS
+        diagnostic_age_seconds is None
+        or diagnostic_age_seconds < REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS
     ):
         return payload
 
+    at_wait_limit = diagnostic_age_seconds >= REPORT_AI_QUEUE_WAIT_LIMIT_SECONDS
     diagnostics = {
-        "code": "report_ai_job_long_queued",
-        "observed_queued_age_seconds": observed_age_seconds,
+        "code": "report_ai_job_wait_limit_reached" if at_wait_limit else "report_ai_job_long_queued",
+        "observed_queued_age_seconds": diagnostic_age_seconds,
         "threshold_seconds": REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS,
         "status": "queued",
         "operator_hint": (
-            "Continue bounded polling. If the job remains queued, inspect Report AI "
-            "worker/stale in-progress diagnostics using the MCP operator runbook."
+            "Age comes from Vetmanager created_at when available, otherwise MCP local observation; "
+            "it is not a Vetmanager worker SLA. "
+            "Inspect Report AI worker/stale in-progress diagnostics using the MCP operator runbook."
         ),
     }
+    diagnostics["age_source"] = "upstream_created_at" if upstream_age_seconds is not None else "mcp_observed"
     for field_name in ("created_at", "updated_at"):
         if job.get(field_name):
             diagnostics[field_name] = job[field_name]
+    if at_wait_limit:
+        diagnostics.update({
+            "stop_automatic_polling": True,
+            "next_step": (
+                "Do not create a duplicate job. The same job may still finish upstream; "
+                "re-check this same job_id later. For invoice KPI only, a last-resort fallback "
+                "is get_invoices with full pagination: compare returned rows to totalCount before "
+                "summing amount by doctor_id."
+            ),
+        })
 
     job.setdefault("mcp_queue_diagnostics", diagnostics)
     record_report_ai_long_queued_poll()
@@ -392,16 +457,18 @@ def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | None = 
             "event_name": "report_ai_job_long_queued",
             "status": "queued",
             "threshold_seconds": REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS,
-            "observed_queued_age_seconds": observed_age_seconds,
-            "observed_queued_age_bucket": _queued_age_bucket(observed_age_seconds),
+            "observed_queued_age_seconds": diagnostic_age_seconds,
+            "observed_queued_age_bucket": _queued_age_bucket(diagnostic_age_seconds),
+            "age_source": diagnostics["age_source"],
+            "wait_limit_reached": at_wait_limit,
         },
     )
     return payload
 
 
-def _annotate_report_ai_job_payload(payload: dict) -> dict:
+async def _annotate_report_ai_job_payload(payload: dict) -> dict:
     observed_at = _monotonic_seconds()
-    annotated = _annotate_report_ai_queue_diagnostics(
+    annotated = await _annotate_report_ai_queue_diagnostics(
         _annotate_report_ai_workarounds(payload), now=observed_at
     )
     job = _extract_job(annotated)
@@ -664,7 +731,9 @@ def register(mcp: FastMCP) -> None:
             record_report_ai_job_created(outcome="error")
             raise
         record_report_ai_job_created(outcome="success")
-        _observe_report_ai_lifecycle(_extract_job(payload))
+        job = _extract_job(payload)
+        _observe_report_ai_lifecycle(job)
+        _observe_report_ai_queue(job)
         return payload
 
     @mcp.tool
@@ -684,16 +753,17 @@ def register(mcp: FastMCP) -> None:
                 value types only to check the expected table structure, and
                 never repeat its values to the user.
                 If MCP observes the same job queued for 30+ seconds, the safe
-                job payload includes mcp_queue_diagnostics with operator hints.
-                Keep polling bounded. If a complex report remains queued, explain
-                that processing is on the Vetmanager side and suggest checking
-                later or simplifying/splitting the report intent.
+                job payload includes mcp_queue_diagnostics. Its age is process-local,
+                not a Vetmanager SLA. At 15 minutes stop automatic polling and do
+                not create a duplicate: re-check the same job later. Invoice KPI
+                fallback needs complete get_invoices pagination before summing amount
+                by doctor_id; it is not a direct aggregate.
         """
         payload = await _call_vm(
             "GET", f"/rest/api/report-ai-job/{job_id}", tool_name="get_report_ai_job",
             metric_endpoint="/rest/api/report-ai-job/{id}",
         )
-        return _annotate_report_ai_job_payload(payload)
+        return await _annotate_report_ai_job_payload(payload)
 
     @mcp.tool
     async def confirm_report_ai_job_candidate(job_id: int, report_id: int) -> dict:
@@ -793,6 +863,26 @@ def register(mcp: FastMCP) -> None:
             return payload
         except VetmanagerError as exc:
             if _is_retryable_export_file_error(exc):
+                observed_wait = _report_ai_export_observed_wait_seconds(file_id)
+                if (
+                    observed_wait is not None
+                    and observed_wait >= REPORT_AI_EXPORT_WAIT_LIMIT_SECONDS
+                ):
+                    record_report_ai_export(operation="poll", outcome="wait_limit_reached")
+                    RUNTIME_LOGGER.warning(
+                        "report_ai_export_wait_limit_reached",
+                        extra={
+                            "event_name": "report_ai_export_wait_limit_reached",
+                            "observed_wait_seconds": observed_wait,
+                            "wait_limit_seconds": REPORT_AI_EXPORT_WAIT_LIMIT_SECONDS,
+                        },
+                    )
+                    raise ToolError(
+                        "MCP observed this export still not ready for 30 minutes. Stop automatic "
+                        "polling and do not start a new export: this same build may still finish. "
+                        "You may re-check this same report_file_id later; only choose a narrower "
+                        "selection after deciding the existing build is no longer needed."
+                    ) from None
                 _record_pending_report_ai_export_poll()
             else:
                 _complete_report_ai_export(file_id, outcome="error")

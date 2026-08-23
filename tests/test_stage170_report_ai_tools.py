@@ -593,6 +593,11 @@ async def test_get_report_ai_job_adds_long_queued_diagnostics_metric_and_log(
     )
     observed_times = iter([100.0, 131.0])
     monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: next(observed_times))
+    monkeypatch.setattr(
+        report_ai,
+        "_unix_seconds",
+        lambda: report_ai.datetime(2026, 6, 18, 12, 0, 31, tzinfo=report_ai.timezone.utc).timestamp(),
+    )
 
     headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
     with headers_patch, runtime_patch, caplog.at_level(logging.WARNING, logger="vetmanager.runtime"):
@@ -606,6 +611,7 @@ async def test_get_report_ai_job_adds_long_queued_diagnostics_metric_and_log(
     assert diagnostics["observed_queued_age_seconds"] == 31
     assert diagnostics["threshold_seconds"] == 30
     assert diagnostics["status"] == "queued"
+    assert diagnostics["age_source"] == "mcp_observed"
     assert diagnostics["created_at"] == "2026-06-18 12:00:00"
     assert diagnostics["updated_at"] == "2026-06-18 12:00:05"
 
@@ -627,6 +633,24 @@ async def test_get_report_ai_job_adds_long_queued_diagnostics_metric_and_log(
     assert not hasattr(record, "intent_text")
     assert not hasattr(record, "domain")
     assert not hasattr(record, "sql")
+
+
+@pytest.mark.asyncio
+async def test_queued_wait_limit_tells_caller_to_recheck_same_job(monkeypatch):
+    report_ai._reset_report_ai_queue_observations()
+    job = {"id": 991, "status": "queued"}
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: 0.0)
+    await report_ai._annotate_report_ai_queue_diagnostics({"data": {"job": job}})
+    monkeypatch.setattr(
+        report_ai, "_monotonic_seconds", lambda: report_ai.REPORT_AI_QUEUE_WAIT_LIMIT_SECONDS
+    )
+    result = await report_ai._annotate_report_ai_queue_diagnostics({"data": {"job": job}})
+
+    diagnostics = result["data"]["job"]["mcp_queue_diagnostics"]
+    assert diagnostics["code"] == "report_ai_job_wait_limit_reached"
+    assert diagnostics["stop_automatic_polling"] is True
+    assert "same job_id later" in diagnostics["next_step"]
+    assert "Do not create a duplicate" in diagnostics["next_step"]
 
 
 @pytest.mark.asyncio
