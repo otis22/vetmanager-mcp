@@ -21,6 +21,7 @@ from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
 
 SHUTDOWN_STEP_TIMEOUT_SECONDS = 3
+STREAMABLE_HTTP_DRAIN_ENABLED_ENV = "STREAMABLE_HTTP_DRAIN_ENABLED"
 
 
 def _log_startup_aborted(exc: Exception, *, step: str) -> None:
@@ -76,16 +77,96 @@ async def _runtime_lifespan(_server):
         await _graceful_shutdown()
 
 
+def _streamable_http_drain_enabled() -> bool:
+    return os.environ.get(STREAMABLE_HTTP_DRAIN_ENABLED_ENV, "true").lower() not in {"0", "false", "no"}
+
+
+def _get_streamable_session_manager(app, *, path: str):
+    """Return the FastMCP streamable-session manager owned by this HTTP app."""
+    route = next((route for route in app.routes if getattr(route, "path", None) == path), None)
+    endpoints = [getattr(route, "endpoint", None)]
+    manager = None
+    seen = set()
+    for _ in range(12):
+        if not endpoints:
+            break
+        endpoint = endpoints.pop()
+        if endpoint is None or id(endpoint) in seen:
+            continue
+        seen.add(id(endpoint))
+        manager = getattr(endpoint, "session_manager", None)
+        if manager is not None:
+            break
+        endpoints.extend(
+            value
+            for value in vars(endpoint).values() if value is not endpoint
+        ) if hasattr(endpoint, "__dict__") else None
+        endpoints.extend(getattr(endpoint, attribute, None) for attribute in ("app", "endpoint", "__wrapped__", "func"))
+    if manager is None:
+        RUNTIME_LOGGER.error(
+            "Streamable HTTP drain is unavailable",
+            extra={"event_name": "streamable_http_drain_unsupported"},
+        )
+    return manager
+
+
+def _close_standalone_sse_streams(session_manager) -> int:
+    """Close held GET SSE streams without terminating their MCP transports."""
+    if session_manager is None or not _streamable_http_drain_enabled():
+        return 0
+    sessions = getattr(session_manager, "_server_instances", None)
+    if not isinstance(sessions, dict):
+        RUNTIME_LOGGER.error(
+            "Streamable HTTP drain is unavailable",
+            extra={"event_name": "streamable_http_drain_unsupported"},
+        )
+        return 0
+
+    session_count = 0
+    for transport in tuple(sessions.values()):
+        close_stream = getattr(transport, "close_standalone_sse_stream", None)
+        if not callable(close_stream):
+            RUNTIME_LOGGER.error(
+                "Streamable HTTP drain is unavailable",
+                extra={"event_name": "streamable_http_drain_unsupported"},
+            )
+            continue
+        try:
+            close_stream()
+            session_count += 1
+        except Exception:
+            RUNTIME_LOGGER.warning(
+                "Streamable HTTP session drain error",
+                extra={"event_name": "streamable_http_drain_error"},
+                exc_info=True,
+            )
+    RUNTIME_LOGGER.info(
+        "Streamable HTTP session drain finished",
+        extra={"event_name": "streamable_http_drain_finished", "session_count": session_count},
+    )
+    return session_count
+
+
 class _DrainingUvicornServer(uvicorn.Server):
+    def __init__(self, config, *, session_manager=None) -> None:
+        super().__init__(config)
+        self._streamable_session_manager = session_manager
+
     def handle_exit(self, sig, frame) -> None:
         begin_draining()
         RUNTIME_LOGGER.info("Shutdown drain started", extra={"event_name": "shutdown_drain_started", "signal": sig})
         super().handle_exit(sig, frame)
 
+    async def shutdown(self, sockets=None) -> None:
+        _close_standalone_sse_streams(self._streamable_session_manager)
+        await asyncio.sleep(0)
+        await super().shutdown(sockets=sockets)
+
 
 def _run_http_server(*, transport: str, host: str, port: int, path: str) -> None:
     """Run the FastMCP HTTP app while preserving FastMCP's Uvicorn defaults."""
     app = mcp.http_app(path=path, transport=transport)
+    session_manager = _get_streamable_session_manager(app, path=path) if transport == "streamable-http" else None
     config = uvicorn.Config(
         app,
         host=host,
@@ -98,7 +179,7 @@ def _run_http_server(*, transport: str, host: str, port: int, path: str) -> None
         proxy_headers=True,
         forwarded_allow_ips=os.environ.get("FORWARDED_ALLOW_IPS"),
     )
-    asyncio.run(_DrainingUvicornServer(config).serve())
+    asyncio.run(_DrainingUvicornServer(config, session_manager=session_manager).serve())
 
 
 configure_logging()
