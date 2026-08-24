@@ -10,11 +10,11 @@ OpenAPI diff 2026-06-15 показал новый/расширенный `goodTa
 
 Источники истины:
 
-- `/home/otis/myprojects/vetmanager-extjs/rest/protected/controllers/GoodTagController.php`
-- `/home/otis/myprojects/vetmanager-extjs/rest/protected/controllers/GoodController.php`
-- `/home/otis/myprojects/vetmanager-extjs/application/src/Entity/GoodEntity.php`
-- `/home/otis/myprojects/vetmanager-extjs/application/src/Entity/Goods/Records/GoodTagRow.php`
-- `/home/otis/myprojects/vetmanager-extjs/application/src/Entity/Goods/Records/Good2TagRow.php`
+- `vetmanager-extjs/rest/protected/controllers/GoodTagController.php`
+- `vetmanager-extjs/rest/protected/controllers/GoodController.php`
+- `vetmanager-extjs/application/src/Entity/GoodEntity.php`
+- `vetmanager-extjs/application/src/Entity/Goods/Records/GoodTagRow.php`
+- `vetmanager-extjs/application/src/Entity/Goods/Records/Good2TagRow.php`
 - Help article: `https://help.vetmanager.ru/article/25283`
 
 Real API facts verified on `devtr6`:

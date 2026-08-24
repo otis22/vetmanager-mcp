@@ -24,8 +24,8 @@ _ANALYTICS_USER_FIELDS = frozenset(
     }
 )
 
-# Vetmanager ERestController::outputHelper (line 497) emits every user response
-# as {"totalCount": ..., "user": ...}; CRUD helpers return it unchanged.
+# User responses arrive in the {"totalCount": ..., "user": ...} envelope;
+# CRUD helpers return that observed API response unchanged.
 _USER_PAGINATION_FIELDS = frozenset({"totalCount"})
 
 

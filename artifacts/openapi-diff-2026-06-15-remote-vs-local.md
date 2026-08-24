@@ -256,8 +256,8 @@ Use the remote spec as the better route/operation baseline, but merge it through
 
 Source files:
 
-- `/home/otis/myprojects/vetmanager-extjs/rest/protected/controllers/VmLinkController.php`
-- `/home/otis/myprojects/vetmanager-extjs/application/src/ServiceIntegration/VmLink.php`
+- `vetmanager-extjs/rest/protected/controllers/VmLinkController.php`
+- `vetmanager-extjs/application/src/ServiceIntegration/VmLink.php`
 
 Controller endpoints:
 

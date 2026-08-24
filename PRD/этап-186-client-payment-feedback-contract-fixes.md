@@ -16,7 +16,7 @@ Production feedback от 2026-07-08:
 
 ## Проверенные факты
 
-Источник: `/home/otis/myprojects/vetmanager-extjs`.
+Источник: закрытый исходный репозиторий `vetmanager-extjs`.
 
 - `rest/protected/models/Payment.php` содержит поля `id`, `amount`, `status`,
   `cassa_id`, `cassaclose_id`, `create_date`, `payed_user`, `description`,

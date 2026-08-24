@@ -14,19 +14,18 @@ The short prompt helper should be exposed to agents as prompt/resource guidance,
 
 ## Sources
 
-- Prompt helpers:
-  - `/home/otis/.var/app/org.telegram.desktop/data/TelegramDesktop/tdata/temp_data/ai-reports-client-prompt-short.md`
-  - `/home/otis/.var/app/org.telegram.desktop/data/TelegramDesktop/tdata/temp_data/ai-reports-client-prompt-full.md`
+- Prompt helpers: temporary local copies of the client prompt drafts.
 - Vetmanager source of truth:
-  - `/home/otis/myprojects/vetmanager-extjs/rest/protected/controllers/ReportAiJobsController.php`
-  - `/home/otis/myprojects/vetmanager-extjs/application/src/Components/ReportConstructor/AI/Job/JobService.php`
-  - `/home/otis/myprojects/vetmanager-extjs/application/src/Components/ReportConstructor/AI/Job/ReportAiJob.php`
-  - `/home/otis/myprojects/vetmanager-extjs/application/src/Components/ReportConstructor/AI/Job/JobStatus.php`
-  - `/home/otis/myprojects/vetmanager-extjs/application/src/Components/ReportConstructor/AI/AiReportFacade.php`
-  - `/home/otis/myprojects/vetmanager-extjs/application/src/Components/ReportConstructor/AI/AiReportRenderer.php`
-  - `/home/otis/myprojects/vetmanager-extjs/application/src/Components/ReportConstructor/AI/PromptBuilder.php`
-  - `/home/otis/myprojects/vetmanager-extjs/application/src/Components/ReportConstructor/AI/SchemaProvider.php`
-  - `/home/otis/myprojects/vetmanager-extjs/application/src/Components/ReportConstructor/AI/PiiFieldsRegistry.php`
+  - `vetmanager-extjs/rest/protected/controllers/ReportAiJobsController.php`
+  - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/Job/JobService.php`
+  - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/Job/ReportAiJob.php`
+  - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/Job/ReportAiJob.php`
+  - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/Job/JobStatus.php`
+  - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/AiReportFacade.php`
+  - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/AiReportRenderer.php`
+  - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/PromptBuilder.php`
+  - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/SchemaProvider.php`
+  - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/PiiFieldsRegistry.php`
 
 ## Verified on devtr6
 

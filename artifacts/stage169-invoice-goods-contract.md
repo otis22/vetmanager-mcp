@@ -4,9 +4,9 @@ This artifact documents the extjs-source-backed custom endpoints used by Stage 1
 
 ## Sources
 
-- `/home/otis/myprojects/vetmanager-extjs/rest/protected/controllers/GoodTagController.php`
-- `/home/otis/myprojects/vetmanager-extjs/rest/protected/controllers/GoodController.php`
-- `/home/otis/myprojects/vetmanager-extjs/application/src/Entity/GoodEntity.php`
+- `vetmanager-extjs/rest/protected/controllers/GoodTagController.php`
+- `vetmanager-extjs/rest/protected/controllers/GoodController.php`
+- `vetmanager-extjs/application/src/Entity/GoodEntity.php`
 - `AssumptionLog.md` entries from 2026-06-15 for `search_invoice_goods` and template-combination recheck.
 
 ## `GET /rest/api/good/productsDataForInvoice`

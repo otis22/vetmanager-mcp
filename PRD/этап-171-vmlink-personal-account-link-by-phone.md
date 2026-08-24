@@ -13,7 +13,7 @@ OpenAPI diff 2026-06-15 показал новые/нормализованные
 
 Пользовательское решение: ссылку на ЛК ассистенту можно отдавать только по телефону. Если ассистент знает телефон клиента, это считается безопасным. Ссылка постоянная. Client-ID based tool не добавлять.
 
-Source of truth: `/home/otis/myprojects/vetmanager-extjs`.
+Source of truth: private `vetmanager-extjs` source repository.
 
 Relevant files:
 

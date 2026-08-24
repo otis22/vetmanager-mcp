@@ -82,8 +82,7 @@ Production feedback triage — это операционная работа, а 
 - исследование конкретного feedback report без кода/тестов/PRD.
 
 Для такого triage source of truth — production DB (`agent_feedback_reports`,
-`known_issues`) и внешний work log в
-`/home/otis/myprojects/LiveHelperAgent/logs/mcp/`.
+`known_issues`) и внешний work log супервизора.
 
 Запрещено по умолчанию добавлять в repo только из-за triage:
 

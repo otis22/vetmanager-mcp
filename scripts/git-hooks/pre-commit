@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Blocks new PHP implementation markers in added staged lines (stage 232.2).
+
+set -euo pipefail
+
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT"
+
+marker_names=(
+    php_active_record_call
+    php_http_exception
+    php_database_helper
+    php_json_decode_this
+    php_array_merge_dollar
+    php_rest_dispatch
+)
+marker_patterns=(
+    '::m[o]del\(\)'
+    'C[H]ttpException'
+    'N[D]atabase::'
+    'json_decode\(\$this'
+    'array_merge\(\$'
+    '-[>]doRest'
+)
+
+while IFS= read -r -d '' file; do
+    if [[ ${ALLOW_FOREIGN_IMPLEMENTATION_FILE:-} == "$file" ]]; then
+        continue
+    fi
+
+    added_lines=$(mktemp)
+    trap 'rm -f "$added_lines"' EXIT
+    if ! git diff --cached --no-color --unified=0 -- "$file" \
+        | awk '/^\+[^+]/ { sub(/^\+/, ""); print }' > "$added_lines"; then
+        echo "ERROR: could not inspect staged additions in $file." >&2
+        exit 1
+    fi
+
+    for index in "${!marker_patterns[@]}"; do
+        if grep -Eq -- "${marker_patterns[$index]}" "$added_lines"; then
+            echo "ERROR: $file adds prohibited implementation marker: ${marker_names[$index]}." >&2
+            echo "Describe observable API behaviour instead of private implementation." >&2
+            exit 1
+        fi
+    done
+    rm -f "$added_lines"
+    trap - EXIT
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)

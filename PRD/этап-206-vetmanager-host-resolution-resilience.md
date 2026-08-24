@@ -233,7 +233,7 @@ transport boundaries.
    - `known_issue_id` is visible in `recent`;
    - `known_issue_match_events` expectations are documented if still zero.
 8. Write external work log in
-   `/home/otis/myprojects/LiveHelperAgent/logs/mcp/` with deploy, smoke,
+   external supervisor work log with deploy, smoke,
    triage and linked report IDs.
 
 ## Проверки

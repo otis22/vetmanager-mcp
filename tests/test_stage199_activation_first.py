@@ -189,7 +189,7 @@ def _just_issued() -> str:
         active_connection=_Connection(),
         integration_health_status="active",
         bearer_tokens=[_token_view()],
-        issued_raw_token="vm_st_f1QHoiqKnkTyJltLCMyfyQhXBhxmtckdJ-KqBkmV9NM",
+        issued_raw_token="vm_st_synthetic_browser_fixture_not_a_real_token0",
         token_success="Bearer token выпущен.",
     )
 

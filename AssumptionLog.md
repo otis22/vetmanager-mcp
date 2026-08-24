@@ -931,7 +931,7 @@
 - Идентификатор первого режима: `domain_api_key`.
 
 **Что реализовано:**
-- Добавлен [vetmanager_auth.py](/home/otis/myprojects/vetmanager-mcp/vetmanager_auth.py) с:
+- Добавлен [vetmanager_auth.py](vetmanager_auth.py) с:
   - `VETMANAGER_AUTH_MODE_DOMAIN_API_KEY`
   - `VetmanagerResolvedCredentials`
   - `resolve_vetmanager_credentials(connection, ...)`
@@ -946,7 +946,7 @@
 ## Этап 23.2: валидация и сохранение account connection
 
 **Что реализовано:**
-- Добавлен [vetmanager_connection_service.py](/home/otis/myprojects/vetmanager-mcp/vetmanager_connection_service.py).
+- Добавлен [vetmanager_connection_service.py](vetmanager_connection_service.py).
 - Реализован `save_domain_api_key_connection(...)`, который:
   - валидирует `domain`;
   - проверяет `api_key` через реальный probe к Vetmanager API после billing host resolution;
@@ -7819,7 +7819,7 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 ### Что сделано
 
 - Проверен help article `https://help.vetmanager.ru/article/25283`: комбинации бывают шаблонные и обычные; обычные комбинации добавляются в счёт как единое целое, а шаблонные используются для быстрого добавления состава.
-- Использован `/home/otis/myprojects/vetmanager-extjs` как источник истины:
+- Использован закрытый репозиторий `vetmanager-extjs` как источник истины:
   - `rest/protected/controllers/GoodTagController.php`
   - `rest/protected/controllers/GoodController.php`
   - `application/src/Entity/GoodEntity.php`
@@ -8055,7 +8055,7 @@ Custom review config: Sonnet unlimited, Codex gpt-5.5 1/PRD + 2/diff. Решен
 - Создан артефакт `artifacts/report-ai-mcp-research-2026-06-15.md`.
 - Создан PRD `PRD/этап-170-report-ai-mcp-tools.md`.
 - В `Roadmap.md` добавлен Stage 170 со статусом `todo`.
-- Work log обновлён в `/home/otis/myprojects/LiveHelperAgent/logs/mcp/2026-06-15-report-ai-mcp-shape.md`.
+- Work log обновлён супервизором во внешнем журнале.
 
 ### Решения и обоснования
 
@@ -9523,7 +9523,7 @@ Node.js 20 deprecation annotation для `actions/checkout@v4`.
 ## Stage 183 Report AI upstream contract sync — 2026-07-03
 
 Context:
-- Implemented Stage 183 after upstream Vetmanager Report AI update research on `devtr6` and `/home/otis/myprojects/vetmanager-extjs`.
+- Implemented Stage 183 after upstream Vetmanager Report AI update research on `devtr6` and the private `vetmanager-extjs` source repository.
 - Upstream now supports `INTENT_MAX_LENGTH=20000`, `DATA_ROW_LIMIT=10000`, `csv_export_url` from `/report-ai-job/{id}/data`, `allow_rest_api=1` for AI reports, `needs_confirmation` candidate confirmation, and `preview_example_row`.
 
 Decisions:
@@ -10061,8 +10061,7 @@ Checks so far:
   пустого/неявного выбора. `full_access` по-прежнему требует явного выбора и
   подтверждения, а OAuth grant не расширяет scope сверх запрошенного клиентом:
   effective scopes остаются intersection(requested scopes, preset scopes).
-- UI help по REST API key взят из support-bot-base:
-  `/home/otis/myprojects/support-bot-base/base/vetmanager_help_ru/Integratsiya_s_drugimi_prilozheniyami_i_servisami/Integratsiya_so_storonnimi_programmami_i_servisami_cherez_REST_API.md`.
+- UI help по REST API key взят из публичной документации поддержки Vetmanager.
   В account UI добавлена короткая инструкция: Vetmanager settings -> service
   integrations -> enable REST API -> edit -> copy API KEY. Сам ключ не
   логируется и не отображается повторно.
@@ -12420,6 +12419,47 @@ Checks so far:
 - Reproduction on devtr6 did not reproduce #38: an all-time medical-card Report AI export returned file fields on second poll after one `401 build in progress` response.
 - `INVALID_ARGUMENT` is not emitted by this repository's export path; without raw call evidence it cannot be attributed to upstream not-ready state.
 - Chosen guard is MCP-observed only: 30 minutes stops automatic polling but later poll of the same file id remains valid; no new export is suggested automatically.
+
+## Этап 232. Публичная гигиена репозитория — 2026-08-24
+
+- Владелец уточнил границу hook: он проверяет только добавленные строки staged
+  diff. Исторические публикации, включая имена классов/методов и логические
+  пути закрытого репозитория, сознательно остаются; точная цитата ошибки,
+  доступная любому API-клиенту, — наблюдаемый контракт, а не реализация.
+- Добавлен versioned `scripts/git-hooks/pre-commit`; он читает NUL-разделённый
+  staged file list, проверяет шесть PHP-маркеров только в добавленных строках
+  и сообщает путь с именем правила, но не содержимое строки. Точечный bypass
+  `ALLOW_FOREIGN_IMPLEMENTATION_FILE` действует лишь для совпадающего одного
+  repo-relative файла. `scripts/git-hooks/install.sh` — совместимая точка
+  установки; installer копирует hook и сохраняет предыдущий pre-commit в
+  timestamped backup.
+- Тесты с git-заглушкой подтверждают блокировку каждой PHP-конструкции,
+  разрешение добавленного имени класса уровня 2 и цитаты API-ошибки, игнор
+  historical context, имена файлов с пробелами и границу bypass. Targeted
+  container run: `22 passed`, exit 0.
+- Все tracked Markdown очищены от абсолютного локального префикса разработчика;
+  `devtr6` и `devslon67` не изменялись. Единственная подтверждённая находка
+  реализации была в комментарии `tools/user.py`: заменена наблюдаемым описанием
+  конверта API без имени класса и номера строки.
+- Browser fixture заменена на очевидно синтетическое значение требуемой длины;
+  прежнее значение не воспроизводится в документации, review prompt или выводе.
+  Его происхождение и возможная ротация требуют отдельного решения владельца.
+- Spark PRD review: read-only sandbox не смог прочитать файл из-за known
+  bwrap/runtime failure; повторный review-only запуск с danger-full-access
+  предложил покрыть rename/границы bypass. Rename не нужен для added-line
+  семантики; тесты bypass и специальных имён добавлены. Второй Spark PRD pass
+  принял только backup существующего pre-commit; предложение превратить
+  одноразовую очистку Markdown в постоянный CI gate отклонено как out of scope.
+- Architecture/PRD review сторонней моделью, attempt 1/3: accepted findings
+  про added-line semantics, NUL-разбор, backup installer и тесты; rejected
+  требование убрать согласованный bypass и требование реального Git в test image
+  (пользователь явно предписал git-заглушку). Evidence:
+  `/tmp/vetmanager-mcp-stage232-review-evidence/2026-08-24T102617Z-file-PRD_-232--_md-attempt-1-of-3.C5XYjq/claude-review-attempt-1-of-3.envelope.json`; subtype=success, stop_reason=tool_use, output_tokens=6238, thinking_tokens=3141, len(result)=7242.
+- Spark test review принял один finding: historical-context test содержал
+  пустую context-строку. Исправлено: marker передаётся в неизменённую строку
+  diff, поэтому тест проверяет именно фильтрацию `+`-строк.
+- Full container verification: `1646 passed, 2 skipped, 67 deselected`, exit 0;
+  ShellCheck и Bash syntax checks завершились с exit 0.
 
 ## Этап 252. Задания Report AI зависают в очереди — 2026-08-24
 

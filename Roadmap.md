@@ -3042,7 +3042,7 @@ but are being forced to run on Node.js 24: actions/checkout@v4`.
 
 ## Этап 183. Report AI upstream contract sync — `done`
 
-Источник: исследование 2026-07-03 свежих изменений Vetmanager Report AI в `/home/otis/myprojects/vetmanager-extjs` и real API checks на `devtr6`. Upstream поднял лимиты (`INTENT_MAX_LENGTH=20000`, `DATA_ROW_LIMIT=10000`), добавил штатный `csv_export_url`, включил `allow_rest_api=1` для AI-отчётов через runtime insert и миграцию existing reports, активировал `needs_confirmation`/candidate confirm flow, добавил `preview_example_row`, исправил view alias/CTE ветку `SubqueryExpander` для ABC/XYZ/goods сценариев.
+Источник: исследование 2026-07-03 свежих изменений Vetmanager Report AI в закрытом репозитории `vetmanager-extjs` и real API checks на `devtr6`. Upstream поднял лимиты (`INTENT_MAX_LENGTH=20000`, `DATA_ROW_LIMIT=10000`), добавил штатный `csv_export_url`, включил `allow_rest_api=1` для AI-отчётов через runtime insert и миграцию existing reports, активировал `needs_confirmation`/candidate confirm flow, добавил `preview_example_row`, исправил view alias/CTE ветку `SubqueryExpander` для ABC/XYZ/goods сценариев.
 
 Цель: синхронизировать MCP tools, prompts, descriptions, docs, tests и known issues с новым upstream contract, не ломая безопасный Report AI workflow и не выдавая raw SQL/PII.
 
@@ -4178,7 +4178,7 @@ Claude и ChatGPT по streamable-http, и каждая выкатка рвёт 
 задолго до 23.08 — это установившаяся практика, а не разовая оплошность.
 Решение владельца: публиковать осознанно или убрать.
 
-**Уровень 3 — локальные пути машины** (`/home/otis/myprojects/...`) в семи
+**Уровень 3 — локальные пути машины** (абсолютный локальный префикс разработчика) в семи
 файлах и имена тестовых стендов в семи. Раскрытия почти нет, но это мусор,
 по которому видно, что документ писался не для читателя.
 
@@ -4189,12 +4189,11 @@ Claude и ChatGPT по streamable-http, и каждая выкатка рвёт 
 работа, и вторая заметно дороже.
 
 - 232.1 Уровень 1 убран из `Roadmap.md`, `AssumptionLog.md` и PRD 245, 248. — `done`
-- 232.2 Автоматическая проверка в `pre-commit`: маркеры чужой реализации
-  (`::model()`, `CHttpException`, `NDatabase::`, пути `rest/protected/`,
-  `application/src/`) не попадают в трекаемые файлы. — `todo`
+- 232.2 Автоматическая проверка в `pre-commit`: новые PHP-маркеры чужой
+  реализации не попадают в добавленные строки staged diff. — `done`
 - 232.3 Решение по уровню 2: публиковать карту закрытого репозитория или
   убрать. — `todo`
-- 232.4 Локальные пути и имена стендов вычистить. — `todo`
+- 232.4 Локальные пути вычищены; осмысленные имена тестовых стендов оставлены. — `done`
 - 232.5 Поза проекта определена: исходник открыт, проект наш. Ждём issues и
   реальной эксплуатации, разработка и поддержка остаются за нами.
   `CONTRIBUTING` и англоязычная точка входа поэтому не нужны. — `done`
@@ -4204,8 +4203,7 @@ Claude и ChatGPT по streamable-http, и каждая выкатка рвёт 
 - 232.7 Отдельная проверка на опасное раскрытие, а не на приватность вообще:
   что из опубликованного помогло бы получить доступ к Vetmanager. Проведена
   24.08.2026, результаты переданы владельцу вне репозитория. — `done`
-- 232.8 Заменить в тестовой фикстуре значение bearer-токена на заведомо
-  синтетическое. — `todo`
+- 232.8 Значение bearer в тестовой фикстуре заменено на заведомо синтетическое. — `done`
 
 ## Этап 233. Точная причина отказа подключения интеграции — `done`
 

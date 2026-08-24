@@ -8,7 +8,7 @@
 
 ## 2026-06-16 — VmLink personal-account link by phone
 
-**Источник:** `artifacts/vetmanager_openapi_v6.json`, `artifacts/openapi-diff-2026-06-15-remote-vs-local.md`, `/home/otis/myprojects/vetmanager-extjs/rest/protected/controllers/VmLinkController.php`, `/home/otis/myprojects/vetmanager-extjs/application/src/ServiceIntegration/VmLink.php`, real `devtr6` probe.
+**Источник:** `artifacts/vetmanager_openapi_v6.json`, `artifacts/openapi-diff-2026-06-15-remote-vs-local.md`, `vetmanager-extjs/rest/protected/controllers/VmLinkController.php`, `vetmanager-extjs/application/src/ServiceIntegration/VmLink.php`, real `devtr6` probe.
 
 - OpenAPI содержит оба endpoint: `GET /rest/api/VmLink/personalAccountLinkByClientId/{clientId}` и `GET /rest/api/VmLink/personalAccountLinkByPhone/{phone}`.
 - Product boundary для MCP Stage 171: публиковать только phone-based tool. Client-ID variant не выводить в MCP, потому что пользователь разрешил отдавать постоянную ссылку на ЛК только когда ассистент уже знает телефон клиента.
