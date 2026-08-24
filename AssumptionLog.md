@@ -12210,9 +12210,9 @@ Checks so far:
 
 ## Этап 245. Обновление медкарты и приёма (2026-08-23)
 
-- MedicalCardsController требует `patient_id`, `doctor_id`, `clinic_id` до
+- Обновление медкарты требует `patient_id`, `doctor_id`, `clinic_id` в теле до
   merge, поэтому MCP читает карту и переносит их в PUT. Пустой read не пишет.
-- AdmissionController имеет такой же barrier для `clinic_id`, `start`, `end`;
+- Обновление приёма имеет такой же барьер для `clinic_id`, `start`, `end`;
   update_admission переносит их после GET. Invoice и Hospital используют base
   controller, аналогичного local preflight не найдено.
 - Supervisor committed-diff review found two accepted blockers in the first
