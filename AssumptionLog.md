@@ -12244,6 +12244,16 @@ Checks so far:
   вдруг принят), карта осталась бы с маркером и, возможно, без связей; теперь
   ветка успеха восстанавливает запись и только потом валит тест. Evidence:
   `~/.local/share/vetmanager-mcp-review-evidence/2026-08-24T174111Z-git_range-origin_main__HEAD-attempt-1-of-3.AWG6FJ/claude-review-attempt-1-of-3.envelope.json`.
+- Code/diff review сторонней моделью, валидный запуск 2/2 (attempt 2/3), оба
+  finding'а low и приняты. Первый: текст падения обещал «карта восстановлена»,
+  хотя откат переписывает те же четыре поля — формулировка приведена к тому,
+  что код действительно делает. Второй: мутирующий PUT ловился только на
+  `VetmanagerError`, поэтому таймаут после применения записи оставил бы маркер
+  в карте; откат перенесён в `finally` под флаг «запрос отклонён». Evidence:
+  `~/.local/share/vetmanager-mcp-review-evidence/2026-08-24T174957Z-git_range-origin_main__HEAD-attempt-2-of-3.3m1d9K/claude-review-attempt-2-of-3.envelope.json`.
+  Бюджет code/diff review исчерпан (2 валидных запуска), третий не запускался;
+  правки после него сделаны без нового ревью — deferred after 2 external-review
+  iterations, push выполнен с этим rationale.
 
 ## Этап 247. TTL медкарт и госпитализаций (2026-08-23)
 

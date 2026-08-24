@@ -129,14 +129,22 @@ async def test_real_partial_medical_card_put_is_still_rejected_upstream() -> Non
     card_id = int((await _pick_card())["id"])
     stored, original = await _baseline(card_id)
 
+    rejected = False
     try:
         await _client().put(f"{_MC_ENDPOINT}/{card_id}", json={"recomendation": MARKER})
     except VetmanagerError as exc:
+        rejected = True
         assert "patient" in str(exc).lower()
-        return
+    finally:
+        # Any other exception may still have reached the server, so restore
+        # whenever the request was not explicitly rejected.
+        if not rejected:
+            await _restore(stored, original)
 
-    await _restore(stored, original)
-    pytest.fail(
-        "Partial medical-card PUT was accepted upstream; the stage 245 workaround "
-        "needs review. The card was restored."
-    )
+    if not rejected:
+        pytest.fail(
+            "Partial medical-card PUT was accepted upstream; the stage 245 workaround "
+            "needs review. `recomendation` and the patient/doctor/clinic links were "
+            "written back; other columns the partial body may have touched were not "
+            "inspected."
+        )
