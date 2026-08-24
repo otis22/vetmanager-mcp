@@ -23,6 +23,10 @@ _CODE_MARKERS = (
 )
 
 
+def test_versioned_hook_preserves_api_contract_lint() -> None:
+    assert "lint_api_contracts.py" in HOOK.read_text(encoding="utf-8")
+
+
 def _stub_git(bin_dir: Path, staged: dict[str, str | None]) -> None:
     """Provide the two diff forms the hook needs; the test image has no Git."""
     bin_dir.mkdir(parents=True)
@@ -46,7 +50,10 @@ def _stub_git(bin_dir: Path, staged: dict[str, str | None]) -> None:
         "if args == ['rev-parse', '--show-toplevel']:\n"
         "    print(os.environ['FAKE_REPO'])\n"
         "elif args[:2] == ['diff', '--cached'] and '--name-only' in args:\n"
-        "    sys.stdout.buffer.write(b''.join(name.encode() + b'\\0' for name in staged))\n"
+        "    if 'tools/*.py' in args or 'prompts.py' in args:\n"
+        "        sys.stdout.write('')\n"
+        "    else:\n"
+        "        sys.stdout.buffer.write(b''.join(name.encode() + b'\\0' for name in staged))\n"
         "elif args[:2] == ['diff', '--cached']:\n"
         "    name = args[-1]\n"
         "    content = staged[name]\n"
@@ -121,6 +128,21 @@ def test_file_name_with_space_is_checked(tmp_path: Path) -> None:
     result = _run(tmp_path, {"new notes.php": _CODE_MARKERS[0] + "\n"})
     assert result.returncode == 1
     assert "new notes.php" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "marker",
+    (
+        ":" + ":model ( )",
+        "N" + "Database ::",
+        "json_decode" + " ( $this",
+        "array_merge" + " ( $",
+        "-" + " > doRest",
+    ),
+)
+def test_added_php_marker_with_whitespace_blocks_commit(tmp_path: Path, marker: str) -> None:
+    result = _run(tmp_path, {"new.php": marker + "\n"})
+    assert result.returncode == 1
 
 
 def test_bypass_applies_to_exactly_one_file(tmp_path: Path) -> None:

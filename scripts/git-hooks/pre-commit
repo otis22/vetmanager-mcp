@@ -15,13 +15,28 @@ marker_names=(
     php_rest_dispatch
 )
 marker_patterns=(
-    '::m[o]del\(\)'
+    '::m[o]del[[:space:]]*\([[:space:]]*\)'
     'C[H]ttpException'
-    'N[D]atabase::'
-    'json_decode\(\$this'
-    'array_merge\(\$'
-    '-[>]doRest'
+    'N[D]atabase[[:space:]]*::'
+    'json_decode[[:space:]]*\([[:space:]]*\$this'
+    'array_merge[[:space:]]*\([[:space:]]*\$'
+    '-[[:space:]]*>[[:space:]]*doRest'
 )
+
+# Preserve the existing API contract lint for staged tool payload changes.
+staged_python=$(git diff --cached --name-only --diff-filter=ACMR -- 'tools/*.py' 'prompts.py')
+if [[ -n $staged_python ]]; then
+    files_arg=$(printf '%s' "$staged_python" | tr '\n' ',' | sed 's/,$//')
+    if ! lint_output=$(python3 scripts/lint_api_contracts.py --files "$files_arg" 2>&1); then
+        echo "ERROR: lint_api_contracts.py found high/blocker findings:" >&2
+        printf '%s\n' "$lint_output" >&2
+        exit 1
+    fi
+    if [[ -n $lint_output ]]; then
+        echo "WARN: lint_api_contracts.py found medium/low findings (not blocking):" >&2
+        printf '%s\n' "$lint_output" >&2
+    fi
+fi
 
 while IFS= read -r -d '' file; do
     if [[ ${ALLOW_FOREIGN_IMPLEMENTATION_FILE:-} == "$file" ]]; then

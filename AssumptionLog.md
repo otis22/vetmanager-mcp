@@ -12458,8 +12458,13 @@ Checks so far:
 - Spark test review принял один finding: historical-context test содержал
   пустую context-строку. Исправлено: marker передаётся в неизменённую строку
   diff, поэтому тест проверяет именно фильтрацию `+`-строк.
-- Full container verification: `1646 passed, 2 skipped, 67 deselected`, exit 0;
-  ShellCheck и Bash syntax checks завершились с exit 0.
+- Full container verification after review fixes: `1652 passed, 2 skipped, 67
+  deselected`, exit 0; ShellCheck и Bash syntax checks завершились с exit 0.
+- Spark review committed diff `fc981df` accepted two medium findings: hook снова
+  запускает прежний staged API-contract lint, а PHP-регулярные выражения
+  допускают whitespace внутри той же конструкции. Добавлены regressions для
+  whitespace-вариантов и явная проверка сохранения lint; после правки требуется
+  новый полный прогон, commit и review committed diff.
 
 ## Этап 252. Задания Report AI зависают в очереди — 2026-08-24
 
