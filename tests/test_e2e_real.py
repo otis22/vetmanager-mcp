@@ -675,8 +675,11 @@ async def test_real_get_invoices():
 @skip_if_no_creds
 @pytest.mark.asyncio
 async def test_real_get_medical_cards():
-    result = await call(vc().get("/rest/api/medicalcard", params={"limit": 5, "offset": 0}))
+    # The lowercase path answers 404 and `call()` turns that into a skip, so the
+    # assertion below never ran. Use the same casing as every other card read.
+    result = await call(vc().get("/rest/api/MedicalCards", params={"limit": 5, "offset": 0}))
     assert "data" in result
+    assert result["data"].get("medicalCards") is not None
 
 
 @skip_if_no_creds
