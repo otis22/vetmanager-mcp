@@ -44,3 +44,13 @@ def test_installer_backs_up_existing_pre_push_and_generates_detached_packaging_g
     assert "docker compose --profile test run --rm -T test pytest -q tests/test_packaging_metadata.py < /dev/null" in generated_hook
     assert "Backed up existing pre-push hook" in completed.stdout
     assert "Backed up existing pre-commit hook" in completed.stdout
+
+    repeated = subprocess.run(
+        ["bash", str(scripts_dir / SCRIPT.name)],
+        cwd=repo,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert len(list(hooks_dir.glob("pre-commit.bak.*"))) == 1
+    assert "Backed up existing pre-commit hook" not in repeated.stdout

@@ -6,6 +6,14 @@ set -euo pipefail
 ROOT=$(git rev-parse --show-toplevel)
 cd "$ROOT"
 
+staged_files=$(mktemp)
+cleanup() { rm -f "$staged_files"; }
+trap cleanup EXIT
+if ! git diff --cached --name-only --diff-filter=ACMR -z > "$staged_files"; then
+    echo "ERROR: could not list staged files for implementation-marker check." >&2
+    exit 1
+fi
+
 marker_names=(
     php_active_record_call
     php_http_exception
@@ -24,7 +32,10 @@ marker_patterns=(
 )
 
 # Preserve the existing API contract lint for staged tool payload changes.
-staged_python=$(git diff --cached --name-only --diff-filter=ACMR -- 'tools/*.py' 'prompts.py')
+if ! staged_python=$(git diff --cached --name-only --diff-filter=ACMR -- 'tools/*.py' 'prompts.py'); then
+    echo "ERROR: could not list staged Python files for API-contract lint." >&2
+    exit 1
+fi
 if [[ -n $staged_python ]]; then
     files_arg=$(printf '%s' "$staged_python" | tr '\n' ',' | sed 's/,$//')
     if ! lint_output=$(python3 scripts/lint_api_contracts.py --files "$files_arg" 2>&1); then
@@ -44,8 +55,7 @@ while IFS= read -r -d '' file; do
     fi
 
     added_lines=$(mktemp)
-    trap 'rm -f "$added_lines"' EXIT
-    if ! git diff --cached --no-color --unified=0 -- "$file" \
+    if ! git --literal-pathspecs diff --cached --no-color --unified=0 -- "$file" \
         | awk '/^\+[^+]/ { sub(/^\+/, ""); print }' > "$added_lines"; then
         echo "ERROR: could not inspect staged additions in $file." >&2
         exit 1
@@ -59,5 +69,4 @@ while IFS= read -r -d '' file; do
         fi
     done
     rm -f "$added_lines"
-    trap - EXIT
-done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+done < "$staged_files"

@@ -23,7 +23,7 @@ _CODE_MARKERS = (
 )
 
 
-def _stub_git(bin_dir: Path, staged: dict[str, str | None]) -> None:
+def _stub_git(bin_dir: Path, staged: dict[str, str | None]) -> Path:
     """Provide the two diff forms the hook needs; the test image has no Git."""
     bin_dir.mkdir(parents=True)
     contents_dir = bin_dir / "contents"
@@ -45,13 +45,13 @@ def _stub_git(bin_dir: Path, staged: dict[str, str | None]) -> None:
         "staged = json.loads(os.environ['FAKE_STAGED'])\n"
         "if args == ['rev-parse', '--show-toplevel']:\n"
         "    print(os.environ['FAKE_REPO'])\n"
-        "elif args[:2] == ['diff', '--cached'] and '--name-only' in args:\n"
-        "    if 'tools/*.py' in args or 'prompts.py' in args:\n"
+        "elif (args[:2] == ['diff', '--cached'] or args[:3] == ['--literal-pathspecs', 'diff', '--cached']) and '--name-only' in args:\n"
+        "    if '-z' in args:\n"
+        "        sys.stdout.buffer.write(b''.join(name.encode() + b'\\0' for name in staged))\n"
+        "    else:\n"
         "        names = [name for name in staged if name.startswith('tools/') and name.endswith('.py') or name == 'prompts.py']\n"
         "        sys.stdout.write('\\n'.join(names))\n"
-        "    else:\n"
-        "        sys.stdout.buffer.write(b''.join(name.encode() + b'\\0' for name in staged))\n"
-        "elif args[:2] == ['diff', '--cached']:\n"
+        "elif args[:2] == ['diff', '--cached'] or args[:3] == ['--literal-pathspecs', 'diff', '--cached']:\n"
         "    name = args[-1]\n"
         "    content = staged[name]\n"
         "    if content is None:\n"
@@ -66,7 +66,7 @@ def _stub_git(bin_dir: Path, staged: dict[str, str | None]) -> None:
         encoding="utf-8",
     )
     script.chmod(0o755)
-    os.environ["FAKE_CONTENTS"] = str(contents_dir)
+    return contents_dir
 
 
 def _run(
@@ -78,7 +78,7 @@ def _run(
     **extra_env: str,
 ) -> subprocess.CompletedProcess[str]:
     bin_dir = tmp_path / "bin"
-    _stub_git(bin_dir, staged)
+    contents_dir = _stub_git(bin_dir, staged)
     lint_script = tmp_path / "scripts" / "lint_api_contracts.py"
     lint_script.parent.mkdir(exist_ok=True)
     lint_script.write_text(
@@ -92,6 +92,7 @@ def _run(
         PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         FAKE_REPO=str(tmp_path),
         FAKE_STAGED=json.dumps(staged),
+        FAKE_CONTENTS=str(contents_dir),
         FAKE_CONTEXT_MARKER=context_marker,
         FAKE_LINT_EXIT=str(lint_exit),
         **extra_env,

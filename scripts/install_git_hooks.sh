@@ -19,6 +19,11 @@ fi
 COMMIT_MSG_HOOK="${HOOK_DIR}/commit-msg"
 PRE_COMMIT_HOOK="${HOOK_DIR}/pre-commit"
 PRE_PUSH_HOOK="${HOOK_DIR}/pre-push"
+VERSIONED_PRE_COMMIT="$ROOT/scripts/git-hooks/pre-commit"
+if [ ! -r "$VERSIONED_PRE_COMMIT" ]; then
+  echo "ERROR: versioned pre-commit hook not found: $VERSIONED_PRE_COMMIT" >&2
+  exit 1
+fi
 
 # ── commit-msg hook: enforces 'Stage N: ...' + AssumptionLog section ───────
 
@@ -70,12 +75,12 @@ chmod +x "$COMMIT_MSG_HOOK"
 
 # ── pre-commit hook: versioned staged-addition guard ────────────────────────
 
-if [ -e "$PRE_COMMIT_HOOK" ]; then
+if [ -e "$PRE_COMMIT_HOOK" ] && ! cmp -s "$VERSIONED_PRE_COMMIT" "$PRE_COMMIT_HOOK"; then
   PRE_COMMIT_BACKUP="${PRE_COMMIT_HOOK}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
   cp -p "$PRE_COMMIT_HOOK" "$PRE_COMMIT_BACKUP"
   echo "Backed up existing pre-commit hook: ${PRE_COMMIT_BACKUP}"
 fi
-install -m 755 "$ROOT/scripts/git-hooks/pre-commit" "$PRE_COMMIT_HOOK"
+install -m 755 "$VERSIONED_PRE_COMMIT" "$PRE_COMMIT_HOOK"
 
 # ── pre-push hook: packaging allowlist guard ───────────────────────────────
 
