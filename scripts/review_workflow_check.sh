@@ -110,6 +110,25 @@ if [ "$TOTAL_LOC" -gt 0 ]; then
     0.5
 fi
 
+# 7a. Write-path tools changed without a recorded live call
+# CLAUDE.md § 6.1: a changed tool must be called for real on the test stand and
+# the response recorded. Two write tools shipped 100%-broken on 2026-08-23 with
+# green tests, because the mocks described a response shape that does not exist.
+WRITE_TOOL_DIFF=$(git diff --cached -- tools/ 2>/dev/null; git diff -- tools/ 2>/dev/null)
+if printf '%s' "$WRITE_TOOL_DIFF" | grep -qE '^\+.*crud_(update|create)'; then
+  if [ -n "$STAGE" ] && ! awk -v s="$STAGE" '
+        $0 ~ "^## Этап " s "([^0-9]|$)" {inside=1; next}
+        inside && /^## / {exit}
+        inside {print}
+      ' AssumptionLog.md 2>/dev/null | grep -qiE 'жив(ой|ая|ым) (вызов|проверк)|devtr6|devslon67|opt_in_real|live call'; then
+    emit high missing_live_call "AssumptionLog.md" "N/A" \
+      "Stage ${STAGE} changes a write-path tool but AssumptionLog records no live call" \
+      "CLAUDE.md 6.1: mocks encode the author belief about the contract; only a real call checks it" \
+      "Call the changed tool on the test stand and record status code and body in AssumptionLog" \
+      0.8
+  fi
+fi
+
 # 8. AssumptionLog coverage for ALL done stages (не только current)
 # Parses Roadmap for every "## Этап N. ... — `done`" and verifies AssumptionLog
 # has a matching section. Catches bulk gaps like stages 92-95 that review-
