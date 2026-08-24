@@ -23,10 +23,6 @@ _CODE_MARKERS = (
 )
 
 
-def test_versioned_hook_preserves_api_contract_lint() -> None:
-    assert "lint_api_contracts.py" in HOOK.read_text(encoding="utf-8")
-
-
 def _stub_git(bin_dir: Path, staged: dict[str, str | None]) -> None:
     """Provide the two diff forms the hook needs; the test image has no Git."""
     bin_dir.mkdir(parents=True)
@@ -51,7 +47,8 @@ def _stub_git(bin_dir: Path, staged: dict[str, str | None]) -> None:
         "    print(os.environ['FAKE_REPO'])\n"
         "elif args[:2] == ['diff', '--cached'] and '--name-only' in args:\n"
         "    if 'tools/*.py' in args or 'prompts.py' in args:\n"
-        "        sys.stdout.write('')\n"
+        "        names = [name for name in staged if name.startswith('tools/') and name.endswith('.py') or name == 'prompts.py']\n"
+        "        sys.stdout.write('\\n'.join(names))\n"
         "    else:\n"
         "        sys.stdout.buffer.write(b''.join(name.encode() + b'\\0' for name in staged))\n"
         "elif args[:2] == ['diff', '--cached']:\n"
@@ -77,16 +74,26 @@ def _run(
     staged: dict[str, str | None],
     *,
     context_marker: str = "context only",
+    lint_exit: int = 0,
     **extra_env: str,
 ) -> subprocess.CompletedProcess[str]:
     bin_dir = tmp_path / "bin"
     _stub_git(bin_dir, staged)
+    lint_script = tmp_path / "scripts" / "lint_api_contracts.py"
+    lint_script.parent.mkdir(exist_ok=True)
+    lint_script.write_text(
+        "import os\n"
+        "print('stub lint finding')\n"
+        "raise SystemExit(int(os.environ['FAKE_LINT_EXIT']))\n",
+        encoding="utf-8",
+    )
     env = dict(
         os.environ,
         PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         FAKE_REPO=str(tmp_path),
         FAKE_STAGED=json.dumps(staged),
         FAKE_CONTEXT_MARKER=context_marker,
+        FAKE_LINT_EXIT=str(lint_exit),
         **extra_env,
     )
     return subprocess.run(
@@ -128,6 +135,12 @@ def test_file_name_with_space_is_checked(tmp_path: Path) -> None:
     result = _run(tmp_path, {"new notes.php": _CODE_MARKERS[0] + "\n"})
     assert result.returncode == 1
     assert "new notes.php" in result.stderr
+
+
+def test_api_contract_lint_remains_blocking_for_staged_tool_code(tmp_path: Path) -> None:
+    result = _run(tmp_path, {"tools/new.py": "payload = {}\n"}, lint_exit=1)
+    assert result.returncode == 1
+    assert "lint_api_contracts.py found high/blocker findings" in result.stderr
 
 
 @pytest.mark.parametrize(

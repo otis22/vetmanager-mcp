@@ -12465,6 +12465,11 @@ Checks so far:
   допускают whitespace внутри той же конструкции. Добавлены regressions для
   whitespace-вариантов и явная проверка сохранения lint; после правки требуется
   новый полный прогон, commit и review committed diff.
+- Final Spark committed-range review принял ещё один medium finding: тестовая
+  git-заглушка должна фактически выполнять сохранённый API-contract lint для
+  staged `tools/*.py`, а не только проверять его наличие текстом. Добавлен
+  поведенческий regression с non-zero lint verdict; при cleanup review также
+  исправлен случайно продублированный source-path в Report AI artifact.
 
 ## Этап 252. Задания Report AI зависают в очереди — 2026-08-24
 

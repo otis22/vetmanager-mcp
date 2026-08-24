@@ -19,7 +19,6 @@ The short prompt helper should be exposed to agents as prompt/resource guidance,
   - `vetmanager-extjs/rest/protected/controllers/ReportAiJobsController.php`
   - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/Job/JobService.php`
   - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/Job/ReportAiJob.php`
-  - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/Job/ReportAiJob.php`
   - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/Job/JobStatus.php`
   - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/AiReportFacade.php`
   - `vetmanager-extjs/application/src/Components/ReportConstructor/AI/AiReportRenderer.php`
