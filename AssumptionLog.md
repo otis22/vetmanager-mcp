@@ -12478,6 +12478,25 @@ Checks so far:
   residual risk: значение не признано синтетическим, но ротация требует
   отдельного решения владельца и запрещённого здесь обращения к production.
   Новая версия fixture очевидно синтетическая; прежнее значение не повторяется.
+- Code/diff review сторонней моделью, валидный запуск 2/2 (attempt 2/3) на
+  диапазоне `origin/main..HEAD`: accepted один low finding — консолидация trap
+  в `scripts/git-hooks/pre-commit` перестала удалять `added_lines` на путях
+  раннего выхода, то есть хук тёк временным файлом при каждом заблокированном
+  коммите (штатное поведение). Исправлено: `cleanup` удаляет оба файла,
+  переменная гасится после успешной итерации; добавлен regression с приватным
+  `TMPDIR`, красный на прежней версии хука. Evidence:
+  `~/.local/share/vetmanager-mcp-review-evidence/2026-08-24T124328Z-git_range-origin_main__HEAD-attempt-2-of-3.MlJ5MF/claude-review-attempt-2-of-3.envelope.json`;
+  outcome=valid_verdict, subtype=success, stop_reason=tool_use,
+  output_tokens=11348, thinking_tokens=10148, len(result)=1268.
+- Medium finding того же запуска — bearer в фикстуре остаётся в публичной
+  истории git, санитайзинг рабочего дерева митигацией не является — по существу
+  верен и уже закрыт решением владельца от 24.08.2026: риск принят, ключ
+  ограничен одним тестовым стендом, ротация не проводится. Deferred after
+  2 external-review iterations; третий валидный review не запускался (бюджет
+  исчерпан), push выполнен с этим rationale.
+- Evidence прошлого запуска писался в `/tmp` и стёрт перезагрузкой машины;
+  дальнейшие запуски используют дефолтный `~/.local/share/...`, который
+  ребут переживает.
 
 ## Этап 252. Задания Report AI зависают в очереди — 2026-08-24
 

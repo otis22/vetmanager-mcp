@@ -174,3 +174,15 @@ def test_bypass_applies_to_exactly_one_file(tmp_path: Path) -> None:
         ALLOW_FOREIGN_IMPLEMENTATION_FILE="allowed.php",
     )
     assert only_allowed.returncode == 0
+
+
+def test_blocked_commit_leaves_no_temporary_files(tmp_path: Path) -> None:
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    result = _run(
+        tmp_path,
+        {"new.php": _CODE_MARKERS[0] + "\n"},
+        TMPDIR=str(scratch),
+    )
+    assert result.returncode == 1
+    assert list(scratch.iterdir()) == []
