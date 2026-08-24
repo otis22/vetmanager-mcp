@@ -346,6 +346,18 @@ def register(mcp: FastMCP) -> None:
         to Vetmanager API names (user_id / admission_date / patient_id) at the
         boundary. Same pattern as create_admission (stage 86).
 
+        Editing an admission requires the clinic it belongs to and the time
+        window of the appointment: without them Vetmanager answers
+        `400 No clinic selected` or `400 Start time or End time parameter is
+        not specified.`, whatever else the body carries. This tool reads the
+        stored admission and sends them back itself, keeping the current
+        duration when only the date changes, so pass only what you want to
+        change.
+
+        An admission already accepted is not editable at all — Vetmanager
+        answers `400 Editing can not be accepted reception.` That is a state,
+        not a missing field: nothing in the body will make the edit go through.
+
         Note: Vetmanager API does not allow deleting admissions via REST.
 
         Args:

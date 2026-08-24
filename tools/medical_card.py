@@ -368,6 +368,17 @@ def register(mcp: FastMCP) -> None:
     ) -> dict:
         """Update an existing medical card record.
 
+        Editing a card requires the patient, doctor and clinic it already
+        belongs to: Vetmanager refuses a body without them and answers
+        `400 Patient does not exist` even when the patient exists and reads
+        fine. This tool reads the stored card and sends those three back
+        unchanged, so pass only the fields you want to change — there is no
+        need to look up the pet first.
+
+        If the stored card has no patient, doctor or clinic, the update is not
+        sent and the error names what is missing; fix the card in Vetmanager
+        before retrying.
+
         Do not use `date_edit` to verify this update: Vetmanager may leave that
         field unchanged even after a successful write. Read the changed field
         back instead.
@@ -389,7 +400,10 @@ def register(mcp: FastMCP) -> None:
         missing_context = [field for field in required_context if not current.get(field)]
         if missing_context:
             raise ValueError(
-                "Medical card lacks required update context: " + ", ".join(missing_context)
+                "Medical card lacks required update context: "
+                + ", ".join(missing_context)
+                + ". Vetmanager requires patient, doctor and clinic on every card"
+                " edit; set them on the card in Vetmanager, then retry."
             )
         payload: dict = {field: current[field] for field in required_context}
         if description:
