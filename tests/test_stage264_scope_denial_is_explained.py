@@ -49,3 +49,39 @@ async def test_allowed_scope_is_not_touched_by_the_new_message():
         await client.get("/rest/api/report-ai-job/1")
 
     assert "lacks required scope" not in str(failure.value)
+
+
+def test_presets_granting_scope_covers_the_edges():
+    """The list feeds a user-facing sentence, so its edges must be boring."""
+    from tool_access_registry import get_presets_granting_scope
+
+    # A scope several presets grant: full access first, then the specific one.
+    assert get_presets_granting_scope("report_ai.write") == ("Full access", "Analytics")
+    # A scope only full access grants must not name anything else.
+    assert get_presets_granting_scope("users.write") == ("Full access",)
+    # An unknown scope yields nothing rather than an odd sentence fragment.
+    assert get_presets_granting_scope("not.a.real.scope") == ()
+
+
+@pytest.mark.asyncio
+async def test_denial_is_recognised_by_code_not_by_wording():
+    """Error handling used to match a substring, which went stale on rewording."""
+    from tool_access_registry import SCOPE_DENIED_ERROR_CODE
+
+    client = _read_only_client()
+    with pytest.raises(AuthError) as denied:
+        await client.post("/rest/api/report-ai-job/1/save", json={"title": "x"})
+
+    assert denied.value.error_code == SCOPE_DENIED_ERROR_CODE
+
+
+def test_export_error_handler_uses_the_code():
+    """The Report AI export path must classify a scope denial as such."""
+    import tools.report_ai as report_ai
+    from tool_access_registry import SCOPE_DENIED_ERROR_CODE
+
+    denial = AuthError("wording may change", status_code=403, error_code=SCOPE_DENIED_ERROR_CODE)
+    generic = AuthError("some other 403", status_code=403)
+
+    assert "wording may change" in str(report_ai._safe_export_error(denial, "start export"))
+    assert "wording may change" not in str(report_ai._safe_export_error(generic, "start export"))

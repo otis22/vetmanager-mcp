@@ -501,6 +501,11 @@ def get_presets_allowing_tool(tool_name: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(labels))
 
 
+# Stage 264: a stable marker for "the token lacks the scope", so error handling
+# never has to match on the wording of a message meant for humans.
+SCOPE_DENIED_ERROR_CODE = "scope_denied"
+
+
 def get_presets_granting_scope(scope: str) -> tuple[str, ...]:
     """User-facing labels of the access presets that include one scope.
 

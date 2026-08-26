@@ -11,6 +11,7 @@ from fastmcp.exceptions import ToolError
 from exceptions import AuthError, VetmanagerError
 from observability_logging import RUNTIME_LOGGER
 from prompts import get_report_ai_prompt_helper_text
+from tool_access_registry import SCOPE_DENIED_ERROR_CODE
 from runtime_auth import get_current_runtime_credentials
 from service_metrics import (
     instrument_call,
@@ -673,7 +674,7 @@ def _safe_export_error(
     *,
     retry_on_conflict: bool = False,
 ) -> ToolError:
-    if isinstance(exc, AuthError) and "lacks required scope" in str(exc):
+    if isinstance(exc, AuthError) and exc.error_code == SCOPE_DENIED_ERROR_CODE:
         return _tool_error_from_vm(exc)
     status = f" HTTP {exc.status_code}" if exc.status_code is not None else ""
     code = f" ({exc.error_code})" if exc.error_code else ""

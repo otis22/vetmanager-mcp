@@ -21,7 +21,7 @@ from request_context import get_current_request_context
 from domain_validation import validate_domain as validate_runtime_domain
 from runtime_auth import get_current_runtime_credentials, resolve_runtime_credentials
 from service_metrics import record_upstream_failure, record_upstream_request
-from tool_access_registry import get_presets_granting_scope
+from tool_access_registry import SCOPE_DENIED_ERROR_CODE, get_presets_granting_scope
 from token_scopes import required_scope_for_request
 from upstream_transport import classify_http_status, classify_transport_error
 from vetmanager_auth import VetmanagerAuthContext
@@ -286,6 +286,9 @@ class VetmanagerClient:
                 " Ask the clinic administrator for a token with that access;"
                 " repeating the call with the current token will fail the same way.",
                 status_code=403,
+                # Callers used to recognise this by a substring of the message,
+                # which quietly went stale the moment the wording improved.
+                error_code=SCOPE_DENIED_ERROR_CODE,
             )
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
