@@ -21,6 +21,7 @@ from service_metrics import snapshot_service_metrics
 from storage_models import (
     Account,
     OAuthAccessToken,
+    OAuthClient,
     OAuthGrant,
     TokenUsageLog,
     VetmanagerConnection,
@@ -58,6 +59,20 @@ async def _seed_oauth_only_account(session, *, now: datetime, used_at: datetime 
     )
     session.add(connection)
     await session.flush()
+    # A grant always belongs to a registered client; the live-access check
+    # requires that client to still be active, so the fixture must have one.
+    session.add(
+        OAuthClient(
+            client_id="vm_oc_stage260",
+            client_name="ChatGPT",
+            redirect_uris_json="[]",
+            token_endpoint_auth_method="none",
+            grant_types_json="[]",
+            response_types_json="[]",
+            scope="clients.read",
+            status="active",
+        )
+    )
     grant = OAuthGrant(
         account_id=account.id,
         vetmanager_connection_id=connection.id,
@@ -273,3 +288,56 @@ async def test_silence_gauge_drops_account_whose_oauth_access_died(session_facto
 
     gauges = snapshot_service_metrics()["account_last_request_age_hours"]
     assert str(account_id) not in gauges
+
+
+def test_rendered_state_does_not_call_a_dead_grant_access():
+    """An active grant with no live token is not access — the runtime would reject it."""
+    from web_html import compute_activation_state
+
+    dead_grant = {
+        "status": "active",
+        "last_used_at": "2026-08-01 10:00 UTC",
+        "last_used_at_raw": "2026-08-01T10:00:00+00:00",
+        "has_live_access": False,
+    }
+    assert compute_activation_state(
+        active_connection={"id": 1},
+        integration_health_status="active",
+        bearer_tokens=[],
+        oauth_grants=[dead_grant],
+    ) == "needs_token"
+
+
+@pytest.mark.asyncio
+async def test_live_access_ignores_spent_refresh_token(session_factory):
+    """A rotated refresh token is spent: the refresh endpoint refuses to exchange it."""
+    from oauth_service import accounts_with_live_oauth_access
+    from storage_models import OAuthAccessToken as _Access, OAuthRefreshToken
+
+    now = datetime.now(timezone.utc)
+    async with session_factory() as session:
+        account_id = await _seed_oauth_only_account(session, now=now, used_at=now - timedelta(hours=1))
+
+    async with session_factory() as session:
+        assert account_id in await accounts_with_live_oauth_access(session, now=now)
+
+    # Expire the access token and leave only a refresh token that was already used.
+    async with session_factory() as session:
+        access = await session.scalar(select(_Access))
+        access.expires_at = now - timedelta(minutes=1)
+        session.add(
+            OAuthRefreshToken(
+                grant_id=access.grant_id,
+                token_prefix="vm_ort_spent",
+                token_hash="hash-spent",
+                scope="clients.read",
+                resource="https://test.example.com/mcp",
+                status="active",
+                used_at=now - timedelta(minutes=30),
+                expires_at=now + timedelta(days=30),
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        assert account_id not in await accounts_with_live_oauth_access(session, now=now)

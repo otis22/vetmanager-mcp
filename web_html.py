@@ -208,9 +208,14 @@ def compute_activation_state(
     )
     if not integration_ready:
         return "needs_connection"
+    # An active grant whose access and refresh tokens have all expired cannot
+    # serve a request; treating it as access would show "ready" to somebody the
+    # runtime would now reject. Callers that cannot tell (no key in the dict)
+    # fall back to the grant status.
     grants = [
         grant for grant in (oauth_grants or [])
         if str(grant.get("status")) == OAUTH_STATUS_ACTIVE
+        and grant.get("has_live_access", True)
     ]
     has_active_token = any(
         _activation_token_is_usable(token, now=now) for token in bearer_tokens

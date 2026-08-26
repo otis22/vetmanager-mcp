@@ -841,19 +841,29 @@ async def accounts_with_live_oauth_access(session: AsyncSession, *, now: datetim
     keeps working only while it can refresh. Checking the grant alone would
     keep an account in the silence gauge long after its access died; checking
     the access token alone would drop a client that is between refreshes.
+
+    The refresh branch mirrors what `exchange_refresh_token` actually accepts —
+    an unused token belonging to an active client. A rotated refresh token is
+    already spent, and a disabled client cannot exchange anything, so counting
+    either as access would show a working state to somebody who has none.
     """
     live_access = (
         select(OAuthGrant.account_id)
         .join(OAuthAccessToken, OAuthAccessToken.grant_id == OAuthGrant.id)
+        .join(OAuthClient, OAuthClient.client_id == OAuthGrant.client_id)
         .where(OAuthGrant.status == OAUTH_STATUS_ACTIVE)
+        .where(OAuthClient.status == OAUTH_STATUS_ACTIVE)
         .where(OAuthAccessToken.status == OAUTH_STATUS_ACTIVE)
         .where(OAuthAccessToken.expires_at > now)
     )
     live_refresh = (
         select(OAuthGrant.account_id)
         .join(OAuthRefreshToken, OAuthRefreshToken.grant_id == OAuthGrant.id)
+        .join(OAuthClient, OAuthClient.client_id == OAuthGrant.client_id)
         .where(OAuthGrant.status == OAUTH_STATUS_ACTIVE)
+        .where(OAuthClient.status == OAUTH_STATUS_ACTIVE)
         .where(OAuthRefreshToken.status == OAUTH_STATUS_ACTIVE)
+        .where(OAuthRefreshToken.used_at.is_(None))
         .where(OAuthRefreshToken.expires_at > now)
     )
     accounts: set[int] = set()

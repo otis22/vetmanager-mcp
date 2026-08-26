@@ -7,7 +7,7 @@ HTML rendering lives in web_html.py.
 
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timezone
 import json
 import os
 from secrets import token_urlsafe
@@ -22,7 +22,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 
 from observability_logging import RUNTIME_LOGGER
-from oauth_service import is_broad_oauth_full_access_scope
+from oauth_service import accounts_with_live_oauth_access, is_broad_oauth_full_access_scope
 from request_context import attach_request_context_headers, get_request_context
 from secret_manager import get_storage_encryption_key
 from service_metrics import record_http_request
@@ -444,6 +444,12 @@ async def _load_account_dashboard(
                 await session.execute(select(OAuthClient).where(OAuthClient.client_id.in_(client_ids)))
             ).scalars().all()
             clients_by_id = {client.client_id: client for client in clients}
+        # Stage 260: the rendered state must agree with polling and with the
+        # runtime — an active grant whose tokens have all died is not access.
+        live_oauth_accounts = await accounts_with_live_oauth_access(
+            session, now=datetime.now(timezone.utc)
+        )
+        account_has_live_oauth = account.id in live_oauth_accounts
         oauth_grant_view = []
         for grant in grants:
             client = clients_by_id.get(grant.client_id)
@@ -469,6 +475,7 @@ async def _load_account_dashboard(
                     "created_at_raw": _iso_dt(grant.created_at),
                     "last_used_at": _format_dt(grant.last_used_at),
                     "last_used_at_raw": _iso_dt(grant.last_used_at),
+                    "has_live_access": account_has_live_oauth,
                     "connection_id": grant.vetmanager_connection_id,
                     "is_last_used": False,
                 }
