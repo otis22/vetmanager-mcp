@@ -156,3 +156,55 @@ async def test_unreachable_command_names_the_issues_agents_never_see(
     # Aggregate-only, like every other triage report: no raw report text.
     assert "Raw summary" not in output
     assert "Raw details" not in output
+
+
+def test_runbook_only_shows_commands_the_cli_actually_accepts():
+    """The runbook is the operational contract — a wrong flag makes it useless.
+
+    The first version of it was written from memory and every id-taking command
+    had the wrong signature.
+    """
+    import re
+    import shlex
+    from pathlib import Path
+
+    runbook = Path(__file__).resolve().parents[1] / "artifacts" / "feedback-triage-runbook.md"
+    parser = triage_cli._build_parser()
+
+    commands = [
+        line.strip()
+        for line in runbook.read_text(encoding="utf-8").splitlines()
+        if line.strip().startswith("python3 scripts/triage_agent_feedback.py")
+    ]
+    assert commands, "the runbook must show how to run the triage tool"
+
+    for command in commands:
+        argv = shlex.split(re.sub(r'"[^"]*"', '"x"', command))[2:]
+        parser.parse_args(argv)
+
+
+@pytest.mark.asyncio
+async def test_unreachable_report_survives_an_empty_result_and_a_missing_tool(
+    sqlite_session_factory_builder, tmp_path, monkeypatch, capsys, feedback_pepper
+):
+    """Nothing unreachable is the goal state, and it must print as such."""
+    session_factory = await sqlite_session_factory_builder(tmp_path / "stage261-empty.db")
+    monkeypatch.setattr(triage_cli, "get_session_factory", lambda: session_factory)
+
+    await triage_cli._unreachable_issues(SimpleNamespace())
+    assert "total=0" in capsys.readouterr().out
+
+    async with session_factory() as session:
+        session.add(KnownIssue(
+            status="open",
+            category="bug",
+            severity="low",
+            title="No tool attached",
+            match_rules_json=json.dumps(_rules()),
+        ))
+        await session.commit()
+
+    await triage_cli._unreachable_issues(SimpleNamespace())
+    output = capsys.readouterr().out
+    assert "total=1" in output
+    assert "| - |" in output, "a missing related_tool prints as a dash, not a crash"

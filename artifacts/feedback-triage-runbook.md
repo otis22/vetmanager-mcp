@@ -33,12 +33,18 @@
 ## Команды
 
 ```bash
-python3 scripts/triage_agent_feedback.py recent --days 7
-python3 scripts/triage_agent_feedback.py show --report-id N
-python3 scripts/triage_agent_feedback.py link --known-issue-id M --report-ids N
+python3 scripts/triage_agent_feedback.py recent --limit 20
+python3 scripts/triage_agent_feedback.py show 47 48
+python3 scripts/triage_agent_feedback.py link 31 45
+python3 scripts/triage_agent_feedback.py promote 48 --title "..." --status acknowledged
+python3 scripts/triage_agent_feedback.py mark 31 workaround_available
 python3 scripts/triage_agent_feedback.py unreachable-issues
 python3 scripts/triage_agent_feedback.py match-effectiveness --days 30
 ```
+
+Идентификаторы передаются позиционно: `link <known_issue_id> <report_id...>`,
+`show <report_id...>`, `promote <report_id>`, `mark <known_issue_id> <status>`.
+`recent` ограничивается `--limit`, а не днями.
 
 `unreachable-issues` — главная проверка после разбора: перечисляет активные
 проблемы без playbook, отсортированные по числу собранных отчётов. Пустой
@@ -59,5 +65,5 @@ python3 scripts/triage_agent_feedback.py match-effectiveness --days 30
 ## Приватность
 
 Все отчёты триажа — агрегатные: ни `summary`, ни `details`, ни `intent_text`
-в вывод не попадают. `show --report-id` печатает содержимое одного отчёта и
-предназначен для человека, разбирающего конкретный случай, а не для выгрузок.
+в вывод не попадают. `show <report_id>` печатает содержимое отчёта целиком и предназначен для
+человека, разбирающего конкретный случай, а не для выгрузок.
