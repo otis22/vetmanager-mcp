@@ -80,6 +80,10 @@ _REPORT_AI_STAGE_BY_STATUS = {
 _REPORT_AI_TERMINAL_OUTCOMES = frozenset({
     "saved", "existing_report_matched", "failed", "rejected",
 })
+# Stage 252.3: stages where the service is supposed to be working. Waiting here
+# past the limit is a hang; `needs_confirmation` waits for a person and
+# `ready_to_save` waits for the caller, so neither belongs.
+_REPORT_AI_ACTIVE_STAGE_STATUSES = ("recognizing", "building_preview")
 
 
 def _monotonic_seconds() -> float:
@@ -306,6 +310,25 @@ def _observe_report_ai_queue(job: dict, *, now: float | None = None) -> int | No
     return max(0, int(current_time - observation["first_seen"]))
 
 
+def _report_ai_stage_age_seconds(job: dict, *, now: float) -> int | None:
+    """How long this job has been sitting in its current stage (stage 252.3).
+
+    Read from the lifecycle observation, which already tracks when each stage
+    started — a second counter would only have to be kept in sync with it.
+    A stage change resets the clock on purpose: movement is not a hang.
+    """
+    observation_key = _report_ai_queue_observation_key(job)
+    if observation_key is None:
+        return None
+    observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.get(observation_key)
+    if observation is None:
+        return None
+    stage = _REPORT_AI_STAGE_BY_STATUS.get(str(job.get("status") or ""), "unknown")
+    if str(observation["stage"]) != stage:
+        return None
+    return max(0, int(now - float(observation["stage_started"])))
+
+
 def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None:
     """Record safe, process-local lifecycle observations for one Report AI job."""
     observation_key = _report_ai_queue_observation_key(job)
@@ -413,9 +436,28 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
     if not isinstance(job, dict):
         return payload
 
-    observed_age_seconds = _observe_report_ai_queue(job, now=now)
-    upstream_age_seconds = await _upstream_job_age_seconds(job)
-    diagnostic_age_seconds = upstream_age_seconds if upstream_age_seconds is not None else observed_age_seconds
+    status = str(job.get("status") or "")
+    # The queue answers "how long until this starts"; an active stage answers
+    # "how long has this stage stopped moving". Mixing them would hand a job
+    # that merely queued for an hour an instant wait-limit on its first second
+    # of recognising.
+    if status == "queued":
+        observed_age_seconds = _observe_report_ai_queue(job, now=now)
+        upstream_age_seconds = await _upstream_job_age_seconds(job)
+        diagnostic_age_seconds = (
+            upstream_age_seconds if upstream_age_seconds is not None else observed_age_seconds
+        )
+        age_scope = "job"
+        age_source = "upstream_created_at" if upstream_age_seconds is not None else "mcp_observed"
+    elif status in _REPORT_AI_ACTIVE_STAGE_STATUSES:
+        _observe_report_ai_queue(job, now=now)  # clears any stale queue observation
+        diagnostic_age_seconds = _report_ai_stage_age_seconds(job, now=now or _monotonic_seconds())
+        age_scope = "stage"
+        age_source = "mcp_observed"
+    else:
+        _observe_report_ai_queue(job, now=now)
+        return payload
+
     if (
         diagnostic_age_seconds is None
         or diagnostic_age_seconds < REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS
@@ -425,25 +467,35 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
     at_wait_limit = diagnostic_age_seconds >= REPORT_AI_QUEUE_WAIT_LIMIT_SECONDS
     diagnostics = {
         "code": "report_ai_job_wait_limit_reached" if at_wait_limit else "report_ai_job_long_queued",
-        "observed_queued_age_seconds": diagnostic_age_seconds,
+        "observed_age_seconds": diagnostic_age_seconds,
+        "age_scope": age_scope,
         "threshold_seconds": REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS,
-        "status": "queued",
+        "status": status,
         "operator_hint": (
             "Age comes from Vetmanager created_at when available, otherwise MCP local observation; "
             "it is not a Vetmanager worker SLA. "
             "Inspect Report AI worker/stale in-progress diagnostics using the MCP operator runbook."
         ),
     }
-    diagnostics["age_source"] = "upstream_created_at" if upstream_age_seconds is not None else "mcp_observed"
+    if age_scope == "job":
+        # Kept for callers that already read the queue-specific field.
+        diagnostics["observed_queued_age_seconds"] = diagnostic_age_seconds
+    diagnostics["age_source"] = age_source
     for field_name in ("created_at", "updated_at"):
         if job.get(field_name):
             diagnostics[field_name] = job[field_name]
     if at_wait_limit:
+        already_started = age_scope == "stage"
         diagnostics.update({
             "stop_automatic_polling": True,
             "next_step": (
-                "Do not create a duplicate job. The same job may still finish upstream; "
-                "re-check this same job_id later. For invoice KPI only, a last-resort fallback "
+                "Do not create a duplicate job. "
+                + (
+                    "This job already started working, so re-running it only doubles the queue; "
+                    if already_started
+                    else "The same job may still finish upstream; "
+                )
+                + "re-check this same job_id later. For invoice KPI only, a last-resort fallback "
                 "is get_invoices with full pagination: compare returned rows to totalCount before "
                 "summing amount by doctor_id."
             ),
@@ -455,11 +507,12 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
         "report_ai_job_long_queued",
         extra={
             "event_name": "report_ai_job_long_queued",
-            "status": "queued",
+            "status": status,
+            "age_scope": age_scope,
             "threshold_seconds": REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS,
             "observed_queued_age_seconds": diagnostic_age_seconds,
             "observed_queued_age_bucket": _queued_age_bucket(diagnostic_age_seconds),
-            "age_source": diagnostics["age_source"],
+            "age_source": age_source,
             "wait_limit_reached": at_wait_limit,
         },
     )
@@ -468,13 +521,14 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
 
 async def _annotate_report_ai_job_payload(payload: dict) -> dict:
     observed_at = _monotonic_seconds()
-    annotated = await _annotate_report_ai_queue_diagnostics(
-        _annotate_report_ai_workarounds(payload), now=observed_at
-    )
+    annotated = _annotate_report_ai_workarounds(payload)
+    # Stage 252.3: the lifecycle observation is updated first — the diagnostics
+    # read the current stage's clock from it, and on the first poll of a new
+    # stage a stale observation would still hold the previous stage's time.
     job = _extract_job(annotated)
     if job:
         _observe_report_ai_lifecycle(job, now=observed_at)
-    return annotated
+    return await _annotate_report_ai_queue_diagnostics(annotated, now=observed_at)
 
 
 def _annotate_report_ai_data_payload(payload: dict) -> dict:
@@ -752,10 +806,15 @@ def register(mcp: FastMCP) -> None:
                 invented example values, not clinic data; use its columns and
                 value types only to check the expected table structure, and
                 never repeat its values to the user.
-                If MCP observes the same job queued for 30+ seconds, the safe
-                job payload includes mcp_queue_diagnostics. Its age is process-local,
-                not a Vetmanager SLA. At 15 minutes stop automatic polling and do
-                not create a duplicate: re-check the same job later. Invoice KPI
+                If a job stops moving for 30+ seconds, the safe job payload
+                includes mcp_queue_diagnostics. It covers the queue and the
+                working stages alike: age_scope says whether the age measures
+                the whole job (queued) or the current stage (recognizing,
+                building_preview), and a stage change restarts that clock.
+                The age is process-local, not a Vetmanager SLA. At 15 minutes
+                stop automatic polling and do not create a duplicate: the same
+                job may still finish, and on a working stage a duplicate only
+                doubles the queue. Re-check the same job later. Invoice KPI
                 fallback needs complete get_invoices pagination before summing amount
                 by doctor_id; it is not a direct aggregate.
         """
