@@ -70,17 +70,35 @@ async def test_update_response_contract_still_differs_from_the_read() -> None:
             if "recomendation" not in record:
                 continue
             # Readable is not the same as writable here: some listed cards
-            # answer 404 to a PUT. Probe with the value the card already has,
-            # so a card we end up rejecting is left exactly as it was.
+            # answer 404 to a PUT. The probe sends only the context fields and
+            # never `recomendation` — an update merges into the stored record,
+            # so a rejected candidate keeps its value untouched, including a
+            # NULL that resending as "" would have quietly overwritten.
             probe = {field: record[field] for field in _CONTEXT}
-            probe["recomendation"] = str(record.get("recomendation") or "")
             if (await client.put(f"{_CARD_PATH}/{candidate_id}", json=probe)).status_code >= 400:
                 continue
             stored, card_id = record, candidate_id
             break
 
         if stored is None:
-            pytest.skip("No readable writable card besides the one the stage 245 test uses.")
+            # A contour with a single writable card would otherwise make this
+            # guard skip silently — and a vendor fix would go unnoticed, which
+            # is the whole point of the test. Fall back to the shared card:
+            # the suite runs sequentially, so the only real hazard is two
+            # concurrent live runs against one contour.
+            first = usable[0]
+            response = await client.get(f"{_CARD_PATH}/{int(first['id'])}")
+            record = response.json().get("data", {}).get("medicalCards") if response.status_code == 200 else None
+            record = record[0] if isinstance(record, list) else record
+            if (
+                isinstance(record, dict)
+                and all(record.get(field) for field in _CONTEXT)
+                and "recomendation" in record
+            ):
+                stored, card_id = record, int(first["id"])
+
+        if stored is None:
+            pytest.skip("No readable, writable medical card on this contour.")
         original = str(stored.get("recomendation") or "")
 
         body = {field: stored[field] for field in _CONTEXT}
