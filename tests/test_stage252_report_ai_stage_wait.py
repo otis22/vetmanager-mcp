@@ -128,3 +128,40 @@ async def test_queued_keeps_its_own_contract(monkeypatch):
     assert diagnostics["age_scope"] == "job"
     assert diagnostics["observed_queued_age_seconds"] >= report_ai.REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS
     assert diagnostics["observed_age_seconds"] == diagnostics["observed_queued_age_seconds"]
+
+
+@pytest.mark.asyncio
+async def test_stage_stall_and_queue_wait_are_counted_apart(monkeypatch):
+    """The queue counter feeds dashboards meaning "waiting to start" — keep it that way."""
+    import service_metrics
+
+    service_metrics.reset_service_metrics()
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: 0.0)
+    queued = {"id": 601, "status": "queued"}
+    stalled = {"id": 602, "status": "recognizing"}
+    await _annotate(queued)
+    await _annotate(stalled)
+
+    monkeypatch.setattr(
+        report_ai,
+        "_monotonic_seconds",
+        lambda: float(report_ai.REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS + 1),
+    )
+    await _annotate(queued)
+    await _annotate(stalled)
+
+    snapshot = service_metrics.snapshot_service_metrics()
+    assert snapshot["report_ai_long_queued_polls_total"] == 1
+    assert snapshot["report_ai_stage_stall_polls_total"] == 1
+    rendered = service_metrics.render_prometheus_metrics()
+    assert "vetmanager_report_ai_stage_stall_polls_total 1" in rendered
+    assert "vetmanager_report_ai_long_queued_polls_total 1" in rendered
+
+
+def test_public_tool_description_covers_working_stages():
+    """The description in the live schema, not just the docstring, must say it."""
+    from tool_descriptions import SPECIAL_TOOL_DESCRIPTIONS
+
+    description = SPECIAL_TOOL_DESCRIPTIONS["get_report_ai_job"]
+    assert "recognizing/building_preview" in description
+    assert "age_scope" in description

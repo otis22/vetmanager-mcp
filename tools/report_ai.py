@@ -21,6 +21,7 @@ from service_metrics import (
     record_report_ai_job_terminal_outcome,
     record_report_ai_job_transition,
     record_report_ai_long_queued_poll,
+    record_report_ai_stage_stall_poll,
 )
 from vetmanager_client import VetmanagerClient
 
@@ -502,7 +503,12 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
         })
 
     job.setdefault("mcp_queue_diagnostics", diagnostics)
-    record_report_ai_long_queued_poll()
+    # The queue counter keeps meaning "waiting to start"; a stalled working
+    # stage is a different question and gets its own counter.
+    if age_scope == "job":
+        record_report_ai_long_queued_poll()
+    else:
+        record_report_ai_stage_stall_poll()
     RUNTIME_LOGGER.warning(
         "report_ai_job_long_queued",
         extra={

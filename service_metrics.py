@@ -48,6 +48,7 @@ _TOKEN_PRESET_ISSUED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _RATE_LIMIT_BACKEND_DEGRADED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _SANITIZER_FAILURES_TOTAL = 0
 _REPORT_AI_LONG_QUEUED_POLLS_TOTAL = 0
+_REPORT_AI_STAGE_STALL_POLLS_TOTAL = 0
 _REPORT_AI_JOBS_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _REPORT_AI_JOB_TRANSITIONS_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
 _REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL: DefaultDict[str, int] = defaultdict(int)
@@ -93,7 +94,8 @@ _TOOL_LABEL_ALLOWED_RE = re.compile(r"[^a-zA-Z0-9_.:-]+")
 def reset_service_metrics() -> None:
     """Clear all in-memory metrics. Tests should call this to isolate assertions."""
     with _LOCK:
-        global _REPORT_AI_LONG_QUEUED_POLLS_TOTAL, _SANITIZER_FAILURES_TOTAL
+        global _REPORT_AI_LONG_QUEUED_POLLS_TOTAL, _REPORT_AI_STAGE_STALL_POLLS_TOTAL
+        global _SANITIZER_FAILURES_TOTAL
         _HTTP_REQUESTS_TOTAL.clear()
         _HTTP_REQUEST_LATENCY_SECONDS.clear()
         _AUTH_FAILURES_TOTAL.clear()
@@ -106,6 +108,7 @@ def reset_service_metrics() -> None:
         _RATE_LIMIT_BACKEND_DEGRADED_TOTAL.clear()
         _SANITIZER_FAILURES_TOTAL = 0
         _REPORT_AI_LONG_QUEUED_POLLS_TOTAL = 0
+        _REPORT_AI_STAGE_STALL_POLLS_TOTAL = 0
         _REPORT_AI_JOBS_TOTAL.clear()
         _REPORT_AI_JOB_TRANSITIONS_TOTAL.clear()
         _REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL.clear()
@@ -309,6 +312,19 @@ def record_report_ai_long_queued_poll() -> None:
         _REPORT_AI_LONG_QUEUED_POLLS_TOTAL += 1
 
 
+def record_report_ai_stage_stall_poll() -> None:
+    """Count a poll where a working stage, not the queue, stopped moving.
+
+    Stage 252.3 keeps this apart from the long-queued counter on purpose: that
+    counter already feeds dashboards meaning "jobs waiting to start", and
+    folding stalled recognizing/building_preview polls into it would change
+    what those dashboards say without anyone touching them.
+    """
+    with _LOCK:
+        global _REPORT_AI_STAGE_STALL_POLLS_TOTAL
+        _REPORT_AI_STAGE_STALL_POLLS_TOTAL += 1
+
+
 def record_report_ai_job_created(*, outcome: str) -> None:
     """Record one Report AI job creation attempt with a bounded outcome."""
     with _LOCK:
@@ -418,6 +434,7 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
             ),
             "sanitizer_failures_total": _SANITIZER_FAILURES_TOTAL,
             "report_ai_long_queued_polls_total": _REPORT_AI_LONG_QUEUED_POLLS_TOTAL,
+            "report_ai_stage_stall_polls_total": _REPORT_AI_STAGE_STALL_POLLS_TOTAL,
             "report_ai_jobs_total": dict(sorted(_REPORT_AI_JOBS_TOTAL.items())),
             "report_ai_job_transitions_total": {
                 f"{from_stage}|{to_stage}": count
@@ -621,6 +638,9 @@ def render_prometheus_metrics() -> str:
             "# HELP vetmanager_report_ai_long_queued_polls_total Total MCP-observed Report AI polls that remained queued for at least the long-queue threshold.",
             "# TYPE vetmanager_report_ai_long_queued_polls_total counter",
             f"vetmanager_report_ai_long_queued_polls_total {snapshot.get('report_ai_long_queued_polls_total', 0)}",
+            "# HELP vetmanager_report_ai_stage_stall_polls_total Total MCP-observed Report AI polls where a working stage stopped moving for at least the long-queue threshold.",
+            "# TYPE vetmanager_report_ai_stage_stall_polls_total counter",
+            f"vetmanager_report_ai_stage_stall_polls_total {snapshot.get('report_ai_stage_stall_polls_total', 0)}",
         ]
     )
 
