@@ -123,6 +123,7 @@ async def test_token_audit_commit_helper_logs_only_after_successful_commit(
         _account, token = await _seed_token(session)
         audit_event = add_token_usage_log(
             session,
+            account_id=token.account_id,
             bearer_token_id=token.id,
             event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
             details={"reason": "succeeded"},
@@ -158,6 +159,7 @@ async def test_token_audit_commit_failure_does_not_emit_committed_log(
         _account, token = await _seed_token(session)
         audit_event = add_token_usage_log(
             session,
+            account_id=token.account_id,
             bearer_token_id=token.id,
             event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
             details={"reason": "succeeded"},
@@ -197,6 +199,7 @@ async def test_token_audit_enriches_only_request_and_correlation_ids(
         _account, token = await _seed_token(session)
         audit_event = add_token_usage_log(
             session,
+            account_id=token.account_id,
             bearer_token_id=token.id,
             event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
             details={"reason": "succeeded"},

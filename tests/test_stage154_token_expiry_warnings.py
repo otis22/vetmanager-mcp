@@ -204,6 +204,7 @@ async def test_ac4_under_one_day_with_prior_7_14_emits_1(
         for et in (TOKEN_EVENT_EXPIRY_WARNING_7, TOKEN_EVENT_EXPIRY_WARNING_14):
             add_token_usage_log(
                 session,
+                account_id=account.id,
                 bearer_token_id=token.id,
                 event_type=et,
                 details={"account_id": account.id, "token_prefix": token.token_prefix},

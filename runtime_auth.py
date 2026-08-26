@@ -18,6 +18,11 @@ from oauth_challenge import oauth_challenge_details
 from oauth_service import OAUTH_ACCESS_TOKEN_PREFIX, get_effective_oauth_tool_scopes_for_preset
 from request_auth import get_bearer_token
 from secret_manager import get_storage_encryption_key
+from auth_audit import (
+    TOKEN_EVENT_AUTH_SUCCEEDED,
+    add_token_usage_log,
+    commit_token_usage_log,
+)
 from storage import get_session_factory
 from storage_models import (
     ACCOUNT_STATUS_ACTIVE,
@@ -171,7 +176,25 @@ async def _resolve_oauth_runtime_credentials(raw_token: str) -> RuntimeCredentia
         is_depersonalized = True if grant.is_depersonalized is not False else False
         access_token.last_used_at = now
         grant.last_used_at = now
-        await session.commit()
+        # Stage 260: journal the authenticated request the same way the bearer
+        # path does. Before this the channel left only `last_used_at`, so every
+        # activity question answered for bearer users alone.
+        audit_event = add_token_usage_log(
+            session,
+            account_id=account_id,
+            oauth_access_token_id=access_token_id,
+            event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
+            details={
+                "account_id": account_id,
+                "token_prefix": access_token.token_prefix,
+                "reason": "succeeded",
+                "connection_id": connection_id,
+                "domain": connection.domain,
+                "auth_mode": connection.auth_mode,
+                "access_preset": grant.access_preset,
+            },
+        )
+        await commit_token_usage_log(session, audit_event)
 
     return RuntimeCredentials(
         vetmanager_auth=_normalize_runtime_vetmanager_auth(resolved),

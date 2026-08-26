@@ -212,6 +212,7 @@ async def _reject(
         base_details.update(extra_audit_details)
     audit_event = add_token_usage_log(
         session,
+        account_id=account.id,
         bearer_token_id=token_id,
         event_type=log_event,
         details=base_details,
@@ -327,6 +328,7 @@ async def resolve_bearer_auth_context(
         record_auth_failure(source="bearer_runtime", reason="rate_limited")
         audit_event = add_token_usage_log(
             session,
+            account_id=account.id,
             bearer_token_id=token.id,
             event_type=TOKEN_EVENT_AUTH_RATE_LIMITED,
             details=_base_auth_details(
@@ -378,6 +380,7 @@ async def resolve_bearer_auth_context(
     )
     audit_event = add_token_usage_log(
         session,
+        account_id=account.id,
         bearer_token_id=token.id,
         event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
         details=_base_auth_details(

@@ -282,6 +282,7 @@ async def test_ac7_ip_denied_audit_log_payload_privacy_safe(
             account = (await session.execute(select(Account).where(Account.id == 1))).scalar_one()
             add_token_usage_log(
                 session,
+                account_id=account.id,
                 bearer_token_id=tok.id,
                 event_type=TOKEN_EVENT_AUTH_FAILED_IP_DENIED,
                 details=bearer.build_ip_denied_audit_details(account, tok, client_ip="203.0.113.42"),

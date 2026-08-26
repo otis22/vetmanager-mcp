@@ -52,6 +52,7 @@ async def sync_expired_tokens(
             continue
         add_token_usage_log(
             session,
+            account_id=token.account_id,
             bearer_token_id=token.id,
             event_type=TOKEN_EVENT_EXPIRED,
             details={
@@ -137,6 +138,7 @@ async def scan_token_expiry_warnings(
         event_type = _EXPIRY_EVENT_BY_THRESHOLD[threshold]
         add_token_usage_log(
             session,
+            account_id=token.account_id,
             bearer_token_id=token.id,
             event_type=event_type,
             details={

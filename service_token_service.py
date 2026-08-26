@@ -77,6 +77,7 @@ async def issue_service_bearer_token(
     await session.flush()
     audit_event = add_token_usage_log(
         session,
+        account_id=token.account_id,
         bearer_token_id=token.id,
         event_type=TOKEN_EVENT_CREATED,
         details={
@@ -129,6 +130,7 @@ async def revoke_service_bearer_token(
     token.revoke(revoked_at=effective_revoked_at)
     audit_event = add_token_usage_log(
         session,
+        account_id=token.account_id,
         bearer_token_id=token.id,
         event_type=TOKEN_EVENT_REVOKED,
         details={

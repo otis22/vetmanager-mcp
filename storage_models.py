@@ -423,12 +423,28 @@ class TokenUsageLog(Base):
             "event_type",
             "event_at",
         ),
+        # Stage 260: a row belongs to exactly one credential kind. Without the
+        # constraint the table would silently accept a row with neither
+        # subject — invisible to both channel aggregates — or with both.
+        CheckConstraint(
+            "(bearer_token_id IS NOT NULL AND oauth_access_token_id IS NULL)"
+            " OR (bearer_token_id IS NULL AND oauth_access_token_id IS NOT NULL)",
+            name="ck_token_usage_logs_single_subject",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    bearer_token_id: Mapped[int] = mapped_column(
+    account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id"),
+        nullable=True,
+    )
+    bearer_token_id: Mapped[int | None] = mapped_column(
         ForeignKey("service_bearer_tokens.id"),
-        nullable=False,
+        nullable=True,
+    )
+    oauth_access_token_id: Mapped[int | None] = mapped_column(
+        ForeignKey("oauth_access_tokens.id"),
+        nullable=True,
     )
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     event_at: Mapped[datetime] = mapped_column(

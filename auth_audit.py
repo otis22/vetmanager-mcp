@@ -113,18 +113,34 @@ def _get_request_correlation_metadata() -> dict[str, str]:
 def add_token_usage_log(
     session: AsyncSession,
     *,
-    bearer_token_id: int,
+    account_id: int,
     event_type: str,
     details: dict[str, Any],
+    bearer_token_id: int | None = None,
+    oauth_access_token_id: int | None = None,
 ) -> TokenUsageLog:
-    """Append a token-centric audit row with best-effort request metadata."""
+    """Append an audit row for one authenticated subject.
+
+    Stage 260: the row names the account and exactly one credential kind, so
+    "who was active" is answerable without joining the bearer tokens — which
+    is what used to hide the whole OAuth channel. `account_id` is required
+    rather than optional on purpose: a row without it falls out of every
+    aggregate silently, and a new call-site should not be able to forget it.
+    """
+    if (bearer_token_id is None) == (oauth_access_token_id is None):
+        raise ValueError(
+            "token usage log needs exactly one subject: "
+            "either bearer_token_id or oauth_access_token_id"
+        )
     ip_address, user_agent = get_request_audit_metadata()
     enriched_details = {
         **details,
         **_get_request_correlation_metadata(),
     }
     audit_event = TokenUsageLog(
+        account_id=account_id,
         bearer_token_id=bearer_token_id,
+        oauth_access_token_id=oauth_access_token_id,
         event_type=event_type,
         ip_address=ip_address,
         user_agent=user_agent,

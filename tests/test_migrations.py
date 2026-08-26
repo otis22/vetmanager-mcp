@@ -479,3 +479,116 @@ def test_postgres_url_is_normalized_for_migrations():
         )
         == "postgresql://user:pass@db/app"
     )
+
+
+def test_token_usage_log_subject_migration_backfills_account_and_guards_subject(tmp_path: Path):
+    """Stage 260: historical bearer rows get their account, and the subject stays single."""
+    import pytest
+    from sqlalchemy import text as _text
+    from sqlalchemy.exc import IntegrityError
+
+    config = _make_alembic_config(tmp_path)
+    command.upgrade(config, "20260821_000019")
+
+    engine = create_engine(config.get_main_option("sqlalchemy.url"))
+    with engine.begin() as conn:
+        conn.execute(_text(
+            "INSERT INTO accounts (email, password_hash, status, created_at, updated_at) "
+            "VALUES ('stage260@example.test', 'hash', 'active', datetime('now'), datetime('now'))"
+        ))
+        conn.execute(_text(
+            "INSERT INTO service_bearer_tokens "
+            "(account_id, name, token_prefix, token_hash, status, allowed_ip_mask, created_at) "
+            "VALUES (1, 'legacy', 'vm_st_legacy', 'hash-legacy', 'active', '*.*.*.*', datetime('now'))"
+        ))
+        conn.execute(_text(
+            "INSERT INTO token_usage_logs (bearer_token_id, event_type, event_at) "
+            "VALUES (1, 'token_auth_succeeded', datetime('now'))"
+        ))
+
+    command.upgrade(config, "head")
+
+    with engine.connect() as conn:
+        rows = conn.execute(_text(
+            "SELECT account_id, bearer_token_id, oauth_access_token_id FROM token_usage_logs"
+        )).fetchall()
+    assert rows == [(1, 1, None)], "the historical row must learn which account it belongs to"
+
+    columns = {c["name"]: c for c in inspect(engine).get_columns("token_usage_logs")}
+    assert columns["bearer_token_id"]["nullable"] is True
+    assert "account_id" in columns
+    assert "oauth_access_token_id" in columns
+
+    # Neither subject: the row would be invisible to both channel aggregates.
+    with engine.connect() as conn:
+        with pytest.raises(IntegrityError):
+            conn.execute(_text(
+                "INSERT INTO token_usage_logs (account_id, event_type, event_at) "
+                "VALUES (1, 'token_auth_succeeded', datetime('now'))"
+            ))
+            conn.commit()
+        conn.rollback()
+
+
+def test_token_usage_log_subject_downgrade_discards_oauth_rows(tmp_path: Path):
+    """Stage 260: the downgrade is honest about losing what only the new columns hold."""
+    from sqlalchemy import text as _text
+
+    config = _make_alembic_config(tmp_path)
+    command.upgrade(config, "head")
+
+    engine = create_engine(config.get_main_option("sqlalchemy.url"))
+    with engine.begin() as conn:
+        conn.execute(_text(
+            "INSERT INTO accounts (email, password_hash, status, created_at, updated_at) "
+            "VALUES ('stage260-down@example.test', 'hash', 'active', datetime('now'), datetime('now'))"
+        ))
+        conn.execute(_text(
+            "INSERT INTO service_bearer_tokens "
+            "(account_id, name, token_prefix, token_hash, status, allowed_ip_mask, created_at) "
+            "VALUES (1, 'bearer', 'vm_st_down', 'hash-down', 'active', '*.*.*.*', datetime('now'))"
+        ))
+        conn.execute(_text(
+            "INSERT INTO oauth_clients "
+            "(client_id, client_name, redirect_uris_json, token_endpoint_auth_method, "
+            " grant_types_json, response_types_json, scope, status, created_at, updated_at) "
+            "VALUES ('vm_oc_down', 'down', '[]', 'none', '[]', '[]', 'clients.read', 'active', "
+            " datetime('now'), datetime('now'))"
+        ))
+        conn.execute(_text(
+            "INSERT INTO vetmanager_connections "
+            "(account_id, auth_mode, status, created_at, updated_at) "
+            "VALUES (1, 'domain_api_key', 'active', datetime('now'), datetime('now'))"
+        ))
+        conn.execute(_text(
+            "INSERT INTO oauth_grants "
+            "(account_id, vetmanager_connection_id, client_id, scopes_json, status, created_at) "
+            "VALUES (1, 1, 'vm_oc_down', '[]', 'active', datetime('now'))"
+        ))
+        conn.execute(_text(
+            "INSERT INTO oauth_access_tokens "
+            "(grant_id, token_prefix, token_hash, scope, resource, status, expires_at, created_at) "
+            "VALUES (1, 'vm_oat_down', 'hash-oat', 'clients.read', 'https://x/mcp', 'active', "
+            " datetime('now', '+1 hour'), datetime('now'))"
+        ))
+        conn.execute(_text(
+            "INSERT INTO token_usage_logs (account_id, bearer_token_id, event_type, event_at) "
+            "VALUES (1, 1, 'token_auth_succeeded', datetime('now'))"
+        ))
+        conn.execute(_text(
+            "INSERT INTO token_usage_logs (account_id, oauth_access_token_id, event_type, event_at) "
+            "VALUES (1, 1, 'token_auth_succeeded', datetime('now'))"
+        ))
+
+    command.downgrade(config, "20260821_000019")
+
+    with engine.connect() as conn:
+        remaining = conn.execute(_text(
+            "SELECT bearer_token_id FROM token_usage_logs"
+        )).fetchall()
+    assert remaining == [(1,)], "only the bearer row survives; the OAuth row has nowhere to live"
+
+    columns = {c["name"]: c for c in inspect(engine).get_columns("token_usage_logs")}
+    assert columns["bearer_token_id"]["nullable"] is False
+    assert "account_id" not in columns
+    assert "oauth_access_token_id" not in columns
