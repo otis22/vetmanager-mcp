@@ -21,6 +21,7 @@ from request_context import get_current_request_context
 from domain_validation import validate_domain as validate_runtime_domain
 from runtime_auth import get_current_runtime_credentials, resolve_runtime_credentials
 from service_metrics import record_upstream_failure, record_upstream_request
+from tool_access_registry import get_presets_granting_scope
 from token_scopes import required_scope_for_request
 from upstream_transport import classify_http_status, classify_transport_error
 from vetmanager_auth import VetmanagerAuthContext
@@ -272,8 +273,18 @@ class VetmanagerClient:
         if required_scope is None:
             return
         if required_scope not in self._scopes:
+            # Stage 264: a bare "lacks required scope" leaves the caller unable
+            # to tell a missing capability from a malformed request, so it
+            # retries or gives up. Say that the operation exists, name the
+            # access that grants it in the words the account page uses, and say
+            # who can grant it — retrying with this token changes nothing.
+            granting = get_presets_granting_scope(required_scope)
+            grants = f" Access presets that include it: {', '.join(granting)}." if granting else ""
             raise AuthError(
-                f"Bearer token lacks required scope '{required_scope}'.",
+                f"This operation exists, but this token's access does not cover it: "
+                f"it requires the '{required_scope}' scope.{grants}"
+                " Ask the clinic administrator for a token with that access;"
+                " repeating the call with the current token will fail the same way.",
                 status_code=403,
             )
 

@@ -501,6 +501,20 @@ def get_presets_allowing_tool(tool_name: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(labels))
 
 
+def get_presets_granting_scope(scope: str) -> tuple[str, ...]:
+    """User-facing labels of the access presets that include one scope.
+
+    Stage 264: lives here rather than in the client because the shape of a
+    preset is this registry's business — the caller only needs the words the
+    account page shows, so that a denial can name what to ask for.
+    """
+    return tuple(
+        TOKEN_PRESET_LABELS[preset]
+        for preset, preset_scopes in TOKEN_PRESET_SCOPES.items()
+        if scope in preset_scopes
+    )
+
+
 def infer_token_preset(scopes: tuple[str, ...] | list[str]) -> str | None:
     """Infer preset from an exact scope bundle match."""
     normalized = tuple(sorted(scopes))
