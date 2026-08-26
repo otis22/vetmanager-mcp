@@ -12,7 +12,6 @@ from tool_access_registry import (
 )
 
 
-SCOPE_DENIED_MESSAGE = "Tool is not permitted for this token."
 BASELINE_ALLOWED_TOOLS = {"get_report_ai_prompt_helper", "report_problem"}
 
 
@@ -60,13 +59,27 @@ def _format_scope_denied_message(
     allowed = ", ".join(allowed_presets) if allowed_presets else "none"
     required_text = ", ".join(required) if required else "unmapped tool"
     missing_text = ", ".join(missing) if missing else "unknown"
+    # Stage 264: this is the text an agent actually reads — the tool-level
+    # check runs before any upstream call. It has to answer three questions at
+    # once: the capability exists, what access it needs in the words the
+    # account page uses, and what to do now. Without the last part an agent
+    # either retries the same call or tells the user the feature is missing.
+    next_step = (
+        # Deliberately not "clinic administrator": the word `clinic` is barred
+        # from these messages, because a test guards against the clinic domain
+        # leaking into an error an agent may repeat back to a user.
+        "Ask your account administrator for a token with one of those presets; "
+        "repeating this call with the current token will fail the same way."
+        if allowed_presets
+        else "No access preset grants this tool; do not retry."
+    )
     return (
-        f"Tool '{tool_name}' is not permitted for this token. "
-        f"{SCOPE_DENIED_MESSAGE} "
+        f"Tool '{tool_name}' exists but is not permitted for this token. "
         f"Required scopes: {required_text}. "
         f"Missing scopes: {missing_text}. "
         f"Current preset: {current_preset}. "
-        f"Allowed presets: {allowed}."
+        f"Allowed presets: {allowed}. "
+        f"{next_step}"
     )
 
 

@@ -36,7 +36,7 @@ async def test_tool_preflight_denies_missing_scope_before_body(monkeypatch):
 
     assert called is False
     message = str(exc_info.value)
-    assert "Tool 'get_inactive_pets' is not permitted for this token." in message
+    assert "Tool 'get_inactive_pets' exists but is not permitted for this token." in message
     assert "Missing scopes: finance.read, medical_cards.read" in message
     assert "Current preset: custom scopes" in message
     assert "Allowed presets: Full access, Read only" in message
@@ -63,7 +63,7 @@ async def test_tool_preflight_fails_closed_for_unknown_tool_mapping(monkeypatch)
         tool_name="unmapped_tool",
     )
 
-    with pytest.raises(ToolError, match="Tool is not permitted for this token."):
+    with pytest.raises(ToolError, match="is not permitted for this token"):
         await wrapped()
 
     assert called is False
@@ -117,7 +117,7 @@ async def test_tool_preflight_fails_closed_for_empty_scopes(monkeypatch):
         tool_name="get_clients",
     )
 
-    with pytest.raises(ToolError, match="Tool is not permitted for this token."):
+    with pytest.raises(ToolError, match="is not permitted for this token"):
         await wrapped()
 
     assert called is False
@@ -143,7 +143,7 @@ async def test_aggregate_tool_missing_scope_makes_zero_body_calls(monkeypatch):
         tool_name="get_doctor_free_slots",
     )
 
-    with pytest.raises(ToolError, match="Tool is not permitted for this token."):
+    with pytest.raises(ToolError, match="is not permitted for this token"):
         await wrapped()
 
     assert called is False

@@ -283,7 +283,7 @@ class VetmanagerClient:
             raise AuthError(
                 f"This operation exists, but this token's access does not cover it: "
                 f"it requires the '{required_scope}' scope.{grants}"
-                " Ask the clinic administrator for a token with that access;"
+                " Ask your account administrator for a token with that access;"
                 " repeating the call with the current token will fail the same way.",
                 status_code=403,
                 # Callers used to recognise this by a substring of the message,

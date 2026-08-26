@@ -85,3 +85,30 @@ def test_export_error_handler_uses_the_code():
 
     assert "wording may change" in str(report_ai._safe_export_error(denial, "start export"))
     assert "wording may change" not in str(report_ai._safe_export_error(generic, "start export"))
+
+
+def test_the_denial_the_agent_actually_reads_says_what_to_do():
+    """The tool-level check fires first — this is the text agents really see.
+
+    Stage 264 first improved the message in the HTTP client, one layer below,
+    where execution never arrives when a tool is denied. The words have to be
+    here, or they help nobody.
+    """
+    from tool_access_registry import PRESET_READ_ONLY, TOKEN_PRESET_SCOPES
+    from tool_scope_security import _format_scope_denied_message
+
+    message = _format_scope_denied_message(
+        "save_report_ai_job_as_report",
+        required_scopes=("report_ai.write",),
+        token_scopes=TOKEN_PRESET_SCOPES[PRESET_READ_ONLY],
+    )
+
+    # What is missing and who has it — already there before this stage.
+    assert "report_ai.write" in message
+    assert "Read only" in message
+    assert "Analytics" in message
+    # What to do about it, and that retrying is pointless — the missing half.
+    assert "administrator" in message.lower()
+    assert "same way" in message or "will not change" in message
+    # And say it once: the old text repeated the same sentence twice.
+    assert message.count("is not permitted for this token") == 1

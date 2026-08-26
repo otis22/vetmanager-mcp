@@ -13,7 +13,6 @@ from tool_scope_security import (
     BASELINE_ALLOWED_TOOLS,
     AuthChallengeToolError,
     ScopeDeniedToolError,
-    SCOPE_DENIED_MESSAGE,
     _ensure_tool_scopes_allowed,
 )
 from tool_access_registry import (
