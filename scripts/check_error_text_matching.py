@@ -41,6 +41,8 @@ OUR_EXCEPTIONS = frozenset({
     "AuthError",
 })
 UPSTREAM_EXCEPTIONS = frozenset({"VetmanagerError"})
+# Marker for "upstream text, read where it should not be read".
+_INLINE_UPSTREAM = "VetmanagerError (inline)"
 TEXT_METHODS = frozenset({"lower", "upper", "strip", "startswith", "endswith", "find", "split"})
 SKIP_DIRS = ("tests/", "alembic/", ".venv/", "scripts/check_error_text_matching.py")
 _WALK_EXCLUDED_DIRS = frozenset({".git", ".venv", "__pycache__", "node_modules", "htmlcov"})
@@ -97,10 +99,19 @@ class _Scanner(ast.NodeVisitor):
     def __init__(self, path: str) -> None:
         self.path = path
         self.findings: list[Finding] = []
+        # name -> exception type it is bound to
         self._scopes: list[dict[str, str]] = [{}]
+        # name -> exception type whose *message* it holds, after `m = str(exc)`
+        self._text_scopes: list[dict[str, str]] = [{}]
 
     def _bound(self, name: str) -> str | None:
         for scope in reversed(self._scopes):
+            if name in scope:
+                return scope[name]
+        return None
+
+    def _holds_text(self, name: str) -> str | None:
+        for scope in reversed(self._text_scopes):
             if name in scope:
                 return scope[name]
         return None
@@ -112,13 +123,22 @@ class _Scanner(ast.NodeVisitor):
                 if type_name in OUR_EXCEPTIONS:
                     scope[node.name] = type_name
                     break
+                if type_name in UPSTREAM_EXCEPTIONS:
+                    # Upstream wording is a real signal, but reading it inline
+                    # hides the dependency: the branch quietly relies on a
+                    # sentence Vetmanager may reword. Allowed in a named
+                    # classifier, where it is visible and testable.
+                    scope[node.name] = _INLINE_UPSTREAM
+                    break
             else:
                 # A name rebound to something else must not inherit an outer
                 # binding — that was the first version's mistake.
                 scope[node.name] = ""
         self._scopes.append(scope)
+        self._text_scopes.append({})
         for child in node.body:
             self.visit(child)
+        self._text_scopes.pop()
         self._scopes.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -135,8 +155,10 @@ class _Scanner(ast.NodeVisitor):
                     scope[arg.arg] = type_name
                     break
         self._scopes.append(scope)
+        self._text_scopes.append({})
         for child in node.body:
             self.visit(child)
+        self._text_scopes.pop()
         self._scopes.pop()
 
     # ── conditions are where a decision happens ──────────────────────────
@@ -162,8 +184,35 @@ class _Scanner(ast.NodeVisitor):
         self._check_condition(node.test)
         self.generic_visit(node)
 
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        self._check_comprehension(node)
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:
+        self._check_comprehension(node)
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        self._check_comprehension(node)
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        self._check_comprehension(node)
+
+    def _check_comprehension(self, node: ast.expr) -> None:
+        for generator in getattr(node, "generators", []):
+            for condition in generator.ifs:
+                self._check_condition(condition)
+        self.generic_visit(node)
+
     def _check_condition(self, test: ast.expr) -> None:
         for node in ast.walk(test):
+            if isinstance(node, ast.Name):
+                # `if "x" in message` where message came from str(exc)
+                carried = self._holds_text(node.id)
+                if carried:
+                    self.findings.append(Finding(
+                        self.path, getattr(node, "lineno", 0), carried,
+                        "decides on the wording of our own message (via a local)",
+                    ))
+                continue
             name, how = self._text_read(node)
             if name is None:
                 continue
@@ -174,9 +223,35 @@ class _Scanner(ast.NodeVisitor):
                     f"decides on the wording of our own message ({how})",
                 ))
 
+    def visit_Assign(self, node: ast.Assign) -> None:
+        """`message = str(exc)` carries the wording into another name.
+
+        Without this the rule catches only the shortest spelling, and the
+        natural one — assign, then test — walks straight through.
+        """
+        name, _ = self._text_read(node.value)
+        if name and self._bound(name):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self._text_scopes[-1][target.id] = self._bound(name)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value is not None:
+            name, _ = self._text_read(node.value)
+            if name and self._bound(name) and isinstance(node.target, ast.Name):
+                self._text_scopes[-1][node.target.id] = self._bound(name)
+        self.generic_visit(node)
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        name, _ = self._text_read(node.value)
+        if name and self._bound(name) and isinstance(node.target, ast.Name):
+            self._text_scopes[-1][node.target.id] = self._bound(name)
+        self.generic_visit(node)
+
     def _text_read(self, node: ast.AST) -> tuple[str | None, str]:
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            if node.func.id in {"str", "repr"} and node.args:
+            if node.func.id in {"str", "repr", "format"} and node.args:
                 return _read_name(node.args[0]), f"{node.func.id}()"
         if isinstance(node, ast.Attribute) and node.attr == "args":
             return _read_name(node.value), ".args"
@@ -184,6 +259,27 @@ class _Scanner(ast.NodeVisitor):
             value = node.value
             if isinstance(value, ast.Attribute) and value.attr == "args":
                 return _read_name(value.value), ".args[...]"
+        # f"{exc}" renders the message just as str() does.
+        if isinstance(node, ast.JoinedStr):
+            for part in node.values:
+                if isinstance(part, ast.FormattedValue):
+                    name = _read_name(part.value)
+                    if name:
+                        return name, "f-string"
+                    inner, how = self._text_read(part.value)
+                    if inner:
+                        return inner, f"f-string/{how}"
+        # "%s" % exc does too.
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+            for operand in (node.right,):
+                name = _read_name(operand)
+                if name:
+                    return name, "%-format"
+                if isinstance(operand, ast.Tuple):
+                    for element in operand.elts:
+                        element_name = _read_name(element)
+                        if element_name:
+                            return element_name, "%-format"
         return None, ""
 
 

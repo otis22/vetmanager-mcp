@@ -148,3 +148,85 @@ def test_the_repository_is_clean():
         except SyntaxError:
             continue
     assert findings == [], "\n".join(str(f) for f in findings)
+
+
+# ── Evasions found by review: none of these are written to dodge the rule, ──
+# ── they are just how people naturally write. That is what makes them bad. ──
+
+BAD_VIA_LOCAL_VARIABLE = '''
+from fastmcp.exceptions import ToolError
+
+def handle():
+    try:
+        work()
+    except ToolError as exc:
+        message = str(exc)
+        if "not permitted" in message:
+            return "denied"
+'''
+
+BAD_VIA_FSTRING = '''
+from fastmcp.exceptions import ToolError
+
+def handle():
+    try:
+        work()
+    except ToolError as exc:
+        if "not permitted" in f"{exc}":
+            return "denied"
+'''
+
+BAD_VIA_PERCENT_FORMAT = '''
+from fastmcp.exceptions import ToolError
+
+def handle():
+    try:
+        work()
+    except ToolError as exc:
+        if "not permitted" in "%s" % exc:
+            return "denied"
+'''
+
+BAD_VIA_COMPREHENSION = '''
+from fastmcp.exceptions import ToolError
+
+def handle():
+    try:
+        work()
+    except ToolError as exc:
+        return [x for x in [exc] if "not permitted" in str(exc)]
+'''
+
+BAD_UPSTREAM_INLINE = '''
+from exceptions import VetmanagerError
+
+def handle():
+    try:
+        work()
+    except VetmanagerError as exc:
+        if "in progress" in str(exc):
+            return "retry"
+'''
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        BAD_VIA_LOCAL_VARIABLE,
+        BAD_VIA_FSTRING,
+        BAD_VIA_PERCENT_FORMAT,
+        BAD_VIA_COMPREHENSION,
+    ],
+)
+def test_indirect_routes_to_our_wording_are_reported(source):
+    assert _scan(source), "the text reached a decision, however it got there"
+
+
+def test_upstream_text_inline_is_reported():
+    """Upstream text is allowed, but only inside a named classifier.
+
+    Inline in a handler it is invisible: nobody knows the branch depends on a
+    sentence Vetmanager may reword.
+    """
+    findings = _scan(BAD_UPSTREAM_INLINE)
+    assert findings, "inline upstream text matching must be pushed into a classifier"
