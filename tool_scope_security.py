@@ -64,15 +64,24 @@ def _format_scope_denied_message(
     # once: the capability exists, what access it needs in the words the
     # account page uses, and what to do now. Without the last part an agent
     # either retries the same call or tells the user the feature is missing.
-    next_step = (
-        # Deliberately not "clinic administrator": the word `clinic` is barred
-        # from these messages, because a test guards against the clinic domain
-        # leaking into an error an agent may repeat back to a user.
-        "Ask your account administrator for a token with one of those presets; "
-        "repeating this call with the current token will fail the same way."
-        if allowed_presets
-        else "No access preset grants this tool; do not retry."
-    )
+    # Deliberately not "clinic administrator" anywhere below: the word `clinic`
+    # is barred from these messages, because a test guards against the clinic
+    # domain leaking into an error an agent may repeat back to a user.
+    if not granted:
+        # Baseline tools need no particular preset — they need a token that
+        # carries any rights at all. Telling this reader that no preset grants
+        # the tool sends them hunting for a permission that does not exist.
+        next_step = (
+            "This token carries no scopes at all. Reconnect with a token that has "
+            "access, then call this tool again."
+        )
+    elif allowed_presets:
+        next_step = (
+            "Ask your account administrator for a token with one of those presets; "
+            "repeating this call with the current token will fail the same way."
+        )
+    else:
+        next_step = "No access preset grants this tool; do not retry."
     return (
         f"Tool '{tool_name}' exists but is not permitted for this token. "
         f"Required scopes: {required_text}. "

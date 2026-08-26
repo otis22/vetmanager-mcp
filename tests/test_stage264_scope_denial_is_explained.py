@@ -112,3 +112,20 @@ def test_the_denial_the_agent_actually_reads_says_what_to_do():
     assert "same way" in message or "will not change" in message
     # And say it once: the old text repeated the same sentence twice.
     assert message.count("is not permitted for this token") == 1
+
+
+def test_a_token_with_no_scopes_is_not_told_the_tool_is_unreachable():
+    """`report_problem` needs no preset — it needs a token that carries any rights.
+
+    The same formatter serves both cases, and saying "no access preset grants
+    this tool" about a baseline tool sends the reader looking for a permission
+    that does not exist.
+    """
+    from tool_scope_security import _format_scope_denied_message
+
+    message = _format_scope_denied_message(
+        "report_problem", required_scopes=(), token_scopes=()
+    )
+
+    assert "No access preset grants this tool" not in message
+    assert "no scopes" in message.lower() or "no permissions" in message.lower()
