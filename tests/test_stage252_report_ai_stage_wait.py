@@ -165,3 +165,42 @@ def test_public_tool_description_covers_working_stages():
     description = SPECIAL_TOOL_DESCRIPTIONS["get_report_ai_job"]
     assert "recognizing/building_preview" in description
     assert "age_scope" in description
+
+
+@pytest.mark.asyncio
+async def test_log_event_names_are_split_like_the_metrics(monkeypatch, caplog):
+    """An alert written for the queue must not start firing on stalled stages."""
+    import logging
+
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: 0.0)
+    queued = {"id": 701, "status": "queued"}
+    stalled = {"id": 702, "status": "building_preview"}
+    await _annotate(queued)
+    await _annotate(stalled)
+
+    monkeypatch.setattr(
+        report_ai,
+        "_monotonic_seconds",
+        lambda: float(report_ai.REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS + 1),
+    )
+    with caplog.at_level(logging.WARNING, logger="vetmanager.runtime"):
+        await _annotate(queued)
+        await _annotate(stalled)
+
+    events = {
+        getattr(record, "event_name"): record
+        for record in caplog.records
+        if hasattr(record, "event_name")
+    }
+    assert "report_ai_job_long_queued" in events
+    assert "report_ai_job_stage_stalled" in events
+
+    queue_record = events["report_ai_job_long_queued"]
+    assert queue_record.age_scope == "job"
+    assert hasattr(queue_record, "observed_queued_age_seconds")
+
+    stage_record = events["report_ai_job_stage_stalled"]
+    assert stage_record.age_scope == "stage"
+    assert stage_record.status == "building_preview"
+    assert hasattr(stage_record, "observed_stage_age_seconds")
+    assert not hasattr(stage_record, "observed_queued_age_seconds")

@@ -509,15 +509,27 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
         record_report_ai_long_queued_poll()
     else:
         record_report_ai_stage_stall_poll()
+    # The log contract is split the same way the metric is: an external alert
+    # on `report_ai_job_long_queued` was written to mean the queue, and a
+    # stalled working stage is a different failure. The queue keeps its event
+    # name and its `observed_queued_age_seconds`; the stage gets its own.
+    if age_scope == "job":
+        event_name = "report_ai_job_long_queued"
+        age_field = "observed_queued_age_seconds"
+        bucket_field = "observed_queued_age_bucket"
+    else:
+        event_name = "report_ai_job_stage_stalled"
+        age_field = "observed_stage_age_seconds"
+        bucket_field = "observed_stage_age_bucket"
     RUNTIME_LOGGER.warning(
-        "report_ai_job_long_queued",
+        event_name,
         extra={
-            "event_name": "report_ai_job_long_queued",
+            "event_name": event_name,
             "status": status,
             "age_scope": age_scope,
             "threshold_seconds": REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS,
-            "observed_queued_age_seconds": diagnostic_age_seconds,
-            "observed_queued_age_bucket": _queued_age_bucket(diagnostic_age_seconds),
+            age_field: diagnostic_age_seconds,
+            bucket_field: _queued_age_bucket(diagnostic_age_seconds),
             "age_source": age_source,
             "wait_limit_reached": at_wait_limit,
         },
