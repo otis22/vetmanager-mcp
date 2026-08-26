@@ -97,13 +97,21 @@ def test_feedback_redaction_covers_bare_token_shapes():
 
 
 @pytest.mark.asyncio
-async def test_known_issue_agent_match_requires_workaround_status(
+@pytest.mark.parametrize("status", ["open", "acknowledged", "workaround_available"])
+async def test_known_issue_reaches_the_agent_whenever_there_is_an_answer(
     sqlite_session_factory_builder,
     tmp_path,
     monkeypatch,
     feedback_pepper,
+    status,
 ):
-    session_factory = await sqlite_session_factory_builder(tmp_path / "known-issue.db")
+    """Stage 261: readiness is a written playbook, not the triage status.
+
+    Until this stage only `workaround_available` reached the agent, while the
+    same three statuses already counted for auto-events. Four issues sat in
+    `acknowledged` with an answer nobody was allowed to deliver.
+    """
+    session_factory = await sqlite_session_factory_builder(tmp_path / f"known-issue-{status}.db")
     monkeypatch.setattr(feedback, "get_session_factory", lambda: session_factory)
     playbook = {
         "version": 1,
@@ -122,13 +130,93 @@ async def test_known_issue_agent_match_requires_workaround_status(
     }
     async with session_factory() as session:
         session.add(KnownIssue(
-            status="acknowledged",
+            status=status,
             category="bug",
             severity="medium",
-            title="Acknowledged but not agent-facing",
+            title=f"Issue in {status} with a written answer",
             related_tool="get_payments",
             match_rules_json=json.dumps(rules),
             agent_playbook_json=json.dumps(playbook),
+        ))
+        await session.commit()
+        match = await feedback.find_known_issue_match(
+            session,
+            feedback.FeedbackIncident(
+                related_tool="get_payments",
+                error_excerpt="date filter mismatch",
+            ),
+        )
+
+    assert match is not None
+    assert match.status == status
+    assert match.playbook["summary"] == "Use date filters."
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["fixed", "wontfix"])
+async def test_closed_known_issue_is_not_offered_to_the_agent(
+    sqlite_session_factory_builder,
+    tmp_path,
+    monkeypatch,
+    feedback_pepper,
+    status,
+):
+    """Fixed means there is nothing to work around; wontfix means there never will be."""
+    session_factory = await sqlite_session_factory_builder(tmp_path / f"closed-{status}.db")
+    monkeypatch.setattr(feedback, "get_session_factory", lambda: session_factory)
+    async with session_factory() as session:
+        session.add(KnownIssue(
+            status=status,
+            category="bug",
+            severity="medium",
+            title=f"Closed issue ({status})",
+            related_tool="get_payments",
+            match_rules_json=json.dumps({
+                "version": 1,
+                "all": [{"field": "related_tool", "op": "eq", "value": "get_payments"}],
+            }),
+            agent_playbook_json=json.dumps({
+                "version": 1,
+                "summary": "Stale answer.",
+                "steps": ["Do not follow this."],
+                "do_not_do": [],
+                "recommended_tool_sequence": ["get_payments"],
+                "safe_to_retry": True,
+            }),
+        ))
+        await session.commit()
+        match = await feedback.find_known_issue_match(
+            session,
+            feedback.FeedbackIncident(
+                related_tool="get_payments",
+                error_excerpt="date filter mismatch",
+            ),
+        )
+
+    assert match is None
+
+
+@pytest.mark.asyncio
+async def test_known_issue_without_a_playbook_is_never_offered(
+    sqlite_session_factory_builder,
+    tmp_path,
+    monkeypatch,
+    feedback_pepper,
+):
+    """"The problem is known" without an answer only invites the same call again."""
+    session_factory = await sqlite_session_factory_builder(tmp_path / "no-playbook.db")
+    monkeypatch.setattr(feedback, "get_session_factory", lambda: session_factory)
+    async with session_factory() as session:
+        session.add(KnownIssue(
+            status="workaround_available",
+            category="bug",
+            severity="medium",
+            title="Status says there is a workaround, but nobody wrote it",
+            related_tool="get_payments",
+            match_rules_json=json.dumps({
+                "version": 1,
+                "all": [{"field": "related_tool", "op": "eq", "value": "get_payments"}],
+            }),
         ))
         await session.commit()
         match = await feedback.find_known_issue_match(

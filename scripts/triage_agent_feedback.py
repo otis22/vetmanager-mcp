@@ -20,6 +20,7 @@ from fastmcp.exceptions import ToolError
 from sqlalchemy import case, delete, func, select
 
 from agent_feedback_service import (
+    KB_AGENT_STATUSES,
     PRIVACY_REDACTIONS,
     REDACTION_VERSION,
     sanitize_text,
@@ -321,6 +322,55 @@ async def _match_events_stats(args: argparse.Namespace) -> None:
         print(f"| {row.known_issue_id} | {row.title} | {row.source} | {row.events} | {row.distinct_accounts} | {row.distinct_tokens} |")
 
 
+async def _unreachable_issues(args: argparse.Namespace) -> None:
+    """Stage 261: issues an agent can never be told about, worst first.
+
+    Active status, something to match on, and no written playbook — the agent
+    hits the error, we recognise it, and say nothing. Sorted by how many
+    reports each one has already collected, because that is the volume of
+    people who hit it.
+    """
+    async with get_session_factory()() as session:
+        issues = (
+            await session.execute(
+                select(KnownIssue).where(KnownIssue.status.in_(KB_AGENT_STATUSES))
+            )
+        ).scalars().all()
+        report_counts = dict(
+            (
+                await session.execute(
+                    select(AgentFeedbackReport.known_issue_id, func.count())
+                    .where(AgentFeedbackReport.known_issue_id.is_not(None))
+                    .group_by(AgentFeedbackReport.known_issue_id)
+                )
+            ).all()
+        )
+
+    rows = [
+        (issue, int(report_counts.get(issue.id, 0)))
+        for issue in issues
+        if validate_agent_playbook(issue.agent_playbook_json) is None
+    ]
+    rows.sort(key=lambda row: (-row[1], row[0].id))
+
+    print("# Known issues the agent never sees")
+    print()
+    print("Active status, no valid agent playbook. Reports counts how many people already hit it.")
+    print()
+    print("| id | status | severity | related_tool | reports | matchable |")
+    print("|---:|---|---|---|---:|---|")
+    for issue, reports in rows:
+        matchable = "yes" if (issue.error_fingerprint_hash or issue.match_rules_json) else "no"
+        print(
+            f"| {issue.id} | {issue.status} | {issue.severity} | "
+            f"{sanitize_text(issue.related_tool, limit=128) or '-'} | {reports} | {matchable} |"
+        )
+    if not rows:
+        print("| - | - | - | - | - | - |")
+    print()
+    print(f"total={len(rows)}")
+
+
 async def _match_effectiveness(args: argparse.Namespace) -> None:
     """Stage 191: aggregate-only known-issue matching diagnostics."""
     cutoff = _now() - timedelta(days=args.days)
@@ -381,8 +431,12 @@ async def _match_effectiveness(args: argparse.Namespace) -> None:
             row["matchable"] += 1
         if validate_agent_playbook(issue.agent_playbook_json) is not None:
             row["valid_playbook"] += 1
+        # Stage 261: an issue is delivered to the agent when it has a valid
+        # playbook and an active status. Counting the skip only for
+        # `workaround_available` hid the acknowledged ones, which is exactly
+        # where the unwritten answers had been piling up.
         if (
-            issue.status == "workaround_available"
+            issue.status in KB_AGENT_STATUSES
             and validate_agent_playbook(issue.agent_playbook_json) is None
         ):
             row["agent_injection_skipped"] += 1
@@ -618,6 +672,11 @@ def _build_parser() -> argparse.ArgumentParser:
     match_stats.add_argument("--top", type=int, default=20)
     match_stats.set_defaults(func=_match_events_stats)
 
+    unreachable = sub.add_parser(
+        "unreachable-issues",
+        help="Active known issues with no agent playbook — the agent hits them and hears nothing.",
+    )
+    unreachable.set_defaults(func=_unreachable_issues)
     match_effectiveness = sub.add_parser(
         "match-effectiveness",
         help="Stage 191: aggregate-only matched/no-match/skipped known-issue diagnostics.",

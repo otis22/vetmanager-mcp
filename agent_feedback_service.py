@@ -50,12 +50,17 @@ REPORT_TOKEN_LIMIT_PER_HOUR = 30
 REPORT_RATE_WINDOW = timedelta(hours=1)
 KNOWN_ISSUE_LOOKUP_TIMEOUT_SECONDS = 0.2
 AUTO_EVENT_WRITE_TIMEOUT_SECONDS = 0.5
-KB_AGENT_STATUS = KNOWN_ISSUE_STATUS_WORKAROUND_AVAILABLE
 AUTO_EVENT_STATUSES = (
     KNOWN_ISSUE_STATUS_OPEN,
     KNOWN_ISSUE_STATUS_ACKNOWLEDGED,
     KNOWN_ISSUE_STATUS_WORKAROUND_AVAILABLE,
 )
+# Stage 261: what makes an issue answerable is a written playbook, not the
+# triage status. Delivering only `workaround_available` while recording
+# auto-events for all three active statuses meant four issues sat in
+# `acknowledged` holding an answer nobody was allowed to hand over.
+# `fixed` and `wontfix` stay out: there is nothing to work around.
+KB_AGENT_STATUSES = AUTO_EVENT_STATUSES
 PRIVACY_REDACTIONS = frozenset({
     "email",
     "phone",
@@ -489,7 +494,7 @@ async def find_known_issue_match(
     session: AsyncSession,
     incident: FeedbackIncident,
 ) -> KnownIssueMatch | None:
-    async for issue in _ordered_known_issue_candidates(session, incident, (KB_AGENT_STATUS,)):
+    async for issue in _ordered_known_issue_candidates(session, incident, KB_AGENT_STATUSES):
         playbook = validate_agent_playbook(issue.agent_playbook_json)
         if playbook is None:
             continue
