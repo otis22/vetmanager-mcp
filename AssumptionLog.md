@@ -12558,3 +12558,33 @@ Checks so far:
 - Reproduction on devtr6 did not reproduce #37: queued job reached ready_to_save in under 30 seconds.
 - Existing long-queue event is process-local and fires only after a repeated queued poll; production zero cannot distinguish no calls, no qualifying polls, restart, or log ingestion loss.
 - Invoice fallback works technically but must fully paginate before aggregating `amount` by `doctor_id`; direct aggregate is proposed as Roadmap stage 259.
+
+## Этап 260. Вызовы по OAuth не попадают в метрики — 2026-08-26
+
+- Предположение: OAuth-вызовы логируются где-то ещё. Проверено на проде:
+  `token_usage_logs` заполняет только `auth/bearer.py`
+  (`TOKEN_EVENT_AUTH_SUCCEEDED`, единственный вызов записи); у
+  `oauth_access_tokens` есть лишь `last_used_at`, событий вызова нет.
+  Значит объём OAuth-трафика сейчас неизмерим в принципе.
+- Последствие подтверждено данными: недельный срез 19–26.08 давал 5 активных
+  аккаунтов по bearer против 8 по обоим каналам; в разборе застрявших 25.08
+  трое (id 15, 35, 39) числились молчащими, хотя вызывали инструменты, а id 38
+  не попадал ни в один срез — у него нет bearer-токена.
+- Предположение: архиватор зомби-аккаунтов может заархивировать активного
+  OAuth-пользователя. Кандидатов сейчас нет: запрос «есть OAuth-грант, нет
+  активного подключения, старше 30 дней» вернул пусто. Защита случайная —
+  вынесено пунктом 260.5.
+- Записи в базе прода не менялись: доступ используется только на чтение.
+
+## Этап 261. Обратная связь копится непрочитанной — 2026-08-26
+
+- В `agent_feedback_reports` два отчёта в статусе `new` (47: нет инструмента
+  задач Ветменеджера, severity `high`; 48: задание Report AI зависает в
+  `recognizing`). Отчёт 48 прислал аккаунт, работающий прямо сейчас.
+- `known_issue_match_events` за 30 дней пуст при 12 отчётах за тот же период:
+  автоматическое сопоставление отчёта с известной проблемой не срабатывает.
+  Привязки `known_issue_id` у отчётов 37–46 проставлены руками — источник
+  подтверждён отсутствием match-событий на те же отпечатки.
+- Known issue 31 (`update_medical_card`) остаётся `acknowledged` без обходного
+  пути, хотя этап 245 закрыт 24.08 и инструмент сам подставляет связи. Запись
+  в базе отстала от кода; правка требует записи в прод и не выполнялась.
