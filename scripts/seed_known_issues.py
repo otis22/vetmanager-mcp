@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -24,7 +23,6 @@ if str(REPO_ROOT) not in sys.path:
 from fastmcp.exceptions import ToolError
 from sqlalchemy import func, select
 
-import agent_feedback_service as feedback
 from agent_feedback_service import (
     AUTO_EVENT_WRITE_TIMEOUT_SECONDS,
     FeedbackIncident,

@@ -409,7 +409,6 @@ async def test_resilient_redis_strict_timeout_propagates_and_records_metric():
 
 @pytest.mark.asyncio
 async def test_check_rate_limit_calls_backend_interleaved(monkeypatch):
-    from web_security import RateLimitError
 
     class _SlowBackend:
         def __init__(self) -> None:

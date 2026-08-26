@@ -279,7 +279,6 @@ async def test_get_client_profile_aggregates_data():
     )
 
     import json as _json
-    from unittest.mock import AsyncMock, patch
 
     async def fake_get_client_profile(client_id):
         vc = client()

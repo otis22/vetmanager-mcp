@@ -365,8 +365,12 @@ async def test_tool_error_gets_report_hint_but_scope_denial_and_depersonalizatio
     normal_credentials = make_runtime_credentials("clinic", "secret")
     monkeypatch.setattr(tools, "resolve_runtime_credentials", AsyncMock(return_value=normal_credentials))
 
+    # Stage 265.5: the caller's own mistake is recognised by type now. It used
+    # to be recognised by the message starting with "invalid ", so the
+    # behaviour depended on phrasing — and real validation messages
+    # ("clinic_id must be a positive integer") never matched that prefix at all.
     async def invalid_input_tool():
-        raise ToolError("Invalid date_from format.")
+        raise feedback.ToolInputError("Invalid date_from format.")
 
     wrapped = tools._wrap_tool_with_depersonalization(invalid_input_tool, tool_name="get_clients")
     with pytest.raises(ToolError) as validation_error:

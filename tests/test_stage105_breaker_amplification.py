@@ -9,13 +9,12 @@ breaker before each retry so a concurrently-tripped circuit aborts the retry loo
 
 from __future__ import annotations
 
-import asyncio
 
 import httpx
 import pytest
 import respx
 
-from exceptions import VetmanagerError, VetmanagerTimeoutError, VetmanagerUpstreamUnavailable
+from exceptions import VetmanagerTimeoutError, VetmanagerUpstreamUnavailable
 from tests.runtime_factories import patch_runtime_credentials
 from vetmanager_client import VetmanagerClient, get_breaker_state
 

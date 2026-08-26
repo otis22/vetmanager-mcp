@@ -7,7 +7,6 @@ from contextlib import ExitStack
 import json
 import re
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest

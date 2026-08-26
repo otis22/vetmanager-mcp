@@ -3,7 +3,7 @@
 import json
 import time
 from collections import OrderedDict
-from datetime import datetime, timezone
+from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError

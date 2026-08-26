@@ -8,12 +8,10 @@ privacy payload, and shared privacy_utils helpers.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy import inspect, text
+from sqlalchemy import text
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -256,7 +254,7 @@ async def test_ac7_ip_denied_audit_log_payload_privacy_safe(
 ) -> None:
     """The audit row written when IP is denied carries masked email, last segment, and expected mask only."""
     import auth.bearer as bearer
-    from auth.bearer import _base_auth_details, TOKEN_EVENT_AUTH_FAILED_IP_DENIED  # may need expose
+    from auth.bearer import TOKEN_EVENT_AUTH_FAILED_IP_DENIED  # may need expose
     from storage_models import Account, ServiceBearerToken, TokenUsageLog
     from sqlalchemy import select
 

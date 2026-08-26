@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -12,7 +11,7 @@ from auth.vetmanager import resolve_vetmanager_credentials
 from bearer_auth import resolve_bearer_auth_context
 from bearer_token_manager import hash_bearer_token
 from domain_validation import validate_domain as _validate_domain
-from exceptions import AuthError, VetmanagerError
+from exceptions import AuthError
 from oauth_metadata import get_mcp_resource_url
 from oauth_challenge import oauth_challenge_details
 from oauth_service import OAUTH_ACCESS_TOKEN_PREFIX, get_effective_oauth_tool_scopes_for_preset

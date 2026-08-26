@@ -6,7 +6,6 @@ import pytest
 import respx
 import httpx
 
-from server import mcp
 from tests.runtime_factories import (
     make_client_with_resolved_runtime,
     patch_runtime_credentials,

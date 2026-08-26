@@ -15,8 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
-import time
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -24,16 +22,13 @@ import pytest
 import respx
 
 import vetmanager_client as vm_client_module
-from exceptions import AuthError, NotFoundError, VetmanagerUpstreamUnavailable
 from filters import in_, not_in
 from server import mcp
 from tests.runtime_factories import patch_runtime_credentials
 from tools.admission import ACTIVE_ADMISSION_STATUSES
 from vetmanager_client import (
-    _BREAKER_COOLDOWN_SECONDS,
     _RETRY_AFTER_MAX_SECONDS,
     _parse_retry_after,
-    VetmanagerClient,
 )
 
 DOMAIN = "testclinic"

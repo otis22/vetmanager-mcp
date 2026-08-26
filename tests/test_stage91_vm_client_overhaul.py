@@ -13,7 +13,6 @@ Covers:
 
 from __future__ import annotations
 
-import time
 
 import httpx
 import pytest
@@ -23,14 +22,11 @@ import vetmanager_client as vm_client_module
 from exceptions import VetmanagerUpstreamUnavailable
 from tests.runtime_factories import patch_runtime_credentials
 from vetmanager_client import (
-    MAX_RETRIES_READ,
     VetmanagerClient,
-    _BREAKER_COOLDOWN_SECONDS,
     _BREAKER_FAILURE_THRESHOLD,
     _backoff_seconds,
     _parse_retry_after,
     reset_breakers,
-    reset_shared_http_client,
 )
 
 DOMAIN = "testclinic"

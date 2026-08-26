@@ -96,3 +96,18 @@ dev = [
     "pytest-httpx>=0.30.0",
     "respx>=0.21.0",
 ]
+
+[tool.ruff]
+# Stage 265.3: this is not a style gate. Only dead code is checked, because
+# that is the class that hid an orphaned constant until somebody noticed by
+# hand. Formatting and the rest stay a separate decision.
+line-length = 120
+
+[tool.ruff.lint]
+select = ["F401", "F841"]
+
+[tool.ruff.lint.per-file-ignores]
+# In tests an unused local often documents intent — `route = respx.get(...)`
+# registers a mock, `result = await tool()` says the call is the point. An
+# unused *import* there is still dead weight, so F401 stays on.
+"tests/**" = ["F841"]

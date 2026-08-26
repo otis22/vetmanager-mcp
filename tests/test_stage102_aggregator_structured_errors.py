@@ -4,13 +4,11 @@ structured section_errors shape {error_type, retryable, message}.
 
 from __future__ import annotations
 
-import asyncio
 
 import httpx
 import pytest
 import respx
 
-from exceptions import VetmanagerUpstreamUnavailable
 from server import mcp
 from tests.runtime_factories import patch_runtime_credentials
 

@@ -18,7 +18,6 @@ import httpx
 import pytest
 import respx
 
-from exceptions import VetmanagerUpstreamUnavailable
 from tests.runtime_factories import patch_runtime_credentials
 from vetmanager_client import (
     VetmanagerClient,

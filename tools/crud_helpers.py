@@ -10,7 +10,7 @@ proxy label for `vetmanager_tool_call_latency_seconds` and
 """
 
 import json
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any, TypeVar
 
 from filters import (
     as_dict_list, build_list_query_params, validate_filter_properties,

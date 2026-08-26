@@ -15,6 +15,16 @@ import re
 from typing import Any
 
 from fastmcp.exceptions import ToolError
+
+
+class ToolInputError(ToolError):
+    """The caller supplied something invalid — not a defect worth reporting.
+
+    Stage 265.5: this distinction used to live in the wording of the message,
+    which meant it broke the moment somebody improved the wording. It stays a
+    ToolError so every existing handler keeps catching it.
+    """
+
 from sqlalchemy import false, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -187,7 +197,7 @@ def sanitize_text_with_metadata(value: str | None, *, limit: int, required: bool
     try:
         text = (value or "").strip()
         if required and not text:
-            raise ToolError("Feedback field is required.")
+            raise ToolInputError("Feedback field is required.")
         redactions: set[str] = set()
         if _PLACEHOLDER_RE.search(text):
             redactions.add("placeholder_seen")
@@ -213,7 +223,7 @@ def sanitize_text_with_metadata(value: str | None, *, limit: int, required: bool
         text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", text)
         text = re.sub(r"\s+", " ", text).strip()
         if required and not text:
-            raise ToolError("Feedback field is empty after sanitization.")
+            raise ToolInputError("Feedback field is empty after sanitization.")
         if not text:
             return SanitizeResult(None, frozenset(redactions))
         return SanitizeResult(_truncate(text, limit), frozenset(redactions))
@@ -231,11 +241,11 @@ def sanitize_params_shape(params_shape: list[str] | None) -> list[str] | None:
     if params_shape is None:
         return None
     if not isinstance(params_shape, list):
-        raise ToolError("params_shape must be a list of safe parameter names.")
+        raise ToolInputError("params_shape must be a list of safe parameter names.")
     cleaned: list[str] = []
     for item in params_shape:
         if not isinstance(item, str) or not _SAFE_PARAM_RE.match(item):
-            raise ToolError("params_shape contains an unsafe parameter name.")
+            raise ToolInputError("params_shape contains an unsafe parameter name.")
         if item not in cleaned:
             cleaned.append(item)
     return sorted(cleaned)[:32]
@@ -267,13 +277,14 @@ def validate_feedback_runtime_config(*, database_url: str) -> None:
 
 
 def should_skip_report_hint(exc: BaseException) -> bool:
-    message = str(exc).strip().lower()
-    return message.startswith((
-        "invalid ",
-        "missing ",
-        "params_shape ",
-        "feedback field ",
-    ))
+    """Stage 265.5: the caller's own mistake, recognised by type.
+
+    This used to match the message against prefixes like "invalid " and
+    "missing ". Rewording any of those messages would have flipped the
+    behaviour silently — pestering a user about their own typo, or swallowing
+    a real defect — and nothing would have failed.
+    """
+    return isinstance(exc, ToolInputError)
 
 
 def build_error_fingerprint_hash(incident: FeedbackIncident) -> str | None:
@@ -562,9 +573,9 @@ async def create_feedback_report(
     reproduce: str | None = None,
 ) -> dict[str, Any]:
     if category not in FEEDBACK_CATEGORIES:
-        raise ToolError("Invalid feedback category.")
+        raise ToolInputError("Invalid feedback category.")
     if severity not in FEEDBACK_SEVERITIES:
-        raise ToolError("Invalid feedback severity.")
+        raise ToolInputError("Invalid feedback severity.")
     safe_params_shape = sanitize_params_shape(params_shape)
     privacy_redactions: set[str] = set()
 

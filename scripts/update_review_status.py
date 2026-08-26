@@ -80,7 +80,6 @@ def git_log_resolves() -> dict[str, list[tuple[str, str]]]:
     except subprocess.CalledProcessError:
         return {}
     resolves: dict[str, list[tuple[str, str]]] = {}
-    current_sha = None
     for block in out.split("@@COMMIT_END@@"):
         lines = block.strip().splitlines()
         if not lines:

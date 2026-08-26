@@ -1,7 +1,6 @@
 """Unit tests: VetmanagerClient runtime auth, caching and transport security."""
 
 import asyncio
-import time
 from unittest.mock import patch
 
 import httpx

@@ -129,7 +129,7 @@ async def test_upcoming_visits_pet_id_filter():
 @pytest.mark.asyncio
 @respx.mock
 async def test_upcoming_visits_relative_date():
-    from datetime import date, timedelta
+    from datetime import date
 
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/admission").mock(

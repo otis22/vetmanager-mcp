@@ -57,7 +57,8 @@ RUN pip install --no-cache-dir \
     "coverage>=7.6.0,<8" \
     "pytest-cov>=5.0.0,<6" \
     "respx>=0.21.0" \
-    "fakeredis>=2.20.0,<3"
+    "fakeredis>=2.20.0,<3" \
+    "ruff>=0.6.0,<1"
 
 RUN python -m playwright install --with-deps chromium && \
     chmod -R a+rX "${PLAYWRIGHT_BROWSERS_PATH}"

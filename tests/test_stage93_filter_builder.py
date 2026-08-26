@@ -7,7 +7,6 @@ import json
 import pytest
 
 from filters import (
-    Filter,
     FilterOp,
     as_dict_list,
     build_list_query_params,

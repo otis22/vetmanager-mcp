@@ -16,8 +16,6 @@ import pytest
 import vetmanager_client as vm_client_module
 from error_tracking import _sanitize_event
 from vetmanager_client import (
-    _BREAKER_COOLDOWN_SECONDS,
-    _BREAKER_FAILURE_THRESHOLD,
     reset_breakers,
 )
 

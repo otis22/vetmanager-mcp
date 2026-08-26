@@ -92,6 +92,53 @@ REQUEST_GAP_SECONDS = 0.05
 
 # ── Public test-helpers (stage 101.2, rewritten in 106.7) ───────────────────
 
+# Stage 265.3: this module stayed the import point for pieces that moved into
+# `vm_transport` when it was split (stage 103d). Callers and tests still reach
+# them through here — `tests/test_stage109_bc_invariants.py` asserts on that
+# identity — so the re-exports are a deliberate facade, listed explicitly
+# rather than left looking like forgotten imports.
+__all__ = [
+    "CACHE_TTL_SECONDS",
+    "CACHE_TTL_SHORT_SECONDS",
+    "MAX_RETRIES_READ",
+    "MAX_RETRIES_WRITE",
+    "REQUEST_GAP_SECONDS",
+    "VetmanagerClient",
+    "VetmanagerError",
+    "_BACKOFF_BASE_SECONDS",
+    "_BACKOFF_MAX_SECONDS",
+    "_BREAKER_COOLDOWN_SECONDS",
+    "_BREAKER_FAILURE_THRESHOLD",
+    "_BREAKER_WINDOW_SECONDS",
+    "_DomainBreaker",
+    "_HTTP_LIMITS",
+    "_REQUEST_TIMEOUTS",
+    "_RETRY_AFTER_MAX_SECONDS",
+    "_RETRY_STATUS_CODES",
+    "_SHORT_TTL_ENTITIES",
+    "_backoff_seconds",
+    "_breaker_record_failure",
+    "_breaker_record_success",
+    "_breakers",
+    "_breakers_global_lock",
+    "_check_breaker_allows",
+    "_current_loop_key",
+    "_entity_from_path_fn",
+    "_get_breaker",
+    "_get_shared_http_client",
+    "_parse_retry_after",
+    "_shared_http_client_lock",
+    "_shared_http_clients",
+    "force_breaker_open",
+    "get_breaker_state",
+    "get_shared_http_client_state",
+    "reset_breakers",
+    "reset_shared_http_client",
+    "resolve_runtime_credentials",
+    "ttl_for_entity",
+]
+
+
 def get_shared_http_client_state() -> dict:
     """Return an aggregate snapshot of the per-loop shared-client pool.
 

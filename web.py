@@ -53,7 +53,6 @@ from web_security import (
     CSRF_COOKIE_NAME,
     create_csrf_token,
     ensure_csrf_cookie,
-    get_request_ip,
     read_csrf_token,
 )
 

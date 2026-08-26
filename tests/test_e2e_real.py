@@ -19,13 +19,12 @@ import json
 import os
 import pytest
 import re
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import httpx
 from fastmcp.exceptions import ToolError
 
 import auth.request as auth_request
-import runtime_auth
 from server import _graceful_shutdown, mcp
 from tests.conftest import TEST_ENCRYPTION_KEY
 from vetmanager_client import VetmanagerClient
@@ -39,7 +38,6 @@ from vetmanager_connection_service import (
 from vetmanager_auth import (
     DEFAULT_USER_TOKEN_APP_NAME,
     VETMANAGER_AUTH_MODE_USER_TOKEN,
-    VetmanagerAuthContext,
 )
 
 TEST_DOMAIN = os.environ.get("TEST_DOMAIN", "")
