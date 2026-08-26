@@ -48,6 +48,9 @@ from storage_models import (
     KNOWN_ISSUE_MATCH_SOURCES,
     KnownIssue,
     KnownIssueMatchEvent,
+    OAUTH_STATUS_ACTIVE,
+    OAuthAccessToken,
+    OAuthGrant,
     ServiceBearerToken,
     TOKEN_STATUS_ACTIVE,
     TokenUsageLog,
@@ -112,18 +115,44 @@ async def _count_archived_accounts(session) -> int:
     return int(await session.scalar(stmt) or 0)
 
 
+def _latest_request(*values) -> datetime | None:
+    """Most recent of the recorded request markers, ignoring the missing ones."""
+    present = [aware for aware in (_to_aware(value) for value in values) if aware is not None]
+    return max(present) if present else None
+
+
 async def _count_live_accounts(session, *, now: datetime, window: timedelta) -> int:
-    """Accounts whose any token has `last_used_at` within `window`."""
+    """Accounts that made a request within `window`, on either channel.
+
+    Stage 260: the journal answers for OAuth, which has no token row to be
+    counted by; the per-token stat still answers for traffic recorded before
+    the journal covered both channels. Neither source alone is complete.
+    """
     cutoff = now - window
-    stmt = (
-        select(func.count(func.distinct(ServiceBearerToken.account_id)))
-        .select_from(TokenUsageStat)
-        .join(ServiceBearerToken, ServiceBearerToken.id == TokenUsageStat.bearer_token_id)
-        .join(Account, Account.id == ServiceBearerToken.account_id)
-        .where(Account.archived_at.is_(None))
-        .where(TokenUsageStat.last_used_at >= cutoff)
+    by_stat = set(
+        (
+            await session.execute(
+                select(ServiceBearerToken.account_id)
+                .select_from(TokenUsageStat)
+                .join(ServiceBearerToken, ServiceBearerToken.id == TokenUsageStat.bearer_token_id)
+                .join(Account, Account.id == ServiceBearerToken.account_id)
+                .where(Account.archived_at.is_(None))
+                .where(TokenUsageStat.last_used_at >= cutoff)
+            )
+        ).scalars().all()
     )
-    return int(await session.scalar(stmt) or 0)
+    by_journal = set(
+        (
+            await session.execute(
+                select(TokenUsageLog.account_id)
+                .join(Account, Account.id == TokenUsageLog.account_id)
+                .where(Account.archived_at.is_(None))
+                .where(TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED)
+                .where(TokenUsageLog.event_at >= cutoff)
+            )
+        ).scalars().all()
+    )
+    return len(by_stat | by_journal)
 
 
 async def _count_dead_accounts(session, *, now: datetime) -> int:
@@ -147,21 +176,28 @@ async def _count_dead_accounts(session, *, now: datetime) -> int:
     if not old_accounts:
         return 0
 
-    # Per-account max(last_used_at) via join through tokens.
+    # Stage 260: last request is the later of the two records — the journal
+    # covers both channels, the per-token stat covers what predates it.
     rows = await session.execute(
         select(
             Account.id,
-            func.max(TokenUsageStat.last_used_at).label("last_used"),
+            func.max(TokenUsageStat.last_used_at).label("stat_last_used"),
+            func.max(TokenUsageLog.event_at).label("journal_last_used"),
         )
         .select_from(Account)
         .outerjoin(ServiceBearerToken, ServiceBearerToken.account_id == Account.id)
         .outerjoin(TokenUsageStat, TokenUsageStat.bearer_token_id == ServiceBearerToken.id)
+        .outerjoin(
+            TokenUsageLog,
+            (TokenUsageLog.account_id == Account.id)
+            & (TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED),
+        )
         .where(Account.archived_at.is_(None), Account.id.in_(old_accounts))
         .group_by(Account.id)
     )
     dead = 0
-    for _, last_used in rows.all():
-        last_used = _to_aware(last_used)
+    for _, stat_last_used, journal_last_used in rows.all():
+        last_used = _latest_request(stat_last_used, journal_last_used)
         if last_used is None or last_used < cutoff:
             dead += 1
     return dead
@@ -174,19 +210,25 @@ async def _fetch_dead_account_rows(session, *, now: datetime, limit: int = 50) -
             Account.id,
             Account.email,
             Account.created_at,
-            func.max(TokenUsageStat.last_used_at).label("last_used"),
+            func.max(TokenUsageStat.last_used_at).label("stat_last_used"),
+            func.max(TokenUsageLog.event_at).label("journal_last_used"),
             func.count(func.distinct(ServiceBearerToken.id)).label("token_count"),
         )
         .select_from(Account)
         .outerjoin(ServiceBearerToken, ServiceBearerToken.account_id == Account.id)
         .outerjoin(TokenUsageStat, TokenUsageStat.bearer_token_id == ServiceBearerToken.id)
+        .outerjoin(
+            TokenUsageLog,
+            (TokenUsageLog.account_id == Account.id)
+            & (TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED),
+        )
         .where(Account.archived_at.is_(None), Account.created_at < cutoff)
         .group_by(Account.id, Account.email, Account.created_at)
     )
     out: list[dict[str, Any]] = []
-    for acc_id, email, created, last_used, token_count in rows.all():
+    for acc_id, email, created, stat_last_used, journal_last_used, token_count in rows.all():
         created_aware = _to_aware(created)
-        last_used_aware = _to_aware(last_used)
+        last_used_aware = _latest_request(stat_last_used, journal_last_used)
         if last_used_aware is not None and last_used_aware >= cutoff:
             continue
         out.append({
@@ -297,6 +339,33 @@ async def _collect_activation_funnel(session, *, now: datetime) -> dict[str, int
                 .join(TokenUsageStat, TokenUsageStat.bearer_token_id == ServiceBearerToken.id)
                 .where(Account.archived_at.is_(None))
                 .where(TokenUsageStat.last_used_at >= recent_usage_cutoff)
+            )
+        ).scalars().all()
+    )
+    # Stage 260: OAuth requests live only in the journal, and an OAuth grant is
+    # usable access just like an issued token — without both, a working account
+    # shows up as "issue a token" and "go make your first request".
+    with_recent_usage |= set(
+        (
+            await session.execute(
+                select(TokenUsageLog.account_id)
+                .join(Account, Account.id == TokenUsageLog.account_id)
+                .where(Account.archived_at.is_(None))
+                .where(TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED)
+                .where(TokenUsageLog.event_at >= recent_usage_cutoff)
+            )
+        ).scalars().all()
+    )
+    usable_tokens |= set(
+        (
+            await session.execute(
+                select(OAuthGrant.account_id)
+                .join(Account, Account.id == OAuthGrant.account_id)
+                .join(OAuthAccessToken, OAuthAccessToken.grant_id == OAuthGrant.id)
+                .where(Account.archived_at.is_(None))
+                .where(OAuthGrant.status == OAUTH_STATUS_ACTIVE)
+                .where(OAuthAccessToken.status == OAUTH_STATUS_ACTIVE)
+                .where(OAuthAccessToken.expires_at > now)
             )
         ).scalars().all()
     )

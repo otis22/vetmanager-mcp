@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from html import escape
 
 from observability_logging import RUNTIME_LOGGER
-from storage_models import Account, VetmanagerConnection
+from storage_models import OAUTH_STATUS_ACTIVE, Account, VetmanagerConnection
 from tool_access_registry import (
     PRESET_DOCTOR,
     PRESET_FINANCE,
@@ -190,11 +190,16 @@ def compute_activation_state(
     active_connection: VetmanagerConnection | None,
     integration_health_status: str,
     bearer_tokens: list[dict[str, object]],
+    oauth_grants: list[dict[str, object]] | None = None,
     now: datetime | None = None,
 ) -> str:
     """Stage 197.4: activation funnel state shared by page render and polling.
 
     Returns one of: needs_connection / needs_token / needs_client_use / ready.
+
+    Stage 260: a connected agent is access too. Judging only by bearer tokens
+    told a user who works through OAuth to go issue a token and make a first
+    request, while their requests were already arriving.
     """
     now = now or datetime.now(timezone.utc)
     integration_ready = (
@@ -203,15 +208,22 @@ def compute_activation_state(
     )
     if not integration_ready:
         return "needs_connection"
+    grants = [
+        grant for grant in (oauth_grants or [])
+        if str(grant.get("status")) == OAUTH_STATUS_ACTIVE
+    ]
     has_active_token = any(
         _activation_token_is_usable(token, now=now) for token in bearer_tokens
     )
-    if not has_active_token:
+    if not has_active_token and not grants:
         return "needs_token"
     has_client_usage = any(
         _activation_token_is_usable(token, now=now)
         and _activation_token_has_client_usage(token)
         for token in bearer_tokens
+    ) or any(
+        _activation_datetime(grant.get("last_used_at_raw"), grant.get("last_used_at")) is not None
+        for grant in grants
     )
     if not has_client_usage:
         return "needs_client_use"
@@ -1326,6 +1338,7 @@ def render_account_page(
         active_connection=active_connection,
         integration_health_status=integration_health_status,
         bearer_tokens=bearer_tokens,
+        oauth_grants=oauth_grants,
         now=activation_now,
     )
     if activation_state == "needs_connection":

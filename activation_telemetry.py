@@ -18,16 +18,59 @@ from service_metrics import (
     set_activation_event_accounts,
     set_activation_funnel_accounts,
 )
+from auth_audit import TOKEN_EVENT_AUTH_SUCCEEDED
 from storage_models import (
     ACCOUNT_STATUS_ACTIVE,
     CONNECTION_STATUS_ACTIVE,
+    OAUTH_STATUS_ACTIVE,
     TOKEN_STATUS_ACTIVE,
     Account,
     ActivationEvent,
+    OAuthAccessToken,
+    OAuthGrant,
     ServiceBearerToken,
+    TokenUsageLog,
     TokenUsageStat,
     VetmanagerConnection,
 )
+
+def _latest(*values: datetime | None) -> datetime | None:
+    """Most recent of the given timestamps, ignoring the missing ones."""
+    present = [
+        value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        for value in values
+        if value is not None
+    ]
+    return max(present) if present else None
+
+
+async def _accounts_with_requests(session, *, since: datetime | None = None) -> set[int]:
+    """Accounts that authenticated at least once, on either channel (stage 260).
+
+    Reads the journal instead of the bearer tokens: an account working through
+    OAuth has no bearer token at all and used to look like it never called.
+    """
+    stmt = (
+        select(TokenUsageLog.account_id)
+        .where(TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED)
+        .where(TokenUsageLog.account_id.is_not(None))
+    )
+    if since is not None:
+        stmt = stmt.where(TokenUsageLog.event_at >= since)
+    return {int(account_id) for account_id in (await session.execute(stmt)).scalars().all()}
+
+
+async def _accounts_with_live_oauth_access(session, *, now: datetime) -> set[int]:
+    """Accounts holding a usable OAuth grant — the OAuth counterpart of an active token."""
+    stmt = (
+        select(OAuthGrant.account_id)
+        .join(OAuthAccessToken, OAuthAccessToken.grant_id == OAuthGrant.id)
+        .where(OAuthGrant.status == OAUTH_STATUS_ACTIVE)
+        .where(OAuthAccessToken.status == OAUTH_STATUS_ACTIVE)
+        .where(OAuthAccessToken.expires_at > now)
+    )
+    return {int(account_id) for account_id in (await session.execute(stmt)).scalars().all()}
+
 
 SILENCE_THRESHOLDS_HOURS = (24, 72)
 ACTIVATION_SCAN_CACHE_TTL = timedelta(seconds=60)
@@ -173,6 +216,13 @@ async def scan_activation_telemetry(
                 )
             ).scalars().all()
         )
+        # Stage 260: an OAuth grant is access too. Without it the funnel drops
+        # every account that never issued a bearer token.
+        oauth_access_account_ids = await _accounts_with_live_oauth_access(session, now=current)
+        active_token_account_ids |= oauth_access_account_ids
+        recent_usage_account_ids |= await _accounts_with_requests(
+            session, since=recent_usage_cutoff
+        )
         connected_with_active_token_ids = connected_account_ids & active_token_account_ids
         connected_recent_usage_ids = connected_with_active_token_ids & recent_usage_account_ids
         new_account_ids = set(
@@ -246,6 +296,8 @@ async def scan_activation_telemetry(
                 )
             ).scalars().all()
         )
+        # Stage 260: the journal is the channel-neutral answer to "did they call".
+        first_mcp_request_ids |= (await _accounts_with_requests(session)) & new_account_ids
         funnel_values = {
             "registered": len(account_ids),
             "connected": len(connected_account_ids),
@@ -297,7 +349,7 @@ async def scan_activation_telemetry(
     stmt = (
         select(
             Account.id.label("account_id"),
-            func.max(ServiceBearerToken.last_used_at).label("last_request_at"),
+            func.max(ServiceBearerToken.last_used_at).label("token_last_used_at"),
             func.min(ServiceBearerToken.created_at).label("earliest_token_created_at"),
             func.count(distinct(ServiceBearerToken.id)).label("live_token_count"),
         )
@@ -323,15 +375,80 @@ async def scan_activation_telemetry(
     )
     rows = (await session.execute(stmt)).all()
 
+    # Stage 260: "when did this account last call" now comes from the journal,
+    # which covers both channels; `ServiceBearerToken.last_used_at` only ever
+    # answered for one of them.
+    last_request_by_account = {
+        int(account_id): last_at
+        for account_id, last_at in (
+            await session.execute(
+                select(
+                    TokenUsageLog.account_id,
+                    func.max(TokenUsageLog.event_at),
+                )
+                .where(TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED)
+                .where(TokenUsageLog.account_id.is_not(None))
+                .group_by(TokenUsageLog.account_id)
+            )
+        ).all()
+    }
+
+    # Accounts whose only access is OAuth have no bearer row above, so they are
+    # added here with the grant as the age anchor.
+    oauth_rows = (
+        await session.execute(
+            select(
+                OAuthGrant.account_id.label("account_id"),
+                func.min(OAuthGrant.created_at).label("earliest_grant_created_at"),
+            )
+            .join(Account, Account.id == OAuthGrant.account_id)
+            .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+            .where(OAuthGrant.status == OAUTH_STATUS_ACTIVE)
+            .where(
+                exists()
+                .where(VetmanagerConnection.account_id == Account.id)
+                .where(VetmanagerConnection.status == CONNECTION_STATUS_ACTIVE)
+            )
+            .group_by(OAuthGrant.account_id)
+        )
+    ).all()
+    bearer_account_ids = {int(row.account_id) for row in rows}
+    oauth_only_rows = [row for row in oauth_rows if int(row.account_id) not in bearer_account_ids]
+
     gauges: dict[int, float] = {}
     live_account_ids: set[int] = set()
     emitted = 0
-    for row in rows:
-        account_id = int(row.account_id)
+    # The fallback anchor keeps its own name per channel: existing alerting
+    # reads `age_anchor`, and "token_created_at" must keep meaning a token.
+    anchored_accounts: list[tuple[int, datetime | None, datetime | None, int, str]] = [
+        (
+            int(row.account_id),
+            row.token_last_used_at,
+            row.earliest_token_created_at,
+            int(row.live_token_count or 0),
+            "token_created_at",
+        )
+        for row in rows
+    ] + [
+        (int(row.account_id), None, row.earliest_grant_created_at, 0, "oauth_grant_created_at")
+        for row in oauth_only_rows
+    ]
+
+    for (
+        account_id,
+        token_last_used_at,
+        earliest_access_at,
+        live_token_count,
+        fallback_anchor,
+    ) in anchored_accounts:
         live_account_ids.add(account_id)
-        last_request_at = row.last_request_at
-        earliest_token_created_at = row.earliest_token_created_at
-        anchor_at = last_request_at or earliest_token_created_at
+        # The journal covers both channels but only from stage 260 onward;
+        # the token's own marker still answers for everything before it.
+        last_request_at = _latest(
+            last_request_by_account.get(account_id),
+            token_last_used_at,
+        )
+        anchor_at = last_request_at or earliest_access_at
         if anchor_at is None:
             continue
 
@@ -343,7 +460,7 @@ async def scan_activation_telemetry(
             continue
 
         ever_used = last_request_at is not None
-        age_anchor = "last_request_at" if ever_used else "token_created_at"
+        age_anchor = "last_request_at" if ever_used else fallback_anchor
         for threshold_hours in SILENCE_THRESHOLDS_HOURS:
             if age_hours < threshold_hours:
                 continue
@@ -362,7 +479,7 @@ async def scan_activation_telemetry(
                     "last_request_at_utc": _iso_or_none(last_request_at),
                     "ever_used": ever_used,
                     "age_anchor": age_anchor,
-                    "live_token_count": int(row.live_token_count or 0),
+                    "live_token_count": live_token_count,
                 },
             )
 

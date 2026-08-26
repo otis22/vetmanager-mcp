@@ -29,11 +29,15 @@ from oauth_service import revoke_oauth_grant_family
 from tool_access_registry import PRESET_FULL_ACCESS, PRESET_REPORT_AI
 from web_html import display_access_label
 from storage import get_session_factory
+from auth_audit import TOKEN_EVENT_AUTH_SUCCEEDED
 from storage_models import (
     CONNECTION_STATUS_ACTIVE,
+    OAUTH_STATUS_ACTIVE,
     TOKEN_STATUS_ACTIVE,
     Account,
+    OAuthGrant,
     ServiceBearerToken,
+    TokenUsageLog,
     TokenUsageStat,
     VetmanagerConnection,
 )
@@ -171,25 +175,43 @@ async def _load_activation_state_for_polling(account_id: int) -> str | None:
                 )
             ).scalars().all()
         ]
-        if not usable_token_ids:
-            return "needs_token"
-
-        used_token = await session.scalar(
-            select(ServiceBearerToken.id)
-            .outerjoin(
-                TokenUsageStat,
-                TokenUsageStat.bearer_token_id == ServiceBearerToken.id,
-            )
-            .where(ServiceBearerToken.id.in_(usable_token_ids))
-            .where(
-                (ServiceBearerToken.last_used_at.is_not(None))
-                | (TokenUsageStat.last_used_at.is_not(None))
-                | (TokenUsageStat.request_count > 0)
-            )
+        # Stage 260: a connected agent is access as much as an issued token is.
+        # Judging by tokens alone told a user whose OAuth requests were already
+        # arriving to go and issue their first token.
+        active_grant = await session.scalar(
+            select(OAuthGrant.id)
+            .where(OAuthGrant.account_id == account_id)
+            .where(OAuthGrant.status == OAUTH_STATUS_ACTIVE)
             .limit(1)
         )
+        if not usable_token_ids and active_grant is None:
+            return "needs_token"
+
+        used_token = None
+        if usable_token_ids:
+            used_token = await session.scalar(
+                select(ServiceBearerToken.id)
+                .outerjoin(
+                    TokenUsageStat,
+                    TokenUsageStat.bearer_token_id == ServiceBearerToken.id,
+                )
+                .where(ServiceBearerToken.id.in_(usable_token_ids))
+                .where(
+                    (ServiceBearerToken.last_used_at.is_not(None))
+                    | (TokenUsageStat.last_used_at.is_not(None))
+                    | (TokenUsageStat.request_count > 0)
+                )
+                .limit(1)
+            )
         if used_token is None:
-            return "needs_client_use"
+            journalled_request = await session.scalar(
+                select(TokenUsageLog.id)
+                .where(TokenUsageLog.account_id == account_id)
+                .where(TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED)
+                .limit(1)
+            )
+            if journalled_request is None:
+                return "needs_client_use"
         return "ready"
 
 
