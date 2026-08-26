@@ -230,3 +230,81 @@ def test_upstream_text_inline_is_reported():
     """
     findings = _scan(BAD_UPSTREAM_INLINE)
     assert findings, "inline upstream text matching must be pushed into a classifier"
+
+
+# ── Second round of evasions found by review ────────────────────────────────
+
+BAD_VIA_UNANNOTATED_HELPER = '''
+from fastmcp.exceptions import ToolError
+
+def _is_denied(exc):
+    return "not permitted" in str(exc)
+
+def handle():
+    try:
+        work()
+    except ToolError as exc:
+        if _is_denied(exc):
+            return "denied"
+'''
+
+BAD_VIA_GETATTR_ARGS = '''
+from fastmcp.exceptions import ToolError
+
+def handle():
+    try:
+        work()
+    except ToolError as exc:
+        if "not permitted" in getattr(exc, "args")[0]:
+            return "denied"
+'''
+
+BAD_VIA_CONDITIONAL_ASSIGNMENT = '''
+from fastmcp.exceptions import ToolError
+
+def handle(flag):
+    try:
+        work()
+    except ToolError as exc:
+        message = str(exc) if flag else ""
+        if "not permitted" in message:
+            return "denied"
+'''
+
+BAD_VIA_STRING_ANNOTATION = '''
+def _is_denied(exc: "ToolError") -> bool:
+    return "not permitted" in str(exc)
+'''
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        BAD_VIA_UNANNOTATED_HELPER,
+        BAD_VIA_GETATTR_ARGS,
+        BAD_VIA_CONDITIONAL_ASSIGNMENT,
+        BAD_VIA_STRING_ANNOTATION,
+    ],
+)
+def test_second_round_of_evasions_is_reported(source):
+    assert _scan(source), "the classification still depends on our wording"
+
+
+GOOD_HELPER_THAT_DOES_NOT_READ_TEXT = '''
+from fastmcp.exceptions import ToolError
+
+def _is_denied(exc):
+    return getattr(exc, "error_code", None) == "scope_denied"
+
+def handle():
+    try:
+        work()
+    except ToolError as exc:
+        if _is_denied(exc):
+            return "denied"
+'''
+
+
+def test_a_helper_that_reads_no_text_is_fine():
+    """Passing the exception to a helper is normal; reading its wording is not."""
+    assert _scan(GOOD_HELPER_THAT_DOES_NOT_READ_TEXT) == []

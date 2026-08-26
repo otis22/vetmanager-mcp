@@ -99,6 +99,7 @@ class _Scanner(ast.NodeVisitor):
     def __init__(self, path: str) -> None:
         self.path = path
         self.findings: list[Finding] = []
+        self.text_reading_helpers: set[str] = set()
         # name -> exception type it is bound to
         self._scopes: list[dict[str, str]] = [{}]
         # name -> exception type whose *message* it holds, after `m = str(exc)`
@@ -213,6 +214,16 @@ class _Scanner(ast.NodeVisitor):
                         "decides on the wording of our own message (via a local)",
                     ))
                 continue
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if node.func.id in self.text_reading_helpers:
+                    for argument in node.args:
+                        argument_name = _read_name(argument)
+                        if argument_name and self._bound(argument_name):
+                            self.findings.append(Finding(
+                                self.path, getattr(node, "lineno", 0),
+                                self._bound(argument_name) or "",
+                                f"hands our exception to '{node.func.id}', which decides on its wording",
+                            ))
             name, how = self._text_read(node)
             if name is None:
                 continue
@@ -255,6 +266,16 @@ class _Scanner(ast.NodeVisitor):
                 return _read_name(node.args[0]), f"{node.func.id}()"
         if isinstance(node, ast.Attribute) and node.attr == "args":
             return _read_name(node.value), ".args"
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr":
+            if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant):
+                if node.args[1].value in {"args", "message"}:
+                    return _read_name(node.args[0]), f'getattr(..., "{node.args[1].value}")'
+        if isinstance(node, ast.IfExp):
+            # `msg = str(exc) if flag else ""` still ends up holding the text.
+            for branch in (node.body, node.orelse):
+                name, how = self._text_read(branch)
+                if name:
+                    return name, f"conditional/{how}"
         if isinstance(node, ast.Subscript):
             value = node.value
             if isinstance(value, ast.Attribute) and value.attr == "args":
@@ -299,6 +320,9 @@ def _exception_names(node: ast.expr | None) -> list[str]:
         return [node.id]
     if isinstance(node, ast.Attribute):
         return [node.attr]
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        # `exc: "ToolError"` is the same statement, just quoted.
+        return [node.value.strip().split("[")[0].split(".")[-1]]
     if isinstance(node, ast.Tuple):
         return [name for element in node.elts for name in _exception_names(element)]
     return []
@@ -308,9 +332,48 @@ def _read_name(node: ast.expr) -> str | None:
     return node.id if isinstance(node, ast.Name) else None
 
 
+def _text_reading_helpers(tree: ast.AST) -> set[str]:
+    """Functions that decide something from the text of a parameter.
+
+    Moving the comparison into a helper and leaving the parameter unannotated
+    was the most natural way around the rule — natural enough that somebody
+    would do it without meaning to. Such a helper is treated as a classifier,
+    and passing one of our exceptions into it is the finding.
+    """
+    helpers: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        all_args = [*node.args.args, *node.args.posonlyargs, *node.args.kwonlyargs]
+        # A parameter annotated as an upstream error is the sanctioned form:
+        # the dependency on their wording is declared right in the signature.
+        params = {
+            arg.arg
+            for arg in all_args
+            if not any(
+                name in UPSTREAM_EXCEPTIONS for name in _exception_names(arg.annotation)
+            )
+        }
+        if not params:
+            continue
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name):
+                if inner.func.id in {"str", "repr"} and inner.args:
+                    if _read_name(inner.args[0]) in params:
+                        helpers.add(node.name)
+                        break
+            if isinstance(inner, ast.Attribute) and inner.attr == "args":
+                if _read_name(inner.value) in params:
+                    helpers.add(node.name)
+                    break
+    return helpers
+
+
 def scan_source(source: str, path: str) -> list[Finding]:
+    tree = ast.parse(source)
     scanner = _Scanner(path)
-    scanner.visit(ast.parse(source))
+    scanner.text_reading_helpers = _text_reading_helpers(tree)
+    scanner.visit(tree)
     return scanner.findings
 
 
