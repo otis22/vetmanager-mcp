@@ -19,12 +19,16 @@
 Отчёт разобран, когда у него нет статуса `new`. Возможных исходов три:
 
 1. **`linked`** — привязан к существующей известной проблеме
-   (`link --known-issue-id N`). Привязка не пишет событие сопоставления: событие
-   означает «автоматика узнала проблему», а тут узнал человек.
-2. **`triaged`** — заведена новая известная проблема (`promote`), потому что
-   существующей не нашлось.
-3. **`ignored`** — отчёт не о дефекте (`mark --status ignored`): непонимание
-   контракта, разовый сбой сети, дубль.
+   (`link 31 45`). Привязка не пишет событие сопоставления: событие означает
+   «автоматика узнала проблему», а тут узнал человек.
+2. **`triaged`** — заведена новая известная проблема (`promote 48`), потому что
+   существующей не нашлось. Сам отчёт при этом остаётся `new`: перевести его
+   нужно отдельно, командой `mark-report 48 --status triaged`.
+3. **`ignored`** — отчёт не о дефекте (`mark-report 48 --status ignored`):
+   непонимание контракта, разовый сбой сети, дубль.
+
+Осторожно: `mark` меняет статус **известной проблемы**, а не отчёта. Статус
+отчёта меняет только `mark-report`.
 
 Проблема, к которой привязан отчёт, должна получить **agent playbook**. Без
 него агент, упёршийся в тот же отказ, снова ничего не услышит — статус на это
@@ -38,6 +42,7 @@ python3 scripts/triage_agent_feedback.py show 47 48
 python3 scripts/triage_agent_feedback.py link 31 45
 python3 scripts/triage_agent_feedback.py promote 48 --title "..." --status acknowledged
 python3 scripts/triage_agent_feedback.py mark 31 workaround_available
+python3 scripts/triage_agent_feedback.py mark-report 48 --status ignored
 python3 scripts/triage_agent_feedback.py unreachable-issues
 python3 scripts/triage_agent_feedback.py match-effectiveness --days 30
 ```
@@ -64,6 +69,11 @@ python3 scripts/triage_agent_feedback.py match-effectiveness --days 30
 
 ## Приватность
 
-Все отчёты триажа — агрегатные: ни `summary`, ни `details`, ни `intent_text`
-в вывод не попадают. `show <report_id>` печатает содержимое отчёта целиком и предназначен для
-человека, разбирающего конкретный случай, а не для выгрузок.
+Агрегатные — не все команды, а конкретные: `group`, `match-effectiveness`,
+`match-events-stats`, `unreachable-issues`. Их вывод можно приносить в общий
+разговор.
+
+Печатают сохранённый текст отчёта и предназначены для человека, разбирающего
+конкретный случай: `show` (отчёт целиком), `recent` (строка `summary` каждого
+отчёта), `export-markdown` (`sample_summary` по группе). Их вывод в общие
+каналы не переносится.

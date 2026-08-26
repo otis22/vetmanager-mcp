@@ -169,17 +169,38 @@ def test_runbook_only_shows_commands_the_cli_actually_accepts():
     from pathlib import Path
 
     runbook = Path(__file__).resolve().parents[1] / "artifacts" / "feedback-triage-runbook.md"
+
+    text = runbook.read_text(encoding="utf-8")
+    # A wrapped command is legal documentation — join continuations first.
+    text = re.sub(r"\\\n\s*", " ", text)
     parser = triage_cli._build_parser()
+    known_commands = set(parser._subparsers._group_actions[0].choices)
 
     commands = [
         line.strip()
-        for line in runbook.read_text(encoding="utf-8").splitlines()
+        for line in text.splitlines()
         if line.strip().startswith("python3 scripts/triage_agent_feedback.py")
     ]
     assert commands, "the runbook must show how to run the triage tool"
 
-    for command in commands:
-        argv = shlex.split(re.sub(r'"[^"]*"', '"x"', command))[2:]
+    # Prose names commands in backticks too, and the first version of this
+    # runbook got every one of those wrong while the fenced block was fine.
+    inline = [
+        fragment
+        for fragment in re.findall(r"`([a-z][a-z-]*(?: [^`]*)?)`", text)
+        if fragment.split()[0] in known_commands
+        # A bare `mark` is a reference to the command, not an invocation, and
+        # a placeholder like `link <known_issue_id>` describes the shape —
+        # argparse can check neither. Only real invocations are parsed.
+        and " " in fragment
+        and "<" not in fragment
+    ]
+    assert inline, "the runbook explains commands in prose; those must parse too"
+
+    for command in [*commands, *inline]:
+        argv = shlex.split(re.sub(r'"[^"]*"', '"x"', command))
+        if argv[:1] == ["python3"]:
+            argv = argv[2:]
         parser.parse_args(argv)
 
 
@@ -208,3 +229,40 @@ async def test_unreachable_report_survives_an_empty_result_and_a_missing_tool(
     output = capsys.readouterr().out
     assert "total=1" in output
     assert "| - |" in output, "a missing related_tool prints as a dash, not a crash"
+
+
+@pytest.mark.asyncio
+async def test_a_report_that_is_not_a_defect_can_leave_the_new_pile(
+    sqlite_session_factory_builder, tmp_path, monkeypatch, capsys, feedback_pepper
+):
+    """Without this, "not a defect" had no exit: only `linked` was reachable.
+
+    A report nobody can link stayed `new` forever, so the count of unread
+    feedback could never go back to zero and stopped meaning anything.
+    """
+    session_factory = await sqlite_session_factory_builder(tmp_path / "stage261-mark-report.db")
+    monkeypatch.setattr(triage_cli, "get_session_factory", lambda: session_factory)
+    async with session_factory() as session:
+        report = AgentFeedbackReport(
+            source="model",
+            category="bug",
+            severity="low",
+            status="new",
+            related_tool="get_payments",
+            summary="Misread the contract, not a defect",
+            details="Details",
+        )
+        session.add(report)
+        await session.commit()
+        report_id = report.id
+
+    await triage_cli._mark_report(SimpleNamespace(report_ids=[report_id], status="ignored"))
+    capsys.readouterr()
+
+    async with session_factory() as session:
+        assert (await session.get(AgentFeedbackReport, report_id)).status == "ignored"
+
+    with pytest.raises(SystemExit):
+        await triage_cli._mark_report(
+            SimpleNamespace(report_ids=[report_id], status="not_a_real_status")
+        )

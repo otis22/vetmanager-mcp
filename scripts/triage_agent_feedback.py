@@ -32,6 +32,7 @@ from storage import get_session_factory
 from storage_models import (
     AgentFeedbackReport,
     FEEDBACK_STATUS_LINKED,
+    FEEDBACK_STATUSES,
     KNOWN_ISSUE_STATUSES,
     KnownIssue,
     KnownIssueMatchEvent,
@@ -171,6 +172,27 @@ async def _mark(args: argparse.Namespace) -> None:
         issue.status = args.status
         await session.commit()
         print(f"known_issue #{issue.id} status={issue.status}")
+
+
+async def _mark_report(args: argparse.Namespace) -> None:
+    """Set the lifecycle status of feedback reports (stage 261).
+
+    `link` and `resolve-report` both end at `linked`, so a report that is not
+    a defect at all had no way out of `new` — and the count of unread feedback
+    could never return to zero, which is what made it easy to ignore.
+    """
+    if args.status not in FEEDBACK_STATUSES:
+        raise SystemExit(
+            f"Invalid report status: {args.status!r}. Allowed: {', '.join(FEEDBACK_STATUSES)}"
+        )
+    async with get_session_factory()() as session:
+        for report_id in args.report_ids:
+            report = await session.get(AgentFeedbackReport, report_id)
+            if report is None:
+                raise SystemExit(f"Report not found: {report_id}")
+            report.status = args.status
+            print(f"report #{report.id} status={report.status}")
+        await session.commit()
 
 
 async def _resolve_report(args: argparse.Namespace) -> None:
@@ -607,10 +629,18 @@ def _build_parser() -> argparse.ArgumentParser:
     promote.add_argument("--match-rules-json", default=None)
     promote.set_defaults(func=_promote)
 
-    mark = sub.add_parser("mark")
+    mark = sub.add_parser("mark", help="Set the status of a known issue.")
     mark.add_argument("known_issue_id", type=int)
     mark.add_argument("status")
     mark.set_defaults(func=_mark)
+
+    mark_report = sub.add_parser(
+        "mark-report",
+        help="Stage 261: set the lifecycle status of feedback reports, including ignored.",
+    )
+    mark_report.add_argument("report_ids", type=int, nargs="+")
+    mark_report.add_argument("--status", required=True)
+    mark_report.set_defaults(func=_mark_report)
 
     resolve = sub.add_parser(
         "resolve-report",
