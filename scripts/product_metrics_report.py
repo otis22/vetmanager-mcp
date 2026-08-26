@@ -38,6 +38,7 @@ from auth_audit import (
     TOKEN_EVENT_EXPIRED,
     TOKEN_EVENT_REVOKED,
 )
+from oauth_service import accounts_with_live_oauth_access
 from storage_models import (
     Account,
     AgentFeedbackReport,
@@ -48,9 +49,6 @@ from storage_models import (
     KNOWN_ISSUE_MATCH_SOURCES,
     KnownIssue,
     KnownIssueMatchEvent,
-    OAUTH_STATUS_ACTIVE,
-    OAuthAccessToken,
-    OAuthGrant,
     ServiceBearerToken,
     TOKEN_STATUS_ACTIVE,
     TokenUsageLog,
@@ -356,19 +354,7 @@ async def _collect_activation_funnel(session, *, now: datetime) -> dict[str, int
             )
         ).scalars().all()
     )
-    usable_tokens |= set(
-        (
-            await session.execute(
-                select(OAuthGrant.account_id)
-                .join(Account, Account.id == OAuthGrant.account_id)
-                .join(OAuthAccessToken, OAuthAccessToken.grant_id == OAuthGrant.id)
-                .where(Account.archived_at.is_(None))
-                .where(OAuthGrant.status == OAUTH_STATUS_ACTIVE)
-                .where(OAuthAccessToken.status == OAUTH_STATUS_ACTIVE)
-                .where(OAuthAccessToken.expires_at > now)
-            )
-        ).scalars().all()
-    )
+    usable_tokens |= await accounts_with_live_oauth_access(session, now=now) & account_ids
 
     ready = connected & usable_tokens
     needs_connection = account_ids - connected
@@ -448,8 +434,10 @@ async def _top_accounts_by_requests(
             func.count(TokenUsageLog.id).label("total"),
         )
         .select_from(Account)
-        .join(ServiceBearerToken, ServiceBearerToken.account_id == Account.id)
-        .join(TokenUsageLog, TokenUsageLog.bearer_token_id == ServiceBearerToken.id)
+        # Stage 260: joined on the journal's own account link. Going through
+        # the bearer token dropped OAuth rows, so the ranking of "who makes the
+        # calls" silently omitted whole accounts.
+        .join(TokenUsageLog, TokenUsageLog.account_id == Account.id)
         .where(Account.archived_at.is_(None))
         .where(TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED)
         .where(TokenUsageLog.event_at >= cutoff)

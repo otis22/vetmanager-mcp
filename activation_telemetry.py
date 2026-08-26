@@ -19,6 +19,7 @@ from service_metrics import (
     set_activation_funnel_accounts,
 )
 from auth_audit import TOKEN_EVENT_AUTH_SUCCEEDED
+from oauth_service import accounts_with_live_oauth_access
 from storage_models import (
     ACCOUNT_STATUS_ACTIVE,
     CONNECTION_STATUS_ACTIVE,
@@ -26,7 +27,6 @@ from storage_models import (
     TOKEN_STATUS_ACTIVE,
     Account,
     ActivationEvent,
-    OAuthAccessToken,
     OAuthGrant,
     ServiceBearerToken,
     TokenUsageLog,
@@ -57,18 +57,6 @@ async def _accounts_with_requests(session, *, since: datetime | None = None) -> 
     )
     if since is not None:
         stmt = stmt.where(TokenUsageLog.event_at >= since)
-    return {int(account_id) for account_id in (await session.execute(stmt)).scalars().all()}
-
-
-async def _accounts_with_live_oauth_access(session, *, now: datetime) -> set[int]:
-    """Accounts holding a usable OAuth grant — the OAuth counterpart of an active token."""
-    stmt = (
-        select(OAuthGrant.account_id)
-        .join(OAuthAccessToken, OAuthAccessToken.grant_id == OAuthGrant.id)
-        .where(OAuthGrant.status == OAUTH_STATUS_ACTIVE)
-        .where(OAuthAccessToken.status == OAUTH_STATUS_ACTIVE)
-        .where(OAuthAccessToken.expires_at > now)
-    )
     return {int(account_id) for account_id in (await session.execute(stmt)).scalars().all()}
 
 
@@ -218,7 +206,7 @@ async def scan_activation_telemetry(
         )
         # Stage 260: an OAuth grant is access too. Without it the funnel drops
         # every account that never issued a bearer token.
-        oauth_access_account_ids = await _accounts_with_live_oauth_access(session, now=current)
+        oauth_access_account_ids = await accounts_with_live_oauth_access(session, now=current)
         active_token_account_ids |= oauth_access_account_ids
         recent_usage_account_ids |= await _accounts_with_requests(
             session, since=recent_usage_cutoff
@@ -394,7 +382,10 @@ async def scan_activation_telemetry(
     }
 
     # Accounts whose only access is OAuth have no bearer row above, so they are
-    # added here with the grant as the age anchor.
+    # added here with the grant as the age anchor. A grant whose access has
+    # already died is not counted: it would keep raising silence alerts for
+    # somebody who can no longer make a request at all.
+    live_oauth_account_ids = await accounts_with_live_oauth_access(session, now=current)
     oauth_rows = (
         await session.execute(
             select(
@@ -404,6 +395,7 @@ async def scan_activation_telemetry(
             .join(Account, Account.id == OAuthGrant.account_id)
             .where(Account.status == ACCOUNT_STATUS_ACTIVE)
             .where(OAuthGrant.status == OAUTH_STATUS_ACTIVE)
+            .where(OAuthGrant.account_id.in_(live_oauth_account_ids or [-1]))
             .where(
                 exists()
                 .where(VetmanagerConnection.account_id == Account.id)

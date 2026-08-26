@@ -40,7 +40,25 @@ def upgrade() -> None:
         "WHERE account_id IS NULL"
     )
 
+    # A row without an account falls out of every aggregate silently, so the
+    # column is NOT NULL rather than merely expected to be filled. If the
+    # backfill could not resolve one, stop here instead of shipping a schema
+    # whose contract is already violated.
+    orphaned = op.get_bind().execute(
+        sa.text("SELECT count(*) FROM token_usage_logs WHERE account_id IS NULL")
+    ).scalar_one()
+    if orphaned:
+        raise RuntimeError(
+            f"stage 260: {orphaned} usage-log rows have no resolvable account; "
+            "inspect them before migrating"
+        )
+
     with op.batch_alter_table("token_usage_logs") as batch_op:
+        batch_op.alter_column(
+            "account_id",
+            existing_type=sa.Integer(),
+            nullable=False,
+        )
         batch_op.alter_column(
             "bearer_token_id",
             existing_type=sa.Integer(),

@@ -832,3 +832,33 @@ async def exchange_oauth_token(session: AsyncSession, form: dict[str, str]) -> d
     if grant_type == "refresh_token":
         return await exchange_oauth_refresh_token(session, form)
     raise OAuthRequestError("unsupported_grant_type", "Unsupported grant_type.")
+
+
+async def accounts_with_live_oauth_access(session: AsyncSession, *, now: datetime) -> set[int]:
+    """Accounts that can still make an OAuth request right now (stage 260).
+
+    A grant on its own is not access: its access token expires, and the client
+    keeps working only while it can refresh. Checking the grant alone would
+    keep an account in the silence gauge long after its access died; checking
+    the access token alone would drop a client that is between refreshes.
+    """
+    live_access = (
+        select(OAuthGrant.account_id)
+        .join(OAuthAccessToken, OAuthAccessToken.grant_id == OAuthGrant.id)
+        .where(OAuthGrant.status == OAUTH_STATUS_ACTIVE)
+        .where(OAuthAccessToken.status == OAUTH_STATUS_ACTIVE)
+        .where(OAuthAccessToken.expires_at > now)
+    )
+    live_refresh = (
+        select(OAuthGrant.account_id)
+        .join(OAuthRefreshToken, OAuthRefreshToken.grant_id == OAuthGrant.id)
+        .where(OAuthGrant.status == OAUTH_STATUS_ACTIVE)
+        .where(OAuthRefreshToken.status == OAUTH_STATUS_ACTIVE)
+        .where(OAuthRefreshToken.expires_at > now)
+    )
+    accounts: set[int] = set()
+    for stmt in (live_access, live_refresh):
+        accounts |= {
+            int(account_id) for account_id in (await session.execute(stmt)).scalars().all()
+        }
+    return accounts

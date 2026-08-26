@@ -135,20 +135,21 @@ async def seeded_session(tmp_path: Path, sqlite_session_factory_builder, now_utc
         for offset_hours in (2, 5, 30, 50, 250, 500):
             # 2h, 5h → 24h; 30h, 50h → 7d; 250h, 500h → 30d
             s.add(TokenUsageLog(
+                account_id=t1.account_id,
                 bearer_token_id=t1.id, event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
                 event_at=now_utc - timedelta(hours=offset_hours),
             ))
         # Creation / revocation
-        s.add(TokenUsageLog(bearer_token_id=t4.id, event_type=TOKEN_EVENT_CREATED,
+        s.add(TokenUsageLog(account_id=t4.account_id, bearer_token_id=t4.id, event_type=TOKEN_EVENT_CREATED,
                             event_at=now_utc - timedelta(hours=12)))
-        s.add(TokenUsageLog(bearer_token_id=t5.id, event_type=TOKEN_EVENT_REVOKED,
+        s.add(TokenUsageLog(account_id=t5.account_id, bearer_token_id=t5.id, event_type=TOKEN_EVENT_REVOKED,
                             event_at=now_utc - timedelta(days=2)))
         # Failures
-        s.add(TokenUsageLog(bearer_token_id=t1.id, event_type=TOKEN_EVENT_AUTH_RATE_LIMITED,
+        s.add(TokenUsageLog(account_id=t1.account_id, bearer_token_id=t1.id, event_type=TOKEN_EVENT_AUTH_RATE_LIMITED,
                             event_at=now_utc - timedelta(hours=2)))
-        s.add(TokenUsageLog(bearer_token_id=t3.id, event_type=TOKEN_EVENT_AUTH_FAILED_IP_DENIED,
+        s.add(TokenUsageLog(account_id=t3.account_id, bearer_token_id=t3.id, event_type=TOKEN_EVENT_AUTH_FAILED_IP_DENIED,
                             event_at=now_utc - timedelta(days=3)))
-        s.add(TokenUsageLog(bearer_token_id=t2.id, event_type=TOKEN_EVENT_AUTH_FAILED_EXPIRED,
+        s.add(TokenUsageLog(account_id=t2.account_id, bearer_token_id=t2.id, event_type=TOKEN_EVENT_AUTH_FAILED_EXPIRED,
                             event_at=now_utc - timedelta(days=10)))
 
         await s.commit()
@@ -250,16 +251,19 @@ async def test_top_accounts_uses_30_day_window_not_lifetime_stat(seeded_session,
         old_stat.request_count = 10_000
         for offset_hours in range(7):
             session.add(TokenUsageLog(
+                account_id=new_token.account_id,
                 bearer_token_id=new_token.id,
                 event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
                 event_at=now_utc - timedelta(hours=offset_hours + 1),
             ))
         session.add(TokenUsageLog(
+            account_id=old_token.account_id,
             bearer_token_id=old_token.id,
             event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
             event_at=now_utc - timedelta(days=31),
         ))
         session.add(TokenUsageLog(
+            account_id=new_token.account_id,
             bearer_token_id=new_token.id,
             event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
             event_at=now_utc + timedelta(minutes=1),

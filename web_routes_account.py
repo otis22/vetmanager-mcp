@@ -29,13 +29,14 @@ from oauth_service import revoke_oauth_grant_family
 from tool_access_registry import PRESET_FULL_ACCESS, PRESET_REPORT_AI
 from web_html import display_access_label
 from storage import get_session_factory
+from datetime import datetime, timezone
+
 from auth_audit import TOKEN_EVENT_AUTH_SUCCEEDED
+from oauth_service import accounts_with_live_oauth_access
 from storage_models import (
     CONNECTION_STATUS_ACTIVE,
-    OAUTH_STATUS_ACTIVE,
     TOKEN_STATUS_ACTIVE,
     Account,
-    OAuthGrant,
     ServiceBearerToken,
     TokenUsageLog,
     TokenUsageStat,
@@ -178,13 +179,11 @@ async def _load_activation_state_for_polling(account_id: int) -> str | None:
         # Stage 260: a connected agent is access as much as an issued token is.
         # Judging by tokens alone told a user whose OAuth requests were already
         # arriving to go and issue their first token.
-        active_grant = await session.scalar(
-            select(OAuthGrant.id)
-            .where(OAuthGrant.account_id == account_id)
-            .where(OAuthGrant.status == OAUTH_STATUS_ACTIVE)
-            .limit(1)
+        live_oauth_accounts = await accounts_with_live_oauth_access(
+            session, now=datetime.now(timezone.utc)
         )
-        if not usable_token_ids and active_grant is None:
+        has_oauth_access = account_id in live_oauth_accounts
+        if not usable_token_ids and not has_oauth_access:
             return "needs_token"
 
         used_token = None

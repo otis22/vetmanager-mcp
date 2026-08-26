@@ -234,3 +234,42 @@ async def test_zombie_archiver_spares_oauth_only_account(session_factory, monkey
     monkeypatch.setattr(archive, "get_session_factory", lambda: session_factory)
     result = await archive.archive_zombie_accounts(apply=False, now=now)
     assert result["candidate_ids"] == []
+
+
+@pytest.mark.asyncio
+async def test_top_accounts_ranking_includes_oauth_only_account(session_factory):
+    """"Who makes the calls" must not mean "who makes them with a bearer token"."""
+    from scripts.product_metrics_report import _top_accounts_by_requests
+
+    now = datetime.now(timezone.utc)
+    async with session_factory() as session:
+        account_id = await _seed_oauth_only_account(
+            session, now=now, used_at=now - timedelta(hours=2)
+        )
+
+    async with session_factory() as session:
+        top = await _top_accounts_by_requests(session, now=now, top_n=5)
+
+    assert [row["account_id"] for row in top] == [account_id]
+    assert top[0]["request_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_silence_gauge_drops_account_whose_oauth_access_died(session_factory):
+    """A revoked grant must stop raising silence alerts: it cannot call at all."""
+    from storage_models import OAuthGrant as _Grant
+
+    now = datetime.now(timezone.utc)
+    async with session_factory() as session:
+        account_id = await _seed_oauth_only_account(
+            session, now=now, used_at=now - timedelta(days=5)
+        )
+        grant = await session.scalar(select(_Grant).where(_Grant.account_id == account_id))
+        grant.status = "revoked"
+        await session.commit()
+
+    async with session_factory() as session:
+        await scan_activation_telemetry(session, now=now)
+
+    gauges = snapshot_service_metrics()["account_last_request_age_hours"]
+    assert str(account_id) not in gauges

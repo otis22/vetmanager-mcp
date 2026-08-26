@@ -434,9 +434,9 @@ class TokenUsageLog(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    account_id: Mapped[int | None] = mapped_column(
+    account_id: Mapped[int] = mapped_column(
         ForeignKey("accounts.id"),
-        nullable=True,
+        nullable=False,
     )
     bearer_token_id: Mapped[int | None] = mapped_column(
         ForeignKey("service_bearer_tokens.id"),

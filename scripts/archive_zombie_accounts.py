@@ -72,17 +72,12 @@ def _candidate_id_select(*, now: datetime):
             or_(TokenUsageStat.request_count > 0, TokenUsageStat.last_used_at.isnot(None)),
         )
     )
-    # Stage 260: the journal names the account directly. Rows written before
-    # the column existed are still reachable through the bearer token, so both
-    # links are checked — a missed row here archives a live account.
+    # Stage 260: the journal names the account directly, on either channel.
+    # Going through the bearer token would drop OAuth rows and archive an
+    # account that has been calling all along.
     request_log_exists = exists(
-        select(TokenUsageLog.id)
-        .outerjoin(ServiceBearerToken, ServiceBearerToken.id == TokenUsageLog.bearer_token_id)
-        .where(
-            or_(
-                TokenUsageLog.account_id == Account.id,
-                ServiceBearerToken.account_id == Account.id,
-            ),
+        select(TokenUsageLog.id).where(
+            TokenUsageLog.account_id == Account.id,
             TokenUsageLog.event_type.in_(REQUEST_HISTORY_EVENTS),
         )
     )

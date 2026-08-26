@@ -71,6 +71,7 @@ async def test_archive_criteria_and_restore_contract(sqlite_session_factory_buil
         zombie = await _account(session, "zombie@example.com", age_days=60)
         zombie_token = await _token(session, zombie, "zombie")
         session.add(TokenUsageLog(
+            account_id=zombie.id,
             bearer_token_id=zombie_token.id,
             event_type=TOKEN_EVENT_CREATED,
             event_at=NOW - timedelta(days=50),
@@ -87,6 +88,7 @@ async def test_archive_criteria_and_restore_contract(sqlite_session_factory_buil
         failed = await _account(session, "failed@example.com", age_days=60)
         failed_token = await _token(session, failed, "failed")
         session.add(TokenUsageLog(
+            account_id=failed.id,
             bearer_token_id=failed_token.id,
             event_type=TOKEN_EVENT_AUTH_FAILED_DISABLED,
             event_at=NOW - timedelta(days=2),
@@ -179,6 +181,7 @@ async def test_archive_apply_rechecks_predicate_after_stale_candidate_select(
         ids = await original_candidate_ids(session, now=now)
         if ids:
             session.add(TokenUsageLog(
+                account_id=account_id,
                 bearer_token_id=token_id,
                 event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
                 event_at=now,
@@ -325,6 +328,7 @@ async def test_product_metrics_excludes_archived_accounts_but_keeps_token_signal
             last_used_at=NOW - timedelta(days=1),
         ))
         session.add(TokenUsageLog(
+            account_id=live.id,
             bearer_token_id=live_token.id,
             event_type=TOKEN_EVENT_AUTH_SUCCEEDED,
             event_at=NOW - timedelta(days=1),
