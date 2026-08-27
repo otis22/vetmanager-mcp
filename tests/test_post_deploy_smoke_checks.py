@@ -98,8 +98,7 @@ def test_post_deploy_smoke_checks_retries_until_service_is_ready() -> None:
             f"http://127.0.0.1:{port}",
             SMOKE_MAX_ATTEMPTS="10",
             SMOKE_SLEEP_SECONDS="0.1",
-            SMOKE_CONNECT_TIMEOUT_SECONDS="1",
-            SMOKE_CURL_MAX_TIME_SECONDS="1",
+            SMOKE_REQUEST_MAX_TIME_SECONDS="1",
         )
     finally:
         httpd = server_holder.get("httpd")
@@ -118,8 +117,7 @@ def test_post_deploy_smoke_checks_fail_with_attempt_context() -> None:
         f"http://127.0.0.1:{port}",
         SMOKE_MAX_ATTEMPTS="2",
         SMOKE_SLEEP_SECONDS="0.1",
-        SMOKE_CONNECT_TIMEOUT_SECONDS="1",
-        SMOKE_CURL_MAX_TIME_SECONDS="1",
+        SMOKE_REQUEST_MAX_TIME_SECONDS="1",
     )
 
     combined_output = result.stdout + result.stderr
@@ -143,8 +141,7 @@ def test_post_deploy_smoke_checks_sends_metrics_bearer_token() -> None:
             METRICS_AUTH_TOKEN="secret-metrics-token",
             SMOKE_MAX_ATTEMPTS="2",
             SMOKE_SLEEP_SECONDS="0.1",
-            SMOKE_CONNECT_TIMEOUT_SECONDS="1",
-            SMOKE_CURL_MAX_TIME_SECONDS="1",
+            SMOKE_REQUEST_MAX_TIME_SECONDS="1",
         )
     finally:
         _HealthyHandler.expected_metrics_token = None
@@ -168,8 +165,7 @@ def test_post_deploy_smoke_checks_fails_when_metrics_token_rejected() -> None:
             METRICS_AUTH_TOKEN="wrong-token",
             SMOKE_MAX_ATTEMPTS="1",
             SMOKE_SLEEP_SECONDS="0.1",
-            SMOKE_CONNECT_TIMEOUT_SECONDS="1",
-            SMOKE_CURL_MAX_TIME_SECONDS="1",
+            SMOKE_REQUEST_MAX_TIME_SECONDS="1",
         )
     finally:
         _HealthyHandler.expected_metrics_token = None
@@ -181,3 +177,97 @@ def test_post_deploy_smoke_checks_fails_when_metrics_token_rejected() -> None:
     assert result.returncode != 0
     assert "metrics failed after 1 attempts" in combined_output
     assert "http_status=403" in combined_output
+
+
+class _RedirectingHandler(_HealthyHandler):
+    """/healthz answers 302 towards a page that is perfectly healthy."""
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path == "/healthz":
+            self.send_response(302)
+            self.send_header("Location", "/healthz-ok")
+            self.end_headers()
+            return
+        if self.path == "/healthz-ok":
+            body = b'{"status":"ok"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        super().do_GET()
+
+
+class _DribblingHandler(_HealthyHandler):
+    """Answers /healthz correctly, one byte at a time, forever slowly."""
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path == "/healthz":
+            body = b'{"status":"ok"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body) + 200))
+            self.end_headers()
+            for chunk in body:
+                self.wfile.write(bytes([chunk]))
+                self.wfile.flush()
+                time.sleep(0.6)
+            return
+        super().do_GET()
+
+
+def _serve(handler_class, port: int):
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), handler_class)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    return httpd, thread
+
+
+def test_a_redirect_is_an_answer_not_a_step_towards_one() -> None:
+    """Stage 267: curl ran without -L, so a 3xx failed the check.
+
+    A redirect that lands on a healthy page would otherwise hide a broken route.
+    """
+    port = _get_free_port()
+    httpd, thread = _serve(_RedirectingHandler, port)
+    try:
+        result = _run_smoke_script(
+            f"http://127.0.0.1:{port}",
+            SMOKE_MAX_ATTEMPTS="2",
+            SMOKE_SLEEP_SECONDS="0.1",
+            SMOKE_REQUEST_MAX_TIME_SECONDS="2",
+        )
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=2)
+
+    assert result.returncode != 0
+    assert "http_status=302" in result.stdout + result.stderr
+
+
+def test_a_slow_dribble_hits_the_deadline_for_the_whole_request() -> None:
+    """Stage 267: `urlopen(timeout=)` bounds one socket read, not the transfer.
+
+    Measured before the fix: a body sent one byte per 0.6s passed a one-second
+    limit after ten seconds, because every single read was fast enough.
+    """
+    port = _get_free_port()
+    httpd, thread = _serve(_DribblingHandler, port)
+    started = time.monotonic()
+    try:
+        result = _run_smoke_script(
+            f"http://127.0.0.1:{port}",
+            SMOKE_MAX_ATTEMPTS="1",
+            SMOKE_SLEEP_SECONDS="0.1",
+            SMOKE_REQUEST_MAX_TIME_SECONDS="1",
+        )
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=2)
+    elapsed = time.monotonic() - started
+
+    assert result.returncode != 0
+    assert elapsed < 8, f"the deadline did not bound the transfer: {elapsed:.1f}s"

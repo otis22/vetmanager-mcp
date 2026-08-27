@@ -52,7 +52,7 @@ Operational helpers:
   `/readyz`, `/metrics` и `/mcp`.
   Поддерживает retry/grace knobs через env:
   `SMOKE_MAX_ATTEMPTS`, `SMOKE_SLEEP_SECONDS`,
-  `SMOKE_CONNECT_TIMEOUT_SECONDS`, `SMOKE_CURL_MAX_TIME_SECONDS`.
+  `SMOKE_REQUEST_MAX_TIME_SECONDS` (дедлайн на весь запрос, как `--max-time`).
   При падении deploy script дополнительно печатает `docker compose ps` и tail
   container logs для fast triage.
   Deploy path также принудительно выравнивает `UID`/`GID` для `docker compose`

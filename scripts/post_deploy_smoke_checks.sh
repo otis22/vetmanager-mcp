@@ -10,7 +10,7 @@ BASE_URL="${1:-http://127.0.0.1:${PORT:-8000}}"
 PUBLIC_DOMAIN="${2:-}"
 SMOKE_MAX_ATTEMPTS="${SMOKE_MAX_ATTEMPTS:-10}"
 SMOKE_SLEEP_SECONDS="${SMOKE_SLEEP_SECONDS:-1}"
-SMOKE_REQUEST_MAX_TIME_SECONDS="${SMOKE_REQUEST_MAX_TIME_SECONDS:-${SMOKE_CURL_MAX_TIME_SECONDS:-5}}"
+SMOKE_REQUEST_MAX_TIME_SECONDS="${SMOKE_REQUEST_MAX_TIME_SECONDS:-5}"
 TMP_DIR="$(mktemp -d)"
 
 cleanup() {
@@ -25,9 +25,25 @@ preview_text() {
 # and this script runs inside that image in tests. Python is present in both
 # places, so one implementation serves the host and the container.
 SMOKE_REQUEST_PY='
-import sys, urllib.error, urllib.request
+import os, sys, threading, urllib.error, urllib.request
 
 url, max_time, body_file, *rest = sys.argv[1:]
+deadline = float(max_time)
+
+
+def give_up():
+    # curl --max-time bounds the whole transfer. urlopen(timeout=...) bounds one
+    # socket operation, so a peer dribbling a byte at a time would keep it alive
+    # indefinitely — measured at ten seconds against a one-second limit.
+    print("TimeoutError: exceeded %ss for the whole request" % deadline, file=sys.stderr)
+    sys.stderr.flush()
+    os._exit(7)
+
+
+watchdog = threading.Timer(deadline, give_up)
+watchdog.daemon = True
+watchdog.start()
+
 headers = {}
 index = 0
 while index < len(rest):
@@ -38,9 +54,17 @@ while index < len(rest):
     else:
         index += 1
 
+
+class NoRedirects(urllib.request.HTTPRedirectHandler):
+    # curl ran without -L: a 3xx is the answer, not a step towards one. Following
+    # it would let a redirect to a healthy page hide a broken route.
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 try:
-    with urllib.request.urlopen(
-        urllib.request.Request(url, headers=headers), timeout=float(max_time)
+    with urllib.request.build_opener(NoRedirects).open(
+        urllib.request.Request(url, headers=headers), timeout=deadline
     ) as response:
         body, status = response.read(), response.status
 except urllib.error.HTTPError as exc:
@@ -49,6 +73,7 @@ except Exception as exc:
     print("%s: %s" % (type(exc).__name__, exc), file=sys.stderr)
     sys.exit(7)
 
+watchdog.cancel()
 with open(body_file, "wb") as handle:
     handle.write(body)
 print(status)
