@@ -127,7 +127,7 @@ def test_post_deploy_smoke_checks_fail_with_attempt_context() -> None:
     assert result.returncode != 0
     assert "healthz failed after 2 attempts" in combined_output
     assert f"http://127.0.0.1:{port}/healthz" in combined_output
-    assert "curl_exit=" in combined_output
+    assert "request_exit=" in combined_output
 
 
 def test_post_deploy_smoke_checks_sends_metrics_bearer_token() -> None:

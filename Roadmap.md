@@ -5046,4 +5046,7 @@ install curl`: с этого VDS **IPv4-адреса Fastly не отвечаю�
 - 267.1 Healthcheck на `urllib` вместо `curl`, шаг `apt` убран. — `done`
 - 267.2 Проверены обе ветки healthcheck: код 0 при 200 и ненулевой, когда
   сервис не отвечает. — `done`
+- 267.3 `post_deploy_smoke_checks.sh` тоже ходил через `curl`, а гоняется он
+  внутри того же образа. Переведён на Python; поле в диагностике
+  переименовано в `request_exit`. — `done`
 

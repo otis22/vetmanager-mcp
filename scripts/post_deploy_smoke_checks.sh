@@ -10,8 +10,7 @@ BASE_URL="${1:-http://127.0.0.1:${PORT:-8000}}"
 PUBLIC_DOMAIN="${2:-}"
 SMOKE_MAX_ATTEMPTS="${SMOKE_MAX_ATTEMPTS:-10}"
 SMOKE_SLEEP_SECONDS="${SMOKE_SLEEP_SECONDS:-1}"
-SMOKE_CONNECT_TIMEOUT_SECONDS="${SMOKE_CONNECT_TIMEOUT_SECONDS:-2}"
-SMOKE_CURL_MAX_TIME_SECONDS="${SMOKE_CURL_MAX_TIME_SECONDS:-5}"
+SMOKE_REQUEST_MAX_TIME_SECONDS="${SMOKE_REQUEST_MAX_TIME_SECONDS:-${SMOKE_CURL_MAX_TIME_SECONDS:-5}}"
 TMP_DIR="$(mktemp -d)"
 
 cleanup() {
@@ -22,36 +21,67 @@ preview_text() {
   printf '%s' "$1" | tr '\n' ' ' | head -c 200
 }
 
+# No curl on purpose: since stage 267 the production image does not carry it,
+# and this script runs inside that image in tests. Python is present in both
+# places, so one implementation serves the host and the container.
+SMOKE_REQUEST_PY='
+import sys, urllib.error, urllib.request
+
+url, max_time, body_file, *rest = sys.argv[1:]
+headers = {}
+index = 0
+while index < len(rest):
+    if rest[index] == "-H" and index + 1 < len(rest):
+        name, _, value = rest[index + 1].partition(":")
+        headers[name.strip()] = value.strip()
+        index += 2
+    else:
+        index += 1
+
+try:
+    with urllib.request.urlopen(
+        urllib.request.Request(url, headers=headers), timeout=float(max_time)
+    ) as response:
+        body, status = response.read(), response.status
+except urllib.error.HTTPError as exc:
+    body, status = exc.read(), exc.code
+except Exception as exc:
+    print("%s: %s" % (type(exc).__name__, exc), file=sys.stderr)
+    sys.exit(7)
+
+with open(body_file, "wb") as handle:
+    handle.write(body)
+print(status)
+'
+
 perform_request() {
   local url="$1"
   shift
   local body_file="${TMP_DIR}/body"
-  local status_file="${TMP_DIR}/status"
   local error_file="${TMP_DIR}/error"
 
   : > "${body_file}"
-  : > "${status_file}"
   : > "${error_file}"
 
-  if curl -sS \
-    --connect-timeout "${SMOKE_CONNECT_TIMEOUT_SECONDS}" \
-    --max-time "${SMOKE_CURL_MAX_TIME_SECONDS}" \
-    -o "${body_file}" \
-    -w '%{http_code}' \
-    "$@" \
-    "${url}" > "${status_file}" 2> "${error_file}"; then
-    SMOKE_LAST_CURL_EXIT=0
+  local status
+  if status="$(python3 -c "${SMOKE_REQUEST_PY}" \
+    "${url}" \
+    "${SMOKE_REQUEST_MAX_TIME_SECONDS}" \
+    "${body_file}" \
+    "$@" 2> "${error_file}")"; then
+    SMOKE_LAST_REQUEST_EXIT=0
   else
-    SMOKE_LAST_CURL_EXIT=$?
+    SMOKE_LAST_REQUEST_EXIT=$?
+    status=""
   fi
 
-  SMOKE_LAST_STATUS="$(cat "${status_file}")"
+  SMOKE_LAST_STATUS="${status}"
   SMOKE_LAST_BODY="$(cat "${body_file}")"
   SMOKE_LAST_ERROR="$(cat "${error_file}")"
 }
 
 health_is_ok() {
-  [ "${SMOKE_LAST_CURL_EXIT}" = "0" ] || return 1
+  [ "${SMOKE_LAST_REQUEST_EXIT}" = "0" ] || return 1
   [ "${SMOKE_LAST_STATUS}" = "200" ] || return 1
   case "${SMOKE_LAST_BODY}" in
     *'"status":"ok"'*|*'"status": "ok"'*) return 0 ;;
@@ -60,12 +90,12 @@ health_is_ok() {
 }
 
 ready_is_ok() {
-  [ "${SMOKE_LAST_CURL_EXIT}" = "0" ] || return 1
+  [ "${SMOKE_LAST_REQUEST_EXIT}" = "0" ] || return 1
   [ "${SMOKE_LAST_STATUS}" = "200" ]
 }
 
 metrics_is_ok() {
-  [ "${SMOKE_LAST_CURL_EXIT}" = "0" ] || return 1
+  [ "${SMOKE_LAST_REQUEST_EXIT}" = "0" ] || return 1
   [ "${SMOKE_LAST_STATUS}" = "200" ] || return 1
   case "${SMOKE_LAST_BODY}" in
     *'vetmanager_http_requests_total'*) return 0 ;;
@@ -74,7 +104,7 @@ metrics_is_ok() {
 }
 
 mcp_status_is_ok() {
-  [ "${SMOKE_LAST_CURL_EXIT}" = "0" ] || return 1
+  [ "${SMOKE_LAST_REQUEST_EXIT}" = "0" ] || return 1
   [ "${SMOKE_LAST_STATUS}" -ge 200 ] && [ "${SMOKE_LAST_STATUS}" -lt 500 ]
 }
 
@@ -91,7 +121,7 @@ retry_request() {
       return 0
     fi
 
-    echo "--> ${label} attempt ${attempt}/${SMOKE_MAX_ATTEMPTS} failed: url=${url} curl_exit=${SMOKE_LAST_CURL_EXIT} http_status=${SMOKE_LAST_STATUS:-000} body=$(preview_text "${SMOKE_LAST_BODY}") error=$(preview_text "${SMOKE_LAST_ERROR}")"
+    echo "--> ${label} attempt ${attempt}/${SMOKE_MAX_ATTEMPTS} failed: url=${url} request_exit=${SMOKE_LAST_REQUEST_EXIT} http_status=${SMOKE_LAST_STATUS:-000} body=$(preview_text "${SMOKE_LAST_BODY}") error=$(preview_text "${SMOKE_LAST_ERROR}")"
 
     if [ "${attempt}" -lt "${SMOKE_MAX_ATTEMPTS}" ]; then
       sleep "${SMOKE_SLEEP_SECONDS}"
@@ -99,7 +129,7 @@ retry_request() {
     attempt=$((attempt + 1))
   done
 
-  echo "ERROR: ${label} failed after ${SMOKE_MAX_ATTEMPTS} attempts: url=${url} curl_exit=${SMOKE_LAST_CURL_EXIT} http_status=${SMOKE_LAST_STATUS:-000} body=$(preview_text "${SMOKE_LAST_BODY}") error=$(preview_text "${SMOKE_LAST_ERROR}")"
+  echo "ERROR: ${label} failed after ${SMOKE_MAX_ATTEMPTS} attempts: url=${url} request_exit=${SMOKE_LAST_REQUEST_EXIT} http_status=${SMOKE_LAST_STATUS:-000} body=$(preview_text "${SMOKE_LAST_BODY}") error=$(preview_text "${SMOKE_LAST_ERROR}")"
   return 1
 }
 
