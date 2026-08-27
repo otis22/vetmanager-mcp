@@ -7,6 +7,7 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 from mcp.types import CallToolRequestParams
 
 from error_tracking import capture_tool_failure, mark_tool_error_as_handled
+from exceptions import ToolInputError
 from filters import FilterPropertyValidationError
 from runtime_auth import get_current_runtime_credentials
 
@@ -32,6 +33,11 @@ class ToolErrorTrackingMiddleware(Middleware):
             return await call_next(context)
         except ToolError as exc:
             mark_tool_error_as_handled(exc)
+            # Stage 265.6: the caller's own mistake is not a failure of this
+            # service. Live evidence 27.08.2026 — PYTHON-Y is an open issue
+            # reading `ToolInputError: Invalid feedback severity.`
+            if isinstance(exc, ToolInputError):
+                raise
             if not _exception_chain_contains(exc, FilterPropertyValidationError):
                 try:
                     credentials = get_current_runtime_credentials()

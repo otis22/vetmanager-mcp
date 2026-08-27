@@ -11,6 +11,7 @@ from fastmcp.exceptions import ToolError
 import pytest
 from sqlalchemy import select
 
+from exceptions import ToolInputError
 import agent_feedback_service as feedback
 from storage_models import AgentFeedbackReport, KnownIssue
 from tests.runtime_factories import make_runtime_credentials
@@ -370,7 +371,7 @@ async def test_tool_error_gets_report_hint_but_scope_denial_and_depersonalizatio
     # behaviour depended on phrasing — and real validation messages
     # ("clinic_id must be a positive integer") never matched that prefix at all.
     async def invalid_input_tool():
-        raise feedback.ToolInputError("Invalid date_from format.")
+        raise ToolInputError("Invalid date_from format.")
 
     wrapped = tools._wrap_tool_with_depersonalization(invalid_input_tool, tool_name="get_clients")
     with pytest.raises(ToolError) as validation_error:

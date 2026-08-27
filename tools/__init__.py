@@ -5,7 +5,7 @@ from functools import wraps
 
 import depersonalization
 from agent_feedback_service import augment_tool_error, should_skip_report_hint
-from exceptions import AuthError
+from exceptions import AuthError, reportable_error
 from privacy_utils import redact_sensitive_output_fields, redact_tool_error
 from runtime_auth import use_runtime_credentials
 from service_metrics import record_sanitizer_failure
@@ -61,7 +61,7 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
                 return depersonalization.sanitize_tool_result(result)
             except Exception:
                 record_sanitizer_failure()
-                raise ToolError("Depersonalization failed.") from None
+                raise reportable_error("Depersonalization failed.") from None
 
     _wrapped.__signature__ = inspect.signature(tool_func)
     return _wrapped

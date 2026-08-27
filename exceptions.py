@@ -1,3 +1,6 @@
+from fastmcp.exceptions import ToolError
+
+
 class VetmanagerError(Exception):
     """Base exception for all Vetmanager API errors."""
 
@@ -54,3 +57,24 @@ class VetmanagerUpstreamUnavailable(VetmanagerError):
     def __init__(self, message: str, *, retry_after_seconds: float | None = None):
         super().__init__(message, status_code=503)
         self.retry_after_seconds = retry_after_seconds
+
+
+class ToolInputError(ToolError):
+    """The caller supplied something invalid — not a defect worth reporting.
+
+    Stage 265.5: this distinction used to live in the wording of the message,
+    which meant it broke the moment somebody improved the wording. It stays a
+    ToolError so every existing handler keeps catching it.
+    """
+
+
+def reportable_error(*args: object) -> ToolError:
+    """A failure the agent is invited to report: upstream, its payload, or us.
+
+    Stage 265.6: inside `tools/` the pair `ToolInputError` / `reportable_error`
+    replaces a bare `ToolError`, so every refusal says in its own line whose
+    mistake it was. Returns the exact `ToolError` class on purpose — the
+    privacy layer redacts by exact type (`type(exc) is ToolError`), and a
+    subclass would quietly walk out from under it.
+    """
+    return ToolError(*args)

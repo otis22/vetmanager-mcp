@@ -7,7 +7,7 @@ from fastmcp.exceptions import ToolError
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, like as _filter_like
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam, validate_list_params
-from exceptions import VetmanagerError
+from exceptions import VetmanagerError, ToolInputError, reportable_error
 from vetmanager_client import VetmanagerClient
 
 
@@ -85,7 +85,7 @@ async def _vm_get(path: str, *, params: dict[str, Any] | None = None) -> dict:
     try:
         return await VetmanagerClient().get(path, params=params)
     except VetmanagerError as exc:
-        raise ToolError(str(exc)) from None
+        raise reportable_error(str(exc)) from None
 
 
 async def _fetch_good_tags(
@@ -152,7 +152,7 @@ def register(mcp: FastMCP) -> None:
         """
         validate_list_params(limit, offset)
         if clinic_id <= 0:
-            raise ToolError("clinic_id must be a positive integer.")
+            raise ToolInputError("clinic_id must be a positive integer.")
 
         accepted: list[dict] = []
         warnings: list[str] = []
@@ -289,9 +289,9 @@ def register(mcp: FastMCP) -> None:
             clinic_id: Clinic ID used to filter sale parameters in positions.
         """
         if tag_id <= 0:
-            raise ToolError("tag_id must be a positive integer.")
+            raise ToolInputError("tag_id must be a positive integer.")
         if clinic_id <= 0:
-            raise ToolError("clinic_id must be a positive integer.")
+            raise ToolInputError("clinic_id must be a positive integer.")
         filters = [{"property": "id", "value": tag_id, "operator": "="}]
         payload = await _vm_get(
             "/rest/api/goodTag",
@@ -304,7 +304,7 @@ def register(mcp: FastMCP) -> None:
         )
         rows = _data_rows(payload, "goodTag")
         if not rows:
-            raise ToolError(f"good combination tag_id={tag_id} not found.")
+            raise ToolInputError(f"good combination tag_id={tag_id} not found.")
         combination = dict(rows[0])
         combination["is_template"] = _normalize_is_template(combination.get("is_template"))
         return {"success": True, "message": "", "data": {"combination": combination}}
@@ -323,11 +323,11 @@ def register(mcp: FastMCP) -> None:
             clinic_id: Clinic ID for store, price, and availability context.
         """
         if tag_id <= 0:
-            raise ToolError("tag_id must be a positive integer.")
+            raise ToolInputError("tag_id must be a positive integer.")
         if quantity <= 0:
-            raise ToolError("quantity must be greater than 0.")
+            raise ToolInputError("quantity must be greater than 0.")
         if clinic_id <= 0:
-            raise ToolError("clinic_id must be a positive integer.")
+            raise ToolInputError("clinic_id must be a positive integer.")
         return await _vm_get(
             "/rest/api/good/checkProductData",
             params={

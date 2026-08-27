@@ -12,7 +12,8 @@ from __future__ import annotations
 import pytest
 from fastmcp.exceptions import ToolError
 
-from agent_feedback_service import ToolInputError, should_skip_report_hint
+from agent_feedback_service import should_skip_report_hint
+from exceptions import ToolInputError
 
 
 def test_input_error_is_skipped_whatever_it_says():

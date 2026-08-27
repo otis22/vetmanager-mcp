@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from exceptions import AuthError, VetmanagerError
+from exceptions import AuthError, ToolInputError, VetmanagerError, reportable_error
 from observability_logging import RUNTIME_LOGGER
 from prompts import get_report_ai_prompt_helper_text
 from tool_access_registry import SCOPE_DENIED_ERROR_CODE
@@ -585,34 +585,50 @@ def _annotate_report_ai_data_payload(payload: dict) -> dict:
 def _validate_intent_text(intent_text: str) -> str:
     intent = (intent_text or "").strip()
     if not intent:
-        raise ToolError("intent_text must be non-empty.")
+        raise ToolInputError("intent_text must be non-empty.")
     if len(intent) > INTENT_MAX_LENGTH:
-        raise ToolError(f"intent_text must be no longer than {INTENT_MAX_LENGTH} characters.")
+        raise ToolInputError(f"intent_text must be no longer than {INTENT_MAX_LENGTH} characters.")
     return intent
 
 
 def _validate_report_title(title: str) -> str:
     value = (title or "").strip()
     if len(value) < 12 or value.lower() in _GENERIC_REPORT_TITLES:
-        raise ToolError(
+        raise ToolInputError(
             "title must be meaningful: include the report purpose and period when applicable."
         )
     return value
 
 
 def _tool_error_from_vm(exc: VetmanagerError) -> ToolError:
-    if exc.error_code:
-        return ToolError(str(exc))
-    return ToolError(str(exc))
+    return reportable_error(str(exc))
 
 
 def _validate_positive_int(name: str, value: int) -> int:
     try:
         number = int(value)
     except (TypeError, ValueError):
-        raise ToolError(f"{name} must be a positive integer.") from None
+        raise ToolInputError(f"{name} must be a positive integer.") from None
     if number <= 0:
-        raise ToolError(f"{name} must be a positive integer.")
+        raise ToolInputError(f"{name} must be a positive integer.")
+    return number
+
+
+def _upstream_positive_int(name: str, value) -> int:
+    """Same check, but the value came from Vetmanager, not from the caller.
+
+    Stage 265.6: `_validate_positive_int` now blames the caller by type. Run it
+    on a payload field and a broken upstream answer would be reported as the
+    agent's own typo.
+    """
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = 0
+    if number <= 0:
+        raise reportable_error(
+            f"Report AI job carries an unusable {name}; this job cannot be exported."
+        )
     return number
 
 
@@ -624,7 +640,7 @@ def _report_filter_params(report_id: int, filter_json: str | None = None) -> dic
     try:
         json.loads(filter_value)
     except json.JSONDecodeError as exc:
-        raise ToolError("filter_json must be valid JSON when provided.") from exc
+        raise ToolInputError("filter_json must be valid JSON when provided.") from exc
     params["filter"] = filter_value
     return params
 
@@ -649,22 +665,22 @@ def _extract_report(payload: dict) -> dict:
 
 def _ensure_start_report_payload(payload: dict) -> dict:
     if payload.get("success") is False:
-        raise ToolError("Starting report export failed.")
+        raise reportable_error("Starting report export failed.")
     report = _extract_report(payload)
     if not report.get("report_file_id"):
-        raise ToolError("Starting report export failed: report_file_id is missing.")
+        raise reportable_error("Starting report export failed: report_file_id is missing.")
     return payload
 
 
 def _ensure_report_file_payload(payload: dict) -> dict:
     if payload.get("success") is False:
-        raise ToolError("Getting report export file failed.")
+        raise reportable_error("Getting report export file failed.")
     report = _extract_report(payload)
     if not any(
         report.get(name)
         for name in ("html_file", "csv_file", "csv_semicolon_file", "xlsx_file")
     ):
-        raise ToolError("Getting report export file failed: export file fields are missing.")
+        raise reportable_error("Getting report export file failed: export file fields are missing.")
     return payload
 
 
@@ -680,32 +696,32 @@ def _safe_export_error(
     code = f" ({exc.error_code})" if exc.error_code else ""
     lowered = str(exc).lower()
     if retry_on_conflict and _is_retryable_export_file_error(exc):
-        return ToolError(
+        return reportable_error(
             "Report export is not ready yet; call get_report_export_file again after a delay."
         )
     if exc.status_code == 403:
         if "report creating in progress" in lowered:
-            return ToolError(
+            return reportable_error(
                 "Report export is temporarily blocked by Vetmanager's tenant-wide REST export guard; "
                 "wait 30 minutes before one new StartReport attempt. Do not retry "
                 "automatically, immediately, or in parallel."
             )
         if "can not run a report more than 10 minutes" in lowered:
-            return ToolError(
+            return reportable_error(
                 "Report export is temporarily limited by Vetmanager's tenant-wide REST export guard; "
                 "wait 30 minutes before one new StartReport attempt. Do not retry "
                 "automatically, immediately, or in parallel."
             )
         if "not accessible for rest" in lowered:
-            return ToolError(
+            return reportable_error(
                 "Report is not REST-exportable: Vetmanager denied StartReport for this report_id."
             )
-        return ToolError(
+        return reportable_error(
             "Report export was denied or temporarily limited by Vetmanager (HTTP 403). "
             "Retry only with bounded attempts; if it keeps failing, treat this report_id "
             "as not currently exportable."
         )
-    return ToolError(f"{action} failed{status}{code}.")
+    return reportable_error(f"{action} failed{status}{code}.")
 
 
 def _is_retryable_export_file_error(exc: VetmanagerError) -> bool:
@@ -955,7 +971,7 @@ def register(mcp: FastMCP) -> None:
                             "wait_limit_seconds": REPORT_AI_EXPORT_WAIT_LIMIT_SECONDS,
                         },
                     )
-                    raise ToolError(
+                    raise reportable_error(
                         "MCP observed this export still not ready for 30 minutes. Stop automatic "
                         "polling and do not start a new export: this same build may still finish. "
                         "You may re-check this same report_file_id later; only choose a narrower "
@@ -991,13 +1007,13 @@ def register(mcp: FastMCP) -> None:
         job = _extract_job(job_payload)
         status = str(job.get("status") or "")
         if status not in {"saved", "existing_report_matched"}:
-            raise ToolError(
+            raise ToolInputError(
                 "Report AI job must be saved or existing_report_matched before export."
             )
         report_id = job.get("report_id")
         if not report_id:
-            raise ToolError("Report AI job does not include report_id for export.")
-        safe_report_id = _validate_positive_int("report_id", report_id)
+            raise reportable_error("Report AI job does not include report_id for export.")
+        safe_report_id = _upstream_positive_int("report_id", report_id)
         return await _start_report_export(
             safe_report_id, filter_json, tool_name="get_report_ai_job_export"
         )

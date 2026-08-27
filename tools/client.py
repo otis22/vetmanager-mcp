@@ -2,9 +2,8 @@ import asyncio
 from decimal import Decimal, InvalidOperation
 
 from fastmcp import FastMCP
-from fastmcp.exceptions import ToolError
 
-from exceptions import NotFoundError, VetmanagerError
+from exceptions import NotFoundError, ToolInputError, VetmanagerError, reportable_error
 from filters import (
     FILTER_FIELDS_BY_ENTITY,
     eq as _filter_eq,
@@ -120,13 +119,13 @@ def _personal_account_link_not_found() -> dict:
 
 def _normalize_personal_account_link_payload(payload) -> dict:
     if not isinstance(payload, dict) or not _boolish_true(payload.get("success")):
-        raise ToolError(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR)
+        raise reportable_error(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR)
     data = payload.get("data")
     if not isinstance(data, dict):
-        raise ToolError(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR)
+        raise reportable_error(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR)
     vm_link = data.get("vetmanagerLink")
     if not isinstance(vm_link, dict):
-        raise ToolError(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR)
+        raise reportable_error(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR)
 
     link = vm_link.get("personal_link")
     if _boolish_true(vm_link.get("success")) and isinstance(link, str) and link:
@@ -142,7 +141,7 @@ def _normalize_personal_account_link_payload(payload) -> dict:
         }
     if _boolish_false(vm_link.get("success")) or not link:
         return _personal_account_link_not_found()
-    raise ToolError(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR)
+    raise reportable_error(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR)
 
 
 def _extract_clients(resp: dict) -> list[dict]:
@@ -557,7 +556,7 @@ def register(mcp: FastMCP) -> None:
         """
         phone_digits = normalize_phone_digits(phone)
         if len(phone_digits) < 7:
-            raise ToolError("phone must contain at least 7 digits.")
+            raise ToolInputError("phone must contain at least 7 digits.")
         try:
             payload = await VetmanagerClient().get(
                 f"/rest/api/VmLink/personalAccountLinkByPhone/{phone_digits}"
@@ -565,7 +564,7 @@ def register(mcp: FastMCP) -> None:
         except NotFoundError:
             return _personal_account_link_not_found()
         except VetmanagerError:
-            raise ToolError(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR) from None
+            raise reportable_error(_PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR) from None
         return _normalize_personal_account_link_payload(payload)
 
     @mcp.tool

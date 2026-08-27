@@ -10,6 +10,7 @@ from filters import (
     in_ as _filter_in,
     lt as _filter_lt,
 )
+from exceptions import reportable_error
 from tools.crud_helpers import crud_get_by_id, crud_create, crud_update, unwrap_single_record
 from validators import LimitParam, parse_date_param
 from vetmanager_client import VetmanagerClient, VetmanagerError
@@ -32,7 +33,7 @@ _DIAGNOSES_TYPE_ERROR = "Cannot assign int to property Entity\\MedicalCard\\Diag
 def _medical_card_update_error(exc: VetmanagerError) -> ToolError | None:
     """Translate the confirmed upstream Diagnoses type defect, and nothing else."""
     if exc.status_code == 500 and _DIAGNOSES_TYPE_ERROR in str(exc):
-        return ToolError(
+        return reportable_error(
             "Vetmanager did not update this medical card: its current diagnosis triggers "
             "a known upstream compatibility error. The record was not saved; do not clear "
             "the diagnosis to retry. Contact Vetmanager support or retry after their fix."

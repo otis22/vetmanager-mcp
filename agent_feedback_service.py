@@ -15,19 +15,10 @@ import re
 from typing import Any
 
 from fastmcp.exceptions import ToolError
-
-
-class ToolInputError(ToolError):
-    """The caller supplied something invalid — not a defect worth reporting.
-
-    Stage 265.5: this distinction used to live in the wording of the message,
-    which meant it broke the moment somebody improved the wording. It stays a
-    ToolError so every existing handler keeps catching it.
-    """
-
 from sqlalchemy import false, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from exceptions import ToolInputError
 from observability_logging import RUNTIME_LOGGER
 from storage import get_session_factory
 from storage_models import (
