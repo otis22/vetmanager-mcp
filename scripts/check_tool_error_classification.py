@@ -93,15 +93,28 @@ class _Scanner(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> None:
         # `_ERROR = ToolError` — the class keeps travelling under a new name.
-        if isinstance(node.value, ast.Name) and node.value.id in self.class_names:
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    self.class_names.add(target.id)
-        elif self._is_class_attribute(node.value):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    self.class_names.add(target.id)
+        self._bind(node.targets, node.value)
         self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        # `_ERROR: type[Exception] = ToolError` — the same move, typed.
+        if node.value is not None:
+            self._bind([node.target], node.value)
+        self.generic_visit(node)
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self._bind([node.target], node.value)
+        self.generic_visit(node)
+
+    def _bind(self, targets, value: ast.expr) -> None:
+        carries_class = (
+            isinstance(value, ast.Name) and value.id in self.class_names
+        ) or self._is_class_attribute(value)
+        if not carries_class:
+            return
+        for target in targets:
+            if isinstance(target, ast.Name):
+                self.class_names.add(target.id)
 
     def visit_Call(self, node: ast.Call) -> None:
         how = self._how_it_reaches_the_class(node.func)

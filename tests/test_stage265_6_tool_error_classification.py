@@ -108,6 +108,22 @@ def check(value):
     if value <= 0:
         raise fastmcp_exceptions.ToolError("value must be a positive integer.")
 """,
+    "rebound_with_a_type_annotation": """
+from fastmcp.exceptions import ToolError
+
+_ERROR: type[Exception] = ToolError
+
+def check(value):
+    if value <= 0:
+        raise _ERROR("value must be a positive integer.")
+""",
+    "rebound_by_a_walrus": """
+from fastmcp.exceptions import ToolError
+
+def check(value):
+    if value <= 0 and (error_cls := ToolError):
+        raise error_cls("value must be a positive integer.")
+""",
     "built_inside_a_comprehension": """
 from fastmcp.exceptions import ToolError
 
