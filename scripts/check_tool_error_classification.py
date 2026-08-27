@@ -127,9 +127,12 @@ class _Scanner(ast.NodeVisitor):
         carries_class = (
             isinstance(value, ast.Name) and value.id in self.class_names
         ) or self._is_class_attribute(value)
-        carries_builtin = isinstance(value, ast.Name) and (
-            value.id == FORBIDDEN_BUILTIN or value.id in self.builtin_names
-        )
+        carries_builtin = (
+            isinstance(value, ast.Name)
+            and (value.id == FORBIDDEN_BUILTIN or value.id in self.builtin_names)
+        ) or self._getattr_name(value) == FORBIDDEN_BUILTIN
+        if self._getattr_name(value) == FORBIDDEN_CLASS:
+            carries_class = True
         if not (carries_class or carries_builtin):
             return
         for target in targets:
@@ -140,6 +143,10 @@ class _Scanner(ast.NodeVisitor):
                     self.builtin_names.add(target.id)
 
     def visit_Call(self, node: ast.Call) -> None:
+        if self._getattr_name(node.func) == FORBIDDEN_CLASS:
+            self.findings.append((node.lineno, "through getattr", FORBIDDEN_CLASS))
+            self.generic_visit(node)
+            return
         how = self._how_it_reaches_the_class(node.func)
         if how is not None:
             self.findings.append((node.lineno, how, FORBIDDEN_CLASS))
@@ -150,6 +157,8 @@ class _Scanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _how_it_reaches_the_builtin(self, func: ast.expr) -> str | None:
+        if self._getattr_name(func) == FORBIDDEN_BUILTIN:
+            return "through getattr"
         if isinstance(func, ast.Name):
             if func.id == FORBIDDEN_BUILTIN:
                 return "by name"
@@ -171,6 +180,16 @@ class _Scanner(ast.NodeVisitor):
         if self._is_class_attribute(func):
             return f"through {ast.unparse(func)}"
         return None
+
+    @staticmethod
+    def _getattr_name(node: ast.expr) -> str | None:
+        """`getattr(builtins, "ValueError")` — the class, spelled sideways."""
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+            return None
+        if node.func.id != "getattr" or len(node.args) < 2:
+            return None
+        wanted = node.args[1]
+        return wanted.value if isinstance(wanted, ast.Constant) and isinstance(wanted.value, str) else None
 
     def _is_class_attribute(self, node: ast.expr) -> bool:
         """`fe.ToolError`, `fastmcp.exceptions.ToolError`, `fm.exceptions.ToolError`."""

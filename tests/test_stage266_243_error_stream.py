@@ -152,7 +152,11 @@ def test_nothing_the_event_carried_survives_into_the_user():
     assert event["user"] == {"id": "42"}
 
 
-@pytest.mark.parametrize("account_id", ["", "not-a-number", "12x", " 42", None])
+@pytest.mark.parametrize(
+    "account_id",
+    ["", "not-a-number", "12x", " 42", "１２３", "٤٢", None],
+    ids=["empty", "words", "trailing", "spaced", "fullwidth", "arabic", "absent"],
+)
 def test_an_account_tag_we_cannot_trust_produces_no_user(account_id):
     tags = {"mcp_tool_failure_capture": "manual"}
     if account_id is not None:
@@ -183,13 +187,17 @@ def test_an_unhandled_failure_still_knows_whose_call_it_was(monkeypatch):
     set_user.assert_called_once_with({"id": "42"})
 
 
-def test_an_unauthenticated_call_names_nobody(monkeypatch):
+def test_an_unauthenticated_call_clears_whoever_was_there(monkeypatch):
+    """Skipping would leave the previous account named on somebody else's call.
+
+    Measured by review: after 101 then None, the next event still carried 101.
+    """
     monkeypatch.setattr(error_tracking, "_configured", True)
     with patch.object(error_tracking.sentry_sdk, "is_initialized", return_value=True):
         with patch.object(error_tracking.sentry_sdk, "set_user") as set_user:
             error_tracking.set_affected_account(None)
 
-    set_user.assert_not_called()
+    set_user.assert_called_once_with(None)
 
 
 def test_naming_the_account_never_breaks_the_call(monkeypatch):

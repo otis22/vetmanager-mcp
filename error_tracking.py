@@ -166,7 +166,9 @@ def _affected_account_id(tags: Any) -> str | None:
     if not isinstance(tags, dict):
         return None
     account_id = tags.get("account_id")
-    if isinstance(account_id, str) and account_id.isdecimal():
+    # `isdecimal` alone accepts Unicode digits — '١٢٣' would ride into the field
+    # and count as a separate person in Sentry.
+    if isinstance(account_id, str) and account_id.isascii() and account_id.isdecimal():
         return account_id
     return None
 
@@ -361,10 +363,12 @@ def set_affected_account(account_id: int | None) -> None:
     scope is per-request, so this does not leak into the next one. Only the
     account id goes in — never an email, a clinic domain or an address.
     """
-    if account_id is None or not _configured or not sentry_sdk.is_initialized():
+    if not _configured or not sentry_sdk.is_initialized():
         return
     try:
-        sentry_sdk.set_user({"id": str(account_id)})
+        # None clears rather than skips: leaving the previous account in place
+        # would put somebody else's id on an unauthenticated call.
+        sentry_sdk.set_user({"id": str(account_id)} if account_id is not None else None)
     except Exception:
         # Error tracking must never alter the call it is describing.
         return

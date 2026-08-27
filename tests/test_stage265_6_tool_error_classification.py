@@ -113,6 +113,28 @@ def check(value):
     if value <= 0:
         raise _ERROR("value must be a positive integer.")
 """,
+    "fetched_with_getattr": """
+import builtins
+
+def check(value):
+    if value <= 0:
+        raise getattr(builtins, "ValueError")("value must be a positive integer.")
+""",
+    "fetched_with_getattr_into_a_name": """
+import builtins
+
+def check(value):
+    if value <= 0:
+        error_type = getattr(builtins, "ValueError")
+        raise error_type("value must be a positive integer.")
+""",
+    "tool_error_fetched_with_getattr": """
+import fastmcp.exceptions
+
+def check(value):
+    if value <= 0:
+        raise getattr(fastmcp.exceptions, "ToolError")("value must be a positive integer.")
+""",
     "imported_as_a_package_alias": """
 import fastmcp as fm
 
