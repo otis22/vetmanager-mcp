@@ -237,6 +237,31 @@ def is_ours(exc) -> bool:
 }
 
 
+def test_an_alias_imported_from_a_neighbour_is_still_the_class(tmp_path):
+    """Stage 266: `_ERROR = ValueError` next door, imported here, raised here.
+
+    Named by the external review as the one remaining route people actually
+    write — the others (`vars(builtins)`, `operator.attrgetter`) it judged an
+    exercise.
+    """
+    module = _load()
+    folder = tmp_path / "tools"
+    folder.mkdir(parents=True)
+    (folder / "shared.py").write_text("_ERROR = ValueError\n", encoding="utf-8")
+    (folder / "uses_it.py").write_text(
+        "from tools.shared import _ERROR\n\n"
+        "def check(value):\n"
+        "    if value <= 0:\n"
+        '        raise _ERROR("value must be a positive integer.")\n',
+        encoding="utf-8",
+    )
+
+    findings = module.scan_paths([folder])
+
+    assert [f.line for f in findings] == [5]
+    assert "ValueError" in str(findings[0]), str(findings[0])
+
+
 @pytest.mark.parametrize("name", sorted(KNOWN_BAD))
 def test_known_bad_specimen_is_caught(tmp_path, name):
     module = _load()

@@ -25,10 +25,16 @@ including an import alias, a call through the module, and a name rebound to
 the class. Catching it, annotating with it and asking `isinstance` are not
 building it and are left alone.
 
-Known limit, stated rather than hidden: a helper that lives outside `tools/`
-and builds a `ToolError` for a tool is not visible here. Three such helpers
-exist on purpose — `reportable_error`, the report-hint rebuild in
-`agent_feedback_service`, and the redaction rebuild in `privacy_utils`.
+Known limits, stated rather than hidden. A helper outside the scanned files
+that builds the class for a tool is invisible here; three such helpers exist on
+purpose — `reportable_error`, the report-hint rebuild in
+`agent_feedback_service`, and the redaction rebuild in `privacy_utils`. And the
+class can still be reached by `vars(builtins)["ValueError"]`,
+`operator.attrgetter`, or `__builtins__` — the external review that found the
+`getattr` route judged those an exercise rather than anything anyone writes
+here, and closing them would cost more reading than they buy. The alias
+imported from a neighbouring module *is* something people write, so it is
+resolved across the scanned files.
 
 Stage 266 added `ValueError` to the same rule, for the same reason: a caller's
 mistyped date raised one, nothing distinguished it from a broken payload, and
@@ -77,7 +83,9 @@ class Finding:
 class _Scanner(ast.NodeVisitor):
     """Collect the names through which this module can reach ToolError."""
 
-    def __init__(self) -> None:
+    def __init__(self, known_aliases: dict[str, dict[str, str]] | None = None) -> None:
+        # What other scanned modules call the class, keyed by module name.
+        self.known_aliases = known_aliases or {}
         # Names bound directly to the class: `ToolError`, `TE`, `_ERROR`.
         self.class_names: set[str] = set()
         # Local name -> the module path it stands for. `import fastmcp as fm`
@@ -94,6 +102,12 @@ class _Scanner(ast.NodeVisitor):
             if module == EXCEPTIONS_MODULE and alias.name == FORBIDDEN_CLASS:
                 self.class_names.add(alias.asname or alias.name)
             else:
+                exported = self.known_aliases.get(module.rsplit(".", 1)[-1], {})
+                carries = exported.get(alias.name)
+                if carries == FORBIDDEN_CLASS:
+                    self.class_names.add(alias.asname or alias.name)
+                elif carries == FORBIDDEN_BUILTIN:
+                    self.builtin_names.add(alias.asname or alias.name)
                 # `from fastmcp import exceptions as fe`
                 self.module_paths[alias.asname or alias.name] = f"{module}.{alias.name}"
         self.generic_visit(node)
@@ -211,22 +225,54 @@ class _Scanner(ast.NodeVisitor):
 
 
 def scan_file(path: Path) -> list[Finding]:
+    return scan_paths([path])
+
+
+def _exported_aliases(files) -> dict[str, dict[str, str]]:
+    """Module-level names that stand for a forbidden class, per module.
+
+    `_ERROR = ValueError` in one file and `from tools.helpers import _ERROR` in
+    the next is how a rule like this gets walked past without anybody meaning
+    to.
+    """
+    exported: dict[str, dict[str, str]] = {}
+    for file_path in files:
+        scanner = _scan(file_path)
+        if scanner is None:
+            continue
+        names = {name: FORBIDDEN_CLASS for name in scanner.class_names}
+        names.update({name: FORBIDDEN_BUILTIN for name in scanner.builtin_names})
+        names.pop(FORBIDDEN_CLASS, None)
+        if names:
+            exported[file_path.stem] = names
+    return exported
+
+
+def _scan(path: Path, known_aliases: dict[str, dict[str, str]] | None = None) -> "_Scanner | None":
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"))
-    except SyntaxError:
-        return []
-    scanner = _Scanner()
+    except (SyntaxError, OSError):
+        return None
+    scanner = _Scanner(known_aliases or {})
     scanner.visit(tree)
-    return [Finding(path, line, how, what) for line, how, what in sorted(scanner.findings)]
+    return scanner
 
 
 def scan_paths(paths) -> list[Finding]:
-    findings: list[Finding] = []
+    files: list[Path] = []
     for entry in paths:
         entry = Path(entry)
-        files = sorted(entry.rglob("*.py")) if entry.is_dir() else [entry]
-        for file_path in files:
-            findings.extend(scan_file(file_path))
+        files.extend(sorted(entry.rglob("*.py")) if entry.is_dir() else [entry])
+
+    known_aliases = _exported_aliases(files)
+    findings: list[Finding] = []
+    for file_path in files:
+        scanner = _scan(file_path, known_aliases)
+        if scanner is None:
+            continue
+        findings.extend(
+            Finding(file_path, line, how, what) for line, how, what in sorted(scanner.findings)
+        )
     return findings
 
 

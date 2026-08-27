@@ -365,10 +365,17 @@ def set_affected_account(account_id: int | None) -> None:
     """
     if not _configured or not sentry_sdk.is_initialized():
         return
+    # The same invariant the tag path holds: a real account id or nobody. A
+    # bool is an int in Python and would have been written down as "True".
+    named = (
+        account_id
+        if isinstance(account_id, int) and not isinstance(account_id, bool) and account_id > 0
+        else None
+    )
     try:
         # None clears rather than skips: leaving the previous account in place
         # would put somebody else's id on an unauthenticated call.
-        sentry_sdk.set_user({"id": str(account_id)} if account_id is not None else None)
+        sentry_sdk.set_user({"id": str(named)} if named is not None else None)
     except Exception:
         # Error tracking must never alter the call it is describing.
         return
