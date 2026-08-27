@@ -4,6 +4,8 @@ from datetime import date
 
 import pytest
 
+from exceptions import ToolInputError
+
 from validators import parse_date_param
 
 
@@ -101,29 +103,29 @@ class TestRelativeMonths:
 
 class TestInvalid:
     def test_unknown_keyword(self):
-        with pytest.raises(ValueError, match="Supported formats"):
+        with pytest.raises(ToolInputError, match="Supported formats"):
             parse_date_param("nextweek")
 
     def test_slash_format(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ToolInputError):
             parse_date_param("2026/04/08")
 
     def test_years_not_supported(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ToolInputError):
             parse_date_param("+1y")
 
     def test_missing_digits(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ToolInputError):
             parse_date_param("+d")
 
     def test_invalid_iso(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ToolInputError):
             parse_date_param("2026-13-45")
 
     def test_huge_relative_offset_rejected(self):
-        with pytest.raises(ValueError, match="too large"):
+        with pytest.raises(ToolInputError, match="too large"):
             parse_date_param("+999999999d")
 
     def test_huge_month_offset_rejected(self):
-        with pytest.raises(ValueError, match="too large"):
+        with pytest.raises(ToolInputError, match="too large"):
             parse_date_param("-999999m")

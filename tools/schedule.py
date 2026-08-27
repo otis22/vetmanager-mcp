@@ -5,6 +5,7 @@ a doctor by subtracting active admissions from timesheet work intervals.
 """
 
 import asyncio
+from exceptions import ToolInputError
 from datetime import date, datetime, timedelta
 
 from fastmcp import FastMCP
@@ -76,28 +77,28 @@ def register(mcp: FastMCP) -> None:
              total_slots, slots: [{start, end, duration_min, clinic_id}, ...]}
         """
         if doctor_id <= 0:
-            raise ValueError(
+            raise ToolInputError(
                 "doctor_id is required. Resolve the doctor first via "
                 "get_users(name=...)."
             )
         if not (5 <= slot_minutes <= 240):
-            raise ValueError("slot_minutes must be between 5 and 240")
+            raise ToolInputError("slot_minutes must be between 5 and 240")
         if not (5 <= min_slot_minutes <= slot_minutes):
-            raise ValueError(
+            raise ToolInputError(
                 "min_slot_minutes must be between 5 and slot_minutes"
             )
 
         resolved_from = parse_date_param(date_from)
         resolved_to = parse_date_param(date_to)
         if not resolved_from or not resolved_to:
-            raise ValueError("date_from and date_to are required")
+            raise ToolInputError("date_from and date_to are required")
 
         start_date = date.fromisoformat(resolved_from)
         end_date = date.fromisoformat(resolved_to)
         if end_date < start_date:
-            raise ValueError("date_to must be >= date_from")
+            raise ToolInputError("date_to must be >= date_from")
         if (end_date - start_date).days > 31:
-            raise ValueError("date range cannot exceed 31 days")
+            raise ToolInputError("date range cannot exceed 31 days")
 
         # Window bounds (fetched datetime strings are inclusive-start,
         # exclusive-end: [window_start, window_end)).

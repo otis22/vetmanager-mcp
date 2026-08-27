@@ -51,7 +51,7 @@ async def _search_client_phones(search_digits: str) -> list[int]:
         total = 0
         rows = []
     if total > _PHONE_SEARCH_MAX_ROWS:
-        raise ValueError(
+        raise ToolInputError(
             f"phone search too broad: matches {total} phone rows "
             f"(> {_PHONE_SEARCH_MAX_ROWS}). Provide more digits to narrow "
             "the search."
@@ -274,7 +274,7 @@ def register(mcp: FastMCP) -> None:
                 unsubscribe, vip, work_phone, zip.
         """
         if name and offset:
-            raise ValueError(
+            raise ToolInputError(
                 "offset is not supported with name search because Vetmanager "
                 "does not provide stable OR pagination across name fields. "
                 "Use offset=0 and narrow by phone/email/status if needed."
@@ -285,7 +285,7 @@ def register(mcp: FastMCP) -> None:
         if phone:
             phone_digits = normalize_phone_digits(phone)
             if len(phone_digits) < 4:
-                raise ValueError(
+                raise ToolInputError(
                     "phone filter requires at least 4 digits; shorter values "
                     "would match too many clients. Provide more of the number."
                 )
@@ -318,7 +318,7 @@ def register(mcp: FastMCP) -> None:
         if name:
             tokens = _name_tokens(name)
             if not tokens:
-                raise ValueError("name filter must contain non-space text")
+                raise ToolInputError("name filter must contain non-space text")
             query_values = list(dict.fromkeys(tokens))
             field_names = ("last_name", "first_name", "middle_name")
             requests = [
@@ -422,7 +422,7 @@ def register(mcp: FastMCP) -> None:
             and resolved_last_visit_to
             and resolved_last_visit_from > resolved_last_visit_to
         ):
-            raise ValueError("last_visit_date_from must be on or before last_visit_date_to")
+            raise ToolInputError("last_visit_date_from must be on or before last_visit_date_to")
 
         combined_filters = [
             _filter_eq("status", "ACTIVE"),

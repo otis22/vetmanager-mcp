@@ -2,6 +2,7 @@ import asyncio
 
 from fastmcp import FastMCP
 
+from exceptions import ToolInputError
 from filters import FILTER_FIELDS_BY_ENTITY, build_list_query_params, eq as _filter_eq, in_ as _filter_in, like as _filter_like
 from resources.pet_profile import fetch as _fetch_pet_profile
 from service_metrics import instrument_call as _instrument_call
@@ -89,7 +90,7 @@ def register(mcp: FastMCP) -> None:
                 picture, sex, status, type_id, weight.
         """
         if alias and not owner_id:
-            raise ValueError(
+            raise ToolInputError(
                 "alias filter requires owner_id — pet nicknames are not "
                 "unique per clinic. Resolve the owner first via "
                 "get_clients(name=...), then pass owner_id and alias together."
@@ -132,7 +133,7 @@ def register(mcp: FastMCP) -> None:
         rather than guessing.
         """
         if not alias.strip():
-            raise ValueError("alias is required")
+            raise ToolInputError("alias is required")
         payload = await crud_list(
             "/rest/api/pet",
             limit=limit,

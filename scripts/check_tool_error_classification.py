@@ -30,6 +30,10 @@ and builds a `ToolError` for a tool is not visible here. Three such helpers
 exist on purpose — `reportable_error`, the report-hint rebuild in
 `agent_feedback_service`, and the redaction rebuild in `privacy_utils`.
 
+Stage 266 added `ValueError` to the same rule, for the same reason: a caller's
+mistyped date raised one, nothing distinguished it from a broken payload, and
+Sentry opened an issue about somebody's typo.
+
 Usage:
     ./scripts/check_tool_error_classification.py [path ...]
 """
@@ -43,6 +47,16 @@ from pathlib import Path
 
 FORBIDDEN_CLASS = "ToolError"
 EXCEPTIONS_MODULE = "fastmcp.exceptions"
+# Stage 266: `ValueError` in these files meant three things at once — the
+# caller's typo, broken data, and a programmer error — and the first of those
+# opened a Sentry issue for somebody's mistyped date. It is a builtin, so it
+# needs no import to reach; the rule is the same either way.
+FORBIDDEN_BUILTIN = "ValueError"
+REPLACEMENTS = (
+    "ToolInputError(...) for the caller's mistake, "
+    "reportable_error(...) for anything worth reporting, "
+    "invariant_error(...) for a state our own code should have prevented"
+)
 
 
 @dataclass(frozen=True)
@@ -51,11 +65,12 @@ class Finding:
     line: int
     how: str
 
+    what: str = FORBIDDEN_CLASS
+
     def __str__(self) -> str:
         return (
-            f"{self.path}:{self.line}: builds {FORBIDDEN_CLASS} directly ({self.how}). "
-            f"Say whose mistake it is: ToolInputError(...) for the caller's, "
-            f"reportable_error(...) for anything worth reporting."
+            f"{self.path}:{self.line}: builds {self.what} directly ({self.how}). "
+            f"Say whose mistake it is: {REPLACEMENTS}."
         )
 
 
@@ -69,7 +84,9 @@ class _Scanner(ast.NodeVisitor):
         # binds `fm` to `fastmcp`, and `fm.exceptions.ToolError` is then the
         # same class reached one dot further out.
         self.module_paths: dict[str, str] = {}
-        self.findings: list[tuple[int, str]] = []
+        # Names bound to the builtin: `ValueError`, or anything it was copied to.
+        self.builtin_names: set[str] = set()
+        self.findings: list[tuple[int, str, str]] = []
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or ""
@@ -110,17 +127,39 @@ class _Scanner(ast.NodeVisitor):
         carries_class = (
             isinstance(value, ast.Name) and value.id in self.class_names
         ) or self._is_class_attribute(value)
-        if not carries_class:
+        carries_builtin = isinstance(value, ast.Name) and (
+            value.id == FORBIDDEN_BUILTIN or value.id in self.builtin_names
+        )
+        if not (carries_class or carries_builtin):
             return
         for target in targets:
             if isinstance(target, ast.Name):
-                self.class_names.add(target.id)
+                if carries_class:
+                    self.class_names.add(target.id)
+                else:
+                    self.builtin_names.add(target.id)
 
     def visit_Call(self, node: ast.Call) -> None:
         how = self._how_it_reaches_the_class(node.func)
         if how is not None:
-            self.findings.append((node.lineno, how))
+            self.findings.append((node.lineno, how, FORBIDDEN_CLASS))
+        else:
+            how = self._how_it_reaches_the_builtin(node.func)
+            if how is not None:
+                self.findings.append((node.lineno, how, FORBIDDEN_BUILTIN))
         self.generic_visit(node)
+
+    def _how_it_reaches_the_builtin(self, func: ast.expr) -> str | None:
+        if isinstance(func, ast.Name):
+            if func.id == FORBIDDEN_BUILTIN:
+                return "by name"
+            if func.id in self.builtin_names:
+                return f"through the name {func.id!r}"
+            return None
+        # `builtins.ValueError`, `bt.ValueError`
+        if isinstance(func, ast.Attribute) and func.attr == FORBIDDEN_BUILTIN:
+            return f"through {ast.unparse(func)}"
+        return None
 
     def _how_it_reaches_the_class(self, func: ast.expr) -> str | None:
         if isinstance(func, ast.Name):
@@ -159,7 +198,7 @@ def scan_file(path: Path) -> list[Finding]:
         return []
     scanner = _Scanner()
     scanner.visit(tree)
-    return [Finding(path, line, how) for line, how in sorted(scanner.findings)]
+    return [Finding(path, line, how, what) for line, how, what in sorted(scanner.findings)]
 
 
 def scan_paths(paths) -> list[Finding]:
@@ -173,7 +212,8 @@ def scan_paths(paths) -> list[Finding]:
 
 
 def main(argv: list[str]) -> int:
-    paths = argv[1:] or [Path(__file__).resolve().parents[1] / "tools"]
+    root = Path(__file__).resolve().parents[1]
+    paths = argv[1:] or [root / "tools", root / "validators.py"]
     findings = scan_paths(paths)
     for finding in findings:
         print(finding)

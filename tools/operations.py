@@ -1,6 +1,7 @@
 """Operational entity tools: Clinics, Timesheet, Properties, AnonymousClient, Messages."""
 
 from typing import Annotated
+from exceptions import ToolInputError
 from datetime import datetime, timedelta
 
 from fastmcp import FastMCP
@@ -218,7 +219,7 @@ def register(mcp: FastMCP) -> None:
         """List in-app notification delivery reports and campaign stats."""
         campaign_name = campaign.strip()
         if not campaign_name:
-            raise ValueError("campaign is required")
+            raise ToolInputError("campaign is required")
         return await crud_list(
             "/rest/api/messages/reports", limit=limit, offset=offset,
             sort=sort, filters=filter, extra={"campaign": campaign_name},

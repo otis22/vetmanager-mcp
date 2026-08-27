@@ -9,6 +9,7 @@ No network I/O — all functions take pre-fetched intervals as input.
 
 from __future__ import annotations
 
+from exceptions import invariant_error
 from datetime import datetime, timedelta
 
 Interval = tuple[datetime, datetime]
@@ -108,9 +109,9 @@ def compute_free_slots(
     Returns a flat list of (start, end) datetime tuples sorted ascending.
     """
     if slot_minutes <= 0:
-        raise ValueError("slot_minutes must be > 0")
+        raise invariant_error("slot_minutes must be > 0")
     if min_slot_minutes <= 0 or min_slot_minutes > slot_minutes:
-        raise ValueError(
+        raise invariant_error(
             "min_slot_minutes must be in (0, slot_minutes]"
         )
     gaps = subtract_intervals(work_intervals, busy_intervals)

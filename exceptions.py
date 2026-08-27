@@ -78,3 +78,14 @@ def reportable_error(*args: object) -> ToolError:
     subclass would quietly walk out from under it.
     """
     return ToolError(*args)
+
+
+def invariant_error(*args: object) -> ValueError:
+    """A state our own code should have made impossible.
+
+    Stage 266: `ValueError` in `tools/` and `validators.py` used to mean three
+    different things at once — the caller's typo, broken data, and a programmer
+    error. The first two now have names of their own; this one keeps the plain
+    ValueError so a bug stays a bug, and says so at the site.
+    """
+    return ValueError(*args)

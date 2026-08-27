@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+from exceptions import ToolInputError
 from datetime import date, datetime, timedelta
 
 from filters import (
@@ -137,12 +138,12 @@ def calculate_inactive_window(
         - cutoff_newest = today - months_min  (last_visit_date <= this)
 
     Raises:
-        ValueError: if months_min < 1 or months_min > months_max.
+        ToolInputError: if months_min < 1 or months_min > months_max.
     """
     if months_min < 1:
-        raise ValueError(f"months_min must be >= 1, got {months_min}")
+        raise ToolInputError(f"months_min must be >= 1, got {months_min}")
     if months_min > months_max:
-        raise ValueError(
+        raise ToolInputError(
             f"months_min must be <= months_max, got {months_min} > {months_max}"
         )
 

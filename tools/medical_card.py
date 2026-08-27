@@ -10,7 +10,7 @@ from filters import (
     in_ as _filter_in,
     lt as _filter_lt,
 )
-from exceptions import reportable_error
+from exceptions import ToolInputError, reportable_error
 from tools.crud_helpers import crud_get_by_id, crud_create, crud_update, unwrap_single_record
 from validators import LimitParam, parse_date_param
 from vetmanager_client import VetmanagerClient, VetmanagerError
@@ -120,16 +120,16 @@ def register(mcp: FastMCP) -> None:
             sort: Optional Vetmanager sort list. Defaults to date_create ASC, id ASC.
         """
         if date and (date_from or date_to):
-            raise ValueError("use either `date` or `date_from`/`date_to`, not both")
+            raise ToolInputError("use either `date` or `date_from`/`date_to`, not both")
         if bool(date_from) != bool(date_to):
-            raise ValueError("date_from and date_to must be provided together")
+            raise ToolInputError("date_from and date_to must be provided together")
         if not date and not (date_from and date_to):
-            raise ValueError("date or date_from/date_to is required")
+            raise ToolInputError("date or date_from/date_to is required")
 
         resolved_from = parse_date_param(date or date_from)
         resolved_to = parse_date_param(date or date_to)
         if resolved_from > resolved_to:
-            raise ValueError("date_from must be on or before date_to")
+            raise ToolInputError("date_from must be on or before date_to")
 
         filters = [
             _filter_gte("date_create", _day_start(resolved_from)),
@@ -395,11 +395,11 @@ def register(mcp: FastMCP) -> None:
         current_response = await crud_get_by_id(_MC_ENDPOINT, card_id)
         current = unwrap_single_record(current_response, "medicalCards")
         if current is None:
-            raise ValueError("Medical card read returned no record; update was not sent.")
+            raise reportable_error("Medical card read returned no record; update was not sent.")
         required_context = ("patient_id", "doctor_id", "clinic_id")
         missing_context = [field for field in required_context if not current.get(field)]
         if missing_context:
-            raise ValueError(
+            raise reportable_error(
                 "Medical card lacks required update context: "
                 + ", ".join(missing_context)
                 + ". Vetmanager requires patient, doctor and clinic on every card"

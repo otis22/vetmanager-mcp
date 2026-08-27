@@ -94,6 +94,25 @@ def check(value):
     if value <= 0:
         raise _ERROR("value must be a positive integer.")
 """,
+    "a_bare_value_error": """
+def check(value):
+    if value <= 0:
+        raise ValueError("value must be a positive integer.")
+""",
+    "a_value_error_through_builtins": """
+import builtins
+
+def check(value):
+    if value <= 0:
+        raise builtins.ValueError("value must be a positive integer.")
+""",
+    "a_value_error_under_another_name": """
+_ERROR = ValueError
+
+def check(value):
+    if value <= 0:
+        raise _ERROR("value must be a positive integer.")
+""",
     "imported_as_a_package_alias": """
 import fastmcp as fm
 
@@ -173,6 +192,20 @@ import fastmcp as fm
 def build():
     return fm.FastMCP(name="vetmanager")
 """,
+    "an_invariant_says_so": """
+from exceptions import invariant_error
+
+def split(total, parts):
+    if parts <= 0:
+        raise invariant_error("parts must be positive; the caller cannot reach this.")
+""",
+    "catching_a_value_error_is_not_building": """
+def parse(text):
+    try:
+        return int(text)
+    except ValueError:
+        return None
+""",
     "asking_the_type_is_not_building": """
 from fastmcp.exceptions import ToolError
 
@@ -203,5 +236,5 @@ def test_known_good_specimen_is_left_alone(tmp_path, name):
 def test_the_repository_itself_is_clean():
     module = _load()
     root = Path(__file__).resolve().parents[1]
-    findings = module.scan_paths([root / "tools"])
+    findings = module.scan_paths([root / "tools", root / "validators.py"])
     assert findings == [], "\n".join(str(f) for f in findings)

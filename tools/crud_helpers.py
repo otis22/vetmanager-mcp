@@ -10,6 +10,7 @@ proxy label for `vetmanager_tool_call_latency_seconds` and
 """
 
 import json
+from exceptions import reportable_error
 from typing import Any, TypeVar
 
 from filters import (
@@ -159,7 +160,7 @@ async def paginate_all(
             total_count_initialized = True
 
         if max_rows is not None and total_count > max_rows:
-            raise ValueError(
+            raise reportable_error(
                 f"result set too large for {endpoint}: totalCount={total_count} "
                 f"exceeds max_rows={max_rows}. Narrow your date range or filters."
             )
@@ -171,7 +172,7 @@ async def paginate_all(
         offset += len(records)
 
         if max_rows is not None and len(all_records) > max_rows:
-            raise ValueError(
+            raise reportable_error(
                 f"result set too large for {endpoint}: accumulated "
                 f"{len(all_records)} rows exceeds max_rows={max_rows}. "
                 "Narrow your date range or filters."

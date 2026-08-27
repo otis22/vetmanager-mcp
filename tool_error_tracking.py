@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import FastMCPError, ValidationError
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from mcp.types import CallToolRequestParams
 
@@ -31,7 +31,13 @@ class ToolErrorTrackingMiddleware(Middleware):
     async def on_call_tool(self, context: MiddlewareContext[CallToolRequestParams], call_next):
         try:
             return await call_next(context)
-        except ToolError as exc:
+        except ValidationError:
+            # Stage 266: arguments that do not match the schema — the caller's
+            # own mistake, one level before our own validation. FastMCP logs it
+            # as a warning and it has never produced an event; widening the
+            # catch below must not hand it one.
+            raise
+        except FastMCPError as exc:
             mark_tool_error_as_handled(exc)
             # Stage 265.6: the caller's own mistake is not a failure of this
             # service. Live evidence 27.08.2026 — PYTHON-Y is an open issue

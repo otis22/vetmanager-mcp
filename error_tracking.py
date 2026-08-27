@@ -9,6 +9,7 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 import sentry_sdk
+from sentry_sdk.integrations.logging import ignore_logger
 from sentry_sdk.integrations.starlette import StarletteIntegration
 
 SUPPORTED_ERROR_TRACKING_BACKENDS = {"sentry"}
@@ -156,6 +157,20 @@ def _event_exception_is_marked(hint: dict[str, Any] | None) -> bool:
     return isinstance(exception, BaseException) and _exception_chain_contains_marker(exception)
 
 
+def _affected_account_id(tags: Any) -> str | None:
+    """The account this private event is about, or nothing.
+
+    Only a plain decimal survives: an unparseable tag would put a guess into the
+    column people read as fact.
+    """
+    if not isinstance(tags, dict):
+        return None
+    account_id = tags.get("account_id")
+    if isinstance(account_id, str) and account_id.isdecimal():
+        return account_id
+    return None
+
+
 def _is_private_handled_event(event: dict[str, Any]) -> bool:
     tags = event.get("tags")
     return isinstance(tags, dict) and (
@@ -198,8 +213,16 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
             and domain
         ):
             event.setdefault("tags", {})["clinic_domain"] = domain
+        # Stage 243: Sentry counts affected users by `user.id`, and this is the
+        # only place that decides what a private event carries. Whatever
+        # Starlette attached goes; the account is put back from the tag that has
+        # already been through the sanitizer, so nothing but that number can
+        # reach the field.
+        affected_account = _affected_account_id(tags)
         for key in ("request", "user", "contexts", "breadcrumbs", "extra"):
             event.pop(key, None)
+        if affected_account is not None:
+            event["user"] = {"id": affected_account}
     request = event.get("request")
     if isinstance(request, dict):
         headers = request.get("headers")
@@ -292,6 +315,9 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
     return event
 
 
+_FASTMCP_TOOL_LOGGER = "fastmcp.server.server"
+
+
 def configure_error_tracking() -> bool:
     """Initialize optional error tracking backend if runtime config is present."""
     global _configured
@@ -303,6 +329,15 @@ def configure_error_tracking() -> bool:
     backend = (os.environ.get("ERROR_TRACKING_BACKEND") or "sentry").strip().lower()
     if backend not in SUPPORTED_ERROR_TRACKING_BACKENDS:
         raise RuntimeError(f"Unsupported error tracking backend: {backend}")
+
+    # Stage 266: FastMCP reports every tool failure on its own boundary — with
+    # `exc_info` for anything unexpected, without it for a FastMCPError. The
+    # default logging integration turns those error records into events, before
+    # our middleware has seen the failure and regardless of what it decides.
+    # Measured live 28.08.2026: three deliberately wrong arguments opened three
+    # issues this way. `capture_tool_failure` is the one channel we control, so
+    # it is the only one left open.
+    ignore_logger(_FASTMCP_TOOL_LOGGER)
 
     traces_sample_rate = float((os.environ.get("ERROR_TRACKING_TRACES_SAMPLE_RATE") or "0").strip())
     sentry_sdk.init(
@@ -316,6 +351,23 @@ def configure_error_tracking() -> bool:
     )
     _configured = True
     return True
+
+
+def set_affected_account(account_id: int | None) -> None:
+    """Name the account this request is about, for events we do not raise ourselves.
+
+    Stage 243: `capture_tool_failure` tags its own events, but an exception that
+    nobody catches is captured by the SDK with no idea whose call it was. The
+    scope is per-request, so this does not leak into the next one. Only the
+    account id goes in — never an email, a clinic domain or an address.
+    """
+    if account_id is None or not _configured or not sentry_sdk.is_initialized():
+        return
+    try:
+        sentry_sdk.set_user({"id": str(account_id)})
+    except Exception:
+        # Error tracking must never alter the call it is describing.
+        return
 
 
 def capture_handled_connection_failure(exc: BaseException, *, account_id: int) -> None:

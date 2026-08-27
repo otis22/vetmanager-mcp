@@ -5,6 +5,7 @@ from functools import wraps
 
 import depersonalization
 from agent_feedback_service import augment_tool_error, should_skip_report_hint
+from error_tracking import set_affected_account
 from exceptions import AuthError, reportable_error
 from privacy_utils import redact_sensitive_output_fields, redact_tool_error
 from runtime_auth import use_runtime_credentials
@@ -35,6 +36,7 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
                 error_description="OAuth authorization is required for this tool.",
             ) from None
         _ensure_tool_scopes_allowed(resolved_tool_name, credentials)
+        set_affected_account(getattr(credentials, "account_id", None))
 
         with use_runtime_credentials(credentials):
             try:

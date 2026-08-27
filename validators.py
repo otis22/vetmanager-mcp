@@ -4,6 +4,7 @@ Guards against accidental bulk operations caused by malformed prompts.
 """
 
 import re
+from exceptions import ToolInputError
 from datetime import date, timedelta
 from typing import Annotated
 
@@ -26,15 +27,15 @@ def validate_list_params(limit: int, offset: int) -> None:
     """Validate pagination parameters for list endpoints.
 
     Raises:
-        ValueError: If limit or offset are outside safe bounds.
+        ToolInputError: If limit or offset are outside safe bounds.
     """
     if limit < 1 or limit > _LIMIT_MAX:
-        raise ValueError(
+        raise ToolInputError(
             f"'limit' must be between 1 and {_LIMIT_MAX}, got {limit}. "
             "Use pagination (offset) to retrieve more records."
         )
     if offset < 0 or offset > _OFFSET_MAX:
-        raise ValueError(
+        raise ToolInputError(
             f"'offset' must be between 0 and {_OFFSET_MAX}, got {offset}. "
             "If you need records beyond this range, refine your search criteria."
         )
@@ -94,7 +95,7 @@ def parse_date_param(value: str, *, today: date | None = None) -> str:
         ISO date string (YYYY-MM-DD), or empty string for empty input.
 
     Raises:
-        ValueError: If `value` does not match any supported form.
+        ToolInputError: If `value` does not match any supported form.
     """
     if value is None or value == "":
         return ""
@@ -118,7 +119,7 @@ def parse_date_param(value: str, *, today: date | None = None) -> str:
         n = int(digits)
         caps = {"d": _MAX_REL_DAYS, "w": _MAX_REL_WEEKS, "m": _MAX_REL_MONTHS}
         if n > caps[unit]:
-            raise ValueError(
+            raise ToolInputError(
                 f"relative date offset too large: '{value}'. "
                 f"Maximum: ±{caps[unit]}{unit}."
             )
@@ -132,7 +133,7 @@ def parse_date_param(value: str, *, today: date | None = None) -> str:
             if unit == "m":
                 return _add_months(anchor, n).isoformat()
         except (OverflowError, ValueError) as exc:
-            raise ValueError(
+            raise ToolInputError(
                 f"relative date '{value}' resolves outside representable range"
             ) from exc
 
@@ -140,7 +141,7 @@ def parse_date_param(value: str, *, today: date | None = None) -> str:
     try:
         return date.fromisoformat(value.strip()).isoformat()
     except ValueError:
-        raise ValueError(
+        raise ToolInputError(
             f"invalid date '{value}'. Supported formats: {_SUPPORTED_DATE_FORMATS}"
         ) from None
 
@@ -161,10 +162,10 @@ def validate_amount(amount: float) -> None:
     """Validate a monetary amount for payment operations.
 
     Raises:
-        ValueError: If amount is not within a plausible range.
+        ToolInputError: If amount is not within a plausible range.
     """
     if amount <= 0 or amount > _AMOUNT_MAX:
-        raise ValueError(
+        raise ToolInputError(
             f"'amount' must be greater than 0 and no more than {_AMOUNT_MAX:,}, "
             f"got {amount}. Verify the currency units (use roubles, not kopecks)."
         )

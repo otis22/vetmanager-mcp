@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
 from fastmcp import FastMCP
+from exceptions import ToolInputError, reportable_error
 from filters import FILTER_FIELDS_BY_ENTITY, build_list_query_params, eq as _filter_eq, gte as _filter_gte, lt as _filter_lt, lte as _filter_lte
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_update, crud_delete, paginate_all
 from validators import LimitParam, parse_date_param
@@ -30,16 +31,16 @@ def register(mcp: FastMCP) -> None:
         try:
             parsed = Decimal(str(value))
         except (InvalidOperation, ValueError) as exc:
-            raise ValueError(f"{field_name} must be a decimal value, got '{value}'") from exc
+            raise ToolInputError(f"{field_name} must be a decimal value, got '{value}'") from exc
         if not parsed.is_finite():
-            raise ValueError(f"{field_name} must be a finite decimal value, got '{value}'")
+            raise ToolInputError(f"{field_name} must be a finite decimal value, got '{value}'")
         return str(value)
 
     def _parse_date_range(date_from: str, date_to: str, *, label: str) -> tuple[str, str]:
         resolved_from = parse_date_param(date_from)
         resolved_to = parse_date_param(date_to)
         if resolved_from and resolved_to and resolved_from > resolved_to:
-            raise ValueError(f"{label}_from must be on or before {label}_to")
+            raise ToolInputError(f"{label}_from must be on or before {label}_to")
         return resolved_from, resolved_to
 
     def _next_day_start(date_value: str) -> str:
@@ -54,11 +55,11 @@ def register(mcp: FastMCP) -> None:
         try:
             parsed = Decimal(str(value))
         except (InvalidOperation, ValueError) as exc:
-            raise ValueError(
+            raise reportable_error(
                 f"Invalid {field_name} value in {row_id=}: '{value}'"
             ) from exc
         if not parsed.is_finite():
-            raise ValueError(
+            raise reportable_error(
                 f"Invalid non-finite {field_name} value in {row_id=}: '{value}'"
             )
         return parsed
@@ -118,16 +119,16 @@ def register(mcp: FastMCP) -> None:
                 percent, pet_id, status.
         """
         if payment_status and payment_status not in _INVOICE_PAYMENT_STATUSES:
-            raise ValueError(
+            raise ToolInputError(
                 f"payment_status must be one of {sorted(_INVOICE_PAYMENT_STATUSES)}, "
                 f"got '{payment_status}'"
             )
         if status and status not in _INVOICE_STATUSES:
-            raise ValueError(
+            raise ToolInputError(
                 f"status must be one of {sorted(_INVOICE_STATUSES)}, got '{status}'"
             )
         if (date_from or date_to) and (invoice_date_from or invoice_date_to):
-            raise ValueError(
+            raise ToolInputError(
                 "date_from/date_to filter create_date; invoice_date_from/"
                 "invoice_date_to filter financial invoice_date. Do not mix them."
             )
@@ -205,7 +206,7 @@ def register(mcp: FastMCP) -> None:
             client_id: Optional client filter (0 = no filter).
         """
         if mode not in _REVENUE_SUMMARY_MODES:
-            raise ValueError(
+            raise ToolInputError(
                 f"mode must be one of {sorted(_REVENUE_SUMMARY_MODES)}, got '{mode}'"
             )
 
@@ -213,7 +214,7 @@ def register(mcp: FastMCP) -> None:
             date_from, date_to, label="date"
         )
         if not resolved_from or not resolved_to:
-            raise ValueError("date_from and date_to are required")
+            raise ToolInputError("date_from and date_to are required")
 
         if mode == "received":
             endpoint = "/rest/api/payment"
@@ -360,7 +361,7 @@ def register(mcp: FastMCP) -> None:
                 semantics without an automatic status filter.
         """
         if date_basis not in _AVERAGE_INVOICE_DATE_BASES:
-            raise ValueError(
+            raise ToolInputError(
                 f"date_basis must be one of {sorted(_AVERAGE_INVOICE_DATE_BASES)}, "
                 f"got '{date_basis}'"
             )
@@ -375,7 +376,7 @@ def register(mcp: FastMCP) -> None:
         else:
             date_from = parse_date_param(date_from)
         if date_from and date_to and date_from > date_to:
-            raise ValueError("date_from must be on or before date_to")
+            raise ToolInputError("date_from must be on or before date_to")
 
         date_field = date_basis
         combined_filters = [

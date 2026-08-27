@@ -2,6 +2,7 @@ from datetime import date as _date, datetime as _datetime, timedelta as _td
 
 from fastmcp import FastMCP
 
+from exceptions import ToolInputError, reportable_error
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, gte as _filter_gte, in_ as _filter_in, lt as _filter_lt
 from resources.admission_status import ACTIVE_ADMISSION_STATUSES  # noqa: F401 — BC re-export
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, unwrap_single_record
@@ -97,7 +98,7 @@ def register(mcp: FastMCP) -> None:
                 patient_id, reception_write_channel, status, type_id, user_id.
         """
         if date and (date_from or date_to):
-            raise ValueError(
+            raise ToolInputError(
                 "use either `date` or `date_from`/`date_to`, not both"
             )
 
@@ -138,7 +139,7 @@ def register(mcp: FastMCP) -> None:
     def _validate_admission_status(status: str) -> None:
         if status and status not in _VALID_ADMISSION_STATUSES:
             allowed = ", ".join(sorted(_VALID_ADMISSION_STATUSES))
-            raise ValueError(
+            raise ToolInputError(
                 f"invalid admission status: {status!r}. Expected one of: {allowed}"
             )
 
@@ -178,13 +179,13 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return (1–100, default 20).
         """
         if client_id <= 0:
-            raise ValueError("client_id is required")
+            raise ToolInputError("client_id is required")
         if days <= 0 or days > 366:
-            raise ValueError("days must be between 1 and 366")
+            raise ToolInputError("days must be between 1 and 366")
 
         resolved_from = parse_date_param(date_from)
         if not resolved_from:
-            raise ValueError("date_from is required")
+            raise ToolInputError("date_from is required")
 
         start_d = _date.fromisoformat(resolved_from)
         end_d = start_d + _td(days=days)
@@ -242,7 +243,7 @@ def register(mcp: FastMCP) -> None:
         validate_list_params(limit, offset)
         resolved = parse_date_param(date)
         if not resolved:
-            raise ValueError("date is required")
+            raise ToolInputError("date is required")
 
         d = _date.fromisoformat(resolved)
         next_day = (d + _td(days=1)).isoformat()
@@ -377,16 +378,16 @@ def register(mcp: FastMCP) -> None:
         current_response = await crud_get_by_id("/rest/api/admission", admission_id)
         current = unwrap_single_record(current_response, "admission")
         if current is None:
-            raise ValueError("Admission read returned no record; update was not sent.")
+            raise reportable_error("Admission read returned no record; update was not sent.")
         required_context = ("clinic_id", "admission_date", "admission_length")
         missing_context = [field for field in required_context if current.get(field) is None]
         if missing_context:
-            raise ValueError("Admission lacks required update context: " + ", ".join(missing_context))
+            raise reportable_error("Admission lacks required update context: " + ", ".join(missing_context))
         try:
             start = _datetime.strptime(current["admission_date"], "%Y-%m-%d %H:%M:%S")
             hours, minutes, seconds = (int(part) for part in current["admission_length"].split(":"))
         except (TypeError, ValueError):
-            raise ValueError("Admission has invalid admission_date or admission_length; update was not sent.") from None
+            raise reportable_error("Admission has invalid admission_date or admission_length; update was not sent.") from None
         duration = _td(hours=hours, minutes=minutes, seconds=seconds)
         payload: dict = {
             "clinic_id": current["clinic_id"],

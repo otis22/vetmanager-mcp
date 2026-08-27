@@ -1,6 +1,7 @@
 """Financial entity tools: Payment, ClosingOfInvoices, InvoiceDocument, Cassa, CassaClose."""
 
 import asyncio
+from exceptions import ToolInputError, reportable_error
 from datetime import date, timedelta
 
 from fastmcp import FastMCP
@@ -25,7 +26,7 @@ def register(mcp: FastMCP) -> None:
         resolved_from = parse_date_param(date_from)
         resolved_to = parse_date_param(date_to)
         if resolved_from and resolved_to and resolved_from > resolved_to:
-            raise ValueError(f"{label}_from must be on or before {label}_to")
+            raise ToolInputError(f"{label}_from must be on or before {label}_to")
         return resolved_from, resolved_to
 
     def _day_start(date_value: str) -> str:
@@ -40,7 +41,7 @@ def register(mcp: FastMCP) -> None:
             if not isinstance(item, dict):
                 continue
             if item.get("property") == "create_date":
-                raise ValueError(
+                raise ToolInputError(
                     "Do not pass create_date in filter together with date_from/date_to. "
                     "Use date_from/date_to for payment date range, or omit them and pass "
                     "a raw create_date filter explicitly."
@@ -51,7 +52,7 @@ def register(mcp: FastMCP) -> None:
             if not isinstance(item, dict):
                 continue
             if item.get("property") in {"client_id", "clientId"}:
-                raise ValueError(
+                raise ToolInputError(
                     "Vetmanager Payment REST does not support client_id filter. "
                     "Use get_client_payment_applications(client_id=...) for "
                     "client-scoped payment applications."
@@ -62,7 +63,7 @@ def register(mcp: FastMCP) -> None:
             if not isinstance(item, dict):
                 continue
             if item.get("property") in _INVOICE_DOCUMENT_FILTER_FIELDS:
-                raise ValueError(
+                raise ToolInputError(
                     "Use the invoice_id argument for get_invoice_documents; "
                     "it is converted to document_id internally. Do not also pass "
                     "invoice_id/invoiceId/documentId/document_id in filter."
@@ -73,7 +74,7 @@ def register(mcp: FastMCP) -> None:
             if not isinstance(item, dict):
                 continue
             if item.get("property") in {"minus_document_id", "plus_document_id"}:
-                raise ValueError(
+                raise ToolInputError(
                     "Do not pass minus_document_id or plus_document_id together with "
                     "invoice_id; invoice_id searches both sides."
                 )
@@ -142,20 +143,20 @@ def register(mcp: FastMCP) -> None:
         )
         if isinstance(invoice_resp, dict) and invoice_resp.get("success") is False:
             message = invoice_resp.get("message") or "Invoice lookup failed"
-            raise ValueError(
+            raise reportable_error(
                 "Invoice lookup failed for get_client_payment_applications "
                 f"pet filter: {message}"
             )
         rows, total = _extract_entity_rows(invoice_resp, "invoice")
         if total is not None and total > _CLIENT_PAYMENT_INVOICE_ID_CAP:
-            raise ValueError(
+            raise ToolInputError(
                 "pet filter matched too many invoices for get_client_payment_applications "
                 f"({total} > {_CLIENT_PAYMENT_INVOICE_ID_CAP}). Use the client-level "
                 "call without pet_id and filter returned invoice.pet_id, or query a "
                 "narrower pet context separately."
             )
         if total is None and len(rows) >= _CLIENT_PAYMENT_INVOICE_ID_CAP:
-            raise ValueError(
+            raise ToolInputError(
                 "pet filter may have more invoices than get_client_payment_applications "
                 f"can safely query ({_CLIENT_PAYMENT_INVOICE_ID_CAP} rows with unknown total). "
                 "Use the client-level call without pet_id and filter returned invoice.pet_id, "
@@ -201,11 +202,11 @@ def register(mcp: FastMCP) -> None:
                 deliberately unsupported; use get_client_payment_applications.
         """
         if status and status not in _PAYMENT_STATUSES:
-            raise ValueError(
+            raise ToolInputError(
                 f"status must be one of {sorted(_PAYMENT_STATUSES)}, got '{status}'"
             )
         if client_id:
-            raise ValueError(
+            raise ToolInputError(
                 "Vetmanager Payment REST does not support client_id filter. "
                 "Use get_client_payment_applications(client_id=...) for "
                 "client-scoped payment applications."
@@ -260,9 +261,9 @@ def register(mcp: FastMCP) -> None:
                 date (inclusive), implemented as < next day 00:00:00.
         """
         if client_id <= 0:
-            raise ValueError("client_id is required")
+            raise ToolInputError("client_id is required")
         if pet_id < 0:
-            raise ValueError("pet_id must be positive or 0")
+            raise ToolInputError("pet_id must be positive or 0")
         resolved_date_from, resolved_date_to = _parse_date_range(
             date_from, date_to, label="date"
         )

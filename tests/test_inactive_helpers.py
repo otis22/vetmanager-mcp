@@ -6,6 +6,8 @@ from datetime import date
 
 import pytest
 
+from exceptions import ToolInputError
+
 from tools import _inactive_helpers as inactive_helpers
 from tools._inactive_helpers import calculate_inactive_window
 
@@ -44,11 +46,11 @@ class TestCalculateInactiveWindow:
         assert cutoff_oldest == "2023-02-28"
 
     def test_validates_min_less_than_or_equal_max(self):
-        with pytest.raises(ValueError, match="months_min must be <= months_max"):
+        with pytest.raises(ToolInputError, match="months_min must be <= months_max"):
             calculate_inactive_window(months_min=10, months_max=5)
 
     def test_validates_positive_min(self):
-        with pytest.raises(ValueError, match="months_min must be >= 1"):
+        with pytest.raises(ToolInputError, match="months_min must be >= 1"):
             calculate_inactive_window(months_min=0, months_max=5)
 
 
