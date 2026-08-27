@@ -65,8 +65,10 @@ class _Scanner(ast.NodeVisitor):
     def __init__(self) -> None:
         # Names bound directly to the class: `ToolError`, `TE`, `_ERROR`.
         self.class_names: set[str] = set()
-        # Names bound to the module holding it: `fastmcp_exceptions`, `exceptions`.
-        self.module_names: set[str] = set()
+        # Local name -> the module path it stands for. `import fastmcp as fm`
+        # binds `fm` to `fastmcp`, and `fm.exceptions.ToolError` is then the
+        # same class reached one dot further out.
+        self.module_paths: dict[str, str] = {}
         self.findings: list[tuple[int, str]] = []
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
@@ -74,18 +76,19 @@ class _Scanner(ast.NodeVisitor):
         for alias in node.names:
             if module == EXCEPTIONS_MODULE and alias.name == FORBIDDEN_CLASS:
                 self.class_names.add(alias.asname or alias.name)
-            # `from fastmcp import exceptions as fe`
-            elif f"{module}.{alias.name}" == EXCEPTIONS_MODULE:
-                self.module_names.add(alias.asname or alias.name)
+            else:
+                # `from fastmcp import exceptions as fe`
+                self.module_paths[alias.asname or alias.name] = f"{module}.{alias.name}"
         self.generic_visit(node)
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
-            if alias.name == EXCEPTIONS_MODULE:
-                # `import fastmcp.exceptions` binds `fastmcp`; the call then
-                # reads `fastmcp.exceptions.ToolError`, an Attribute of an
-                # Attribute, which _resolves_ below.
-                self.module_names.add(alias.asname or alias.name)
+            if alias.asname:
+                # `import fastmcp.exceptions as fe`, `import fastmcp as fm`
+                self.module_paths[alias.asname] = alias.name
+            else:
+                # `import fastmcp.exceptions` binds the top package only.
+                self.module_paths[alias.name.split(".")[0]] = alias.name.split(".")[0]
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:
@@ -118,11 +121,22 @@ class _Scanner(ast.NodeVisitor):
         return None
 
     def _is_class_attribute(self, node: ast.expr) -> bool:
-        """`fe.ToolError`, `fastmcp.exceptions.ToolError`."""
+        """`fe.ToolError`, `fastmcp.exceptions.ToolError`, `fm.exceptions.ToolError`."""
         if not isinstance(node, ast.Attribute) or node.attr != FORBIDDEN_CLASS:
             return False
-        base = ast.unparse(node.value)
-        return base in self.module_names or base == EXCEPTIONS_MODULE
+        return self._module_path(node.value) == EXCEPTIONS_MODULE
+
+    def _module_path(self, node: ast.expr) -> str | None:
+        """Expand the leading local name of a dotted path into its module."""
+        parts: list[str] = []
+        while isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+        if not isinstance(node, ast.Name):
+            return None
+        head = self.module_paths.get(node.id, node.id)
+        parts.append(head)
+        return ".".join(reversed(parts))
 
 
 def scan_file(path: Path) -> list[Finding]:

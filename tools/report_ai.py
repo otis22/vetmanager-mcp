@@ -689,6 +689,7 @@ def _safe_export_error(
     action: str,
     *,
     retry_on_conflict: bool = False,
+    report_id_from_caller: bool = False,
 ) -> ToolError:
     if isinstance(exc, AuthError) and exc.error_code == SCOPE_DENIED_ERROR_CODE:
         return _tool_error_from_vm(exc)
@@ -713,9 +714,15 @@ def _safe_export_error(
                 "automatically, immediately, or in parallel."
             )
         if "not accessible for rest" in lowered:
-            return reportable_error(
+            message = (
                 "Report is not REST-exportable: Vetmanager denied StartReport for this report_id."
             )
+            # Stage 265.6: when the caller chose the report_id, this is a
+            # precondition its own docstring states, not a defect. Sentry issue
+            # PYTHON-N is exactly this refusal, filed against us.
+            if report_id_from_caller:
+                return ToolInputError(message)
+            return reportable_error(message)
         return reportable_error(
             "Report export was denied or temporarily limited by Vetmanager (HTTP 403). "
             "Retry only with bounded attempts; if it keeps failing, treat this report_id "
@@ -761,7 +768,11 @@ async def _call_vm(
 
 
 async def _start_report_export(
-    report_id: int, filter_json: str | None = None, *, tool_name: str
+    report_id: int,
+    filter_json: str | None = None,
+    *,
+    tool_name: str,
+    report_id_from_caller: bool = False,
 ) -> dict:
     params = _report_filter_params(report_id, filter_json)
     client = VetmanagerClient()
@@ -779,7 +790,9 @@ async def _start_report_export(
         return payload
     except VetmanagerError as exc:
         record_report_ai_export(operation="start", outcome="error")
-        raise _safe_export_error(exc, "Starting report export") from None
+        raise _safe_export_error(
+            exc, "Starting report export", report_id_from_caller=report_id_from_caller,
+        ) from None
     except ToolError:
         record_report_ai_export(operation="start", outcome="error")
         raise
@@ -930,7 +943,10 @@ def register(mcp: FastMCP) -> None:
                 MCP validates JSON syntax only, not report-specific semantics.
         """
         return await _start_report_export(
-            report_id, filter_json, tool_name="start_report_export"
+            report_id,
+            filter_json,
+            tool_name="start_report_export",
+            report_id_from_caller=True,
         )
 
     @mcp.tool

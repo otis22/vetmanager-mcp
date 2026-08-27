@@ -94,6 +94,20 @@ def check(value):
     if value <= 0:
         raise _ERROR("value must be a positive integer.")
 """,
+    "imported_as_a_package_alias": """
+import fastmcp as fm
+
+def check(value):
+    if value <= 0:
+        raise fm.exceptions.ToolError("value must be a positive integer.")
+""",
+    "imported_as_a_deep_module_alias": """
+import fastmcp.exceptions as fastmcp_exceptions
+
+def check(value):
+    if value <= 0:
+        raise fastmcp_exceptions.ToolError("value must be a positive integer.")
+""",
     "built_inside_a_comprehension": """
 from fastmcp.exceptions import ToolError
 
@@ -136,6 +150,12 @@ def translate(exc) -> ToolError | None:
     if exc.status_code == 500:
         return reportable_error("Upstream failed.")
     return None
+""",
+    "another_class_from_the_same_package": """
+import fastmcp as fm
+
+def build():
+    return fm.FastMCP(name="vetmanager")
 """,
     "asking_the_type_is_not_building": """
 from fastmcp.exceptions import ToolError

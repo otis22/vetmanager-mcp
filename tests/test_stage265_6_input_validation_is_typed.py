@@ -146,3 +146,45 @@ async def test_a_real_failure_is_still_captured():
             )
 
     capture.assert_called_once()
+
+
+def _rest_denied_payload() -> dict:
+    return {"success": False, "message": "Report is not accessible for REST"}
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_a_report_the_caller_picked_is_the_callers_precondition():
+    """`start_report_export` documents that the report must have REST export on.
+
+    Sentry issue PYTHON-N is this exact refusal, filed against us twice.
+    """
+    _billing_mock()
+    respx.get(f"{BASE}/rest/api/report/StartReport").mock(
+        return_value=httpx.Response(403, json=_rest_denied_payload()),
+    )
+    headers_patch, runtime_patch = patch_runtime_credentials(DOMAIN, API_KEY)
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolInputError):
+            await mcp.call_tool("start_report_export", {"report_id": 4242})
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_the_same_refusal_on_a_report_we_chose_is_still_reportable():
+    """Here the report_id came out of the job, so the choice was not the caller's."""
+    _billing_mock()
+    respx.get(f"{BASE}/rest/api/report-ai-job/7").mock(
+        return_value=httpx.Response(200, json={
+            "success": True,
+            "data": {"job": {"id": 7, "status": "saved", "report_id": 99}},
+        }),
+    )
+    respx.get(f"{BASE}/rest/api/report/StartReport").mock(
+        return_value=httpx.Response(403, json=_rest_denied_payload()),
+    )
+    headers_patch, runtime_patch = patch_runtime_credentials(DOMAIN, API_KEY)
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError) as raised:
+            await mcp.call_tool("get_report_ai_job_export", {"job_id": 7})
+    assert not isinstance(raised.value, ToolInputError)
