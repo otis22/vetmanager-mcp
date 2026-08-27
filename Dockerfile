@@ -13,9 +13,12 @@ RUN groupadd -g "${GID}" app && \
 
 WORKDIR /app
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+# No apt step on purpose. `curl` was here only for the healthcheck below, and
+# the image already carries a Python that can make the same request. Reaching
+# deb.debian.org costs a build-time dependency on a network path this host does
+# not have: 27.08.2026 the deploy failed twice because Fastly's IPv4 addresses
+# time out from this VDS — the host itself only gets through over IPv6, which
+# containers do not have.
 
 # Production dependencies only
 RUN pip install --no-cache-dir \
@@ -41,7 +44,7 @@ RUN mkdir -p /app/data /var/log/vetmanager-mcp && \
 USER app
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8000}/healthz || exit 1
+    CMD python -c "import os,sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://localhost:%s/healthz' % os.environ.get('PORT','8000'), timeout=5).status == 200 else 1)" || exit 1
 
 CMD ["python", "server.py"]
 
