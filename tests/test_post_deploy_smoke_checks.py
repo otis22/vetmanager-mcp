@@ -243,8 +243,11 @@ def test_a_redirect_is_an_answer_not_a_step_towards_one() -> None:
         httpd.server_close()
         thread.join(timeout=2)
 
+    combined = result.stdout + result.stderr
     assert result.returncode != 0
-    assert "http_status=302" in result.stdout + result.stderr
+    assert "http_status=302" in combined
+    # Refusing the redirect is only half the job: say where it pointed.
+    assert "/healthz-ok" in combined, combined
 
 
 def test_a_slow_dribble_hits_the_deadline_for_the_whole_request() -> None:
@@ -269,5 +272,9 @@ def test_a_slow_dribble_hits_the_deadline_for_the_whole_request() -> None:
         thread.join(timeout=2)
     elapsed = time.monotonic() - started
 
+    combined = result.stdout + result.stderr
     assert result.returncode != 0
     assert elapsed < 8, f"the deadline did not bound the transfer: {elapsed:.1f}s"
+    # curl aborted the transfer and still printed the status it already had.
+    # Dropping it would make a dribbling peer look like an unreachable one.
+    assert "http_status=200" in combined, combined

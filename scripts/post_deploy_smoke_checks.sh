@@ -30,14 +30,28 @@ import os, sys, threading, urllib.error, urllib.request
 url, max_time, body_file, *rest = sys.argv[1:]
 deadline = float(max_time)
 
+# What we know so far. curl --max-time still prints the status it already got
+# and keeps the partial body; losing both would make a slow peer look exactly
+# like an unreachable one.
+seen = {"status": None, "body": bytearray()}
+
+
+def report_and_exit(reason, code):
+    with open(body_file, "wb") as handle:
+        handle.write(bytes(seen["body"]))
+    if seen["status"] is not None:
+        print(seen["status"])
+    print(reason, file=sys.stderr)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
+
 
 def give_up():
     # curl --max-time bounds the whole transfer. urlopen(timeout=...) bounds one
     # socket operation, so a peer dribbling a byte at a time would keep it alive
     # indefinitely — measured at ten seconds against a one-second limit.
-    print("TimeoutError: exceeded %ss for the whole request" % deadline, file=sys.stderr)
-    sys.stderr.flush()
-    os._exit(7)
+    report_and_exit("TimeoutError: exceeded %ss for the whole request" % deadline, 7)
 
 
 watchdog = threading.Timer(deadline, give_up)
@@ -62,21 +76,35 @@ class NoRedirects(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def drain(stream):
+    while True:
+        chunk = stream.read(8192)
+        if not chunk:
+            return
+        seen["body"].extend(chunk)
+
+
 try:
     with urllib.request.build_opener(NoRedirects).open(
         urllib.request.Request(url, headers=headers), timeout=deadline
     ) as response:
-        body, status = response.read(), response.status
+        seen["status"] = response.status
+        drain(response)
 except urllib.error.HTTPError as exc:
-    body, status = exc.read(), exc.code
+    seen["status"] = exc.code
+    location = exc.headers.get("Location")
+    if location:
+        # The whole point of refusing redirects is telling the operator where
+        # the route went instead of where it should have.
+        print("Location: %s" % location, file=sys.stderr)
+    drain(exc)
 except Exception as exc:
-    print("%s: %s" % (type(exc).__name__, exc), file=sys.stderr)
-    sys.exit(7)
+    report_and_exit("%s: %s" % (type(exc).__name__, exc), 7)
 
 watchdog.cancel()
 with open(body_file, "wb") as handle:
-    handle.write(body)
-print(status)
+    handle.write(bytes(seen["body"]))
+print(seen["status"])
 '
 
 perform_request() {
@@ -97,7 +125,6 @@ perform_request() {
     SMOKE_LAST_REQUEST_EXIT=0
   else
     SMOKE_LAST_REQUEST_EXIT=$?
-    status=""
   fi
 
   SMOKE_LAST_STATUS="${status}"
