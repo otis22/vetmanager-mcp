@@ -51,16 +51,13 @@ jobs:
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          changed_paths="$(git diff --name-only "${base_sha}" "${HEAD_SHA}")"
-          if [ -z "${changed_paths}" ]; then
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if printf '%s\n' "${changed_paths}" | grep -Eqv '(^PRD/|^docs/|\.md$)'; then
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-          fi
+          # `-z` and quotepath=false keep non-ASCII paths verbatim: plain
+          # `--name-only` escapes them into octal and quotes them, which made
+          # every commit adding a Russian-named PRD look like a code commit
+          # (stage 254.3).
+          should_deploy="$(git -c core.quotepath=false diff --name-only -z \
+            "${base_sha}" "${HEAD_SHA}" | ./scripts/deploy_scope_check.sh)"
+          echo "should_deploy=${should_deploy}" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: changes

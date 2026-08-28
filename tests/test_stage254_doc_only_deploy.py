@@ -12,10 +12,16 @@ def test_deploy_workflow_scopes_from_last_successful_deploy_before_deploy() -> N
     assert "github.event.workflow_run.head_sha" in text
     assert "actions/workflows/deploy-prod.yml/runs?branch=main&status=completed" in text
     assert '.name == "deploy" and .conclusion == "success"' in text
-    assert 'git diff --name-only "${base_sha}" "${HEAD_SHA}"' in text
+    # Stage 254.3: these two lines used to pin the exact escaping-prone call
+    # (`git diff --name-only` plus a regex over its output), so the test stayed
+    # green while a Russian-named PRD walked straight through the filter. The
+    # contract is now the raw-path form and the shared decision script.
+    assert "git -c core.quotepath=false diff --name-only -z" in text
+    assert "./scripts/deploy_scope_check.sh" in text
     assert "fetch-depth: 0" in text
-    assert "^PRD/|^docs/|\\.md$" in text
-    assert "should_deploy=false" in text
+    # The verdict itself now comes from the script, so the workflow only has
+    # to hand it through unchanged.
+    assert 'echo "should_deploy=${should_deploy}"' in text
     assert "needs.changes.outputs.should_deploy == 'true'" in text
 
 
