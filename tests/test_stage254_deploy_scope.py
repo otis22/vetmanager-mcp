@@ -70,3 +70,43 @@ def test_the_workflow_produces_raw_paths_and_asks_the_script():
     assert "git -c core.quotepath=false diff --name-only -z" in workflow
     # The escaping trap lived in exactly this call; it must not come back.
     assert 'git diff --name-only "${base_sha}"' not in workflow
+
+
+def test_the_decision_drains_its_input_instead_of_closing_the_pipe():
+    # Review finding 28.08.2026: exiting on the first code path closes the pipe
+    # under a still-writing `git diff`, which surfaces as exit 141 the moment
+    # the workflow step gains `pipefail` — and only for commits that must
+    # deploy. The write is far larger than a pipe buffer, so a reader that
+    # leaves early is caught here rather than in CI.
+    # ~400 KB — several pipe buffers, but small enough that `read -d ''`
+    # (one syscall per byte) stays fast on a loaded runner.
+    paths = ["server.py"] + [f"docs/page-{index}.md" for index in range(20_000)]
+    payload = "".join(path + "\0" for path in paths).encode("utf-8")
+    with subprocess.Popen(
+        ["bash", str(SCRIPT_PATH)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ) as process:
+        assert process.stdin is not None and process.stdout is not None
+        try:
+            process.stdin.write(payload)
+            process.stdin.flush()
+        except BrokenPipeError:
+            process.kill()
+            raise AssertionError(
+                "the decision closed the pipe while the producer was still writing"
+            ) from None
+        process.stdin.close()
+        stdout = process.stdout.read()
+        try:
+            process.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            # Without this the timeout would propagate into `Popen.__exit__`,
+            # which waits on the child with no bound: a hung suite instead of
+            # a failed test.
+            process.kill()
+            raise
+
+    assert process.returncode == 0
+    assert stdout.decode("utf-8").strip() == "true"

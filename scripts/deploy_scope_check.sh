@@ -13,21 +13,22 @@
 # on the strength of a list we failed to obtain.
 set -euo pipefail
 
+# The whole list is read even once the answer is known: leaving early would
+# close the pipe under a still-writing `git diff`, and that becomes exit 141
+# the moment this step runs under `pipefail` — for code commits only.
 seen_any=false
+needs_deploy=false
 
 while IFS= read -r -d '' path; do
   seen_any=true
   case "${path}" in
-    PRD/*|docs/*|*.md) continue ;;
-    *)
-      echo true
-      exit 0
-      ;;
+    PRD/*|docs/*|*.md) ;;
+    *) needs_deploy=true ;;
   esac
 done
 
 if [ "${seen_any}" = false ]; then
-  echo true
-else
-  echo false
+  needs_deploy=true
 fi
+
+echo "${needs_deploy}"
