@@ -582,13 +582,47 @@ def _annotate_report_ai_data_payload(payload: dict) -> dict:
     return payload
 
 
-def _validate_intent_text(intent_text: str) -> str:
+# Stage 275, layer three. Asked before the report is built, so the personal
+# columns are never selected in the first place — the other two layers only get
+# to clean what already arrived. Constant on purpose: an identical request must
+# stay identical, or upstream deduplication stops recognising repeats.
+DEPERSONALIZED_INTENT_REQUIREMENT = (
+    "Важно: не включай в результат персональные данные — "
+    "ФИО клиентов и сотрудников, телефоны, адреса и электронную почту. "
+    "Если такие поля нужны для группировки, используй идентификаторы."
+)
+
+
+def _validate_intent_text(intent_text: str, *, reserve: int = 0) -> str:
     intent = (intent_text or "").strip()
     if not intent:
         raise ToolInputError("intent_text must be non-empty.")
-    if len(intent) > INTENT_MAX_LENGTH:
+    if len(intent) + reserve > INTENT_MAX_LENGTH:
         raise ToolInputError(f"intent_text must be no longer than {INTENT_MAX_LENGTH} characters.")
     return intent
+
+
+def _answers_must_hide_personal_data() -> bool:
+    credentials = get_current_runtime_credentials()
+    return bool(credentials is not None and getattr(credentials, "is_depersonalized", False))
+
+
+def _privacy_requirement_reserve() -> int:
+    """Room the requirement will take, and only for the tokens that get it.
+
+    Charging every caller for it would shrink the request budget of tokens that
+    never receive the requirement at all.
+    """
+    if not _answers_must_hide_personal_data():
+        return 0
+    return len(DEPERSONALIZED_INTENT_REQUIREMENT) + 2
+
+
+def _intent_with_privacy_requirement(intent: str) -> str:
+    """Append the requirement for a token whose answers must carry no personal data."""
+    if not _answers_must_hide_personal_data():
+        return intent
+    return f"{intent}\n\n{DEPERSONALIZED_INTENT_REQUIREMENT}"
 
 
 def _validate_report_title(title: str) -> str:
@@ -823,7 +857,10 @@ def register(mcp: FastMCP) -> None:
                 queued jobs without user consent.
         """
         try:
-            intent = _validate_intent_text(intent_text)
+            # The requirement is part of what upstream must fit, so its length
+            # is reserved before the user's own text is measured.
+            intent = _validate_intent_text(intent_text, reserve=_privacy_requirement_reserve())
+            intent = _intent_with_privacy_requirement(intent)
             payload = await _call_vm(
                 "POST", "/rest/api/report-ai-job", json={"intent_text": intent},
                 tool_name="create_report_ai_job",

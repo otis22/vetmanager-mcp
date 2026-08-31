@@ -52,6 +52,20 @@ TOKEN_STATUS_DISPLAY: dict[str, str] = {
 }
 
 
+# Stage 275: shown wherever depersonalization is offered. A promise stated
+# without its limit is exactly what sent a reader of this service to write that
+# it hands out full access to the clinic database.
+REPORT_PRIVACY_NOTE = (
+    "Отчёты строятся по свободному запросу, поэтому полной гарантии по персональным "
+    "данным в них нет. vetmanager-mcp накладывает три слоя защиты: скрывает "
+    "персональные колонки по названию, вычищает из значений телефоны, почту, адреса "
+    "и узнаваемые формы ФИО в любых колонках и требует от генератора отчёта не "
+    "включать персональные данные. Известный остаток, который эти слои не ловят: "
+    "имя из двух слов без отчества в колонке с неожиданным названием. Выгрузка "
+    "CSV и XLSX скачивается из Ветменеджера напрямую, мимо этих слоёв."
+)
+
+
 def render_access_summary(preset: str) -> str:
     """Three muted lines describing a preset, in the page's existing type.
 
@@ -1108,6 +1122,7 @@ def render_oauth_consent_page(
               <span>
                 <strong style="display: block; color: var(--ink);">Без персональных данных</strong>
                 <small style="color: var(--muted); font-size: 0.85rem;">ФИО, телефоны, email и адреса будут скрыты в ответах помощника.</small>
+                <small style="display: block; color: var(--muted); font-size: 0.85rem; margin-top: 6px;">{escape(REPORT_PRIVACY_NOTE)}</small>
               </span>
             </label>
             <label style="display: flex; gap: 10px; align-items: start;">
@@ -1819,7 +1834,8 @@ def render_account_page(
             <input type="checkbox" name="is_depersonalized" value="1" {"checked" if token_is_depersonalized else ""} {token_disabled} data-testid="token-is-depersonalized" style="width: auto; margin-top: 6px;">
             <span>
               <strong style="display: block; color: var(--ink);">Деперсонализировать ответы</strong>
-              <small style="color: var(--muted); font-size: 0.85rem;">Скрывает ФИО, телефоны, email и адреса; позже этот токен будет использовать централизованный sanitizer ответа.</small>
+              <small style="color: var(--muted); font-size: 0.85rem;">Скрывает ФИО, телефоны, email и адреса в ответах помощника.</small>
+              <small style="display: block; color: var(--muted); font-size: 0.85rem; margin-top: 6px;">{escape(REPORT_PRIVACY_NOTE)}</small>
             </span>
           </label>
           <label>Ограничение по IP

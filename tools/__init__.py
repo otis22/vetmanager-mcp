@@ -18,6 +18,20 @@ from tool_scope_security import (
 from tool_access_registry import (
     TOOL_REQUIRED_SCOPES,
 )
+
+# Stage 275: what a report returns is shaped by generated SQL, so its columns
+# cannot be recognised by name. These tools get value-level cleaning on top;
+# ordinary tools must not, or predictable fields start losing real data.
+REPORT_TOOLS = frozenset({
+    "create_report_ai_job",
+    "confirm_report_ai_job_candidate",
+    "get_report_ai_job",
+    "get_report_ai_job_data",
+    "get_report_ai_job_export",
+    "get_report_export_file",
+    "save_report_ai_job_as_report",
+    "start_report_export",
+})
 from vetmanager_client import resolve_runtime_credentials
 
 
@@ -60,7 +74,9 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
             if not credentials.is_depersonalized:
                 return result
             try:
-                return depersonalization.sanitize_tool_result(result)
+                return depersonalization.sanitize_tool_result(
+                    result, report_mode=resolved_tool_name in REPORT_TOOLS
+                )
             except Exception:
                 record_sanitizer_failure()
                 raise reportable_error("Depersonalization failed.") from None
