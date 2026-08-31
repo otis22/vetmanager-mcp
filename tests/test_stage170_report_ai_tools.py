@@ -278,7 +278,7 @@ async def test_create_report_ai_job_posts_strict_intent_body():
         )
     )
 
-    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE))
     with headers_patch, runtime_patch:
         result = await mcp.call_tool(
             "create_report_ai_job",
@@ -347,7 +347,7 @@ async def test_report_ai_tool_metric_uses_constant_job_path_template():
         )
     )
 
-    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE))
     with headers_patch, runtime_patch:
         await mcp.call_tool("get_report_ai_job", {"job_id": 987654})
 
@@ -359,7 +359,7 @@ async def test_report_ai_tool_metric_uses_constant_job_path_template():
 @pytest.mark.asyncio
 async def test_invalid_report_ai_job_creation_counts_as_error_attempt():
     service_metrics.reset_service_metrics()
-    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE))
     with headers_patch, runtime_patch:
         with pytest.raises(ToolError, match="intent_text"):
             await mcp.call_tool("create_report_ai_job", {"intent_text": ""})
@@ -376,7 +376,7 @@ async def test_create_report_ai_job_rejects_empty_or_long_intent_before_upstream
         return_value=httpx.Response(200, json={"data": {"unexpected": True}})
     )
 
-    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE))
     with headers_patch, runtime_patch:
         with pytest.raises(ToolError, match="intent_text"):
             await mcp.call_tool("create_report_ai_job", {"intent_text": intent_text})
@@ -400,7 +400,7 @@ async def test_create_report_ai_job_accepts_20000_character_intent():
     )
 
     intent = "x" * 20000
-    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE))
     with headers_patch, runtime_patch:
         await mcp.call_tool("create_report_ai_job", {"intent_text": intent})
 
@@ -830,7 +830,7 @@ async def test_confirm_report_ai_job_candidate_posts_strict_report_id_body():
         )
     )
 
-    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE))
     with headers_patch, runtime_patch:
         result = await mcp.call_tool(
             "confirm_report_ai_job_candidate",
@@ -857,7 +857,7 @@ async def test_confirm_report_ai_job_candidate_preserves_validation_error_code()
         )
     )
 
-    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE))
     with headers_patch, runtime_patch:
         with pytest.raises(ToolError, match="VALIDATION_ERROR"):
             await mcp.call_tool(
@@ -1015,7 +1015,7 @@ async def test_confirmed_existing_report_matched_data_flow_does_not_save():
         return_value=httpx.Response(200, json={"data": {"report_id": 999}})
     )
 
-    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE))
     with headers_patch, runtime_patch:
         await mcp.call_tool("confirm_report_ai_job_candidate", {"job_id": 22, "report_id": 84})
         result = await mcp.call_tool("get_report_ai_job_data", {"job_id": 22})

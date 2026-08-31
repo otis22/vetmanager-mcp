@@ -185,18 +185,18 @@ def test_frontdesk_accepts_analytics_read_blast_radius_explicitly():
         for name, scopes in TOOL_REQUIRED_SCOPES.items()
         if SCOPE_ANALYTICS_READ in scopes
     }
+    # Stage 269 moved everything that starts work upstream onto
+    # `report_ai.write`, so this list is what front desk can reach with a read
+    # right alone: the slots workflow, message reports, timesheets, and looking
+    # at a report someone else already built.
     assert analytics_tools == {
-        "confirm_report_ai_job_candidate",
-        "create_report_ai_job",
         "get_doctor_free_slots",
         "get_message_reports",
-        "get_report_ai_job_export",
         "get_report_ai_job",
         "get_report_ai_job_data",
         "get_report_export_file",
         "get_timesheet_by_id",
         "get_timesheets",
-        "start_report_export",
     }
     assert SCOPE_ANALYTICS_READ in TOKEN_PRESET_SCOPES[PRESET_FRONTDESK]
 
@@ -218,16 +218,16 @@ def test_normalize_token_preset_rejects_unknown_or_whitespace_values(preset):
         ("get_doctor_free_slots", (SCOPE_ADMISSIONS_READ, SCOPE_ANALYTICS_READ)),
         ("get_message_reports", (SCOPE_ANALYTICS_READ,)),
         ("get_report_ai_prompt_helper", ()),
-        ("create_report_ai_job", (SCOPE_ANALYTICS_READ,)),
+        ("create_report_ai_job", (SCOPE_REPORT_AI_WRITE,)),
         ("search_invoice_goods", (SCOPE_INVENTORY_READ,)),
         ("get_good_combination", (SCOPE_INVENTORY_READ,)),
         ("calculate_good_combination_price", (SCOPE_INVENTORY_READ,)),
         ("get_report_ai_job", (SCOPE_ANALYTICS_READ,)),
-        ("confirm_report_ai_job_candidate", (SCOPE_ANALYTICS_READ,)),
+        ("confirm_report_ai_job_candidate", (SCOPE_REPORT_AI_WRITE,)),
         ("get_report_ai_job_data", (SCOPE_ANALYTICS_READ,)),
-        ("start_report_export", (SCOPE_ANALYTICS_READ,)),
+        ("start_report_export", (SCOPE_REPORT_AI_WRITE,)),
         ("get_report_export_file", (SCOPE_ANALYTICS_READ,)),
-        ("get_report_ai_job_export", (SCOPE_ANALYTICS_READ,)),
+        ("get_report_ai_job_export", (SCOPE_REPORT_AI_WRITE,)),
         ("save_report_ai_job_as_report", (SCOPE_REPORT_AI_WRITE,)),
         ("send_message_to_users", (SCOPE_MESSAGING_WRITE,)),
         ("update_user", (SCOPE_USERS_WRITE,)),
@@ -243,12 +243,14 @@ def test_request_scope_mapping_covers_missing_write_paths():
     assert required_scope_for_request("POST", "/rest/api/timesheet") == SCOPE_ANALYTICS_WRITE
     assert required_scope_for_request("GET", "/rest/api/messages/reports") == SCOPE_ANALYTICS_READ
     assert required_scope_for_request("GET", "/rest/api/ClientPhone") == SCOPE_CLIENTS_READ
-    assert required_scope_for_request("POST", "/rest/api/report-ai-job") == SCOPE_ANALYTICS_READ
+    # Stage 269: starting work needs the report right; looking at a job or at a
+    # file that is already built stays on the read right.
+    assert required_scope_for_request("POST", "/rest/api/report-ai-job") == SCOPE_REPORT_AI_WRITE
     assert required_scope_for_request("GET", "/rest/api/report-ai-job/2") == SCOPE_ANALYTICS_READ
-    assert required_scope_for_request("POST", "/rest/api/report-ai-job/2/confirm") == SCOPE_ANALYTICS_READ
+    assert required_scope_for_request("POST", "/rest/api/report-ai-job/2/confirm") == SCOPE_REPORT_AI_WRITE
     assert required_scope_for_request("GET", "/rest/api/report-ai-job/2/data") == SCOPE_ANALYTICS_READ
     assert required_scope_for_request("POST", "/rest/api/report-ai-job/2/save") == SCOPE_REPORT_AI_WRITE
-    assert required_scope_for_request("GET", "/rest/api/report/StartReport") == SCOPE_ANALYTICS_READ
+    assert required_scope_for_request("GET", "/rest/api/report/StartReport") == SCOPE_REPORT_AI_WRITE
     assert required_scope_for_request("GET", "/rest/api/report/reportFile") == SCOPE_ANALYTICS_READ
     assert required_scope_for_request("GET", "/rest/api/good/productsDataForInvoice") == SCOPE_INVENTORY_READ
     assert required_scope_for_request("GET", "/rest/api/good/checkProductData") == SCOPE_INVENTORY_READ

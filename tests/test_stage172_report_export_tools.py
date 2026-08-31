@@ -7,7 +7,7 @@ import service_metrics
 import tools.report_ai as report_ai
 from server import mcp
 from tests.runtime_factories import patch_runtime_credentials
-from token_scopes import SCOPE_ANALYTICS_READ
+from token_scopes import SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE
 
 
 DOMAIN = "testclinic"
@@ -21,7 +21,9 @@ def billing_mock():
     )
 
 
-def bearer_runtime_patch(*, scopes=(SCOPE_ANALYTICS_READ,)):
+# Stage 269: the report flow needs both rights — `analytics.read` to look
+# at a job, `report_ai.write` to start one.
+def bearer_runtime_patch(*, scopes=(SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE)):
     return patch_runtime_credentials(
         DOMAIN,
         API_KEY,
@@ -513,8 +515,9 @@ async def test_start_report_export_missing_scope_keeps_scope_error():
             await mcp.call_tool("start_report_export", {"report_id": 88})
 
     message = str(exc_info.value)
-    assert "Required scopes: analytics.read" in message
-    assert "Missing scopes: analytics.read" in message
+    # Stage 269: starting an export is no longer covered by a read right.
+    assert "Required scopes: report_ai.write" in message
+    assert "Missing scopes: report_ai.write" in message
     assert "not REST-exportable" not in message
     assert route.call_count == 0
 

@@ -212,12 +212,18 @@ def required_scope_for_request(method: str, path: str) -> str | None:
     if entity == "report-ai-job":
         if normalized_method == "GET":
             return SCOPE_ANALYTICS_READ
-        if normalized_method == "POST" and len(parts) >= 5 and parts[4] == "save":
-            return SCOPE_REPORT_AI_WRITE
         if normalized_method == "POST":
-            return SCOPE_ANALYTICS_READ
+            # Stage 269: every POST here makes Vetmanager do something — create
+            # the job, confirm a candidate, save the report. Reading a job that
+            # already exists is the GET above.
+            return SCOPE_REPORT_AI_WRITE
         return None
     if entity == "report" and normalized_method == "GET":
+        # Stage 269: `StartReport` is a GET that starts an export, so it needs
+        # the same right as creating a job; `reportFile` only hands back a file
+        # that is already built.
+        if len(parts) >= 4 and parts[3] == "startreport":
+            return SCOPE_REPORT_AI_WRITE
         return SCOPE_ANALYTICS_READ
     if normalized_method == "GET":
         return _READ_SCOPE_BY_ENTITY.get(entity)

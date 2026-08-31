@@ -491,11 +491,20 @@ Scope routing:
 - `token_scopes.py::required_scope_for_request` — defense-in-depth на REST path:
   `ClientPhone` требует `clients.read`, `/messages/reports` и timesheet read
   paths требуют `analytics.read`, send-message mutation paths требуют
-  `messaging.write`, а `/report-ai-job/{id}/save` требует `report_ai.write`.
+  `messaging.write`. Этап 269: все `POST /report-ai-job*` (создание,
+  подтверждение кандидата, сохранение) и `GET /report/StartReport` требуют
+  `report_ai.write`; чтение задания, его данных и готового файла остаётся на
+  `analytics.read`.
 - `messaging.read` остаётся supported legacy scope для совместимости со старыми
   manifests, но active preset'ы его не используют.
-- `report_ai.write` — узкий write scope только для explicit
-  `save_report_ai_job_as_report`; old persisted full-access snapshots before
+- `report_ai.write` — право на работу с отчётами. Этап 172.2 завёл его под
+  explicit `save_report_ai_job_as_report`; этап 269 перевёл на него всё, что
+  запускает работу на стороне Ветменеджера: `create_report_ai_job`,
+  `confirm_report_ai_job_candidate`, `start_report_export` и
+  `get_report_ai_job_export` (читающий по имени, запускающий по сути).
+  Причина — `create_report_ai_job` принимает свободный текст, по которому
+  строится отчёт по любым данным клиники, поэтому на праве чтения аналитики он
+  обходил область видимости группы. Old persisted full-access snapshots before
   this scope are expanded to current full access during deserialization.
 
 Storage:
