@@ -39,7 +39,13 @@ async def test_tool_preflight_denies_missing_scope_before_body(monkeypatch):
     assert "Tool 'get_inactive_pets' exists but is not permitted for this token." in message
     assert "Missing scopes: finance.read, medical_cards.read" in message
     assert "Current preset: custom scopes" in message
-    assert "Allowed presets: Full access, Read only" in message
+    # Stage 272: pinned as the whole line, not a prefix. As a substring this
+    # stayed green while the list behind it grew, shrank or repeated itself —
+    # and this list is what an agent reads to decide which key to ask for.
+    presets_line = next(
+        part for part in message.split(". ") if part.startswith("Allowed presets:")
+    )
+    assert presets_line == "Allowed presets: Full access, Read only, Analytics"
     assert exc_info.value.__cause__ is None
 
 
