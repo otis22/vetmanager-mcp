@@ -12,12 +12,19 @@ a copy-paste from a sibling entity, or someone reading the old PRD of stage 55.
 """
 
 import pytest
+from fastmcp.exceptions import NotFoundError, ToolError
 
 from server import mcp
 from tool_access_registry import MARKETED_PRESET_TOOLS, TOOL_REQUIRED_SCOPES
 from tool_descriptions import TOOL_ENTITY_MAP
 
 REMOVED_TOOLS = ("delete_invoice", "delete_invoice_document")
+# The argument each tool used to take, so that a returned tool fails this file
+# on the refusal it gives — not on an argument it does not recognise.
+REMOVED_TOOL_ARGUMENTS = {
+    "delete_invoice": {"invoice_id": 10},
+    "delete_invoice_document": {"doc_id": 20},
+}
 
 
 @pytest.mark.asyncio
@@ -37,3 +44,19 @@ def test_the_removed_tools_are_absent_from_every_registry(tool_name):
     assert tool_name not in TOOL_ENTITY_MAP
     for preset, tools in MARKETED_PRESET_TOOLS.items():
         assert tool_name not in tools, f"{tool_name} is advertised by preset {preset}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", REMOVED_TOOLS)
+async def test_calling_a_removed_tool_reads_as_unknown_not_as_missing_rights(tool_name):
+    """The refusal has to say the tool does not exist.
+
+    A scope denial would send the caller to ask an administrator for wider
+    access, and that access would never help — the tool is gone on purpose.
+    """
+    with pytest.raises((NotFoundError, ToolError)) as refusal:
+        await mcp.call_tool(tool_name, REMOVED_TOOL_ARGUMENTS[tool_name])
+
+    message = str(refusal.value).lower()
+    assert "unknown tool" in message or "not found" in message, message
+    assert "scope" not in message and "preset" not in message, message
