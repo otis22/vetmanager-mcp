@@ -137,6 +137,29 @@ def _rendered(name, value):
     return f"<strong>{name}:</strong> {value}"
 
 
+def _summary_block(html):
+    """The whole summary container, not its first line.
+
+    Slicing to the first `</div>` stopped inside the first row and made the
+    checks below pass on a fragment — the rest of the block, and every other
+    preset, went unexamined.
+    """
+    start = html.index('<div data-testid="token-access-summary"')
+    depth = 0
+    index = start
+    while True:
+        opening = html.find("<div", index)
+        closing = html.index("</div>", index)
+        if opening != -1 and opening < closing:
+            depth += 1
+            index = opening + 4
+            continue
+        depth -= 1
+        index = closing + 6
+        if depth == 0:
+            return html[start:index]
+
+
 def test_the_account_page_says_see_and_change_not_just_see():
     html = _account_html()
 
@@ -159,9 +182,7 @@ def test_the_summary_does_not_bring_a_card_inside_a_card_or_block_wrapping():
     """The owner asked that the page not get worse looking. Nested cards and a
     no-wrap list are the two ways a summary of ten areas does that."""
     html = _account_html()
-    summary_start = html.index('data-testid="token-access-summary"')
-    summary_end = html.index("</div>", summary_start)
-    summary = html[summary_start:summary_end]
+    summary = _summary_block(html)
 
     assert "panel-card" not in summary
     assert "<code>" not in summary
