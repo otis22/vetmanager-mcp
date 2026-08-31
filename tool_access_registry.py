@@ -146,8 +146,6 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
     "create_supplier": (SCOPE_INVENTORY_WRITE,),
     "create_timesheet": (SCOPE_ANALYTICS_WRITE,),
     "delete_client": (SCOPE_CLIENTS_WRITE,),
-    "delete_invoice": (SCOPE_FINANCE_WRITE,),
-    "delete_invoice_document": (SCOPE_FINANCE_WRITE,),
     "delete_pet": (SCOPE_PETS_WRITE,),
     "report_problem": (),
     "get_admission_by_id": (SCOPE_ADMISSIONS_READ,),

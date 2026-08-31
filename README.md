@@ -630,7 +630,7 @@ COMMIT;
 - После успешного `POST`/`PUT`/`DELETE` кеш для соответствующего тега `domain:entity` инвалидируется.
 - Ограничение подхода: кеш живёт только в памяти процесса и полностью сбрасывается при рестарте сервера.
 
-**121 инструментов** по 15 группам сущностей:
+**119 инструментов** по 15 группам сущностей:
 
 | Группа | Инструменты | Кол-во |
 |--------|-------------|--------|
@@ -638,8 +638,8 @@ COMMIT;
 | Pet | `get_pets`, `get_pet_by_id`, `create_pet`, `update_pet`, `delete_pet`, `get_pet_profile`, `get_inactive_pets` | 7 |
 | Admission | `get_admissions`, `get_admission_by_id`, `create_admission`, `update_admission`, `get_client_upcoming_visits`, `get_daily_schedule` | 6 |
 | MedicalCard | `get_medical_cards`, `get_medical_cards_by_date`, `get_medical_cards_by_client_id`, `get_medical_card_by_id`, `create_medical_card`, `update_medical_card`, `get_vaccinations` | 7 |
-| Invoice | `get_invoices`, `get_average_invoice`, `get_invoice_by_id`, `update_invoice`, `delete_invoice` | 5 |
-| Finance | `get_payments`, `get_payment_by_id`, `get_client_payment_applications`, `get_revenue_summary`, `get_invoice_documents`, `get_invoice_document_by_id`, `delete_invoice_document`, `get_closing_of_invoices`, `get_closing_of_invoice_by_id`, `get_cassas`, `get_cassa_by_id`, `get_cassa_closes`, `get_cassa_close_by_id` | 13 |
+| Invoice | `get_invoices`, `get_average_invoice`, `get_invoice_by_id`, `update_invoice` | 4 |
+| Finance | `get_payments`, `get_payment_by_id`, `get_client_payment_applications`, `get_revenue_summary`, `get_invoice_documents`, `get_invoice_document_by_id`, `get_closing_of_invoices`, `get_closing_of_invoice_by_id`, `get_cassas`, `get_cassa_by_id`, `get_cassa_closes`, `get_cassa_close_by_id` | 12 |
 | Good | `get_goods`, `get_good_by_id`, `search_invoice_goods`, `get_good_combination`, `calculate_good_combination_price`, `create_good`, `update_good` | 7 |
 | User | `get_users`, `get_user_by_id`, `update_user` | 3 |
 | Warehouse | `get_good_groups`, `get_good_group_by_id`, `get_good_sale_params`, `get_good_sale_param_by_id`, `get_party_accounts`, `get_party_account_by_id`, `get_party_account_docs`, `get_party_account_doc_by_id`, `get_store_documents`, `get_store_document_by_id`, `get_suppliers`, `get_supplier_by_id`, `create_supplier`, `update_supplier`, `get_good_stock_balance` | 15 |

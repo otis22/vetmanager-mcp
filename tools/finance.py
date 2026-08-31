@@ -12,7 +12,7 @@ from filters import (
     in_ as _filter_in,
     lt as _filter_lt,
 )
-from tools.crud_helpers import crud_list, crud_get_by_id, crud_delete
+from tools.crud_helpers import crud_list, crud_get_by_id
 from validators import LimitParam, parse_date_param
 
 
@@ -444,17 +444,6 @@ def register(mcp: FastMCP) -> None:
             doc_id: Unique numeric ID of the invoice document.
         """
         return await crud_get_by_id("/rest/api/invoiceDocument", doc_id)
-
-    @mcp.tool
-    async def delete_invoice_document(doc_id: int) -> dict:
-        """Delete an invoice line item by its ID.
-
-        WARNING: This permanently removes the line item from the invoice.
-
-        Args:
-            doc_id: ID of the invoice document (line item) to delete.
-        """
-        return await crud_delete("/rest/api/invoiceDocument", doc_id)
 
     @mcp.tool
     async def get_cassas(

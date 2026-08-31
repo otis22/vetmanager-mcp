@@ -174,11 +174,11 @@ class TestToolsListSchema:
 
     def test_stage185_high_impact_tools_have_safety_wording(self, all_tool_exports):
         tools = _tools_by_name(all_tool_exports)
+        # Stage 268 removed the two invoice delete tools; the wording contract
+        # covers the destructive tools that are left.
         for tool_name in (
             "delete_client",
             "delete_pet",
-            "delete_invoice",
-            "delete_invoice_document",
         ):
             description = tools[tool_name]["description"]
             assert "destructive" in description.lower()

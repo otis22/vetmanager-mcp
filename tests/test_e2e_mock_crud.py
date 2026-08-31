@@ -247,58 +247,6 @@ async def test_delete_pet_tool():
     assert str(route.calls.last.request.url) == f"{BASE}/rest/api/pet/5"
 
 
-@pytest.mark.asyncio
-@respx.mock
-async def test_delete_invoice():
-    billing_mock()
-    respx.delete(f"{BASE}/rest/api/invoice/10").mock(
-        return_value=httpx.Response(200, json={"data": {"id": 10}})
-    )
-    result = await client().delete("/rest/api/invoice/10")
-    assert result["data"]["id"] == 10
-
-
-@pytest.mark.asyncio
-@respx.mock
-async def test_delete_invoice_tool():
-    billing_mock()
-    route = respx.delete(f"{BASE}/rest/api/invoice/10").mock(
-        return_value=httpx.Response(200, json={"data": {"id": 10}})
-    )
-    headers_patch, runtime_patch = bearer_runtime_patch()
-    with headers_patch, runtime_patch:
-        result = await mcp.call_tool("delete_invoice", {"invoice_id": 10})
-    assert route.call_count == 1
-    assert route.calls.last.request.method == "DELETE"
-    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/invoice/10"
-
-
-@pytest.mark.asyncio
-@respx.mock
-async def test_delete_invoice_document():
-    billing_mock()
-    respx.delete(f"{BASE}/rest/api/invoiceDocument/20").mock(
-        return_value=httpx.Response(200, json={"data": {"id": 20}})
-    )
-    result = await client().delete("/rest/api/invoiceDocument/20")
-    assert result["data"]["id"] == 20
-
-
-@pytest.mark.asyncio
-@respx.mock
-async def test_delete_invoice_document_tool():
-    billing_mock()
-    route = respx.delete(f"{BASE}/rest/api/invoiceDocument/20").mock(
-        return_value=httpx.Response(200, json={"data": {"id": 20}})
-    )
-    headers_patch, runtime_patch = bearer_runtime_patch()
-    with headers_patch, runtime_patch:
-        result = await mcp.call_tool("delete_invoice_document", {"doc_id": 20})
-    assert route.call_count == 1
-    assert route.calls.last.request.method == "DELETE"
-    assert str(route.calls.last.request.url) == f"{BASE}/rest/api/invoiceDocument/20"
-
-
 # -- CREATE tools --
 
 @pytest.mark.asyncio
@@ -569,8 +517,6 @@ async def test_delete_client_tool_404_raises_not_found_error():
         ("update_good", respx.put, "/rest/api/good/15", {"good_id": 15, "title": "Broken"}, 500, "HTTP 500"),
         ("delete_client", respx.delete, "/rest/api/client/42", {"client_id": 42}, 404, "Resource not found"),
         ("delete_pet", respx.delete, "/rest/api/pet/5", {"pet_id": 5}, 404, "Resource not found"),
-        ("delete_invoice", respx.delete, "/rest/api/invoice/10", {"invoice_id": 10}, 404, "Resource not found"),
-        ("delete_invoice_document", respx.delete, "/rest/api/invoiceDocument/20", {"doc_id": 20}, 404, "Resource not found"),
     ],
 )
 @respx.mock

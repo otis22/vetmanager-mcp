@@ -5,7 +5,7 @@ from typing import Any
 from fastmcp import FastMCP
 from exceptions import ToolInputError, reportable_error
 from filters import FILTER_FIELDS_BY_ENTITY, build_list_query_params, eq as _filter_eq, gte as _filter_gte, lt as _filter_lt, lte as _filter_lte
-from tools.crud_helpers import crud_list, crud_get_by_id, crud_update, crud_delete, paginate_all
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_update, paginate_all
 from validators import LimitParam, parse_date_param
 from vetmanager_client import VetmanagerClient
 
@@ -455,6 +455,11 @@ def register(mcp: FastMCP) -> None:
     ) -> dict:
         """Update an existing invoice.
 
+        There is no tool for deleting an invoice or one of its line items: this
+        service cannot delete them the way Vetmanager does, so deleting an
+        invoice stays a job for Vetmanager itself. Say that plainly instead of
+        looking for another tool.
+
         Args:
             invoice_id: ID of the invoice to update.
             client_id: New client ID (0 = no change).
@@ -478,16 +483,3 @@ def register(mcp: FastMCP) -> None:
         if discount:
             payload["discount"] = discount
         return await crud_update("/rest/api/invoice", invoice_id, payload)
-
-    @mcp.tool
-    async def delete_invoice(
-        invoice_id: int,
-    ) -> dict:
-        """Delete an invoice by its ID.
-
-        WARNING: This permanently removes the invoice. Use with caution.
-
-        Args:
-            invoice_id: ID of the invoice to delete.
-        """
-        return await crud_delete("/rest/api/invoice", invoice_id)
