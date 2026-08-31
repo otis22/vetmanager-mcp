@@ -12,7 +12,7 @@ from tool_access_registry import (
     PRESET_READ_ONLY,
     PRESET_REPORT_AI,
     TOKEN_PRESET_SCOPES,
-    MARKETED_PRESET_TOOLS,
+    tools_for_preset,
     TOOL_REQUIRED_SCOPES,
     get_presets_allowing_tool,
     normalize_token_preset,
@@ -144,11 +144,16 @@ def test_presets_expose_expected_scope_bundles(preset, expected_scopes):
     assert TOKEN_PRESET_SCOPES[preset] == tuple(sorted(expected_scopes))
 
 
-def test_marketed_preset_tools_are_covered_by_preset_scopes():
-    for preset, tool_names in MARKETED_PRESET_TOOLS.items():
+def test_preset_tools_are_covered_by_preset_scopes():
+    # Stage 272: the list is computed from the rights now, so this direction
+    # cannot fail on its own — it stays as the statement of what the list means.
+    for preset in TOKEN_PRESET_SCOPES:
         preset_scopes = set(TOKEN_PRESET_SCOPES[preset])
-        for tool_name in tool_names:
-            assert set(TOOL_REQUIRED_SCOPES[tool_name]).issubset(preset_scopes)
+        for tool_name in tools_for_preset(preset):
+            required = TOOL_REQUIRED_SCOPES[tool_name]
+            if not required:
+                continue
+            assert set(required).issubset(preset_scopes)
 
 
 def test_full_access_preset_covers_every_registered_tool_scope():
@@ -259,7 +264,10 @@ def test_request_scope_mapping_covers_missing_write_paths():
 
 
 def test_report_ai_preset_advertises_full_report_ai_flow():
-    assert MARKETED_PRESET_TOOLS[PRESET_REPORT_AI] == (
+    # Stage 272: computed, not curated — the whole flow has to be reachable,
+    # both reading a report and starting one.
+    analytics_tools = set(tools_for_preset(PRESET_REPORT_AI))
+    assert {
         "create_report_ai_job",
         "confirm_report_ai_job_candidate",
         "get_report_ai_job",
@@ -268,7 +276,7 @@ def test_report_ai_preset_advertises_full_report_ai_flow():
         "get_report_export_file",
         "get_report_ai_job_export",
         "save_report_ai_job_as_report",
-    )
+    }.issubset(analytics_tools)
     assert get_presets_allowing_tool("save_report_ai_job_as_report") == (
         "Full access",
         "Analytics",

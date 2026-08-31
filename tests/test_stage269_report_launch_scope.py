@@ -22,7 +22,7 @@ from tool_access_registry import (
     PRESET_REPORT_AI,
     TOKEN_PRESET_SCOPES,
     TOOL_REQUIRED_SCOPES,
-    MARKETED_PRESET_TOOLS,
+    tools_for_preset,
 )
 from tool_scope_security import ScopeDeniedToolError, _ensure_tool_scopes_allowed
 from token_scopes import (
@@ -107,7 +107,7 @@ def test_the_second_layer_splits_the_same_way(method, path, expected_scope):
 
 @pytest.mark.parametrize("preset", PRESETS_WITHOUT_REPORT_RIGHTS)
 def test_those_presets_no_longer_advertise_starting_a_report(preset):
-    advertised = set(MARKETED_PRESET_TOOLS.get(preset, ()))
+    advertised = set(tools_for_preset(preset))
     promised_but_denied = sorted(advertised.intersection(LAUNCHING_TOOLS))
     assert not promised_but_denied, (
         f"preset {preset} still advertises {promised_but_denied}, which it can no longer do"

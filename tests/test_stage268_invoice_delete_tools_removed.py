@@ -15,7 +15,7 @@ import pytest
 from fastmcp.exceptions import NotFoundError, ToolError
 
 from server import mcp
-from tool_access_registry import MARKETED_PRESET_TOOLS, TOOL_REQUIRED_SCOPES
+from tool_access_registry import TOKEN_PRESET_CHOICES, TOOL_REQUIRED_SCOPES, tools_for_preset
 from tool_descriptions import TOOL_ENTITY_MAP
 
 REMOVED_TOOLS = ("delete_invoice", "delete_invoice_document")
@@ -42,8 +42,10 @@ async def test_the_removed_invoice_delete_tools_are_not_registered():
 def test_the_removed_tools_are_absent_from_every_registry(tool_name):
     assert tool_name not in TOOL_REQUIRED_SCOPES
     assert tool_name not in TOOL_ENTITY_MAP
-    for preset, tools in MARKETED_PRESET_TOOLS.items():
-        assert tool_name not in tools, f"{tool_name} is advertised by preset {preset}"
+    for preset in TOKEN_PRESET_CHOICES:
+        assert tool_name not in tools_for_preset(preset), (
+            f"{tool_name} is part of preset {preset}"
+        )
 
 
 @pytest.mark.asyncio

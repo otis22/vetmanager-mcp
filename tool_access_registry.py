@@ -267,195 +267,11 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
     "update_user": (SCOPE_USERS_WRITE,),
 }
 
-# User-facing advertised preset coverage. Keep explicit: tests import this
-# source constant to avoid maintaining a separate mirror fixture.
-MARKETED_PRESET_TOOLS: dict[str, tuple[str, ...]] = {
-    PRESET_READ_ONLY: (
-        "get_admission_by_id",
-        "get_admissions",
-        "get_anonymous_clients",
-        "get_average_invoice",
-        "get_breed_by_id",
-        "get_breeds",
-        "get_cassa_by_id",
-        "get_cassa_close_by_id",
-        "get_cassa_closes",
-        "get_cassas",
-        "get_cities",
-        "get_city_by_id",
-        "get_city_types",
-        "get_client_by_id",
-        "get_client_profile",
-        "get_client_upcoming_visits",
-        "get_clients",
-        "get_personal_account_link_by_phone",
-        "get_clinic_by_id",
-        "get_clinics",
-        "get_closing_of_invoice_by_id",
-        "get_closing_of_invoices",
-        "get_combo_manual_item_by_id",
-        "get_combo_manual_items",
-        "get_combo_manual_name_by_id",
-        "get_combo_manual_names",
-        "get_daily_schedule",
-        "get_debtors",
-        "get_diagnoses",
-        "get_doctor_free_slots",
-        "get_good_by_id",
-        "get_good_combination",
-        "get_good_group_by_id",
-        "get_good_groups",
-        "get_good_sale_param_by_id",
-        "get_good_sale_params",
-        "get_good_stock_balance",
-        "get_goods",
-        "search_invoice_goods",
-        "calculate_good_combination_price",
-        "get_hospital_block_by_id",
-        "get_hospital_blocks",
-        "get_hospitalization_by_id",
-        "get_hospitalizations",
-        "get_inactive_clients",
-        "get_inactive_pets",
-        "get_invoice_by_id",
-        "get_invoice_document_by_id",
-        "get_invoice_documents",
-        "get_invoices",
-        "get_medical_card_by_id",
-        "get_medical_cards",
-        "get_medical_cards_by_date",
-        "get_medical_cards_by_client_id",
-        "get_message_reports",
-        "get_party_account_by_id",
-        "get_party_account_doc_by_id",
-        "get_party_account_docs",
-        "get_party_accounts",
-        "get_payment_by_id",
-        "get_payments",
-        "get_revenue_summary",
-        "get_report_ai_job",
-        "get_report_ai_job_data",
-        "get_report_export_file",
-        "get_pet_by_id",
-        "get_pet_profile",
-        "get_pet_type_by_id",
-        "get_pet_types",
-        "get_pets",
-        "get_properties",
-        "get_role_by_id",
-        "get_roles",
-        "get_store_document_by_id",
-        "get_store_documents",
-        "get_street_by_id",
-        "get_streets",
-        "get_supplier_by_id",
-        "get_suppliers",
-        "get_timesheet_by_id",
-        "get_timesheets",
-        "get_unit_by_id",
-        "get_units",
-        "get_user_by_id",
-        "get_user_position_by_id",
-        "get_user_positions",
-        "get_users",
-        "get_vaccinations",
-    ),
-    PRESET_FRONTDESK: (
-        "create_admission",
-        "create_client",
-        "create_pet",
-        "get_admissions",
-        "get_client_by_id",
-        "get_client_upcoming_visits",
-        "get_clients",
-        "get_personal_account_link_by_phone",
-        "get_daily_schedule",
-        "get_doctor_free_slots",
-        "get_report_ai_job",
-        "get_report_ai_job_data",
-        "get_report_export_file",
-        "get_message_reports",
-        "get_pet_by_id",
-        "get_pets",
-        "get_timesheet_by_id",
-        "get_timesheets",
-        "send_message_to_all",
-        "send_message_to_roles",
-        "send_message_to_users",
-        "update_admission",
-        "update_client",
-        "update_pet",
-    ),
-    PRESET_DOCTOR: (
-        "create_medical_card",
-        "get_admissions",
-        "get_daily_schedule",
-        "get_diagnoses",
-        "get_doctor_free_slots",
-        "get_medical_card_by_id",
-        "get_medical_cards",
-        "get_medical_cards_by_date",
-        "get_pet_by_id",
-        "get_pet_profile",
-        "get_pets",
-        "get_timesheet_by_id",
-        "get_timesheets",
-        "get_user_by_id",
-        "get_users",
-        "get_vaccinations",
-        "update_medical_card",
-    ),
-    PRESET_FINANCE: (
-        "get_average_invoice",
-        "get_client_by_id",
-        "get_clients",
-        "get_closing_of_invoice_by_id",
-        "get_closing_of_invoices",
-        "get_debtors",
-        "get_invoice_by_id",
-        "get_invoice_document_by_id",
-        "get_invoice_documents",
-        "get_invoices",
-        "get_payment_by_id",
-        "get_payments",
-        "get_revenue_summary",
-        "update_invoice",
-    ),
-    PRESET_INVENTORY: (
-        "create_good",
-        "create_supplier",
-        "get_good_by_id",
-        "get_good_combination",
-        "get_good_group_by_id",
-        "get_good_groups",
-        "get_good_sale_param_by_id",
-        "get_good_sale_params",
-        "get_good_stock_balance",
-        "get_goods",
-        "search_invoice_goods",
-        "calculate_good_combination_price",
-        "get_party_account_by_id",
-        "get_party_account_doc_by_id",
-        "get_party_account_docs",
-        "get_party_accounts",
-        "get_store_document_by_id",
-        "get_store_documents",
-        "get_supplier_by_id",
-        "get_suppliers",
-        "update_good",
-        "update_supplier",
-    ),
-    PRESET_REPORT_AI: (
-        "create_report_ai_job",
-        "confirm_report_ai_job_candidate",
-        "get_report_ai_job",
-        "get_report_ai_job_data",
-        "start_report_export",
-        "get_report_export_file",
-        "get_report_ai_job_export",
-        "save_report_ai_job_as_report",
-    ),
-}
+# Tools that need no particular right — a token only has to carry some rights
+# at all. Named here rather than derived from an empty scope list: an empty
+# list is also what a tool looks like when someone forgot to give it rights,
+# and those two must never be confused.
+BASELINE_ALLOWED_TOOLS = frozenset({"get_report_ai_prompt_helper", "report_problem"})
 
 
 def normalize_token_preset(preset: str | None) -> str:
@@ -478,18 +294,34 @@ def get_token_preset_label(preset: str | None) -> str:
     return TOKEN_PRESET_LABELS[normalized]
 
 
+def tools_for_preset(preset: str | None) -> tuple[str, ...]:
+    """Tools this preset gives, computed from its rights.
+
+    Stage 272: the registry used to carry a second, hand-written answer to this
+    question, and the two drifted by tens of tools. The rule below is the one
+    `_ensure_tool_scopes_allowed` applies, repeated deliberately in full — a
+    plain subset test would also let through a tool whose rights were never
+    filled in, and that tool would be advertised everywhere and refused
+    everywhere.
+    """
+    granted = set(get_token_preset_scopes(preset))
+    names = []
+    for tool_name, required_scopes in TOOL_REQUIRED_SCOPES.items():
+        if tool_name in BASELINE_ALLOWED_TOOLS:
+            names.append(tool_name)
+            continue
+        if required_scopes and set(required_scopes).issubset(granted):
+            names.append(tool_name)
+    return tuple(sorted(names))
+
+
 def get_presets_allowing_tool(tool_name: str) -> tuple[str, ...]:
-    """Return user-facing preset labels that advertise access to a tool."""
-    labels: list[str] = []
-    required_scopes = TOOL_REQUIRED_SCOPES.get(tool_name)
-    if required_scopes and set(required_scopes).issubset(TOKEN_PRESET_SCOPES[PRESET_FULL_ACCESS]):
-        labels.append(TOKEN_PRESET_LABELS[PRESET_FULL_ACCESS])
-    labels.extend(
+    """Labels of every preset that gives this tool."""
+    return tuple(
         TOKEN_PRESET_LABELS[preset]
-        for preset, tools in MARKETED_PRESET_TOOLS.items()
-        if tool_name in tools and preset != PRESET_FULL_ACCESS
+        for preset in TOKEN_PRESET_CHOICES
+        if tool_name in tools_for_preset(preset)
     )
-    return tuple(dict.fromkeys(labels))
 
 
 # Stage 264: a stable marker for "the token lacks the scope", so error handling

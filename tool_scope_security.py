@@ -11,14 +11,13 @@ from fastmcp.server.middleware import Middleware
 from exceptions import AuthError
 from runtime_auth import peek_runtime_scopes
 from tool_access_registry import (
+    BASELINE_ALLOWED_TOOLS,
     TOOL_REQUIRED_SCOPES,
     get_presets_allowing_tool,
     get_token_preset_label,
     infer_token_preset,
 )
 
-
-BASELINE_ALLOWED_TOOLS = {"get_report_ai_prompt_helper", "report_problem"}
 
 
 class AuthChallengeToolError(ToolError):
