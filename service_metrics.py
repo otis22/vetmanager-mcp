@@ -47,6 +47,7 @@ _TOOL_CALL_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = def
 _TOKEN_PRESET_ISSUED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _RATE_LIMIT_BACKEND_DEGRADED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _SANITIZER_FAILURES_TOTAL = 0
+_REST_UNMAPPED_READ_TOTAL = 0
 _REPORT_AI_LONG_QUEUED_POLLS_TOTAL = 0
 _REPORT_AI_STAGE_STALL_POLLS_TOTAL = 0
 _REPORT_AI_JOBS_TOTAL: DefaultDict[str, int] = defaultdict(int)
@@ -95,7 +96,7 @@ def reset_service_metrics() -> None:
     """Clear all in-memory metrics. Tests should call this to isolate assertions."""
     with _LOCK:
         global _REPORT_AI_LONG_QUEUED_POLLS_TOTAL, _REPORT_AI_STAGE_STALL_POLLS_TOTAL
-        global _SANITIZER_FAILURES_TOTAL
+        global _SANITIZER_FAILURES_TOTAL, _REST_UNMAPPED_READ_TOTAL
         _HTTP_REQUESTS_TOTAL.clear()
         _HTTP_REQUEST_LATENCY_SECONDS.clear()
         _AUTH_FAILURES_TOTAL.clear()
@@ -107,6 +108,7 @@ def reset_service_metrics() -> None:
         _TOKEN_PRESET_ISSUED_TOTAL.clear()
         _RATE_LIMIT_BACKEND_DEGRADED_TOTAL.clear()
         _SANITIZER_FAILURES_TOTAL = 0
+        _REST_UNMAPPED_READ_TOTAL = 0
         _REPORT_AI_LONG_QUEUED_POLLS_TOTAL = 0
         _REPORT_AI_STAGE_STALL_POLLS_TOTAL = 0
         _REPORT_AI_JOBS_TOTAL.clear()
@@ -305,6 +307,18 @@ def record_sanitizer_failure() -> None:
         _SANITIZER_FAILURES_TOTAL += 1
 
 
+def record_rest_unmapped_read() -> None:
+    """Count a read whose path the scope layer does not recognise.
+
+    Stage 274: writing on an unknown path is refused outright; reading is only
+    counted, for one release. This number is what the decision to close reading
+    rests on — nothing else in the system would notice such a request.
+    """
+    with _LOCK:
+        global _REST_UNMAPPED_READ_TOTAL
+        _REST_UNMAPPED_READ_TOTAL += 1
+
+
 def record_report_ai_long_queued_poll() -> None:
     """Increment the MCP-observed long-queued Report AI poll counter."""
     with _LOCK:
@@ -433,6 +447,7 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 sorted(_RATE_LIMIT_BACKEND_DEGRADED_TOTAL.items())
             ),
             "sanitizer_failures_total": _SANITIZER_FAILURES_TOTAL,
+            "rest_unmapped_read_total": _REST_UNMAPPED_READ_TOTAL,
             "report_ai_long_queued_polls_total": _REPORT_AI_LONG_QUEUED_POLLS_TOTAL,
             "report_ai_stage_stall_polls_total": _REPORT_AI_STAGE_STALL_POLLS_TOTAL,
             "report_ai_jobs_total": dict(sorted(_REPORT_AI_JOBS_TOTAL.items())),
@@ -630,6 +645,9 @@ def render_prometheus_metrics() -> str:
             "# HELP vetmanager_sanitizer_failures_total Total fail-closed depersonalization sanitizer errors.",
             "# TYPE vetmanager_sanitizer_failures_total counter",
             f"vetmanager_sanitizer_failures_total {snapshot.get('sanitizer_failures_total', 0)}",
+            "# HELP vetmanager_rest_unmapped_read_total Total reads whose REST path has no required scope mapping.",
+            "# TYPE vetmanager_rest_unmapped_read_total counter",
+            f"vetmanager_rest_unmapped_read_total {snapshot.get('rest_unmapped_read_total', 0)}",
         ]
     )
 

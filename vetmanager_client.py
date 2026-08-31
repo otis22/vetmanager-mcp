@@ -20,9 +20,13 @@ from request_auth import get_bearer_token
 from request_context import get_current_request_context
 from domain_validation import validate_domain as validate_runtime_domain
 from runtime_auth import get_current_runtime_credentials, resolve_runtime_credentials
-from service_metrics import record_upstream_failure, record_upstream_request
+from service_metrics import (
+    record_rest_unmapped_read,
+    record_upstream_failure,
+    record_upstream_request,
+)
 from tool_access_registry import SCOPE_DENIED_ERROR_CODE, get_presets_granting_scope
-from token_scopes import required_scope_for_request
+from token_scopes import REQUEST_NOT_MAPPED, required_scope_for_request
 from upstream_transport import classify_http_status, classify_transport_error
 from vetmanager_auth import VetmanagerAuthContext
 # Stage 103d BC note: the `_BREAKER_*` names below are re-exports of the
@@ -317,7 +321,28 @@ class VetmanagerClient:
 
     def _require_scope(self, method: str, path: str) -> None:
         required_scope = required_scope_for_request(method, path)
+        if required_scope == REQUEST_NOT_MAPPED:
+            # Stage 274: the layer exists to catch a tool reaching past its own
+            # declaration. Letting through what it does not recognise made it
+            # agree with every such mistake.
+            RUNTIME_LOGGER.warning(
+                "rest_scope_request_not_mapped",
+                extra={"event": "rest_scope_request_not_mapped", "http_method": method.upper()},
+            )
+            raise AuthError(
+                "This operation is not available through this service.",
+                status_code=403,
+                error_code=SCOPE_DENIED_ERROR_CODE,
+            )
         if required_scope is None:
+            # Stage 274: an unmapped read still goes through, and is counted.
+            # Refusing reads by mistake breaks every listing at once, so the
+            # door closes on them only after a release of watching this number.
+            record_rest_unmapped_read()
+            RUNTIME_LOGGER.warning(
+                "rest_scope_unmapped_read",
+                extra={"event": "rest_scope_unmapped_read", "path": path.split("?", 1)[0]},
+            )
             return
         if required_scope not in self._scopes:
             # Stage 264: a bare "lacks required scope" leaves the caller unable

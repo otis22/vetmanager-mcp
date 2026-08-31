@@ -29,6 +29,11 @@ SCOPE_ANALYTICS_READ = "analytics.read"
 SCOPE_ANALYTICS_WRITE = "analytics.write"
 SCOPE_REPORT_AI_WRITE = "report_ai.write"
 
+# Stage 274: what the second layer answers when it does not recognise the
+# request at all. Deliberately not a scope: no token can hold it, and no
+# refusal message should offer it as something to ask an administrator for.
+REQUEST_NOT_MAPPED = "__request_not_mapped__"
+
 SUPPORTED_TOKEN_SCOPES = (
     SCOPE_ADMISSIONS_READ,
     SCOPE_ADMISSIONS_WRITE,
@@ -175,6 +180,7 @@ _WRITE_SCOPE_BY_ENTITY = {
     "messages": SCOPE_MESSAGING_WRITE,
     "payment": SCOPE_FINANCE_WRITE,
     "pet": SCOPE_PETS_WRITE,
+    "suppliers": SCOPE_INVENTORY_WRITE,
     "timesheet": SCOPE_ANALYTICS_WRITE,
     "user": SCOPE_USERS_WRITE,
 }
@@ -237,6 +243,10 @@ def required_scope_for_request(method: str, path: str) -> str | None:
         return None
 
     entity = parts[2]
+    if normalized_method not in {"GET", "POST", "PUT", "DELETE"}:
+        # `_request` can send any verb. Without this line a future PATCH would
+        # walk past a door this stage just closed.
+        return REQUEST_NOT_MAPPED
     if entity == "report-ai-job":
         if normalized_method == "GET":
             return SCOPE_ANALYTICS_READ
@@ -261,5 +271,11 @@ def required_scope_for_request(method: str, path: str) -> str | None:
         # path should be refused by default, not waved through.
         return SCOPE_RECORDS_DELETE
     if normalized_method in {"POST", "PUT"}:
-        return _WRITE_SCOPE_BY_ENTITY.get(entity)
+        # Stage 274: writing is closed. Every writing path this service uses is
+        # mapped, and a test over the sources keeps it that way, so an unmapped
+        # write is a mistake rather than a case to allow.
+        return _WRITE_SCOPE_BY_ENTITY.get(entity, REQUEST_NOT_MAPPED)
+    # Stage 274: an unmapped read is still allowed, and watched. Refusing a read
+    # by mistake breaks every listing at once, so it gets one release of being
+    # counted before the same door closes on it.
     return None
