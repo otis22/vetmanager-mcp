@@ -339,9 +339,13 @@ class VetmanagerClient:
             # Refusing reads by mistake breaks every listing at once, so the
             # door closes on them only after a release of watching this number.
             record_rest_unmapped_read()
+            # Only the entity, never the rest of the path: an unmapped path is
+            # by definition one nobody has looked at, and its later segments
+            # may carry a record id or a phone number.
+            entity = "/".join(path.split("?", 1)[0].strip("/").split("/")[:3])
             RUNTIME_LOGGER.warning(
                 "rest_scope_unmapped_read",
-                extra={"event": "rest_scope_unmapped_read", "path": path.split("?", 1)[0]},
+                extra={"event": "rest_scope_unmapped_read", "entity": entity},
             )
             return
         if required_scope not in self._scopes:

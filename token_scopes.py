@@ -237,16 +237,19 @@ def deserialize_token_scopes(raw_value: str | None) -> list[str]:
 def required_scope_for_request(method: str, path: str) -> str | None:
     """Return required coarse-grained scope for one REST request, if known."""
     normalized_method = method.strip().upper()
+    if normalized_method not in {"GET", "POST", "PUT", "DELETE"}:
+        # `_request` can send any verb. Without this line a future PATCH would
+        # walk past a door this stage just closed. Checked before the path is
+        # parsed: an unsupported verb is refused whatever it points at.
+        return REQUEST_NOT_MAPPED
     normalized_path = path.split("?", 1)[0].strip("/")
     parts = [part.lower() for part in normalized_path.split("/") if part]
     if len(parts) < 3 or parts[0] != "rest" or parts[1] != "api":
-        return None
+        # A path this function cannot read is not a read it can vouch for.
+        # Writing on it is refused; reading keeps the watched-for-now path.
+        return None if normalized_method == "GET" else REQUEST_NOT_MAPPED
 
     entity = parts[2]
-    if normalized_method not in {"GET", "POST", "PUT", "DELETE"}:
-        # `_request` can send any verb. Without this line a future PATCH would
-        # walk past a door this stage just closed.
-        return REQUEST_NOT_MAPPED
     if entity == "report-ai-job":
         if normalized_method == "GET":
             return SCOPE_ANALYTICS_READ

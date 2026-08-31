@@ -21,8 +21,11 @@ from token_scopes import (
 SOURCE_DIRECTORIES = ("tools", "resources")
 
 # How a call names the method it will use. `crud_*` wrap the verb, so the verb
-# is in the function name rather than next to the path.
+# is in the function name rather than next to the path; `_vm_get` wraps a get,
+# and `_call_vm` carries the verb as its first argument.
+METHOD_IN_FIRST_ARGUMENT = {"_call_vm"}
 CALL_METHODS = {
+    "_vm_get": "GET",
     "crud_list": "GET",
     "crud_get_by_id": "GET",
     "crud_create": "POST",
@@ -87,10 +90,19 @@ def _rest_calls():
             for node in ast.walk(tree):
                 if not isinstance(node, ast.Call):
                     continue
-                method = CALL_METHODS.get(_called_name(node.func))
-                if method is None:
-                    continue
-                path = _first_path_argument(node, constants)
+                name = _called_name(node.func)
+                if name in METHOD_IN_FIRST_ARGUMENT:
+                    if not node.args or not isinstance(node.args[0], ast.Constant):
+                        continue
+                    method = str(node.args[0].value).upper()
+                    path = _first_path_argument(
+                        ast.Call(func=node.func, args=node.args[1:], keywords=[]), constants
+                    )
+                else:
+                    method = CALL_METHODS.get(name)
+                    if method is None:
+                        continue
+                    path = _first_path_argument(node, constants)
                 if not path or not path.startswith("/rest/api/"):
                     continue
                 calls.add((method, path, str(source_file)))
@@ -105,6 +117,10 @@ def test_the_scan_actually_finds_the_calls():
     assert any(method == "POST" for method, _, _ in calls)
     assert any(method == "PUT" for method, _, _ in calls)
     assert any(path.endswith("MedicalCards") for _, path, _ in calls)
+    # Wrapper call sites: the path never appears next to a verb there, and a
+    # scanner that only understood direct calls would report them as absent.
+    assert any("productsDataForInvoice" in path for _, path, _ in calls)
+    assert any(path.startswith("/rest/api/report-ai-job") for _, path, _ in calls)
 
 
 def test_every_call_the_service_makes_has_a_required_right():
@@ -189,6 +205,26 @@ async def test_an_unmapped_read_passes_and_leaves_a_trace(monkeypatch, caplog):
 
     assert seen, "an unmapped read was not counted"
     assert "rest_scope_unmapped_read" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_the_trace_of_an_unmapped_read_carries_no_record_data(monkeypatch, caplog):
+    """An unmapped path is one nobody has looked at yet; its tail may hold a
+    record id or a phone number, and this warning is written before anyone
+    decides the path is safe to quote."""
+    client = _client_with_everything()
+
+    with caplog.at_level("WARNING"):
+        with pytest.raises(Exception):
+            await client.get("/rest/api/somethingNew/79184140259/details")
+
+    written = [
+        record for record in caplog.records if record.getMessage() == "rest_scope_unmapped_read"
+    ]
+    assert written, "the unmapped read left no trace at all"
+    entity = getattr(written[0], "entity", "")
+    assert entity == "rest/api/somethingNew", entity
+    assert all("79184140259" not in str(value) for value in vars(written[0]).values())
 
 
 def test_the_metric_is_exported_for_reading_on_the_server():
