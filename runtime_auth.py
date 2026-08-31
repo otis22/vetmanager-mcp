@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from auth.vetmanager import resolve_vetmanager_credentials
 from bearer_auth import resolve_bearer_auth_context
 from bearer_token_manager import hash_bearer_token
-from domain_validation import validate_domain as _validate_domain
+from domain_validation import ip_matches_mask, validate_domain as _validate_domain
 from exceptions import AuthError
 from oauth_metadata import get_mcp_resource_url
 from oauth_challenge import oauth_challenge_details
@@ -21,6 +21,7 @@ from auth_audit import (
     TOKEN_EVENT_AUTH_SUCCEEDED,
     add_token_usage_log,
     commit_token_usage_log,
+    get_request_audit_metadata,
 )
 from storage import get_session_factory
 from storage_models import (
@@ -142,6 +143,13 @@ async def peek_runtime_scopes() -> tuple[str, ...] | None:
     rows to tell a key that is being used from one that was never tried. A
     catalogue request must not look like a call.
 
+    Every check the ordinary path makes before it hands out rights is repeated
+    here, so a token that would be refused gets no tailored catalogue either —
+    a stolen key used from the wrong address should not be told what it could
+    have done. The one deliberate difference is the rate limiter: asking for
+    the catalogue is not a call and must not spend the budget for one.
+    `tests/test_stage271_peek_scopes_matches_auth.py` pins the equivalence.
+
     Returns None whenever the answer is not certain, and the caller then leaves
     the catalogue alone. Being wrong here can only widen a list, never widen
     access: the call is still checked by `_ensure_tool_scopes_allowed`.
@@ -170,6 +178,14 @@ async def peek_runtime_scopes() -> tuple[str, ...] | None:
             grant = await session.get(OAuthGrant, access_token.grant_id)
             if grant is None or grant.status != OAUTH_STATUS_ACTIVE:
                 return None
+            account = await session.get(Account, grant.account_id)
+            if account is None or account.status != ACCOUNT_STATUS_ACTIVE:
+                return None
+            connection = await session.get(
+                VetmanagerConnection, grant.vetmanager_connection_id
+            )
+            if connection is None or connection.status != CONNECTION_STATUS_ACTIVE:
+                return None
             return tuple(
                 get_effective_oauth_tool_scopes_for_preset(
                     grant.access_preset,
@@ -186,7 +202,25 @@ async def peek_runtime_scopes() -> tuple[str, ...] | None:
             return None
         if token.status == TOKEN_STATUS_DISABLED:
             return None
-        return tuple(token.get_scopes())
+        account = await session.get(Account, token.account_id)
+        if account is None or account.status != ACCOUNT_STATUS_ACTIVE:
+            return None
+        if token.allowed_ip_mask != "*.*.*.*":
+            client_ip, _ = get_request_audit_metadata()
+            if client_ip is None or not ip_matches_mask(client_ip, token.allowed_ip_mask):
+                return None
+        scopes = tuple(token.get_scopes())
+        if not scopes:
+            return None
+        connection = await session.scalar(
+            select(VetmanagerConnection)
+            .where(VetmanagerConnection.account_id == account.id)
+            .where(VetmanagerConnection.status == CONNECTION_STATUS_ACTIVE)
+            .limit(1)
+        )
+        if connection is None:
+            return None
+        return scopes
 
 
 async def _resolve_oauth_runtime_credentials(raw_token: str) -> RuntimeCredentials:
