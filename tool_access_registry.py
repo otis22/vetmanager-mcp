@@ -294,6 +294,25 @@ def get_token_preset_label(preset: str | None) -> str:
     return TOKEN_PRESET_LABELS[normalized]
 
 
+def _presets_narrowest_first() -> tuple[str, ...]:
+    """Presets ordered by how much they grant, full access last.
+
+    Stage 273: this order is read by an agent that just got refused, and it
+    decides what that agent asks its owner for. With full access first, the
+    widest key was always the first answer offered.
+    """
+    return tuple(
+        sorted(
+            TOKEN_PRESET_CHOICES,
+            key=lambda preset: (
+                preset == PRESET_FULL_ACCESS,
+                len(TOKEN_PRESET_SCOPES[preset]),
+                TOKEN_PRESET_CHOICES.index(preset),
+            ),
+        )
+    )
+
+
 def tools_for_preset(preset: str | None) -> tuple[str, ...]:
     """Tools this preset gives, computed from its rights.
 
@@ -319,7 +338,7 @@ def get_presets_allowing_tool(tool_name: str) -> tuple[str, ...]:
     """Labels of every preset that gives this tool."""
     return tuple(
         TOKEN_PRESET_LABELS[preset]
-        for preset in TOKEN_PRESET_CHOICES
+        for preset in _presets_narrowest_first()
         if tool_name in tools_for_preset(preset)
     )
 
@@ -338,8 +357,8 @@ def get_presets_granting_scope(scope: str) -> tuple[str, ...]:
     """
     return tuple(
         TOKEN_PRESET_LABELS[preset]
-        for preset, preset_scopes in TOKEN_PRESET_SCOPES.items()
-        if scope in preset_scopes
+        for preset in _presets_narrowest_first()
+        if scope in TOKEN_PRESET_SCOPES[preset]
     )
 
 

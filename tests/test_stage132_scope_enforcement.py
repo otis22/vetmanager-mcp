@@ -45,7 +45,7 @@ async def test_tool_preflight_denies_missing_scope_before_body(monkeypatch):
     presets_line = next(
         part for part in message.split(". ") if part.startswith("Allowed presets:")
     )
-    assert presets_line == "Allowed presets: Full access, Read only, Analytics"
+    assert presets_line == "Allowed presets: Read only, Analytics, Full access"
     assert exc_info.value.__cause__ is None
 
 

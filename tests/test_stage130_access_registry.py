@@ -277,7 +277,9 @@ def test_report_ai_preset_advertises_full_report_ai_flow():
         "get_report_ai_job_export",
         "save_report_ai_job_as_report",
     }.issubset(analytics_tools)
+    # Stage 273: narrowest first, full access last — the refusal should offer
+    # the smallest key that would work.
     assert get_presets_allowing_tool("save_report_ai_job_as_report") == (
-        "Full access",
         "Analytics",
+        "Full access",
     )

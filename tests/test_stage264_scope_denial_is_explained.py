@@ -55,8 +55,9 @@ def test_presets_granting_scope_covers_the_edges():
     """The list feeds a user-facing sentence, so its edges must be boring."""
     from tool_access_registry import get_presets_granting_scope
 
-    # A scope several presets grant: full access first, then the specific one.
-    assert get_presets_granting_scope("report_ai.write") == ("Full access", "Analytics")
+    # Stage 273: several presets grant it — the narrow one first, full access
+    # last, so the sentence offers the smallest key that would work.
+    assert get_presets_granting_scope("report_ai.write") == ("Analytics", "Full access")
     # A scope only full access grants must not name anything else.
     assert get_presets_granting_scope("users.write") == ("Full access",)
     # An unknown scope yields nothing rather than an odd sentence fragment.

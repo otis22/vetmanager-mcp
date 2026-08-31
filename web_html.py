@@ -8,6 +8,7 @@ from html import escape
 
 from observability_logging import RUNTIME_LOGGER
 from storage_models import OAUTH_STATUS_ACTIVE, Account, VetmanagerConnection
+from access_summary import summarize_access
 from tool_access_registry import (
     PRESET_DOCTOR,
     PRESET_FINANCE,
@@ -49,6 +50,20 @@ TOKEN_STATUS_DISPLAY: dict[str, str] = {
     "expired": "Истёк",
     "revoked": "Отозван",
 }
+
+
+def render_access_summary(preset: str) -> str:
+    """Three muted lines describing a preset, in the page's existing type.
+
+    Stage 273: not a list of tools — Analytics reaches 97 of them. What an
+    owner checks before handing a key to an assistant is which parts of the
+    clinic it touches, and whether it can change or delete anything.
+    """
+    rows = "".join(
+        f"<div><strong>{escape(name)}:</strong> {escape(value)}</div>"
+        for name, value in summarize_access(TOKEN_PRESET_SCOPES[preset])
+    )
+    return rows
 
 
 def display_access_label(inferred_preset: str | None) -> str:
@@ -1026,6 +1041,7 @@ def render_oauth_consent_page(
         effective_preview_rows.append(
             "<li>"
             f"<strong>{escape(title)}:</strong> {escape(description)}"
+            f'<div style="color: var(--muted); font-size: 0.85rem;">{render_access_summary(preset)}</div>'
             "</li>"
         )
         scopes_text = " ".join(TOKEN_PRESET_SCOPES[preset])
@@ -1251,6 +1267,25 @@ def render_account_page(
             (_DOCTOR_PRESET_FORM_VALUE, PRESET_DOCTOR, TOKEN_PRESET_DISPLAY_LABELS[PRESET_DOCTOR]),
             (PRESET_FINANCE, PRESET_FINANCE, TOKEN_PRESET_DISPLAY_LABELS[PRESET_FINANCE]),
             (PRESET_INVENTORY, PRESET_INVENTORY, TOKEN_PRESET_DISPLAY_LABELS[PRESET_INVENTORY]),
+        )
+    )
+    # One block per preset, only the selected one shown. Rendered by the server
+    # rather than built in the browser, so the page still answers "what does
+    # this level give" when the script does not run.
+    access_summary_blocks = "".join(
+        (
+            f'<div data-access-summary="{escape(form_value)}"'
+            f'{"" if token_access_preset == preset else " hidden"}>'
+            f"{render_access_summary(preset)}</div>"
+        )
+        for form_value, preset, _label in (
+            (PRESET_REPORT_AI, PRESET_REPORT_AI, None),
+            (PRESET_FULL_ACCESS, PRESET_FULL_ACCESS, None),
+            (PRESET_READ_ONLY, PRESET_READ_ONLY, None),
+            (PRESET_FRONTDESK, PRESET_FRONTDESK, None),
+            (_DOCTOR_PRESET_FORM_VALUE, PRESET_DOCTOR, None),
+            (PRESET_FINANCE, PRESET_FINANCE, None),
+            (PRESET_INVENTORY, PRESET_INVENTORY, None),
         )
     )
     issued_token_html = ""
@@ -1775,8 +1810,11 @@ def render_account_page(
             <select name="access_preset" {token_disabled} data-testid="token-access-preset">
               {preset_options}
             </select>
-            <small style="color: var(--muted); font-size: 0.85rem;">Уровень доступа определяет, что помощник сможет видеть. Настройка по отдельным действиям не требуется.</small>
+            <small style="color: var(--muted); font-size: 0.85rem;">Уровень доступа определяет, что помощник сможет видеть и менять. Настройка по отдельным действиям не требуется.</small>
           </label>
+          <div data-testid="token-access-summary" style="color: var(--muted); font-size: 0.85rem; margin: -6px 0 14px;">
+            {access_summary_blocks}
+          </div>
           <label style="display: flex; gap: 10px; align-items: start;">
             <input type="checkbox" name="is_depersonalized" value="1" {"checked" if token_is_depersonalized else ""} {token_disabled} data-testid="token-is-depersonalized" style="width: auto; margin-top: 6px;">
             <span>
@@ -1889,6 +1927,21 @@ def render_account_page(
                 radio.addEventListener('change', updatePanels);
               }}
               updatePanels();
+            }}
+
+            // Stage 273: the summary under the access level follows the
+            // selection. The server already rendered the selected one, so a
+            // page without scripts still says what the level gives.
+            const accessSelect = document.querySelector('[data-testid="token-access-preset"]');
+            if (accessSelect) {{
+              const summaries = Array.from(document.querySelectorAll('[data-access-summary]'));
+              const syncAccessSummary = () => {{
+                for (const summary of summaries) {{
+                  summary.hidden = summary.getAttribute('data-access-summary') !== accessSelect.value;
+                }}
+              }};
+              accessSelect.addEventListener('change', syncAccessSummary);
+              syncAccessSummary();
             }}
 
             // Stage 210 (K-1): revoking a key or disconnecting an assistant is
