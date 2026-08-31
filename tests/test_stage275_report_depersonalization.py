@@ -242,8 +242,21 @@ def test_the_report_right_never_comes_without_full_reading():
     ("value", "expected_to_be_hidden"),
     [
         ("Иванов Пётр Сергеевич", True),
+        # A database column holds the same name shouted, lowercased or
+        # transliterated, and a rule that knew one form would look like it
+        # worked while leaking the other three.
+        ("иванов петр сергеевич", True),
+        ("ИВАНОВ ПЕТР СЕРГЕЕВИЧ", True),
+        ("Ivanov Petr Sergeevich", True),
         ("Пётр Сергеевич", True),
+        ("ПЁТР СЕРГЕЕВИЧ", True),
+        ("Сергей Никитич", True),
+        ("Иван Кузьмич", True),
         ("Иванов П. С.", True),
+        ("Иванов И И", True),
+        ("Ул. Ленина, д. 5", True),
+        ("Проспект Мира, д. 10", True),
+        ("Иванов Пётр Сергеевич, ул. Ленина, д. 5", True),
         ("+7 918 414-01-11", True),
         ("8 (918) 414-01-11", True),
         ("79184140111", True),
@@ -255,6 +268,11 @@ def test_the_report_right_never_comes_without_full_reading():
         ("Иванов Пётр", False),
         ("Иванов", False),
         # And the data a report exists for must survive.
+        # A report grouped by street is an ordinary question, and a diagnosis
+        # is not a patronymic however it ends.
+        ("улица Красных Партизан", False),
+        ("проспект Чекистов", False),
+        ("Вялый паралич", False),
         ("Ампициллин 500 мг", False),
         ("Вакцинация комплексная", False),
         ("Клиника Айболит", False),

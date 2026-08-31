@@ -81,27 +81,44 @@ _PHONE_RE = re.compile(r"(?<!\[redacted-phone\])(?:\+?\d[\d\-\s().]{8,}\d)")
 _OWNER_PHRASE_RE = re.compile(
     r"(?u)\b(?i:(?:владелец|хозяин|owner))\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё.\-]+(?:\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё.\-]+){0,2}"
 )
+# `Иванов И. И.`, `Иванов И.И.` and the dotless `Иванов И И` that a report
+# column produces just as often.
 _INITIALS_RE = re.compile(
-    r"(?u)\b[A-ZА-ЯЁ][a-zа-яё]{1,30}\s+[A-ZА-ЯЁ]\.\s?[A-ZА-ЯЁ]\."
+    r"(?u)\b[A-ZА-ЯЁ][a-zа-яё]{1,30}\s+[A-ZА-ЯЁ]\.?\s?[A-ZА-ЯЁ]\.?(?![a-zа-яё])"
 )
-# Stage 275: three capitalised Cyrillic words in a row. Two would catch a
+# Stage 275: three words in a row that look like a name. Two would catch a
 # clinic or a street just as often as a person, so the two-word form is left
 # to the other layers on purpose.
+#
+# Case-insensitive and Latin-aware on purpose: a database column holds
+# `ИВАНОВ ПЕТР СЕРГЕЕВИЧ` and `Ivanov Petr Sergeevich` as readily as the
+# title-case form, and a rule that only knew one of them would look like it
+# worked while leaking the other two.
 _FULL_NAME_RE = re.compile(
-    r"(?u)\b[А-ЯЁ][а-яё]{1,30}\s+[А-ЯЁ][а-яё]{1,30}\s+[А-ЯЁ][а-яё]{1,30}\b"
+    r"(?ui)\b[А-ЯЁA-Z][а-яёa-z]{1,30}\s+[А-ЯЁA-Z][а-яёa-z]{1,30}\s+[А-ЯЁA-Z][а-яёa-z]{1,30}\b"
 )
 # A patronymic gives a person away on its own: `-ович`, `-евна` and their kin
 # are almost never part of a product or a clinic name, so a two-word "Пётр
 # Сергеевич" is caught here even though a bare two-word name is not.
 _PATRONYMIC_RE = re.compile(
-    r"(?u)\b[А-ЯЁ][а-яё]{1,30}\s+[А-ЯЁ][а-яё]{1,30}(?:ович|евич|ьич|овна|евна|ична|инична)\b"
+    r"(?u)\b[А-ЯЁ][а-яёА-ЯЁ]{1,30}\s+[А-ЯЁ][а-яёА-ЯЁ]*?"
+    r"(?i:ович|евич|ич|овна|евна|ична|инична)\b"
+)
+# A value that names a street is an ordinary analytical dimension. Checked
+# after the address rule has had its turn, so a real address is already gone by
+# then and only a bare street name is left to protect from the name rules.
+_STREET_MARKER_RE = re.compile(
+    r"(?ui)\b(?:ул\.|улица|пр-?т|проспект|пер\.|переулок|ш\.|шоссе|б-р|бульвар)"
 )
 # A postal address written out. Anchored on the parts that only an address has
 # — city, street, building, flat — so a service name cannot match by accident.
+# A postal address, not a street name. The house or flat part is required: a
+# report grouped by street is a normal analytical dimension, and redacting
+# `улица Красных Партизан` would delete the answer rather than protect anyone.
 _ADDRESS_RE = re.compile(
-    r"(?u)(?:\bг\.\s?[А-ЯЁ][а-яё\-]+[,\s]+)?"
-    r"(?:ул\.|улица|пр-?т|проспект|пер\.|переулок|ш\.|шоссе|б-р|бульвар)\s?[А-ЯЁа-яё0-9\-\s]+"
-    r"(?:[,\s]+д\.?\s?\d+[А-Яа-я]?)?(?:[,\s]+(?:кв\.?|оф\.?)\s?\d+)?"
+    r"(?ui)(?:\bг\.\s?[А-ЯЁ][а-яё\-]+[,\s]+)?"
+    r"(?:ул\.|улица|пр-?т|проспект|пер\.|переулок|ш\.|шоссе|б-р|бульвар)\s?[А-ЯЁа-яё0-9\-\s.]{2,40}?"
+    r"[,\s]+д\.?\s?\d+[А-Яа-я]?(?:[,\s]+(?:кв\.?|оф\.?)\s?\d+)?"
 )
 # A run of digits that could be a Russian phone number. Bounded on purpose: a
 # pet's microchip is fifteen digits and a barcode thirteen, and a report that
@@ -190,10 +207,13 @@ def sanitize_report_value(text: str) -> str:
     if not text:
         return text
     cleaned = _EMAIL_RE.sub(REDACTED_EMAIL, text)
-    cleaned = _FULL_NAME_RE.sub(REDACTED_NAME, cleaned)
-    cleaned = _PATRONYMIC_RE.sub(REDACTED_NAME, cleaned)
-    cleaned = _INITIALS_RE.sub(REDACTED_NAME, cleaned)
+    # The address goes first so that what remains can be judged on its own: a
+    # leftover street marker then means a street name, not an address.
     cleaned = _ADDRESS_RE.sub(REDACTED_ADDRESS, cleaned)
+    if not _STREET_MARKER_RE.search(cleaned):
+        cleaned = _FULL_NAME_RE.sub(REDACTED_NAME, cleaned)
+        cleaned = _PATRONYMIC_RE.sub(REDACTED_NAME, cleaned)
+        cleaned = _INITIALS_RE.sub(REDACTED_NAME, cleaned)
 
     date_spans = [match.span() for match in _DATE_OR_DATETIME_RE.finditer(cleaned)]
 
