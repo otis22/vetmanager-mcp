@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
-from fastmcp.exceptions import ToolError
+import logging
 
+from fastmcp.exceptions import ToolError
+from fastmcp.server import dependencies as _fastmcp_dependencies
+from fastmcp.server.middleware import Middleware
+
+from exceptions import AuthError
+from runtime_auth import peek_runtime_scopes
 from tool_access_registry import (
     TOOL_REQUIRED_SCOPES,
     get_presets_allowing_tool,
@@ -124,3 +130,71 @@ def _ensure_tool_scopes_allowed(tool_name: str, credentials) -> None:
             ),
             required_scopes=required_scopes,
         )
+
+
+RUNTIME_LOGGER = logging.getLogger("vetmanager_mcp.runtime")
+
+
+def visible_tools_for_scopes(tools, token_scopes):
+    """The subset of `tools` this token may actually call.
+
+    Deliberately the same rule as `_ensure_tool_scopes_allowed`, expressed once:
+    a catalogue that disagrees with the refusal is worse than no filtering at
+    all, because then the list lies in a new way.
+
+    The given objects are returned as they are — never rebuilt — so the OAuth
+    metadata attached to each tool survives.
+    """
+    granted = set(token_scopes or ())
+    if not granted:
+        return []
+
+    visible = []
+    for tool in tools:
+        if tool.name in BASELINE_ALLOWED_TOOLS:
+            visible.append(tool)
+            continue
+        required = TOOL_REQUIRED_SCOPES.get(tool.name)
+        if required and set(required).issubset(granted):
+            visible.append(tool)
+    return visible
+
+
+class ToolVisibilityMiddleware(Middleware):
+    """Stage 271: show a token the tools it can use, not the whole catalogue.
+
+    Only `on_list_tools` is implemented, so the call path stays exactly as it
+    was. The list is left whole whenever the rights cannot be established —
+    an unauthenticated discovery call, a non-HTTP transport, or a failure that
+    has nothing to do with authentication. Hiding everything would present the
+    service as having no tools at all; the call check still guards access.
+    """
+
+    async def on_list_tools(self, context, call_next):
+        tools = await call_next(context)
+
+        try:
+            _fastmcp_dependencies.get_http_request()
+        except RuntimeError:
+            return tools
+
+        try:
+            token_scopes = await peek_runtime_scopes()
+        except AuthError:
+            # No token, or one that is not valid — the ordinary discovery call.
+            return tools
+        except Exception:
+            # Anything else is a failure of ours, not of the caller. Serve the
+            # catalogue rather than an empty service, but say so: a full list
+            # returned quietly would hide the outage behind normal-looking
+            # output.
+            RUNTIME_LOGGER.warning(
+                "tool_visibility_scope_lookup_failed",
+                exc_info=True,
+                extra={"event": "tool_visibility_scope_lookup_failed"},
+            )
+            return tools
+
+        if token_scopes is None:
+            return tools
+        return visible_tools_for_scopes(tools, token_scopes)

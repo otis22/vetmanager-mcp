@@ -27,9 +27,11 @@ from storage_models import (
     ACCOUNT_STATUS_ACTIVE,
     CONNECTION_STATUS_ACTIVE,
     OAUTH_STATUS_ACTIVE,
+    TOKEN_STATUS_DISABLED,
     Account,
     OAuthAccessToken,
     OAuthGrant,
+    ServiceBearerToken,
     VetmanagerConnection,
 )
 from sqlalchemy import select
@@ -129,6 +131,62 @@ async def resolve_runtime_credentials() -> RuntimeCredentials:
         auth_subject_type="service_bearer",
         auth_subject_id=context.bearer_token_id,
     )
+
+
+async def peek_runtime_scopes() -> tuple[str, ...] | None:
+    """Rights of the current token, read without journalling the request.
+
+    Stage 271: `tools/list` is a catalogue question, not work on clinic data.
+    Resolving credentials the normal way would spend the rate-limit budget and
+    write a `token_auth_succeeded` row — and the activation metrics count those
+    rows to tell a key that is being used from one that was never tried. A
+    catalogue request must not look like a call.
+
+    Returns None whenever the answer is not certain, and the caller then leaves
+    the catalogue alone. Being wrong here can only widen a list, never widen
+    access: the call is still checked by `_ensure_tool_scopes_allowed`.
+    """
+    cached = get_current_runtime_credentials()
+    if cached is not None:
+        return tuple(cached.scopes or ())
+
+    raw_token = get_bearer_token()
+    now = datetime.now(timezone.utc)
+
+    async with get_session_factory()() as session:
+        if raw_token.startswith(OAUTH_ACCESS_TOKEN_PREFIX):
+            access_token = await session.scalar(
+                select(OAuthAccessToken).where(
+                    OAuthAccessToken.token_hash == hash_bearer_token(raw_token)
+                )
+            )
+            if access_token is None or access_token.status != OAUTH_STATUS_ACTIVE:
+                return None
+            expires_at = access_token.expires_at
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at <= now or access_token.resource != get_mcp_resource_url():
+                return None
+            grant = await session.get(OAuthGrant, access_token.grant_id)
+            if grant is None or grant.status != OAUTH_STATUS_ACTIVE:
+                return None
+            return tuple(
+                get_effective_oauth_tool_scopes_for_preset(
+                    grant.access_preset,
+                    access_token.scope,
+                )
+            )
+
+        token = await session.scalar(
+            select(ServiceBearerToken).where(
+                ServiceBearerToken.token_hash == hash_bearer_token(raw_token)
+            )
+        )
+        if token is None or token.is_revoked() or token.is_expired(now=now):
+            return None
+        if token.status == TOKEN_STATUS_DISABLED:
+            return None
+        return tuple(token.get_scopes())
 
 
 async def _resolve_oauth_runtime_credentials(raw_token: str) -> RuntimeCredentials:
