@@ -23,6 +23,7 @@ SCOPE_USERS_READ = "users.read"
 SCOPE_USERS_WRITE = "users.write"
 SCOPE_MESSAGING_READ = "messaging.read"
 SCOPE_MESSAGING_WRITE = "messaging.write"
+SCOPE_RECORDS_DELETE = "records.delete"
 SCOPE_REFERENCE_READ = "reference.read"
 SCOPE_ANALYTICS_READ = "analytics.read"
 SCOPE_ANALYTICS_WRITE = "analytics.write"
@@ -45,12 +46,16 @@ SUPPORTED_TOKEN_SCOPES = (
     SCOPE_MESSAGING_WRITE,
     SCOPE_PETS_READ,
     SCOPE_PETS_WRITE,
+    SCOPE_RECORDS_DELETE,
     SCOPE_REFERENCE_READ,
     SCOPE_REPORT_AI_WRITE,
     SCOPE_USERS_READ,
     SCOPE_USERS_WRITE,
 )
 
+# Every historical shape of "full access". A key stores the list it was issued
+# with, so adding a scope would quietly shrink every key already out there:
+# a snapshot here is how such a key is recognised and brought up to date.
 LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS = (
     (
         SCOPE_ADMISSIONS_READ,
@@ -70,6 +75,29 @@ LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS = (
         SCOPE_PETS_READ,
         SCOPE_PETS_WRITE,
         SCOPE_REFERENCE_READ,
+        SCOPE_USERS_READ,
+        SCOPE_USERS_WRITE,
+    ),
+    # Before stage 270 gave deletion its own right.
+    (
+        SCOPE_ADMISSIONS_READ,
+        SCOPE_ADMISSIONS_WRITE,
+        SCOPE_ANALYTICS_READ,
+        SCOPE_ANALYTICS_WRITE,
+        SCOPE_CLIENTS_READ,
+        SCOPE_CLIENTS_WRITE,
+        SCOPE_FINANCE_READ,
+        SCOPE_FINANCE_WRITE,
+        SCOPE_INVENTORY_READ,
+        SCOPE_INVENTORY_WRITE,
+        SCOPE_MEDICAL_CARDS_READ,
+        SCOPE_MEDICAL_CARDS_WRITE,
+        SCOPE_MESSAGING_READ,
+        SCOPE_MESSAGING_WRITE,
+        SCOPE_PETS_READ,
+        SCOPE_PETS_WRITE,
+        SCOPE_REFERENCE_READ,
+        SCOPE_REPORT_AI_WRITE,
         SCOPE_USERS_READ,
         SCOPE_USERS_WRITE,
     ),
@@ -227,6 +255,11 @@ def required_scope_for_request(method: str, path: str) -> str | None:
         return SCOPE_ANALYTICS_READ
     if normalized_method == "GET":
         return _READ_SCOPE_BY_ENTITY.get(entity)
-    if normalized_method in {"POST", "PUT", "DELETE"}:
+    if normalized_method == "DELETE":
+        # Stage 270: deletion is its own right, and it is required for every
+        # entity — including ones no tool deletes today. An unmapped deleting
+        # path should be refused by default, not waved through.
+        return SCOPE_RECORDS_DELETE
+    if normalized_method in {"POST", "PUT"}:
         return _WRITE_SCOPE_BY_ENTITY.get(entity)
     return None

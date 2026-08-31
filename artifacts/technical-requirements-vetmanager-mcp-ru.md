@@ -449,7 +449,7 @@ vetmanager-mcp/
 
 | Preset | Scope bundle |
 |---|---|
-| `full_access` | полный актуальный `SUPPORTED_TOKEN_SCOPES` на момент выпуска |
+| `full_access` | полный актуальный `SUPPORTED_TOKEN_SCOPES` на момент выпуска; **единственный preset с `records.delete`** (этап 270) |
 | `read_only` | `admissions.read`, `analytics.read`, `clients.read`, `finance.read`, `inventory.read`, `medical_cards.read`, `pets.read`, `reference.read`, `users.read` |
 | `frontdesk` | `admissions.read`, `admissions.write`, `analytics.read`, `clients.read`, `clients.write`, `finance.read`, `messaging.write`, `pets.read`, `pets.write`, `reference.read`, `users.read` |
 | `doctor` | `admissions.read`, `analytics.read`, `medical_cards.read`, `medical_cards.write`, `pets.read`, `reference.read`, `users.read` |
@@ -483,6 +483,7 @@ Supported scopes:
 - `analytics.read`
 - `analytics.write`
 - `report_ai.write`
+- `records.delete`
 
 Scope routing:
 - `tool_access_registry.py::TOOL_REQUIRED_SCOPES` — source of truth для
@@ -497,6 +498,15 @@ Scope routing:
   `analytics.read`.
 - `messaging.read` остаётся supported legacy scope для совместимости со старыми
   manifests, но active preset'ы его не используют.
+- `records.delete` — право на удаление записей, этап 270. Раньше
+  `delete_client` требовал `clients.write`, а `delete_pet` — `pets.write`,
+  из-за чего `frontdesk` удалял клиентов и питомцев, не объявляя этого.
+  Одно право на оба инструмента, а не по праву на сущность: удаляющих
+  инструментов два, и доступны они одной группе. Ключи полного доступа,
+  выпущенные до этапа, распознаются снимком в
+  `LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS` и дополняются; OAuth-гранты с выбранной
+  группой пересчитываются от группы, а гранты без группы и так требуют
+  переподключения при обновлении токена.
 - `report_ai.write` — право на работу с отчётами. Этап 172.2 завёл его под
   explicit `save_report_ai_job_as_report`; этап 269 перевёл на него всё, что
   запускает работу на стороне Ветменеджера: `create_report_ai_job`,

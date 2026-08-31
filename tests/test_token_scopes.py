@@ -51,10 +51,46 @@ def test_deserialize_missing_scopes_preserves_legacy_full_access():
     assert deserialize_token_scopes(None) == list(SUPPORTED_TOKEN_SCOPES)
 
 
-def test_deserialize_old_full_access_snapshot_expands_to_current_full_access():
-    old_full_access = [scope for scope in SUPPORTED_TOKEN_SCOPES if scope != SCOPE_REPORT_AI_WRITE]
+# Stage 270: spelled out instead of derived from SUPPORTED_TOKEN_SCOPES. Derived,
+# it silently became a different list every time a scope was added — and a list
+# that was never actually issued to anyone is not a compatibility guard.
+FULL_ACCESS_BEFORE_REPORT_AI_WRITE = [
+    "admissions.read",
+    "admissions.write",
+    "analytics.read",
+    "analytics.write",
+    "clients.read",
+    "clients.write",
+    "finance.read",
+    "finance.write",
+    "inventory.read",
+    "inventory.write",
+    "medical_cards.read",
+    "medical_cards.write",
+    "messaging.read",
+    "messaging.write",
+    "pets.read",
+    "pets.write",
+    "reference.read",
+    "users.read",
+    "users.write",
+]
 
-    assert deserialize_token_scopes(json.dumps(old_full_access)) == list(SUPPORTED_TOKEN_SCOPES)
+FULL_ACCESS_BEFORE_RECORDS_DELETE = sorted(
+    FULL_ACCESS_BEFORE_REPORT_AI_WRITE + [SCOPE_REPORT_AI_WRITE]
+)
+
+
+def test_deserialize_old_full_access_snapshot_expands_to_current_full_access():
+    restored = deserialize_token_scopes(json.dumps(FULL_ACCESS_BEFORE_REPORT_AI_WRITE))
+
+    assert restored == list(SUPPORTED_TOKEN_SCOPES)
+
+
+def test_deserialize_full_access_issued_before_the_delete_right_expands_too():
+    restored = deserialize_token_scopes(json.dumps(FULL_ACCESS_BEFORE_RECORDS_DELETE))
+
+    assert restored == list(SUPPORTED_TOKEN_SCOPES)
 
 
 def test_deserialize_old_report_ai_snapshot_expands_to_analytics_bundle():
