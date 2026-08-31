@@ -66,6 +66,10 @@ async def _seed(session_factory, *, raw_token, **overrides):
             expires_at=overrides.get("expires_at"),
         )
         token.set_raw_token(raw_token)
+        if overrides.get("break_credentials"):
+            # What a rotated encryption key or a half-written connection looks
+            # like from here.
+            connection.encrypted_credentials = "not-decryptable"
         if "scopes" in overrides:
             token.set_scopes(overrides["scopes"])
         session.add_all([connection, token])
@@ -81,6 +85,11 @@ def _use_factory(monkeypatch, session_factory, raw_token, *, client_ip="10.0.0.1
     monkeypatch.setattr(
         bearer_auth_impl, "get_request_audit_metadata", lambda: (client_ip, None)
     )
+    # The catalogue path decrypts the stored connection the same way the auth
+    # path does, and here that means the fixture's key.
+    monkeypatch.setattr(
+        runtime_auth, "get_storage_encryption_key", lambda: TEST_ENCRYPTION_KEY
+    )
 
 
 # `accounts.status` only accepts "active" today, so an inactive account cannot
@@ -91,6 +100,15 @@ REFUSING_SETUPS = {
     "no rights at all": {"scopes": ()},
     "no active connection": {"connection_status": "disabled"},
     "another address": {"ip_mask": "203.0.113.7"},
+    "connection that cannot be decrypted": {"break_credentials": True},
+}
+
+# A refusal is normally an AuthError. Unreadable credentials are the exception:
+# the ordinary path fails there too, just not politely — it raises out of the
+# decryption itself. What matters for this file is that it does not hand out
+# credentials, so the catalogue must not hand out a tailored list.
+REFUSAL_TYPES = {
+    "connection that cannot be decrypted": Exception,
 }
 
 
@@ -104,7 +122,7 @@ async def test_a_token_authentication_refuses_gets_no_catalogue_either(
     _use_factory(monkeypatch, session_factory, raw_token)
 
     async with session_factory() as session:
-        with pytest.raises((AuthError, RateLimitError)):
+        with pytest.raises(REFUSAL_TYPES.get(case, (AuthError, RateLimitError))):
             await resolve_bearer_auth_context(
                 raw_token, session, encryption_key=TEST_ENCRYPTION_KEY
             )
@@ -145,3 +163,58 @@ async def test_asking_for_the_catalogue_writes_nothing(session_factory, monkeypa
         assert await session.scalar(select(func.count()).select_from(TokenUsageLog)) == 0
         token = await session.scalar(select(ServiceBearerToken))
         assert token.last_used_at == used_before
+
+
+@pytest.mark.asyncio
+async def test_an_oauth_grant_that_is_no_longer_active_gets_no_catalogue(
+    session_factory, monkeypatch
+):
+    """The OAuth branch repeats the same checks and can drift the same way."""
+    from bearer_token_manager import hash_bearer_token
+    from oauth_service import OAUTH_ACCESS_TOKEN_PREFIX
+    from storage_models import OAuthAccessToken, OAuthGrant
+
+    raw_token = f"{OAUTH_ACCESS_TOKEN_PREFIX}catalogue-probe"
+
+    async with session_factory() as session:
+        account = Account(email="oauth@example.com", status="active")
+        session.add(account)
+        await session.flush()
+        connection = VetmanagerConnection(
+            account_id=account.id,
+            auth_mode="domain_api_key",
+            status="active",
+            domain="clinic-a",
+        )
+        connection.set_credentials(
+            {"domain": "clinic-a", "api_key": "secret-key"},
+            encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        session.add(connection)
+        await session.flush()
+        grant = OAuthGrant(
+            account_id=account.id,
+            vetmanager_connection_id=connection.id,
+            client_id="chatgpt",
+            scopes_json='["clients.read"]',
+            access_preset="read_only",
+            status="revoked",
+        )
+        session.add(grant)
+        await session.flush()
+        session.add(
+            OAuthAccessToken(
+                grant_id=grant.id,
+                token_prefix=raw_token[:12],
+                token_hash=hash_bearer_token(raw_token),
+                scope="clients.read",
+                resource="https://vetmanager-mcp.example/mcp",
+                status="active",
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+        )
+        await session.commit()
+
+    _use_factory(monkeypatch, session_factory, raw_token)
+
+    assert await peek_runtime_scopes() is None

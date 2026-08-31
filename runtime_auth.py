@@ -134,6 +134,25 @@ async def resolve_runtime_credentials() -> RuntimeCredentials:
     )
 
 
+def _connection_credentials_resolve(connection) -> bool:
+    """Whether this connection would actually yield credentials.
+
+    The last thing both authentication paths do is decrypt the stored
+    credentials, and that step can fail on its own — a rotated encryption key,
+    a half-written connection, an auth mode we no longer support. Until it
+    succeeds the token cannot call anything, so the catalogue must not be
+    tailored for it either.
+    """
+    try:
+        resolve_vetmanager_credentials(
+            connection,
+            encryption_key=get_storage_encryption_key(),
+        )
+    except Exception:
+        return False
+    return True
+
+
 async def peek_runtime_scopes() -> tuple[str, ...] | None:
     """Rights of the current token, read without journalling the request.
 
@@ -186,6 +205,8 @@ async def peek_runtime_scopes() -> tuple[str, ...] | None:
             )
             if connection is None or connection.status != CONNECTION_STATUS_ACTIVE:
                 return None
+            if not _connection_credentials_resolve(connection):
+                return None
             return tuple(
                 get_effective_oauth_tool_scopes_for_preset(
                     grant.access_preset,
@@ -219,6 +240,8 @@ async def peek_runtime_scopes() -> tuple[str, ...] | None:
             .limit(1)
         )
         if connection is None:
+            return None
+        if not _connection_credentials_resolve(connection):
             return None
         return scopes
 
