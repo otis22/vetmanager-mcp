@@ -234,6 +234,13 @@ def configure_logging() -> None:
     level = (os.environ.get("LOG_LEVEL") or "INFO").strip().upper()
     root.setLevel(level)
 
+    # Stage 278: `httpx` logs every request line at INFO, address included.
+    # The export download goes to a public CDN link that serves the raw,
+    # uncleaned file to anyone holding it — and production runs at INFO with a
+    # persistent log on disk. Our own instrumentation already records endpoint,
+    # method, status and duration, so nothing is lost by silencing the library.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
     access_logger = logging.getLogger("uvicorn.access")
     if not any(isinstance(item, ReportExportPathFilter) for item in access_logger.filters):
         access_logger.addFilter(ReportExportPathFilter())
