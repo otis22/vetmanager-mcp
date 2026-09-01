@@ -102,7 +102,17 @@ _INITIALS_RE = re.compile(
 #
 # The forms are spelled out instead: title case or all caps, in either script.
 # A name is written that way; a sentence is not.
-_NAME_WORD = r"(?:[А-ЯЁ][а-яё]{1,30}|[А-ЯЁ]{2,31}|[A-Z][a-z]{1,30}|[A-Z]{2,31})"
+# One definition of "a word a name is made of", used by every rule below. It
+# has to allow what surnames actually contain — an inner hyphen, an apostrophe,
+# an inner capital — or the rule matches only the tail: `Петров-Водкин Пётр
+# Сергеевич` came back as `Петров-[redacted-name]`, leaving half a surname and
+# a broken value behind (found by review, 01.09.2026).
+_NAME_PART = r"(?:[А-ЯЁ][А-ЯЁа-яё]{1,30}|[A-Z][A-Za-z]{1,30})"
+_NAME_TAIL = r"(?:[А-ЯЁ][А-ЯЁа-яё]{0,30}|[A-Z][A-Za-z]{0,30}|[а-яё]{1,30}|[a-z]{1,30})"
+# `O'Connor` and `Д'Артаньян` start with a single letter before the apostrophe,
+# which the general form cannot allow — a lone capital would turn `А Б В` into
+# a name.
+_NAME_WORD = rf"(?:[А-ЯЁA-Z]'{_NAME_PART}|{_NAME_PART}(?:['\-]{_NAME_TAIL})*)"
 _FULL_NAME_RE = re.compile(
     rf"(?u)\b{_NAME_WORD}\s+{_NAME_WORD}\s+{_NAME_WORD}\b"
 )
@@ -162,7 +172,7 @@ _TAIL_WORDS = frozenset({
     "плюс", "люкс", "сервис", "групп", "трейд", "фарм", "вет", "эконом",
     "премиум", "plus", "group", "vet",
 })
-_PAIR_WORD_RE = re.compile(r"(?u)[^\W\d_]+(?:-[^\W\d_]+)*")
+_PAIR_WORD_RE = re.compile(r"(?u)[^\W\d_]+(?:['\-][^\W\d_]+)*")
 # Stage 277: the one lowercase form worth taking. Requiring capitals is what
 # keeps `вялый паралич` out of the patronymic rule, so lowercase is allowed
 # here only when the first word is a known given name — `петр сергеевич` is a

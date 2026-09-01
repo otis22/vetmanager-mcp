@@ -97,7 +97,38 @@ def test_a_name_typed_entirely_in_lower_case_is_taken_by_the_dictionary():
     but only where a known given name stands next to a patronymic."""
     assert sanitize_report_value("петр сергеевич") == REDACTED_NAME
     assert sanitize_report_value("мария ивановна") == REDACTED_NAME
-    assert "петр" not in sanitize_report_value("иванов петр сергеевич")
+
+
+def test_the_lower_case_surname_stays_and_that_is_the_stated_residual():
+    """`иванов петр сергеевич` comes back as `иванов [redacted-name]`.
+
+    The surname is not swallowed on purpose: in lower case nothing separates a
+    surname from an ordinary word, and a rule that ate the word before the name
+    would eat `принимал петр сергеевич` down to nothing. A lone surname is what
+    the interface text already calls the residual, so this is that residual and
+    not a new one.
+    """
+    assert sanitize_report_value("иванов петр сергеевич") == f"иванов {REDACTED_NAME}"
+    assert sanitize_report_value("принимал петр сергеевич") == f"принимал {REDACTED_NAME}"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "Петров-Водкин Пётр Сергеевич",
+        "Анна-Мария Иванова Сергеевна",
+        "O'Connor Anna Sergeevna",
+        "МакДональд Анна Сергеевна",
+    ],
+)
+def test_a_surname_with_a_hyphen_apostrophe_or_inner_capital_goes_whole(value):
+    """The first version left `Петров-` behind: half a surname and a broken
+    value. One definition of a name word now serves every rule."""
+    assert sanitize_report_value(value) == REDACTED_NAME
+
+
+def test_bare_capitals_are_not_a_name():
+    assert sanitize_report_value("А Б В") == "А Б В"
 
 
 @pytest.mark.parametrize("value", ["вялый паралич", "кулич пасхальный", "калач ржаной"])
