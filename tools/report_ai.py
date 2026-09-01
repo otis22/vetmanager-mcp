@@ -1,20 +1,25 @@
 """Report AI job tools for Vetmanager report constructor workflows."""
 
+import asyncio
+import httpx
 import json
 import time
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
+import report_export
 from exceptions import AuthError, ToolInputError, VetmanagerError, reportable_error
 from observability_logging import RUNTIME_LOGGER
 from prompts import get_report_ai_prompt_helper_text
 from tool_access_registry import SCOPE_DENIED_ERROR_CODE
 from runtime_auth import get_current_runtime_credentials
+from oauth_metadata import get_site_base_url
 from service_metrics import (
     instrument_call,
+    record_report_export_download,
     record_report_ai_export,
     record_report_ai_export_duration,
     record_report_ai_job_created,
@@ -732,7 +737,7 @@ def _safe_export_error(
     lowered = str(exc).lower()
     if retry_on_conflict and _is_retryable_export_file_error(exc):
         return reportable_error(
-            "Report export is not ready yet; call get_report_export_file again after a delay."
+            "Report export is not ready yet; call get_report_export_download again after a delay."
         )
     if exc.status_code == 403:
         if "report creating in progress" in lowered:
@@ -772,6 +777,77 @@ def _is_retryable_export_file_error(exc: VetmanagerError) -> bool:
         exc.status_code == 409
         or "build in progress" in lowered
         or "not started" in lowered
+    )
+
+
+# Stage 276: what the CDN is allowed to answer with, and how long we wait for
+# it. An HTML error page parsed as CSV would be stored and served as a report.
+_EXPORT_DOWNLOAD_TIMEOUT = httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)
+
+
+def _pick_csv_locator(report: dict) -> tuple[str, str]:
+    """Choose the CSV to download and the delimiter that goes with it."""
+    comma = report.get("csv_file")
+    if isinstance(comma, str) and comma.strip():
+        return comma.strip(), ","
+    semicolon = report.get("csv_semicolon_file")
+    if isinstance(semicolon, str) and semicolon.strip():
+        return semicolon.strip(), ";"
+    raise reportable_error(
+        "This export has no CSV file; only CSV can be cleaned and served by MCP."
+    )
+
+
+async def _download_export_bytes(locator: str) -> bytes:
+    """Fetch the export body, bounded and unauthenticated.
+
+    No credentials go here on purpose: the locator points at a public CDN, not
+    at the clinic. Redirects are not followed — where the bytes come from is
+    our decision, not the answer's. The size is counted on decompressed bytes,
+    so a compressed answer cannot walk past the limit.
+    """
+    limit = report_export.REPORT_EXPORT_MAX_BYTES
+    try:
+        async with httpx.AsyncClient(
+            timeout=_EXPORT_DOWNLOAD_TIMEOUT, follow_redirects=False, trust_env=False
+        ) as client:
+            async with client.stream("GET", locator) as response:
+                if response.status_code != 200:
+                    raise report_export.ReportExportError(
+                        "The export file could not be downloaded from Vetmanager storage."
+                    )
+                media_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+                if media_type not in report_export.REPORT_EXPORT_ALLOWED_CONTENT_TYPES:
+                    raise report_export.ReportExportError(
+                        "Vetmanager storage answered with something that is not an export file."
+                    )
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > limit:
+                        raise report_export.ReportExportError(
+                            f"The export is larger than {limit // (1024 * 1024)} MB; "
+                            "narrow the report or its period and export again."
+                        )
+                    chunks.append(chunk)
+    except httpx.HTTPError:
+        raise report_export.ReportExportError(
+            "The export file could not be downloaded from Vetmanager storage."
+        ) from None
+    return b"".join(chunks)
+
+
+def _export_subject(credentials) -> tuple[str, int]:
+    """Which access this file belongs to, for the link and for its liveness."""
+    if getattr(credentials, "bearer_token_id", None) is not None:
+        return "service_bearer", int(credentials.bearer_token_id)
+    subject_type = getattr(credentials, "auth_subject_type", None)
+    subject_id = getattr(credentials, "auth_subject_id", None)
+    if subject_type and subject_id is not None:
+        return str(subject_type), int(subject_id)
+    raise report_export.ReportExportError(
+        "This access cannot own an export link; re-authorize and try again."
     )
 
 
@@ -987,8 +1063,8 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool
-    async def get_report_export_file(report_file_id: int) -> dict:
-        """Get CSV/XLSX export file locators after start_report_export.
+    async def get_report_export_download(report_file_id: int) -> dict:
+        """Download a finished report export and return a link to the CSV file.
 
         Args:
             report_file_id: Export build ID returned by start_report_export.
@@ -1003,11 +1079,9 @@ def register(mcp: FastMCP) -> None:
                 "/rest/api/report/reportFile",
                 "GET",
                 lambda: client.get("/rest/api/report/reportFile", params={"file_id": file_id}),
-                tool_name="get_report_export_file",
+                tool_name="get_report_export_download",
             )
             payload = _ensure_report_file_payload(payload)
-            _complete_report_ai_export(file_id, outcome="success")
-            return payload
         except VetmanagerError as exc:
             if _is_retryable_export_file_error(exc):
                 observed_wait = _report_ai_export_observed_wait_seconds(file_id)
@@ -1039,6 +1113,75 @@ def register(mcp: FastMCP) -> None:
         except ToolError:
             _complete_report_ai_export(file_id, outcome="error")
             raise
+
+        # Stage 276: from here on the file is ours. Vetmanager's own address is
+        # a public CDN link that serves the raw export to anyone who has it, so
+        # it never leaves this function — not in the answer, not in an error.
+        try:
+            locator, delimiter = _pick_csv_locator(_extract_report(payload))
+            raw = await _download_export_bytes(locator)
+            credentials = get_current_runtime_credentials()
+            depersonalize = bool(getattr(credentials, "is_depersonalized", False))
+            # Cleaning is CPU work over every cell, and a 25 MB export is
+            # hundreds of thousands of them: off the event loop it goes.
+            csv_text, rows, columns = await asyncio.to_thread(
+                report_export.build_export_csv,
+                raw,
+                delimiter=delimiter,
+                depersonalize=depersonalize,
+            )
+            subject_type, subject_id = _export_subject(credentials)
+            await asyncio.to_thread(report_export.sweep_expired)
+            owner = report_export.owner_segment(
+                domain=credentials.domain,
+                subject_type=subject_type,
+                subject_id=subject_id,
+            )
+            filename = report_export.new_export_filename(report_file_id=file_id)
+            url_path = await asyncio.to_thread(
+                report_export.store_export,
+                csv_text=csv_text,
+                owner=owner,
+                filename=filename,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                download_name=f"report-export-{file_id}.csv",
+            )
+        except report_export.ReportExportError as exc:
+            record_report_export_download(outcome="refused")
+            _complete_report_ai_export(file_id, outcome="error")
+            raise reportable_error(str(exc)) from None
+        except ToolError:
+            record_report_export_download(outcome="refused")
+            _complete_report_ai_export(file_id, outcome="error")
+            raise
+        except Exception:
+            record_report_export_download(outcome="error")
+            _complete_report_ai_export(file_id, outcome="error")
+            RUNTIME_LOGGER.error(
+                "report_export_download_failed",
+                extra={"event_name": "report_export_download_failed"},
+                exc_info=True,
+            )
+            raise reportable_error("Preparing the export file failed.") from None
+
+        record_report_export_download(outcome="success")
+        _complete_report_ai_export(file_id, outcome="success")
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            seconds=report_export.REPORT_EXPORT_TTL_SECONDS
+        )
+        return {
+            "download_url": f"{get_site_base_url()}{url_path}",
+            "expires_at": expires_at.replace(microsecond=0).isoformat(),
+            "rows": rows,
+            "columns": columns,
+            "depersonalized": depersonalize,
+            "how_to_use": (
+                "Give this link to the person who asked for the export. Anyone holding "
+                "the link can download the file, so do not post it anywhere public. "
+                "The link stops working after three days."
+            ),
+        }
 
     @mcp.tool
     async def get_report_ai_job_export(job_id: int, filter_json: str | None = None) -> dict:

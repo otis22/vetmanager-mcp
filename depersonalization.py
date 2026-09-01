@@ -231,6 +231,15 @@ def sanitize_report_value(text: str) -> str:
     return _PHONE_LIKE_RE.sub(_replace_phone, cleaned)
 
 
+def sanitize_report_cell(column: str, value: str) -> str:
+    """Clean one report cell the way a report row is cleaned.
+
+    Stage 276: a CSV export is a report with its column names in the header
+    row. Same two layers, same order — the name decides first, then the value.
+    """
+    return _sanitize_value(value, key=column or None, report_mode=True)
+
+
 def sanitize_tool_result(payload: Any, *, report_mode: bool = False) -> Any:
     """Recursively sanitize structured fields and whitelist free-text fields.
 

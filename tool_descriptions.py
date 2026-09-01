@@ -586,7 +586,7 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "get_report_ai_job": "report_ai",
     "get_report_ai_job_data": "report_ai",
     "start_report_export": "report_ai",
-    "get_report_export_file": "report_ai",
+    "get_report_export_download": "report_ai",
     "get_report_ai_job_export": "report_ai",
     "save_report_ai_job_as_report": "report_ai",
 }
@@ -936,7 +936,7 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "rather than manually calling this with the report_id. "
         "The report must have REST export enabled in Vetmanager. Optional filter_json "
         "is report-specific JSON; MCP validates JSON syntax only. The tool returns "
-        "report_file_id for get_report_export_file. Vetmanager may respond with busy "
+        "report_file_id for get_report_export_download. Vetmanager may respond with busy "
         "or time-limit states from a tenant-wide REST export guard and provides no "
         "retry_after. For either recognized guard, wait 30 minutes before one new "
         "StartReport attempt; do not retry automatically, immediately, or in parallel. "
@@ -944,15 +944,17 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "locators outside the tool response. Domain synonyms: отчёт, отчет, CSV отчёт, XLSX отчёт, "
         "конструктор отчётов, аналитика."
     ),
-    "get_report_export_file": (
-        "Get CSV/XLSX export file locators for a report_file_id returned by "
-        "start_report_export. For Report AI exports, get_report_ai_job_export can "
-        "start the export and return the report_file_id for this tool. This is an "
-        "export follow-up, not a default "
-        "discovery/list step. If Vetmanager says generation is still in progress, "
-        "retry after a delay. Treat html_file, csv_file, csv_semicolon_file, and "
-        "xlsx_file as sensitive clinic-data locators. Domain synonyms: отчёт, "
-        "CSV отчёт, XLSX отчёт, выгрузка отчёта, конструктор отчётов."
+    "get_report_export_download": (
+        "Download the finished CSV export for a report_file_id returned by "
+        "start_report_export or get_report_ai_job_export, and get a link to "
+        "it. MCP downloads the file "
+        "itself, applies the same personal-data protection the report rows "
+        "get, and serves it from this server; Vetmanager's own file addresses "
+        "are never returned. If Vetmanager says generation is still in "
+        "progress, retry after a delay. The returned link is public to anyone "
+        "holding it and stops working after three days: hand it to the person "
+        "who asked, do not post it. Domain synonyms: отчёт, CSV отчёт, "
+        "выгрузка отчёта, скачать отчёт, конструктор отчётов."
     ),
     "get_report_ai_job_export": (
         "Start CSV/XLSX export for a Report AI job only when it is saved or "
@@ -961,7 +963,7 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "it is not the default way to read small Report AI row sets. Check "
         "get_report_ai_job first to verify saved/existing_report_matched status; "
         "this tool delegates export start to start_report_export and returns "
-        "report_file_id for get_report_export_file. This does not auto-save "
+        "report_file_id for get_report_export_download. This does not auto-save "
         "ready_to_save jobs. Domain synonyms: ИИ отчёт, AI "
         "report, CSV отчёт, XLSX отчёт, конструктор отчётов."
     ),

@@ -11,8 +11,26 @@ from token_scopes import SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE
 
 
 DOMAIN = "testclinic"
+CDN = "https://cdn.example/vetmanager-public-user-files/testclinic/report.csv"
 API_KEY = "test-key-mock"
 BASE = "https://testclinic.vetmanager.cloud"
+
+
+@pytest.fixture(autouse=True)
+def _export_storage(tmp_path, monkeypatch):
+    """Stage 276: the download tool writes the cleaned file somewhere."""
+    monkeypatch.setenv("REPORT_EXPORT_DIR", str(tmp_path / "report-exports"))
+    monkeypatch.setenv("WEB_SESSION_SECRET", "stage-172-test-secret")
+    monkeypatch.setenv("SITE_BASE_URL", "https://mcp.example")
+    import report_export
+
+    report_export.reset_link_key_cache()
+
+
+def cdn_mock(body: bytes = b"Column\n1\n"):
+    return respx.get(CDN).mock(
+        return_value=httpx.Response(200, content=body, headers={"content-type": "text/csv"})
+    )
 
 
 def billing_mock():
@@ -43,7 +61,7 @@ async def test_report_export_tools_registered_without_list_tool():
     names = {tool.name for tool in await mcp.list_tools()}
 
     assert "start_report_export" in names
-    assert "get_report_export_file" in names
+    assert "get_report_export_download" in names
     assert "get_report_ai_job_export" in names
     assert "list_reports" not in names
     assert "get_reports" not in names
@@ -194,7 +212,7 @@ async def test_malformed_export_responses_are_recorded_as_errors_not_abandonment
             await mcp.call_tool("start_report_export", {"report_id": 88})
         await mcp.call_tool("start_report_export", {"report_id": 88})
         with pytest.raises(ToolError, match="export file fields"):
-            await mcp.call_tool("get_report_export_file", {"report_file_id": 124})
+            await mcp.call_tool("get_report_export_download", {"report_file_id": 124})
 
     assert start_route.call_count == 2
     assert file_route.call_count == 1
@@ -219,30 +237,31 @@ async def test_report_export_gets_bypass_cache_for_start_and_poll():
     )
     file_route = respx.get(f"{BASE}/rest/api/report/reportFile").mock(
         side_effect=[
-            httpx.Response(200, json={"data": {"report": {"csv_file": "first.csv"}}}),
-            httpx.Response(200, json={"data": {"report": {"csv_file": "second.csv"}}}),
+            httpx.Response(200, json={"data": {"report": {"csv_file": CDN}}}),
+            httpx.Response(200, json={"data": {"report": {"csv_file": CDN}}}),
         ]
     )
+    cdn_mock()
 
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
         first_start = await mcp.call_tool("start_report_export", {"report_id": 88})
         second_start = await mcp.call_tool("start_report_export", {"report_id": 88})
-        first_file = await mcp.call_tool("get_report_export_file", {"report_file_id": 123})
-        second_file = await mcp.call_tool("get_report_export_file", {"report_file_id": 123})
+        first_file = await mcp.call_tool("get_report_export_download", {"report_file_id": 123})
+        second_file = await mcp.call_tool("get_report_export_download", {"report_file_id": 123})
 
     assert start_route.call_count == 2
     assert file_route.call_count == 2
     assert _structured(first_start)["data"]["report"]["report_file_id"] == 123
     assert _structured(second_start)["data"]["report"]["report_file_id"] == 124
-    assert _structured(first_file)["data"]["report"]["csv_file"] == "first.csv"
-    assert _structured(second_file)["data"]["report"]["csv_file"] == "second.csv"
+    assert _structured(first_file)["download_url"] != _structured(second_file)["download_url"]
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_get_report_export_file_calls_reportfile_with_file_id():
+async def test_get_report_export_download_calls_reportfile_with_file_id():
     billing_mock()
+    cdn_mock()
     route = respx.get(f"{BASE}/rest/api/report/reportFile").mock(
         return_value=httpx.Response(
             200,
@@ -252,7 +271,7 @@ async def test_get_report_export_file_calls_reportfile_with_file_id():
                 "data": {
                     "report": {
                         "html_file": "report.html",
-                        "csv_file": "report.csv",
+                        "csv_file": CDN,
                         "csv_semicolon_file": "report-semicolon.csv",
                         "xlsx_file": "report.xlsx",
                     }
@@ -263,15 +282,16 @@ async def test_get_report_export_file_calls_reportfile_with_file_id():
 
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
-        result = await mcp.call_tool("get_report_export_file", {"report_file_id": 123})
+        result = await mcp.call_tool("get_report_export_download", {"report_file_id": 123})
 
     assert dict(route.calls.last.request.url.params) == {"file_id": "123"}
-    assert _structured(result)["data"]["report"]["csv_file"] == "report.csv"
+    assert _structured(result)["download_url"].startswith("https://mcp.example/report-export/")
+    assert "report.csv" not in str(_structured(result))
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_get_report_export_file_turns_marker_not_ready_into_retry_guidance():
+async def test_get_report_export_download_turns_marker_not_ready_into_retry_guidance():
     service_metrics.reset_service_metrics()
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/report/reportFile").mock(
@@ -283,8 +303,8 @@ async def test_get_report_export_file_turns_marker_not_ready_into_retry_guidance
 
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
-        with pytest.raises(ToolError, match="not ready.*get_report_export_file"):
-            await mcp.call_tool("get_report_export_file", {"report_file_id": 123})
+        with pytest.raises(ToolError, match="not ready.*get_report_export_download"):
+            await mcp.call_tool("get_report_export_download", {"report_file_id": 123})
 
     assert route.call_count == 1
     assert service_metrics.snapshot_service_metrics()["report_ai_exports_total"] == {
@@ -320,7 +340,7 @@ async def test_export_retry_classification_matches_tool_error_and_metric(
     with headers_patch, runtime_patch:
         await mcp.call_tool("start_report_export", {"report_id": 88})
         with pytest.raises(ToolError, match="not ready"):
-            await mcp.call_tool("get_report_export_file", {"report_file_id": 127})
+            await mcp.call_tool("get_report_export_download", {"report_file_id": 127})
 
     assert service_metrics.snapshot_service_metrics()["report_ai_exports_total"] == {
         "poll|not_ready": 1,
@@ -351,7 +371,7 @@ async def test_export_marker_is_not_retryable_outside_observed_statuses(
     with headers_patch, runtime_patch:
         await mcp.call_tool("start_report_export", {"report_id": 88})
         with pytest.raises(ToolError) as error:
-            await mcp.call_tool("get_report_export_file", {"report_file_id": 127})
+            await mcp.call_tool("get_report_export_download", {"report_file_id": 127})
 
     assert "not ready" not in str(error.value).lower()
     assert service_metrics.snapshot_service_metrics()["report_ai_exports_total"] == {
@@ -402,7 +422,7 @@ def test_active_export_polls_refresh_abandonment_ttl(monkeypatch):
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_get_report_export_file_treats_409_as_retryable_without_message():
+async def test_get_report_export_download_treats_409_as_retryable_without_message():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/report/reportFile").mock(
         return_value=httpx.Response(409, json={"success": False, "message": ""})
@@ -410,8 +430,8 @@ async def test_get_report_export_file_treats_409_as_retryable_without_message():
 
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
-        with pytest.raises(ToolError, match="not ready.*get_report_export_file"):
-            await mcp.call_tool("get_report_export_file", {"report_file_id": 123})
+        with pytest.raises(ToolError, match="not ready.*get_report_export_download"):
+            await mcp.call_tool("get_report_export_download", {"report_file_id": 123})
 
     assert route.call_count == 1
 
@@ -428,9 +448,10 @@ async def test_retryable_export_poll_keeps_observation_until_string_file_id_succ
     file_route = respx.get(f"{BASE}/rest/api/report/reportFile").mock(
         side_effect=[
             httpx.Response(409, json={"success": False, "message": ""}),
-            httpx.Response(200, json={"data": {"report": {"csv_file": "report.csv"}}}),
+            httpx.Response(200, json={"data": {"report": {"csv_file": CDN}}}),
         ]
     )
+    cdn_mock()
     observed_times = iter([10.0, 12.0, 15.0, 17.0, 17.0])
     monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: next(observed_times))
 
@@ -438,8 +459,8 @@ async def test_retryable_export_poll_keeps_observation_until_string_file_id_succ
     with headers_patch, runtime_patch:
         await mcp.call_tool("start_report_export", {"report_id": 88})
         with pytest.raises(ToolError, match="not ready"):
-            await mcp.call_tool("get_report_export_file", {"report_file_id": 123})
-        await mcp.call_tool("get_report_export_file", {"report_file_id": 123})
+            await mcp.call_tool("get_report_export_download", {"report_file_id": 123})
+        await mcp.call_tool("get_report_export_download", {"report_file_id": 123})
 
     assert start_route.call_count == 1
     assert file_route.call_count == 2
@@ -464,9 +485,10 @@ async def test_export_wait_limit_stops_automatic_polling_but_keeps_build_observa
     route = respx.get(f"{BASE}/rest/api/report/reportFile").mock(
         side_effect=[
             httpx.Response(409, json={"success": False, "message": ""}),
-            httpx.Response(200, json={"data": {"report": {"csv_file": "report.csv"}}}),
+            httpx.Response(200, json={"data": {"report": {"csv_file": CDN}}}),
         ]
     )
+    cdn_mock()
     now = [0.0]
     monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: now[0])
     headers_patch, runtime_patch = bearer_runtime_patch()
@@ -474,11 +496,11 @@ async def test_export_wait_limit_stops_automatic_polling_but_keeps_build_observa
         await mcp.call_tool("start_report_export", {"report_id": 88})
         now[0] = report_ai.REPORT_AI_EXPORT_WAIT_LIMIT_SECONDS
         with pytest.raises(ToolError, match="Stop automatic polling"):
-            await mcp.call_tool("get_report_export_file", {"report_file_id": 127})
-        later = await mcp.call_tool("get_report_export_file", {"report_file_id": 127})
+            await mcp.call_tool("get_report_export_download", {"report_file_id": 127})
+        later = await mcp.call_tool("get_report_export_download", {"report_file_id": 127})
 
     assert route.call_count == 2
-    assert _structured(later)["data"]["report"]["csv_file"] == "report.csv"
+    assert _structured(later)["download_url"].startswith("https://mcp.example/report-export/")
     assert service_metrics.snapshot_service_metrics()["report_ai_exports_total"] == {
         "poll|success": 1,
         "poll|wait_limit_reached": 1,
@@ -488,7 +510,7 @@ async def test_export_wait_limit_stops_automatic_polling_but_keeps_build_observa
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_get_report_export_file_rejects_200_without_export_fields():
+async def test_get_report_export_download_rejects_200_without_export_fields():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/report/reportFile").mock(
         return_value=httpx.Response(200, json={"success": True, "data": {"report": {}}})
@@ -497,7 +519,7 @@ async def test_get_report_export_file_rejects_200_without_export_fields():
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
         with pytest.raises(ToolError, match="export file fields"):
-            await mcp.call_tool("get_report_export_file", {"report_file_id": 123})
+            await mcp.call_tool("get_report_export_download", {"report_file_id": 123})
 
     assert route.call_count == 1
 
@@ -524,7 +546,7 @@ async def test_start_report_export_missing_scope_keeps_scope_error():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_get_report_export_file_missing_scope_keeps_scope_error():
+async def test_get_report_export_download_missing_scope_keeps_scope_error():
     route = respx.get(f"{BASE}/rest/api/report/reportFile").mock(
         return_value=httpx.Response(200, json={"data": {"report": {"csv_file": "secret.csv"}}})
     )
@@ -532,7 +554,7 @@ async def test_get_report_export_file_missing_scope_keeps_scope_error():
     headers_patch, runtime_patch = bearer_runtime_patch(scopes=())
     with headers_patch, runtime_patch:
         with pytest.raises(ToolError) as exc_info:
-            await mcp.call_tool("get_report_export_file", {"report_file_id": 123})
+            await mcp.call_tool("get_report_export_download", {"report_file_id": 123})
 
     message = str(exc_info.value)
     assert "Required scopes: analytics.read" in message

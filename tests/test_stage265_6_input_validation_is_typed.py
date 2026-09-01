@@ -51,7 +51,7 @@ BAD_ARGUMENTS = [
     ("create_report_ai_job", {"intent_text": "a" * 20_001}),
     ("start_report_export", {"report_id": 0}),
     ("start_report_export", {"report_id": 7, "filter_json": "{not json"}),
-    ("get_report_export_file", {"report_file_id": -3}),
+    ("get_report_export_download", {"report_file_id": -3}),
 ]
 
 

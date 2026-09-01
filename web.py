@@ -47,6 +47,7 @@ from web_auth import SESSION_COOKIE_NAME, read_account_session_token, clear_acco
 from web_html import display_access_label, render_account_page
 from web_routes_account import register_account_routes
 from web_routes_auth import register_auth_routes
+from web_routes_export import register_export_routes
 from web_routes_oauth import register_oauth_routes
 from web_routes_system import register_system_routes
 from web_security import (
@@ -622,6 +623,12 @@ def register_web_routes(mcp: FastMCP) -> None:
         resolve_csrf_token=_resolve_csrf_token,
         extract_redirect_origin=_extract_oauth_redirect_origin,
         generate_csp_nonce=_generate_csp_nonce,
+    )
+
+    register_export_routes(
+        mcp,
+        observed_route=_observed_custom_route,
+        plain_text_response=_plain_text_response,
     )
 
     register_account_routes(

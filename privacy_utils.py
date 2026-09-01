@@ -20,6 +20,19 @@ from collections.abc import Mapping, Sequence
 from fastmcp.exceptions import ToolError
 
 
+# Stage 276: the report export download path is the whole authorization for
+# that file, so it must not survive into any log. The template and the pattern
+# live here, with the other redaction rules, so the logging and error-tracking
+# layers do not have to import the export machinery to scrub one path.
+REPORT_EXPORT_ROUTE_TEMPLATE = "/report-export/{owner}/{name}"
+_REPORT_EXPORT_PATH_RE = re.compile(r"/report-export/[0-9a-f]{32}/[0-9a-f]{32}\.csv")
+
+
+def scrub_report_export_path(text: str) -> str:
+    """Replace a signed export path with its route template."""
+    return _REPORT_EXPORT_PATH_RE.sub(REPORT_EXPORT_ROUTE_TEMPLATE, text)
+
+
 _GLOBAL_SENSITIVE_OUTPUT_FIELDS = frozenset({
     "passport_series",
     "passwd",

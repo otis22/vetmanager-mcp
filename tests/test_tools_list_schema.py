@@ -227,13 +227,13 @@ class TestToolsListSchema:
         ai_export = tools["get_report_ai_job_export"]["description"]
         assert "get_report_ai_job" in ai_export
         assert "start_report_export" in ai_export
-        assert "get_report_export_file" in ai_export
+        assert "get_report_export_download" in ai_export
 
         start_export = tools["start_report_export"]["description"]
         assert "known report_id" in start_export
         assert "get_report_ai_job_export" in start_export
 
-        file_export = tools["get_report_export_file"]["description"]
+        file_export = tools["get_report_export_download"]["description"]
         assert "start_report_export" in file_export
         assert "get_report_ai_job_export" in file_export
 

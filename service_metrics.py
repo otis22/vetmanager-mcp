@@ -48,6 +48,8 @@ _TOKEN_PRESET_ISSUED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _RATE_LIMIT_BACKEND_DEGRADED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _SANITIZER_FAILURES_TOTAL = 0
 _REST_UNMAPPED_READ_TOTAL = 0
+_REPORT_EXPORT_DOWNLOAD_TOTAL: DefaultDict[str, int] = defaultdict(int)
+_REPORT_EXPORT_SERVE_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _REPORT_AI_LONG_QUEUED_POLLS_TOTAL = 0
 _REPORT_AI_STAGE_STALL_POLLS_TOTAL = 0
 _REPORT_AI_JOBS_TOTAL: DefaultDict[str, int] = defaultdict(int)
@@ -107,6 +109,8 @@ def reset_service_metrics() -> None:
         _TOOL_CALL_LATENCY_SECONDS.clear()
         _TOKEN_PRESET_ISSUED_TOTAL.clear()
         _RATE_LIMIT_BACKEND_DEGRADED_TOTAL.clear()
+        _REPORT_EXPORT_DOWNLOAD_TOTAL.clear()
+        _REPORT_EXPORT_SERVE_TOTAL.clear()
         _SANITIZER_FAILURES_TOTAL = 0
         _REST_UNMAPPED_READ_TOTAL = 0
         _REPORT_AI_LONG_QUEUED_POLLS_TOTAL = 0
@@ -307,6 +311,18 @@ def record_sanitizer_failure() -> None:
         _SANITIZER_FAILURES_TOTAL += 1
 
 
+def record_report_export_download(*, outcome: str) -> None:
+    """Count one attempt to turn a Vetmanager export into a served file."""
+    with _LOCK:
+        _REPORT_EXPORT_DOWNLOAD_TOTAL[outcome] += 1
+
+
+def record_report_export_serve(*, outcome: str) -> None:
+    """Count one request to the public export route."""
+    with _LOCK:
+        _REPORT_EXPORT_SERVE_TOTAL[outcome] += 1
+
+
 def record_rest_unmapped_read() -> None:
     """Count a read whose path the scope layer does not recognise.
 
@@ -448,6 +464,8 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
             ),
             "sanitizer_failures_total": _SANITIZER_FAILURES_TOTAL,
             "rest_unmapped_read_total": _REST_UNMAPPED_READ_TOTAL,
+            "report_export_download_total": dict(sorted(_REPORT_EXPORT_DOWNLOAD_TOTAL.items())),
+            "report_export_serve_total": dict(sorted(_REPORT_EXPORT_SERVE_TOTAL.items())),
             "report_ai_long_queued_polls_total": _REPORT_AI_LONG_QUEUED_POLLS_TOTAL,
             "report_ai_stage_stall_polls_total": _REPORT_AI_STAGE_STALL_POLLS_TOTAL,
             "report_ai_jobs_total": dict(sorted(_REPORT_AI_JOBS_TOTAL.items())),
@@ -648,8 +666,24 @@ def render_prometheus_metrics() -> str:
             "# HELP vetmanager_rest_unmapped_read_total Total reads whose REST path has no required scope mapping.",
             "# TYPE vetmanager_rest_unmapped_read_total counter",
             f"vetmanager_rest_unmapped_read_total {snapshot.get('rest_unmapped_read_total', 0)}",
+            "# HELP vetmanager_report_export_download_total Report exports downloaded, cleaned and stored by MCP.",
+            "# TYPE vetmanager_report_export_download_total counter",
         ]
     )
+    for outcome, count in snapshot.get("report_export_download_total", {}).items():
+        lines.append(
+            f"vetmanager_report_export_download_total{_labels_text(outcome=outcome)} {count}"
+        )
+    lines.extend(
+        [
+            "# HELP vetmanager_report_export_serve_total Requests to the public report export route.",
+            "# TYPE vetmanager_report_export_serve_total counter",
+        ]
+    )
+    for outcome, count in snapshot.get("report_export_serve_total", {}).items():
+        lines.append(
+            f"vetmanager_report_export_serve_total{_labels_text(outcome=outcome)} {count}"
+        )
 
     lines.extend(
         [

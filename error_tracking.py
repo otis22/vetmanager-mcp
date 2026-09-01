@@ -12,6 +12,8 @@ import sentry_sdk
 from sentry_sdk.integrations.logging import ignore_logger
 from sentry_sdk.integrations.starlette import StarletteIntegration
 
+from privacy_utils import scrub_report_export_path
+
 SUPPORTED_ERROR_TRACKING_BACKENDS = {"sentry"}
 _REDACTED = "[Filtered]"
 _HANDLED_CONNECTION_FAILURE_TAG = "handled_connection_failure"
@@ -227,6 +229,13 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
             event["user"] = {"id": affected_account}
     request = event.get("request")
     if isinstance(request, dict):
+        # Stage 276: the export path is the authorization for the file; Sentry
+        # keeps `request.url` verbatim, and the header scrubbing below never
+        # looked at it.
+        url = request.get("url")
+        if isinstance(url, str):
+            request["url"] = scrub_report_export_path(url)
+
         headers = request.get("headers")
         if isinstance(headers, dict):
             request["headers"] = _redact_mapping(headers)

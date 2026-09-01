@@ -199,7 +199,7 @@ def test_frontdesk_accepts_analytics_read_blast_radius_explicitly():
         "get_message_reports",
         "get_report_ai_job",
         "get_report_ai_job_data",
-        "get_report_export_file",
+        "get_report_export_download",
         "get_timesheet_by_id",
         "get_timesheets",
     }
@@ -231,7 +231,7 @@ def test_normalize_token_preset_rejects_unknown_or_whitespace_values(preset):
         ("confirm_report_ai_job_candidate", (SCOPE_REPORT_AI_WRITE,)),
         ("get_report_ai_job_data", (SCOPE_ANALYTICS_READ,)),
         ("start_report_export", (SCOPE_REPORT_AI_WRITE,)),
-        ("get_report_export_file", (SCOPE_ANALYTICS_READ,)),
+        ("get_report_export_download", (SCOPE_ANALYTICS_READ,)),
         ("get_report_ai_job_export", (SCOPE_REPORT_AI_WRITE,)),
         ("save_report_ai_job_as_report", (SCOPE_REPORT_AI_WRITE,)),
         ("send_message_to_users", (SCOPE_MESSAGING_WRITE,)),
@@ -273,7 +273,7 @@ def test_report_ai_preset_advertises_full_report_ai_flow():
         "get_report_ai_job",
         "get_report_ai_job_data",
         "start_report_export",
-        "get_report_export_file",
+        "get_report_export_download",
         "get_report_ai_job_export",
         "save_report_ai_job_as_report",
     }.issubset(analytics_tools)

@@ -83,7 +83,7 @@ def test_analytics_covers_the_whole_report_flow():
         "get_report_ai_job_data",
         "save_report_ai_job_as_report",
         "start_report_export",
-        "get_report_export_file",
+        "get_report_export_download",
         "get_report_ai_job_export",
     ):
         assert tool_name in computed, tool_name

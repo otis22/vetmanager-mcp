@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from request_context import get_current_request_context
-from privacy_utils import mask_ip_to_network
+from privacy_utils import mask_ip_to_network, scrub_report_export_path
 
 DEFAULT_LOG_FORMAT = "text"
 SUPPORTED_LOG_FORMATS = {"json", "text"}
@@ -188,6 +188,27 @@ class PersistentRotatingFileHandler(logging.Handler):
             self.handleError(record)
 
 
+class ReportExportPathFilter(logging.Filter):
+    """Keep the key to an export file out of the access log.
+
+    Stage 276: `uvicorn` is started with `access_log=True` and
+    `PERSISTENT_LOG_PATH` writes that log to disk, so the signed download path
+    — which is the whole authorization for the file — would be persisted in
+    plain text. Access records carry the path as an argument, not in the
+    message, so the argument is what gets replaced.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
+            replaced = scrub_report_export_path(args[2])
+            if replaced != args[2]:
+                record.args = args[:2] + (replaced,) + args[3:]
+        if isinstance(record.msg, str):
+            record.msg = scrub_report_export_path(record.msg)
+        return True
+
+
 def _is_our_handler(handler: logging.Handler) -> bool:
     return getattr(handler, _HANDLER_MARKER, False) is True
 
@@ -212,6 +233,10 @@ def configure_logging() -> None:
     root = logging.getLogger()
     level = (os.environ.get("LOG_LEVEL") or "INFO").strip().upper()
     root.setLevel(level)
+
+    access_logger = logging.getLogger("uvicorn.access")
+    if not any(isinstance(item, ReportExportPathFilter) for item in access_logger.filters):
+        access_logger.addFilter(ReportExportPathFilter())
 
     if any(_is_our_handler(h) for h in root.handlers):
         return

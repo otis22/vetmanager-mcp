@@ -46,7 +46,7 @@ LAUNCHING_TOOLS = (
 READING_TOOLS = (
     "get_report_ai_job",
     "get_report_ai_job_data",
-    "get_report_export_file",
+    "get_report_export_download",
 )
 
 PRESETS_WITHOUT_REPORT_RIGHTS = (PRESET_READ_ONLY, PRESET_FRONTDESK, PRESET_DOCTOR)

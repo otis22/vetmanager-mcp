@@ -28,7 +28,6 @@ REPORT_TOOLS = frozenset({
     "get_report_ai_job",
     "get_report_ai_job_data",
     "get_report_ai_job_export",
-    "get_report_export_file",
     "save_report_ai_job_as_report",
     "start_report_export",
 })
