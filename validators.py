@@ -22,6 +22,15 @@ LimitParam = Annotated[
     Field(ge=1, le=_LIMIT_MAX, description="Max records to return (1–100)."),
 ]
 
+# `strict` matters here: without it pydantic accepts True as the integer 1, and
+# a boolean would silently become a reference to diagnosis id 1.
+# The range check lives in the tool, so the refusal can name the catalogue the
+# ids come from; the schema only blocks what the tool cannot see afterwards.
+DiagnosisIdParam = Annotated[
+    int,
+    Field(strict=True, description="Diagnosis id from get_diagnoses."),
+]
+
 
 def validate_list_params(limit: int, offset: int) -> None:
     """Validate pagination parameters for list endpoints.

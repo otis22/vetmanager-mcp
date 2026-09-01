@@ -1,3 +1,4 @@
+import json
 from datetime import date, timedelta
 
 from fastmcp import FastMCP
@@ -12,7 +13,7 @@ from filters import (
 )
 from exceptions import ToolInputError, reportable_error
 from tools.crud_helpers import crud_get_by_id, crud_create, crud_update, unwrap_single_record
-from validators import LimitParam, parse_date_param
+from validators import DiagnosisIdParam, LimitParam, parse_date_param
 from vetmanager_client import VetmanagerClient, VetmanagerError
 
 # The correct Vetmanager REST endpoint for medical cards is /rest/api/MedicalCards
@@ -28,6 +29,76 @@ _DEFAULT_DATE_SORT = [
 ]
 
 _DIAGNOSES_TYPE_ERROR = "Cannot assign int to property Entity\\MedicalCard\\Diagnoses::$diagnoses of type array"
+
+# The card's diagnosis field holds references, not text: a JSON array string of
+# {"id": <diagnosis id>, "type": <diagnosis type>}. Ids come from get_diagnoses;
+# types come from the clinic combo manual "diagnos_types" — verified on devtr6
+# 2026-09-01: 1 final (the catalogue default), 2 preliminary, 3 differential,
+# 4 probable. A value that decodes to a bare integer answers HTTP 500 upstream
+# and is not saved; free text is accepted and stored verbatim, which silently
+# turns the reference into a string that points at nothing.
+_DIAGNOSIS_TYPES = (1, 2, 3, 4)
+_DEFAULT_DIAGNOSIS_TYPE = 1
+_DIAGNOSIS_CATALOGUE_HINT = (
+    "Diagnosis ids come from get_diagnoses; free text belongs in 'diagnosis_text'."
+)
+
+
+def _diagnos_field(diagnosis_ids: list[int], diagnosis_type: int) -> str:
+    """Build the `diagnos` value, or refuse before anything reaches the API."""
+    if diagnosis_type not in _DIAGNOSIS_TYPES:
+        raise ToolInputError(
+            f"'diagnosis_type' must be one of {', '.join(str(t) for t in _DIAGNOSIS_TYPES)}"
+            f" (1 final, 2 preliminary, 3 differential, 4 probable), got {diagnosis_type}."
+        )
+    if not diagnosis_ids:
+        raise ToolInputError(
+            "'diagnosis_ids' must name at least one diagnosis; an empty list is not a way"
+            " to clear the diagnosis, and clearing it is not supported by this tool."
+            f" {_DIAGNOSIS_CATALOGUE_HINT}"
+        )
+    for value in diagnosis_ids:
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ToolInputError(
+                f"'diagnosis_ids' takes positive diagnosis ids, got {value!r}."
+                f" {_DIAGNOSIS_CATALOGUE_HINT}"
+            )
+    return json.dumps(
+        [{"id": value, "type": diagnosis_type} for value in diagnosis_ids],
+        separators=(",", ":"),
+    )
+
+
+def _refuse_legacy_diagnosis(diagnosis: str) -> None:
+    """The removed free-text parameter: refuse loudly instead of writing junk."""
+    if diagnosis:
+        raise ToolInputError(
+            "'diagnosis' no longer reaches the card. The field it used to fill holds"
+            " references to the clinic diagnosis catalogue, so free text written there"
+            " pointed at nothing and a bare number crashed the save."
+            " Use 'diagnosis_ids' to record a diagnosis, or 'diagnosis_text' for a note."
+        )
+
+
+def _apply_diagnosis(
+    payload: dict, diagnosis: str, diagnosis_ids: list[int] | None,
+    diagnosis_type: int, diagnosis_text: str, *, on_create: bool = False,
+) -> None:
+    """Put the diagnosis fields into an outgoing payload, or nothing at all."""
+    _refuse_legacy_diagnosis(diagnosis)
+    if diagnosis_ids is not None:
+        payload["diagnos"] = _diagnos_field(diagnosis_ids, diagnosis_type)
+    if diagnosis_text:
+        if on_create:
+            # Verified on devtr6 2026-09-01: the create endpoint answers 201 and
+            # drops this field, while update stores it. Refusing beats writing a
+            # note the clinic will never see.
+            raise ToolInputError(
+                "'diagnosis_text' is not saved when the card is created: Vetmanager"
+                " accepts the request and drops the field. Create the card first,"
+                " then set the note with update_medical_card."
+            )
+        payload["diagnos_text"] = diagnosis_text
 
 
 def _medical_card_update_error(exc: VetmanagerError) -> ToolError | None:
@@ -303,6 +374,9 @@ def register(mcp: FastMCP) -> None:
         date_create: str,
         description: str = "",
         diagnosis: str = "",
+        diagnosis_ids: list[DiagnosisIdParam] | None = None,
+        diagnosis_type: int = _DEFAULT_DIAGNOSIS_TYPE,
+        diagnosis_text: str = "",
         treatment: str = "",
         recomendation: str = "",
         clinic_id: int = 0,
@@ -316,12 +390,26 @@ def register(mcp: FastMCP) -> None:
         Use patient_id (pet ID) to identify the animal.  All other fields are
         optional but should be filled in when provided by the user.
 
+        A diagnosis is a reference, not a sentence: pass `diagnosis_ids` with
+        ids from `get_diagnoses`. Anything the catalogue does not cover goes in
+        `diagnosis_text`. The tool checks the shape of the ids, not whether the
+        clinic actually has them — an unknown id is stored as written.
+
         Args:
             patient_id: ID of the pet (patient).  Also accepted as pet_id.
             doctor_id: ID of the veterinarian creating the record.
             date_create: Record date in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format.
             description: Clinical description / anamnesis (optional).
-            diagnosis: Diagnosis text (optional).
+            diagnosis: Removed. Kept only to answer with what to use instead.
+            diagnosis_ids: Diagnosis ids from get_diagnoses. Omit to leave the
+                diagnosis alone; an empty list is refused, not treated as
+                "clear it".
+            diagnosis_type: How certain the diagnosis is, from the clinic
+                `diagnos_types` catalogue: 1 final (default), 2 preliminary,
+                3 differential, 4 probable.
+            diagnosis_text: Not saved on create — Vetmanager answers 201 and
+                drops the field. Set the note with update_medical_card after
+                the card exists.
             treatment: Prescribed treatment (optional).
             recomendation: Recommendations for the owner (optional).
             clinic_id: ID of the clinic branch (optional, 0 = default).
@@ -338,8 +426,9 @@ def register(mcp: FastMCP) -> None:
         }
         if description:
             payload["description"] = description
-        if diagnosis:
-            payload["diagnos"] = diagnosis  # API field name is "diagnos"
+        _apply_diagnosis(
+            payload, diagnosis, diagnosis_ids, diagnosis_type, diagnosis_text, on_create=True,
+        )
         if treatment:
             payload["treatment"] = treatment
         if recomendation:
@@ -361,6 +450,9 @@ def register(mcp: FastMCP) -> None:
         card_id: int,
         description: str = "",
         diagnosis: str = "",
+        diagnosis_ids: list[DiagnosisIdParam] | None = None,
+        diagnosis_type: int = _DEFAULT_DIAGNOSIS_TYPE,
+        diagnosis_text: str = "",
         treatment: str = "",
         recomendation: str = "",
         weight: float = 0.0,
@@ -383,10 +475,23 @@ def register(mcp: FastMCP) -> None:
         field unchanged even after a successful write. Read the changed field
         back instead.
 
+        A diagnosis is a reference, not a sentence: pass `diagnosis_ids` with
+        ids from `get_diagnoses`. Anything the catalogue does not cover goes in
+        `diagnosis_text`. The tool checks the shape of the ids, not whether the
+        clinic actually has them — an unknown id is stored as written.
+
         Args:
             card_id: ID of the medical card record to update.
             description: Updated clinical description/anamnesis.
-            diagnosis: Updated diagnosis text.
+            diagnosis: Removed. Kept only to answer with what to use instead.
+            diagnosis_ids: Diagnosis ids from get_diagnoses; they replace the
+                ones on the card. Omit to leave the diagnosis alone; an empty
+                list is refused, not treated as "clear it".
+            diagnosis_type: How certain the diagnosis is, from the clinic
+                `diagnos_types` catalogue: 1 final (default), 2 preliminary,
+                3 differential, 4 probable.
+            diagnosis_text: Free-text note about the diagnosis. Stored beside
+                the references, never instead of them.
             treatment: Updated treatment notes.
             recomendation: Updated recommendations for the owner.
             weight: Updated animal weight in kg (0 = no change).
@@ -408,8 +513,7 @@ def register(mcp: FastMCP) -> None:
         payload: dict = {field: current[field] for field in required_context}
         if description:
             payload["description"] = description
-        if diagnosis:
-            payload["diagnos"] = diagnosis  # API field name is "diagnos"
+        _apply_diagnosis(payload, diagnosis, diagnosis_ids, diagnosis_type, diagnosis_text)
         if treatment:
             payload["treatment"] = treatment
         if recomendation:

@@ -168,7 +168,7 @@ async def test_create_medical_card_maps_fields_to_api_contract():
                 "doctor_id": 3,
                 "date_create": "2026-04-20",
                 "description": "Checkup",
-                "diagnosis": "Healthy",
+                "diagnosis_ids": [32],
                 "treatment": "None",
                 "recomendation": "Observe",
                 "weight": 4.2,
@@ -181,12 +181,13 @@ async def test_create_medical_card_maps_fields_to_api_contract():
         "doctor_id": 3,
         "date_create": "2026-04-20",
         "description": "Checkup",
-        "diagnos": "Healthy",
+        "diagnos": '[{"id":32,"type":1}]',
         "treatment": "None",
         "recomendation": "Observe",
         "weight": 4.2,
     }
     assert "diagnosis" not in body
+    assert "diagnosis_ids" not in body
 
 
 @pytest.mark.asyncio
@@ -208,7 +209,7 @@ async def test_update_medical_card_maps_fields_to_api_contract():
             {
                 "card_id": 42,
                 "description": "Updated",
-                "diagnosis": "Recovered",
+                "diagnosis_ids": [19],
                 "temperature": 38.5,
             },
         )
@@ -219,7 +220,7 @@ async def test_update_medical_card_maps_fields_to_api_contract():
         "doctor_id": 8,
         "clinic_id": 9,
         "description": "Updated",
-        "diagnos": "Recovered",
+        "diagnos": '[{"id":19,"type":1}]',
         "temperature": 38.5,
     }
     assert "diagnosis" not in body
