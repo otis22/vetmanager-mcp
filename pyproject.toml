@@ -54,6 +54,7 @@ only-include = [
     "request_credentials.py",
     "resources",
     "runtime_auth.py",
+    "russian_given_names.py",
     "secret_manager.py",
     "server.py",
     "shutdown_state.py",

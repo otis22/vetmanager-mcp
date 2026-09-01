@@ -263,9 +263,10 @@ def test_the_report_right_never_comes_without_full_reading():
         ("ivanov@example.com", True),
         ("г. Краснодар, ул. Ленина, д. 5, кв. 12", True),
         ("ул. Красная, д. 12", True),
-        # Known residual, stated on the page: two words without a patronymic
-        # cannot be told from a company or a street by shape.
-        ("Иванов Пётр", False),
+        # Stage 277 closed the two-word form with a dictionary of given names:
+        # shape cannot tell `Иванов Пётр` from `Клиника Вера`, but a dictionary
+        # can. The lone surname is still the stated residual.
+        ("Иванов Пётр", True),
         ("Иванов", False),
         # And the data a report exists for must survive.
         # A report grouped by street is an ordinary question, and a diagnosis
@@ -276,6 +277,11 @@ def test_the_report_right_never_comes_without_full_reading():
         ("Ампициллин 500 мг", False),
         ("Вакцинация комплексная", False),
         ("Клиника Айболит", False),
+        # Stage 277 markers: a clinic keeps its name even when that name is a
+        # person's, and a service keeps its three ordinary words.
+        ("Клиника Вера", False),
+        ("Вера Плюс", False),
+        ("Стрижка когтей собаке", False),
         ("Немецкая овчарка", False),
         ("643094100123456", False),
     ],

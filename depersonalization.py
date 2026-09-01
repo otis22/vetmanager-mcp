@@ -6,6 +6,8 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from russian_given_names import GIVEN_NAMES
+
 
 REDACTED_PHONE = "[redacted-phone]"
 REDACTED_EMAIL = "[redacted-email]"
@@ -90,12 +92,19 @@ _INITIALS_RE = re.compile(
 # clinic or a street just as often as a person, so the two-word form is left
 # to the other layers on purpose.
 #
-# Case-insensitive and Latin-aware on purpose: a database column holds
-# `ИВАНОВ ПЕТР СЕРГЕЕВИЧ` and `Ivanov Petr Sergeevich` as readily as the
-# title-case form, and a rule that only knew one of them would look like it
-# worked while leaking the other two.
+# Latin-aware and case-aware, but NOT case-insensitive.
+#
+# Stage 275 wrote this rule with a plain `(?i)` to catch `ИВАНОВ ПЕТР
+# СЕРГЕЕВИЧ` and `Ivanov Petr Sergeevich`. The flag did catch them — and it
+# also turned `[А-ЯЁA-Z]` into "any letter", so every three ordinary words in a
+# row became a name: `Стрижка когтей собаке` and `Анализ крови общий` came back
+# as `[redacted-name]`. Found 01.09.2026, in production the whole time.
+#
+# The forms are spelled out instead: title case or all caps, in either script.
+# A name is written that way; a sentence is not.
+_NAME_WORD = r"(?:[А-ЯЁ][а-яё]{1,30}|[А-ЯЁ]{2,31}|[A-Z][a-z]{1,30}|[A-Z]{2,31})"
 _FULL_NAME_RE = re.compile(
-    r"(?ui)\b[А-ЯЁA-Z][а-яёa-z]{1,30}\s+[А-ЯЁA-Z][а-яёa-z]{1,30}\s+[А-ЯЁA-Z][а-яёa-z]{1,30}\b"
+    rf"(?u)\b{_NAME_WORD}\s+{_NAME_WORD}\s+{_NAME_WORD}\b"
 )
 # A patronymic gives a person away on its own: `-ович`, `-евна` and their kin
 # are almost never part of a product or a clinic name, so a two-word "Пётр
@@ -124,6 +133,122 @@ _ADDRESS_RE = re.compile(
 # pet's microchip is fifteen digits and a barcode thirteen, and a report that
 # loses those is broken rather than private.
 _PHONE_LIKE_RE = re.compile(r"(?<![\d\-])\+?\d[\d\-\s().]{7,18}\d(?![\d\-])")
+# Stage 277. Words that make a capitalised pair something other than a person.
+# Checked on the pair itself, not on the whole value: a marker at the start of a
+# comment must not switch the protection off for the name at its end.
+_MARKER_WORDS = frozenset({
+    # legal forms
+    "ооо", "зао", "пао", "ао", "нко", "ано", "ип", "пк", "фгбу", "гбу", "муп",
+    "llc", "ltd", "inc",
+    # organisations
+    "клиника", "ветклиника", "аптека", "центр", "госпиталь", "лаборатория",
+    "сеть", "филиал", "отделение", "clinic", "pharma",
+    # saints and holidays
+    "святой", "святая", "преподобный", "блаженный", "день",
+})
+# Place words also block the pair that follows them: a street really is named
+# by what comes after the word `улица`, so one step back is honest here. No
+# such step for organisations — after `Ветклиника` there can be a name or a
+# person, and erring toward a leak is not allowed.
+_PLACE_WORDS = frozenset({
+    "улица", "ул", "проспект", "пр", "переулок", "пер", "шоссе", "бульвар",
+    "площадь", "сквер", "парк", "поселок", "село", "деревня", "станция",
+    "район", "микрорайон", "город", "г",
+})
+# A commercial tail is a tail. `Вера Плюс` is a name of a business; `Vet Petr`
+# is a person, and the only difference is where the marker stands. Letting such
+# a word stand first would make it a shield for real names.
+_TAIL_WORDS = frozenset({
+    "плюс", "люкс", "сервис", "групп", "трейд", "фарм", "вет", "эконом",
+    "премиум", "plus", "group", "vet",
+})
+_PAIR_WORD_RE = re.compile(r"(?u)[^\W\d_]+(?:-[^\W\d_]+)*")
+# Stage 277: the one lowercase form worth taking. Requiring capitals is what
+# keeps `вялый паралич` out of the patronymic rule, so lowercase is allowed
+# here only when the first word is a known given name — `петр сергеевич` is a
+# person, `вялый паралич` is a diagnosis, and the dictionary knows which.
+_LOWER_PATRONYMIC_RE = re.compile(
+    r"(?ui)\b([^\W\d_]{2,31})\s+([^\W\d_]*?(?:ович|евич|овна|евна|ична|инична))\b"
+)
+_SOFT_PUNCTUATION = {
+    "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-", "\u2014": "-",
+    "\u2018": "'", "\u2019": "'", "\u02bc": "'",
+}
+
+
+def _fold(word: str) -> str:
+    return word.lower().replace("ё", "е")
+
+
+def _is_given_name(word: str) -> bool:
+    folded = _fold(word)
+    if folded in GIVEN_NAMES:
+        return True
+    return any(part in GIVEN_NAMES for part in folded.split("-") if part)
+
+
+def _starts_capitalised(word: str) -> bool:
+    head = word[0]
+    return head.isupper() or (word.isupper() and head.isalpha())
+
+
+def _blocks_pair(word: str, *, is_second: bool) -> bool:
+    folded = _fold(word)
+    if folded in _MARKER_WORDS or folded in _PLACE_WORDS:
+        return True
+    return is_second and folded in _TAIL_WORDS
+
+
+def _normalize_soft_punctuation(text: str) -> str:
+    for source, target in _SOFT_PUNCTUATION.items():
+        text = text.replace(source, target)
+    return text
+
+
+def redact_given_name_pairs(text: str) -> str:
+    """Redact a capitalised pair when one of its words is a known given name.
+
+    Stage 277, the form stage 275 could not take. Overlapping pairs are all
+    considered: in `ООО Вера Иванова` the first pair is blocked by the legal
+    form and the second is not, and a scanner that consumed the first would
+    never look at the second.
+    """
+    words = [(match.start(), match.end(), match.group(0)) for match in _PAIR_WORD_RE.finditer(text)]
+    spans: list[tuple[int, int]] = []
+    for index in range(len(words) - 1):
+        left_start, left_end, left = words[index]
+        right_start, right_end, right = words[index + 1]
+        separator = text[left_end:right_start]
+        if not separator or separator.strip():
+            continue
+        if not (_starts_capitalised(left) and _starts_capitalised(right)):
+            continue
+        if _blocks_pair(left, is_second=False) or _blocks_pair(right, is_second=True):
+            continue
+        if index and _fold(words[index - 1][2]) in _PLACE_WORDS:
+            continue
+        if not (_is_given_name(left) or _is_given_name(right)):
+            continue
+        spans.append((left_start, right_end))
+
+    if not spans:
+        return text
+    merged: list[tuple[int, int]] = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    parts: list[str] = []
+    position = 0
+    for start, end in merged:
+        parts.append(text[position:start])
+        parts.append(REDACTED_NAME)
+        position = end
+    parts.append(text[position:])
+    return "".join(parts)
+
+
 def _normalize_key(key: str) -> str:
     return "".join(ch for ch in key.lower() if ch.isalnum())
 
@@ -206,7 +331,8 @@ def sanitize_report_value(text: str) -> str:
     """
     if not text:
         return text
-    cleaned = _EMAIL_RE.sub(REDACTED_EMAIL, text)
+    cleaned = _normalize_soft_punctuation(text)
+    cleaned = _EMAIL_RE.sub(REDACTED_EMAIL, cleaned)
     # The address goes first so that what remains can be judged on its own: a
     # leftover street marker then means a street name, not an address.
     cleaned = _ADDRESS_RE.sub(REDACTED_ADDRESS, cleaned)
@@ -214,6 +340,14 @@ def sanitize_report_value(text: str) -> str:
         cleaned = _FULL_NAME_RE.sub(REDACTED_NAME, cleaned)
         cleaned = _PATRONYMIC_RE.sub(REDACTED_NAME, cleaned)
         cleaned = _INITIALS_RE.sub(REDACTED_NAME, cleaned)
+
+    # Stage 277 stands outside the street guard on purpose: it carries its own,
+    # which looks at the pair rather than at the whole value.
+    cleaned = redact_given_name_pairs(cleaned)
+    cleaned = _LOWER_PATRONYMIC_RE.sub(
+        lambda match: REDACTED_NAME if _is_given_name(match.group(1)) else match.group(0),
+        cleaned,
+    )
 
     date_spans = [match.span() for match in _DATE_OR_DATETIME_RE.finditer(cleaned)]
 
