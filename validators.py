@@ -31,6 +31,11 @@ DiagnosisIdParam = Annotated[
     Field(strict=True, description="Diagnosis id from get_diagnoses."),
 ]
 
+DiagnosisTypeParam = Annotated[
+    int,
+    Field(strict=True, description="Diagnosis type from the diagnos_types catalogue."),
+]
+
 
 def validate_list_params(limit: int, offset: int) -> None:
     """Validate pagination parameters for list endpoints.

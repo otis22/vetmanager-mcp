@@ -244,6 +244,57 @@ async def test_empty_legacy_diagnosis_changes_nothing_and_is_not_an_error():
     assert "diagnos" not in body
 
 
+# ── the refusal happens before anything reaches the network ────────────────
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_update_refuses_a_bad_diagnosis_before_reading_the_card():
+    """A bad argument must not cost an upstream request, and must not hide
+    behind a read error when the card or the network is having a bad day."""
+    billing_mock()
+    read_route = _card_read_mock()
+    write_route = _update_route()
+    with pytest.raises(ToolError):
+        await _call("update_medical_card", {
+            "card_id": CARD_ID, "diagnosis_ids": [32], "diagnosis_type": 9,
+        })
+    assert not read_route.called
+    assert not write_route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_update_refuses_the_legacy_argument_before_reading_the_card():
+    billing_mock()
+    read_route = _card_read_mock()
+    with pytest.raises(ToolError):
+        await _call("update_medical_card", {"card_id": CARD_ID, "diagnosis": "гастрит"})
+    assert not read_route.called
+
+
+# ── the helper refuses what the schema cannot see ──────────────────────────
+
+@pytest.mark.parametrize("ids", [32, "32", {"id": 32}, None if False else (32,)])
+def test_diagnos_field_refuses_anything_that_is_not_a_list(ids):
+    """The schema types this argument, but the helper is also reachable from
+    code, and `32` would otherwise raise TypeError instead of an answer."""
+    from exceptions import ToolInputError
+    from tools.medical_card import _diagnos_field
+
+    with pytest.raises(ToolInputError) as excinfo:
+        _diagnos_field(ids, 1)
+    assert "diagnosis_ids" in str(excinfo.value)
+
+
+def test_diagnos_field_refuses_a_boolean_type():
+    """`True` is an int in Python, and 1 is a real diagnosis type."""
+    from exceptions import ToolInputError
+    from tools.medical_card import _diagnos_field
+
+    with pytest.raises(ToolInputError):
+        _diagnos_field([32], True)
+
+
 # ── the invariant itself ────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

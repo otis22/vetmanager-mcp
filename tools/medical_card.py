@@ -13,7 +13,7 @@ from filters import (
 )
 from exceptions import ToolInputError, reportable_error
 from tools.crud_helpers import crud_get_by_id, crud_create, crud_update, unwrap_single_record
-from validators import DiagnosisIdParam, LimitParam, parse_date_param
+from validators import DiagnosisIdParam, DiagnosisTypeParam, LimitParam, parse_date_param
 from vetmanager_client import VetmanagerClient, VetmanagerError
 
 # The correct Vetmanager REST endpoint for medical cards is /rest/api/MedicalCards
@@ -46,10 +46,15 @@ _DIAGNOSIS_CATALOGUE_HINT = (
 
 def _diagnos_field(diagnosis_ids: list[int], diagnosis_type: int) -> str:
     """Build the `diagnos` value, or refuse before anything reaches the API."""
-    if diagnosis_type not in _DIAGNOSIS_TYPES:
+    if isinstance(diagnosis_type, bool) or diagnosis_type not in _DIAGNOSIS_TYPES:
         raise ToolInputError(
             f"'diagnosis_type' must be one of {', '.join(str(t) for t in _DIAGNOSIS_TYPES)}"
             f" (1 final, 2 preliminary, 3 differential, 4 probable), got {diagnosis_type}."
+        )
+    if not isinstance(diagnosis_ids, list):
+        raise ToolInputError(
+            f"'diagnosis_ids' takes a list of diagnosis ids, got {type(diagnosis_ids).__name__}."
+            f" {_DIAGNOSIS_CATALOGUE_HINT}"
         )
     if not diagnosis_ids:
         raise ToolInputError(
@@ -80,25 +85,31 @@ def _refuse_legacy_diagnosis(diagnosis: str) -> None:
         )
 
 
-def _apply_diagnosis(
-    payload: dict, diagnosis: str, diagnosis_ids: list[int] | None,
+def _diagnosis_fields(
+    diagnosis: str, diagnosis_ids: list[int] | None,
     diagnosis_type: int, diagnosis_text: str, *, on_create: bool = False,
-) -> None:
-    """Put the diagnosis fields into an outgoing payload, or nothing at all."""
+) -> dict:
+    """The diagnosis part of an outgoing payload — or a refusal, or nothing.
+
+    Called before anything else touches the network, so a bad argument never
+    costs an upstream request and never hides behind a read error.
+    """
     _refuse_legacy_diagnosis(diagnosis)
+    if diagnosis_text and on_create:
+        # Verified on devtr6 2026-09-01: the create endpoint answers 201 and
+        # drops this field, while update stores it. Refusing beats writing a
+        # note the clinic will never see.
+        raise ToolInputError(
+            "'diagnosis_text' is not saved when the card is created: Vetmanager"
+            " accepts the request and drops the field. Create the card first,"
+            " then set the note with update_medical_card."
+        )
+    fields: dict = {}
     if diagnosis_ids is not None:
-        payload["diagnos"] = _diagnos_field(diagnosis_ids, diagnosis_type)
+        fields["diagnos"] = _diagnos_field(diagnosis_ids, diagnosis_type)
     if diagnosis_text:
-        if on_create:
-            # Verified on devtr6 2026-09-01: the create endpoint answers 201 and
-            # drops this field, while update stores it. Refusing beats writing a
-            # note the clinic will never see.
-            raise ToolInputError(
-                "'diagnosis_text' is not saved when the card is created: Vetmanager"
-                " accepts the request and drops the field. Create the card first,"
-                " then set the note with update_medical_card."
-            )
-        payload["diagnos_text"] = diagnosis_text
+        fields["diagnos_text"] = diagnosis_text
+    return fields
 
 
 def _medical_card_update_error(exc: VetmanagerError) -> ToolError | None:
@@ -375,7 +386,7 @@ def register(mcp: FastMCP) -> None:
         description: str = "",
         diagnosis: str = "",
         diagnosis_ids: list[DiagnosisIdParam] | None = None,
-        diagnosis_type: int = _DEFAULT_DIAGNOSIS_TYPE,
+        diagnosis_type: DiagnosisTypeParam = _DEFAULT_DIAGNOSIS_TYPE,
         diagnosis_text: str = "",
         treatment: str = "",
         recomendation: str = "",
@@ -400,7 +411,8 @@ def register(mcp: FastMCP) -> None:
             doctor_id: ID of the veterinarian creating the record.
             date_create: Record date in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format.
             description: Clinical description / anamnesis (optional).
-            diagnosis: Removed. Kept only to answer with what to use instead.
+            diagnosis: Removed. A non-empty value is refused and names what to
+                use instead; an empty one is ignored.
             diagnosis_ids: Diagnosis ids from get_diagnoses. Omit to leave the
                 diagnosis alone; an empty list is refused, not treated as
                 "clear it".
@@ -419,6 +431,9 @@ def register(mcp: FastMCP) -> None:
             weight: Animal weight in kg at the time of visit (optional, 0 = not recorded).
             temperature: Animal body temperature in °C (optional, 0 = not recorded).
         """
+        diagnosis_fields = _diagnosis_fields(
+            diagnosis, diagnosis_ids, diagnosis_type, diagnosis_text, on_create=True,
+        )
         payload: dict = {
             "patient_id": patient_id,
             "doctor_id": doctor_id,
@@ -426,9 +441,7 @@ def register(mcp: FastMCP) -> None:
         }
         if description:
             payload["description"] = description
-        _apply_diagnosis(
-            payload, diagnosis, diagnosis_ids, diagnosis_type, diagnosis_text, on_create=True,
-        )
+        payload.update(diagnosis_fields)
         if treatment:
             payload["treatment"] = treatment
         if recomendation:
@@ -451,7 +464,7 @@ def register(mcp: FastMCP) -> None:
         description: str = "",
         diagnosis: str = "",
         diagnosis_ids: list[DiagnosisIdParam] | None = None,
-        diagnosis_type: int = _DEFAULT_DIAGNOSIS_TYPE,
+        diagnosis_type: DiagnosisTypeParam = _DEFAULT_DIAGNOSIS_TYPE,
         diagnosis_text: str = "",
         treatment: str = "",
         recomendation: str = "",
@@ -483,7 +496,8 @@ def register(mcp: FastMCP) -> None:
         Args:
             card_id: ID of the medical card record to update.
             description: Updated clinical description/anamnesis.
-            diagnosis: Removed. Kept only to answer with what to use instead.
+            diagnosis: Removed. A non-empty value is refused and names what to
+                use instead; an empty one is ignored.
             diagnosis_ids: Diagnosis ids from get_diagnoses; they replace the
                 ones on the card. Omit to leave the diagnosis alone; an empty
                 list is refused, not treated as "clear it".
@@ -497,6 +511,9 @@ def register(mcp: FastMCP) -> None:
             weight: Updated animal weight in kg (0 = no change).
             temperature: Updated body temperature in °C (0 = no change).
         """
+        diagnosis_fields = _diagnosis_fields(
+            diagnosis, diagnosis_ids, diagnosis_type, diagnosis_text,
+        )
         current_response = await crud_get_by_id(_MC_ENDPOINT, card_id)
         current = unwrap_single_record(current_response, "medicalCards")
         if current is None:
@@ -513,7 +530,7 @@ def register(mcp: FastMCP) -> None:
         payload: dict = {field: current[field] for field in required_context}
         if description:
             payload["description"] = description
-        _apply_diagnosis(payload, diagnosis, diagnosis_ids, diagnosis_type, diagnosis_text)
+        payload.update(diagnosis_fields)
         if treatment:
             payload["treatment"] = treatment
         if recomendation:
