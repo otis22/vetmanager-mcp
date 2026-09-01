@@ -286,13 +286,19 @@ def test_diagnos_field_refuses_anything_that_is_not_a_list(ids):
     assert "diagnosis_ids" in str(excinfo.value)
 
 
-def test_diagnos_field_refuses_a_boolean_type():
-    """`True` is an int in Python, and 1 is a real diagnosis type."""
+@pytest.mark.parametrize("diagnosis_type", [
+    pytest.param(True, id="bool-is-an-int-in-python"),
+    pytest.param(1.0, id="float-equals-a-valid-type"),
+    pytest.param("1", id="string"),
+])
+def test_diagnos_field_refuses_a_type_that_is_not_an_integer(diagnosis_type):
+    """`True` and `1.0` both compare equal to the valid type 1, and a float
+    would reach the API as `"type":1.0`."""
     from exceptions import ToolInputError
     from tools.medical_card import _diagnos_field
 
     with pytest.raises(ToolInputError):
-        _diagnos_field([32], True)
+        _diagnos_field([32], diagnosis_type)
 
 
 # ── the invariant itself ────────────────────────────────────────────────────

@@ -46,7 +46,7 @@ _DIAGNOSIS_CATALOGUE_HINT = (
 
 def _diagnos_field(diagnosis_ids: list[int], diagnosis_type: int) -> str:
     """Build the `diagnos` value, or refuse before anything reaches the API."""
-    if isinstance(diagnosis_type, bool) or diagnosis_type not in _DIAGNOSIS_TYPES:
+    if type(diagnosis_type) is not int or diagnosis_type not in _DIAGNOSIS_TYPES:
         raise ToolInputError(
             f"'diagnosis_type' must be one of {', '.join(str(t) for t in _DIAGNOSIS_TYPES)}"
             f" (1 final, 2 preliminary, 3 differential, 4 probable), got {diagnosis_type}."
