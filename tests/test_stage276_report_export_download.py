@@ -191,7 +191,19 @@ def test_every_file_is_written_the_way_excel_opens_it():
 
 @pytest.mark.parametrize(
     "cell",
-    ["=1+1", "+1", "@SUM(A1)", "\t=1+1", "   =1+1", "-cmd|'/c calc'!A0"],
+    [
+        "=1+1",
+        "+1",
+        "@SUM(A1)",
+        "\t=1+1",
+        "   =1+1",
+        "-cmd|'/c calc'!A0",
+        # A control or format character hides the `=` from a naive check and
+        # Excel looks straight past it.
+        "\x1b=1+1",
+        "\u200b=1+1",
+        "\x00=1+1",
+    ],
 )
 def test_a_cell_that_excel_would_execute_is_escaped(cell):
     text, _, _ = _build(f"Колонка\n{cell}\n".encode(), depersonalize=False)
@@ -422,6 +434,21 @@ async def test_a_file_over_the_limit_is_refused_and_nothing_is_stored(
         await mcp.call_tool("get_report_export_download", {"report_file_id": 5})
 
     assert "selcdn" not in str(excinfo.value)
+    assert list(export_root.rglob("*.csv")) == []
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_a_body_with_no_type_at_all_is_not_served_as_a_report(export_root: Path):
+    """An error page with its label torn off is still an error page."""
+    billing_mock()
+    report_file_mock()
+    respx.get(CDN).mock(return_value=httpx.Response(200, content=b"<html>nope</html>"))
+
+    headers_patch, runtime_patch = runtime()
+    with headers_patch, runtime_patch, pytest.raises(ToolError):
+        await mcp.call_tool("get_report_export_download", {"report_file_id": 5})
+
     assert list(export_root.rglob("*.csv")) == []
 
 

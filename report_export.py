@@ -24,6 +24,7 @@ import os
 import re
 import secrets
 import time
+import unicodedata
 
 from depersonalization import sanitize_report_cell
 from web_auth import get_web_session_secret
@@ -34,13 +35,13 @@ REPORT_EXPORT_TTL_SECONDS = 3 * 24 * 60 * 60
 REPORT_EXPORT_MAX_BYTES = 25 * 1024 * 1024
 REPORT_EXPORT_CONTENT_TYPE = "text/csv; charset=utf-8"
 # What the CDN is allowed to answer with. An HTML error page parsed as CSV
-# would be stored and served as if it were a report.
+# would be stored and served as if it were a report — and a body with no type
+# at all is exactly that case with the label torn off, so it is refused too.
 REPORT_EXPORT_ALLOWED_CONTENT_TYPES = frozenset({
     "text/csv",
     "text/plain",
     "application/csv",
     "application/octet-stream",
-    "",
 })
 
 _SEGMENT_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -48,7 +49,6 @@ _SEGMENT_RE = re.compile(r"^[0-9a-f]{32}$")
 # exception: without it every negative sum in the report would grow a quote.
 _FORMULA_LEAD = ("=", "+", "@", "-")
 _SAFE_NUMBER_RE = re.compile(r"^-?\d+(?:[.,]\d+)?$")
-_LEADING_NOISE = " \t\r\n\v\f\x00"
 
 _LINK_KEY: bytes | None = None
 
@@ -135,8 +135,22 @@ def _decode(raw: bytes) -> str:
     raise ReportExportError("The export file is in an encoding MCP cannot read.")
 
 
+def _leading_noise(cell: str) -> int:
+    """How many leading characters Excel will look past before the formula.
+
+    Whitespace is the obvious case, but any control or format character does
+    the same job of hiding the `=` from a naive check while Excel still
+    executes what follows.
+    """
+    index = 0
+    for index, char in enumerate(cell):
+        if not (char.isspace() or unicodedata.category(char) in {"Cc", "Cf"}):
+            return index
+    return index + 1
+
+
 def _escape_formula(cell: str) -> str:
-    stripped = cell.lstrip(_LEADING_NOISE)
+    stripped = cell[_leading_noise(cell):]
     if not stripped:
         return cell
     if _SAFE_NUMBER_RE.match(cell.strip()):
