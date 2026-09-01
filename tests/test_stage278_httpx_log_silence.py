@@ -40,3 +40,40 @@ def test_the_address_of_an_export_never_reaches_a_record(caplog):
         )
 
     assert "vetmanager-public-user-files" not in caplog.text
+
+
+def test_a_url_in_a_local_variable_does_not_reach_sentry():
+    """Key names catch `locator`; this catches the same address hiding inside a
+    `payload` that no key name marks as sensitive."""
+    from error_tracking import _sanitize_event
+
+    event = {
+        "logger": "vetmanager.runtime",
+        "exception": {
+            "values": [
+                {
+                    "value": "boom",
+                    "stacktrace": {
+                        "frames": [
+                            {
+                                "vars": {
+                                    "locator": "https://cdn.example/export.csv",
+                                    "payload": (
+                                        "{'report': {'csv_file': "
+                                        "'https://cdn.example/vetmanager-public-user-files/"
+                                        "clinic/secret.csv'}}"
+                                    ),
+                                }
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
+    }
+
+    scrubbed = _sanitize_event(event, {})
+
+    text = str(scrubbed)
+    assert "cdn.example" not in text
+    assert "vetmanager-public-user-files" not in text

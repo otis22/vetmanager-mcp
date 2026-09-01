@@ -405,6 +405,47 @@ async def test_the_downloaded_file_is_the_cleaned_one(export_root: Path):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_the_download_is_measured_without_naming_the_address(export_root: Path):
+    """Stage 278: silencing httpx removed the only record of this request's
+    status and duration; ours keeps both and knows nothing about the address."""
+    import service_metrics
+
+    service_metrics.reset_service_metrics()
+    billing_mock()
+    report_file_mock()
+    cdn_mock("a,b\n1,2\n".encode())
+
+    headers_patch, runtime_patch = runtime()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("get_report_export_download", {"report_file_id": 5})
+
+    rendered = service_metrics.render_prometheus_metrics()
+    assert 'target="report_export_storage"' in rendered
+    assert 'status="200"' in rendered
+    assert "selcdn" not in rendered
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_a_refused_body_is_still_measured(export_root: Path):
+    import service_metrics
+
+    service_metrics.reset_service_metrics()
+    billing_mock()
+    report_file_mock()
+    cdn_mock(b"<html>nope</html>", content_type="text/html")
+
+    headers_patch, runtime_patch = runtime()
+    with headers_patch, runtime_patch, pytest.raises(ToolError):
+        await mcp.call_tool("get_report_export_download", {"report_file_id": 5})
+
+    rendered = service_metrics.render_prometheus_metrics()
+    assert 'target="report_export_storage"' in rendered
+    assert 'status="200"' in rendered
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_the_api_key_is_not_sent_to_the_cdn(export_root: Path):
     billing_mock()
     report_file_mock()

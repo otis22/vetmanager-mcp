@@ -36,7 +36,17 @@ _SENSITIVE_KEY_PATTERNS = (
     # owner approved it as incident-diagnostic metadata for stage 233.5.
     "client_ip", "x-forwarded-for", "x-real-ip", "remote_addr", "ip_address",
     "email", "phone", "login", "password",
+    # Stage 278: names holding a report export locator. The address itself is a
+    # public link to the uncleaned file, so it is a credential in everything but
+    # name.
+    "locator", "csv_file", "csv_semicolon_file", "xlsx_file", "html_file",
+    "export_url", "download_url",
 )
+# Stage 278: a URL sitting in a local variable is almost never the thing that
+# explains a crash, and here one of them is the key to a clinic's whole export.
+# Key names catch `locator`; this catches the same address hiding inside a
+# `payload` that no key name marks as sensitive.
+_URL_IN_VALUE_RE = re.compile(r"https?://[^\s'\"<>\\]+")
 
 # Exact allowlist of keys that would match a sensitive pattern but are
 # actually safe to keep (observability metadata, not credentials).
@@ -116,9 +126,19 @@ def _is_sensitive_key(name: object) -> bool:
     )
 
 
+def _redact_urls_in_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _URL_IN_VALUE_RE.sub("[redacted-url]", value)
+    return value
+
+
 def _redact_mapping(mapping: dict[str, Any]) -> dict[str, Any]:
     return {
-        key: (_REDACTED if _is_sensitive_key(key) else value)
+        key: (
+            _REDACTED
+            if _is_sensitive_key(key)
+            else _redact_urls_in_value(value)
+        )
         for key, value in mapping.items()
     }
 

@@ -20,6 +20,7 @@ from oauth_metadata import get_site_base_url
 from service_metrics import (
     instrument_call,
     record_report_export_download,
+    record_upstream_request,
     record_report_ai_export,
     record_report_ai_export_duration,
     record_report_ai_job_created,
@@ -807,11 +808,14 @@ async def _download_export_bytes(locator: str) -> bytes:
     so a compressed answer cannot walk past the limit.
     """
     limit = report_export.REPORT_EXPORT_MAX_BYTES
+    started_at = time.perf_counter()
+    status = "error"
     try:
         async with httpx.AsyncClient(
             timeout=_EXPORT_DOWNLOAD_TIMEOUT, follow_redirects=False, trust_env=False
         ) as client:
             async with client.stream("GET", locator) as response:
+                status = str(response.status_code)
                 if response.status_code != 200:
                     raise report_export.ReportExportError(
                         "The export file could not be downloaded from Vetmanager storage."
@@ -832,9 +836,19 @@ async def _download_export_bytes(locator: str) -> bytes:
                         )
                     chunks.append(chunk)
     except httpx.HTTPError:
+        status = "transport_error"
         raise report_export.ReportExportError(
             "The export file could not be downloaded from Vetmanager storage."
         ) from None
+    finally:
+        # Stage 278: silencing httpx took away the only place this request's
+        # status and duration were visible. Our own record keeps both and knows
+        # nothing about the address.
+        record_upstream_request(
+            target="report_export_storage",
+            status=status,
+            duration_seconds=time.perf_counter() - started_at,
+        )
     return b"".join(chunks)
 
 
