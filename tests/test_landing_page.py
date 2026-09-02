@@ -278,7 +278,7 @@ async def test_final_cta_prioritizes_clinic_help():
     html = response.text
     assert "Нужна помощь?" in html
     assert "Проверить подключение можно в кабинете" in html
-    assert 'mailto:support@vetmanager.cloud' in html
+    assert "github.com/otis22/vetmanager-mcp/issues" in html
     assert "github.com/otis22/vetmanager-mcp" in html
     assert "Проект открыт. Техническая команда может установить его на своём сервере." in html
     self_hosted_note = html.index('class="self-hosted-note"')
@@ -448,3 +448,23 @@ def test_stage146_tabs_and_copy_controls_are_structurally_wired():
     assert 'event.key === "Home"' in html
     assert 'event.key === "End"' in html
     assert "Выделите текст вручную" in html
+
+
+@pytest.mark.asyncio
+async def test_stage284_landing_has_no_mailto_support_channel():
+    """Этап 284: вход поддержки — issues, а не почта.
+
+    Сторож намеренно шире правки: запрещён ЛЮБОЙ `mailto:` на странице, а не
+    конкретный адрес. Причина — сам случай, который к этапу привёл:
+    `support@vetmanager.cloud` попал как placeholder и прожил месяцы, потому
+    что тест сторожил его наличие, а не его уместность.
+    """
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/")
+
+    html = response.text
+    assert "mailto:" not in html
+    assert html.count("https://github.com/otis22/vetmanager-mcp/issues") >= 2

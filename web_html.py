@@ -148,6 +148,31 @@ _CHATGPT_OAUTH_PRESET_COPY = {
 }
 
 
+_SUPPORT_ISSUES_URL = "https://github.com/otis22/vetmanager-mcp/issues"
+_SUPPORT_EMAIL_FORBIDDEN = set('"\'<>,;()[]\\ \t\n\r\x00')
+
+
+def _resolve_support_email() -> str:
+    """Этап 284: адрес поддержки приходит из окружения, а не из кода.
+
+    Репозиторий открытый — личная почта, вписанная в исходник, остаётся в
+    истории git навсегда. Значение приходит от оператора и уезжает в `href`,
+    поэтому мусор превращается в пустую строку (ссылки не будет), а не в
+    сломанную разметку.
+    """
+    raw = (os.environ.get("SUPPORT_EMAIL") or "").strip()
+    if not raw or len(raw) > 254:
+        return ""
+    if any(ch in _SUPPORT_EMAIL_FORBIDDEN or ord(ch) < 0x20 for ch in raw):
+        return ""
+    local, sep, domain = raw.partition("@")
+    if not sep or not local or not domain or "@" in domain:
+        return ""
+    if "." not in domain or domain.startswith(".") or domain.endswith("."):
+        return ""
+    return raw
+
+
 def _resolve_site_base_url() -> str:
     """Stage 100.5: same validation as landing_page._resolve_site_base_url —
     reject invalid operator input and fall back to prod default.
@@ -1703,6 +1728,19 @@ def render_account_page(
           </details>
         </section>
         """
+    support_email = _resolve_support_email()
+    support_mail_html = (
+        f' Или напишите на <a href="mailto:{escape(support_email)}">{escape(support_email)}</a>.'
+        if support_email
+        else ""
+    )
+    support_block_html = f"""
+        <section class="panel-card" data-testid="support-block">
+          <strong>Что-то не работает?</strong>
+          <p>Расскажите в <a href="{_SUPPORT_ISSUES_URL}" target="_blank" rel="noopener">issues на GitHub</a> —
+          там видно ответ и историю разбора.{support_mail_html}</p>
+        </section>
+    """
     return render_shell(
         "Кабинет аккаунта",
         f"""
@@ -1916,6 +1954,7 @@ def render_account_page(
           <summary><h2>Другие помощники</h2></summary>
           <p>Для Manus и других клиентов используйте тот же URL: добавьте его как custom MCP connector с OAuth.</p>
         </details>
+        {support_block_html}
         <div class="actions">
           <a class="link" href="/">На лендинг</a>
           <form method="post" action="/logout" data-testid="logout-form">
