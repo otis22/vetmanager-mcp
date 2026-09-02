@@ -14,6 +14,12 @@ from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_upda
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
 
+# How far `get_inactive_pets` is allowed to walk the lapsed-client window.
+# Module level so a test can shrink the walk instead of mocking two thousand
+# clients to see what the tool says when it runs out of budget.
+CLIENT_PAGE_SIZE = 100
+MAX_CLIENT_PAGES = 20  # safety cap: 20 * 100 = 2000 clients scanned
+
 
 def _owner_summary(client: object) -> dict:
     """Project only the owner fields required to disambiguate a pet candidate."""
@@ -336,6 +342,16 @@ def register(mcp: FastMCP) -> None:
         (most recently lapsed first). Default limit is 50 to prevent
         accidentally fetching the whole base.
 
+        `truncated` says whether the list is all there was. A truncated list is
+        a page, not an answer — do not report it as "all lapsed pets".
+        `truncation_reason` says why it stopped: `limit_reached` (raise `limit`
+        or narrow the window) or `client_scan_cap` (the scan ran out of budget
+        before the window ran out of clients — narrow the window).
+        `clients_total_in_window` counts lapsed clients, not pets: the number of
+        pets is not knowable without visiting every client, which is the walk
+        this tool exists to avoid. It is null when upstream reports no count —
+        "unknown", not "none".
+
         Args:
             months_min: Minimum age of owner's last visit in months (default 13).
             months_max: Maximum age of owner's last visit in months (default 24).
@@ -345,31 +361,43 @@ def register(mcp: FastMCP) -> None:
         # accumulate `limit` pets or exhaust the inactive-client window.
         # This avoids the heuristic underfill where many clients have no
         # confirmed pets.
-        CLIENT_PAGE_SIZE = 100
-        MAX_CLIENT_PAGES = 20  # safety cap: 20 * 100 = 2000 clients scanned
-        SAFETY_CAP_REACHED = False
+        #
+        # Stage 223: the loop collects one pet MORE than asked. That extra pet
+        # is never returned — it exists only to tell a list that happens to fill
+        # the limit from a list that was cut by it. Without it both look the
+        # same from outside, and the answer quietly under-reports.
+        probe_limit = limit + 1
+        safety_cap_reached = False
 
         vc = VetmanagerClient()
         result_pets: list[dict] = []
         clients_scanned = 0
         cutoff_oldest = ""
         cutoff_newest = ""
+        clients_total_in_window: int | None = None
         offset = 0
 
         for page_num in range(MAX_CLIENT_PAGES):
-            clients, cutoff_oldest, cutoff_newest = await fetch_inactive_clients_page(
+            (
+                clients,
+                cutoff_oldest,
+                cutoff_newest,
+                page_total,
+            ) = await fetch_inactive_clients_page(
                 months_min=months_min,
                 months_max=months_max,
                 limit=CLIENT_PAGE_SIZE,
                 offset=offset,
             )
+            if clients_total_in_window is None:
+                clients_total_in_window = page_total
             if not clients:
                 break
 
             client_pet_pairs = await find_pets_for_clients_last_visit(
                 vc,
                 clients=clients,
-                limit=limit - len(result_pets),
+                limit=probe_limit - len(result_pets),
             )
 
             for client, visited_pets in client_pet_pairs:
@@ -402,13 +430,13 @@ def register(mcp: FastMCP) -> None:
                             "not_specified" if not pet.get("visit_doctor_id") else "unresolved"
                         ),
                     })
-                    if len(result_pets) >= limit:
+                    if len(result_pets) >= probe_limit:
                         break
 
-                if len(result_pets) >= limit:
+                if len(result_pets) >= probe_limit:
                     break
 
-            if len(result_pets) >= limit:
+            if len(result_pets) >= probe_limit:
                 break
 
             if len(clients) < CLIENT_PAGE_SIZE:
@@ -417,7 +445,17 @@ def register(mcp: FastMCP) -> None:
 
             offset += CLIENT_PAGE_SIZE
             if page_num + 1 == MAX_CLIENT_PAGES:
-                SAFETY_CAP_REACHED = True
+                safety_cap_reached = True
+
+        cut_by_limit = len(result_pets) > limit
+        del result_pets[limit:]
+
+        reasons = []
+        if cut_by_limit:
+            reasons.append("limit_reached")
+        if safety_cap_reached:
+            reasons.append("client_scan_cap")
+        truncation_reason = "+".join(reasons) if reasons else None
 
         unresolved_doctor_ids = list({
             int(pet["doctor_id"]) for pet in result_pets
@@ -448,11 +486,14 @@ def register(mcp: FastMCP) -> None:
         return {
             "inactive_pets": result_pets,
             "limit_applied": limit,
+            "truncated": bool(reasons),
+            "truncation_reason": truncation_reason,
+            "clients_total_in_window": clients_total_in_window,
             "clients_scanned": clients_scanned,
             "cutoff_window": {"from": cutoff_oldest, "to": cutoff_newest},
             "months_min": months_min,
             "months_max": months_max,
-            "safety_cap_reached": SAFETY_CAP_REACHED,
+            "safety_cap_reached": safety_cap_reached,
             "note": (
                 "Returned top N pets confirmed at last client visit via invoice "
                 "(or medcard fallback). Pass higher limit or different "

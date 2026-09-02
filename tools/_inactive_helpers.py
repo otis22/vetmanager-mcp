@@ -3,6 +3,7 @@
 Provides:
 - calculate_inactive_window: calendar-accurate cutoff date math
 - fetch_inactive_clients_page: single API call returning top N inactive clients
+  plus the upstream total for the whole window
 - find_pets_at_client_last_visit: per-pet visit detection via invoice→medcard
 """
 
@@ -171,7 +172,7 @@ async def fetch_inactive_clients_page(
     limit: int,
     offset: int = 0,
     today: date | None = None,
-) -> tuple[list[dict], str, str]:
+) -> tuple[list[dict], str, str, int | None]:
     """Fetch a page of inactive clients sorted by last_visit_date DESC.
 
     Single API call to /rest/api/client with filters:
@@ -185,7 +186,12 @@ async def fetch_inactive_clients_page(
             pets requires scanning more clients than `limit`.
 
     Returns:
-        (clients_list, cutoff_oldest, cutoff_newest)
+        (clients_list, cutoff_oldest, cutoff_newest, total_in_window)
+
+    `total_in_window` is the upstream `totalCount` — how many lapsed clients
+    the window holds, not how many this page carries. It is None when upstream
+    does not say: zero would read as "nobody lapsed", which is a different
+    answer from "not told".
     """
     cutoff_oldest, cutoff_newest = calculate_inactive_window(
         months_min, months_max, today=today
@@ -208,9 +214,21 @@ async def fetch_inactive_clients_page(
     data = resp.get("data", {}) if isinstance(resp, dict) else {}
     if isinstance(data, dict):
         clients = data.get("client", []) or []
+        total_in_window = _total_count(data)
     else:
         clients = []
-    return clients, cutoff_oldest, cutoff_newest
+        total_in_window = None
+    return clients, cutoff_oldest, cutoff_newest, total_in_window
+
+
+def _total_count(data: dict) -> int | None:
+    """Upstream row count, or None when upstream did not report one."""
+    if "totalCount" not in data:
+        return None
+    try:
+        return int(data["totalCount"])
+    except (TypeError, ValueError):
+        return None
 
 
 def _normalize_to_midnight(last_visit_date: str) -> str:

@@ -500,16 +500,25 @@ def register(mcp: FastMCP) -> None:
         DESC). Default limit is 50 to prevent accidentally fetching the whole
         client base.
 
+        `total_in_window` is how many lapsed clients the window holds, and
+        `truncated` says whether the returned list is all of them. A `truncated`
+        list is a page, not an answer — raise `limit` or narrow the window
+        before reporting it as complete. `total_in_window` is null when upstream
+        does not report a count; that is "unknown", not "none".
+
         Args:
             months_min: Minimum age of last visit in months (default 13).
             months_max: Maximum age of last visit in months (default 24).
             limit: Max clients to return (1–100, default 50).
         """
-        clients, cutoff_oldest, cutoff_newest = await fetch_inactive_clients_page(
-            months_min=months_min,
-            months_max=months_max,
-            limit=limit,
+        clients, cutoff_oldest, cutoff_newest, total_in_window = (
+            await fetch_inactive_clients_page(
+                months_min=months_min,
+                months_max=months_max,
+                limit=limit,
+            )
         )
+        truncated = total_in_window is not None and total_in_window > limit
 
         result_clients = [
             {
@@ -526,6 +535,8 @@ def register(mcp: FastMCP) -> None:
         return {
             "inactive_clients": result_clients,
             "limit_applied": limit,
+            "total_in_window": total_in_window,
+            "truncated": truncated,
             "cutoff_window": {"from": cutoff_oldest, "to": cutoff_newest},
             "months_min": months_min,
             "months_max": months_max,

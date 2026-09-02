@@ -626,7 +626,11 @@ async def test_get_inactive_pets_batches_lookup_for_large_client_page():
     assert len(data["inactive_pets"]) == 50
     assert pet_route.call_count < 30
     assert invoice_route.call_count < 30
-    assert medcard_route.call_count == 0
+    # Stage 223: the tool reaches for one pet beyond the limit to learn whether
+    # the list is cut. That 51st pet has no invoice here, so the batched medcard
+    # fallback fires once. Once — the point of the assertion is that the
+    # fallback stays batched and does not become a call per client.
+    assert medcard_route.call_count <= 1
 
 
 @pytest.mark.asyncio

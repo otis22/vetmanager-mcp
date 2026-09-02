@@ -774,7 +774,10 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "For each lapsed client, checks invoices first and medical cards as "
         "fallback to identify which specific pets were at the last visit (a "
         "client may have multiple pets, but only some were brought). Pass "
-        "months_min, months_max, and limit to customize. Use for reactivation "
+        "months_min, months_max, and limit to customize. The answer carries "
+        "truncated, truncation_reason and clients_total_in_window: a truncated "
+        "list is a page, not the whole window, and must not be reported as all "
+        "lapsed pets. Use for reactivation "
         "campaigns targeting specific patients. Domain synonyms: питомец, "
         "пациент, животное, кот, собака, pet, animal."
     ),
@@ -784,7 +787,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "lapsed clients whose last visit was between 13 and 24 months ago — "
         "long enough to be lapsed but recent enough to reactivate. Pass "
         "months_min and months_max to customize the window, and limit to change "
-        "the result size. Use when the user asks for lapsed clients, "
+        "the result size. The answer carries total_in_window and truncated: a "
+        "truncated list is a page, not the whole window. Use when the user asks "
+        "for lapsed clients, "
         "reactivation list, or clients to win back. Domain synonyms: клиент, "
         "владелец, хозяин, контакт, клиентская база, client."
     ),
