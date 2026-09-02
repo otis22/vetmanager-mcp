@@ -94,6 +94,15 @@ def test_cabinet_shows_the_address_once_configured(monkeypatch: pytest.MonkeyPat
         "owner @example.org",
         "owner@example.org\nBcc: evil@example.net",
         "a" * 250 + "@example.org",
+        # Ревью диффа: URI-уровень. `escape()` не нейтрализует смысл этих
+        # символов внутри `mailto:` — адрес перестаёт быть одним адресом,
+        # оставаясь безупречным с точки зрения HTML.
+        "owner@example.org?bcc=evil%40example.net",
+        "owner@example.org&subject=hi",
+        "owner%2Cevil@example.org",
+        "owner@example.org%0D%0ABcc:evil@example.net",
+        "mailto:owner@example.org",
+        "javascript:alert(1)@example.org",
     ],
 )
 def test_malformed_address_is_ignored_rather_than_rendered(
@@ -108,3 +117,8 @@ def test_malformed_address_is_ignored_rather_than_rendered(
     html = _render_cabinet()
 
     assert "mailto:" not in html
+    # Ревью диффа: отсутствия ссылки мало. Если однажды невалидное значение
+    # отрендерится видимым текстом или внутри не-почтовой ссылки, проверка выше
+    # останется зелёной вопреки правилу «мусор не рендерится».
+    if raw.strip():
+        assert raw.strip() not in html

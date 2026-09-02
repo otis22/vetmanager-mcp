@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timezone
 from html import escape
 
@@ -149,7 +150,13 @@ _CHATGPT_OAUTH_PRESET_COPY = {
 
 
 _SUPPORT_ISSUES_URL = "https://github.com/otis22/vetmanager-mcp/issues"
-_SUPPORT_EMAIL_FORBIDDEN = set('"\'<>,;()[]\\ \t\n\r\x00')
+
+# Этап 284, ревью диффа: белый список, а не чёрный. Первая версия запрещала
+# ломающие разметку символы и пропускала URI-уровень: `?bcc=`, `&subject=`,
+# `%2C` — `escape()` не нейтрализует их смысл внутри `mailto:`, и адрес
+# переставал быть одним адресом. Запрет сырой запятой при разрешённом `%2C` —
+# защита по совпадению символа, а не по правилу.
+_SUPPORT_EMAIL_RE = re.compile(r"^[A-Za-z0-9._+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$")
 
 
 def _resolve_support_email() -> str:
@@ -157,18 +164,13 @@ def _resolve_support_email() -> str:
 
     Репозиторий открытый — личная почта, вписанная в исходник, остаётся в
     истории git навсегда. Значение приходит от оператора и уезжает в `href`,
-    поэтому мусор превращается в пустую строку (ссылки не будет), а не в
-    сломанную разметку.
+    поэтому всё, что не является одним обычным адресом, превращается в пустую
+    строку: ссылки просто не будет.
     """
     raw = (os.environ.get("SUPPORT_EMAIL") or "").strip()
     if not raw or len(raw) > 254:
         return ""
-    if any(ch in _SUPPORT_EMAIL_FORBIDDEN or ord(ch) < 0x20 for ch in raw):
-        return ""
-    local, sep, domain = raw.partition("@")
-    if not sep or not local or not domain or "@" in domain:
-        return ""
-    if "." not in domain or domain.startswith(".") or domain.endswith("."):
+    if not _SUPPORT_EMAIL_RE.fullmatch(raw):
         return ""
     return raw
 
