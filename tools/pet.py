@@ -445,7 +445,14 @@ def register(mcp: FastMCP) -> None:
 
             offset += CLIENT_PAGE_SIZE
             if page_num + 1 == MAX_CLIENT_PAGES:
-                safety_cap_reached = True
+                # The budget running out is only a truncation if the window
+                # still holds clients we never looked at. When it ends on the
+                # very last allowed page, the walk was complete and saying
+                # otherwise would send the caller narrowing a window that has
+                # nothing left in it. An unknown total stays "maybe more".
+                safety_cap_reached = (
+                    clients_total_in_window is None or clients_total_in_window > offset
+                )
 
         cut_by_limit = len(result_pets) > limit
         del result_pets[limit:]

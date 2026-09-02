@@ -255,3 +255,35 @@ async def test_the_probe_costs_one_batched_fallback_not_one_per_client():
         f"fallback called {medcards.call_count} times for 20 clients — "
         "the probe must not unbatch it"
     )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_the_scan_budget_ending_with_the_window_is_not_truncation(monkeypatch):
+    """Budget and window ran out together: the walk was complete, so say so."""
+    import tools.pet as pet_module
+
+    monkeypatch.setattr(pet_module, "CLIENT_PAGE_SIZE", 1)
+    monkeypatch.setattr(pet_module, "MAX_CLIENT_PAGES", 1)
+    _mock_one_client_with_pets([10], clients_total=1)
+
+    data = await _call("get_inactive_pets", {"limit": 50})
+
+    assert data["safety_cap_reached"] is False
+    assert data["truncated"] is False
+    assert data["truncation_reason"] is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_an_unknown_window_total_at_the_budget_edge_stays_maybe_more(monkeypatch):
+    import tools.pet as pet_module
+
+    monkeypatch.setattr(pet_module, "CLIENT_PAGE_SIZE", 1)
+    monkeypatch.setattr(pet_module, "MAX_CLIENT_PAGES", 1)
+    _mock_one_client_with_pets([10], clients_total=None)
+
+    data = await _call("get_inactive_pets", {"limit": 50})
+
+    assert data["safety_cap_reached"] is True
+    assert data["truncation_reason"] == "client_scan_cap"
