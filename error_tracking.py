@@ -36,6 +36,11 @@ _SENSITIVE_KEY_PATTERNS = (
     # owner approved it as incident-diagnostic metadata for stage 233.5.
     "client_ip", "x-forwarded-for", "x-real-ip", "remote_addr", "ip_address",
     "email", "phone", "login", "password",
+    # Stage 281: who is calling us. Found on 4 of 80 production events as
+    # `X-Openai-Subject` — a stable identifier of the caller's end user, kept
+    # because no familiar word appeared in its name. `X-Openai-Session` beside
+    # it was cleaned only by the accident of the word "session".
+    "subject",
     # Stage 278: names holding a report export locator. The address itself is a
     # public link to the uncleaned file, so it is a credential in everything but
     # name.
@@ -47,6 +52,14 @@ _SENSITIVE_KEY_PATTERNS = (
 # Key names catch `locator`; this catches the same address hiding inside a
 # `payload` that no key name marks as sensitive.
 _URL_IN_VALUE_RE = re.compile(r"https?://[^\s'\"<>\\]+")
+
+# Stage 281: the caller's own request metadata, copied out of the headers into
+# a local variable. Headers are cleaned in `request.headers`; the copy in
+# `vars.meta_dict` was not, and carried `x-codex-turn-metadata` — 310 characters
+# including the caller's workspace filesystem path. Matched exactly, not as a
+# substring: bare `meta` and `metadata` are too common to redact blindly, and a
+# tracking system that hides ordinary variables stops explaining its own crashes.
+_CALLER_METADATA_KEYS = frozenset({"meta_dict", "_meta"})
 
 # Exact allowlist of keys that would match a sensitive pattern but are
 # actually safe to keep (observability metadata, not credentials).
@@ -121,6 +134,8 @@ def _is_sensitive_key(name: object) -> bool:
     lowered = name.lower()
     if lowered in _SAFE_KEY_WHITELIST:
         return False
+    if lowered in _CALLER_METADATA_KEYS:
+        return True
     return lowered in {"name", "first_name", "last_name", "full_name"} or any(
         pattern in lowered for pattern in _SENSITIVE_KEY_PATTERNS
     )
