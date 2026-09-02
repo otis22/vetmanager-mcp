@@ -129,3 +129,70 @@ def test_a_wrapped_item_keeps_the_status_on_its_last_line(tmp_path):
     )
     assert result.returncode == 1
     assert "пункт 235.7 остался `todo`" in result.stdout
+
+
+def test_a_nested_item_under_a_closed_nested_stage_is_refused(tmp_path):
+    """Stages run `2.5` and items run `2.5.1.1` — 169 of them the first parser never saw."""
+    result = _run(
+        _specimen(
+            tmp_path,
+            "## Этап 2.5. Расширение — `done`\n\n"
+            "### 2.5.1 Справочные сущности — `done`\n\n"
+            "- 2.5.1.1 Сделано. — `done`\n"
+            "- 2.5.1.2 Осталось. — `todo`\n",
+        )
+    )
+    assert result.returncode == 1
+    assert "пункт 2.5.1.2 остался `todo`" in result.stdout
+
+
+def test_a_nested_item_without_a_status_is_refused(tmp_path):
+    result = _run(
+        _specimen(tmp_path, "## Этап 2.5. Расширение — `done`\n\n- 2.5.1.1 Без статуса.\n")
+    )
+    assert result.returncode == 1
+    assert "пункт 2.5.1.1 без статуса" in result.stdout
+
+
+def test_a_neighbour_number_is_not_a_child(tmp_path):
+    """`2.51.1` shares a prefix with stage `2.5` but is not under it."""
+    result = _run(
+        _specimen(tmp_path, "## Этап 2.5. Расширение — `done`\n\n- 2.51.1 Чужой. — `done`\n")
+    )
+    assert result.returncode == 1
+    assert "пункт 2.51.1 стоит под этапом 2.5" in result.stdout
+
+
+def test_a_status_after_a_nested_bullet_list_still_counts(tmp_path):
+    """Items 105.2 and 106.5 put their own status on a line after their sub-list."""
+    result = _run(
+        _specimen(
+            tmp_path,
+            "## Этап 105. Хотфикс — `done`\n\n"
+            "- 105.2 Изменения:\n"
+            "  - первое изменение;\n"
+            "  - второе изменение.\n"
+            "  `done`\n",
+        )
+    )
+    assert result.returncode == 0, result.stdout
+
+
+def test_a_nested_bullet_does_not_lend_its_status_to_the_item(tmp_path):
+    result = _run(
+        _specimen(
+            tmp_path,
+            "## Этап 105. Хотфикс — `done`\n\n"
+            "- 105.2 Изменения:\n"
+            "  - подпункт, в котором стоит слово `done`.\n",
+        )
+    )
+    assert result.returncode == 1
+    assert "пункт 105.2 без статуса" in result.stdout
+
+
+def test_a_stage_with_a_letter_suffix_is_understood(tmp_path):
+    result = _run(
+        _specimen(tmp_path, "## Этап 103a. Auth package split — `done`\n\n- 103.1 Сделано. — `done`\n")
+    )
+    assert result.returncode == 0, result.stdout

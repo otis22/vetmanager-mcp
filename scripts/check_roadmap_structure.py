@@ -38,8 +38,13 @@ OPEN_STATUSES = ("todo", "in_progress", "supervisor_pending")
 CLOSED_STATUSES = ("done", "stop")
 STATUSES = OPEN_STATUSES + CLOSED_STATUSES
 
-_STAGE_HEADING = re.compile(r"^## Этап (\d+)([a-z]?)[.:]")
-_ITEM = re.compile(r"^- (\d+)\.(\d+)\s")
+# Stage and item numbers are dotted: stages run `234`, `103a` and `2.5`, items
+# under them run `234.1` and `2.5.1.1`. An item belongs to a stage when the
+# stage number is a prefix of it — matched on the dot, so `2.51.1` is not a
+# child of stage `2.5`.
+_STAGE_HEADING = re.compile(r"^## Этап (\d+(?:\.\d+)*)([a-z]?)[.:\s]")
+_ITEM = re.compile(r"^- (\d+(?:\.\d+)+)\s")
+_NESTED_BULLET = re.compile(r"^\s*[-*]\s")
 _BACKTICKED = re.compile(r"`([^`]+)`")
 
 
@@ -56,14 +61,13 @@ def _status_of(text: str) -> str | None:
 @dataclass
 class Item:
     number: str
-    stage_number: int
     line: int
     status: str | None
 
 
 @dataclass
 class Stage:
-    number: int
+    number: str
     suffix: str
     line: int
     status: str | None
@@ -73,13 +77,17 @@ class Stage:
     def name(self) -> str:
         return f"{self.number}{self.suffix}"
 
+    def owns(self, item: Item) -> bool:
+        return item.number.startswith(f"{self.number}.")
+
 
 def parse(text: str) -> list[Stage]:
     """Read the file into stages and their items.
 
     An item may wrap over several lines; its status is looked for in the item's
-    own paragraph only. Prose that follows a blank line is commentary — it can
-    quote any status word without that word becoming the item's own.
+    own paragraph only. Prose that follows a blank line is commentary, and a
+    nested bullet is a thing of its own — neither may donate a status word to
+    the item above it.
     """
     lines = text.split("\n")
     stages: list[Stage] = []
@@ -98,7 +106,7 @@ def parse(text: str) -> list[Stage]:
         if heading:
             close_item()
             current = Stage(
-                number=int(heading.group(1)),
+                number=heading.group(1),
                 suffix=heading.group(2),
                 line=lineno,
                 status=_status_of(line),
@@ -109,21 +117,21 @@ def parse(text: str) -> list[Stage]:
         item = _ITEM.match(line)
         if item and current is not None:
             close_item()
-            pending_item = Item(
-                number=f"{item.group(1)}.{item.group(2)}",
-                stage_number=int(item.group(1)),
-                line=lineno,
-                status=None,
-            )
+            pending_item = Item(number=item.group(1), line=lineno, status=None)
             pending = [line]
             current.items.append(pending_item)
             continue
 
         if pending_item is not None:
-            if line.startswith("  ") and line.strip():
-                pending.append(line)
-            else:
+            if not line.strip() or not line.startswith("  "):
                 close_item()
+            elif _NESTED_BULLET.match(line):
+                # A nested bullet is a thing of its own: it neither ends the
+                # item nor lends it a status. Items 105.2 and 106.5 put their
+                # own status on a line *after* such a list.
+                continue
+            else:
+                pending.append(line)
 
     close_item()
     return stages
@@ -148,7 +156,7 @@ def check(stages: list[Stage], path_label: str) -> list[str]:
             )
 
         for item in stage.items:
-            if item.stage_number != stage.number:
+            if not stage.owns(item):
                 findings.append(
                     f"{path_label}:{item.line}: пункт {item.number} стоит под"
                     f" этапом {stage.name} — номер пункта должен совпадать с"
