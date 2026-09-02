@@ -1334,18 +1334,18 @@
 
 Цель: свернуть 7 фрагментированных auth-модулей в `auth/` package; закрыть dead-code в `request_credentials.py`; разобраться с rate-limiter split.
 
-- 92.1 `auth/` package full split — `done via 103a` (commit): созданы `auth/{context,vetmanager,bearer,rate_limit,request}.py`. Top-level `bearer_auth.py`, `vetmanager_auth.py`, `bearer_rate_limiter.py`, `request_auth.py` — BC shim'ы ≤ 22 LOC.
+- 92.1 `auth/` package full split — `done` (через 103a, commit): созданы `auth/{context,vetmanager,bearer,rate_limit,request}.py`. Top-level `bearer_auth.py`, `vetmanager_auth.py`, `bearer_rate_limiter.py`, `request_auth.py` — BC shim'ы ≤ 22 LOC.
 - 92.2 Удалить dead public API `get_request_credentials()` из `request_credentials.py`; оставить только internal helper `_get_request_headers()` — `done`
-- 92.3 Split `resolve_bearer_auth_context` на pipeline валидаторов — `done via 103.1 focused` (commit 3d0405b): `_reject(...) -> NoReturn` helper consolidated 6 failure branches. Full Validator-class pipeline — out-of-scope: `_reject` уже сделал pipeline линейным, дальнейшая декомпозиция без concrete use case не добавляет testability.
-- 92.5 Regression-тесты новых структур — автоматически покрыты существующим `tests/test_bearer_auth.py` + `tests/test_bearer_rate_limit.py` + `tests/test_vetmanager_auth.py` (648 passed).
+- 92.3 Split `resolve_bearer_auth_context` на pipeline валидаторов — `done` (через 103.1 focused, commit 3d0405b): `_reject(...) -> NoReturn` helper consolidated 6 failure branches. Full Validator-class pipeline — out-of-scope: `_reject` уже сделал pipeline линейным, дальнейшая декомпозиция без concrete use case не добавляет testability.
+- 92.5 Regression-тесты новых структур — автоматически покрыты существующим `tests/test_bearer_auth.py` + `tests/test_bearer_rate_limit.py` + `tests/test_vetmanager_auth.py` (648 passed). — `done`
 
 ## Этап 93. Architecture: FilterBuilder + service/repository layer (H11, H21) — `done` (focused subset; full Resource class — backlog)
 
 Цель: убрать 15+ ручных `json.dumps` фильтров и миксование транспортного слоя с бизнес-логикой в `tools/`.
 
 - 93.1 `filters.py` модуль: `Filter` dataclass + helpers (eq, ne, lt, lte, gt, gte, in_, not_in, like); `as_dict_list` для mixed list[Filter|dict]; `build_list_query_params` accepts Filter objects — `done`
-- 93.2 Миграция `tools/*.py` callers на FilterBuilder — `done via 103.2` (commit 79223be): все 11 tool-модулей (`_inactive_helpers`, `admission`, `client`, `crud_helpers`, `good`, `invoice`, `medical_card`, `operations`, `pet`, `schedule`, `user`) используют `filters.eq/in_/lt/lte/gt/gte/like`; raw dict-литералы устранены.
-- 93.3 Lint/test contract на raw json.dumps вне filters.py — `done via 104.3/104.4` (commit 49341c5): `scripts/lint_api_contracts.py` AST-сканирует payload + filter dicts; pre-commit hook блокирует phantom fields. Специализированный json.dumps detector можно добавить при появлении регрессии — текущий AST-path ловит все прод-случаи.
+- 93.2 Миграция `tools/*.py` callers на FilterBuilder — `done` (через 103.2, commit 79223be): все 11 tool-модулей (`_inactive_helpers`, `admission`, `client`, `crud_helpers`, `good`, `invoice`, `medical_card`, `operations`, `pet`, `schedule`, `user`) используют `filters.eq/in_/lt/lte/gt/gte/like`; raw dict-литералы устранены.
+- 93.3 Lint/test contract на raw json.dumps вне filters.py — `done` (через 104.3/104.4, commit 49341c5): `scripts/lint_api_contracts.py` AST-сканирует payload + filter dicts; pre-commit hook блокирует phantom fields. Специализированный json.dumps detector можно добавить при появлении регрессии — текущий AST-path ловит все прод-случаи.
 
 Ship: FilterBuilder теперь единственный способ собирать VM-фильтры в tools/; gateway layer остаётся в зонтике 103c.
 
@@ -1355,7 +1355,7 @@ Ship: FilterBuilder теперь единственный способ соби�
 
 - 94.3 Substring-match → structural JSON assertions в test_inactive_clients/pets — `done`
 - 94.4 billing-API 500/503 → HostResolutionError regression тесты — `done` (404 уже было)
-- 94.5 Boundary tests (last_visit_date=None, months_min>max, zero-length timesheet) — `done via 101 + 104`: `months_min>max` validation в `calculate_inactive_window` покрыт; `last_visit_date=None` обработка через `find_pets_at_client_last_visit` early return. Zero-length timesheet — обрабатывается `_slots_helpers.compute_free_slots` (`end <= begin: continue`).
+- 94.5 Boundary tests (last_visit_date=None, months_min>max, zero-length timesheet) — `done` (через 101 + 104): `months_min>max` validation в `calculate_inactive_window` покрыт; `last_visit_date=None` обработка через `find_pets_at_client_last_visit` early return. Zero-length timesheet — обрабатывается `_slots_helpers.compute_free_slots` (`end <= begin: continue`).
 
 Ship: главные хрупкие assertions структурированы; недостающее billing error-path coverage закрыто; boundary cases покрыты validators.py + helpers.
 
@@ -1365,7 +1365,7 @@ Ship: главные хрупкие assertions структурированы; �
 
 - 95.1 `web_auth.py::hash_account_password` и `verify_account_password` → `asyncio.to_thread` в `create_account_with_password` и `authenticate_account` — `done`
 - 95.5 `paginate_all` default `max_rows=10_000` — `done`
-- 95.7 `get_client_profile` + `get_pet_profile` → `asyncio.gather(return_exceptions=True)` + `partial:true` + `section_errors` поле — `done via 102.1 + 103.7` (commit c87bfa8): оба профиля используют shared `gather_sections` helper со structured section_errors.
+- 95.7 `get_client_profile` + `get_pet_profile` → `asyncio.gather(return_exceptions=True)` + `partial:true` + `section_errors` поле — `done` (через 102.1 + 103.7, commit c87bfa8): оба профиля используют shared `gather_sections` helper со structured section_errors.
 
 Ship: критичные event-loop blockers и OOM-защита закрыты; остаток — оптимизации с более широким deploy-риском.
 
@@ -1485,8 +1485,8 @@ Full suite 646 passed.
   - `vm_transport/breaker.py` (205 LOC): `DomainBreaker` dataclass, `_breakers` registry, `check_breaker_allows`, `breaker_record_success/failure`, `get_breaker_state`, `force_breaker_open`, `reset_breakers`, `BREAKER_*` env-tunable constants.
   
   BC: dict identity сохраняется через by-reference импорт; тесты продолжают клирить `vm_client._shared_http_clients`/`_breakers` через dict.clear(). Test change — 1 строка: `monkeypatch.setattr("vm_transport.retry.random.uniform", ...)` вместо старой `vetmanager_client.random.uniform`. Dead code `_SharedClientProxy` удалён. Codex review: 3 warnings (BC decoupling of breaker constants, proxy/sentinel, pool race) — пункты 1 и 2 отработаны (documentation comment + proxy удалён); пункт 3 — pre-existing race в original коде, out of scope.
-- 103.5 `request_credentials.py` simplified в standalone 10-line shim с собственной копией `_get_request_headers()` (избежание circular import с `request_auth`) — `done via commit 0326c6c`. Полное удаление модуля отложено в зонтик 103a (11 test-call-sites используют `patch.object(request_credentials, "_get_request_headers", ...)` — безопасное удаление требует coordinated test migration).
-- 103.6 Move `_instrumented_call` в `service_metrics.instrument_call` — `done via commit 0326c6c`: canonical location в `service_metrics.py`; `tools/crud_helpers._instrumented_call` теперь BC re-export. Aggregator tools и web handlers могут использовать `instrument_call` без импорта `crud_helpers`.
+- 103.5 `request_credentials.py` simplified в standalone 10-line shim с собственной копией `_get_request_headers()` (избежание circular import с `request_auth`) — `done` (через commit 0326c6c). Полное удаление модуля отложено в зонтик 103a (11 test-call-sites используют `patch.object(request_credentials, "_get_request_headers", ...)` — безопасное удаление требует coordinated test migration).
+- 103.6 Move `_instrumented_call` в `service_metrics.instrument_call` — `done` (через commit 0326c6c): canonical location в `service_metrics.py`; `tools/crud_helpers._instrumented_call` теперь BC re-export. Aggregator tools и web handlers могут использовать `instrument_call` без импорта `crud_helpers`.
 - 103.7 Extract `tools/_aggregation.py::gather_sections` helper — `done` (commit c87bfa8: оба профиля мигрированы; CancelledError re-raise + structured errors + `aggregator_partial` warning log; будущие aggregator'ы наследуют контракт автоматически)
 - 103.8 Move `build_list_query_params` из `validators.py` в `filters.py` — `done`. Canonical location теперь `filters.build_list_query_params`; `validators.py` re-export'ит функцию для BC (тест `tests/test_validators.py` продолжает импортить оттуда). Lazy import `as_dict_list` удалён — теперь direct call внутри filters.py. Все tool-модули (crud_helpers, _inactive_helpers, medical_card) мигрированы на новый импорт.
 
@@ -1629,7 +1629,6 @@ Acceptance: все 4 rooted причины (update_admission missed, phantom enu
 - 104.6 Subagent pre-return checklists — `done`
 - 104.7 Extended `review_workflow_check.sh` — `done`
 - 104.8 `docs/stage-workflow-template.md` — `done`
-- 97.7 CLAUDE.md §5a count fix — `done`
 
 Все mechanical gates на месте. Следующая регрессия `update_admission`-типа ловится pre-commit hook (`lint_api_contracts.py`) на blocker-severity и rejects commit.
 
@@ -1854,7 +1853,7 @@ Acceptance:
 - 112.3 `url_path` → `entity` во всех 4 лог-сайтах `vetmanager_client._request` (retry/timeout-retry/timeout-final/network_error). — `done`
 - 112.4 Explicit `correlation_id` в `account_registered` + `web_login_succeeded` extra. — `done`
 - 112.5 Retry log уровень DEBUG для всех attempts (last included); terminal WARNING остаётся на raise-site. — `done`
-- 112.6 N/A — false positive, `started` уже per-attempt (line 296 reset).
+- 112.6 N/A — false positive, `started` уже per-attempt (line 296 reset). — `stop`
 
 ---
 
@@ -1864,20 +1863,20 @@ Acceptance:
 
 - 113.F7 billing-api hardening — per-loop shared `httpx.AsyncClient`, TTL cache (300s, env-tunable `BILLING_RESOLVER_CACHE_TTL_SECONDS`), tighter timeouts (connect 3s read 10s), `reset_billing_resolver` integrated с `_graceful_shutdown` + autouse test fixture. — `done`
 - 113.1 Env accessors — `breaker_failure_threshold()/window_seconds()/cooldown_seconds()` в `vm_transport/breaker.py`; runtime читает env per-call. Module-level constants kept as documented defaults (tests reading them as `range(BREAKER_FAILURE_THRESHOLD)` не ломаются). — `done`
-- 113.2 probe_in_flight TOCTOU — **deferred** в stage 113b (careful design need).
-- 113.3 breaker 5xx retry accounting — **deferred** в stage 113b (fundamental semantics decision).
-- 113.4 `id(loop)` → `WeakKeyDictionary` — **deferred** в stage 113b (scope overlap с 113.5).
-- 113.5 asyncio.Lock module-scope — **deferred** в stage 113b (combined with 113.4 refactor).
+- 113.2 probe_in_flight TOCTOU — **deferred** в stage 113b (careful design need). — `stop`
+- 113.3 breaker 5xx retry accounting — **deferred** в stage 113b (fundamental semantics decision). — `stop`
+- 113.4 `id(loop)` → `WeakKeyDictionary` — **deferred** в stage 113b (scope overlap с 113.5). — `stop`
+- 113.5 asyncio.Lock module-scope — **deferred** в stage 113b (combined with 113.4 refactor). — `stop`
 
 ---
 
 ## Этап 114. Simplicity debt (focused F2) — `done`
 
 - 114.F2 fix 3 inline imports: `service_metrics.py` (`import time` + `REQUEST_CACHE`), `resources/_aggregation.py` (exceptions/RUNTIME_LOGGER/request_context consolidated + duplicate AuthError deleted); AST regression test. — `done`
-- 114.2 codebase-wide audit — **deferred** в stage 114b.
-- 114.3 BC shim policy — **deferred** в stage 114b.
-- 114.4 3-hop indirection collapse — **deferred** в stage 114b.
-- 114.5 FilterBuilder migration — **deferred** в stage 114b.
+- 114.2 codebase-wide audit — **deferred** в stage 114b. — `stop`
+- 114.3 BC shim policy — **deferred** в stage 114b. — `stop`
+- 114.4 3-hop indirection collapse — **deferred** в stage 114b. — `stop`
+- 114.5 FilterBuilder migration — **deferred** в stage 114b. — `stop`
 
 ---
 
@@ -4189,7 +4188,20 @@ Claude и ChatGPT по streamable-http, и каждая выкатка рвёт 
 то есть ни одной выкатки после этапа 230 он не пережил. Остаточный обрыв
 ASGI-ответа живёт в пункте 237.4 и закрывается там, а не здесь.
 
-## Этап 231. Развести деплой кода и деплой наблюдаемости — `todo`
+## Этап 231. Развести деплой кода и деплой наблюдаемости — `stop`
+
+Заведён 23.08.2026 одним заголовком, без декомпозиции, и в таком виде провисел
+в очереди до разбора 02.09.2026. Закрыт без работы, потому что обе его половины
+разошлись по другим местам:
+
+- деплой кода от правки документации разведён этапом 254 — коммит, не трогающий
+  ничего из образа, больше не пересобирает прод;
+- наблюдаемость (алертинг, дашборды) ставится на сервере вручную и в
+  репозитории следов не оставляет — своего деплоя отсюда она не получает.
+
+Собственного содержания у этапа не осталось. Возвращать — только с
+декомпозицией, иначе он снова будет висеть заголовком.
+
 
 ## Этап 232. Что мы публикуем, не заметив этого — `done`
 
@@ -4280,7 +4292,8 @@ ASGI-ответа живёт в пункте 237.4 и закрывается т�
 - 234.2 Настроить хранение логов контейнера: ротация и срок жизни, переживающие
   пересоздание. — `done`
 - 234.3 Проверить на живом событии, что в трекинг не утекают домены клиник,
-  email и токены. — `supervisor_pending`
+  email и токены. — `stop` (вынесено в этап 281: проверка не сделана, а внутри
+  закрытого этапа её не было видно)
 
 ## Этап 235. Контракт фильтров у list-инструментов — `in_progress`
 
@@ -4666,6 +4679,10 @@ position_id, role_id, sip_number.» Модель читает докстринг
 - 246.5 Команда `link <known_issue_id> <report_id...>`: `promote` и
   `resolve-report` каждый создают **новый** known issue, поэтому один баг,
   пришедший под четырьмя отпечатками, распадался на четыре записи. — `done`
+- 246.6 Связать отчёты #39 и #40 с known issue #30, уже стоящим в `fixed`
+  с 23.08.2026 (пункт 246.3). Перенесено из закрытого этапа 249, где стояло с
+  неверной формулировкой «перевести #30 в `fixed`» — он был переведён раньше.
+  Работа операционная: production `known_issues`, репозиторий не меняется. — `todo`
 
 ## Этап 247. Медкарты кешируются 15 минут вместо минуты — `done`
 
@@ -4743,7 +4760,8 @@ credential fields». Проблема закрыта.
 
 - 249.1 Живой вызов `get_users` — учётных полей нет. — `done`
 - 249.2 Вложенный контекст сотрудника в других инструментах — чист. — `done`
-- 249.3 Перевести known issue #30 в `fixed` и связать с ним #39 и #40. — `todo`
+- 249.3 Связать known issues — `stop` (вынесено в 246.6; формулировка была
+  неверна: #30 переведён в `fixed` ещё 23.08.2026 пунктом 246.3)
 ## Этап 250. По счёту нельзя найти его закрытия — `done`
 
 Источник: отчёт #36, known issue #27 `acknowledged`. Докстринг
@@ -5150,11 +5168,7 @@ bearer-путь (`auth/bearer.py`), поэтому `token_usage_logs` описы
   одно: `PYTHON-12` (406 на сортировке) и `PYTHON-H` (404 экспорта), а не два.
   Старые события от логгера (`PYTHON-G`, `PYTHON-M` вида «Error calling tool
   'X'») больше не появляются. — `done`
-- 266.4 Разобрать по кодам, какие upstream-отказы означают ошибку вызывающего,
-  а какие — наш неправильно собранный запрос. Найдено ревью этапа 265.6:
-  `VALIDATION_ERROR` и `INVALID_TRANSITION` сегодня одинаково зовут сообщить о
-  дефекте, хотя за первым часто стоит аргумент вызывающего. Типизировать их
-  скопом нельзя — замолчим свои же поломки. — `todo`
+- 266.4 Типизация upstream-отказов — `stop` (вынесено в этап 280)
 
 ## Этап 267. Сборка образа зависела от сети, которой у прода нет — `done`
 
@@ -5389,3 +5403,64 @@ install curl`: с этого VDS **IPv4-адреса Fastly не отвечаю�
 
 - 278.1 Журнал `httpx` приглушён до предупреждений: собственная инструментовка и метрики дают ту же информацию, а строки библиотеки только дублируют её и носят с собой адреса. — `done`
 - 278.2 Сторож: тест ловит попадание адреса выгрузки в записи логгера. — `done`
+
+## Этап 279. Роадмап теряет пункты молча — `done`
+
+Источник: разбор очереди 02.09.2026 по просьбе владельца. Роадмап — заявленный
+единственный источник очереди работ, но прочитать его глазами уже нельзя:
+287 заголовков, 5391 строка. Всё, что не видно с первого взгляда, теряется.
+
+Найдено разбором:
+
+- **Незакрытый пункт внутри закрытого этапа не виден.** 249.3 и 266.4 стоят в
+  `todo` внутри этапов со статусом `done`. Обычный просмотр очереди по
+  статусам этапов их не показывает — работа считается сделанной, потому что
+  закрыт заголовок над ней.
+- **Номер пункта не проверяется против номера этапа.** Пункт 97.7 лежит под
+  заголовком этапа 104.
+- **Открытый этап без единого пункта.** 231 состоит из одного заголовка: ни
+  декомпозиции, ни причины. Он висит в очереди, ничего про себя не сообщая.
+- **Словарь статусов не закреплён.** Заголовки несут `done`, `todo`, `stop` и
+  `in_progress`; поиск по `in-progress` не находит ничего, и два открытых
+  этапа (235 и 237) при таком поиске пропадают из очереди целиком.
+
+Общее у всех четырёх: роадмап проверяется вниманием, а внимание кончается на
+пятитысячной строке. Значит проверять должен гейт.
+
+- 279.1 Гейт `scripts/check_roadmap_structure.py`: статус этапа из закрытого
+  словаря; статус у каждого пункта; номер пункта совпадает с номером своего
+  этапа; в закрытом этапе нет незакрытых пунктов; открытый этап имеет хотя бы
+  один пункт. Каждая проверка показана красной на образце. — `done`
+- 279.2 Гейт поднят в CI отдельным тестом, а не отдельной джобой. — `done`
+- 279.3 Остатки закрытых этапов вынесены наружу: 249.3 — в открытый этап 246
+  про обратную связь, 266.4 — отдельным этапом 280. Пункт 97.7 возвращён под
+  свой этап. — `done`
+- 279.4 Этап 231 закрыт: его документационная часть сделана этапом 254,
+  наблюдаемость деплоится вне репозитория и своего деплоя здесь не получает. — `done`
+- 279.5 Расхождение 249.3 и 246.3 снято: обе строки говорят об одних и тех же
+  отчётах и должны говорить одно. — `done`
+
+## Этап 280. Отказ вызывающего и наша поломка — разные вещи — `todo`
+
+Вынесено из этапа 266 (пункт 266.4), закрытого 31.08.2026: сам пункт остался
+несделанным и жил внутри закрытого этапа, где его не было видно.
+
+- 280.1 Разобрать по кодам, какие upstream-отказы означают ошибку вызывающего,
+  а какие — наш неправильно собранный запрос. Найдено ревью этапа 265.6:
+  `VALIDATION_ERROR` и `INVALID_TRANSITION` сегодня одинаково зовут сообщить о
+  дефекте, хотя за первым часто стоит аргумент вызывающего. Типизировать их
+  скопом нельзя — замолчим свои же поломки. — `todo`
+
+## Этап 281. Проверить на живом событии, что трекинг не носит чужих данных — `todo`
+
+Вынесено из этапа 234 (пункт 234.3), закрытого 23.08.2026 со статусом
+`supervisor_pending`: проверка так и не сделана, а внутри закрытого этапа её
+не было видно ни в очереди, ни в разборах.
+
+Часть исходной формулировки с тех пор устарела: домен клиники решением
+21.08.2026 персональными данными не считается. Остаток — email и токены —
+в силе.
+
+- 281.1 Живое событие в трекинге: убедиться, что в нём нет email и токенов. — `todo`
+- 281.2 Что найдено — закрыть санитайзером и сторожем; что не найдено —
+  записать, на каком именно событии проверяли. — `todo`

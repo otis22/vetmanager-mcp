@@ -14,7 +14,7 @@
 
 | Файл / папка | Назначение |
 |--------------|------------|
-| [Roadmap.md](Roadmap.md) | Workplan: этапы и задачи, статусы (todo / in_progress / done / stop). Единственный источник очереди работ. |
+| [Roadmap.md](Roadmap.md) | Workplan: этапы и задачи. Единственный источник очереди работ. Статусы — закрытый словарь: `todo`, `in_progress`, `supervisor_pending` (ждёт решения владельца), `done`, `stop`. Структуру проверяет `scripts/check_roadmap_structure.py`; он же поднят в CI тестом `tests/test_stage279_roadmap_structure.py`. Незакрытый пункт под закрытым заголовком, пункт с чужим номером и открытый этап без пунктов роняют набор. |
 | [AssumptionLog.md](AssumptionLog.md) | Журнал допущений, неясностей и архитектурных решений после завершения задач. |
 | [PRD/](PRD/) | PRD задач с декомпозицией (подзадачи ≤ 2 ч или ≤ 150 строк). Перед реализацией — создать/прочитать PRD этапа. |
 
@@ -149,6 +149,7 @@ API требует и что отвечает: поля, коды, тексты 
 ## Тесты и проверки
 
 - ShellCheck и синтаксис Bash (обязательны перед commit при изменении `scripts/*.sh`): `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`. Первая команда сама скачивает официальный образ при чистой Docker-сессии и фиксирована на версии CI.
+- Структура роадмапа: `scripts/check_roadmap_structure.py` (запускается и сам по себе, и из набора)
 - Unit + mock e2e: `docker compose --profile test run --rm test`
 - Real API e2e (только если в `.env` есть test `TEST_DOMAIN` и `TEST_API_KEY`; секреты не печатать): `docker compose --env-file .env --profile test run --rm test python scripts/run_opt_in_real_test_suite.py`
 - CI: `.github/workflows/test.yml` (unit + mock); `test-real.yml` — ручной запуск с секретом.
