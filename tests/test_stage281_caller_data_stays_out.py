@@ -102,3 +102,64 @@ def test_a_bare_meta_key_is_not_swept_along():
     frame_vars = _frame_vars(event)
     assert frame_vars["meta"] == "harmless"
     assert frame_vars["metadata"] == "also harmless"
+
+
+def test_a_nested_copy_of_the_headers_is_cleaned_too():
+    """Review of d8adec8: the sanitizer looked at the outer name only.
+
+    `headers = dict(request.headers)` is an ordinary line — one exists in
+    `auth_audit.py`. Captured in a frame, the whole header map rode through
+    under the safe outer key `headers`, carrying exactly the values the header
+    scrubber had just cleaned one level up.
+    """
+    event = _sanitize(_frame_event({
+        "headers": {
+            "x-openai-subject": "v1/aaaaaaaaaaaaaaaaaaaa",
+            "authorization": "Bearer secret-token-value",
+            "x-request-id": "req-42",
+        },
+        "tool": "get_invoice_by_id",
+    }))
+
+    headers = _frame_vars(event)["headers"]
+    assert headers["x-openai-subject"] == "[Filtered]"
+    assert headers["authorization"] == "[Filtered]"
+    assert headers["x-request-id"] == "req-42", "observability must survive nesting too"
+    assert _frame_vars(event)["tool"] == "get_invoice_by_id"
+
+
+def test_caller_metadata_is_known_by_its_own_name_not_by_its_wrapper():
+    """Review of d8adec8: the leaf names were only safe while wrapped.
+
+    The same fields arriving as headers, in `extra`, or as their own frame var
+    were untouched, so protection depended on the shape of the event.
+    """
+    event = _sanitize({
+        "request": {"headers": {"X-Codex-Turn-Metadata": "{'workspaces': {'/root/x': 1}}"}},
+        "extra": {"claudecode/toolUseId": "toolu_123", "threadId": "0199"},
+    })
+
+    assert event["request"]["headers"]["X-Codex-Turn-Metadata"] == "[Filtered]"
+    assert event["extra"]["claudecode/toolUseId"] == "[Filtered]"
+    assert event["extra"]["threadId"] == "[Filtered]"
+
+
+def test_a_list_of_mappings_is_not_a_hiding_place():
+    event = _sanitize(_frame_event({
+        "batch": [{"authorization": "Bearer x"}, {"x-request-id": "req-7"}],
+    }))
+
+    batch = _frame_vars(event)["batch"]
+    assert batch[0]["authorization"] == "[Filtered]"
+    assert batch[1]["x-request-id"] == "req-7"
+
+
+def test_recursion_stops_before_a_pathological_structure_costs_the_event():
+    """Depth is bounded: a deep blob must not turn sanitizing into the failure."""
+    deep: dict = {"authorization": "Bearer x"}
+    for _ in range(40):
+        deep = {"level": deep}
+
+    event = _sanitize(_frame_event({"deep": deep}))
+
+    assert event is not None

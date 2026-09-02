@@ -61,6 +61,12 @@ _URL_IN_VALUE_RE = re.compile(r"https?://[^\s'\"<>\\]+")
 # tracking system that hides ordinary variables stops explaining its own crashes.
 _CALLER_METADATA_KEYS = frozenset({"meta_dict", "_meta"})
 
+# The same blob also arrives under its own names — as a header, in `extra`, or
+# as a frame variable of its own. Review of stage 281 found that the wrapper
+# names above protected it only while it stayed wrapped, so protection depended
+# on the shape of the event rather than on what the field is.
+_CALLER_METADATA_PATTERNS = ("turn-metadata", "tooluseid", "threadid")
+
 # Exact allowlist of keys that would match a sensitive pattern but are
 # actually safe to keep (observability metadata, not credentials).
 # Lowered before comparison.
@@ -136,6 +142,8 @@ def _is_sensitive_key(name: object) -> bool:
         return False
     if lowered in _CALLER_METADATA_KEYS:
         return True
+    if any(pattern in lowered for pattern in _CALLER_METADATA_PATTERNS):
+        return True
     return lowered in {"name", "first_name", "last_name", "full_name"} or any(
         pattern in lowered for pattern in _SENSITIVE_KEY_PATTERNS
     )
@@ -147,12 +155,31 @@ def _redact_urls_in_value(value: Any) -> Any:
     return value
 
 
-def _redact_mapping(mapping: dict[str, Any]) -> dict[str, Any]:
+# A copy of a mapping is as revealing as the original. `headers = dict(...)` is
+# an ordinary line — one lives in `auth_audit.py` — and captured in a frame it
+# carried the whole header map under the safe outer name `headers`, past the
+# scrubber that had just cleaned those very values one level up. Depth is
+# bounded so that a pathological structure cannot turn sanitizing into the
+# failure it was meant to describe.
+_MAX_REDACTION_DEPTH = 12
+
+
+def _redact_value(value: Any, depth: int) -> Any:
+    if depth >= _MAX_REDACTION_DEPTH:
+        return _REDACTED
+    if isinstance(value, dict):
+        return _redact_mapping(value, depth + 1)
+    if isinstance(value, (list, tuple)):
+        return [_redact_value(item, depth + 1) for item in value]
+    return _redact_urls_in_value(value)
+
+
+def _redact_mapping(mapping: dict[str, Any], depth: int = 0) -> dict[str, Any]:
     return {
         key: (
             _REDACTED
             if _is_sensitive_key(key)
-            else _redact_urls_in_value(value)
+            else _redact_value(value, depth)
         )
         for key, value in mapping.items()
     }
