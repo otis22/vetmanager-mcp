@@ -17,14 +17,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
 from storage_models import ACCOUNT_STATUS_ACTIVE, Account
+from env_utils import env_int
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PASSWORD_SCHEME = "pbkdf2_sha256"
 PASSWORD_ITERATIONS = 390_000
 SESSION_COOKIE_NAME = "vm_account_session"
-SESSION_MAX_AGE_SECONDS = int(
-    os.environ.get("WEB_SESSION_MAX_AGE_SECONDS", 60 * 60 * 24)
-)  # default: 24 hours
+# Этап 285: читается на импорте — сырой int("") ронял бы процесс до старта.
+SESSION_MAX_AGE_SECONDS = env_int(
+    "WEB_SESSION_MAX_AGE_SECONDS", 60 * 60 * 24, positive_only=False
+)
 
 
 PASSWORD_MIN_LENGTH = 10

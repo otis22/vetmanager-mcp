@@ -47,7 +47,10 @@ def test_stage190_observability_services_are_localhost_only_and_persistent() -> 
     services = compose["services"]
 
     assert {"prometheus", "grafana"}.issubset(services)
-    assert services["mcp"]["environment"]["PORT"] == 8000
+    # Этап 285: окружение сервиса записано списком, а не отображением —
+    # голое имя передаёт настройку только если она задана, `NAME=${NAME:-}`
+    # положило бы в контейнер пустую строку.
+    assert "PORT=8000" in services["mcp"]["environment"]
     assert services["mcp"]["ports"] == ["127.0.0.1:${PORT:-8000}:8000"]
     assert services["prometheus"]["ports"] == ["127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"]
     assert services["grafana"]["ports"] == ["127.0.0.1:${GRAFANA_PORT:-3000}:3000"]

@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from shutdown_state import is_draining
+from env_utils import env_int
 
 DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./data/vetmanager.db"
 
@@ -82,8 +83,13 @@ def create_database_engine(database_url: str | None = None) -> AsyncEngine:
 
     if normalized_url.startswith("postgresql"):
         kwargs.update({
-            "pool_size": int(os.environ.get("DB_POOL_SIZE", "10")),
-            "max_overflow": int(os.environ.get("DB_MAX_OVERFLOW", "20")),
+            # Этап 285: env_int терпит пустое значение и возвращает дефолт;
+            # сырой int("") ронял бы старт при `DB_POOL_SIZE=` в .env.
+            # positive_only отключён: ноль здесь осмыслен — у SQLAlchemy это
+            # «без ограничения» для pool_size и «без запаса» для overflow,
+            # и раньше сырой int() такое значение принимал.
+            "pool_size": env_int("DB_POOL_SIZE", 10, positive_only=False),
+            "max_overflow": env_int("DB_MAX_OVERFLOW", 20, positive_only=False),
             "pool_timeout": 30,
             "pool_recycle": 1800,
         })

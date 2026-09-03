@@ -14,10 +14,10 @@ dict reference must be stable across `vetmanager_client` re-exports.
 from __future__ import annotations
 
 import asyncio
-import os
 from weakref import WeakKeyDictionary
 
 import httpx
+from env_utils import env_float
 
 # Split timeouts so a fast-failing DNS/TCP path does not wait the full 30s.
 REQUEST_TIMEOUTS = httpx.Timeout(connect=5.0, read=20.0, write=10.0, pool=2.0)
@@ -95,7 +95,10 @@ async def reset_shared_http_client() -> None:
             await c.aclose()
         except Exception:
             pass
-    grace_seconds = float(os.environ.get("VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS", "0"))
+    # Этап 285: ноль — законное значение, поэтому positive_only отключён.
+    grace_seconds = env_float(
+        "VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS", 0.0, positive_only=False
+    )
     if grace_seconds > 0:
         # Give asyncio SSL/socket transports time to run close callbacks before
         # pytest's unraisable-warning collector runs under `-W error`.

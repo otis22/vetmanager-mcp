@@ -56,27 +56,72 @@ services:
         ERROR_TRACKING_RELEASE: ${GIT_SHA:-unknown}
     image: vetmanager-mcp
     environment:
-      DATABASE_URL: ${DATABASE_URL:-}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      PERSISTENT_LOG_PATH: /var/log/vetmanager-mcp
-      ERROR_TRACKING_DSN: ${ERROR_TRACKING_DSN:-}
-      ERROR_TRACKING_ENVIRONMENT: ${ERROR_TRACKING_ENVIRONMENT:-production}
-      ERROR_TRACKING_TRACES_SAMPLE_RATE: ${ERROR_TRACKING_TRACES_SAMPLE_RATE:-0}
-      MCP_TRANSPORT: ${MCP_TRANSPORT:-streamable-http}
-      MCP_HOST: ${MCP_HOST:-0.0.0.0}
-      MCP_PATH: ${MCP_PATH:-/mcp}
-      PORT: 8000
-      SITE_BASE_URL: ${SITE_BASE_URL:-}
-      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
-      STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY:-}
-      WEB_SESSION_SECRET: ${WEB_SESSION_SECRET:-}
-      FEEDBACK_FINGERPRINT_PEPPER: ${FEEDBACK_FINGERPRINT_PEPPER:-}
-      METRICS_AUTH_TOKEN: ${METRICS_AUTH_TOKEN:-}
-      REDIS_URL: ${REDIS_URL:-}
-      RATE_LIMIT_REQUIRE_REDIS: ${RATE_LIMIT_REQUIRE_REDIS:-}
-      RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS: ${RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS:-}
-      RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS: ${RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS:-}
-      RATE_LIMIT_REDIS_HEALTH_CHECK_INTERVAL_SECONDS: ${RATE_LIMIT_REDIS_HEALTH_CHECK_INTERVAL_SECONDS:-}
+      # Этап 285. Форма записи здесь — не стиль, а поведение. `NAME=${NAME:-}`
+      # кладёт в контейнер ПУСТУЮ строку, и читатель вида
+      # `int(os.environ.get("NAME", "10"))` получает "" вместо отсутствия ключа,
+      # дефолт не применяется и приложение падает на старте. Голое `NAME`
+      # (список, без `=`) передаёт значение, только если оно задано, а иначе
+      # переменной в контейнере нет и дефолт из кода работает.
+      # Значение справа от `=` пишется только там, где оно действительно
+      # фиксировано этим окружением.
+      - DATABASE_URL
+      - LOG_LEVEL
+      - PERSISTENT_LOG_PATH=/var/log/vetmanager-mcp
+      - ERROR_TRACKING_DSN
+      - ERROR_TRACKING_ENVIRONMENT=${ERROR_TRACKING_ENVIRONMENT:-production}
+      - ERROR_TRACKING_TRACES_SAMPLE_RATE=${ERROR_TRACKING_TRACES_SAMPLE_RATE:-0}
+      - MCP_TRANSPORT=${MCP_TRANSPORT:-streamable-http}
+      - MCP_HOST=${MCP_HOST:-0.0.0.0}
+      - MCP_PATH=${MCP_PATH:-/mcp}
+      - PORT=8000
+      - SITE_BASE_URL
+      - SUPPORT_EMAIL
+      - STORAGE_ENCRYPTION_KEY
+      - WEB_SESSION_SECRET
+      - FEEDBACK_FINGERPRINT_PEPPER
+      - METRICS_AUTH_TOKEN
+      - REDIS_URL
+      - RATE_LIMIT_REQUIRE_REDIS
+      - RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS
+      - RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS
+      - RATE_LIMIT_REDIS_HEALTH_CHECK_INTERVAL_SECONDS
+      # Безопасность (285.2)
+      - WEB_ENABLE_HSTS
+      - WEB_SESSION_SECURE
+      - WEB_SESSION_SAMESITE
+      - WEB_SESSION_MAX_AGE_SECONDS
+      - WEB_TRUSTED_PROXY_IPS
+      - FORWARDED_ALLOW_IPS
+      # Лимиты веб-входа и OAuth
+      - WEB_LOGIN_RATE_LIMIT_ATTEMPTS
+      - WEB_LOGIN_RATE_LIMIT_WINDOW_SECONDS
+      - WEB_REGISTER_RATE_LIMIT_ATTEMPTS
+      - WEB_REGISTER_RATE_LIMIT_WINDOW_SECONDS
+      - OAUTH_DCR_RATE_LIMIT_ATTEMPTS
+      - OAUTH_DCR_RATE_LIMIT_WINDOW_SECONDS
+      - OAUTH_TOKEN_RATE_LIMIT_ATTEMPTS
+      - OAUTH_TOKEN_RATE_LIMIT_WINDOW_SECONDS
+      - BEARER_RATE_LIMIT_REQUESTS
+      - BEARER_RATE_LIMIT_WINDOW_SECONDS
+      # Устойчивость обращений к Ветменеджеру
+      - BREAKER_FAILURE_THRESHOLD
+      - BREAKER_WINDOW_SECONDS
+      - BREAKER_COOLDOWN_SECONDS
+      - BILLING_RESOLVER_CACHE_TTL_SECONDS
+      - VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS
+      - STREAMABLE_HTTP_DRAIN_ENABLED
+      # База и хранилище
+      - DB_POOL_SIZE
+      - DB_MAX_OVERFLOW
+      - REPORT_EXPORT_DIR
+      # Журналы и трекинг ошибок
+      - LOG_FORMAT
+      - FASTMCP_LOG_LEVEL
+      - ERROR_TRACKING_BACKEND
+      - SENTRY_DSN
+      # Валидация контрактов фильтров и сортировки
+      - FILTER_CONTRACT_VALIDATION_ENABLED
+      - SORT_CONTRACT_VALIDATION_ENABLED
     ports:
       - "127.0.0.1:${PORT:-8000}:8000"
     volumes:

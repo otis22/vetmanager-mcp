@@ -19,9 +19,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests.test_stage285_runtime_env_reaches_container import (
+    declared_for_mcp_service,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
 _ENV_READ = re.compile(r"""os\.environ(?:\.get\(|\[)["']([A-Z0-9_]+)["']""")
-_DECLARED = re.compile(r"^      ([A-Z0-9_]+):", re.M)
+
 
 
 def _runtime_env_names() -> set[str]:
@@ -43,16 +47,9 @@ def _operator_env_names() -> set[str]:
     return names
 
 
-def _declared_for_mcp_service() -> set[str]:
-    compose = (ROOT / "docker-compose.yml").read_text()
-    start = compose.index("\n  mcp:")
-    end = compose.index("\n  prometheus:")
-    return set(_DECLARED.findall(compose[start:end]))
-
-
 def test_every_operator_setting_the_runtime_reads_reaches_the_container() -> None:
     expected = _operator_env_names() & _runtime_env_names()
-    missing = sorted(expected - _declared_for_mcp_service())
+    missing = sorted(expected - declared_for_mcp_service())
 
     assert not missing, (
         "Переменные предложены оператору в .env.example и читаются рантаймом, "

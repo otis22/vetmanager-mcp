@@ -127,10 +127,13 @@ def test_mcp_compose_contract_enables_persistent_and_error_tracking_envs():
     compose = Path("docker-compose.yml").read_text()
 
     for value in (
-        "PERSISTENT_LOG_PATH: /var/log/vetmanager-mcp",
-        "ERROR_TRACKING_DSN: ${ERROR_TRACKING_DSN:-}",
-        "ERROR_TRACKING_ENVIRONMENT: ${ERROR_TRACKING_ENVIRONMENT:-production}",
-        "ERROR_TRACKING_TRACES_SAMPLE_RATE: ${ERROR_TRACKING_TRACES_SAMPLE_RATE:-0}",
+        # Этап 285: список, а не отображение. `- ERROR_TRACKING_DSN` без
+        # значения передаёт настройку, только если она задана; прежняя форма
+        # `${X:-}` клала в контейнер пустую строку.
+        "- PERSISTENT_LOG_PATH=/var/log/vetmanager-mcp",
+        "- ERROR_TRACKING_DSN\n",
+        "- ERROR_TRACKING_ENVIRONMENT=${ERROR_TRACKING_ENVIRONMENT:-production}",
+        "- ERROR_TRACKING_TRACES_SAMPLE_RATE=${ERROR_TRACKING_TRACES_SAMPLE_RATE:-0}",
         "mcp-logs:/var/log/vetmanager-mcp",
         "driver: json-file",
         "max-size: 10m",
@@ -146,4 +149,15 @@ def test_release_is_a_build_arg_not_a_runtime_compose_override():
     assert "ARG ERROR_TRACKING_RELEASE=unknown" in dockerfile
     assert "ENV ERROR_TRACKING_RELEASE=${ERROR_TRACKING_RELEASE}" in dockerfile
     assert "ERROR_TRACKING_RELEASE: ${GIT_SHA:-unknown}" in compose
-    assert "ERROR_TRACKING_RELEASE: ${ERROR_TRACKING_RELEASE:-}" not in compose
+
+    # Этап 285: проверка наличия строки не различала блоки, и сторож остался
+    # зелёным, когда имя ошибочно попало ещё и в `environment`. На проде
+    # GIT_SHA не экспортирован — подстановка дала бы `unknown` и затёрла
+    # настоящий SHA, вшитый в образ. Поэтому проверяется именно блок.
+    mcp_service = compose[compose.index("\n  mcp:"):compose.index("\n  prometheus:")]
+    environment_block = mcp_service[mcp_service.index("    environment:"):]
+
+    assert "ERROR_TRACKING_RELEASE" not in environment_block, (
+        "версия кода приезжает сборкой образа; объявление её в environment "
+        "затирает настоящий SHA значением unknown"
+    )

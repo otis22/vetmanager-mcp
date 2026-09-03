@@ -17,6 +17,7 @@ from observability_logging import SECURITY_LOGGER
 from rate_limit_backend import get_rate_limit_backend, reset_rate_limit_backend
 from service_metrics import record_auth_failure
 from web_auth import get_web_session_cookie_settings, get_web_session_secret
+from env_utils import env_int
 
 CSRF_COOKIE_NAME = "vm_csrf"
 CSRF_FIELD_NAME = "csrf_token"
@@ -197,8 +198,15 @@ async def clear_rate_limit_key(namespace: str, key: str) -> None:
 
 def get_rate_limit_config(prefix: str, *, default_attempts: int, default_window_seconds: int) -> tuple[int, int]:
     """Resolve web limiter settings from env with stable defaults."""
-    attempts = int(os.environ.get(f"{prefix}_ATTEMPTS", str(default_attempts)).strip())
-    window_seconds = int(os.environ.get(f"{prefix}_WINDOW_SECONDS", str(default_window_seconds)).strip())
+    # Этап 285: пустое значение — это тоже «не задано», иначе первый же вход
+    # отвечает 500 вместо того, чтобы взять встроенный дефолт.
+    # positive_only отключён везде: этап меняет обработку ПУСТОГО значения и
+    # больше ничего. Ноль раньше принимался — молча подменять его дефолтом
+    # значило бы завести ту же болезнь с другого конца.
+    attempts = env_int(f"{prefix}_ATTEMPTS", default_attempts, positive_only=False)
+    window_seconds = env_int(
+        f"{prefix}_WINDOW_SECONDS", default_window_seconds, positive_only=False
+    )
     return attempts, window_seconds
 
 

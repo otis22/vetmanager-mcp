@@ -23,7 +23,6 @@ Non-scope (deferred to stage 113b/c):
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 from weakref import WeakKeyDictionary
 
@@ -121,7 +120,10 @@ async def reset_billing_resolver() -> None:
             await client.aclose()
         except Exception:
             pass
-    grace_seconds = float(os.environ.get("VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS", "0"))
+    # Этап 285: ноль — законное значение, поэтому positive_only отключён.
+    grace_seconds = env_float(
+        "VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS", 0.0, positive_only=False
+    )
     if grace_seconds > 0:
         # Let asyncio SSL/socket transports finish close callbacks before pytest's
         # unraisable-warning collector runs under `-W error`.
