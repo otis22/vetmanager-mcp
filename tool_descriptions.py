@@ -770,7 +770,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "List invoice line items for a parent invoice. Pass invoice_id as the "
         "invoice / bill id and use limit/offset for pagination; do not add an "
         "extra parent-id filter. Use when the user asks what products or services "
-        "are inside an invoice. Domain synonyms: позиция счёта, строка счёта, "
+        "are inside an invoice. "
+        "Bulk rule: to collect this across a whole period or a long list of invoices, create a Report AI job with create_report_ai_job instead of calling this one by one — a per-invoice loop over thousands of records is the wrong shape and stalls when upstream is slow. "
+        "Domain synonyms: позиция счёта, строка счёта, "
         "товар в счёте, услуга в счёте, позиция, invoice document, invoice line."
     ),
     "get_inactive_pets": (
@@ -873,7 +875,10 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "report_ai_prompt_helper unless the user already supplied a final Russian "
         "intent_text. Use when the user asks for an analytic report, grouped/list "
         "report, count, trend, or business condition that is better answered by "
-        "the report constructor. The intent is limited to 20000 characters and "
+        "the report constructor. Bulk extraction is this tool's job: a whole "
+        "period, thousands of invoices, or an aggregate across many records "
+        "belongs here rather than in a per-record loop over the read tools. "
+        "The intent is limited to 20000 characters and "
         "jobs must be polled with get_report_ai_job. For complex or "
         "multi-condition reports, prefer narrower periods and simpler grouped "
         "requests. Create jobs sequentially: wait for the previous job to finish; "
@@ -1034,6 +1039,41 @@ PRIVACY_DESCRIPTION_SUFFIXES: dict[str, str] = {
 }
 
 
+_BULK_RULE = (
+    "Bulk rule: to collect this across a whole period or a long list of "
+    "invoices, create a Report AI job with create_report_ai_job instead of "
+    "calling this one by one — a per-invoice loop over thousands of records is "
+    "the wrong shape and stalls when upstream is slow."
+)
+
+# Этап 288: решение владельца 03.09.2026 по отчёту #60. Отдельный словарь, а не
+# приписка к приватным суффиксам: суффикс про приватность и правило про объём —
+# разные вещи, и складывать их в один ящик значит со временем потерять оба.
+BULK_DESCRIPTION_SUFFIXES: dict[str, str] = {
+    "get_invoice_by_id": _BULK_RULE,
+}
+
+
+def compose_tool_description(tool_name: str) -> str | None:
+    """Итоговое описание инструмента — ровно то, что уезжает в `tools/list`.
+
+    Собирается в одном месте, а не в двух: сторожа сверяют то же значение,
+    которое видит модель, и не могут разойтись со сборкой.
+    """
+    description = SPECIAL_TOOL_DESCRIPTIONS.get(tool_name)
+    if description is None:
+        description = _build_generic_description(tool_name)
+    if not description:
+        return None
+    for extra in (
+        BULK_DESCRIPTION_SUFFIXES.get(tool_name),
+        PRIVACY_DESCRIPTION_SUFFIXES.get(tool_name),
+    ):
+        if extra:
+            description = f"{description} {extra}"
+    return description
+
+
 def _domain_synonyms(entity_key: str) -> str:
     synonyms = ENTITY_METADATA[entity_key]["synonyms"]
     return ", ".join(str(item) for item in synonyms)
@@ -1094,12 +1134,7 @@ def enhance_tool_descriptions(mcp: FastMCP) -> None:
         if not key.startswith("tool:"):
             continue
 
-        description = SPECIAL_TOOL_DESCRIPTIONS.get(component.name)
-        if description is None:
-            description = _build_generic_description(component.name)
-        privacy_suffix = PRIVACY_DESCRIPTION_SUFFIXES.get(component.name)
-        if description and privacy_suffix:
-            description = f"{description} {privacy_suffix}"
+        description = compose_tool_description(component.name)
         if not description:
             continue
 
