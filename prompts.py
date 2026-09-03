@@ -269,10 +269,12 @@ def register_prompts(mcp: FastMCP) -> None:
         return [Message(
             _bearer_runtime_prefix()
             + f"Calculate the clinic revenue for {date}. "
-            + 'Call get_revenue_summary(date_from=date, date_to=date, mode="received"). '
-            + "Treat received mode as the cash revenue default. "
+            + 'Call get_revenue_summary(date_from=date, date_to=date, mode="invoiced"). '
+            + "Clinic revenue is invoice.amount over invoices with status='exec' — that is "
+            + "the invoiced mode. Use mode=\"received\" only if the user asked about the "
+            + "cash register or money actually received, and say which one you answered. "
             + "If the result has truncated=true, state that the total is partial and ask to narrow the range. "
-            + "Summarise total received and any breakdown available in the data."
+            + "Summarise the total and any breakdown available in the data."
         )]
 
     @mcp.prompt

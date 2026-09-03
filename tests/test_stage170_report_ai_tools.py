@@ -104,7 +104,10 @@ async def test_get_report_ai_prompt_helper_tool_matches_prompt_body():
     assert "good.id" in helper_text
     assert "код/артикул/наименование товара" in helper_text
     assert "Пустой результат — это результат" in helper_text
-    assert "Источник — оплаченные платежи (полученные деньги)" in helper_text
+    # Этап 286: умолчание для выручки — исполненные счета, а не касса.
+    # Прежняя строка закрепляла обратное и вернула бы то самое расхождение,
+    # ради устранения которого этап и делался.
+    assert "Источник — выставленные счета со статусом «исполнен»" in helper_text
     assert "30 секунд" in helper_text
     assert "а не данные клиники" in helper_text
     assert "проверить структуру" in helper_text

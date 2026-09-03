@@ -61,7 +61,10 @@ Clarify these cases before creating the job:
 If the user already gave a precise criterion, do not ask again. Example: "clients with negative balance" is precise enough; use balance `< 0` and label the column as balance/debt according to the request.
 
 Если уточнить не у кого, выберите разумное умолчание, явно запишите его в
-`intent_text` и назовите пользователю в ответе. Например: `Источник — оплаченные платежи (полученные деньги)`.
+`intent_text` и назовите пользователю в ответе. Для выручки умолчание задано:
+`Источник — выставленные счета со статусом «исполнен»`. Полученные деньги
+(кассу) берите только тогда, когда пользователь спросил именно про кассу или
+поступления.
 
 ## Empty results
 
@@ -72,6 +75,7 @@ If the user already gave a precise criterion, do not ask again. Example: "client
 ## Common anchors
 
 - Revenue/sales/turnover: invoices or payments; clarify accrual vs received money.
+  Plain "выручка" without qualifiers defaults to executed invoices, not payments.
 - Payments/cash receipts: payments.
 - Debtors/debt: clients by balance, or unpaid invoices if the user says invoice debt.
 - Advances/overpayments: clients by balance.

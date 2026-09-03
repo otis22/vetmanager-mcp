@@ -88,7 +88,11 @@ class TestPromptsBearerOnly:
         )[0]
         assert "get_payments(limit=100" not in daily_revenue_section
         assert "get_revenue_summary" in daily_revenue_section
-        assert 'mode="received"' in daily_revenue_section
+        # Этап 286: промпт спрашивает выручку, значит и режим должен быть про
+        # выручку. Прежний сторож требовал mode="received" и тем самым защищал
+        # расхождение: текст говорил «clinic revenue», а вызов просил кассу.
+        assert 'mode="invoiced"' in daily_revenue_section
+        assert "status='exec'" in daily_revenue_section
         assert "truncated" in daily_revenue_section
 
     def test_client_balance_prompt_uses_payment_applications(self):
