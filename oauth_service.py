@@ -406,6 +406,23 @@ async def register_oauth_client(session: AsyncSession, payload: dict) -> dict:
     }
 
 
+def describe_disallowed_scopes(disallowed: list[str]) -> str:
+    """Этап 287.4: отказ по scope называет следующий шаг, а не только факт.
+
+    Отчёт #50: агент честно запросил `pets.write`, получил «этот scope клиенту
+    не разрешён» и встал. Права выдаёт владелец на экране согласия, выбирая
+    уровень доступа в кабинете, — из прежнего текста этого было не понять,
+    и повторные попытки клиента ничего изменить не могли.
+    """
+    asked = ", ".join(sorted(disallowed))
+    return (
+        f"Requested scope is not allowed for this client: {asked}. "
+        "Access level is chosen by the account owner in the cabinet (кабинет) "
+        "when connecting: ask them to reconnect the integration with a level "
+        "that includes these rights."
+    )
+
+
 async def validate_oauth_authorize_request(session: AsyncSession, params) -> dict:
     """Validate OAuth authorize params and return signed request data."""
     response_type = (params.get("response_type") or "").strip()
@@ -443,8 +460,9 @@ async def validate_oauth_authorize_request(session: AsyncSession, params) -> dic
         raise OAuthRequestError("invalid_scope", str(exc)) from exc
     requested_tool_scopes = normalize_oauth_tool_scopes(requested_oauth_scopes)
     client_tool_scopes = set(normalize_oauth_tool_scopes(client.scope.split()))
-    if any(scope not in client_tool_scopes for scope in requested_tool_scopes):
-        raise OAuthRequestError("invalid_scope", "Requested scope is not allowed for this client.")
+    disallowed = [scope for scope in requested_tool_scopes if scope not in client_tool_scopes]
+    if disallowed:
+        raise OAuthRequestError("invalid_scope", describe_disallowed_scopes(disallowed))
 
     return {
         "client_id": client.client_id,

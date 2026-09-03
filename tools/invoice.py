@@ -190,7 +190,7 @@ def register(mcp: FastMCP) -> None:
     async def get_revenue_summary(
         date_from: str,
         date_to: str,
-        mode: str = "received",
+        mode: str = "invoiced",
         include_breakdown: bool = True,
         client_id: int = 0,
     ) -> dict:
@@ -199,9 +199,12 @@ def register(mcp: FastMCP) -> None:
         Args:
             date_from: Start date. Accepts YYYY-MM-DD or relative forms.
             date_to: End date. Same accepted formats.
-            mode: 'received' for cash revenue from exec payments, 'invoiced'
-                for executed invoice amount, or 'paid_by_executed_invoices'
-                for current paid_amount on invoices executed in the period.
+            mode: 'invoiced' (default) is clinic revenue — invoice.amount
+                over invoices with status='exec'. 'received' is the cash
+                register instead: exec payments by date, which also carries
+                technical split/reallocation rows and does not reproduce the
+                clinic's revenue report. 'paid_by_executed_invoices' is the
+                current paid_amount on invoices executed in the period.
             include_breakdown: Include day-level totals.
             client_id: Optional client filter (0 = no filter).
         """

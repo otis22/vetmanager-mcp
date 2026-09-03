@@ -99,7 +99,7 @@ async def test_get_revenue_summary_received_uses_exec_payments_and_half_open_dat
     with headers_patch, runtime_patch:
         result = await mcp.call_tool(
             "get_revenue_summary",
-            {"date_from": "2026-03-01", "date_to": "2026-03-31"},
+            {"date_from": "2026-03-01", "date_to": "2026-03-31", "mode": "received"},
         )
 
     data = result.structured_content
@@ -164,7 +164,7 @@ async def test_get_payments_date_range_matches_revenue_summary_received_boundari
         )
         await mcp.call_tool(
             "get_revenue_summary",
-            {"date_from": "2026-03-01", "date_to": "2026-03-31"},
+            {"date_from": "2026-03-01", "date_to": "2026-03-31", "mode": "received"},
         )
 
     payments_filters = _filters_from_call(route.calls[0])
@@ -319,7 +319,7 @@ async def test_get_revenue_summary_truncated_warns_partial_totals():
     with headers_patch, runtime_patch:
         result = await mcp.call_tool(
             "get_revenue_summary",
-            {"date_from": "2026-03-01", "date_to": "2026-03-31"},
+            {"date_from": "2026-03-01", "date_to": "2026-03-31", "mode": "received"},
         )
 
     data = result.structured_content
@@ -359,7 +359,7 @@ async def test_get_revenue_summary_exact_page_cap_is_not_truncated_when_total_kn
     with headers_patch, runtime_patch:
         result = await mcp.call_tool(
             "get_revenue_summary",
-            {"date_from": "2026-03-01", "date_to": "2026-03-31"},
+            {"date_from": "2026-03-01", "date_to": "2026-03-31", "mode": "received"},
         )
 
     data = result.structured_content
@@ -398,7 +398,7 @@ async def test_get_revenue_summary_rejects_malformed_amounts_before_total():
         with pytest.raises(Exception) as exc_info:
             await mcp.call_tool(
                 "get_revenue_summary",
-                {"date_from": "2026-03-01", "date_to": "2026-03-31"},
+                {"date_from": "2026-03-01", "date_to": "2026-03-31", "mode": "received"},
             )
 
     assert "amount" in str(exc_info.value)
@@ -433,7 +433,7 @@ async def test_get_revenue_summary_rejects_non_finite_amounts_before_total():
         with pytest.raises(Exception) as exc_info:
             await mcp.call_tool(
                 "get_revenue_summary",
-                {"date_from": "2026-03-01", "date_to": "2026-03-31"},
+                {"date_from": "2026-03-01", "date_to": "2026-03-31", "mode": "received"},
             )
 
     assert "amount" in str(exc_info.value)

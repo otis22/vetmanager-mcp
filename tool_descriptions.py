@@ -736,12 +736,17 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "чек, квитанция, документ оплаты, invoice, bill."
     ),
     "get_revenue_summary": (
-        "Calculate authoritative revenue totals for a date range using executed "
-        "payments by default, with explicit non-cashflow invoice modes for billed "
-        "or currently paid invoice amounts. Use when the user asks for revenue, "
-        "cash received, daily proceeds, or March revenue. Use get_average_invoice "
-        "instead for average check / average invoice amount. Domain synonyms: "
-        "платёж, оплата, поступление, касса, выручка, revenue, payment."
+        "Calculate revenue totals for a date range. Clinic revenue is "
+        "invoice.amount over invoices with status='exec' — that is mode "
+        "'invoiced', the default, and the one that reproduces the clinic's own "
+        "revenue report. Use mode='received' only when the user asks about the "
+        "cash register or money actually received: it sums exec payments by "
+        "date and also carries technical split/reallocation rows, so it will "
+        "differ from revenue. Use mode='paid_by_executed_invoices' for how much "
+        "of the period's executed invoices is paid so far. Use "
+        "get_average_invoice instead for average check / average invoice "
+        "amount. Domain synonyms: выручка, revenue, платёж, оплата, "
+        "поступление, касса, payment."
     ),
     "get_payments": (
         "List direct Vetmanager Payment records. Use for raw payment/date/status "
