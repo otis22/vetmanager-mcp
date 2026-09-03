@@ -287,7 +287,9 @@ string; numeric zero сохраняется (privacy-safe — `client_id=0` не
 - `report_problem` описывает, когда агенту стоит сообщать о проблеме
   инструмента/description/контракта. Сообщения сохраняются только в БД после
   redaction; агент должен описывать форму проблемы, а не данные, используя
-  placeholders `<client>`, `<owner>`, `<patient>`, `<phone>`, `<address>`.
+  placeholders `<client>`, `<owner>`, `<phone>`, `<address>`. Кличка питомца и
+  личное имя остаются в тексте (этап 290): они никого не опознают, а без них
+  отчёт нельзя воспроизвести.
   `agent_feedback_reports.possible_pii` помогает triage видеть записи с
   privacy-like redaction/placeholders; legacy model/user reports backfill'ятся
   консервативно, auto-events остаются `possible_pii=false`. Agent-facing советы

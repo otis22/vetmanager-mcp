@@ -41,8 +41,10 @@ def register(mcp: FastMCP) -> None:
         passwords, raw client or patient data, or raw Vetmanager payloads. Use
         params_shape for safe parameter names only, never parameter values.
         Describe the shape of the problem, not the data: write "client <client> lookup returns 500"
-        instead of naming the client; write "patient <patient> invoice is missing" instead of naming the patient. Use
-        placeholders <client>, <owner>, <patient>, <phone>, and <address>.
+        instead of naming the client by surname. Keep the pet's nickname and a person's first
+        name as they are - they identify nobody and are what makes the report reproducible:
+        write "pet Rex is not found by alias search". Use placeholders <client>, <owner>,
+        <phone>, and <address>.
         """
         credentials = get_current_runtime_credentials()
         if credentials is None:

@@ -237,8 +237,9 @@ mcp = FastMCP(
         "correct rejections of invalid user input, or normal multi-step composition. "
         "Do not paste raw tool response bodies, raw record IDs, user's verbatim message, "
         "or full error payloads. Describe the shape of the problem, not raw clinic data. "
-        "Replace names, patients, phones, and addresses with <client>, <owner>, <patient>, "
-        "<phone>, and <address>."
+        "Replace client and owner surnames, phones, and addresses with <client>, <owner>, "
+        "<phone>, and <address>. Keep the pet's nickname and a person's first name as they "
+        "are: they identify nobody and are what makes the report reproducible."
     ),
     lifespan=_runtime_lifespan,
 )

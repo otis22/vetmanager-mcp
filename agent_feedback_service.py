@@ -43,7 +43,7 @@ REPORT_HINT = (
     'If this error is unclear or you suspect a Vetmanager MCP bug, call '
     'report_problem with related_tool="{tool_name}".'
 )
-REDACTION_VERSION = 2
+REDACTION_VERSION = 3
 MAX_AUTO_EVENTS_PER_MINUTE = 60
 AUTO_EVENT_DEDUP_WINDOW = timedelta(minutes=15)
 REPORT_ACCOUNT_LIMIT_PER_HOUR = 60
@@ -66,7 +66,6 @@ PRIVACY_REDACTIONS = frozenset({
     "email",
     "phone",
     "contextual_name",
-    "contextual_patient",
     "contextual_address",
     "placeholder_seen",
     "sanitizer_error",
@@ -91,10 +90,18 @@ _CONTEXT_NAME_RE = re.compile(
     rf"\b(?P<label>(?i:client|owner|клиент|владелец))\s*(?P<sep>[:=])?\s+"
     rf"(?P<value>{_NAME_VALUE})\b"
 )
-_CONTEXT_PATIENT_RE = re.compile(
-    r"\b(?P<label>(?i:pet|patient|питомец|пациент|кличка))\s*(?P<sep>[:=])?\s+"
-    r"(?P<value>[A-ZА-ЯЁ][a-zа-яё]{2,})\b"
-)
+# Этап 290: кличка питомца больше не чистится — решение Владимира 03.09.2026.
+# «Рекс» никого не опознаёт, а отчёт «поиск не находит [REDACTED]» невозможно
+# ни воспроизвести, ни понять: ради защиты, которая ничего не защищала,
+# терялось содержание жалобы.
+
+# Значение после метки `client:` / `owner:` чистится целиком, в том числе
+# одиночное слово. Попытка отличить там имя от фамилии по списку суффиксов
+# была отклонена внешним ревью и проверкой: список пропускал Толстой, Горький,
+# Белая, Кац, Смит, Ivanov, Smith — то есть обычные фамилии, а не экзотику.
+# Указание владельца «имя без фамилии оставляем» и без того выполняется:
+# санитайзер трогает только размеченные конструкции, а имя в свободном тексте
+# («Иван просит выгрузку») он не видел никогда.
 _CONTEXT_ADDRESS_RE = re.compile(
     r"\b(?P<label>address|адрес)\s*(?P<sep>[:=])\s*(?P<value>[^.;\n]{1,120})",
     re.IGNORECASE,
@@ -210,7 +217,6 @@ def sanitize_text_with_metadata(value: str | None, *, limit: int, required: bool
         text = _PHONE_CANDIDATE_RE.sub(_phone_replace, text)
         text = _redact_context(_CONTEXT_ADDRESS_RE, text, "contextual_address", redactions)
         text = _redact_context(_CONTEXT_NAME_RE, text, "contextual_name", redactions)
-        text = _redact_context(_CONTEXT_PATIENT_RE, text, "contextual_patient", redactions)
         text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", text)
         text = re.sub(r"\s+", " ", text).strip()
         if required and not text:

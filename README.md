@@ -516,8 +516,9 @@ Do not call report_problem for legitimately empty results. Do not paste raw tool
 
 Feedback хранится в БД в `agent_feedback_reports` после redaction/truncation.
 Агентам нужно описывать форму проблемы, а не данные: вместо ФИО клиента,
-клички пациента, телефона и адреса использовать `<client>`, `<patient>`,
-`<phone>`, `<address>`. После этапа 150 отчёты получают `possible_pii` flag:
+телефона и адреса использовать `<client>`, `<owner>`, `<phone>`, `<address>`.
+Кличку питомца и личное имя, наоборот, оставляют как есть — решение этапа 290:
+они никого не опознают, а без них отчёт нельзя воспроизвести. После этапа 150 отчёты получают `possible_pii` flag:
 старые ручные/model reports помечаются консервативно, новые reports получают
 флаг при privacy-like redaction или placeholders; auto-events остаются
 `possible_pii=false`, потому что не сохраняют raw error text.

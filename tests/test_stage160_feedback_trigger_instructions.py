@@ -51,10 +51,16 @@ def test_report_problem_successful_but_unsatisfactory_triggers_are_everywhere():
 
 
 def test_report_problem_strong_privacy_suppression_is_everywhere():
+    """Этап 290 убрал отсюда `<patient>` осознанно.
+
+    Кличка решением владельца 03.09.2026 остаётся в тексте; требование прятать
+    её сохранилось бы здесь и продолжало действовать на модель, то есть
+    решение не подействовало бы вовсе. Остальные плейсхолдеры на месте, а
+    новое правило проверяется ниже — тоже на всех трёх поверхностях.
+    """
     fragments = (
         "<client>",
         "<owner>",
-        "<patient>",
         "<phone>",
         "<address>",
         "Do not paste raw tool response bodies",
@@ -66,6 +72,17 @@ def test_report_problem_strong_privacy_suppression_is_everywhere():
     for surface_name, text in _surfaces().items():
         for fragment in fragments:
             assert fragment in text, f"{surface_name} missing privacy fragment: {fragment!r}"
+
+
+def test_the_pet_nickname_allowance_is_stated_everywhere():
+    """Правило, названное на одной поверхности из трёх, действует случайно."""
+    for surface_name, text in _surfaces().items():
+        assert "<patient>" not in text, (
+            f"{surface_name}: модели всё ещё велят прятать кличку"
+        )
+        assert "nickname" in text.lower(), (
+            f"{surface_name}: не сказано, что кличку можно оставлять"
+        )
 
 
 def test_report_problem_description_contains_category_mapping():

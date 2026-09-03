@@ -24,6 +24,13 @@ def feedback_pepper(monkeypatch):
 
 
 def test_feedback_sanitizer_redacts_contextual_pii_and_keeps_domain_language():
+    """Этап 290 сузил это правило осознанно, а не по недосмотру.
+
+    Кличка питомца вычищалась вместе с фамилией; решением Владимира
+    03.09.2026 она остаётся: «Барсик» никого не опознаёт, а отчёт «поиск не
+    находит [REDACTED]» невозможно ни воспроизвести, ни понять. Фамилия,
+    адрес, почта и телефон под чисткой остались — их и проверяем здесь.
+    """
     text = (
         "клиент Иванов И.И.; owner: John Smith; кличка Барсик; "
         "адрес: Москва, Ленина 1; email test@example.com; phone +7 999 123-45-67"
@@ -34,13 +41,12 @@ def test_feedback_sanitizer_redacts_contextual_pii_and_keeps_domain_language():
     assert result.text is not None
     assert "Иванов" not in result.text
     assert "John Smith" not in result.text
-    assert "Барсик" not in result.text
+    assert "Барсик" in result.text, "кличка остаётся — решение этапа 290"
     assert "Москва" not in result.text
     assert "test@example.com" not in result.text
     assert "+7 999" not in result.text
     assert {
         "contextual_name",
-        "contextual_patient",
         "contextual_address",
         "email",
         "phone",
@@ -59,10 +65,12 @@ def test_feedback_sanitizer_redacts_contextual_pii_and_keeps_domain_language():
     )
     assert feedback.PRIVACY_REDACTIONS.isdisjoint(harmless.redactions)
 
+    # Метка в любом регистре ловится по-прежнему; кличка после неё остаётся
+    # (этап 290), фамилия с именем — нет.
     capitalized = feedback.sanitize_text_with_metadata("Client: John Smith; PATIENT Барсик", limit=1000)
     assert "John Smith" not in (capitalized.text or "")
-    assert "Барсик" not in (capitalized.text or "")
-    assert {"contextual_name", "contextual_patient"}.issubset(capitalized.redactions)
+    assert "Барсик" in (capitalized.text or "")
+    assert "contextual_name" in capitalized.redactions
 
 
 def test_feedback_sanitizer_exception_fails_closed(monkeypatch):
@@ -87,7 +95,10 @@ def test_report_problem_instructions_describe_shape_not_data():
     assert "<owner>" in description
     assert "Describe the shape of the problem, not the data" in description
     assert "client <client> lookup returns 500" in feedback_source
-    assert "<patient>" in feedback_source
+    # Этап 290: модель больше не просят прятать кличку — иначе решение
+    # оставлять её в тексте не действует, кличка исчезает до записи.
+    assert "<patient>" not in feedback_source
+    assert "<phone>" in feedback_source
 
 
 @pytest.mark.asyncio
