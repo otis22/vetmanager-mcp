@@ -6,6 +6,7 @@ import re
 from secrets import token_hex
 
 from fastmcp.server import dependencies as _fastmcp_dependencies
+from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -75,3 +76,38 @@ def attach_request_context_headers(response: Response, request: Request) -> None
     context = get_request_context(request)
     response.headers[REQUEST_ID_HEADER] = context["request_id"]
     response.headers[CORRELATION_ID_HEADER] = context["correlation_id"]
+
+
+class RequestContextHeaderMiddleware:
+    """Вешает идентификаторы запроса на любой HTTP-ответ приложения.
+
+    Этап 289.4: `attach_request_context_headers` вызывали только веб-страницы
+    и выгрузки, поэтому ответы `/mcp` уходили без `X-Request-ID`. Клиент,
+    поймавший отказ, не мог связать свой вызов с нашим журналом — и наш
+    собственный post-deploy смоук тоже не мог.
+
+    Middleware сделан на чистом ASGI, а не на `BaseHTTPMiddleware`: последний
+    буферизует ответ и ломает потоковую отдачу, на которой держится
+    streamable-http.
+    """
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Идентификаторы кладутся в состояние запроса, поэтому в заголовке и в
+        # журнале оказывается одно и то же значение, а не два похожих.
+        context = get_request_context(Request(scope))
+
+        async def send_with_ids(message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers[REQUEST_ID_HEADER] = context["request_id"]
+                headers[CORRELATION_ID_HEADER] = context["correlation_id"]
+            await send(message)
+
+        await self.app(scope, receive, send_with_ids)

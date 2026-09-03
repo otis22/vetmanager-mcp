@@ -20,6 +20,7 @@ from tool_error_tracking import ToolErrorTrackingMiddleware
 from tool_descriptions import enhance_tool_descriptions
 from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
+from request_context import RequestContextHeaderMiddleware
 
 SHUTDOWN_STEP_TIMEOUT_SECONDS = 3
 STREAMABLE_HTTP_DRAIN_ENABLED_ENV = "STREAMABLE_HTTP_DRAIN_ENABLED"
@@ -191,8 +192,11 @@ class _DrainingUvicornServer(uvicorn.Server):
 def _run_http_server(*, transport: str, host: str, port: int, path: str) -> None:
     """Run the FastMCP HTTP app while preserving FastMCP's Uvicorn defaults."""
     app = mcp.http_app(path=path, transport=transport)
+    # Этап 289.4: ответы /mcp должны нести идентификатор запроса — иначе
+    # клиенту (и нашему смоуку) нечем связать свой отказ с нашим журналом.
+    served_app = RequestContextHeaderMiddleware(app)
     config = uvicorn.Config(
-        app,
+        served_app,
         host=host,
         port=port,
         lifespan="on",
