@@ -164,6 +164,37 @@ async def _promote(args: argparse.Namespace) -> None:
         print(f"created known_issue #{issue.id} from report #{report.id}")
 
 
+async def _set_playbook(args: argparse.Namespace) -> None:
+    """Этап 294.4: починить playbook у существующей проблемы.
+
+    До этого правки playbook не было вовсе: `promote --playbook-json` заводит
+    новую проблему, `mark` меняет статус. Когда 04.09.2026 понадобилось заменить
+    одно устаревшее имя инструмента в playbook проблемы #11, пришлось писать
+    разовый скрипт и выполнять его внутри боевого контейнера. Runbook требует
+    playbook у каждой привязанной проблемы и не давал способа его исправить.
+
+    Валидация та же, что на записи в `promote`: невалидный playbook не заменит
+    рабочий и не заменит собой отсутствующий.
+    """
+    playbook = _load_json_file(args.playbook_json)
+    playbook_json = _safe_json_payload(playbook, limit=8000)
+    if not playbook_json:
+        raise SystemExit("Playbook JSON is required.")
+    if validate_agent_playbook(playbook_json) is None:
+        raise SystemExit("Invalid agent playbook JSON — refusing to write.")
+    async with get_session_factory()() as session:
+        issue = await session.get(KnownIssue, args.known_issue_id)
+        if issue is None:
+            raise SystemExit(f"Known issue not found: {args.known_issue_id}")
+        was_reachable = validate_agent_playbook(issue.agent_playbook_json) is not None
+        issue.agent_playbook_json = playbook_json
+        await session.commit()
+        print(
+            f"known_issue #{issue.id} playbook updated "
+            f"(was_reachable={was_reachable} now_reachable=True)"
+        )
+
+
 async def _mark(args: argparse.Namespace) -> None:
     async with get_session_factory()() as session:
         issue = await session.get(KnownIssue, args.known_issue_id)
@@ -368,29 +399,42 @@ async def _unreachable_issues(args: argparse.Namespace) -> None:
             ).all()
         )
 
+    # Этап 294: «playbook не написан» и «playbook отвергнут валидацией» — разные
+    # поломки и разная работа. Проблема #11 два дня выглядела здесь так же, как
+    # те, для которых ответ просто не сочинили, хотя её ответ был написан ещё в
+    # июне и погас от переименования инструмента.
     rows = [
-        (issue, int(report_counts.get(issue.id, 0)))
+        (
+            issue,
+            int(report_counts.get(issue.id, 0)),
+            "rejected" if issue.agent_playbook_json else "missing",
+        )
         for issue in issues
         if validate_agent_playbook(issue.agent_playbook_json) is None
     ]
-    rows.sort(key=lambda row: (-row[1], row[0].id))
+    # Отвергнутые — вперёд: там ответ уже есть и его надо починить, а не сочинить.
+    rows.sort(key=lambda row: (row[2] != "rejected", -row[1], row[0].id))
 
     print("# Known issues the agent never sees")
     print()
     print("Active status, no valid agent playbook. Reports counts how many people already hit it.")
+    print("playbook_state=rejected means the answer exists but validation drops it —")
+    print("check the runtime log for agent_playbook_rejected and its reason.")
     print()
-    print("| id | status | severity | related_tool | reports | matchable |")
-    print("|---:|---|---|---|---:|---|")
-    for issue, reports in rows:
+    print("| id | status | severity | related_tool | reports | matchable | playbook_state |")
+    print("|---:|---|---|---|---:|---|---|")
+    for issue, reports, playbook_state in rows:
         matchable = "yes" if (issue.error_fingerprint_hash or issue.match_rules_json) else "no"
         print(
             f"| {issue.id} | {issue.status} | {issue.severity} | "
-            f"{sanitize_text(issue.related_tool, limit=128) or '-'} | {reports} | {matchable} |"
+            f"{sanitize_text(issue.related_tool, limit=128) or '-'} | {reports} | "
+            f"{matchable} | {playbook_state} |"
         )
     if not rows:
-        print("| - | - | - | - | - | - |")
+        print("| - | - | - | - | - | - | - |")
     print()
-    print(f"total={len(rows)}")
+    rejected = sum(1 for row in rows if row[2] == "rejected")
+    print(f"total={len(rows)} rejected={rejected} missing={len(rows) - rejected}")
 
 
 async def _match_effectiveness(args: argparse.Namespace) -> None:
@@ -628,6 +672,14 @@ def _build_parser() -> argparse.ArgumentParser:
     promote.add_argument("--playbook-json", default=None)
     promote.add_argument("--match-rules-json", default=None)
     promote.set_defaults(func=_promote)
+
+    set_playbook = sub.add_parser(
+        "set-playbook",
+        help="Stage 294: replace the agent playbook of an existing known issue.",
+    )
+    set_playbook.add_argument("known_issue_id", type=int)
+    set_playbook.add_argument("--playbook-json", required=True)
+    set_playbook.set_defaults(func=_set_playbook)
 
     mark = sub.add_parser("mark", help="Set the status of a known issue.")
     mark.add_argument("known_issue_id", type=int)

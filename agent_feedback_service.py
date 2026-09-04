@@ -326,34 +326,67 @@ def _validate_string_list(value: Any, *, max_items: int, max_chars: int) -> list
     return result
 
 
+def _reject_playbook(reason: str, detail: str = "") -> None:
+    """Этап 294. Отказ валидации был немым, и знание пропадало беззвучно.
+
+    Проблема #11 выпала из выдачи агенту 01.09.2026, когда этап 276 переименовал
+    инструмент, названный в её playbook: одно неизвестное имя отвергает playbook
+    целиком. Ни лога, ни счётчика — два дня спустя пришёл отчёт ровно про то, что
+    в этой проблеме описано.
+    """
+    RUNTIME_LOGGER.warning(
+        "agent_playbook_rejected",
+        extra={
+            "event_name": "agent_playbook_rejected",
+            "reason": reason,
+            "detail": detail,
+        },
+    )
+
+
 def validate_agent_playbook(raw_json: str | None) -> dict[str, Any] | None:
+    # Отсутствие playbook — не отказ: у большинства проблем он просто не написан.
     if not raw_json:
         return None
     try:
         data = json.loads(raw_json)
     except json.JSONDecodeError:
+        _reject_playbook("malformed_json")
         return None
-    if not isinstance(data, dict) or data.get("version") != 1:
+    if not isinstance(data, dict):
+        _reject_playbook("not_an_object")
+        return None
+    if data.get("version") != 1:
+        _reject_playbook("unsupported_version", str(data.get("version")))
         return None
     summary = data.get("summary")
     if not isinstance(summary, str) or len(summary) > 500:
+        _reject_playbook("invalid_summary")
         return None
     playbook: dict[str, Any] = {"version": 1, "summary": summary}
     for key in ("steps", "do_not_do", "recommended_tool_sequence"):
         max_chars = 128 if key == "recommended_tool_sequence" else 500
         value = _validate_string_list(data.get(key, []), max_items=8, max_chars=max_chars)
         if value is None:
+            _reject_playbook("invalid_string_list", key)
             return None
-        if key == "recommended_tool_sequence" and any(tool not in TOOL_REQUIRED_SCOPES for tool in value):
-            return None
+        if key == "recommended_tool_sequence":
+            unknown = [tool for tool in value if tool not in TOOL_REQUIRED_SCOPES]
+            if unknown:
+                # Имя инструмента — единственная часть playbook, которая может
+                # устареть без правки самого playbook: инструмент переименовали.
+                _reject_playbook("unknown_tool", ", ".join(unknown))
+                return None
         playbook[key] = value
     user_template = data.get("user_message_template")
     if user_template is not None:
         if not isinstance(user_template, str) or len(user_template) > 800:
+            _reject_playbook("invalid_user_message_template")
             return None
         playbook["user_message_template"] = user_template
     safe_to_retry = data.get("safe_to_retry", False)
     if not isinstance(safe_to_retry, bool):
+        _reject_playbook("invalid_safe_to_retry")
         return None
     playbook["safe_to_retry"] = safe_to_retry
     return playbook
