@@ -281,6 +281,18 @@ for i in $(seq 1 20); do
 done
 
 echo "--> Verifying feedback fingerprint pepper is present in MCP container..."
+# Этап 297.2. Раньше здесь была одна ветка на два разных события, и обе
+# сообщались как «контейнер не получил секрет». 04.09.2026 файл исчез между
+# заливкой и проверкой — его удалил `rsync -az --delete` параллельного выката, —
+# и красный деплой обвинил здоровое приложение в чужой гонке. Проверка, которая
+# сломалась сама, обязана говорить о себе, а не о том, что она проверяет.
+if [ ! -f "${REMOTE_PEPPER_FILE}" ]; then
+  echo "ERROR: pepper file disappeared between upload and verification: ${REMOTE_PEPPER_FILE}"
+  echo "       This is a deploy-side problem, not an application one: the container was not asked."
+  echo "       Most likely cause: a concurrent deploy rsynced --delete over the same directory."
+  echo "       Check for overlapping Deploy Prod runs before touching the application."
+  exit 1
+fi
 if ! compose exec -T mcp sh -c 'expected="$(cat)"; test -n "${FEEDBACK_FINGERPRINT_PEPPER:-}" && test "${FEEDBACK_FINGERPRINT_PEPPER}" = "${expected}"' < "${REMOTE_PEPPER_FILE}"; then
   echo "ERROR: MCP container did not receive the deployed feedback fingerprint pepper."
   dump_compose_diagnostics

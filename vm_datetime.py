@@ -46,3 +46,28 @@ def day_start(day: str) -> str:
 def next_day_start(day: str) -> str:
     """Начало суток, следующих за `day` — верхняя граница строгим сравнением."""
     return f"{(date.fromisoformat(day) + timedelta(days=1)).isoformat()} 00:00:00"
+
+
+# Этап 293.3. Поля Ветменеджера типа `timestamp`, у которых сравнение с голой
+# датой означает полночь. Проверено по схеме (`vetmanager-extjs`, дамп
+# `.docker/test/webapps-migration/dump.sql`), а не по памяти:
+#
+#   invoice.create_date        timestamp
+#   invoice.invoice_date       timestamp
+#   payment.create_date        timestamp
+#   client.last_visit_date     timestamp
+#   client.date_register       timestamp
+#   admission.admission_date   timestamp
+#   medical_cards.date_create  timestamp
+#
+# Имена намеренно без таблиц: фильтры строятся по имени поля, и `create_date`
+# одинаково опасен и у счёта, и у платежа. Сторож — в
+# `tests/test_stage293_timestamp_field_guard.py`.
+VM_TIMESTAMP_FIELDS = frozenset({
+    "create_date",
+    "invoice_date",
+    "last_visit_date",
+    "date_register",
+    "admission_date",
+    "date_create",
+})
