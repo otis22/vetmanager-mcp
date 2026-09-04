@@ -461,15 +461,63 @@ def match_rules(raw_json: str | None, incident: FeedbackIncident) -> bool:
     return True
 
 
+# Заглушки, которыми агент заполняет «кода ошибки нет». `-` не выдумка: именно
+# так отсутствующий код печатает `triage_agent_feedback.py recent`, и агент,
+# видевший вывод разбора, повторит эту строку. Внешнее ревью 04.09.2026.
+_ERROR_CODE_PLACEHOLDERS = frozenset(
+    {"-", "--", "—", "none", "null", "nil", "n/a", "na", "undefined", "unknown"}
+)
+
+
+def _is_failure_http_status(status: int | None) -> bool:
+    """Говорит ли HTTP-статус об отказе.
+
+    `0` — обрыв соединения: этап 153 (F14) специально сохранил его как признак,
+    поэтому проверка идёт на `is not None`, а не на истинность значения.
+    Успешные и перенаправляющие статусы признаком не являются: `report_problem`
+    принимает `http_status` от агента, а его описание прямо зовёт сообщать и про
+    **успешные** вызовы с неверными данными. Считать `200` признаком — значит
+    вернуть тот же слабый отпечаток, только с добавленной константой.
+    """
+    if status is None:
+        return False
+    return status == 0 or status >= 400
+
+
+def _has_error_signal(incident: FeedbackIncident) -> bool:
+    """Есть ли у инцидента хоть один признак отказа.
+
+    Этап 295. Отпечаток считается по пяти полям, но у отчёта про **успешный**
+    вызов с неверными данными четыре из них пусты, и хеш схлопывается до
+    инструмента и формы параметров. Такой отпечаток одинаков у всех отчётов про
+    этот инструмент — про что бы они ни были, — и потому не является основанием
+    считать два отчёта одним дефектом.
+
+    Оба поля, по которым здесь принимается решение, заполняет сам агент, а не
+    рантайм. Поэтому граница проверяет смысл значения, а не его непустоту:
+    иначе запрет обходится любой заглушкой.
+    """
+    error_code = (incident.error_code or "").strip().lower()
+    return (
+        _is_failure_http_status(incident.http_status)
+        or (bool(error_code) and error_code not in _ERROR_CODE_PLACEHOLDERS)
+        or bool(normalize_error_text(incident.error_excerpt))
+    )
+
+
 async def _ordered_known_issue_candidates(
     session: AsyncSession,
     incident: FeedbackIncident,
     statuses: tuple[str, ...],
 ) -> AsyncIterator[KnownIssue]:
     fingerprint_hash = build_error_fingerprint_hash(incident)
+    # Отпечаток остаётся записанным в отчёте — он нужен для склейки повторов и
+    # для ручной привязки. Правом быть основанием для автоматического матча он
+    # пользуется только тогда, когда собран из признаков отказа.
+    matchable_fingerprint = fingerprint_hash if _has_error_signal(incident) else None
     fingerprint_matches = (
-        KnownIssue.error_fingerprint_hash == fingerprint_hash
-        if fingerprint_hash
+        KnownIssue.error_fingerprint_hash == matchable_fingerprint
+        if matchable_fingerprint
         else false()
     )
     candidates = (
@@ -487,12 +535,34 @@ async def _ordered_known_issue_candidates(
 
     exact_matches: list[KnownIssue] = []
     rule_matches: list[KnownIssue] = []
+    suppressed: list[int] = []
     for issue in candidates:
-        if fingerprint_hash and issue.error_fingerprint_hash == fingerprint_hash:
+        if matchable_fingerprint and issue.error_fingerprint_hash == matchable_fingerprint:
             exact_matches.append(issue)
             continue
+        if (
+            matchable_fingerprint is None
+            and fingerprint_hash
+            and issue.error_fingerprint_hash == fingerprint_hash
+        ):
+            suppressed.append(issue.id)
         if match_rules(issue.match_rules_json, incident):
             rule_matches.append(issue)
+
+    if suppressed and not rule_matches:
+        # Отказ должен быть виден разбору: отчёт остался неразобранным не
+        # потому, что подходящей проблемы нет, а потому что основания не было.
+        # Счётчик считает только тех кандидатов, что и так были выбраны по
+        # инструменту: отдельного запроса ради диагностики здесь не делается,
+        # поэтому число — нижняя оценка, а не точный подсчёт.
+        RUNTIME_LOGGER.info(
+            "known_issue_match_skipped_no_error_signal",
+            extra={
+                "event_name": "known_issue_match_skipped_no_error_signal",
+                "related_tool": incident.related_tool,
+                "suppressed_candidates": len(suppressed),
+            },
+        )
 
     for issue in [*exact_matches, *rule_matches]:
         yield issue
