@@ -149,10 +149,18 @@ def register(mcp: FastMCP) -> None:
         resolved_amount_max = _parse_money_filter(amount_max, field_name="amount_max")
 
         combined_filters: list = list(filter or [])
+        # Этап 293. `create_date` — timestamp, и сравнение с голой датой
+        # означало полночь: однодневный диапазон возвращал пусто, а любой
+        # диапазон терял свой последний день. Пара границ здесь та же, что
+        # ниже у `invoice_date`, и та же, что у `get_payments` с этапа 21.
         if resolved_date_from:
-            combined_filters.append(_filter_gte("create_date", resolved_date_from))
+            combined_filters.append(
+                _filter_gte("create_date", _day_start(resolved_date_from))
+            )
         if resolved_date_to:
-            combined_filters.append(_filter_lte("create_date", resolved_date_to))
+            combined_filters.append(
+                _filter_lt("create_date", _next_day_start(resolved_date_to))
+            )
         if resolved_invoice_date_from:
             combined_filters.append(
                 _filter_gte("invoice_date", _day_start(resolved_invoice_date_from))

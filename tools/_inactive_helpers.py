@@ -20,9 +20,9 @@ from filters import (
     gte as _filter_gte,
     in_ as _filter_in,
     lt as _filter_lt,
-    lte as _filter_lte,
 )
 from vetmanager_client import VetmanagerClient
+from vm_datetime import day_start, next_day_start
 
 _BATCH_SIZE = 100
 _BATCH_CONCURRENCY = 4
@@ -136,7 +136,9 @@ def calculate_inactive_window(
     Returns:
         (cutoff_oldest, cutoff_newest) as ISO date strings (YYYY-MM-DD).
         - cutoff_oldest = today - months_max  (last_visit_date >= this)
-        - cutoff_newest = today - months_min  (last_visit_date <= this)
+        - cutoff_newest = today - months_min  (последний день окна;
+          в фильтр уходит как last_visit_date < начало следующих суток —
+          колонка timestamp, и голая дата означала бы полночь)
 
     Raises:
         ToolInputError: if months_min < 1 or months_min > months_max.
@@ -178,7 +180,8 @@ async def fetch_inactive_clients_page(
     Single API call to /rest/api/client with filters:
         - status = ACTIVE
         - last_visit_date >= cutoff_oldest
-        - last_visit_date <= cutoff_newest
+        - last_visit_date < начало суток, следующих за cutoff_newest,
+          то есть сам день отсечки входит в окно целиком
     Sort: last_visit_date DESC (most recently lapsed first).
 
     Args:
@@ -199,8 +202,11 @@ async def fetch_inactive_clients_page(
 
     filters = [
         _filter_eq("status", "ACTIVE"),
-        _filter_gte("last_visit_date", cutoff_oldest),
-        _filter_lte("last_visit_date", cutoff_newest),
+        # Этап 293. Верхняя граница окна тоже теряла день: клиент, заходивший
+        # в день отсечки, в список не попадал. Здесь границу считает код, а не
+        # человек, поэтому ошибка не видна вовсе.
+        _filter_gte("last_visit_date", day_start(cutoff_oldest)),
+        _filter_lt("last_visit_date", next_day_start(cutoff_newest)),
     ]
     sort = [{"property": "last_visit_date", "direction": "DESC"}]
 

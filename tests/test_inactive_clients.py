@@ -117,10 +117,13 @@ async def test_get_inactive_clients_sends_status_active_and_last_visit_date_filt
         f for f in filter_list if f.get("property") == "last_visit_date"
     ]
     assert len(last_visit_filters) == 2, (
-        f"expected two last_visit_date clauses (>= and <=), got {last_visit_filters}"
+        f"expected two last_visit_date clauses (>= and <), got {last_visit_filters}"
     )
+    # Этап 293: было `["<=", ">="]` — голая дата против timestamp-колонки.
+    # Третий по счёту тест этого этапа, прибивавший неверную границу.
     operators = sorted(f.get("operator") for f in last_visit_filters)
-    assert operators == ["<=", ">="]
+    assert operators == ["<", ">="]
+    assert all(f["value"].endswith(" 00:00:00") for f in last_visit_filters)
 
 
 @pytest.mark.asyncio

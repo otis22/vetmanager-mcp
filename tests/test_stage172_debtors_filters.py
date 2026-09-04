@@ -120,8 +120,11 @@ async def test_get_debtors_adds_last_visit_date_window_filters():
         )
 
     actual = {(f["property"], f["operator"], f["value"]) for f in _filters_from_call(route.calls[0])}
-    assert ("last_visit_date", ">=", "2026-01-01") in actual
-    assert ("last_visit_date", "<=", "2026-06-17") in actual
+    # Этап 293: `client.last_visit_date` — timestamp, и голая дата в верхней
+    # границе означала полночь, то есть должник, заходивший в этот день днём,
+    # из выборки выпадал. Прежние строки прибивали именно это поведение.
+    assert ("last_visit_date", ">=", "2026-01-01 00:00:00") in actual
+    assert ("last_visit_date", "<", "2026-06-18 00:00:00") in actual
 
 
 @pytest.mark.asyncio

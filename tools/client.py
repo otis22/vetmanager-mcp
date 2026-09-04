@@ -11,13 +11,13 @@ from filters import (
     in_ as _filter_in,
     like as _filter_like,
     lt as _filter_lt,
-    lte as _filter_lte,
 )
 from resources.client_profile import fetch as _fetch_client_profile
 from service_metrics import instrument_call as _instrument_call
 from tools._inactive_helpers import fetch_inactive_clients_page
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
 from validators import LimitParam, normalize_phone_digits, parse_date_param
+from vm_datetime import day_start, next_day_start
 from vetmanager_client import VetmanagerClient
 
 
@@ -428,10 +428,16 @@ def register(mcp: FastMCP) -> None:
             _filter_eq("status", "ACTIVE"),
             _filter_lt("balance", "0"),
         ]
+        # Этап 293. `client.last_visit_date` — timestamp: голая дата в верхней
+        # границе отбрасывала должника, заходившего в этот день днём.
         if resolved_last_visit_from:
-            combined_filters.append(_filter_gte("last_visit_date", resolved_last_visit_from))
+            combined_filters.append(
+                _filter_gte("last_visit_date", day_start(resolved_last_visit_from))
+            )
         if resolved_last_visit_to:
-            combined_filters.append(_filter_lte("last_visit_date", resolved_last_visit_to))
+            combined_filters.append(
+                _filter_lt("last_visit_date", next_day_start(resolved_last_visit_to))
+            )
         sort = [{"property": "id", "direction": "ASC"}]
         response = await crud_list(
             "/rest/api/client",

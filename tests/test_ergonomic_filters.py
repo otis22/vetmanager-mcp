@@ -1237,9 +1237,15 @@ async def test_get_invoices_relative_dates():
     assert len(date_filters) == 2
     today = date.today()
     thirty_ago = (today - timedelta(days=30)).isoformat()
+    tomorrow = (today + timedelta(days=1)).isoformat()
     by_op = {f["operator"]: f["value"] for f in date_filters}
-    assert by_op[">="] == thirty_ago
-    assert by_op["<="] == today.isoformat()
+    # Этап 293: до него здесь стояло `by_op["<="] == today.isoformat()` —
+    # голая дата против timestamp-колонки, то есть полночь. Тест был зелёным и
+    # потому делал дефект похожим на решение: диапазон терял последний день.
+    # Ровно такую же пару строк на `get_payments` (тест ниже) починили ещё
+    # этапом 21, а этот остался.
+    assert by_op[">="] == f"{thirty_ago} 00:00:00"
+    assert by_op["<"] == f"{tomorrow} 00:00:00"
 
 
 @pytest.mark.asyncio

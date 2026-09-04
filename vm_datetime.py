@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import re
 
 
@@ -30,3 +30,19 @@ def normalize_vm_datetime(value: str, *, field_name: str = "datetime") -> str:
     if parsed.tzinfo is not None:
         raise ValueError(f"invalid VM datetime for {field_name}: timezone is not supported")
     return parsed.replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def day_start(day: str) -> str:
+    """Начало суток для фильтра по timestamp-колонке Ветменеджера.
+
+    Этап 293. Поля вроде `invoice.create_date` и `client.last_visit_date` —
+    `timestamp`, и сравнение с голой датой означает полночь. Границы диапазона
+    строятся парой `day_start(from)` / `next_day_start(to)`, чтобы диапазон
+    означал сутки целиком.
+    """
+    return f"{date.fromisoformat(day).isoformat()} 00:00:00"
+
+
+def next_day_start(day: str) -> str:
+    """Начало суток, следующих за `day` — верхняя граница строгим сравнением."""
+    return f"{(date.fromisoformat(day) + timedelta(days=1)).isoformat()} 00:00:00"
