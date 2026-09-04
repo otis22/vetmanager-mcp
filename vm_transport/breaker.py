@@ -61,6 +61,16 @@ def breaker_window_seconds() -> float:
     return env_float("BREAKER_WINDOW_SECONDS", 60.0)
 
 
+def breaker_probe_timeout_seconds() -> float:
+    """Сколько ждать отчёта о пробе, прежде чем считать её брошенной.
+
+    По умолчанию 60 секунд: верхний предел одного обращения к апстриму —
+    5 с на соединение плюс 20 с на чтение, с повторами это заметно меньше
+    минуты. Всё, что живёт дольше, отчитаться уже не собирается.
+    """
+    return env_float("BREAKER_PROBE_TIMEOUT_SECONDS", 60.0)
+
+
 def breaker_cooldown_seconds() -> float:
     """Current breaker OPEN→HALF_OPEN cooldown from env (per-call read)."""
     return env_float("BREAKER_COOLDOWN_SECONDS", 30.0)
@@ -75,6 +85,9 @@ class DomainBreaker:
     window_start: float = 0.0
     opened_at: float = 0.0
     probe_in_flight: bool = False
+    # Этап 291: без отметки времени у пробы нет срока годности, и брошенный
+    # флаг запирает домен навсегда — инцидент `alternativa` 04.09.2026.
+    probe_started_at: float = 0.0
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -101,7 +114,7 @@ async def reset_breakers() -> None:
         _breakers.clear()
 
 
-async def check_breaker_allows(domain: str) -> None:
+async def check_breaker_allows(domain: str) -> bool:
     """Raise VetmanagerUpstreamUnavailable if breaker is OPEN and cooldown
     has not elapsed, OR if already HALF_OPEN with a probe in flight (strict
     single-probe semantics under concurrency). Transitions OPEN → HALF_OPEN
@@ -111,6 +124,10 @@ async def check_breaker_allows(domain: str) -> None:
     recorded in `record_upstream_request` (status="circuit_open") so a
     single query on `vetmanager_upstream_requests_total` sees the full
     error rate including breaker fast-fails.
+
+    Этап 291: возвращает True, если вызывающий впущен **как проба**. Без
+    этого повторная проверка перед вторым заходом видела собственный флаг
+    вызывающего и объявляла, что пробует кто-то другой.
     """
     breaker = await get_breaker(domain)
     async with breaker.lock:
@@ -134,8 +151,25 @@ async def check_breaker_allows(domain: str) -> None:
             # Cooldown elapsed — transition to HALF_OPEN and admit one probe.
             breaker.state = "half_open"
             breaker.probe_in_flight = True
-            return
+            breaker.probe_started_at = time.monotonic()
+            return True
         if breaker.state == "half_open":
+            if breaker.probe_in_flight and _probe_is_abandoned(breaker):
+                # Этап 291: о пробе никто не отчитался дольше срока годности.
+                # Причина не важна — отмена задачи, гибель воркера, ветка без
+                # хука: домен не может оставаться запертым из-за этого.
+                RUNTIME_LOGGER.warning(
+                    "Circuit breaker probe abandoned; admitting a new one",
+                    extra={
+                        "event_name": "circuit_breaker_probe_abandoned",
+                        "domain": domain,
+                        "probe_age_seconds": round(
+                            time.monotonic() - breaker.probe_started_at, 1
+                        ),
+                    },
+                )
+                breaker.probe_started_at = time.monotonic()
+                return True
             if breaker.probe_in_flight:
                 record_upstream_failure(
                     target="vetmanager_api", reason="circuit_half_open_busy"
@@ -152,6 +186,15 @@ async def check_breaker_allows(domain: str) -> None:
                 )
             # First caller after a previous probe cleared — admit as new probe.
             breaker.probe_in_flight = True
+            breaker.probe_started_at = time.monotonic()
+            return True
+    return False
+
+
+def _probe_is_abandoned(breaker: DomainBreaker) -> bool:
+    if not breaker.probe_started_at:
+        return False
+    return (time.monotonic() - breaker.probe_started_at) > breaker_probe_timeout_seconds()
 
 
 async def breaker_record_success(domain: str) -> None:
@@ -161,6 +204,7 @@ async def breaker_record_success(domain: str) -> None:
         breaker.consecutive_failures = 0
         breaker.window_start = 0.0
         breaker.probe_in_flight = False
+        breaker.probe_started_at = 0.0
         if breaker.state in ("half_open", "open"):
             breaker.state = "closed"
             # Stage 107.9 (obs): log recovery transition so incidents have
@@ -186,6 +230,7 @@ async def breaker_record_failure(domain: str) -> None:
             breaker.state = "open"
             breaker.opened_at = now
             breaker.probe_in_flight = False
+            breaker.probe_started_at = 0.0
             # Stage 112.1 (super-review 2026-04-19): symmetric log for probe-fail
             # transition; pairs with recovery log on success path.
             RUNTIME_LOGGER.warning(
@@ -235,6 +280,7 @@ def get_breaker_state(domain: str) -> dict | None:
         "state": breaker.state,
         "consecutive_failures": breaker.consecutive_failures,
         "probe_in_flight": breaker.probe_in_flight,
+        "probe_started_at": breaker.probe_started_at,
         "opened_at": breaker.opened_at,
         "window_start": breaker.window_start,
     }

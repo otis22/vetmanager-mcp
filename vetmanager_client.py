@@ -388,7 +388,11 @@ class VetmanagerClient:
         # Circuit breaker fast-path: if domain is currently OPEN and cooldown
         # has not elapsed, fail fast instead of waiting the full timeout.
         domain_key = self._domain or "unknown"
-        await _check_breaker_allows(domain_key)
+        # Этап 291: запоминаем, впущены ли мы как проба. Повторная проверка
+        # перед вторым заходом иначе видит наш же `probe_in_flight` и решает,
+        # что пробует кто-то другой, — так домен `alternativa` заперся
+        # 04.09.2026 на серии 429 от Ветменеджера.
+        _holding_the_probe = await _check_breaker_allows(domain_key)
 
         # Stage 98.1: capture correlation_id once so structured warnings on
         # timeout / network / retry can tie back to the inbound MCP request.
@@ -416,7 +420,9 @@ class VetmanagerClient:
                 # check (above the while loop) and this retry, abort immediately
                 # with VetmanagerUpstreamUnavailable instead of wasting more
                 # round-trips against a known-dead upstream.
-                if attempt > 0:
+                # Держателю пробы перепроверяться не о чем: он и есть тот,
+                # кого ждёт брейкер.
+                if attempt > 0 and not _holding_the_probe:
                     try:
                         await _check_breaker_allows(domain_key)
                     except VetmanagerUpstreamUnavailable:
@@ -608,6 +614,7 @@ class VetmanagerClient:
             # UNEXPECTED exit (CancelledError, shutdown, KeyboardInterrupt).
             # Normal branches set `_breaker_resolved = True` after running
             # their record_success/record_failure hook.
+            #
             if not _breaker_resolved:
                 await _breaker_record_failure(domain_key)
 
