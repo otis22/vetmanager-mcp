@@ -161,10 +161,27 @@ if [ -n "$DONE_STAGES" ]; then
 fi
 
 # 9. PRD section sanity — every PRD/этап-N-*.md должен иметь разделы Цель + Scope
+#
+# Требование действует на документы, написанные после введения правила. Тексты
+# этапов до PRD_GOAL_REQUIRED_FROM написаны по прежней договорённости, где
+# разбор начинался с «Обращения» или «Контекста», и переписывать их задним
+# числом значило бы менять исторические документы ради зелёной проверки.
+# Решение владельца 04.09.2026: старое пометить устаревшим, цель требовать
+# в новых.
+#
+# Граница выбрана по факту, а не на глаз: на 04.09.2026 раздела не имели ровно
+# 32 PRD, все с номером этапа 292 и ниже, а PRD этапов 293 и 295 его уже имели.
+PRD_GOAL_REQUIRED_FROM=293
 for PRD in PRD/этап-*.md; do
   [ -f "$PRD" ] || continue
+  BASENAME=$(basename "$PRD")
+  # `этап-172.3-...` → 172: дробный номер сравнивается по целой части.
+  STAGE_NUM=$(printf '%s' "$BASENAME" | sed -nE 's/^этап-([0-9]+).*/\1/p')
+  [ -n "$STAGE_NUM" ] || continue
+  if [ "$STAGE_NUM" -lt "$PRD_GOAL_REQUIRED_FROM" ]; then
+    continue
+  fi
   if ! grep -qiE '^## Цель' "$PRD" 2>/dev/null; then
-    BASENAME=$(basename "$PRD")
     emit low prd_missing_section "$PRD" "N/A" \
       "PRD ${BASENAME} has no '## Цель' section" \
       "CLAUDE.md § 3 mandates PRD with goal + decomposition" \
