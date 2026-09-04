@@ -13,6 +13,7 @@ from observability_logging import RUNTIME_LOGGER
 from rate_limit_backend import shutdown_rate_limit_backend
 from storage import bootstrap_storage_schema, get_database_url, initialize_storage, shutdown_storage
 from shutdown_state import begin_draining, reset_draining
+from custom_clinic_hosts import log_custom_clinic_hosts
 from structured_logging import configure_logging
 from tool_oauth_security import OAuthChallengeMiddleware, apply_tool_oauth_security_metadata
 from tool_scope_security import ToolVisibilityMiddleware
@@ -271,6 +272,10 @@ if __name__ == "__main__":
         "validate_feedback_runtime_config",
         lambda: validate_feedback_runtime_config(database_url=get_database_url()),
     )
+    # Этап 292: карта собственных адресов клиник живёт только в `.env` на
+    # сервере и при пересборке машины теряется молча. В журнал идёт её размер —
+    # число, не адреса, — чтобы «доехала или нет» было видно сразу.
+    _run_startup_step("log_custom_clinic_hosts", log_custom_clinic_hosts)
     transport, host, port, path = _run_startup_step(
         "transport_config",
         _load_runtime_config,

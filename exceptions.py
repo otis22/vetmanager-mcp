@@ -48,6 +48,17 @@ class HostResolutionError(VetmanagerError):
     """Failed to resolve Vetmanager host for the given domain."""
 
 
+class VetmanagerTlsError(VetmanagerError):
+    """TLS to the clinic's own server could not be verified.
+
+    Stage 292: clinics on a custom domain sometimes serve the leaf certificate
+    without the intermediate. A browser hides this — it fetches the missing
+    link itself — so the clinic sees a working site while every strict client
+    fails. Kept a distinct type so the message can name what to fix instead of
+    blaming Vetmanager for being down.
+    """
+
+
 class VetmanagerUpstreamUnavailable(VetmanagerError):
     """Circuit breaker is open for this domain — upstream considered unhealthy.
 

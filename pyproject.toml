@@ -30,6 +30,7 @@ only-include = [
     "bearer_auth.py",
     "bearer_rate_limiter.py",
     "bearer_token_manager.py",
+    "custom_clinic_hosts.py",
     "depersonalization.py",
     "domain_validation.py",
     "env_utils.py",

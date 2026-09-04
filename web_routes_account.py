@@ -18,6 +18,7 @@ from exceptions import (
     HostResolutionError,
     VetmanagerError,
     VetmanagerTimeoutError,
+    VetmanagerTlsError,
     VetmanagerUpstreamUnavailable,
 )
 from observability_logging import RUNTIME_LOGGER
@@ -89,6 +90,17 @@ def _integration_error_text(exc: Exception) -> str:
         return (
             "Vetmanager сейчас не отвечает. Подождите минуту и попробуйте ещё раз — "
             "данные формы сохранены."
+        )
+    if isinstance(exc, VetmanagerTlsError):
+        # Этап 292. Браузер докачивает промежуточный сертификат сам, поэтому у
+        # клиники сайт выглядит рабочим, а любой строгий клиент к ней не
+        # подключится. Назвать это «Vetmanager не отвечает» — отправить человека
+        # чинить не туда.
+        return (
+            "Не удалось проверить сертификат вашего сервера: он отдаёт неполную "
+            "цепочку. В браузере это незаметно — он докачивает недостающее звено "
+            "сам. Передайте администратору сервера: нужно отдавать полную цепочку "
+            "сертификата (в nginx — fullchain) и проверить срок её действия."
         )
     if isinstance(exc, HostResolutionError):
         return (

@@ -2,6 +2,7 @@
 
 import re
 
+from custom_clinic_hosts import account_key_for_custom_host
 from exceptions import VetmanagerError
 
 DOMAIN_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -26,6 +27,12 @@ def normalize_domain_input(raw: str) -> str:
             break
     domain = domain.split("/", 1)[0].split("?", 1)[0]
     domain = domain.rstrip(".")
+    # Этап 292: клиника на собственном домене вводит тот адрес, который видит в
+    # браузере. Ключ аккаунта не выводится из адреса — он берётся из настроенной
+    # карты, то есть его один раз выяснил человек.
+    configured_key = account_key_for_custom_host(domain)
+    if configured_key is not None:
+        return configured_key
     for suffix in _KNOWN_HOST_SUFFIXES:
         if domain.endswith(suffix):
             domain = domain[: -len(suffix)]

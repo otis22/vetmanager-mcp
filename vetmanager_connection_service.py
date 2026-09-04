@@ -10,10 +10,17 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from exceptions import AuthError, HostResolutionError, VetmanagerError, VetmanagerTimeoutError
+from exceptions import (
+    AuthError,
+    HostResolutionError,
+    VetmanagerError,
+    VetmanagerTimeoutError,
+    VetmanagerTlsError,
+)
 from host_resolver import resolve_vetmanager_host as _resolve_host_via_billing
 from observability_logging import RUNTIME_LOGGER
 from service_metrics import record_upstream_failure, record_upstream_request
+from upstream_transport import classify_transport_error
 from domain_validation import validate_domain as _validate_domain
 from storage_models import CONNECTION_STATUS_ACTIVE, CONNECTION_STATUS_DISABLED, VetmanagerConnection
 from vetmanager_auth import (
@@ -195,10 +202,11 @@ async def _request_with_retry(
             raise VetmanagerTimeoutError(timeout_message) from exc
         except httpx.RequestError as exc:
             elapsed = time.monotonic() - started
+            reason = classify_transport_error(exc)
             _record_upstream_attempt(
                 target=target,
                 ok=False,
-                reason="request_error",
+                reason=reason,
                 duration_seconds=elapsed,
             )
             RUNTIME_LOGGER.warning(
@@ -206,10 +214,17 @@ async def _request_with_retry(
                 extra={
                     "event_name": "vetmanager_auth_probe_failed",
                     "target": target,
+                    "reason": reason,
                     "error_class": type(exc).__name__,
                     "account_connection_id": account_connection_id,
                 },
             )
+            # Этап 292: поломка сертификата на сервере клиники — не то же самое,
+            # что недоступный Ветменеджер, и чинится в другом месте.
+            if reason == "tls_verification_failed":
+                raise VetmanagerTlsError(
+                    "TLS verification failed for the clinic host."
+                ) from exc
             raise VetmanagerError(unavailable_message) from exc
 
         elapsed = time.monotonic() - started

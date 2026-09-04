@@ -109,6 +109,9 @@ services:
       - BREAKER_COOLDOWN_SECONDS
       - BREAKER_PROBE_TIMEOUT_SECONDS
       - BILLING_RESOLVER_CACHE_TTL_SECONDS
+      # Этап 292. Собственные адреса клиник (`ключ=хост` через запятую). Имя
+      # переменной в репозитории, значение — только в `.env` на сервере.
+      - CUSTOM_CLINIC_HOSTS
       - VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS
       - STREAMABLE_HTTP_DRAIN_ENABLED
       # База и хранилище
