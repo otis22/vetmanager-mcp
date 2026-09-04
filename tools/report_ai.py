@@ -34,7 +34,18 @@ from vetmanager_client import VetmanagerClient
 
 
 INTENT_MAX_LENGTH = 20000
+# Два разных предела в одной подсистеме апстрима — сводить их в один нельзя,
+# именно это и породило отчёт #62 (этап 296).
+#
+# `JobService::DATA_ROW_LIMIT = 10000` — предел выдачи: сколько строк отдаётся
+# клиенту и по чему считается флаг `limited`.
 REPORT_AI_DATA_ROW_LIMIT = 10000
+# `AiReportRenderer::VIEW_ROW_LIMIT = 1000` — предел рендера: к SQL отчёта
+# применяется `SqlRowLimiter::apply($sql, 1000)`, и `total` возвращается как
+# `count($rows)` уже обрезанного набора. Поэтому у данных ИИ-отчёта
+# `limited = (total > 10000)` не может стать истиной: рендер физически не
+# отдаёт больше 1000 строк. Признака обрезки в ответе нет — его называем мы.
+REPORT_AI_RENDERER_ROW_LIMIT = 1000
 REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD = 9000
 REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS = 30
 REPORT_AI_QUEUE_WAIT_LIMIT_SECONDS = 15 * 60
@@ -567,21 +578,45 @@ def _annotate_report_ai_data_payload(payload: dict) -> dict:
     except (TypeError, ValueError):
         total = None
 
+    rows = data.get("rows")
+    row_count = len(rows) if isinstance(rows, list) else None
+    # Ровно предел рендера — почти наверняка обрезка, и `limited` об этом не
+    # скажет никогда. Вывод делается по числу строк, а не по флагу; равенство
+    # строгое, потому что 1001 строка означала бы, что апстрим изменился и
+    # вердикт «обрезано» стал бы выдумкой.
+    truncated_at_renderer_cap = row_count == REPORT_AI_RENDERER_ROW_LIMIT
+
     near_cap = total is not None and total >= REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD
-    if not limited and not near_cap:
+    if not limited and not near_cap and not truncated_at_renderer_cap:
         return payload
 
-    guidance = {
-        "code": "report_ai_large_result",
-        "row_limit": REPORT_AI_DATA_ROW_LIMIT,
-        "threshold": REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD,
-        "limited": limited,
-        "total": total,
-        "summary": (
-            "Report AI returned a large row set. Avoid pasting huge tables into chat; "
-            "narrow the report or use CSV/XLSX export for bulk review."
-        ),
-    }
+    if truncated_at_renderer_cap:
+        guidance = {
+            "code": "report_ai_probable_truncation",
+            "renderer_row_limit": REPORT_AI_RENDERER_ROW_LIMIT,
+            "limited": limited,
+            "total": total,
+            "summary": (
+                "Report AI returned exactly the upstream renderer cap of "
+                f"{REPORT_AI_RENDERER_ROW_LIMIT} rows, so the report is almost "
+                "certainly cut short. The `limited` flag is computed against a "
+                "different, larger cap and cannot report this truncation. Do not "
+                "present these rows as the complete period: narrow the report or "
+                "take the full data through CSV/XLSX export."
+            ),
+        }
+    else:
+        guidance = {
+            "code": "report_ai_large_result",
+            "row_limit": REPORT_AI_DATA_ROW_LIMIT,
+            "threshold": REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD,
+            "limited": limited,
+            "total": total,
+            "summary": (
+                "Report AI returned a large row set. Avoid pasting huge tables into chat; "
+                "narrow the report or use CSV/XLSX export for bulk review."
+            ),
+        }
     if data.get("csv_export_url"):
         guidance["export_available"] = True
     data.setdefault("mcp_large_result_guidance", guidance)
@@ -1027,10 +1062,13 @@ def register(mcp: FastMCP) -> None:
             job_id: Report AI job ID. Data is available only for saved or
                 existing_report_matched jobs. ready_to_save has preview summary
                 only; call save_report_ai_job_as_report first when rows are
-                needed. Returned rows are capped by Vetmanager at 10000 and
-                limited=true means total is larger. When limited=true or totals
-                approach the cap, prefer narrowing the report or CSV/XLSX export
-                via the returned csv_export_url/report_id for bulk review.
+                needed. Vetmanager renders AI report data with a hard cap of
+                1000 rows, and `limited` is NOT the truncation signal here: it
+                is computed against a different, larger cap and is never true
+                for AI reports. Exactly 1000 rows means the report is almost
+                certainly cut short — say so instead of presenting it as the
+                whole period, and take the full data through CSV/XLSX export
+                via the returned csv_export_url/report_id.
         """
         payload = await _call_vm(
             "GET", f"/rest/api/report-ai-job/{job_id}/data", tool_name="get_report_ai_job_data",

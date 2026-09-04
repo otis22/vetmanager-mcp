@@ -171,8 +171,13 @@ def test_report_ai_guidance_descriptions_name_helper_and_fallback_policy():
     assert "XYZ" not in job_description
 
     data_description = SPECIAL_TOOL_DESCRIPTIONS["get_report_ai_job_data"]
-    assert "limited=true" in data_description
-    assert "10000" in data_description
+    # Этап 296: прежде здесь стояло `"limited=true" in ...` и `"10000" in ...`.
+    # Обе строки прибивали неверный контракт: у данных ИИ-отчёта рендер режет
+    # SQL на 1000 строках и отдаёт `total` от обрезанного набора, поэтому
+    # `limited = (total > 10000)` не может стать истиной ни при каких данных.
+    assert "1000 rows" in data_description
+    assert "10000" not in data_description
+    assert "limited is NOT the truncation signal" in data_description
     assert "csv_export_url" in data_description
     assert "empty rows result is valid" in data_description
     assert "do not recreate the job" in data_description
@@ -229,8 +234,13 @@ async def test_report_ai_guidance_reaches_live_tool_descriptions():
     assert "XYZ" not in job_description
 
     data_description = tools_by_name["get_report_ai_job_data"].description
-    assert "limited=true" in data_description
-    assert "10000" in data_description
+    # Этап 296: прежде здесь стояло `"limited=true" in ...` и `"10000" in ...`.
+    # Обе строки прибивали неверный контракт: у данных ИИ-отчёта рендер режет
+    # SQL на 1000 строках и отдаёт `total` от обрезанного набора, поэтому
+    # `limited = (total > 10000)` не может стать истиной ни при каких данных.
+    assert "1000 rows" in data_description
+    assert "10000" not in data_description
+    assert "limited is NOT the truncation signal" in data_description
     assert "csv_export_url" in data_description
     assert "empty rows result is valid" in data_description
     assert "do not recreate the job" in data_description
