@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from exceptions import ToolInputError
 from observability_logging import RUNTIME_LOGGER
+from service_metrics import record_known_issue_lookup
 from storage import get_session_factory
 from storage_models import (
     AgentFeedbackReport,
@@ -926,7 +927,12 @@ async def augment_tool_error(tool_name: str, credentials, exc: ToolError) -> Too
             lookup_known_issue_for_error(tool_name, exc),
             timeout=KNOWN_ISSUE_LOOKUP_TIMEOUT_SECONDS,
         )
+        record_known_issue_lookup(
+            tool_name=tool_name,
+            outcome="matched" if known_issue is not None else "no_match",
+        )
     except Exception:
+        record_known_issue_lookup(tool_name=tool_name, outcome="lookup_failed")
         RUNTIME_LOGGER.warning(
             "Known issue lookup failed",
             extra={"event_name": "known_issue_lookup_failed", "tool_name": tool_name},

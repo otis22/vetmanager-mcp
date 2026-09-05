@@ -418,20 +418,29 @@ async def _unreachable_issues(args: argparse.Namespace) -> None:
     print("# Known issues the agent never sees")
     print()
     print("Active status, no valid agent playbook. Reports counts how many people already hit it.")
+    print("injection=no means the issue cannot fire on a tool failure: its only key is a")
+    print("fingerprint built from a report, and the runtime builds a different one (stage 283).")
     print("playbook_state=rejected means the answer exists but validation drops it —")
     print("check the runtime log for agent_playbook_rejected and its reason.")
     print()
-    print("| id | status | severity | related_tool | reports | matchable | playbook_state |")
-    print("|---:|---|---|---|---:|---|---|")
+    print("| id | status | severity | related_tool | reports | matchable | injection | playbook_state |")
+    print("|---:|---|---|---|---:|---|---|---|")
     for issue, reports, playbook_state in rows:
         matchable = "yes" if (issue.error_fingerprint_hash or issue.match_rules_json) else "no"
+        # Этап 283.2. Отпечаток проблемы приходит из отчёта, а инжекция считает
+        # свой — из живого исключения, где `error_code` это имя класса, а формы
+        # параметров нет вовсе. Эти два отпечатка не совпадают по построению,
+        # поэтому при отказе инструмента проблему находит только написанное
+        # человеком правило. `matchable=yes` без правил означает «найдётся при
+        # ручном разборе», а не «дойдёт до агента».
+        injection = "yes" if issue.match_rules_json else "no"
         print(
             f"| {issue.id} | {issue.status} | {issue.severity} | "
             f"{sanitize_text(issue.related_tool, limit=128) or '-'} | {reports} | "
-            f"{matchable} | {playbook_state} |"
+            f"{matchable} | {injection} | {playbook_state} |"
         )
     if not rows:
-        print("| - | - | - | - | - | - | - |")
+        print("| - | - | - | - | - | - | - | - |")
     print()
     rejected = sum(1 for row in rows if row[2] == "rejected")
     print(f"total={len(rows)} rejected={rejected} missing={len(rows) - rejected}")

@@ -36,6 +36,10 @@ _HTTP_REQUEST_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = 
 )
 _AUTH_FAILURES_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
 _UPSTREAM_FAILURES_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
+# Этап 283.1. Знаменатель для «инжекция сработала 0 раз». Без него ноль не
+# читается: это либо «отказов не было», либо «было N и не совпало ни разу».
+# В Sentry такие отказы не летят — они обработаны, — поэтому счёт ведётся здесь.
+_KNOWN_ISSUE_LOOKUPS_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
 _UPSTREAM_REQUESTS_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
 _UPSTREAM_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = defaultdict(
     LatencyAggregate
@@ -103,6 +107,7 @@ def reset_service_metrics() -> None:
         _HTTP_REQUEST_LATENCY_SECONDS.clear()
         _AUTH_FAILURES_TOTAL.clear()
         _UPSTREAM_FAILURES_TOTAL.clear()
+        _KNOWN_ISSUE_LOOKUPS_TOTAL.clear()
         _UPSTREAM_REQUESTS_TOTAL.clear()
         _UPSTREAM_LATENCY_SECONDS.clear()
         _TOOL_CALLS_TOTAL.clear()
@@ -193,6 +198,29 @@ def record_upstream_failure(*, target: str, reason: str) -> None:
     """Record a failed upstream interaction grouped by target and reason."""
     with _LOCK:
         _UPSTREAM_FAILURES_TOTAL[(target, reason)] += 1
+
+
+KNOWN_ISSUE_LOOKUP_OUTCOMES = ("matched", "no_match", "lookup_failed")
+
+
+def record_known_issue_lookup(*, tool_name: str, outcome: str) -> None:
+    """Одна попытка найти известную проблему по живому отказу инструмента.
+
+    Этап 283.1. `matched` без `no_match` — это не «механизм работает», а
+    «мы не знаем»: ноль совпадений одинаково выглядит и когда отказов не было,
+    и когда их были тысячи. Метка инструмента чистится тем же правилом, что и
+    остальные, — от неё зависит кардинальность.
+    """
+    if outcome not in KNOWN_ISSUE_LOOKUP_OUTCOMES:
+        RUNTIME_LOGGER.error(
+            "record_known_issue_lookup: unknown outcome dropped",
+            extra={"event_name": "known_issue_lookup_outcome_unknown", "dropped": outcome},
+        )
+        return
+    with _LOCK:
+        _KNOWN_ISSUE_LOOKUPS_TOTAL[
+            (_TOOL_LABEL_ALLOWED_RE.sub("_", tool_name or "") or "unknown", outcome)
+        ] += 1
 
 
 def record_upstream_request(
@@ -442,6 +470,10 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 f"{target}|{reason}": count
                 for (target, reason), count in sorted(_UPSTREAM_FAILURES_TOTAL.items())
             },
+            "known_issue_lookups_total": {
+                f"{tool}|{outcome}": count
+                for (tool, outcome), count in sorted(_KNOWN_ISSUE_LOOKUPS_TOTAL.items())
+            },
             "upstream_requests_total": {
                 f"{target}|{status}": count
                 for (target, status), count in sorted(_UPSTREAM_REQUESTS_TOTAL.items())
@@ -572,6 +604,19 @@ def render_prometheus_metrics() -> str:
         lines.append(
             f"vetmanager_upstream_failures_total"
             f"{_labels_text(target=target, reason=reason)} {value}"
+        )
+
+    lines.extend(
+        [
+            "# HELP vetmanager_known_issue_lookups_total Known-issue lookups on tool failure by tool and outcome.",
+            "# TYPE vetmanager_known_issue_lookups_total counter",
+        ]
+    )
+    for key, value in snapshot["known_issue_lookups_total"].items():
+        tool, outcome = key.split("|", 1)
+        lines.append(
+            f"vetmanager_known_issue_lookups_total"
+            f"{_labels_text(tool=tool, outcome=outcome)} {value}"
         )
 
     lines.extend(
