@@ -62,12 +62,20 @@ AUTO_EVENT_STATUSES = (
 # `acknowledged` holding an answer nobody was allowed to hand over.
 # `fixed` and `wontfix` stay out: there is nothing to work around.
 KB_AGENT_STATUSES = AUTO_EVENT_STATUSES
+# Этап 299. `placeholder_seen` отсюда убран. Из 61 отчёта 12 были помечены
+# `possible_pii`, и у всех двенадцати это была **единственная** причина: агент
+# написал `<client>` или `<phone>` — ровно как велит описание `report_problem`.
+# Флаг «возможны персональные данные» поднимался там, где агент их убрал, и
+# показывал разбирающему самые чистые отчёты, а на дашборде читался как утечка.
+#
+# Сам признак остаётся в наборе `redactions`: он свидетельство того, что
+# контракт соблюдён, и выбрасывать его незачем — он просто перестаёт означать
+# риск.
 PRIVACY_REDACTIONS = frozenset({
     "email",
     "phone",
     "contextual_name",
     "contextual_address",
-    "placeholder_seen",
     "sanitizer_error",
 })
 
