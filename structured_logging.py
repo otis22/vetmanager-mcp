@@ -132,7 +132,19 @@ def build_log_formatter(*, log_format: str | None = None) -> logging.Formatter:
 
 _HANDLER_MARKER = "_vm_structured_logging_handler"
 PERSISTENT_LOG_MAX_BYTES = 10 * 1024 * 1024
-PERSISTENT_LOG_MAX_FILES = 14
+# Этап 302. Раньше здесь стоял `PERSISTENT_LOG_MAX_FILES = 14` рядом с дневным
+# лимитом, и оба читались как одно правило «14 файлов = 14 дней». Это верно,
+# только пока файл один в день. Файл режется по размеру, число файлов за сутки
+# ничем не ограничено: 04.09.2026 на бою их вышло пятнадцать, и плоский лимит
+# стёр всё старше одного дня. Обещание «две недели» стало неправдой молча —
+# обнаружилось лишь тогда, когда логи за нужные дни понадобились и их не было.
+#
+# Срок хранения теперь измеряется днями. Диск при этом всё равно ограничен —
+# на боевом хосте его 20 ГБ, и он уже забивался, — поэтому объём назван
+# отдельным бюджетом, а не подменяет собой срок. 2 ГиБ хватает и на две недели
+# обычной нагрузки, и на несколько дней такой, как 04.09.
+PERSISTENT_LOG_RETENTION_DAYS = 14
+PERSISTENT_LOG_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 
 
 class PersistentRotatingFileHandler(logging.Handler):
@@ -168,14 +180,29 @@ class PersistentRotatingFileHandler(logging.Handler):
         return self.current_path
 
     def _prune(self) -> None:
+        # Срок хранения — по дням.
         files = sorted(self.directory.glob("runtime-????-??-??-*.log"))
-        oldest_day = (datetime.now(timezone.utc) - timedelta(days=13)).date()
+        oldest_day = (
+            datetime.now(timezone.utc)
+            - timedelta(days=PERSISTENT_LOG_RETENTION_DAYS - 1)
+        ).date()
         for path in files:
             file_day = datetime.strptime(path.name[8:18], "%Y-%m-%d").date()
             if file_day < oldest_day:
                 path.unlink(missing_ok=True)
+        # Бюджет объёма — отдельно и явно: он защищает диск, а не сокращает срок
+        # хранения втихую. Срезаются самые старые файлы, пока объём не уложится.
         files = sorted(self.directory.glob("runtime-????-??-??-*.log"))
-        for path in files[:-PERSISTENT_LOG_MAX_FILES]:
+        sizes = {path: path.stat().st_size for path in files if path.exists()}
+        total = sum(sizes.values())
+        # Читается из глобали модуля, а не из значения, захваченного при
+        # импорте: бюджет должен быть управляемым снаружи — и в тесте, и если
+        # его когда-нибудь вынесут в переменную окружения.
+        budget = globals()["PERSISTENT_LOG_MAX_TOTAL_BYTES"]
+        for path in files:
+            if total <= budget:
+                break
+            total -= sizes.get(path, 0)
             path.unlink(missing_ok=True)
 
     def emit(self, record: logging.LogRecord) -> None:

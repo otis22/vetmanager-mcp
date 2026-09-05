@@ -110,8 +110,16 @@ def test_request_context_log_filter_attaches_request_fields(monkeypatch):
 
 
 def test_persistent_log_handler_rotates_and_bounds_files(tmp_path, monkeypatch):
+    """Этап 302: объём ограничивается бюджетом байт, а не числом файлов.
+
+    Прежде здесь стоял `PERSISTENT_LOG_MAX_FILES = 2`, и тест подтверждал, что
+    лишние файлы удаляются по счёту. Этот же счёт на бою превращал обещанные
+    две недели хранения в сутки, стоило нагрузке нарезать 15 файлов за день.
+    """
     monkeypatch.setattr("structured_logging.PERSISTENT_LOG_MAX_BYTES", 1)
-    monkeypatch.setattr("structured_logging.PERSISTENT_LOG_MAX_FILES", 2)
+    # 10 байт — ровно «two\n» плюс «three\n»: бюджет держит два последних файла
+    # и срезает самый старый.
+    monkeypatch.setattr("structured_logging.PERSISTENT_LOG_MAX_TOTAL_BYTES", 10)
     handler = PersistentRotatingFileHandler(str(tmp_path))
     handler.setFormatter(logging.Formatter("%(message)s"))
 
@@ -119,7 +127,6 @@ def test_persistent_log_handler_rotates_and_bounds_files(tmp_path, monkeypatch):
         handler.emit(logging.makeLogRecord({"msg": message, "args": ()}))
 
     files = sorted(Path(tmp_path).glob("runtime-*.log"))
-    assert len(files) == 2
     assert [path.read_text().strip() for path in files] == ["two", "three"]
 
 
