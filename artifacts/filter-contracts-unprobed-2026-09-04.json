@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "probed_at": "2026-09-04",
+  "source": "devtr6 read-only scalar-field filter probe",
+  "note": "Этап 235.7. Семь сущностей, у которых на пробе 23.08.2026 не было записей: подтвердить имена полей было нечем, и инструменты оставались без allowlist. Повторная проба 04.09.2026 — записи появились, все 68 полей приняты со статусом 200, ни одного NO_ROWS. Подтверждено, что поле ПРИНИМАЕТСЯ фильтром; что фильтр по нему сужает выборку, проба не проверяет — известная проблема #24 была ровно про принятый и молча проигнорированный фильтр.",
+  "entities": {
+    "comboManualName": [
+      "id",
+      "is_readonly",
+      "name",
+      "title"
+    ],
+    "comboManualItem": [
+      "combo_manual_id",
+      "dop_param1",
+      "dop_param2",
+      "dop_param3",
+      "id",
+      "is_active",
+      "title",
+      "value"
+    ],
+    "goodGroup": [
+      "id",
+      "is_service",
+      "is_show_in_vaccines",
+      "markup",
+      "price_id",
+      "title"
+    ],
+    "partyAccount": [
+      "add_dt",
+      "edit_dt",
+      "exec_dt",
+      "id",
+      "status",
+      "store_id",
+      "supplier_id"
+    ],
+    "partyAccountDoc": [
+      "characteristic_id",
+      "document_id",
+      "good_id",
+      "id",
+      "price",
+      "quantity",
+      "status",
+      "stavka_nds_percent",
+      "written_of_quantity"
+    ],
+    "storeDocument": [
+      "add_dt",
+      "creator_id",
+      "document_type",
+      "edit_dt",
+      "exec_dt",
+      "executor_id",
+      "id",
+      "prihod_date",
+      "prihod_number",
+      "receiver_id",
+      "receiver_store_id",
+      "receiver_user_id",
+      "sender_user_id",
+      "status",
+      "store_id",
+      "supplier_id",
+      "total",
+      "transfer_sender_store_doc_id"
+    ],
+    "suppliers": [
+      "address",
+      "bank_account",
+      "bank_account_corr",
+      "bank_ik",
+      "bank_name",
+      "city_id",
+      "company_name",
+      "contact_person",
+      "id",
+      "inn",
+      "mail",
+      "note",
+      "person_type",
+      "phone",
+      "status",
+      "view_in_modules"
+    ]
+  },
+  "public_excluded_fields": {}
+}

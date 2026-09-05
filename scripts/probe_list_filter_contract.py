@@ -38,6 +38,20 @@ ENTITIES = {
     "cityType": "/rest/api/cityType", "street": "/rest/api/street", "unit": "/rest/api/unit",
     "role": "/rest/api/role", "userPosition": "/rest/api/userPosition",
     "goodSaleParam": "/rest/api/goodSaleParam", "good": "/rest/api/good",
+    # Этап 235.7: сущности, у которых контракт фильтров не подтверждён — раньше
+    # проба на них не ходила. Из одиннадцати инструментов пункта сюда попали
+    # семь: остальные четыре (`get_medical_cards`, `get_diagnoses`,
+    # `get_anonymous_clients`, `get_message_reports`) ходят не в обычный
+    # list-эндпоинт, а в особые пути вида `/rest/api/MedicalCards/AllDiagnoses`
+    # и `/rest/api/user/anonymousList`, где общий контракт `filter`/`sort`
+    # неприменим — для них вопрос поставлен неверно, а не остался без ответа.
+    "comboManualName": "/rest/api/ComboManualName",
+    "comboManualItem": "/rest/api/ComboManualItem",
+    "goodGroup": "/rest/api/GoodGroup",
+    "partyAccount": "/rest/api/PartyAccount",
+    "partyAccountDoc": "/rest/api/PartyAccountDoc",
+    "storeDocument": "/rest/api/StoreDocument",
+    "suppliers": "/rest/api/Suppliers",
 }
 PROBE_VALUE = 0
 REQUEST_GAP_SECONDS = 0.1
@@ -51,8 +65,21 @@ def _scalar_fields(row: dict[str, Any]) -> list[str]:
 
 
 def _rows(payload: Any, entity: str) -> list[dict[str, Any]]:
+    """Строки списка, как бы Ветменеджер ни назвал ключ.
+
+    Этап 235.7: раньше ключ искался точным совпадением с именем сущности, и на
+    любом расхождении регистра или числа (`goodGroup` против `GoodGroup`,
+    `clients` против `client`) проба печатала `NO_ROWS`. «Записей нет» и «ключ
+    называется иначе» выглядели одинаково, а вывод из них делался разный.
+    """
     data = payload.get("data", {}) if isinstance(payload, dict) else {}
-    rows = data.get(entity, []) if isinstance(data, dict) else data
+    if not isinstance(data, dict):
+        return data if isinstance(data, list) else []
+    rows = data.get(entity)
+    if not isinstance(rows, list):
+        # Ключ не совпал — берём единственный список в ответе, если он один.
+        lists = [value for value in data.values() if isinstance(value, list)]
+        rows = lists[0] if len(lists) == 1 else None
     return rows if isinstance(rows, list) else []
 
 

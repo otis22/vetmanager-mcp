@@ -1360,10 +1360,18 @@ async def test_get_combo_manual_items_uses_name_id_filter_not_legacy_query_param
         )
 
     filters = _filter_of(route)
+    # Этап 301: прежде здесь требовалось `combo_manual_name_id` — поле, которого
+    # в `combo_manual_items` нет. Ветменеджер отвечал на такой фильтр 406, то
+    # есть зелёный тест прибивал инструмент, не работавший ни разу. Настоящая
+    # колонка — `combo_manual_id`, через неё же идёт связь `comboManualName`
+    # в модели ExtJS.
     assert any(
-        f.get("property") == "combo_manual_name_id" and f.get("value") == 9
+        f.get("property") == "combo_manual_id" and f.get("value") == 9
         for f in filters
-    ), f"expected combo_manual_name_id filter, got {filters}"
+    ), f"expected combo_manual_id filter, got {filters}"
+    assert not any(
+        f.get("property") == "combo_manual_name_id" for f in filters
+    ), "фантомное имя поля вернулось в фильтр"
     assert "comboManualNameId" not in _query_of(route)
 
 

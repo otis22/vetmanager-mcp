@@ -66,6 +66,49 @@ FILTER_FIELDS_BY_ENTITY: dict[str, frozenset[str]] = {
     "userPosition": frozenset({"admission_length", "id", "title"}),
     "goodSaleParam": frozenset({"barcode", "clinic_id", "coefficient", "good_id", "id", "is_partial_sale", "is_skip_marking", "markup", "max_price", "min_price", "price", "price_formation", "status", "unit_sale_id"}),
     "good": frozenset({"barcode", "category_id", "code", "create_date", "description", "for_combination", "group_id", "id", "is_active", "is_call", "is_for_sale", "is_marking", "is_recipe", "is_warehouse_account", "prime_cost", "title", "unit_storage_id"}),
+    # Этап 235.7. Семь сущностей, которые до 04.09.2026 оставались без
+    # allowlist: на прежней пробе у них не было записей, и подтвердить поля
+    # было нечем. Проба повторена на `devtr6` 04.09.2026 — записи появились,
+    # все 68 полей приняты со статусом 200.
+    #
+    # Что именно подтверждено: поле **принимается** фильтром, а не то, что
+    # фильтр по нему действительно сужает выборку. Разница не теоретическая —
+    # известная проблема #24 была ровно про принятый и молча проигнорированный
+    # фильтр по имени клиента. Allowlist защищает от опечатки в имени поля,
+    # но не обещает, что апстрим отфильтрует.
+    #
+    # Остальные четыре инструмента пункта — `get_medical_cards`,
+    # `get_diagnoses`, `get_anonymous_clients`, `get_message_reports` — ходят
+    # не в обычный list-эндпоинт, а в особые пути
+    # (`/rest/api/MedicalCards/AllDiagnoses`, `/rest/api/user/anonymousList`,
+    # `/rest/api/messages/reports`), где общий контракт `filter`/`sort`
+    # неприменим: для них вопрос поставлен неверно, а не остался без ответа.
+    "comboManualName": frozenset({"id", "is_readonly", "name", "title"}),
+    "comboManualItem": frozenset({
+        "combo_manual_id", "dop_param1", "dop_param2", "dop_param3", "id",
+        "is_active", "title", "value",
+    }),
+    "goodGroup": frozenset({
+        "id", "is_service", "is_show_in_vaccines", "markup", "price_id", "title",
+    }),
+    "partyAccount": frozenset({
+        "add_dt", "edit_dt", "exec_dt", "id", "status", "store_id", "supplier_id",
+    }),
+    "partyAccountDoc": frozenset({
+        "characteristic_id", "document_id", "good_id", "id", "price", "quantity",
+        "status", "stavka_nds_percent", "written_of_quantity",
+    }),
+    "storeDocument": frozenset({
+        "add_dt", "creator_id", "document_type", "edit_dt", "exec_dt", "executor_id",
+        "id", "prihod_date", "prihod_number", "receiver_id", "receiver_store_id",
+        "receiver_user_id", "sender_user_id", "status", "store_id", "supplier_id",
+        "total", "transfer_sender_store_doc_id",
+    }),
+    "suppliers": frozenset({
+        "address", "bank_account", "bank_account_corr", "bank_ik", "bank_name",
+        "city_id", "company_name", "contact_person", "id", "inn", "mail", "note",
+        "person_type", "phone", "status", "view_in_modules",
+    }),
 }
 
 

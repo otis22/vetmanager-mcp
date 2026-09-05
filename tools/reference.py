@@ -261,6 +261,7 @@ def register(mcp: FastMCP) -> None:
         """
         return await crud_list(
             "/rest/api/ComboManualName", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["comboManualName"],
         )
 
     @mcp.tool
@@ -289,12 +290,20 @@ def register(mcp: FastMCP) -> None:
         """
         combined_filters: list = list(filter or [])
         if combo_manual_name_id:
+            # Этап 301. Фильтр уходил по `combo_manual_name_id` — поля с таким
+            # именем нет: в `combo_manual_items` колонка называется
+            # `combo_manual_id`, и связь `comboManualName` в модели ExtJS идёт
+            # через неё же. Ветменеджер отвечал на это `HTTP 406 — Invalid
+            # filter item name`, то есть инструмент не мог вернуть ничего
+            # вообще. Имя параметра оставлено прежним: для вызывающего это
+            # действительно идентификатор родительского справочника.
             combined_filters.append(
-                _filter_eq("combo_manual_name_id", combo_manual_name_id)
+                _filter_eq("combo_manual_id", combo_manual_name_id)
             )
         return await crud_list(
             "/rest/api/ComboManualItem", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["comboManualItem"],
         )
 
     @mcp.tool

@@ -25,6 +25,7 @@ def register(mcp: FastMCP) -> None:
         """
         return await crud_list(
             "/rest/api/GoodGroup", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["goodGroup"],
         )
 
     @mcp.tool
@@ -88,6 +89,7 @@ def register(mcp: FastMCP) -> None:
         """
         return await crud_list(
             "/rest/api/PartyAccount", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["partyAccount"],
         )
 
     @mcp.tool
@@ -114,6 +116,7 @@ def register(mcp: FastMCP) -> None:
         """
         return await crud_list(
             "/rest/api/PartyAccountDoc", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["partyAccountDoc"],
         )
 
     @mcp.tool
@@ -140,6 +143,7 @@ def register(mcp: FastMCP) -> None:
         """
         return await crud_list(
             "/rest/api/StoreDocument", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["storeDocument"],
         )
 
     @mcp.tool
@@ -166,6 +170,7 @@ def register(mcp: FastMCP) -> None:
         """
         return await crud_list(
             "/rest/api/Suppliers", limit=limit, offset=offset, sort=sort, filters=filter,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["suppliers"],
         )
 
     @mcp.tool

@@ -36,6 +36,11 @@ def test_filter_allowlists_match_real_probe_artifacts():
     artifacts = [
         json.loads((artifact_dir / "filter-contracts-finance.json").read_text()),
         json.loads((artifact_dir / "filter-contracts-list.json").read_text()),
+        # Этап 235.7: отдельный артефакт повторной пробы 04.09.2026 по семи
+        # сущностям, у которых 23.08 не было записей. Отдельным файлом, а не
+        # правкой прежнего: у них разная дата прогона, и смешивать их значило
+        # бы приписать старой пробе то, чего она не видела.
+        json.loads((artifact_dir / "filter-contracts-unprobed-2026-09-04.json").read_text()),
     ]
     expected = {}
     for artifact in artifacts:
