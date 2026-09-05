@@ -104,6 +104,40 @@ def _deduplicate_medical_card_patient(card: dict) -> None:
     card.pop("patient", None)
 
 
+def _compact_invoice(invoice: dict) -> None:
+    """Этап 224. Убрать из счёта то, что в анкете уже есть отдельным разделом.
+
+    Замер на стенде: у питомца с четырьмя счетами запись владельца приезжала
+    шесть раз, запись питомца — пять. Оба — субъект самой анкеты, и повторять
+    их внутри каждого счёта незачем.
+    """
+    invoice.pop("client", None)
+    invoice.pop("pet", None)
+
+
+def _compact_invoice_line(line: dict) -> dict:
+    """Позиция счёта без повтора самого счёта и без полных справочников.
+
+    `invoice_documents[].document` — это родительский счёт целиком: счёт с двумя
+    позициями содержал сам себя трижды. Справочники товара и цены сжимаются до
+    того, ради чего позицию читают: что продали, почём и сколько.
+    """
+    good = line.get("good") if isinstance(line.get("good"), dict) else {}
+    sale_param = line.get("goodSaleParam") if isinstance(line.get("goodSaleParam"), dict) else {}
+    line.pop("document", None)
+    line.pop("good", None)
+    line.pop("goodSaleParam", None)
+    # Пустое поле не добавляется: `good_title: null` в ответе — это шум, из
+    # которого агент не узнаёт ничего, кроме того, что мы что-то не нашли.
+    if good.get("title"):
+        line["good_title"] = good["title"]
+    if sale_param.get("price_formation"):
+        # Этап 298 показал, что цена позиции может быть выведена из наценки, а не
+        # задана: для разбора счёта это существенно, а стоит одно поле.
+        line["price_formation"] = sale_param.get("price_formation")
+    return line
+
+
 async def fetch(pet_id: int) -> dict:
     """Build a comprehensive pet profile.
 
@@ -153,6 +187,8 @@ async def fetch(pet_id: int) -> dict:
         }
     if not isinstance(pet_data, dict) or not pet_data.get("id"):
         raise NotFoundError(f"Pet {pet_id} not found")
+    # Владелец есть отдельным разделом верхнего уровня — вложенная копия лишняя.
+    pet_data.pop("owner", None)
 
     medical_cards_params = build_list_query_params(
         limit=_MEDICAL_CARDS_LIMIT,
@@ -291,6 +327,9 @@ async def fetch(pet_id: int) -> dict:
 
     invoices_raw, invoices_total = _extract_rows(invoices_payload, "invoice")
     invoices = _sort_invoices(invoices_raw)[:_INVOICE_RESULT_LIMIT]
+    for invoice in invoices:
+        if isinstance(invoice, dict):
+            _compact_invoice(invoice)
     invoice_document_errors: dict[str, dict] = {}
     if invoices:
         doc_sections = []
@@ -325,7 +364,10 @@ async def fetch(pet_id: int) -> dict:
             for invoice in invoices:
                 invoice_id = str(invoice.get("id") or "")
                 docs, total = docs_by_invoice_id.get(invoice_id, ([], None))
-                invoice["invoice_documents"] = docs
+                invoice["invoice_documents"] = [
+                    _compact_invoice_line(doc) for doc in docs if isinstance(doc, dict)
+                ]
+                docs = invoice["invoice_documents"]
                 invoice["invoice_documents_total"] = total
                 invoice["invoice_documents_truncated"] = (
                     total is not None and total > len(docs)
@@ -362,6 +404,40 @@ async def fetch(pet_id: int) -> dict:
         "last_vaccination_date": last_vaccination_date,
         "next_vaccination_date": next_vaccination_date,
     }
+    # Этап 224.3. Сказать, чего в ответе нет и как это взять. Молчаливое
+    # отсутствие агент читает как «данных нет» — тот же класс, что этапы 296
+    # и 301, где неверная или недостающая подсказка стоила неполного ответа
+    # человеку.
+    more_details: list[dict] = []
+    if result["medical_cards_truncated"]:
+        more_details.append({
+            "section": "medical_cards",
+            "shown": result["medical_cards_returned"],
+            "total": medical_cards_total,
+            "tool": "get_medical_cards_by_date",
+            "note": (
+                f"Показаны последние {result['medical_cards_returned']} записей "
+                f"питомца {pet_id}. Остальные — отдельным запросом за нужный период."
+            ),
+        })
+    if invoices_total is not None and invoices_total > len(invoices):
+        more_details.append({
+            "section": "invoices",
+            "shown": len(invoices),
+            "total": invoices_total,
+            "tool": "get_invoices",
+            "arguments": {"pet_id": pet_id},
+            "note": "Показаны последние счета; за остальными — get_invoices с pet_id.",
+        })
+    more_details.append({
+        "section": "invoice_documents",
+        "tool": "get_invoice_documents",
+        "note": (
+            "Позиции счёта сжаты до названия, цены и количества. Полные "
+            "справочники товара и цены — get_invoice_documents по нужному счёту."
+        ),
+    })
+    result["more_details"] = more_details
     if section_errors:
         result["partial"] = True
         result["section_errors"] = section_errors

@@ -583,7 +583,9 @@ async def test_get_pet_profile_returns_owner_medical_cards_and_invoice_line_item
     assert [row["id"] for row in payload["last_medical_cards"]] == [905, 904, 903, 902, 901]
     assert [invoice["id"] for invoice in payload["last_invoices"]] == [306, 305, 304, 303, 302]
     assert payload["last_invoices_total"] == 6
-    assert payload["last_invoices"][0]["invoice_documents"][0]["good"]["title"] == "Осмотр"
+    # Этап 224: позиция счёта сжата — вместо полного справочника товара
+    # остаётся название, ради которого его и читали.
+    assert payload["last_invoices"][0]["invoice_documents"][0]["good_title"] == "Осмотр"
     assert payload["last_invoices"][0]["invoice_documents_total"] == 1
     assert payload["last_invoices"][0]["invoice_documents_truncated"] is False
     invoice_sort = invoice_route.calls.last.request.url.params["sort"]
