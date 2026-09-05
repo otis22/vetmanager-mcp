@@ -259,6 +259,10 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
     "update_admission": (SCOPE_ADMISSIONS_WRITE,),
     "update_client": (SCOPE_CLIENTS_WRITE,),
     "update_good": (SCOPE_INVENTORY_WRITE,),
+    # Этап 298. Цена продажи видна клиентам клиники, поэтому инструмент без
+    # `confirm=true` ничего не пишет; право доступа то же, что у остальных
+    # изменений номенклатуры.
+    "update_good_sale_price": (SCOPE_INVENTORY_WRITE,),
     "update_hospitalization": (SCOPE_MEDICAL_CARDS_WRITE,),
     "update_invoice": (SCOPE_FINANCE_WRITE,),
     "update_medical_card": (SCOPE_MEDICAL_CARDS_WRITE,),

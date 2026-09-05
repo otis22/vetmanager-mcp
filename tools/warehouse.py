@@ -1,11 +1,24 @@
 """Warehouse/inventory entity tools: GoodGroup, GoodSaleParam, PartyAccount,
 PartyAccountDoc, StoreDocument, Suppliers."""
 
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+
 from fastmcp import FastMCP
+from exceptions import ToolInputError, reportable_error
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
+
+# Этап 298. Сколько строк цены один вызов вправе переписать. Больше — работа
+# для отчёта и рук клиники, а не для одного вызова агента: цену видят клиенты,
+# и откатывать массовую ошибку придётся тоже руками.
+_PRICE_UPDATE_ROW_LIMIT = 50
+# Сколько строк инструмент вообще согласен прочитать, прежде чем сказать, что
+# такая переоценка делается не одним вызовом.
+_PRICE_UPDATE_FETCH_LIMIT = 500
+_PRICE_SCOPES = ("row", "good", "group")
+_MONEY = Decimal("0.01")
 
 
 def register(mcp: FastMCP) -> None:
@@ -213,6 +226,308 @@ def register(mcp: FastMCP) -> None:
         if note:
             payload["note"] = note
         return await crud_create("/rest/api/Suppliers", payload)
+
+    def _price_row(payload: dict) -> dict:
+        data = payload.get("data", {}) if isinstance(payload, dict) else {}
+        row = data.get("goodSaleParam") if isinstance(data, dict) else None
+        if not isinstance(row, dict) or not row.get("id"):
+            raise reportable_error("Vetmanager returned no sale parameter record.")
+        return row
+
+    def _caller_number(value, *, field: str) -> Decimal:
+        """Число от вызывающего — отказ, а не падение.
+
+        Внешнее ревью (finding medium): `Decimal(str(float("inf")))` доходит до
+        `quantize` и поднимает `InvalidOperation` — это боевой crash, а не
+        контролируемый отказ.
+        """
+        try:
+            number = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ToolInputError(f"{field} must be a decimal number, got {value!r}")
+        if not number.is_finite():
+            raise ToolInputError(f"{field} must be a finite number, got {value!r}")
+        return number
+
+    def _apply_change(current: Decimal, new_price, change_percent) -> Decimal:
+        if new_price:
+            target = _caller_number(new_price, field="new_price")
+        else:
+            percent = _caller_number(change_percent, field="change_percent")
+            target = current * (Decimal("1") + percent / Decimal("100"))
+        target = target.quantize(_MONEY, rounding=ROUND_HALF_UP)
+        if target <= 0:
+            raise ToolInputError("Resulting price must be positive.")
+        return target
+
+    def _sale_band(price: Decimal, row: dict) -> dict:
+        """Коридор скидки и наценки при продаже — не ограничение на цену.
+
+        `min_price` и `max_price` в Ветменеджере — **проценты**, а не рубли:
+
+            $minPrice = $price - $price * $min_price / 100;
+            $maxPrice = $price + $price * $max_price / 100;
+
+        (`GoodController.php`; миграция 2014 года
+        `m140311_081943_update_good_sets_max_min_to_percents` перевела старые
+        абсолютные значения в проценты.) Коридор считается от текущей цены,
+        то есть двигается вместе с ней — запретить им установку новой цены
+        нельзя, можно только показать последствие.
+        """
+        min_pct = _money(row.get("min_price") or 0, field="min_price")
+        max_pct = _money(row.get("max_price") or 0, field="max_price")
+        return {
+            "min": str((price - price * min_pct / 100).quantize(_MONEY, rounding=ROUND_HALF_UP)),
+            "max": str((price + price * max_pct / 100).quantize(_MONEY, rounding=ROUND_HALF_UP)),
+            "min_percent": str(min_pct),
+            "max_percent": str(max_pct),
+            "note": (
+                "min_price и max_price — проценты отклонения от цены, "
+                "а не рубли: это допустимая скидка и наценка при продаже, "
+                "а не ограничение на саму цену."
+            ),
+        }
+
+    def _money(value, *, field: str) -> Decimal:
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            raise reportable_error(f"Sale parameter carries an unusable {field}: {value!r}")
+
+    async def _all_rows(endpoint: str, key: str, filters: list, what: str) -> list[dict]:
+        """Все строки, а не первая страница.
+
+        Внешнее ревью 05.09.2026 (finding high): выборка шла одной страницей по
+        100 и игнорировала `totalCount`. На большой группе превью было бы
+        неполным, а обновление — частичным, причём молча. Для цен молчаливая
+        неполнота хуже отказа: половина товаров переоценена, половина нет, и
+        никто об этом не знает.
+        """
+        collected: list[dict] = []
+        offset = 0
+        while True:
+            payload = await crud_list(
+                endpoint, limit=100, offset=offset, filters=filters,
+                allowed_filter_properties=FILTER_FIELDS_BY_ENTITY[key],
+            )
+            data = payload.get("data", {}) if isinstance(payload, dict) else {}
+            rows = data.get(key) if isinstance(data, dict) else None
+            batch = [row for row in rows or [] if isinstance(row, dict)]
+            collected.extend(batch)
+            try:
+                total = int(data.get("totalCount"))
+            except (TypeError, ValueError):
+                total = len(collected)
+            if total > _PRICE_UPDATE_FETCH_LIMIT:
+                raise ToolInputError(
+                    f"{what}: Vetmanager reports {total} records, above the "
+                    f"{_PRICE_UPDATE_FETCH_LIMIT} this tool will read. A repricing that "
+                    "wide is done from a report and by hand — a partial pass over prices "
+                    "is worse than none."
+                )
+            offset += len(batch)
+            if not batch or offset >= total:
+                return collected
+
+    async def _rows_for_good(good_id: int, clinic_id: int) -> list[dict]:
+        filters = [_filter_eq("good_id", good_id)]
+        if clinic_id:
+            filters.append(_filter_eq("clinic_id", clinic_id))
+        return await _all_rows(
+            "/rest/api/goodSaleParam", "goodSaleParam", filters,
+            f"price rows of good {good_id}",
+        )
+
+    async def _goods_in_group(group_id: int) -> list[dict]:
+        return await _all_rows(
+            "/rest/api/good", "good", [_filter_eq("group_id", group_id)],
+            f"goods in group {group_id}",
+        )
+
+    @mcp.tool
+    async def update_good_sale_price(
+        sale_param_id: int,
+        new_price: float = 0.0,
+        change_percent: float = 0.0,
+        scope: str = "row",
+        clinic_id: int = 0,
+        confirm: bool = False,
+    ) -> dict:
+        """Change a sale price. Shows what would change and writes only on confirm.
+
+        A price is visible to the clinic's own customers, so this tool does
+        nothing by default: without `confirm=True` it returns a preview and
+        sends no write request at all.
+
+        A good does NOT have one price. `good_sale_param` holds a row per clinic
+        and per sale unit, so the preview lists the update variants and how many
+        rows each one touches. Rows where `price_formation` is `increase` derive
+        their price from a markup: writing `price` there looks done and changes
+        nothing, so such a row is refused.
+
+        Args:
+            sale_param_id: ID of the sale parameter row to start from
+                (`get_good_sale_params` lists them for a good).
+            new_price: Absolute new price. Not allowed for scope='group':
+                one price for every good in a group is almost never meant.
+            change_percent: Relative change, e.g. 10 raises by 10%, -5 lowers
+                by 5%. Use this for a group. Mutually exclusive with new_price.
+            scope: 'row' — this row only; 'good' — every price row of this good;
+                'group' — every good in this good's group.
+            clinic_id: Restrict 'good' or 'group' to a single clinic (0 = all).
+            confirm: Must be true to actually write. Without it nothing changes.
+        """
+        if scope not in _PRICE_SCOPES:
+            raise ToolInputError(f"scope must be one of {list(_PRICE_SCOPES)}, got '{scope}'")
+        if bool(new_price) == bool(change_percent):
+            raise ToolInputError(
+                "Pass exactly one of new_price or change_percent: "
+                "two ways to say the same number means guessing which one was meant."
+            )
+        if new_price and scope == "group":
+            raise ToolInputError(
+                "scope='group' does not accept new_price: setting every good in a "
+                "group to the same price is almost never intended. Use change_percent."
+            )
+        if new_price < 0 or (new_price == 0 and change_percent == 0):
+            raise ToolInputError("new_price must be positive.")
+
+        row = _price_row(await crud_get_by_id("/rest/api/goodSaleParam", sale_param_id))
+        if str(row.get("price_formation") or "") == "increase":
+            raise ToolInputError(
+                f"Sale parameter {sale_param_id} derives its price from a markup "
+                "(price_formation='increase'), so writing price would change nothing. "
+                "Change the markup instead."
+            )
+
+        current = _money(row.get("price"), field="price")
+        target = _apply_change(current, new_price, change_percent)
+
+        good_id = int(row.get("good_id") or 0)
+        good = {}
+        if good_id:
+            good_payload = await crud_get_by_id("/rest/api/good", good_id)
+            good_data = good_payload.get("data", {}) if isinstance(good_payload, dict) else {}
+            good = good_data.get("good") if isinstance(good_data, dict) else {}
+            good = good if isinstance(good, dict) else {}
+        good_rows = await _rows_for_good(good_id, clinic_id) if good_id else [row]
+        group_id = int(good.get("group_id") or 0)
+        group_goods = await _goods_in_group(group_id) if group_id else []
+
+        # Вызов должен повторяться буквально: без самой величины он падает на
+        # «Pass exactly one of new_price or change_percent» (внешнее ревью).
+        _change_args = (
+            {"new_price": new_price} if new_price else {"change_percent": change_percent}
+        )
+        variants = [
+            {
+                "scope": "row",
+                "rows": 1,
+                "note": (
+                    f"Только эта строка: клиника {row.get('clinic_id')}, "
+                    f"единица продажи {row.get('unit_sale_id')}."
+                ),
+                "call": dict(_change_args, sale_param_id=sale_param_id, scope="row", confirm=True),
+            },
+            {
+                "scope": "good",
+                "rows": len(good_rows),
+                "note": (
+                    f"Все строки цены товара {good_id}"
+                    + (f" в клинике {clinic_id}." if clinic_id else " во всех клиниках.")
+                ),
+                "call": dict(_change_args, sale_param_id=sale_param_id, scope="good", confirm=True),
+            },
+            {
+                "scope": "group",
+                "goods": len(group_goods),
+                "note": (
+                    f"Все товары группы {group_id} — только процентом."
+                    if group_id else "Группа у товара не указана."
+                ),
+                "call": {
+                    "sale_param_id": sale_param_id, "scope": "group",
+                    "change_percent": change_percent or "укажите процент", "confirm": True,
+                },
+            },
+        ]
+
+        preview = {
+            "applied": False,
+            "sale_param_id": sale_param_id,
+            "good_id": good_id,
+            "good_title": good.get("title"),
+            "clinic_id": row.get("clinic_id"),
+            "unit_sale_id": row.get("unit_sale_id"),
+            "status": row.get("status"),
+            "price_formation": row.get("price_formation"),
+            "current_price": row.get("price"),
+            "new_price": str(target),
+            "sale_band": _sale_band(target, row),
+            "scope": scope,
+            "variants": variants,
+            "next_step": (
+                "Ничего не изменено. Повторите вызов с confirm=true и нужным scope."
+            ),
+        }
+        if not confirm:
+            return preview
+
+        if scope == "row":
+            targets = [row]
+        elif scope == "good":
+            targets = good_rows
+        else:
+            targets = []
+            for member in group_goods:
+                member_id = int(member.get("id") or 0)
+                if member_id:
+                    targets.extend(await _rows_for_good(member_id, clinic_id))
+
+        writable = [
+            item for item in targets
+            if str(item.get("price_formation") or "") != "increase"
+        ]
+        skipped_derived = [
+            item.get("id") for item in targets
+            if str(item.get("price_formation") or "") == "increase"
+        ]
+        if len(writable) > _PRICE_UPDATE_ROW_LIMIT:
+            raise ToolInputError(
+                f"This variant touches {len(writable)} price rows, above the "
+                f"{_PRICE_UPDATE_ROW_LIMIT}-row limit for a single call. A repricing "
+                "that large is done from a report and by hand, not by one agent call."
+            )
+
+        updated: list[dict] = []
+        for item in writable:
+            item_id = int(item.get("id") or 0)
+            if not item_id:
+                continue
+            before = _money(item.get("price"), field="price")
+            item_target = target if new_price else _apply_change(before, 0, change_percent)
+            await crud_update("/rest/api/goodSaleParam", item_id, {"price": str(item_target)})
+            # «Стало» читается заново: эхо запроса подтверждает только то, что мы
+            # его отправили.
+            after = _price_row(await crud_get_by_id("/rest/api/goodSaleParam", item_id))
+            updated.append({
+                "sale_param_id": item_id,
+                "clinic_id": item.get("clinic_id"),
+                "before": item.get("price"),
+                "after": after.get("price"),
+            })
+
+        first = updated[0] if updated else {}
+        return {
+            "applied": True,
+            "scope": scope,
+            "updated_rows": len(updated),
+            "sale_param_id": sale_param_id,
+            "before": first.get("before"),
+            "after": first.get("after"),
+            "updated": updated,
+            "skipped_derived_price_rows": skipped_derived,
+        }
 
     @mcp.tool
     async def update_supplier(

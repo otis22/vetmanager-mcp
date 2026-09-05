@@ -573,6 +573,7 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "update_invoice": "invoice",
     "create_good": "good",
     "update_good": "good",
+    "update_good_sale_price": "good",
     "update_user": "user",
     "create_supplier": "supplier",
     "update_supplier": "supplier",

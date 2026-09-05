@@ -173,6 +173,11 @@ _WRITE_SCOPE_BY_ENTITY = {
     "admission": SCOPE_ADMISSIONS_WRITE,
     "client": SCOPE_CLIENTS_WRITE,
     "good": SCOPE_INVENTORY_WRITE,
+    # Этап 298: цена продажи живёт в отдельной сущности, и её запись — то же
+    # право на номенклатуру. Без этой строки второй слой fail-closed (этап 274)
+    # отказывает записи как незамапленной — что он и сделал, когда инструмент
+    # появился раньше сопоставления.
+    "goodsaleparam": SCOPE_INVENTORY_WRITE,
     "hospital": SCOPE_MEDICAL_CARDS_WRITE,
     "invoicedocument": SCOPE_FINANCE_WRITE,
     "invoice": SCOPE_FINANCE_WRITE,
