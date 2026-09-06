@@ -27,7 +27,12 @@ from agent_feedback_service import (
     validate_agent_playbook,
     validate_match_rules_json,
 )
-from exceptions import VetmanagerError, VetmanagerUpstreamUnavailable, reportable_error
+from exceptions import (
+    ToolInputError,
+    VetmanagerError,
+    VetmanagerUpstreamUnavailable,
+    reportable_error,
+)
 from filters import SortPropertyValidationError
 from scripts.seed_known_issues import SEED_ISSUES
 
@@ -84,27 +89,11 @@ CORPUS: tuple[RealFailure, ...] = (
         VetmanagerError("Upstream API error (HTTP 500) — No Clinic selected", 500),
         "write-needs-clinic", "PYTHON-15",
     ),
-    # --- Report AI: сохранение из неподтверждённого статуса ---
-    RealFailure(
-        4, "save_report_ai_job_as_report",
-        reportable_error(
-            "Upstream API error (HTTP 409): INVALID_TRANSITION — "
-            "Сохранение недоступно из статуса 'needs_confirmation'"
-        ),
-        "report-ai-save-needs-confirmation", "PYTHON-W",
-    ),
     # --- экспорт отчёта ---
     RealFailure(
         4, "get_report_export_download",
         reportable_error("Getting report export file failed HTTP 404."),
         "report-export-not-available", "PYTHON-H",
-    ),
-    RealFailure(
-        2, "start_report_export",
-        reportable_error(
-            "Report is not REST-exportable: Vetmanager denied StartReport for this report_id."
-        ),
-        "report-export-not-available", "PYTHON-N",
     ),
     # --- то, на что правила в этом этапе быть НЕ должно ---
     RealFailure(
@@ -116,6 +105,31 @@ CORPUS: tuple[RealFailure, ...] = (
         657, "get_invoice_by_id",
         VetmanagerError("Timeout requesting Vetmanager upstream. Please retry shortly.", 504),
         None, "таймаут — там же",
+    ),
+)
+
+# Эти два класса были в корпусе как покрываемые, пока ревью дифа не показало,
+# что покрыть их нечем: сегодня они не доходят до механизма по замыслу.
+# `INVALID_TRANSITION` стал `ToolInputError` этапом 280 (04.09.2026), отказ
+# `not accessible for rest` при заданном вызывающим report_id — этапом 265.6
+# (27.08.2026). Оба события в Sentry датированы **раньше** этих правок и потому
+# несут подпись механизма: корпус показывает поведение кода на момент события,
+# а не сегодняшнее.
+UNREACHABLE_BY_DESIGN: tuple[RealFailure, ...] = (
+    RealFailure(
+        4, "save_report_ai_job_as_report",
+        ToolInputError(
+            "Upstream API error (HTTP 409): INVALID_TRANSITION — "
+            "Сохранение недоступно из статуса 'needs_confirmation'"
+        ),
+        None, "PYTHON-W, с 04.09.2026 это ошибка вызывающего",
+    ),
+    RealFailure(
+        2, "start_report_export",
+        ToolInputError(
+            "Report is not REST-exportable: Vetmanager denied StartReport for this report_id."
+        ),
+        None, "PYTHON-N, с 27.08.2026 это ошибка вызывающего",
     ),
 )
 
@@ -212,3 +226,41 @@ def test_the_older_rules_still_match_what_they_were_written_for() -> None:
         assert match_rules(json.dumps(item.match_rules), incident), (
             f"{item.slug} не узнаёт собственный отказ"
         )
+
+
+@pytest.mark.parametrize(
+    "failure",
+    UNREACHABLE_BY_DESIGN,
+    ids=[f.note for f in UNREACHABLE_BY_DESIGN],
+)
+def test_a_caller_mistake_gets_no_rule_because_it_gets_no_injection(failure: RealFailure) -> None:
+    """Правило под отказ, который до механизма не доходит, — правило на бумаге.
+
+    `should_skip_report_hint` пропускает `ToolInputError` мимо
+    `augment_tool_error` целиком: агент не получает ни приглашения сообщить о
+    проблеме, ни playbook. Пока это так, писать сюда правила нельзя — они
+    выглядели бы рабочими и молчали на бою (этап 307 разбирает, надо ли делить
+    эти две вещи).
+    """
+    assert _rules_matching(failure) == set(), (
+        f"правило заведено на отказ, который до механизма не доходит: {failure.note}"
+    )
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [f for f in CORPUS if f.covered_by],
+    ids=[f"{f.tool}-{f.note}" for f in CORPUS if f.covered_by],
+)
+def test_exactly_one_rule_answers_each_failure(failure: RealFailure) -> None:
+    """Совпасть должно ровно одно правило.
+
+    Найдено ревью дифа: проверки «нужное правило есть среди совпавших» мало.
+    Кандидат выбирается первым по `priority`, и второе, более широкое правило
+    молча заберёт отказ себе — тест при этом останется зелёным.
+    """
+    matched = _rules_matching(failure)
+
+    assert matched == {failure.covered_by}, (
+        f"на {failure.note} ответило больше одного правила: {sorted(matched)}"
+    )

@@ -287,50 +287,17 @@ SEED_ISSUES: tuple[SeedIssue, ...] = (
         workaround="Pass clinic_id explicitly on write calls.",
     ),
     SeedIssue(
-        slug="report-ai-save-needs-confirmation",
-        title="[seed:report-ai-save-needs-confirmation] Report AI save blocked by needs_confirmation",
-        category="contract",
-        severity="medium",
-        priority=72,
-        related_tool=None,
-        match_rules={
-            "version": 1,
-            "all": [
-                {
-                    "field": "normalized_error_text",
-                    "op": "contains_all",
-                    "value": ["invalid_transition", "needs_confirmation"],
-                },
-            ],
-        },
-        agent_playbook=_playbook(
-            "The report cannot be saved while its job waits for a candidate to be confirmed.",
-            steps=[
-                "Read the job with get_report_ai_job and look at its candidates.",
-                "Confirm the right one with confirm_report_ai_job_candidate, or reject it if none matches.",
-                "Save only after the job leaves needs_confirmation.",
-            ],
-            do_not_do=[
-                "Do not create a second job for the same intent — the first one is still waiting.",
-            ],
-            tools=["get_report_ai_job", "confirm_report_ai_job_candidate", "save_report_ai_job_as_report"],
-            safe_to_retry=False,
-        ),
-        public_summary="Saving a Report AI report requires confirming its candidate first.",
-        workaround="Confirm or reject the candidate, then save.",
-    ),
-    SeedIssue(
         slug="report-export-not-available",
         title="[seed:report-export-not-available] Report cannot be exported over REST",
         category="bug",
         severity="medium",
         priority=74,
         related_tool=None,
-        match_rules=_text_rules(
-            "getting report export file failed",
-            "not rest-exportable",
-            "denied startreport",
-        ),
+        # Только достижимый маркер. «not rest-exportable» и «denied startreport»
+        # с 27.08.2026 (этап 265.6) возвращаются как `ToolInputError`, когда
+        # report_id назвал сам вызывающий, — а такой отказ намеренно проходит
+        # мимо механизма. Правило на них выглядело бы рабочим и не сработало.
+        match_rules=_text_rules("getting report export file failed"),
         agent_playbook=_playbook(
             "Vetmanager did not produce the export file for this report.",
             steps=[
