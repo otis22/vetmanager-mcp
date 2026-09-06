@@ -366,3 +366,47 @@ async def test_a_failed_lookup_does_not_pay_for_a_second_database_trip(
         await wrapped()
 
     assert auto_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_the_auto_report_shows_the_same_code_the_match_used(wrap_failing_tool) -> None:
+    """Разбирающий должен видеть тот код, по которому проблема и нашлась.
+
+    Найдено вторым прогоном ревью дифа: отпечаток считался по коду апстрима, а
+    в отчёт ложилось имя python-класса. Матчинг это не ломало — он идёт по
+    отпечатку, — но человек при разборе видел один код, а сработал другой.
+    """
+    from storage_models import AgentFeedbackReport, KnownIssue
+
+    rules = json.dumps({
+        "version": 1,
+        "all": [{"field": "error_code", "op": "eq", "value": "INVALID_FILTER"}],
+    })
+    playbook = json.dumps({
+        "version": 1,
+        "summary": "Upstream rejected the filter.",
+        "steps": ["Check the allowed filter fields for this entity."],
+        "do_not_do": ["Do not retry the same filter name."],
+        "recommended_tool_sequence": ["get_cassa_closes"],
+        "safe_to_retry": False,
+    })
+    async with wrap_failing_tool.session_factory() as session:
+        session.add(KnownIssue(
+            status="workaround_available", category="contract", severity="medium",
+            title="Апстрим отверг имя поля фильтра", related_tool=None,
+            match_rules_json=rules, agent_playbook_json=playbook,
+        ))
+        await session.commit()
+
+    wrapped = wrap_failing_tool(
+        VetmanagerError("Upstream API error (HTTP 406)", 406, error_code="INVALID_FILTER"),
+        tool_name="get_cassa_closes",
+    )
+
+    with pytest.raises(ToolError):
+        await wrapped()
+
+    async with wrap_failing_tool.session_factory() as session:
+        reports = (await session.execute(select(AgentFeedbackReport))).scalars().all()
+
+    assert [report.error_code for report in reports] == ["INVALID_FILTER"]

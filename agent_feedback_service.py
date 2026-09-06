@@ -907,7 +907,10 @@ async def write_auto_feedback_event(*, credentials, tool_name: str, exc: BaseExc
             related_tool=tool_name,
             summary=f"Matched known issue during {tool_name} failure",
             details="Auto-event created for a tool failure matching a verified known issue.",
-            error_code=exc.__class__.__name__,
+            # Этап 306: тот же код, по которому проблема и нашлась. Отпечаток
+            # считается из инцидента, а в отчёт ложилось имя python-класса —
+            # разбирающий видел один код, а сработал другой.
+            error_code=incident.error_code,
             error_fingerprint_hash=fingerprint_hash,
             known_issue_id=known_issue_id,
             redaction_version=REDACTION_VERSION,
