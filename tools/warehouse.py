@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from fastmcp import FastMCP
 from exceptions import ToolInputError, reportable_error
-from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq
+from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, in_ as _filter_in
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
@@ -288,6 +288,13 @@ def register(mcp: FastMCP) -> None:
             ),
         }
 
+    def _is_writable(row: dict) -> bool:
+        """Строка с `increase` берёт цену из наценки — запись туда бесследна."""
+        return str(row.get("price_formation") or "") != "increase"
+
+    def _writable_count(rows: list[dict]) -> int:
+        return sum(1 for row in rows if _is_writable(row))
+
     def _money(value, *, field: str) -> Decimal:
         try:
             return Decimal(str(value))
@@ -337,6 +344,54 @@ def register(mcp: FastMCP) -> None:
             "/rest/api/goodSaleParam", "goodSaleParam", filters,
             f"price rows of good {good_id}",
         )
+
+    async def _count_rows(filters: list) -> int | None:
+        """Сколько строк подходит под фильтр — без вычитывания самих строк.
+
+        Этап 298.7. Число строк группы нужно **в превью**, где строки не
+        читаются: их читает только запись. Обход по товару стоил бы запроса на
+        товар — 57 запросов ради одного числа на группе 66 стенда `devtr6`.
+        Апстрим принимает `IN` списком, и `totalCount` при `limit=1` отвечает
+        на вопрос целиком.
+        """
+        payload = await crud_list(
+            "/rest/api/goodSaleParam", limit=1, offset=0, filters=filters,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["goodSaleParam"],
+        )
+        data = payload.get("data", {}) if isinstance(payload, dict) else {}
+        try:
+            return int(data.get("totalCount"))
+        except (TypeError, ValueError):
+            # Finding внешнего ревью 06.09.2026. Считать длину пришедшего
+            # списка здесь нельзя: запрос идёт с `limit=1`, и группа на 112
+            # строк дала бы единицу — вариант выглядел бы проходящим. «Не
+            # знаю» и «одна строка» должны различаться.
+            return None
+
+    async def _group_row_counts(
+        good_ids: list[int], clinic_id: int
+    ) -> tuple[int | None, int | None]:
+        """(всего строк, из них пишущихся) по товарам группы.
+
+        Пишущиеся считаются вычитанием строк с `price_formation='increase'`, а
+        не отдельным условием «не increase»: оператор `!=` по этому полю мы не
+        проверяли, а вычитание опирается только на равенство. Сходимость с тем,
+        как считает запись, проверена на `devtr6` 06.09.2026: 114 всего, 2
+        `increase`, и запись отказала ровно на 112.
+
+        Пустой список товаров запроса не делает: `IN []` апстрим отдаёт 500
+        (проверено там же), а `filters.in_` такой список и не построит.
+        """
+        if not good_ids:
+            return 0, 0
+        filters = [_filter_in("good_id", good_ids)]
+        if clinic_id:
+            filters.append(_filter_eq("clinic_id", clinic_id))
+        total = await _count_rows(filters)
+        derived = await _count_rows(filters + [_filter_eq("price_formation", "increase")])
+        if total is None or derived is None:
+            return None, None
+        return total, max(total - derived, 0)
 
     async def _goods_in_group(group_id: int) -> list[dict]:
         return await _all_rows(
@@ -412,66 +467,118 @@ def register(mcp: FastMCP) -> None:
             good = good if isinstance(good, dict) else {}
         good_rows = await _rows_for_good(good_id, clinic_id) if good_id else [row]
         group_id = int(good.get("group_id") or 0)
-        group_goods = await _goods_in_group(group_id) if group_id else []
+        # Товары группы нужны превью и групповой записи. Записи одной
+        # строки они не нужны — finding внешнего ревью 06.09.2026: путь
+        # записи не должен зависеть от запросов, которых не использует.
+        needs_group = not confirm or scope == "group"
+        group_goods = await _goods_in_group(group_id) if group_id and needs_group else []
 
-        # Вызов должен повторяться буквально: без самой величины он падает на
-        # «Pass exactly one of new_price or change_percent» (внешнее ревью).
-        _change_args = (
-            {"new_price": new_price} if new_price else {"change_percent": change_percent}
-        )
-        variants = [
-            {
-                "scope": "row",
-                "rows": 1,
-                "note": (
-                    f"Только эта строка: клиника {row.get('clinic_id')}, "
-                    f"единица продажи {row.get('unit_sale_id')}."
-                ),
-                "call": dict(_change_args, sale_param_id=sale_param_id, scope="row", confirm=True),
-            },
-            {
-                "scope": "good",
-                "rows": len(good_rows),
-                "note": (
-                    f"Все строки цены товара {good_id}"
-                    + (f" в клинике {clinic_id}." if clinic_id else " во всех клиниках.")
-                ),
-                "call": dict(_change_args, sale_param_id=sale_param_id, scope="good", confirm=True),
-            },
-            {
-                "scope": "group",
-                "goods": len(group_goods),
-                "note": (
-                    f"Все товары группы {group_id} — только процентом."
-                    if group_id else "Группа у товара не указана."
-                ),
-                "call": {
-                    "sale_param_id": sale_param_id, "scope": "group",
-                    "change_percent": change_percent or "укажите процент", "confirm": True,
-                },
-            },
-        ]
-
-        preview = {
-            "applied": False,
-            "sale_param_id": sale_param_id,
-            "good_id": good_id,
-            "good_title": good.get("title"),
-            "clinic_id": row.get("clinic_id"),
-            "unit_sale_id": row.get("unit_sale_id"),
-            "status": row.get("status"),
-            "price_formation": row.get("price_formation"),
-            "current_price": row.get("price"),
-            "new_price": str(target),
-            "sale_band": _sale_band(target, row),
-            "scope": scope,
-            "variants": variants,
-            "next_step": (
-                "Ничего не изменено. Повторите вызов с confirm=true и нужным scope."
-            ),
-        }
         if not confirm:
+            # Вызов должен повторяться буквально: без самой величины он падает на
+            # «Pass exactly one of new_price or change_percent» (внешнее ревью).
+            _change_args = (
+                {"new_price": new_price} if new_price else {"change_percent": change_percent}
+            )
+            # Этап 298.7. Вариант называет то, чем меряется предел, — строки. До
+            # этого групповой вариант выдавал число товаров и готовый вызов, а
+            # предел считал строки: на группе 66 стенда `devtr6` превью предлагало
+            # вызов, который сам же и отклонял (57 товаров, 112 строк, предел 50).
+            group_ids = [int(member.get("id") or 0) for member in group_goods if member.get("id")]
+            group_rows_total, group_rows_writable = await _group_row_counts(group_ids, clinic_id)
+            good_writable = _writable_count(good_rows)
+
+            def _variant(
+                variant_scope: str, *, rows: int | None, writable: int | None,
+                note: str, call, **extra
+            ) -> dict:
+                # Неизвестное число строк закрывает вариант так же, как
+                # превышение: предложить вызов, о котором нечего сказать,
+                # значит переложить проверку предела на клинику.
+                exceeds = writable is None or writable > _PRICE_UPDATE_ROW_LIMIT
+                if writable is None:
+                    note = (
+                        f"{note} Не предлагается: апстрим не вернул totalCount, "
+                        "и число строк неизвестно."
+                    )
+                elif exceeds:
+                    note = (
+                        f"{note} Не выполнится: {writable} строк при пределе "
+                        f"{_PRICE_UPDATE_ROW_LIMIT} за вызов. Сузьте до клиники "
+                        "(`clinic_id`) или делайте такую переоценку отчётом и руками."
+                    )
+                return {
+                    "scope": variant_scope,
+                    "rows": rows,
+                    "writable_rows": writable,
+                    "exceeds_limit": exceeds,
+                    "note": note,
+                    "call": None if exceeds else call,
+                    **extra,
+                }
+
+            variants = [
+                _variant(
+                    "row", rows=1, writable=_writable_count([row]),
+                    note=(
+                        f"Только эта строка: клиника {row.get('clinic_id')}, "
+                        f"единица продажи {row.get('unit_sale_id')}."
+                    ),
+                    call=dict(_change_args, sale_param_id=sale_param_id, scope="row", confirm=True),
+                ),
+                _variant(
+                    "good", rows=len(good_rows), writable=good_writable,
+                    note=(
+                        f"Все строки цены товара {good_id}"
+                        + (f" в клинике {clinic_id}." if clinic_id else " во всех клиниках.")
+                    ),
+                    call=dict(_change_args, sale_param_id=sale_param_id, scope="good", confirm=True),
+                ),
+                _variant(
+                    "group", rows=group_rows_total, writable=group_rows_writable,
+                    goods=len(group_goods),
+                    note=(
+                        (
+                            f"Все товары группы {group_id} — только процентом."
+                            if change_percent
+                            # Finding второго прогона ревью 06.09.2026: вызов с
+                            # «укажите процент» внутри — записка, а не вызов, и
+                            # повтор падает на типе. Непустой `call` означает
+                            # «выполнимо», значит здесь его быть не должно.
+                            else f"Все товары группы {group_id} — только процентом: "
+                                 "повторите вызов с `change_percent`."
+                        )
+                        if group_id else "Группа у товара не указана."
+                    ),
+                    call=(
+                        {
+                            "sale_param_id": sale_param_id, "scope": "group",
+                            "change_percent": change_percent, "confirm": True,
+                        }
+                        if group_ids and change_percent else None
+                    ),
+                ),
+            ]
+
+            preview = {
+                "applied": False,
+                "sale_param_id": sale_param_id,
+                "good_id": good_id,
+                "good_title": good.get("title"),
+                "clinic_id": row.get("clinic_id"),
+                "unit_sale_id": row.get("unit_sale_id"),
+                "status": row.get("status"),
+                "price_formation": row.get("price_formation"),
+                "current_price": row.get("price"),
+                "new_price": str(target),
+                "sale_band": _sale_band(target, row),
+                "scope": scope,
+                "variants": variants,
+                "next_step": (
+                    "Ничего не изменено. Повторите вызов с confirm=true и нужным scope."
+                ),
+            }
             return preview
+
 
         if scope == "row":
             targets = [row]
@@ -484,14 +591,8 @@ def register(mcp: FastMCP) -> None:
                 if member_id:
                     targets.extend(await _rows_for_good(member_id, clinic_id))
 
-        writable = [
-            item for item in targets
-            if str(item.get("price_formation") or "") != "increase"
-        ]
-        skipped_derived = [
-            item.get("id") for item in targets
-            if str(item.get("price_formation") or "") == "increase"
-        ]
+        writable = [item for item in targets if _is_writable(item)]
+        skipped_derived = [item.get("id") for item in targets if not _is_writable(item)]
         if len(writable) > _PRICE_UPDATE_ROW_LIMIT:
             raise ToolInputError(
                 f"This variant touches {len(writable)} price rows, above the "

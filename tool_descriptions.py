@@ -594,6 +594,28 @@ TOOL_ENTITY_MAP: dict[str, str] = {
 
 
 SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
+    # Этап 298.8. До 06.09.2026 инструмент уезжал в `tools/list` generic-строкой
+    # «Update an existing good / service catalog item»: ни цены, ни подтверждения,
+    # ни того, что группа переоценивается только процентом. От правки карточки
+    # товара он был неотличим, хотя весь смысл этапа 298 — в двух шагах.
+    "update_good_sale_price": (
+        "Change the sale price of a good or service. Two steps, always: the first "
+        "call returns a preview and writes nothing; only a repeat call with "
+        "confirm=true actually changes the price. Clients of the clinic see the new "
+        "price immediately, so never call it with confirm=true until the user has "
+        "seen the preview and agreed to a specific variant. The preview lists the "
+        "variants — 'row' (this one price row), 'good' (every price row of the good) "
+        "and 'group' (every good in the same group) — each with the "
+        "number of rows it would write and a ready call to repeat; a variant with "
+        "call=null cannot be run as offered. A group is repriced by percent only "
+        "(change_percent), never by an absolute price, and the percent applies to "
+        "each row's own price. Pass clinic_id to restrict 'good' or 'group' to a "
+        "single clinic; without it they cover every clinic. "
+        "Rows whose price comes from a markup "
+        "(price_formation='increase') are not written: change the markup instead. "
+        "Domain synonyms: цена продажи, прайс, переоценка, изменить цену, наценка, "
+        "price, repricing."
+    ),
     "report_problem": (
         "Report a suspected Vetmanager MCP tool, description, contract, or docs "
         "problem for developer triage. Call report_problem when a tool error is unclear "

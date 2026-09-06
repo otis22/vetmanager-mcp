@@ -118,6 +118,9 @@ async def test_preview_offers_variants_with_row_counts() -> None:
     assert variants["row"]["rows"] == 1
     assert variants["good"]["rows"] == 3, "у товара три строки цены"
     assert variants["group"]["goods"] == 2
+    # Этап 298.7: у группы тоже есть число строк — предел меряется строками, а
+    # не товарами, и вариант обязан называть ту же единицу, что и отказ.
+    assert "rows" in variants["group"]
     for variant in variants.values():
         assert "call" in variant, "вариант без готового вызова бесполезен"
 
@@ -180,7 +183,12 @@ async def test_variant_call_can_be_repeated_verbatim() -> None:
     for variant in answer["variants"]:
         call = variant["call"]
         if variant["scope"] == "group":
-            assert "change_percent" in call
+            # Этап 298.7: спросили абсолютной ценой — готового группового
+            # вызова нет. Прежняя версия клала сюда `change_percent="укажите
+            # процент"`, то есть проверка требовала ровно того вызова, который
+            # не выполняется: строка падает на типе `change_percent: float`.
+            assert call is None
+            assert "change_percent" in variant["note"]
         else:
             assert call.get("new_price") == 2500.0 or call.get("change_percent")
 
