@@ -797,10 +797,23 @@ async def write_known_issue_match_event(
 
 
 def build_incident_from_exception(tool_name: str, exc: BaseException) -> FeedbackIncident:
+    """Инцидент из живого исключения — со всем, что оно о себе знает.
+
+    Этап 306: у отказа апстрима есть HTTP-код и собственный код ошибки
+    (`VetmanagerError.status_code` / `.error_code`), и правило, написанное на
+    них, куда точнее подстроки в тексте. Пока такие отказы не доходили до
+    механизма, поля оставались пустыми и никто этого не замечал; найдено ревью
+    дифа. У нашего `ToolError` этих атрибутов нет — для него ничего не
+    меняется, и отпечатки прежних проблем остаются прежними.
+    """
+    status = getattr(exc, "status_code", None)
+    upstream_code = getattr(exc, "error_code", None)
     return FeedbackIncident(
         related_tool=tool_name,
-        error_code=exc.__class__.__name__,
-        error_excerpt=str(exc),
+        http_status=status if isinstance(status, int) else None,
+        error_code=upstream_code if isinstance(upstream_code, str) and upstream_code
+        else exc.__class__.__name__,
+        error_excerpt=str(exc) or exc.__class__.__name__,
         params_shape=None,
     )
 
@@ -919,12 +932,27 @@ async def _persist_injection_match_event(
         await session.commit()
 
 
-async def augment_tool_error(tool_name: str, credentials, exc: ToolError) -> ToolError:
+async def augment_tool_error(
+    tool_name: str,
+    credentials,
+    exc: ToolError,
+    *,
+    incident_source: BaseException | None = None,
+) -> ToolError:
+    """Подсказка про известную проблему поверх отказа.
+
+    `exc` — то, что увидит вызывающий; `incident_source` — то, по чему ищется
+    проблема. Обычно это одно и то же. Расходятся они на пути отказа апстрима
+    (этап 306): наружу уходит переупакованный `ToolError`, а искать надо по
+    исходному исключению, у которого есть HTTP-код и код ошибки апстрима.
+    """
+    source = incident_source if incident_source is not None else exc
     hint = REPORT_HINT.format(tool_name=tool_name)
     known_issue: KnownIssueMatch | None = None
+    lookup_failed = False
     try:
         known_issue = await asyncio.wait_for(
-            lookup_known_issue_for_error(tool_name, exc),
+            lookup_known_issue_for_error(tool_name, source),
             timeout=KNOWN_ISSUE_LOOKUP_TIMEOUT_SECONDS,
         )
         record_known_issue_lookup(
@@ -932,6 +960,7 @@ async def augment_tool_error(tool_name: str, credentials, exc: ToolError) -> Too
             outcome="matched" if known_issue is not None else "no_match",
         )
     except Exception:
+        lookup_failed = True
         record_known_issue_lookup(tool_name=tool_name, outcome="lookup_failed")
         RUNTIME_LOGGER.warning(
             "Known issue lookup failed",
@@ -958,9 +987,16 @@ async def augment_tool_error(tool_name: str, credentials, exc: ToolError) -> Too
                 extra={"event_name": "known_issue_match_event_write_failed", "tool_name": tool_name},
                 exc_info=True,
             )
+    # Этап 306: если поиск уже не смог — второй заход в ту же базу не делаем.
+    # Найдено ревью дифа: отказ платил 0.2 с за упавший поиск и ещё до 0.5 с за
+    # авто-событие, которое пошло бы в ту же недоступную базу. Открытый
+    # предохранитель существует ради быстрого отказа, и это ровно тот случай,
+    # когда лишнее ожидание вреднее пропущенной записи.
+    if lookup_failed:
+        return ToolError(f"{exc}\n\n{hint}")
     try:
         await asyncio.wait_for(
-            write_auto_feedback_event(credentials=credentials, tool_name=tool_name, exc=exc),
+            write_auto_feedback_event(credentials=credentials, tool_name=tool_name, exc=source),
             timeout=AUTO_EVENT_WRITE_TIMEOUT_SECONDS,
         )
     except Exception:

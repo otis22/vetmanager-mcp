@@ -235,3 +235,134 @@ async def test_the_lookup_counter_now_sees_the_real_stream(wrap_failing_tool) ->
 
     counts = snapshot_service_metrics()["known_issue_lookups_total"]
     assert counts.get("get_invoice_by_id|no_match") == 1
+
+
+# --- 306.6: инцидент собирается из настоящего отказа, а не из обёртки --------
+
+
+@pytest.mark.asyncio
+async def test_a_rule_written_on_the_upstream_status_finds_the_issue(
+    wrap_failing_tool, monkeypatch
+) -> None:
+    """Найдено ревью дифа: главный тест проверял подпись, а не срабатывание.
+
+    Подпись `call report_problem` появляется на любом отказе, поэтому «дошло до
+    механизма» она доказывает, а «правило может сработать» — нет. Отказ апстрима
+    несёт `status_code` и собственный `error_code`, и правило, написанное на
+    них, обязано найти проблему и вернуть playbook.
+    """
+    from storage_models import KnownIssue
+
+    rules = json.dumps({
+        "version": 1,
+        "all": [
+            {"field": "related_tool", "op": "eq", "value": "get_invoice_by_id"},
+            {"field": "http_status", "op": "eq", "value": 503},
+        ],
+    })
+    # Playbook по-английски не для красоты: `augment_tool_error` сериализует его
+    # с `ensure_ascii=True`, и кириллица доехала бы до агента в виде \uXXXX.
+    playbook = json.dumps({
+        "version": 1,
+        "summary": "Circuit breaker is open: upstream refuses every request.",
+        "steps": ["Fetch the whole list in one call instead of one record at a time."],
+        "do_not_do": ["Do not retry per-record requests in a loop."],
+        "recommended_tool_sequence": ["get_invoices"],
+        "safe_to_retry": False,
+    })
+    async with wrap_failing_tool.session_factory() as session:
+        session.add(KnownIssue(
+            status="workaround_available", category="bug", severity="high",
+            title="Предохранитель апстрима", related_tool="get_invoice_by_id",
+            match_rules_json=rules, agent_playbook_json=playbook,
+        ))
+        await session.commit()
+
+    wrapped = wrap_failing_tool(
+        VetmanagerUpstreamUnavailable("VM API circuit breaker open for alternativa")
+    )
+
+    with pytest.raises(ToolError) as raised:
+        await wrapped()
+
+    assert "Known issue playbook" in str(raised.value)
+    assert "Fetch the whole list in one call" in str(raised.value)
+
+    async with wrap_failing_tool.session_factory() as session:
+        events = (await session.execute(select(KnownIssueMatchEvent))).scalars().all()
+    assert [event.source for event in events] == ["injection", "auto"]
+
+
+@pytest.mark.asyncio
+async def test_the_incident_keeps_the_upstream_code_not_the_wrapper_name(
+    wrap_failing_tool, monkeypatch
+) -> None:
+    """Правилу нужен код апстрима, а не имя класса, в который мы переупаковали."""
+    captured = {}
+
+    original = feedback.build_incident_from_exception
+
+    def _spy(tool_name, exc):
+        incident = original(tool_name, exc)
+        captured.update({
+            "http_status": incident.http_status,
+            "error_code": incident.error_code,
+        })
+        return incident
+
+    monkeypatch.setattr(feedback, "build_incident_from_exception", _spy)
+
+    wrapped = wrap_failing_tool(
+        VetmanagerError("Upstream API error (HTTP 406)", 406, error_code="INVALID_FILTER")
+    )
+
+    with pytest.raises(ToolError):
+        await wrapped()
+
+    assert captured["http_status"] == 406
+    assert captured["error_code"] == "INVALID_FILTER"
+
+
+@pytest.mark.asyncio
+async def test_an_upstream_failure_without_a_message_still_says_something(
+    wrap_failing_tool,
+) -> None:
+    """Пустые `args` не должны превращать отказ в пустую строку."""
+    wrapped = wrap_failing_tool(VetmanagerUpstreamUnavailable(""))
+
+    with pytest.raises(ToolError) as raised:
+        await wrapped()
+
+    text = str(raised.value)
+    assert HINT in text
+    assert "VetmanagerUpstreamUnavailable" in text
+
+
+@pytest.mark.asyncio
+async def test_a_failed_lookup_does_not_pay_for_a_second_database_trip(
+    wrap_failing_tool, monkeypatch
+) -> None:
+    """Если поиск проблемы уже не смог, авто-событие не идёт в БД второй раз.
+
+    Открытый предохранитель существует ради быстрого отказа. Платить за него
+    двумя независимыми заходами в недоступную базу — 0.2 с плюс 0.5 с — значит
+    подорвать смысл предохранителя ровно там, где он важнее всего.
+    """
+    async def _boom(_tool_name, _exc):
+        raise RuntimeError("db is away")
+
+    auto_calls = 0
+
+    async def _count_auto(**_kwargs):
+        nonlocal auto_calls
+        auto_calls += 1
+
+    monkeypatch.setattr(feedback, "lookup_known_issue_for_error", _boom)
+    monkeypatch.setattr(feedback, "write_auto_feedback_event", _count_auto)
+
+    wrapped = wrap_failing_tool(VetmanagerUpstreamUnavailable("circuit breaker open"))
+
+    with pytest.raises(ToolError):
+        await wrapped()
+
+    assert auto_calls == 0

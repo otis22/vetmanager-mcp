@@ -59,14 +59,18 @@ REPORT_TOOLS = frozenset({
 from vetmanager_client import resolve_runtime_credentials
 
 
-async def _with_known_issue_hint(tool_name: str, credentials, exc):
+async def _with_known_issue_hint(tool_name: str, credentials, exc, *, incident_source=None):
     """Подсказка про известную проблему поверх отказа, с редактированием на выходе.
 
     Общая для обеих веток обёртки: собственного `ToolError` и отказа апстрима
     (этап 306). Держится одной функцией намеренно — пока это были два
     одинаковых блока рядом, любая правка одного молча расходилась со вторым.
     """
-    augmented = await augment_tool_error(tool_name, credentials, exc)
+    # Параметр передаётся только когда он есть: путь собственного `ToolError`
+    # вызывает `augment_tool_error` ровно так же, как до этапа 306, и подмены
+    # этой функции в тестах не обязаны знать про новый аргумент.
+    extra = {"incident_source": incident_source} if incident_source is not None else {}
+    augmented = await augment_tool_error(tool_name, credentials, exc, **extra)
     return redact_tool_error(augmented) if type(augmented) is ToolError else augmented
 
 
@@ -115,7 +119,12 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
                 raise await _with_known_issue_hint(
                     resolved_tool_name,
                     credentials,
-                    redact_tool_error(reportable_error(*exc.args)),
+                    # Пустые args превратили бы отказ в пустую строку — тогда
+                    # вызывающий не узнаёт даже, что именно отказало.
+                    redact_tool_error(
+                        reportable_error(str(exc) or exc.__class__.__name__)
+                    ),
+                    incident_source=exc,
                 ) from exc
             result = redact_sensitive_output_fields(result)
             if not credentials.is_depersonalized:
