@@ -27,7 +27,11 @@ async def test_seed_definitions_validate() -> None:
     import scripts.seed_known_issues as seed
 
     seed.validate_seed_definitions()
-    assert 5 <= len(seed.SEED_ISSUES) <= 10
+    # Этап 305 поднял потолок с 10 до 12: добавлены четыре правила, написанные
+    # из корпуса настоящих падений Sentry, и удалять ради потолка было бы
+    # нечего. Потолок остаётся — он сторожит `SEED_ISSUES` от превращения в
+    # свалку, куда дописывают «на всякий случай».
+    assert 5 <= len(seed.SEED_ISSUES) <= 12
     assert all(item.title.startswith(f"[seed:{item.slug}] ") for item in seed.SEED_ISSUES)
 
 

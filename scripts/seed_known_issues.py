@@ -72,6 +72,27 @@ def _rules(tool: str, *markers: str) -> dict[str, Any]:
     }
 
 
+def _text_rules(*markers: str, tool: str | None = None) -> dict[str, Any]:
+    """Правило по тексту отказа, без условия на `error_code`.
+
+    Этап 305: у прежних правил стоит `error_code = ToolError`, потому что до
+    этапа 306 до механизма доходил только наш собственный `ToolError`. Отказ
+    апстрима приносит свой код (`VetmanagerError`, а часто и код Ветменеджера),
+    и такое условие отсекло бы ровно то, ради чего правило и пишется.
+
+    `tool=None` оставляет правило применимым к любому инструменту: один и тот
+    же отказ по контракту поля прилетает из `get_users`, `get_invoices`,
+    `get_cassa_closes` и ещё нескольких.
+    """
+    conditions: list[dict[str, Any]] = []
+    if tool:
+        conditions.append({"field": "related_tool", "op": "eq", "value": tool})
+    conditions.append(
+        {"field": "normalized_error_text", "op": "contains_any", "value": list(markers)}
+    )
+    return {"version": 1, "all": conditions}
+
+
 def _playbook(
     summary: str,
     *,
@@ -240,6 +261,120 @@ SEED_ISSUES: tuple[SeedIssue, ...] = (
         ),
         public_summary="Legacy Report AI goods preview may fail when the generated query references good.id.",
         workaround="If PREVIEW_FAILED still explicitly mentions good.id, retry with an intent asking for product code/article/title instead of standalone good.id.",
+    ),
+    # --- Этап 305: правила из настоящих падений, а не из жалоб ---------------
+    # Приоритеты заданы явно: кандидат выбирается первым по `priority`, поэтому
+    # специфичные правила стоят раньше общего правила про контракт поля.
+    SeedIssue(
+        slug="write-needs-clinic",
+        title="[seed:write-needs-clinic] Write refused because no clinic is selected",
+        category="contract",
+        severity="medium",
+        priority=70,
+        related_tool=None,
+        match_rules=_text_rules("no clinic selected"),
+        agent_playbook=_playbook(
+            "Vetmanager refuses the write because the request carries no clinic.",
+            steps=[
+                "Read the clinic list with get_clinics and pick the one the user means.",
+                "Repeat the same call with clinic_id set.",
+            ],
+            do_not_do=["Do not retry the identical payload — it will be refused again."],
+            tools=["get_clinics"],
+            safe_to_retry=False,
+        ),
+        public_summary="Vetmanager rejects writes that do not name a clinic.",
+        workaround="Pass clinic_id explicitly on write calls.",
+    ),
+    SeedIssue(
+        slug="report-ai-save-needs-confirmation",
+        title="[seed:report-ai-save-needs-confirmation] Report AI save blocked by needs_confirmation",
+        category="contract",
+        severity="medium",
+        priority=72,
+        related_tool=None,
+        match_rules={
+            "version": 1,
+            "all": [
+                {
+                    "field": "normalized_error_text",
+                    "op": "contains_all",
+                    "value": ["invalid_transition", "needs_confirmation"],
+                },
+            ],
+        },
+        agent_playbook=_playbook(
+            "The report cannot be saved while its job waits for a candidate to be confirmed.",
+            steps=[
+                "Read the job with get_report_ai_job and look at its candidates.",
+                "Confirm the right one with confirm_report_ai_job_candidate, or reject it if none matches.",
+                "Save only after the job leaves needs_confirmation.",
+            ],
+            do_not_do=[
+                "Do not create a second job for the same intent — the first one is still waiting.",
+            ],
+            tools=["get_report_ai_job", "confirm_report_ai_job_candidate", "save_report_ai_job_as_report"],
+            safe_to_retry=False,
+        ),
+        public_summary="Saving a Report AI report requires confirming its candidate first.",
+        workaround="Confirm or reject the candidate, then save.",
+    ),
+    SeedIssue(
+        slug="report-export-not-available",
+        title="[seed:report-export-not-available] Report cannot be exported over REST",
+        category="bug",
+        severity="medium",
+        priority=74,
+        related_tool=None,
+        match_rules=_text_rules(
+            "getting report export file failed",
+            "not rest-exportable",
+            "denied startreport",
+        ),
+        agent_playbook=_playbook(
+            "Vetmanager did not produce the export file for this report.",
+            steps=[
+                "Check the export state with get_report_ai_job before asking for the file again.",
+                "If the report is not REST-exportable, build the same data through a Report AI job instead.",
+            ],
+            do_not_do=[
+                "Do not poll the download endpoint in a loop — the file is not being prepared.",
+            ],
+            tools=["get_report_ai_job", "create_report_ai_job"],
+            safe_to_retry=False,
+        ),
+        public_summary="Some Vetmanager reports are not available through REST export.",
+        workaround="Use a Report AI job to obtain the same rows.",
+    ),
+    SeedIssue(
+        slug="upstream-rejects-field-name",
+        title="[seed:upstream-rejects-field-name] Filter or sort names a field the entity does not have",
+        category="contract",
+        severity="medium",
+        priority=90,
+        related_tool=None,
+        match_rules=_text_rules(
+            "invalid sort item",
+            "invalid filter item",
+            "unknown sort property",
+            "unknown filter property",
+        ),
+        agent_playbook=_playbook(
+            "The field name in filter or sort does not exist on this entity.",
+            steps=[
+                "Read the allowed properties from the error text — they are listed there.",
+                "Repeat the call with a field from that list.",
+                "When sorting, pass both property and direction.",
+            ],
+            do_not_do=[
+                "Do not guess a similar name — the allowed list is exact.",
+                "Do not drop the filter entirely and read the whole entity instead.",
+            ],
+            tools=[],
+            safe_to_retry=False,
+        ),
+        public_summary="Filter and sort accept only the fields the entity actually has.",
+        workaround="Take the field name from the allowed list in the error text.",
     ),
 )
 

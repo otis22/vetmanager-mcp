@@ -195,6 +195,36 @@ async def _set_playbook(args: argparse.Namespace) -> None:
         )
 
 
+async def _set_match_rules(args: argparse.Namespace) -> None:
+    """Этап 305.3: починить правила у существующей проблемы.
+
+    До этого правки правил не было вовсе: `promote --match-rules-json` задаёт их
+    при создании, `set-playbook` правит playbook. Ровно та же дыра, которую этап
+    294.4 закрыл для playbook, — и она осталась открытой для правил, из-за чего
+    одиннадцать живущих на проде правил менялись бы разовым скриптом внутри
+    боевого контейнера.
+
+    Валидация та же, что на записи в `promote`: невалидные правила не заменят
+    рабочие и не заменят собой отсутствующие.
+    """
+    rules = _load_json_file(args.match_rules_json)
+    match_rules_json = _safe_json_payload(rules, limit=8000)
+    if not match_rules_json:
+        raise SystemExit("Match rules JSON is required.")
+    if validate_match_rules_json(match_rules_json) is None:
+        raise SystemExit("Invalid match rules JSON — refusing to write.")
+    async with get_session_factory()() as session:
+        issue = await session.get(KnownIssue, args.known_issue_id)
+        if issue is None:
+            raise SystemExit(f"Known issue not found: {args.known_issue_id}")
+        had_rules = issue.match_rules_json is not None
+        issue.match_rules_json = match_rules_json
+        await session.commit()
+        print(
+            f"known_issue #{issue.id} match rules updated (had_rules={had_rules})"
+        )
+
+
 async def _mark(args: argparse.Namespace) -> None:
     async with get_session_factory()() as session:
         issue = await session.get(KnownIssue, args.known_issue_id)
@@ -689,6 +719,14 @@ def _build_parser() -> argparse.ArgumentParser:
     set_playbook.add_argument("known_issue_id", type=int)
     set_playbook.add_argument("--playbook-json", required=True)
     set_playbook.set_defaults(func=_set_playbook)
+
+    set_match_rules = sub.add_parser(
+        "set-match-rules",
+        help="Stage 305: replace the match rules of an existing known issue.",
+    )
+    set_match_rules.add_argument("known_issue_id", type=int)
+    set_match_rules.add_argument("--match-rules-json", required=True)
+    set_match_rules.set_defaults(func=_set_match_rules)
 
     mark = sub.add_parser("mark", help="Set the status of a known issue.")
     mark.add_argument("known_issue_id", type=int)

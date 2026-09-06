@@ -411,7 +411,12 @@ def validate_match_rules_json(raw_json: str | None) -> dict[str, Any] | None:
     if not isinstance(data, dict) or data.get("version") != 1:
         return None
     conditions = data.get("all")
-    if not isinstance(conditions, list) or len(conditions) > 16:
+    # Этап 305.3: пустой список условий проходил валидацию и совпадал с любым
+    # инцидентом. У проблемы с `related_tool = None` такая запись становится
+    # кандидатом почти на каждый отказ и затеняет остальные — выбирается первый
+    # по `priority`. Пока правила задавались только при создании проблемы, дыра
+    # была теоретической; команда правки делает её достижимой одним файлом.
+    if not isinstance(conditions, list) or not conditions or len(conditions) > 16:
         return None
     for condition in conditions:
         if not isinstance(condition, dict):
