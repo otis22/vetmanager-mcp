@@ -194,7 +194,6 @@ def test_the_consent_screen_shows_the_same_three_lines():
 
     html = render_oauth_consent_page(
         client_name="ChatGPT",
-        scopes=["clients.read"],
         request_state="state",
         csrf_token="csrf",
         connections=[{"id": 1, "domain": "clinic-a"}],

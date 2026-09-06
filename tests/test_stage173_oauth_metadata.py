@@ -85,7 +85,6 @@ def test_oauth_consent_uses_neutral_client_name_fallback():
         csrf_token="csrf",
         request_state="state",
         client_name="",
-        scopes=[],
         connections=[],
         script_nonce="test-consent-nonce",
     )
@@ -834,10 +833,11 @@ async def test_oauth_authorize_consent_creates_code_bound_to_connection(
     assert 'data-testid="oauth-privacy-mode"' in consent_response.text
     assert 'data-testid="oauth-privacy-depersonalized"' in consent_response.text
     assert 'data-testid="oauth-privacy-personal-data"' in consent_response.text
-    assert 'data-testid="oauth-requested-scopes-technical"' in consent_response.text
     assert 'data-testid="oauth-granted-scopes-technical"' in consent_response.text
     assert "Технические scopes" in consent_response.text
-    assert "Если выбрать уровень шире технического запроса" in consent_response.text
+    # Этап 287.5: сравнение с «техническим запросом» ушло со страницы вместе с
+    # самим запросом — теперь экран говорит, что запрошенное ни на что не влияет.
+    assert "на выданные права не влияет" in consent_response.text
     assert "report_ai.write" in consent_response.text
     assert "font-size: 0.72rem" in consent_response.text
     assert "Аналитик" in consent_response.text

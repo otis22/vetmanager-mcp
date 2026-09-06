@@ -1060,7 +1060,6 @@ def render_oauth_consent_page(
     csrf_token: str,
     request_state: str,
     client_name: str,
-    scopes: list[str],
     connections: list[dict[str, str | int]],
     script_nonce: str,
     error: str | None = None,
@@ -1070,7 +1069,6 @@ def render_oauth_consent_page(
     client_display_name = client_name.strip() or "помощник"
     consent_title = f"Доступ для {client_display_name}" if client_name.strip() else "Доступ для помощника"
     error_html = f'<div class="error">{escape(error)}</div>' if error else ""
-    scope_items = "".join(f"<li><code>{escape(scope)}</code></li>" for scope in scopes) or "<li>не переданы</li>"
     access_options = "".join(
         (
             f'<option value="{escape(preset)}" {"selected" if selected_access_preset == preset else ""}>'
@@ -1126,10 +1124,6 @@ def render_oauth_consent_page(
           <span>Что означают уровни доступа</span>
           <ul>{effective_preview_html}</ul>
         </section>
-        <section class="metric" data-testid="oauth-requested-scopes-technical" style="font-size: 0.72rem; color: var(--muted);">
-          <span>Технические scopes, которые передал {escape(client_display_name)}</span>
-          <ul>{scope_items}</ul>
-        </section>
         <details class="metric" data-testid="oauth-granted-scopes-technical" style="font-size: 0.72rem; color: var(--muted);">
           <summary>Технические scopes, которые выдаёт каждый уровень</summary>
           <ul>{granted_scopes_html}</ul>
@@ -1142,8 +1136,8 @@ def render_oauth_consent_page(
             <select name="access_preset" required data-testid="oauth-access-preset">
               {access_options}
             </select>
-            <small style="color: var(--muted); font-size: 0.85rem;">{escape(client_display_name)} получит права выбранного уровня; это может быть больше технического запроса клиента. Полный доступ требует отдельного подтверждения.</small>
-            <small style="display: block; color: var(--muted); font-size: 0.85rem;">Если выбрать уровень шире технического запроса, будут выданы права выбранного уровня.</small>
+            <small style="color: var(--muted); font-size: 0.85rem;">{escape(client_display_name)} получит ровно права выбранного уровня. Полный доступ требует отдельного подтверждения.</small>
+            <small style="display: block; color: var(--muted); font-size: 0.85rem;">То, что клиент запросил при подключении, на выданные права не влияет.</small>
           </label>
           <fieldset class="metric" style="border: 1px solid var(--line); margin: 16px 0;" data-testid="oauth-privacy-mode">
             <legend>Персональные данные</legend>

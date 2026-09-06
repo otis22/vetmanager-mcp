@@ -213,7 +213,6 @@ def register_oauth_routes(
                     csrf_token=resolve_csrf_token(request),
                     request_state="",
                     client_name=request_data["client_name"],
-                    scopes=request_data["scopes"],
                     connections=[],
                     error="No active Vetmanager connection is available for this account.",
                     script_nonce=script_nonce,
@@ -234,7 +233,6 @@ def register_oauth_routes(
                 csrf_token=csrf_token,
                 request_state=sign_oauth_authorize_request(request_data),
                 client_name=request_data["client_name"],
-                scopes=request_data["scopes"],
                 connections=[
                     {"id": connection.id, "domain": connection.domain or "n/a"}
                     for connection in connections
@@ -277,7 +275,6 @@ def register_oauth_routes(
                     csrf_token=csrf_token,
                     request_state=form.get("request_state", ""),
                     client_name=str(request_data.get("client_name") or ""),
-                    scopes=list(request_data.get("scopes") or []),
                     connections=[],
                     error=str(exc),
                     selected_access_preset=form.get("access_preset") or default_oauth_consent_access_preset(),
@@ -314,7 +311,6 @@ def register_oauth_routes(
                         csrf_token=csrf_token,
                         request_state=form.get("request_state", ""),
                         client_name=str(request_data.get("client_name") or ""),
-                        scopes=list(request_data.get("scopes") or []),
                         connections=[],
                         error="Selected Vetmanager connection is not active.",
                         selected_access_preset=str(
