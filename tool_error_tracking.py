@@ -8,11 +8,14 @@ from mcp.types import CallToolRequestParams
 
 from error_tracking import capture_tool_failure, mark_tool_error_as_handled
 from exceptions import ToolInputError
-from filters import FilterPropertyValidationError
+from filters import FilterPropertyValidationError, SortPropertyValidationError
 from runtime_auth import get_current_runtime_credentials
 
 
-def _exception_chain_contains(exc: BaseException, expected_type: type[BaseException]) -> bool:
+def _exception_chain_contains(
+    exc: BaseException,
+    expected_type: type[BaseException] | tuple[type[BaseException], ...],
+) -> bool:
     seen: set[int] = set()
     while id(exc) not in seen:
         seen.add(id(exc))
@@ -44,7 +47,14 @@ class ToolErrorTrackingMiddleware(Middleware):
             # reading `ToolInputError: Invalid feedback severity.`
             if isinstance(exc, ToolInputError):
                 raise
-            if not _exception_chain_contains(exc, FilterPropertyValidationError):
+            # Этап 306: sort назван рядом с filter. Раньше это было незаметно —
+            # sort-ошибка наследник ValueError, и `except FastMCPError` её не
+            # ловил вовсе. После расширения перехвата она приходит сюда
+            # `ToolError`ом и без этой строки попадала бы в Sentry как дефект
+            # продукта, хотя это такой же отказ контракта, как filter.
+            if not _exception_chain_contains(
+                exc, (FilterPropertyValidationError, SortPropertyValidationError)
+            ):
                 try:
                     credentials = get_current_runtime_credentials()
                 except Exception:

@@ -6,7 +6,14 @@ from functools import wraps
 import depersonalization
 from agent_feedback_service import augment_tool_error, should_skip_report_hint
 from error_tracking import set_affected_account
-from exceptions import AuthError, reportable_error
+from exceptions import (
+    AuthError,
+    NotFoundError,
+    RateLimitError,
+    VetmanagerError,
+    reportable_error,
+)
+from filters import FilterPropertyValidationError, SortPropertyValidationError
 from privacy_utils import redact_sensitive_output_fields, redact_tool_error
 from runtime_auth import use_runtime_credentials
 from service_metrics import record_sanitizer_failure
@@ -18,6 +25,24 @@ from tool_scope_security import (
 from tool_access_registry import (
     TOOL_REQUIRED_SCOPES,
 )
+
+# Этап 306: до этой правки обёртка ловила только `ToolError`, и механизм
+# известных проблем видел 0.2% отказов. Инструменты в массе бросают
+# `VetmanagerError` и наследников; в `ToolError` их превращал FastMCP уровнем
+# выше, уже после обёртки, — поэтому в Sentry всё выглядело как `ToolError`.
+REPORTABLE_UPSTREAM_ERRORS = (
+    VetmanagerError,
+    FilterPropertyValidationError,
+    SortPropertyValidationError,
+)
+# Отказы, которые не являются дефектом продукта: приглашать сообщить о них как
+# о баге значит учить агента заводить баги на нормальную работу системы.
+# `NotFoundError` — 404 от десятков `get_*_by_id`, то есть устаревший
+# идентификатор. `AuthError` — отказ доступа. `RateLimitError` — наш
+# собственный ограничитель частоты, апстрим его не бросает вовсе, и вместе с
+# подписью он потерял бы `retry_after_seconds`.
+NOT_A_DEFECT_ERRORS = (AuthError, NotFoundError, RateLimitError)
+
 
 # Stage 275: what a report returns is shaped by generated SQL, so its columns
 # cannot be recognised by name. These tools get value-level cleaning on top;
@@ -32,6 +57,17 @@ REPORT_TOOLS = frozenset({
     "start_report_export",
 })
 from vetmanager_client import resolve_runtime_credentials
+
+
+async def _with_known_issue_hint(tool_name: str, credentials, exc):
+    """Подсказка про известную проблему поверх отказа, с редактированием на выходе.
+
+    Общая для обеих веток обёртки: собственного `ToolError` и отказа апстрима
+    (этап 306). Держится одной функцией намеренно — пока это были два
+    одинаковых блока рядом, любая правка одного молча расходилась со вторым.
+    """
+    augmented = await augment_tool_error(tool_name, credentials, exc)
+    return redact_tool_error(augmented) if type(augmented) is ToolError else augmented
 
 
 def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None):
@@ -59,16 +95,28 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
                     raise
                 if should_skip_report_hint(exc):
                     raise
-                to_augment = redact_tool_error(exc) if type(exc) is ToolError else exc
-                augmented_exc = await augment_tool_error(
-                    resolved_tool_name, credentials, to_augment,
-                )
-                final_exc = (
-                    redact_tool_error(augmented_exc)
-                    if type(augmented_exc) is ToolError
-                    else augmented_exc
-                )
-                raise final_exc from exc
+                raise await _with_known_issue_hint(
+                    resolved_tool_name,
+                    credentials,
+                    redact_tool_error(exc) if type(exc) is ToolError else exc,
+                ) from exc
+            except NOT_A_DEFECT_ERRORS:
+                raise
+            except REPORTABLE_UPSTREAM_ERRORS as exc:
+                # Этап 306: тот же путь, что у собственного ToolError. Наружу
+                # уходит ToolError — до этой правки его строил FastMCP уровнем
+                # выше, дописывая префикс `Error calling tool 'X':` и оставляя
+                # текст апстрима без редактирования приватности.
+                if resolved_tool_name in BASELINE_ALLOWED_TOOLS:
+                    raise
+                # Редактирование идёт до подписи: `redact_tool_error` разбирает
+                # аргументы как JSON, а после склейки с подсказкой текст
+                # перестаёт быть разбираемым и ушёл бы к клиенту как есть.
+                raise await _with_known_issue_hint(
+                    resolved_tool_name,
+                    credentials,
+                    redact_tool_error(reportable_error(*exc.args)),
+                ) from exc
             result = redact_sensitive_output_fields(result)
             if not credentials.is_depersonalized:
                 return result
