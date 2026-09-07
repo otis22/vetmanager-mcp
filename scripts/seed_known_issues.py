@@ -327,15 +327,26 @@ SEED_ISSUES: tuple[SeedIssue, ...] = (
         # Достижимо с этапа 307: отказ типизирован как ошибка вызывающего, и
         # раньше вместе с обвинением терялся и playbook.
         #
-        # Правило привязано к инструменту намеренно. `INVALID_TRANSITION` —
-        # один код на четыре разные ситуации (`tools/report_ai.py:682`), и
-        # текста для их различения не хватает: «подтверждение доступно только
-        # из needs_confirmation» содержит тот же маркер, что и «сохранение
-        # недоступно из needs_confirmation», а следующее действие у них разное.
-        # Найдено ревью дифа этапа 307.
-        match_rules=_text_rules(
-            "invalid_transition", tool="save_report_ai_job_as_report"
-        ),
+        # Два условия, и оба нужны. `INVALID_TRANSITION` — один код на четыре
+        # разные ситуации (`tools/report_ai.py:682`): инструмент отсекает
+        # чужие, статус — свои же. Тот же `save_report_ai_job_as_report`
+        # отказывает и из `queued`, где подтверждать нечего и надо ждать.
+        # Найдено двумя прогонами ревью дифа этапа 307.
+        match_rules={
+            "version": 1,
+            "all": [
+                {
+                    "field": "related_tool",
+                    "op": "eq",
+                    "value": "save_report_ai_job_as_report",
+                },
+                {
+                    "field": "normalized_error_text",
+                    "op": "contains_all",
+                    "value": ["invalid_transition", "needs_confirmation"],
+                },
+            ],
+        },
         agent_playbook=_playbook(
             "The job still waits for its candidate to be confirmed.",
             steps=[

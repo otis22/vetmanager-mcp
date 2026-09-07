@@ -146,6 +146,11 @@ CORPUS: tuple[RealFailure, ...] = (
 # за остальные: playbook «сначала подтверди кандидата» на запросе данных из
 # `ready_to_save` уводит агента не туда.
 #
+# Мало сузить правило до инструмента: один и тот же
+# `save_report_ai_job_as_report` отказывает и из `queued`, и из
+# `needs_confirmation`, а подтверждать кандидата можно только во втором
+# случае. Найдено вторым прогоном ревью дифа.
+#
 # Корпус выше состоит из настоящих событий Sentry и потому эти случаи не
 # ловит — их там просто не было. Точность проверяется отдельно.
 OTHER_TRANSITIONS: tuple[RealFailure, ...] = (
@@ -156,6 +161,14 @@ OTHER_TRANSITIONS: tuple[RealFailure, ...] = (
             "Данные доступны только для job со статусом saved или existing_report_matched"
         ),
         None, "данные запрошены до сохранения",
+    ),
+    RealFailure(
+        0, "save_report_ai_job_as_report",
+        ToolInputError(
+            "Upstream API error (HTTP 409): INVALID_TRANSITION — "
+            "Сохранение недоступно из статуса queued"
+        ),
+        None, "тот же инструмент, но статус queued",
     ),
     RealFailure(
         0, "confirm_report_ai_job_candidate",
@@ -257,13 +270,17 @@ def test_the_older_rules_still_match_what_they_were_written_for() -> None:
     текстовый маркер, и правило обязано узнать собственный отказ.
     """
     for item in SEED_ISSUES:
-        # У правила может быть несколько текстовых условий, и все они
-        # обязательны: берём по одному маркеру из каждого.
-        markers = [
-            condition["value"][0]
-            for condition in item.match_rules["all"]
-            if condition["field"] == "normalized_error_text"
-        ]
+        # Условий может быть несколько, и все они обязательны. Внутри условия
+        # смотрим на оператор: `contains_any` довольствуется одним маркером,
+        # `contains_all` требует всех. Этап 307 завёл первое правило со вторым
+        # оператором, и прежняя выборка «первый маркер каждого условия» стала
+        # собирать текст, которому правило не отвечает.
+        markers: list[str] = []
+        for condition in item.match_rules["all"]:
+            if condition["field"] != "normalized_error_text":
+                continue
+            values = condition["value"]
+            markers.extend(values if condition["op"] == "contains_all" else values[:1])
         if not markers or not item.related_tool:
             continue
         sample = reportable_error("upstream failed: " + " ".join(markers))
