@@ -139,6 +139,47 @@ CORPUS: tuple[RealFailure, ...] = (
 # поведение кода **на момент события**, а не сегодняшнее.
 
 
+# Этап 307, найдено ревью дифа. `INVALID_TRANSITION` — один код на четыре
+# разные ситуации (`tools/report_ai.py:682`): подтверждение не из
+# `needs_confirmation`, сохранение из неподходящего статуса, запрос данных до
+# сохранения, недопустимый переход. Правило под одну из них не смеет отвечать
+# за остальные: playbook «сначала подтверди кандидата» на запросе данных из
+# `ready_to_save` уводит агента не туда.
+#
+# Корпус выше состоит из настоящих событий Sentry и потому эти случаи не
+# ловит — их там просто не было. Точность проверяется отдельно.
+OTHER_TRANSITIONS: tuple[RealFailure, ...] = (
+    RealFailure(
+        0, "get_report_ai_job_data",
+        ToolInputError(
+            "Upstream API error (HTTP 409): INVALID_TRANSITION — "
+            "Данные доступны только для job со статусом saved или existing_report_matched"
+        ),
+        None, "данные запрошены до сохранения",
+    ),
+    RealFailure(
+        0, "confirm_report_ai_job_candidate",
+        ToolInputError(
+            "Upstream API error (HTTP 409): INVALID_TRANSITION — "
+            "Подтверждение доступно только из статуса needs_confirmation"
+        ),
+        None, "подтверждение не из needs_confirmation",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    "failure", OTHER_TRANSITIONS, ids=[f.note for f in OTHER_TRANSITIONS]
+)
+def test_one_upstream_code_does_not_hand_out_one_playbook(failure: RealFailure) -> None:
+    """Правило отвечает за свою ситуацию, а не за весь код апстрима."""
+    matched = _rules_matching(failure)
+
+    assert "report-ai-save-needs-confirmation" not in matched, (
+        f"playbook про подтверждение кандидата выдан на другой отказ: {failure.note}"
+    )
+
+
 def _seed_by_slug() -> dict[str, object]:
     return {item.slug: item for item in SEED_ISSUES}
 
