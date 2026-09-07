@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import os
 import sys
 from collections import defaultdict
@@ -619,6 +620,16 @@ KNOWN_ISSUE_LOOKUPS_QUERY = (
 KNOWN_ISSUE_DELIVERY_OUTCOME = "matched"
 
 
+def _as_utc(value: datetime) -> datetime:
+    """A naive timestamp means UTC here — never the timezone of whoever runs it."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    # Перевод, а не пометка: `now - timedelta(days=30)` в зоне с переводом
+    # часов — арифметика по настенным часам, и окно тихо становится 719 или
+    # 721 часом вместо 720.
+    return value.astimezone(timezone.utc)
+
+
 def _no_delivery_data(reason: str, *, window_days: int) -> dict[str, Any]:
     return {
         "status": "no_data",
@@ -660,6 +671,9 @@ def summarize_known_issue_delivery(
     if not result:
         return _no_delivery_data("empty_series", window_days=window_days)
 
+    now = _as_utc(now)
+    now_ts = now.timestamp()
+    window_start = now_ts - window_days * 24 * 3600
     sums: dict[tuple[str, str], float] = defaultdict(float)
     earliest: float | None = None
     for series in result:
@@ -681,6 +695,17 @@ def summarize_known_issue_delivery(
                 value = float(point[1])
             except (TypeError, ValueError):
                 continue
+            # NaN, Inf and negative counts are impossible for increase() of a
+            # counter. Skipping such a point silently would mean computing the
+            # ratio from what is left and passing it off as the truth — so the
+            # whole answer is declared untrustworthy instead.
+            if not math.isfinite(at) or not math.isfinite(value) or value < 0:
+                return _no_delivery_data("malformed_response", window_days=window_days)
+            # Точка вне запрошенного окна невозможна для честного ответа, а
+            # `isfinite` пропускает 1e20 — на котором давится datetime и падает
+            # весь отчёт. Люфт в один шаг: край окна округляется.
+            if not (window_start - PROMETHEUS_STEP_SECONDS <= at <= now_ts + PROMETHEUS_STEP_SECONDS):
+                return _no_delivery_data("malformed_response", window_days=window_days)
             # Same (kind, outcome) can arrive as several rows — sum, never
             # overwrite.
             sums[(str(kind), str(outcome))] += value
@@ -737,6 +762,7 @@ async def collect_known_issue_delivery(
     must still build, and a silent 0 would repeat exactly the lie stage 283
     told for years.
     """
+    now = _as_utc(now)
     base_url = (os.environ.get("PROMETHEUS_BASE_URL") or PROMETHEUS_DEFAULT_URL).rstrip("/")
     params = {
         "query": KNOWN_ISSUE_LOOKUPS_QUERY,
@@ -744,15 +770,27 @@ async def collect_known_issue_delivery(
         "end": str(now.timestamp()),
         "step": str(PROMETHEUS_STEP_SECONDS),
     }
+    # Адрес проверяется до похода: с подменённым транспортом httpx схему не
+    # проверяет, и битый адрес молча уехал бы как обычный запрос.
+    try:
+        url = httpx.URL(f"{base_url}/api/v1/query_range")
+    except (httpx.InvalidURL, ValueError):
+        return _no_delivery_data("invalid_url", window_days=window_days)
+    if url.scheme not in ("http", "https") or not url.host:
+        return _no_delivery_data("invalid_url", window_days=window_days)
     try:
         async with httpx.AsyncClient(
             transport=transport, timeout=PROMETHEUS_TIMEOUT_SECONDS
         ) as client:
-            response = await client.get(f"{base_url}/api/v1/query_range", params=params)
+            response = await client.get(url, params=params)
     except httpx.TimeoutException:
         return _no_delivery_data("timeout", window_days=window_days)
     except httpx.HTTPError:
         return _no_delivery_data("connection_error", window_days=window_days)
+    except (httpx.InvalidURL, ValueError):
+        # A misconfigured address is the same class of event as a silent
+        # Prometheus: metrics are unavailable, and the report still builds.
+        return _no_delivery_data("invalid_url", window_days=window_days)
     if response.status_code != 200:
         return _no_delivery_data(f"http_{response.status_code}", window_days=window_days)
     try:
@@ -830,10 +868,6 @@ async def _collect_feedback_metrics(session, *, now: datetime, top_n: int) -> di
                 top_n=top_n,
             ),
         },
-        "known_issue_delivery": await collect_known_issue_delivery(
-            now=now,
-            window_days=30,
-        ),
     }
 
 
@@ -911,6 +945,14 @@ async def collect_metrics(
         fail_7d = await _failure_breakdown(session, since=now - timedelta(days=7), until=now)
         fail_30d = await _failure_breakdown(session, since=now - timedelta(days=30), until=now)
         feedback = await _collect_feedback_metrics(session, now=now, top_n=top_n)
+
+    # Stage 283.5: the network call lives outside the DB session on purpose —
+    # a silent Prometheus must not hold a database connection open while it
+    # times out.
+    feedback["known_issue_delivery"] = await collect_known_issue_delivery(
+        now=now,
+        window_days=30,
+    )
 
     return {
         "accounts": {

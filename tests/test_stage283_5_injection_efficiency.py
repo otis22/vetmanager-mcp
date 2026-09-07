@@ -15,12 +15,15 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
+import pytest_asyncio
 
 from scripts.product_metrics_report import (
+    _collect_feedback_metrics,
     KNOWN_ISSUE_LOOKUPS_QUERY,
     PROMETHEUS_DEFAULT_URL,
     PROMETHEUS_STEP_SECONDS,
@@ -99,8 +102,12 @@ def test_depth_is_the_earliest_point_across_all_series():
     assert out["effective_depth_hours"] == 50
 
 
-def test_depth_never_exceeds_the_report_window():
-    """Ряд старше окна не даёт глубину больше окна — считается только окно."""
+def test_point_older_than_the_window_is_a_broken_answer():
+    """Честный query_range за 30 дней такой точки вернуть не может.
+
+    Обрезать её окном значило бы показать полную глубину по ответу, которому
+    нельзя верить.
+    """
     payload = _payload(
         _series(
             "failure",
@@ -109,8 +116,41 @@ def test_depth_never_exceeds_the_report_window():
         ),
     )
     out = summarize_known_issue_delivery(payload, now=NOW, window_days=WINDOW_DAYS)
+    assert out["status"] == "no_data"
+    assert out["reason"] == "malformed_response"
+
+
+def test_point_on_the_window_edge_gives_full_depth():
+    payload = _payload(
+        _series(
+            "failure",
+            "matched",
+            [(_hours_ago(24 * WINDOW_DAYS), 1.0), (_hours_ago(1), 1.0)],
+        ),
+    )
+    out = summarize_known_issue_delivery(payload, now=NOW, window_days=WINDOW_DAYS)
     assert out["effective_depth_hours"] == 24 * WINDOW_DAYS
     assert out["depth_is_partial"] is False
+
+
+def test_absurd_timestamp_is_malformed_not_an_overflow():
+    """`isfinite` пропускает 1e20 — а datetime им давится и роняет отчёт."""
+    for absurd in ("1e20", "-1e20"):
+        payload = {
+            "status": "success",
+            "data": {
+                "resultType": "matrix",
+                "result": [
+                    {
+                        "metric": {"kind": "failure", "outcome": "matched"},
+                        "values": [[absurd, "1"]],
+                    }
+                ],
+            },
+        }
+        out = summarize_known_issue_delivery(payload, now=NOW, window_days=WINDOW_DAYS)
+        assert out["status"] == "no_data"
+        assert out["reason"] == "malformed_response"
 
 
 # ── числитель, знаменатель и отношение ─────────────────────────────────────
@@ -376,10 +416,14 @@ def test_markdown_names_the_depth_next_to_the_rate():
         )
     )
     text = format_markdown(metrics, now=NOW)
-    assert "failure" in text
     # Глубина обязана стоять рядом с числом, иначе отношение врёт окном.
-    assert "24" in text
-    assert "30" in text
+    # Проверяется целая строка, а не наличие «24» где-то в отчёте: цифры
+    # встречаются и в других секциях.
+    assert (
+        "_data depth: 24h of a 30d window — window not covered. "
+        "Counts are Prometheus estimates._"
+    ) in text
+    assert "| failure | 4 | 14 | 28.6% |" in text
 
 
 def test_markdown_says_no_data_and_why_when_prometheus_is_silent():
@@ -397,7 +441,8 @@ def test_markdown_says_no_data_and_why_when_prometheus_is_silent():
         }
     )
     text = format_markdown(metrics, now=NOW)
-    assert "connection_error" in text
+    assert "_no data: connection_error_" in text
+    assert "delivery_rate" not in text
 
 
 def test_json_carries_the_section():
@@ -451,3 +496,152 @@ class _Zeros(dict):
 
     def __str__(self) -> str:
         return "0"
+
+
+# ── невозможные числа роняют секцию, а не отчёт ────────────────────────────
+
+
+@pytest.mark.parametrize("bad", ["NaN", "+Inf", "-Inf", "-3"])
+def test_impossible_value_makes_the_whole_section_no_data(bad):
+    """NaN и отрицательные доставки — не «странное число», а битый ответ.
+
+    Пропустить такую точку молча значит посчитать отношение по остатку и
+    выдать его за правду. Ответу, где встретилось невозможное значение,
+    доверять нельзя целиком.
+    """
+    payload = {
+        "status": "success",
+        "data": {
+            "resultType": "matrix",
+            "result": [
+                {
+                    "metric": {"kind": "failure", "outcome": "matched"},
+                    "values": [[_hours_ago(10).timestamp(), bad]],
+                }
+            ],
+        },
+    }
+    out = summarize_known_issue_delivery(payload, now=NOW, window_days=WINDOW_DAYS)
+    assert out["status"] == "no_data"
+    assert out["reason"] == "malformed_response"
+
+
+def test_non_finite_timestamp_is_malformed_not_a_crash():
+    payload = {
+        "status": "success",
+        "data": {
+            "resultType": "matrix",
+            "result": [
+                {
+                    "metric": {"kind": "failure", "outcome": "matched"},
+                    "values": [["NaN", "1"]],
+                }
+            ],
+        },
+    }
+    out = summarize_known_issue_delivery(payload, now=NOW, window_days=WINDOW_DAYS)
+    assert out["status"] == "no_data"
+    assert out["reason"] == "malformed_response"
+
+
+def test_delivery_rate_never_exceeds_one():
+    out = summarize_known_issue_delivery(
+        _one_day_old_payload(), now=NOW, window_days=WINDOW_DAYS
+    )
+    for row in out["by_kind"].values():
+        assert row["deliveries"] <= row["lookups"]
+        assert row["delivery_rate"] is None or 0.0 <= row["delivery_rate"] <= 1.0
+
+
+def test_naive_now_is_read_as_utc_not_as_local_time(monkeypatch):
+    """Иначе глубина тихо съезжает на смещение машины, где считают отчёт.
+
+    Часовой пояс подменяется намеренно: в контейнере UTC, и без подмены тест
+    был бы зелёным по совпадению, а не по существу.
+    """
+    monkeypatch.setenv("TZ", "Asia/Tokyo")
+    time.tzset()
+    try:
+        naive = NOW.replace(tzinfo=None)
+        out = summarize_known_issue_delivery(
+            _one_day_old_payload(), now=naive, window_days=WINDOW_DAYS
+        )
+        assert out["effective_depth_hours"] == 24
+    finally:
+        monkeypatch.delenv("TZ", raising=False)
+        time.tzset()
+
+
+# ── битый адрес — такой же отказ метрик, как и молчащий сервис ─────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_url", ["not a url", "ftp://prometheus:9090", "http://"])
+async def test_broken_base_url_is_no_data_without_touching_the_network(
+    monkeypatch, bad_url
+):
+    """Транспорт отдаёт валидный ответ: если тест зелёный — до сети не дошло."""
+    monkeypatch.setenv("PROMETHEUS_BASE_URL", bad_url)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_one_day_old_payload())
+
+    out = await collect_known_issue_delivery(
+        now=NOW, window_days=WINDOW_DAYS, transport=_transport(handler)
+    )
+    assert out["status"] == "no_data"
+    assert out["reason"] in {"invalid_url", "connection_error"}
+
+
+@pytest.mark.asyncio
+async def test_empty_base_url_env_falls_back_to_the_default(monkeypatch):
+    """Пустая переменная — это «не задано», а не «битый адрес»."""
+    monkeypatch.setenv("PROMETHEUS_BASE_URL", "")
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json=_one_day_old_payload())
+
+    out = await collect_known_issue_delivery(
+        now=NOW, window_days=WINDOW_DAYS, transport=_transport(handler)
+    )
+    assert seen["url"].startswith(PROMETHEUS_DEFAULT_URL)
+    assert out["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_window_is_thirty_real_days_even_across_a_dst_shift():
+    """`now - timedelta` в зоне с переводом часов — арифметика по настенным
+    часам: окно тихо становится 719 или 721 часом."""
+    from zoneinfo import ZoneInfo
+
+    berlin_now = datetime(2026, 4, 10, 12, 0, tzinfo=ZoneInfo("Europe/Berlin"))
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["params"] = request.url.params
+        return httpx.Response(200, json=_one_day_old_payload())
+
+    await collect_known_issue_delivery(
+        now=berlin_now, window_days=WINDOW_DAYS, transport=_transport(handler)
+    )
+    span = float(seen["params"]["end"]) - float(seen["params"]["start"])
+    assert span == pytest.approx(WINDOW_DAYS * 24 * 3600)
+
+
+# ── сеть не живёт внутри сессии БД ─────────────────────────────────────────
+
+
+@pytest_asyncio.fixture
+async def empty_session(tmp_path, sqlite_session_factory_builder):
+    factory = await sqlite_session_factory_builder(tmp_path / "stage283-5.db")
+    async with factory() as session:
+        yield session
+
+
+@pytest.mark.asyncio
+async def test_feedback_metrics_stay_sql_only(empty_session):
+    """Поход в Prometheus не должен держать открытым соединение к базе."""
+    out = await _collect_feedback_metrics(empty_session, now=NOW, top_n=10)
+    assert set(out) == {"reports", "match_events"}
