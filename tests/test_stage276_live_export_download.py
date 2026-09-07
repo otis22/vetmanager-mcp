@@ -8,6 +8,10 @@ returned.
 
     docker compose --env-file .env --profile test run --rm -T test \\
         python -m pytest -m real_api tests/test_stage276_live_export_download.py
+
+Два состояния стенда тест пропускает, а не проваливает: общий на тенант
+предохранитель экспорта (30 минут) и незавершённая сборка файла. Оба —
+состояние чужой системы, а не отказ нашей, и доказывать тест поставлен не их.
 """
 
 from __future__ import annotations
@@ -50,7 +54,16 @@ async def test_real_export_is_downloaded_cleaned_and_served_by_us(live_export_ro
         TEST_DOMAIN, TEST_API_KEY, is_depersonalized=True
     )
     with headers_patch, runtime_patch:
-        started = await mcp.call_tool("start_report_export", {"report_id": LIVE_REPORT_ID})
+        try:
+            started = await mcp.call_tool("start_report_export", {"report_id": LIVE_REPORT_ID})
+        except Exception as exc:
+            # Предохранитель экспорта в Ветменеджере общий на весь тенант и
+            # держится 30 минут: соседний прогон или чужая выгрузка на стенде
+            # закрывают дверь этому тесту. Это не отказ продукта и не то, что
+            # тест доказывает, — тот же случай, что и незавершённая сборка ниже.
+            if "REST export guard" not in str(exc):
+                raise
+            pytest.skip(f"Vetmanager tenant-wide REST export guard is active: {exc}")
         report_file_id = started.structured_content["data"]["report"]["report_file_id"]
 
         payload = None

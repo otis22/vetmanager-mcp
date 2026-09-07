@@ -7,7 +7,6 @@ import respx
 import httpx
 from fastmcp.exceptions import ToolError
 
-from depersonalization import REDACTED_EMAIL, REDACTED_NAME, REDACTED_PHONE
 from server import mcp
 from tests.runtime_factories import (
     make_client_with_resolved_runtime,
@@ -577,9 +576,12 @@ async def test_get_pet_profile_returns_owner_medical_cards_and_invoice_line_item
 
     payload = result.structured_content
     assert payload["pet"]["id"] == 14
-    assert payload["owner"]["first_name"] == REDACTED_NAME
-    assert payload["owner"]["phone"] == REDACTED_PHONE
-    assert payload["owner"]["email"] == REDACTED_EMAIL
+    # Этап 308: в агрегаторе владелец адресуется своим client-id, а не id
+    # питомца, — значение скрыто по-прежнему, но видно, о ком речь.
+    assert payload["owner"]["first_name"] == "[client:422:first_name]"
+    assert payload["owner"]["phone"] == "[client:422:phone]"
+    assert payload["owner"]["email"] == "[client:422:email]"
+    assert payload["pet"]["id"] != 422, "адрес владельца не должен совпадать с питомцем"
     assert [row["id"] for row in payload["last_medical_cards"]] == [905, 904, 903, 902, 901]
     assert [invoice["id"] for invoice in payload["last_invoices"]] == [306, 305, 304, 303, 302]
     assert payload["last_invoices_total"] == 6

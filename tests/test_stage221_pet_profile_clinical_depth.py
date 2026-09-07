@@ -238,5 +238,7 @@ async def test_find_pets_by_alias_uses_global_depersonalization_wrapper(monkeypa
     assert candidate["owner_id"] == 662
     assert candidate["type"] == "Кошки"
     assert candidate["breed"] == "Беспородная"
-    assert candidate["owner"] == {"name": "[redacted-name]", "phone": "[redacted-phone]"}
+    # Этап 308: у владельца, вложенного в питомца, своего `id` нет — адрес
+    # берётся из `owner_id` родителя, а не из идентификатора питомца.
+    assert candidate["owner"] == {"name": "[client:662:name]", "phone": "[client:662:phone]"}
     assert "passport_series" not in candidate["owner"]

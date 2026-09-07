@@ -447,12 +447,16 @@ async def test_depersonalized_get_debtors_redacts_real_phone_fields():
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("get_debtors", {})
 
+    # Этап 308 сделал маску адресной: значение скрыто по-прежнему, но видно,
+    # о ком речь. Идентификатор записи персональными данными не является
+    # (граница приватности от 21.08.2026), поэтому модели раскрыто столько же.
     debtor = result.structured_content["debtors"][0]
-    assert debtor["last_name"] == REDACTED_NAME
-    assert debtor["first_name"] == REDACTED_NAME
-    assert debtor["middle_name"] == REDACTED_NAME
-    assert debtor["cell_phone"] == REDACTED_PHONE
-    assert debtor["home_phone"] == REDACTED_PHONE
+    assert debtor["last_name"] == "[client:42:last_name]"
+    assert debtor["first_name"] == "[client:42:first_name]"
+    assert debtor["middle_name"] == "[client:42:middle_name]"
+    assert debtor["cell_phone"] == "[client:42:cell_phone]"
+    assert debtor["home_phone"] == "[client:42:home_phone]"
+    assert "Ivanov" not in str(debtor)
 
 
 @pytest.mark.asyncio

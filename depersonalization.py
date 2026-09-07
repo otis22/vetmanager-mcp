@@ -26,6 +26,13 @@ _NAME_KEYS = frozenset({
     "fio",
     "clientname",
     "ownername",
+    # Этап 308: оба ключа уходили наружу целиком. `doctorname` — ФИО врача в
+    # плоских строках (`get_inactive_pets`), `contactperson` — контактное лицо
+    # поставщика. Те же имена через `get_users` маскировались, то есть
+    # обещание режима исполнялось непоследовательно.
+    "doctorname",
+    "username",
+    "contactperson",
     "client",
     "owner",
     "фио",
@@ -47,6 +54,7 @@ _PHONE_KEYS = frozenset({
     "homephone",
     "workphone",
     "ownerphone",
+    "doctorphone",
     "телефон",
     "телефонклиента",
     "телефонвладельца",
@@ -55,8 +63,63 @@ _PHONE_KEYS = frozenset({
     "контактныйтелефон",
     "номертелефона",
 })
-_EMAIL_KEYS = frozenset({"email", "почта", "электроннаяпочта", "емейл", "имейл"})
+_EMAIL_KEYS = frozenset({"email", "mail", "почта", "электроннаяпочта", "емейл", "имейл"})
 _ADDRESS_KEYS = frozenset({"address", "адрес", "адресклиента", "адресдоставки"})
+# Этап 308. Кто такой владелец записи — по ключу, под которым она пришла.
+# Формы ответов не единообразны, и правила «взять соседний id» не хватает:
+# `debtors` не совпадает с названием сущности, а у владельца, вложенного в
+# питомца, своего `id` нет вовсе.
+_NOT_A_PERSON = object()
+
+_ENTITY_BY_KEY: dict[str, object] = {
+    "client": "client", "clients": "client", "debtors": "client",
+    "inactiveclients": "client", "owner": "client",
+    "user": "user", "users": "user", "doctor": "user",
+    "pet": "pet", "pets": "pet", "inactivepets": "pet", "patient": "pet",
+    "supplier": "supplier", "suppliers": "supplier",
+    # Записи, в которых `name` и контакты не принадлежат человеку. Сегодня они
+    # маскируются зря: название вакцины и телефон филиала — не ПДн.
+    "vaccination": _NOT_A_PERSON, "vaccinations": _NOT_A_PERSON,
+    "role": _NOT_A_PERSON, "roles": _NOT_A_PERSON,
+    "type": _NOT_A_PERSON, "types": _NOT_A_PERSON,
+    "pettype": _NOT_A_PERSON, "pettypes": _NOT_A_PERSON,
+    "breed": _NOT_A_PERSON, "breeds": _NOT_A_PERSON,
+    "good": _NOT_A_PERSON, "goods": _NOT_A_PERSON,
+    "goodgroup": _NOT_A_PERSON, "goodgroups": _NOT_A_PERSON,
+    "unit": _NOT_A_PERSON, "units": _NOT_A_PERSON,
+    "diagnosis": _NOT_A_PERSON, "diagnoses": _NOT_A_PERSON,
+    "clinic": _NOT_A_PERSON, "clinics": _NOT_A_PERSON,
+    "city": _NOT_A_PERSON, "cities": _NOT_A_PERSON,
+    "street": _NOT_A_PERSON, "streets": _NOT_A_PERSON,
+}
+
+# Вложенная запись без собственного `id`: идентификатор лежит в родителе.
+_NESTED_ID_IN_PARENT = {
+    "owner": ("owner_id", "client_id"),
+    "client": ("client_id",),
+    "patient": ("patient_id", "pet_id"),
+    "doctor": ("doctor_id", "user_id"),
+}
+
+# Поле, чей владелец — не та запись, в которой оно лежит. Строка
+# `inactive_pets[]` несёт питомца, клиента и сотрудника разом.
+_FIELD_ADDRESS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "ownername": ("client", ("owner_id", "client_id")),
+    "ownerphone": ("client", ("owner_id", "client_id")),
+    "owner": ("client", ("owner_id", "client_id")),
+    "clientname": ("client", ("client_id",)),
+    "client": ("client", ("client_id",)),
+    "doctorname": ("user", ("doctor_id", "user_id")),
+    "doctorphone": ("user", ("doctor_id", "user_id")),
+    "username": ("user", ("user_id",)),
+}
+
+# Ключи, персональные только внутри своей записи. `nickname` у сотрудника —
+# такой же идентификатор человека, как ФИО рядом; у кого-то ещё — нет.
+_ENTITY_ONLY_KEYS = {"nickname": "user"}
+
+_PLACEHOLDER_FIELD_RE = re.compile(r"^[a-z0-9_]+$")
+
 _FREE_TEXT_KEYS = frozenset({
     "description",
     "diagnos",
@@ -263,8 +326,76 @@ def _normalize_key(key: str) -> str:
     return "".join(ch for ch in key.lower() if ch.isalnum())
 
 
-def _redaction_for_key(key: str) -> str | None:
+def _positive_id(value: object) -> int | None:
+    """Идентификатор приходит от апстрима — в адрес пускаем только целое > 0.
+
+    Плейсхолдер разбирают регексом на стороне приложения: чужое двоеточие или
+    скобка сломали бы разбор, а не просто выглядели плохо.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return None
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _placeholder_field(key: str) -> str | None:
+    """Сегмент имени поля — имя колонки ответа, а не ключ классификатора.
+
+    `_normalize_key` выбрасывает подчёркивания (`last_name` → `lastname`) и
+    для адреса не годится: приложение резолвит по тому имени, которое видит.
+    Русский ключ адресом стать не может — падаем на необратимую маску.
+    """
+    candidate = key.strip().lower()
+    return candidate if _PLACEHOLDER_FIELD_RE.match(candidate) else None
+
+
+def _record_address(
+    mapping: Mapping, *, key: str | None, inherited: tuple | None, parent: Mapping | None
+) -> tuple | None:
+    """Чья это запись и какой у неё идентификатор."""
+    entity = _ENTITY_BY_KEY.get(_normalize_key(key or "")) if key else None
+    if entity is None:
+        return inherited
+    if entity is _NOT_A_PERSON:
+        return (_NOT_A_PERSON, None)
+    record_id = _positive_id(mapping.get("id"))
+    if record_id is None and isinstance(parent, Mapping):
+        for parent_field in _NESTED_ID_IN_PARENT.get(_normalize_key(key or ""), ()):
+            record_id = _positive_id(parent.get(parent_field))
+            if record_id is not None:
+                break
+    return (entity, record_id)
+
+
+def _addressed_placeholder(
+    key: str, *, record: Mapping | None, address: tuple | None
+) -> str | None:
+    """`[сущность:id:поле]` — или None, если адресовать нечем."""
+    override = _FIELD_ADDRESS.get(_normalize_key(key))
+    if override is not None and isinstance(record, Mapping):
+        entity, id_fields = override
+        record_id = next(
+            (found for field in id_fields if (found := _positive_id(record.get(field)))),
+            None,
+        )
+    elif address is not None:
+        entity, record_id = address
+    else:
+        return None
+    if not isinstance(entity, str) or record_id is None:
+        return None
+    field = _placeholder_field(key)
+    return f"[{entity}:{record_id}:{field}]" if field else None
+
+
+def _redaction_for_key(key: str, *, entity: object = None) -> str | None:
     normalized = _normalize_key(key)
+    required_entity = _ENTITY_ONLY_KEYS.get(normalized)
+    if required_entity is not None:
+        return REDACTED_NAME if entity == required_entity else None
     if normalized in _NAME_KEYS:
         return REDACTED_NAME
     if normalized in _PHONE_KEYS:
@@ -394,24 +525,55 @@ def sanitize_tool_result(payload: Any, *, report_mode: bool = False) -> Any:
     return _sanitize_value(payload, report_mode=report_mode)
 
 
-def _sanitize_value(value: Any, *, key: str | None = None, report_mode: bool = False) -> Any:
+def _sanitize_value(
+    value: Any,
+    *,
+    key: str | None = None,
+    report_mode: bool = False,
+    address: tuple | None = None,
+    record: Mapping | None = None,
+) -> Any:
+    """`address` — чья запись сейчас разбирается, `record` — сама запись.
+
+    Этап 308: без этих двух маска не может сказать, о ком речь. `address`
+    наследуется вложенными значениями, `record` нужен полям, чей владелец —
+    не та запись, в которой они лежат (`doctor_name` внутри строки о питомце).
+    """
     if isinstance(value, Mapping):
+        child_address = _record_address(value, key=key, inherited=address, parent=record)
         return {
-            child_key: _sanitize_value(child_value, key=str(child_key), report_mode=report_mode)
+            child_key: _sanitize_value(
+                child_value,
+                key=str(child_key),
+                report_mode=report_mode,
+                address=child_address,
+                record=value,
+            )
             for child_key, child_value in value.items()
         }
-    if isinstance(value, list):
-        return [_sanitize_value(item, key=key, report_mode=report_mode) for item in value]
-    if isinstance(value, tuple):
-        return [_sanitize_value(item, key=key, report_mode=report_mode) for item in value]
+    if isinstance(value, (list, tuple)):
+        return [
+            _sanitize_value(
+                item, key=key, report_mode=report_mode, address=address, record=record
+            )
+            for item in value
+        ]
     if not isinstance(value, str):
         return value
 
+    entity = address[0] if address else None
+    if entity is _NOT_A_PERSON:
+        # Название вакцины, роли, породы, телефон филиала — не персональные
+        # данные, и маскировать их значит терять данные без выигрыша.
+        return value
     if key:
-        replacement = _redaction_for_key(key)
+        replacement = _redaction_for_key(key, entity=entity)
         if replacement is not None:
-            return replacement
+            return _addressed_placeholder(key, record=record, address=address) or replacement
         if _is_free_text_key(key):
+            # Адресности здесь нет намеренно: найденное внутри текста ФИО может
+            # принадлежать владельцу, врачу или третьему лицу, и адрес записи о
+            # нём ничего не говорит.
             return sanitize_text(value)
     if report_mode:
         return sanitize_report_value(value)
