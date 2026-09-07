@@ -946,6 +946,7 @@ async def augment_tool_error(
     exc: ToolError,
     *,
     incident_source: BaseException | None = None,
+    blame_product: bool = True,
 ) -> ToolError:
     """Подсказка про известную проблему поверх отказа.
 
@@ -953,6 +954,13 @@ async def augment_tool_error(
     проблема. Обычно это одно и то же. Расходятся они на пути отказа апстрима
     (этап 306): наружу уходит переупакованный `ToolError`, а искать надо по
     исходному исключению, у которого есть HTTP-код и код ошибки апстрима.
+
+    `blame_product=False` — этап 307, ошибка вызывающего. Из пяти действий
+    остаются три: поиск проблемы, событие `injection` и сам playbook. Уходят
+    те два, что утверждают вину продукта, — приглашение сообщить о проблеме и
+    авто-отчёт о дефекте. Тип ошибки при этом обязан сохраниться: плоский
+    `ToolError` перестал бы быть `ToolInputError`, и `tool_error_tracking`
+    завёл бы на опечатку issue в Sentry, отменив этап 265.6.
     """
     source = incident_source if incident_source is not None else exc
     hint = REPORT_HINT.format(tool_name=tool_name)
@@ -966,10 +974,15 @@ async def augment_tool_error(
         record_known_issue_lookup(
             tool_name=tool_name,
             outcome="matched" if known_issue is not None else "no_match",
+            kind="failure" if blame_product else "caller_mistake",
         )
     except Exception:
         lookup_failed = True
-        record_known_issue_lookup(tool_name=tool_name, outcome="lookup_failed")
+        record_known_issue_lookup(
+            tool_name=tool_name,
+            outcome="lookup_failed",
+            kind="failure" if blame_product else "caller_mistake",
+        )
         RUNTIME_LOGGER.warning(
             "Known issue lookup failed",
             extra={"event_name": "known_issue_lookup_failed", "tool_name": tool_name},
@@ -1001,7 +1014,16 @@ async def augment_tool_error(
     # предохранитель существует ради быстрого отказа, и это ровно тот случай,
     # когда лишнее ожидание вреднее пропущенной записи.
     if lookup_failed:
-        return ToolError(f"{exc}\n\n{hint}")
+        return ToolError(f"{exc}\n\n{hint}") if blame_product else exc
+    if not blame_product:
+        # Авто-отчёт — заявка «в продукте дефект». Для чужой опечатки это
+        # ложь, и ровно её этап 265.5 и убирал. Заодно журнал платит одну
+        # строку вместо двух: у потока отказов совпадение стоит `injection`
+        # и `auto`, здесь остаётся только `injection`.
+        return exc if known_issue is None else type(exc)(
+            f"{exc}\n\nKnown issue playbook: "
+            + json.dumps(known_issue.as_response(), ensure_ascii=True, sort_keys=True)
+        )
     try:
         await asyncio.wait_for(
             write_auto_feedback_event(credentials=credentials, tool_name=tool_name, exc=source),

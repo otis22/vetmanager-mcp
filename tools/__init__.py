@@ -10,6 +10,7 @@ from exceptions import (
     AuthError,
     NotFoundError,
     RateLimitError,
+    ToolInputError,
     VetmanagerError,
     reportable_error,
 )
@@ -59,7 +60,9 @@ REPORT_TOOLS = frozenset({
 from vetmanager_client import resolve_runtime_credentials
 
 
-async def _with_known_issue_hint(tool_name: str, credentials, exc, *, incident_source=None):
+async def _with_known_issue_hint(
+    tool_name: str, credentials, exc, *, incident_source=None, blame_product: bool = True
+):
     """Подсказка про известную проблему поверх отказа, с редактированием на выходе.
 
     Общая для обеих веток обёртки: собственного `ToolError` и отказа апстрима
@@ -70,6 +73,8 @@ async def _with_known_issue_hint(tool_name: str, credentials, exc, *, incident_s
     # вызывает `augment_tool_error` ровно так же, как до этапа 306, и подмены
     # этой функции в тестах не обязаны знать про новый аргумент.
     extra = {"incident_source": incident_source} if incident_source is not None else {}
+    if not blame_product:
+        extra["blame_product"] = False
     augmented = await augment_tool_error(tool_name, credentials, exc, **extra)
     return redact_tool_error(augmented) if type(augmented) is ToolError else augmented
 
@@ -98,7 +103,19 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
                 if resolved_tool_name in BASELINE_ALLOWED_TOOLS:
                     raise
                 if should_skip_report_hint(exc):
-                    raise
+                    # Этап 307. Ошибка вызывающего не получает ни приглашения
+                    # сообщить о дефекте, ни авто-отчёта — но playbook ей
+                    # полезнее всего: он говорит, что сделать вместо.
+                    #
+                    # Граница по точному типу, а не по `isinstance`:
+                    # произвольный подкласс со своей сигнатурой `__init__`
+                    # пересобрать нельзя, и augmentation вернула бы другой
+                    # объект, потеряв его атрибуты.
+                    if type(exc) is not ToolInputError:
+                        raise
+                    raise await _with_known_issue_hint(
+                        resolved_tool_name, credentials, exc, blame_product=False
+                    ) from exc
                 raise await _with_known_issue_hint(
                     resolved_tool_name,
                     credentials,

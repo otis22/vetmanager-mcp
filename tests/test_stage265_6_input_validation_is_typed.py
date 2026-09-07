@@ -59,14 +59,23 @@ BAD_ARGUMENTS = [
 @pytest.mark.parametrize("tool_name,arguments", BAD_ARGUMENTS)
 @respx.mock
 async def test_a_wrong_argument_never_asks_the_user_to_report_a_defect(tool_name, arguments):
+    """Этап 307 переписал этот сторож, а не снял его.
+
+    Раньше он утверждал `augment.assert_not_called()` — augmentation не
+    вызывается вовсе. Теперь она вызывается, но с `blame_product=False`: это
+    два разных утверждения, и второе сохраняет ровно ту гарантию, ради которой
+    писался этап 265.5. Обвинение выключено; доставка playbook — нет.
+    """
     _billing_mock()
     headers_patch, runtime_patch = patch_runtime_credentials(DOMAIN, API_KEY)
     with headers_patch, runtime_patch:
-        augment = AsyncMock(return_value=ToolError("...and please report this problem."))
+        augment = AsyncMock(side_effect=lambda _t, _c, exc, **kwargs: exc)
         with patch("tools.augment_tool_error", augment):
-            with pytest.raises(ToolInputError):
+            with pytest.raises(ToolInputError) as raised:
                 await mcp.call_tool(tool_name, arguments)
-    augment.assert_not_called()
+
+    assert "report this problem" not in str(raised.value)
+    assert augment.await_args.kwargs.get("blame_product") is False
 
 
 @pytest.mark.asyncio
@@ -79,11 +88,13 @@ async def test_a_combination_that_does_not_exist_is_the_callers_id_not_our_bug()
     )
     headers_patch, runtime_patch = patch_runtime_credentials(DOMAIN, API_KEY)
     with headers_patch, runtime_patch:
-        augment = AsyncMock(return_value=ToolError("...and please report this problem."))
+        augment = AsyncMock(side_effect=lambda _t, _c, exc, **kwargs: exc)
         with patch("tools.augment_tool_error", augment):
-            with pytest.raises(ToolInputError):
+            with pytest.raises(ToolInputError) as raised:
                 await mcp.call_tool("get_good_combination", {"tag_id": 4242, "clinic_id": 1})
-    augment.assert_not_called()
+
+    assert "report this problem" not in str(raised.value)
+    assert augment.await_args.kwargs.get("blame_product") is False
 
 
 @pytest.mark.asyncio

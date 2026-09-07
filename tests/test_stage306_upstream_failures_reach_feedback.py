@@ -234,7 +234,7 @@ async def test_the_lookup_counter_now_sees_the_real_stream(wrap_failing_tool) ->
         await wrapped()
 
     counts = snapshot_service_metrics()["known_issue_lookups_total"]
-    assert counts.get("get_invoice_by_id|no_match") == 1
+    assert counts.get("get_invoice_by_id|no_match|failure") == 1
 
 
 # --- 306.6: инцидент собирается из настоящего отказа, а не из обёртки --------

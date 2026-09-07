@@ -12,6 +12,9 @@
 Каждый случай проверяется в двух формах текста — как его видит наш код и как он
 выглядит в Sentry с обёрткой FastMCP. До этапа 306 вторая форма была
 единственной, которую вообще можно было увидеть, и на ней легко ошибиться.
+
+Этап 307 добавил в корпус два класса ошибок вызывающего: с разделением
+приглашения и playbook они наконец достижимы.
 """
 
 from __future__ import annotations
@@ -95,6 +98,22 @@ CORPUS: tuple[RealFailure, ...] = (
         reportable_error("Getting report export file failed HTTP 404."),
         "report-export-not-available", "PYTHON-H",
     ),
+    # --- ошибка вызывающего: достижимо с этапа 307 ---
+    RealFailure(
+        4, "save_report_ai_job_as_report",
+        ToolInputError(
+            "Upstream API error (HTTP 409): INVALID_TRANSITION — "
+            "Сохранение недоступно из статуса 'needs_confirmation'"
+        ),
+        "report-ai-save-needs-confirmation", "PYTHON-W",
+    ),
+    RealFailure(
+        2, "start_report_export",
+        ToolInputError(
+            "Report is not REST-exportable: Vetmanager denied StartReport for this report_id."
+        ),
+        "report-export-not-available", "PYTHON-N",
+    ),
     # --- то, на что правила в этом этапе быть НЕ должно ---
     RealFailure(
         5181, "get_invoice_by_id",
@@ -108,30 +127,16 @@ CORPUS: tuple[RealFailure, ...] = (
     ),
 )
 
-# Эти два класса были в корпусе как покрываемые, пока ревью дифа не показало,
-# что покрыть их нечем: сегодня они не доходят до механизма по замыслу.
-# `INVALID_TRANSITION` стал `ToolInputError` этапом 280 (04.09.2026), отказ
-# `not accessible for rest` при заданном вызывающим report_id — этапом 265.6
-# (27.08.2026). Оба события в Sentry датированы **раньше** этих правок и потому
-# несут подпись механизма: корпус показывает поведение кода на момент события,
-# а не сегодняшнее.
-UNREACHABLE_BY_DESIGN: tuple[RealFailure, ...] = (
-    RealFailure(
-        4, "save_report_ai_job_as_report",
-        ToolInputError(
-            "Upstream API error (HTTP 409): INVALID_TRANSITION — "
-            "Сохранение недоступно из статуса 'needs_confirmation'"
-        ),
-        None, "PYTHON-W, с 04.09.2026 это ошибка вызывающего",
-    ),
-    RealFailure(
-        2, "start_report_export",
-        ToolInputError(
-            "Report is not REST-exportable: Vetmanager denied StartReport for this report_id."
-        ),
-        None, "PYTHON-N, с 27.08.2026 это ошибка вызывающего",
-    ),
-)
+# Раздел «недостижимо по замыслу» опустел на этапе 307. Он существовал ради
+# двух классов выше: они стали `ToolInputError` уже после того, как их события
+# записались в Sentry (этап 265.6 — 27.08.2026, этап 280 — 04.09.2026), и
+# потому несли подпись механизма, не проходя через него сегодня. Этап 307
+# разделил приглашение сообщить о дефекте и доставку playbook — обвинение
+# по-прежнему выключено, а playbook доезжает, и правила под них стали
+# осмысленными.
+#
+# Урок, ради которого этот комментарий остаётся: корпус из Sentry показывает
+# поведение кода **на момент события**, а не сегодняшнее.
 
 
 def _seed_by_slug() -> dict[str, object]:
@@ -226,25 +231,6 @@ def test_the_older_rules_still_match_what_they_were_written_for() -> None:
         assert match_rules(json.dumps(item.match_rules), incident), (
             f"{item.slug} не узнаёт собственный отказ"
         )
-
-
-@pytest.mark.parametrize(
-    "failure",
-    UNREACHABLE_BY_DESIGN,
-    ids=[f.note for f in UNREACHABLE_BY_DESIGN],
-)
-def test_a_caller_mistake_gets_no_rule_because_it_gets_no_injection(failure: RealFailure) -> None:
-    """Правило под отказ, который до механизма не доходит, — правило на бумаге.
-
-    `should_skip_report_hint` пропускает `ToolInputError` мимо
-    `augment_tool_error` целиком: агент не получает ни приглашения сообщить о
-    проблеме, ни playbook. Пока это так, писать сюда правила нельзя — они
-    выглядели бы рабочими и молчали на бою (этап 307 разбирает, надо ли делить
-    эти две вещи).
-    """
-    assert _rules_matching(failure) == set(), (
-        f"правило заведено на отказ, который до механизма не доходит: {failure.note}"
-    )
 
 
 @pytest.mark.parametrize(

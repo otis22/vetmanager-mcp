@@ -52,14 +52,17 @@ def test_each_outcome_is_counted_per_tool() -> None:
     record_known_issue_lookup(tool_name="get_clients", outcome="no_match")
     record_known_issue_lookup(tool_name="get_invoices", outcome="matched")
 
-    assert _counts() == {"get_clients|no_match": 2, "get_invoices|matched": 1}
+    assert _counts() == {
+        "get_clients|no_match|failure": 2,
+        "get_invoices|matched|failure": 1,
+    }
 
 
 def test_tool_label_is_sanitised() -> None:
     """Метка идёт в Prometheus: посторонние символы ломают кардинальность."""
     record_known_issue_lookup(tool_name="get clients/../etc", outcome="no_match")
 
-    assert list(_counts()) == ["get_clients_.._etc|no_match"]
+    assert list(_counts()) == ["get_clients_.._etc|no_match|failure"]
 
 
 def test_counter_reaches_prometheus_output() -> None:
@@ -85,7 +88,7 @@ async def test_a_tool_failure_without_a_match_is_counted_as_no_match(monkeypatch
         "get_invoices", make_runtime_credentials("clinic", "secret"), ToolError("upstream refused")
     )
 
-    assert _counts().get("get_invoices|no_match") == 1
+    assert _counts().get("get_invoices|no_match|failure") == 1
 
 
 async def _noop(*_args, **_kwargs) -> None:
@@ -106,8 +109,8 @@ async def test_a_failed_lookup_is_not_confused_with_no_match(monkeypatch) -> Non
     )
 
     counts = _counts()
-    assert counts.get("get_pets|lookup_failed") == 1
-    assert "get_pets|no_match" not in counts
+    assert counts.get("get_pets|lookup_failed|failure") == 1
+    assert "get_pets|no_match|failure" not in counts
 
 
 # --- Этап 283.2 — «найдётся при разборе» и «дойдёт до агента» разные вещи ----

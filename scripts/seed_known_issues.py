@@ -293,11 +293,15 @@ SEED_ISSUES: tuple[SeedIssue, ...] = (
         severity="medium",
         priority=74,
         related_tool=None,
-        # Только достижимый маркер. «not rest-exportable» и «denied startreport»
-        # с 27.08.2026 (этап 265.6) возвращаются как `ToolInputError`, когда
-        # report_id назвал сам вызывающий, — а такой отказ намеренно проходит
-        # мимо механизма. Правило на них выглядело бы рабочим и не сработало.
-        match_rules=_text_rules("getting report export file failed"),
+        # Второй маркер добавлен этапом 307. До него «not rest-exportable»
+        # возвращался как `ToolInputError`, когда report_id назвал сам
+        # вызывающий, и проходил мимо механизма целиком: правило на него
+        # выглядело бы рабочим и молчало. Теперь обвинение по-прежнему
+        # выключено, а playbook доезжает — и правило имеет смысл.
+        match_rules=_text_rules(
+            "getting report export file failed",
+            "not rest-exportable",
+        ),
         agent_playbook=_playbook(
             "Vetmanager did not produce the export file for this report.",
             steps=[
@@ -312,6 +316,32 @@ SEED_ISSUES: tuple[SeedIssue, ...] = (
         ),
         public_summary="Some Vetmanager reports are not available through REST export.",
         workaround="Use a Report AI job to obtain the same rows.",
+    ),
+    SeedIssue(
+        slug="report-ai-save-needs-confirmation",
+        title="[seed:report-ai-save-needs-confirmation] Report AI job is saved before the candidate is confirmed",
+        category="contract",
+        severity="medium",
+        priority=72,
+        related_tool=None,
+        # Достижимо с этапа 307: отказ типизирован как ошибка вызывающего, и
+        # раньше вместе с обвинением терялся и playbook.
+        match_rules=_text_rules("invalid_transition"),
+        agent_playbook=_playbook(
+            "The job still waits for its candidate to be confirmed.",
+            steps=[
+                "Read the job with get_report_ai_job and look at its status.",
+                "Call confirm_report_ai_job_candidate for the candidate the user meant.",
+                "Save the report only after the job leaves needs_confirmation.",
+            ],
+            do_not_do=[
+                "Do not retry the save — the status does not change by itself.",
+            ],
+            tools=["get_report_ai_job", "confirm_report_ai_job_candidate"],
+            safe_to_retry=False,
+        ),
+        public_summary="Report AI jobs must be confirmed before they can be saved as a report.",
+        workaround="Confirm the candidate first, then save.",
     ),
     SeedIssue(
         slug="upstream-rejects-field-name",
