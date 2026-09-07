@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -22,6 +23,7 @@ from typing import Any
 # Allow running as `python scripts/product_metrics_report.py` without PYTHONPATH hacks.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import httpx
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -597,6 +599,169 @@ async def _top_known_issues_by_match_events(
     ]
 
 
+# ── Stage 283.5: delivery rate of the known-issue mechanism ────────────────
+#
+# The DB journal answers "which issues fired"; it cannot answer "out of how
+# many". `known_issue_match_events` has no `kind` column (storage_models.py),
+# so a per-kind numerator is unreachable from SQL. Both halves of the ratio
+# therefore come from one Prometheus answer, over one window, by construction.
+
+PROMETHEUS_DEFAULT_URL = "http://prometheus:9090"
+PROMETHEUS_TIMEOUT_SECONDS = 5.0
+PROMETHEUS_STEP_SECONDS = 3600
+# increase() is computed per original series and only then summed: a restart of
+# one series must not be masked by growth of its neighbour. Prometheus scrapes
+# every 15s, so an hourly step loses no raw sample — increase looks at all of
+# them inside its own window.
+KNOWN_ISSUE_LOOKUPS_QUERY = (
+    "sum by (kind, outcome) (increase(vetmanager_known_issue_lookups_total[1h]))"
+)
+KNOWN_ISSUE_DELIVERY_OUTCOME = "matched"
+
+
+def _no_delivery_data(reason: str, *, window_days: int) -> dict[str, Any]:
+    return {
+        "status": "no_data",
+        "reason": reason,
+        "window_days": window_days,
+        "effective_depth_hours": 0,
+        "depth_is_partial": True,
+        "first_sample_at": None,
+        "by_kind": {},
+    }
+
+
+def summarize_known_issue_delivery(
+    payload: Any,
+    *,
+    now: datetime,
+    window_days: int,
+) -> dict[str, Any]:
+    """Turn a Prometheus range answer into deliveries, lookups and data depth.
+
+    Pure function: no I/O, so every branch is testable without a live
+    Prometheus. Values are estimates — increase() extrapolates to the window
+    edges — but the ratio survives it, since numerator and denominator are
+    skewed the same way. The exact per-issue count lives in top_known_issues.
+    """
+    if not isinstance(payload, dict):
+        return _no_delivery_data("malformed_response", window_days=window_days)
+    status = payload.get("status")
+    if status == "error":
+        return _no_delivery_data("prometheus_error", window_days=window_days)
+    if status != "success":
+        return _no_delivery_data("malformed_response", window_days=window_days)
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return _no_delivery_data("malformed_response", window_days=window_days)
+    result = data.get("result")
+    if not isinstance(result, list):
+        return _no_delivery_data("malformed_response", window_days=window_days)
+    if not result:
+        return _no_delivery_data("empty_series", window_days=window_days)
+
+    sums: dict[tuple[str, str], float] = defaultdict(float)
+    earliest: float | None = None
+    for series in result:
+        if not isinstance(series, dict):
+            continue
+        labels = series.get("metric")
+        values = series.get("values")
+        if not isinstance(labels, dict) or not isinstance(values, list):
+            continue
+        kind = labels.get("kind")
+        outcome = labels.get("outcome")
+        if not kind or not outcome:
+            continue
+        for point in values:
+            if not isinstance(point, (list, tuple)) or len(point) != 2:
+                continue
+            try:
+                at = float(point[0])
+                value = float(point[1])
+            except (TypeError, ValueError):
+                continue
+            # Same (kind, outcome) can arrive as several rows — sum, never
+            # overwrite.
+            sums[(str(kind), str(outcome))] += value
+            if earliest is None or at < earliest:
+                earliest = at
+
+    if earliest is None:
+        return _no_delivery_data("empty_series", window_days=window_days)
+
+    window_hours = window_days * 24
+    age_hours = int(round((now.timestamp() - earliest) / 3600))
+    # Depth is the truth about the data, capped by the window we asked for.
+    effective_depth_hours = max(0, min(window_hours, age_hours))
+
+    by_kind: dict[str, dict[str, Any]] = {}
+    for (kind, outcome), value in sums.items():
+        entry = by_kind.setdefault(kind, {"deliveries": 0.0, "lookups": 0.0})
+        entry["lookups"] += value
+        if outcome == KNOWN_ISSUE_DELIVERY_OUTCOME:
+            entry["deliveries"] += value
+
+    rendered: dict[str, dict[str, Any]] = {}
+    for kind, entry in sorted(by_kind.items()):
+        deliveries = float(entry["deliveries"])
+        lookups = float(entry["lookups"])
+        rendered[kind] = {
+            "deliveries": int(round(deliveries)),
+            "lookups": int(round(lookups)),
+            # A zero denominator is not a failure and not a zero rate — it is
+            # an unanswerable question, and says so.
+            "delivery_rate": (deliveries / lookups) if lookups else None,
+        }
+
+    return {
+        "status": "ok",
+        "reason": None,
+        "window_days": window_days,
+        "effective_depth_hours": effective_depth_hours,
+        "depth_is_partial": effective_depth_hours < window_hours,
+        "first_sample_at": datetime.fromtimestamp(earliest, tz=timezone.utc).isoformat(),
+        "by_kind": rendered,
+    }
+
+
+async def collect_known_issue_delivery(
+    *,
+    now: datetime,
+    window_days: int,
+    transport: Any = None,
+) -> dict[str, Any]:
+    """Ask Prometheus for the lookup counter; never let the report die trying.
+
+    Every failure mode degrades to "no data" with its own reason: the report
+    must still build, and a silent 0 would repeat exactly the lie stage 283
+    told for years.
+    """
+    base_url = (os.environ.get("PROMETHEUS_BASE_URL") or PROMETHEUS_DEFAULT_URL).rstrip("/")
+    params = {
+        "query": KNOWN_ISSUE_LOOKUPS_QUERY,
+        "start": str((now - timedelta(days=window_days)).timestamp()),
+        "end": str(now.timestamp()),
+        "step": str(PROMETHEUS_STEP_SECONDS),
+    }
+    try:
+        async with httpx.AsyncClient(
+            transport=transport, timeout=PROMETHEUS_TIMEOUT_SECONDS
+        ) as client:
+            response = await client.get(f"{base_url}/api/v1/query_range", params=params)
+    except httpx.TimeoutException:
+        return _no_delivery_data("timeout", window_days=window_days)
+    except httpx.HTTPError:
+        return _no_delivery_data("connection_error", window_days=window_days)
+    if response.status_code != 200:
+        return _no_delivery_data(f"http_{response.status_code}", window_days=window_days)
+    try:
+        payload = response.json()
+    except ValueError:
+        return _no_delivery_data("malformed_response", window_days=window_days)
+    return summarize_known_issue_delivery(payload, now=now, window_days=window_days)
+
+
 async def _collect_feedback_metrics(session, *, now: datetime, top_n: int) -> dict[str, Any]:
     since_24h = now - timedelta(hours=24)
     since_7d = now - timedelta(days=7)
@@ -665,6 +830,10 @@ async def _collect_feedback_metrics(session, *, now: datetime, top_n: int) -> di
                 top_n=top_n,
             ),
         },
+        "known_issue_delivery": await collect_known_issue_delivery(
+            now=now,
+            window_days=30,
+        ),
     }
 
 
@@ -907,6 +1076,31 @@ def format_markdown(m: dict[str, Any], *, now: datetime) -> str:
             out.append(
                 f"| {row['known_issue_id']} | {row['title']} | {row['events']} "
                 f"| {row['distinct_accounts']} | {row['distinct_tokens']} |"
+            )
+    out.append("")
+
+    out.append("### Known issue delivery rate")
+    delivery = fb.get("known_issue_delivery") or {}
+    window_days = delivery.get("window_days", 30)
+    if delivery.get("status") != "ok":
+        # Never a 0 — an unreachable Prometheus and a real zero are different
+        # answers, and the report says which one it is.
+        out.append(f"_no data: {delivery.get('reason') or 'unknown'}_")
+    else:
+        depth_hours = delivery.get("effective_depth_hours", 0)
+        suffix = " — window not covered" if delivery.get("depth_is_partial") else ""
+        out.append(
+            f"_data depth: {depth_hours}h of a {window_days}d window{suffix}. "
+            f"Counts are Prometheus estimates._"
+        )
+        out.append("| kind | deliveries | lookups | delivery_rate |")
+        out.append("|---|---|---|---|")
+        for kind, row in sorted(delivery.get("by_kind", {}).items()):
+            rate = row.get("delivery_rate")
+            rate_text = "—" if rate is None else f"{rate:.1%}"
+            out.append(
+                f"| {kind} | {row.get('deliveries', 0)} | {row.get('lookups', 0)} "
+                f"| {rate_text} |"
             )
     out.append("")
 
