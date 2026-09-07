@@ -27,7 +27,6 @@ from runtime_auth import resolve_runtime_credentials
 from server import mcp
 from service_metrics import reset_service_metrics, snapshot_service_metrics
 from storage import Base, create_database_engine
-from depersonalization import REDACTED_EMAIL, REDACTED_NAME, REDACTED_PHONE
 from storage_models import (
     OAuthAccessToken,
     OAuthAuthorizationCode,
@@ -1359,10 +1358,13 @@ async def test_oauth_tool_call_redacts_personal_fields_by_default(tmp_path, monk
 
     result = await mcp.call_tool("get_client_by_id", {"client_id": 42})
 
+    # Этап 308: одиночная запись `get_client_by_id` приходит без
+    # ключа-контейнера, и сущность для корня берётся из имени
+    # инструмента. Значение скрыто по-прежнему, но видно, о ком речь.
     assert result.structured_content["data"]["id"] == 42
-    assert result.structured_content["data"]["firstName"] == REDACTED_NAME
-    assert result.structured_content["data"]["phone"] == REDACTED_PHONE
-    assert result.structured_content["data"]["email"] == REDACTED_EMAIL
+    assert result.structured_content["data"]["firstName"] == "[client:42:firstName]"
+    assert result.structured_content["data"]["phone"] == "[client:42:phone]"
+    assert result.structured_content["data"]["email"] == "[client:42:email]"
 
     await engine.dispose()
     storage.reset_storage_state()
@@ -1471,9 +1473,11 @@ async def test_legacy_oauth_tool_call_redacts_personal_fields_for_null_privacy_m
 
     result = await mcp.call_tool("get_client_by_id", {"client_id": 42})
 
-    assert result.structured_content["data"]["firstName"] == REDACTED_NAME
-    assert result.structured_content["data"]["phone"] == REDACTED_PHONE
-    assert result.structured_content["data"]["email"] == REDACTED_EMAIL
+    # Этап 308: адресная маска действует и для устаревшего маркера приватности —
+    # режим определяется грантом, а не формой маски.
+    assert result.structured_content["data"]["firstName"] == "[client:42:firstName]"
+    assert result.structured_content["data"]["phone"] == "[client:42:phone]"
+    assert result.structured_content["data"]["email"] == "[client:42:email]"
 
     await engine.dispose()
     storage.reset_storage_state()

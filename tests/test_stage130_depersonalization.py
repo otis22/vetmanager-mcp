@@ -364,11 +364,15 @@ async def test_mcp_tool_response_is_sanitized_for_depersonalized_token():
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("get_client_by_id", {"client_id": 42})
 
+    # Этап 308: одиночная запись `get_client_by_id` приходит без
+    # ключа-контейнера, и сущность для корня берётся из имени
+    # инструмента. Значение скрыто по-прежнему, но видно, о ком речь.
     assert result.structured_content["data"]["id"] == 42
-    assert result.structured_content["data"]["firstName"] == REDACTED_NAME
-    assert result.structured_content["data"]["phone"] == REDACTED_PHONE
-    assert result.structured_content["data"]["email"] == REDACTED_EMAIL
-    assert result.structured_content["data"]["address"] == REDACTED_ADDRESS
+    assert result.structured_content["data"]["firstName"] == "[client:42:firstName]"
+    assert result.structured_content["data"]["phone"] == "[client:42:phone]"
+    assert result.structured_content["data"]["email"] == "[client:42:email]"
+    assert result.structured_content["data"]["address"] == "[client:42:address]"
+    assert "Anna" not in str(result.structured_content)
 
 
 @pytest.mark.asyncio

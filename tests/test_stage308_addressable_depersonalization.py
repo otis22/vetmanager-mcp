@@ -290,3 +290,84 @@ def test_the_placeholder_keeps_the_key_the_application_actually_sees() -> None:
 
     assert out["firstName"] == "[client:123:firstName]"
     assert out["cell_phone"] == "[client:123:cell_phone]"
+
+
+# --- 308.2: плейсхолдер — значение, а не ссылка -----------------------------
+
+
+def test_the_server_explains_that_a_placeholder_is_already_the_value() -> None:
+    """Слово `redacted` само говорило «дальше ходить некуда».
+
+    `[client:123:last_name]` выглядит как приглашение сходить за значением, и
+    модель может зациклиться: `get_client_by_id(123)` вернёт тот же
+    плейсхолдер. Семантику, которую несла сама маска, приходится сказать вслух.
+    """
+    from server import mcp
+
+    instructions = mcp.instructions
+
+    assert "[client:123:last_name]" in instructions, "формат должен быть показан примером"
+    for promise in ("final value", "verbatim", "will return the same placeholder"):
+        assert promise in instructions, promise
+
+
+# --- 308.3: обещание в интерфейсе -------------------------------------------
+
+
+def test_the_privacy_note_no_longer_promises_more_than_the_server_does() -> None:
+    """Обещание разошлось надвое, и заметка обязана это сказать.
+
+    Структурные поля рядом с идентификатором возвращаются адресным
+    плейсхолдером — приложение может подставить значение. Отчёты, выгрузка и
+    свободный текст очищаются необратимо. Заметка показывается для всего
+    режима сразу, поэтому обещать резолв везде она не имеет права.
+    """
+    from web_html import REPORT_PRIVACY_NOTE
+
+    assert "необратимо" in REPORT_PRIVACY_NOTE
+    assert "плейсхолдер" in REPORT_PRIVACY_NOTE.lower()
+
+
+# --- найдено вторым прогоном ревью дифа -------------------------------------
+
+
+def test_a_report_column_with_a_familiar_name_is_not_cleaned_weaker() -> None:
+    """Колонка `description` чистилась слабее, чем колонка `c1`.
+
+    Свободный текст короткого замыкания уходил в `sanitize_text`, минуя
+    `sanitize_report_value` — а именно вторая ловит пары «Фамилия Имя» по
+    словарю (этапы 275–277). Получалось, что защита отчёта зависела от того,
+    как клиника назвала колонку. Дефект старше этапа 308; здесь он на пути.
+    """
+    from depersonalization import sanitize_report_cell
+
+    for column in ("description", "c1"):
+        cleaned = sanitize_report_cell(column, "Петров Иван Сергеевич +79990000001")
+        assert "Петров" not in cleaned, column
+        assert "+79990000001" not in cleaned, column
+
+
+def test_a_single_record_answer_is_addressed_by_its_tool() -> None:
+    """`get_client_by_id` отдаёт запись без ключа-контейнера.
+
+    Сущность назвать нечем — кроме имени инструмента, который её вернул.
+    Имени инструмента мало для всего ответа (в нём бывает несколько сущностей),
+    но ровно достаточно для корня.
+    """
+    out = sanitize_tool_result(
+        {"success": True, "data": {"id": 42, "firstName": "Anna", "cell_phone": "+79990000001"}},
+        tool_name="get_client_by_id",
+    )["data"]
+
+    assert out["firstName"] == "[client:42:firstName]"
+    assert out["cell_phone"] == "[client:42:cell_phone]"
+
+
+def test_a_tool_name_does_not_override_a_named_container() -> None:
+    """Стартовая сущность — только для корня, вложенное имя всегда сильнее."""
+    out = sanitize_tool_result(
+        {"data": {"pets": [{"id": 7, "owner_id": 123, "owner": {"name": "Иванова"}}]}},
+        tool_name="get_client_by_id",
+    )["data"]["pets"][0]
+
+    assert out["owner"]["name"] == "[client:123:name]"

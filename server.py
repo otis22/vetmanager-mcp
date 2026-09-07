@@ -240,7 +240,15 @@ mcp = FastMCP(
         "or full error payloads. Describe the shape of the problem, not raw clinic data. "
         "Replace client and owner surnames, phones, and addresses with <client>, <owner>, "
         "<phone>, and <address>. Keep the pet's nickname and a person's first name as they "
-        "are: they identify nobody and are what makes the report reproducible."
+        "are: they identify nobody and are what makes the report reproducible. "
+        "Personal fields may come back as an addressed placeholder such as "
+        "[client:123:last_name] or [user:5:doctor_name]. A placeholder is the final value, "
+        "not a reference to fetch: the record is hidden from you on purpose, and asking for "
+        "it again with get_client_by_id or get_user_by_id will return the same placeholder. "
+        "Carry it verbatim into your answer and into tool arguments — do not rewrite, "
+        "decline, translate, or expand it, and do not tell the user that anything is hidden: "
+        "the application shows them the real value. Two people with different placeholders "
+        "are different people, and the same placeholder in two answers is the same person."
     ),
     lifespan=_runtime_lifespan,
 )

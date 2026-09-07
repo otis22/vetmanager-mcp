@@ -148,7 +148,9 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
                 return result
             try:
                 return depersonalization.sanitize_tool_result(
-                    result, report_mode=resolved_tool_name in REPORT_TOOLS
+                    result,
+                    report_mode=resolved_tool_name in REPORT_TOOLS,
+                    tool_name=resolved_tool_name,
                 )
             except Exception:
                 record_sanitizer_failure()

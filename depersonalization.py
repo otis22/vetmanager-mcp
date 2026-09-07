@@ -361,6 +361,12 @@ def _record_address(
     """Чья это запись и какой у неё идентификатор."""
     entity = _ENTITY_BY_KEY.get(_normalize_key(key or "")) if key else None
     if entity is None:
+        # Стартовая сущность из имени инструмента приходит без идентификатора:
+        # его несёт сама запись, до которой мы только сейчас дошли.
+        if inherited is not None and inherited[1] is None and isinstance(inherited[0], str):
+            record_id = _positive_id(mapping.get("id"))
+            if record_id is not None:
+                return (inherited[0], record_id)
         return inherited
     if entity is _NOT_A_PERSON:
         return (_NOT_A_PERSON, None)
@@ -518,14 +524,33 @@ def sanitize_report_cell(column: str, value: str) -> str:
     return _sanitize_value(value, key=column or None, report_mode=True)
 
 
-def sanitize_tool_result(payload: Any, *, report_mode: bool = False) -> Any:
+# Ответ на «дай одну запись» приходит без ключа-контейнера: `get_client_by_id`
+# отдаёт `{"data": {"id": 42, ...}}`, и назвать сущность нечем — кроме имени
+# инструмента, который её вернул. Для всего ответа этого мало (в нём бывает
+# несколько сущностей), но для корня ровно достаточно.
+_ENTITY_BY_TOOL = {
+    "get_client_by_id": "client",
+    "get_client_profile": "client",
+    "get_pet_by_id": "pet",
+    "get_pet_profile": "pet",
+    "get_user_by_id": "user",
+    "get_supplier_by_id": "supplier",
+}
+
+
+def sanitize_tool_result(
+    payload: Any, *, report_mode: bool = False, tool_name: str | None = None
+) -> Any:
     """Recursively sanitize structured fields and whitelist free-text fields.
 
     `report_mode` turns on the value-level cleaning that report rows need and
     ordinary tools must not get: their fields are predictable, and scrubbing
     every value there would cost real data for no gain.
     """
-    return _sanitize_value(payload, report_mode=report_mode)
+    entity = _ENTITY_BY_TOOL.get(tool_name or "")
+    return _sanitize_value(
+        payload, report_mode=report_mode, address=(entity, None) if entity else None
+    )
 
 
 def _sanitize_value(
@@ -575,7 +600,12 @@ def _sanitize_value(
         # Адресности здесь нет намеренно: найденное внутри текста ФИО может
         # принадлежать владельцу, врачу или третьему лицу, и адрес записи о
         # нём ничего не говорит.
-        return sanitize_text(value)
+        cleaned = sanitize_text(value)
+        # В режиме отчёта — оба слоя, а не первый вместо второго. Пары
+        # «Фамилия Имя» по словарю ловит именно `sanitize_report_value`, и без
+        # неё защита отчёта зависела от того, как клиника назвала колонку:
+        # `c1` чистилась строже, чем `description`. Дефект старше этапа 308.
+        return sanitize_report_value(cleaned) if report_mode else cleaned
     if entity is _NOT_A_PERSON:
         # Название вакцины, роли, породы, контакты филиала — не персональные
         # данные, и маскировать их значит терять данные без выигрыша.
