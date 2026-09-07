@@ -99,6 +99,7 @@ _NESTED_ID_IN_PARENT = {
     "client": ("client_id",),
     "patient": ("patient_id", "pet_id"),
     "doctor": ("doctor_id", "user_id"),
+    "user": ("user_id", "doctor_id"),
 }
 
 # Поле, чей владелец — не та запись, в которой оно лежит. Строка
@@ -118,7 +119,7 @@ _FIELD_ADDRESS: dict[str, tuple[str, tuple[str, ...]]] = {
 # такой же идентификатор человека, как ФИО рядом; у кого-то ещё — нет.
 _ENTITY_ONLY_KEYS = {"nickname": "user"}
 
-_PLACEHOLDER_FIELD_RE = re.compile(r"^[a-z0-9_]+$")
+_PLACEHOLDER_FIELD_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 _FREE_TEXT_KEYS = frozenset({
     "description",
@@ -346,9 +347,11 @@ def _placeholder_field(key: str) -> str | None:
 
     `_normalize_key` выбрасывает подчёркивания (`last_name` → `lastname`) и
     для адреса не годится: приложение резолвит по тому имени, которое видит.
-    Русский ключ адресом стать не может — падаем на необратимую маску.
+    Регистр тоже сохраняется: `camelCase` встречается в ответах наравне со
+    `snake_case`, и `firstname` — ключ, которого в ответе нет. Русский ключ
+    адресом стать не может: падаем на необратимую маску.
     """
-    candidate = key.strip().lower()
+    candidate = key.strip()
     return candidate if _PLACEHOLDER_FIELD_RE.match(candidate) else None
 
 
@@ -562,19 +565,25 @@ def _sanitize_value(
         return value
 
     entity = address[0] if address else None
+    if key and _is_free_text_key(key):
+        # Свободный текст чистится всегда — и внутри записи, не относящейся к
+        # человеку. «Запись не про человека» верно для её **полей**: название
+        # товара, телефон филиала. Для текста, который набирают руками, оно не
+        # верно: туда попадает что угодно. Найдено ревью дифа — сентинел
+        # выключал очистку заодно, и телефон с почтой уходили сырыми.
+        #
+        # Адресности здесь нет намеренно: найденное внутри текста ФИО может
+        # принадлежать владельцу, врачу или третьему лицу, и адрес записи о
+        # нём ничего не говорит.
+        return sanitize_text(value)
     if entity is _NOT_A_PERSON:
-        # Название вакцины, роли, породы, телефон филиала — не персональные
+        # Название вакцины, роли, породы, контакты филиала — не персональные
         # данные, и маскировать их значит терять данные без выигрыша.
         return value
     if key:
         replacement = _redaction_for_key(key, entity=entity)
         if replacement is not None:
             return _addressed_placeholder(key, record=record, address=address) or replacement
-        if _is_free_text_key(key):
-            # Адресности здесь нет намеренно: найденное внутри текста ФИО может
-            # принадлежать владельцу, врачу или третьему лицу, и адрес записи о
-            # нём ничего не говорит.
-            return sanitize_text(value)
     if report_mode:
         return sanitize_report_value(value)
     return value

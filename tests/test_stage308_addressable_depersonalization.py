@@ -26,7 +26,7 @@ from depersonalization import (
     sanitize_tool_result,
 )
 
-PLACEHOLDER_RE = re.compile(r"^\[[a-z_]+:[1-9]\d*:[a-z0-9_]+\]$")
+PLACEHOLDER_RE = re.compile(r"^\[[a-z_]+:[1-9]\d*:[A-Za-z0-9_]+\]$")
 
 
 def _s(payload):
@@ -241,3 +241,52 @@ def test_report_rows_do_not_become_addressable() -> None:
     )["rows"][0]
 
     assert out["Владелец"] == REDACTED_NAME
+
+
+# --- найдено ревью дифа -----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "container",
+    ["good", "clinics", "role", "vaccinations"],
+    ids=["товар", "клиника", "роль", "вакцина"],
+)
+def test_free_text_is_still_cleaned_inside_a_non_person_record(container) -> None:
+    """Регресс, внесённый вместе с сентинелом `_NOT_A_PERSON`.
+
+    «Эта запись не про человека» верно для её **полей**: название товара и
+    телефон филиала — не персональные данные. Но свободный текст внутри такой
+    записи набирается руками, и туда попадает что угодно. Ранний возврат
+    выключил `sanitize_text` вместе со всем остальным, и телефон с почтой
+    поехали наружу сырыми — то есть правка, задуманная против потери данных,
+    открыла утечку.
+    """
+    out = _s({container: [{"id": 1, "description": "Звонил Иван, +79990000001, a@b.ru"}]})
+    text = out[container][0]["description"]
+
+    assert "+79990000001" not in text
+    assert "a@b.ru" not in text
+    assert REDACTED_PHONE in text
+
+
+def test_a_nested_staff_record_is_addressed_from_the_parent_too() -> None:
+    """У вложенного `user` своего `id` может не быть — как у `owner`.
+
+    Без этого один и тот же врач приходит то адресным плейсхолдером, то
+    необратимой маской, в зависимости от формы ответа.
+    """
+    out = _s({"admission": [{"id": 900, "user_id": 5, "user": {"last_name": "Петров"}}]})
+
+    assert out["admission"][0]["user"]["last_name"] == "[user:5:last_name]"
+
+
+def test_the_placeholder_keeps_the_key_the_application_actually_sees() -> None:
+    """Приложение резолвит по имени поля из ответа, а не по нашему внутреннему.
+
+    `camelCase` встречается в ответах наравне со `snake_case`; приведение к
+    нижнему регистру дало бы `firstname`, которого в ответе нет.
+    """
+    out = _s({"client": {"id": 123, "firstName": "Анна", "cell_phone": "+79990000001"}})["client"]
+
+    assert out["firstName"] == "[client:123:firstName]"
+    assert out["cell_phone"] == "[client:123:cell_phone]"
