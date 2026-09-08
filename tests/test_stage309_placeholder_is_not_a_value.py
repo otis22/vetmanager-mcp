@@ -283,3 +283,36 @@ async def test_rejection_goes_through_the_stage_307_handling():
     assert augment.await_count == 1
     # Обвинение выключено — это ошибка вызывающего; доставка playbook нет.
     assert augment.await_args.kwargs.get("blame_product") is False
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_report_problem_may_carry_a_placeholder():
+    """Отчёт о проблеме — единственное место, где плейсхолдер уместен.
+
+    `report_problem` не ходит в Ветменеджер и ничего не записывает в базу
+    клиники: он описывает форму проблемы разбирающему. Этап 299 уже закрепил,
+    что плейсхолдер в отчёте — признак соблюдения контракта, а не риска.
+    Запретить его здесь значило бы сломать обратную связь ровно про тот
+    инцидент, который чинит этот этап.
+    """
+    billing_mock()
+    headers_patch, runtime_patch = bearer_runtime_patch(is_depersonalized=True)
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool(
+            "report_problem",
+            {
+                "summary": "update_client записал плейсхолдер вместо фамилии",
+                "details": f"аргумент был {PLACEHOLDER}, ушёл в базу как есть",
+                "category": "bug",
+                "severity": "high",
+                "related_tool": "update_client",
+            },
+        )
+    # Утверждение о сохранении, а не о «что-то вернулось»: отказ до тела
+    # инструмента тоже дал бы непустой результат.
+    assert result.structured_content["ok"] is True
+    assert result.structured_content["message"] == "feedback_saved"
+    assert result.structured_content["feedback_id"]
+    counter = snapshot_service_metrics()["placeholder_argument_rejections_total"]
+    assert "report_problem" not in counter

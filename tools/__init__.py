@@ -95,6 +95,13 @@ def _reject_placeholder_arguments(tool_name: str, args: tuple, kwargs: dict) -> 
     Проверка одинакова для любого токена: плейсхолдер живёт в истории диалога,
     и один и тот же аргумент не может то отклоняться, то портить данные.
     """
+    if tool_name in BASELINE_ALLOWED_TOOLS:
+        # `report_problem` и помощник промпта ничего не пишут в базу клиники и
+        # наверх не ходят. Больше того, отчёт о проблеме — единственное место,
+        # где плейсхолдер уместен: этап 299 закрепил, что в отчёте он признак
+        # соблюдения контракта, а не риска. Запрет здесь сломал бы обратную
+        # связь ровно про тот инцидент, который чинит этот этап.
+        return
     if not contains_addressed_placeholder(list(args)) and not contains_addressed_placeholder(kwargs):
         return
     record_placeholder_argument_rejection(tool_name)
