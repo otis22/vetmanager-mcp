@@ -6,6 +6,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from exceptions import ToolInputError
 from russian_given_names import GIVEN_NAMES
 
 
@@ -379,6 +380,57 @@ def _record_address(
     return (entity, record_id)
 
 
+# Stage 309: the placeholder format lives in exactly two functions — a builder
+# and a detector. A shared regex alone would not be enough: a test that checks
+# the detector with the same regex only proves the regex matches itself, while
+# the generator quietly drifts away.
+ADDRESSED_PLACEHOLDER_ENTITIES = frozenset({"client", "user", "pet", "supplier"})
+_ADDRESSED_PLACEHOLDER_RE = re.compile(
+    r"\[(?:" + "|".join(sorted(ADDRESSED_PLACEHOLDER_ENTITIES)) + r"):[1-9]\d*:[A-Za-z0-9_]+\]"
+)
+# Real MCP arguments are shallow; anything deeper is a malformed call, not a
+# legitimate payload we failed to handle.
+_ARGUMENT_SCAN_MAX_DEPTH = 50
+
+
+def build_addressed_placeholder(entity: str, record_id: int, field: str) -> str:
+    """`[сущность:id:поле]` — единственное место, где формат собирается."""
+    return f"[{entity}:{record_id}:{field}]"
+
+
+def contains_addressed_placeholder(value: Any, _depth: int = 0, _seen: set | None = None) -> bool:
+    """Есть ли в значении адресный плейсхолдер — с обходом вглубь.
+
+    Ключи словарей проверяются наравне со значениями: плейсхолдер в ключе тоже
+    уедет наверх. Нестроковые скаляры не разворачиваются в текст — `42` не
+    должно случайно совпасть ни с чем.
+
+    Цикл и слишком глубокая структура — не повод падать с `RecursionError`
+    посреди обхода: это `ToolInputError` до вызова инструмента.
+    """
+    if isinstance(value, str):
+        return _ADDRESSED_PLACEHOLDER_RE.search(value) is not None
+    if not isinstance(value, (dict, list, tuple)):
+        return False
+    if _depth >= _ARGUMENT_SCAN_MAX_DEPTH:
+        raise ToolInputError(
+            "Tool arguments are nested too deeply to check for placeholders."
+        )
+    seen = set() if _seen is None else _seen
+    marker = id(value)
+    if marker in seen:
+        raise ToolInputError("Tool arguments contain a cycle and cannot be checked.")
+    seen = seen | {marker}
+    items = (
+        [item for pair in value.items() for item in pair]
+        if isinstance(value, dict)
+        else list(value)
+    )
+    return any(
+        contains_addressed_placeholder(item, _depth + 1, seen) for item in items
+    )
+
+
 def _addressed_placeholder(
     key: str, *, record: Mapping | None, address: tuple | None
 ) -> str | None:
@@ -397,7 +449,7 @@ def _addressed_placeholder(
     if not isinstance(entity, str) or record_id is None:
         return None
     field = _placeholder_field(key)
-    return f"[{entity}:{record_id}:{field}]" if field else None
+    return build_addressed_placeholder(entity, record_id, field) if field else None
 
 
 def _redaction_for_key(key: str, *, entity: object = None) -> str | None:

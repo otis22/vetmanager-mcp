@@ -49,6 +49,10 @@ _TOOL_CALL_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = def
     LatencyAggregate
 )
 _TOKEN_PRESET_ISSUED_TOTAL: DefaultDict[str, int] = defaultdict(int)
+# Этап 309. Сколько раз отказ спас запись от плейсхолдера. Метка — только имя
+# инструмента: в аргументе может лежать что угодно, включая персональные
+# данные, поэтому ни значения, ни пути до него в метрике быть не может.
+_PLACEHOLDER_ARGUMENT_REJECTIONS_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _RATE_LIMIT_BACKEND_DEGRADED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _SANITIZER_FAILURES_TOTAL = 0
 _REST_UNMAPPED_READ_TOTAL = 0
@@ -113,6 +117,7 @@ def reset_service_metrics() -> None:
         _TOOL_CALLS_TOTAL.clear()
         _TOOL_CALL_LATENCY_SECONDS.clear()
         _TOKEN_PRESET_ISSUED_TOTAL.clear()
+        _PLACEHOLDER_ARGUMENT_REJECTIONS_TOTAL.clear()
         _RATE_LIMIT_BACKEND_DEGRADED_TOTAL.clear()
         _REPORT_EXPORT_DOWNLOAD_TOTAL.clear()
         _REPORT_EXPORT_SERVE_TOTAL.clear()
@@ -337,6 +342,14 @@ def record_token_preset_issued(preset: str) -> None:
         _TOKEN_PRESET_ISSUED_TOTAL[preset] += 1
 
 
+def record_placeholder_argument_rejection(tool_name: str) -> None:
+    """Аргумент инструмента содержал адресный плейсхолдер и был отклонён."""
+    with _LOCK:
+        _PLACEHOLDER_ARGUMENT_REJECTIONS_TOTAL[
+            _TOOL_LABEL_ALLOWED_RE.sub("_", tool_name or "") or "unknown"
+        ] += 1
+
+
 def record_rate_limit_backend_degraded(reason: str) -> None:
     """Increment Redis rate-limit backend degradation counter."""
     with _LOCK:
@@ -502,6 +515,9 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 for (endpoint, method), aggregate in sorted(_TOOL_CALL_LATENCY_SECONDS.items())
             },
             "token_preset_issued_total": dict(sorted(_TOKEN_PRESET_ISSUED_TOTAL.items())),
+            "placeholder_argument_rejections_total": dict(
+                sorted(_PLACEHOLDER_ARGUMENT_REJECTIONS_TOTAL.items())
+            ),
             "rate_limit_backend_degraded_total": dict(
                 sorted(_RATE_LIMIT_BACKEND_DEGRADED_TOTAL.items())
             ),
@@ -701,6 +717,17 @@ def render_prometheus_metrics() -> str:
     for preset, count in snapshot.get("token_preset_issued_total", {}).items():
         lines.append(
             f"vetmanager_token_preset_issued_total{_labels_text(preset=preset)} {count}"
+        )
+
+    lines.extend(
+        [
+            "# HELP vetmanager_placeholder_argument_rejections_total Tool calls rejected because an argument carried an addressed placeholder.",
+            "# TYPE vetmanager_placeholder_argument_rejections_total counter",
+        ]
+    )
+    for tool, count in snapshot.get("placeholder_argument_rejections_total", {}).items():
+        lines.append(
+            f"vetmanager_placeholder_argument_rejections_total{_labels_text(tool=tool)} {count}"
         )
 
     lines.extend(

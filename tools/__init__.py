@@ -4,6 +4,7 @@ import inspect
 from functools import wraps
 
 import depersonalization
+from depersonalization import contains_addressed_placeholder
 from agent_feedback_service import augment_tool_error, should_skip_report_hint
 from error_tracking import set_affected_account
 from exceptions import (
@@ -17,7 +18,10 @@ from exceptions import (
 from filters import FilterPropertyValidationError, SortPropertyValidationError
 from privacy_utils import redact_sensitive_output_fields, redact_tool_error
 from runtime_auth import use_runtime_credentials
-from service_metrics import record_sanitizer_failure
+from service_metrics import (
+    record_placeholder_argument_rejection,
+    record_sanitizer_failure,
+)
 from tool_scope_security import (
     BASELINE_ALLOWED_TOOLS,
     AuthChallengeToolError,
@@ -79,6 +83,30 @@ async def _with_known_issue_hint(
     return redact_tool_error(augmented) if type(augmented) is ToolError else augmented
 
 
+def _reject_placeholder_arguments(tool_name: str, args: tuple, kwargs: dict) -> None:
+    """Адресный плейсхолдер — конечное значение для человека, а не для записи.
+
+    Этап 308 сделал маску похожей на значение, и модель, честно выполнившая
+    инструкцию «переноси дословно», записывала её в базу клиники вместо
+    фамилии. Подставлять настоящее значение здесь нельзя: контур записи и
+    контур чтения моделью не разделены, и подставленное вернулось бы ей через
+    чтение той же записи.
+
+    Проверка одинакова для любого токена: плейсхолдер живёт в истории диалога,
+    и один и тот же аргумент не может то отклоняться, то портить данные.
+    """
+    if not contains_addressed_placeholder(list(args)) and not contains_addressed_placeholder(kwargs):
+        return
+    record_placeholder_argument_rejection(tool_name)
+    raise ToolInputError(
+        "A tool argument contains an addressed placeholder such as "
+        "[client:123:last_name]. A placeholder is the final value shown to the "
+        "person, not a value to store or send: the application substitutes it "
+        "on its side. Pass the real value, omit the field, or let the "
+        "application resolve the placeholder before calling this tool."
+    )
+
+
 def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None):
     resolved_tool_name = tool_name or tool_func.__name__
 
@@ -98,6 +126,10 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
 
         with use_runtime_credentials(credentials):
             try:
+                # Этап 309. Проверка стоит внутри этого `try` намеренно: этап
+                # 307 обрабатывает ошибку вызывающего только здесь. Снаружи
+                # ошибка была бы того же типа, но без playbook.
+                _reject_placeholder_arguments(resolved_tool_name, args, kwargs)
                 result = await tool_func(*args, **kwargs)
             except ToolError as exc:
                 if resolved_tool_name in BASELINE_ALLOWED_TOOLS:
