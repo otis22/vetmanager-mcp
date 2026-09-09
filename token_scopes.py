@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
+from urllib.parse import unquote
 
 TOKEN_ACCESS_POLICY_VERSION = 1
 
@@ -316,7 +317,10 @@ def required_scope_for_request(method: str, path: str) -> str | None:
         return REQUEST_NOT_MAPPED
     normalized_path = path.split("?", 1)[0].strip("/")
     parts = [part.lower() for part in normalized_path.split("/") if part]
-    if any(part in {".", ".."} for part in parts):
+    # Decoded once before the check: we never decode the path ourselves, but a
+    # proxy or web server between us and the clinic may, and then `%2e%2e`
+    # becomes the same way out as a plain `..`.
+    if any(unquote(part) in {".", ".."} for part in parts):
         # Stage 310: this function reads the path as written, while the HTTP
         # client resolves dot segments before sending it. So a path can be
         # classified as one entity and delivered as another. While every

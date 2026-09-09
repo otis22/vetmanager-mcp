@@ -148,6 +148,22 @@ async def test_an_edit_sends_a_zero_it_was_given():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_a_title_can_be_cleared():
+    """Upstream constrains the label's length, not its emptiness, so an empty
+    title is a value — the one that removes a label typed by mistake."""
+    billing_mock()
+    route = respx.put(f"{BASE}/rest/api/timesheet/7").mock(
+        return_value=httpx.Response(200, json={"data": {"id": 7}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("update_timesheet", {"timesheet_id": 7, "title": ""})
+
+    assert _body_of(route) == {"title": ""}
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_deleting_a_shift_removes_it():
     billing_mock()
     route = respx.delete(f"{BASE}/rest/api/timesheet/7").mock(

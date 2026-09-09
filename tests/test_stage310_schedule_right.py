@@ -124,6 +124,25 @@ def test_a_path_that_travels_elsewhere_is_refused(path):
     assert required_scope_for_request("DELETE", path) == REQUEST_NOT_MAPPED
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        # We do not decode the path; something between us and the clinic may.
+        "/rest/api/timesheet/%2e%2e/client/5",
+        "/rest/api/timesheet/%2E%2E/client/5",
+        "/rest/api/%2e/timesheet/%2e%2e/pet/5",
+    ],
+)
+def test_an_encoded_way_out_is_refused_too(path):
+    assert required_scope_for_request("DELETE", path) == REQUEST_NOT_MAPPED
+
+
+def test_an_ordinary_percent_in_a_path_still_works():
+    """Refusing everything with a `%` would close paths that are simply
+    escaped, so the check decodes and looks again rather than guessing."""
+    assert required_scope_for_request("GET", "/rest/api/%53uppliers") is not REQUEST_NOT_MAPPED
+
+
 def test_a_path_with_dot_segments_is_refused_for_writing_too(): 
     assert required_scope_for_request("POST", "/rest/api/timesheet/../client") == REQUEST_NOT_MAPPED
 

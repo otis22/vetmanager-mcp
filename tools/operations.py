@@ -169,7 +169,7 @@ def register(mcp: FastMCP) -> None:
         doctor_id: int | None = None,
         clinic_id: int | None = None,
         type: int | None = None,
-        title: str = "",
+        title: str | None = None,
     ) -> dict:
         """Update an existing work schedule entry (timesheet).
 
@@ -203,7 +203,10 @@ def register(mcp: FastMCP) -> None:
             payload["clinic_id"] = clinic_id
         if type is not None:
             payload["type"] = type
-        if title:
+        # An empty title is a value: upstream limits its length, not its
+        # emptiness, so this is how a label typed by mistake is removed. An
+        # empty date is not — there is no such moment in time.
+        if title is not None:
             payload["title"] = title
         if not payload:
             # Vetmanager answers 406 `No params` to an empty body. Refusing
