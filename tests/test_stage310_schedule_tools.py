@@ -98,6 +98,9 @@ async def test_a_shift_without_a_type_never_reaches_the_clinic():
 @pytest.mark.asyncio
 @respx.mock
 async def test_editing_a_shift_sends_only_what_changed():
+    # Stage 311 took the two time boundaries out of this test: they are now
+    # changed in pairs, because one of them alone cannot be checked against
+    # the other. Everything else still travels on its own.
     billing_mock()
     route = respx.put(f"{BASE}/rest/api/timesheet/7").mock(
         return_value=httpx.Response(200, json={"data": {"id": 7}})
@@ -106,11 +109,11 @@ async def test_editing_a_shift_sends_only_what_changed():
     with headers_patch, runtime_patch:
         await mcp.call_tool(
             "update_timesheet",
-            {"timesheet_id": 7, "end_datetime": "2027-03-01T20:00:00"},
+            {"timesheet_id": 7, "type": 4},
         )
 
     body = _body_of(route)
-    assert body == {"end_datetime": "2027-03-01 20:00:00"}
+    assert body == {"type": 4}
 
 
 @pytest.mark.asyncio

@@ -67,6 +67,16 @@ def _shift_time_fields(
             "night: both flags describe the time of the shift."
         )
 
+    if bool(begin_datetime) != bool(end_datetime):
+        # One boundary alone cannot be checked: the other one lives in the
+        # row, and the tool does not read it. Upstream would take the result
+        # either way, so a shift whose end lands before its start can only be
+        # kept out by asking for the pair.
+        raise ToolInputError(
+            "Change begin_datetime and end_datetime together: with one "
+            "boundary alone there is nothing to check the other against."
+        )
+
     if all_day:
         # The dates stay as given: the form sets the time on each end
         # separately, so an all-day span of several days is a row it makes.
@@ -270,8 +280,10 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             timesheet_id: ID of the schedule entry to update.
-            begin_datetime: New start date/time (optional).
-            end_datetime: New end date/time (optional).
+            begin_datetime: New start date/time (optional). Times are
+                changed in pairs: pass end_datetime with it.
+            end_datetime: New end date/time (optional). Times are changed in
+                pairs: pass begin_datetime with it.
             doctor_id: New staff member ID (optional).
             clinic_id: New clinic branch ID (optional).
             type: New shift type id from `get_timesheet_types` (optional).

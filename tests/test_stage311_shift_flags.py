@@ -429,16 +429,33 @@ async def test_an_edit_that_ends_before_it_starts_is_refused():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_an_edit_moving_one_end_only_is_left_alone():
-    """With one boundary unknown there is nothing to compare it against, and
-    guessing the other from the row would take a request."""
+async def test_an_edit_moving_one_end_only_is_refused():
+    """The other boundary lives in the row, and the tool does not read it. A
+    row edited to 20:00 that still ends at 18:00 is exactly the shift this
+    stage refuses to create — the edit path must not be a way back in."""
     billing_mock()
     route = _update_route()
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
-        await mcp.call_tool(
-            "update_timesheet",
-            {"timesheet_id": 7, "end_datetime": "2027-03-01T20:00:00"},
-        )
+        with pytest.raises(ToolError) as excinfo:
+            await mcp.call_tool(
+                "update_timesheet",
+                {"timesheet_id": 7, "end_datetime": "2027-03-01T20:00:00"},
+            )
 
-    assert _body_of(route) == {"end_datetime": "2027-03-01 20:00:00"}
+    assert "begin_datetime" in str(excinfo.value)
+    assert not route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_an_edit_that_touches_no_times_still_sends_only_what_changed():
+    """Pairing is about the two boundaries of one interval, not about edits
+    in general: everything else still travels alone."""
+    billing_mock()
+    route = _update_route()
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("update_timesheet", {"timesheet_id": 7, "type": 3})
+
+    assert _body_of(route) == {"type": 3}
