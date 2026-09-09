@@ -3,6 +3,8 @@
 Stage 16: every tool must expose meaningful description and inputSchema.
 Stage 17: every list tool must expose minimum=1 and maximum=100 for limit.
 """
+import re
+
 import pytest
 import sys
 from pathlib import Path
@@ -287,10 +289,13 @@ class TestToolsListSchema:
 
     def test_stage185_readme_tool_count_matches_live_tools(self, all_tool_exports):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        marker = "**"
-        line = next(line for line in readme.splitlines() if "инструментов** по" in line)
-        count_text = line.split(marker, 2)[1].split()[0]
-        assert int(count_text) == len(all_tool_exports)
+        # Stage 310: the count line used to be found by the exact word
+        # "инструментов", so the guard broke on 123 — where Russian wants
+        # "инструмента". It was matching grammar, not the number it guards.
+        match = re.search(r"\*\*(\d+) инструмент\w*\*\* по", readme)
+
+        assert match is not None, "README has no tool count line"
+        assert int(match.group(1)) == len(all_tool_exports)
 
     def test_stage185_python_tool_parameters_are_schema_source(self, run_async):
         async def _fetch():

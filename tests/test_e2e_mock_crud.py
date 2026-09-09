@@ -332,7 +332,7 @@ async def test_create_timesheet_tool():
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("create_timesheet", {
             "doctor_id": 1, "begin_datetime": "2026-03-27T09:00:00",
-            "end_datetime": "2026-03-27T18:00:00", "clinic_id": 1,
+            "end_datetime": "2026-03-27T18:00:00", "clinic_id": 1, "type": 2,
         })
     assert route.call_count == 1
     assert route.calls.last.request.method == "POST"
@@ -342,6 +342,10 @@ async def test_create_timesheet_tool():
         "begin_datetime": "2026-03-27 09:00:00",
         "end_datetime": "2026-03-27 18:00:00",
         "clinic_id": 1,
+        # Stage 310: upstream refuses a shift without a type, and the model
+        # requires the template id even though every real row carries 0.
+        "type": 2,
+        "shedule_id": 0,
     }
 
 
@@ -492,6 +496,7 @@ async def test_delete_client_tool_404_raises_not_found_error():
                 "begin_datetime": "2026-03-27T09:00:00",
                 "end_datetime": "2026-03-27T18:00:00",
                 "clinic_id": 1,
+                "type": 2,
             },
             422,
             "HTTP 422",

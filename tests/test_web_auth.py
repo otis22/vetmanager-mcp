@@ -1425,6 +1425,7 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
         "pets.read",
         "pets.write",
         "reference.read",
+        "schedule.write",
         "users.read",
     ]
     assert snapshot_service_metrics()["token_preset_issued_total"]["frontdesk"] == 1

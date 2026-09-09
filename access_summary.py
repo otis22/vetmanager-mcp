@@ -34,6 +34,7 @@ from token_scopes import (
     SCOPE_RECORDS_DELETE,
     SCOPE_REFERENCE_READ,
     SCOPE_REPORT_AI_WRITE,
+    SCOPE_SCHEDULE_WRITE,
     SCOPE_USERS_READ,
     SCOPE_USERS_WRITE,
 )
@@ -49,7 +50,8 @@ class AccessArea:
 
 
 # Named by what the right actually opens, not by the scope's own name:
-# `analytics.write` is timesheets, and reports live on `report_ai.write`.
+# reports live on `report_ai.write`, and the schedule got a name of its own in
+# stage 310 — until then it was hiding under `analytics.write`.
 ACCESS_AREAS: tuple[AccessArea, ...] = (
     AccessArea("клиенты", SCOPE_CLIENTS_READ, SCOPE_CLIENTS_WRITE),
     AccessArea("питомцы", SCOPE_PETS_READ, SCOPE_PETS_WRITE),
@@ -58,7 +60,7 @@ ACCESS_AREAS: tuple[AccessArea, ...] = (
     AccessArea("финансы", SCOPE_FINANCE_READ, SCOPE_FINANCE_WRITE),
     AccessArea("склад", SCOPE_INVENTORY_READ, SCOPE_INVENTORY_WRITE),
     AccessArea("сотрудники", SCOPE_USERS_READ, SCOPE_USERS_WRITE),
-    AccessArea("смены и статистика", SCOPE_ANALYTICS_READ, SCOPE_ANALYTICS_WRITE),
+    AccessArea("смены и статистика", SCOPE_ANALYTICS_READ, SCOPE_SCHEDULE_WRITE),
     AccessArea("справочники", SCOPE_REFERENCE_READ, None),
     AccessArea("рассылки", SCOPE_MESSAGING_READ, SCOPE_MESSAGING_WRITE),
     AccessArea("отчёты", None, SCOPE_REPORT_AI_WRITE),
@@ -68,6 +70,16 @@ ACCESS_AREAS: tuple[AccessArea, ...] = (
 # that require it, so a third deleting tool cannot appear without this line
 # being corrected.
 DELETABLE_RECORDS = "клиенты и питомцы"
+
+# Stage 310: the schedule right removes rows too. A shift has no deleted
+# status, so `delete_timesheet` erases it — and a page that answered "нет"
+# here would be making the exact promise stage 273 built this line to keep.
+DELETABLE_SHIFTS = "смены графика"
+
+# Stage 310: kept supported so manifests of keys issued earlier still parse,
+# but no tool asks for it any more. Listed here because every right must be
+# accounted for, and a right that opens nothing has no area on the screen.
+STALE_SCOPES = frozenset({SCOPE_ANALYTICS_WRITE})
 
 NOTHING = "нет"
 
@@ -90,7 +102,12 @@ def summarize_access(scopes) -> tuple[tuple[str, str], ...]:
     granted = set(scopes or ())
     reading = _areas(granted, "read_scope")
     changing = _areas(granted, "write_scope")
-    deleting = DELETABLE_RECORDS if SCOPE_RECORDS_DELETE in granted else NOTHING
+    removable = []
+    if SCOPE_RECORDS_DELETE in granted:
+        removable.append(DELETABLE_RECORDS)
+    if SCOPE_SCHEDULE_WRITE in granted:
+        removable.append(DELETABLE_SHIFTS)
+    deleting = ", ".join(removable) or NOTHING
     return (
         ("Чтение", ", ".join(reading) or NOTHING),
         ("Изменение", ", ".join(changing) or NOTHING),

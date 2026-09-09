@@ -144,7 +144,10 @@ _CHATGPT_OAUTH_PRESET_COPY = {
     ),
     PRESET_FRONTDESK: (
         "Регистратура",
-        "расписание, клиенты, питомцы и сообщения",
+        # Stage 310: "расписание" here meant appointments. The preset now also
+        # runs the staff work schedule, and a clinic reading this line is
+        # choosing what to hand out — so both belong in it by name.
+        "записи на приём, график работы сотрудников, клиенты, питомцы и сообщения",
     ),
     PRESET_FULL_ACCESS: (
         "Полный доступ",

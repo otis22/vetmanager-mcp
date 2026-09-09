@@ -20,6 +20,7 @@ from tool_access_registry import (
 )
 from tool_scope_security import ScopeDeniedToolError, _ensure_tool_scopes_allowed
 from token_scopes import (
+    LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS,
     SCOPE_CLIENTS_WRITE,
     SCOPE_PETS_WRITE,
     SCOPE_RECORDS_DELETE,
@@ -94,15 +95,20 @@ def test_creating_and_editing_keep_their_own_rights(method, path, expected):
     assert required_scope_for_request(method, path) == expected
 
 
-def test_a_full_access_key_issued_before_this_stage_still_deletes():
+@pytest.mark.parametrize("snapshot", LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS)
+def test_a_full_access_key_issued_before_this_stage_still_deletes(snapshot):
     """The stored list is what a key carries; a new right would leave it short.
 
     Without the snapshot, every Full access key issued until today would
     silently stop being full access.
-    """
-    issued_before = [scope for scope in SUPPORTED_TOKEN_SCOPES if scope != SCOPE_RECORDS_DELETE]
 
-    restored = deserialize_token_scopes(json.dumps(issued_before))
+    Stage 310: this used to build the old manifest as "everything except
+    `records.delete`", which only held while deletion was the newest right.
+    The next right added made that composition one no key was ever issued
+    with, and the guard started testing a shape that never existed. Reading
+    the snapshots themselves keeps it honest as rights keep arriving.
+    """
+    restored = deserialize_token_scopes(json.dumps(list(snapshot)))
 
     assert restored == list(SUPPORTED_TOKEN_SCOPES)
     assert SCOPE_RECORDS_DELETE in restored

@@ -9,8 +9,16 @@ a client, and that silence is what the user report was about.
 
 import pytest
 
-from access_summary import ACCESS_AREAS, DELETABLE_RECORDS, NOTHING, summarize_access
+from access_summary import (
+    ACCESS_AREAS,
+    DELETABLE_RECORDS,
+    DELETABLE_SHIFTS,
+    NOTHING,
+    STALE_SCOPES,
+    summarize_access,
+)
 from tool_access_registry import (
+    PRESET_FRONTDESK,
     PRESET_FULL_ACCESS,
     TOKEN_PRESET_CHOICES,
     TOKEN_PRESET_LABELS,
@@ -37,7 +45,10 @@ def test_every_right_is_shown_somewhere():
     covered.discard(None)
     covered.add(SCOPE_RECORDS_DELETE)
 
-    assert set(SUPPORTED_TOKEN_SCOPES) == covered
+    # Stage 310: a right kept alive only so older key manifests still parse
+    # has nothing to show — but it must be listed as stale on purpose, not
+    # simply missing, or a right dropped by accident would look the same.
+    assert set(SUPPORTED_TOKEN_SCOPES) == covered | STALE_SCOPES
 
 
 def test_the_delete_line_names_what_is_actually_deletable():
@@ -59,9 +70,20 @@ def test_all_three_lines_are_always_there(preset):
 
 
 @pytest.mark.parametrize("preset", [p for p in TOKEN_PRESET_CHOICES if p != PRESET_FULL_ACCESS])
-def test_only_full_access_says_it_can_delete(preset):
-    assert _lines(preset)["Удаление"] == NOTHING
-    assert _lines(PRESET_FULL_ACCESS)["Удаление"] == DELETABLE_RECORDS
+def test_only_full_access_erases_clinic_records(preset):
+    """Stage 310 split this in two. Deleting is no longer one thing: front
+    desk removes shifts from the schedule, and that is not the worry this line
+    was written for — erasing a client is."""
+    assert DELETABLE_RECORDS not in _lines(preset)["Удаление"]
+    assert DELETABLE_RECORDS in _lines(PRESET_FULL_ACCESS)["Удаление"]
+
+
+def test_the_line_says_shifts_where_shifts_can_be_erased():
+    """A key that erases shifts while the page answers "нет" is the promise
+    stage 273 exists to keep, broken in a new place."""
+    assert DELETABLE_SHIFTS in _lines(PRESET_FRONTDESK)["Удаление"]
+    assert DELETABLE_SHIFTS in _lines(PRESET_FULL_ACCESS)["Удаление"]
+    assert _lines("doctor")["Удаление"] == NOTHING
 
 
 def test_read_only_says_it_changes_nothing():

@@ -21,7 +21,7 @@ from token_scopes import (
     SCOPE_ADMISSIONS_READ,
     SCOPE_ADMISSIONS_WRITE,
     SCOPE_ANALYTICS_READ,
-    SCOPE_ANALYTICS_WRITE,
+    SCOPE_SCHEDULE_WRITE,
     SCOPE_CLIENTS_READ,
     SCOPE_CLIENTS_WRITE,
     SCOPE_FINANCE_READ,
@@ -91,6 +91,7 @@ def test_full_access_preset_matches_supported_scopes_snapshot():
                 SCOPE_PETS_READ,
                 SCOPE_PETS_WRITE,
                 SCOPE_REFERENCE_READ,
+                SCOPE_SCHEDULE_WRITE,
                 SCOPE_USERS_READ,
             ),
         ),
@@ -236,7 +237,7 @@ def test_normalize_token_preset_rejects_unknown_or_whitespace_values(preset):
         ("save_report_ai_job_as_report", (SCOPE_REPORT_AI_WRITE,)),
         ("send_message_to_users", (SCOPE_MESSAGING_WRITE,)),
         ("update_user", (SCOPE_USERS_WRITE,)),
-        ("create_timesheet", (SCOPE_ANALYTICS_WRITE,)),
+        ("create_timesheet", (SCOPE_SCHEDULE_WRITE,)),
     ],
 )
 def test_representative_tools_have_expected_scope_mapping(tool_name, expected_scopes):
@@ -245,7 +246,7 @@ def test_representative_tools_have_expected_scope_mapping(tool_name, expected_sc
 
 def test_request_scope_mapping_covers_missing_write_paths():
     assert required_scope_for_request("PUT", "/rest/api/user/5") == SCOPE_USERS_WRITE
-    assert required_scope_for_request("POST", "/rest/api/timesheet") == SCOPE_ANALYTICS_WRITE
+    assert required_scope_for_request("POST", "/rest/api/timesheet") == SCOPE_SCHEDULE_WRITE
     assert required_scope_for_request("GET", "/rest/api/messages/reports") == SCOPE_ANALYTICS_READ
     assert required_scope_for_request("GET", "/rest/api/ClientPhone") == SCOPE_CLIENTS_READ
     # Stage 269: starting work needs the report right; looking at a job or at a

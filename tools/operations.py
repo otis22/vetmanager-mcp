@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from fastmcp import FastMCP
 from pydantic import Field
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, gt as _filter_gt, lt as _filter_lt
-from tools.crud_helpers import crud_list, crud_get_by_id, crud_create
+from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
 from vm_datetime import normalize_vm_datetime
@@ -106,13 +106,31 @@ def register(mcp: FastMCP) -> None:
         return await crud_get_by_id("/rest/api/timesheet", timesheet_id)
 
     @mcp.tool
+    async def get_timesheet_types(
+        limit: LimitParam = 20,
+        offset: int = 0,
+    ) -> dict:
+        """List shift types used by the work schedule.
+
+        `type` on a timesheet entry is an id from this table, not a free
+        value, and the ids differ between clinics. Read it before creating a
+        shift: `is_working_hours` marks the types that count as work.
+
+        Args:
+            limit: Max records to return.
+            offset: Pagination offset.
+        """
+        # Case matters: `/rest/api/timesheettypes` answers 404.
+        return await crud_list("/rest/api/timesheetTypes", limit=limit, offset=offset)
+
+    @mcp.tool
     async def create_timesheet(
         doctor_id: int,
         begin_datetime: str,
         end_datetime: str,
         clinic_id: int,
+        type: int,
         title: str = "",
-        type: str = "",
     ) -> dict:
         """Create a new work schedule entry (timesheet) for a staff member.
 
@@ -121,8 +139,9 @@ def register(mcp: FastMCP) -> None:
             begin_datetime: Start date/time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS).
             end_datetime: End date/time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS).
             clinic_id: ID of the clinic branch.
-            title: Schedule entry title/label (optional).
-            type: Schedule type (optional).
+            type: Shift type id from `get_timesheet_types`. Required by
+                Vetmanager: a shift without it is refused.
+            title: Schedule entry title/label, up to 50 characters (optional).
         """
         payload: dict = {
             "doctor_id": doctor_id,
@@ -133,12 +152,77 @@ def register(mcp: FastMCP) -> None:
                 end_datetime, field_name="end_datetime"
             ),
             "clinic_id": clinic_id,
+            "type": type,
+            # Required by the model and absent from every payload this tool
+            # used to send. Real rows carry 0: shifts belong to no template.
+            "shedule_id": 0,
         }
         if title:
             payload["title"] = title
+        return await crud_create("/rest/api/timesheet", payload)
+
+    @mcp.tool
+    async def update_timesheet(
+        timesheet_id: int,
+        begin_datetime: str = "",
+        end_datetime: str = "",
+        doctor_id: int = 0,
+        clinic_id: int = 0,
+        type: int = 0,
+        title: str = "",
+    ) -> dict:
+        """Update an existing work schedule entry (timesheet).
+
+        Only the fields you pass are sent. Use this to fix a shift loaded by
+        mistake instead of deleting and recreating it.
+
+        Args:
+            timesheet_id: ID of the schedule entry to update.
+            begin_datetime: New start date/time (optional).
+            end_datetime: New end date/time (optional).
+            doctor_id: New staff member ID (optional).
+            clinic_id: New clinic branch ID (optional).
+            type: New shift type id from `get_timesheet_types` (optional).
+            title: New title, up to 50 characters (optional).
+        """
+        payload: dict = {}
+        if begin_datetime:
+            payload["begin_datetime"] = normalize_vm_datetime(
+                begin_datetime, field_name="begin_datetime"
+            )
+        if end_datetime:
+            payload["end_datetime"] = normalize_vm_datetime(
+                end_datetime, field_name="end_datetime"
+            )
+        if doctor_id:
+            payload["doctor_id"] = doctor_id
+        if clinic_id:
+            payload["clinic_id"] = clinic_id
         if type:
             payload["type"] = type
-        return await crud_create("/rest/api/timesheet", payload)
+        if title:
+            payload["title"] = title
+        if not payload:
+            # Vetmanager answers 406 `No params` to an empty body. Refusing
+            # here says which call was pointless; the upstream code does not.
+            raise ToolInputError(
+                "Pass at least one field to change: begin_datetime, "
+                "end_datetime, doctor_id, clinic_id, type or title."
+            )
+        return await crud_update("/rest/api/timesheet", timesheet_id, payload)
+
+    @mcp.tool
+    async def delete_timesheet(timesheet_id: int) -> dict:
+        """Delete a work schedule entry (timesheet).
+
+        Removal is permanent: unlike an admission, a shift has no deleted
+        status, so the row is gone. Prefer `update_timesheet` when the shift
+        only needs correcting.
+
+        Args:
+            timesheet_id: ID of the schedule entry to delete.
+        """
+        return await crud_delete("/rest/api/timesheet", timesheet_id)
 
     @mcp.tool
     async def get_properties(

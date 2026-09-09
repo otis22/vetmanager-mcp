@@ -28,6 +28,10 @@ SCOPE_REFERENCE_READ = "reference.read"
 SCOPE_ANALYTICS_READ = "analytics.read"
 SCOPE_ANALYTICS_WRITE = "analytics.write"
 SCOPE_REPORT_AI_WRITE = "report_ai.write"
+# Stage 310: the staff work schedule. It used to ride on `analytics.write`,
+# which carried nothing else and lived only inside Full access — so adding a
+# shift meant taking a key that deletes clients.
+SCOPE_SCHEDULE_WRITE = "schedule.write"
 
 # Stage 274: what the second layer answers when it does not recognise the
 # request at all. Deliberately not a scope: no token can hold it, and no
@@ -54,6 +58,7 @@ SUPPORTED_TOKEN_SCOPES = (
     SCOPE_RECORDS_DELETE,
     SCOPE_REFERENCE_READ,
     SCOPE_REPORT_AI_WRITE,
+    SCOPE_SCHEDULE_WRITE,
     SCOPE_USERS_READ,
     SCOPE_USERS_WRITE,
 )
@@ -106,6 +111,30 @@ LEGACY_FULL_ACCESS_SCOPE_SNAPSHOTS = (
         SCOPE_USERS_READ,
         SCOPE_USERS_WRITE,
     ),
+    # Before stage 310 gave the work schedule its own right.
+    (
+        SCOPE_ADMISSIONS_READ,
+        SCOPE_ADMISSIONS_WRITE,
+        SCOPE_ANALYTICS_READ,
+        SCOPE_ANALYTICS_WRITE,
+        SCOPE_CLIENTS_READ,
+        SCOPE_CLIENTS_WRITE,
+        SCOPE_FINANCE_READ,
+        SCOPE_FINANCE_WRITE,
+        SCOPE_INVENTORY_READ,
+        SCOPE_INVENTORY_WRITE,
+        SCOPE_MEDICAL_CARDS_READ,
+        SCOPE_MEDICAL_CARDS_WRITE,
+        SCOPE_MESSAGING_READ,
+        SCOPE_MESSAGING_WRITE,
+        SCOPE_PETS_READ,
+        SCOPE_PETS_WRITE,
+        SCOPE_RECORDS_DELETE,
+        SCOPE_REFERENCE_READ,
+        SCOPE_REPORT_AI_WRITE,
+        SCOPE_USERS_READ,
+        SCOPE_USERS_WRITE,
+    ),
 )
 
 LEGACY_REPORT_AI_PRESET_SCOPE_SNAPSHOTS = (
@@ -113,6 +142,41 @@ LEGACY_REPORT_AI_PRESET_SCOPE_SNAPSHOTS = (
         SCOPE_ANALYTICS_READ,
         SCOPE_REPORT_AI_WRITE,
     ),
+)
+
+# Stage 310: front desk as it was issued before the schedule became its own
+# right. A key carries the manifest stored the day it was made, so without this
+# the right would reach only keys issued from now on. Matching is exact: a
+# manifest edited by hand is not this composition and is left alone.
+LEGACY_FRONTDESK_PRESET_SCOPE_SNAPSHOTS = (
+    (
+        SCOPE_ADMISSIONS_READ,
+        SCOPE_ADMISSIONS_WRITE,
+        SCOPE_ANALYTICS_READ,
+        SCOPE_CLIENTS_READ,
+        SCOPE_CLIENTS_WRITE,
+        SCOPE_FINANCE_READ,
+        SCOPE_MESSAGING_WRITE,
+        SCOPE_PETS_READ,
+        SCOPE_PETS_WRITE,
+        SCOPE_REFERENCE_READ,
+        SCOPE_USERS_READ,
+    ),
+)
+
+FRONTDESK_SCOPE_BUNDLE = (
+    SCOPE_ADMISSIONS_READ,
+    SCOPE_ADMISSIONS_WRITE,
+    SCOPE_ANALYTICS_READ,
+    SCOPE_CLIENTS_READ,
+    SCOPE_CLIENTS_WRITE,
+    SCOPE_FINANCE_READ,
+    SCOPE_MESSAGING_WRITE,
+    SCOPE_PETS_READ,
+    SCOPE_PETS_WRITE,
+    SCOPE_REFERENCE_READ,
+    SCOPE_SCHEDULE_WRITE,
+    SCOPE_USERS_READ,
 )
 
 REPORT_AI_ANALYTICS_SCOPE_BUNDLE = (
@@ -163,6 +227,7 @@ _READ_SCOPE_BY_ENTITY = {
     "street": SCOPE_REFERENCE_READ,
     "suppliers": SCOPE_INVENTORY_READ,
     "timesheet": SCOPE_ANALYTICS_READ,
+    "timesheettypes": SCOPE_REFERENCE_READ,
     "unit": SCOPE_REFERENCE_READ,
     "user": SCOPE_USERS_READ,
     "userposition": SCOPE_REFERENCE_READ,
@@ -186,7 +251,7 @@ _WRITE_SCOPE_BY_ENTITY = {
     "payment": SCOPE_FINANCE_WRITE,
     "pet": SCOPE_PETS_WRITE,
     "suppliers": SCOPE_INVENTORY_WRITE,
-    "timesheet": SCOPE_ANALYTICS_WRITE,
+    "timesheet": SCOPE_SCHEDULE_WRITE,
     "user": SCOPE_USERS_WRITE,
 }
 
@@ -236,6 +301,8 @@ def deserialize_token_scopes(raw_value: str | None) -> list[str]:
         return normalize_token_scopes(None)
     if tuple(normalized) in LEGACY_REPORT_AI_PRESET_SCOPE_SNAPSHOTS:
         return normalize_token_scopes(REPORT_AI_ANALYTICS_SCOPE_BUNDLE)
+    if tuple(normalized) in LEGACY_FRONTDESK_PRESET_SCOPE_SNAPSHOTS:
+        return normalize_token_scopes(FRONTDESK_SCOPE_BUNDLE)
     return normalized
 
 
@@ -274,6 +341,11 @@ def required_scope_for_request(method: str, path: str) -> str | None:
     if normalized_method == "GET":
         return _READ_SCOPE_BY_ENTITY.get(entity)
     if normalized_method == "DELETE":
+        # Stage 310: a shift is not a clinic record. It has no deleted status
+        # to fall back on, so correcting a loaded schedule means removing rows
+        # — and that must not cost the right to erase clients and pets.
+        if entity == "timesheet":
+            return SCOPE_SCHEDULE_WRITE
         # Stage 270: deletion is its own right, and it is required for every
         # entity — including ones no tool deletes today. An unmapped deleting
         # path should be refused by default, not waved through.

@@ -1493,6 +1493,7 @@ async def test_create_timesheet_normalizes_datetime_payload():
                 "begin_datetime": "2026-04-24T09:30:15.123",
                 "end_datetime": "2026-04-24 18:00:00",
                 "clinic_id": 2,
+                "type": 2,
             },
         )
 
@@ -1515,6 +1516,7 @@ async def test_create_timesheet_rejects_timezone_datetime_before_http():
                 "create_timesheet",
                 {
                     "doctor_id": 7,
+                    "type": 2,
                     "begin_datetime": "2026-04-24T09:30:00+03:00",
                     "end_datetime": "2026-04-24T18:00:00",
                     "clinic_id": 2,

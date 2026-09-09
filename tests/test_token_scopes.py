@@ -19,6 +19,7 @@ from token_scopes import (
     SCOPE_PETS_READ,
     SCOPE_PETS_WRITE,
     SCOPE_REFERENCE_READ,
+    SCOPE_SCHEDULE_WRITE,
     SCOPE_REPORT_AI_WRITE,
     SCOPE_USERS_READ,
     SUPPORTED_TOKEN_SCOPES,
@@ -239,6 +240,7 @@ async def test_issue_service_bearer_token_uses_selected_access_preset_scopes(tmp
             SCOPE_PETS_READ,
             SCOPE_PETS_WRITE,
             SCOPE_REFERENCE_READ,
+            SCOPE_SCHEDULE_WRITE,
             SCOPE_USERS_READ,
         ]
     finally:
