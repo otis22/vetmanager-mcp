@@ -316,6 +316,14 @@ def required_scope_for_request(method: str, path: str) -> str | None:
         return REQUEST_NOT_MAPPED
     normalized_path = path.split("?", 1)[0].strip("/")
     parts = [part.lower() for part in normalized_path.split("/") if part]
+    if any(part in {".", ".."} for part in parts):
+        # Stage 310: this function reads the path as written, while the HTTP
+        # client resolves dot segments before sending it. So a path can be
+        # classified as one entity and delivered as another. While every
+        # deletion needed the same right that bought nothing; now that the
+        # schedule deletes on a cheaper right, it would. A path whose meaning
+        # changes on the way out is not one this layer can vouch for.
+        return REQUEST_NOT_MAPPED
     if len(parts) < 3 or parts[0] != "rest" or parts[1] != "api":
         # A path this function cannot read is not a read it can vouch for.
         # Writing on it is refused; reading keeps the watched-for-now path.

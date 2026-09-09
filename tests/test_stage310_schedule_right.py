@@ -24,6 +24,7 @@ from tool_access_registry import (
 )
 from tool_scope_security import ScopeDeniedToolError, _ensure_tool_scopes_allowed
 from token_scopes import (
+    REQUEST_NOT_MAPPED,
     SCOPE_ANALYTICS_WRITE,
     SCOPE_RECORDS_DELETE,
     SCOPE_REFERENCE_READ,
@@ -104,6 +105,27 @@ def test_deleting_a_shift_asks_for_the_schedule_right():
 )
 def test_deleting_anything_else_still_asks_for_the_record_right(path):
     assert required_scope_for_request("DELETE", path) == SCOPE_RECORDS_DELETE
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # The scope check reads the path as written; the HTTP client resolves
+        # dot segments afterwards. Before this stage every DELETE needed the
+        # same right, so a path that read as one entity and travelled as
+        # another bought nothing. Giving the schedule a cheaper right is what
+        # makes the difference worth exploiting.
+        "/rest/api/timesheet/../client/5",
+        "/rest/api/timesheet/./../pet/5",
+        "/rest/api/./timesheet/../client/5",
+    ],
+)
+def test_a_path_that_travels_elsewhere_is_refused(path):
+    assert required_scope_for_request("DELETE", path) == REQUEST_NOT_MAPPED
+
+
+def test_a_path_with_dot_segments_is_refused_for_writing_too(): 
+    assert required_scope_for_request("POST", "/rest/api/timesheet/../client") == REQUEST_NOT_MAPPED
 
 
 def test_the_types_reference_is_a_reference():

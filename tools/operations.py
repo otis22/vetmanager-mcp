@@ -166,9 +166,9 @@ def register(mcp: FastMCP) -> None:
         timesheet_id: int,
         begin_datetime: str = "",
         end_datetime: str = "",
-        doctor_id: int = 0,
-        clinic_id: int = 0,
-        type: int = 0,
+        doctor_id: int | None = None,
+        clinic_id: int | None = None,
+        type: int | None = None,
         title: str = "",
     ) -> dict:
         """Update an existing work schedule entry (timesheet).
@@ -194,11 +194,14 @@ def register(mcp: FastMCP) -> None:
             payload["end_datetime"] = normalize_vm_datetime(
                 end_datetime, field_name="end_datetime"
             )
-        if doctor_id:
+        # Absence, not falseness: treating 0 as "not passed" would silently
+        # drop a value the caller wrote down, while the docstring promises the
+        # fields it is given are the fields that are sent.
+        if doctor_id is not None:
             payload["doctor_id"] = doctor_id
-        if clinic_id:
+        if clinic_id is not None:
             payload["clinic_id"] = clinic_id
-        if type:
+        if type is not None:
             payload["type"] = type
         if title:
             payload["title"] = title

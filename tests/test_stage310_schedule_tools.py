@@ -131,6 +131,23 @@ async def test_an_edit_that_changes_nothing_is_refused_here():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_an_edit_sends_a_zero_it_was_given():
+    """The tool promises to send the fields it is passed. Deciding that zero
+    means "not passed" makes that promise false for whoever needs it — better
+    to hand the value upstream and let it answer."""
+    billing_mock()
+    route = respx.put(f"{BASE}/rest/api/timesheet/7").mock(
+        return_value=httpx.Response(200, json={"data": {"id": 7}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("update_timesheet", {"timesheet_id": 7, "clinic_id": 0})
+
+    assert _body_of(route) == {"clinic_id": 0}
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_deleting_a_shift_removes_it():
     billing_mock()
     route = respx.delete(f"{BASE}/rest/api/timesheet/7").mock(
