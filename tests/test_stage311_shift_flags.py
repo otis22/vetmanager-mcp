@@ -449,6 +449,24 @@ async def test_an_edit_moving_one_end_only_is_refused():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_an_edit_moving_the_other_end_only_is_refused_too():
+    """The rule is about the pair, so it has no favoured side."""
+    billing_mock()
+    route = _update_route()
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError) as excinfo:
+            await mcp.call_tool(
+                "update_timesheet",
+                {"timesheet_id": 7, "begin_datetime": "2027-03-01T20:00:00"},
+            )
+
+    assert "end_datetime" in str(excinfo.value)
+    assert not route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_an_edit_that_touches_no_times_still_sends_only_what_changed():
     """Pairing is about the two boundaries of one interval, not about edits
     in general: everything else still travels alone."""
