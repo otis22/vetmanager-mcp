@@ -26,12 +26,11 @@ def upgrade() -> None:
             item for item in constraints
             if re.search(r"\bsource\b", str(item.get("sqltext") or ""), re.IGNORECASE)
         ]
-        old_name = source_constraints[0].get("name") if source_constraints else None
-        if source_constraints and not old_name:
+        if any(not item.get("name") for item in source_constraints):
             raise RuntimeError("stage 315: unnamed source CHECK cannot be safely replaced")
         with op.batch_alter_table(_TABLE) as batch:
-            if old_name:
-                batch.drop_constraint(old_name, type_="check")
+            for constraint in source_constraints:
+                batch.drop_constraint(constraint["name"], type_="check")
             batch.create_check_constraint("ck_agent_feedback_reports_source", _NEW)
         return
     name = bind.execute(sa.text("""
