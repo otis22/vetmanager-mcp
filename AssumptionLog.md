@@ -16295,3 +16295,29 @@ attempt 1 (evidence
 нашёл нерезолвимый виртуальный сегмент `doctor_name`; заменён на реальный
 `first_name`. Claude attempt 2 уточнил resolver-контракт во всех режимах;
 принято и отражено в PRD и докстрингах.
+
+**Простота и аудит.** Решение использует единственный существующий
+`build_addressed_placeholder`, не запрашивает пользователя и не вводит второй
+формат маски. Аудит всех докстрингов, обещающих имя/ФИО сотрудника, оставил
+только честный контракт с конечным адресным значением. `git diff --check` и
+`git show --check` перед commit — без замечаний.
+
+**Ревью committed diff и self-attestation.** Claude Opus attempt 1 (evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T194447Z-git_range-HEAD__HEAD-attempt-1-of-3.J3jdFK/claude-review-attempt-1-of-3.envelope.json`)
+нашёл medium: sanitizer в depersonalized mode переписывал вложенный конечный
+плейсхолдер по ключу `doctor_name`. Принято: добавлен ранний возврат для полного
+адресного плейсхолдера и отдельный тест depersonalized-доступа (commit
+`c07a191`). Перед повторным review Spark после read-only sandbox runtime failure
+повторён в review-only danger-full-access режиме и вернул `[]`; финальный вывод:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/spark-stage313/c07a191-final.txt`.
+Claude Opus attempt 2 (evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T194957Z-git_range-HEAD__HEAD-attempt-2-of-3.rIi6ZK/claude-review-attempt-2-of-3.envelope.json`,
+subtype `success`, stop_reason `tool_use`, output_tokens `1318`, thinking_tokens
+`1055`, len(result) `15`) вернул `{"findings":[]}`. Сторож был сломан именно
+заменой `first_name` на `middle_name`; восстановленный код, живой ответ стенда
+и тест depersonalized-режима подтверждают, что это не ложное зелёное.
+
+**Выкат.** Tests `34640676033` и Deploy Prod `34641140653` (повтор
+`34641050622`) для `c07a191` — `success`; production MCP здоров и содержит
+логику stage 313. Report #66 закрыт штатным `resolve-report`: linked known
+issue #48 со статусом `fixed` и плейбуком со ссылкой на этап 313.
