@@ -16242,6 +16242,30 @@ annotated assignment.
 `docker compose --profile test run --rm test sh -c "python scripts/run_default_test_suite.py"`
 — 2920 passed, 2 skipped, 76 deselected.
 
-**Операция 312.4.** Пока не выполнялась: она идёт последней, после push,
-зелёного `Tests` и `Deploy Prod`, через штатный CLI в боевом контейнере с
-`< /dev/null` и read-only снимками до/после.
+**Операция 312.4.** Выполнена 11.09.2026 на боевой базе после зелёного
+`Deploy Prod` для `e4d5b0218de0398cbb758ffb232c7c19419c5327`
+(`gh run view 34612077433`: `status=completed`, `conclusion=success`).
+Read-only снимок до правок через `psql -U vetmanager -d vetmanager` подтвердил
+три активные записи с именем вне реестра: #10 `tool_search`, #19
+`create_report_ai_job/get_report_ai_job`, #29 `get_report_export_file`.
+Правки сделаны только штатным CLI в боевом контейнере с `< /dev/null`:
+`set-related-tool 10 --related-tool create_report_ai_job`,
+`set-match-rules 10 --match-rules-json /tmp/stage312-rules10.json`,
+`set-related-tool 19 --related-tool ""`,
+`set-related-tool 29 --related-tool get_report_export_download`. Для #19
+сохранена семантика multi-tool: `related_tool = NULL`, а реальные инструменты
+перечислены в `match_rules` через `related_tool in ["create_report_ai_job",
+"get_report_ai_job"]`, чтобы второй инструмент не отсекался на prefilter.
+Read-only снимок после правок: #10 `related_tool=create_report_ai_job` и
+валидные правила по salary/payroll-маркерам; #19 `related_tool=NULL` и прежние
+валидные multi-tool rules; #29 `related_tool=get_report_export_download`.
+Живая приёмка: `docker compose exec -T mcp python
+scripts/triage_agent_feedback.py unreachable-issues < /dev/null` больше не
+показывает ни `unknown related_tool`, ни `invalid match_rules`; осталось
+`total=5 rejected=0 missing=5`, все строки про отсутствующие playbook-и, а не
+про имена инструментов.
+
+**Финальная проверка закрытия.** После production-операции и закрытия статусов
+этапа локально повторён стандартный набор: `docker compose --profile test run
+--rm test sh -c "python scripts/run_default_test_suite.py"` — 2920 passed, 2
+skipped, 76 deselected.
