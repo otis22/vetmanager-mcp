@@ -16345,6 +16345,14 @@ AI проходят через `_call_vm`/`instrument_call`, а export-download 
 повтор danger-full-access review-only дал три принимаемых замечания: проверяемый
 чек-лист, fallback #42 и обязательная ветка при отсутствии метрик. Повтор Spark
 добавил точные пороги/ID; Claude Opus attempt 1 evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T200020Z-file-PRD_-314-report-ai--_md-attempt-1-of-3.lJPG26/claude-review-attempt-1-of-3.envelope.json`
+был валидным и содержал пять findings (test-first ветка, source of truth/
+rollback, запрет неверной атрибуции #42, точные пороги и проверяемая приёмка).
+Его ошибочно перезапустили: параллельный вывод runner не показал строку об
+успехе, хотя envelope уже был сохранён; между 20:00:20 и 20:01:00 ни PRD, ни
+prompt не менялись. Это **отклонение от бюджета**: выполнены три валидных
+Claude PRD-review при лимите два; второй запуск с тем же `attempt 1/3` не должен
+был происходить. Claude Opus повторный attempt 1 evidence
 `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T200100Z-file-PRD_-314-report-ai--_md-attempt-1-of-3.zZNRVD/claude-review-attempt-1-of-3.envelope.json`
 и attempt 2 evidence
 `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T200201Z-file-PRD_-314-report-ai--_md-attempt-2-of-3.uaegUz/claude-review-attempt-2-of-3.envelope.json`
