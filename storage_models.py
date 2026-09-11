@@ -707,6 +707,9 @@ class AgentFeedbackReport(Base):
     )
     redaction_version: Mapped[int] = mapped_column(Integer, nullable=False, default=2, server_default="2")
     possible_pii: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    is_human_web_submission: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
 
 class KnownIssue(Base):

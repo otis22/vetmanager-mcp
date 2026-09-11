@@ -16,6 +16,7 @@ from agent_feedback_service import create_account_human_feedback_report
 from server import mcp
 from storage import Base, create_database_engine
 from storage_models import AgentFeedbackReport
+import scripts.triage_agent_feedback as triage_cli
 from web_auth import SESSION_COOKIE_NAME
 from web_html import render_account_page
 from web_security import reset_web_security_state
@@ -70,6 +71,7 @@ async def test_account_feedback_form_uses_csrf_and_stores_human_report(tmp_path,
     assert report.account_id == 1
     assert "Question" in report.details
     assert report.redaction_version == 0
+    assert report.is_human_web_submission is True
     storage.reset_storage_state()
 
 
@@ -112,6 +114,17 @@ def test_feedback_sentry_event_drops_post_body_and_stack_values():
     assert sanitized is not None
     assert "data" not in sanitized["request"]
     assert private not in repr(sanitized)
+
+
+def test_triage_masks_raw_account_feedback_body():
+    report = AgentFeedbackReport(
+        id=1, source="human", category="other", severity="medium", status="new",
+        summary="Account dashboard feedback", details="Contact person@example.com, phone +7 999 123-45-67",
+        redaction_version=0, possible_pii=True, is_human_web_submission=True,
+    )
+    body = "\n".join(triage_cli._report_body_lines(report))
+    assert "person@example.com" not in body
+    assert "+7 999" not in body
 
 
 def test_feedback_contact_is_optional_and_runtime_only(monkeypatch):

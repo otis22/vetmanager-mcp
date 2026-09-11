@@ -684,12 +684,10 @@ async def _enforce_report_rate_limit(
             .where(AgentFeedbackReport.created_at >= cutoff)
         )
         # Stage 316: this is deliberately a channel bucket, not a source
-        # bucket. An MCP call may also truthfully use source=human, but it has
-        # a bearer token and must not be able to exhaust the dashboard form.
+        # bucket. An MCP/OAuth call may also truthfully use source=human, but
+        # it must not be able to exhaust the dashboard form.
         if human_web_bucket:
-            account_query = account_query.where(AgentFeedbackReport.source == FEEDBACK_SOURCE_HUMAN).where(
-                AgentFeedbackReport.bearer_token_id.is_(None)
-            )
+            account_query = account_query.where(AgentFeedbackReport.is_human_web_submission.is_(True))
         account_count = await session.scalar(account_query)
         if int(account_count or 0) >= REPORT_ACCOUNT_LIMIT_PER_HOUR:
             raise ToolError("Feedback rate limit exceeded for this account.")
@@ -841,6 +839,7 @@ async def create_account_human_feedback_report(
             # writer-sanitized report of the current redaction version.
             redaction_version=0,
             possible_pii=True,
+            is_human_web_submission=True,
         )
         session.add(report)
         await session.commit()
