@@ -16269,3 +16269,29 @@ scripts/triage_agent_feedback.py unreachable-issues < /dev/null` больше н
 этапа локально повторён стандартный набор: `docker compose --profile test run
 --rm test sh -c "python scripts/run_default_test_suite.py"` — 2920 passed, 2
 skipped, 76 deselected.
+
+## Этап 313. Расписание без повторного поиска врача
+
+`admission` по контракту несёт только `user_id`; вложенный user-объект не
+гарантирован. Поэтому `get_daily_schedule` добавляет `doctor_name` как
+`[user:<id>:first_name]`: это адресное конечное значение для приложения, а не
+приглашение к `get_user_by_id`, и не создаёт N+1.
+
+**Сторож.** Перед приёмкой временно заменён сегмент `first_name` на
+`middle_name`; `test_daily_schedule_returns_addressed_doctor_name_without_user_lookup`
+упал с `[user:3:middle_name] != [user:3:first_name]`. Затем рабочий сегмент
+восстановлен.
+
+**Живой стенд TEST_DOMAIN/TEST_API_KEY (11.09.2026).** Созданы синтетические
+клиент и питомец «Тест» и приём #858 на сегодня с существующим user_id=1.
+Вызов `get_daily_schedule` вернул без клиентских данных:
+`{'success': True, 'date': '2026-09-11', 'returnedCount': 1,
+'admission': {'id': 858, 'user_id': 1, 'doctor_name': '[user:1:first_name]'}}`.
+
+**PRD-review.** Spark Architecture Critique: принято требование закрепить
+публичное описание tools/list и режимы; добавлен контрактный тест. Claude Opus
+attempt 1 (evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T193138Z-file-PRD_-313--_md-attempt-1-of-3.URiL14/claude-review-attempt-1-of-3.envelope.json`)
+нашёл нерезолвимый виртуальный сегмент `doctor_name`; заменён на реальный
+`first_name`. Claude attempt 2 уточнил resolver-контракт во всех режимах;
+принято и отражено в PRD и докстрингах.

@@ -102,6 +102,12 @@ def register(mcp: FastMCP) -> None:
     ) -> dict:
         """List users (staff/doctors) of the clinic.
 
+        Under depersonalized access, staff identity fields are addressed
+        placeholders such as `[user:3:first_name]`. They are final display
+        values: copy them verbatim; do not perform another user lookup.
+        A placeholder returned by another tool (for example daily schedule) is
+        likewise final in every access mode and is resolved by the application.
+
         By default only active staff are returned. Pass is_active=False to
         list only inactive users, or is_active=None to include all.
 
@@ -191,6 +197,12 @@ def register(mcp: FastMCP) -> None:
         user_id: int,
     ) -> dict:
         """Get a clinic user (staff member) by their unique ID.
+
+        Under depersonalized access, staff identity fields are addressed
+        placeholders such as `[user:3:first_name]`. They are final display
+        values: copy them verbatim; do not perform another user lookup.
+        A placeholder returned by another tool (for example daily schedule) is
+        likewise final in every access mode and is resolved by the application.
 
         Args:
             user_id: Unique numeric ID of the user.

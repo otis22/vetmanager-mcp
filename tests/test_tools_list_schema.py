@@ -155,6 +155,11 @@ class TestToolsListSchema:
         assert "offset" in properties
         assert properties["offset"].get("default") == 0
 
+    def test_daily_schedule_documents_resolvable_doctor_placeholder(self, all_tool_exports):
+        tool = next(t for t in all_tool_exports if t["name"] == "get_daily_schedule")
+        assert "doctor_name" in tool["description"]
+        assert "[user:<user_id>:first_name]" in tool["description"]
+
     def test_get_medical_cards_by_date_exports_daily_control_contract(self, all_tool_exports):
         tool = next(t for t in all_tool_exports if t["name"] == "get_medical_cards_by_date")
         properties = tool["schema"].get("properties", {})

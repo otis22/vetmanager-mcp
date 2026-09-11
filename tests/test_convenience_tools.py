@@ -100,9 +100,31 @@ async def test_upcoming_visits_builds_filter_with_date_range_and_client():
     assert "deleted" not in status_filter["value"]
     date_filters = [f for f in filters if f["property"] == "admission_date"]
     assert {f["operator"] for f in date_filters} == {">=", "<"}
-
     sort = _sort_from(route)
     assert sort == [{"property": "admission_date", "direction": "ASC"}]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_daily_schedule_returns_addressed_doctor_name_without_user_lookup():
+    billing_mock()
+    admission_route = respx.get(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(200, json={
+            "success": True,
+            "data": {"totalCount": 1, "admission": [{"id": 7, "user_id": 3}]},
+        })
+    )
+    user_route = respx.get(f"{BASE}/rest/api/user/3").mock(
+        return_value=httpx.Response(500)
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_daily_schedule", {"date": "2026-04-10"})
+
+    row = result.structured_content["data"]["admission"][0]
+    assert row["doctor_name"] == "[user:3:first_name]"
+    assert admission_route.call_count == 1
+    assert user_route.call_count == 0
 
 
 @pytest.mark.asyncio

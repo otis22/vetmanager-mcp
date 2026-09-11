@@ -3,6 +3,7 @@ from datetime import date as _date, datetime as _datetime, timedelta as _td
 from fastmcp import FastMCP
 
 from exceptions import ToolInputError, reportable_error
+from depersonalization import build_addressed_placeholder
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, gte as _filter_gte, in_ as _filter_in, lt as _filter_lt
 from resources.admission_status import ACTIVE_ADMISSION_STATUSES  # noqa: F401 — BC re-export
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, unwrap_single_record
@@ -228,7 +229,10 @@ def register(mcp: FastMCP) -> None:
         daily schedule, appointments today.
 
         Returns admissions sorted by time ascending, excluding cancelled
-        (deleted/not_approved) statuses.
+        (deleted/not_approved) statuses. Each admission with `user_id` includes
+        `doctor_name` as `[user:<user_id>:first_name]` in every access mode:
+        this is the final display value, so copy it verbatim rather than calling
+        `get_user_by_id`; the application resolver renders the staff name.
 
         Args:
             date: Target day (YYYY-MM-DD or relative: today, tomorrow, +1d,
@@ -266,7 +270,19 @@ def register(mcp: FastMCP) -> None:
             filters=filters,
         )
         rows, total = _unwrap_admission_list_response(resp)
-        returned_count = len(rows)
+        schedule_rows = []
+        for row in rows:
+            scheduled = dict(row)
+            try:
+                user_id = int(scheduled.get("user_id"))
+            except (TypeError, ValueError):
+                user_id = 0
+            if user_id > 0:
+                scheduled["doctor_name"] = build_addressed_placeholder(
+                    "user", user_id, "first_name"
+                )
+            schedule_rows.append(scheduled)
+        returned_count = len(schedule_rows)
         total_count = int(total or 0)
         next_offset_candidate = offset + returned_count
         truncated = total_count > next_offset_candidate
@@ -287,7 +303,7 @@ def register(mcp: FastMCP) -> None:
             "pagination_limit_reached": pagination_limit_reached,
             "pagination_stalled": pagination_stalled,
             "truncated": truncated,
-            "data": {"admission": rows, "totalCount": total_count},
+            "data": {"admission": schedule_rows, "totalCount": total_count},
         }
 
     @mcp.tool
