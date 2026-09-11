@@ -422,6 +422,7 @@ deploy. Не регенерируйте его перед каждым запу�
 - `PROD_SSH_TARGET` (пример: `root@<your-server-ip>`)
 - `PROD_SSH_PRIVATE_KEY` (приватный ключ для SSH)
 - `FEEDBACK_FINGERPRINT_PEPPER` (обязателен для production/PostgreSQL feedback fingerprints)
+- `FEEDBACK_CONTACT_EMAIL` (необязательный контакт, показывается только в форме жалобы кабинета)
 - `PROD_REMOTE_DIR` (опционально, по умолчанию `/opt/vetmanager-mcp`)
 - `PROD_SSL_DOMAIN` (опционально, ваш домен)
 - `PROD_CERTBOT_EMAIL` (опционально, email для certbot)

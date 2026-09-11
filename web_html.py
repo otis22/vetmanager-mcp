@@ -7,6 +7,7 @@ import re
 from datetime import datetime, timezone
 from html import escape
 
+from env_utils import env_email
 from observability_logging import RUNTIME_LOGGER
 from storage_models import OAUTH_STATUS_ACTIVE, Account, VetmanagerConnection
 from access_summary import summarize_access
@@ -180,6 +181,11 @@ def _resolve_support_email() -> str:
     if not _SUPPORT_EMAIL_RE.fullmatch(raw):
         return ""
     return raw
+
+
+def _resolve_feedback_contact_email() -> str:
+    """Stage 316: optional private contact supplied only by runtime environment."""
+    return env_email("FEEDBACK_CONTACT_EMAIL")
 
 
 def _resolve_site_base_url() -> str:
@@ -1220,6 +1226,8 @@ def render_account_page(
     issued_token_privacy_label: str | None = None,
     activation_now: datetime | None = None,
     selected_agent: str = "",
+    feedback_error: str | None = None,
+    feedback_success: str | None = None,
 ) -> str:
     # Stage 100.6: escape even though _resolve_site_base_url validates —
     # defense-in-depth against future misconfig where validation may be
@@ -1744,6 +1752,38 @@ def render_account_page(
           там видно ответ и историю разбора.{support_mail_html}</p>
         </section>
     """
+    feedback_contact_email = _resolve_feedback_contact_email()
+    feedback_contact_html = (
+        f'<p>Вопросы и жалобы напрямую: Владимир Романичев, '
+        f'<a href="mailto:{escape(feedback_contact_email)}">{escape(feedback_contact_email)}</a>.</p>'
+        if feedback_contact_email
+        else ""
+    )
+    feedback_error_html = f'<div class="error">{escape(feedback_error)}</div>' if feedback_error else ""
+    feedback_success_html = (
+        f'<div class="success">{escape(feedback_success)}</div>' if feedback_success else ""
+    )
+    feedback_form_html = f"""
+        <details class="section-block" id="agent-feedback-section" data-testid="agent-feedback-section">
+          <summary><h2>Пожаловаться на ответ агента</h2></summary>
+          <p>Опишите ситуацию без ключей, паролей и лишних персональных данных.</p>
+          {feedback_error_html}{feedback_success_html}
+          <form method="post" action="/account/agent-feedback" data-testid="agent-feedback-form">
+            {hidden_csrf_input(csrf_token)}
+            <label>Что спросили
+              <textarea name="asked" maxlength="2000" required data-testid="agent-feedback-asked"></textarea>
+            </label>
+            <label>Что получили
+              <textarea name="received" maxlength="2000" required data-testid="agent-feedback-received"></textarea>
+            </label>
+            <label>Чего ждали
+              <textarea name="expected" maxlength="2000" required data-testid="agent-feedback-expected"></textarea>
+            </label>
+            <div class="actions"><button type="submit" class="primary" data-testid="agent-feedback-submit">Отправить жалобу</button></div>
+          </form>
+          {feedback_contact_html}
+        </details>
+    """
     return render_shell(
         "Кабинет аккаунта",
         f"""
@@ -1957,6 +1997,7 @@ def render_account_page(
           <summary><h2>Другие помощники</h2></summary>
           <p>Для Manus и других клиентов используйте тот же URL: добавьте его как custom MCP connector с OAuth.</p>
         </details>
+        {feedback_form_html}
         {support_block_html}
         <div class="actions">
           <a class="link" href="/">На лендинг</a>

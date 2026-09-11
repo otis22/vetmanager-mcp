@@ -55,9 +55,10 @@ def _row_summary(
     if known_issue_id is not None:
         known_issue_text = f" known_issue=#{known_issue_id}/{known_issue_status or 'unknown'}"
     return (
-        f"#{report.id} [{report.status}] {report.severity}/{report.category} "
+        f"#{report.id} [{report.status}] source={report.source} {report.severity}/{report.category} "
         f"tool={report.related_tool or '-'} fingerprint={report.error_fingerprint_hash or '-'} "
-        f"possible_pii={str(report.possible_pii).lower()}{known_issue_text} summary={report.summary}"
+        f"possible_pii={str(report.possible_pii).lower()}{known_issue_text} "
+        f"summary={sanitize_text(report.summary, limit=240) or '-'}"
     )
 
 
@@ -642,10 +643,10 @@ def _report_body_lines(report: AgentFeedbackReport) -> list[str]:
         f"  known_issue_id  : {report.known_issue_id}",
         f"  possible_pii    : {str(report.possible_pii).lower()}",
         f"  redaction_ver   : {report.redaction_version}",
-        f"  summary         : {report.summary}",
-        f"  details         : {report.details}",
-        f"  reproduce       : {report.reproduce or '-'}",
-        f"  suggested_fix   : {report.suggested_fix or '-'}",
+        f"  summary         : {sanitize_text(report.summary, limit=240) or '-'}",
+        f"  details         : {sanitize_text(report.details, limit=8000) or '-'}",
+        f"  reproduce       : {sanitize_text(report.reproduce, limit=4000) or '-'}",
+        f"  suggested_fix   : {sanitize_text(report.suggested_fix, limit=4000) or '-'}",
     ]
 
 

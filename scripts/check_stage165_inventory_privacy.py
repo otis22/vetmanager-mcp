@@ -26,7 +26,7 @@ def _assert_regex_self_tests() -> None:
             "eyJabc.eyJdef123.sigxyz",
             0,
         ),
-        (r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})", "someone@gmail.com", 0),
+        (r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})", "someone@invalid.test", 0),
         (r"\b[A-Za-z0-9]{32,}\b", "0123456789abcdef0123456789abcdef01234567", 0),
         (r"(?:\+7|8)[\s(.-]*\d{3}[\s). -]*\d{3}[\s.-]*\d{2}[\s.-]*\d{2}", "+7 999 123 45 67", 0),
         (r"\b(?:chat|tg|telegram)[ _-]?id\s*[:=]?\s*\d{6,}\b", "chat_id 1234567", re.I),

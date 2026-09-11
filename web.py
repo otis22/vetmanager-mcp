@@ -529,6 +529,8 @@ async def _render_account_dashboard_response(
     issued_token_access_label: str | None = None,
     issued_token_privacy_label: str | None = None,
     selected_agent: str = "",
+    feedback_error: str | None = None,
+    feedback_success: str | None = None,
 ) -> HTMLResponse | RedirectResponse:
     csrf_token = _resolve_csrf_token(request)
     script_nonce = _generate_csp_nonce()
@@ -579,6 +581,8 @@ async def _render_account_dashboard_response(
             issued_token_access_label=issued_token_access_label,
             issued_token_privacy_label=issued_token_privacy_label,
             selected_agent=selected_agent,
+            feedback_error=feedback_error,
+            feedback_success=feedback_success,
         ),
         status_code=status_code,
         with_csrf_cookie=True,

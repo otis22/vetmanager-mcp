@@ -16,7 +16,7 @@ def test_stage165_inventory_privacy_checker_flags_common_pii_shapes() -> None:
     text = "\n".join(
         [
             "token eyJabc.eyJdef123.sigxyz",
-            "mail someone@gmail.com",
+            "mail someone@invalid.test",
             "phone +7 999 123 45 67",
             "chat_id 1234567",
             "улица Ленина",
@@ -48,9 +48,9 @@ def test_stage165_inventory_privacy_checker_allows_required_evidence_identifiers
 
 
 def test_stage165_inventory_privacy_checker_flags_redacted_email_at_real_domain() -> None:
-    problems = check_stage165.find_generic_privacy_problems("email redacted@gmail.com")
+    problems = check_stage165.find_generic_privacy_problems("email redacted@invalid.test")
 
-    assert ("email", "redacted@gmail.com") in problems
+    assert ("email", "redacted@invalid.test") in problems
 
 
 def test_stage165_inventory_privacy_checker_uses_stage163_hash_path(

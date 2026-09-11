@@ -26,8 +26,10 @@ from storage_models import (
     AgentFeedbackReport,
     FEEDBACK_CATEGORIES,
     FEEDBACK_CATEGORY_BUG,
+    FEEDBACK_CATEGORY_OTHER,
     FEEDBACK_SEVERITIES,
     FEEDBACK_SEVERITY_LOW,
+    FEEDBACK_SEVERITY_MEDIUM,
     FEEDBACK_SOURCE_AUTO,
     FEEDBACK_SOURCE_HUMAN,
     FEEDBACK_SOURCE_MODEL,
@@ -662,6 +664,7 @@ async def _enforce_report_rate_limit(
     *,
     account_id: int | None,
     bearer_token_id: int | None,
+    source: str = FEEDBACK_SOURCE_MODEL,
 ) -> None:
     cutoff = _now() - REPORT_RATE_WINDOW
     if bearer_token_id is not None:
@@ -674,12 +677,18 @@ async def _enforce_report_rate_limit(
         if int(token_count or 0) >= REPORT_TOKEN_LIMIT_PER_HOUR:
             raise ToolError("Feedback rate limit exceeded for this token.")
     if account_id is not None:
-        account_count = await session.scalar(
+        account_query = (
             select(func.count())
             .select_from(AgentFeedbackReport)
             .where(AgentFeedbackReport.account_id == account_id)
             .where(AgentFeedbackReport.created_at >= cutoff)
         )
+        # Stage 316: a person must still be able to complain after a burst of
+        # model/auto reports for the same account. The web form has its own
+        # per-account bucket while retaining the established numeric limit.
+        if source == FEEDBACK_SOURCE_HUMAN:
+            account_query = account_query.where(AgentFeedbackReport.source == FEEDBACK_SOURCE_HUMAN)
+        account_count = await session.scalar(account_query)
         if int(account_count or 0) >= REPORT_ACCOUNT_LIMIT_PER_HOUR:
             raise ToolError("Feedback rate limit exceeded for this account.")
 
@@ -730,6 +739,7 @@ async def create_feedback_report(
             session,
             account_id=getattr(credentials, "account_id", None),
             bearer_token_id=getattr(credentials, "bearer_token_id", None),
+            source=source,
         )
         known_issue = await find_known_issue_match(session, incident)
         now = _now()
@@ -788,6 +798,50 @@ async def create_feedback_report(
         "known_issue": known_issue.as_response() if known_issue else None,
         "message": "feedback_saved",
     }
+
+
+async def create_account_human_feedback_report(
+    *,
+    account_id: int,
+    asked: str,
+    received: str,
+    expected: str,
+) -> dict[str, Any]:
+    """Persist the account form exactly as authored, without sending it elsewhere."""
+    fields = {
+        "Что спросили": asked,
+        "Что получили": received,
+        "Чего ждали": expected,
+    }
+    if not isinstance(account_id, int) or isinstance(account_id, bool) or account_id <= 0:
+        raise ToolInputError("Invalid account.")
+    if any(not isinstance(value, str) or not value.strip() for value in fields.values()):
+        raise ToolInputError("All feedback fields are required.")
+    if any(len(value) > 2000 for value in fields.values()):
+        raise ToolInputError("Feedback field is too long.")
+    details = "\n\n".join(f"{label}:\n{value.strip()}" for label, value in fields.items())
+    async with get_session_factory()() as session:
+        await _enforce_report_rate_limit(
+            session,
+            account_id=account_id,
+            bearer_token_id=None,
+            source=FEEDBACK_SOURCE_HUMAN,
+        )
+        report = AgentFeedbackReport(
+            source=FEEDBACK_SOURCE_HUMAN,
+            category=FEEDBACK_CATEGORY_OTHER,
+            severity=FEEDBACK_SEVERITY_MEDIUM,
+            status=FEEDBACK_STATUS_NEW,
+            account_id=account_id,
+            summary="Account dashboard feedback",
+            details=details,
+            redaction_version=REDACTION_VERSION,
+            possible_pii=True,
+        )
+        session.add(report)
+        await session.commit()
+        await session.refresh(report)
+    return {"ok": True, "feedback_id": report.id, "message": "feedback_saved"}
 
 
 async def write_known_issue_match_event(

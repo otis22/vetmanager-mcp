@@ -10,6 +10,18 @@ from __future__ import annotations
 
 import math
 import os
+import re
+
+
+_EMAIL_RE = re.compile(r"^[A-Za-z0-9._+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$")
+
+
+def env_email(name: str) -> str:
+    """Read one safe email value, returning empty string for absent or malformed input."""
+    raw = (os.environ.get(name) or "").strip()
+    if not raw or len(raw) > 254 or not _EMAIL_RE.fullmatch(raw):
+        return ""
+    return raw
 
 
 def env_int(name: str, default: int, *, positive_only: bool = True) -> int:

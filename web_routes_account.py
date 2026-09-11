@@ -13,6 +13,7 @@ from activation_events import (
     classify_activation_reason,
     record_activation_event_best_effort,
 )
+from agent_feedback_service import create_account_human_feedback_report
 from exceptions import (
     AuthError,
     HostResolutionError,
@@ -20,7 +21,9 @@ from exceptions import (
     VetmanagerTimeoutError,
     VetmanagerTlsError,
     VetmanagerUpstreamUnavailable,
+    ToolInputError,
 )
+from fastmcp.exceptions import ToolError
 from observability_logging import RUNTIME_LOGGER
 from error_tracking import capture_handled_connection_failure
 from secret_manager import get_storage_encryption_key
@@ -248,6 +251,35 @@ def register_account_routes(
         if selected_agent not in {"chatgpt", "claude", "manus"}:
             selected_agent = ""
         return await render_account_dashboard_response(request, account_id, selected_agent=selected_agent)
+
+    @observed_route(mcp, "/account/agent-feedback", methods=["POST"], include_in_schema=False)
+    async def account_agent_feedback_submit(request: Request) -> HTMLResponse | RedirectResponse:
+        account_id = get_account_id_from_request(request)
+        if account_id is None:
+            response = redirect_response(request, url="/login", status_code=303)
+            clear_account_session_cookie(response)
+            return response
+        form = await read_form(request)
+        try:
+            validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
+        except ValueError:
+            return await render_account_dashboard_response(
+                request, account_id, status_code=403, feedback_error="Не удалось отправить жалобу. Обновите страницу и попробуйте снова.",
+            )
+        try:
+            await create_account_human_feedback_report(
+                account_id=account_id,
+                asked=form.get("asked", ""),
+                received=form.get("received", ""),
+                expected=form.get("expected", ""),
+            )
+        except (ToolInputError, ToolError):
+            return await render_account_dashboard_response(
+                request, account_id, status_code=400, feedback_error="Не удалось отправить жалобу. Проверьте поля и попробуйте позже.",
+            )
+        return await render_account_dashboard_response(
+            request, account_id, feedback_success="Жалоба отправлена в очередь разбора.",
+        )
 
     @observed_route(mcp, "/account/integration", methods=["POST"], include_in_schema=False)
     async def account_integration_submit(request: Request) -> HTMLResponse | RedirectResponse:

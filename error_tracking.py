@@ -22,6 +22,7 @@ _MANUAL_TOOL_FAILURE_VALUE = "manual"
 _MANUAL_TOOL_FAILURE_TEXT_TAG = "mcp_safe_upstream_text"
 _TOOL_ERROR_CAPTURE_MARKER = "_vetmanager_mcp_error_tracking_handled"
 _configured = False
+_ACCOUNT_FEEDBACK_PATH = "/account/agent-feedback"
 
 # Substrings matched case-insensitively against header/cookie/body keys.
 # Any key containing one of these is replaced with _REDACTED.
@@ -255,6 +256,14 @@ def _has_safe_manual_tool_failure_text(event: dict[str, Any]) -> bool:
     return isinstance(tags, dict) and tags.get(_MANUAL_TOOL_FAILURE_TEXT_TAG) == "true"
 
 
+def _is_account_feedback_event(event: dict[str, Any]) -> bool:
+    request = event.get("request")
+    if not isinstance(request, dict):
+        return False
+    url = request.get("url")
+    return isinstance(url, str) and url.split("?", 1)[0].endswith(_ACCOUNT_FEEDBACK_PATH)
+
+
 def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[str, Any] | None:
     tags = event.get("tags")
     if (
@@ -291,6 +300,12 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
             event["user"] = {"id": affected_account}
     request = event.get("request")
     if isinstance(request, dict):
+        # Stage 316: dashboard feedback is deliberately stored as authored in
+        # the database. It must never become an incidental Sentry attachment
+        # if this POST raises before its handler returns a safe response.
+        url = request.get("url")
+        if isinstance(url, str) and url.split("?", 1)[0].endswith(_ACCOUNT_FEEDBACK_PATH):
+            request.pop("data", None)
         # Stage 276: the export path is the authorization for the file; Sentry
         # keeps `request.url` verbatim, and the header scrubbing below never
         # looked at it.
@@ -345,7 +360,9 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
             for exc_v in exc_values:
                 if not isinstance(exc_v, dict):
                     continue
-                if _is_handled_connection_failure_event(event):
+                if _is_account_feedback_event(event):
+                    exc_v["value"] = _REDACTED
+                elif _is_handled_connection_failure_event(event):
                     exc_v["value"] = _REDACTED
                 elif _has_safe_manual_tool_failure_text(event):
                     exc_v["value"] = _redact_exception_value(exc_v.get("value"))
@@ -363,7 +380,7 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
                         if isinstance(f_vars, dict):
                             frame["vars"] = (
                                 {key: _REDACTED for key in f_vars}
-                                if _is_private_handled_event(event)
+                                if _is_private_handled_event(event) or _is_account_feedback_event(event)
                                 else _redact_mapping(f_vars)
                             )
 

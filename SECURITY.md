@@ -15,7 +15,8 @@ If you discover a security vulnerability in this project, please report it respo
 ### How to report
 
 1. **GitHub Security Advisories** (preferred): use the "Report a vulnerability" button on the [Security tab](https://github.com/otis22/vetmanager-mcp/security/advisories) of this repository.
-2. **Email**: send details to **otis22@gmail.com** with subject `[SECURITY] vetmanager-mcp`.
+2. **Private report**: open a private security advisory in the repository with
+   subject `[SECURITY] vetmanager-mcp`.
 
 ### What to include
 
