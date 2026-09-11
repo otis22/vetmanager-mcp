@@ -664,7 +664,7 @@ async def _enforce_report_rate_limit(
     *,
     account_id: int | None,
     bearer_token_id: int | None,
-    source: str = FEEDBACK_SOURCE_MODEL,
+    human_web_bucket: bool = False,
 ) -> None:
     cutoff = _now() - REPORT_RATE_WINDOW
     if bearer_token_id is not None:
@@ -683,11 +683,13 @@ async def _enforce_report_rate_limit(
             .where(AgentFeedbackReport.account_id == account_id)
             .where(AgentFeedbackReport.created_at >= cutoff)
         )
-        # Stage 316: a person must still be able to complain after a burst of
-        # model/auto reports for the same account. The web form has its own
-        # per-account bucket while retaining the established numeric limit.
-        if source == FEEDBACK_SOURCE_HUMAN:
-            account_query = account_query.where(AgentFeedbackReport.source == FEEDBACK_SOURCE_HUMAN)
+        # Stage 316: this is deliberately a channel bucket, not a source
+        # bucket. An MCP call may also truthfully use source=human, but it has
+        # a bearer token and must not be able to exhaust the dashboard form.
+        if human_web_bucket:
+            account_query = account_query.where(AgentFeedbackReport.source == FEEDBACK_SOURCE_HUMAN).where(
+                AgentFeedbackReport.bearer_token_id.is_(None)
+            )
         account_count = await session.scalar(account_query)
         if int(account_count or 0) >= REPORT_ACCOUNT_LIMIT_PER_HOUR:
             raise ToolError("Feedback rate limit exceeded for this account.")
@@ -739,7 +741,6 @@ async def create_feedback_report(
             session,
             account_id=getattr(credentials, "account_id", None),
             bearer_token_id=getattr(credentials, "bearer_token_id", None),
-            source=source,
         )
         known_issue = await find_known_issue_match(session, incident)
         now = _now()
@@ -825,7 +826,7 @@ async def create_account_human_feedback_report(
             session,
             account_id=account_id,
             bearer_token_id=None,
-            source=FEEDBACK_SOURCE_HUMAN,
+            human_web_bucket=True,
         )
         report = AgentFeedbackReport(
             source=FEEDBACK_SOURCE_HUMAN,
@@ -835,7 +836,10 @@ async def create_account_human_feedback_report(
             account_id=account_id,
             summary="Account dashboard feedback",
             details=details,
-            redaction_version=REDACTION_VERSION,
+            # 0 is an explicit marker for text stored as the person entered
+            # it; triage masks it at read time. It must not masquerade as a
+            # writer-sanitized report of the current redaction version.
+            redaction_version=0,
             possible_pii=True,
         )
         session.add(report)

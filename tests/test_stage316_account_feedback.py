@@ -69,6 +69,7 @@ async def test_account_feedback_form_uses_csrf_and_stores_human_report(tmp_path,
     assert report.source == "human"
     assert report.account_id == 1
     assert "Question" in report.details
+    assert report.redaction_version == 0
     storage.reset_storage_state()
 
 
@@ -92,6 +93,7 @@ async def test_human_account_bucket_is_not_spent_by_model_reports(tmp_path, monk
     monkeypatch.setattr("agent_feedback_service.REPORT_ACCOUNT_LIMIT_PER_HOUR", 1)
     async with storage.get_session_factory()() as session:
         session.add(AgentFeedbackReport(source="model", category="bug", severity="low", status="new", account_id=1, summary="model", details="model"))
+        session.add(AgentFeedbackReport(source="human", category="bug", severity="low", status="new", account_id=1, bearer_token_id=99, summary="mcp human", details="mcp human"))
         await session.commit()
     result = await create_account_human_feedback_report(account_id=1, asked="a", received="b", expected="c")
     assert result["ok"] is True
