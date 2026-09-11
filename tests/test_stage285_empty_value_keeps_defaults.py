@@ -32,6 +32,10 @@ from tests.test_stage285_runtime_env_reaches_container import runtime_env_names
 
 ROOT = Path(__file__).resolve().parents[1]
 _EMPTY_DEFAULT = re.compile(r"^\s*-\s*([A-Z0-9_]+)=\$\{[A-Z0-9_]+:-\}\s*$", re.M)
+# A contact address is display-only: an unset value intentionally becomes an
+# empty string and env_email() treats it as absent.  Numeric/runtime defaults
+# must still use the bare compose pass-through guarded below.
+_INTENTIONALLY_EMPTY_RUNTIME_VALUES = {"FEEDBACK_CONTACT_EMAIL"}
 
 
 def _session_max_age_in_fresh_process(value: str) -> str:
@@ -64,7 +68,10 @@ def _mcp_service_block() -> str:
 
 
 def test_no_declaration_turns_an_unset_setting_into_an_empty_string() -> None:
-    offenders = sorted(set(_EMPTY_DEFAULT.findall(_mcp_service_block())) & runtime_env_names())
+    offenders = sorted(
+        (set(_EMPTY_DEFAULT.findall(_mcp_service_block())) & runtime_env_names())
+        - _INTENTIONALLY_EMPTY_RUNTIME_VALUES
+    )
 
     assert not offenders, (
         "Эти настройки объявлены как ${NAME:-}: незаданная превращается в "
