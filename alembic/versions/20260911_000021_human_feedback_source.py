@@ -20,8 +20,17 @@ _NEW = "source IN ('model', 'auto', 'human', 'user_complaint')"
 def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == "sqlite":
+        constraints = sa.inspect(bind).get_check_constraints(_TABLE)
+        old_name = next(
+            (
+                item.get("name") for item in constraints
+                if "source" in str(item.get("sqltext") or "").lower()
+            ),
+            None,
+        )
         with op.batch_alter_table(_TABLE) as batch:
-            batch.drop_constraint("ck_agent_feedback_reports_source", type_="check")
+            if old_name:
+                batch.drop_constraint(old_name, type_="check")
             batch.create_check_constraint("ck_agent_feedback_reports_source", _NEW)
         return
     name = bind.execute(sa.text("""
