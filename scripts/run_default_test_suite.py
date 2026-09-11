@@ -20,6 +20,14 @@ def main() -> int:
     if DEFAULT_SUITE_WARNING_POLICY.warnings_allowed != 0:
         raise SystemExit("Default suite warning policy must require zero warnings.")
 
+    gate = subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / "scripts" / "check_known_issue_tool_names.py")],
+        env=dict(os.environ),
+        check=False,
+    )
+    if gate.returncode != 0:
+        return gate.returncode
+
     command = [
         sys.executable,
         *[item for flag in build_warning_error_flags() for item in ("-W", flag)],

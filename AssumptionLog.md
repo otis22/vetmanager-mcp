@@ -16131,3 +16131,117 @@ REST стенда (`scripts/probe_timesheet_contract.py`), а сквозной �
 внутри одних суток и пара флагов отклонены нашими текстами; правка ночной
 строки с `all_day` вернула её всесуточной и с `night: 0`; правка одной границы
 времени отклонена; обе строки удалены. Стенд возвращён.
+
+## Этап 312. Запись о проблеме перестаёт врать
+
+**PRD-review.** Собственное ревью добавило явное архитектурное решение:
+проверять `related_tool` там, где текст становится поисковым ключом, а
+`report_problem` оставить жалобой со свободным текстом. Spark PRD-review:
+первая read-only попытка упёрлась в runtime/sandbox, повтор с
+`gpt-5.3-codex-spark -s danger-full-access` был review-only; приняты замечания
+про безопасную production-операцию и приёмку `unreachable-issues`. Повторный
+Spark-review вернул пустой список. Claude Opus PRD-review 1/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T132117Z-file-PRD_-312-----_md-attempt-1-of-3.uxAql2/claude-review-attempt-1-of-3.envelope.json`,
+subtype `success`, stop_reason `tool_use`, output_tokens `6029`,
+thinking_tokens `4703`, len(result) `3250`; все адекватные findings приняты.
+Главная правка: для проблем, относящихся к нескольким инструментам, нужен
+`related_tool = NULL` плюс `match_rules` с `related_tool in [...]`, иначе
+второй инструмент отсекается до проверки правил. Claude Opus PRD-review 2/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T132450Z-file-PRD_-312-----_md-attempt-2-of-3.srmqy5/claude-review-attempt-2-of-3.envelope.json`,
+subtype `success`, stop_reason `tool_use`, output_tokens `3648`,
+thinking_tokens `2298`, len(result) `1667`; бюджет PRD-review 2/2 исчерпан,
+замечания про валидацию `match_rules`, `NULL`-семантику и старые
+`new+known_issue` учтены в PRD и коде.
+
+**Оценка простоты.** Отдельная схема для нескольких инструментов отвергнута:
+существующих `match_rules` достаточно. Маленькая проверка имени оправдана,
+потому что нужна в `promote`, `set-related-tool`, `set-match-rules` и seed-гейте.
+Рантайм-поиск не усложнялся: кандидаты по-прежнему выбираются по честному
+`related_tool`, `NULL` или fingerprint, а точное сужение делает правило.
+
+**Red/Green.** Тесты написаны первыми. До реализации
+`docker compose --profile test run --rm test pytest tests/test_stage312_known_issue_tool_names.py`
+дал красный результат: 8 failed, 1 passed. После реализации тот же набор:
+9 passed. Соседний набор после правки фикстуры stage 246:
+`docker compose --profile test run --rm test pytest tests/test_stage246_feedback_triage_tooling.py::test_link_attaches_several_reports_to_one_known_issue tests/test_stage246_feedback_triage_tooling.py::test_link_is_idempotent_for_duplicate_and_already_linked_report tests/test_stage312_known_issue_tool_names.py`
+дал 11 passed.
+
+**Сторожа приняты красными.** Мутации: авто-репорт с `known_issue_id` временно
+вернули на `FEEDBACK_STATUS_NEW` — упал
+`test_auto_feedback_with_known_issue_is_linked_not_new`; сняли проверку
+`related_tool` в `validate_match_rules_json` — упали
+`test_match_rules_reject_unknown_related_tool_names` и
+`test_set_match_rules_rejects_unknown_related_tool_name`; сделали
+`match_rules(None)` совпадающим — упал
+`test_null_related_tool_without_rules_does_not_match_every_failure`; сняли
+проверку неизвестного имени в `_validate_related_tool` — упали
+`test_promote_rejects_free_form_related_tool_without_override` и
+`test_set_related_tool_updates_and_rejects_unknown`; заставили `promote`
+игнорировать override `--related-tool` — упал
+`test_promote_allows_registered_or_empty_related_tool_override`; скрыли
+невалидный `related_tool` из `unreachable-issues` — упал
+`test_unreachable_issues_names_unknown_related_tool_reason`; отключили проверку
+имени внутри seed `match_rules` — упал
+`test_seed_tool_name_gate_checks_related_tool_and_rules`; диагностической
+seed-записи временно вернули `related_tool = DIAGNOSTIC_TOOL` — упал
+`test_diagnostic_seed_issue_does_not_store_fake_related_tool`; runtime-валидацию
+`match_rules` временно сделали строгой по именам инструментов — упал
+`test_runtime_match_rules_keep_valid_tool_when_a_stale_name_is_present`;
+seed-гейт временно разрешил неразобранное поле `related_tool` — упал
+`test_seed_tool_name_gate_checks_related_tool_and_rules` по
+`[seed:unparsed-field] related_tool could not be parsed`. Все мутации
+возвращены перед зелёными прогонами.
+
+**Проверки перед коммитом.** `python3 scripts/check_roadmap_structure.py` —
+exit 0; `python3 scripts/check_known_issue_tool_names.py` — exit 0 после
+перевода гейта на AST-разбор seed-файла без импорта FastMCP;
+`scripts/review_workflow_check.sh 312` — exit 0 с ожидаемыми предупреждениями
+до обновления этого раздела; полный набор
+`docker compose --profile test run --rm test sh -c "python scripts/run_default_test_suite.py"`
+после исправления соседней фикстуры — 2918 passed, 2 skipped, 76 deselected.
+
+**Ревью дифа, прогон 1/2.** Spark-review по `HEAD^..HEAD` вернул `[]`. Claude
+Opus evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T135524Z-git_range-HEAD__HEAD-attempt-1-of-3.QcRa0p/claude-review-attempt-1-of-3.envelope.json`,
+subtype `success`, stop_reason `tool_use`, output_tokens `3445`,
+thinking_tokens `2525`, len(result) `2361`. Два medium приняты: диагностическая
+known issue stage 157 не должна притворяться реальным инструментом, поэтому
+её `related_tool` возвращён в `NULL`, а правило оставлено только на
+синтетический маркер; `unreachable-issues` обязан показывать невалидные
+`match_rules`, потому что после валидации правила с переименованным
+`related_tool` перестают матчить так же молча, как битая колонка. Low про
+неразобранный seed expression тоже принят: гейт теперь fail-closed, если не
+смог разобрать `match_rules`.
+
+**Повтор после review-правок.** Прицельно:
+`docker compose --profile test run --rm test pytest tests/test_stage312_known_issue_tool_names.py tests/test_stage157_feedback_kb_seed.py`
+— 22 passed. После добавления сторожа на диагностическую seed-запись:
+та же команда — 23 passed. Полный набор после финальной правки:
+`docker compose --profile test run --rm test sh -c "python scripts/run_default_test_suite.py"`
+— 2919 passed, 2 skipped, 76 deselected.
+
+**Ревью дифа, прогон 2/2.** Перед вторым Claude-review Spark-review после
+read-only runtime failure был повторён с `gpt-5.3-codex-spark -s
+danger-full-access` в review-only режиме и вернул `[]`. Claude Opus evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T142615Z-git_range-HEAD__HEAD-attempt-2-of-3.tEjINK/claude-review-attempt-2-of-3.envelope.json`,
+subtype `success`, stop_reason `tool_use`, output_tokens `5019`,
+thinking_tokens `4460`, len(result) `1463`; бюджет code-review 2/2 исчерпан.
+Medium принят: runtime `match_rules` не должен отбрасывать всю запись базы из-за
+одного устаревшего имени в списке, иначе активные боевые записи молчат до
+ручной операции 312.4. Решение: строгая проверка имён включена только для
+write-paths (`promote`, `set-match-rules`, seed validation,
+`unreachable-issues`), а runtime остаётся lenient и сравнивает фактический
+инцидент с правилом. Low принят: seed-гейт теперь fail-closed при
+неразобранном/пустом `SEED_ISSUES` и неразобранном `related_tool`, включая
+annotated assignment.
+
+**Повтор после второго review.** `python3 scripts/check_known_issue_tool_names.py`
+— exit 0. Прицельно:
+`docker compose --profile test run --rm test pytest tests/test_stage312_known_issue_tool_names.py tests/test_stage157_feedback_kb_seed.py`
+— 24 passed. Полный набор:
+`docker compose --profile test run --rm test sh -c "python scripts/run_default_test_suite.py"`
+— 2920 passed, 2 skipped, 76 deselected.
+
+**Операция 312.4.** Пока не выполнялась: она идёт последней, после push,
+зелёного `Tests` и `Deploy Prod`, через штатный CLI в боевом контейнере с
+`< /dev/null` и read-only снимками до/после.

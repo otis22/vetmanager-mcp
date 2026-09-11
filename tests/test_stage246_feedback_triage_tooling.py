@@ -17,7 +17,7 @@ def _report(**overrides) -> AgentFeedbackReport:
         "category": "bug",
         "severity": "high",
         "status": "new",
-        "related_tool": "vetmanager__update_medical_card",
+        "related_tool": "update_medical_card",
         "summary": "update_medical_card rejects an existing card",
         "details": "Shape-only feedback without raw customer data.",
         "reproduce": "Call the tool with a card id that reads fine.",

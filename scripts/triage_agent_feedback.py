@@ -37,6 +37,7 @@ from storage_models import (
     KnownIssue,
     KnownIssueMatchEvent,
 )
+from tool_access_registry import TOOL_REQUIRED_SCOPES
 
 
 def _now() -> datetime:
@@ -127,6 +128,24 @@ def _safe_json_payload(data: dict[str, Any] | None, *, limit: int) -> str | None
     return json.dumps(_sanitize_json_value(data), ensure_ascii=True, sort_keys=True)[:limit]
 
 
+def _normalize_related_tool(value: str | None) -> str | None:
+    if value is None:
+        return None
+    tool_name = sanitize_text(value, limit=128)
+    return tool_name or None
+
+
+def _validate_related_tool(value: str | None) -> str | None:
+    tool_name = _normalize_related_tool(value)
+    if tool_name is None:
+        return None
+    if tool_name not in TOOL_REQUIRED_SCOPES:
+        raise SystemExit(
+            f"Unknown related_tool {tool_name!r}. Use a registered tool name or an empty value for NULL."
+        )
+    return tool_name
+
+
 async def _promote(args: argparse.Namespace) -> None:
     playbook = _load_json_file(args.playbook_json)
     playbook_json = _safe_json_payload(playbook, limit=8000)
@@ -134,19 +153,23 @@ async def _promote(args: argparse.Namespace) -> None:
         raise SystemExit("Invalid agent playbook JSON.")
     match_rules = _load_json_file(args.match_rules_json)
     match_rules_json = _safe_json_payload(match_rules, limit=8000)
-    if match_rules_json and validate_match_rules_json(match_rules_json) is None:
+    if match_rules_json and validate_match_rules_json(match_rules_json, strict_tool_names=True) is None:
         raise SystemExit("Invalid match rules JSON.")
     async with get_session_factory()() as session:
         report = await session.get(AgentFeedbackReport, args.report_id)
         if report is None:
             raise SystemExit(f"Report not found: {args.report_id}")
+        related_tool_arg = getattr(args, "related_tool", None)
+        related_tool = _validate_related_tool(
+            report.related_tool if related_tool_arg is None else related_tool_arg
+        )
         now = _now()
         issue = KnownIssue(
             status=args.status,
             category=report.category,
             severity=report.severity,
             title=sanitize_text(args.title or report.summary, limit=240, required=True) or "",
-            related_tool=report.related_tool,
+            related_tool=related_tool,
             error_fingerprint_hash=report.error_fingerprint_hash,
             match_rules_json=match_rules_json,
             agent_playbook_json=playbook_json,
@@ -211,7 +234,7 @@ async def _set_match_rules(args: argparse.Namespace) -> None:
     match_rules_json = _safe_json_payload(rules, limit=8000)
     if not match_rules_json:
         raise SystemExit("Match rules JSON is required.")
-    if validate_match_rules_json(match_rules_json) is None:
+    if validate_match_rules_json(match_rules_json, strict_tool_names=True) is None:
         raise SystemExit("Invalid match rules JSON — refusing to write.")
     async with get_session_factory()() as session:
         issue = await session.get(KnownIssue, args.known_issue_id)
@@ -222,6 +245,22 @@ async def _set_match_rules(args: argparse.Namespace) -> None:
         await session.commit()
         print(
             f"known_issue #{issue.id} match rules updated (had_rules={had_rules})"
+        )
+
+
+async def _set_related_tool(args: argparse.Namespace) -> None:
+    """Stage 312: replace the search-key tool name of an existing known issue."""
+    related_tool = _validate_related_tool(args.related_tool)
+    async with get_session_factory()() as session:
+        issue = await session.get(KnownIssue, args.known_issue_id)
+        if issue is None:
+            raise SystemExit(f"Known issue not found: {args.known_issue_id}")
+        before = issue.related_tool
+        issue.related_tool = related_tool
+        await session.commit()
+        print(
+            f"known_issue #{issue.id} related_tool updated "
+            f"({before or '-'} -> {related_tool or '-'})"
         )
 
 
@@ -433,15 +472,30 @@ async def _unreachable_issues(args: argparse.Namespace) -> None:
     # поломки и разная работа. Проблема #11 два дня выглядела здесь так же, как
     # те, для которых ответ просто не сочинили, хотя её ответ был написан ещё в
     # июне и погас от переименования инструмента.
-    rows = [
-        (
-            issue,
-            int(report_counts.get(issue.id, 0)),
-            "rejected" if issue.agent_playbook_json else "missing",
+    rows = []
+    for issue in issues:
+        playbook_valid = validate_agent_playbook(issue.agent_playbook_json) is not None
+        match_rules_valid = (
+            issue.match_rules_json is None
+            or validate_match_rules_json(issue.match_rules_json, strict_tool_names=True) is not None
         )
-        for issue in issues
-        if validate_agent_playbook(issue.agent_playbook_json) is None
-    ]
+        unknown_related_tool = bool(
+            issue.related_tool and issue.related_tool not in TOOL_REQUIRED_SCOPES
+        )
+        if playbook_valid and match_rules_valid and not unknown_related_tool:
+            continue
+        if playbook_valid:
+            playbook_state = "ok"
+        else:
+            playbook_state = "rejected" if issue.agent_playbook_json else "missing"
+        rows.append(
+            (
+                issue,
+                int(report_counts.get(issue.id, 0)),
+                playbook_state,
+                match_rules_valid,
+            )
+        )
     # Отвергнутые — вперёд: там ответ уже есть и его надо починить, а не сочинить.
     rows.sort(key=lambda row: (row[2] != "rejected", -row[1], row[0].id))
 
@@ -455,8 +509,15 @@ async def _unreachable_issues(args: argparse.Namespace) -> None:
     print()
     print("| id | status | severity | related_tool | reports | matchable | injection | playbook_state |")
     print("|---:|---|---|---|---:|---|---|---|")
-    for issue, reports, playbook_state in rows:
+    for issue, reports, playbook_state, match_rules_valid in rows:
+        unknown_related_tool = bool(
+            issue.related_tool and issue.related_tool not in TOOL_REQUIRED_SCOPES
+        )
         matchable = "yes" if (issue.error_fingerprint_hash or issue.match_rules_json) else "no"
+        if unknown_related_tool:
+            matchable = "unknown related_tool"
+        elif not match_rules_valid:
+            matchable = "invalid match_rules"
         # Этап 283.2. Отпечаток проблемы приходит из отчёта, а инжекция считает
         # свой — из живого исключения, где `error_code` это имя класса, а формы
         # параметров нет вовсе. Эти два отпечатка не совпадают по построению,
@@ -464,6 +525,8 @@ async def _unreachable_issues(args: argparse.Namespace) -> None:
         # человеком правило. `matchable=yes` без правил означает «найдётся при
         # ручном разборе», а не «дойдёт до агента».
         injection = "yes" if issue.match_rules_json else "no"
+        if issue.match_rules_json and not match_rules_valid:
+            injection = "invalid"
         print(
             f"| {issue.id} | {issue.status} | {issue.severity} | "
             f"{sanitize_text(issue.related_tool, limit=128) or '-'} | {reports} | "
@@ -710,6 +773,11 @@ def _build_parser() -> argparse.ArgumentParser:
     promote.add_argument("--workaround", default=None)
     promote.add_argument("--playbook-json", default=None)
     promote.add_argument("--match-rules-json", default=None)
+    promote.add_argument(
+        "--related-tool",
+        default=None,
+        help="Override report.related_tool; empty value stores NULL.",
+    )
     promote.set_defaults(func=_promote)
 
     set_playbook = sub.add_parser(
@@ -727,6 +795,14 @@ def _build_parser() -> argparse.ArgumentParser:
     set_match_rules.add_argument("known_issue_id", type=int)
     set_match_rules.add_argument("--match-rules-json", required=True)
     set_match_rules.set_defaults(func=_set_match_rules)
+
+    set_related_tool = sub.add_parser(
+        "set-related-tool",
+        help="Stage 312: replace related_tool of an existing known issue.",
+    )
+    set_related_tool.add_argument("known_issue_id", type=int)
+    set_related_tool.add_argument("--related-tool", required=True)
+    set_related_tool.set_defaults(func=_set_related_tool)
 
     mark = sub.add_parser("mark", help="Set the status of a known issue.")
     mark.add_argument("known_issue_id", type=int)

@@ -30,6 +30,7 @@ from storage_models import (
     FEEDBACK_SEVERITY_LOW,
     FEEDBACK_SOURCE_AUTO,
     FEEDBACK_SOURCE_MODEL,
+    FEEDBACK_STATUS_LINKED,
     FEEDBACK_STATUS_NEW,
     KNOWN_ISSUE_STATUS_ACKNOWLEDGED,
     KNOWN_ISSUE_STATUS_OPEN,
@@ -401,7 +402,11 @@ def validate_agent_playbook(raw_json: str | None) -> dict[str, Any] | None:
     return playbook
 
 
-def validate_match_rules_json(raw_json: str | None) -> dict[str, Any] | None:
+def validate_match_rules_json(
+    raw_json: str | None,
+    *,
+    strict_tool_names: bool = False,
+) -> dict[str, Any] | None:
     if not raw_json:
         return None
     try:
@@ -433,6 +438,15 @@ def validate_match_rules_json(raw_json: str | None) -> dict[str, Any] | None:
                 return None
         elif isinstance(expected, str) and len(expected) > 500:
             return None
+        if strict_tool_names and field == "related_tool":
+            if op == "eq":
+                if not isinstance(expected, str) or expected not in TOOL_REQUIRED_SCOPES:
+                    return None
+            elif op == "in":
+                if not isinstance(expected, list) or any(
+                    item not in TOOL_REQUIRED_SCOPES for item in expected
+                ):
+                    return None
     return data
 
 
@@ -906,7 +920,7 @@ async def write_auto_feedback_event(*, credentials, tool_name: str, exc: BaseExc
             source=FEEDBACK_SOURCE_AUTO,
             category=FEEDBACK_CATEGORY_BUG,
             severity=FEEDBACK_SEVERITY_LOW,
-            status=FEEDBACK_STATUS_NEW,
+            status=FEEDBACK_STATUS_LINKED,
             account_id=account_id,
             bearer_token_id=bearer_token_id,
             related_tool=tool_name,

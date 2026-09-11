@@ -413,7 +413,7 @@ def validate_seed_definitions() -> None:
         seen.add(item.slug)
         if not item.title.startswith(f"{marker} "):
             raise SeedKnownIssuesError(f"invalid_seed_title:{item.slug}")
-        if validate_match_rules_json(_json_payload(item.match_rules)) is None:
+        if validate_match_rules_json(_json_payload(item.match_rules), strict_tool_names=True) is None:
             raise SeedKnownIssuesError(f"invalid_match_rules:{item.slug}")
         if validate_agent_playbook(_json_payload(item.agent_playbook)) is None:
             raise SeedKnownIssuesError(f"invalid_agent_playbook:{item.slug}")
@@ -484,7 +484,7 @@ def _run_id_is_safe(run_id: str) -> bool:
 
 
 def _diagnostic_rules() -> dict[str, Any]:
-    return _rules(DIAGNOSTIC_TOOL, DIAGNOSTIC_MARKER)
+    return _text_rules(DIAGNOSTIC_MARKER)
 
 
 async def _ensure_diagnostic_issue(session) -> KnownIssue:
@@ -500,7 +500,7 @@ async def _ensure_diagnostic_issue(session) -> KnownIssue:
         "category": "bug",
         "severity": "low",
         "priority": 999,
-        "related_tool": DIAGNOSTIC_TOOL,
+        "related_tool": None,
         "match_rules_json": _json_payload(_diagnostic_rules()),
         "agent_playbook_json": None,
         "public_summary": "Synthetic Stage 157 feedback auto-event diagnostic.",
