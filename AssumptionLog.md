@@ -16398,3 +16398,75 @@ Claude не запускался. Spark перед этими review gate дал
 `recent --source human` показал #67 как `[new]`; он закрыт штатным
 `resolve-report 67`, итог: linked known issue #49 status=fixed. Клиентских
 данных и секретов в проверке не использовалось.
+
+**Отклонение review-gate.** Исправляющий production-миграцию коммит `92c7909`
+ушёл в `main` после исчерпания двух валидных Claude diff-review этапа 315 без
+отдельного повторного strong review. Причина — установленная живой проверкой
+ошибка legacy CHECK, которая блокировала миграцию; исправление прошло целевые
+и полный контейнерный набор, CI и Deploy. Это не делает пропущенный review
+пройденным: отклонение зафиксировано явно.
+
+## Этап 316. Жалоба из кабинета
+
+Форма в `/account` сохраняет только самостоятельно введённые три поля в
+`details` human-report, с `account_id`, CSRF и отдельным account-dashboard
+rate bucket. Маркер `is_human_web_submission` отделяет этот bucket от
+существующего MCP `report_problem`; миграция `20260912_000022` добавляет его
+с безопасным default. Runtime contact валидируется как один email и выводится
+только при непустом значении. Само значение остаётся только в production
+`.env`, в публичных файлах его нет.
+
+**Privacy и сторожа.** Для POST формы `before_send` вычищает Sentry
+`request.data`, значения исключения и локальные variables frame; регрессионный
+тест проверяет, что ни одно поле жалобы не переживает serialisation события.
+Triage маскирует `summary` и `details` перед stdout. Сторож личных почтовых
+доменов сканирует checkout, исключая только служебные каталоги и явно
+публичный `example`-домен. Перед приёмкой в неотслеживаемый
+`tests/.stage316_email_guard_probe.txt` временно добавили email на личном
+домене: тест упал, указав этот файл; затем probe удалён и сторож снова зелёный.
+Это также не даёт самому тесту стать местом утечки адреса.
+
+**PRD reviews и простота.** Spark отметил валидацию/escaping contact и
+проверку потребителей `details`; оба замечания приняты. Claude PRD envelopes
+были повторно открыты напрямую, а не разобраны по смешанному stdout:
+
+- attempt 1 — `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T220407Z-file-PRD_-316---_md-attempt-1-of-3.sJPbhK/claude-review-attempt-1-of-3.envelope.json`;
+- attempt 2 — `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T220458Z-file-PRD_-316---_md-attempt-2-of-3.9Wt3IR/claude-review-attempt-2-of-3.envelope.json`;
+- attempt 3 — `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T220542Z-file-PRD_-316---_md-attempt-3-of-3.pxftK7/claude-review-attempt-3-of-3.envelope.json`.
+
+У всех `subtype=success`, `is_error=false`, `stop_reason=tool_use`,
+`output_tokens=null`, `thinking_tokens=null`; длина `result` соответственно
+2051, 1726 и 2286. Это **три валидных** verdict при бюджете два: прежняя
+ошибка была в чтении агрегированного перемешанного вывода вместо envelope.
+Новые PRD review не запускались; превышение — отклонение от правила. Приняты
+findings о Sentry, отдельном rate bucket, маскировании triage и безопасном
+contact. Низкий finding, что `sanitize_text` якобы не импортирован, отклонён:
+импорт уже был в `scripts/triage_agent_feedback.py`, при этом полезная
+проверка маскирования добавлена. Простота: один endpoint, один marker и
+существующие CSRF/rendering paths, без нового публичного сервиса или канала
+логирования.
+
+**Diff reviews.** Claude attempt 1
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T222727Z-git_range-b1f1a0d__11757ab-attempt-1-of-3.iugAuQ/claude-review-attempt-1-of-3.envelope.json`
+и attempt 2
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T224205Z-git_range-b1f1a0d__HEAD-attempt-2-of-3.Z5NQzE/claude-review-attempt-2-of-3.envelope.json`
+напрямую подтверждены как success/non-error/tool_use: `result` 1311 и 1620,
+а counters null. Приняты: `redaction_version=0` для самостоятельно введённого
+текста и явный marker вместо эвристики bearer/OAuth. Отклонён только ложный
+finding об отсутствующем импорте. Spark до второго gate упёрся в bwrap, затем
+provider rate-limit; валидного Spark verdict там не было. После двух валидных
+Claude diff reviews лимит исчерпан. Поэтому CI-исправление `8e816fc` (лишний
+import и документированное исключение для display-only пустого env) ушло без
+третьего strong review — отдельное, явное отклонение, а не расходование
+несуществующего третьего слота.
+
+**Проверки и выкат.** Полный `docker compose --profile test run --rm test`,
+структура Roadmap и целевые 38 tests прошли; CI `34656836346` — success,
+Deploy `34657179610` — success. Живой стендовый ASGI-вызов формы вернул
+`{'status': 200, 'body': 'feedback_saved'}` с синтетическими полями. На
+production: alembic revision `20260912_000022` и marker-column присутствуют;
+`/account` тестового аккаунта вернул 200, блок и runtime contact есть.
+POST с синтетическими полями создал human dashboard report #68; штатный
+`resolve-report 68 --status fixed` связал его с known issue #50, а
+`recent --source human` показал `[linked] source=human`. Данные аккаунта,
+текст формы и runtime contact в журнал/вывод не попадали.
