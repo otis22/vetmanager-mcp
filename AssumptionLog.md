@@ -16321,3 +16321,33 @@ subtype `success`, stop_reason `tool_use`, output_tokens `1318`, thinking_tokens
 `34641050622`) для `c07a191` — `success`; production MCP здоров и содержит
 логику stage 313. Report #66 закрыт штатным `resolve-report`: linked known
 issue #48 со статусом `fixed` и плейбуком со ссылкой на этап 313.
+
+## Этап 314. Report AI: единый фронт
+
+**Решения.** Зависание #19/#28/#35 — upstream: повторять тот же `job_id`, не
+создавать дубль, прекратить автоматический polling через 15 минут и вернуться
+позднее; #29 аналогично по тому же `report_file_id`, но порог 30 минут. Обрезка
+#11/#20: root cause upstream (renderer 1000), а MCP-обход этапа 296 уже есть —
+ровно 1000 строк не выдаются за полный ответ, используется export. #42:
+пространство Report AI identifier не доказано равным `user_id`, поэтому ID не
+называется ФИО и не сопоставляется автоматически; `doctor_name` этапа 313 —
+конечный плейсхолдер только уже данной строки расписания.
+
+**Операция и метрики.** На production семь записей #11/#19/#20/#28/#29/#35/#42
+перезаписаны только штатным `triage_agent_feedback.py set-playbook`; каждая
+команда сообщила `now_reachable=True`, `unreachable-issues` после операции:
+`total=0 rejected=0 missing=0`. Аудит `tools/report_ai.py`: все вызовы Report
+AI проходят через `_call_vm`/`instrument_call`, а export-download обёрнут
+отдельно; историческая метрик-дыра не воспроизводится, код не менялся и живой
+вызов изменённого инструмента не требуется.
+
+**PRD-review и простота.** Spark сначала упал до чтения на read-only bwrap,
+повтор danger-full-access review-only дал три принимаемых замечания: проверяемый
+чек-лист, fallback #42 и обязательная ветка при отсутствии метрик. Повтор Spark
+добавил точные пороги/ID; Claude Opus attempt 1 evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T200100Z-file-PRD_-314-report-ai--_md-attempt-1-of-3.zZNRVD/claude-review-attempt-1-of-3.envelope.json`
+и attempt 2 evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T200201Z-file-PRD_-314-report-ai--_md-attempt-2-of-3.uaegUz/claude-review-attempt-2-of-3.envelope.json`
+уточнили test-first ветку, source of truth и запрет неверной атрибуции #42;
+все важные findings приняты. PRD не добавляет инструментов и повторно не
+открывает решения 259/296/303.
