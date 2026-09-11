@@ -16359,3 +16359,42 @@ Claude PRD-review при лимите два; второй запуск с те�
 уточнили test-first ветку, source of truth и запрет неверной атрибуции #42;
 все важные findings приняты. PRD не добавляет инструментов и повторно не
 открывает решения 259/296/303.
+
+## Этап 315. Жалоба человека через агента
+
+Источник `human` отделён от model/auto в модели, миграции и triage. Совпадение
+с known issue сохраняется как подсказка (`known_issue_id`), но human-report
+остаётся `new`: человек не исчезает из очереди из-за автоматического матчинга.
+
+**Сторож.** Перед приёмкой временно подменили ожидаемый источник `human` в
+регрессионном тесте на `model`; тест human-feedback упал по несовпадению
+источника. После восстановления он также создаёт совпадающую известную проблему
+и проверяет `known_issue_id` вместе со статусом `new`.
+
+**Reviews и простота.** PRD-review Claude Opus: attempt 1
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T204513Z-file-PRD_-315---_md-attempt-1-of-3.hsLsQ4/claude-review-attempt-1-of-3.envelope.json`
+и attempt 2
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-11T204554Z-file-PRD_-315---_md-attempt-2-of-3.uVue8M/claude-review-attempt-2-of-3.envelope.json`
+— оба валидны; приняты требования к миграции старого CHECK и к проверяемой
+семантике human source. Simplicity: один параметр `source` с прежним default,
+без второго канала и без изменения существующих callers. Diff-review Claude
+attempt 1 и 2 (evidence `2026-09-11T212055Z-git_range-28a773a__HEAD-attempt-1-of-3.e2xOTT/claude-review-attempt-1-of-3.envelope.json`
+и `2026-09-11T212248Z-git_range-28a773a__HEAD-attempt-2-of-3.wQ2Jfu/claude-review-attempt-2-of-3.envelope.json`)
+принял обработку именованных/безымянных legacy CHECK. Лимит двух валидных
+strong diff reviews исчерпан до повторной правки миграции; дополнительный
+Claude не запускался. Spark перед этими review gate дал candidate findings,
+приняты только проверяемые про SQLite и точный поиск source-CHECK.
+
+**Миграция и выкат.** Первый Deploy `34649716263` корректно остановился до
+выката: PostgreSQL рендерит legacy CHECK как `source = ANY(...)`, поэтому
+поиск `source IN` не нашёл ограничение. Исправление `92c7909` ищет отдельное
+поле `source`, не затрагивая остальные CHECK; целевые тесты 37 passed, полный
+контейнерный набор прошёл, CI `34650936595` и Deploy `34651359375` — success.
+На production revision `20260911_000021`, source CHECK содержит human.
+
+**Живой вызов production (11.09.2026).** Вызов `report_problem` с
+`source="human"` и синтетическим безопасным описанием вернул
+`{'ok': True, 'feedback_id': 67, 'known_issue': None, 'message': 'feedback_saved'}`.
+`recent --source human` показал #67 как `[new]`; он закрыт штатным
+`resolve-report 67`, итог: linked known issue #49 status=fixed. Клиентских
+данных и секретов в проверке не использовалось.
