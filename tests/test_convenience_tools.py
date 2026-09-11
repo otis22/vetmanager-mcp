@@ -25,13 +25,14 @@ def billing_mock():
     )
 
 
-def bearer_runtime_patch():
+def bearer_runtime_patch(*, is_depersonalized: bool = False):
     return patch_runtime_credentials(
         DOMAIN,
         API_KEY,
         bearer_token="mock-token",
         bearer_token_id=1,
         connection_id=1,
+        is_depersonalized=is_depersonalized,
     )
 
 
@@ -125,6 +126,23 @@ async def test_daily_schedule_returns_addressed_doctor_name_without_user_lookup(
     assert row["doctor_name"] == "[user:3:first_name]"
     assert admission_route.call_count == 1
     assert user_route.call_count == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_daily_schedule_keeps_doctor_placeholder_for_depersonalized_access():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/admission").mock(
+        return_value=httpx.Response(200, json={
+            "success": True,
+            "data": {"totalCount": 1, "admission": [{"id": 7, "user_id": 3}]},
+        })
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch(is_depersonalized=True)
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_daily_schedule", {"date": "2026-04-10"})
+
+    assert result.structured_content["data"]["admission"][0]["doctor_name"] == "[user:3:first_name]"
 
 
 @pytest.mark.asyncio

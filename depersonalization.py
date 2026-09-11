@@ -641,6 +641,12 @@ def _sanitize_value(
     if not isinstance(value, str):
         return value
 
+    # A tool may deliberately return the already-addressed final value (the
+    # daily schedule does this for doctor_name). Reclassifying it by the outer
+    # response key would silently change its resolver field.
+    if _ADDRESSED_PLACEHOLDER_RE.fullmatch(value):
+        return value
+
     entity = address[0] if address else None
     if key and _is_free_text_key(key):
         # Свободный текст чистится всегда — и внутри записи, не относящейся к
