@@ -67,14 +67,36 @@ async def test_human_feedback_is_redacted_and_remains_new_when_known_issue_match
     session_factory = await sqlite_session_factory_builder(tmp_path / "human-feedback.db")
     monkeypatch.setattr(feedback, "get_session_factory", lambda: session_factory)
     credentials = make_runtime_credentials("clinic", "secret", account_id=1, bearer_token_id=None)
+    incident = feedback.FeedbackIncident(
+        related_tool="get_payments",
+        http_status=422,
+        error_code="ToolError",
+        error_excerpt="payment provider rejected the request",
+        params_shape=["date_from"],
+    )
+    async with session_factory() as session:
+        session.add(KnownIssue(
+            status="open", category="bug", severity="medium", priority=1,
+            title="Known payment failure", related_tool=incident.related_tool,
+            error_fingerprint_hash=feedback.build_error_fingerprint_hash(incident),
+            agent_playbook_json=json.dumps({
+                "version": 1, "summary": "Retry later", "steps": [],
+                "do_not_do": [], "recommended_tool_sequence": [], "safe_to_retry": False,
+            }),
+        ))
+        await session.commit()
     result = await feedback.create_feedback_report(
         credentials=credentials, category="bug", severity="medium", source=FEEDBACK_SOURCE_HUMAN,
         summary="Иванов says answer is wrong", details="Call +7 999 123-45-67 was not helpful",
+        related_tool=incident.related_tool, http_status=incident.http_status,
+        error_code=incident.error_code, error_excerpt=incident.error_excerpt,
+        params_shape=incident.params_shape,
     )
     async with session_factory() as session:
         report = await session.get(AgentFeedbackReport, result["feedback_id"])
     assert report is not None
     assert report.source == FEEDBACK_SOURCE_HUMAN
+    assert report.known_issue_id is not None
     assert report.status == FEEDBACK_STATUS_NEW
     assert "+7 999" not in report.details
 

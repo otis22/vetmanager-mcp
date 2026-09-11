@@ -33,13 +33,16 @@ def upgrade() -> None:
                 batch.drop_constraint(constraint["name"], type_="check")
             batch.create_check_constraint("ck_agent_feedback_reports_source", _NEW)
         return
-    name = bind.execute(sa.text("""
+    names = bind.execute(sa.text("""
         SELECT conname FROM pg_constraint
         WHERE conrelid = 'agent_feedback_reports'::regclass
-          AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%source IN%'
-    """)).scalar_one_or_none()
-    if name:
-        op.execute(sa.text(f'ALTER TABLE {_TABLE} DROP CONSTRAINT "{name}"'))
+          AND contype = 'c'
+          AND pg_get_constraintdef(oid) ~* '(^|[^a-z_])source([^a-z_]|$)'
+    """)).scalars().all()
+    if len(names) > 1:
+        raise RuntimeError("stage 315: multiple source CHECK constraints require manual review")
+    if names:
+        op.drop_constraint(names[0], _TABLE, type_="check")
     op.create_check_constraint("ck_agent_feedback_reports_source", _TABLE, _NEW)
 
 
