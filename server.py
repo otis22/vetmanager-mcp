@@ -234,6 +234,8 @@ mcp = FastMCP(
         "missing tool, parameter, filter, sort, pagination, or date semantics blocks a reasonable request; "
         "workaround was necessary because no direct tool or parameter exists; "
         "successful response is suspicious, inconsistent, or not enough to answer. "
+        "If the human says an answer is wrong or unsuitable, or asks to complain or pass feedback "
+        "to developers, call report_problem with source='human' and a short safe paraphrase. "
         "Do not call report_problem for legitimately empty results, expected pagination endings, "
         "correct rejections of invalid user input, or normal multi-step composition. "
         "Do not paste raw tool response bodies, raw record IDs, user's verbatim message, "

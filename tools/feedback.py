@@ -22,6 +22,7 @@ def register(mcp: FastMCP) -> None:
         params_shape: list[str] | None = None,
         suggested_fix: str = "",
         reproduce: str = "",
+        source: str = "model",
     ) -> dict:
         """Report a suspected Vetmanager MCP problem for developer triage.
 
@@ -36,7 +37,9 @@ def register(mcp: FastMCP) -> None:
         pagination endings, correct rejections of invalid user input, or normal
         multi-step composition.
 
-        Do not paste raw tool response bodies, raw record IDs, user's verbatim message,
+        If a person says the answer is wrong, unsuitable, asks to complain, or asks to
+        pass feedback to developers, call this tool with source="human" and a short
+        safe paraphrase of the complaint. Do not paste raw tool response bodies, raw record IDs, user's verbatim message,
         or full error payloads. Do not include bearer tokens, API keys,
         passwords, raw client or patient data, or raw Vetmanager payloads. Use
         params_shape for safe parameter names only, never parameter values.
@@ -65,4 +68,5 @@ def register(mcp: FastMCP) -> None:
             params_shape=params_shape,
             suggested_fix=suggested_fix or None,
             reproduce=reproduce or None,
+            source=source,
         )

@@ -29,6 +29,7 @@ from storage_models import (
     FEEDBACK_SEVERITIES,
     FEEDBACK_SEVERITY_LOW,
     FEEDBACK_SOURCE_AUTO,
+    FEEDBACK_SOURCE_HUMAN,
     FEEDBACK_SOURCE_MODEL,
     FEEDBACK_STATUS_LINKED,
     FEEDBACK_STATUS_NEW,
@@ -699,11 +700,14 @@ async def create_feedback_report(
     params_shape: list[str] | None = None,
     suggested_fix: str | None = None,
     reproduce: str | None = None,
+    source: str = FEEDBACK_SOURCE_MODEL,
 ) -> dict[str, Any]:
     if category not in FEEDBACK_CATEGORIES:
         raise ToolInputError("Invalid feedback category.")
     if severity not in FEEDBACK_SEVERITIES:
         raise ToolInputError("Invalid feedback severity.")
+    if source not in {FEEDBACK_SOURCE_MODEL, FEEDBACK_SOURCE_HUMAN}:
+        raise ToolInputError("Invalid feedback source.")
     safe_params_shape = sanitize_params_shape(params_shape)
     privacy_redactions: set[str] = set()
 
@@ -754,7 +758,7 @@ async def create_feedback_report(
                 source="report",
             )
         report = AgentFeedbackReport(
-            source=FEEDBACK_SOURCE_MODEL,
+            source=source,
             category=category,
             severity=severity,
             status=FEEDBACK_STATUS_NEW,

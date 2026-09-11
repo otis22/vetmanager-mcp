@@ -170,6 +170,7 @@ async def test_feedback_metrics_collected_with_windows_and_breakdowns(feedback_s
     assert reports["by_source_30d"] == {
         FEEDBACK_SOURCE_MODEL: 2,
         FEEDBACK_SOURCE_AUTO: 1,
+        "human": 0,
         FEEDBACK_SOURCE_USER_COMPLAINT: 1,
     }
     assert reports["by_status_30d"] == {

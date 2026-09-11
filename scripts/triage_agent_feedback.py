@@ -31,6 +31,7 @@ from agent_feedback_service import (
 from storage import get_session_factory
 from storage_models import (
     AgentFeedbackReport,
+    FEEDBACK_SOURCES,
     FEEDBACK_STATUS_LINKED,
     FEEDBACK_STATUSES,
     KNOWN_ISSUE_STATUSES,
@@ -66,6 +67,7 @@ async def _recent(args: argparse.Namespace) -> None:
             await session.execute(
                 select(AgentFeedbackReport, KnownIssue.id, KnownIssue.status)
                 .outerjoin(KnownIssue, KnownIssue.id == AgentFeedbackReport.known_issue_id)
+                .where(AgentFeedbackReport.source == getattr(args, "source", None) if getattr(args, "source", None) else True)
                 .order_by(AgentFeedbackReport.created_at.desc(), AgentFeedbackReport.id.desc())
                 .limit(args.limit)
             )
@@ -759,6 +761,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     recent = sub.add_parser("recent")
     recent.add_argument("--limit", type=int, default=50)
+    recent.add_argument("--source", choices=FEEDBACK_SOURCES)
     recent.set_defaults(func=_recent)
 
     group = sub.add_parser("group")

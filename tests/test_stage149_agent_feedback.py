@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from exceptions import ToolInputError
 import agent_feedback_service as feedback
-from storage_models import AgentFeedbackReport, KnownIssue
+from storage_models import AgentFeedbackReport, KnownIssue, FEEDBACK_SOURCE_HUMAN, FEEDBACK_STATUS_NEW
 from tests.runtime_factories import make_runtime_credentials
 import tools
 import scripts.triage_agent_feedback as triage_cli
@@ -58,6 +58,25 @@ async def test_report_problem_sanitizes_and_persists_structured_feedback(
     assert "+7 999" not in report.details
     assert report.error_fingerprint_hash.startswith("hmac-sha256:")
     assert json.loads(report.params_shape_json or "[]") == ["client_id", "date_from", "date_to"]
+
+
+@pytest.mark.asyncio
+async def test_human_feedback_is_redacted_and_remains_new_when_known_issue_matches(
+    sqlite_session_factory_builder, tmp_path, monkeypatch, feedback_pepper,
+):
+    session_factory = await sqlite_session_factory_builder(tmp_path / "human-feedback.db")
+    monkeypatch.setattr(feedback, "get_session_factory", lambda: session_factory)
+    credentials = make_runtime_credentials("clinic", "secret", account_id=1, bearer_token_id=None)
+    result = await feedback.create_feedback_report(
+        credentials=credentials, category="bug", severity="medium", source=FEEDBACK_SOURCE_HUMAN,
+        summary="Иванов says answer is wrong", details="Call +7 999 123-45-67 was not helpful",
+    )
+    async with session_factory() as session:
+        report = await session.get(AgentFeedbackReport, result["feedback_id"])
+    assert report is not None
+    assert report.source == FEEDBACK_SOURCE_HUMAN
+    assert report.status == FEEDBACK_STATUS_NEW
+    assert "+7 999" not in report.details
 
 
 def test_report_problem_and_wrapper_fingerprint_paths_converge(feedback_pepper):
