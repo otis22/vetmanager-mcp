@@ -6,6 +6,7 @@ Revises: 20260826_000020
 
 from alembic import op
 import sqlalchemy as sa
+import re
 
 
 revision = "20260911_000021"
@@ -21,13 +22,13 @@ def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == "sqlite":
         constraints = sa.inspect(bind).get_check_constraints(_TABLE)
-        old_name = next(
-            (
-                item.get("name") for item in constraints
-                if "source" in str(item.get("sqltext") or "").lower()
-            ),
-            None,
-        )
+        source_constraints = [
+            item for item in constraints
+            if re.search(r"\bsource\b", str(item.get("sqltext") or ""), re.IGNORECASE)
+        ]
+        old_name = source_constraints[0].get("name") if source_constraints else None
+        if source_constraints and not old_name:
+            raise RuntimeError("stage 315: unnamed source CHECK cannot be safely replaced")
         with op.batch_alter_table(_TABLE) as batch:
             if old_name:
                 batch.drop_constraint(old_name, type_="check")
