@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 import respx
+from fastmcp.exceptions import ToolError
 
 from server import mcp
 from tests.runtime_factories import patch_runtime_credentials
@@ -112,3 +113,13 @@ async def test_period_tool_marks_scan_limited_when_invoice_pages_consume_budget(
     assert data["next_offset"] is None
     assert data["upstream_calls"] == 20
     assert len(invoice_route.calls) == 20
+
+
+@pytest.mark.asyncio
+async def test_period_tool_rejects_negative_offset_before_upstream_call():
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="offset must be 0 or greater"):
+            await mcp.call_tool("get_invoice_documents_by_period", {
+                "date_from": "2026-09-12", "date_to": "2026-09-12", "offset": -1,
+            })

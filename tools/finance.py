@@ -509,6 +509,8 @@ def register(mcp: FastMCP) -> None:
         resolved_from, resolved_to = _parse_date_range(date_from, date_to, label="date")
         if not resolved_from or not resolved_to:
             raise ToolInputError("date_from and date_to are required")
+        if offset < 0:
+            raise ToolInputError("offset must be 0 or greater")
         if status and status not in _INVOICE_STATUSES:
             raise ToolInputError(
                 f"status must be one of {sorted(_INVOICE_STATUSES)}, got '{status}'"
