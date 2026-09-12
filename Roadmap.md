@@ -7094,18 +7094,18 @@ mcp-feedback-analysis.md`). Механизм известных проблем �
 - 316.1 CSRF-защищённая форма и ограничение частоты. — `done`
 - 316.2 Privacy-safe triage, стенд, reviews и выкат. — `done`
 
-## Этап 317. Экспорт не повторяет отказ и оставляет след — `in_progress`
+## Этап 317. Экспорт не повторяет отказ и оставляет след — `done`
 
 - 317.1 Ошибки StartReport и ожидание export-download дают агенту явный срок
-  повтора через существующий known-issue playbook. — `in_progress`
+  повтора через существующий known-issue playbook. — `done`
 - 317.2 Несопоставленный failure сохраняет ограниченный privacy-safe след и
-  triage показывает агрегаты для написания match rules. — `todo`
-- 317.3 Миграция, сторожа, стенд, reviews, deploy и production verification. — `todo`
+  triage показывает агрегаты для написания match rules. — `done`
+- 317.3 Миграция, сторожа, стенд, reviews, deploy и production verification. — `done`
 
-## Этап 318. Позиции счетов за период без N+1 — `todo`
+## Этап 318. Позиции счетов за период без N+1 — `in_progress`
 
 - 318.1 Разведать фактический предел `document_id IN (...)` в исходниках и на
-  тестовом стенде; зафиксировать результат в PRD/AssumptionLog. — `todo`
+  тестовом стенде; зафиксировать результат в PRD/AssumptionLog. — `done`
 - 318.2 Реализовать ограниченный пакетный инструмент и красный сторож пачки. — `todo`
 - 318.3 Обновить KI-51 штатным triage, пройти проверки/reviews/deploy и
   проверить видимость инструмента на production. — `todo`

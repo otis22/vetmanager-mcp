@@ -207,6 +207,7 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
     "get_invoice_by_id": (SCOPE_FINANCE_READ,),
     "get_invoice_document_by_id": (SCOPE_FINANCE_READ,),
     "get_invoice_documents": (SCOPE_FINANCE_READ,),
+    "get_invoice_documents_by_period": (SCOPE_FINANCE_READ,),
     "get_invoices": (SCOPE_FINANCE_READ,),
     "get_medical_card_by_id": (SCOPE_MEDICAL_CARDS_READ,),
     "get_medical_cards": (SCOPE_MEDICAL_CARDS_READ,),

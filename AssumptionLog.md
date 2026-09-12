@@ -16470,3 +16470,50 @@ POST с синтетическими полями создал human dashboard r
 `resolve-report 68 --status fixed` связал его с known issue #50, а
 `recent --source human` показал `[linked] source=human`. Данные аккаунта,
 текст формы и runtime contact в журнал/вывод не попадали.
+
+## Этап 318. Позиции счетов за период
+
+Разведка на TEST_DOMAIN завершена до реализации: 669 синтетических счетов с
+одной позицией подтвердили `totalCount` без молчаливого усечения для 50, 100,
+200 и 500 `document_id`; 1000, 2000 и 5000 вернули HTTP 414 до REST. Точная
+уточняющая граница для десятизначных ID — 669 значений / URL 8 203 байта (200),
+670 / 8 215 байт (414). Безопасная пачка, записанная в PRD, — 500.
+
+**PRD review, отклонение бюджета 3/2, 12.09.2026.** После Spark-review (его
+findings о внутренней пагинации, стабильном порядке, границах даты и URL guard
+приняты в PRD) были запущены три Claude PRD-review, хотя бюджет — два:
+
+- `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-12T091440Z-file-PRD_-318----_md-attempt-1-of-3.6ieETk/claude-review-attempt-1-of-3.envelope.json`;
+- `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-12T091529Z-file-PRD_-318----_md-attempt-2-of-3.3vDQSn/claude-review-attempt-2-of-3.envelope.json`;
+- `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-12T091610Z-file-PRD_-318----_md-attempt-3-of-3.L9EJsl/claude-review-attempt-3-of-3.envelope.json`.
+
+Прежний вывод о пустых файлах был ошибкой чтения, не infrastructure failure.
+Прямой `python3 json.load` подтверждает соответственно `success False 1054`,
+`success False 1132`, `success False 1577`; рядом лежат разбираемые
+`*.verdict.json`. Новых PRD-review не запускать. Приняты все findings: ранняя
+остановка внутри IN-пакета несовместима с глобальной пагинацией, поэтому пакет
+читается до totalCount, затем сортируется в памяти; sorting обоих endpoint
+явный; при budget-limited stateless scan нет `next_offset`, а budget считает
+страницы invoice и invoiceDocument. Превышение трёх валидных запусков при
+бюджете двух зафиксировано явно.
+
+**Реализация и проверки.** Новый `get_invoice_documents_by_period` сначала
+читает `invoice` по включительному диапазону clinic-date, затем
+`invoiceDocument` по `document_id IN` пакетами максимум 500. Пакет всегда
+дочитывается до `totalCount`, все позиции сортируются в памяти по
+`invoice_date, invoice_id, id`, и лишь законченный scan получает глобальные
+`offset/limit`. Лимит — 20 upstream calls с учётом обеих сущностей; при его
+превышении результат `limited=true`, `next_offset=null` и совет сузить период.
+Это намеренно не обещает continuation из частичного stateless scan.
+
+**Красный сторож.** В `tools/finance.py` временно изменили безопасную константу
+с 500 на 501. `test_period_tool_reads_whole_batches_before_global_page_and_never_sends_over_500_ids`
+упал, потому что в фильтр ушёл пакет из 501 ID; после возврата 500 два stage-318
+теста прошли. Это guard реального запроса, не проверка недостижимой ветки.
+
+**Живой TEST_DOMAIN вызов.** На 669 созданных синтетических счетах вызов нового
+инструмента с `offset=490, limit=30` вернул код/статус `ok`, `limited=false`,
+30 строк, `upstream_calls=14`, `next_offset=520`; в каждой строке присутствуют
+`invoice_id` и `invoice_date`. Период содержал также существующие тестовые
+данные, поэтому `totalCount=682`; ни ID клиентов, ни тела строк, ни секреты не
+выводились. Страница пересекает безопасную границу первого 500-ID пакета.

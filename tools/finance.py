@@ -3,6 +3,7 @@
 import asyncio
 from exceptions import ToolInputError, reportable_error
 from datetime import date, timedelta
+from urllib.parse import urlencode
 
 from fastmcp import FastMCP
 from filters import (
@@ -21,6 +22,11 @@ def register(mcp: FastMCP) -> None:
     _PAYMENT_STATUSES = {"exec", "save", "deleted"}
     _INVOICE_DOCUMENT_FILTER_FIELDS = {"invoice_id", "invoiceId", "documentId", "document_id"}
     _CLIENT_PAYMENT_INVOICE_ID_CAP = 100
+    _INVOICE_DOCUMENT_PERIOD_BATCH_SIZE = 500
+    _INVOICE_DOCUMENT_PERIOD_QUERY_BYTES = 7000
+    _INVOICE_DOCUMENT_PERIOD_CALL_BUDGET = 20
+    _INVOICE_DOCUMENT_PERIOD_PAGE_SIZE = 100
+    _INVOICE_STATUSES = {"exec", "save", "deleted", "closed", "archived"}
 
     def _parse_date_range(date_from: str, date_to: str, *, label: str) -> tuple[str, str]:
         resolved_from = parse_date_param(date_from)
@@ -133,6 +139,46 @@ def register(mcp: FastMCP) -> None:
         if isinstance(value, str) and value.isdigit():
             return int(value)
         return None
+
+    def _period_invoice_id_batches(invoice_ids: list[int]) -> list[list[int]]:
+        """Split IDs before either the proven count or conservative URL bound."""
+        batches: list[list[int]] = []
+        current: list[int] = []
+        for invoice_id in invoice_ids:
+            candidate = current + [invoice_id]
+            query = urlencode({
+                "limit": _INVOICE_DOCUMENT_PERIOD_PAGE_SIZE,
+                "offset": 0,
+                "filter": str([{"property": "document_id", "value": candidate, "operator": "IN"}]),
+                "sort": str([
+                    {"property": "document_id", "direction": "ASC"},
+                    {"property": "id", "direction": "ASC"},
+                ]),
+            })
+            if current and (
+                len(candidate) > _INVOICE_DOCUMENT_PERIOD_BATCH_SIZE
+                or len(query) > _INVOICE_DOCUMENT_PERIOD_QUERY_BYTES
+            ):
+                batches.append(current)
+                current = [invoice_id]
+            else:
+                current = candidate
+        if current:
+            batches.append(current)
+        return batches
+
+    def _period_limited_result(*, calls: int, reason: str) -> dict:
+        return {
+            "data": {
+                "invoiceDocument": [],
+                "totalCount": None,
+                "limited": True,
+                "limited_reason": reason,
+                "upstream_calls": calls,
+                "next_offset": None,
+                "advice": "Narrow date_from/date_to before retrying; offset cannot continue an incomplete scan.",
+            }
+        }
 
     async def _invoice_ids_for_client_pet(client_id: int, pet_id: int) -> list[int]:
         invoice_resp = await crud_list(
@@ -421,6 +467,9 @@ def register(mcp: FastMCP) -> None:
     ) -> dict:
         """List line items (goods/services) within a specific invoice.
 
+        For positions across a date period, use get_invoice_documents_by_period
+        instead of making one call per invoice.
+
         Args:
             invoice_id: ID of the parent invoice.
             limit: Max records to return.
@@ -435,6 +484,119 @@ def register(mcp: FastMCP) -> None:
             "/rest/api/invoiceDocument", limit=limit, offset=offset,
             sort=sort, filters=combined_filters,
         )
+
+    @mcp.tool
+    async def get_invoice_documents_by_period(
+        date_from: str,
+        date_to: str,
+        clinic_id: int = 0,
+        status: str = "",
+        doctor_id: int = 0,
+        limit: LimitParam = 50,
+        offset: int = 0,
+    ) -> dict:
+        """List invoice line items for an inclusive clinic-date period.
+
+        Domain synonyms: invoice = счёт; invoice document = позиция счёта,
+        товар или услуга; period = период.
+
+        This bounded alternative to per-invoice calls reads invoices first and
+        then fetches their positions in safe document_id IN batches. It makes
+        at most 20 upstream calls; if that is insufficient, it returns
+        limited=true and asks to narrow the period rather than pretending an
+        incomplete scan is pageable.
+        """
+        resolved_from, resolved_to = _parse_date_range(date_from, date_to, label="date")
+        if not resolved_from or not resolved_to:
+            raise ToolInputError("date_from and date_to are required")
+        if status and status not in _INVOICE_STATUSES:
+            raise ToolInputError(
+                f"status must be one of {sorted(_INVOICE_STATUSES)}, got '{status}'"
+            )
+
+        invoice_filters = [
+            _filter_gte("invoice_date", _day_start(resolved_from)),
+            _filter_lt("invoice_date", _next_day_start(resolved_to)),
+        ]
+        if clinic_id:
+            invoice_filters.append(_filter_eq("clinic_id", clinic_id))
+        if status:
+            invoice_filters.append(_filter_eq("status", status))
+        if doctor_id:
+            invoice_filters.append(_filter_eq("doctor_id", doctor_id))
+
+        calls = 0
+        invoice_offset = 0
+        invoices: list[dict] = []
+        invoice_sort = [
+            {"property": "invoice_date", "direction": "ASC"},
+            {"property": "id", "direction": "ASC"},
+        ]
+        while True:
+            if calls >= _INVOICE_DOCUMENT_PERIOD_CALL_BUDGET:
+                return _period_limited_result(calls=calls, reason="upstream_call_budget")
+            response = await crud_list(
+                "/rest/api/invoice", limit=_INVOICE_DOCUMENT_PERIOD_PAGE_SIZE,
+                offset=invoice_offset, sort=invoice_sort, filters=invoice_filters,
+                allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["invoice"],
+            )
+            calls += 1
+            rows, total = _extract_entity_rows(response, "invoice")
+            invoices.extend(rows)
+            if not rows or (total is not None and len(invoices) >= total):
+                break
+            invoice_offset += len(rows)
+
+        invoice_dates = {
+            invoice_id: row.get("invoice_date")
+            for row in invoices
+            if (invoice_id := _coerce_invoice_id(row.get("id"))) is not None
+        }
+        positions: list[dict] = []
+        document_sort = [
+            {"property": "document_id", "direction": "ASC"},
+            {"property": "id", "direction": "ASC"},
+        ]
+        for batch in _period_invoice_id_batches(list(invoice_dates)):
+            document_offset = 0
+            while True:
+                if calls >= _INVOICE_DOCUMENT_PERIOD_CALL_BUDGET:
+                    return _period_limited_result(calls=calls, reason="upstream_call_budget")
+                response = await crud_list(
+                    "/rest/api/invoiceDocument", limit=_INVOICE_DOCUMENT_PERIOD_PAGE_SIZE,
+                    offset=document_offset, sort=document_sort,
+                    filters=[_filter_in("document_id", batch)],
+                )
+                calls += 1
+                rows, total = _extract_entity_rows(response, "invoiceDocument")
+                for row in rows:
+                    invoice_id = _coerce_invoice_id(row.get("document_id"))
+                    if invoice_id is not None and invoice_id in invoice_dates:
+                        positions.append({
+                            **row,
+                            "invoice_id": invoice_id,
+                            "invoice_date": invoice_dates[invoice_id],
+                        })
+                if not rows or (total is not None and document_offset + len(rows) >= total):
+                    break
+                document_offset += len(rows)
+
+        positions.sort(key=lambda row: (
+            str(row.get("invoice_date") or ""),
+            int(row.get("invoice_id") or 0),
+            int(row.get("id") or 0),
+        ))
+        page = positions[offset:offset + limit]
+        next_offset = offset + len(page) if offset + len(page) < len(positions) else None
+        return {
+            "data": {
+                "invoiceDocument": page,
+                "totalCount": len(positions),
+                "limited": False,
+                "upstream_calls": calls,
+                "next_offset": next_offset,
+            }
+        }
 
     @mcp.tool
     async def get_invoice_document_by_id(doc_id: int) -> dict:
