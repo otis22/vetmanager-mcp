@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Structural gate for Roadmap.md — the file that claims to be the work queue.
+"""Structural gate for the Roadmap queue and its immutable history archive.
 
 Roadmap.md is 5000+ lines and ~290 stage headings. Anything that is not visible
 at a glance stops being visible at all: on 2026-09-02 a review found two `todo`
@@ -7,8 +7,8 @@ items sitting inside `done` stages, an item filed under a foreign stage number,
 and an open stage with no items at all. None of them were hidden — they were
 just past the point where attention runs out.
 
-The gate answers five questions about the file's shape, and nothing about the
-quality of its text:
+The gate answers shape questions and, when both files are supplied, the queue /
+archive distribution rules. It does not judge prose quality.
 
 1. every stage heading carries a status from the closed vocabulary;
 2. every item carries a status from the same vocabulary;
@@ -17,7 +17,7 @@ quality of its text:
 5. an open stage (`todo` / `in_progress`) holds at least one item.
 
 Usage:
-    scripts/check_roadmap_structure.py [path/to/Roadmap.md]
+    scripts/check_roadmap_structure.py [path/to/Roadmap.md [path/to/Roadmap-archive.md]]
 
 Exit codes:
     0 — the file is well-formed
@@ -178,13 +178,59 @@ def check(stages: list[Stage], path_label: str) -> list[str]:
     return findings
 
 
+def _key(stage: Stage) -> tuple[tuple[int, ...], str]:
+    return tuple(int(part) for part in stage.number.split(".")), stage.suffix
+
+
+def check_distribution(queue: list[Stage], archive: list[Stage], queue_label: str, archive_label: str) -> list[str]:
+    findings: list[str] = []
+    maximum = max((int(stage.number.split(".")[0]) for stage in queue), default=0)
+    cutoff = maximum - 20
+    for stage in queue:
+        if stage.status in CLOSED_STATUSES and int(stage.number.split(".")[0]) < cutoff:
+            findings.append(f"{queue_label}:{stage.line}: закрытый этап {stage.name} вне окна")
+    for stage in archive:
+        if stage.status in OPEN_STATUSES:
+            findings.append(f"{archive_label}:{stage.line}: открытый этап {stage.name} в архиве")
+    locations: dict[str, list[str]] = {}
+    for label, stages in ((queue_label, queue), (archive_label, archive)):
+        for stage in stages:
+            locations.setdefault(stage.name, []).append(label)
+    for name, labels in locations.items():
+        if len(labels) != 1:
+            findings.append(f"{queue_label}: этап {name} встречается в обоих файлах")
+    for earlier, later in zip(archive, archive[1:]):
+        if _key(earlier) >= _key(later):
+            findings.append(f"{archive_label}:{later.line}: порядок этапов не монотонен")
+    queue_closed = [stage for stage in queue if stage.status in CLOSED_STATUSES]
+    if queue_closed:
+        minimum = min(_key(stage) for stage in queue_closed)
+        for stage in archive:
+            if _key(stage) >= minimum:
+                findings.append(
+                    f"{archive_label}:{stage.line}: этап {stage.name} не меньше минимального закрытого в очереди"
+                )
+    return findings
+
+
 def main(argv: list[str]) -> int:
-    path = Path(argv[1]) if len(argv) > 1 else Path(__file__).resolve().parents[1] / "Roadmap.md"
-    findings = check(parse(path.read_text(encoding="utf-8")), path.name)
+    root = Path(__file__).resolve().parents[1]
+    paths = [Path(value) for value in argv[1:]] or [root / "Roadmap.md", root / "Roadmap-archive.md"]
+    if len(paths) > 2:
+        print("usage: check_roadmap_structure.py [Roadmap.md [Roadmap-archive.md]]", file=sys.stderr)
+        return 2
+    if len(paths) == 2 and not paths[1].exists():
+        print(f"{paths[1].name}: архив не найден", file=sys.stderr)
+        return 1
+    parsed = [parse(path.read_text(encoding="utf-8")) for path in paths]
+    findings = check(parsed[0], paths[0].name)
+    if len(paths) == 2:
+        findings += check(parsed[1], paths[1].name)
+        findings += check_distribution(parsed[0], parsed[1], paths[0].name, paths[1].name)
     for finding in findings:
         print(finding)
     if findings:
-        print(f"\n{len(findings)} нарушений структуры в {path.name}", file=sys.stderr)
+        print(f"\n{len(findings)} нарушений структуры", file=sys.stderr)
         return 1
     return 0
 

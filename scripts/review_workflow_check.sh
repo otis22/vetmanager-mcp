@@ -133,7 +133,7 @@ fi
 # Parses Roadmap for every "## Этап N. ... — `done`" and verifies AssumptionLog
 # has a matching section. Catches bulk gaps like stages 92-95 that review-
 # workflow missed previously.
-DONE_STAGES=$(grep -oE '^## Этап [0-9]+\.[^\n]*`done`' Roadmap.md 2>/dev/null | grep -oE '^## Этап [0-9]+' | grep -oE '[0-9]+' | sort -nu || true)
+DONE_STAGES=$({ grep -oE '^## Этап [0-9]+\.[^\n]*`done`' Roadmap.md 2>/dev/null; grep -oE '^## Этап [0-9]+\.[^\n]*`done`' Roadmap-archive.md 2>/dev/null; } | grep -oE '^## Этап [0-9]+' | grep -oE '[0-9]+' | sort -nu || true)
 if [ -n "$DONE_STAGES" ]; then
   MISSING_LOG_STAGES=""
   for S in $DONE_STAGES; do

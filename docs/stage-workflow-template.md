@@ -78,6 +78,7 @@ docker compose --profile test run --rm test
 ### 13. **Update Roadmap status** (ОБЯЗАТЕЛЬНО)
 - [ ] Каждая подзадача `N.x` имеет `— \`done\`` или `— \`stop\`` (не `todo`/`in_progress`)
 - [ ] Заголовок этапа — `— \`done\`` или канонический `частично done` (если поддерживается)
+- [ ] Запустил `python3 scripts/archive_roadmap.py`, затем `python3 scripts/check_roadmap_structure.py`; архив не редактировал вручную
 
 ### 14. **Resolution note для baseline/super-review findings** (если применимо)
 - [ ] Если текущий этап закрывает finding из `artifacts/review/*.md` — добавил resolution line в сам review document

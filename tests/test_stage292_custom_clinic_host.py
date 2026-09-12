@@ -212,9 +212,10 @@ def _repo_root() -> Path:
 def _stage_texts() -> dict[str, str]:
     root = _repo_root()
     texts = {name: (root / name).read_text(encoding="utf-8") for name in _STAGE_FILES}
-    roadmap = (root / "Roadmap.md").read_text(encoding="utf-8")
-    section = roadmap.split("## Этап 292.", 1)
-    texts["Roadmap.md (этап 292)"] = section[1].split("\n## ", 1)[0] if len(section) > 1 else ""
+    for roadmap_name in ("Roadmap.md", "Roadmap-archive.md"):
+        roadmap = (root / roadmap_name).read_text(encoding="utf-8")
+        section = roadmap.split("## Этап 292.", 1)
+        texts[f"{roadmap_name} (этап 292)"] = section[1].split("\n## ", 1)[0] if len(section) > 1 else ""
     return texts
 
 

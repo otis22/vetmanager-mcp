@@ -16524,3 +16524,28 @@ verification (Deploy `34686882015`, `tools/list` содержит
 318 в Roadmap как `in_progress` с открытыми 318.2/318.3 и не перенёс туда
 результат разведки `IN`. Запись закрыта супервизором отдельным docs-only
 коммитом без стороннего ревью по §5.5; код не менялся.
+
+## Этап 319. Очередь и архив Roadmap
+
+Сделано: `Roadmap.md` стал очередью, `Roadmap-archive.md` — append-only
+историей; первый перенос сохранил 307 номеров и тел по
+`scripts/verify_stage319_roadmap_transfer.py`, второй запуск перенёс 0 этапов.
+7 реально найденных суффиксов заголовков (не 11 из исходной записи) перенесены
+первой строкой тела без потери текста. Позднее старое закрытие, нарушающее
+append-only порядок, архиватор отказывает до записи.
+
+Красный сторож: до реализации отсутствующий архиватор дал 7 красных stage-319
+тестов; после реализации каждый из пяти образцов распределения отклоняется
+своим сообщением. ShellCheck, `bash -n`, полный Docker-набор (2947 selected),
+structural gate и evidence-проверка зелёные. Инструменты и production не
+менялись, живой API-вызов не нужен.
+
+PRD Spark: первая read-only попытка упала до чтения на bwrap, fallback валиден;
+приняты четыре замечания, два candidate-only во втором pass отклонены по
+явному контракту владельца. Claude Opus PRD 2/2: envelopes
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-12T194617Z-file-PRD_-319----roadmap_md-attempt-1-of-3.1hJcUA/claude-review-attempt-1-of-3.envelope.json`
+(`success`, `is_error=false`, `stop_reason=tool_use`, output/thinking 2422/1673,
+len 1891) и
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-12T194809Z-file-PRD_-319----roadmap_md-attempt-2-of-3.oaT9pK/claude-review-attempt-2-of-3.envelope.json`
+(`success`, false, `tool_use`, 2702/2034, len 1690); рядом verdict-файлы.
+Commit/diff-review/push/deploy: pending.
