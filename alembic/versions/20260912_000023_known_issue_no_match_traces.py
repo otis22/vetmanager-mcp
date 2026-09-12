@@ -28,9 +28,11 @@ def upgrade() -> None:
     )
     op.create_index("ix_known_issue_no_match_traces_tool_created", "known_issue_no_match_traces", ["related_tool", "created_at"])
     op.create_index("ix_known_issue_no_match_traces_created", "known_issue_no_match_traces", ["created_at"])
+    op.create_index("ix_known_issue_no_match_traces_account_id", "known_issue_no_match_traces", ["account_id"])
 
 
 def downgrade() -> None:
+    op.drop_index("ix_known_issue_no_match_traces_account_id", table_name="known_issue_no_match_traces")
     op.drop_index("ix_known_issue_no_match_traces_created", table_name="known_issue_no_match_traces")
     op.drop_index("ix_known_issue_no_match_traces_tool_created", table_name="known_issue_no_match_traces")
     op.drop_table("known_issue_no_match_traces")

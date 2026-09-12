@@ -271,7 +271,7 @@ def normalize_error_text(value: str | None) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-_TRACE_URL_RE = re.compile(r"(?:https?://|www\.)[^\s'\"<>]+", re.IGNORECASE)
+_TRACE_URL_RE = re.compile(r"(?:https?://|www\.|\b[\w-]+(?:\.[\w-]+)+)[^\s'\"<>]*", re.IGNORECASE)
 _TRACE_IDENTIFIER_RE = re.compile(r"\b\d{1,}\b")
 
 
@@ -282,7 +282,10 @@ def normalize_no_match_trace_text(value: str | None) -> SanitizeResult:
     text = _TRACE_URL_RE.sub("{url}", text)
     text = _TRACE_IDENTIFIER_RE.sub("{id}", text)
     text = re.sub(r"\s+", " ", text.lower()).strip()
-    return SanitizeResult(text, sanitized.redactions)
+    redactions = set(sanitized.redactions)
+    if len((value or "")) > 1000:
+        redactions.add("sanitizer_error")
+    return SanitizeResult(text, frozenset(redactions))
 
 
 def _fingerprint_pepper() -> str:

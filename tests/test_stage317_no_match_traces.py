@@ -25,7 +25,7 @@ async def test_no_match_failure_writes_sanitized_trace_and_triage_aggregates_it(
     monkeypatch.setattr(feedback, "get_session_factory", lambda: factory)
     monkeypatch.setattr(triage, "get_session_factory", lambda: factory)
     credentials = SimpleNamespace(account_id=None, bearer_token_id=None)
-    error = VetmanagerError("StartReport failed at https://tenant.example/rest/42 due to export guard", 403)
+    error = VetmanagerError("StartReport failed at tenant.vetmanager.ru/rest/42 due to export guard", 403)
 
     await feedback.augment_tool_error("start_report_export", credentials, ToolError(str(error)), incident_source=error)
 
@@ -33,10 +33,10 @@ async def test_no_match_failure_writes_sanitized_trace_and_triage_aggregates_it(
         trace = (await session.execute(select(KnownIssueNoMatchTrace))).scalar_one()
     assert trace.related_tool == "start_report_export"
     assert trace.http_status == 403
-    assert "tenant.example" not in trace.normalized_error_text
+    assert "tenant.vetmanager.ru" not in trace.normalized_error_text
     assert "42" not in trace.normalized_error_text
 
     await triage._no_match_traces(SimpleNamespace(days=30, limit=20))
     output = capsys.readouterr().out
     assert "start_report_export" in output
-    assert "tenant.example" not in output
+    assert "tenant.vetmanager.ru" not in output
