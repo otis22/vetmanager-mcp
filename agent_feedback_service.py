@@ -15,7 +15,7 @@ import re
 from typing import Any
 
 from fastmcp.exceptions import ToolError
-from sqlalchemy import false, func, select, update
+from sqlalchemy import delete, false, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from exceptions import ToolInputError
@@ -41,6 +41,7 @@ from storage_models import (
     KNOWN_ISSUE_MATCH_SOURCES,
     KnownIssue,
     KnownIssueMatchEvent,
+    KnownIssueNoMatchTrace,
 )
 from tool_access_registry import TOOL_REQUIRED_SCOPES
 
@@ -56,6 +57,8 @@ REPORT_TOKEN_LIMIT_PER_HOUR = 30
 REPORT_RATE_WINDOW = timedelta(hours=1)
 KNOWN_ISSUE_LOOKUP_TIMEOUT_SECONDS = 0.2
 AUTO_EVENT_WRITE_TIMEOUT_SECONDS = 0.5
+NO_MATCH_TRACE_RETENTION_DAYS = 180
+NO_MATCH_TRACE_PER_TOOL_CAP = 1000
 AUTO_EVENT_STATUSES = (
     KNOWN_ISSUE_STATUS_OPEN,
     KNOWN_ISSUE_STATUS_ACKNOWLEDGED,
@@ -266,6 +269,20 @@ def normalize_error_text(value: str | None) -> str:
     text = text.lower()
     text = _VOLATILE_RE.sub("{volatile}", text)
     return re.sub(r"\s+", " ", text).strip()
+
+
+_TRACE_URL_RE = re.compile(r"(?:https?://|www\.)[^\s'\"<>]+", re.IGNORECASE)
+_TRACE_IDENTIFIER_RE = re.compile(r"\b\d{1,}\b")
+
+
+def normalize_no_match_trace_text(value: str | None) -> SanitizeResult:
+    """Make a rule-authoring excerpt safe even when upstream included a locator/id."""
+    sanitized = sanitize_text_with_metadata(value, limit=1000)
+    text = sanitized.text or ""
+    text = _TRACE_URL_RE.sub("{url}", text)
+    text = _TRACE_IDENTIFIER_RE.sub("{id}", text)
+    text = re.sub(r"\s+", " ", text.lower()).strip()
+    return SanitizeResult(text, sanitized.redactions)
 
 
 def _fingerprint_pepper() -> str:
@@ -999,6 +1016,35 @@ async def write_auto_feedback_event(*, credentials, tool_name: str, exc: BaseExc
         await session.commit()
 
 
+async def write_no_match_trace(*, credentials, tool_name: str, exc: BaseException) -> None:
+    """Persist only a sanitized unmatched failure; never affect the tool response."""
+    incident = build_incident_from_exception(tool_name, exc)
+    normalized = normalize_no_match_trace_text(incident.error_excerpt)
+    if not normalized.text:
+        return
+    account_id = getattr(credentials, "account_id", None)
+    possible_pii = bool(normalized.redactions.intersection(PRIVACY_REDACTIONS))
+    async with get_session_factory()() as session:
+        session.add(KnownIssueNoMatchTrace(
+            account_id=account_id,
+            related_tool=tool_name,
+            http_status=incident.http_status,
+            error_code=sanitize_text(incident.error_code, limit=128),
+            normalized_error_text=normalized.text,
+            possible_pii=possible_pii,
+        ))
+        await session.flush()
+        old_ids = (await session.execute(
+            select(KnownIssueNoMatchTrace.id)
+            .where(KnownIssueNoMatchTrace.related_tool == tool_name)
+            .order_by(KnownIssueNoMatchTrace.created_at.desc(), KnownIssueNoMatchTrace.id.desc())
+            .offset(NO_MATCH_TRACE_PER_TOOL_CAP)
+        )).scalars().all()
+        if old_ids:
+            await session.execute(delete(KnownIssueNoMatchTrace).where(KnownIssueNoMatchTrace.id.in_(old_ids)))
+        await session.commit()
+
+
 async def _persist_injection_match_event(
     *, tool_name: str, credentials, known_issue_id: int, fingerprint_hash: str | None,
 ) -> None:
@@ -1063,6 +1109,18 @@ async def augment_tool_error(
             extra={"event_name": "known_issue_lookup_failed", "tool_name": tool_name},
             exc_info=True,
         )
+    if blame_product and not lookup_failed and known_issue is None:
+        try:
+            await asyncio.wait_for(
+                write_no_match_trace(credentials=credentials, tool_name=tool_name, exc=source),
+                timeout=AUTO_EVENT_WRITE_TIMEOUT_SECONDS,
+            )
+        except Exception:
+            RUNTIME_LOGGER.warning(
+                "Known issue no-match trace write failed",
+                extra={"event_name": "known_issue_no_match_trace_write_failed", "tool_name": tool_name},
+                exc_info=True,
+            )
     if known_issue is not None:
         # Stage 151: best-effort write of injection match event in own session.
         # Failure must NOT block the ToolError flow — log and continue.

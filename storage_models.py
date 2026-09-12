@@ -765,6 +765,29 @@ class KnownIssue(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class KnownIssueNoMatchTrace(Base):
+    """Bounded, sanitized evidence for failure lookups without a known issue."""
+
+    __tablename__ = "known_issue_no_match_traces"
+    __table_args__ = (
+        Index("ix_known_issue_no_match_traces_tool_created", "related_tool", "created_at"),
+        Index("ix_known_issue_no_match_traces_created", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    related_tool: Mapped[str] = mapped_column(String(128), nullable=False)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    normalized_error_text: Mapped[str] = mapped_column(Text, nullable=False)
+    possible_pii: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+
+
 # Stage 151: persistent log of every known-issue match — broader source-of-truth
 # than agent_feedback_reports.known_issue_id (which is gated by dedup/cap).
 KNOWN_ISSUE_MATCH_SOURCES = ("injection", "report", "auto")

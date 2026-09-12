@@ -37,6 +37,7 @@ from storage_models import (
     KNOWN_ISSUE_STATUSES,
     KnownIssue,
     KnownIssueMatchEvent,
+    KnownIssueNoMatchTrace,
 )
 from tool_access_registry import TOOL_REQUIRED_SCOPES
 
@@ -397,8 +398,39 @@ async def _retention(args: argparse.Namespace) -> None:
             .where(AgentFeedbackReport.status.in_(("ignored", "linked", "triaged")))
             .where(AgentFeedbackReport.created_at < cutoff)
         )
+        trace_result = await session.execute(
+            delete(KnownIssueNoMatchTrace).where(KnownIssueNoMatchTrace.created_at < cutoff)
+        )
         await session.commit()
-    print(f"deleted_reports={result.rowcount or 0}")
+    print(f"deleted_reports={result.rowcount or 0} deleted_no_match_traces={trace_result.rowcount or 0}")
+
+
+async def _no_match_traces(args: argparse.Namespace) -> None:
+    """Show rule-authoring aggregates without exposing possible-PII text."""
+    cutoff = _now() - timedelta(days=args.days)
+    async with get_session_factory()() as session:
+        safe_rows = (await session.execute(
+            select(
+                KnownIssueNoMatchTrace.related_tool,
+                KnownIssueNoMatchTrace.normalized_error_text,
+                func.count().label("count"),
+            )
+            .where(KnownIssueNoMatchTrace.created_at >= cutoff)
+            .where(KnownIssueNoMatchTrace.possible_pii.is_(False))
+            .group_by(KnownIssueNoMatchTrace.related_tool, KnownIssueNoMatchTrace.normalized_error_text)
+            .order_by(func.count().desc(), KnownIssueNoMatchTrace.related_tool.asc())
+            .limit(args.limit)
+        )).all()
+        pii_count = await session.scalar(
+            select(func.count()).select_from(KnownIssueNoMatchTrace)
+            .where(KnownIssueNoMatchTrace.created_at >= cutoff)
+            .where(KnownIssueNoMatchTrace.possible_pii.is_(True))
+        )
+    print("| tool | normalized_error_text | count |")
+    print("|---|---|---:|")
+    for row in safe_rows:
+        print(f"| {row.related_tool} | {row.normalized_error_text} | {row.count} |")
+    print(f"possible_pii_rows={int(pii_count or 0)}")
 
 
 async def _match_events_cleanup(args: argparse.Namespace) -> None:
@@ -862,6 +894,13 @@ def _build_parser() -> argparse.ArgumentParser:
     retention = sub.add_parser("retention-cleanup")
     retention.add_argument("--days", type=int, default=180)
     retention.set_defaults(func=_retention)
+
+    no_match_traces = sub.add_parser(
+        "no-match-traces", help="Stage 317: aggregate sanitized unmatched failure traces.",
+    )
+    no_match_traces.add_argument("--days", type=int, default=30)
+    no_match_traces.add_argument("--limit", type=int, default=100)
+    no_match_traces.set_defaults(func=_no_match_traces)
 
     match_cleanup = sub.add_parser(
         "match-events-cleanup",

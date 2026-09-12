@@ -802,7 +802,8 @@ def _safe_export_error(
     lowered = str(exc).lower()
     if retry_on_conflict and _is_retryable_export_file_error(exc):
         return reportable_error(
-            "Report export is not ready yet; call get_report_export_download again after a delay."
+            "Report export is not ready yet; retry get_report_export_download with the same "
+            "report_file_id after 60 seconds. Do not start another export."
         )
     if exc.status_code == 403:
         if "report creating in progress" in lowered:
