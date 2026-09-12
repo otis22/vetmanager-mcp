@@ -65,19 +65,16 @@ def test_archive_moves_closed_stages_verbatim_and_second_run_is_a_noop(tmp_path:
     assert (queue.read_bytes(), archive.read_bytes()) == before
 
 
-def test_archive_refuses_a_late_old_closure_without_changing_files(tmp_path: Path) -> None:
+def test_archive_appends_a_late_old_closure_and_gate_stays_green(tmp_path: Path) -> None:
     queue, archive = _files(
         tmp_path,
         _stage("2", "done") + _stage("31", "in_progress"),
         "# Архив Roadmap\n\n" + _stage("5", "done"),
     )
-    before = (queue.read_bytes(), archive.read_bytes())
-
     result = _run_archiver(queue, archive)
-
-    assert result.returncode == 1
-    assert "append-only" in result.stderr
-    assert (queue.read_bytes(), archive.read_bytes()) == before
+    assert result.returncode == 0, result.stderr
+    assert archive.read_text(encoding="utf-8").endswith(_stage("2", "done"))
+    assert _run_gate(queue, archive).returncode == 0
 
 
 @pytest.mark.parametrize(
@@ -86,8 +83,6 @@ def test_archive_refuses_a_late_old_closure_without_changing_files(tmp_path: Pat
         (_stage("1", "done") + _stage("31", "todo"), "# Архив Roadmap\n", "закрытый этап 1 вне окна"),
         (_stage("31", "todo"), "# Архив Roadmap\n\n" + _stage("1", "todo"), "открытый этап 1 в архиве"),
         (_stage("1", "done") + _stage("31", "todo"), "# Архив Roadmap\n\n" + _stage("1", "done"), "этап 1 встречается"),
-        (_stage("31", "todo"), "# Архив Roadmap\n\n" + _stage("8", "done") + _stage("7", "done"), "не монотонен"),
-        (_stage("30", "done") + _stage("31", "todo"), "# Архив Roadmap\n\n" + _stage("30", "done"), "не меньше минимального закрытого"),
     ],
 )
 def test_distribution_gate_refuses_each_stage319_rule(
@@ -106,4 +101,3 @@ def test_repository_queue_and_archive_pass_the_distribution_gate() -> None:
         [sys.executable, str(CHECKER)], cwd=ROOT, text=True, capture_output=True
     )
     assert result.returncode == 0, result.stdout
-

@@ -178,10 +178,6 @@ def check(stages: list[Stage], path_label: str) -> list[str]:
     return findings
 
 
-def _key(stage: Stage) -> tuple[tuple[int, ...], str]:
-    return tuple(int(part) for part in stage.number.split(".")), stage.suffix
-
-
 def check_distribution(queue: list[Stage], archive: list[Stage], queue_label: str, archive_label: str) -> list[str]:
     findings: list[str] = []
     maximum = max((int(stage.number.split(".")[0]) for stage in queue), default=0)
@@ -199,17 +195,6 @@ def check_distribution(queue: list[Stage], archive: list[Stage], queue_label: st
     for name, labels in locations.items():
         if len(labels) != 1:
             findings.append(f"{queue_label}: этап {name} встречается в обоих файлах")
-    for earlier, later in zip(archive, archive[1:]):
-        if _key(earlier) >= _key(later):
-            findings.append(f"{archive_label}:{later.line}: порядок этапов не монотонен")
-    queue_closed = [stage for stage in queue if stage.status in CLOSED_STATUSES]
-    if queue_closed:
-        minimum = min(_key(stage) for stage in queue_closed)
-        for stage in archive:
-            if _key(stage) >= minimum:
-                findings.append(
-                    f"{archive_label}:{stage.line}: этап {stage.name} не меньше минимального закрытого в очереди"
-                )
     return findings
 
 

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Move closed Roadmap stages outside the owner's 20-number queue window.
 
-The archive is append-only.  A late closure that would need insertion before
-its tail is refused, so a historical record cannot silently be rewritten.
+The archive is append-only and keeps the order in which stages are closed.
 """
 
 from __future__ import annotations
@@ -16,8 +15,8 @@ from check_roadmap_structure import CLOSED_STATUSES, Stage, parse
 ARCHIVE_HEADER = """# Архив Roadmap
 
 Закрытая история очереди. Архив append-only и не редактируется: переоткрытие
-или позднее закрытие исторической работы оформляется новым этапом со ссылкой.
-Ищите нужную запись по номеру этапа. Пропуски 187–188 намеренны.
+или позднее закрытие добавляется в хвост. Порядок — по времени закрытия;
+ищите нужную запись по номеру этапа. Пропуски 187–188 намеренны.
 
 """
 
@@ -58,12 +57,8 @@ def main(argv: list[str] | None = None) -> int:
         for stage, body in queue_blocks
         if stage.status in CLOSED_STATUSES and int(stage.number.split(".")[0]) < maximum - 20
     ]
-    tail = stage_key(archive_blocks[-1][0]) if archive_blocks else None
-    if tail is not None and any(stage_key(stage) <= tail for stage, _ in candidates):
-        print("append-only archive refuses a late old closure", file=sys.stderr)
-        return 1
     candidate_names = {stage.name for stage, _ in candidates}
-    moved = sorted(candidates, key=lambda item: stage_key(item[0]))
+    moved = candidates
     new_queue = queue_prefix + "".join(body for stage, body in queue_blocks if stage.name not in candidate_names)
     new_archive = archive_prefix + "".join(body for _, body in archive_blocks) + "".join(body for _, body in moved)
     if new_queue != roadmap_text:
