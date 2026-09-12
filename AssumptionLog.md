@@ -16549,3 +16549,13 @@ len 1891) и
 `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-12T194809Z-file-PRD_-319----roadmap_md-attempt-2-of-3.oaT9pK/claude-review-attempt-2-of-3.envelope.json`
 (`success`, false, `tool_use`, 2702/2034, len 1690); рядом verdict-файлы.
 Commit/diff-review/push/deploy: pending.
+
+**Code review.** First diff-review round for `023a453` accidentally consumed
+3/2 valid Claude runs: attempts 1, 2 and 3 were started before the previous
+runner had finished writing its envelope. Attempt 1 (`195816Z`, success/false,
+len 1203) and attempts 2/3 (`195902Z`/`195946Z`) all found the same late-close
+deadlock; it is accepted and fixed in `1e86593` by closure-time append order.
+The review of `1e86593` (`200244Z`, success/false, output/thinking 2150/1662,
+len 919) gave two low findings, both accepted: PRD now names closure-time
+order, and a new guard keeps `ARCHIVE_HEADER` byte-identical to the committed
+archive header. Final review/push/deploy: pending.

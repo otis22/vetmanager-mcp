@@ -65,6 +65,17 @@ def test_archive_moves_closed_stages_verbatim_and_second_run_is_a_noop(tmp_path:
     assert (queue.read_bytes(), archive.read_bytes()) == before
 
 
+def test_a_new_archive_uses_the_committed_header_byte_for_byte(tmp_path: Path) -> None:
+    queue, archive = _files(tmp_path, _stage("1", "done") + _stage("31", "todo"))
+    archive.unlink()
+
+    result = _run_archiver(queue, archive)
+
+    assert result.returncode == 0, result.stderr
+    expected = (ROOT / "Roadmap-archive.md").read_text(encoding="utf-8").split("## Этап ", 1)[0]
+    assert archive.read_text(encoding="utf-8").startswith(expected)
+
+
 def test_archive_appends_a_late_old_closure_and_gate_stays_green(tmp_path: Path) -> None:
     queue, archive = _files(
         tmp_path,
