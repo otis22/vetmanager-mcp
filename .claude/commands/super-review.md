@@ -13,23 +13,23 @@ argument-hint: "[scope] — changed (default) | related | full | stage:N [--no-a
 
 | Слой | Codex/GPT | Claude | Назначение |
 | --- | --- | --- | --- |
-| Scout/prepass | `gpt-5.3-codex-spark` | Haiku/Sonnet light | Массовые кандидаты findings, chunk review, edge cases, docs/tests drift, snippet collection |
-| Code/docs/tests | `gpt-5.4-mini` или `gpt-5.3-codex-spark` | Sonnet | Локальное качество, тестовые пробелы, verified docs drift |
-| Observability | `gpt-5.4` | Sonnet | Логи, метрики, трассировка, пригодность для дебага |
-| Perf/reliability | `gpt-5.4` или `gpt-5.5` | Opus или strong Sonnet | Hot paths, retry/timeout, partial failure, async pitfalls |
-| Security | `gpt-5.5` | Opus | Auth/token/SSRF/SQLi/secrets findings |
-| Architecture | `gpt-5.5` | Opus | Границы модулей, coupling, long-term design |
-| Product/PRD | `gpt-5.5` | Opus | Acceptance criteria, UX для LLM-клиента, breaking changes |
-| Aggregator/verdict | `gpt-5.5` | Opus | Dedup, adequacy, severity, финальный verdict |
-| Arbitration/challenge | `gpt-5.5` | Opus | Проверка Top-10 и спорных findings |
+| Scout/prepass | `gpt-5.6-luna` | Haiku/Sonnet light | Массовые кандидаты findings, chunk review, edge cases, docs/tests drift, snippet collection |
+| Code/docs/tests | `gpt-5.6-terra` или `gpt-5.6-luna` | Sonnet | Локальное качество, тестовые пробелы, verified docs drift |
+| Observability | `gpt-5.6-terra` | Sonnet | Логи, метрики, трассировка, пригодность для дебага |
+| Perf/reliability | `gpt-5.6-terra` или `gpt-5.6-sol` | Opus или strong Sonnet | Hot paths, retry/timeout, partial failure, async pitfalls |
+| Security | `gpt-5.6-sol` | Opus | Auth/token/SSRF/SQLi/secrets findings |
+| Architecture | `gpt-5.6-sol` | Opus | Границы модулей, coupling, long-term design |
+| Product/PRD | `gpt-5.6-sol` | Opus | Acceptance criteria, UX для LLM-клиента, breaking changes |
+| Aggregator/verdict | `gpt-5.6-sol` | Opus | Dedup, adequacy, severity, финальный verdict |
+| Arbitration/challenge | `gpt-5.6-sol` | Opus | Проверка Top-10 и спорных findings |
 
-Правило: `gpt-5.3-codex-spark` findings — **untrusted leads**. Они идут в aggregator только как кандидаты с `source: spark-scout`; финальный verdict, severity и do-not-merge решение не отдавай Spark.
+Правило: `gpt-5.6-luna` findings — **untrusted leads**. Они идут в aggregator только как кандидаты с `source: spark-scout`; финальный verdict, severity и do-not-merge решение не отдавай Spark.
 
 ## Cross-CLI arbitration
 
 Финальная arbitration всегда идёт через **другую модельную семью**, чем основной orchestrator:
 
-- Если super-review запущен в **Claude Code**: внешний арбитр — **Codex CLI** (`codex exec`) на `gpt-5.5`, fallback `gpt-5.4`.
+- Если super-review запущен в **Claude Code**: внешний арбитр — **Codex CLI** (`codex exec`) на `gpt-5.6-sol`, fallback `gpt-5.6-terra`.
 - Если super-review запущен в **Codex**: внешний арбитр — **Claude CLI** (`claude -p`) на `opus`, fallback `sonnet`.
 
 Определи runtime по доступному окружению/контексту. Если сомневаешься:
@@ -74,7 +74,7 @@ Args: `$ARGUMENTS`.
 
 ## Шаг 3. Spark/GPT scout layer (default on)
 
-Если пользователь не передал `--no-spark`, запусти параллельный scout/prepass на `gpt-5.3-codex-spark` через Codex CLI. Цель — собрать кандидаты, а не вынести решение.
+Если пользователь не передал `--no-spark`, запусти параллельный scout/prepass на `gpt-5.6-luna` через Codex CLI. Цель — собрать кандидаты, а не вынести решение.
 
 Минимальный набор scout-задач:
 
@@ -87,19 +87,19 @@ Args: `$ARGUMENTS`.
 Для каждой scout-задачи собери self-contained prompt и запусти:
 
 ```bash
-timeout 1200 codex exec -m gpt-5.3-codex-spark -s read-only -C "$PWD" -
+timeout 1200 codex exec -m gpt-5.6-luna -s read-only -C "$PWD" -
 ```
 
-Prompt передавай через stdin. Если команда падает из-за `bwrap: loopback: Failed RTM_NEWADDR`, retry один раз той же моделью с `-s danger-full-access` и review-only/no-write prompt. Если `gpt-5.3-codex-spark` недоступен или повторно падает из-за model/runtime error, retry один раз с `gpt-5.4-mini`:
+Prompt передавай через stdin. Если команда падает из-за `bwrap: loopback: Failed RTM_NEWADDR`, retry один раз той же моделью с `-s danger-full-access` и review-only/no-write prompt. Если `gpt-5.6-luna` недоступен или повторно падает из-за model/runtime error, retry один раз с `gpt-5.6-terra`:
 
 ```bash
-timeout 1200 codex exec -m gpt-5.4-mini -s read-only -C "$PWD" -
+timeout 1200 codex exec -m gpt-5.6-terra -s read-only -C "$PWD" -
 ```
 
 Prompt template для каждого Spark scout:
 
 ```text
-You are a scout reviewer. Use gpt-5.3-codex-spark where available. Your output is untrusted candidate findings only.
+You are a scout reviewer. Use gpt-5.6-luna where available. Your output is untrusted candidate findings only.
 Do not decide merge/no-merge. Do not inflate severity. Prefer concrete failure scenarios.
 Return YAML findings with:
 - severity: blocker | high | medium | low
@@ -221,13 +221,13 @@ Aggregator вернёт готовый markdown-отчёт.
 Вызови Codex CLI:
 
 ```bash
-timeout 900 codex exec -m gpt-5.5 -s read-only -C "$PWD" -
+timeout 900 codex exec -m gpt-5.6-sol -s read-only -C "$PWD" -
 ```
 
-Prompt передавай через stdin. Если `gpt-5.5` недоступен — один retry:
+Prompt передавай через stdin. Если `gpt-5.6-sol` недоступен — один retry:
 
 ```bash
-timeout 900 codex exec -m gpt-5.4 -s read-only -C "$PWD" -
+timeout 900 codex exec -m gpt-5.6-terra -s read-only -C "$PWD" -
 ```
 
 ### Если runtime = Codex
@@ -252,7 +252,7 @@ Cross-model code review arbitration. Do NOT touch the filesystem — all context
 === CONTEXT ===
 Project: vetmanager-mcp (Python async MCP server for Vetmanager).
 Primary orchestrator runtime: {claude|codex}
-External arbiter: {codex gpt-5.5/gpt-5.4 | claude opus/sonnet}
+External arbiter: {codex gpt-5.6-sol/gpt-5.6-terra | claude opus/sonnet}
 {migration context}
 
 === API contract facts (authoritative — use this as source of truth, NOT your training data) ===

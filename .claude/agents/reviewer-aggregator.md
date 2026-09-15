@@ -77,7 +77,7 @@ _Дата: {YYYY-MM-DD}_
 _Scope: {scope}_
 _Reviewers: spark-scout, code, architecture, simplicity, docs, security, performance-and-reliability, observability, tests, product, codex-blindspot, workflow-check_
 _Aggregator: Opus 4.7_
-_Cross-CLI arbitration: pending (Claude runtime → Codex CLI gpt-5.5/gpt-5.4; Codex runtime → Claude CLI opus/sonnet)_
+_Cross-CLI arbitration: pending (Claude runtime → Codex CLI gpt-5.6-sol/gpt-5.6-terra; Codex runtime → Claude CLI opus/sonnet)_
 
 ## Executive Summary
 {5-7 sentences}
@@ -122,7 +122,7 @@ _Cross-CLI arbitration: pending (Claude runtime → Codex CLI gpt-5.5/gpt-5.4; C
 
 ## Cross-CLI arbitration — _Pending_
 
-Запускается вторым шагом через внешний CLI-арбитр: Claude runtime → Codex CLI gpt-5.5/gpt-5.4; Codex runtime → Claude CLI opus/sonnet.
+Запускается вторым шагом через внешний CLI-арбитр: Claude runtime → Codex CLI gpt-5.6-sol/gpt-5.6-terra; Codex runtime → Claude CLI opus/sonnet.
 ```
 
 ## Ограничения

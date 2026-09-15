@@ -23,10 +23,10 @@ If the Claude command and this skill differ, prefer it only for shared review po
 
 Spark/GPT side:
 
-- `gpt-5.3-codex-spark`: scout/prepass only. Treat output as untrusted leads.
-- `gpt-5.4-mini` or `gpt-5.3-codex-spark`: code/docs/tests candidate mining.
-- `gpt-5.4`: observability and normal validation.
-- `gpt-5.5`: security, architecture, product, hard disputes, and GPT-side aggregation if needed.
+- `gpt-5.6-luna`: scout/prepass only. Treat output as untrusted leads.
+- `gpt-5.6-terra` or `gpt-5.6-luna`: code/docs/tests candidate mining.
+- `gpt-5.6-terra`: observability and normal validation.
+- `gpt-5.6-sol`: security, architecture, product, hard disputes, and GPT-side aggregation if needed.
 
 Claude side:
 
@@ -34,7 +34,7 @@ Claude side:
 - `sonnet`: fallback external arbitration and routine code/docs/tests checks.
 
 Never let Spark decide final severity or merge verdict.
-Use the exact model name `gpt-5.3-codex-spark`. The shorter name `gpt-5.3-spark` is incomplete and must not be used.
+"Spark" is the historical name of the scout role; the model is `gpt-5.6-luna`. The bare slug `gpt-5.6` does not exist (400 not supported); use only `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna`. `gpt-5.3-codex-spark`, `gpt-5.4` and `gpt-5.4-mini` are no longer available on this account.
 
 ## Runtime Defaults And Fallbacks
 
@@ -75,13 +75,13 @@ These are known review-runner issues, not project findings. Do not include them 
 3. Unless `--no-spark`, run up to 3 Spark scout/review passes before stronger review where practical. Spark output is candidate-only: validate adequacy and keep only important, evidence-backed findings before sending anything to stronger review/arbitration. In Codex runtime, use subagents if available; otherwise run bounded local passes yourself. If shelling out is appropriate, use:
 
 ```bash
-timeout 1200 codex exec -m gpt-5.3-codex-spark -s read-only -C "$PWD" -
+timeout 1200 codex exec -m gpt-5.6-luna -s read-only -C "$PWD" -
 ```
 
 Fallback once:
 
 ```bash
-timeout 1200 codex exec -m gpt-5.4-mini -s read-only -C "$PWD" -
+timeout 1200 codex exec -m gpt-5.6-terra -s read-only -C "$PWD" -
 ```
 
 Use this fallback command only when the first command failed because the **model** was unavailable/unsupported/denied/quota-limited. Do not use it for sandbox/runtime failures or malformed review output.
@@ -89,7 +89,7 @@ Use this fallback command only when the first command failed because the **model
 If the failure is the known read-only sandbox startup error (`bwrap: loopback: Failed RTM_NEWADDR`), retry the same model with:
 
 ```bash
-timeout 1200 codex exec -m gpt-5.3-codex-spark -s danger-full-access -C "$PWD" -
+timeout 1200 codex exec -m gpt-5.6-luna -s danger-full-access -C "$PWD" -
 ```
 
 The prompt for any `danger-full-access` retry must include: `Review only. Do not edit files. Do not run write commands.`
@@ -127,16 +127,16 @@ If `opus` fails due to local CLI/runtime/shell problems, retry `opus` once after
 
 Run these roles as separate passes where practical; each pass returns YAML findings only.
 
-- `code` (`gpt-5.4-mini` or current Codex model): local readability, dead code, naming, local duplication, complexity. Max 20 findings.
-- `architecture` (`gpt-5.5` preferred): module boundaries, layering, coupling, cross-module duplication, fit to technical requirements. Max 20 findings.
-- `simplicity` (`gpt-5.5` preferred): over-engineering, unnecessary indirection, premature flexibility, simpler concrete alternatives. Max 20 findings.
-- `docs` (`gpt-5.4-mini` or current Codex model): verified drift across README/Roadmap/PRD/AssumptionLog/CLAUDE/AGENTS and code. Max 20 findings.
-- `security` (`gpt-5.5` preferred): tokens, auth, SSRF, SQLi, CSRF, secrets, info disclosure. Max 20 findings.
-- `performance-and-reliability` (`gpt-5.5` or `gpt-5.4`): N+1, timeouts, retry/backoff, async blocking, partial failure, cleanup. Max 20 findings.
-- `observability` (`gpt-5.4`): logs, metrics, correlation IDs, incident debuggability, safe logging. Max 20 findings.
-- `tests` (`gpt-5.4-mini` or current Codex model): behavior coverage, unhappy paths, boundaries, fixture realism, fragile mocks. Max 20 findings.
-- `product` (`gpt-5.5` preferred): PRD acceptance, LLM-client UX, breaking changes, missing implementation. Max 20 findings.
-- `codex-blindspot` (`gpt-5.5` or current Codex model): semantic bugs and edge cases that ordinary role reviews may miss. Max 15 findings.
+- `code` (`gpt-5.6-terra` or current Codex model): local readability, dead code, naming, local duplication, complexity. Max 20 findings.
+- `architecture` (`gpt-5.6-sol` preferred): module boundaries, layering, coupling, cross-module duplication, fit to technical requirements. Max 20 findings.
+- `simplicity` (`gpt-5.6-sol` preferred): over-engineering, unnecessary indirection, premature flexibility, simpler concrete alternatives. Max 20 findings.
+- `docs` (`gpt-5.6-terra` or current Codex model): verified drift across README/Roadmap/PRD/AssumptionLog/CLAUDE/AGENTS and code. Max 20 findings.
+- `security` (`gpt-5.6-sol` preferred): tokens, auth, SSRF, SQLi, CSRF, secrets, info disclosure. Max 20 findings.
+- `performance-and-reliability` (`gpt-5.6-sol` or `gpt-5.6-terra`): N+1, timeouts, retry/backoff, async blocking, partial failure, cleanup. Max 20 findings.
+- `observability` (`gpt-5.6-terra`): logs, metrics, correlation IDs, incident debuggability, safe logging. Max 20 findings.
+- `tests` (`gpt-5.6-terra` or current Codex model): behavior coverage, unhappy paths, boundaries, fixture realism, fragile mocks. Max 20 findings.
+- `product` (`gpt-5.6-sol` preferred): PRD acceptance, LLM-client UX, breaking changes, missing implementation. Max 20 findings.
+- `codex-blindspot` (`gpt-5.6-sol` or current Codex model): semantic bugs and edge cases that ordinary role reviews may miss. Max 15 findings.
 
 Before aggregation, drop non-meta findings with `confidence < 0.4`. If more than 120 findings remain, keep all blocker/high and the highest severity x confidence medium/low findings up to 120 total.
 
@@ -182,6 +182,6 @@ Keep total <= 900 words.
 - External arbitration max two calls: primary external model plus fallback.
 - Spark calls can be numerous, but Spark output remains candidate-only.
 - For ordinary workflow gates outside full super-review, Spark-review budget is 3 calls before the stronger review.
-- Use the exact model name `gpt-5.3-codex-spark`; do not use older short aliases for Spark.
+- Use the exact slugs `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna`; the bare `gpt-5.6` and the retired `gpt-5.3-codex-spark` / `gpt-5.4*` are invalid.
 - Record runtime limitations explicitly: model fallback, sandbox fallback, timeout, partial role output, skipped arbitration. Keep these in the report header/limitations, not in the confirmed findings list.
 - For VM API fields, trust inline API facts and authoritative repo sources, not model memory.

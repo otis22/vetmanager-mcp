@@ -87,18 +87,18 @@ Architecture Critique gate:
 
 `Ревью сторонней моделью` означает:
 
-- если текущий агент работает в Claude, ревью делает Codex `gpt-5.5`
+- если текущий агент работает в Claude, ревью делает Codex `gpt-5.6-sol`
 - если текущий агент работает в Codex, ревью делает Claude Opus
 
 Бюджеты:
 
 - Spark-review: максимум 3 запуска перед каждым видом review gate; Spark-бюджет отдельный от бюджета сильной модели
-- `gpt-5.3-codex-spark` как обычный scout/subagent для вспомогательных задач можно запускать без лимита; лимит 3 относится только к Spark-review перед конкретным review gate
+- `gpt-5.6-luna` как обычный scout/subagent для вспомогательных задач можно запускать без лимита; лимит 3 относится только к Spark-review перед конкретным review gate
 - PRD-review сторонней моделью: максимум 2 валидных запуска на задачу; валиден только разбираемый verdict (findings или явный пустой список)
 - Architecture Critique, засчитанный как strong PRD-review, расходует тот же бюджет PRD-review сторонней моделью; не добавлять отдельный третий запуск strong-модели только из-за нового gate.
 - code/diff review сторонней моделью: максимум 2 валидных запуска на задачу; валиден только разбираемый verdict (findings или явный пустой список)
 - бюджеты раздельные и не расходуют друг друга
-- правильное имя модели Spark: `gpt-5.3-codex-spark`; имя `gpt-5.3-spark` неполное и не должно использоваться
+- «Spark» — историческое имя scout-роли, модель — `gpt-5.6-luna`; голый `gpt-5.6` — несуществующий слаг, использовать только `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna`; `gpt-5.3-codex-spark`, `gpt-5.4`, `gpt-5.4-mini` сняты с аккаунта
 - Spark не принимает финальных решений: его вывод является candidate-only и обязан пройти проверку на адекватность
 - принимать после Spark можно только адекватные, важные и проверяемые findings; speculative/low-impact/неподтверждённые замечания отклоняются
 - Spark-review должен иметь узкий prompt: что ревьювить (PRD, staged/uncommitted diff, committed diff), какие severity принимать, какой формат ответа нужен; Spark не должен сам менять файлы
@@ -106,10 +106,10 @@ Architecture Critique gate:
 Правильный shell-вызов Spark-review из Codex runtime:
 
 ```bash
-timeout 1200 codex exec -m gpt-5.3-codex-spark -s read-only -C "$PWD" -
+timeout 1200 codex exec -m gpt-5.6-luna -s read-only -C "$PWD" -
 ```
 
-Если read-only sandbox падает до чтения файлов из-за runtime/sandbox ошибки (например `bwrap`/user namespace failure), это не считается finding проекта. Нужно остановить зависший запуск, повторить тот же `gpt-5.3-codex-spark` один раз с `-s danger-full-access` и prompt: `Review only. Do not edit files. Do not run write commands.` Fallback на другую модель разрешён только при явной model/provider failure, а не при sandbox/runtime failure. Результат Spark-review фиксируется в AssumptionLog вместе с принятыми/отклонёнными findings или `[]`.
+Если read-only sandbox падает до чтения файлов из-за runtime/sandbox ошибки (например `bwrap`/user namespace failure), это не считается finding проекта. Нужно остановить зависший запуск, повторить тот же `gpt-5.6-luna` один раз с `-s danger-full-access` и prompt: `Review only. Do not edit files. Do not run write commands.` Fallback на другую модель разрешён только при явной model/provider failure, а не при sandbox/runtime failure. Результат Spark-review фиксируется в AssumptionLog вместе с принятыми/отклонёнными findings или `[]`.
 
 Claude Opus review из Codex runtime:
 

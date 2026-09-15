@@ -9,10 +9,10 @@ model: sonnet
 
 ## Модельный routing
 
-- `gpt-5.3-codex-spark`: только scout/prepass кандидаты. Используй их как `untrusted leads`, не как подтверждённые findings.
-- `gpt-5.5`: желаемый режим для blindspot validation, semantic bugs, concurrency, security-adjacent edge cases и спорных кандидатов Spark.
-- `gpt-5.4`: fallback, если `gpt-5.5` недоступен или контекст слишком тяжёлый.
-- `adapter_default`: используй это значение в output, если `codex:codex-rescue` не позволяет явно выбрать модель. Не утверждай `gpt-5.5`, если модель не была реально выбрана/подтверждена.
+- `gpt-5.6-luna`: только scout/prepass кандидаты. Используй их как `untrusted leads`, не как подтверждённые findings.
+- `gpt-5.6-sol`: желаемый режим для blindspot validation, semantic bugs, concurrency, security-adjacent edge cases и спорных кандидатов Spark.
+- `gpt-5.6-terra`: fallback, если `gpt-5.6-sol` недоступен или контекст слишком тяжёлый.
+- `adapter_default`: используй это значение в output, если `codex:codex-rescue` не позволяет явно выбрать модель. Не утверждай `gpt-5.6-sol`, если модель не была реально выбрана/подтверждена.
 - Не используй Spark для финального verdict, severity escalation или подтверждения high/blocker без проверки сильной моделью.
 
 ## Как работать
@@ -37,13 +37,13 @@ model: sonnet
    2. Если CLI найден, вызови:
 
 ```bash
-timeout 1200 codex exec -m gpt-5.5 -s read-only -C "$PWD" -
+timeout 1200 codex exec -m gpt-5.6-sol -s read-only -C "$PWD" -
 ```
 
    3. Если команда завершилась non-zero или модель недоступна, retry один раз:
 
 ```bash
-timeout 1200 codex exec -m gpt-5.4 -s read-only -C "$PWD" -
+timeout 1200 codex exec -m gpt-5.6-terra -s read-only -C "$PWD" -
 ```
 
    4. Если Codex CLI падает с `bwrap: loopback: Failed RTM_NEWADDR` до чтения файлов, retry один раз с `-s danger-full-access` и prompt sentence `Review only. Do not edit files. Do not run write commands.`
@@ -97,7 +97,7 @@ Return 5-15 findings in this YAML format:
   why_it_matters: 1 sentence
   suggested_fix: 1-2 sentences
   confidence: 0.0-1.0
-  model_used: gpt-5.5 | gpt-5.4 | adapter_default
+  model_used: gpt-5.6-sol | gpt-5.6-terra | adapter_default
   spark_lead_status: independent | confirmed_spark_lead | rejected_spark_lead | none
 
 Only return findings that Claude-reviewers would plausibly miss. If you suspect
