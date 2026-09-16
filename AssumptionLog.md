@@ -17127,3 +17127,21 @@ user-name и closings вернули честные `totalCount` 1/2 и `limited
 — пустой `totalCount=0`, `limited=false`, average/free-slots — успешные нулевые
 результаты выбранного дня. Данные строк и идентификаторы не сохранялись.
 Финальный Claude verdict 2/2 и post-push evidence добавляются после гейтов.
+
+**Committed diff review, финальный strong verdict.** Финальный Claude Opus
+valid 2/2 по `origin/main..HEAD` вернул `findings=[]`:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T200847Z-git_range-origin_main__HEAD-attempt-2-of-3.hfS0oR/claude-review-attempt-2-of-3.envelope.json`
+(`subtype=success`, `stop_reason=tool_use`, output/thinking 3223/2705,
+`len(result)=15`). Code/diff strong-review budget исчерпан 2/2; известных
+неустранённых blocker/high/medium findings нет.
+
+**Self-attestation перед push.** Implementation commits: `a6a7237`,
+`24e55a5`, `3564c08`. Все новые guards показаны красными: исходные 18 failures,
+period repeat — 2 failures, mutable payload с теми же IDs — 1 failure,
+повторная короткая страница — 1 failure; затем зелёными focused/full наборами.
+`_all_rows` склада и stage245 test не менялись, dead-code/import guard прошёл
+в полном suite, точная команда `review_workflow_check.sh --prepare-roadmap`
+выполнена перед каждым commit. Живые read-only ответы изменённых tools
+проверены на API-key контуре без сохранения клинических строк. Этап и
+подэтапы остаются `supervisor_pending`/`done`; push, GitHub Tests и Deploy Prod
+ещё не утверждаются и фиксируются только после фактического результата.
