@@ -15,6 +15,7 @@ Run inside Docker:
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import pytest
@@ -29,6 +30,7 @@ from server import _graceful_shutdown, mcp
 from tests.conftest import TEST_ENCRYPTION_KEY
 from vetmanager_client import VetmanagerClient
 from exceptions import AuthError, VetmanagerError
+from property_privacy import REDACTED_SECRET, is_secret_property_name_or_title
 from tests.runtime_factories import patch_runtime_credentials
 from vetmanager_connection_service import (
     save_user_login_password_connection,
@@ -49,6 +51,12 @@ TEST_USER_PASSWORD = os.environ.get("TEST_USER_PASSWORD", "")
 RUN_REAL_WEB_TESTS = os.environ.get("RUN_REAL_WEB_TESTS") == "1"
 TEST_REPORT_AI_ALLOW_SAVE = os.environ.get("TEST_REPORT_AI_ALLOW_SAVE") == "1"
 CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
+REAL_SECRET_VALUE_RE = re.compile(
+    r"(?:^eyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}$|"
+    r"^(?:sk-|xoxb-)[A-Za-z0-9_-]{12,}$|^AKIA[A-Z0-9]{12,}$|"
+    r"^[0-9a-fA-F]{24,}$|^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9]{24,}$|"
+    r"https?://[^\s]*[?&](?:key|token|secret|api_key|password)=[^&#\s]+)",
+)
 
 skip_if_no_creds = pytest.mark.skipif(
     not TEST_DOMAIN or not TEST_API_KEY,
@@ -1077,8 +1085,44 @@ async def test_real_get_timesheets():
 @skip_if_no_creds
 @pytest.mark.asyncio
 async def test_real_get_properties():
-    result = await call(vc().get("/rest/api/properties", params={"limit": 5, "offset": 0}))
-    assert "data" in result
+    raw = await call(vc().get("/rest/api/properties", params={"limit": 100, "offset": 0}))
+    raw_data = raw.get("data", {})
+    raw_rows = raw_data.get("properties", [])
+    if not isinstance(raw_rows, list):
+        pytest.fail("properties response has no rows list")
+
+    headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+    with headers_patch, runtime_patch:
+        result = await call(mcp.call_tool("get_properties", {"limit": 100, "offset": 0}))
+    payload = _tool_payload(result)
+    rows = payload.get("data", {}).get("properties", [])
+    if len(rows) != len(raw_rows):
+        pytest.fail("get_properties changed the real page length")
+    if payload.get("data", {}).get("totalCount") != raw_data.get("totalCount"):
+        pytest.fail("get_properties changed the real totalCount")
+
+    # Never put a raw property_value in an assertion expression or failure
+    # message: this test runs against a real clinic and CI logs are public.
+    rendered = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    for raw_row, row in zip(raw_rows, rows, strict=True):
+        if not isinstance(raw_row, dict) or not isinstance(row, dict):
+            pytest.fail("properties response contains a non-object row")
+        looks_secret = isinstance(raw_value := raw_row.get("property_value"), str) and bool(
+            REAL_SECRET_VALUE_RE.fullmatch(raw_value)
+        )
+        if is_secret_property_name_or_title(raw_row) or looks_secret:
+            if row.get("property_value") != REDACTED_SECRET:
+                pytest.fail("secret property was not redacted")
+        if (
+            (is_secret_property_name_or_title(raw_row) or looks_secret)
+            and isinstance(raw_value, str)
+            and len(raw_value) >= 24
+        ):
+            # Keep an opaque fingerprint only; the branch below deliberately
+            # has a constant failure string and cannot disclose raw_value.
+            raw_fingerprint = hashlib.sha256(raw_value.encode()).digest()
+            if raw_value in rendered and raw_fingerprint:
+                pytest.fail("a long property value leaked through get_properties")
 
 
 @skip_if_no_creds

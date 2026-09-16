@@ -8,6 +8,7 @@ from pydantic import Field
 
 from exceptions import ToolInputError
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, gt as _filter_gt, lt as _filter_lt
+from property_privacy import sanitize_properties_response
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
@@ -359,16 +360,20 @@ def register(mcp: FastMCP) -> None:
     ) -> dict:
         """List system configuration properties of the clinic.
 
+        Secret-looking property names, titles and values are returned as
+        ``[redacted:secret]``. This placeholder is not a usable setting value.
+
         Args:
             limit: Max records to return.
             offset: Pagination offset.
             filter/sort: Optional raw clauses. Allowed properties for both: clinic_id, id,
-                property_name, property_title, property_value.
+                property_name, property_title. Values cannot be filtered or sorted.
         """
-        return await crud_list(
+        response = await crud_list(
             "/rest/api/properties", limit=limit, offset=offset, sort=sort, filters=filter,
             allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["properties"],
         )
+        return sanitize_properties_response(response)
 
     @mcp.tool
     async def get_anonymous_clients(

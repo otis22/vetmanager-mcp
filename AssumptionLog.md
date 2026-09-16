@@ -17152,3 +17152,37 @@ GitHub Tests run `35144969350` завершён `success`, Deploy Prod run
 `35145550569` завершён `success`. Этап 323 и 323.1–323.3 закрыты `done`;
 `supervisor_pending` по этапу нет. Закрытие выполнено супервизором после
 проверки CI и финального отчёта воркера.
+# Этап 328. Секреты в свойствах клиники, 16.09.2026
+
+- Источник: `report_problem` #70 и указание Владимира. OpenAPI подтверждает
+  `/rest/api/properties` и поля `property_name`, `property_title`,
+  `property_value`; read-only исходники VM и read-only стенд сверены без
+  публикации значения. На стенде `get_properties` прошёл через MCP с 100
+  строками: код HTTP 200, контракт pagination сохранён, секретные имена
+  заменены `[redacted:secret]`; property values не записывались в этот журнал.
+- Решение: `property_privacy.py` — локальный pure helper, а не глобальный
+  privacy helper: только он владеет контекстом пары имя/значение. Строки не
+  удаляются, поэтому `offset` и `totalCount` честны. Name/title denylist
+  fail-closed; value layer ловит JWT, service prefixes, URL-query credentials,
+  credential pairs и long ASCII token forms. `property_value` удалён из filter
+  и sort allowlist, закрывая oracle.
+- Красный сторож: временно возвращён raw response из `get_properties`; тест
+  `test_get_properties_redacts_before_mcp_returns_the_page` упал, затем после
+  возврата вызова helper зелёный. AST guard защищает будущий `/properties` путь.
+- PRD reviews: Spark дважды не дал валидный verdict из-за рекурсивного nested
+  Codex runtime; процессы остановлены. Opus PRD/Architecture review 1/2:
+  evidence `~/.local/share/vetmanager-mcp-review-evidence/2026-09-16T203102Z-file-PRD_-328----_md-attempt-1-of-3.i9fV9p/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=6710,
+  thinking_tokens=4854, len(result)=3949. Attempt 2/2:
+  `~/.local/share/vetmanager-mcp-review-evidence/2026-09-16T203340Z-file-PRD_-328----_md-attempt-2-of-3.TEvivv/claude-review-attempt-2-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=5929,
+  thinking_tokens=4118, len(result)=4020. Accepted/rejected rationale is in PRD.
+- Проверки: mock suite `3087 passed, 2 skipped`; opt-in real suite `65 passed,
+  9 skipped, 3091 deselected`; `test_real_get_properties` passed.
+- Code review attempt 1/2 accepted medium finding: real-suite assertions whose
+  operand held raw properties were replaced by constant-message `pytest.fail`
+  branches. Accepted JWT minimum segments; rejected Russian-title exception
+  because the requested name policy explicitly allows false positives. Evidence:
+  `~/.local/share/vetmanager-mcp-review-evidence/2026-09-16T210520Z-git_range-HEAD__HEAD-attempt-1-of-3.KAmzWj/claude-review-attempt-1-of-3.envelope.json`,
+  subtype=success, stop_reason=tool_use, output_tokens=6492,
+  thinking_tokens=5380, len(result)=2360.

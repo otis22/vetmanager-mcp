@@ -24,6 +24,7 @@ only-include = [
     "alembic",
     "access_summary.py",
     "activation_events.py",
+    "property_privacy.py",
     "activation_telemetry.py",
     "agent_feedback_service.py",
     "auth",

@@ -34,6 +34,7 @@
   },
   "public_excluded_fields": {
     "client": ["passport_series"],
-    "user": ["calc_percents", "last_change_pwd_date", "login", "passwd", "user_inn"]
+    "user": ["calc_percents", "last_change_pwd_date", "login", "passwd", "user_inn"],
+    "properties": ["property_value"]
   }
 }

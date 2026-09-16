@@ -55,7 +55,7 @@ FILTER_FIELDS_BY_ENTITY: dict[str, frozenset[str]] = {
     "user": frozenset({"address", "cell_phone", "email", "first_name", "id", "is_active", "is_limited", "last_name", "middle_name", "nickname", "phone", "position_id", "role_id", "sip_number"}),
     "clinics": frozenset({"address", "city_id", "email", "end_time", "guest_client_id", "id", "internet_address", "logo_url", "phone", "start_time", "status", "telegram", "time_zone", "title", "whatsapp"}),
     "timesheet": frozenset({"action_id", "all_day", "begin_datetime", "clinic_id", "doctor_id", "end_datetime", "id", "night", "shedule_id", "shift", "title", "type"}),
-    "properties": frozenset({"clinic_id", "id", "property_name", "property_title", "property_value"}),
+    "properties": frozenset({"clinic_id", "id", "property_name", "property_title"}),
     "breed": frozenset({"id", "pet_type_id", "title"}),
     "petType": frozenset({"id", "picture", "title", "type"}),
     "city": frozenset({"id", "title", "type_id"}),
