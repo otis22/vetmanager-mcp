@@ -16851,3 +16851,18 @@ MCP `update_good_sale_price` с `scope=row`, `confirm=true` и совпадаю�
 
 Committed diff review, commit/push/CI/deploy и финальная self-attestation
 фиксируются после соответствующих гейтов.
+
+**Committed diff review, раунд 1.** Implementation commit `632a66a`.
+Spark после read-only bwrap fallback дал `findings=[]`. Claude Opus valid 1/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T161429Z-git_range-HEAD__HEAD-attempt-1-of-3.u5IWRo/claude-review-attempt-1-of-3.envelope.json`
+(`subtype=success`, `is_error=false`, `stop_reason=tool_use`,
+output/thinking 4080/3598, `len(result)=1226`). Medium finding о возможном
+server-side cap меньше 100 проверен на том же живом стенде: запрос
+`limit=100` вернул HTTP 200, ровно 100 строк и числовой total больше страницы;
+finding отклонён. Low finding о классификации `httpx.ConnectError` принят:
+класс раньше попадал в `upstream_error`, теперь получает privacy-safe
+`connection`. Новый сторож сначала упал именно на этом расхождении, после
+исправления focused набор дал 31 passed. После review-правки повторены полный
+suite (3013 passed, 2 skipped, 76 deselected) и opt-in real suite (65 passed,
+9 skipped, 3017 deselected; отдельный web-account contour — 1 skipped);
+stage245 снова прошёл.

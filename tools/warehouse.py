@@ -682,7 +682,7 @@ def register(mcp: FastMCP) -> None:
             name = type(exc).__name__.lower()
             if "timeout" in name:
                 return {"code": "timeout", "message": "Vetmanager did not answer in time."}
-            if any(word in name for word in ("connection", "resolution", "tls")):
+            if any(word in name for word in ("connect", "resolution", "tls")):
                 return {"code": "connection", "message": "Vetmanager could not be reached."}
             if name == "toolerror":
                 return {

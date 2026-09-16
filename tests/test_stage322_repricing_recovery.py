@@ -125,6 +125,22 @@ async def test_first_put_timeout_is_unknown_and_does_not_leak_raw_detail() -> No
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_connect_error_has_safe_specific_reason() -> None:
+    _base_mocks()
+    secret_detail = "https://private.example/path?api_key=do-not-echo"
+
+    with patch("tools.warehouse.crud_update", side_effect=httpx.ConnectError(secret_detail)):
+        answer = await _call(
+            sale_param_id=38, change_percent=10, scope="good", confirm=True
+        )
+
+    assert answer["failed"]["reason"]["code"] == "connection"
+    assert answer["failed"]["write_state"] == "unknown"
+    assert secret_detail not in json.dumps(answer)
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_non_404_put_rejection_keeps_write_state_unknown() -> None:
     _base_mocks()
     respx.put(f"{BASE}/rest/api/goodSaleParam/38").mock(
