@@ -17301,8 +17301,11 @@ push из-за синтетической Stripe-подобной фикстур
   breaker локальный budget timeout по-прежнему не ухудшает.
 - Красный сторож `test_half_open_probe_budget_exhaustion_records_failure_and_releases_probe`
   до правки упал: state был `half_open` вместо `open`. После правки: 1 passed;
-  focused (`stage324`, `stage106`, `stage291`) — 12 passed; полный mock suite —
-  exit 0.
+  focused (`stage324`, `stage106`, `stage291`) — 12 passed. Локальный полный
+  suite после этой правки до конца не доведён (контейнер прерван, exit-файла
+  нет; push ушёл раньше его завершения — отклонение от Core Loop, отмечено
+  супервизором). Полная верификация `462c684` — GitHub Tests run
+  `35161350148` (тот же Docker suite), `success`.
 
 ## Post-push evidence и self-attestation
 
