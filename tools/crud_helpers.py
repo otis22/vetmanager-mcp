@@ -90,6 +90,27 @@ def normalize_record_id(value: object, *, label: str) -> int:
     raise reportable_error(f"invalid record id in {label} response")
 
 
+def _page_fingerprint(records: list[dict]) -> str:
+    """Prefer stable integer-like ids; fall back for non-standard entities."""
+    record_ids: list[int] = []
+    for record in records:
+        value = record.get("id")
+        if isinstance(value, bool):
+            break
+        if isinstance(value, int) and value > 0:
+            record_ids.append(value)
+            continue
+        if isinstance(value, str) and value.isdecimal() and int(value) > 0:
+            record_ids.append(int(value))
+            continue
+        break
+    else:
+        return "ids:" + json.dumps(sorted(record_ids), separators=(",", ":"))
+    return "rows:" + json.dumps(
+        records, sort_keys=True, default=str, separators=(",", ":"),
+    )
+
+
 def extract_list_page(
     response: object,
     *,
@@ -229,7 +250,7 @@ async def paginate_all(
     all_records: list[dict] = []
     offset = 0
     calls = 0
-    seen_full_pages: set[str] = set()
+    seen_pages: set[str] = set()
     effective_sort = total_order_sort(sort, allowed_filter_properties)
 
     normalized_filters = as_dict_list(filters) if filters else None
@@ -268,13 +289,12 @@ async def paginate_all(
                 )
             break
 
-        if len(records) >= page_size:
-            fingerprint = json.dumps(records, sort_keys=True, default=str, separators=(",", ":"))
-            if fingerprint in seen_full_pages:
-                raise reportable_error(
-                    f"pagination made no progress for {endpoint}"
-                )
-            seen_full_pages.add(fingerprint)
+        fingerprint = _page_fingerprint(records)
+        if fingerprint in seen_pages:
+            raise reportable_error(
+                f"pagination made no progress for {endpoint}"
+            )
+        seen_pages.add(fingerprint)
 
         all_records.extend(records)
         offset += len(records)

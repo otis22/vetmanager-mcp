@@ -17104,3 +17104,26 @@ live-теста прошли. Повторный живой MCP-вызов perio
 `totalCount=0`, `limited=false`, integer `upstream_calls`; строк клиники в
 evidence нет. Финальные проверки, fix commit и второй review фиксируются
 следующей записью.
+
+**Committed diff review, раунд 2 — Spark и финальный аудит.** После fix commit
+`24e55a5` read-only Spark снова упал с тем же `bwrap` до чтения файлов;
+review-only fallback нашёл medium: общий helper fingerprint-ил весь payload,
+поэтому те же IDs с меняющимся mutable полем доходили до safety cap вместо
+раннего no-progress отказа. Finding принят. Новый guard сначала упал на
+`call budget exceeded`, затем прошёл после fingerprint по нормализованным
+integer-like IDs. Собственный аудит расширил тот же guard на повторную короткую
+страницу при завышенном valid count: новый тест также сначала упал на call
+budget. Теперь fingerprint проверяется для каждой непустой страницы; у
+нестандартных сущностей без пригодного ID остаётся полный-payload fallback, а
+общий call budget по-прежнему гарантирует конечный fail-closed результат.
+Focused набор после правки — 64 passed.
+
+Финальный полный Docker suite после обеих правок — 3057 passed, 2 skipped,
+76 deselected за 615.72 s. Финальный точный opt-in real suite — 64 passed,
+10 skipped, 3061 deselected; export-test штатно пропущен временным export
+guard, отдельный web-account contour — 1 skipped. Оба stage245 live-теста
+прошли. На окончательном коде повторены пять безопасных read-only MCP calls:
+user-name и closings вернули честные `totalCount` 1/2 и `limited=false`, period
+— пустой `totalCount=0`, `limited=false`, average/free-slots — успешные нулевые
+результаты выбранного дня. Данные строк и идентификаторы не сохранялись.
+Финальный Claude verdict 2/2 и post-push evidence добавляются после гейтов.

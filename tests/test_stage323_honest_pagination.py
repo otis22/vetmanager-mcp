@@ -150,6 +150,61 @@ async def test_paginate_all_rejects_repeated_full_page_without_progress():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_paginate_all_detects_same_ids_when_mutable_fields_change():
+    _billing_mock()
+    calls = 0
+
+    def response(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={
+            "success": True,
+            "data": {
+                "totalCount": 999,
+                "client": [
+                    {"id": 1, "edit_date": calls},
+                    {"id": "2", "edit_date": calls},
+                ],
+            },
+        })
+
+    respx.get(f"{BASE}/rest/api/client").mock(side_effect=response)
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="progress"):
+            await paginate_all(
+                "/rest/api/client", entity_key="client", page_size=2, max_calls=3,
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_paginate_all_detects_repeated_short_page_before_call_budget():
+    _billing_mock()
+    calls = 0
+
+    def response(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={
+            "success": True,
+            "data": {
+                "totalCount": 999,
+                "client": [{"id": 1, "edit_date": calls}],
+            },
+        })
+
+    respx.get(f"{BASE}/rest/api/client").mock(side_effect=response)
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="progress"):
+            await paginate_all(
+                "/rest/api/client", entity_key="client", page_size=2, max_calls=3,
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_invoice_closing_merge_reads_both_branches_then_sorts_and_pages():
     _billing_mock()
     minus_rows = [{"id": i, "create_date": "2026-09-16"} for i in range(1, 102)]
