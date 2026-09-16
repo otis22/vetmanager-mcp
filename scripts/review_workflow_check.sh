@@ -3,13 +3,21 @@
 # Outputs YAML findings to stdout in the same format as LLM reviewers.
 #
 # Usage:
-#   ./scripts/review_workflow_check.sh [stage_number]
+#   ./scripts/review_workflow_check.sh [--prepare-roadmap] [stage_number]
 # If stage_number omitted, uses the last in-progress stage from Roadmap.md.
+# --prepare-roadmap performs the mutating archival step used immediately before
+# commit. Without it, review and diagnostic invocations remain read-only.
 
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+PREPARE_ROADMAP=0
+if [ "${1:-}" = "--prepare-roadmap" ]; then
+  PREPARE_ROADMAP=1
+  shift
+fi
 
 emit() {
   # emit severity category file lines problem why_it_matters suggested_fix confidence
@@ -29,16 +37,18 @@ emit() {
 EOF
 }
 
-# Archival is part of the gate: prepare the queue first, then validate the
-# queue/archive distribution. Both commands must pass before commit.
-ARCHIVE_RESULT=$(python3 scripts/archive_roadmap.py 2>&1) || emit_archive_failure=1
-if [ "${emit_archive_failure:-0}" -eq 1 ]; then
-  ARCHIVE_RESULT=$(printf '%s' "$ARCHIVE_RESULT" | tr '\n' ';' | tr '"' "'")
-  emit high roadmap_archive "Roadmap.md|Roadmap-archive.md" "N/A" \
-    "archive_roadmap.py failed: ${ARCHIVE_RESULT}" \
-    "A malformed or stale queue cannot be committed safely" \
-    "Fix the reported archive invariant, then rerun the workflow check" \
-    0.95
+# Archival is the mutating pre-commit preparation step. Ordinary review runs
+# only validate structure so they cannot silently rewrite a committed checkout.
+if [ "$PREPARE_ROADMAP" -eq 1 ]; then
+  ARCHIVE_RESULT=$(python3 scripts/archive_roadmap.py 2>&1) || emit_archive_failure=1
+  if [ "${emit_archive_failure:-0}" -eq 1 ]; then
+    ARCHIVE_RESULT=$(printf '%s' "$ARCHIVE_RESULT" | tr '\n' ';' | tr '"' "'")
+    emit high roadmap_archive "Roadmap.md|Roadmap-archive.md" "N/A" \
+      "archive_roadmap.py failed: ${ARCHIVE_RESULT}" \
+      "A malformed or stale queue cannot be committed safely" \
+      "Fix the reported archive invariant, then rerun the workflow check" \
+      0.95
+  fi
 fi
 STRUCTURE_RESULT=$(python3 scripts/check_roadmap_structure.py 2>&1) || emit_structure_failure=1
 if [ "${emit_structure_failure:-0}" -eq 1 ]; then

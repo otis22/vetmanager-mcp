@@ -356,7 +356,7 @@ Workflow завершён?
 **Что запускается (в параллель):**
 - 9 специализированных ревьюеров: `code`, `architecture`, `docs`, `security`, `performance-and-reliability`, `observability`, `tests`, `product`, `simplicity` + `codex-blindspot` (параллельный Codex pass) + `aggregator` = 11 subagent'ов в `.claude/agents/`
 - `codex-blindspot`: один Codex-пробег с анти-корреляционным промптом (ищет то, что Claude-модели системно пропускают)
-- `scripts/review_workflow_check.sh` — механические проверки (PRD файл, Roadmap статус, AssumptionLog, diff size)
+- `scripts/review_workflow_check.sh` — по умолчанию read-only механические проверки (PRD файл, Roadmap статус, AssumptionLog, diff size); явный `--prepare-roadmap` добавляет архивирование перед structural gate для предкоммитной подготовки
 - Агрегатор (`reviewer-aggregator`) — дедупликация, ранжирование, итоговый verdict
 - Финальный Codex-арбитраж на top-10 blocker+high findings
 

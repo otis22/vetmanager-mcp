@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -75,6 +76,62 @@ def test_workflow_checker_accepts_supervisor_pending(tmp_path: Path) -> None:
         ["bash", str(checker), "900"], cwd=tmp_path, text=True, capture_output=True
     )
     assert "roadmap_status_missing" not in result.stdout
+
+
+def test_workflow_checker_is_read_only_unless_roadmap_preparation_is_explicit(
+    tmp_path: Path,
+) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in (
+        "review_workflow_check.sh",
+        "archive_roadmap.py",
+        "check_roadmap_structure.py",
+        "find_roadmap_stage.py",
+    ):
+        shutil.copy2(ROOT / "scripts" / name, scripts / name)
+    queue = """# Queue
+
+## Этап 1. Старый — `done`
+
+- 1.1 Готово. — `done`
+
+## Этап 21. Новый — `todo`
+
+- 21.1 Сделать. — `todo`
+"""
+    archive = "# Архив Roadmap\n\n"
+    roadmap = tmp_path / "Roadmap.md"
+    archived = tmp_path / "Roadmap-archive.md"
+    roadmap.write_text(queue, encoding="utf-8")
+    archived.write_text(archive, encoding="utf-8")
+    (tmp_path / "AssumptionLog.md").write_text("", encoding="utf-8")
+    (tmp_path / "PRD").mkdir()
+
+    subprocess.run(
+        ["bash", str(scripts / "review_workflow_check.sh"), "21"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert roadmap.read_text(encoding="utf-8") == queue
+    assert archived.read_text(encoding="utf-8") == archive
+
+    subprocess.run(
+        [
+            "bash",
+            str(scripts / "review_workflow_check.sh"),
+            "--prepare-roadmap",
+            "21",
+        ],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert "## Этап 1." not in roadmap.read_text(encoding="utf-8")
+    assert "## Этап 1." in archived.read_text(encoding="utf-8")
 
 
 def test_core_loop_orders_archive_before_structure_and_commit() -> None:

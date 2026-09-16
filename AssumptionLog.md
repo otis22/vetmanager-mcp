@@ -16946,3 +16946,17 @@ exit 0. Полный Docker suite: 3029 passed, 2 skipped, 76 deselected. MCP to
 API и production data не менялись, поэтому живой API-вызов не требуется;
 `paginate_all`, этап 323 и real-test 245 не затронуты. Code review, commit,
 push и CI/deploy фиксируются следующей записью после соответствующих гейтов.
+
+**Committed diff review, раунд 1.** Реализация зафиксирована коммитом
+`a82ffbe`. Spark-review committed diff после обязательного fallback с
+read-only `bwrap` на review-only запуск вернул `[]`. Claude Opus valid 1/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T173221Z-git_range-HEAD__HEAD-attempt-1-of-3.3Hs52Q/claude-review-attempt-1-of-3.envelope.json`
+(`subtype=success`, `stop_reason=tool_use`, output/thinking 6755/6261,
+`len(result)=970`). Принято medium-замечание: безусловный запуск архиватора из
+review-check менял tracked-файлы даже в диагностическом и super-review
+контексте. Регрессионный тест сначала упал на фактической мутации; теперь
+обычный запуск read-only, а явный `--prepare-roadmap` выполняет архивирование
+перед structural gate. Focused matrix после исправления — 13 passed; повторный
+полный Docker suite — 3030 passed, 2 skipped, 76 deselected. Точные ShellCheck
+0.9.0 и `bash -n` прошли; `paginate_all`, этап 323 и real-test 245 по-прежнему
+не менялись и не ослаблялись.
