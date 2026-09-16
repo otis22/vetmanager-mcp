@@ -88,10 +88,10 @@ async def test_get_users_returns_only_analytics_fields(monkeypatch):
 async def test_get_users_name_search_projects_merged_records(monkeypatch):
     import tools.user as user_module
 
-    async def fake_crud_list(*args, **kwargs):
-        return {"success": True, "data": {"user": [_UPSTREAM_USER], "totalCount": 1}}
+    async def fake_paginate_all(*args, **kwargs):
+        return ([_UPSTREAM_USER], 1)
 
-    monkeypatch.setattr(user_module, "crud_list", fake_crud_list)
+    monkeypatch.setattr(user_module, "paginate_all", fake_paginate_all)
 
     headers_patch, runtime_patch = _runtime_patch()
     with headers_patch, runtime_patch:

@@ -260,14 +260,30 @@ Enum: **`none` / `partial` / `full`**. Нет `paid` / `unpaid` — LLM част
 
 **Гипотеза требующая проверки на real API:** хранятся ли телефоны в нормализованном виде (только цифры) или с форматированием (`+7 (916) 123-45-67`). От этого зависит стратегия LIKE-поиска. MVP нормализует запрос под «только цифры», если прод покажет проблему — расширяем.
 
-### `get_users.name` поиск: OR между полями — требует проверки
+### `get_users.name` поиск: OR между полями не поддерживается
 
-В entity `user` есть `first_name` и `last_name`. Для поиска «по ФИО» нужен OR между полями. Поддерживает ли Vetmanager filter API оператор OR внутри массива — не очевидно из OpenAPI.
+В entity `user` есть `first_name` и `last_name`, но стандартный REST filter
+соединяет элементы только через AND. Он поддерживает `IN` нескольких значений
+одного поля, но не OR-группы и не `IN` по разным полям. Read-only probe
+16.09.2026: вложенная OR-группа для `/rest/api/user` и
+`/rest/api/closingOfInvoices` вернула HTTP 406 с `success=false`, а
+`user.id IN [x,y]` — HTTP 200 с числовым `totalCount`. Поэтому поиск
+`last_name LIKE X OR first_name LIKE X` и invoice на любой стороне
+`closingOfInvoices` требуют двух полных bounded веток, дедупликации и локальной
+глобальной сортировки до offset/limit.
 
-- Если поддерживает: `filter=[{"property":"first_name","operator":"LIKE","value":"X","or":true}, {"property":"last_name","operator":"LIKE","value":"X","or":true}]` (точный синтаксис проверить).
-- Если нет: два последовательных запроса с merge по `id`.
+### List `totalCount`: отдельный count не является границей полной страницы
 
-**Статус:** требует real API probe в этапе 78.3.
+Стандартный list формирует страницу и `totalCount` отдельными операциями с
+одинаковыми фильтрами/relations; страница получается раньше count. На
+стабильных данных фильтр/relations не создают отдельного штатного механизма
+undercount, но конкурентное изменение между операциями может сделать счётчик
+меньше уже полученной полной страницы. Поэтому полный batch нельзя завершать
+по `totalCount`: нужно читать до короткой/пустой страницы под локальными
+row/call/no-progress guards. Read-only probe 16.09.2026 на `invoice`,
+`invoiceDocument`, `user`, `closingOfInvoices` подтвердил обычную форму HTTP
+200 / `success=true` / object `data` / integer `totalCount`; invalid field на
+каждом endpoint дал HTTP 406 / `success=false`, а не HTTP 200.
 
 ### `pet.owner_id` vs привычка называть `client_id`
 

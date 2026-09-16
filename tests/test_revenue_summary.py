@@ -467,6 +467,7 @@ async def test_get_average_invoice_defaults_to_invoice_date_exec_half_open():
         return_value=httpx.Response(
             200,
             json={
+                "success": True,
                 "data": {
                     "totalCount": 2,
                     "invoice": [
@@ -507,6 +508,7 @@ async def test_get_average_invoice_create_date_preserves_no_status_filter():
         return_value=httpx.Response(
             200,
             json={
+                "success": True,
                 "data": {
                     "totalCount": 1,
                     "invoice": [{"id": 1, "amount": "900.00", "status": "save"}],

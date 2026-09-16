@@ -132,11 +132,11 @@ async def test_invoice_closings_search_both_sides_and_deduplicate() -> None:
     )
     # respx uses routes in registration order; one matcher cannot distinguish filters.
     route.side_effect = [
-        httpx.Response(200, json={"data": {"closingOfInvoices": [{"id": 1}, {"id": 3}]}}),
-        httpx.Response(200, json={"data": {"closingOfInvoices": [{"id": 2}, {"id": 3}]}}),
+        httpx.Response(200, json={"success": True, "data": {"closingOfInvoices": [{"id": 1}, {"id": 3}]}}),
+        httpx.Response(200, json={"success": True, "data": {"closingOfInvoices": [{"id": 2}, {"id": 3}]}}),
     ]
     with _runtime_patch():
         result = await mcp.call_tool("get_closing_of_invoices", {"invoice_id": 8, "limit": 20})
     data = result.structured_content["data"]
-    assert [row["id"] for row in data["closingOfInvoices"]] == [1, 3, 2]
+    assert [row["id"] for row in data["closingOfInvoices"]] == [1, 2, 3]
     assert data["totalCount"] == 3

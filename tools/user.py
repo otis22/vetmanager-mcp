@@ -4,7 +4,15 @@ from fastmcp import FastMCP
 
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, like as _filter_like
 from observability_logging import RUNTIME_LOGGER
-from tools.crud_helpers import crud_list, crud_get_by_id, crud_update
+from tools.crud_helpers import (
+    crud_get_by_id,
+    crud_list,
+    crud_update,
+    normalize_record_id,
+    paginate_all,
+    sort_records,
+    total_order_sort,
+)
 from validators import LimitParam
 
 
@@ -111,15 +119,15 @@ def register(mcp: FastMCP) -> None:
         By default only active staff are returned. Pass is_active=False to
         list only inactive users, or is_active=None to include all.
 
-        Name search covers BOTH last_name and first_name via two sequential
+        Name search covers BOTH last_name and first_name via two parallel
         requests merged by user id (Vetmanager filter language does not
-        expose OR across properties in a first-class way). Result count is
-        capped by `limit` after the merge.
+        expose OR across properties). Both branches are read completely under
+        safety caps, then globally sorted and paged.
 
         Args:
             limit: Max records to return (1–100, default 20).
-            offset: Pagination offset (0–10000). Ignored when `name` is set
-                (merge path starts from offset 0).
+            offset: Pagination offset (0–10000). With name it is applied after
+                both branches are merged and globally sorted.
             name: Filter by staff name (LIKE match on last_name OR first_name).
             position_id: Filter by position ID (e.g. a doctor position).
             is_active: Active filter: True = active only (default),
@@ -152,45 +160,43 @@ def register(mcp: FastMCP) -> None:
         last_name_filters = base_filters + [_filter_like("last_name", name)]
         first_name_filters = base_filters + [_filter_like("first_name", name)]
 
-        last_name_resp, first_name_resp = await asyncio.gather(
-            crud_list(
+        effective_sort = total_order_sort(sort, FILTER_FIELDS_BY_ENTITY["user"])
+        last_name_result, first_name_result = await asyncio.gather(
+            paginate_all(
                 "/rest/api/user",
-                limit=limit,
-                offset=0,
-                sort=sort,
+                page_size=100,
+                entity_key="user",
+                sort=effective_sort,
                 filters=last_name_filters,
                 allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["user"],
             ),
-            crud_list(
+            paginate_all(
                 "/rest/api/user",
-                limit=limit,
-                offset=0,
-                sort=sort,
+                page_size=100,
+                entity_key="user",
+                sort=effective_sort,
                 filters=first_name_filters,
                 allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["user"],
             ),
         )
 
-        def _extract_users(resp: dict) -> list[dict]:
-            data = resp.get("data", {}) if isinstance(resp, dict) else {}
-            if isinstance(data, list):
-                return data
-            if isinstance(data, dict):
-                return data.get("user") or data.get("users") or []
-            return []
-
-        seen_ids: set = set()
+        seen_ids: set[int] = set()
         merged: list[dict] = []
-        for user in _extract_users(last_name_resp) + _extract_users(first_name_resp):
-            uid = user.get("id")
+        for user in last_name_result[0] + first_name_result[0]:
+            uid = normalize_record_id(user.get("id"), label="user")
             if uid in seen_ids:
                 continue
             seen_ids.add(uid)
-            merged.append(_project_user(user))
-            if len(merged) >= limit:
-                break
+            normalized_user = dict(user)
+            normalized_user["id"] = uid
+            merged.append(normalized_user)
+        merged = sort_records(merged, effective_sort)
+        page = [_project_user(user) for user in merged[offset:offset + limit]]
 
-        return {"success": True, "data": {"user": merged, "totalCount": len(merged)}}
+        return {
+            "success": True,
+            "data": {"user": page, "totalCount": len(merged), "limited": False},
+        }
 
     @mcp.tool
     async def get_user_by_id(

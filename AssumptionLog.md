@@ -16997,3 +16997,87 @@ GitHub Tests run `35133870606` завершён `success`, Deploy Prod run
 сделаны при исчерпанном бюджете 2/2, поэтому ещё одного strong verdict не было;
 риски закрыты показанными красными сторожами, focused matrix и повторным полным
 набором 3035 passed, 2 skipped, 76 deselected.
+
+## Этап 323. Честная пагинация, 16.09.2026
+
+Findings F16–F19 сначала проверены по read-only исходникам ВМ и API-key
+стенду. List получает страницу и считает `totalCount` отдельными операциями с
+одинаковыми filters/relations; лимит применяется только к странице. При
+стабильных данных отдельного механизма занижения count из-за filter/join не
+найдено, но страница читается раньше count, поэтому конкурентное удаление
+может дать счётчик меньше уже полученной полной страницы. Полную страницу
+нельзя обрывать по count. Верхнеуровневые REST filters соединяются через AND;
+`IN` работает для значений одного поля, OR-групп между разными полями нет.
+
+Живые пробы до реализации: `invoice`, `invoiceDocument`, `user` и
+`closingOfInvoices` с `limit=1` вернули HTTP 200, `success=true`, объект
+`data`, integer `totalCount` и одну строку. Неверное имя фильтра на всех
+четырёх endpoints вернуло HTTP 406, `success=false`, `error=true`; вложенная
+OR-группа для `user` и `closingOfInvoices` также дала 406, а `user.id IN`
+нескольких значений — HTTP 200 и integer count. HTTP 200 с `success=false`
+спровоцировать не удалось: текущий exception path сохраняет HTTP status.
+Следовательно, F16 подтверждён как дефект defensive pagination, F17/F18 — как
+неполное двухветочное слияние без доступной однозапросной OR-замены, F19 — как
+реальный fail-open MCP на synthetic/malformed envelope, но не как штатный
+ответ текущего стенда.
+
+Реализация усиливает общий `paginate_all`: любой невалидный/отсутствующий
+count означает unknown, полная страница всегда ведёт к следующей, короткая
+страница учитывает только count текущего ответа, а пустая до valid count,
+не-true `success`, malformed envelope, cap/call budget и повторная полная
+страница дают санитизированную ошибку. Серверный scan получил полный порядок с
+`id` tie-breaker. `_all_rows` этапа 322 не изменён. Invoice closings и поиск
+пользователя по имени полностью читают обе AND-ветки, нормализуют и
+дедуплицируют id, глобально сортируют и лишь затем применяют offset/limit;
+успешный count равен полному merge и `limited=false`. Обе фазы period tool
+строго валидируют envelope и связанные IDs; существующий budget-результат
+этапа 318 остаётся честным `limited=true` без частичных финансовых строк.
+
+**PRD review.** Первый Spark после read-only `bwrap` failure повторён с
+review-only fallback; приняты strict `success is True` и `id` tie-breaker.
+Claude Opus valid 1/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T185843Z-file-PRD_-323--_md-attempt-1-of-3.7EMqIW/claude-review-attempt-1-of-3.envelope.json`
+(`subtype=success`, `stop_reason=tool_use`, output/thinking 4937/3722,
+`len(result)=2872`). Приняты server-side total order, продолжение короткой
+страницы при большем current count и deterministic null/mixed sort; два low
+отклонены по уже fail-closed cap и bounded period contract этапа 318. Второй
+Spark уточнил sort allowlist и fail-closed IDs. Claude Opus valid 2/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T190248Z-file-PRD_-323--_md-attempt-2-of-3.GWwUJj/claude-review-attempt-2-of-3.envelope.json`
+(`success`, `tool_use`, output/thinking 3173/2345, `len(result)=2242`). Приняты
+семантика count текущей страницы, fixed merge caps и нормализация ID; warning
+о period `limited=true` отклонён по тому же публичному контракту. PRD-review
+budget исчерпан 2/2.
+
+**Red/green.** Первый точный запуск нового guard-файла до реализации дал
+18 failed. Он отдельно ломался на absent/string/float/bool/negative count,
+low count полной страницы, short page с большим count, non-true/missing
+`success`, malformed data/rows, повторной полной странице, неполных
+двухветочных merge и ложном успехе обеих period-сущностей. После реализации
+тот же набор дал 18 passed. Устаревшие моки двух average-invoice тестов без
+обязательного `success=true` были приведены к подтверждённому envelope;
+целевой повтор дал 3 passed.
+
+**Живой вызов изменённых инструментов.** Read-only вызовы на API-key стенде
+после реализации: `get_users(name)` — MCP OK, `success=true`, одна строка,
+`totalCount=1`, `limited=false`; `get_closing_of_invoices` — MCP OK,
+`success=true`, две строки, `totalCount=2`, `limited=false`;
+`get_invoice_documents_by_period` — MCP OK, пустой честный period-result,
+`totalCount=0`, `limited=false`; `get_average_invoice` и
+`get_doctor_free_slots` — MCP OK, `success=true`, нулевые агрегат/слоты на
+выбранный день. Идентификаторы, имена и содержимое строк не печатались и не
+сохранялись.
+
+**Проверки до commit.** Focused матрица после финальной правки — 114 passed;
+Ruff и `git diff --check` — exit 0. Полный Docker suite — 3053 passed,
+2 skipped, 76 deselected за 485.23 s. Точная opt-in real команда из
+AGENTS.md — 65 passed, 9 skipped, 3057 deselected; отдельный web-account
+contour — 1 skipped. Оба stage245 live-теста прошли, известный ReadTimeout не
+возник. `scripts/review_workflow_check.sh --prepare-roadmap` выполнен до
+commit. Его high `missing_live_call` после исправления заголовка записи снят;
+medium advisory о 519 LOC отклонён: PRD заранее делит stage на четыре
+ограниченных implementation/test-подзадачи, а общий diff включает тесты и
+публичные артефакты; low tests reminder закрыт полным прогоном.
+
+Committed diff review, commit/push/CI/deploy и финальная self-attestation
+фиксируются после соответствующих гейтов. Подэтапы 323.1–323.3 выполнены;
+этап оставлен `supervisor_pending` до решения владельца.

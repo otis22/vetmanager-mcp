@@ -146,7 +146,7 @@ async def test_crud_delete_calls_delete():
 async def test_paginate_all_single_page():
     billing_mock()
     respx.get(f"{BASE}/rest/api/client").mock(
-        return_value=httpx.Response(200, json={
+        return_value=httpx.Response(200, json={"success": True,
             "data": {"totalCount": 2, "client": [{"id": 1}, {"id": 2}]}
         })
     )
@@ -168,10 +168,10 @@ async def test_paginate_all_multi_page():
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            return httpx.Response(200, json={
+            return httpx.Response(200, json={"success": True,
                 "data": {"totalCount": 3, "item": [{"id": 1}, {"id": 2}]}
             })
-        return httpx.Response(200, json={
+        return httpx.Response(200, json={"success": True,
             "data": {"totalCount": 3, "item": [{"id": 3}]}
         })
 
@@ -190,7 +190,7 @@ async def test_paginate_all_multi_page():
 async def test_paginate_all_empty():
     billing_mock()
     respx.get(f"{BASE}/rest/api/invoice").mock(
-        return_value=httpx.Response(200, json={
+        return_value=httpx.Response(200, json={"success": True,
             "data": {"totalCount": 0, "invoice": []}
         })
     )
@@ -207,7 +207,7 @@ async def test_paginate_all_empty():
 async def test_paginate_all_with_filters():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/client").mock(
-        return_value=httpx.Response(200, json={
+        return_value=httpx.Response(200, json={"success": True,
             "data": {"totalCount": 1, "client": [{"id": 1, "status": "ACTIVE"}]}
         })
     )
@@ -230,11 +230,15 @@ async def test_paginate_all_repeats_extra_params_on_every_page():
         side_effect=[
             httpx.Response(
                 200,
-                json={"data": {"totalCount": 2, "timesheet": [{"id": 1}]}},
+                json={"success": True, "data": {"totalCount": 2, "timesheet": [{"id": 1}]}},
             ),
             httpx.Response(
                 200,
-                json={"data": {"totalCount": 2, "timesheet": [{"id": 2}]}},
+                json={"success": True, "data": {"totalCount": 2, "timesheet": [{"id": 2}]}},
+            ),
+            httpx.Response(
+                200,
+                json={"success": True, "data": {"totalCount": 2, "timesheet": []}},
             ),
         ]
     )
@@ -249,7 +253,7 @@ async def test_paginate_all_repeats_extra_params_on_every_page():
 
     assert total == 2
     assert [record["id"] for record in records] == [1, 2]
-    assert route.call_count == 2
+    assert route.call_count == 3
     assert all(
         request.request.url.params["parameters"] == parameters
         for request in route.calls
@@ -258,12 +262,17 @@ async def test_paginate_all_repeats_extra_params_on_every_page():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_paginate_all_boundary_100_stops_on_first_page():
+async def test_paginate_all_boundary_100_checks_the_next_page():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/client").mock(
-        return_value=httpx.Response(200, json={
-            "data": {"totalCount": 100, "client": [{"id": i} for i in range(100)]}
-        })
+        side_effect=[
+            httpx.Response(200, json={"success": True, "data": {
+                "totalCount": 100, "client": [{"id": i} for i in range(100)],
+            }}),
+            httpx.Response(200, json={"success": True, "data": {
+                "totalCount": 100, "client": [],
+            }}),
+        ]
     )
     with bearer_patch():
         records, total = await paginate_all(
@@ -271,12 +280,12 @@ async def test_paginate_all_boundary_100_stops_on_first_page():
         )
     assert total == 100
     assert len(records) == 100
-    assert route.call_count == 1
+    assert route.call_count == 2
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_paginate_all_boundary_101_fetches_second_page_and_keeps_initial_total():
+async def test_paginate_all_boundary_101_fetches_second_page():
     billing_mock()
     call_count = 0
 
@@ -284,11 +293,11 @@ async def test_paginate_all_boundary_101_fetches_second_page_and_keeps_initial_t
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            return httpx.Response(200, json={
+            return httpx.Response(200, json={"success": True,
                 "data": {"totalCount": 101, "client": [{"id": i} for i in range(100)]}
             })
-        return httpx.Response(200, json={
-            "data": {"totalCount": 9999, "client": [{"id": 100}]}
+        return httpx.Response(200, json={"success": True,
+            "data": {"totalCount": 101, "client": [{"id": 100}]}
         })
 
     respx.get(f"{BASE}/rest/api/client").mock(side_effect=side_effect)

@@ -10,9 +10,10 @@ proxy label for `vetmanager_tool_call_latency_seconds` and
 """
 
 import json
+from functools import cmp_to_key
 from typing import Any, TypeVar
 
-from exceptions import reportable_error
+from exceptions import ToolInputError, reportable_error
 from filters import (
     as_dict_list, build_list_query_params, validate_filter_properties,
     validate_sort_properties,
@@ -25,6 +26,92 @@ T = TypeVar("T")
 # Stage 103.6: _instrumented_call is now canonical in service_metrics.
 # This re-export preserves backward compatibility for any future caller
 # (and for tests that may import _instrumented_call from crud_helpers).
+
+
+def total_order_sort(
+    sort: list[dict] | None,
+    allowed_properties: frozenset[str] | None = None,
+) -> list[dict]:
+    """Validate a sort and append a unique id tie-breaker when absent."""
+    if allowed_properties is not None:
+        validate_sort_properties(sort, allowed_properties)
+    normalized: list[dict] = []
+    for item in sort or []:
+        if not isinstance(item, dict) or not isinstance(item.get("property"), str):
+            raise ToolInputError("Each sort item must contain a property")
+        direction = str(item.get("direction", "ASC")).upper()
+        if direction not in {"ASC", "DESC"}:
+            raise ToolInputError("Sort direction must be ASC or DESC")
+        normalized.append({"property": item["property"], "direction": direction})
+    if not any(item["property"] == "id" for item in normalized):
+        normalized.append({"property": "id", "direction": "ASC"})
+    return normalized
+
+
+def _sortable_value(value: object) -> tuple:
+    if isinstance(value, bool):
+        return (0, int(value))
+    if isinstance(value, (int, float)):
+        return (1, float(value))
+    if isinstance(value, str):
+        return (2, value.casefold(), value)
+    return (3, type(value).__name__, str(value))
+
+
+def sort_records(records: list[dict], sort: list[dict]) -> list[dict]:
+    """Sort merged API rows deterministically, keeping null values last."""
+    def compare(left: dict, right: dict) -> int:
+        for item in sort:
+            left_value = left.get(item["property"])
+            right_value = right.get(item["property"])
+            if left_value is None or right_value is None:
+                result = (left_value is None) - (right_value is None)
+            else:
+                left_key = _sortable_value(left_value)
+                right_key = _sortable_value(right_value)
+                result = (left_key > right_key) - (left_key < right_key)
+                if item["direction"] == "DESC":
+                    result = -result
+            if result:
+                return result
+        return 0
+
+    return sorted(records, key=cmp_to_key(compare))
+
+
+def normalize_record_id(value: object, *, label: str) -> int:
+    """Return an upstream integer-like record id or fail closed."""
+    if isinstance(value, bool):
+        raise reportable_error(f"invalid record id in {label} response")
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.isdecimal() and int(value) > 0:
+        return int(value)
+    raise reportable_error(f"invalid record id in {label} response")
+
+
+def extract_list_page(
+    response: object,
+    *,
+    endpoint: str,
+    entity_key: str,
+) -> tuple[list[dict], int | None]:
+    """Validate one successful list envelope without leaking its message."""
+    if not isinstance(response, dict) or response.get("success") is not True:
+        raise reportable_error(f"upstream list request failed for {endpoint}")
+    data = response.get("data")
+    if not isinstance(data, dict):
+        raise reportable_error(f"malformed upstream list response for {endpoint}")
+    records = data.get(entity_key)
+    if not isinstance(records, list) or any(not isinstance(row, dict) for row in records):
+        raise reportable_error(f"malformed {entity_key} rows from {endpoint}")
+    raw_total = data.get("totalCount")
+    total = (
+        raw_total
+        if isinstance(raw_total, int) and not isinstance(raw_total, bool) and raw_total >= 0
+        else None
+    )
+    return records, total
 
 
 def unwrap_single_record(response: dict, *entity_keys: str) -> dict | None:
@@ -118,16 +205,19 @@ async def paginate_all(
     *,
     filters: list | None = None,
     extra: dict[str, Any] | None = None,
+    sort: list[dict] | None = None,
+    allowed_filter_properties: frozenset[str] | None = None,
     page_size: int = 100,
     entity_key: str,
     max_rows: int | None = 10_000,
+    max_calls: int = 1_000,
 ) -> tuple[list[dict], int]:
     """Fetch all pages of a list endpoint.
 
     Args:
         extra: Query parameters repeated unchanged on every page.
         max_rows: Hard cap on total rows fetched (default 10_000). Raises
-            ValueError if totalCount (or collected rows) exceeds the cap —
+            ToolError if totalCount (or collected rows) exceeds the cap —
             prevents runaway memory use on pathologically large result sets.
             Pass `None` to disable the cap (only for operationally-bounded
             callers that know the result set is limited by other constraints).
@@ -138,39 +228,53 @@ async def paginate_all(
     vc = VetmanagerClient()
     all_records: list[dict] = []
     offset = 0
-    total_count = 0
-    total_count_initialized = False
+    calls = 0
+    seen_full_pages: set[str] = set()
+    effective_sort = total_order_sort(sort, allowed_filter_properties)
 
-    filter_str: str | None = None
-    if filters:
-        normalized = as_dict_list(filters)
-        if normalized:
-            filter_str = json.dumps(normalized, separators=(",", ":"))
+    normalized_filters = as_dict_list(filters) if filters else None
+    if allowed_filter_properties is not None:
+        validate_filter_properties(filters, allowed_filter_properties)
 
     while True:
-        params: dict[str, Any] = {"limit": page_size, "offset": offset}
-        if extra:
-            params.update(extra)
-        if filter_str:
-            params["filter"] = filter_str
+        if calls >= max_calls:
+            raise reportable_error(
+                f"pagination call budget exceeded for {endpoint}; narrow filters"
+            )
+        params = build_list_query_params(
+            limit=page_size,
+            offset=offset,
+            sort=effective_sort,
+            filters=normalized_filters,
+            extra=extra,
+        )
 
         resp = await vc.get(endpoint, params=params)
-        data = resp.get("data", {})
-        page_total_count = int(data.get("totalCount", 0)) if isinstance(data, dict) else 0
-        records = data.get(entity_key, []) if isinstance(data, dict) else []
+        calls += 1
+        records, page_total_count = extract_list_page(
+            resp, endpoint=endpoint, entity_key=entity_key,
+        )
 
-        if not total_count_initialized:
-            total_count = page_total_count
-            total_count_initialized = True
-
-        if max_rows is not None and total_count > max_rows:
+        if max_rows is not None and page_total_count is not None and page_total_count > max_rows:
             raise reportable_error(
-                f"result set too large for {endpoint}: totalCount={total_count} "
+                f"result set too large for {endpoint}: totalCount={page_total_count} "
                 f"exceeds max_rows={max_rows}. Narrow your date range or filters."
             )
 
         if not records:
+            if page_total_count is not None and offset < page_total_count:
+                raise reportable_error(
+                    f"pagination ended before totalCount for {endpoint}"
+                )
             break
+
+        if len(records) >= page_size:
+            fingerprint = json.dumps(records, sort_keys=True, default=str, separators=(",", ":"))
+            if fingerprint in seen_full_pages:
+                raise reportable_error(
+                    f"pagination made no progress for {endpoint}"
+                )
+            seen_full_pages.add(fingerprint)
 
         all_records.extend(records)
         offset += len(records)
@@ -182,7 +286,10 @@ async def paginate_all(
                 "Narrow your date range or filters."
             )
 
-        if offset >= total_count or len(records) < page_size:
+        if (
+            len(records) < page_size
+            and (page_total_count is None or offset >= page_total_count)
+        ):
             break
 
-    return all_records, total_count
+    return all_records, len(all_records)

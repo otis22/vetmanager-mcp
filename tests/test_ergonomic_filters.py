@@ -707,7 +707,7 @@ async def test_get_users_name_filter_merges_last_and_first_name():
     route = respx.get(f"{BASE}/rest/api/user").mock(
         return_value=httpx.Response(
             200,
-            json={"data": {"totalCount": 1, "user": [{"id": 7, "last_name": "Иванова"}]}},
+            json={"success": True, "data": {"totalCount": 1, "user": [{"id": 7, "last_name": "Иванова"}]}},
         )
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
@@ -792,9 +792,9 @@ async def test_get_users_position_id_filter():
 async def test_get_users_name_search_runs_last_and_first_name_in_parallel(monkeypatch):
     import tools.user as user_module
 
-    async def fake_crud_list(
-        endpoint, *, limit, offset, sort=None, filters=None, extra=None,
-        allowed_filter_properties=None,
+    async def fake_paginate_all(
+        endpoint, *, page_size, entity_key, sort=None, filters=None, extra=None,
+        allowed_filter_properties=None, **kwargs,
     ):
         await asyncio.sleep(0.05)
         props = {
@@ -802,10 +802,10 @@ async def test_get_users_name_search_runs_last_and_first_name_in_parallel(monkey
             for f in (filters or [])
         }
         if "last_name" in props:
-            return {"data": {"user": [{"id": 7, "last_name": "Иванова"}]}}
-        return {"data": {"user": [{"id": 8, "first_name": "Иванова"}]}}
+            return ([{"id": 7, "last_name": "Иванова"}], 1)
+        return ([{"id": 8, "first_name": "Иванова"}], 1)
 
-    monkeypatch.setattr(user_module, "crud_list", fake_crud_list)
+    monkeypatch.setattr(user_module, "paginate_all", fake_paginate_all)
 
     headers_patch, runtime_patch = bearer_runtime_patch()
     started = time.perf_counter()

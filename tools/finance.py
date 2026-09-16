@@ -13,7 +13,15 @@ from filters import (
     in_ as _filter_in,
     lt as _filter_lt,
 )
-from tools.crud_helpers import crud_list, crud_get_by_id
+from tools.crud_helpers import (
+    crud_get_by_id,
+    crud_list,
+    extract_list_page,
+    normalize_record_id,
+    paginate_all,
+    sort_records,
+    total_order_sort,
+)
 from validators import LimitParam, parse_date_param
 
 
@@ -85,15 +93,6 @@ def register(mcp: FastMCP) -> None:
                     "invoice_id; invoice_id searches both sides."
                 )
 
-    def _closing_rows(response: dict) -> list[dict]:
-        data = response.get("data") if isinstance(response, dict) else None
-        if isinstance(data, list):
-            return [row for row in data if isinstance(row, dict)]
-        if isinstance(data, dict):
-            rows = data.get("closingOfInvoices") or []
-            return [row for row in rows if isinstance(row, dict)]
-        return []
-
     def _extract_entity_rows(resp: dict, entity_key: str) -> tuple[list[dict], int | None]:
         data = resp.get("data", {}) if isinstance(resp, dict) else {}
         if isinstance(data, list):
@@ -107,6 +106,23 @@ def register(mcp: FastMCP) -> None:
         except (TypeError, ValueError):
             parsed_total = None
         return [row for row in rows if isinstance(row, dict)], parsed_total
+
+    def _extract_period_rows(
+        response: object, entity_key: str, endpoint: str,
+    ) -> tuple[list[dict], int | None]:
+        rows, total = extract_list_page(
+            response, endpoint=endpoint, entity_key=entity_key,
+        )
+        normalized: list[dict] = []
+        for row in rows:
+            item = dict(row)
+            item["id"] = normalize_record_id(row.get("id"), label=entity_key)
+            if entity_key == "invoiceDocument":
+                item["document_id"] = normalize_record_id(
+                    row.get("document_id"), label="invoiceDocument.document_id",
+                )
+            normalized.append(item)
+        return normalized, total
 
     def _result_metadata(
         *,
@@ -421,30 +437,39 @@ def register(mcp: FastMCP) -> None:
             )
         _reject_closing_invoice_filter_conflict(filter)
         base_filters = list(filter or [])
+        effective_sort = total_order_sort(
+            sort, FILTER_FIELDS_BY_ENTITY["closingOfInvoices"],
+        )
         minus, plus = await asyncio.gather(
-            crud_list(
-                "/rest/api/closingOfInvoices", limit=100, offset=0, sort=sort,
+            paginate_all(
+                "/rest/api/closingOfInvoices", page_size=100,
+                entity_key="closingOfInvoices", sort=effective_sort,
                 filters=base_filters + [_filter_eq("minus_document_id", invoice_id)],
                 allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["closingOfInvoices"],
             ),
-            crud_list(
-                "/rest/api/closingOfInvoices", limit=100, offset=0, sort=sort,
+            paginate_all(
+                "/rest/api/closingOfInvoices", page_size=100,
+                entity_key="closingOfInvoices", sort=effective_sort,
                 filters=base_filters + [_filter_eq("plus_document_id", invoice_id)],
                 allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["closingOfInvoices"],
             ),
         )
-        seen_ids: set[object] = set()
+        seen_ids: set[int] = set()
         merged: list[dict] = []
-        for row in _closing_rows(minus) + _closing_rows(plus):
-            row_id = row.get("id")
-            dedupe_key = row_id if row_id is not None else id(row)
-            if dedupe_key not in seen_ids:
-                seen_ids.add(dedupe_key)
-                merged.append(row)
+        for row in minus[0] + plus[0]:
+            row_id = normalize_record_id(row.get("id"), label="closingOfInvoices")
+            if row_id not in seen_ids:
+                seen_ids.add(row_id)
+                normalized_row = dict(row)
+                normalized_row["id"] = row_id
+                merged.append(normalized_row)
+        merged = sort_records(merged, effective_sort)
         return {
+            "success": True,
             "data": {
                 "closingOfInvoices": merged[offset:offset + limit],
                 "totalCount": len(merged),
+                "limited": False,
             }
         }
 
@@ -543,11 +568,17 @@ def register(mcp: FastMCP) -> None:
                 allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["invoice"],
             )
             calls += 1
-            rows, total = _extract_entity_rows(response, "invoice")
+            rows, total = _extract_period_rows(response, "invoice", "/rest/api/invoice")
             invoices.extend(rows)
-            if not rows or (total is not None and len(invoices) >= total):
+            if not rows:
+                if total is not None and len(invoices) < total:
+                    raise reportable_error("invoice pagination ended before totalCount")
                 break
             invoice_offset += len(rows)
+            if len(rows) < _INVOICE_DOCUMENT_PERIOD_PAGE_SIZE and (
+                total is None or invoice_offset >= total
+            ):
+                break
 
         invoice_dates = {
             invoice_id: row.get("invoice_date")
@@ -570,7 +601,9 @@ def register(mcp: FastMCP) -> None:
                     filters=[_filter_in("document_id", batch)],
                 )
                 calls += 1
-                rows, total = _extract_entity_rows(response, "invoiceDocument")
+                rows, total = _extract_period_rows(
+                    response, "invoiceDocument", "/rest/api/invoiceDocument",
+                )
                 for row in rows:
                     invoice_id = _coerce_invoice_id(row.get("document_id"))
                     if invoice_id is not None and invoice_id in invoice_dates:
@@ -579,15 +612,23 @@ def register(mcp: FastMCP) -> None:
                             "invoice_id": invoice_id,
                             "invoice_date": invoice_dates[invoice_id],
                         })
-                if not rows or (total is not None and document_offset + len(rows) >= total):
+                if not rows:
+                    if total is not None and document_offset < total:
+                        raise reportable_error(
+                            "invoiceDocument pagination ended before totalCount"
+                        )
                     break
                 document_offset += len(rows)
+                if len(rows) < _INVOICE_DOCUMENT_PERIOD_PAGE_SIZE and (
+                    total is None or document_offset >= total
+                ):
+                    break
 
-        positions.sort(key=lambda row: (
-            str(row.get("invoice_date") or ""),
-            int(row.get("invoice_id") or 0),
-            int(row.get("id") or 0),
-        ))
+        positions = sort_records(positions, [
+            {"property": "invoice_date", "direction": "ASC"},
+            {"property": "invoice_id", "direction": "ASC"},
+            {"property": "id", "direction": "ASC"},
+        ])
         page = positions[offset:offset + limit]
         next_offset = offset + len(page) if offset + len(page) < len(positions) else None
         return {

@@ -43,7 +43,7 @@ async def test_period_tool_reads_whole_batches_before_global_page_and_never_send
     def invoice_response(request: httpx.Request) -> httpx.Response:
         query = _query(request)
         offset = int(query["offset"][0])
-        return httpx.Response(200, json={"data": {
+        return httpx.Response(200, json={"success": True, "data": {
             "invoice": invoices[offset:offset + 100], "totalCount": len(invoices),
         }})
 
@@ -59,7 +59,7 @@ async def test_period_tool_reads_whole_batches_before_global_page_and_never_send
             {"id": invoice_id, "document_id": invoice_id, "good_id": 10}
             for invoice_id in ids
         ]
-        return httpx.Response(200, json={"data": {
+        return httpx.Response(200, json={"success": True, "data": {
             "invoiceDocument": rows[offset:offset + 100], "totalCount": len(rows),
         }})
 
@@ -78,7 +78,7 @@ async def test_period_tool_reads_whole_batches_before_global_page_and_never_send
     assert all(size <= 500 for size in document_batch_sizes)
     assert max(document_batch_sizes) == 500
     assert len(invoice_route.calls) == 6
-    assert len(document_route.calls) == 6
+    assert len(document_route.calls) == 7
     assert all(
         json.loads(_query(call.request)["sort"][0]) == [
             {"property": "document_id", "direction": "ASC"},
@@ -96,7 +96,7 @@ async def test_period_tool_marks_scan_limited_when_invoice_pages_consume_budget(
 
     def invoice_response(request: httpx.Request) -> httpx.Response:
         offset = int(_query(request)["offset"][0])
-        return httpx.Response(200, json={"data": {
+        return httpx.Response(200, json={"success": True, "data": {
             "invoice": invoices[offset:offset + 100], "totalCount": len(invoices),
         }})
 
