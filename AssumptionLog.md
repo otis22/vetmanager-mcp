@@ -16973,3 +16973,18 @@ focused matrix дала 34 passed. Candidate о crash-atomic транзакци�
 исправлений: 3033 passed, 2 skipped, 76 deselected за 588.31 s; точные
 ShellCheck 0.9.0 и `bash -n` — exit 0. Уточнение PRD отражает принятый review;
 его strong-review бюджет уже исчерпан 2/2.
+
+**Committed diff review, раунд 2 и финальные исправления.** Третий Spark pass
+после обязательного read-only `bwrap` fallback прочитал diff, но затем запустил
+вложенный scout, который снова упал на sandbox runtime; разбираемого verdict не
+получено, Spark-бюджет 3/3 исчерпан, результат не засчитан как `[]`. Claude Opus
+valid 2/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T180526Z-git_range-a82ffbe__HEAD-attempt-2-of-3.WKtEZ6/claude-review-attempt-2-of-3.envelope.json`
+(`subtype=success`, `stop_reason=tool_use`, output/thinking 6330/5817,
+`len(result)=1293`). Приняты оба findings: `in_progress` теперь приоритетнее
+старого `supervisor_pending` при автоопределении, а частично подготовленные
+tempfile удаляются при следующем prepare failure. Оба сторожа показаны красными
+(`2 failed`) и зелёными (focused matrix 36 passed). Финальный полный Docker
+suite после исправлений: 3035 passed, 2 skipped, 76 deselected за 495.14 s;
+ShellCheck 0.9.0 и `bash -n` — exit 0. Code/diff review budget исчерпан 2/2;
+неустранённых известных blocker/high/medium/low findings нет.

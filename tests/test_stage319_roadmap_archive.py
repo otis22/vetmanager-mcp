@@ -208,6 +208,26 @@ def test_failed_rollback_preserves_recovery_copy(tmp_path: Path, monkeypatch) ->
     assert old_archive in [path.read_bytes() for path in recovery_files]
 
 
+def test_prepare_failure_cleans_already_created_tempfiles(tmp_path: Path, monkeypatch) -> None:
+    queue, archive = _files(tmp_path, _stage("1", "done") + _stage("31", "todo"))
+    module = _archive_module()
+    real_prepare = module._prepare
+    calls = 0
+
+    def injected_prepare(path, text):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected prepare failure")
+        return real_prepare(path, text)
+
+    monkeypatch.setattr(module, "_prepare", injected_prepare)
+    result = module.main(["--roadmap", str(queue), "--archive", str(archive)])
+
+    assert result == 1
+    assert not list(tmp_path.glob(".Roadmap*"))
+
+
 @pytest.mark.parametrize(
     ("queue", "archive", "message"),
     [

@@ -4,7 +4,8 @@
 #
 # Usage:
 #   ./scripts/review_workflow_check.sh [--prepare-roadmap] [stage_number]
-# If stage_number omitted, uses the last in-progress stage from Roadmap.md.
+# If stage_number omitted, prefers an in-progress stage from Roadmap.md and
+# falls back to the first supervisor-pending stage.
 # --prepare-roadmap performs the mutating archival step used immediately before
 # commit. Without it, review and diagnostic invocations remain read-only.
 
@@ -63,8 +64,11 @@ fi
 # 1. Detect current stage
 STAGE="${1:-}"
 if [ -z "$STAGE" ]; then
-  # Find the first active queue stage, including an owner-decision wait.
-  STAGE=$(grep -oE 'Этап [0-9]+.*(in_progress|supervisor_pending)' Roadmap.md 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)
+  STAGE=$(grep -oE 'Этап [0-9]+.*in_progress' Roadmap.md 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)
+fi
+
+if [ -z "$STAGE" ]; then
+  STAGE=$(grep -oE 'Этап [0-9]+.*supervisor_pending' Roadmap.md 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)
 fi
 
 if [ -z "$STAGE" ]; then

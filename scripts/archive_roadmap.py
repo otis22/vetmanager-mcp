@@ -52,10 +52,13 @@ def _prepare(path: Path, text: str) -> Path:
 
 
 def _replace_pair(roadmap: Path, archive: Path, new_queue: str, new_archive: str, old_archive: str | None) -> None:
-    queue_temp = _prepare(roadmap, new_queue)
-    archive_temp = _prepare(archive, new_archive)
-    rollback_temp = _prepare(archive, old_archive) if old_archive is not None else None
+    queue_temp: Path | None = None
+    archive_temp: Path | None = None
+    rollback_temp: Path | None = None
     try:
+        queue_temp = _prepare(roadmap, new_queue)
+        archive_temp = _prepare(archive, new_archive)
+        rollback_temp = _prepare(archive, old_archive) if old_archive is not None else None
         os.replace(archive_temp, archive)
         try:
             os.replace(queue_temp, roadmap)
@@ -75,8 +78,10 @@ def _replace_pair(roadmap: Path, archive: Path, new_queue: str, new_archive: str
                     rollback_temp = None
             raise
     finally:
-        queue_temp.unlink(missing_ok=True)
-        archive_temp.unlink(missing_ok=True)
+        if queue_temp is not None:
+            queue_temp.unlink(missing_ok=True)
+        if archive_temp is not None:
+            archive_temp.unlink(missing_ok=True)
         if rollback_temp is not None:
             rollback_temp.unlink(missing_ok=True)
 

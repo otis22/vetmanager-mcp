@@ -109,6 +109,38 @@ def test_workflow_checker_auto_detects_supervisor_pending(tmp_path: Path) -> Non
     assert "missing_prd" not in result.stdout
 
 
+def test_workflow_checker_prefers_in_progress_over_supervisor_pending(tmp_path: Path) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in (
+        "review_workflow_check.sh",
+        "check_roadmap_structure.py",
+        "find_roadmap_stage.py",
+    ):
+        shutil.copy2(ROOT / "scripts" / name, scripts / name)
+    (tmp_path / "Roadmap.md").write_text(
+        "## Этап 900. Решение владельца — `supervisor_pending`\n\n"
+        "- 900.1 Ждёт решения. — `supervisor_pending`\n\n"
+        "## Этап 902. Текущая работа — `in_progress`\n\n"
+        "- 902.1 Делается. — `in_progress`\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "Roadmap-archive.md").write_text("# Архив\n", encoding="utf-8")
+    (tmp_path / "AssumptionLog.md").write_text("## Этап 902. Evidence\n", encoding="utf-8")
+    prd = tmp_path / "PRD"
+    prd.mkdir()
+    (prd / "этап-902-test.md").write_text("## Цель\n", encoding="utf-8")
+
+    result = subprocess.run(
+        ["bash", str(scripts / "review_workflow_check.sh")],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+    )
+    assert "missing_prd" not in result.stdout
+    assert "missing_assumption" not in result.stdout
+
+
 def test_completion_checker_rejects_supervisor_pending(tmp_path: Path) -> None:
     scripts = tmp_path / "scripts"
     scripts.mkdir()
