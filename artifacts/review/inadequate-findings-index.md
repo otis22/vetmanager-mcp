@@ -337,3 +337,44 @@ Source: `artifacts/review/2026-04-30-changed-stage-150-152.md`
 
 - reviewer: architecture, confidence: 0.95, arbitration_verdict: not arbitrated
 - **Причина dismiss (architectural, deferred)**: дублирование признаётся, но extract shared `per_loop_async_client_factory` — архитектурный refactor, не входит в scope hardening Stage 153. Заводится отдельным этапом, когда будет следующий касающийся `host_resolver` change.
+
+---
+
+## 2026-09-16 super-review full stage 319
+
+Source: `artifacts/review/2026-09-16-full-stage-319.md`
+
+### 1. `resources/pet_profile.py:349-363` — отмена дочерней корутины ломает normal shutdown
+
+- reviewer: architecture, confidence: 0.25 after validation
+- **Причина dismiss**: дочерние корутины не опубликованы как независимо отменяемые задачи; отмена родителя, ожидающего `gather`, штатно распространяет `CancelledError`. Заявленный failure scenario не подтверждён.
+
+### 2. `vetmanager_client.py:182-512` — обязательная декомпозиция транспорта из-за расхождения TTL policy
+
+- reviewer: architecture, confidence: 0.30 after validation
+- **Причина dismiss**: это широкая рекомендация по рефакторингу без конкретного текущего отказа; локальный выбор TTL намеренно сохраняет backward-compatible поверхность monkey-patching и сам по себе не доказывает рассинхрон policy.
+
+### 3. `scripts/review_workflow_check.sh:32-42` — checker обязан выбирать следующий `todo`
+
+- reviewer: product, confidence: 0.20 after validation
+- **Причина dismiss**: finding смешивает выбор следующей задачи с post-work аудитом. Скрипт намеренно проверяет `in_progress`, а при его отсутствии — завершённую стадию; проверка ещё не выполненного `todo` была бы неверной.
+
+### 4. `scripts/verify_stage319_roadmap_transfer.py:33-50` — исторический baseline обязан совпадать с mutable HEAD
+
+- reviewer: product, confidence: 0.20 after validation
+- **Причина dismiss**: это одноразовое свидетельство первого переноса, а не текущий workflow/CI gate. Позднее законное закрытие этапа 237 делает снимок отличным от HEAD, но не опровергает историческое evidence.
+
+### 5. `scripts/archive_roadmap.py:24-25` — удалить неиспользуемый `stage_key`
+
+- reviewer: simplicity, confidence: 0.99
+- **Причина dismiss**: настоящий dead-code nit без наблюдаемого дефекта или существенной стоимости сопровождения; самостоятельная правка не оправдана.
+
+### 6. `tests/test_stage319_roadmap_archive.py:48-76` — нет отдельного теста byte-for-byte сохранности prefix
+
+- reviewer: tests, confidence: 0.70
+- **Причина dismiss**: тест мог бы усилить защиту, но текущая конкатенация напрямую сохраняет prefix и конкретный дефект не показан; это общий запрос на дополнительное покрытие.
+
+### 7. `web_routes_export.py:39-58` — export URL обязан умереть с короткоживущим OAuth access token
+
+- reviewer: security + spark-scout + aggregator, pre-arbitration confidence: 0.99; Claude Opus verdict: false_positive / low
+- **Причина dismiss**: capability намеренно следует за долговечным OAuth grant, а не часовым access token; привязка трёхдневной ссылки к expiry токена сломает штатную доступность, тогда как revoke grant уже закрывает ссылку. Семантику независимого exact-token revocation следует сначала отдельно определить как продуктовый контракт.
