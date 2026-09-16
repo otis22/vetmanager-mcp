@@ -17187,7 +17187,7 @@ GitHub Tests run `35144969350` завершён `success`, Deploy Prod run
   subtype=success, stop_reason=tool_use, output_tokens=6492,
   thinking_tokens=5380, len(result)=2360.
 
-# Этап 329. Follow-up санитайзера свойств, 17.09.2026
+## Этап 329. Follow-up санитайзера свойств, 17.09.2026
 
 - Красные сторожа: до кода 14 checks на новые token forms и русские тумблеры
   упали; затем отдельно упал сторож «Переключить».
@@ -17200,3 +17200,15 @@ GitHub Tests run `35144969350` завершён `success`, Deploy Prod run
 - Opus PRD 1/2 принял high про «Включить»; 2/2: UUID отклонён, full-string
   уточнение принято. Evidence: `~/.local/share/vetmanager-mcp-review-evidence/2026-09-16T211845Z-file-PRD_-329----_md-attempt-1-of-3.7CWhcy/claude-review-attempt-1-of-3.envelope.json`,
   `~/.local/share/vetmanager-mcp-review-evidence/2026-09-16T212048Z-file-PRD_-329----_md-attempt-2-of-3.n83Vcc/claude-review-attempt-2-of-3.envelope.json`.
+
+**Post-push evidence и self-attestation (этап 329).** Коммиты `5338dd2`,
+`d0b762c` отправлены в `main`; production HEAD — `d0b762c`. GitHub Tests run
+`35154292595` завершён `success`, Deploy Prod run `35154781010` завершён
+`success`. Этап 329 и 329.1–329.3 закрыты `done`. Diff-review Opus 1/2 по
+`origin/main..HEAD`: один medium (fail-closed ложные срабатывания
+`_BASE64URL_TOKEN_RE` на однорегистровых идентификаторах ≥32 с цифрой) —
+отклонён по прямому требованию пользователя; принятый риск, пересмотреть при
+жалобах клиник через `report_problem`. Push protection GitHub остановил первый
+push из-за синтетической Stripe-подобной фикстуры — фикстура собрана
+конкатенацией, тест не ослаблен. Закрытие выполнено супервизором после
+проверки CI и финального отчёта воркера.
