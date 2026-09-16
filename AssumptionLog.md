@@ -16678,3 +16678,15 @@ Focused итог: 24 passed. Полная команда из AGENTS снача�
 skipped из-за отсутствующего optional credential. Code review, commit,
 push, CI/deploy и self-attestation будут дописаны после соответствующих
 гейтов.
+
+**Committed diff review.** Implementation commit `118e5a7`. Spark code gate
+использовал допустимые 3/3 запуска: первые два прочитали diff, но их финальные
+строки потерялись в обрезанном многотысячном transcript; третий verdict был
+сохранён отдельно и дал `{"findings":[]}`. Ни один candidate finding не был
+принят. Claude Opus strong review valid 1/2, findings пусты: envelope
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T125814Z-git_range-HEAD__HEAD-attempt-1-of-3.vd0XQk/claude-review-attempt-1-of-3.envelope.json`,
+`subtype=success`, `is_error=false`, `stop_reason=tool_use`, output/thinking
+2664/2134, `len(result)=15`; verdict рядом содержит `{"findings":[]}`.
+Повторный strong запуск не требовался: первый валидный verdict закрыл gate без
+findings. Roadmap 321 и 321.1–321.4 закрыты `done`; push, номера GitHub runs и
+результат deploy сообщаются в финальном post-push self-attestation.
