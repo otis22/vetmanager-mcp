@@ -180,21 +180,24 @@ def check(stages: list[Stage], path_label: str) -> list[str]:
 
 def check_distribution(queue: list[Stage], archive: list[Stage], queue_label: str, archive_label: str) -> list[str]:
     findings: list[str] = []
-    maximum = max((int(stage.number.split(".")[0]) for stage in queue), default=0)
-    cutoff = maximum - 20
+    all_stages = queue + archive
+    maximum = max((int(stage.number.split(".")[0]) for stage in all_stages), default=0)
+    cutoff = maximum - 19
     for stage in queue:
         if stage.status in CLOSED_STATUSES and int(stage.number.split(".")[0]) < cutoff:
             findings.append(f"{queue_label}:{stage.line}: закрытый этап {stage.name} вне окна")
     for stage in archive:
         if stage.status in OPEN_STATUSES:
             findings.append(f"{archive_label}:{stage.line}: открытый этап {stage.name} в архиве")
+        elif stage.status in CLOSED_STATUSES and int(stage.number.split(".")[0]) >= cutoff:
+            findings.append(f"{archive_label}:{stage.line}: закрытый этап {stage.name} из текущего окна")
     locations: dict[str, list[str]] = {}
     for label, stages in ((queue_label, queue), (archive_label, archive)):
         for stage in stages:
             locations.setdefault(stage.name, []).append(label)
     for name, labels in locations.items():
         if len(labels) != 1:
-            findings.append(f"{queue_label}: этап {name} встречается в обоих файлах")
+            findings.append(f"{queue_label}: этап {name} встречается {len(labels)} раза ({', '.join(labels)})")
     return findings
 
 

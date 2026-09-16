@@ -29,6 +29,27 @@ emit() {
 EOF
 }
 
+# Archival is part of the gate: prepare the queue first, then validate the
+# queue/archive distribution. Both commands must pass before commit.
+ARCHIVE_RESULT=$(python3 scripts/archive_roadmap.py 2>&1) || emit_archive_failure=1
+if [ "${emit_archive_failure:-0}" -eq 1 ]; then
+  ARCHIVE_RESULT=$(printf '%s' "$ARCHIVE_RESULT" | tr '\n' ';' | tr '"' "'")
+  emit high roadmap_archive "Roadmap.md|Roadmap-archive.md" "N/A" \
+    "archive_roadmap.py failed: ${ARCHIVE_RESULT}" \
+    "A malformed or stale queue cannot be committed safely" \
+    "Fix the reported archive invariant, then rerun the workflow check" \
+    0.95
+fi
+STRUCTURE_RESULT=$(python3 scripts/check_roadmap_structure.py 2>&1) || emit_structure_failure=1
+if [ "${emit_structure_failure:-0}" -eq 1 ]; then
+  STRUCTURE_RESULT=$(printf '%s' "$STRUCTURE_RESULT" | tr '\n' ';' | tr '"' "'")
+  emit high roadmap_structure "Roadmap.md|Roadmap-archive.md" "N/A" \
+    "check_roadmap_structure.py failed: ${STRUCTURE_RESULT}" \
+    "The queue/archive distribution is structurally invalid" \
+    "Fix the reported structure findings before commit" \
+    0.95
+fi
+
 # 1. Detect current stage
 STAGE="${1:-}"
 if [ -z "$STAGE" ]; then
@@ -90,8 +111,8 @@ fi
 
 # 6. Roadmap status for stage
 if [ -n "$STAGE" ]; then
-  STAGE_LINE=$(grep -m1 "Этап ${STAGE}" Roadmap.md 2>/dev/null || true)
-  if ! echo "$STAGE_LINE" | grep -qE '\b(done|in_progress|stop|todo)\b'; then
+  STAGE_LINE=$(python3 scripts/find_roadmap_stage.py "$STAGE" 2>/dev/null || true)
+  if ! echo "$STAGE_LINE" | grep -qE '\b(done|in_progress|supervisor_pending|stop|todo)\b'; then
     emit low roadmap_status_missing "Roadmap.md" "N/A" \
       "Stage ${STAGE} line has no explicit status marker" \
       "Roadmap.md is the single source of queue status" \

@@ -16525,18 +16525,38 @@ verification (Deploy `34686882015`, `tools/list` содержит
 результат разведки `IN`. Запись закрыта супервизором отдельным docs-only
 коммитом без стороннего ревью по §5.5; код не менялся.
 
+## Этап 317. Экспорт не повторяет отказ и оставляет след
+
+Секция восстановлена 16.09.2026 только по сохранённым следам. Коммит
+`4a8fe83336f2f15df89023106b4ec74757e19e65` добавил PRD 317, модель и миграцию
+`known_issue_no_match_traces`, bounded privacy-safe сохранение no-match,
+агрегацию triage, один stage-specific тест и явный 60-секундный повтор того же
+`report_file_id`. Коммит `c8902feb4f565ad56a0aa48698bbab8674837b28`
+дополнил редактирование доменов и migration constraint.
+
+На финальном SHA `c8902fe` сохранены зелёные GitHub runs: Tests
+`34684346294` и Deploy Prod `34684563908`. В HEAD существует
+`tests/test_stage317_no_match_traces.py`, который проверяет запись
+санитизированного следа, удаление домена/числового ID и безопасный агрегат
+triage. PRD фиксирует требовавшиеся live-call/review/rollout gates, но их
+ответы, review envelopes, точный локальный test count, self-attestation и
+отдельное production-verification evidence для этапа 317 не сохранены — эти
+сведения не восстанавливаются задним числом и не домысливаются.
+
 ## Этап 319. Очередь и архив Roadmap
 
 Сделано: `Roadmap.md` стал очередью, `Roadmap-archive.md` — append-only
 историей; первый перенос сохранил 307 номеров и тел по
 `scripts/verify_stage319_roadmap_transfer.py`, второй запуск перенёс 0 этапов.
 7 реально найденных суффиксов заголовков (не 11 из исходной записи) перенесены
-первой строкой тела без потери текста. Позднее старое закрытие, нарушающее
-append-only порядок, архиватор отказывает до записи.
+первой строкой тела без потери текста. Позднее старое закрытие добавляется в
+хвост в порядке фактического закрытия; числовая сортировка не применяется.
 
 Красный сторож: до реализации отсутствующий архиватор дал 7 красных stage-319
-тестов; после реализации каждый из пяти образцов распределения отклоняется
-своим сообщением. ShellCheck, `bash -n`, полный Docker-набор (2947 selected),
+тестов. Текущая матрица отклоняет старый закрытый этап в очереди, открытый или
+свежий закрытый этап в архиве, повтор identity в одном/двух файлах и проверяет
+границы `max−20`/`max−19`; архиватор отдельно проверяется на idempotency,
+append-order и безопасный отказ до записи. ShellCheck, `bash -n`, полный Docker-набор (2947 selected),
 structural gate и evidence-проверка зелёные. Инструменты и production не
 менялись, живой API-вызов не нужен.
 
@@ -16877,3 +16897,52 @@ output/thinking 2836/2406, `len(result)=15`). Бюджет code/diff review 2/2;
 неустранённых blocker/high/medium нет. Этап 322 и оба подэтапа закрыты
 `done`; `supervisor_pending` нет. Push, GitHub Tests и Deploy Prod отражаются
 в post-push self-attestation.
+
+## Этап 326. Безопасное завершение и архив Roadmap, 16.09.2026
+
+Findings F7, F8, F12, F13, F26, F27, F28 и F29 подтверждены по HEAD и истории.
+Для F13 восстановлена отдельная секция 317 только по коммитам `4a8fe83` и
+`c8902fe`, PRD, существующему тесту и зелёным GitHub runs Tests `34684346294` /
+Deploy Prod `34684563908`; несохранённые live/review/self-attestation evidence
+явно названы несохранёнными. Ничего задним числом не выдумано.
+
+Конкретный этап теперь ищет `scripts/find_roadmap_stage.py` ровно один раз по
+`Roadmap.md` и `Roadmap-archive.md`; `check_stage_completion.sh 237` проходит
+high-severity gate. Выбор активного этапа остаётся только по очереди.
+Архиватор проверяет форму и полную identity (`103`, `103a` различны) до записи,
+удаляет выбранные блоки по индексам, готовит соседние tempfile с `fsync` и
+заменяет сначала архив, затем очередь. Обычная ошибка второй замены откатывает
+архив; внезапное убийство между заменами может оставить две одинаковые копии
+без потери данных, после чего строгий duplicate gate требует ручной сверки и
+удаления очередной копии. Это осознанная граница двухфайловой атомарности без
+журнала.
+
+Окно исправлено на ровно `max−19..max`: закрытые `<= max−20` архивируются,
+максимум считается по объединению, свежий закрытый этап в архиве отклоняется.
+По новой границе этап 307 корректно перенесён из очереди в хвост архива.
+Исторические записи 319 синхронизированы с HEAD: closure-order, 7 исправленных
+заголовков и фактическая матрица guards. Core Loop запускает архиватор перед
+structural gate и commit; Cursor знает архив, а `supervisor_pending` остаётся
+открытым статусом, ожидающим решения владельца.
+
+**PRD review.** Два первых Codex Spark pass вернули `[]`. После принятого strong
+warning о recovery повторный read-only Spark столкнулся с bwrap и выдал
+неподтверждённый candidate; обязательный review-only fallback с доступом к
+файлам вернул `[]`. Claude Opus valid 2/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T165609Z-file-PRD_-326-----roadmap_md-attempt-1-of-3.r58HEr/claude-review-attempt-1-of-3.envelope.json`
+(`subtype=success`, `stop_reason=tool_use`, output/thinking 2764/2163,
+`len(result)=1627`) и
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T165912Z-file-PRD_-326-----roadmap_md-attempt-2-of-3.Nocqz0/claude-review-attempt-2-of-3.envelope.json`
+(`success`, `tool_use`, 3336/2616, `len(result)=1873`). Приняты: rollback и
+ручной crash recovery, suffix identity, union-max preflight, byte-preserving
+append-order. Отклонён nit, предлагавший не считать `stop` закрытым: это
+противоречит `CLOSED_STATUSES` и контракту владельца.
+
+**Red/green и проверки.** До реализации focused Docker run дал 13 failed / 7
+passed: сторожа реально падали на границе, дублях, отсутствии atomic replace,
+архивном 237, неполном словаре и порядке Core Loop. После реализации focused
+матрица — 23 passed. ShellCheck 0.9.0, `bash -n`, Ruff и structural gate —
+exit 0. Полный Docker suite: 3029 passed, 2 skipped, 76 deselected. MCP tools,
+API и production data не менялись, поэтому живой API-вызов не требуется;
+`paginate_all`, этап 323 и real-test 245 не затронуты. Code review, commit,
+push и CI/deploy фиксируются следующей записью после соответствующих гейтов.

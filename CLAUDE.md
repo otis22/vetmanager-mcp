@@ -9,7 +9,9 @@ Workflow адаптирован из `.cursor/rules/agent-workflow.mdc` с до�
 
 - Workplan хранится в `Roadmap.md` — единственный источник очереди работ; закрытая история вне окна 20 номеров находится в append-only `Roadmap-archive.md`
 - Формируется на основе PRD
-- Содержит только название этапа/задачи и статус (`todo` / `in_progress` / `done` / `stop`)
+- Содержит только название этапа/задачи и статус (`todo` / `in_progress` /
+  `supervisor_pending` / `done` / `stop`); `supervisor_pending` означает, что
+  работа ждёт решения владельца и считается открытой
 - Не содержит деталей реализации
 
 ---
@@ -92,15 +94,16 @@ output» запрещена. Runner валидирует сохранённый 
 9. **Написать тесты** (test-first)
 10. **Red → Green** — реализовать до прохождения тестов
 11. **Запустить все проверки** — при изменении `scripts/*.sh`: `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`; затем `docker compose --profile test run --rm test`
-12. **Аудит изменений:**
+12. **Обновить `Roadmap.md` и `AssumptionLog.md`** — закрыть выполненные пункты и записать evidence
+13. **Архивировать и проверить структуру** — выполнить строго в таком порядке: `python3 scripts/archive_roadmap.py`, затем `python3 scripts/check_roadmap_structure.py`; оба exit code должны быть 0 до commit
+14. **Аудит изменений:**
    - legacy-паттерны, дублирование, рассинхрон с контрактом
    - при необходимости — рефакторинг
-13. **Повторный прогон** тестов после аудита/рефакторинга (если были изменения)
-14. **Commit** — только после зелёных проверок и локального аудита
-15. **Ревью сторонней моделью на committed diff до push** (см. раздел 5) — устранить адекватные findings; если были изменения, повторить tests/audit/commit/review в пределах бюджета code/diff review
-16. **Push** — только после прохождения code/diff review gate или явного исчерпания бюджета с rationale
-17. **Workflow self-attestation checklist** (см. раздел 4.2) — заполнить чеклист по всем предыдущим шагам и показать пользователю после push
-18. **Завершение задачи** — обновить `Roadmap.md` и `AssumptionLog.md`
+15. **Повторный прогон** тестов после аудита/рефакторинга (если были изменения)
+16. **Commit** — только после зелёных проверок, архивного/структурного гейта и локального аудита
+17. **Ревью сторонней моделью на committed diff до push** (см. раздел 5) — устранить адекватные findings; если были изменения, повторить tests/audit/commit/review в пределах бюджета code/diff review
+18. **Push** — только после прохождения code/diff review gate или явного исчерпания бюджета с rationale
+19. **Workflow self-attestation checklist** (см. раздел 4.2) — заполнить чеклист по всем предыдущим шагам и показать пользователю после push
 
 ### Запрещено:
 - писать код без тестов

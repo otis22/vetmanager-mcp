@@ -82,12 +82,11 @@ fi
 
 # ── 4. Roadmap status ≠ in_progress ─────────────────────────────────────────
 
-STAGE_LINE=$(grep -m1 "^## Этап ${STAGE}\." Roadmap.md 2>/dev/null || true)
-if [ -z "$STAGE_LINE" ]; then
-  emit high missing_roadmap_header "Roadmap.md" "N/A" \
-    "No '## Этап ${STAGE}. ...' header in Roadmap.md" \
-    "Roadmap is the single source of queue status" \
-    "Add roadmap entry for stage ${STAGE}" \
+if ! STAGE_LINE=$(python3 scripts/find_roadmap_stage.py "$STAGE" 2>/dev/null); then
+  emit high missing_roadmap_header "Roadmap.md|Roadmap-archive.md" "N/A" \
+    "Stage ${STAGE} must have exactly one heading across queue and archive" \
+    "Duplicate or missing stage history makes completion status ambiguous" \
+    "Restore exactly one roadmap entry for stage ${STAGE}" \
     0.9
   FAIL=1
 elif echo "$STAGE_LINE" | grep -qE '\bin_progress\b|\btodo\b'; then
@@ -98,7 +97,7 @@ elif echo "$STAGE_LINE" | grep -qE '\bin_progress\b|\btodo\b'; then
     0.8
   FAIL=1
 else
-  echo "  ✓ Roadmap marker set" >&2
+  echo "  ✓ Roadmap/archive marker set" >&2
 fi
 
 # ── 5. Commit message prefix ────────────────────────────────────────────────
