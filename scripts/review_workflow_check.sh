@@ -63,8 +63,8 @@ fi
 # 1. Detect current stage
 STAGE="${1:-}"
 if [ -z "$STAGE" ]; then
-  # Find last in_progress line in Roadmap.md
-  STAGE=$(grep -oE 'Этап [0-9]+.*in_progress' Roadmap.md 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)
+  # Find the first active queue stage, including an owner-decision wait.
+  STAGE=$(grep -oE 'Этап [0-9]+.*(in_progress|supervisor_pending)' Roadmap.md 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)
 fi
 
 if [ -z "$STAGE" ]; then

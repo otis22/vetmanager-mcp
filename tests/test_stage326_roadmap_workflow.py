@@ -78,6 +78,63 @@ def test_workflow_checker_accepts_supervisor_pending(tmp_path: Path) -> None:
     assert "roadmap_status_missing" not in result.stdout
 
 
+def test_workflow_checker_auto_detects_supervisor_pending(tmp_path: Path) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in (
+        "review_workflow_check.sh",
+        "check_roadmap_structure.py",
+        "find_roadmap_stage.py",
+    ):
+        shutil.copy2(ROOT / "scripts" / name, scripts / name)
+    (tmp_path / "Roadmap.md").write_text(
+        "## Этап 900. Решение владельца — `supervisor_pending`\n\n"
+        "- 900.1 Ждёт решения. — `supervisor_pending`\n\n"
+        "## Этап 901. Уже готово — `done`\n\n"
+        "- 901.1 Готово. — `done`\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "Roadmap-archive.md").write_text("# Архив\n", encoding="utf-8")
+    (tmp_path / "AssumptionLog.md").write_text("## Этап 900. Evidence\n", encoding="utf-8")
+    prd = tmp_path / "PRD"
+    prd.mkdir()
+    (prd / "этап-900-test.md").write_text("## Цель\n", encoding="utf-8")
+
+    result = subprocess.run(
+        ["bash", str(scripts / "review_workflow_check.sh")],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+    )
+    assert "missing_prd" not in result.stdout
+
+
+def test_completion_checker_rejects_supervisor_pending(tmp_path: Path) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in ("check_stage_completion.sh", "find_roadmap_stage.py"):
+        shutil.copy2(ROOT / "scripts" / name, scripts / name)
+    (tmp_path / "Roadmap.md").write_text(
+        "## Этап 900. Решение владельца — `supervisor_pending`\n\n"
+        "- 900.1 Ждёт решения. — `supervisor_pending`\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "Roadmap-archive.md").write_text("# Архив\n", encoding="utf-8")
+    (tmp_path / "AssumptionLog.md").write_text("## Этап 900. Evidence\n", encoding="utf-8")
+    prd = tmp_path / "PRD"
+    prd.mkdir()
+    (prd / "этап-900-test.md").write_text("## Цель\n", encoding="utf-8")
+
+    result = subprocess.run(
+        ["bash", str(scripts / "check_stage_completion.sh"), "900"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 1
+    assert "stage_still_open" in result.stdout
+
+
 def test_workflow_checker_is_read_only_unless_roadmap_preparation_is_explicit(
     tmp_path: Path,
 ) -> None:

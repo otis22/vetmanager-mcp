@@ -16960,3 +16960,16 @@ review-check менял tracked-файлы даже в диагностичес�
 полный Docker suite — 3030 passed, 2 skipped, 76 deselected. Точные ShellCheck
 0.9.0 и `bash -n` прошли; `paginate_all`, этап 323 и real-test 245 по-прежнему
 не менялись и не ослаблялись.
+
+**Spark-review после раунда 1.** Второй Spark pass предложил четыре medium
+candidate. Приняты три проверяемые части: recovery-copy сохраняется, если
+ломаются и замена очереди, и rollback архива; `supervisor_pending` участвует в
+автоопределении активного этапа и блокирует completion как открытый статус.
+Все три сторожа сначала упали (`3 failed`), после исправления расширенная
+focused matrix дала 34 passed. Candidate о crash-atomic транзакции отклонён:
+двухфайловая crash-атомарность требует отдельного журнала, а согласованный PRD
+явно выбирает безопасное состояние с дублем без потери данных, строгий отказ
+следующего preflight и ручную сверку. Финальный полный Docker suite после этих
+исправлений: 3033 passed, 2 skipped, 76 deselected за 588.31 s; точные
+ShellCheck 0.9.0 и `bash -n` — exit 0. Уточнение PRD отражает принятый review;
+его strong-review бюджет уже исчерпан 2/2.

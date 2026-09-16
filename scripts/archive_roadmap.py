@@ -63,8 +63,16 @@ def _replace_pair(roadmap: Path, archive: Path, new_queue: str, new_archive: str
             if rollback_temp is None:
                 archive.unlink(missing_ok=True)
             else:
-                os.replace(rollback_temp, archive)
-                rollback_temp = None
+                try:
+                    os.replace(rollback_temp, archive)
+                except OSError as rollback_error:
+                    recovery_path = rollback_temp
+                    rollback_temp = None
+                    raise OSError(
+                        f"archive rollback failed; recovery copy preserved at {recovery_path}"
+                    ) from rollback_error
+                else:
+                    rollback_temp = None
             raise
     finally:
         queue_temp.unlink(missing_ok=True)

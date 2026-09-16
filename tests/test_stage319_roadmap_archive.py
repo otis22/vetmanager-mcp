@@ -185,6 +185,29 @@ def test_atomic_replacement_commits_archive_before_queue(tmp_path: Path, monkeyp
     assert targets[:2] == [archive, queue]
 
 
+def test_failed_rollback_preserves_recovery_copy(tmp_path: Path, monkeypatch) -> None:
+    queue, archive = _files(tmp_path, _stage("1", "done") + _stage("31", "todo"))
+    old_archive = archive.read_bytes()
+    module = _archive_module()
+    real_replace = module.os.replace
+    calls = 0
+
+    def injected_replace(source, target):
+        nonlocal calls
+        calls += 1
+        if calls in {2, 3}:
+            raise OSError(f"injected replace failure {calls}")
+        return real_replace(source, target)
+
+    monkeypatch.setattr(module.os, "replace", injected_replace)
+    result = module.main(["--roadmap", str(queue), "--archive", str(archive)])
+    recovery_files = list(tmp_path.glob(f".{archive.name}.*"))
+
+    assert result == 1
+    assert recovery_files
+    assert old_archive in [path.read_bytes() for path in recovery_files]
+
+
 @pytest.mark.parametrize(
     ("queue", "archive", "message"),
     [

@@ -80,7 +80,7 @@ else
   echo "  ✓ AssumptionLog entry exists" >&2
 fi
 
-# ── 4. Roadmap status ≠ in_progress ─────────────────────────────────────────
+# ── 4. Roadmap status is closed ──────────────────────────────────────────────
 
 if ! STAGE_LINE=$(python3 scripts/find_roadmap_stage.py "$STAGE" 2>/dev/null); then
   emit high missing_roadmap_header "Roadmap.md|Roadmap-archive.md" "N/A" \
@@ -89,10 +89,10 @@ if ! STAGE_LINE=$(python3 scripts/find_roadmap_stage.py "$STAGE" 2>/dev/null); t
     "Restore exactly one roadmap entry for stage ${STAGE}" \
     0.9
   FAIL=1
-elif echo "$STAGE_LINE" | grep -qE '\bin_progress\b|\btodo\b'; then
+elif echo "$STAGE_LINE" | grep -qE '\bin_progress\b|\btodo\b|\bsupervisor_pending\b'; then
   emit medium stage_still_open "Roadmap.md" "N/A" \
-    "Stage ${STAGE} header still marked in_progress/todo" \
-    "Completion check expects done/stop/partially done after commit" \
+    "Stage ${STAGE} header still marked todo/in_progress/supervisor_pending" \
+    "Completion check accepts only the closed statuses done/stop" \
     "Update Roadmap: '— \`done\`' or explicit '— \`stop\`'" \
     0.8
   FAIL=1
