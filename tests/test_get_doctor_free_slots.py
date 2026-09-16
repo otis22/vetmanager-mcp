@@ -147,6 +147,7 @@ async def test_no_admissions_full_timesheet_chunked():
                         {
                             "id": 1,
                             "doctor_id": 1,
+                            "ttype": {"id": 2, "is_working_hours": 1},
                             "begin_datetime": "2026-04-10 09:00:00",
                             "end_datetime": "2026-04-10 11:00:00",
                             "clinic_id": 1,
@@ -199,6 +200,7 @@ async def test_admission_blocks_slots():
                         {
                             "id": 1,
                             "doctor_id": 1,
+                            "ttype": {"id": 2, "is_working_hours": 1},
                             "begin_datetime": "2026-04-10 09:00:00",
                             "end_datetime": "2026-04-10 11:00:00",
                             "clinic_id": 1,
@@ -263,6 +265,7 @@ async def test_deleted_admission_ignored():
                         {
                             "id": 1,
                             "doctor_id": 1,
+                            "ttype": {"id": 2, "is_working_hours": 1},
                             "begin_datetime": "2026-04-10 09:00:00",
                             "end_datetime": "2026-04-10 10:00:00",
                             "clinic_id": 1,
@@ -331,6 +334,7 @@ async def test_admission_length_zero_fallback():
                         {
                             "id": 1,
                             "doctor_id": 1,
+                            "ttype": {"id": 2, "is_working_hours": 1},
                             "begin_datetime": "2026-04-10 09:00:00",
                             "end_datetime": "2026-04-10 10:00:00",
                             "clinic_id": 1,
@@ -393,6 +397,7 @@ async def test_night_shift_slots():
                         {
                             "id": 1,
                             "doctor_id": 1,
+                            "ttype": {"id": 2, "is_working_hours": 1},
                             "begin_datetime": "2026-04-10 22:00:00",
                             "end_datetime": "2026-04-11 00:00:00",
                             "clinic_id": 1,
@@ -443,6 +448,7 @@ async def test_long_admission_started_before_window_blocks_slot():
                         {
                             "id": 1,
                             "doctor_id": 1,
+                            "ttype": {"id": 2, "is_working_hours": 1},
                             "begin_datetime": "2026-04-11 00:00:00",
                             "end_datetime": "2026-04-11 03:00:00",
                             "clinic_id": 1,
@@ -506,6 +512,7 @@ async def test_admission_ended_before_window_ignored():
                         {
                             "id": 1,
                             "doctor_id": 1,
+                            "ttype": {"id": 2, "is_working_hours": 1},
                             "begin_datetime": "2026-04-11 00:00:00",
                             "end_datetime": "2026-04-11 01:00:00",
                             "clinic_id": 1,
@@ -567,6 +574,7 @@ async def test_too_many_rows_raises():
                         {
                             "id": 1,
                             "doctor_id": 1,
+                            "ttype": {"id": 2, "is_working_hours": 1},
                             "begin_datetime": "2026-04-10 09:00:00",
                             "end_datetime": "2026-04-10 10:00:00",
                             "clinic_id": 1,
@@ -649,6 +657,7 @@ async def test_multi_clinic_admission_blocks_only_its_own_clinic():
                         {
                             "id": 1,
                             "doctor_id": 1,
+                            "ttype": {"id": 2, "is_working_hours": 1},
                             "begin_datetime": "2026-04-10 09:00:00",
                             "end_datetime": "2026-04-10 10:00:00",
                             "clinic_id": 1,
@@ -656,6 +665,7 @@ async def test_multi_clinic_admission_blocks_only_its_own_clinic():
                         {
                             "id": 2,
                             "doctor_id": 1,
+                            "ttype": {"id": 2, "is_working_hours": 1},
                             "begin_datetime": "2026-04-10 09:00:00",
                             "end_datetime": "2026-04-10 10:00:00",
                             "clinic_id": 2,
@@ -715,6 +725,7 @@ async def test_schedule_fetches_timesheet_and_admission_in_parallel(monkeypatch)
             return ([{
                 "id": 1,
                 "doctor_id": 1,
+                "ttype": {"id": 2, "is_working_hours": 1},
                 "begin_datetime": "2026-04-10 09:00:00",
                 "end_datetime": "2026-04-10 10:00:00",
                 "clinic_id": 1,

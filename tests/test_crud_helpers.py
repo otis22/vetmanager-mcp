@@ -224,6 +224,40 @@ async def test_paginate_all_with_filters():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_paginate_all_repeats_extra_params_on_every_page():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/timesheet").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={"data": {"totalCount": 2, "timesheet": [{"id": 1}]}},
+            ),
+            httpx.Response(
+                200,
+                json={"data": {"totalCount": 2, "timesheet": [{"id": 2}]}},
+            ),
+        ]
+    )
+    parameters = '{"attach_timesheet_type":1}'
+    with bearer_patch():
+        records, total = await paginate_all(
+            "/rest/api/timesheet",
+            entity_key="timesheet",
+            page_size=1,
+            extra={"parameters": parameters},
+        )
+
+    assert total == 2
+    assert [record["id"] for record in records] == [1, 2]
+    assert route.call_count == 2
+    assert all(
+        request.request.url.params["parameters"] == parameters
+        for request in route.calls
+    )
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_paginate_all_boundary_100_stops_on_first_page():
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/client").mock(

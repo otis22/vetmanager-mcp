@@ -249,7 +249,7 @@ class TestToolsListSchema:
         expected_properties = {
             "create_client": {"first_name", "last_name", "phone", "email"},
             "create_pet": {"alias", "owner_id", "type_id", "breed_id", "birthday", "note"},
-            "create_admission": {"pet_id", "client_id", "doctor_id", "date", "reason", "status"},
+            "create_admission": {"pet_id", "client_id", "doctor_id", "clinic_id", "date", "reason"},
             "update_admission": {
                 "admission_id",
                 "date",
@@ -282,7 +282,7 @@ class TestToolsListSchema:
         expected_fragments = {
             "create_client": ("checking whether the owner already exists", "Confirm the exact owner"),
             "create_pet": ("resolving owner_id", "confirming the exact owner"),
-            "create_admission": ("resolving pet_id, client_id, and doctor_id", "Confirm the exact pet"),
+            "create_admission": ("resolving pet_id, client_id, doctor_id, and clinic_id", "Confirm the exact pet"),
             "update_admission": ("confirming the exact admission_id", "leave optional fields empty or 0"),
             "create_medical_card": ("resolving patient_id", "Confirm the exact pet, doctor"),
         }

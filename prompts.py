@@ -97,6 +97,7 @@ def register_prompts(mcp: FastMCP) -> None:
         client_name: str,
         pet_name: str,
         doctor_id: int,
+        clinic_id: int,
         date: str,
     ) -> list[Message]:
         """Book a new admission appointment for a pet.
@@ -105,15 +106,16 @@ def register_prompts(mcp: FastMCP) -> None:
             client_name: Client name to look up.
             pet_name: Pet name or alias.
             doctor_id: ID of the veterinarian.
+            clinic_id: ID of the clinic branch.
             date: Appointment date/time in ISO 8601 format.
         """
         return [Message(
             _bearer_runtime_prefix()
             + f"Book an appointment for client '{client_name}', pet '{pet_name}', "
-            + f"doctor ID {doctor_id}, date {date}. "
+            + f"doctor ID {doctor_id}, clinic ID {clinic_id}, date {date}. "
             + "1. Call get_clients(name=client_name, limit=20). "
             + "2. From the chosen client, call get_pets(owner_id=client_id, limit=100) and find the pet by alias/name. "
-            + "3. Call create_admission(pet_id=pet_id, client_id=client_id, doctor_id=doctor_id, date=date). "
+            + "3. Call create_admission(pet_id=pet_id, client_id=client_id, doctor_id=doctor_id, clinic_id=clinic_id, date=date). "
             + "Confirm the created admission ID."
         )]
 

@@ -29,7 +29,7 @@ def register(mcp: FastMCP) -> None:
         """
         combined_filters: list = list(filter or [])
         if pet_id:
-            combined_filters.append(_filter_eq("patient_id", pet_id))
+            combined_filters.append(_filter_eq("pet_id", pet_id))
         return await crud_list(
             "/rest/api/hospital", limit=limit, offset=offset,
             sort=sort, filters=combined_filters if combined_filters else None,

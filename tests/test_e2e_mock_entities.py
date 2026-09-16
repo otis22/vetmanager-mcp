@@ -177,6 +177,7 @@ async def test_create_admission():
                 "pet_id": 5,
                 "client_id": 1,
                 "doctor_id": 3,
+                "clinic_id": 1,
                 "date": "2026-03-01 10:00:00",
             },
         )
@@ -184,8 +185,9 @@ async def test_create_admission():
     assert body["patient_id"] == 5
     assert body["client_id"] == 1
     assert body["user_id"] == 3
+    assert body["clinic_id"] == 1
     assert body["admission_date"] == "2026-03-01 10:00:00"
-    assert body["status"] == "save"
+    assert "status" not in body
     assert "pet_id" not in body
     assert "doctor_id" not in body
     assert "date" not in body

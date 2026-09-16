@@ -16582,3 +16582,99 @@ Claude verdict: envelope
 `sentry-alert` (вне репозитория); при повторе — новый этап со ссылкой.
 Docs-only коммит без стороннего ревью по §5.5. Первый живой перенос по правилу
 этапа 319: закрытый 237 ушёл в хвост архива после 318, гейт зелёный.
+
+## Этап 321. Контракт полей инструментов, 16.09.2026
+
+Findings F2, F3, F10 и F30 из полного review этапа 319 проверены как гипотезы,
+а не приняты по формулировке ревью. Контракт и решение подробно зафиксированы
+в `PRD/этап-321-контракт-полей-инструментов.md`; ниже — evidence выполнения.
+
+**321.1 Admission.** `rest/protected/models/Admission.php:11-21,45-59,90-103`
+объявляет `description`, `patient_id`, `type_id`, `clinic_id`, но не `reason`;
+`application/src/Entity/Admission.php:37-67` мапит `description` и `type_id`,
+но не `reason`/`type`. `AdmissionController.php:246-255,258-307` требует
+`clinic_id` и на POST безусловно ставит `not_confirmed`;
+`AdmissionController.php:382-465` на PUT требует `clinic_id/start/end`, не
+вызывает create-`prepareData` и пропускает update-status через Entity mapping.
+Живой raw REST: POST без `clinic_id` → HTTP 400
+`{"success":false,"message":"Clinic id is empty","data":null}`; POST с
+разными `description`/`reason` и `status=save` → HTTP 201, read-back сохранил
+`description`, вернул `status=not_confirmed`, `reason` отсутствует; PUT с
+`description`, `reason`, `type=987654` → HTTP 201, read-back сменил только
+`description`; PUT с `type_id=7` → HTTP 201, read-back `type_id=7`; PUT со
+`status=not_confirmed` → HTTP 201 и тот же status в read-back. Generic DELETE
+probe-записи дал HTTP 500 из-за FK `admission_journal`; штатный
+`POST /rest/api/admission/cancelAdmission` дал HTTP 201 и read-back
+`status=deleted`.
+
+MCP boundary исправлена минимально: `reason -> description`, create требует
+`clinic_id`, не обещает управляемый `status`; update принимает числовой
+`admission_type` и отправляет `type_id`. Живой MCP create создал probe 864:
+response/read-back `description=stage321-live-tool-create`, `type_id=0`,
+`status=not_confirmed`, `clinic_id=1`; MCP update вернул success и read-back
+`description=stage321-live-tool-update`, `type_id=7`. Первая cleanup-попытка
+с неверным body key вернула `success=false`, `No ID selected`; сверка с
+`AdmissionController.php:590-659` показала обязательный key `id`, повторный
+cancel с `id=864` вернул success, финальный read-back `deleted`. Секреты и
+персональные вложения ответа здесь не записаны.
+
+**321.2 Hospital.** `Hospital.php:20-26,29-35,38-79` объявляет/подписывает/
+фильтрует `pet_id` и строит `pet_data` relation по нему;
+`HospitalController.php:30-64` применяет общий REST filter. Live:
+`GET /rest/api/hospital` с filter `pet_id=6` → HTTP 200, `totalCount=1`,
+`{"id":2,"pet_id":6,"status":"delayed"}`; тот же filter с
+`patient_id=6` → HTTP 406
+`{"success":false,"message":"Invalid filter item name: <patient_id>."}`.
+MCP `get_hospitalizations(pet_id=6)` после правки вернул тот же единственный
+row. Исправлены convenience-filter и `api_entity_reference-ru.md`; существующий
+`FILTER_FIELDS_BY_ENTITY["hospital"]` уже был верен.
+
+**321.3 Timesheet.** `Timesheet.php:33-45,51-58` отдаёт `type/all_day/night`
+и relation `ttype`; `Timesheet.php:129-170` определяет рабочие часы join-ом
+`timesheet_types ... is_working_hours=1`; `TimesheetTypes.php:39-51,68-79`
+объявляет discriminator; `TimesheetController.php:4-24` прикрепляет relation
+по `parameters.attach_timesheet_type`. Live обычного list: HTTP 200, строки с
+`type=2`; `/timesheetTypes`: HTTP 200, `totalCount=6`, type 2 имеет
+`is_working_hours=1`, types 3 и 5 — `0`; list с attach parameter: HTTP 200,
+`totalCount=141`, строка содержит `ttype={"id":2,"is_working_hours":1}`.
+Поэтому `get_doctor_free_slots` запрашивает attached relation в том же
+bounded `/timesheet` GET и fail-closed исключает отпуск/выходной/неизвестную
+строку. MCP live для doctor 1, clinic 1, 2021-01-05 вернул 28 слотов, первые
+`08:00–08:30` и `08:30–09:00`. Нового scope и миграции credentials нет:
+отдельный `/timesheetTypes` GET отвергнут после review, смысл прежнего
+`analytics.read` не меняется. `paginate_all(extra=...)` повторяет attach на
+каждой странице. All-day и night геометрия этапа 311 сохранена.
+
+**321.4 get_timesheets.** Невозможная дата `2026-02-30` теперь до сети даёт
+существующий `ToolInputError`: `invalid date '2026-02-30'. Expected
+YYYY-MM-DD.` Новый exception/helper не создан.
+
+**PRD review.** Spark budget 3/3: pass 1 не дал компактного разбираемого
+verdict, pass 2 ошибочно заявил о недоступности файла и отклонён, pass 3
+справедливо заметил credential migration при отдельном `/timesheetTypes`;
+решение заменено на attached relation. Claude Opus valid 2/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T120127Z-file-PRD_-321---_md-attempt-1-of-3.FAMtzQ/claude-review-attempt-1-of-3.envelope.json`
+(`success`, `is_error=false`, `stop_reason=tool_use`, output/thinking
+3650/2708, len(result)=2545) и
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T120429Z-file-PRD_-321---_md-attempt-2-of-3.xqsfIc/claude-review-attempt-2-of-3.envelope.json`
+(`success`, false, `tool_use`, 1548/1025, len=1373). Приняты требования не
+менять scopes, live-проверить update-status/обязательный update context и
+явно ошибаться, если непустой табель целиком лишён discriminator; low-risk
+breaking schema create описан явно.
+
+**Red/green и проверки.** На старом коде focused run дал 7 failed/1 passed:
+не было create-`clinic_id`, update слал `type`, hospital слал `patient_id`,
+выходной создавал слоты, missing `ttype` маскировался нулём, неверная дата
+выпускала `ValueError`, `paginate_all` не принимал `extra`. Guard all-day/night
+отдельно принят красным: временная инверсия working-hours condition дала
+expected failure на первом all-day slot; после восстановления — 1 passed.
+Focused итог: 24 passed. Полная команда из AGENTS сначала дала
+2951 passed/2 skipped и один не связанный с diff failure: ignored local SQLite
+не имел migration 000022. Старый файл сохранён как recoverable
+`data/vetmanager.db.pre-stage321-backup`, новая test DB поднята через
+`alembic upgrade head` до 000023; повторная полная точная команда зелёная:
+2952 passed, 2 skipped, 76 deselected. Opt-in real suite точной командой:
+65 passed, 9 skipped, 2956 deselected; отдельный web-account contour — 1
+skipped из-за отсутствующего optional credential. Code review, commit,
+push, CI/deploy и self-attestation будут дописаны после соответствующих
+гейтов.

@@ -10,9 +10,9 @@ proxy label for `vetmanager_tool_call_latency_seconds` and
 """
 
 import json
-from exceptions import reportable_error
 from typing import Any, TypeVar
 
+from exceptions import reportable_error
 from filters import (
     as_dict_list, build_list_query_params, validate_filter_properties,
     validate_sort_properties,
@@ -117,6 +117,7 @@ async def paginate_all(
     endpoint: str,
     *,
     filters: list | None = None,
+    extra: dict[str, Any] | None = None,
     page_size: int = 100,
     entity_key: str,
     max_rows: int | None = 10_000,
@@ -124,6 +125,7 @@ async def paginate_all(
     """Fetch all pages of a list endpoint.
 
     Args:
+        extra: Query parameters repeated unchanged on every page.
         max_rows: Hard cap on total rows fetched (default 10_000). Raises
             ValueError if totalCount (or collected rows) exceeds the cap —
             prevents runaway memory use on pathologically large result sets.
@@ -147,6 +149,8 @@ async def paginate_all(
 
     while True:
         params: dict[str, Any] = {"limit": page_size, "offset": offset}
+        if extra:
+            params.update(extra)
         if filter_str:
             params["filter"] = filter_str
 

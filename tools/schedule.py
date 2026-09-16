@@ -5,11 +5,12 @@ a doctor by subtracting active admissions from timesheet work intervals.
 """
 
 import asyncio
-from exceptions import ToolInputError
+import json
 from datetime import date, datetime, timedelta
 
 from fastmcp import FastMCP
 
+from exceptions import ToolInputError, reportable_error
 from filters import eq as _filter_eq, gt as _filter_gt, gte as _filter_gte, lt as _filter_lt
 from tools._slots_helpers import (
     compute_free_slots,
@@ -137,6 +138,11 @@ def register(mcp: FastMCP) -> None:
             paginate_all(
                 "/rest/api/timesheet",
                 filters=ts_filters,
+                extra={
+                    "parameters": json.dumps(
+                        {"attach_timesheet_type": 1}, separators=(",", ":")
+                    )
+                },
                 page_size=100,
                 entity_key="timesheet",
                 max_rows=_MAX_ROWS_PER_ENTITY,
@@ -154,7 +160,17 @@ def register(mcp: FastMCP) -> None:
 
         # --- Build work intervals from timesheet, grouped by clinic_id ---
         clinics_seen: dict[int, list[tuple[datetime, datetime]]] = {}
+        rows_with_type_discriminator = 0
         for row in timesheet_rows:
+            timesheet_type = row.get("ttype")
+            if not isinstance(timesheet_type, dict):
+                continue
+            is_working_hours = timesheet_type.get("is_working_hours")
+            if is_working_hours not in (0, 1, "0", "1", False, True):
+                continue
+            rows_with_type_discriminator += 1
+            if str(int(is_working_hours)) != "1":
+                continue
             try:
                 begin = parse_vm_datetime(row["begin_datetime"])
                 end = parse_vm_datetime(row["end_datetime"])
@@ -164,6 +180,12 @@ def register(mcp: FastMCP) -> None:
                 continue
             cid = int(row.get("clinic_id") or 0)
             clinics_seen.setdefault(cid, []).append((begin, end))
+
+        if timesheet_rows and rows_with_type_discriminator == 0:
+            raise reportable_error(
+                "Vetmanager timesheet rows have no working-hours discriminator; "
+                "free slots cannot be calculated safely."
+            )
 
         # --- Build busy intervals partitioned by clinic_id ---
         # Filter client-side: keep only admissions that truly overlap the

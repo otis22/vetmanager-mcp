@@ -1,11 +1,12 @@
 """Operational entity tools: Clinics, Timesheet, Properties, AnonymousClient, Messages."""
 
-from typing import Annotated
-from exceptions import ToolInputError
 from datetime import datetime, timedelta
+from typing import Annotated
 
 from fastmcp import FastMCP
 from pydantic import Field
+
+from exceptions import ToolInputError
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, gt as _filter_gt, lt as _filter_lt
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
 from validators import LimitParam
@@ -169,7 +170,12 @@ def register(mcp: FastMCP) -> None:
         if doctor_id:
             combined_filters.append(_filter_eq("doctor_id", doctor_id))
         if date:
-            day = datetime.strptime(date, "%Y-%m-%d").date()
+            try:
+                day = datetime.strptime(date, "%Y-%m-%d").date()
+            except ValueError:
+                raise ToolInputError(
+                    f"invalid date {date!r}. Expected YYYY-MM-DD."
+                ) from None
             next_day = day + timedelta(days=1)
             combined_filters.append(
                 _filter_lt("begin_datetime", f"{next_day.isoformat()} 00:00:00")

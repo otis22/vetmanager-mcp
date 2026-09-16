@@ -702,8 +702,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "create_admission": (
         "Schedule a new admission / appointment only after resolving pet_id, "
-        "client_id, and doctor_id with get_pets/get_clients/get_users or known "
-        "context. Confirm the exact pet, owner, doctor, date/time, and reason "
+        "client_id, doctor_id, and clinic_id with get_pets/get_clients/get_users/"
+        "get_clinics or known context. Confirm the exact pet, owner, doctor, "
+        "clinic, date/time, and reason "
         "before writing. Domain synonyms: приём, визит, запись, запись на приём, "
         "запись к врачу, консультация, appointment."
     ),

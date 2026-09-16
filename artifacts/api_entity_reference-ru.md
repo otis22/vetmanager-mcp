@@ -384,7 +384,7 @@
 | Имя поля | Тип | Nullable | Описание |
 | :--- | :--- | :--- | :--- |
 | `id` | integer | Нет | Уникальный идентификатор. |
-| `patient_id` | integer | Нет | Внешний ключ к сущности `pet`. |
+| `pet_id` | integer | Нет | Внешний ключ к сущности `pet`. |
 | `date_in` | string | Нет | Дата поступления. Формат: `YYYY-MM-DD HH:MM:SS`. |
 | `date_out` | string | Да | Дата выписки. |
 | `status` | string | Нет | Статус (например, `active`, `discharged`). |

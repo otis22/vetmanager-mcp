@@ -311,38 +311,37 @@ def register(mcp: FastMCP) -> None:
         pet_id: int,
         client_id: int,
         doctor_id: int,
+        clinic_id: int,
         date: str,
         reason: str = "",
-        status: str = "save",
     ) -> dict:
         """Schedule a new admission (appointment) for a pet.
 
         External param names follow MCP conventions (pet_id / doctor_id / date);
         this tool translates them to the Vetmanager API field names
-        (patient_id / user_id / admission_date) at the boundary.
+        (patient_id / user_id / clinic_id / admission_date / description) at
+        the boundary. Vetmanager creates REST admissions as `not_confirmed`;
+        callers cannot choose the initial status.
 
         Args:
             pet_id: ID of the pet being admitted.
             client_id: ID of the pet's owner.
             doctor_id: ID of the attending veterinarian.
+            clinic_id: ID of the clinic where the admission is scheduled.
             date: Appointment date/time. Accepts VM datetime
                 (YYYY-MM-DD HH:MM:SS) or local ISO datetime without timezone;
                 sends VM format to the API.
             reason: Reason for the visit (optional).
-            status: Admission status (default 'save'). Valid values per
-                Vetmanager enum: save, directed, accepted, delayed,
-                in_treatment, not_approved, not_confirmed, deleted.
         """
-        _validate_admission_status(status)
         payload: dict = {
             "patient_id": pet_id,
             "client_id": client_id,
             "user_id": doctor_id,
+            "clinic_id": clinic_id,
             "admission_date": normalize_vm_datetime(date, field_name="admission_date"),
-            "status": status,
         }
         if reason:
-            payload["reason"] = reason
+            payload["description"] = reason
         return await crud_create("/rest/api/admission", payload)
 
     @mcp.tool
@@ -355,7 +354,7 @@ def register(mcp: FastMCP) -> None:
         reason: str = "",
         status: str = "",
         clinic_id: int = 0,
-        admission_type: str = "",
+        admission_type: int = 0,
     ) -> dict:
         """Update an existing admission (appointment) record.
 
@@ -389,7 +388,7 @@ def register(mcp: FastMCP) -> None:
             status: New status (one of: save, directed, accepted, delayed,
                 in_treatment, not_approved, not_confirmed, deleted).
             clinic_id: New clinic ID (0 = no change).
-            admission_type: Admission type (leave empty to keep current).
+            admission_type: Numeric Vetmanager admission type id (0 = keep current).
         """
         current_response = await crud_get_by_id("/rest/api/admission", admission_id)
         current = unwrap_single_record(current_response, "admission")
@@ -422,11 +421,11 @@ def register(mcp: FastMCP) -> None:
         if pet_id:
             payload["patient_id"] = pet_id
         if reason:
-            payload["reason"] = reason
+            payload["description"] = reason
         if status:
             payload["status"] = status
         if clinic_id:
             payload["clinic_id"] = clinic_id
         if admission_type:
-            payload["type"] = admission_type
+            payload["type_id"] = admission_type
         return await crud_update("/rest/api/admission", admission_id, payload)

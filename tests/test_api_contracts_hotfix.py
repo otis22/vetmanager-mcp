@@ -1,11 +1,10 @@
-"""Regression tests for Stage 86 — fixing create_admission payload contract
+"""Regression tests for Stage 86/321 — create_admission payload contract
 and get_medical_cards_by_client_id pet filter (owner_id) + IN-batch.
 
 Context: baseline super-review 2026-04-17 found that:
 - create_admission sent payload with {pet_id, client_id, doctor_id, date, status}
   but the Vetmanager admission entity expects
-  {patient_id, client_id, user_id, admission_date, status}. Default status
-  was 'assigned' which is not in the enum — silently dropped by API.
+  {patient_id, client_id, user_id, clinic_id, admission_date, description}.
 - get_medical_cards_by_client_id filtered pets by {property: client_id} but
   Pet FK since stage 77.4 is owner_id. Medical cards fetched in N+1 loop
   over pets instead of a single batched IN-query.
@@ -19,7 +18,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 import respx
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import ToolError, ValidationError
 
 from server import mcp
 from tests.runtime_factories import patch_runtime_credentials
@@ -232,8 +231,7 @@ async def test_update_medical_card_maps_fields_to_api_contract():
 @pytest.mark.asyncio
 @respx.mock
 async def test_create_admission_maps_fields_to_api_contract():
-    """create_admission must translate external names (pet_id/doctor_id/date)
-    to API field names (patient_id/user_id/admission_date)."""
+    """External names map to the fields accepted by AdmissionController."""
     billing_mock()
     route = respx.post(f"{BASE}/rest/api/admission").mock(
         return_value=httpx.Response(201, json={"data": {"id": 42}})
@@ -246,6 +244,7 @@ async def test_create_admission_maps_fields_to_api_contract():
                 "pet_id": 5,
                 "client_id": 1,
                 "doctor_id": 3,
+                "clinic_id": 9,
                 "date": "2026-04-20T10:00:00",
                 "reason": "checkup",
             },
@@ -257,8 +256,9 @@ async def test_create_admission_maps_fields_to_api_contract():
     assert body["patient_id"] == 5
     assert body["client_id"] == 1
     assert body["user_id"] == 3
+    assert body["clinic_id"] == 9
     assert body["admission_date"] == "2026-04-20 10:00:00"
-    assert body["reason"] == "checkup"
+    assert body["description"] == "checkup"
     # Must NOT leak external names into the API payload
     assert "pet_id" not in body
     assert "doctor_id" not in body
@@ -267,9 +267,7 @@ async def test_create_admission_maps_fields_to_api_contract():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_create_admission_default_status_is_save():
-    """Default status must be a valid enum value ('save'), not the invented
-    'assigned' that VM silently drops."""
+async def test_create_admission_does_not_send_status_controlled_by_upstream():
     billing_mock()
     route = respx.post(f"{BASE}/rest/api/admission").mock(
         return_value=httpx.Response(201, json={"data": {"id": 7}})
@@ -282,56 +280,56 @@ async def test_create_admission_default_status_is_save():
                 "pet_id": 5,
                 "client_id": 1,
                 "doctor_id": 3,
+                "clinic_id": 9,
                 "date": "2026-04-20T10:00:00",
             },
         )
 
     body = _body_of(route)
-    assert body["status"] == "save"
+    assert "status" not in body
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_create_admission_passes_explicit_status_through():
-    """Explicit status param (valid enum) passes through unchanged."""
+async def test_create_admission_rejects_obsolete_status_argument():
     billing_mock()
     route = respx.post(f"{BASE}/rest/api/admission").mock(
         return_value=httpx.Response(201, json={"data": {"id": 8}})
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
-    with headers_patch, runtime_patch:
+    with headers_patch, runtime_patch, pytest.raises(ValidationError):
         await mcp.call_tool(
             "create_admission",
             {
                 "pet_id": 5,
                 "client_id": 1,
                 "doctor_id": 3,
+                "clinic_id": 9,
                 "date": "2026-04-20T10:00:00",
                 "status": "not_confirmed",
             },
         )
 
-    body = _body_of(route)
-    assert body["status"] == "not_confirmed"
+    assert not route.called
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_create_admission_invalid_status_rejected():
-    """Tool layer should reject invented enum values before any HTTP call."""
+async def test_create_admission_rejects_any_obsolete_status_value():
     billing_mock()
     route = respx.post(f"{BASE}/rest/api/admission").mock(
         return_value=httpx.Response(201, json={"data": {"id": 999}})
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
-        with pytest.raises(ToolError, match="invalid admission status"):
+        with pytest.raises(ValidationError):
             await mcp.call_tool(
                 "create_admission",
                 {
                     "pet_id": 5,
                     "client_id": 1,
                     "doctor_id": 3,
+                    "clinic_id": 9,
                     "date": "2026-04-20T10:00:00",
                     "status": "assigned",
                 },
@@ -360,6 +358,7 @@ async def test_create_admission_normalizes_vm_datetime_edge_cases():
                     "pet_id": 5,
                     "client_id": 1,
                     "doctor_id": 3,
+                    "clinic_id": 9,
                     "date": value,
                 },
             )
@@ -395,6 +394,7 @@ async def test_create_admission_rejects_invalid_vm_datetime_before_http(bad_date
                     "pet_id": 5,
                     "client_id": 1,
                     "doctor_id": 3,
+                    "clinic_id": 9,
                     "date": bad_date,
                 },
             )
