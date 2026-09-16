@@ -16866,3 +16866,14 @@ finding отклонён. Low finding о классификации `httpx.Conne
 suite (3013 passed, 2 skipped, 76 deselected) и opt-in real suite (65 passed,
 9 skipped, 3017 deselected; отдельный web-account contour — 1 skipped);
 stage245 снова прошёл.
+
+**Committed diff review, раунд 2.** Fix commit `ec25580`. Финальный Codex
+Spark по
+`origin/main..HEAD` после read-only bwrap fallback дал `findings=[]`. Claude
+Opus valid 2/2 также вернул пустой verdict:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T163312Z-git_range-origin_main__HEAD-attempt-2-of-3.reIXBr/claude-review-attempt-2-of-3.envelope.json`
+(`subtype=success`, `is_error=false`, `stop_reason=tool_use`,
+output/thinking 2836/2406, `len(result)=15`). Бюджет code/diff review 2/2;
+неустранённых blocker/high/medium нет. Этап 322 и оба подэтапа закрыты
+`done`; `supervisor_pending` нет. Push, GitHub Tests и Deploy Prod отражаются
+в post-push self-attestation.
