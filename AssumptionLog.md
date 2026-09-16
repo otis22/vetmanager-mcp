@@ -17145,3 +17145,10 @@ period repeat — 2 failures, mutable payload с теми же IDs — 1 failure
 проверены на API-key контуре без сохранения клинических строк. Этап и
 подэтапы остаются `supervisor_pending`/`done`; push, GitHub Tests и Deploy Prod
 ещё не утверждаются и фиксируются только после фактического результата.
+
+**Post-push evidence и self-attestation.** Коммиты этапа `a6a7237`, `24e55a5`,
+`3564c08`, `952a899` отправлены в `main`; production HEAD — `952a899`.
+GitHub Tests run `35144969350` завершён `success`, Deploy Prod run
+`35145550569` завершён `success`. Этап 323 и 323.1–323.3 закрыты `done`;
+`supervisor_pending` по этапу нет. Закрытие выполнено супервизором после
+проверки CI и финального отчёта воркера.
