@@ -17186,3 +17186,17 @@ GitHub Tests run `35144969350` завершён `success`, Deploy Prod run
   `~/.local/share/vetmanager-mcp-review-evidence/2026-09-16T210520Z-git_range-HEAD__HEAD-attempt-1-of-3.KAmzWj/claude-review-attempt-1-of-3.envelope.json`,
   subtype=success, stop_reason=tool_use, output_tokens=6492,
   thinking_tokens=5380, len(result)=2360.
+
+# Этап 329. Follow-up санитайзера свойств, 17.09.2026
+
+- Красные сторожа: до кода 14 checks на новые token forms и русские тумблеры
+  упали; затем отдельно упал сторож «Переключить».
+- Добавлены prefix forms и full-value base64url >=32 с цифрой; paths исключены
+  до base64 проверки. Real oracle импортирует production matcher. Русское
+  `ключ` допускается только не после кириллицы. Dump VM без чтения values:
+  28 rows; denylist names 5→5, titles 3→3.
+- Проверки: mock `3114 passed, 2 skipped`; opt-in real `65 passed, 9 skipped`;
+  `test_real_get_properties` passed.
+- Opus PRD 1/2 принял high про «Включить»; 2/2: UUID отклонён, full-string
+  уточнение принято. Evidence: `~/.local/share/vetmanager-mcp-review-evidence/2026-09-16T211845Z-file-PRD_-329----_md-attempt-1-of-3.7CWhcy/claude-review-attempt-1-of-3.envelope.json`,
+  `~/.local/share/vetmanager-mcp-review-evidence/2026-09-16T212048Z-file-PRD_-329----_md-attempt-2-of-3.n83Vcc/claude-review-attempt-2-of-3.envelope.json`.

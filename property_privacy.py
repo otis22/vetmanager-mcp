@@ -28,11 +28,23 @@ KNOWN_SECRET_PROPERTY_NAMES = frozenset({
 _SECRET_NAME_RE = re.compile(
     r"api|key|token|secret|pass|password|passwd|pwd|salt|auth|credential|billing|"
     r"login|access|cert|private|signature|hmac|pin|otp|sid|hash|bearer|"
-    r"пароль|ключ|токен|секрет|логин",
+    r"пароль|(?<![а-яё])ключ|токен|секрет|логин",
     re.IGNORECASE,
 )
 _JWT_RE = re.compile(r"^eyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}$")
-_PREFIX_TOKEN_RE = re.compile(r"^(?:sk-|xoxb-)[A-Za-z0-9_-]{12,}$|^AKIA[A-Z0-9]{12,}$")
+_PREFIX_TOKEN_RE = re.compile(
+    r"^(?:"
+    r"(?:sk[-_]|pk_|rk_)[A-Za-z0-9_-]{8,}|"
+    r"AIza[A-Za-z0-9_-]{12,}|"
+    r"AKIA[A-Z0-9]{12,}|"
+    r"gh[ops]_[A-Za-z0-9_-]{12,}|"
+    r"xox[abposr]-[A-Za-z0-9_-]{12,}|"
+    r"ya29\.[A-Za-z0-9._-]{12,}|"
+    r"glpat-[A-Za-z0-9_-]{12,}|"
+    r"hf_[A-Za-z0-9_-]{12,}"
+    r")$"
+)
+_BEARER_TOKEN_RE = re.compile(r"^bearer\s+[^\s]{12,}$", re.IGNORECASE)
 _URL_SECRET_QUERY_RE = re.compile(
     r"https?://[^\s]*[?&][^=&#\s]*(?:key|token|secret|pass|auth|sig)[^=&#\s]*=[^&#\s]+",
     re.IGNORECASE,
@@ -42,9 +54,11 @@ _ALNUM_TOKEN_RE = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9]{24,}$"
 _BASE64_TOKEN_RE = re.compile(
     r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9+/]{22,}={0,2}$"
 )
+_BASE64URL_TOKEN_RE = re.compile(r"^(?=.*\d)[A-Za-z0-9_-]{32,}$")
 _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
+_PATH_RE = re.compile(r"^/")
 _CREDENTIAL_PAIR_RE = re.compile(
     r"^[A-Za-z0-9._-]{3,}:(?=[^\s]{6,}$)(?=[^\s]*[0-9!@#$%^&*])[A-Za-z0-9._!@#$%^&*+-]+$"
 )
@@ -65,16 +79,21 @@ def looks_like_secret_value(value: object) -> bool:
     """Recognise conservative, ASCII-only credential forms without logging them."""
     if not isinstance(value, str) or not value:
         return False
-    if _JWT_RE.fullmatch(value) or _PREFIX_TOKEN_RE.fullmatch(value):
+    if (
+        _JWT_RE.fullmatch(value)
+        or _PREFIX_TOKEN_RE.fullmatch(value)
+        or _BEARER_TOKEN_RE.fullmatch(value)
+    ):
         return True
     if _URL_SECRET_QUERY_RE.search(value) or _CREDENTIAL_PAIR_RE.fullmatch(value):
         return True
-    if _UUID_RE.fullmatch(value) or value.isdecimal():
+    if _UUID_RE.fullmatch(value) or _PATH_RE.match(value) or value.isdecimal():
         return False
     return bool(
         _HEX_RE.fullmatch(value)
         or _ALNUM_TOKEN_RE.fullmatch(value)
         or _BASE64_TOKEN_RE.fullmatch(value)
+        or _BASE64URL_TOKEN_RE.fullmatch(value)
     )
 
 

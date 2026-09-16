@@ -30,7 +30,11 @@ from server import _graceful_shutdown, mcp
 from tests.conftest import TEST_ENCRYPTION_KEY
 from vetmanager_client import VetmanagerClient
 from exceptions import AuthError, VetmanagerError
-from property_privacy import REDACTED_SECRET, is_secret_property_name_or_title
+from property_privacy import (
+    REDACTED_SECRET,
+    is_secret_property_name_or_title,
+    looks_like_secret_value,
+)
 from tests.runtime_factories import patch_runtime_credentials
 from vetmanager_connection_service import (
     save_user_login_password_connection,
@@ -51,13 +55,6 @@ TEST_USER_PASSWORD = os.environ.get("TEST_USER_PASSWORD", "")
 RUN_REAL_WEB_TESTS = os.environ.get("RUN_REAL_WEB_TESTS") == "1"
 TEST_REPORT_AI_ALLOW_SAVE = os.environ.get("TEST_REPORT_AI_ALLOW_SAVE") == "1"
 CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
-REAL_SECRET_VALUE_RE = re.compile(
-    r"(?:^eyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}$|"
-    r"^(?:sk-|xoxb-)[A-Za-z0-9_-]{12,}$|^AKIA[A-Z0-9]{12,}$|"
-    r"^[0-9a-fA-F]{24,}$|^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9]{24,}$|"
-    r"https?://[^\s]*[?&](?:key|token|secret|api_key|password)=[^&#\s]+)",
-)
-
 skip_if_no_creds = pytest.mark.skipif(
     not TEST_DOMAIN or not TEST_API_KEY,
     reason="TEST_DOMAIN and TEST_API_KEY not set — skipping real API tests",
@@ -1107,9 +1104,8 @@ async def test_real_get_properties():
     for raw_row, row in zip(raw_rows, rows, strict=True):
         if not isinstance(raw_row, dict) or not isinstance(row, dict):
             pytest.fail("properties response contains a non-object row")
-        looks_secret = isinstance(raw_value := raw_row.get("property_value"), str) and bool(
-            REAL_SECRET_VALUE_RE.fullmatch(raw_value)
-        )
+        raw_value = raw_row.get("property_value")
+        looks_secret = looks_like_secret_value(raw_value)
         if is_secret_property_name_or_title(raw_row) or looks_secret:
             if row.get("property_value") != REDACTED_SECRET:
                 pytest.fail("secret property was not redacted")
