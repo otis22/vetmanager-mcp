@@ -16988,3 +16988,12 @@ tempfile удаляются при следующем prepare failure. Оба с
 suite после исправлений: 3035 passed, 2 skipped, 76 deselected за 495.14 s;
 ShellCheck 0.9.0 и `bash -n` — exit 0. Code/diff review budget исчерпан 2/2;
 неустранённых известных blocker/high/medium/low findings нет.
+
+**Post-push evidence и self-attestation.** Коммиты этапа `a82ffbe`, `4b6f9ce`,
+`68f5606`, `e682baf` отправлены в `main`; production HEAD — `e682baf`.
+GitHub Tests run `35133870606` завершён `success`, Deploy Prod run
+`35135213157` завершён `success`. Этап 326 и все 326.1–326.6 закрыты `done`;
+`supervisor_pending` по этапу нет. После финального code-review правки были
+сделаны при исчерпанном бюджете 2/2, поэтому ещё одного strong verdict не было;
+риски закрыты показанными красными сторожами, focused matrix и повторным полным
+набором 3035 passed, 2 skipped, 76 deselected.
