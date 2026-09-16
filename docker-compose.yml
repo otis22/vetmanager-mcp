@@ -119,6 +119,7 @@ services:
       - DB_POOL_SIZE
       - DB_MAX_OVERFLOW
       - REPORT_EXPORT_DIR
+      - REPORT_EXPORT_ALLOWED_ORIGINS
       # Журналы и трекинг ошибок
       - LOG_FORMAT
       - FASTMCP_LOG_LEVEL
@@ -240,6 +241,7 @@ services:
       TEST_USER_TOKEN_BASE_URL: ${TEST_USER_TOKEN_BASE_URL:-}
       TEST_USER_LOGIN: ${TEST_USER_LOGIN:-}
       TEST_USER_PASSWORD: ${TEST_USER_PASSWORD:-}
+      REPORT_EXPORT_ALLOWED_ORIGINS: ${REPORT_EXPORT_ALLOWED_ORIGINS:-}
     volumes:
       - .:/app
     user: "${UID:-1000}:${GID:-1000}"

@@ -11,6 +11,7 @@ from error_tracking import configure_error_tracking
 from host_resolver import reset_billing_resolver
 from observability_logging import RUNTIME_LOGGER
 from rate_limit_backend import shutdown_rate_limit_backend
+from report_export_origin import validate_allowed_origins_config
 from storage import bootstrap_storage_schema, get_database_url, initialize_storage, shutdown_storage
 from shutdown_state import begin_draining, reset_draining
 from custom_clinic_hosts import log_custom_clinic_hosts
@@ -72,6 +73,7 @@ async def _graceful_shutdown() -> None:
 async def _runtime_lifespan(_server):
     reset_draining()
     try:
+        validate_allowed_origins_config()
         await initialize_storage()
         if get_database_url().startswith("sqlite"):
             await bootstrap_storage_schema()

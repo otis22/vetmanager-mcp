@@ -1,9 +1,11 @@
 import httpx
 import pytest
 import respx
+from urllib.parse import urlsplit
 from fastmcp.exceptions import ToolError
 
 import service_metrics
+from report_export_origin import ExportTarget
 import tools.report_ai as report_ai
 from server import mcp
 from tests.runtime_factories import patch_runtime_credentials
@@ -22,6 +24,12 @@ def _export_storage(tmp_path, monkeypatch):
     monkeypatch.setenv("REPORT_EXPORT_DIR", str(tmp_path / "report-exports"))
     monkeypatch.setenv("WEB_SESSION_SECRET", "stage-172-test-secret")
     monkeypatch.setenv("SITE_BASE_URL", "https://mcp.example")
+    async def resolve_test_target(locator: str) -> ExportTarget:
+        parsed = urlsplit(locator)
+        return ExportTarget(locator, parsed.hostname or "", f"https://{parsed.hostname}", ("93.184.216.34",))
+
+    monkeypatch.setattr(report_ai, "resolve_export_target", resolve_test_target)
+    monkeypatch.setattr(report_ai, "PinnedExportTransport", lambda _target: httpx.AsyncHTTPTransport())
     import report_export
 
     report_export.reset_link_key_cache()

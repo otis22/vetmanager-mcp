@@ -17,6 +17,7 @@ from pathlib import Path
 import json
 import logging
 import os
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -24,6 +25,7 @@ import respx
 from fastmcp.exceptions import ToolError
 
 import report_export
+from report_export_origin import ExportTarget
 from privacy_utils import REPORT_EXPORT_ROUTE_TEMPLATE
 import tool_descriptions
 import tools
@@ -78,6 +80,12 @@ def export_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("REPORT_EXPORT_DIR", str(root))
     monkeypatch.setenv("WEB_SESSION_SECRET", "stage-276-test-secret")
     monkeypatch.setenv("SITE_BASE_URL", "https://mcp.example")
+    async def resolve_test_target(locator: str) -> ExportTarget:
+        parsed = urlsplit(locator)
+        return ExportTarget(locator, parsed.hostname or "", f"https://{parsed.hostname}", ("93.184.216.34",))
+
+    monkeypatch.setattr("tools.report_ai.resolve_export_target", resolve_test_target)
+    monkeypatch.setattr("tools.report_ai.PinnedExportTransport", lambda _target: httpx.AsyncHTTPTransport())
     report_export.reset_link_key_cache()
     return root
 

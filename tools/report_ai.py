@@ -11,6 +11,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 import report_export
+from report_export_transport import PinnedExportTransport, resolve_export_target
 from exceptions import AuthError, ToolInputError, VetmanagerError, reportable_error
 from observability_logging import RUNTIME_LOGGER
 from prompts import get_report_ai_prompt_helper_text
@@ -876,8 +877,12 @@ async def _download_export_bytes(locator: str) -> bytes:
     started_at = time.perf_counter()
     status = "error"
     try:
+        target = await resolve_export_target(locator)
         async with httpx.AsyncClient(
-            timeout=_EXPORT_DOWNLOAD_TIMEOUT, follow_redirects=False, trust_env=False
+            transport=PinnedExportTransport(target),
+            timeout=_EXPORT_DOWNLOAD_TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
         ) as client:
             async with client.stream("GET", locator) as response:
                 status = str(response.status_code)
