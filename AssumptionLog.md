@@ -17303,3 +17303,18 @@ push из-за синтетической Stripe-подобной фикстур
   до правки упал: state был `half_open` вместо `open`. После правки: 1 passed;
   focused (`stage324`, `stage106`, `stage291`) — 12 passed; полный mock suite —
   exit 0.
+
+## Post-push evidence и self-attestation
+
+- Commit `462c684` отправлен в `main`. GitHub Tests run
+  `35161350148` завершён `success`:
+  `https://github.com/otis22/vetmanager-mcp/actions/runs/35161350148`.
+  Deploy Prod того же SHA, включая Verify public MCP read-only tool, завершён
+  `success`: `35161740724`,
+  `https://github.com/otis22/vetmanager-mcp/actions/runs/35161740724`.
+- Поэтому этап 324 и 324.1–324.2 переведены в `done` отдельным commit после
+  подтверждения production deploy. Контракт инструмента изменён только так:
+  `get_clients(name=...)` принимает максимум четыре unique whitespace token и
+  возвращает typed input error до I/O при превышении; merge/dedup/totalCount
+  сохранены. Транспортный контракт GET: логический retry budget 30 s, без
+  sleep сверх остатка; локальное исчерпание — понятный timeout.
