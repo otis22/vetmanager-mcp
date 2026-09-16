@@ -16743,5 +16743,18 @@ valid 2/2: `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T13
 `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T133001Z-file-PRD_-320---report-ai_md-attempt-2-of-3.LfX6ZD/claude-review-attempt-2-of-3.envelope.json`
 (`success`, false, `tool_use`, 10707/8408, len 5353). Принятые findings и
 одно отклонённое противоречащее owner-контракту замечание перечислены в PRD.
-Code review, full/real suites, post-deploy live check и self-attestation будут
-дописаны после соответствующих гейтов.
+**Code review и pre-push gates.** Spark committed-diff review
+`origin/main..HEAD` дал `{"findings":[]}`; candidate findings нет. Claude
+Opus strong review valid 1/2 также пуст: envelope
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T141331Z-git_range-origin_main__HEAD-attempt-1-of-3.AjdVHe/claude-review-attempt-1-of-3.envelope.json`,
+`subtype=success`, `is_error=false`, `stop_reason=tool_use`, output/thinking
+9872/9632, `len(result)=15`; verdict рядом содержит `{"findings":[]}`.
+После обязательного rebuild первый полный suite нашёл только два F401 на
+намеренных re-export; explicit aliases исправлены commit `b1b7775`, ruff и
+focused subset зелёные. Новый полный прогон: 2992 passed, 2 skipped,
+76 deselected. Exact opt-in real suite: export live test прошёл end-to-end,
+но общий итог 64 passed, 9 skipped, 1 failed из-за несвязанного
+`test_real_partial_medical_card_put_is_still_rejected_upstream`: PUT дважды
+подряд получил `ReadTimeout` через 20 секунд вместо ожидаемого upstream 4xx;
+отдельный повтор дал тот же timeout. Контракт/тест не смягчались. Push,
+GitHub CI/deploy и post-deploy live check дописываются после выполнения.

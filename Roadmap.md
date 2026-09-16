@@ -346,7 +346,7 @@ production (`457a22d`, `77e6422`, Deploy `34686882015`), плейбук KI-51
   `docs/stage-workflow-template.md` шаг 13 (запуск `archive_roadmap.py`);
   reviews, CI, self-attestation, AssumptionLog. — `done`
 
-## Этап 320. Выгрузка Report AI идёт по адресу, который прислал чужой сервер — `in_progress`
+## Этап 320. Выгрузка Report AI идёт по адресу, который прислал чужой сервер — `done`
 
 Источник: полное супер-ревью 16.09.2026
 (`artifacts/review/2026-09-16-full-stage-319.md`, F1, F22, F24). Locator
