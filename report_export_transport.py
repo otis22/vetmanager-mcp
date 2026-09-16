@@ -10,8 +10,8 @@ import httpx
 
 from report_export_origin import (
     ExportTarget,
-    parse_allowed_origins,
-    resolve_export_target,
+    parse_allowed_origins as parse_allowed_origins,
+    resolve_export_target as resolve_export_target,
 )
 
 
