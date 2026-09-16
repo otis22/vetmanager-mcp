@@ -2,6 +2,7 @@
 
 import asyncio
 import httpx
+import io
 import json
 import time
 from collections import OrderedDict
@@ -85,7 +86,9 @@ _REPORT_AI_FINALIZED_OBSERVATIONS: OrderedDict[_ReportAiQueueObservationKey, flo
 _REPORT_AI_EXPORT_OBSERVATIONS: OrderedDict[
     _ReportAiQueueObservationKey, dict[str, float | bool]
 ] = OrderedDict()
-_REPORT_AI_CLINIC_TIMEZONES: OrderedDict[tuple[int | None, int | None, int], str] = OrderedDict()
+_REPORT_AI_CLINIC_TIMEZONES: OrderedDict[
+    tuple[int | None, int | None, int], tuple[str, float]
+] = OrderedDict()
 _REPORT_AI_STAGE_BY_STATUS = {
     "queued": "queued",
     "recognizing": "recognized",
@@ -121,8 +124,13 @@ async def _upstream_job_age_seconds(job: dict) -> int | None:
     key = _report_ai_queue_observation_key({"id": clinic_id})
     if not isinstance(created_at, str) or key is None:
         return None
-    timezone_name = _REPORT_AI_CLINIC_TIMEZONES.get(key)
-    if timezone_name is None:
+    now = _monotonic_seconds()
+    cached = _REPORT_AI_CLINIC_TIMEZONES.get(key)
+    if cached is not None and now - cached[1] <= REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS:
+        timezone_name = cached[0]
+        _REPORT_AI_CLINIC_TIMEZONES.move_to_end(key)
+    else:
+        _REPORT_AI_CLINIC_TIMEZONES.pop(key, None)
         try:
             payload = await VetmanagerClient().get(f"/rest/api/clinics/{key[2]}")
         except VetmanagerError:
@@ -136,7 +144,10 @@ async def _upstream_job_age_seconds(job: dict) -> int | None:
         if not isinstance(timezone_name, str) or not timezone_name:
             RUNTIME_LOGGER.warning("report_ai_queue_age_timezone_unavailable", extra={"event_name": "report_ai_queue_age_timezone_unavailable"})
             return None
-        _REPORT_AI_CLINIC_TIMEZONES[key] = timezone_name
+        _REPORT_AI_CLINIC_TIMEZONES[key] = (timezone_name, now)
+        _REPORT_AI_CLINIC_TIMEZONES.move_to_end(key)
+        while len(_REPORT_AI_CLINIC_TIMEZONES) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
+            _REPORT_AI_CLINIC_TIMEZONES.popitem(last=False)
     try:
         created = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZoneInfo(timezone_name))
     except (ValueError, ZoneInfoNotFoundError):
@@ -157,6 +168,16 @@ def _report_ai_queue_observation_count() -> int:
 
 
 def _cleanup_report_ai_queue_observations(now: float) -> None:
+    expired_timezone_keys = [
+        key
+        for key, (_, fetched_at) in _REPORT_AI_CLINIC_TIMEZONES.items()
+        if now - fetched_at > REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS
+    ]
+    for key in expired_timezone_keys:
+        _REPORT_AI_CLINIC_TIMEZONES.pop(key, None)
+    while len(_REPORT_AI_CLINIC_TIMEZONES) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
+        _REPORT_AI_CLINIC_TIMEZONES.popitem(last=False)
+
     expired_job_ids = [
         job_id
         for job_id, observation in _REPORT_AI_QUEUE_OBSERVATIONS.items()
@@ -865,7 +886,7 @@ def _pick_csv_locator(report: dict) -> tuple[str, str]:
     )
 
 
-async def _download_export_bytes(locator: str) -> bytes:
+async def _download_export_bytes(locator: str) -> io.BytesIO:
     """Fetch the export body, bounded and unauthenticated.
 
     No credentials go here on purpose: the locator points at a public CDN, not
@@ -895,7 +916,7 @@ async def _download_export_bytes(locator: str) -> bytes:
                     raise report_export.ReportExportError(
                         "Vetmanager storage answered with something that is not an export file."
                     )
-                chunks: list[bytes] = []
+                body = io.BytesIO()
                 total = 0
                 async for chunk in response.aiter_bytes():
                     total += len(chunk)
@@ -904,7 +925,7 @@ async def _download_export_bytes(locator: str) -> bytes:
                             f"The export is larger than {limit // (1024 * 1024)} MB; "
                             "narrow the report or its period and export again."
                         )
-                    chunks.append(chunk)
+                    body.write(chunk)
     except httpx.HTTPError:
         status = "transport_error"
         raise report_export.ReportExportError(
@@ -919,7 +940,8 @@ async def _download_export_bytes(locator: str) -> bytes:
             status=status,
             duration_seconds=time.perf_counter() - started_at,
         )
-    return b"".join(chunks)
+    body.seek(0)
+    return body
 
 
 def _export_subject(credentials) -> tuple[str, int]:
@@ -1211,12 +1233,6 @@ def register(mcp: FastMCP) -> None:
             depersonalize = bool(getattr(credentials, "is_depersonalized", False))
             # Cleaning is CPU work over every cell, and a 25 MB export is
             # hundreds of thousands of them: off the event loop it goes.
-            csv_text, rows, columns = await asyncio.to_thread(
-                report_export.build_export_csv,
-                raw,
-                delimiter=delimiter,
-                depersonalize=depersonalize,
-            )
             subject_type, subject_id = _export_subject(credentials)
             await asyncio.to_thread(report_export.sweep_expired)
             owner = report_export.owner_segment(
@@ -1225,9 +1241,11 @@ def register(mcp: FastMCP) -> None:
                 subject_id=subject_id,
             )
             filename = report_export.new_export_filename(report_file_id=file_id)
-            url_path = await asyncio.to_thread(
-                report_export.store_export,
-                csv_text=csv_text,
+            url_path, rows, columns = await asyncio.to_thread(
+                report_export.store_export_stream,
+                raw=raw,
+                delimiter=delimiter,
+                depersonalize=depersonalize,
                 owner=owner,
                 filename=filename,
                 subject_type=subject_type,

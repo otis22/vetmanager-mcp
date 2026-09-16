@@ -16690,3 +16690,58 @@ push, CI/deploy и self-attestation будут дописаны после со�
 Повторный strong запуск не требовался: первый валидный verdict закрыл gate без
 findings. Roadmap 321 и 321.1–321.4 закрыты `done`; push, номера GitHub runs и
 результат deploy сообщаются в финальном post-push self-attestation.
+
+## Этап 320. Безопасный production-путь выгрузок Report AI
+
+Findings F1, F22 и F24 из полного review этапа 319 проверены до реализации.
+Живой API-key стенд: `StartReport` вернул HTTP 200; два первых poll
+`reportFile` — HTTP 401, третий — HTTP 200. Оба CSV locator имели схему
+`https`, host `308427.selcdn.ru`, эффективный порт 443, без userinfo и query;
+path и сами locator нигде не записаны. Read-only исходники Ветменеджера
+показали также origin `https://vetmanager-public-user-files.s3.amazonaws.com:443`
+и on-prem `https://store.alfavet.by:443`. `FILE_STORAGE_HOST` задаётся per
+cluster, поэтому полный список принципиально не восстанавливается из
+репозитория. Решение владельца закреплено: встроенного default allowlist нет;
+пустой/незаданный `REPORT_EXPORT_ALLOWED_ORIGINS` ничего не блокирует сверх
+безусловного HTTPS/443/no-userinfo/public-A+AAAA/pinned-IP минимума.
+
+320.1 закрывает SSRF и DNS rebinding отдельным commit `c085e45`: все DNS
+ответы обязаны быть global и соединение выполняется только с проверенным IP,
+при этом исходный host остаётся для Host/SNI/certificate validation;
+redirects и proxy env выключены. Exact-origin allowlist включается только
+явно заданным env, malformed непустая конфигурация fail-fast. Ошибка минимума
+не содержит адрес, allowlist-ошибка содержит только canonical origin, но не
+path/query locator; host observability не добавлялась. Красная приёмка:
+целевая мутация отключила scheme/userinfo, port, address, allowlist и pinned
+connect проверки — 22 failed/9 passed, включая IPv4/IPv6 private, loopback,
+link-local, multicast, unspecified, shared/reserved и mixed DNS. После
+восстановления SSRF + прежний export subset: 126 passed.
+
+Baseline F22 на CSV ровно 26 214 400 байт (~25 650 строк): raw object
+26 214 433 байта, result `str` 52 480 166 байт, RSS +115 604 KiB,
+`tracemalloc` peak 142 394 064 байта; public `read_bytes` поднимал current с
+52 485 794 до 78 728 777 байт. После 320.2 тот же предел и сопоставимые
+25 626 широких строк: raw buffer 26 214 400, stored CSV 26 240 031 байт,
+download current/peak 28 865 217/28 865 309, end-to-end store
+current/peak 28 867 401/29 048 859 байт, RSS delta 26 356 KiB; public serve
+читает по 65 536 байт. Неизбежной остаётся одна bounded raw-копия: она нужна
+для UTF-8-sig → cp1251 restart без записи неочищенных данных на disk. Полные
+decoded input, row list, Unicode output, encode и serve-body копии удалены;
+санитизация остаётся построчной, публикация атомарна, stale temp убирает
+штатный sweep.
+
+F24 подтверждён: timezone cache хранил строки без TTL/limit/cleanup. 320.3
+переиспользует существующие observation TTL, max entries и cleanup; cache
+хранит `(timezone, fetched_at_monotonic)`, hit двигает LRU, но не продлевает
+absolute TTL, а read path сам перечитывает timezone после expiry. Test-first
+red 320.2/320.3: 9 failed; итоговый focused набор streaming/export/cache:
+153 passed. PRD Spark: приняты direct `httpcore` constraint, transport-level
+proof, `ipaddress.is_global` и оба dependency manifests. Claude Opus PRD
+valid 2/2: `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T132550Z-file-PRD_-320---report-ai_md-attempt-1-of-3.O0lenQ/claude-review-attempt-1-of-3.envelope.json`
+(`success`, `is_error=false`, `stop_reason=tool_use`, output/thinking
+13049/10770, len 5279) и
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T133001Z-file-PRD_-320---report-ai_md-attempt-2-of-3.LfX6ZD/claude-review-attempt-2-of-3.envelope.json`
+(`success`, false, `tool_use`, 10707/8408, len 5353). Принятые findings и
+одно отклонённое противоречащее owner-контракту замечание перечислены в PRD.
+Code review, full/real suites, post-deploy live check и self-attestation будут
+дописаны после соответствующих гейтов.

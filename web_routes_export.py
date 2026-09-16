@@ -14,7 +14,7 @@ import asyncio
 
 from sqlalchemy import select
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, StreamingResponse
 
 import report_export
 from observability_logging import RUNTIME_LOGGER
@@ -109,13 +109,20 @@ def register_export_routes(mcp, *, observed_route, plain_text_response) -> None:
             return _not_found(refusal)
 
         try:
-            body = await asyncio.to_thread(stored.path.read_bytes)
+            handle = await asyncio.to_thread(stored.path.open, "rb")
         except OSError:
             return _not_found("not_found")
 
+        async def _chunks():
+            try:
+                while chunk := await asyncio.to_thread(handle.read, 64 * 1024):
+                    yield chunk
+            finally:
+                await asyncio.to_thread(handle.close)
+
         record_report_export_serve(outcome="served")
-        response = Response(
-            content=body,
+        response = StreamingResponse(
+            content=_chunks(),
             media_type=report_export.REPORT_EXPORT_CONTENT_TYPE,
             headers={
                 "Content-Disposition": f'attachment; filename="{stored.download_name}"',

@@ -250,6 +250,103 @@ def store_export(
     return f"{REPORT_EXPORT_ROUTE_PREFIX}/{owner}/{name}.csv"
 
 
+def store_export_stream(
+    *,
+    raw: io.BytesIO,
+    delimiter: str,
+    depersonalize: bool,
+    owner: str,
+    filename: str,
+    subject_type: str,
+    subject_id: int,
+    download_name: str,
+) -> tuple[str, int, int]:
+    """Clean a bounded raw export row by row and atomically publish it."""
+    name = file_segment(owner, filename)
+    directory = get_export_root() / owner
+    directory.mkdir(parents=True, exist_ok=True)
+    os.chmod(directory, 0o700)
+    csv_path = directory / f"{name}.csv"
+    meta_path = directory / f"{name}.json"
+    temporary = directory / f".{name}.csv.{secrets.token_hex(4)}.tmp"
+    rows = columns = 0
+    parsed = False
+    try:
+        for encoding in ("utf-8-sig", "cp1251"):
+            raw.seek(0)
+            source = io.TextIOWrapper(raw, encoding=encoding, newline="")
+            try:
+                with open(temporary, "w", encoding="utf-8", newline="") as output:
+                    output.write("\ufeff")
+                    reader = csv.reader(source, delimiter=delimiter)
+                    writer = csv.writer(
+                        output,
+                        delimiter=";",
+                        lineterminator="\r\n",
+                        quoting=csv.QUOTE_MINIMAL,
+                    )
+                    header: list[str] | None = None
+                    row_count = 0
+                    for row in reader:
+                        if row == []:
+                            continue
+                        if header is None:
+                            header = row
+                            writer.writerow([_escape_formula(cell) for cell in header])
+                            continue
+                        cleaned = []
+                        for index, cell in enumerate(row):
+                            column = header[index] if index < len(header) else ""
+                            value = (
+                                sanitize_report_cell(column, cell)
+                                if depersonalize
+                                else cell
+                            )
+                            cleaned.append(_escape_formula(value))
+                        writer.writerow(cleaned)
+                        row_count += 1
+                    if header is None:
+                        raise ReportExportError("The export file is empty.")
+                    output.flush()
+                    os.fsync(output.fileno())
+                rows, columns = row_count, len(header)
+                parsed = True
+                break
+            except UnicodeDecodeError:
+                temporary.unlink(missing_ok=True)
+            finally:
+                source.detach()
+        if not parsed:
+            raise ReportExportError("The export file is in an encoding MCP cannot read.")
+        os.chmod(temporary, 0o600)
+        meta = {
+            "v": 1,
+            "subject_type": subject_type,
+            "subject_id": subject_id,
+            "owner": owner,
+            "download_name": download_name,
+        }
+        _write_private(meta_path, json.dumps(meta, ensure_ascii=False).encode("utf-8"))
+        try:
+            os.replace(temporary, csv_path)
+        except Exception:
+            meta_path.unlink(missing_ok=True)
+            raise
+    except ReportExportError:
+        temporary.unlink(missing_ok=True)
+        meta_path.unlink(missing_ok=True)
+        raise
+    except (csv.Error, OSError) as exc:
+        temporary.unlink(missing_ok=True)
+        meta_path.unlink(missing_ok=True)
+        raise ReportExportError("Preparing the export file failed.") from exc
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        meta_path.unlink(missing_ok=True)
+        raise
+    return f"{REPORT_EXPORT_ROUTE_PREFIX}/{owner}/{name}.csv", rows, columns
+
+
 def _safe_download_name(value: object) -> str:
     """A file name fit for a header, whatever the companion happens to hold."""
     text = value if isinstance(value, str) else ""
@@ -324,6 +421,14 @@ def sweep_expired(*, now: float | None = None) -> int:
                 continue
             _delete_pair(directory, csv_path.stem)
             removed += 1
+        for temporary in directory.glob(".*.tmp"):
+            try:
+                if current - temporary.stat().st_mtime <= REPORT_EXPORT_TTL_SECONDS:
+                    continue
+                temporary.unlink(missing_ok=True)
+                removed += 1
+            except OSError:
+                continue
         try:
             next(directory.iterdir())
         except StopIteration:
