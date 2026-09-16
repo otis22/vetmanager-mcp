@@ -16780,3 +16780,74 @@ probe за кодом ответа получил `StartReport` HTTP 403 из-з
 что открытого продуктового решения не осталось. В частности, без
 `REPORT_EXPORT_ALLOWED_ORIGINS` allowlist не включается и ничего не блокирует
 сверх безусловного сетевого минимума.
+
+## Этап 322. Безопасная массовая переоценка, 16.09.2026
+
+Findings F4/F5 супер-ревью этапа 319 сначала проверены как гипотезы. В
+read-only исходниках ВМ `GoodSaleParamController` не переопределяет базовый
+list/update: базовый list безусловно формирует `data.totalCount`, а update
+загружает и сохраняет один id. Найденный transactional
+`GoodController::simpleUpdateProduct` принимает один товар и один
+`sale_param_id`, поэтому атомарной массовой переоценкой не является. OpenAPI
+также публикует только list GET и одиночный PUT `/goodSaleParam/{ID}`.
+Следовательно, F4 подтверждён; F5 подтверждён как fail-open MCP при нарушении
+контракта, но не как штатный ответ ВМ. Подробные ссылки и минимальные цитаты —
+в `PRD/этап-322-безопасная-массовая-переоценка.md`.
+
+Живой API-key стенд до реализации: list с `limit=1`, `limit=0` и offset за
+концом каждый раз вернул HTTP 200 и числовой `totalCount=486`; отсутствие поля
+спровоцировать не удалось. PUT заведомо отсутствующего id вернул HTTP 404,
+`success=false`, `message="Record not found"`. Поэтому только 404 считается
+доказанным `not_written`; иной PUT failure и любой сбой read-back имеют
+`write_state=unknown`.
+
+Решение: локальный `_all_rows` переоценки fail-closed проверяет integer/stable
+`totalCount`, ранний конец, размер страницы, id, дубликаты и overshoot, не
+затрагивая общий `paginate_all` этапа 323. До первого PUT строится план
+before/target. Незавершённый вызов возвращает confirmed `updated`, текущую
+`failed`, последующие `untouched`, запрещает повтор исходного процента и даёт
+абсолютные row-scoped `resume_calls`. Failed row сначала перечитывается
+оператором; recovery для untouched защищён best-effort `expected_price`, но
+не называется CAS из-за GET/PUT TOCTOU. Причины ошибок санитизированы; raw
+exception, URL и body наружу не возвращаются.
+
+**PRD review.** Spark pass 1 после read-only bwrap failure повторён с
+review-only fallback; всего принято семь проверяемых findings: optimistic
+guard, проверка target, отсутствие snapshot/CAS, Decimal/rounding, только 404
+как `not_written`, дополнительные pagination contradictions и полная матрица
+`expected_price`. Один finding о потерянном уже существующем лимите 500
+отклонён по коду и сторожу. Claude Opus PRD/Architecture Critique valid 2/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T151929Z-file-PRD_-322---_md-attempt-1-of-3.ec2qaw/claude-review-attempt-1-of-3.envelope.json`
+(`subtype=success`, `is_error=false`, `stop_reason=tool_use`,
+output/thinking 7551/5871, `len(result)=4568`) и
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T152438Z-file-PRD_-322---_md-attempt-2-of-3.BjoJut/claude-review-attempt-2-of-3.envelope.json`
+(`success`, false, `tool_use`, 5601/4881, `len(result)=1832`). Все шесть
+findings первого и два второго запуска приняты; high после исправлений нет.
+Оценка простоты оставила решение локальным: без storage, rollback, operation
+id, нового класса и преждевременного общего pagination helper.
+
+**Red/green.** Исходный focused run новых сторожей дал 10 failed/9 passed.
+Каждая группа guards отдельно показана красной намеренной поломкой и затем
+восстановлена: `_all_rows -> []` дал 10 failures; снятие ограничения
+`expected_price` дало 3; неверный `applied=true` на partial — 2; принятие
+verification mismatch, отсутствие cent rounding, текстовое вместо Decimal
+сравнение и утечка `str(timeout)` — по одному; классификация HTTP 409 как
+`not_written` — 1 failure. Финальный focused набор этапов 298.7/322: 30
+passed. Полный точный Docker suite: 3012 passed, 2 skipped, 76 deselected.
+Opt-in real suite точной командой: 65 passed, 9 skipped, 3016 deselected;
+отдельный web-account contour — 1 skipped. Известный stage245 ReadTimeout не
+возник и оба live medical-card теста прошли.
+
+**Живой вызов изменённого инструмента.** На API-key стенде выбрана fixed
+строка с ценой, уже равной копейкам; идентификатор и цена не записываются.
+Контрольный GET list вернул HTTP 200 и числовой `totalCount`. Идемпотентный
+raw PUT той же цены вернул HTTP 201 и тело
+`{"success":true,"message":"Record Updated","data":{"goodSaleParam":"<row>","totalCount":"<value>"}}`.
+MCP `update_good_sale_price` с `scope=row`, `confirm=true` и совпадающим
+`expected_price` вернул
+`{"applied":true,"complete":true,"status":"completed","updated_rows":1,"acknowledged_writes":1,"before_equals_after":true}`.
+Таким образом изменённый write/read-back путь проверен живьём без фактической
+смены цены и без публикации данных клиники.
+
+Committed diff review, commit/push/CI/deploy и финальная self-attestation
+фиксируются после соответствующих гейтов.

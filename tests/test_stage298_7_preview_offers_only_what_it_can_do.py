@@ -219,10 +219,11 @@ async def test_good_without_a_group_asks_for_nothing(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_count_without_a_trustworthy_total_does_not_claim_the_variant_fits() -> None:
-    """Finding ревью (medium). Счёт идёт запросом с `limit=1`: если апстрим не
-    вернул `totalCount`, число строк в ответе равно единице — и вариант на 112
-    строк выглядел бы проходящим. Не знать и знать «одна строка» — разные вещи.
+async def test_count_without_a_trustworthy_total_fails_closed() -> None:
+    """Этап 322.2 усилил прежнее «не предлагать вариант» до полного отказа.
+
+    Без `totalCount` нельзя доказать полноту даже строк одного товара, поэтому
+    preview не должен продолжаться с частичным набором.
     """
     _mocks(group_goods=57, group_rows=114, derived_rows=2)
     respx.get(f"{BASE}/rest/api/goodSaleParam").mock(
@@ -231,12 +232,10 @@ async def test_count_without_a_trustworthy_total_does_not_claim_the_variant_fits
         )
     )
 
-    group = _group(await _call(sale_param_id=38, change_percent=10))
+    with pytest.raises(Exception) as exc_info:
+        await _call(sale_param_id=38, change_percent=10)
 
-    assert group["rows"] is None, "неизвестное число не притворяется числом"
-    assert group["exceeds_limit"] is True
-    assert group["call"] is None
-    assert "totalCount" in group["note"] or "неизвест" in group["note"].lower()
+    assert "totalCount" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -247,10 +246,17 @@ async def test_writing_one_row_does_not_depend_on_counting_the_group() -> None:
     с любым отказом на групповом запросе, которого она не использует.
     """
     seen = _mocks(group_goods=57, group_rows=114, derived_rows=2)
+    respx.get(f"{BASE}/rest/api/goodSaleParam/38").mock(side_effect=[
+        httpx.Response(200, json={"data": {"goodSaleParam": dict(_ROW)}}),
+        httpx.Response(200, json={"data": {
+            "goodSaleParam": dict(_ROW, price="2310.0000000000"),
+        }}),
+    ])
     respx.put(f"{BASE}/rest/api/goodSaleParam/38").mock(
-        return_value=httpx.Response(200, json={"data": {"goodSaleParam": dict(_ROW, price="2310.0000000000")}})
+        return_value=httpx.Response(200, json={"data": {
+            "goodSaleParam": dict(_ROW, price="2310.0000000000"),
+        }})
     )
-
     answer = await _call(sale_param_id=38, change_percent=10, scope="row", confirm=True)
 
     assert answer["applied"] is True

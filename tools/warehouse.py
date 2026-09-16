@@ -311,20 +311,31 @@ def register(mcp: FastMCP) -> None:
         никто об этом не знает.
         """
         collected: list[dict] = []
+        seen_ids: set[int] = set()
         offset = 0
+        expected_total: int | None = None
+        page_size = 100
         while True:
             payload = await crud_list(
-                endpoint, limit=100, offset=offset, filters=filters,
+                endpoint, limit=page_size, offset=offset, filters=filters,
                 allowed_filter_properties=FILTER_FIELDS_BY_ENTITY[key],
             )
             data = payload.get("data", {}) if isinstance(payload, dict) else {}
             rows = data.get(key) if isinstance(data, dict) else None
             batch = [row for row in rows or [] if isinstance(row, dict)]
-            collected.extend(batch)
-            try:
-                total = int(data.get("totalCount"))
-            except (TypeError, ValueError):
-                total = len(collected)
+            total = data.get("totalCount") if isinstance(data, dict) else None
+            if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+                raise reportable_error(
+                    f"{what}: Vetmanager list response has no trustworthy integer "
+                    "totalCount; no prices were changed."
+                )
+            if expected_total is None:
+                expected_total = total
+            elif total != expected_total:
+                raise reportable_error(
+                    f"{what}: Vetmanager changed totalCount during pagination; "
+                    "no prices were changed."
+                )
             if total > _PRICE_UPDATE_FETCH_LIMIT:
                 raise ToolInputError(
                     f"{what}: Vetmanager reports {total} records, above the "
@@ -332,8 +343,37 @@ def register(mcp: FastMCP) -> None:
                     "wide is done from a report and by hand — a partial pass over prices "
                     "is worse than none."
                 )
+            if len(batch) > page_size:
+                raise reportable_error(
+                    f"{what}: Vetmanager returned more rows than requested; "
+                    "no prices were changed."
+                )
+            for item in batch:
+                item_id = item.get("id")
+                if isinstance(item_id, bool) or not isinstance(item_id, int) or item_id <= 0:
+                    raise reportable_error(
+                        f"{what}: Vetmanager returned a row without a usable id; "
+                        "no prices were changed."
+                    )
+                if item_id in seen_ids:
+                    raise reportable_error(
+                        f"{what}: Vetmanager repeated a row during pagination; "
+                        "no prices were changed."
+                    )
+                seen_ids.add(item_id)
+            collected.extend(batch)
+            if len(collected) > total:
+                raise reportable_error(
+                    f"{what}: Vetmanager returned more rows than totalCount; "
+                    "no prices were changed."
+                )
             offset += len(batch)
-            if not batch or offset >= total:
+            if offset < total and len(batch) < page_size:
+                raise reportable_error(
+                    f"{what}: Vetmanager ended pagination before totalCount; "
+                    "no prices were changed."
+                )
+            if offset >= total:
                 return collected
 
     async def _rows_for_good(good_id: int, clinic_id: int) -> list[dict]:
@@ -407,6 +447,7 @@ def register(mcp: FastMCP) -> None:
         scope: str = "row",
         clinic_id: int = 0,
         confirm: bool = False,
+        expected_price: str = "",
     ) -> dict:
         """Change a sale price. Shows what would change and writes only on confirm.
 
@@ -431,6 +472,9 @@ def register(mcp: FastMCP) -> None:
                 'group' — every good in this good's group.
             clinic_id: Restrict 'good' or 'group' to a single clinic (0 = all).
             confirm: Must be true to actually write. Without it nothing changes.
+            expected_price: Optional optimistic guard for a confirmed row update.
+                The current price must still equal this value. Only valid with
+                scope='row' and confirm=true; this is not an atomic CAS.
         """
         if scope not in _PRICE_SCOPES:
             raise ToolInputError(f"scope must be one of {list(_PRICE_SCOPES)}, got '{scope}'")
@@ -446,6 +490,10 @@ def register(mcp: FastMCP) -> None:
             )
         if new_price < 0 or (new_price == 0 and change_percent == 0):
             raise ToolInputError("new_price must be positive.")
+        if expected_price and (scope != "row" or not confirm):
+            raise ToolInputError(
+                "expected_price is only valid with scope='row' and confirm=true."
+            )
 
         row = _price_row(await crud_get_by_id("/rest/api/goodSaleParam", sale_param_id))
         if str(row.get("price_formation") or "") == "increase":
@@ -456,6 +504,13 @@ def register(mcp: FastMCP) -> None:
             )
 
         current = _money(row.get("price"), field="price")
+        if expected_price:
+            expected = _caller_number(expected_price, field="expected_price")
+            if current != expected:
+                raise ToolInputError(
+                    f"expected_price does not match the current price of sale parameter "
+                    f"{sale_param_id}; no price was changed. Read the row again before retrying."
+                )
         target = _apply_change(current, new_price, change_percent)
 
         good_id = int(row.get("good_id") or 0)
@@ -600,29 +655,144 @@ def register(mcp: FastMCP) -> None:
                 "that large is done from a report and by hand, not by one agent call."
             )
 
-        updated: list[dict] = []
+        plan: list[dict] = []
         for item in writable:
             item_id = int(item.get("id") or 0)
             if not item_id:
                 continue
             before = _money(item.get("price"), field="price")
             item_target = target if new_price else _apply_change(before, 0, change_percent)
-            await crud_update("/rest/api/goodSaleParam", item_id, {"price": str(item_target)})
-            # «Стало» читается заново: эхо запроса подтверждает только то, что мы
-            # его отправили.
-            after = _price_row(await crud_get_by_id("/rest/api/goodSaleParam", item_id))
-            updated.append({
+            plan.append({
                 "sale_param_id": item_id,
                 "clinic_id": item.get("clinic_id"),
                 "before": item.get("price"),
+                "target": str(item_target),
+            })
+
+        updated: list[dict] = []
+        acknowledged_writes = 0
+
+        def _reason(exc: Exception) -> dict:
+            status_code = getattr(exc, "status_code", None)
+            if isinstance(status_code, int):
+                return {
+                    "code": f"http_{status_code}",
+                    "message": "Vetmanager rejected the price update.",
+                }
+            name = type(exc).__name__.lower()
+            if "timeout" in name:
+                return {"code": "timeout", "message": "Vetmanager did not answer in time."}
+            if any(word in name for word in ("connection", "resolution", "tls")):
+                return {"code": "connection", "message": "Vetmanager could not be reached."}
+            if name == "toolerror":
+                return {
+                    "code": "malformed_response",
+                    "message": "Vetmanager returned an unusable verification response.",
+                }
+            return {"code": "upstream_error", "message": "Vetmanager update failed."}
+
+        def _incomplete(index: int, *, phase: str, reason: dict, acknowledged: bool,
+                        write_state: str) -> dict:
+            failed = {
+                **plan[index],
+                "phase": phase,
+                "reason": reason,
+                "write_acknowledged": acknowledged,
+                "write_state": write_state,
+            }
+            untouched = plan[index + 1:]
+            resume_calls = [
+                {
+                    "sale_param_id": item["sale_param_id"],
+                    "scope": "row",
+                    "new_price": item["target"],
+                    "expected_price": item["before"],
+                    "confirm": True,
+                }
+                for item in untouched
+            ]
+            first = updated[0] if updated else {}
+            return {
+                "applied": False,
+                "complete": False,
+                "partially_applied": acknowledged_writes > 0,
+                "status": "partial" if acknowledged_writes > 0 else "failed",
+                "scope": scope,
+                "updated_rows": len(updated),
+                "acknowledged_writes": acknowledged_writes,
+                "sale_param_id": sale_param_id,
+                "before": first.get("before"),
+                "after": first.get("after"),
+                "updated": updated,
+                "failed": failed,
+                "untouched": untouched,
+                "resume_calls": resume_calls,
+                "retry_policy": {
+                    "repeat_same_percentage_call": False,
+                    "safe_completion": "read_failed_then_apply_absolute_targets",
+                },
+                "next_step": (
+                    "Do not repeat the original percentage repricing. Read the failed row, "
+                    "apply its absolute target only if still needed, then run resume_calls."
+                ),
+                "skipped_derived_price_rows": skipped_derived,
+            }
+
+        for index, item in enumerate(plan):
+            item_id = item["sale_param_id"]
+            try:
+                await crud_update(
+                    "/rest/api/goodSaleParam", item_id, {"price": item["target"]}
+                )
+                acknowledged_writes += 1
+            except Exception as exc:
+                status_code = getattr(exc, "status_code", None)
+                return _incomplete(
+                    index,
+                    phase="put",
+                    reason=_reason(exc),
+                    acknowledged=False,
+                    write_state="not_written" if status_code == 404 else "unknown",
+                )
+
+            try:
+                # «Стало» читается заново: эхо запроса подтверждает только то,
+                # что мы его отправили.
+                after = _price_row(await crud_get_by_id("/rest/api/goodSaleParam", item_id))
+                after_price = _money(after.get("price"), field="price")
+            except Exception as exc:
+                return _incomplete(
+                    index, phase="verify", reason=_reason(exc),
+                    acknowledged=True, write_state="unknown",
+                )
+            if after_price != Decimal(item["target"]):
+                return _incomplete(
+                    index,
+                    phase="verify",
+                    reason={
+                        "code": "verification_mismatch",
+                        "message": "The read-back price did not match the requested target.",
+                    },
+                    acknowledged=True,
+                    write_state="unknown",
+                )
+            updated.append({
+                "sale_param_id": item_id,
+                "clinic_id": item["clinic_id"],
+                "before": item["before"],
+                "target": item["target"],
                 "after": after.get("price"),
             })
 
         first = updated[0] if updated else {}
         return {
             "applied": True,
+            "complete": True,
+            "partially_applied": False,
+            "status": "completed",
             "scope": scope,
             "updated_rows": len(updated),
+            "acknowledged_writes": acknowledged_writes,
             "sale_param_id": sale_param_id,
             "before": first.get("before"),
             "after": first.get("after"),
