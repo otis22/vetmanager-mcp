@@ -16756,5 +16756,27 @@ focused subset зелёные. Новый полный прогон: 2992 passed
 но общий итог 64 passed, 9 skipped, 1 failed из-за несвязанного
 `test_real_partial_medical_card_put_is_still_rejected_upstream`: PUT дважды
 подряд получил `ReadTimeout` через 20 секунд вместо ожидаемого upstream 4xx;
-отдельный повтор дал тот же timeout. Контракт/тест не смягчались. Push,
-GitHub CI/deploy и post-deploy live check дописываются после выполнения.
+отдельный повтор дал тот же timeout. Контракт/тест не смягчались.
+
+**Push, CI, Deploy Prod и post-deploy smoke.** В `main` отправлены commits
+`c085e45` (320.1 отдельно), `cac47d9` (320.2/320.3), `b1b7775` (явные
+security re-export aliases) и `d208d93` (финальные review/verification
+evidence). GitHub `Tests` run 35108707350 зелёный для `d208d93`: jobs
+`default`, `fast`, `postgres-activation-telemetry` завершились `success`.
+`Deploy Prod` run 35109345435 зелёный: remote deploy и штатный public MCP
+read-only smoke завершились `success`. Production smoke credential не имеет
+права запуска Report AI export, поэтому обязательная живая проверка выгрузки
+после deploy выполнена на API-key стенде: точный MCP end-to-end тест
+`tests/test_stage276_live_export_download.py` завершился exit code 0,
+`1 passed in 7.36s`; он вызвал `start_report_export`, получил готовый
+`get_report_export_download`, сохранил очищенный CSV через новый pinned
+transport и разрешил выданную MCP-ссылку. Немедленный дополнительный raw
+probe за кодом ответа получил `StartReport` HTTP 403 из-за штатного общего
+30-минутного export guard после успешного запуска; locator и его path/query
+не печатались. До реализации тот же живой контракт был зафиксирован кодами
+`StartReport` HTTP 200, `reportFile` HTTP 401, 401, 200; после deploy
+изменённый MCP-путь подтверждён зелёным end-to-end вызовом, а не моками.
+Этап 320 и 320.1–320.3 имеют статус `done`; `supervisor_pending` нет, потому
+что открытого продуктового решения не осталось. В частности, без
+`REPORT_EXPORT_ALLOWED_ORIGINS` allowlist не включается и ничего не блокирует
+сверх безусловного сетевого минимума.
