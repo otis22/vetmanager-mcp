@@ -124,6 +124,18 @@ def register(mcp: FastMCP) -> None:
             normalized.append(item)
         return normalized, total
 
+    def _reject_repeated_full_period_page(
+        rows: list[dict], seen: set[tuple[int, ...]], entity_key: str,
+    ) -> None:
+        if len(rows) < _INVOICE_DOCUMENT_PERIOD_PAGE_SIZE:
+            return
+        fingerprint = tuple(row["id"] for row in rows)
+        if fingerprint in seen:
+            raise reportable_error(
+                f"pagination made no progress for {entity_key}"
+            )
+        seen.add(fingerprint)
+
     def _result_metadata(
         *,
         rows: list[dict],
@@ -555,6 +567,7 @@ def register(mcp: FastMCP) -> None:
         calls = 0
         invoice_offset = 0
         invoices: list[dict] = []
+        seen_invoice_pages: set[tuple[int, ...]] = set()
         invoice_sort = [
             {"property": "invoice_date", "direction": "ASC"},
             {"property": "id", "direction": "ASC"},
@@ -569,6 +582,7 @@ def register(mcp: FastMCP) -> None:
             )
             calls += 1
             rows, total = _extract_period_rows(response, "invoice", "/rest/api/invoice")
+            _reject_repeated_full_period_page(rows, seen_invoice_pages, "invoice")
             invoices.extend(rows)
             if not rows:
                 if total is not None and len(invoices) < total:
@@ -586,6 +600,7 @@ def register(mcp: FastMCP) -> None:
             if (invoice_id := _coerce_invoice_id(row.get("id"))) is not None
         }
         positions: list[dict] = []
+        seen_document_pages: set[tuple[int, ...]] = set()
         document_sort = [
             {"property": "document_id", "direction": "ASC"},
             {"property": "id", "direction": "ASC"},
@@ -603,6 +618,9 @@ def register(mcp: FastMCP) -> None:
                 calls += 1
                 rows, total = _extract_period_rows(
                     response, "invoiceDocument", "/rest/api/invoiceDocument",
+                )
+                _reject_repeated_full_period_page(
+                    rows, seen_document_pages, "invoiceDocument",
                 )
                 for row in rows:
                     invoice_id = _coerce_invoice_id(row.get("document_id"))

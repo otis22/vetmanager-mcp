@@ -250,3 +250,44 @@ async def test_period_scan_rejects_failed_or_malformed_pages(entity, payload):
                 "date_from": "2026-09-16", "date_to": "2026-09-16",
             })
     assert "sensitive upstream detail" not in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("entity", ["invoice", "invoiceDocument"])
+async def test_period_scan_rejects_repeated_full_page(entity):
+    _billing_mock()
+    invoices = [
+        {"id": i, "invoice_date": "2026-09-16"}
+        for i in range(1, 101)
+    ]
+    invoice_payload = {
+        "success": True,
+        "data": {"invoice": invoices, "totalCount": 200},
+    }
+    if entity == "invoice":
+        respx.get(f"{BASE}/rest/api/invoice").mock(
+            return_value=httpx.Response(200, json=invoice_payload)
+        )
+    else:
+        respx.get(f"{BASE}/rest/api/invoice").mock(side_effect=[
+            httpx.Response(200, json={"success": True, "data": {
+                "invoice": [invoices[0]], "totalCount": 1,
+            }}),
+        ])
+        documents = [
+            {"id": i, "document_id": 1}
+            for i in range(1, 101)
+        ]
+        respx.get(f"{BASE}/rest/api/invoiceDocument").mock(
+            return_value=httpx.Response(200, json={"success": True, "data": {
+                "invoiceDocument": documents, "totalCount": 200,
+            }})
+        )
+
+    headers_patch, runtime_patch = _runtime_patch()
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError, match="progress"):
+            await mcp.call_tool("get_invoice_documents_by_period", {
+                "date_from": "2026-09-16", "date_to": "2026-09-16",
+            })

@@ -17081,3 +17081,26 @@ medium advisory о 519 LOC отклонён: PRD заранее делит stage
 Committed diff review, commit/push/CI/deploy и финальная self-attestation
 фиксируются после соответствующих гейтов. Подэтапы 323.1–323.3 выполнены;
 этап оставлен `supervisor_pending` до решения владельца.
+
+**Committed diff review, раунд 1.** Implementation commit `a6a7237`.
+Spark read-only упал до чтения Git с
+`bwrap: loopback: Failed RTM_NEWADDR`; обязательный review-only fallback той же
+модели нашёл medium: period-цикл не обнаруживал повторную полную страницу и
+мог принять дубли как полный финансовый результат, если следующая страница
+становилась короткой. Finding принят. Два новых guards до исправления дали
+`2 failed`, после добавления no-progress проверки обеих фаз focused набор дал
+23 passed. Claude Opus valid 1/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T193538Z-git_range-HEAD__HEAD-attempt-1-of-3.HT635u/claude-review-attempt-1-of-3.envelope.json`
+(`subtype=success`, `stop_reason=tool_use`, output/thinking 7407/6249,
+`len(result)=619`). Единственный low о дополнительном подтверждающем вызове и
+уменьшении effective capacity прежнего 20-call period budget отклонён как
+прямо согласованный honest/bounded контракт этапов 318/323; budget намеренно не
+расширяется.
+
+После review-исправления полный Docker suite повторён: 3055 passed, 2 skipped,
+76 deselected за 536.56 s. Точный opt-in real suite повторён: 65 passed,
+9 skipped, 3059 deselected; web-account contour — 1 skipped; оба stage245
+live-теста прошли. Повторный живой MCP-вызов period tool дал MCP OK,
+`totalCount=0`, `limited=false`, integer `upstream_calls`; строк клиники в
+evidence нет. Финальные проверки, fix commit и второй review фиксируются
+следующей записью.
