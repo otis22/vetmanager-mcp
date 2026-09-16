@@ -17212,3 +17212,94 @@ GitHub Tests run `35144969350` завершён `success`, Deploy Prod run
 push из-за синтетической Stripe-подобной фикстуры — фикстура собрана
 конкатенацией, тест не ослаблен. Закрытие выполнено супервизором после
 проверки CI и финального отчёта воркера.
+## Этап 324. Внешние вызовы без бюджета
+
+## Что подтверждено
+
+- F11 подтверждён: `_name_tokens` не ограничивал число unique tokens, а
+  `get_clients(name=...)` формировал `3 × unique_tokens` `crud_list` и запускал
+  их одним `asyncio.gather`. Read-only load probe test contour с 30 synthetic
+  tokens выполнил 90 GET: HTTP 200 — 90, wall time 1.585 s. В запросе не было
+  клиентских данных, тела ответов и секреты не записывались.
+- Стандартный REST filter не даёт OR между `last_name`/`first_name`/
+  `middle_name`. Custom `/rest/api/client/clientsSearchData` существует, но
+  его другой projection/набор полей, status filter, order и отсутствие
+  `totalCount` несовместимы с контрактом `get_clients`; он не используется.
+- F21 подтверждён: comment рядом с breaker описывает только его cooldown.
+  Inbound MCP deadline нет; `request_context` содержит лишь ids. До изменения
+  GET имел до 4 попыток, phase read timeout 20 s и Retry-After до 300 s.
+
+## Решения и обоснования
+
+- Name-search принимает не более 4 unique whitespace tokens и запускает не
+  более 4 upstream calls одновременно (то есть не более 12 calls/tool). Более
+  длинная строка — typed `ToolInputError` до I/O: усечение изменило бы
+  `all(tokens)` и могло бы дать ложное совпадение. Это явно описано в tool
+  docstring.
+- Retrying GET имеет monotonic budget 30 s; новая попытка не начинается при
+  остатке <0.25 s и получает httpx phase timeouts, ограниченные остатком.
+  Retry-After/backoff, который не оставляет времени на попытку, не sleep'ится.
+  Полученный 429/5xx сохраняется как исходный HTTP error; local exhaustion
+  без HTTP ответа — `VetmanagerTimeoutError` и не добавляет breaker failure.
+- Новые guards показаны красными: временный name-search concurrency=12 дал
+  peak=12 вместо 4; временно выключенная проверка Retry-After дала 4 calls
+  вместо 1. После возврата кода focused suite: 72 passed.
+
+## Живая проверка
+
+- Opt-in real contour: `test_real_get_clients_name_search` — PASSED.
+  Read-only вызов инструмента нашёл token из test contour; upstream name-list
+  ответы HTTP 200, MCP body имеет `success=true` и
+  `data={client: list, totalCount: int, truncated: bool}`. Значения полей и
+  credentials не записаны.
+- Полный opt-in real contour: 66 passed, 9 skipped (3122 deselected), exit 0;
+  отдельный mandatory web-flow invocation: 1 skipped, exit 0.
+
+## Ревью
+
+- Spark PRD pass: read-only sandbox failed before file read; same-model
+  danger-full-access retry produced meta output and was stopped as invalid
+  review output (не verdict). Повтор не запускался: CLI игнорировал review-only
+  boundary и поднимал лишние MCP processes.
+- Claude Opus PRD-review valid 1/2 evidence:
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T222013Z-file-PRD_-324----_md-attempt-1-of-3.V33g3x/claude-review-attempt-1-of-3.envelope.json`;
+  subtype success, stop_reason tool_use, output_tokens 2673, thinking_tokens
+  2023, len(result) 1617. Приняты warnings о breaker/accounting, явном input
+  contract и minimum remaining budget.
+- Claude Opus PRD-review valid 2/2 evidence:
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T222243Z-file-PRD_-324----_md-attempt-2-of-3.11oL0r/claude-review-attempt-2-of-3.envelope.json`;
+  subtype success, stop_reason tool_use, output_tokens 2229, thinking_tokens
+  1892, len(result) 760. Принят warning сохранять received 429/503 вместо
+  подмены timeout. PRD strong-review budget 2/2 исчерпан; blocker/high нет.
+
+## Diff-review follow-up
+
+- Opus diff-review 1/2 (`fc0f1a1`) warning о caller `timeout` отклонён:
+  `rg` не нашёл ни одного caller `VetmanagerClient.get/request` с `timeout`;
+  `tools/report_ai.py:901-907` создаёт отдельный `httpx.AsyncClient` с
+  `_EXPORT_DOWNLOAD_TIMEOUT`. Поэтому перезапись не меняет существующий
+  контракт; `min()` не добавлялся без отдельного red test.
+- Low о pending coroutine принят: `_gather_name_search_requests._run` теперь
+  закрывает coroutine в `finally`, в том числе при отмене до semaphore acquire.
+  Focused suite после правки: 73 passed.
+
+## Diff-review 2/2 и follow-up breaker
+
+- Ошибочно прочитанный ранее пустой envelope не был сбоем провайдера. Валидный
+  Opus diff-review 2/2 —
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T230643Z-git_range-origin_main__HEAD-attempt-2-of-3.kFCqO2/claude-review-attempt-2-of-3.envelope.json`:
+  `subtype=success`, `validator_exit=0`, verdict сохранён рядом. Повтор того же
+  валидного verdict —
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-16T230732Z-git_range-origin_main__HEAD-attempt-2-of-3.qmKrqT/claude-review-attempt-2-of-3.envelope.json`;
+  он не расходует дополнительный слот. Пустым был только неиспользуемый третий
+  каталог `2026-09-16T230820Z-git_range-origin_main__HEAD-attempt-2-of-3.S8DO7b`.
+  Бюджет code/diff Opus исчерпан 2/2, нового запуска нет.
+- Warning принят: budget-exhaustion не должен ставить `_breaker_resolved=True`
+  до записи outcome у удерживаемой HALF_OPEN-пробы. Добавлен общий путь,
+  который перед локальным `VetmanagerTimeoutError` вызывает
+  `_breaker_record_failure` только для `_holding_the_probe`; обычный закрытый
+  breaker локальный budget timeout по-прежнему не ухудшает.
+- Красный сторож `test_half_open_probe_budget_exhaustion_records_failure_and_releases_probe`
+  до правки упал: state был `half_open` вместо `open`. После правки: 1 passed;
+  focused (`stage324`, `stage106`, `stage291`) — 12 passed; полный mock suite —
+  exit 0.

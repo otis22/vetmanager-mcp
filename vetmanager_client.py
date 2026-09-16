@@ -89,6 +89,10 @@ from vm_transport.retry import (
 # Stage 108.9: legacy REQUEST_TIMEOUT removed — actual timeouts live in
 # vm_transport/pool.py::REQUEST_TIMEOUTS (connect=5, read=20, write=10, pool=2).
 REQUEST_GAP_SECONDS = 0.05
+# Bound a whole retrying GET even when upstream repeatedly advises a long
+# Retry-After. There is no inbound MCP request deadline in this runtime.
+READ_REQUEST_BUDGET_SECONDS = 30.0
+_READ_REQUEST_MIN_REMAINING_SECONDS = 0.25
 
 # Shared httpx.AsyncClient pool (stage 99.4) lives in vm_transport.pool —
 # re-exported above.
@@ -403,6 +407,32 @@ class VetmanagerClient:
             max_retries = 0
         else:
             max_retries = MAX_RETRIES_READ if upper_method == "GET" else MAX_RETRIES_WRITE
+        read_deadline = (
+            time.monotonic() + READ_REQUEST_BUDGET_SECONDS
+            if upper_method == "GET" and retry_enabled
+            else None
+        )
+
+        def remaining_read_budget() -> float | None:
+            if read_deadline is None:
+                return None
+            return read_deadline - time.monotonic()
+
+        def bounded_request_timeout(remaining: float | None) -> httpx.Timeout | None:
+            if remaining is None:
+                return None
+            return httpx.Timeout(
+                connect=min(_REQUEST_TIMEOUTS.connect, remaining),
+                read=min(_REQUEST_TIMEOUTS.read, remaining),
+                write=min(_REQUEST_TIMEOUTS.write, remaining),
+                pool=min(_REQUEST_TIMEOUTS.pool, remaining),
+            )
+
+        def budget_timeout_error() -> VetmanagerTimeoutError:
+            return VetmanagerTimeoutError(
+                "Vetmanager request time budget was exhausted. Please retry shortly."
+            )
+
         attempt = 0
         # Stage 106.1 (F2 fix): `_check_breaker_allows` above may have
         # transitioned to HALF_OPEN with probe_in_flight=True. If the retry
@@ -413,6 +443,21 @@ class VetmanagerClient:
         # Flag gets set True after any normal branch ran its breaker hook;
         # finally records failure if nothing ran (unexpected exit).
         _breaker_resolved = False
+
+        async def settle_probe_before_budget_timeout() -> VetmanagerTimeoutError:
+            """Release an admitted HALF_OPEN probe before raising local timeout.
+
+            A logical GET budget is client-side policy, so it does not add a
+            failure for ordinary CLOSED requests.  A probe is different: it
+            already owns the breaker slot and must report an outcome before
+            the 106.1 finally guard is suppressed.
+            """
+            nonlocal _breaker_resolved
+            if _holding_the_probe:
+                await _breaker_record_failure(domain_key)
+            _breaker_resolved = True
+            return budget_timeout_error()
+
         try:
             while True:
                 # Stage 105.2 (B2 fix): re-check breaker before each retry attempt.
@@ -428,13 +473,23 @@ class VetmanagerClient:
                     except VetmanagerUpstreamUnavailable:
                         _breaker_resolved = True
                         raise
+                remaining = remaining_read_budget()
+                if remaining is not None and remaining < _READ_REQUEST_MIN_REMAINING_SECONDS:
+                    raise await settle_probe_before_budget_timeout()
                 try:
                     await self._pace_requests()
+                    remaining = remaining_read_budget()
+                    if remaining is not None and remaining < _READ_REQUEST_MIN_REMAINING_SECONDS:
+                        raise await settle_probe_before_budget_timeout()
                     # Started AFTER pace_requests so upstream latency metric
                     # reflects only the httpx round-trip, not client-side pacing.
                     started = time.monotonic()
                     client = await _get_shared_http_client()
-                    response = await client.request(method, url, headers=self._headers(), **kwargs)
+                    request_kwargs = dict(kwargs)
+                    timeout = bounded_request_timeout(remaining)
+                    if timeout is not None:
+                        request_kwargs["timeout"] = timeout
+                    response = await client.request(method, url, headers=self._headers(), **request_kwargs)
                     elapsed = time.monotonic() - started
                     record_upstream_request(
                         target="vetmanager_api",
@@ -456,6 +511,14 @@ class VetmanagerClient:
                             await _breaker_record_failure(domain_key)
                         retry_after = _parse_retry_after(response.headers.get("Retry-After"))
                         delay = _backoff_seconds(attempt, retry_after)
+                        remaining = remaining_read_budget()
+                        if remaining is not None and delay + _READ_REQUEST_MIN_REMAINING_SECONDS > remaining:
+                            # Preserve an already received 429/5xx rather than
+                            # disguising it as a local timeout. A 5xx was
+                            # already accounted for immediately above.
+                            if response.status_code in {502, 503, 504}:
+                                _breaker_resolved = True
+                            self._raise_for_status(response, path=path)
                         # Stage 112.5 (super-review 2026-04-19): all retry
                         # decisions at DEBUG to avoid false alert noise for
                         # self-healing retries. Terminal failure still
@@ -533,7 +596,11 @@ class VetmanagerClient:
                                 "elapsed_ms": round(elapsed * 1000, 2),
                             },
                         )
-                        await asyncio.sleep(_backoff_seconds(attempt))
+                        delay = _backoff_seconds(attempt)
+                        remaining = remaining_read_budget()
+                        if remaining is not None and delay + _READ_REQUEST_MIN_REMAINING_SECONDS > remaining:
+                            raise await settle_probe_before_budget_timeout() from exc
+                        await asyncio.sleep(delay)
                         attempt += 1
                         continue
                     # Stage 105.2 (B2 fix): ONE breaker failure per logical call.
@@ -580,7 +647,11 @@ class VetmanagerClient:
                 except httpx.RequestError as exc:
                     elapsed = time.monotonic() - started
                     if attempt < max_retries:
-                        await asyncio.sleep(_backoff_seconds(attempt))
+                        delay = _backoff_seconds(attempt)
+                        remaining = remaining_read_budget()
+                        if remaining is not None and delay + _READ_REQUEST_MIN_REMAINING_SECONDS > remaining:
+                            raise await settle_probe_before_budget_timeout() from exc
+                        await asyncio.sleep(delay)
                         attempt += 1
                         continue
                     # Stage 105.2 (B2 fix): one breaker failure per logical call.

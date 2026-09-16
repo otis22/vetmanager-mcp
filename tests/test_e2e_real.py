@@ -232,6 +232,35 @@ async def test_real_get_clients():
     assert "data" in result
 
 
+@skip_if_no_creds
+@pytest.mark.asyncio
+async def test_real_get_clients_name_search():
+    """Read-only smoke for the public name-search tool contract."""
+    seed = await call(vc().get("/rest/api/client", params={"limit": 20, "offset": 0}))
+    rows = seed.get("data", {}).get("client", []) if isinstance(seed, dict) else []
+    token = next(
+        (
+            str(row[field]).strip()
+            for row in rows
+            if isinstance(row, dict)
+            for field in ("last_name", "first_name", "middle_name")
+            if isinstance(row.get(field), str) and row[field].strip()
+        ),
+        None,
+    )
+    if token is None:
+        pytest.skip("Test contour has no client name token for read-only search smoke.")
+
+    headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
+    with headers_patch, runtime_patch:
+        result = await call(mcp.call_tool("get_clients", {"name": token, "limit": 5}))
+
+    payload = _tool_payload(result)
+    assert payload.get("success") is True
+    assert isinstance(payload.get("data", {}).get("client"), list)
+    assert isinstance(payload.get("data", {}).get("totalCount"), int)
+
+
 def _phone_digits_from_client(row: dict) -> list[str]:
     digits: list[str] = []
     for key in ("cell_phone", "home_phone", "work_phone"):

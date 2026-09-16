@@ -24,6 +24,8 @@ from vetmanager_client import VetmanagerClient
 # Hard cap on phase-1 ClientPhone fetch. If more rows exist we refuse the
 # search rather than silently return a truncated set of clients.
 _PHONE_SEARCH_MAX_ROWS = 100
+_NAME_SEARCH_MAX_UNIQUE_TOKENS = 4
+_NAME_SEARCH_CONCURRENCY = 4
 _PERSONAL_ACCOUNT_LINK_NOT_FOUND_MESSAGE = "Client profile not found"
 _PERSONAL_ACCOUNT_LINK_UPSTREAM_ERROR = "Unable to get personal account link from Vetmanager."
 _PERSONAL_ACCOUNT_LINK_WARNING = (
@@ -167,6 +169,30 @@ def _name_tokens(name: str) -> list[str]:
     return [token.casefold() for token in name.split() if token.strip()]
 
 
+async def _gather_name_search_requests(*coroutines) -> list:
+    """Run the bounded client-name fan-out and clean up on cancellation."""
+    semaphore = asyncio.Semaphore(_NAME_SEARCH_CONCURRENCY)
+
+    async def _run(coroutine):
+        try:
+            async with semaphore:
+                return await coroutine
+        finally:
+            close = getattr(coroutine, "close", None)
+            if callable(close):
+                close()
+
+    tasks = [asyncio.create_task(_run(coroutine)) for coroutine in coroutines]
+    try:
+        return await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+
+
 def _client_name_text(client: dict) -> str:
     return " ".join(
         str(client.get(field) or "")
@@ -255,8 +281,10 @@ def register(mcp: FastMCP) -> None:
             name: Filter by client name (LIKE match on last_name, first_name,
                 or middle_name). Name search issues separate requests and
                 merges by client id because Vetmanager filters do not expose
-                OR across properties. The response includes truncated=True when
-                the bounded merged search may have more matches.
+                OR across properties. Use at most 4 distinct name tokens;
+                remove extra qualifiers if needed. The response includes
+                truncated=True when the bounded merged search may have more
+                matches.
             phone: Filter by phone number (any of cell/home/work). The
                 input is normalized to digits-only before matching against
                 the `clients_phones.clean_phone` index, so formatted input
@@ -320,6 +348,11 @@ def register(mcp: FastMCP) -> None:
             if not tokens:
                 raise ToolInputError("name filter must contain non-space text")
             query_values = list(dict.fromkeys(tokens))
+            if len(query_values) > _NAME_SEARCH_MAX_UNIQUE_TOKENS:
+                raise ToolInputError(
+                    "name filter accepts at most 4 distinct tokens; remove extra "
+                    "qualifiers and retry."
+                )
             field_names = ("last_name", "first_name", "middle_name")
             requests = [
                 crud_list(
@@ -337,7 +370,7 @@ def register(mcp: FastMCP) -> None:
                 for field_name in field_names
             ]
 
-            responses = await asyncio.gather(*requests)
+            responses = await _gather_name_search_requests(*requests)
             failed_response = next(
                 (
                     resp
