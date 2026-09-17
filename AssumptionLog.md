@@ -17321,3 +17321,60 @@ push из-за синтетической Stripe-подобной фикстур
   возвращает typed input error до I/O при превышении; merge/dedup/totalCount
   сохранены. Транспортный контракт GET: логический retry budget 30 s, без
   sleep сверх остатка; локальное исчерпание — понятный timeout.
+
+## Этап 325. Отключённый OAuth-клиент продолжает работать
+
+### Проверенные факты и решения
+
+- F14 подтверждён для runtime и `scope-peek`: они читали token → grant →
+  account → connection, но не `OAuthClient`. Refresh уже требовал active
+  client, поэтому его часть finding опровергнута без правки.
+- Связь хранится как публичная строка `OAuthGrant.client_id` →
+  `OAuthClient.client_id`, не numeric id. DCR создаёт клиента `active`; поле
+  `oauth_clients.status` создано `NOT NULL` с check `active/disabled`, legacy
+  NULL исключён. Runtime отвергает только явный `disabled`, чтобы не сделать
+  неизвестное легаси-значение отключением.
+- Падение старого stage-260 test было корректной модельной дырой fixture: grant
+  ссылался на `vm_oc_test`, но строки OAuthClient не было. В production grant
+  создаётся только после DCR client; fixture дополнен active client без
+  изменения исходного journal assert. Полный suite после этого: 3125 passed,
+  2 skipped, exit 0, `/tmp/vm325-full-20260917t225900.exit`.
+- F15 подтверждён: OAuth runtime обходил shared limiter. Ключ выбран по
+  `OAuthGrant.id` (`oauth_grant:<id>`), а не access-token id: refresh rotation
+  не обнуляет бюджет. Алгоритм, env и `RateLimitError` те же, что у bearer.
+  Наблюдаемый OAuth peak 226/сутки существенно ниже default 1000/60 s.
+- F9 подтверждён: process-local asyncio lock не защищает разные workers.
+  Частичный unique index допускает disabled history и один active row. Insert
+  защищён SAVEPOINT; проигравший получает HTTP 409, а не чужое connection.
+  Push запрещён до production SQL-предпроверки duplicate active rows.
+- F23 подтверждён: OAuth, server и onboarding различали slash normalization.
+  Единый provider сохранил default public URL; invalid MCP_PATH получает
+  fallback `/mcp` и structured event `invalid_mcp_path` без значения env.
+
+### Красно-зелёные и безопасность
+
+- Guard disabled client показан красным временным bypass runtime-check:
+  `test_disabled_client_rejects_runtime_and_scope_peek` упал с `DID NOT RAISE`;
+  после возврата check — зелёный. Test также закрепляет scope-peek; refresh
+  уже проверяется существующим `_require_active_oauth_client`.
+- Новый suite stage 325 зелёный (5 tests), focused regression OAuth/bearer
+  после дополнения fixture — 10 passed. Existing OAuth authorize/token/refresh,
+  metadata, revoke, scope-peek и bearer limiter сохранены полным suite.
+- Post-deploy: GitHub Deploy public MCP smoke должен быть success; через 5–10
+  минут супервизор сверяет `token_auth_succeeded` с non-null
+  `oauth_access_token_id` после выкатки и OAuth labels
+  `vetmanager_auth_failures_total`.
+
+### PRD-review Opus 2/2 и §6.0
+
+- Valid Opus PRD-review 2/2 evidence:
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-17T203816Z-file-PRD_-325--oauth-_md-attempt-2-of-3.o9bSG8/claude-review-attempt-2-of-3.envelope.json`;
+  subtype success, duration_api_ms 50452. Оба warning приняты. Runtime и
+  scope-peek теперь fail-closed требуют existing active client, как refresh и
+  live-access accounting; новый test закрепляет dangling grant → отказ.
+- §6.0: limiter меняет трактовку уже выданных OAuth grants. До push оператор
+  отвечает: (1) сколько grants/tokens живы и какой peak запросов в минуту за
+  30 дней; (2) что произойдёт при текущем `BEARER_RATE_LIMIT_*`; (3) достаточно
+  ли текущего лимита или требуется migration/исключение. Суточный peak 226 не
+  принимается как доказательство для 60-second window. Решение фиксируется
+  после production SQL-предпроверки; push до него запрещён.
