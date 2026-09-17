@@ -3,7 +3,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from bearer_token_manager import build_token_prefix, hash_bearer_token, verify_bearer_token
@@ -238,6 +238,13 @@ class VetmanagerConnection(Base):
         CheckConstraint(
             f"status IN ({', '.join(repr(s) for s in CONNECTION_STATUSES)})",
             name="ck_vetmanager_connections_status",
+        ),
+        Index(
+            "uq_vetmanager_connections_one_active_account",
+            "account_id",
+            unique=True,
+            sqlite_where=text("status = 'active'"),
+            postgresql_where=text("status = 'active'"),
         ),
     )
 

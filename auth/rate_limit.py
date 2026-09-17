@@ -29,7 +29,7 @@ def get_bearer_rate_limit_window_seconds() -> int:
 class InMemoryBearerRateLimiter:
     """Compatibility adapter backed by the shared rate-limit backend."""
 
-    async def check_or_raise(self, bearer_token_id: int) -> None:
+    async def check_or_raise(self, bearer_token_id: int, *, subject_type: str = "service_bearer") -> None:
         """Reserve one request slot or raise a 429-safe error."""
         request_limit = get_bearer_rate_limit_requests()
         window_seconds = get_bearer_rate_limit_window_seconds()
@@ -37,7 +37,7 @@ class InMemoryBearerRateLimiter:
         backend = await get_rate_limit_backend()
         _, allowed = await backend.consume_hit(
             "bearer",
-            str(bearer_token_id),
+            f"{subject_type}:{bearer_token_id}",
             limit=request_limit,
             window_seconds=window_seconds,
         )

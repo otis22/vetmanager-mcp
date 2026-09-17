@@ -3,13 +3,25 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from token_scopes import SUPPORTED_TOKEN_SCOPES
+from observability_logging import RUNTIME_LOGGER
 
 DEFAULT_SITE_BASE_URL = "https://vetmanager-mcp.vromanichev.ru"
 DEFAULT_MCP_PATH = "/mcp"
 OAUTH_SCOPE_OFFLINE_ACCESS = "offline_access"
+
+
+@dataclass(frozen=True, slots=True)
+class PublicEndpointConfig:
+    site_base_url: str
+    mcp_path: str
+
+    @property
+    def mcp_resource_url(self) -> str:
+        return f"{self.site_base_url}{self.mcp_path}"
 
 
 def get_oauth_scopes_supported() -> list[str]:
@@ -30,13 +42,19 @@ def get_mcp_path() -> str:
     """Return normalized public MCP path."""
     raw = (os.environ.get("MCP_PATH") or DEFAULT_MCP_PATH).strip()
     if not raw.startswith("/"):
+        RUNTIME_LOGGER.warning("Invalid MCP_PATH; using default route.", extra={"event_name": "invalid_mcp_path"})
         return DEFAULT_MCP_PATH
     normalized = "/" + "/".join(part for part in raw.split("/") if part)
     return normalized or DEFAULT_MCP_PATH
 
 
+def get_public_endpoint_config() -> PublicEndpointConfig:
+    """Return the one validated public endpoint used by every public surface."""
+    return PublicEndpointConfig(get_site_base_url(), get_mcp_path())
+
+
 def get_mcp_resource_url() -> str:
-    return f"{get_site_base_url()}{get_mcp_path()}"
+    return get_public_endpoint_config().mcp_resource_url
 
 
 def get_protected_resource_metadata_url() -> str:

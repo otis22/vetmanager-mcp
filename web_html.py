@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from oauth_metadata import get_mcp_path, get_site_base_url
 import re
 from datetime import datetime, timezone
 from html import escape
@@ -192,26 +193,11 @@ def _resolve_site_base_url() -> str:
     """Stage 100.5: same validation as landing_page._resolve_site_base_url —
     reject invalid operator input and fall back to prod default.
     """
-    raw = (os.environ.get("SITE_BASE_URL") or _DEFAULT_SITE_BASE_URL).strip()
-    raw = raw.rstrip("/")
-    if not raw or len(raw) > 255:
-        return _DEFAULT_SITE_BASE_URL
-    if not (raw.startswith("http://") or raw.startswith("https://")):
-        return _DEFAULT_SITE_BASE_URL
-    if any(c in raw for c in ('"', "'", "<", ">", " ", "\t", "\n", "\r", "\x00")):
-        return _DEFAULT_SITE_BASE_URL
-    return raw
+    return get_site_base_url()
 
 
 def _resolve_mcp_path() -> str:
-    raw = (os.environ.get("MCP_PATH") or "/mcp").strip()
-    if not raw or len(raw) > 128:
-        return "/mcp"
-    if not raw.startswith("/"):
-        return "/mcp"
-    if any(c in raw for c in ('"', "'", "<", ">", " ", "\t", "\n", "\r", "\x00")):
-        return "/mcp"
-    return raw
+    return get_mcp_path()
 
 
 def _activation_datetime(value: object, fallback: object = None) -> datetime | None:

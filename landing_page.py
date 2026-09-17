@@ -10,7 +10,7 @@ verbatim so existing test_landing_page.py assertions continue to hold.
 
 from __future__ import annotations
 
-import os
+from oauth_metadata import get_mcp_path, get_site_base_url
 
 # Default to the production host so existing deployments render correctly.
 # Self-hosted operators override via SITE_BASE_URL env (no trailing slash).
@@ -22,32 +22,12 @@ def _resolve_site_base_url() -> str:
     contain no control chars / quotes / whitespace, length ≤ 255. Invalid
     input falls back to the prod default so an operator typo doesn't
     inject markup into landing template."""
-    raw = (os.environ.get("SITE_BASE_URL") or _DEFAULT_SITE_BASE_URL).strip()
-    raw = raw.rstrip("/")
-    if not raw:
-        return _DEFAULT_SITE_BASE_URL
-    if len(raw) > 255:
-        return _DEFAULT_SITE_BASE_URL
-    if not (raw.startswith("http://") or raw.startswith("https://")):
-        return _DEFAULT_SITE_BASE_URL
-    # Reject any whitespace / quote / angle bracket / control char.
-    if any(c in raw for c in ('"', "'", "<", ">", " ", "\t", "\n", "\r", "\x00")):
-        return _DEFAULT_SITE_BASE_URL
-    return raw
+    return get_site_base_url()
 
 
 def _resolve_mcp_path() -> str:
     """Validate MCP_PATH for display in public onboarding instructions."""
-    raw = (os.environ.get("MCP_PATH") or "/mcp").strip()
-    if not raw:
-        return "/mcp"
-    if len(raw) > 128:
-        return "/mcp"
-    if not raw.startswith("/"):
-        return "/mcp"
-    if any(c in raw for c in ('"', "'", "<", ">", " ", "\t", "\n", "\r", "\x00")):
-        return "/mcp"
-    return raw
+    return get_mcp_path()
 
 
 def render_landing_page(script_nonce: str = "") -> str:

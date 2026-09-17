@@ -21,6 +21,7 @@ from bearer_token_manager import build_token_prefix, generate_bearer_token, hash
 from storage_models import (
     Account,
     OAuthAccessToken,
+    OAuthClient,
     OAuthGrant,
     ServiceBearerToken,
     TokenUsageLog,
@@ -76,6 +77,11 @@ async def test_oauth_request_is_journalled_with_account_and_token(session_factor
         account, connection = await _seed_account(
             session, email="oauth@example.com", domain="oauth-clinic"
         )
+        session.add(OAuthClient(
+            client_id="vm_oc_test", client_name="Test", redirect_uris_json="[]",
+            token_endpoint_auth_method="none", grant_types_json="[]",
+            response_types_json="[]", scope="clients.read", status="active",
+        ))
         grant = OAuthGrant(
             account_id=account.id,
             vetmanager_connection_id=connection.id,

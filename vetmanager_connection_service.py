@@ -8,6 +8,7 @@ import time
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from exceptions import (
@@ -535,7 +536,15 @@ async def _save_connection(
                     credentials,
                     encryption_key=encryption_key,
                 )
-                session.add(connection)
+                try:
+                    async with session.begin_nested():
+                        session.add(connection)
+                        await session.flush()
+                except IntegrityError as exc:
+                    raise VetmanagerError(
+                        "Another connection update is already active for this account.",
+                        status_code=409,
+                    ) from exc
     await session.refresh(connection)
     return connection
 

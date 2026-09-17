@@ -8,6 +8,7 @@ from fastmcp import FastMCP
 
 from agent_feedback_service import validate_feedback_runtime_config
 from error_tracking import configure_error_tracking
+from oauth_metadata import get_mcp_path
 from host_resolver import reset_billing_resolver
 from observability_logging import RUNTIME_LOGGER
 from rate_limit_backend import shutdown_rate_limit_backend
@@ -50,7 +51,7 @@ def _load_runtime_config() -> tuple[str, str, int, str]:
         os.environ.get("MCP_TRANSPORT", "streamable-http"),
         os.environ.get("MCP_HOST", "0.0.0.0"),
         int(os.environ.get("PORT", "8000")),
-        os.environ.get("MCP_PATH", "/mcp"),
+        get_mcp_path(),
     )
 
 

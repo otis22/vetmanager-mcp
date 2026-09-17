@@ -224,4 +224,4 @@ async def test_bearer_rate_limit_uses_shared_backend_namespace(monkeypatch):
 
     await bearer_rate_limiter.BEARER_RATE_LIMITER.check_or_raise(123)
 
-    assert calls == [("bearer", "123", 7, 13)]
+    assert calls == [("bearer", "service_bearer:123", 7, 13)]

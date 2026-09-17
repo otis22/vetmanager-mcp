@@ -15,6 +15,7 @@ from exceptions import AuthError
 from storage_models import (
     Account,
     OAuthAccessToken,
+    OAuthClient,
     OAuthGrant,
     ServiceBearerToken,
     VetmanagerConnection,
@@ -175,6 +176,11 @@ async def test_resolve_runtime_credentials_accepts_oauth_access_token(session_fa
         )
         session.add(connection)
         await session.flush()
+        session.add(OAuthClient(
+            client_id="vm_oc_test", client_name="Test", redirect_uris_json="[]",
+            token_endpoint_auth_method="none", grant_types_json="[]",
+            response_types_json="[]", scope="clients.read", status="active",
+        ))
         grant = OAuthGrant(
             account_id=account.id,
             vetmanager_connection_id=connection.id,
@@ -239,6 +245,11 @@ async def test_resolve_runtime_credentials_treats_legacy_oauth_privacy_as_depers
         )
         session.add(connection)
         await session.flush()
+        session.add(OAuthClient(
+            client_id="vm_oc_test", client_name="Test", redirect_uris_json="[]",
+            token_endpoint_auth_method="none", grant_types_json="[]",
+            response_types_json="[]", scope="clients.read", status="active",
+        ))
         grant = OAuthGrant(
             account_id=account.id,
             vetmanager_connection_id=connection.id,

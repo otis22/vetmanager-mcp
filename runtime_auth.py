@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from auth.vetmanager import resolve_vetmanager_credentials
+from auth import rate_limit
 from bearer_auth import resolve_bearer_auth_context
 from bearer_token_manager import hash_bearer_token
 from domain_validation import ip_matches_mask, validate_domain as _validate_domain
-from exceptions import AuthError
+from exceptions import AuthError, RateLimitError
 from oauth_metadata import get_mcp_resource_url
 from oauth_challenge import oauth_challenge_details
 from oauth_service import OAUTH_ACCESS_TOKEN_PREFIX, get_effective_oauth_tool_scopes_for_preset
@@ -31,6 +32,7 @@ from storage_models import (
     TOKEN_STATUS_DISABLED,
     Account,
     OAuthAccessToken,
+    OAuthClient,
     OAuthGrant,
     ServiceBearerToken,
     VetmanagerConnection,
@@ -197,6 +199,9 @@ async def peek_runtime_scopes() -> tuple[str, ...] | None:
             grant = await session.get(OAuthGrant, access_token.grant_id)
             if grant is None or grant.status != OAUTH_STATUS_ACTIVE:
                 return None
+            client = await session.scalar(select(OAuthClient).where(OAuthClient.client_id == grant.client_id))
+            if client is None or client.status != OAUTH_STATUS_ACTIVE:
+                return None
             account = await session.get(Account, grant.account_id)
             if account is None or account.status != ACCOUNT_STATUS_ACTIVE:
                 return None
@@ -267,12 +272,21 @@ async def _resolve_oauth_runtime_credentials(raw_token: str) -> RuntimeCredentia
         grant = await session.get(OAuthGrant, access_token.grant_id)
         if grant is None or grant.status != OAUTH_STATUS_ACTIVE:
             raise _invalid_oauth_token_error()
+        client = await session.scalar(select(OAuthClient).where(OAuthClient.client_id == grant.client_id))
+        if client is None or client.status != OAUTH_STATUS_ACTIVE:
+            raise _invalid_oauth_token_error()
         account = await session.get(Account, grant.account_id)
         if account is None or account.status != ACCOUNT_STATUS_ACTIVE:
             raise _invalid_oauth_token_error()
         connection = await session.get(VetmanagerConnection, grant.vetmanager_connection_id)
         if connection is None or connection.status != CONNECTION_STATUS_ACTIVE:
             raise _invalid_oauth_token_error()
+        try:
+            await rate_limit.BEARER_RATE_LIMITER.check_or_raise(
+                grant.id, subject_type="oauth_grant"
+            )
+        except RateLimitError:
+            raise
 
         resolved = resolve_vetmanager_credentials(
             connection,
