@@ -17382,3 +17382,14 @@ push из-за синтетической Stripe-подобной фикстур
   ли текущего лимита или требуется migration/исключение. Суточный peak 226 не
   принимается как доказательство для 60-second window. Решение фиксируется
   после production SQL-предпроверки; push до него запрещён.
+
+### Diff-review Opus
+
+- 1/2 valid: medium в `landing_page.py:30` — shared provider снял stage-100.5
+  markup guard. Принят: validation длины и dangerous chars перенесена в
+  canonical provider, test quote/angle-bracket payload добавлен; commit
+  `37c6126`, full suite по нему зелёный.
+- 2/2 valid: `[]`. Evidence:
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-17T210741Z-git_range-origin_main__HEAD-attempt-2-of-3.DI6EgI/claude-review-attempt-2-of-3.envelope.json`;
+  subtype success, stop_reason tool_use, output_tokens 5051, thinking_tokens
+  4351, len(result) 15. Budget code/diff review 2/2 исчерпан.
