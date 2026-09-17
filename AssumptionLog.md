@@ -17360,6 +17360,10 @@ push из-за синтетической Stripe-подобной фикстур
 - Новый suite stage 325 зелёный (5 tests), focused regression OAuth/bearer
   после дополнения fixture — 10 passed. Existing OAuth authorize/token/refresh,
   metadata, revoke, scope-peek и bearer limiter сохранены полным suite.
+- Full mock suite относится к коду commit `de69057`: после запуска
+  `/tmp/vm325-full-20260917t234100.log` не было code patches, а commit
+  зафиксировал ровно это дерево. `/tmp/vm325-full-20260917t234100.exit` = 0,
+  итог: 3126 passed, 2 skipped.
 - Post-deploy: GitHub Deploy public MCP smoke должен быть success; через 5–10
   минут супервизор сверяет `token_auth_succeeded` с non-null
   `oauth_access_token_id` после выкатки и OAuth labels
