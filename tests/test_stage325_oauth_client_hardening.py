@@ -107,6 +107,7 @@ async def test_partial_unique_index_allows_disabled_history_but_rejects_second_a
 @pytest.mark.parametrize(("site", "path", "expected"), [
     ("https://test.example.com/", "//custom//mcp/", "https://test.example.com/custom/mcp"),
     ("invalid", "custom/mcp", "https://vetmanager-mcp.vromanichev.ru/mcp"),
+    ("https://test.example.com", '/mcp\"><img>', "https://test.example.com/mcp"),
 ])
 def test_public_endpoint_normalization_is_shared(monkeypatch, site, path, expected):
     monkeypatch.setenv("SITE_BASE_URL", site)
@@ -115,5 +116,5 @@ def test_public_endpoint_normalization_is_shared(monkeypatch, site, path, expect
     from server import _load_runtime_config
     assert get_mcp_resource_url() == expected
     assert f"{_resolve_site_base_url()}{_resolve_mcp_path()}" == expected
-    expected_path = "/custom/mcp" if expected.startswith("https://test") else "/mcp"
+    expected_path = "/custom/mcp" if path == "//custom//mcp/" else "/mcp"
     assert _load_runtime_config()[-1] == expected_path

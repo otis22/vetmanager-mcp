@@ -33,7 +33,8 @@ def get_site_base_url() -> str:
     """Return canonical public site base URL without a trailing slash."""
     raw = (os.environ.get("SITE_BASE_URL") or DEFAULT_SITE_BASE_URL).strip()
     parsed = urlparse(raw)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    if (len(raw) > 255 or any(c in raw for c in ('"', "'", "<", ">", " ", "\t", "\n", "\r", "\x00"))
+            or parsed.scheme not in {"http", "https"} or not parsed.netloc):
         return DEFAULT_SITE_BASE_URL
     return raw.rstrip("/")
 
@@ -41,7 +42,8 @@ def get_site_base_url() -> str:
 def get_mcp_path() -> str:
     """Return normalized public MCP path."""
     raw = (os.environ.get("MCP_PATH") or DEFAULT_MCP_PATH).strip()
-    if not raw.startswith("/"):
+    if (len(raw) > 128 or any(c in raw for c in ('"', "'", "<", ">", " ", "\t", "\n", "\r", "\x00"))
+            or not raw.startswith("/")):
         RUNTIME_LOGGER.warning("Invalid MCP_PATH; using default route.", extra={"event_name": "invalid_mcp_path"})
         return DEFAULT_MCP_PATH
     normalized = "/" + "/".join(part for part in raw.split("/") if part)
