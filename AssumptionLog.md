@@ -17332,8 +17332,9 @@ push из-за синтетической Stripe-подобной фикстур
 - Связь хранится как публичная строка `OAuthGrant.client_id` →
   `OAuthClient.client_id`, не numeric id. DCR создаёт клиента `active`; поле
   `oauth_clients.status` создано `NOT NULL` с check `active/disabled`, legacy
-  NULL исключён. Runtime отвергает только явный `disabled`, чтобы не сделать
-  неизвестное легаси-значение отключением.
+  NULL исключён. Формулировка «runtime отвергает только явный disabled»
+  **заменена** по Opus PRD-review 2/2: действующее правило fail-closed —
+  требуется существующий `active` client.
 - Падение старого stage-260 test было корректной модельной дырой fixture: grant
   ссылался на `vm_oc_test`, но строки OAuthClient не было. В production grant
   создаётся только после DCR client; fixture дополнен active client без
@@ -17393,3 +17394,18 @@ push из-за синтетической Stripe-подобной фикстур
   `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-17T210741Z-git_range-origin_main__HEAD-attempt-2-of-3.DI6EgI/claude-review-attempt-2-of-3.envelope.json`;
   subtype success, stop_reason tool_use, output_tokens 5051, thinking_tokens
   4351, len(result) 15. Budget code/diff review 2/2 исчерпан.
+
+### Production gate §6.0 — 18.09.2026 13:08 МСК
+
+- **Индекс:** production read-only query duplicate active rows вернула пусто;
+  distribution `vetmanager_connections`: active 27, disabled 9. Поэтому
+  partial unique index безопасен, disabled history сохраняется, migration
+  данных не нужна.
+- **OAuth client compatibility:** `oauth_clients` — 37 rows, все active;
+  `status NOT NULL`, default отсутствует, DCR ставит status явно.
+  `oauth_grants`: active 26, revoked 8. Fail-closed check не отключит legacy
+  NULL/unknown rows: таких значений в schema и production нет.
+- **Лимитер:** изменение трактовки выданных grants подтверждено безопасным.
+  Peak за 30 дней по successful OAuth token usage — 27 запросов за минуту на
+  token (16.09 12:13 UTC; далее 22/18/17). Default 1000/60 s даёт запас около
+  37×; migration, allowlist и исключение не требуются.
