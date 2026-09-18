@@ -38,6 +38,7 @@ def test_stage330_report74_clinical_numbers_survive_in_both_sanitizers(clinical_
         "8 (918) 414-01-11",
         "8-918-414-01-11",
         "+7(999)123-45-67", "8(999)123-45-67", "+7 (999) 1234567", "8 999 1234567", "+7 9991234567",
+        "7 999 123 45 67", "7 999 1234567", "7(999)1234567",
     ],
 )
 def test_stage330_existing_phone_corpus_stays_redacted(phone: str) -> None:
@@ -96,6 +97,11 @@ def test_stage330_space_separated_short_groups_are_not_phones(clinical_text: str
     assert _free_text(clinical_text) == clinical_text
     assert error_tracking._redact_exception_value(clinical_text) == clinical_text
     assert sanitize_feedback_text(clinical_text, limit=500) == clinical_text
+
+
+@pytest.mark.parametrize("clinical_text", ["7 120 45 60", "8 150 45 60 55"])
+def test_stage330_short_groups_after_country_or_trunk_are_not_phones(clinical_text: str) -> None:
+    assert _free_text(clinical_text) == clinical_text
 
 
 @pytest.mark.parametrize("phone", ["+7 4852 45 67 89", "123-45-67", "тел. 123 45 67"])
