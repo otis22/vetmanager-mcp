@@ -11,6 +11,7 @@ from fastmcp.exceptions import ToolError
 from zoneinfo import ZoneInfo
 
 import clinic_timezone
+import tools.finance as finance_tools
 from runtime_auth import use_runtime_credentials
 from server import mcp
 from service_metrics import reset_service_metrics, snapshot_service_metrics
@@ -120,6 +121,31 @@ async def test_timezone_cache_is_scoped_to_tenant(monkeypatch):
 
 def test_tzdb_is_available_in_test_image():
     assert ZoneInfo("UTC").key == "UTC"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_invoice_document_period_uses_its_clinic_for_relative_dates(monkeypatch):
+    seen: list[tuple[int, bool]] = []
+
+    async def clinic_today(clinic_id, *, relative=False, now=None):
+        seen.append((clinic_id, relative))
+        return datetime(2026, 1, 1).date()
+
+    monkeypatch.setattr(finance_tools, "clinic_local_today", clinic_today)
+    respx.get(f"https://billing-api.vetmanager.cloud/host/{DOMAIN}").mock(
+        return_value=httpx.Response(200, json={"data": {"url": BASE}})
+    )
+    respx.get(f"{BASE}/rest/api/invoice").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {"invoice": [], "totalCount": 0}})
+    )
+    headers_patch, runtime_patch = patch_runtime_credentials(DOMAIN, API_KEY)
+    with headers_patch, runtime_patch:
+        await mcp.call_tool(
+            "get_invoice_documents_by_period",
+            {"date_from": "today", "date_to": "today", "clinic_id": 42},
+        )
+    assert seen == [(42, True)]
 
 
 @pytest.mark.asyncio

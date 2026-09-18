@@ -23,7 +23,7 @@ from tools.crud_helpers import (
     total_order_sort,
 )
 from validators import LimitParam, is_relative_date_param, parse_date_param
-from clinic_timezone import process_local_today
+from clinic_timezone import clinic_local_today
 
 
 def register(mcp: FastMCP) -> None:
@@ -37,9 +37,12 @@ def register(mcp: FastMCP) -> None:
     _INVOICE_DOCUMENT_PERIOD_PAGE_SIZE = 100
     _INVOICE_STATUSES = {"exec", "save", "deleted", "closed", "archived"}
 
-    def _parse_date_range(date_from: str, date_to: str, *, label: str) -> tuple[str, str]:
-        today = process_local_today(
-            relative=is_relative_date_param(date_from) or is_relative_date_param(date_to)
+    async def _parse_date_range(
+        date_from: str, date_to: str, *, label: str, clinic_id: int = 0
+    ) -> tuple[str, str]:
+        today = await clinic_local_today(
+            clinic_id,
+            relative=is_relative_date_param(date_from) or is_relative_date_param(date_to),
         )
         resolved_from = parse_date_param(date_from, today=today)
         resolved_to = parse_date_param(date_to, today=today)
@@ -290,7 +293,7 @@ def register(mcp: FastMCP) -> None:
                 "client-scoped payment applications."
             )
         _reject_payment_client_filter(filter)
-        resolved_date_from, resolved_date_to = _parse_date_range(
+        resolved_date_from, resolved_date_to = await _parse_date_range(
             date_from, date_to, label="date"
         )
         if resolved_date_from or resolved_date_to:
@@ -342,7 +345,7 @@ def register(mcp: FastMCP) -> None:
             raise ToolInputError("client_id is required")
         if pet_id < 0:
             raise ToolInputError("pet_id must be positive or 0")
-        resolved_date_from, resolved_date_to = _parse_date_range(
+        resolved_date_from, resolved_date_to = await _parse_date_range(
             date_from, date_to, label="date"
         )
 
@@ -547,7 +550,9 @@ def register(mcp: FastMCP) -> None:
         limited=true and asks to narrow the period rather than pretending an
         incomplete scan is pageable.
         """
-        resolved_from, resolved_to = _parse_date_range(date_from, date_to, label="date")
+        resolved_from, resolved_to = await _parse_date_range(
+            date_from, date_to, label="date", clinic_id=clinic_id
+        )
         if not resolved_from or not resolved_to:
             raise ToolInputError("date_from and date_to are required")
         if offset < 0:
