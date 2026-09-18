@@ -79,6 +79,15 @@ def test_stage330_unprefixed_microchip_and_ean_survive(identifier: str) -> None:
     assert error_tracking._redact_exception_value(identifier) == identifier
 
 
+@pytest.mark.parametrize("value", ["счёт № 81234567", "документ 8202609181"])
+def test_stage330_short_numbers_starting_with_eight_are_not_phones(value: str) -> None:
+    assert _free_text(value) == value
+
+
+def test_stage330_eight_prefix_requires_a_separator() -> None:
+    assert REDACTED_PHONE in _free_text("8 9991234567")
+
+
 @pytest.mark.parametrize(
     "clinical_text",
     ["150 45 60 55 40", "Диурез: 120 45 60 мл", "150 120 45 60 мл", "Показатели: 150 120 45 60"],
