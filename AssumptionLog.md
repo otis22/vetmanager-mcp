@@ -17457,7 +17457,7 @@ push из-за синтетической Stripe-подобной фикстур
   their upstream contract is covered by respx mock tests.
 - Production: push `9f87d777a7bea3c8cf3eda4fd98b754b39826203`; CI Tests run
   `35340526330` success; Deploy Prod run `35341593443` success.
-# Этап 330. Маска телефонов не принимает клинические числа за номера
+## Этап 330. Маска телефонов не принимает клинические числа за номера
 
 **Решение.** Один stdlib matcher `phone_redaction.py` используется free-text,
 report values, error tracking и feedback sanitation. Пробельные группированные
@@ -17479,3 +17479,8 @@ real `/tmp/vm330-real-5895fac.exit`: 0 (66 passed, 9 skipped). Real-suite не
 2/3: 2 warnings — учтены решениями супервизора. Evidence:
 `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-18T124218Z-file-PRD_-330----_md-attempt-1-of-3.Vs3ohk/claude-review-attempt-1-of-3.envelope.json`;
 `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-18T124522Z-file-PRD_-330----_md-attempt-2-of-3.CAeujc/claude-review-attempt-2-of-3.envelope.json`.
+
+**Production completion.** Push `23a6cfb`; CI Tests run 35363328732 — success;
+Deploy Prod run 35363947145 — success. Code review 1/2: 1 high (common Russian
+forms) and 1 medium (contact marker vs identifier) — fixed; review 2/2: 1
+warning (голая `7`) — fixed in `23a6cfb`; budget 2/2 exhausted, no third run.
