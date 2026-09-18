@@ -14,6 +14,7 @@ from filters import (
 from exceptions import ToolInputError, reportable_error
 from tools.crud_helpers import crud_get_by_id, crud_create, crud_update, unwrap_single_record
 from validators import DiagnosisIdParam, DiagnosisTypeParam, LimitParam, parse_date_param
+from clinic_timezone import clinic_local_today
 from vetmanager_client import VetmanagerClient, VetmanagerError
 
 # The correct Vetmanager REST endpoint for medical cards is /rest/api/MedicalCards
@@ -208,8 +209,9 @@ def register(mcp: FastMCP) -> None:
         if not date and not (date_from and date_to):
             raise ToolInputError("date or date_from/date_to is required")
 
-        resolved_from = parse_date_param(date or date_from)
-        resolved_to = parse_date_param(date or date_to)
+        clinic_today = await clinic_local_today(clinic_id)
+        resolved_from = parse_date_param(date or date_from, today=clinic_today)
+        resolved_to = parse_date_param(date or date_to, today=clinic_today)
         if resolved_from > resolved_to:
             raise ToolInputError("date_from must be on or before date_to")
 

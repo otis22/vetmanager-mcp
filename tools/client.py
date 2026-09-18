@@ -17,6 +17,7 @@ from service_metrics import instrument_call as _instrument_call
 from tools._inactive_helpers import fetch_inactive_clients_page
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
 from validators import LimitParam, normalize_phone_digits, parse_date_param
+from clinic_timezone import process_local_today
 from vm_datetime import day_start, next_day_start
 from vetmanager_client import VetmanagerClient
 
@@ -448,8 +449,9 @@ def register(mcp: FastMCP) -> None:
             last_visit_date_from: Optional minimum client.last_visit_date.
             last_visit_date_to: Optional maximum client.last_visit_date.
         """
-        resolved_last_visit_from = parse_date_param(last_visit_date_from)
-        resolved_last_visit_to = parse_date_param(last_visit_date_to)
+        today = process_local_today()
+        resolved_last_visit_from = parse_date_param(last_visit_date_from, today=today)
+        resolved_last_visit_to = parse_date_param(last_visit_date_to, today=today)
         if (
             resolved_last_visit_from
             and resolved_last_visit_to

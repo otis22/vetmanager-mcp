@@ -9,6 +9,7 @@ from pydantic import Field
 from exceptions import ToolInputError
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, gt as _filter_gt, lt as _filter_lt
 from property_privacy import sanitize_properties_response
+from service_metrics import instrument_call
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
 from validators import LimitParam
 from vetmanager_client import VetmanagerClient
@@ -403,7 +404,11 @@ def register(mcp: FastMCP) -> None:
         recall a sent message.
         """
         payload = {"message": message, "campaign": campaign}
-        return await VetmanagerClient().post("/rest/api/messages/all", json=payload)
+        return await instrument_call(
+            "/rest/api/messages/all", "POST",
+            lambda: VetmanagerClient().post("/rest/api/messages/all", json=payload),
+            tool_name="send_message_to_all",
+        )
 
     @mcp.tool
     async def send_message_to_users(
@@ -421,7 +426,11 @@ def register(mcp: FastMCP) -> None:
             "campaign": campaign,
             "user_ids": user_ids,
         }
-        return await VetmanagerClient().post("/rest/api/messages/users", json=payload)
+        return await instrument_call(
+            "/rest/api/messages/users", "POST",
+            lambda: VetmanagerClient().post("/rest/api/messages/users", json=payload),
+            tool_name="send_message_to_users",
+        )
 
     @mcp.tool
     async def get_message_reports(
@@ -456,4 +465,8 @@ def register(mcp: FastMCP) -> None:
             "campaign": campaign,
             "roles": roles,
         }
-        return await VetmanagerClient().post("/rest/api/messages/roles", json=payload)
+        return await instrument_call(
+            "/rest/api/messages/roles", "POST",
+            lambda: VetmanagerClient().post("/rest/api/messages/roles", json=payload),
+            tool_name="send_message_to_roles",
+        )

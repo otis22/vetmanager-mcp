@@ -8,6 +8,7 @@ from filters import FILTER_FIELDS_BY_ENTITY, build_list_query_params, eq as _fil
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_update, paginate_all
 from validators import LimitParam, parse_date_param
 from vetmanager_client import VetmanagerClient
+from clinic_timezone import process_local_today
 
 _MONEY_QUANT = Decimal("0.01")
 _SUMMARY_PAGE_SIZE = 100
@@ -37,8 +38,9 @@ def register(mcp: FastMCP) -> None:
         return str(value)
 
     def _parse_date_range(date_from: str, date_to: str, *, label: str) -> tuple[str, str]:
-        resolved_from = parse_date_param(date_from)
-        resolved_to = parse_date_param(date_to)
+        today = process_local_today()
+        resolved_from = parse_date_param(date_from, today=today)
+        resolved_to = parse_date_param(date_to, today=today)
         if resolved_from and resolved_to and resolved_from > resolved_to:
             raise ToolInputError(f"{label}_from must be on or before {label}_to")
         return resolved_from, resolved_to
@@ -377,15 +379,15 @@ def register(mcp: FastMCP) -> None:
                 f"got '{date_basis}'"
             )
 
-        today = date.today()
+        today = process_local_today()
         if not date_to:
             date_to = today.isoformat()
         else:
-            date_to = parse_date_param(date_to)
+            date_to = parse_date_param(date_to, today=today)
         if not date_from:
             date_from = (today - timedelta(days=365)).isoformat()
         else:
-            date_from = parse_date_param(date_from)
+            date_from = parse_date_param(date_from, today=today)
         if date_from and date_to and date_from > date_to:
             raise ToolInputError("date_from must be on or before date_to")
 

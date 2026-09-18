@@ -14,6 +14,7 @@ from validators import (
     validate_list_params,
 )
 from vm_datetime import normalize_vm_datetime
+from clinic_timezone import clinic_local_today
 
 
 _VALID_ADMISSION_STATUSES = {
@@ -103,8 +104,9 @@ def register(mcp: FastMCP) -> None:
                 "use either `date` or `date_from`/`date_to`, not both"
             )
 
-        effective_from = parse_date_param(date_from or date)
-        effective_to = parse_date_param(date_to or date)
+        clinic_today = await clinic_local_today(None)
+        effective_from = parse_date_param(date_from or date, today=clinic_today)
+        effective_to = parse_date_param(date_to or date, today=clinic_today)
 
         combined_filters: list = list(filter or [])
         if effective_from:
@@ -184,7 +186,7 @@ def register(mcp: FastMCP) -> None:
         if days <= 0 or days > 366:
             raise ToolInputError("days must be between 1 and 366")
 
-        resolved_from = parse_date_param(date_from)
+        resolved_from = parse_date_param(date_from, today=await clinic_local_today(None))
         if not resolved_from:
             raise ToolInputError("date_from is required")
 
@@ -245,7 +247,7 @@ def register(mcp: FastMCP) -> None:
                 next_offset to fetch the next page.
         """
         validate_list_params(limit, offset)
-        resolved = parse_date_param(date)
+        resolved = parse_date_param(date, today=await clinic_local_today(clinic_id))
         if not resolved:
             raise ToolInputError("date is required")
 

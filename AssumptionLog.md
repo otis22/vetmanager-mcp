@@ -17420,3 +17420,16 @@ push из-за синтетической Stripe-подобной фикстур
   skipped (`/tmp/vm325-full-37c6126.exit=0`) and real 66 passed / 9 skipped
   (`/tmp/vm325-real-20260917t235300.exit=0`) green; audit/workflow gate run;
   production preflight and deploy evidence recorded.
+## Этап 327. Метрики сообщений и клиник-локальные даты
+
+- F25 подтверждён: три `send_message_*` обходили `instrument_call`; теперь
+  endpoint/method/tool labels совпадают с существующим exporter/Grafana.
+  AST-сторож показан красным подменой `instrument_call` в
+  `send_message_to_all` (1 failed), затем зелёным.
+- F20 подтверждён: `time_zone` берётся из `/rest/api/clinics/{id}` и имеет
+  IANA формат; read-only Vetmanager source подтверждает `clinics.time_zone`.
+  Общий bounded cache вынесен из Report AI, keys tenant-scoped.
+- PRD strong review: attempt 1 valid (3 warnings accepted), evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-18T102840Z-file-PRD_-327----_md-attempt-1-of-3.okudB4/claude-review-attempt-1-of-3.envelope.json`, subtype success, stop_reason tool_use, output_tokens 3161, thinking_tokens 2291, len(result) 2470.
+- PRD strong review: attempt 2 valid (2 warnings accepted), evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-18T103153Z-file-PRD_-327----_md-attempt-2-of-3.jlSbYj/claude-review-attempt-2-of-3.envelope.json`, subtype success, stop_reason tool_use, output_tokens 2863, thinking_tokens 2111, len(result) 1798.

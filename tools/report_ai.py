@@ -33,6 +33,12 @@ from service_metrics import (
     record_report_ai_stage_stall_poll,
 )
 from vetmanager_client import VetmanagerClient
+from clinic_timezone import (
+    CLINIC_TIMEZONE_MAX_ENTRIES,
+    CLINIC_TIMEZONE_TTL_SECONDS,
+    _CACHE as _REPORT_AI_CLINIC_TIMEZONES,
+    resolve_clinic_timezone,
+)
 
 
 INTENT_MAX_LENGTH = 20000
@@ -52,8 +58,8 @@ REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD = 9000
 REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS = 30
 REPORT_AI_QUEUE_WAIT_LIMIT_SECONDS = 15 * 60
 REPORT_AI_EXPORT_WAIT_LIMIT_SECONDS = 30 * 60
-REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS = 3600
-REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES = 4096
+REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS = CLINIC_TIMEZONE_TTL_SECONDS
+REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES = CLINIC_TIMEZONE_MAX_ENTRIES
 REPORT_AI_GOODS_GOOD_ID_WORKAROUND_CODE = "report_ai_goods_good_id_preview_failed"
 _GENERIC_REPORT_TITLES = {
     "report",
@@ -85,9 +91,6 @@ _REPORT_AI_LIFECYCLE_OBSERVATIONS: OrderedDict[
 _REPORT_AI_FINALIZED_OBSERVATIONS: OrderedDict[_ReportAiQueueObservationKey, float] = OrderedDict()
 _REPORT_AI_EXPORT_OBSERVATIONS: OrderedDict[
     _ReportAiQueueObservationKey, dict[str, float | bool]
-] = OrderedDict()
-_REPORT_AI_CLINIC_TIMEZONES: OrderedDict[
-    tuple[int | None, int | None, int], tuple[str, float]
 ] = OrderedDict()
 _REPORT_AI_STAGE_BY_STATUS = {
     "queued": "queued",
@@ -124,33 +127,15 @@ async def _upstream_job_age_seconds(job: dict) -> int | None:
     key = _report_ai_queue_observation_key({"id": clinic_id})
     if not isinstance(created_at, str) or key is None:
         return None
-    now = _monotonic_seconds()
-    cached = _REPORT_AI_CLINIC_TIMEZONES.get(key)
-    if cached is not None and now - cached[1] <= REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS:
-        timezone_name = cached[0]
-        _REPORT_AI_CLINIC_TIMEZONES.move_to_end(key)
-    else:
-        _REPORT_AI_CLINIC_TIMEZONES.pop(key, None)
-        try:
-            payload = await VetmanagerClient().get(f"/rest/api/clinics/{key[2]}")
-        except VetmanagerError:
-            RUNTIME_LOGGER.warning("report_ai_queue_age_timezone_unavailable", extra={"event_name": "report_ai_queue_age_timezone_unavailable"})
-            return None
-        data = payload.get("data") if isinstance(payload, dict) else None
-        clinic = data.get("clinics") if isinstance(data, dict) else None
-        if isinstance(clinic, list):
-            clinic = clinic[0] if clinic else None
-        timezone_name = clinic.get("time_zone") if isinstance(clinic, dict) else None
-        if not isinstance(timezone_name, str) or not timezone_name:
-            RUNTIME_LOGGER.warning("report_ai_queue_age_timezone_unavailable", extra={"event_name": "report_ai_queue_age_timezone_unavailable"})
-            return None
-        _REPORT_AI_CLINIC_TIMEZONES[key] = (timezone_name, now)
-        _REPORT_AI_CLINIC_TIMEZONES.move_to_end(key)
-        while len(_REPORT_AI_CLINIC_TIMEZONES) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
-            _REPORT_AI_CLINIC_TIMEZONES.popitem(last=False)
+    clinic_timezone = await resolve_clinic_timezone(
+        key[2], client_factory=VetmanagerClient, monotonic=_monotonic_seconds
+    )
+    if clinic_timezone is None:
+        RUNTIME_LOGGER.warning("report_ai_queue_age_timezone_unavailable", extra={"event_name": "report_ai_queue_age_timezone_unavailable"})
+        return None
     try:
-        created = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZoneInfo(timezone_name))
-    except (ValueError, ZoneInfoNotFoundError):
+        created = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=clinic_timezone)
+    except ValueError:
         return None
     return max(0, int(_unix_seconds() - created.timestamp()))
 
