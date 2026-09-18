@@ -16,7 +16,10 @@ _PHONE_RE = re.compile(
     r"\+?\d{10,11}"
     r"|\+\d{12,15}"
     r"|\+\d{1,3}(?:[ .-]\d{2,4}){2,4}"
-    r"|(?:(?:\+\d{1,3}|8)[ .-]?)?\(\d{3,5}\)[ .-]\d{3}[ .-]\d{2}[ .-]\d{2}"
+    r"|(?:(?:\+\d{1,3}|8)[ .-]?)?\(\d{3,5}\)[ .-]?\d{3}[ .-]\d{2}[ .-]\d{2}"
+    r"|(?:\+\d{1,3}|8)[ .-]?\(\d{3,5}\)[ .-]?\d{7}"
+    r"|(?:\+\d{1,3}|8)[ .-]?\d{7,10}"
+    r"|(?:\+\d{1,3}|8)[ .-]?\d{3}[ .-]?\d{7}"
     r"|(?:\+\d{1,3}|8)[ .-]\d{3,5}[ .-]\d{3}[ .-]\d{2}[ .-]\d{2}"
     r"|\d{3,5}-\d{3}-\d{2}-\d{2}"
     r"|(?:\+\d{1,3}|8)[ .-]\d{3,5}[ .-]\d{2}[ .-]\d{2}(?:[ .-]\d{2})?"
@@ -35,9 +38,7 @@ _UNIT_BEFORE_RE = re.compile(
 _CONTACT_WORD_RE = re.compile(
     r"(?iu)\b(?:тел(?:ефон)?|звоните|звонить|перезвонить|с|до|после|в|на)\b"
 )
-_IDENTIFIER_BEFORE_RE = re.compile(
-    r"(?iu)\b(?:id|ид|инн|chip|чип|microchip|микрочип|barcode|штрихкод)\s*[:=]?\s*$|[№#]\s*$"
-)
+_IDENTIFIER_BEFORE_RE = re.compile(r"(?iu)\b(?:id|ид|инн|chip|чип|microchip|микрочип|barcode|штрихкод)\s*[:=]?\s*$")
 
 
 def iter_phone_matches(text: str) -> Iterator[re.Match[str]]:
@@ -61,10 +62,10 @@ def redact_phone_numbers(text: str, replacement: str) -> str:
 def _has_clinical_context(text: str, match: re.Match[str]) -> bool:
     before = text[max(0, match.start() - 24):match.start()]
     after = text[match.end():match.end() + 24]
-    if _IDENTIFIER_BEFORE_RE.search(before):
-        return True
     if _CONTACT_WORD_RE.search(before) or _CONTACT_WORD_RE.search(after):
         return False
+    if _IDENTIFIER_BEFORE_RE.search(before):
+        return True
     return bool(
         _UNIT_AFTER_RE.match(after)
         or _UNIT_BEFORE_RE.search(before)

@@ -37,6 +37,7 @@ def test_stage330_report74_clinical_numbers_survive_in_both_sanitizers(clinical_
         "999-123-45-67",
         "8 (918) 414-01-11",
         "8-918-414-01-11",
+        "+7(999)123-45-67", "8(999)123-45-67", "+7 (999) 1234567", "8 999 1234567", "+7 9991234567",
     ],
 )
 def test_stage330_existing_phone_corpus_stays_redacted(phone: str) -> None:
@@ -65,6 +66,11 @@ def test_stage330_unit_context_is_local_to_its_number() -> None:
 def test_stage330_context_never_becomes_contact_phone_bypass(contact_text: str) -> None:
     assert REDACTED_PHONE in _free_text(contact_text)
     assert "[Filtered]" in error_tracking._redact_exception_value(contact_text)
+
+
+@pytest.mark.parametrize("text", ["тел. № 89991234567", "Тел.№ +7 999 123-45-67", "контакт #89991234567"])
+def test_stage330_contact_marker_beats_identifier_context(text: str) -> None:
+    assert REDACTED_PHONE in _free_text(text)
 
 
 @pytest.mark.parametrize("identifier", ["643094100123456", "4600051000057"])
