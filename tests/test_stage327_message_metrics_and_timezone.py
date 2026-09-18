@@ -7,9 +7,6 @@ from datetime import datetime, timezone
 import pytest
 
 import clinic_timezone
-from runtime_auth import RuntimeCredentials, use_runtime_credentials
-from service_metrics import reset_service_metrics, snapshot_service_metrics
-from vetmanager_auth import VetmanagerAuthContext
 
 
 @pytest.mark.asyncio

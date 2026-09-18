@@ -25,6 +25,7 @@ only-include = [
     "access_summary.py",
     "activation_events.py",
     "property_privacy.py",
+    "clinic_timezone.py",
     "activation_telemetry.py",
     "agent_feedback_service.py",
     "auth",

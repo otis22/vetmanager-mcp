@@ -7,7 +7,6 @@ from datetime import date, datetime, timezone
 import time
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from exceptions import VetmanagerError
 from observability_logging import RUNTIME_LOGGER
 from runtime_auth import get_current_runtime_credentials
 from vetmanager_client import VetmanagerClient
