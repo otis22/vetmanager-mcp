@@ -68,6 +68,16 @@ _MAX_REL_WEEKS = _MAX_REL_DAYS // 7
 _MAX_REL_MONTHS = 20 * 12
 
 
+def is_relative_date_param(value: str | None) -> bool:
+    """Return whether *value* needs a current-date anchor to be parsed."""
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().lower()
+    return normalized in {"today", "yesterday", "tomorrow"} or bool(
+        _REL_DATE_PATTERN.match(normalized)
+    )
+
+
 def _add_months(base: date, months: int) -> date:
     """Add months to a date, clamping end-of-month.
 

@@ -19,7 +19,7 @@ from tools._slots_helpers import (
 )
 from tools.admission import ACTIVE_ADMISSION_STATUSES
 from tools.crud_helpers import paginate_all
-from validators import parse_date_param
+from validators import is_relative_date_param, parse_date_param
 from clinic_timezone import clinic_local_today
 
 # Admissions that START before the requested window can STILL overlap into
@@ -90,7 +90,10 @@ def register(mcp: FastMCP) -> None:
                 "min_slot_minutes must be between 5 and slot_minutes"
             )
 
-        clinic_today = await clinic_local_today(clinic_id)
+        clinic_today = await clinic_local_today(
+            clinic_id,
+            relative=is_relative_date_param(date_from) or is_relative_date_param(date_to),
+        )
         resolved_from = parse_date_param(date_from, today=clinic_today)
         resolved_to = parse_date_param(date_to, today=clinic_today)
         if not resolved_from or not resolved_to:

@@ -6,7 +6,7 @@ from fastmcp import FastMCP
 from exceptions import ToolInputError, reportable_error
 from filters import FILTER_FIELDS_BY_ENTITY, build_list_query_params, eq as _filter_eq, gte as _filter_gte, lt as _filter_lt, lte as _filter_lte
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_update, paginate_all
-from validators import LimitParam, parse_date_param
+from validators import LimitParam, is_relative_date_param, parse_date_param
 from vetmanager_client import VetmanagerClient
 from clinic_timezone import process_local_today
 
@@ -38,7 +38,9 @@ def register(mcp: FastMCP) -> None:
         return str(value)
 
     def _parse_date_range(date_from: str, date_to: str, *, label: str) -> tuple[str, str]:
-        today = process_local_today()
+        today = process_local_today(
+            relative=is_relative_date_param(date_from) or is_relative_date_param(date_to)
+        )
         resolved_from = parse_date_param(date_from, today=today)
         resolved_to = parse_date_param(date_to, today=today)
         if resolved_from and resolved_to and resolved_from > resolved_to:
@@ -379,7 +381,9 @@ def register(mcp: FastMCP) -> None:
                 f"got '{date_basis}'"
             )
 
-        today = process_local_today()
+        today = process_local_today(
+            relative=is_relative_date_param(date_from) or is_relative_date_param(date_to)
+        )
         if not date_to:
             date_to = today.isoformat()
         else:

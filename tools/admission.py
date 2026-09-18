@@ -10,6 +10,7 @@ from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_upda
 from validators import (
     LimitParam,
     VETMANAGER_MAX_OFFSET,
+    is_relative_date_param,
     parse_date_param,
     validate_list_params,
 )
@@ -104,7 +105,7 @@ def register(mcp: FastMCP) -> None:
                 "use either `date` or `date_from`/`date_to`, not both"
             )
 
-        clinic_today = await clinic_local_today(None)
+        clinic_today = await clinic_local_today(None, relative=is_relative_date_param(date_from) or is_relative_date_param(date_to))
         effective_from = parse_date_param(date_from or date, today=clinic_today)
         effective_to = parse_date_param(date_to or date, today=clinic_today)
 
@@ -186,7 +187,10 @@ def register(mcp: FastMCP) -> None:
         if days <= 0 or days > 366:
             raise ToolInputError("days must be between 1 and 366")
 
-        resolved_from = parse_date_param(date_from, today=await clinic_local_today(None))
+        resolved_from = parse_date_param(
+            date_from,
+            today=await clinic_local_today(None, relative=is_relative_date_param(date_from)),
+        )
         if not resolved_from:
             raise ToolInputError("date_from is required")
 
@@ -247,7 +251,12 @@ def register(mcp: FastMCP) -> None:
                 next_offset to fetch the next page.
         """
         validate_list_params(limit, offset)
-        resolved = parse_date_param(date, today=await clinic_local_today(clinic_id))
+        resolved = parse_date_param(
+            date,
+            today=await clinic_local_today(
+                clinic_id, relative=is_relative_date_param(date)
+            ),
+        )
         if not resolved:
             raise ToolInputError("date is required")
 

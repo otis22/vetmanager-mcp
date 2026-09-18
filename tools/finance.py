@@ -22,7 +22,7 @@ from tools.crud_helpers import (
     sort_records,
     total_order_sort,
 )
-from validators import LimitParam, parse_date_param
+from validators import LimitParam, is_relative_date_param, parse_date_param
 from clinic_timezone import process_local_today
 
 
@@ -38,7 +38,9 @@ def register(mcp: FastMCP) -> None:
     _INVOICE_STATUSES = {"exec", "save", "deleted", "closed", "archived"}
 
     def _parse_date_range(date_from: str, date_to: str, *, label: str) -> tuple[str, str]:
-        today = process_local_today()
+        today = process_local_today(
+            relative=is_relative_date_param(date_from) or is_relative_date_param(date_to)
+        )
         resolved_from = parse_date_param(date_from, today=today)
         resolved_to = parse_date_param(date_to, today=today)
         if resolved_from and resolved_to and resolved_from > resolved_to:
