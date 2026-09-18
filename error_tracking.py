@@ -13,6 +13,7 @@ from sentry_sdk.integrations.logging import ignore_logger
 from sentry_sdk.integrations.starlette import StarletteIntegration
 
 from privacy_utils import scrub_report_export_path
+from phone_redaction import redact_phone_numbers
 
 SUPPORTED_ERROR_TRACKING_BACKENDS = {"sentry"}
 _REDACTED = "[Filtered]"
@@ -109,16 +110,11 @@ _BARE_CREDENTIAL_RE = re.compile(r"(?i)\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+"
 _EMAIL_RE = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
 _IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 _IPV6_CANDIDATE_RE = re.compile(r"(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{0,4}:){2,}[0-9A-Fa-f:]+")
-_PHONE_RE = re.compile(
-    r"(?<!\w)(?:\+\d[\d .()/-]{6,}\d|\d{1,3}[ -]\(?\d{3}\)?[ -]?\d{3}[ -]?\d{2}[ -]?\d{2})(?!\w)"
-)
-
-
 def _redact_exception_value(value: object) -> object:
     """Keep diagnostic upstream text while removing common secret and PII values."""
     if not isinstance(value, str):
         return value
-    value = _PHONE_RE.sub(_REDACTED, value)
+    value = redact_phone_numbers(value, _REDACTED)
     value = _BARE_CREDENTIAL_RE.sub(_REDACTED, value)
     value = _SENSITIVE_EXCEPTION_VALUE_RE.sub(r"\1" + _REDACTED, value)
     value = _EMAIL_RE.sub(_REDACTED, value)

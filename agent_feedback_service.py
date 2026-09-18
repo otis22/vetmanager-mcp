@@ -19,6 +19,7 @@ from sqlalchemy import delete, false, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from exceptions import ToolInputError
+from phone_redaction import redact_phone_numbers
 from observability_logging import RUNTIME_LOGGER
 from service_metrics import record_known_issue_lookup
 from storage import get_session_factory
@@ -96,7 +97,6 @@ _SECRET_PATTERNS = (
     re.compile(r"(api[_-]?key|password|token|secret)\s*[:=]\s*\S+", re.IGNORECASE),
 )
 _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
-_PHONE_CANDIDATE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d\s().-]{7,}\d)(?!\w)")
 _PLACEHOLDER_RE = re.compile(r"<(?:client|owner|patient|phone|address)>", re.IGNORECASE)
 _NAME_VALUE = (
     r"(?:[A-ZА-ЯЁ][a-zа-яё]{2,})(?:\s+[A-ZА-ЯЁ][a-zа-яё]{2,}){0,2}"
@@ -223,14 +223,10 @@ def sanitize_text_with_metadata(value: str | None, *, limit: int, required: bool
             redactions.add("email")
             text = _EMAIL_RE.sub("[REDACTED]", text)
 
-        def _phone_replace(match: re.Match[str]) -> str:
-            candidate = match.group(0)
-            if not _is_phone_like(candidate):
-                return candidate
+        phone_redacted = redact_phone_numbers(text, "[REDACTED]")
+        if phone_redacted != text:
             redactions.add("phone")
-            return "[REDACTED]"
-
-        text = _PHONE_CANDIDATE_RE.sub(_phone_replace, text)
+        text = phone_redacted
         text = _redact_context(_CONTEXT_ADDRESS_RE, text, "contextual_address", redactions)
         text = _redact_context(_CONTEXT_NAME_RE, text, "contextual_name", redactions)
         text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", text)

@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from exceptions import ToolInputError
+from phone_redaction import iter_phone_matches, redact_phone_numbers
 from russian_given_names import GIVEN_NAMES
 
 
@@ -144,7 +145,6 @@ _DATE_OR_DATETIME_RE = re.compile(
     r"|(?:0[1-9]|[12]\d|3[01])\.(?:0[1-9]|1[0-2])\.(?:19\d{2}|20\d{2}|2100)"
     r")(?:[T\s](?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):?[0-5]\d)?)?(?!\d)"
 )
-_PHONE_RE = re.compile(r"(?<!\[redacted-phone\])(?:\+?\d[\d\-\s().]{8,}\d)")
 _OWNER_PHRASE_RE = re.compile(
     r"(?u)\b(?i:(?:владелец|хозяин|owner))\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё.\-]+(?:\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё.\-]+){0,2}"
 )
@@ -204,10 +204,6 @@ _ADDRESS_RE = re.compile(
     r"(?:ул\.|улица|пр-?т|проспект|пер\.|переулок|ш\.|шоссе|б-р|бульвар)\s?[А-ЯЁа-яё0-9\-\s.]{2,40}?"
     r"[,\s]+д\.?\s?\d+[А-Яа-я]?(?:[,\s]+(?:кв\.?|оф\.?)\s?\d+)?"
 )
-# A run of digits that could be a Russian phone number. Bounded on purpose: a
-# pet's microchip is fifteen digits and a barcode thirteen, and a report that
-# loses those is broken rather than private.
-_PHONE_LIKE_RE = re.compile(r"(?<![\d\-])\+?\d[\d\-\s().]{7,18}\d(?![\d\-])")
 # Stage 277. Words that make a capitalised pair something other than a person.
 # Checked on the pair itself, not on the whole value: a marker at the start of a
 # comment must not switch the protection off for the name at its end.
@@ -479,7 +475,7 @@ def sanitize_text(text: str) -> str:
     date_spans = [match.span() for match in _DATE_OR_DATETIME_RE.finditer(text)]
     email_spans = [match.span() for match in _EMAIL_RE.finditer(text)]
     redactions = [(start, end, REDACTED_EMAIL) for start, end in email_spans]
-    for phone_match in _PHONE_RE.finditer(text):
+    for phone_match in iter_phone_matches(text):
         start, end = phone_match.span()
         if any(
             date_start <= start and end <= date_end
@@ -551,20 +547,7 @@ def sanitize_report_value(text: str) -> str:
         cleaned,
     )
 
-    date_spans = [match.span() for match in _DATE_OR_DATETIME_RE.finditer(cleaned)]
-
-    def _replace_phone(match: re.Match) -> str:
-        start, end = match.span()
-        # A date is digits and separators too: `2026-08-31 10:11` counts ten of
-        # them, and a report stripped of its dates is worse than useless.
-        if any(start < date_end and date_start < end for date_start, date_end in date_spans):
-            return match.group(0)
-        digits = [char for char in match.group(0) if char.isdigit()]
-        # Ten and eleven digits is what a Russian phone has; anything longer is
-        # a chip, a barcode or an internal identifier.
-        return REDACTED_PHONE if 10 <= len(digits) <= 11 else match.group(0)
-
-    return _PHONE_LIKE_RE.sub(_replace_phone, cleaned)
+    return redact_phone_numbers(cleaned, REDACTED_PHONE)
 
 
 def sanitize_report_cell(column: str, value: str) -> str:

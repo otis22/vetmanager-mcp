@@ -48,6 +48,7 @@ only-include = [
     "oauth_challenge.py",
     "oauth_metadata.py",
     "oauth_service.py",
+    "phone_redaction.py",
     "privacy_utils.py",
     "prompts.py",
     "rate_limit_backend.py",
