@@ -17457,3 +17457,25 @@ push из-за синтетической Stripe-подобной фикстур
   their upstream contract is covered by respx mock tests.
 - Production: push `9f87d777a7bea3c8cf3eda4fd98b754b39826203`; CI Tests run
   `35340526330` success; Deploy Prod run `35341593443` success.
+# Этап 330. Маска телефонов не принимает клинические числа за номера
+
+**Решение.** Один stdlib matcher `phone_redaction.py` используется free-text,
+report values, error tracking и feedback sanitation. Пробельные группированные
+номера допускаются только с `+CC`/`8` или после `тел.`; prefix-less варианты —
+только с дефисами. Ряды клинических чисел, SVG/CSS координаты, EAN и микрочипы
+сохраняются. 12–15 цифр без `+` не считаются телефоном; это принятый компромисс
+в пользу клинических и товарных идентификаторов. Контекстные единицы ограничены
+точным списком; `г`, `ед` и время исключены как неоднозначные.
+
+**Корпус и сторож.** Красный запуск `tests/test_stage330_phone_redaction.py`
+подтвердил маскирование диуреза до реализации; намеренная broad-form поломка
+вернула `150 45 60 55 40` в `[redacted-phone]`. После исправления focused:
+177 passed; full `/tmp/vm330-full-5895fac.exit`: 0 (3164 passed, 2 skipped);
+real `/tmp/vm330-real-5895fac.exit`: 0 (66 passed, 9 skipped). Real-suite не
+имеет безопасного existing сценария записи числовой таблицы в описание карты;
+поэтому проверка #74 закреплена mock-корпусом, новой записи на стенде не было.
+
+**Review.** Spark PRD final: `[]`. Claude PRD 1/3: 1 high, 2 medium — учтены;
+2/3: 2 warnings — учтены решениями супервизора. Evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-18T124218Z-file-PRD_-330----_md-attempt-1-of-3.Vs3ohk/claude-review-attempt-1-of-3.envelope.json`;
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-18T124522Z-file-PRD_-330----_md-attempt-2-of-3.CAeujc/claude-review-attempt-2-of-3.envelope.json`.
