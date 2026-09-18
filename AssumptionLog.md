@@ -17433,3 +17433,27 @@ push из-за синтетической Stripe-подобной фикстур
   `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-18T102840Z-file-PRD_-327----_md-attempt-1-of-3.okudB4/claude-review-attempt-1-of-3.envelope.json`, subtype success, stop_reason tool_use, output_tokens 3161, thinking_tokens 2291, len(result) 2470.
 - PRD strong review: attempt 2 valid (2 warnings accepted), evidence
   `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-18T103153Z-file-PRD_-327----_md-attempt-2-of-3.jlSbYj/claude-review-attempt-2-of-3.envelope.json`, subtype success, stop_reason tool_use, output_tokens 2863, thinking_tokens 2111, len(result) 1798.
+- Diff-review finding TypeError in `parse_date_param(..., today=)` rejected:
+  keyword exists on `validators.py:88`. Evidence: `/tmp/vm327-full-b9683c6.exit`=0
+  (3129 passed, 2 skipped); `/tmp/vm327-real-b9683c6.exit`=0 (65 passed, 10 skipped).
+- Diff-review 1/2: accepted warnings on conditional timezone resolution,
+  short transport-failure cache, runtime metric guard, tenant-scoped/negative
+  cache/tzdb tests, and invalid timezone caching. Spark later found the
+  `get_invoice_documents_by_period(clinic_id=...)` omission; accepted and fixed.
+- Diff-review 2/2 valid: one low finding (broad catch around timezone GET)
+  rejected: every resolution failure intentionally has the short 60-second
+  cache to prevent a request storm and preserve process-local fallback. Evidence
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-18T113527Z-git_range-origin_main__HEAD-attempt-2-of-3.3Ksma9/claude-review-attempt-2-of-3.envelope.json`,
+  subtype success, stop_reason tool_use, output_tokens 4213, thinking_tokens
+  3893, len(result) 555.
+- Runtime guard red→green: replacing `send_message_to_all` tool label with
+  `broken_stage327_guard` made its metric test fail (1 failed); restored code
+  passed. Runtime test covers all three POST endpoint/tool labels for success,
+  error and latency.
+- Checks: final full suite `/tmp/vm327-full-9f87d77.exit`=0 (3136 passed,
+  2 skipped); earlier real suite `/tmp/vm327-real-b9683c6.exit`=0 (65 passed,
+  10 skipped). The changed `send_message_*` tools were not live-called: no
+  known safe recipient exists on the stand, and these writes are irreversible;
+  their upstream contract is covered by respx mock tests.
+- Production: push `9f87d777a7bea3c8cf3eda4fd98b754b39826203`; CI Tests run
+  `35340526330` success; Deploy Prod run `35341593443` success.
