@@ -17409,3 +17409,14 @@ push из-за синтетической Stripe-подобной фикстур
   Peak за 30 дней по successful OAuth token usage — 27 запросов за минуту на
   token (16.09 12:13 UTC; далее 22/18/17). Default 1000/60 s даёт запас около
   37×; migration, allowlist и исключение не требуются.
+
+### Production completion и self-attestation
+
+- Push SHA `e967104983c49e0cfec6722aafa886bf7c71efc6`; CI Tests run
+  `35333235000` success; Deploy Prod run `35334173346` success, включая public
+  MCP smoke.
+- Self-attestation: Roadmap/PRD/artifacts reviewed; PRD Opus 2/2 and diff Opus
+  2/2 completed; guards red→green; focused tests, full mock 3127 passed / 2
+  skipped (`/tmp/vm325-full-37c6126.exit=0`) and real 66 passed / 9 skipped
+  (`/tmp/vm325-real-20260917t235300.exit=0`) green; audit/workflow gate run;
+  production preflight and deploy evidence recorded.
