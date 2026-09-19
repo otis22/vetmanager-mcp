@@ -102,7 +102,8 @@ if $has_source_fingerprint && [[ $expected_fingerprint != "$report_fingerprint" 
     exit 65
 fi
 if [[ -z $download_issue_id && $report_known_issue_id != 45 ]]; then
-    printf '%s\n' 'Report #80 is not linked to KI-45 before promotion; if a prior promote succeeded, rerun with STAGE332_401_ISSUE_ID from its output.' >&2
+    printf 'Report #80 is not linked to KI-45 before promotion; observed linked issue #%s. Rerun with STAGE332_401_ISSUE_ID=%s.\n' \
+        "$report_known_issue_id" "$report_known_issue_id" >&2
     exit 65
 fi
 if [[ -n $download_issue_id && $report_known_issue_id != 45 && $report_known_issue_id != "$download_issue_id" ]]; then

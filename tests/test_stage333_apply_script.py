@@ -67,7 +67,7 @@ elif " promote 80 " in command:
     if state.get("target") is not None: fail("duplicate promote")
     state["target"] = {
         "id": 81, "status": "workaround_available",
-        "title": "Report export file download is unauthorized",
+        "title": state.get("promote_target_title", "Report export file download is unauthorized"),
         "related_tool": "get_report_export_download",
         "error_fingerprint_hash": state["report_fingerprint"],
         "match_rules_json": {}, "agent_playbook_json": {},
@@ -125,6 +125,7 @@ def _run(
     live: dict | None = None,
     report_link: int = 45,
     issue_id: int | None = None,
+    promote_target_title: str | None = None,
 ):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir(exist_ok=True)
@@ -136,10 +137,13 @@ def _run(
         before_file.write_text(json.dumps(before), encoding="utf-8")
     state_file = tmp_path / "state.json"
     if not state_file.exists():
-        state_file.write_text(json.dumps({
+        initial_state = {
             "commands": [], "remote_files": {}, "report_fingerprint": FINGERPRINT,
             "report_link": report_link, "ki45": live or before, "target": None,
-        }), encoding="utf-8")
+        }
+        if promote_target_title is not None:
+            initial_state["promote_target_title"] = promote_target_title
+        state_file.write_text(json.dumps(initial_state), encoding="utf-8")
     env = os.environ.copy()
     env.update({
         "CONFIRM_STAGE332_PROD": "apply-stage-332", "STAGE332_MODE": mode,
@@ -223,3 +227,18 @@ def test_invalid_override_id_is_not_persisted(tmp_path):
     assert failed.returncode != 0
     assert not (tmp_path / "target-id.txt").exists()
     assert state["commands"] == []
+
+
+def test_post_promote_identity_failure_is_recoverable_without_duplicate(tmp_path):
+    before = _before(None)
+    failed, state, _ = _run(
+        tmp_path, before, promote_target_title="unexpected target",
+    )
+    assert failed.returncode != 0
+    assert not (tmp_path / "target-id.txt").exists()
+    assert sum(" promote 80 " in command for command in state["commands"]) == 1
+
+    retried, state, _ = _run(tmp_path, before)
+    assert retried.returncode != 0
+    assert "observed linked issue #81" in retried.stderr
+    assert sum(" promote 80 " in command for command in state["commands"]) == 1
