@@ -17624,3 +17624,95 @@ GitHub Tests run `35436352562` и Deploy Prod run `35436580323` завершен
 success. Этап оставлен `supervisor_pending`: супервизор применяет конфигурацию
 скриптом, проверяет `match-effectiveness` и только затем переводит этап в
 `done`.
+
+## Этап 333. Скрипт применения 332 принимает KI-45 без отпечатка
+
+**Исправленная предпосылка.** PRD этапа 332 ошибочно предполагал, что у KI-45
+есть fingerprint, который нужно перенести. Первый supervisor-only запуск
+19.09.2026 в 13:28 сохранил неизменяемый before-state
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-332/ki45-before.json`
+(SHA-256 `0eb9439ac0fc35b36ed71c9fe4a81ad3c78c5792e80b47783b2c4a4f28b4d182`,
+mode 600) и остановился до записи: реальный KI-45 seed имеет
+`error_fingerprint_hash=null`, `related_tool=null`; report #80 был связан с
+ней текстовым правилом. Файл не перезаписывался. Этап 332 остаётся
+`supervisor_pending`: Deploy Prod доставил исправленный скрипт, но миграцию
+production DB агент не применял, `known_issues` не менял и к production-хосту
+не обращался.
+
+**Решение и восстановление.** Ветка миграции выбирается только по сохранённому
+before-state. Для исходного fingerprint строгий прямой/обратный
+`move-fingerprint` сохранён; для `null` оба переноса пропускаются. До первого
+`promote` проверяются report #80 и полный live KI-45, после него — ID,
+identity и допустимая fingerprint-пара отдельной 401-записи. ID сохраняется
+только после этих проверок. Если `promote` успел связать report, но дальнейшая
+проверка отказала, повтор fail-closed печатает наблюдаемый ID для явного
+`STAGE332_401_ISSUE_ID` и не создаёт дубль. Rollback/retry/re-apply используют
+тот же ID и полностью восстанавливают snapshot. Локальный live CLI на
+контейнерной DB подтвердил present/null, rollback retry, re-apply и повторный
+rollback; evidence `live-local-cli.log`, `live-local-cli-2.log` и
+`live-local-cli-reapply.log` с `.exit=0` в каталоге stage-333.
+
+**PRD-review 2/2.** Spark PRD 1 — невалидный sandbox failure; Spark PRD 2 —
+приняты два high о write-before-mismatch/target ID и medium об executable
+fake-SSH harness, отклонён compensating trap. Evidence
+`stage-333/spark-prd-1.log/.stderr/.exit` и
+`stage-333/spark-prd-2.log/.stderr/.exit`. Opus PRD 1/2 принял high и три
+medium о post-promote recovery, snapshot drift, link/re-apply и привязке к
+fingerprint #80. Envelope:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-333/opus-prd-1/2026-09-19T103853Z-file-PRD_-333--332--_md-attempt-1-of-3.xbEy3Q/claude-review-attempt-1-of-3.envelope.json`;
+subtype success, stop_reason tool_use, output_tokens 6182, thinking_tokens
+5065, len(result) 3011. Opus PRD 2/2 принял high и два medium о present
+re-apply, источнике fingerprint на retry/rollback и точных snapshot-полях.
+Envelope:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-333/opus-prd-2/2026-09-19T104229Z-file-PRD_-333--332--_md-attempt-1-of-3.8RJrWA/claude-review-attempt-1-of-3.envelope.json`;
+subtype success, stop_reason tool_use, output_tokens 5949, thinking_tokens
+4853, len(result) 2569. Бюджет PRD-review 2/2 исчерпан.
+
+**Diff-review 2/2.** Spark diff 1 и 3 невалидны (sandbox/оборван без verdict),
+Spark diff 2 валиден: high о ранней валидации отклонён после сверки порядка,
+high о `known_issue_id` принят; evidence `stage-333/spark-diff-1.*`,
+`spark-diff-2.*`, `spark-diff-3.log/.stderr`. Opus diff 1/2: три low приняты —
+ID не сохраняется до `validate_issue_pair`, recovery после post-promote crash
+fail-closed, живой re-apply добавлен. Envelope:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-333/opus-diff-1/2026-09-19T115207Z-git_range-dccb6ab__HEAD-attempt-1-of-3.6eHThd/claude-review-attempt-1-of-3.envelope.json`;
+subtype success, stop_reason tool_use, output_tokens 11287, thinking_tokens
+10492, len(result) 2147. Opus diff 2/2: приняты low о recovery ID и отсутствующем
+post-promote identity guard; guard сначала упал на старом сообщении, затем
+прошёл. Low о возможном отсутствии relink у `promote` отклонён: реальный
+локальный CLI создал #46 из report #80, после чего identity-проверка и полный
+rollback/re-apply прошли. Envelope:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-333/opus-diff-2/2026-09-19T121330Z-git_range-origin_main__HEAD-attempt-1-of-3.p8d4ha/claude-review-attempt-1-of-3.envelope.json`;
+subtype success, stop_reason tool_use, output_tokens 12042, thinking_tokens
+11320, len(result) 1971. Бюджет diff-review 2/2 и Spark 3/3 исчерпан; третий
+Opus не запускался.
+
+**Red → Green и проверки.** Исходные сторожа ломались отсутствием null-ветки,
+re-apply после rollback, write-before-mismatch, read-only report CLI/parser и
+точного маркера `not rest-exportable`: 6 failed / 25 passed,
+`stage-333/guards-red.log/.exit`. Post-Opus сторож ломался отсутствием
+наблюдаемого recovery ID: 1 failed, `opus2-guard-red.log/.exit`; после fix
+focused suite — 35 passed. ShellCheck v0.9.0 и `bash -n` — exit 0. Финальный
+mock suite на code SHA `fcbc77f358b421021db7d4c45324a0eae78fb837`: 3232
+passed, 2 skipped, 77 deselected; real suite: 66 passed, 9 skipped, 3236
+deselected, отдельный web-flow skipped; evidence
+`stage-333/mock-suite-fcbc77f.*` и `real-suite-fcbc77f.*`, exit 0.
+
+**Deployment и передача супервизору.** Кодовые коммиты `be2e482`, `e1b7711`,
+`6e1e3d2`, `fcbc77f` отправлены в `main`. GitHub Tests run `35443215392`,
+ShellCheck run `35443215414` и Deploy Prod run `35443539173` завершены
+success. Apply выполняет только супервизор из корня актуального checkout,
+явно используя существующий snapshot:
+
+```bash
+CONFIRM_STAGE332_PROD=apply-stage-332 STAGE332_MODE=apply STAGE332_BEFORE_STATE_FILE=/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-332/ki45-before.json scripts/apply_stage332_known_issues_prod.sh
+```
+
+После apply отдельная контрольная команда эффективности:
+
+```bash
+ssh root@212.193.59.219 'cd /opt/vetmanager-mcp && docker compose --profile production exec -T mcp python scripts/triage_agent_feedback.py match-effectiveness --days 30'
+```
+
+Скрипт сам печатает rollback-команду с фактическим ID отдельной 401-записи.
+Если вывод `promote` был потерян, но report #80 уже связан, повторный apply
+печатает наблюдаемый ID; его следует передать как `STAGE332_401_ISSUE_ID`.
