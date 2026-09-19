@@ -17544,3 +17544,83 @@ len(result) 461. Повторён только тот же отклонённы�
 `35428831449` — success, включая public MCP read-only smoke. Production DB и
 `known_issues` не менялись: тексты закрытия репортов #71/#73 переданы
 супервизору отдельным итоговым отчётом.
+
+## Этап 332. База знаний узнаёт отказы экспорта отчёта
+
+**Решение.** Отказы `start_report_export` и временные отказы скачивания
+покрывает версионированная конфигурация KI-45; постоянный HTTP 401 скачивания
+получает отдельную запись и отдельный playbook без повторного StartReport.
+Fingerprint отчёта #80 переносится атомарной CLI-командой, а конфигурация KI-45
+сохраняется в локальный mode-600 before-state для полного rollback. Скрипт
+применения предназначен только супервизору. Агент production DB и
+`known_issues` не читал и не менял.
+
+**PRD-review.** Spark PRD вернул `[]`. Opus PRD 1/2: два medium и один low
+приняты — обязательный before-state, явное создание отдельной 401-записи и
+неперекрывающаяся матрица параметризованных отказов. Evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-332/opus-prd-1/2026-09-19T081826Z-file-PRD_-332----_md-attempt-1-of-3.b3EIz0/claude-review-attempt-1-of-3.envelope.json`;
+subtype success, stop_reason tool_use, output_tokens 2402, thinking_tokens 1697,
+len(result) 1811. Opus PRD 2/2: три warning приняты — KI-45 исключает
+постоянный 401, fingerprint #80 переносится отдельной записи, порядок создания
+и адресных операций определён. Evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-332/opus-prd-2/2026-09-19T082035Z-file-PRD_-332----_md-attempt-2-of-3.hIepsw/claude-review-attempt-2-of-3.envelope.json`;
+subtype success, stop_reason tool_use, output_tokens 2250, thinking_tokens 1507,
+len(result) 1887. Бюджет PRD-review 2/2 исчерпан.
+
+**Red → Green и живые проверки.** Основной matcher-сторож показан красным
+удалением обязательного tenant-wide маркера: 1 failed / 16 passed, evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-332/guard-broken-marker.log`
+и `.exit`. Rollback-сторож сломан присваиванием `rules_json = None` для
+сохранённого object-state: 1 failed, evidence `guard-broken-restore-object.log`
+и `.exit` в том же каталоге. Новый preflight-сторож до реализации не нашёл
+CLI, validator и обязательный порядок/header: 3 failed / 6 passed, evidence
+`preflight-guard-red.log/.exit`; после исправления focused suite — 26 passed,
+`preflight-focused-green.log/.exit`. Скрипт без
+`CONFIRM_STAGE332_PROD=apply-stage-332` отказал до SSH с exit 64,
+`prod-script-fail-closed.log/.exit`.
+
+На разрешённом тестовом контуре StartReport вернул `report_file_id`, первый
+reportFile подтвердил временную неготовность, следующий — готовые поля; значения
+локаторов намеренно не печатались. Первый host-запуск был невалиден из-за
+локального окружения (exit 127), корректный container-run — exit 0: evidence
+`live-export-probe.log/.exit` и `live-export-probe-container.log/.exit`.
+Канонический matcher на воспроизведённом тексте выбрал только KI-45, а на
+постоянном 401 — только download-401; evidence
+`live-reproduced-matcher.log/.exit`. Это тестовый `TEST_DOMAIN`/`TEST_API_KEY`
+контур, не production и не отдельный bearer-стенд.
+
+**Diff-review.** Первый Spark-запуск в read-only sandbox не прочитал repo и
+является невалидным, несмотря на печать `[]`; evidence
+`spark-diff-1.log/.stderr/.exit`. Spark 2/3 нашёл неполный rollback (high) и
+неидемпотентный повтор promote (medium); оба finding приняты и исправлены
+before-state restore, сохранённым ID, полным rollback и проверкой fingerprint;
+evidence `spark-diff-2.log/.stderr/.exit`.
+
+Opus diff 1/2: medium о непроверенном object-state rollback и low о принятии
+чужого fingerprint приняты; добавлены object/null round-trip тесты и
+обязательный `--expected-fingerprint`. Evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-332/opus-diff-1/2026-09-19T092416Z-git_range-origin_main__HEAD-attempt-1-of-3.vWVkSH/claude-review-attempt-1-of-3.envelope.json`;
+subtype success, stop_reason tool_use, output_tokens 5415, thinking_tokens 4704,
+len(result) 1833.
+
+Opus diff 2/2: low о частичной миграции при запуске скрипта на старом образе
+принят. До `promote` контейнер теперь без DB-доступа валидирует обе пары
+rules/playbook новой CLI-командой; старый образ fail-closed на неизвестной
+команде. В шапке закреплено обязательное условие: запуск только после Deploy
+Prod этого коммита. Evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-332/opus-diff-2/2026-09-19T094234Z-git_range-origin_main__HEAD-attempt-2-of-3.uDgv3A/claude-review-attempt-2-of-3.envelope.json`;
+subtype success, stop_reason tool_use, output_tokens 4565, thinking_tokens 3775,
+len(result) 988. Бюджет diff-review 2/2 исчерпан; третий Opus не запускался.
+
+**Проверки и deployment.** ShellCheck v0.9.0, `bash -n`,
+`scripts/check_roadmap_structure.py` и `git diff --check` зелёные. Полный mock
+suite на code SHA `a12e6fba3290c80e1374e3400a6009429121244d`: 3223 passed,
+2 skipped, 77 deselected, exit 0; evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-332/mock-suite-a12e6fba3290.log/.exit`.
+Real suite: 66 passed, 9 skipped, 3227 deselected; отдельный web-flow skipped,
+exit 0; evidence `real-suite-a12e6fba3290.log/.exit` в том же каталоге.
+Коммиты `1d4e105`, `42688d3`, `160e42c`, `a12e6fb` отправлены в `main`.
+GitHub Tests run `35436352562` и Deploy Prod run `35436580323` завершены
+success. Этап оставлен `supervisor_pending`: супервизор применяет конфигурацию
+скриптом, проверяет `match-effectiveness` и только затем переводит этап в
+`done`.
