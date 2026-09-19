@@ -83,6 +83,28 @@ def test_versioned_rules_and_playbooks_pass_production_validators():
         assert feedback.validate_agent_playbook(json.dumps(_load(filename))) is not None
 
 
+def test_ki45_fixture_preserves_real_before_state_advice_and_excludes_401():
+    rules = _load("ki45-match-rules.json")
+    playbook = _load("ki45-playbook.json")
+    conditions = rules["all"]
+    markers = next(
+        condition["value"] for condition in conditions
+        if condition["field"] == "normalized_error_text"
+        and condition["op"] == "contains_any"
+    )
+    exclusions = next(
+        condition["value"] for condition in conditions
+        if condition["field"] == "normalized_error_text"
+        and condition["op"] == "not_contains_any"
+    )
+
+    assert "not rest-exportable" in markers
+    assert "getting report export file failed" in markers
+    assert "getting report export file failed http 401" in exclusions
+    assert "get_report_ai_job" in playbook["recommended_tool_sequence"]
+    assert "create_report_ai_job" in playbook["recommended_tool_sequence"]
+
+
 @pytest.mark.asyncio
 async def test_moved_report_80_fingerprint_selects_download_401_issue(
     sqlite_session_factory_builder, tmp_path, monkeypatch,

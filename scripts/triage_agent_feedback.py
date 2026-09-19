@@ -289,6 +289,20 @@ async def _show_known_issue_config(args: argparse.Namespace) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
 
 
+async def _show_feedback_fingerprint(args: argparse.Namespace) -> None:
+    """Print only the report identity/link/fingerprint needed by migrations."""
+    async with get_session_factory()() as session:
+        report = await session.get(AgentFeedbackReport, args.report_id)
+        if report is None:
+            raise SystemExit(f"Report not found: {args.report_id}")
+        payload = {
+            "id": report.id,
+            "known_issue_id": report.known_issue_id,
+            "error_fingerprint_hash": report.error_fingerprint_hash,
+        }
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+
+
 async def _restore_known_issue_config(args: argparse.Namespace) -> None:
     """Restore the reversible fields emitted by show-known-issue-config."""
     data = _load_json_file(args.config_json)
@@ -961,6 +975,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     show_issue_config.add_argument("known_issue_id", type=int)
     show_issue_config.set_defaults(func=_show_known_issue_config)
+
+    show_feedback_fingerprint = sub.add_parser(
+        "show-feedback-fingerprint",
+        help="Stage 333: print a report fingerprint without report text.",
+    )
+    show_feedback_fingerprint.add_argument("report_id", type=int)
+    show_feedback_fingerprint.set_defaults(func=_show_feedback_fingerprint)
 
     restore_issue_config = sub.add_parser(
         "restore-known-issue-config",

@@ -19,6 +19,7 @@
         "report export is temporarily blocked",
         "report export is temporarily limited",
         "report is not rest-exportable",
+        "not rest-exportable",
         "report export was denied or temporarily limited",
         "getting report export file failed"
       ]

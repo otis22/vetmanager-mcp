@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 import scripts.triage_agent_feedback as triage
-from storage_models import KnownIssue
+from storage_models import AgentFeedbackReport, KnownIssue
 
 
 def _issue(title: str, fingerprint: str | None) -> KnownIssue:
@@ -16,6 +16,31 @@ def _issue(title: str, fingerprint: str | None) -> KnownIssue:
         status="workaround_available", category="bug", severity="medium",
         title=title, error_fingerprint_hash=fingerprint,
     )
+
+
+@pytest.mark.asyncio
+async def test_show_feedback_fingerprint_is_json_without_report_text(
+    sqlite_session_factory_builder, tmp_path, monkeypatch, capsys,
+):
+    factory = await sqlite_session_factory_builder(tmp_path / "report-fingerprint.db")
+    monkeypatch.setattr(triage, "get_session_factory", lambda: factory)
+    async with factory() as session:
+        report = AgentFeedbackReport(
+            source="model", status="linked", category="bug", severity="medium",
+            summary="secret summary", details="secret details",
+            error_fingerprint_hash="a" * 64, known_issue_id=45,
+        )
+        session.add(report)
+        await session.commit()
+        report_id = report.id
+
+    await triage._show_feedback_fingerprint(SimpleNamespace(report_id=report_id))
+    shown = json.loads(capsys.readouterr().out)
+    assert shown == {
+        "error_fingerprint_hash": "a" * 64,
+        "id": report_id,
+        "known_issue_id": 45,
+    }
 
 
 @pytest.mark.asyncio
@@ -166,12 +191,14 @@ def test_parser_exposes_stage332_commands():
         "--match-rules-json", "/tmp/rules.json",
         "--playbook-json", "/tmp/playbook.json",
     ])
+    report_fingerprint = parser.parse_args(["show-feedback-fingerprint", "80"])
     assert (move.source_id, move.target_id) == (45, 81)
     assert move.expected_fingerprint == "abc"
     assert show.known_issue_id == 45
     assert restore.config_json == "/tmp/x.json"
     assert validate.match_rules_json == "/tmp/rules.json"
     assert validate.playbook_json == "/tmp/playbook.json"
+    assert report_fingerprint.report_id == 80
 
 
 @pytest.mark.asyncio

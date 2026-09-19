@@ -12,6 +12,7 @@
   ],
   "recommended_tool_sequence": [
     "get_report_export_download",
+    "get_report_ai_job",
     "create_report_ai_job"
   ],
   "user_message_template": "Экспорт отчёта не завершён. Сообщите пользователю причину из ошибки; не запускайте новый экспорт после отказа. Если готовится тот же файл, повторяйте только его скачивание после указанной паузы.",
