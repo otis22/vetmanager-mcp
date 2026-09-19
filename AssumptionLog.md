@@ -17484,3 +17484,63 @@ real `/tmp/vm330-real-5895fac.exit`: 0 (66 passed, 9 skipped). Real-suite не
 Deploy Prod run 35363947145 — success. Code review 1/2: 1 high (common Russian
 forms) and 1 medium (contact marker vs identifier) — fixed; review 2/2: 1
 warning (голая `7`) — fixed in `23a6cfb`; budget 2/2 exhausted, no third run.
+
+## Этап 331. Контракт создания питомца и медкарты
+
+**Решение и контракт.** `create_pet` теперь требует положительные `type_id` и
+`breed_id`; `create_medical_card` — положительный `clinic_id`.
+`admission_type` принимается только как положительное JSON-число: название,
+числовая строка, ноль и отрицательное значение отклоняются до I/O. Тот же код
+добавлен в `update_medical_card`. Сетевого lookup и кэша справочника нет.
+Изменение не меняет трактовку уже выданных ключей, токенов или прав; §6.0 не
+требует миграции production-данных.
+
+**PRD-review 2/2.** Spark — `[]`. Opus 1/2 evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-18T155209Z-file-PRD_-331--create-pet-medical-card_md-attempt-1-of-3.sB9bRg/claude-review-attempt-1-of-3.envelope.json`;
+subtype success, stop_reason tool_use, output_tokens 4127, thinking_tokens 3255,
+len(result) 1967. Opus 2/2 evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-18T155923Z-file-PRD_-331--create-pet-medical-card_md-attempt-2-of-3.HHQTa5/claude-review-attempt-2-of-3.envelope.json`;
+subtype success, stop_reason tool_use, output_tokens 2078, thinking_tokens 1533,
+len(result) 1204. Оба finding набора приняты и закрыты записанными в PRD
+JSON-int POST/PUT пробами; бюджет PRD-review исчерпан.
+
+**Red → Green и проверки.** Исходный guard запуск дал 9 failed / 4 passed:
+необязательные ссылки, строковый payload, отсутствующее update-поле и старые
+описания. Отдельно замена строгого update-типа на `int` дала 3 failed / 1
+passed; после возврата строгого типа 17 tests passed. Полный mock suite на
+финальном code SHA `47db2adfd6d91f4f6b17c7844798d191c7eb6c67`: 3197 passed,
+2 skipped, 77 deselected, exit 0; evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-331/mock-suite-final-47db2adfd6d91f4f6b17c7844798d191c7eb6c67.log`
+и одноимённый `.exit`. Opt-in real suite: 66 passed, 9 skipped, 3201
+deselected; отдельный web-flow 1 skipped; exit 0, evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-331/real-suite.log`
+и `.exit`.
+
+**Живые MCP-вызовы на devtr6.** Пять невалидных вызовов (`breed_id`
+отсутствует, `type_id=0`, `clinic_id` отсутствует/равен нулю, название типа
+приёма) дали локальный ValidationError и `http_events=0`. Помеченный питомец
+`stage331-mcp-20260919` создан через `create_pet` — HTTP 201; медкарта с
+`admission_type=3` через `create_medical_card` — HTTP 201; затем
+`update_medical_card(admission_type=4)` — HTTP 201, GET вернул 4 и сохранил
+маркерное описание. Evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-331/live-mcp.log`
+и `.exit`; сохранность описания — `opus1-medium-live-check.log/.exit` рядом.
+
+**Diff-review 2/2.** Spark evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-331/spark-diff-1.log`:
+`[]`. Opus 1/2 evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-19T070650Z-git_range-origin_main__HEAD-attempt-1-of-3.g23GRQ/claude-review-attempt-1-of-3.envelope.json`;
+subtype success, stop_reason tool_use, output_tokens 6460, thinking_tokens 4777,
+len(result) 1838. Medium о возможном сбросе прочих полей отклонён живым GET:
+описание сохранилось после минимального PUT. Low о возможном отсутствии
+`clinic_id` отклонён: `_card_context` требует это поле, real suite зелёный.
+Opus 2/2 evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-19T070851Z-git_range-origin_main__HEAD-attempt-2-of-3.rcJh7q/claude-review-attempt-2-of-3.envelope.json`;
+subtype success, stop_reason tool_use, output_tokens 2463, thinking_tokens 2115,
+len(result) 461. Повторён только тот же отклонённый low; бюджет 2/2 исчерпан.
+
+**Production completion.** Кодовые коммиты `35eb244` и `47db2ad` отправлены в
+`main`. GitHub Tests run `35428568582` — success; Deploy Prod run
+`35428831449` — success, включая public MCP read-only smoke. Production DB и
+`known_issues` не менялись: тексты закрытия репортов #71/#73 переданы
+супервизору отдельным итоговым отчётом.
