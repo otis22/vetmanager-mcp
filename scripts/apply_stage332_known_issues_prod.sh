@@ -41,6 +41,11 @@ if [[ $mode == apply && ! -s $before_file ]]; then
     fi
 fi
 printf 'KI-45 before-state: %s\n' "$before_file"
+expected_fingerprint=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["error_fingerprint_hash"] or "")' "$before_file")
+if [[ ! $expected_fingerprint =~ ^[[:xdigit:]]{64}$ ]]; then
+    printf '%s\n' 'KI-45 before-state has no usable fingerprint; refusing migration.' >&2
+    exit 65
+fi
 
 download_issue_id=${STAGE332_401_ISSUE_ID:-}
 if [[ -z $download_issue_id && -s $id_file ]]; then
@@ -53,7 +58,7 @@ if [[ $mode == rollback ]]; then
         exit 65
     fi
     "${remote[@]}" "$compose sh -c \"cat > /tmp/stage332-ki45-before.json\"" <"$before_file"
-    "${remote[@]}" "$compose python scripts/triage_agent_feedback.py move-fingerprint $download_issue_id 45"
+    "${remote[@]}" "$compose python scripts/triage_agent_feedback.py move-fingerprint $download_issue_id 45 --expected-fingerprint $expected_fingerprint"
     "${remote[@]}" "$compose python scripts/triage_agent_feedback.py restore-known-issue-config 45 --config-json /tmp/stage332-ki45-before.json"
     "${remote[@]}" "$compose python scripts/triage_agent_feedback.py mark $download_issue_id wontfix"
     "${remote[@]}" "$compose python scripts/triage_agent_feedback.py link 45 80"
@@ -84,7 +89,7 @@ fi
 
 "${remote[@]}" "$compose python scripts/triage_agent_feedback.py set-match-rules 45 --match-rules-json /tmp/stage332-ki45-match-rules.json"
 "${remote[@]}" "$compose python scripts/triage_agent_feedback.py set-playbook 45 --playbook-json /tmp/stage332-ki45-playbook.json"
-"${remote[@]}" "$compose python scripts/triage_agent_feedback.py move-fingerprint 45 $download_issue_id"
+"${remote[@]}" "$compose python scripts/triage_agent_feedback.py move-fingerprint 45 $download_issue_id --expected-fingerprint $expected_fingerprint"
 "${remote[@]}" "$compose python scripts/triage_agent_feedback.py show-known-issue-config $download_issue_id"
 "${remote[@]}" "$compose python scripts/triage_agent_feedback.py match-effectiveness --days 30"
 "${remote[@]}" "$compose sh -c \"rm -f /tmp/stage332-ki45-match-rules.json /tmp/stage332-ki45-playbook.json /tmp/stage332-download-401-match-rules.json /tmp/stage332-download-401-playbook.json\""

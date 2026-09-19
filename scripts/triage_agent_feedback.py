@@ -319,6 +319,11 @@ async def _move_fingerprint(args: argparse.Namespace) -> None:
     """Atomically move one verified failure fingerprint to another issue."""
     if args.source_id == args.target_id:
         raise SystemExit("Source and target known issue must differ.")
+    expected = getattr(args, "expected_fingerprint", None)
+    if expected is not None and (
+        not isinstance(expected, str) or not expected or len(expected) > 96
+    ):
+        raise SystemExit("Expected fingerprint is invalid.")
     async with get_session_factory()() as session:
         source = await session.get(KnownIssue, args.source_id)
         target = await session.get(KnownIssue, args.target_id)
@@ -328,10 +333,14 @@ async def _move_fingerprint(args: argparse.Namespace) -> None:
             raise SystemExit(f"Known issue not found: {args.target_id}")
         fingerprint = source.error_fingerprint_hash
         if not fingerprint:
-            if target.error_fingerprint_hash:
+            if expected and target.error_fingerprint_hash == expected:
                 print(f"fingerprint already moved known_issue #{source.id} -> #{target.id}")
                 return
+            if target.error_fingerprint_hash:
+                raise SystemExit("Target does not carry the expected fingerprint.")
             raise SystemExit(f"Known issue #{source.id} has no fingerprint to move.")
+        if expected and fingerprint != expected:
+            raise SystemExit("Source does not carry the expected fingerprint.")
         if target.error_fingerprint_hash not in (None, fingerprint):
             raise SystemExit("Source and target have different fingerprints; nothing changed.")
         target.error_fingerprint_hash = fingerprint
@@ -944,6 +953,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     move_fingerprint.add_argument("source_id", type=int)
     move_fingerprint.add_argument("target_id", type=int)
+    move_fingerprint.add_argument("--expected-fingerprint")
     move_fingerprint.set_defaults(func=_move_fingerprint)
 
     set_related_tool = sub.add_parser(
