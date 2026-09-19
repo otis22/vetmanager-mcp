@@ -165,6 +165,7 @@ async def test_create_medical_card_maps_fields_to_api_contract():
             {
                 "patient_id": 5,
                 "doctor_id": 3,
+                "clinic_id": 9,
                 "date_create": "2026-04-20",
                 "description": "Checkup",
                 "diagnosis_ids": [32],
@@ -178,6 +179,7 @@ async def test_create_medical_card_maps_fields_to_api_contract():
     assert body == {
         "patient_id": 5,
         "doctor_id": 3,
+        "clinic_id": 9,
         "date_create": "2026-04-20",
         "description": "Checkup",
         "diagnos": '[{"id":32,"type":1}]',

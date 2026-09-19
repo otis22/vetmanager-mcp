@@ -80,7 +80,7 @@ async def test_create_pet_payload_uses_owner_id():
     with headers_patch, runtime_patch:
         await mcp.call_tool(
             "create_pet",
-            {"alias": "Barney", "owner_id": 42, "type_id": 1},
+            {"alias": "Barney", "owner_id": 42, "type_id": 1, "breed_id": 2},
         )
 
     body = _body_of(route)

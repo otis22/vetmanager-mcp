@@ -61,7 +61,12 @@ def _update_route():
     )
 
 
-CREATE_BASE = {"patient_id": 5, "doctor_id": 3, "date_create": "2026-04-20"}
+CREATE_BASE = {
+    "patient_id": 5,
+    "doctor_id": 3,
+    "clinic_id": 9,
+    "date_create": "2026-04-20",
+}
 
 
 async def _call(tool: str, args: dict):

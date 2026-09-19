@@ -129,7 +129,10 @@ async def test_create_pet():
     )
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
-        result = await mcp.call_tool("create_pet", {"alias": "Luna", "owner_id": 1})
+        result = await mcp.call_tool(
+            "create_pet",
+            {"alias": "Luna", "owner_id": 1, "type_id": 1, "breed_id": 2},
+        )
     body = _body_of(route)
     assert body["alias"] == "Luna"
     assert body["owner_id"] == 1

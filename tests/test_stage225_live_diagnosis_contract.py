@@ -151,6 +151,7 @@ async def test_real_tool_refuses_the_bad_shapes_before_reaching_upstream() -> No
             await mcp.call_tool("create_medical_card", {
                 "patient_id": int(context["patient_id"]),
                 "doctor_id": int(context["doctor_id"]),
+                "clinic_id": int(context["clinic_id"]),
                 "date_create": "2026-09-01 12:00:00",
                 "diagnosis_text": "не сохранится при создании",
             })

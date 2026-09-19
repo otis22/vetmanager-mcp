@@ -13,7 +13,14 @@ from filters import (
 )
 from exceptions import ToolInputError, reportable_error
 from tools.crud_helpers import crud_get_by_id, crud_create, crud_update, unwrap_single_record
-from validators import DiagnosisIdParam, DiagnosisTypeParam, LimitParam, is_relative_date_param, parse_date_param
+from validators import (
+    DiagnosisIdParam,
+    DiagnosisTypeParam,
+    LimitParam,
+    PositiveReferenceIdParam,
+    is_relative_date_param,
+    parse_date_param,
+)
 from clinic_timezone import clinic_local_today
 from vetmanager_client import VetmanagerClient, VetmanagerError
 
@@ -389,6 +396,7 @@ def register(mcp: FastMCP) -> None:
         patient_id: int,
         doctor_id: int,
         date_create: str,
+        clinic_id: PositiveReferenceIdParam,
         description: str = "",
         diagnosis: str = "",
         diagnosis_ids: list[DiagnosisIdParam] | None = None,
@@ -396,16 +404,15 @@ def register(mcp: FastMCP) -> None:
         diagnosis_text: str = "",
         treatment: str = "",
         recomendation: str = "",
-        clinic_id: int = 0,
-        admission_type: str = "",
+        admission_type: PositiveReferenceIdParam | None = None,
         meet_result_id: int = 0,
         weight: float = 0.0,
         temperature: float = 0.0,
     ) -> dict:
         """Add a new medical card record for a pet.
 
-        Use patient_id (pet ID) to identify the animal.  All other fields are
-        optional but should be filled in when provided by the user.
+        Use patient_id (pet ID) to identify the animal. clinic_id is required;
+        the remaining clinical fields are optional.
 
         A diagnosis is a reference, not a sentence: pass `diagnosis_ids` with
         ids from `get_diagnoses`. Anything the catalogue does not cover goes in
@@ -430,9 +437,9 @@ def register(mcp: FastMCP) -> None:
                 the card exists.
             treatment: Prescribed treatment (optional).
             recomendation: Recommendations for the owner (optional).
-            clinic_id: ID of the clinic branch (optional, 0 = default).
-            admission_type: Type of admission, e.g. "Взятие анализа",
-                            "Первичный прием", "Плановый осмотр" (optional).
+            clinic_id: ID of the clinic branch.
+            admission_type: Positive numeric catalogue code of the admission
+                type from combo_manual_items (optional).
             meet_result_id: ID of the visit result from the combo manual (optional, 0 = none).
             weight: Animal weight in kg at the time of visit (optional, 0 = not recorded).
             temperature: Animal body temperature in °C (optional, 0 = not recorded).
@@ -444,6 +451,7 @@ def register(mcp: FastMCP) -> None:
             "patient_id": patient_id,
             "doctor_id": doctor_id,
             "date_create": date_create,
+            "clinic_id": clinic_id,
         }
         if description:
             payload["description"] = description
@@ -452,9 +460,7 @@ def register(mcp: FastMCP) -> None:
             payload["treatment"] = treatment
         if recomendation:
             payload["recomendation"] = recomendation
-        if clinic_id:
-            payload["clinic_id"] = clinic_id
-        if admission_type:
+        if admission_type is not None:
             payload["admission_type"] = admission_type
         if meet_result_id:
             payload["meet_result_id"] = meet_result_id
@@ -474,6 +480,7 @@ def register(mcp: FastMCP) -> None:
         diagnosis_text: str = "",
         treatment: str = "",
         recomendation: str = "",
+        admission_type: PositiveReferenceIdParam | None = None,
         weight: float = 0.0,
         temperature: float = 0.0,
     ) -> dict:
@@ -514,6 +521,8 @@ def register(mcp: FastMCP) -> None:
                 the references, never instead of them.
             treatment: Updated treatment notes.
             recomendation: Updated recommendations for the owner.
+            admission_type: Positive numeric catalogue code of the admission
+                type from combo_manual_items.
             weight: Updated animal weight in kg (0 = no change).
             temperature: Updated body temperature in °C (0 = no change).
         """
@@ -541,6 +550,8 @@ def register(mcp: FastMCP) -> None:
             payload["treatment"] = treatment
         if recomendation:
             payload["recomendation"] = recomendation
+        if admission_type is not None:
+            payload["admission_type"] = admission_type
         if weight:
             payload["weight"] = weight
         if temperature:

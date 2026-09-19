@@ -696,9 +696,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     "create_pet": (
         "Register a new pet / patient only after resolving owner_id with "
         "get_clients or known client context and confirming the exact owner. "
-        "Resolve type_id/breed_id with reference lookups when the user specifies "
-        "species or breed. Domain synonyms: питомец, пациент, животное, кот, "
-        "собака, пациент клиники, pet, animal."
+        "Resolve the required type_id and breed_id with reference lookups and "
+        "confirm the exact species and breed. Domain synonyms: питомец, пациент, "
+        "животное, кот, собака, пациент клиники, pet, animal."
     ),
     "create_admission": (
         "Schedule a new admission / appointment only after resolving pet_id, "
@@ -745,9 +745,10 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "create_medical_card": (
         "Add a new medical card / clinical record only after resolving patient_id "
-        "(pet ID) and doctor_id with get_pets/get_users or known context. Confirm "
-        "the exact pet, doctor, record date, and clinical text before writing; "
-        "use optional clinic/admission fields only when explicitly known. Domain "
+        "(pet ID), doctor_id, and the required clinic_id with get_pets/get_users "
+        "or known context. Confirm the exact pet, doctor, clinic, record date, and "
+        "clinical text before writing. admission_type is an optional positive "
+        "numeric catalogue code, never a title. Domain "
         "synonyms: медкарта, медицинская карта, история болезни, история лечения, "
         "клиническая запись, осмотр, medical card, medical record."
     ),

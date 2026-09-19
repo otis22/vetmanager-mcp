@@ -11,7 +11,7 @@ from tools._inactive_helpers import (
     find_pets_for_clients_last_visit,
 )
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
-from validators import LimitParam
+from validators import LimitParam, PositiveReferenceIdParam
 from vetmanager_client import VetmanagerClient
 
 # How far `get_inactive_pets` is allowed to walk the lapsed-client window.
@@ -199,8 +199,8 @@ def register(mcp: FastMCP) -> None:
     async def create_pet(
         alias: str,
         owner_id: int,
-        type_id: int = 0,
-        breed_id: int = 0,
+        type_id: PositiveReferenceIdParam,
+        breed_id: PositiveReferenceIdParam,
         birthday: str = "",
         note: str = "",
     ) -> dict:
@@ -211,16 +211,17 @@ def register(mcp: FastMCP) -> None:
             owner_id: ID of the owning client. The Vetmanager Pet table uses
                 `owner_id` as the FK to client.id (not `client_id`); this name
                 is consistent with get_pets/update_pet.
-            type_id: Animal type ID (species). Use 0 if unknown.
-            breed_id: Breed ID. Use 0 if unknown.
+            type_id: Animal type (species) ID.
+            breed_id: Breed ID for that animal type.
             birthday: Date of birth in YYYY-MM-DD format (optional).
             note: Additional notes about the pet.
         """
-        payload: dict = {"alias": alias, "owner_id": owner_id}
-        if type_id:
-            payload["type_id"] = type_id
-        if breed_id:
-            payload["breed_id"] = breed_id
+        payload: dict = {
+            "alias": alias,
+            "owner_id": owner_id,
+            "type_id": type_id,
+            "breed_id": breed_id,
+        }
         if birthday:
             payload["birthday"] = birthday
         if note:
