@@ -124,6 +124,7 @@ def _run(
     mode: str = "apply",
     live: dict | None = None,
     report_link: int = 45,
+    issue_id: int | None = None,
 ):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir(exist_ok=True)
@@ -147,6 +148,8 @@ def _run(
         "XDG_DATA_HOME": str(tmp_path / "data"), "FAKE_SSH_STATE": str(state_file),
         "PATH": f"{fake_bin}:{env['PATH']}",
     })
+    if issue_id is not None:
+        env["STAGE332_401_ISSUE_ID"] = str(issue_id)
     result = subprocess.run([str(SCRIPT)], cwd=ROOT, env=env, text=True,
                             capture_output=True, check=False)
     return result, json.loads(state_file.read_text()), before_file.read_bytes()
@@ -212,3 +215,11 @@ def test_first_apply_rejects_report_linked_to_an_unexpected_issue(tmp_path):
     assert failed.returncode != 0
     assert state["target"] is None
     assert state["ki45"] == before
+
+
+def test_invalid_override_id_is_not_persisted(tmp_path):
+    before = _before(None)
+    failed, state, _ = _run(tmp_path, before, issue_id=45)
+    assert failed.returncode != 0
+    assert not (tmp_path / "target-id.txt").exists()
+    assert state["commands"] == []

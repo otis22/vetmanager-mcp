@@ -68,7 +68,7 @@ download_issue_id=${STAGE332_401_ISSUE_ID:-}
 if [[ -z $download_issue_id && -s $id_file ]]; then
     download_issue_id=$(<"$id_file")
 fi
-if [[ -n $download_issue_id && ! $download_issue_id =~ ^[0-9]+$ ]]; then
+if [[ -n $download_issue_id && ( ! $download_issue_id =~ ^[0-9]+$ || $download_issue_id == 45 ) ]]; then
     printf '%s\n' 'Saved download-401 known issue id is invalid.' >&2
     exit 65
 fi
@@ -102,7 +102,7 @@ if $has_source_fingerprint && [[ $expected_fingerprint != "$report_fingerprint" 
     exit 65
 fi
 if [[ -z $download_issue_id && $report_known_issue_id != 45 ]]; then
-    printf '%s\n' 'Report #80 is not linked to KI-45 before promotion; refusing migration.' >&2
+    printf '%s\n' 'Report #80 is not linked to KI-45 before promotion; if a prior promote succeeded, rerun with STAGE332_401_ISSUE_ID from its output.' >&2
     exit 65
 fi
 if [[ -n $download_issue_id && $report_known_issue_id != 45 && $report_known_issue_id != "$download_issue_id" ]]; then
@@ -196,9 +196,6 @@ if [[ ! $download_issue_id =~ ^[0-9]+$ ]]; then
     printf '%s\n' 'Could not determine the separate download-401 known issue id.' >&2
     exit 65
 fi
-if [[ ! -s $id_file ]]; then
-    (umask 077; printf '%s\n' "$download_issue_id" >"$id_file")
-fi
 if $promoted_this_run; then
     if ! load_report_state || [[ $report_known_issue_id != "$download_issue_id" ]]; then
         printf '%s\n' 'Report #80 was not linked to the promoted known issue; refusing migration.' >&2
@@ -211,6 +208,9 @@ target_config=$("${remote[@]}" "$compose python scripts/triage_agent_feedback.py
 if ! validate_issue_pair "$source_config" "$target_config"; then
     printf '%s\n' 'Known-issue fingerprint state is unexpected; refusing migration.' >&2
     exit 65
+fi
+if [[ ! -s $id_file ]]; then
+    (umask 077; printf '%s\n' "$download_issue_id" >"$id_file")
 fi
 
 if $has_source_fingerprint; then
