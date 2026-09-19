@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Supervisor-only production application for Stage 332. Do not run from agents.
+# Run only after Deploy Prod of this commit succeeds.
 
 set -euo pipefail
 
@@ -73,6 +74,9 @@ for name in ki45-match-rules ki45-playbook download-401-match-rules download-401
     "${remote[@]}" "$compose sh -c \"cat > /tmp/stage332-$name.json\"" \
         <"$fixture_dir/$name.json"
 done
+
+"${remote[@]}" "$compose python scripts/triage_agent_feedback.py validate-known-issue-config --match-rules-json /tmp/stage332-ki45-match-rules.json --playbook-json /tmp/stage332-ki45-playbook.json"
+"${remote[@]}" "$compose python scripts/triage_agent_feedback.py validate-known-issue-config --match-rules-json /tmp/stage332-download-401-match-rules.json --playbook-json /tmp/stage332-download-401-playbook.json"
 
 if [[ -z $download_issue_id ]]; then
     promote_output=$("${remote[@]}" "$compose python scripts/triage_agent_feedback.py promote 80 --title 'Report export file download is unauthorized' --status workaround_available --public-summary 'The report file was created but current Vetmanager credentials cannot download it.' --workaround 'Re-authorize the integration, then download the same report_file_id; do not start a new export.' --related-tool get_report_export_download --match-rules-json /tmp/stage332-download-401-match-rules.json --playbook-json /tmp/stage332-download-401-playbook.json")

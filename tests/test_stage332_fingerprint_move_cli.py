@@ -161,7 +161,47 @@ def test_parser_exposes_stage332_commands():
     move = parser.parse_args(["move-fingerprint", "45", "81", "--expected-fingerprint", "abc"])
     show = parser.parse_args(["show-known-issue-config", "45"])
     restore = parser.parse_args(["restore-known-issue-config", "45", "--config-json", "/tmp/x.json"])
+    validate = parser.parse_args([
+        "validate-known-issue-config",
+        "--match-rules-json", "/tmp/rules.json",
+        "--playbook-json", "/tmp/playbook.json",
+    ])
     assert (move.source_id, move.target_id) == (45, 81)
     assert move.expected_fingerprint == "abc"
     assert show.known_issue_id == 45
     assert restore.config_json == "/tmp/x.json"
+    assert validate.match_rules_json == "/tmp/rules.json"
+    assert validate.playbook_json == "/tmp/playbook.json"
+
+
+@pytest.mark.asyncio
+async def test_validate_known_issue_config_is_db_free_and_fail_closed(tmp_path, capsys):
+    rules = tmp_path / "rules.json"
+    playbook = tmp_path / "playbook.json"
+    rules.write_text(json.dumps({
+        "version": 1,
+        "all": [{
+            "field": "normalized_error_text",
+            "op": "not_contains_any",
+            "value": ["http 401"],
+        }],
+    }), encoding="utf-8")
+    playbook.write_text(json.dumps({
+        "version": 1,
+        "summary": "safe",
+        "steps": [],
+        "do_not_do": [],
+        "recommended_tool_sequence": [],
+        "safe_to_retry": False,
+    }), encoding="utf-8")
+
+    await triage._validate_known_issue_config(SimpleNamespace(
+        match_rules_json=str(rules), playbook_json=str(playbook)
+    ))
+    assert capsys.readouterr().out == "known issue config valid\n"
+
+    rules.write_text('{"version": 1, "all": []}', encoding="utf-8")
+    with pytest.raises(SystemExit, match="Invalid match rules JSON"):
+        await triage._validate_known_issue_config(SimpleNamespace(
+            match_rules_json=str(rules), playbook_json=str(playbook)
+        ))

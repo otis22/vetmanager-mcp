@@ -252,6 +252,21 @@ async def _set_match_rules(args: argparse.Namespace) -> None:
         )
 
 
+async def _validate_known_issue_config(args: argparse.Namespace) -> None:
+    """Validate versioned rules/playbook without opening a DB session."""
+    rules = _load_json_file(args.match_rules_json)
+    rules_json = _safe_json_payload(rules, limit=8000)
+    if not rules_json or validate_match_rules_json(
+        rules_json, strict_tool_names=True
+    ) is None:
+        raise SystemExit("Invalid match rules JSON.")
+    playbook = _load_json_file(args.playbook_json)
+    playbook_json = _safe_json_payload(playbook, limit=8000)
+    if not playbook_json or validate_agent_playbook(playbook_json) is None:
+        raise SystemExit("Invalid agent playbook JSON.")
+    print("known issue config valid")
+
+
 async def _show_known_issue_config(args: argparse.Namespace) -> None:
     """Print the reversible configuration of one issue without report text."""
     async with get_session_factory()() as session:
@@ -931,6 +946,14 @@ def _build_parser() -> argparse.ArgumentParser:
     set_match_rules.add_argument("known_issue_id", type=int)
     set_match_rules.add_argument("--match-rules-json", required=True)
     set_match_rules.set_defaults(func=_set_match_rules)
+
+    validate_issue_config = sub.add_parser(
+        "validate-known-issue-config",
+        help="Stage 332: validate rules/playbook with deployed code without DB access.",
+    )
+    validate_issue_config.add_argument("--match-rules-json", required=True)
+    validate_issue_config.add_argument("--playbook-json", required=True)
+    validate_issue_config.set_defaults(func=_validate_known_issue_config)
 
     show_issue_config = sub.add_parser(
         "show-known-issue-config",
