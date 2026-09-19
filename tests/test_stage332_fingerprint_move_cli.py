@@ -37,6 +37,9 @@ async def test_move_fingerprint_accepts_promote_duplicate_and_is_reversible(
         target = await session.get(KnownIssue, target_id)
         assert (source.error_fingerprint_hash, target.error_fingerprint_hash) == (None, "same-hash")
 
+    # Supervisor retry after a partial run must not fail or create another row.
+    await triage._move_fingerprint(SimpleNamespace(source_id=source_id, target_id=target_id))
+
     await triage._move_fingerprint(SimpleNamespace(source_id=target_id, target_id=source_id))
     async with factory() as session:
         source = await session.get(KnownIssue, source_id)
@@ -85,9 +88,47 @@ async def test_show_config_is_json_and_does_not_print_report_text(
     assert shown["match_rules_json"]["version"] == 1
 
 
+@pytest.mark.asyncio
+async def test_saved_config_restores_nullable_rules_playbook_and_fingerprint(
+    sqlite_session_factory_builder, tmp_path, monkeypatch, capsys,
+):
+    factory = await sqlite_session_factory_builder(tmp_path / "restore.db")
+    monkeypatch.setattr(triage, "get_session_factory", lambda: factory)
+    async with factory() as session:
+        issue = _issue("KI-45 before", "old-hash")
+        issue.match_rules_json = None
+        issue.agent_playbook_json = None
+        session.add(issue)
+        await session.commit()
+        issue_id = issue.id
+
+    await triage._show_known_issue_config(SimpleNamespace(known_issue_id=issue_id))
+    snapshot = tmp_path / "before.json"
+    snapshot.write_text(capsys.readouterr().out, encoding="utf-8")
+    async with factory() as session:
+        issue = await session.get(KnownIssue, issue_id)
+        issue.title = "changed"
+        issue.error_fingerprint_hash = None
+        issue.match_rules_json = json.dumps({"version": 1, "all": [{"field": "related_tool", "op": "eq", "value": "start_report_export"}]})
+        issue.agent_playbook_json = json.dumps({"version": 1, "summary": "changed", "steps": [], "do_not_do": [], "recommended_tool_sequence": [], "safe_to_retry": False})
+        await session.commit()
+
+    await triage._restore_known_issue_config(
+        SimpleNamespace(known_issue_id=issue_id, config_json=str(snapshot))
+    )
+    async with factory() as session:
+        restored = await session.get(KnownIssue, issue_id)
+        assert restored.title == "KI-45 before"
+        assert restored.error_fingerprint_hash == "old-hash"
+        assert restored.match_rules_json is None
+        assert restored.agent_playbook_json is None
+
+
 def test_parser_exposes_stage332_commands():
     parser = triage._build_parser()
     move = parser.parse_args(["move-fingerprint", "45", "81"])
     show = parser.parse_args(["show-known-issue-config", "45"])
+    restore = parser.parse_args(["restore-known-issue-config", "45", "--config-json", "/tmp/x.json"])
     assert (move.source_id, move.target_id) == (45, 81)
     assert show.known_issue_id == 45
+    assert restore.config_json == "/tmp/x.json"

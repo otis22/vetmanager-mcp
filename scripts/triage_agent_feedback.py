@@ -274,6 +274,47 @@ async def _show_known_issue_config(args: argparse.Namespace) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
 
 
+async def _restore_known_issue_config(args: argparse.Namespace) -> None:
+    """Restore the reversible fields emitted by show-known-issue-config."""
+    data = _load_json_file(args.config_json)
+    if not isinstance(data, dict) or data.get("id") != args.known_issue_id:
+        raise SystemExit("Config JSON does not belong to the requested known issue.")
+    status = data.get("status")
+    if status not in KNOWN_ISSUE_STATUSES:
+        raise SystemExit("Config JSON has an invalid known issue status.")
+    title = sanitize_text(data.get("title"), limit=240, required=True) or ""
+    related_tool = _validate_related_tool(data.get("related_tool"))
+    fingerprint = data.get("error_fingerprint_hash")
+    if fingerprint is not None and (
+        not isinstance(fingerprint, str) or not fingerprint or len(fingerprint) > 96
+    ):
+        raise SystemExit("Config JSON has an invalid fingerprint.")
+    rules = data.get("match_rules_json")
+    rules_json = _safe_json_payload(rules, limit=8000)
+    if rules is not None and validate_match_rules_json(
+        rules_json, strict_tool_names=True
+    ) is None:
+        raise SystemExit("Config JSON has invalid match rules.")
+    playbook = data.get("agent_playbook_json")
+    playbook_json = _safe_json_payload(playbook, limit=8000)
+    if playbook is not None and validate_agent_playbook(playbook_json) is None:
+        raise SystemExit("Config JSON has an invalid agent playbook.")
+
+    async with get_session_factory()() as session:
+        issue = await session.get(KnownIssue, args.known_issue_id)
+        if issue is None:
+            raise SystemExit(f"Known issue not found: {args.known_issue_id}")
+        issue.status = status
+        issue.title = title
+        issue.related_tool = related_tool
+        issue.error_fingerprint_hash = fingerprint
+        issue.match_rules_json = rules_json
+        issue.agent_playbook_json = playbook_json
+        issue.updated_at = _now()
+        await session.commit()
+    print(f"known_issue #{issue.id} config restored")
+
+
 async def _move_fingerprint(args: argparse.Namespace) -> None:
     """Atomically move one verified failure fingerprint to another issue."""
     if args.source_id == args.target_id:
@@ -287,6 +328,9 @@ async def _move_fingerprint(args: argparse.Namespace) -> None:
             raise SystemExit(f"Known issue not found: {args.target_id}")
         fingerprint = source.error_fingerprint_hash
         if not fingerprint:
+            if target.error_fingerprint_hash:
+                print(f"fingerprint already moved known_issue #{source.id} -> #{target.id}")
+                return
             raise SystemExit(f"Known issue #{source.id} has no fingerprint to move.")
         if target.error_fingerprint_hash not in (None, fingerprint):
             raise SystemExit("Source and target have different fingerprints; nothing changed.")
@@ -885,6 +929,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     show_issue_config.add_argument("known_issue_id", type=int)
     show_issue_config.set_defaults(func=_show_known_issue_config)
+
+    restore_issue_config = sub.add_parser(
+        "restore-known-issue-config",
+        help="Stage 332: restore fields from show-known-issue-config JSON.",
+    )
+    restore_issue_config.add_argument("known_issue_id", type=int)
+    restore_issue_config.add_argument("--config-json", required=True)
+    restore_issue_config.set_defaults(func=_restore_known_issue_config)
 
     move_fingerprint = sub.add_parser(
         "move-fingerprint",
