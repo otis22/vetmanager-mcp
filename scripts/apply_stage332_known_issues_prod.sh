@@ -68,21 +68,45 @@ download_issue_id=${STAGE332_401_ISSUE_ID:-}
 if [[ -z $download_issue_id && -s $id_file ]]; then
     download_issue_id=$(<"$id_file")
 fi
+if [[ -n $download_issue_id && ! $download_issue_id =~ ^[0-9]+$ ]]; then
+    printf '%s\n' 'Saved download-401 known issue id is invalid.' >&2
+    exit 65
+fi
 
-report_config=$("${remote[@]}" "$compose python scripts/triage_agent_feedback.py show-feedback-fingerprint 80")
-if ! report_fingerprint=$(python3 -c '
+load_report_state() {
+    local report_config parsed
+    report_config=$("${remote[@]}" "$compose python scripts/triage_agent_feedback.py show-feedback-fingerprint 80")
+    parsed=$(python3 -c '
 import json, re, sys
 data = json.load(sys.stdin)
 value = data.get("error_fingerprint_hash")
-if data.get("id") != 80 or not isinstance(value, str) or re.fullmatch(r"[0-9A-Fa-f]{64}", value) is None:
+known_issue_id = data.get("known_issue_id")
+if (data.get("id") != 80
+        or not isinstance(value, str)
+        or re.fullmatch(r"[0-9A-Fa-f]{64}", value) is None
+        or not isinstance(known_issue_id, int)
+        or known_issue_id <= 0):
     raise SystemExit(1)
-print(value)
-' <<<"$report_config" 2>/dev/null); then
+print(f"{value}|{known_issue_id}")
+' <<<"$report_config" 2>/dev/null) || return 1
+    report_fingerprint=${parsed%%|*}
+    report_known_issue_id=${parsed#*|}
+}
+
+if ! load_report_state; then
     printf '%s\n' 'Report #80 has no usable fingerprint; refusing migration.' >&2
     exit 65
 fi
 if $has_source_fingerprint && [[ $expected_fingerprint != "$report_fingerprint" ]]; then
     printf '%s\n' 'KI-45 fingerprint does not match report #80; refusing migration.' >&2
+    exit 65
+fi
+if [[ -z $download_issue_id && $report_known_issue_id != 45 ]]; then
+    printf '%s\n' 'Report #80 is not linked to KI-45 before promotion; refusing migration.' >&2
+    exit 65
+fi
+if [[ -n $download_issue_id && $report_known_issue_id != 45 && $report_known_issue_id != "$download_issue_id" ]]; then
+    printf '%s\n' 'Report #80 is linked to an unexpected known issue; refusing migration.' >&2
     exit 65
 fi
 
@@ -145,6 +169,7 @@ if [[ $mode == rollback ]]; then
     exit 0
 fi
 
+promoted_this_run=false
 if [[ -z $download_issue_id ]]; then
     live_ki45=$("${remote[@]}" "$compose python scripts/triage_agent_feedback.py show-known-issue-config 45")
     if ! validate_initial_ki45 "$live_ki45"; then
@@ -165,6 +190,7 @@ if [[ -z $download_issue_id ]]; then
     promote_output=$("${remote[@]}" "$compose python scripts/triage_agent_feedback.py promote 80 --title 'Report export file download is unauthorized' --status workaround_available --public-summary 'The report file was created but current Vetmanager credentials cannot download it.' --workaround 'Re-authorize the integration, then download the same report_file_id; do not start a new export.' --related-tool get_report_export_download --match-rules-json /tmp/stage332-download-401-match-rules.json --playbook-json /tmp/stage332-download-401-playbook.json")
     printf '%s\n' "$promote_output"
     download_issue_id=$(printf '%s\n' "$promote_output" | sed -n 's/.*created known_issue #\([0-9][0-9]*\).*/\1/p')
+    promoted_this_run=true
 fi
 if [[ ! $download_issue_id =~ ^[0-9]+$ ]]; then
     printf '%s\n' 'Could not determine the separate download-401 known issue id.' >&2
@@ -172,6 +198,12 @@ if [[ ! $download_issue_id =~ ^[0-9]+$ ]]; then
 fi
 if [[ ! -s $id_file ]]; then
     (umask 077; printf '%s\n' "$download_issue_id" >"$id_file")
+fi
+if $promoted_this_run; then
+    if ! load_report_state || [[ $report_known_issue_id != "$download_issue_id" ]]; then
+        printf '%s\n' 'Report #80 was not linked to the promoted known issue; refusing migration.' >&2
+        exit 65
+    fi
 fi
 
 source_config=$("${remote[@]}" "$compose python scripts/triage_agent_feedback.py show-known-issue-config 45")

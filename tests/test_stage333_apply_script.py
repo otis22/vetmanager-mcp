@@ -117,7 +117,14 @@ def _before(fingerprint: str | None) -> dict:
     return value
 
 
-def _run(tmp_path: Path, before: dict, *, mode: str = "apply", live: dict | None = None):
+def _run(
+    tmp_path: Path,
+    before: dict,
+    *,
+    mode: str = "apply",
+    live: dict | None = None,
+    report_link: int = 45,
+):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir(exist_ok=True)
     fake_ssh = fake_bin / "ssh"
@@ -130,7 +137,7 @@ def _run(tmp_path: Path, before: dict, *, mode: str = "apply", live: dict | None
     if not state_file.exists():
         state_file.write_text(json.dumps({
             "commands": [], "remote_files": {}, "report_fingerprint": FINGERPRINT,
-            "report_link": 45, "ki45": live or before, "target": None,
+            "report_link": report_link, "ki45": live or before, "target": None,
         }), encoding="utf-8")
     env = os.environ.copy()
     env.update({
@@ -197,3 +204,11 @@ def test_first_apply_rejects_live_ki45_drift(tmp_path):
     assert failed.returncode != 0
     assert state["target"] is None
     assert state["ki45"] == live
+
+
+def test_first_apply_rejects_report_linked_to_an_unexpected_issue(tmp_path):
+    before = _before(None)
+    failed, state, _ = _run(tmp_path, before, report_link=999)
+    assert failed.returncode != 0
+    assert state["target"] is None
+    assert state["ki45"] == before
