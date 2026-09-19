@@ -17716,3 +17716,107 @@ ssh root@212.193.59.219 'cd /opt/vetmanager-mcp && docker compose --profile prod
 Скрипт сам печатает rollback-команду с фактическим ID отдельной 401-записи.
 Если вывод `promote` был потерян, но report #80 уже связан, повторный apply
 печатает наблюдаемый ID; его следует передать как `STAGE332_401_ISSUE_ID`.
+
+## Этап 334. Миграция 332 без отпечатков у KI-45 и репорта #80
+
+**Исправленная предпосылка.** Два supervisor apply установили production-факт:
+отпечатков нет ни у KI-45, ни у репорта #80. Первый запуск 19.09.2026 13:28
+сохранил read-only before-state
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-332/ki45-before.json`;
+второй запуск 15:43 на `fcbc77f` завершился до мутаций с exit 65 и сообщением
+`Report #80 has no usable fingerprint; refusing migration`. Репорт связан с
+KI-45 текстовым правилом `getting report export file failed`. Тем самым
+премисса этапов 332/333 о переносе или сверке fingerprint #80 ложна целиком.
+Агент production host/DB/`known_issues` не вызывал и before-state не менял.
+
+**Решение.** В согласованном состоянии `null/null` `promote 80` создаёт
+rule-only target с nullable fingerprint, точными download-401 fixtures,
+`related_tool=get_report_export_download` и ссылкой #80. Ветка не вызывает
+`move-fingerprint`; односторонний или разный fingerprint остаётся fail-closed.
+Двухфазный локальный marker `prepared` → `target:<id>` позволяет восстановить
+ID после обрыва между DB-транзакцией promote и записью ID, не создавая дубль.
+Identity проверяется по ID/title/tool/status/fixtures и текущей read-only ссылке
+#80. Apply/retry и rollback/re-rollback/re-apply используют явную матрицу
+status/link; rollback восстанавливает семь полей KI-45 из snapshot, ставит
+target в `wontfix` и возвращает #80 к KI-45. Новая CLI-команда, schema/matcher
+change и синтетический fingerprint не понадобились; выданные credentials не
+меняются.
+
+**PRD review.** Spark 1 (`stage-334/spark-prd-1.log/.stderr/.exit`) принёс пять
+кандидатов: принят риск потери ID после promote и уточнены state matrix,
+KI-45 drift и fixtures; fault-injection расширен. Spark 2
+(`stage-334/spark-prd-2.log/.stderr/.exit`) уточнил marker recovery; три medium
+приняты и сведены к двухфазному marker. Ревью сторонней моделью 1/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-334/opus-prd-1/2026-09-19T125724Z-file-PRD_-334--332-null-null_md-attempt-1-of-3.jYK4kb/claude-review-attempt-1-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=2942,
+thinking_tokens=2405, len(result)=1413. Medium о потерянном ID после rollback и
+low о crash-window приняты. Ревью 2/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-334/opus-prd-2/2026-09-19T125958Z-file-PRD_-334--332-null-null_md-attempt-1-of-3.HwbaZY/claude-review-attempt-1-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=3519,
+thinking_tokens=2983, len(result)=1212. Medium о тупике `prepared/#80→45`
+принят: `prepared` разрешает повторный promote только пока #80 всё ещё связан с
+KI-45; после появления target marker хранит его ID.
+
+**Red/Green и локальная live-проверка.** Красный сторож
+`stage-334/guards-red.log/.exit` (exit 1) сломался старым отказом на
+`report fingerprint=null`, отсутствием fail-closed для `KI-45=null/#80=hash`
+и недостижимым recovery после promote. После реализации focused-набор
+`tests/test_stage333_apply_script.py`, `test_stage332_apply_script.py` и
+`test_stage332_fingerprint_move_cli.py` прошёл 20 тестов; расширенный harness
+проходит apply → retry → rollback → re-rollback → re-apply для `null/null` и
+`present/present`, односторонние состояния и invalid marker/link отклоняет.
+Локальный реальный CLI в контейнере на SQLite создал nullable target #46,
+показал `error_fingerprint_hash: null`, fixtures v1 и ссылку #80→46, затем
+идемпотентно выполнил link rollback/re-apply; evidence
+`stage-334/live-null-null.log/.exit` (exit 0). Это локальная БД, не production.
+
+**Проверки и аудит до code review.** ShellCheck v0.9.0 и `bash -n` для всех
+`scripts/*.sh` завершились exit 0. Полный mock suite: 3238 passed, 2 skipped,
+77 deselected; real suite: 66 passed, 9 skipped, 3242 deselected, отдельный
+web-flow skipped. Evidence: `stage-334/mock-suite-precommit.log/.exit` и
+`stage-334/real-suite-precommit.log/.exit`, оба exit 0. Audit проверил
+fail-closed пары fingerprint, target identity/status/link, сохранение семи
+полей snapshot, отсутствие новой CLI/DB/public поверхности и порядок link →
+reactivate; рефакторинг не потребовался. Workflow-check medium о суммарных 313
+LOC отклонён как механический: PRD декомпозирует отдельные изменения скрипта и
+test harness по ≤150 LOC; low reminder о suite выполнен указанными прогонами.
+
+**Spark diff 1.** Валидный review (`stage-334/spark-diff-1.log/.stderr/.exit`)
+нашёл два high, оба приняты: параллельные supervisor-процессы могли одновременно
+пройти `prepared` и создать дубли; rollback допускал snapshot без nullable-поля.
+Новые сторожа были красными (2 failed,
+`stage-334/spark1-guards-red.log/.exit`), затем зелёными (16 passed). Скрипт
+берёт неблокирующий `flock` на локальном evidence-файле и до любого write
+требует наличие всех семи ключей snapshot. После правок ShellCheck/`bash -n`
+снова exit 0; финальный полный mock suite — 3240 passed, 2 skipped, 77
+deselected, real suite — 66 passed, 9 skipped, 3244 deselected и отдельный
+web-flow skipped. Evidence: `stage-334/mock-suite-final.log/.exit` и
+`stage-334/real-suite-final.log/.exit`, оба exit 0.
+
+**Ревью сторонней моделью diff 1/2.** Envelope:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-334/opus-diff-1/2026-09-19T134325Z-git_range-origin_main__HEAD-attempt-1-of-3.GagKTm/claude-review-attempt-1-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=6763,
+thinking_tokens=6142, len(result)=1272. Единственный medium принят: recovery
+после crash-before-ID сохранял ID на apply, но не на rollback, поэтому
+crash → rollback → apply мог повторно вызвать promote. Новый сторож сначала
+упал на отсутствующем `target-id.txt`
+(`stage-334/opus1-guard-red.log/.exit`), затем цепочка прошла без дубля; focused
+suite — 26 passed. После исправления ShellCheck/`bash -n` снова exit 0,
+post-Opus полный mock suite — 3241 passed, 2 skipped, 77 deselected, real suite
+— 66 passed, 9 skipped, 3245 deselected и отдельный web-flow skipped; evidence
+`stage-334/mock-suite-post-opus1.log/.exit` и
+`stage-334/real-suite-post-opus1.log/.exit`, оба exit 0.
+
+**Ревью сторонней моделью diff 2/2.** Envelope:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-334/opus-diff-2/2026-09-19T140259Z-git_range-origin_main__HEAD-attempt-1-of-3.ireK7p/claude-review-attempt-1-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=8882,
+thinking_tokens=8247, len(result)=728. Единственный low принят: generic-подсказка
+про `STAGE332_401_ISSUE_ID` была тупиковой при утрате marker в rule-only ветке.
+Теперь эта ветка явно сообщает об отсутствующем migration state и не предлагает
+запрещённый override; present/present сохраняет прежнюю recovery-подсказку.
+Focused suite — 26 passed, ShellCheck/`bash -n` — exit 0. Финальные после всех
+review-правок: mock 3241 passed, 2 skipped, 77 deselected; real 66 passed,
+9 skipped, 3245 deselected и отдельный web-flow skipped. Evidence:
+`stage-334/mock-suite-post-opus2.log/.exit` и
+`stage-334/real-suite-post-opus2.log/.exit`, оба exit 0. Бюджет diff-review 2/2
+исчерпан; третьего strong review нет.

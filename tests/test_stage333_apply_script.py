@@ -70,10 +70,13 @@ elif " promote 80 " in command:
         "title": state.get("promote_target_title", "Report export file download is unauthorized"),
         "related_tool": "get_report_export_download",
         "error_fingerprint_hash": state["report_fingerprint"],
-        "match_rules_json": {}, "agent_playbook_json": {},
+        "match_rules_json": json.loads(state["remote_files"]["/tmp/stage332-download-401-match-rules.json"]),
+        "agent_playbook_json": json.loads(state["remote_files"]["/tmp/stage332-download-401-playbook.json"]),
     }
     state["report_link"] = 81
     print("created known_issue #81 from report #80")
+    if state.pop("fail_after_promote", False):
+        save(); raise SystemExit(75)
 elif " move-fingerprint " in command:
     match = re.search(r'move-fingerprint (\d+) (\d+) --expected-fingerprint ([0-9a-f]+)', command)
     source_id, target_id, expected = int(match.group(1)), int(match.group(2)), match.group(3)
@@ -126,6 +129,8 @@ def _run(
     report_link: int = 45,
     issue_id: int | None = None,
     promote_target_title: str | None = None,
+    report_fingerprint: str | None = FINGERPRINT,
+    fail_after_promote: bool = False,
 ):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir(exist_ok=True)
@@ -138,8 +143,9 @@ def _run(
     state_file = tmp_path / "state.json"
     if not state_file.exists():
         initial_state = {
-            "commands": [], "remote_files": {}, "report_fingerprint": FINGERPRINT,
+            "commands": [], "remote_files": {}, "report_fingerprint": report_fingerprint,
             "report_link": report_link, "ki45": live or before, "target": None,
+            "fail_after_promote": fail_after_promote,
         }
         if promote_target_title is not None:
             initial_state["promote_target_title"] = promote_target_title
@@ -149,6 +155,7 @@ def _run(
         "CONFIRM_STAGE332_PROD": "apply-stage-332", "STAGE332_MODE": mode,
         "STAGE332_BEFORE_STATE_FILE": str(before_file),
         "STAGE332_401_ID_FILE": str(tmp_path / "target-id.txt"),
+        "STAGE332_401_STATE_FILE": str(tmp_path / "migration-state.txt"),
         "XDG_DATA_HOME": str(tmp_path / "data"), "FAKE_SSH_STATE": str(state_file),
         "PATH": f"{fake_bin}:{env['PATH']}",
     })
@@ -159,43 +166,71 @@ def _run(
     return result, json.loads(state_file.read_text()), before_file.read_bytes()
 
 
-@pytest.mark.parametrize("source_fingerprint", [None, FINGERPRINT], ids=["absent", "present"])
-def test_apply_retry_and_rollback_cover_both_source_states(tmp_path, source_fingerprint):
+@pytest.mark.parametrize(
+    ("source_fingerprint", "report_fingerprint"),
+    [(None, None), (FINGERPRINT, FINGERPRINT)],
+    ids=["both-absent", "both-present"],
+)
+def test_apply_retry_and_rollback_cover_consistent_source_states(
+    tmp_path, source_fingerprint, report_fingerprint,
+):
     before = _before(source_fingerprint)
     original = json.dumps(before).encode()
-    applied, state, saved = _run(tmp_path, before)
+    applied, state, saved = _run(
+        tmp_path, before, report_fingerprint=report_fingerprint,
+    )
     assert applied.returncode == 0, applied.stderr
     assert saved == original
     assert state["ki45"]["error_fingerprint_hash"] is None
-    assert state["target"]["error_fingerprint_hash"] == FINGERPRINT
+    assert state["target"]["error_fingerprint_hash"] == report_fingerprint
+    assert state["target"]["status"] == "workaround_available"
+    assert state["target"]["related_tool"] == "get_report_export_download"
+    assert state["target"]["match_rules_json"]["version"] == 1
+    assert state["target"]["agent_playbook_json"]["version"] == 1
     moves = [command for command in state["commands"] if " move-fingerprint " in command]
     assert bool(moves) is (source_fingerprint is not None)
     assert not any("set-related-tool" in command for command in state["commands"])
 
-    retried, state, _ = _run(tmp_path, before)
+    retried, state, _ = _run(
+        tmp_path, before, report_fingerprint=report_fingerprint,
+    )
     assert retried.returncode == 0, retried.stderr
     assert sum(" promote 80 " in command for command in state["commands"]) == 1
 
-    rolled_back, state, _ = _run(tmp_path, before, mode="rollback")
+    rolled_back, state, _ = _run(
+        tmp_path, before, mode="rollback", report_fingerprint=report_fingerprint,
+    )
     assert rolled_back.returncode == 0, rolled_back.stderr
     assert state["ki45"] == before
     assert state["report_link"] == 45
     assert state["target"]["status"] == "wontfix"
-    expected_target = None if source_fingerprint else FINGERPRINT
-    assert state["target"]["error_fingerprint_hash"] == expected_target
+    assert state["target"]["error_fingerprint_hash"] is None
 
-    rolled_back_again, state, _ = _run(tmp_path, before, mode="rollback")
+    rolled_back_again, state, _ = _run(
+        tmp_path, before, mode="rollback", report_fingerprint=report_fingerprint,
+    )
     assert rolled_back_again.returncode == 0, rolled_back_again.stderr
 
-    reapplied, state, _ = _run(tmp_path, before)
+    reapplied, state, _ = _run(
+        tmp_path, before, report_fingerprint=report_fingerprint,
+    )
     assert reapplied.returncode == 0, reapplied.stderr
     assert state["target"]["status"] == "workaround_available"
     assert state["report_link"] == 81
 
 
-def test_mismatched_source_fails_before_any_write(tmp_path):
-    before = _before("b" * 64)
-    failed, state, _ = _run(tmp_path, before)
+@pytest.mark.parametrize(
+    ("source_fingerprint", "report_fingerprint"),
+    [("b" * 64, FINGERPRINT), (None, FINGERPRINT), (FINGERPRINT, None)],
+    ids=["different", "report-only", "source-only"],
+)
+def test_inconsistent_fingerprints_fail_before_any_write(
+    tmp_path, source_fingerprint, report_fingerprint,
+):
+    before = _before(source_fingerprint)
+    failed, state, _ = _run(
+        tmp_path, before, report_fingerprint=report_fingerprint,
+    )
     assert failed.returncode != 0
     writes = (" promote 80 ", " move-fingerprint ", " set-match-rules ",
               " set-playbook ", " mark ", " link ")
@@ -215,8 +250,12 @@ def test_first_apply_rejects_live_ki45_drift(tmp_path):
 
 def test_first_apply_rejects_report_linked_to_an_unexpected_issue(tmp_path):
     before = _before(None)
-    failed, state, _ = _run(tmp_path, before, report_link=999)
+    failed, state, _ = _run(
+        tmp_path, before, report_link=999, report_fingerprint=None,
+    )
     assert failed.returncode != 0
+    assert "migration state is missing" in failed.stderr
+    assert "STAGE332_401_ISSUE_ID" not in failed.stderr
     assert state["target"] is None
     assert state["ki45"] == before
 
@@ -233,12 +272,116 @@ def test_post_promote_identity_failure_is_recoverable_without_duplicate(tmp_path
     before = _before(None)
     failed, state, _ = _run(
         tmp_path, before, promote_target_title="unexpected target",
+        report_fingerprint=None,
     )
     assert failed.returncode != 0
-    assert not (tmp_path / "target-id.txt").exists()
+    assert (tmp_path / "target-id.txt").read_text().strip() == "81"
     assert sum(" promote 80 " in command for command in state["commands"]) == 1
 
-    retried, state, _ = _run(tmp_path, before)
+    retried, state, _ = _run(tmp_path, before, report_fingerprint=None)
     assert retried.returncode != 0
-    assert "observed linked issue #81" in retried.stderr
+    assert "state is unexpected" in retried.stderr
     assert sum(" promote 80 " in command for command in state["commands"]) == 1
+
+
+def test_null_null_recovers_crash_after_promote_without_duplicate(tmp_path):
+    before = _before(None)
+    interrupted, state, _ = _run(
+        tmp_path, before, report_fingerprint=None, fail_after_promote=True,
+    )
+    assert interrupted.returncode != 0
+    assert state["report_link"] == 81
+    assert not (tmp_path / "target-id.txt").exists()
+
+    retried, state, _ = _run(tmp_path, before, report_fingerprint=None)
+    assert retried.returncode == 0, retried.stderr
+    assert (tmp_path / "target-id.txt").read_text().strip() == "81"
+    assert (tmp_path / "migration-state.txt").read_text().strip() == (
+        "stage334-null-null-v1:target:81"
+    )
+    assert sum(" promote 80 " in command for command in state["commands"]) == 1
+
+
+def test_null_null_crash_can_rollback_then_reapply_without_duplicate(tmp_path):
+    before = _before(None)
+    interrupted, state, _ = _run(
+        tmp_path, before, report_fingerprint=None, fail_after_promote=True,
+    )
+    assert interrupted.returncode != 0
+    assert state["report_link"] == 81
+
+    rolled_back, state, _ = _run(
+        tmp_path, before, mode="rollback", report_fingerprint=None,
+    )
+    assert rolled_back.returncode == 0, rolled_back.stderr
+    assert (tmp_path / "target-id.txt").read_text().strip() == "81"
+    assert (tmp_path / "migration-state.txt").read_text().strip() == (
+        "stage334-null-null-v1:target:81"
+    )
+
+    reapplied, state, _ = _run(tmp_path, before, report_fingerprint=None)
+    assert reapplied.returncode == 0, reapplied.stderr
+    assert state["report_link"] == 81
+    assert sum(" promote 80 " in command for command in state["commands"]) == 1
+
+
+def test_null_null_prepared_marker_before_promote_is_safe_to_retry(tmp_path):
+    before = _before(None)
+    (tmp_path / "migration-state.txt").write_text(
+        "stage334-null-null-v1:prepared\n", encoding="utf-8",
+    )
+    applied, state, _ = _run(tmp_path, before, report_fingerprint=None)
+    assert applied.returncode == 0, applied.stderr
+    assert state["report_link"] == 81
+    assert sum(" promote 80 " in command for command in state["commands"]) == 1
+
+
+def test_null_null_active_target_without_report_link_fails_closed(tmp_path):
+    before = _before(None)
+    applied, state, _ = _run(tmp_path, before, report_fingerprint=None)
+    assert applied.returncode == 0, applied.stderr
+    state["report_link"] = 45
+    (tmp_path / "state.json").write_text(json.dumps(state), encoding="utf-8")
+
+    failed, state, _ = _run(tmp_path, before, report_fingerprint=None)
+    assert failed.returncode != 0
+    assert "state is unexpected" in failed.stderr
+    assert state["report_link"] == 45
+
+
+def test_null_null_invalid_migration_marker_fails_before_remote_access(tmp_path):
+    before = _before(None)
+    (tmp_path / "migration-state.txt").write_text("unknown\n", encoding="utf-8")
+    failed, state, _ = _run(tmp_path, before, report_fingerprint=None)
+    assert failed.returncode != 0
+    assert "migration state is invalid" in failed.stderr
+    assert state["commands"] == [
+        "cd /opt/vetmanager-mcp && docker compose --profile production exec -T mcp "
+        "python scripts/triage_agent_feedback.py show-feedback-fingerprint 80"
+    ]
+
+
+def test_migration_script_takes_an_exclusive_local_lock():
+    script = SCRIPT.read_text(encoding="utf-8")
+    assert "flock -n 9" in script
+    assert "download-401-migration.lock" in script
+
+
+def test_rollback_rejects_before_state_missing_a_nullable_field(tmp_path):
+    before = _before(None)
+    applied, state, _ = _run(tmp_path, before, report_fingerprint=None)
+    assert applied.returncode == 0, applied.stderr
+    malformed = dict(before)
+    malformed.pop("related_tool")
+    (tmp_path / "ki45-before.json").write_text(json.dumps(malformed), encoding="utf-8")
+    commands_before = len(state["commands"])
+
+    failed, state, _ = _run(
+        tmp_path, malformed, mode="rollback", report_fingerprint=None,
+    )
+    assert failed.returncode != 0
+    assert "before-state is invalid" in failed.stderr
+    assert not any(
+        "restore-known-issue-config" in command
+        for command in state["commands"][commands_before:]
+    )
