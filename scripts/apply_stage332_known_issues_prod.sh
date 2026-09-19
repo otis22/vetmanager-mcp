@@ -3,6 +3,9 @@
 # Run only after Deploy Prod of this commit succeeds.
 
 set -euo pipefail
+export LC_ALL=C
+
+fingerprint_regex='^(hmac-sha256:)?[0-9A-Fa-f]{64}$'
 
 if [[ ${CONFIRM_STAGE332_PROD:-} != apply-stage-332 ]]; then
     printf '%s\n' 'Refusing production change. Set CONFIRM_STAGE332_PROD=apply-stage-332.' >&2
@@ -50,7 +53,7 @@ if [[ $mode == apply && ! -s $before_file ]]; then
 fi
 printf 'KI-45 before-state: %s\n' "$before_file"
 if ! expected_fingerprint=$(python3 -c '
-import json, sys
+import json, re, sys
 data = json.load(open(sys.argv[1], encoding="utf-8"))
 required = ("id", "status", "title", "related_tool", "error_fingerprint_hash", "match_rules_json", "agent_playbook_json")
 if (not isinstance(data, dict)
@@ -58,16 +61,18 @@ if (not isinstance(data, dict)
         or any(field not in data for field in required)):
     raise SystemExit(1)
 value = data["error_fingerprint_hash"]
-if value is not None and (not isinstance(value, str) or len(value) != 64):
+if value is not None and (
+        not isinstance(value, str)
+        or re.fullmatch(sys.argv[2], value) is None):
     raise SystemExit(1)
 print(value or "")
-' "$before_file" 2>/dev/null); then
+' "$before_file" "$fingerprint_regex" 2>/dev/null); then
     printf '%s\n' 'KI-45 before-state is invalid; refusing migration.' >&2
     exit 65
 fi
 has_source_fingerprint=false
 if [[ -n $expected_fingerprint ]]; then
-    if [[ ! $expected_fingerprint =~ ^[[:xdigit:]]{64}$ ]]; then
+    if [[ ! $expected_fingerprint =~ $fingerprint_regex ]]; then
         printf '%s\n' 'KI-45 before-state fingerprint is invalid; refusing migration.' >&2
         exit 65
     fi
@@ -102,12 +107,12 @@ known_issue_id = data.get("known_issue_id")
 if (data.get("id") != 80
         or (value is not None and (
             not isinstance(value, str)
-            or re.fullmatch(r"[0-9A-Fa-f]{64}", value) is None))
+            or re.fullmatch(sys.argv[1], value) is None))
         or not isinstance(known_issue_id, int)
         or known_issue_id <= 0):
     raise SystemExit(1)
 print("{}|{}".format(value or "", known_issue_id))
-' <<<"$report_config" 2>/dev/null) || return 1
+' "$fingerprint_regex" <<<"$report_config" 2>/dev/null) || return 1
     report_fingerprint=${parsed%%|*}
     report_known_issue_id=${parsed#*|}
 }
@@ -116,9 +121,9 @@ if ! load_report_state; then
     printf '%s\n' 'Report #80 state is invalid; refusing migration.' >&2
     exit 65
 fi
-if { [[ -n $expected_fingerprint ]] && [[ -z $report_fingerprint ]]; } \
-        || { [[ -z $expected_fingerprint ]] && [[ -n $report_fingerprint ]]; } \
-        || { [[ -n $expected_fingerprint ]] && [[ $expected_fingerprint != "$report_fingerprint" ]]; }; then
+if [[ -n $expected_fingerprint ]] \
+        && { [[ -z $report_fingerprint ]] \
+            || [[ $expected_fingerprint != "$report_fingerprint" ]]; }; then
     printf '%s\n' 'KI-45 and report #80 fingerprints are inconsistent; refusing migration.' >&2
     exit 65
 fi
@@ -189,7 +194,7 @@ validate_issue_pair() {
     python3 -c '
 import json, sys
 source, target = json.loads(sys.argv[1]), json.loads(sys.argv[2])
-target_id, expected, has_source = int(sys.argv[3]), sys.argv[4], sys.argv[5] == "true"
+target_id, expected, has_source = int(sys.argv[3]), sys.argv[4] or None, sys.argv[5] == "true"
 report_link = int(sys.argv[6])
 saved = json.load(open(sys.argv[7], encoding="utf-8"))
 desired_rules = json.load(open(sys.argv[8], encoding="utf-8"))
@@ -212,7 +217,7 @@ if (target.get("id") != target_id
         or target.get("agent_playbook_json") != target_playbook):
     raise SystemExit(1)
 pair = (source.get("error_fingerprint_hash"), target.get("error_fingerprint_hash"))
-allowed = {(expected, expected), (expected, None), (None, expected)} if has_source else {(None, None)}
+allowed = {(expected, expected), (expected, None), (None, expected)} if has_source else {(None, expected)}
 if pair not in allowed:
     raise SystemExit(1)
 if (target.get("status"), report_link) not in {

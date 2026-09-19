@@ -5,14 +5,18 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 
 import pytest
 
+import agent_feedback_service as feedback
+
 
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "scripts" / "apply_stage332_known_issues_prod.sh"
-FINGERPRINT = "a" * 64
+FINGERPRINT = "hmac-sha256:" + "a" * 64
+LEGACY_FINGERPRINT = "c" * 64
 REAL_BEFORE_STATE = {
     "id": 45,
     "status": "workaround_available",
@@ -78,7 +82,7 @@ elif " promote 80 " in command:
     if state.pop("fail_after_promote", False):
         save(); raise SystemExit(75)
 elif " move-fingerprint " in command:
-    match = re.search(r'move-fingerprint (\d+) (\d+) --expected-fingerprint ([0-9a-f]+)', command)
+    match = re.search(r'move-fingerprint (\d+) (\d+) --expected-fingerprint ((?:hmac-sha256:)?[0-9A-Fa-f]{64})', command)
     source_id, target_id, expected = int(match.group(1)), int(match.group(2)), match.group(3)
     source = state["ki45"] if source_id == 45 else state["target"]
     target = state["ki45"] if target_id == 45 else state["target"]
@@ -168,8 +172,8 @@ def _run(
 
 @pytest.mark.parametrize(
     ("source_fingerprint", "report_fingerprint"),
-    [(None, None), (FINGERPRINT, FINGERPRINT)],
-    ids=["both-absent", "both-present"],
+    [(None, None), (FINGERPRINT, FINGERPRINT), (None, FINGERPRINT)],
+    ids=["both-absent", "both-present", "report-only"],
 )
 def test_apply_retry_and_rollback_cover_consistent_source_states(
     tmp_path, source_fingerprint, report_fingerprint,
@@ -204,7 +208,8 @@ def test_apply_retry_and_rollback_cover_consistent_source_states(
     assert state["ki45"] == before
     assert state["report_link"] == 45
     assert state["target"]["status"] == "wontfix"
-    assert state["target"]["error_fingerprint_hash"] is None
+    expected_rollback_target = None if source_fingerprint is not None else report_fingerprint
+    assert state["target"]["error_fingerprint_hash"] == expected_rollback_target
 
     rolled_back_again, state, _ = _run(
         tmp_path, before, mode="rollback", report_fingerprint=report_fingerprint,
@@ -221,8 +226,8 @@ def test_apply_retry_and_rollback_cover_consistent_source_states(
 
 @pytest.mark.parametrize(
     ("source_fingerprint", "report_fingerprint"),
-    [("b" * 64, FINGERPRINT), (None, FINGERPRINT), (FINGERPRINT, None)],
-    ids=["different", "report-only", "source-only"],
+    [("hmac-sha256:" + "b" * 64, FINGERPRINT), (FINGERPRINT, None)],
+    ids=["different", "source-only"],
 )
 def test_inconsistent_fingerprints_fail_before_any_write(
     tmp_path, source_fingerprint, report_fingerprint,
@@ -284,16 +289,19 @@ def test_post_promote_identity_failure_is_recoverable_without_duplicate(tmp_path
     assert sum(" promote 80 " in command for command in state["commands"]) == 1
 
 
-def test_null_null_recovers_crash_after_promote_without_duplicate(tmp_path):
+@pytest.mark.parametrize("report_fingerprint", [None, FINGERPRINT], ids=["null-null", "report-only"])
+def test_source_null_recovers_crash_after_promote_without_duplicate(
+    tmp_path, report_fingerprint,
+):
     before = _before(None)
     interrupted, state, _ = _run(
-        tmp_path, before, report_fingerprint=None, fail_after_promote=True,
+        tmp_path, before, report_fingerprint=report_fingerprint, fail_after_promote=True,
     )
     assert interrupted.returncode != 0
     assert state["report_link"] == 81
     assert not (tmp_path / "target-id.txt").exists()
 
-    retried, state, _ = _run(tmp_path, before, report_fingerprint=None)
+    retried, state, _ = _run(tmp_path, before, report_fingerprint=report_fingerprint)
     assert retried.returncode == 0, retried.stderr
     assert (tmp_path / "target-id.txt").read_text().strip() == "81"
     assert (tmp_path / "migration-state.txt").read_text().strip() == (
@@ -365,6 +373,75 @@ def test_migration_script_takes_an_exclusive_local_lock():
     script = SCRIPT.read_text(encoding="utf-8")
     assert "flock -n 9" in script
     assert "download-401-migration.lock" in script
+
+
+def _script_fingerprint_regex() -> str:
+    script = SCRIPT.read_text(encoding="utf-8")
+    assignments = re.findall(r"^fingerprint_regex='([^']+)'$", script, re.MULTILINE)
+    assert len(assignments) == 1
+    assert script.count('"$fingerprint_regex"') == 2
+    assert script.count("=~ $fingerprint_regex") == 1
+    assert "[[:xdigit:]]{64}" not in script
+    assert 'r"[0-9A-Fa-f]{64}"' not in script
+    return assignments[0]
+
+
+def test_service_fingerprint_passes_the_scripts_single_regex_and_bash_path(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setenv("FEEDBACK_FINGERPRINT_PEPPER", "stage335-test-pepper")
+    incident = feedback.build_incident_from_exception(
+        "get_report_export_download",
+        RuntimeError("Getting report export file failed HTTP 401."),
+    )
+    fingerprint = feedback.build_error_fingerprint_hash(incident)
+
+    assert fingerprint is not None
+    assert re.fullmatch(_script_fingerprint_regex(), fingerprint)
+    applied, state, _ = _run(
+        tmp_path, _before(fingerprint), report_fingerprint=fingerprint,
+    )
+    assert applied.returncode == 0, applied.stderr
+    assert state["target"]["error_fingerprint_hash"] == fingerprint
+
+
+def test_legacy_bare_fingerprint_remains_supported(tmp_path):
+    applied, state, _ = _run(
+        tmp_path, _before(LEGACY_FINGERPRINT),
+        report_fingerprint=LEGACY_FINGERPRINT,
+    )
+    assert applied.returncode == 0, applied.stderr
+    assert state["target"]["error_fingerprint_hash"] == LEGACY_FINGERPRINT
+
+
+def test_report_only_retry_rejects_target_fingerprint_drift_before_write(tmp_path):
+    before = _before(None)
+    applied, state, _ = _run(tmp_path, before, report_fingerprint=FINGERPRINT)
+    assert applied.returncode == 0, applied.stderr
+    state["target"]["error_fingerprint_hash"] = "hmac-sha256:" + "b" * 64
+    commands_before = len(state["commands"])
+    (tmp_path / "state.json").write_text(json.dumps(state), encoding="utf-8")
+
+    failed, state, _ = _run(tmp_path, before, report_fingerprint=FINGERPRINT)
+    assert failed.returncode != 0
+    assert "state is unexpected" in failed.stderr
+    writes = (" move-fingerprint ", " set-match-rules ", " set-playbook ", " mark ", " link ")
+    assert not any(
+        any(marker in command for marker in writes)
+        for command in state["commands"][commands_before:]
+    )
+
+
+@pytest.mark.parametrize(
+    "fingerprint",
+    ["sha256:" + "a" * 64, "hmac-sha256:" + "g" * 64, "hmac-sha256:" + "a" * 63],
+)
+def test_malformed_source_fingerprint_fails_before_remote_access(tmp_path, fingerprint):
+    failed, state, _ = _run(
+        tmp_path, _before(fingerprint), report_fingerprint=fingerprint,
+    )
+    assert failed.returncode != 0
+    assert state["commands"] == []
 
 
 def test_rollback_rejects_before_state_missing_a_nullable_field(tmp_path):
