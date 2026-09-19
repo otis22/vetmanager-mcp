@@ -17840,3 +17840,80 @@ supervisor-only apply.
 а применение перенесено в следующий этап после снятия супервизором реального
 production-снимка состояния #80 и KI-45. Переданный факт записан без обращения
 агента к production и без мутаций production DB/`known_issues`.
+
+## Этап 335. Скрипт 332 принимает реальный формат отпечатка
+
+**Production-факт и граница работы.** Read-only снимки супервизора
+19.09.2026 21:22 показали KI-45 с `error_fingerprint_hash=null` и #80 с
+`hmac-sha256:<64 hex>`, связанный с KI-45. Код
+`agent_feedback_service.build_error_fingerprint_hash` подтвердил тот же
+контракт. Файлы `stage-332/*-manual*.json` и `ki45-before.json` не
+изменялись. Агент не обращался к production host/DB, не менял
+`known_issues` и не запускал уже применённую вручную миграцию 332.
+
+**Решение.** Единый Bash/Python-compatible literal
+`^(hmac-sha256:)?[0-9A-Fa-f]{64}$` с `LC_ALL=C` передаётся в оба
+Python preflight и используется Bash-проверкой. Реальная prefixed форма
+стала основной, bare 64 hex сохранена для legacy/test совместимости;
+смешанная bare/prefixed пара остаётся fail-closed. Для source-null/
+report-present `promote` создаёт цель с отпечатком репорта, а
+`move-fingerprint` в обе стороны пропускается. Существующий
+marker/target-ID и exact identity/status/link/fingerprint preflight сохраняют
+retry, crash recovery, rollback и re-apply без дубля.
+
+**PRD review.** Spark (`stage-335/spark-prd-1.log/.stderr/.exit`) дал два
+кандидата: medium о fake-SSH parser принят; high о канонизации
+bare/prefixed отклонён, потому что general CLI и storage сравнивают
+хранимые строки точно. Opus Architecture Critique + PRD review 1/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-335/2026-09-19T201806Z-file-PRD_-335---_md-attempt-1-of-3.akyE1D/claude-review-attempt-1-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=4822,
+thinking_tokens=3751, len(result)=2744. Приняты regex call-site и crash/reapply
+уточнения; отклонён новый snapshot report fingerprint. Review 2/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-335/2026-09-19T202038Z-file-PRD_-335---_md-attempt-2-of-3.I2wSmh/claude-review-attempt-2-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=5614,
+thinking_tokens=4651, len(result)=2613. Приняты проверка атомарности `promote`
+и service-generated Bash guard; повторный marker-snapshot отклонён как новый
+миграционный контракт вне наблюдённого случая. Бюджет 2/2 исчерпан.
+
+**Red/Green и live CLI.** Старый скрипт красным уронил format guard
+(нет единого regex) и report-only apply (`Report #80 state is invalid`):
+`stage-335/guards-red.log/.exit`, `stage-335/report-only-guard-red.log/.exit`,
+exit 1. Target-fingerprint guard отдельно сломан удалением сверки и
+упал, потом возвращён в green:
+`stage-335/target-fingerprint-guard-red.log/.exit`, exit 1;
+`stage-335/focused-green-final.log/.exit`, 23 passed. Связанный focused набор —
+50 passed (`stage-335/focused-related.log/.exit`). Локальный живой CLI в
+контейнере на SQLite создал service fingerprint
+`hmac-sha256:aabe…`, выполнил promote #80→#46, rollback #80→#45 и
+re-apply #80→#46; target во всех состояниях сохранил тот же fingerprint.
+Evidence: `stage-335/live-report-only.log/.exit`, exit 0. Это локальная БД,
+не production.
+
+**Проверки и аудит.** ShellCheck v0.9.0 и `bash -n` для всех shell-
+скриптов — exit 0. Полный mock suite: 3248 passed, 2 skipped, 77 deselected,
+exit 0 (`stage-335/mock-suite-final.log/.exit`). Полный real suite: 65 passed,
+9 skipped и один внешний 20-second timeout TEST_DOMAIN в несвязанном
+`test_real_partial_medical_card_put_is_still_rejected_upstream`, exit 1
+(`stage-335/real-suite-final.log/.exit`); точечный повтор этого же real-
+теста сразу прошёл 1 passed, exit 0
+(`stage-335/real-timeout-focused-retry.log/.exit`); полный suite второй раз не
+запускался. Аудит проверил exact comparison, fail-closed mixed/source-only
+состояния, target identity/status/link/fingerprint, единственность regex и
+отсутствие новой CLI/DB/public поверхности; рефакторинг не потребовался.
+
+**Committed diff review.** Spark (`stage-335/spark-diff-1.log/.stderr/.exit`)
+ошибочно сообщил, что report-only ветка не пишет `prepared`: условие
+опирается на source snapshot, а crash-test исполняет recovery. Кандидат
+отклонён. Opus diff review 1/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-335/2026-09-19T204435Z-git_range-HEAD__HEAD-attempt-1-of-3.GKp5cV/claude-review-attempt-1-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=7094,
+thinking_tokens=5902, len(result)=786. Единственный medium о возможной CLI
+regex отклонён по коду: argparse не валидирует формат, а
+`_move_fingerprint` принимает любую непустую строку до 96 символов;
+prefixed fingerprint имеет 76. Адекватных findings не осталось.
+
+**Доставка.** Code SHA `e56806f7f093ca04a5bc709f26862e32055fd686`
+(`Accept real feedback fingerprint format`) совпал с `origin/main`.
+GitHub Tests `35468427661`, ShellCheck `35468427617` и Deploy Prod
+`35468802910` завершились `success`; deploy включал public read-only
+MCP smoke. Это доставка кода, а не повторное применение миграции 332.
