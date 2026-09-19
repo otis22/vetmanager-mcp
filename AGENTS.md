@@ -157,6 +157,27 @@ API требует и что отвечает: поля, коды, тексты 
 
 Задача не считается завершённой без прохождения проверок и записи в AssumptionLog.
 
+Бюджет хода агента — 90 минут (таймаут MCP-инструмента 5400 с; 19.09.2026 три
+этапа подряд оборвались на нём). Полный mock + real suite стоят ~15 минут, поэтому:
+
+- полный прогон делается **один раз перед push**, по финальному SHA, после всех
+  правок по ревью; между ревью — только фокусные тесты изменённых файлов;
+- если ревью-правки после полного прогона трогают только тесты/скрипты/тексты —
+  повторяется фокусный набор + ShellCheck, а не весь suite;
+- этап с ожидаемыми двумя раундами сильного ревью планируется в два хода:
+  реализация до коммита в первом, ревью + push + CI во втором.
+
+Guard-скрипты и миграции production-данных:
+
+- формат полей (`error_fingerprint_hash` = `hmac-sha256:<64 hex>`, статусы,
+  ссылки) берётся из кода и реального снимка, а не из синтетических фикстур;
+  сторож на формат обязателен, если скрипт валидирует значение регуляркой;
+- PRD этапа, который меняет known_issues/правила/связи на проде, начинается с
+  read-only снимка (`show-known-issue-config`, `show-feedback-fingerprint`,
+  `show`), снятого супервизором и приложенного как факт; проектировать по
+  памяти или по тексту отказа предыдущего запуска запрещено (19.09.2026: три
+  этапа чинили несуществующие состояния).
+
 Дополнение к workflow:
 - Перед `commit`/`push` агент обязан сделать аудит внесённых изменений.
 - Если аудит потребовал рефакторинга, после него обязателен новый полный прогон тестов и проверок.
@@ -166,7 +187,7 @@ API требует и что отвечает: поля, коды, тексты 
 - Перед каждым PRD/code review агент делает Spark-review `gpt-5.6-luna`, затем более сильное ревью. «Spark» — историческое имя scout-роли, модель — `gpt-5.6-luna`. Голый `gpt-5.6` — несуществующий слаг (400 not supported); использовать только `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna`. `gpt-5.3-codex-spark`, `gpt-5.4`, `gpt-5.4-mini` сняты с аккаунта.
 - Spark findings являются candidate-only: агент обязан проверить адекватность и принимать только важные, проверяемые замечания; speculative/low-impact/неподтверждённые замечания отклоняются.
 - Spark-review prompt должен быть узким: указать объект ревью (PRD, staged/uncommitted diff, committed diff), severity, формат ответа и запрет на правки.
-- Правильный вызов Spark-review из Codex runtime: `timeout 1200 codex exec -m gpt-5.6-luna -s read-only -C "$PWD" -`. Если read-only падает до чтения файлов из-за sandbox/runtime ошибки (`bwrap`, user namespace и т.п.), остановить зависший запуск и один раз повторить ту же модель с `-s danger-full-access` и review-only prompt: `Review only. Do not edit files. Do not run write commands.` Fallback на другую модель разрешён только при явной model/provider failure, не при sandbox/runtime failure. Итог Spark-review (`[]` или принятые/отклонённые findings) фиксируется в AssumptionLog.
+- Правильный вызов Spark-review из Codex runtime на машине супервизора (bwrap сломан, `-s read-only` не читает репозиторий — проверено 19.09.2026 на пяти запусках подряд): сразу `timeout 1200 codex exec -m gpt-5.6-luna -s danger-full-access -C "$PWD" -` с review-only prompt: `Review only. Do not edit files. Do not run write commands.` Промпт обязан требовать перечислить прочитанные файлы (`files_read`); вердикт `[]` без прочитанных файлов невалиден и слот не расходует. Fallback на другую модель разрешён только при явной model/provider failure. Итог Spark-review (`[]` или принятые/отклонённые findings) фиксируется в AssumptionLog.
 - Claude Opus review из Codex runtime: real shell timeout должен быть минимум в 2 раза больше prompt deadline; default `timeout 1200`, в prompt писать `Finish this review within 600 seconds`, реальный timeout Claude не сообщать. Для inline diff/context отключать tools/MCP (`--strict-mcp-config --mcp-config '{"mcpServers":{}}' --tools ""`), запрещать правки/commands, требовать structured JSON findings через `--output-format json` + schema и писать `Think briefly, then return JSON matching the schema immediately`. Успех: JSON-конверт разобран, `is_error=false`, непустое поле `.result` разбирается по required schema. Валидатор вызывать напрямую как исполняемый `scripts/validate_review_result.py`, не через имя интерпретатора; CI проверяет этот вызов. Сбой: конверт не JSON, `is_error=true`, `.result` пусто/не разбирается/не соответствует schema либо provider/model error. `stop_reason` не участвует: при `--json-schema` structured result штатно доставляется tool call. Infrastructure failure не расходует слот и фиксируется отдельной строкой в `AssumptionLog` как `N/3`; максимум три таких попытки на strong review gate, затем `blocked` и push запрещён. Только запуск с разбираемым verdict расходует слот бюджета.
 
 ### Evidence Claude review
