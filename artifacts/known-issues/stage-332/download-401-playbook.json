@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "summary": "Vetmanager created the export build, but the current credentials are not authorized to download its file.",
+  "steps": [
+    "Tell the user that report creation succeeded but file download authorization failed.",
+    "Ask an administrator to restore or re-authorize the Vetmanager integration.",
+    "After authorization is corrected, retry get_report_export_download with the same report_file_id."
+  ],
+  "do_not_do": [
+    "Do not call start_report_export again: creating another file does not repair download authorization.",
+    "Do not retry the unauthorized download in a loop."
+  ],
+  "recommended_tool_sequence": [
+    "get_report_export_download"
+  ],
+  "user_message_template": "Файл отчёта создан, но Vetmanager не разрешил скачать его с текущей авторизацией. Нужна повторная авторизация интеграции; новый запуск экспорта проблему не исправит.",
+  "safe_to_retry": false
+}

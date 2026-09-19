@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "summary": "Vetmanager refused, limited, or did not finish the report export.",
+  "steps": [
+    "Tell the user the reason stated in the tool error.",
+    "If get_report_export_download says the same build is not ready, wait as instructed and retry only that report_file_id.",
+    "For a permanent REST-export refusal, offer to build the requested data through a Report AI job."
+  ],
+  "do_not_do": [
+    "Do not call start_report_export again after a refusal or while the same build may still finish.",
+    "Do not poll get_report_export_download automatically, immediately, or in parallel."
+  ],
+  "recommended_tool_sequence": [
+    "get_report_export_download",
+    "create_report_ai_job"
+  ],
+  "user_message_template": "Экспорт отчёта не завершён. Сообщите пользователю причину из ошибки; не запускайте новый экспорт после отказа. Если готовится тот же файл, повторяйте только его скачивание после указанной паузы.",
+  "safe_to_retry": false
+}

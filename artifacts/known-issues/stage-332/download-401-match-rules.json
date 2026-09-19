@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "all": [
+    {
+      "field": "related_tool",
+      "op": "eq",
+      "value": "get_report_export_download"
+    },
+    {
+      "field": "normalized_error_text",
+      "op": "contains_any",
+      "value": [
+        "getting report export file failed http 401"
+      ]
+    }
+  ]
+}

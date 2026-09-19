@@ -252,6 +252,53 @@ async def _set_match_rules(args: argparse.Namespace) -> None:
         )
 
 
+async def _show_known_issue_config(args: argparse.Namespace) -> None:
+    """Print the reversible configuration of one issue without report text."""
+    async with get_session_factory()() as session:
+        issue = await session.get(KnownIssue, args.known_issue_id)
+        if issue is None:
+            raise SystemExit(f"Known issue not found: {args.known_issue_id}")
+        payload = {
+            "id": issue.id,
+            "status": issue.status,
+            "title": issue.title,
+            "related_tool": issue.related_tool,
+            "error_fingerprint_hash": issue.error_fingerprint_hash,
+            "match_rules_json": (
+                json.loads(issue.match_rules_json) if issue.match_rules_json else None
+            ),
+            "agent_playbook_json": (
+                json.loads(issue.agent_playbook_json) if issue.agent_playbook_json else None
+            ),
+        }
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+
+
+async def _move_fingerprint(args: argparse.Namespace) -> None:
+    """Atomically move one verified failure fingerprint to another issue."""
+    if args.source_id == args.target_id:
+        raise SystemExit("Source and target known issue must differ.")
+    async with get_session_factory()() as session:
+        source = await session.get(KnownIssue, args.source_id)
+        target = await session.get(KnownIssue, args.target_id)
+        if source is None:
+            raise SystemExit(f"Known issue not found: {args.source_id}")
+        if target is None:
+            raise SystemExit(f"Known issue not found: {args.target_id}")
+        fingerprint = source.error_fingerprint_hash
+        if not fingerprint:
+            raise SystemExit(f"Known issue #{source.id} has no fingerprint to move.")
+        if target.error_fingerprint_hash not in (None, fingerprint):
+            raise SystemExit("Source and target have different fingerprints; nothing changed.")
+        target.error_fingerprint_hash = fingerprint
+        source.error_fingerprint_hash = None
+        now = _now()
+        source.updated_at = now
+        target.updated_at = now
+        await session.commit()
+    print(f"fingerprint moved known_issue #{source.id} -> #{target.id}")
+
+
 async def _set_related_tool(args: argparse.Namespace) -> None:
     """Stage 312: replace the search-key tool name of an existing known issue."""
     related_tool = _validate_related_tool(args.related_tool)
@@ -831,6 +878,21 @@ def _build_parser() -> argparse.ArgumentParser:
     set_match_rules.add_argument("known_issue_id", type=int)
     set_match_rules.add_argument("--match-rules-json", required=True)
     set_match_rules.set_defaults(func=_set_match_rules)
+
+    show_issue_config = sub.add_parser(
+        "show-known-issue-config",
+        help="Stage 332: print reversible rule/playbook/fingerprint config for one issue.",
+    )
+    show_issue_config.add_argument("known_issue_id", type=int)
+    show_issue_config.set_defaults(func=_show_known_issue_config)
+
+    move_fingerprint = sub.add_parser(
+        "move-fingerprint",
+        help="Stage 332: atomically move a fingerprint between known issues.",
+    )
+    move_fingerprint.add_argument("source_id", type=int)
+    move_fingerprint.add_argument("target_id", type=int)
+    move_fingerprint.set_defaults(func=_move_fingerprint)
 
     set_related_tool = sub.add_parser(
         "set-related-tool",

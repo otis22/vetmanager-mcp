@@ -132,7 +132,10 @@ _MATCH_FIELDS = {
     "normalized_error_text",
     "params_shape",
 }
-_MATCH_OPS = {"eq", "in", "contains_any", "contains_all", "has_keys", "missing_keys"}
+_MATCH_OPS = {
+    "eq", "in", "contains_any", "contains_all", "not_contains_any",
+    "has_keys", "missing_keys",
+}
 _auto_event_stamps: deque[datetime] = deque()
 
 
@@ -450,7 +453,10 @@ def validate_match_rules_json(
         expected = condition.get("value")
         if field not in _MATCH_FIELDS or op not in _MATCH_OPS:
             return None
-        if op in {"in", "contains_any", "contains_all", "has_keys", "missing_keys"}:
+        if op in {
+            "in", "contains_any", "contains_all", "not_contains_any",
+            "has_keys", "missing_keys",
+        }:
             if not isinstance(expected, list) or len(expected) > 32:
                 return None
             if any(not isinstance(item, str) or len(item) > 500 for item in expected):
@@ -529,6 +535,9 @@ def match_rules(raw_json: str | None, incident: FeedbackIncident) -> bool:
                 return False
         elif op == "contains_all":
             if not isinstance(expected, list) or not _contains_all_members(actual, expected):
+                return False
+        elif op == "not_contains_any":
+            if not isinstance(expected, list) or _contains_any_member(actual, expected):
                 return False
         elif op == "has_keys":
             if not isinstance(expected, list) or not set(expected).issubset(actual or set()):

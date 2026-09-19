@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "all": [
+    {
+      "field": "related_tool",
+      "op": "in",
+      "value": [
+        "start_report_export",
+        "get_report_export_download"
+      ]
+    },
+    {
+      "field": "normalized_error_text",
+      "op": "contains_any",
+      "value": [
+        "starting report export failed",
+        "report export is not ready yet",
+        "mcp observed this export still not ready",
+        "report export is temporarily blocked",
+        "report export is temporarily limited",
+        "report is not rest-exportable",
+        "report export was denied or temporarily limited",
+        "getting report export file failed"
+      ]
+    },
+    {
+      "field": "normalized_error_text",
+      "op": "not_contains_any",
+      "value": [
+        "getting report export file failed http 401"
+      ]
+    }
+  ]
+}
