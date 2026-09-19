@@ -17820,3 +17820,23 @@ review-правок: mock 3241 passed, 2 skipped, 77 deselected; real 66 passed,
 `stage-334/mock-suite-post-opus2.log/.exit` и
 `stage-334/real-suite-post-opus2.log/.exit`, оба exit 0. Бюджет diff-review 2/2
 исчерпан; третьего strong review нет.
+
+**Доставка и закрытие кода.** Финальный кодовый SHA
+`c799ba9ec7c3ed116a090227293a3bff00fe1f3d` (`Support rule-only report
+migration`) совпал с `origin/main`. GitHub Tests run `35448514521`, ShellCheck
+run `35448514563` и Deploy Prod run `35448853682` завершились `success`; код
+этапа тем самым доставлен в production. Это не означает применение миграции:
+агент не обращался к production host/DB, не менял `known_issues` и не запускал
+supervisor-only apply.
+
+**Новая production-неясность после доставки.** Третий apply супервизора
+19.09.2026 в 17:31 на `c799ba9` завершился fail-closed до мутаций с exit 65 и
+сообщением `Report #80 state is invalid; refusing migration`. По контракту
+`load_report_state` это означает `known_issue_id=null`: репорт #80 не связан
+ни с KI-45, ни с отдельной известной проблемой; fingerprint репорта также
+отсутствует. Это четвёртое состояние не входило в PRD 334, который покрывает
+связанный #80 (`known_issue_id > 0`), и намеренно не принимается скриптом.
+Этап 334 закрыт как доставленный код, этап 332 остаётся `supervisor_pending`,
+а применение перенесено в следующий этап после снятия супервизором реального
+production-снимка состояния #80 и KI-45. Переданный факт записан без обращения
+агента к production и без мутаций production DB/`known_issues`.
