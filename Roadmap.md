@@ -25,10 +25,34 @@
   в парный Markdown не попадало вовсе — витрина знала про начало ряда, источник
   нет. — `done`
 
-## Этап 316. Жалоба из кабинета — `done`
+## Этап 336. Отказ провайдера Report AI выглядит для агента как ошибка интента — `todo`
 
-- 316.1 CSRF-защищённая форма и ограничение частоты. — `done`
-- 316.2 Privacy-safe triage, стенд, reviews и выкат. — `done`
+Источник: пилот bot-panel 19.09.2026, run `ec8a374d`. Два job подряд (#4 12:41,
+#6 12:43 МСК) прошли `queued → recognizing` и через ~60 с упали на стороне
+Ветменеджера: `status=failed`, `error_code=PREVIEW_FAILED`,
+`error_message_safe="DeepSeek CURL error: Connection timed out after 10000
+milliseconds"`. Это транспортный отказ LLM-провайдера (`OpenAiLlmClient` в
+vetmanager-extjs: `"{provider} CURL error: {curlError}"`, connect-timeout к
+`api.deepseek.com`; фолбэк flash→pro бьёт в тот же хост). MCP отдал `failed`
+честно, но без подсказки — агент немедленно пересоздал job с другим
+интентом (бесполезно при недоступном провайдере) и `report_problem` не
+вызвал: в базе знаний следа нет, пользователь получил «конструктор дважды
+вернул таймаут». Единственная существующая аннотация для `PREVIEW_FAILED` —
+`report_ai_goods_good_id_preview_failed` — про другой класс отказа.
+
+- 336.1 `mcp_workaround` для `failed` + `PREVIEW_FAILED` с транспортным
+  текстом провайдера (маркеры — из кода `OpenAiLlmClient.php` /
+  `HttpErrorMapper.php` в `../vetmanager-extjs`, не домысливать: `CURL error`,
+  `timed out`, HTTP 5xx/429/408 и т.п.): код `report_ai_provider_unreachable`,
+  шаги — интент не переписывать, новый job не создавать сразу, одна повторная
+  попытка не раньше чем через несколько минут, иначе прямые инструменты
+  (`get_medical_cards_by_date`, `get_admissions` …); `safe_to_retry` с
+  задержкой; в шагах — вызвать `report_problem` с кодом отказа. Сторож: тест
+  на точный текст 19.09 красный до реализации; отказ с `good.id` и обычный
+  `PREVIEW_FAILED` без транспортных маркеров аннотацию не получают. — `todo`
+- 336.2 Описание `get_report_ai_job` / prompt helper: что означает
+  `PREVIEW_FAILED` с транспортным сообщением и что делать (те же шаги, без
+  дублирования текста — ссылкой на поле `mcp_workaround`). — `todo`
 
 ## Этап 317. Экспорт не повторяет отказ и оставляет след — `done`
 
