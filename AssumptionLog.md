@@ -17917,3 +17917,54 @@ prefixed fingerprint имеет 76. Адекватных findings не оста�
 GitHub Tests `35468427661`, ShellCheck `35468427617` и Deploy Prod
 `35468802910` завершились `success`; deploy включал public read-only
 MCP smoke. Это доставка кода, а не повторное применение миграции 332.
+
+## Этап 336. Отказ провайдера Report AI не является ошибкой интента
+
+**Решение.** Для `failed` + `PREVIEW_FAILED` MCP распознаёт
+проверенные upstream transport-формы: `CURL error:` и числовые
+`HTTP 408/429/5xx:`. Он добавляет `mcp_workaround.code=
+report_ai_provider_unreachable`: не менять интент, не создавать job
+сразу, подождать не менее 5 минут и сделать не более одной
+попытки; затем перейти к прямым инструментам и вызвать `report_problem`.
+Transport имеет приоритет над `good.id`; `Renderer timeout`, другие
+status/error code и HTTP 4xx кроме 408/429 не аннотируются. Description
+`get_report_ai_job` ссылается на `job.mcp_workaround`, не дублируя шаги.
+
+**PRD review.** Spark PRD evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-336/spark-prd-1.log`
+(exit 0). Приняты точные HTTP 500–599/граница 499 и тест точного
+текста про 5 минут/одну попытку. Отклонено расширение на prompt
+helper: решённая граница допускает `get_report_ai_job` и/или helper;
+машинные retry-поля также отклонены, так как задан существующий
+dict-контракт. Claude Opus PRD-review valid 1/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-336/2026-09-20T211957Z-file-PRD_-336---report-ai_md-attempt-1-of-3.COIOTR/claude-review-attempt-1-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=1747,
+thinking_tokens=1465, len(result)=15, findings `[]`.
+
+**Red/Green и живая проверка.** До реализации сторожа были сломаны
+отсутствием transport-ветки: оба точных пилотных текста и HTTP
+408/429/5xx не получали workaround, пересечение уходило в `good.id`,
+а description не знал о поле: 9 failed, 9 passed, exit 1
+(`stage-336/guards-red-docker.log/.exit`). Green: 63 passed
+(`stage-336/focused-green-after-audit.log/.exit`). Живой devtr6
+`create_report_ai_job` → `get_report_ai_job` вернул MCP code 0 и safe body: job
+`id=246`, `status=needs_confirmation`, `error_code/error_message_safe=null`,
+`mcp_workaround` отсутствует. Evidence: `stage-336/live-check.log/.exit`, exit 0.
+Провайдер намеренно не ронялся. Агент не обращался к production.
+
+**Проверки и review diff.** Аудит нашёл только двусмысленную фразу
+description; после правки focused набор повторён. Spark committed-diff
+review вернул `[]`: `stage-336/spark-diff-1.log/.stderr/.exit`.
+Claude Opus diff-review valid 1/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-336/2026-09-20T212533Z-git_range-origin_main__HEAD-attempt-1-of-3.65x5yH/claude-review-attempt-1-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=948, thinking_tokens=894,
+len(result)=15, findings `[]`. Полный mock suite на финальном code SHA:
+3266 passed, 2 skipped, 77 deselected, exit 0
+(`stage-336/mock-suite-2350df5.log/.exit`). Полный real suite: 66 passed,
+9 skipped, 3270 deselected; отдельный web-flow 1 skipped; exit 0
+(`stage-336/real-suite-2350df5.log/.exit`).
+
+**Доставка.** Code SHA `2350df5bdf71d10bd51eaf163baf599884ce7971`
+(`Handle Report AI provider transport failures`) доставлен в production.
+GitHub Tests `35539395611` и Deploy Prod `35539743442` завершились
+`success`; deploy включал public read-only MCP smoke.
