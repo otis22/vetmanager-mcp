@@ -4,6 +4,7 @@ import asyncio
 import httpx
 import io
 import json
+import re
 import time
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
@@ -60,6 +61,7 @@ REPORT_AI_EXPORT_WAIT_LIMIT_SECONDS = 30 * 60
 REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS = CLINIC_TIMEZONE_TTL_SECONDS
 REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES = CLINIC_TIMEZONE_MAX_ENTRIES
 REPORT_AI_GOODS_GOOD_ID_WORKAROUND_CODE = "report_ai_goods_good_id_preview_failed"
+REPORT_AI_PROVIDER_UNREACHABLE_WORKAROUND_CODE = "report_ai_provider_unreachable"
 _GENERIC_REPORT_TITLES = {
     "report",
     "отчет",
@@ -434,6 +436,41 @@ def _report_ai_goods_good_id_workaround() -> dict:
     }
 
 
+def _report_ai_provider_unreachable_workaround() -> dict:
+    return {
+        "code": REPORT_AI_PROVIDER_UNREACHABLE_WORKAROUND_CODE,
+        "summary": (
+            "Report AI preview failed because its LLM provider was unreachable. "
+            "This is a provider transport failure, not evidence that the intent is wrong."
+        ),
+        "steps": [
+            "Do not rewrite the report intent_text because of this transport failure.",
+            "Do not create a new Report AI job immediately.",
+            "Wait at least 5 minutes, then make at most one retry with the unchanged intent.",
+            "If that retry fails too, use direct tools for the question, such as get_medical_cards_by_date or get_admissions.",
+            "Call report_problem with the PREVIEW_FAILED error code and the safe failure context.",
+        ],
+        "do_not_do": [
+            "Do not treat provider unavailability as an intent error.",
+            "Do not create repeated Report AI jobs while the provider is unavailable.",
+        ],
+        "safe_to_retry": True,
+    }
+
+
+def _looks_like_report_ai_provider_failure(job: dict) -> bool:
+    if job.get("status") != "failed" or job.get("error_code") != "PREVIEW_FAILED":
+        return False
+    message = str(job.get("error_message_safe") or "").lower()
+    if "curl error:" in message:
+        return True
+    match = re.search(r"\bhttp\s+(\d{3}):", message)
+    if match is None:
+        return False
+    status = int(match.group(1))
+    return status in {408, 429} or 500 <= status <= 599
+
+
 def _looks_like_goods_good_id_preview_failure(job: dict) -> bool:
     if job.get("status") != "failed" or job.get("error_code") != "PREVIEW_FAILED":
         return False
@@ -449,9 +486,12 @@ def _looks_like_goods_good_id_preview_failure(job: dict) -> bool:
 def _annotate_report_ai_workarounds(payload: dict) -> dict:
     data = payload.get("data")
     job = data.get("job") if isinstance(data, dict) else payload.get("job")
-    if not isinstance(job, dict) or not _looks_like_goods_good_id_preview_failure(job):
+    if not isinstance(job, dict):
         return payload
-    job.setdefault("mcp_workaround", _report_ai_goods_good_id_workaround())
+    if _looks_like_report_ai_provider_failure(job):
+        job.setdefault("mcp_workaround", _report_ai_provider_unreachable_workaround())
+    elif _looks_like_goods_good_id_preview_failure(job):
+        job.setdefault("mcp_workaround", _report_ai_goods_good_id_workaround())
     return payload
 
 

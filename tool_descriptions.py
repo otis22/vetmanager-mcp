@@ -947,9 +947,11 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "Successful confirmation enables data reads without "
         "saving a new report. recognized.preview_example_row contains invented "
         "example values, not clinic data: use its columns and types only to check "
-        "the expected table structure, and never repeat its values to the user. For "
-        "failed or rejected jobs, read error_message_safe, explain the reason, and do "
-        "not recreate an unchanged intent; rephrase it first. It does not expose raw SQL. Domain synonyms: отчёт, "
+        "the expected table structure, and never repeat its values to the user. When "
+        "a PREVIEW_FAILED job identifies a provider transport failure, that is not "
+        "an intent error: follow job.mcp_workaround. For other failed or rejected "
+        "jobs, read error_message_safe, explain the reason, and do not recreate an "
+        "unchanged intent; rephrase it first. It does not expose raw SQL. Domain synonyms: отчёт, "
         "отчет, ИИ отчёт, AI report, конструктор отчётов, аналитика, report ai."
     ),
     "confirm_report_ai_job_candidate": (
