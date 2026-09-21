@@ -17968,3 +17968,60 @@ len(result)=15, findings `[]`. Полный mock suite на финальном c
 (`Handle Report AI provider transport failures`) доставлен в production.
 GitHub Tests `35539395611` и Deploy Prod `35539743442` завершились
 `success`; deploy включал public read-only MCP smoke.
+
+## Этап 337. Подсказка после пустого поиска сотрудника по имени
+
+**Решение.** `get_users` добавляет верхнеуровневый `mcp_hint` только при
+непустом `name` и итоговом `totalCount=0`. Контракт содержит код
+`user_name_search_empty`, краткое объяснение, шаги поиска по основе фамилии и
+запрет делать вывод об отсутствии/неактивности врача либо расширять
+`is_active`. Автоматический повторный запрос не выполняется. Верхний уровень
+выбран как метаданные ответа: проекция и деперсонализация обходят только
+`data`, поэтому подсказка не теряется и не принимается санитайзером за PII;
+в деперсонализованном ответе placeholder сотрудника остаётся финальным
+значением и цитируется буквально.
+
+**PRD review.** Spark принял явное правило для placeholder в
+деперсонализованном режиме; предложение задать отдельные правила для коротких,
+некириллических и first-name запросов отклонено как расширение статической
+подсказки за согласованную границу. Claude Opus PRD-review valid 1/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-337/2026-09-21T082244Z-file-PRD_-337---_md-attempt-1-of-3.Pmxl9f/claude-review-attempt-1-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=1719,
+thinking_tokens=1344, len(result)=870. Принято требование маскировать данные
+сотрудника в live evidence; отдельная проверка существования названных в
+подсказке инструментов отклонена как несоразмерная для неизменяемого
+действующего реестра.
+
+**Red/Green и живая проверка.** До реализации focused набор дал 2 failed,
+4 passed: отсутствовали `mcp_hint` и фраза в description. После Green ветка
+формирования подсказки намеренно заменялась на недостижимую; точный сторож
+упал с отсутствующим ключом `mcp_hint`, затем изменение возвращено. Итоговый
+focused набор: 10 passed, 58 deselected. На devtr6 вызов с существующей полной
+фамилией вернул одну запись без подсказки, с отсутствующей полной фамилией —
+ноль записей и `user_name_search_empty`, без `name` — список без подсказки.
+Данные сотрудника в evidence замаскированы. Evidence:
+`stage-337/live-check.log/.exit`, exit 0. Деперсонализованный режим проверен
+тестом: placeholder сохраняется, а `mcp_hint` не меняется. Обращений к
+production не было.
+
+**Проверки и review diff.** Аудит подтвердил отсутствие fallback и лишних
+REST-запросов, условие по итоговому merge и сохранение метаданных после
+деперсонализации; рефакторинг не потребовался. Spark diff-кандидат об
+отсутствии devtr6 evidence отклонён: оно хранится вне публичного репозитория
+и завершилось exit 0. Claude Opus diff-review valid 1/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-337/2026-09-21T082850Z-git_range-origin_main__HEAD-attempt-1-of-3.OaVk5d/claude-review-attempt-1-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=2660,
+thinking_tokens=2103, len(result)=458. Единственный low finding относился к
+предсуществующему этапу 338 и отклонён как вне diff/скоупа.
+
+Полный mock suite: 3272 passed, 2 skipped, 77 deselected, exit 0
+(`stage-337/mock-suite.exit`). Полный real suite: 66 passed, 9 skipped,
+3276 deselected, exit 0 (`stage-337/real-suite.exit`). Оба suite запускались
+один раз на общем workspace SHA `dd1370dc1fe42d8d2476956966ec539e3a606bc5`:
+он является потомком code SHA и отличается только параллельной документацией;
+целевые файлы этапа побайтово совпадали с code SHA.
+
+**Доставка.** Code SHA `60953eb858d5b99b3eaab6cf56d8d82d0696f30a`
+(`Guide empty staff name searches`) доставлен в production. GitHub Tests
+`35579362245` и Deploy Prod `35580021473` завершились `success`; deploy
+включал public read-only MCP smoke.
