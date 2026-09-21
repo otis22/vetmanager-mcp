@@ -7094,3 +7094,11 @@ mcp-feedback-analysis.md`). Механизм известных проблем �
 - 316.1 CSRF-защищённая форма и ограничение частоты. — `done`
 - 316.2 Privacy-safe triage, стенд, reviews и выкат. — `done`
 
+## Этап 317. Экспорт не повторяет отказ и оставляет след — `done`
+
+- 317.1 Ошибки StartReport и ожидание export-download дают агенту явный срок
+  повтора через существующий known-issue playbook. — `done`
+- 317.2 Несопоставленный failure сохраняет ограниченный privacy-safe след и
+  triage показывает агрегаты для написания match rules. — `done`
+- 317.3 Миграция, сторожа, стенд, reviews, deploy и production verification. — `done`
+
