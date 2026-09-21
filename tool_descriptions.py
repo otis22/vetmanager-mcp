@@ -1093,6 +1093,13 @@ BULK_DESCRIPTION_SUFFIXES: dict[str, str] = {
 }
 
 
+SEARCH_GUIDANCE_SUFFIXES: dict[str, str] = {
+    "get_users": (
+        "If a name search is empty, follow mcp_hint and retry with a surname stem."
+    ),
+}
+
+
 def compose_tool_description(tool_name: str) -> str | None:
     """Итоговое описание инструмента — ровно то, что уезжает в `tools/list`.
 
@@ -1106,6 +1113,7 @@ def compose_tool_description(tool_name: str) -> str | None:
         return None
     for extra in (
         BULK_DESCRIPTION_SUFFIXES.get(tool_name),
+        SEARCH_GUIDANCE_SUFFIXES.get(tool_name),
         PRIVACY_DESCRIPTION_SUFFIXES.get(tool_name),
     ):
         if extra:

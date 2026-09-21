@@ -37,6 +37,26 @@ _ANALYTICS_USER_FIELDS = frozenset(
 _USER_PAGINATION_FIELDS = frozenset({"totalCount"})
 
 
+def _empty_user_name_search_hint() -> dict:
+    return {
+        "code": "user_name_search_empty",
+        "summary": "No staff member matched the supplied name.",
+        "steps": [
+            "Repeat get_users with a 3–4 letter surname stem; name searches both "
+            "last_name and first_name.",
+            "If several staff members match, compare position_id and schedule context.",
+            "Confirm the selected staff member with get_user_by_id.",
+            "Quote the surname exactly as recorded; under depersonalized access, "
+            "quote an addressed placeholder verbatim and do not resolve it again.",
+        ],
+        "do_not_do": [
+            "Do not conclude from one empty exact-name search that the doctor is "
+            "missing or inactive.",
+            "Do not set is_active=None instead of searching by a surname stem.",
+        ],
+    }
+
+
 def _project_user(user: dict) -> dict:
     """Return the closed analytics-safe view of one Vetmanager user."""
     return {field: user[field] for field in _ANALYTICS_USER_FIELDS if field in user}
@@ -193,10 +213,13 @@ def register(mcp: FastMCP) -> None:
         merged = sort_records(merged, effective_sort)
         page = [_project_user(user) for user in merged[offset:offset + limit]]
 
-        return {
+        response = {
             "success": True,
             "data": {"user": page, "totalCount": len(merged), "limited": False},
         }
+        if not merged:
+            response["mcp_hint"] = _empty_user_name_search_hint()
+        return response
 
     @mcp.tool
     async def get_user_by_id(
