@@ -18138,3 +18138,13 @@ deadline; последняя причина/ответ сохраняется м
 перенесён после финальной проверки бюджета; прежний oversleep guard дополнен
 детерминированной задержкой после завершённого backoff. После правок focused
 набор: 32 passed, exit 0 (`stage-339/focused-after-spark-fixes.log/.exit`).
+
+Opus committed-diff review valid 1/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-22T203819Z-git_range-origin_main__HEAD-attempt-1-of-3.em55RQ/claude-review-attempt-1-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=4610,
+thinking_tokens=3644, len(result)=919. Единственный low finding принят:
+детерминированный scheduler-delay guard больше не зависит от жёсткого числа
+вызовов `monotonic`, а переключает clock по состоянию завершённого backoff и
+явно доказывает прохождение post-sleep check и следующей задержки. После
+правки focused набор: 32 passed, exit 0
+(`stage-339/focused-after-opus-fix.log/.exit`).

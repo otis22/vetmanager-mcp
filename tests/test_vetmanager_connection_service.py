@@ -682,12 +682,20 @@ async def test_connection_scheduler_delay_before_retry_preserves_last_error(
 ):
     import vetmanager_connection_service as service
 
-    clock_calls = 0
+    clock_state = {
+        "backoff_finished": False,
+        "post_sleep_checked": False,
+        "scheduler_delay_seen": False,
+    }
 
     def monotonic() -> float:
-        nonlocal clock_calls
-        clock_calls += 1
-        return 0.0 if clock_calls <= 7 else 41.0
+        if not clock_state["backoff_finished"]:
+            return 0.0
+        if not clock_state["post_sleep_checked"]:
+            clock_state["post_sleep_checked"] = True
+            return 0.0
+        clock_state["scheduler_delay_seen"] = True
+        return 41.0
 
     class FakeClient:
         def __init__(self):
@@ -703,7 +711,7 @@ async def test_connection_scheduler_delay_before_retry_preserves_last_error(
         return fake_client
 
     async def fake_sleep(delay: float) -> None:
-        return None
+        clock_state["backoff_finished"] = True
 
     monkeypatch.setattr(service, "get_shared_http_client", fake_get_shared_http_client)
     monkeypatch.setattr(service, "time", SimpleNamespace(monotonic=monotonic))
@@ -722,6 +730,8 @@ async def test_connection_scheduler_delay_before_retry_preserves_last_error(
             )
 
     assert fake_client.calls == 1
+    assert clock_state["post_sleep_checked"] is True
+    assert clock_state["scheduler_delay_seen"] is True
     assert not any(
         getattr(record, "event_name", "") == "vetmanager_auth_probe_retry"
         for record in caplog.records
