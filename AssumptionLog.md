@@ -18168,3 +18168,13 @@ thinking_tokens=2217, len(result)=1038. Единственный low о пере
 всегда его оставляет. Внешняя `CancelledError` намеренно не создаёт также
 failure metric и terminal log. После двух валидных Opus-review material
 findings не осталось; code-review бюджет 2/2 исчерпан.
+
+**Финальные проверки и доставка.** На финальном code/review SHA
+`8a0cf15d47c79bde42240fa915c21e320fe0c529` полный mock suite запущен один
+раз точной командой из workflow: 3288 passed, 2 skipped, 77 deselected,
+exit 0. Полный opt-in real suite также один раз: 66 passed, 9 skipped, 3292
+deselected; отдельный web-flow 1 skipped; общий exit 0. GitHub Tests
+`35784003579` завершился `success` во всех трёх jobs. Deploy Prod
+`35784808957` завершился `success`, включая public read-only MCP smoke.
+Production напрямую не опрашивался; статус доставки получен только из GitHub
+Actions.
