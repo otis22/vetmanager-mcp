@@ -33,6 +33,8 @@ from vm_transport.pool import get_shared_http_client
 from vm_transport.retry import RETRY_STATUS_CODES, backoff_seconds, parse_retry_after
 
 REQUEST_TIMEOUT = 30.0
+CONNECTION_REQUEST_BUDGET_SECONDS = 45.0
+_CONNECTION_RETRY_MIN_REMAINING_SECONDS = 5.0
 
 INTEGRATION_HEALTH_ACTIVE = "active"
 INTEGRATION_HEALTH_INVALID = "invalid"
@@ -150,17 +152,83 @@ async def _request_with_retry(
     unavailable_message: str,
 ) -> httpx.Response:
     client = await get_shared_http_client()
+    upper_method = method.upper()
+    if upper_method not in {"GET", "POST"}:
+        raise RuntimeError(f"unsupported method {method}")
     max_attempts = 3
+    deadline = time.monotonic() + CONNECTION_REQUEST_BUDGET_SECONDS
+
+    def remaining_budget() -> float:
+        return deadline - time.monotonic()
+
+    async def wait_for_retry(delay: float) -> bool:
+        remaining = remaining_budget()
+        retry_window = remaining - _CONNECTION_RETRY_MIN_REMAINING_SECONDS
+        if retry_window <= delay:
+            return False
+        try:
+            async with asyncio.timeout(retry_window):
+                await asyncio.sleep(delay)
+        except TimeoutError:
+            return False
+        return remaining_budget() > _CONNECTION_RETRY_MIN_REMAINING_SECONDS
+
+    def log_retry(
+        *,
+        attempt: int,
+        error_class: str,
+        status_code: int | None = None,
+    ) -> None:
+        extra = {
+            "event_name": "vetmanager_auth_probe_retry",
+            "target": target,
+            "error_class": error_class,
+            "attempt": attempt,
+            "account_connection_id": account_connection_id,
+        }
+        if status_code is not None:
+            extra["status_code"] = status_code
+        RUNTIME_LOGGER.warning("Retrying Vetmanager auth probe", extra=extra)
+
+    def log_terminal_failure(
+        *,
+        error_class: str,
+        reason: str | None = None,
+        status_code: int | None = None,
+    ) -> None:
+        extra = {
+            "event_name": "vetmanager_auth_probe_failed",
+            "target": target,
+            "error_class": error_class,
+            "account_connection_id": account_connection_id,
+        }
+        if reason is not None:
+            extra["reason"] = reason
+        if status_code is not None:
+            extra["status_code"] = status_code
+        RUNTIME_LOGGER.warning("Vetmanager auth probe failed", extra=extra)
 
     for attempt in range(max_attempts):
+        remaining = remaining_budget()
+        if remaining <= 0:
+            raise VetmanagerTimeoutError(timeout_message)
         started = time.monotonic()
         try:
-            if method == "GET":
-                response = await client.get(url, params=params, headers=headers)
-            elif method == "POST":
-                response = await client.post(url, headers=headers, files=files)
-            else:
-                raise RuntimeError(f"unsupported method {method}")
+            async with asyncio.timeout(remaining):
+                if upper_method == "GET":
+                    response = await client.get(url, params=params, headers=headers)
+                else:
+                    response = await client.post(url, headers=headers, files=files)
+        except TimeoutError as exc:
+            elapsed = time.monotonic() - started
+            _record_upstream_attempt(
+                target=target,
+                ok=False,
+                reason="timeout",
+                duration_seconds=elapsed,
+            )
+            log_terminal_failure(error_class=type(exc).__name__, reason="timeout")
+            raise VetmanagerTimeoutError(timeout_message) from exc
         except httpx.ConnectTimeout as exc:
             elapsed = time.monotonic() - started
             _record_upstream_attempt(
@@ -169,19 +237,15 @@ async def _request_with_retry(
                 reason="connect_timeout",
                 duration_seconds=elapsed,
             )
-            RUNTIME_LOGGER.warning(
-                "Vetmanager auth probe timed out while connecting",
-                extra={
-                    "event_name": "vetmanager_auth_probe_retry",
-                    "target": target,
-                    "error_class": type(exc).__name__,
-                    "attempt": attempt + 1,
-                    "account_connection_id": account_connection_id,
-                },
-            )
-            if attempt + 1 < max_attempts:
-                await asyncio.sleep(backoff_seconds(attempt))
+            if attempt + 1 < max_attempts and await wait_for_retry(
+                backoff_seconds(attempt)
+            ):
+                log_retry(attempt=attempt + 1, error_class=type(exc).__name__)
                 continue
+            log_terminal_failure(
+                error_class=type(exc).__name__,
+                reason="connect_timeout",
+            )
             raise VetmanagerTimeoutError(timeout_message) from exc
         except httpx.TimeoutException as exc:
             elapsed = time.monotonic() - started
@@ -191,15 +255,14 @@ async def _request_with_retry(
                 reason="timeout",
                 duration_seconds=elapsed,
             )
-            RUNTIME_LOGGER.warning(
-                "Vetmanager auth probe timed out",
-                extra={
-                    "event_name": "vetmanager_auth_probe_failed",
-                    "target": target,
-                    "error_class": type(exc).__name__,
-                    "account_connection_id": account_connection_id,
-                },
-            )
+            if (
+                upper_method == "GET"
+                and attempt + 1 < max_attempts
+                and await wait_for_retry(backoff_seconds(attempt))
+            ):
+                log_retry(attempt=attempt + 1, error_class=type(exc).__name__)
+                continue
+            log_terminal_failure(error_class=type(exc).__name__, reason="timeout")
             raise VetmanagerTimeoutError(timeout_message) from exc
         except httpx.RequestError as exc:
             elapsed = time.monotonic() - started
@@ -210,57 +273,49 @@ async def _request_with_retry(
                 reason=reason,
                 duration_seconds=elapsed,
             )
-            RUNTIME_LOGGER.warning(
-                "Vetmanager auth probe request error",
-                extra={
-                    "event_name": "vetmanager_auth_probe_failed",
-                    "target": target,
-                    "reason": reason,
-                    "error_class": type(exc).__name__,
-                    "account_connection_id": account_connection_id,
-                },
-            )
             # Этап 292: поломка сертификата на сервере клиники — не то же самое,
             # что недоступный Ветменеджер, и чинится в другом месте.
             if reason == "tls_verification_failed":
+                log_terminal_failure(error_class=type(exc).__name__, reason=reason)
                 raise VetmanagerTlsError(
                     "TLS verification failed for the clinic host."
                 ) from exc
+            if (
+                upper_method == "GET"
+                and attempt + 1 < max_attempts
+                and await wait_for_retry(backoff_seconds(attempt))
+            ):
+                log_retry(attempt=attempt + 1, error_class=type(exc).__name__)
+                continue
+            log_terminal_failure(error_class=type(exc).__name__, reason=reason)
             raise VetmanagerError(unavailable_message) from exc
 
         elapsed = time.monotonic() - started
-        if response.status_code in RETRY_STATUS_CODES - {429}:
-            _record_upstream_attempt(
-                target=target,
-                ok=False,
-                reason=f"http_{response.status_code}",
-                duration_seconds=elapsed,
-            )
-            RUNTIME_LOGGER.warning(
-                "Vetmanager auth probe received retryable upstream status",
-                extra={
-                    "event_name": "vetmanager_auth_probe_retry",
-                    "target": target,
-                    "status_code": response.status_code,
-                    "attempt": attempt + 1,
-                    "account_connection_id": account_connection_id,
-                },
-            )
-            if attempt + 1 < max_attempts:
-                await asyncio.sleep(
-                    backoff_seconds(
-                        attempt,
-                        parse_retry_after(response.headers.get("Retry-After")),
-                    )
-                )
-                continue
+        response_ok = response.status_code < 400
+        response_reason = None if response_ok else f"http_{response.status_code}"
         _record_upstream_attempt(
             target=target,
-            ok=response.status_code < 400,
-            reason=None if response.status_code < 400 else f"http_{response.status_code}",
+            ok=response_ok,
+            reason=response_reason,
             duration_seconds=elapsed,
         )
-        if response.status_code < 400:
+        if (
+            upper_method == "GET"
+            and response.status_code in RETRY_STATUS_CODES - {429}
+            and attempt + 1 < max_attempts
+        ):
+            delay = backoff_seconds(
+                attempt,
+                parse_retry_after(response.headers.get("Retry-After")),
+            )
+            if await wait_for_retry(delay):
+                log_retry(
+                    attempt=attempt + 1,
+                    error_class=f"HTTP{response.status_code}",
+                    status_code=response.status_code,
+                )
+                continue
+        if response_ok:
             RUNTIME_LOGGER.info(
                 "Vetmanager auth probe succeeded",
                 extra={
@@ -271,14 +326,9 @@ async def _request_with_retry(
                 },
             )
         else:
-            RUNTIME_LOGGER.warning(
-                "Vetmanager auth probe failed",
-                extra={
-                    "event_name": "vetmanager_auth_probe_failed",
-                    "target": target,
-                    "status_code": response.status_code,
-                    "account_connection_id": account_connection_id,
-                },
+            log_terminal_failure(
+                error_class=f"HTTP{response.status_code}",
+                status_code=response.status_code,
             )
         return response
 

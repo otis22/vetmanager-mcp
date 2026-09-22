@@ -18068,3 +18068,65 @@ mcp-heartbeat`, лог `/var/log/mcp-heartbeat.log`, живая отправка
 следующем сообщении; продуктовые алерты (доля 5xx апстрима, застрявшие Report
 AI, всплеск `no_match`) остаются отдельным решением, если суточного ряда
 окажется мало.
+
+## Этап 339. Повторы пути подключения клиники
+
+**Решение.** `_request_with_retry` повторяет `ConnectTimeout` для GET и POST,
+а прочие `TimeoutException`/`RequestError` и 502/503/504 — только для GET.
+TLS verification остаётся немедленным `VetmanagerTlsError`. Один логический
+вызов ограничен 45-секундным wall-clock deadline через `asyncio.timeout`;
+новая попытка не начинается, если после backoff не остаётся больше 5 секунд.
+При остановке до нового HTTP-вызова сохраняется последняя upstream-причина;
+если новая попытка началась, её результат главный. POST после возможной
+доставки не повторяется. Метрики пишутся ровно один раз на попытку, retry-log
+— только непосредственно перед фактической следующей попыткой.
+
+**PRD и Architecture Critique.** Spark PRD 1/3
+(`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-339/spark-prd-1.log`,
+exit 0): принят запрет 5xx-retry для POST, guards на terminal log/metrics и
+регистр метода; bounded timeout уже был в PRD. Spark PRD 2/3
+(`stage-339/spark-prd-2.log`, exit 0): приняты отдельная обработка wall-clock
+timeout, повторная проверка бюджета после backoff и взаимоисключающий учёт
+terminal response. Opus Architecture Critique/full PRD-review valid 1/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-22T201146Z-file-PRD_-339--_md-attempt-1-of-3.gWstjP/claude-review-attempt-1-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=1996,
+thinking_tokens=943, len(result)=2835. Приняты hard wall-clock timeout вместо
+одних component timeouts, явная граница одного вызова, guards всех веток и
+минимум времени новой попытки. Opus valid 2/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-22T201542Z-file-PRD_-339--_md-attempt-2-of-3.5JIUNE/claude-review-attempt-2-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=2390,
+thinking_tokens=1608, len(result)=2083. Принято правило «последняя начатая
+попытка побеждает» и устранена гонка равных component/wall timers. Timeout
+внешнего reverse proxy отсутствует в repo и не проверялся на production:
+45 секунд — локальный бюджет одного `_request_with_retry`; риск более раннего
+обрыва login/password submit внешним hop принят как out of scope.
+
+**Простота.** Отдельные retry-класс/policy/framework отклонены: один локальный
+цикл и два метода не требуют новой общей абстракции. Deadline, ожидание и два
+узких log-helper живут рядом с единственным call-site; breaker/cache основного
+клиента не переносились.
+
+**Red/Green и сторожа.** Старый код дал 7 failed, 18 passed, exit 1
+(`stage-339/guards-red.log/.exit`): GET падал на первом read/network отказе,
+lowercase не нормализовался, POST повторял 503, wall-clock budget отсутствовал,
+terminal 503 учитывался дважды. Сохранённые инварианты намеренно ломались:
+POST разрешался retry после read/network ошибки, POST запрещался retry после
+`ConnectTimeout`, TLS fail-fast отключался — соответствующий набор дал 4
+failed, exit 1 (`stage-339/preserved-guards-intentional-red.log/.exit`). После
+возврата кода итоговый focused набор после аудита: 30 passed, exit 0
+(`stage-339/focused-green-after-audit.log/.exit`).
+
+**Живая проверка.** На test-контуре devtr6 штатный
+`validate_domain_api_key_connection` с `TEST_DOMAIN`/`TEST_API_KEY` из `.env`
+прошёл: pytest code 0, безопасная форма результата `1 passed`, без печати
+домена, ключа или тела клиники. Evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-339/live-devtr6-validation.log/.exit`.
+Обращений к production не было.
+
+**Аудит.** Проверены method/error matrix, строгий TLS fail-fast, wall-clock
+deadline HTTP и backoff, сохранение последней причины до старта новой попытки,
+последняя начатая попытка, единственность metric sample и правдивость
+retry/terminal logs. Аудит добавил guards `RequestError`, Retry-After 60,
+backoff oversleep и 503 → wall-clock timeout; новых public/API/storage
+контрактов и секретов в логах нет. Committed-diff review и финальные suite
+будут дописаны после первого коммита.
