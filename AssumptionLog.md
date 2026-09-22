@@ -18157,3 +18157,14 @@ context, а retry-event теперь пишется только после ре
 await. Кандидат о недостижимом scheduler-delay guard отклонён: после fake sleep
 первый clock read возвращает 0 (post-sleep check проходит с 45 с), следующий
 возвращает 41 (новый loop видит 4 с); оба перехода закреплены assertions.
+
+Opus committed-diff review valid 2/2:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-09-22T204423Z-git_range-origin_main__HEAD-attempt-2-of-3.2ZU0AR/claude-review-attempt-2-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=3184,
+thinking_tokens=2217, len(result)=1038. Единственный low о переносе retry-log
+до HTTP await отклонён: это снова позволило бы событию утверждать повтор,
+который не стартовал после исчерпания budget/cancellation. Текущий event
+пишется после доказанно начатого await; штатный timeout/transport/response
+всегда его оставляет. Внешняя `CancelledError` намеренно не создаёт также
+failure metric и terminal log. После двух валидных Opus-review material
+findings не осталось; code-review бюджет 2/2 исчерпан.
