@@ -18130,3 +18130,11 @@ retry/terminal logs. Аудит добавил guards `RequestError`, Retry-Afte
 backoff oversleep и 503 → wall-clock timeout; новых public/API/storage
 контрактов и секретов в логах нет. Committed-diff review и финальные suite
 будут дописаны после первого коммита.
+
+Spark committed-diff review 1/3
+(`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-339/spark-diff-1.log`,
+exit 0) дал три адекватных связанных finding: client acquisition включён в
+deadline; последняя причина/ответ сохраняется между итерациями, а retry-log
+перенесён после финальной проверки бюджета; прежний oversleep guard дополнен
+детерминированной задержкой после завершённого backoff. После правок focused
+набор: 32 passed, exit 0 (`stage-339/focused-after-spark-fixes.log/.exit`).

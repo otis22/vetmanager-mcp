@@ -151,7 +151,6 @@ async def _request_with_retry(
     timeout_message: str,
     unavailable_message: str,
 ) -> httpx.Response:
-    client = await get_shared_http_client()
     upper_method = method.upper()
     if upper_method not in {"GET", "POST"}:
         raise RuntimeError(f"unsupported method {method}")
@@ -208,8 +207,47 @@ async def _request_with_retry(
             extra["status_code"] = status_code
         RUNTIME_LOGGER.warning("Vetmanager auth probe failed", extra=extra)
 
+    try:
+        async with asyncio.timeout(remaining_budget()):
+            client = await get_shared_http_client()
+    except TimeoutError as exc:
+        log_terminal_failure(error_class=type(exc).__name__, reason="timeout")
+        raise VetmanagerTimeoutError(timeout_message) from exc
+
+    pending_retry: tuple[str, int | None] | None = None
+    last_failure: tuple[str, object, str | None] | None = None
+
+    def finish_last_failure() -> httpx.Response:
+        if last_failure is None:
+            raise VetmanagerTimeoutError(timeout_message)
+        kind, value, reason = last_failure
+        if kind == "response":
+            response = value
+            assert isinstance(response, httpx.Response)
+            log_terminal_failure(
+                error_class=f"HTTP{response.status_code}",
+                status_code=response.status_code,
+            )
+            return response
+        exc = value
+        assert isinstance(exc, httpx.RequestError)
+        log_terminal_failure(error_class=type(exc).__name__, reason=reason)
+        if kind in {"connect_timeout", "timeout"}:
+            raise VetmanagerTimeoutError(timeout_message) from exc
+        raise VetmanagerError(unavailable_message) from exc
+
     for attempt in range(max_attempts):
         remaining = remaining_budget()
+        if pending_retry is not None:
+            if remaining <= _CONNECTION_RETRY_MIN_REMAINING_SECONDS:
+                return finish_last_failure()
+            error_class, status_code = pending_retry
+            log_retry(
+                attempt=attempt,
+                error_class=error_class,
+                status_code=status_code,
+            )
+            pending_retry = None
         if remaining <= 0:
             raise VetmanagerTimeoutError(timeout_message)
         started = time.monotonic()
@@ -240,7 +278,8 @@ async def _request_with_retry(
             if attempt + 1 < max_attempts and await wait_for_retry(
                 backoff_seconds(attempt)
             ):
-                log_retry(attempt=attempt + 1, error_class=type(exc).__name__)
+                last_failure = ("connect_timeout", exc, "connect_timeout")
+                pending_retry = (type(exc).__name__, None)
                 continue
             log_terminal_failure(
                 error_class=type(exc).__name__,
@@ -260,7 +299,8 @@ async def _request_with_retry(
                 and attempt + 1 < max_attempts
                 and await wait_for_retry(backoff_seconds(attempt))
             ):
-                log_retry(attempt=attempt + 1, error_class=type(exc).__name__)
+                last_failure = ("timeout", exc, "timeout")
+                pending_retry = (type(exc).__name__, None)
                 continue
             log_terminal_failure(error_class=type(exc).__name__, reason="timeout")
             raise VetmanagerTimeoutError(timeout_message) from exc
@@ -285,7 +325,8 @@ async def _request_with_retry(
                 and attempt + 1 < max_attempts
                 and await wait_for_retry(backoff_seconds(attempt))
             ):
-                log_retry(attempt=attempt + 1, error_class=type(exc).__name__)
+                last_failure = ("request_error", exc, reason)
+                pending_retry = (type(exc).__name__, None)
                 continue
             log_terminal_failure(error_class=type(exc).__name__, reason=reason)
             raise VetmanagerError(unavailable_message) from exc
@@ -309,11 +350,8 @@ async def _request_with_retry(
                 parse_retry_after(response.headers.get("Retry-After")),
             )
             if await wait_for_retry(delay):
-                log_retry(
-                    attempt=attempt + 1,
-                    error_class=f"HTTP{response.status_code}",
-                    status_code=response.status_code,
-                )
+                last_failure = ("response", response, response_reason)
+                pending_retry = (f"HTTP{response.status_code}", response.status_code)
                 continue
         if response_ok:
             RUNTIME_LOGGER.info(

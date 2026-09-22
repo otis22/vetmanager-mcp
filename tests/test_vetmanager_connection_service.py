@@ -3,6 +3,7 @@
 import asyncio
 from pathlib import Path
 import ssl
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -644,6 +645,87 @@ async def test_connection_wall_clock_budget_records_terminal_timeout(monkeypatch
         getattr(record, "event_name", "") == "vetmanager_auth_probe_failed"
         for record in caplog.records
     ) == 1
+
+
+@pytest.mark.asyncio
+async def test_connection_budget_includes_shared_client_acquisition(monkeypatch, caplog):
+    import vetmanager_connection_service as service
+
+    async def slow_get_shared_http_client():
+        await asyncio.sleep(0.02)
+        raise AssertionError("client acquisition should have timed out")
+
+    monkeypatch.setattr(service, "get_shared_http_client", slow_get_shared_http_client)
+    monkeypatch.setattr(service, "CONNECTION_REQUEST_BUDGET_SECONDS", 0.01)
+
+    with caplog.at_level("WARNING", logger="vetmanager.runtime"):
+        with pytest.raises(VetmanagerTimeoutError):
+            await service._request_with_retry(
+                "GET",
+                "https://clinic-a.vetmanager.cloud/rest/api/user",
+                target="vetmanager_api_probe",
+                headers={},
+                timeout_message="client acquisition timed out",
+                unavailable_message="unavailable",
+            )
+
+    assert sum(
+        getattr(record, "event_name", "") == "vetmanager_auth_probe_failed"
+        for record in caplog.records
+    ) == 1
+
+
+@pytest.mark.asyncio
+async def test_connection_scheduler_delay_before_retry_preserves_last_error(
+    monkeypatch,
+    caplog,
+):
+    import vetmanager_connection_service as service
+
+    clock_calls = 0
+
+    def monotonic() -> float:
+        nonlocal clock_calls
+        clock_calls += 1
+        return 0.0 if clock_calls <= 7 else 41.0
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = 0
+
+        async def get(self, url, *, params=None, headers=None):
+            self.calls += 1
+            raise httpx.ConnectError("connection reset")
+
+    fake_client = FakeClient()
+
+    async def fake_get_shared_http_client():
+        return fake_client
+
+    async def fake_sleep(delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(service, "get_shared_http_client", fake_get_shared_http_client)
+    monkeypatch.setattr(service, "time", SimpleNamespace(monotonic=monotonic))
+    monkeypatch.setattr(service, "backoff_seconds", lambda attempt, retry_after=None: 0.2)
+    monkeypatch.setattr(service.asyncio, "sleep", fake_sleep)
+
+    with caplog.at_level("WARNING", logger="vetmanager.runtime"):
+        with pytest.raises(VetmanagerError, match="original unavailable"):
+            await service._request_with_retry(
+                "GET",
+                "https://clinic-a.vetmanager.cloud/rest/api/user",
+                target="vetmanager_api_probe",
+                headers={},
+                timeout_message="timeout",
+                unavailable_message="original unavailable",
+            )
+
+    assert fake_client.calls == 1
+    assert not any(
+        getattr(record, "event_name", "") == "vetmanager_auth_probe_retry"
+        for record in caplog.records
+    )
 
 
 @pytest.mark.asyncio
