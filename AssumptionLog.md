@@ -18148,3 +18148,12 @@ thinking_tokens=3644, len(result)=919. Единственный low finding пр
 явно доказывает прохождение post-sleep check и следующей задержки. После
 правки focused набор: 32 passed, exit 0
 (`stage-339/focused-after-opus-fix.log/.exit`).
+
+Spark committed-diff review 2/3 вернул `[]`
+(`stage-339/spark-diff-2.log/.exit`). Spark 3/3
+(`stage-339/spark-diff-3.log/.exit`) принят в части stale remaining между
+синхронным retry-log и HTTP context: остаток пересчитывается прямо перед
+context, а retry-event теперь пишется только после реально начатого повторного
+await. Кандидат о недостижимом scheduler-delay guard отклонён: после fake sleep
+первый clock read возвращает 0 (post-sleep check проходит с 45 с), следующий
+возвращает 41 (новый loop видит 4 с); оба перехода закреплены assertions.

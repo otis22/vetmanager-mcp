@@ -238,18 +238,32 @@ async def _request_with_retry(
 
     for attempt in range(max_attempts):
         remaining = remaining_budget()
+        retry_context = pending_retry
         if pending_retry is not None:
             if remaining <= _CONNECTION_RETRY_MIN_REMAINING_SECONDS:
                 return finish_last_failure()
-            error_class, status_code = pending_retry
+            pending_retry = None
+        remaining = remaining_budget()
+        if (
+            retry_context is not None
+            and remaining <= _CONNECTION_RETRY_MIN_REMAINING_SECONDS
+        ):
+            return finish_last_failure()
+        if remaining <= 0:
+            raise VetmanagerTimeoutError(timeout_message)
+
+        def log_started_retry() -> None:
+            nonlocal retry_context
+            if retry_context is None:
+                return
+            error_class, status_code = retry_context
             log_retry(
                 attempt=attempt,
                 error_class=error_class,
                 status_code=status_code,
             )
-            pending_retry = None
-        if remaining <= 0:
-            raise VetmanagerTimeoutError(timeout_message)
+            retry_context = None
+
         started = time.monotonic()
         try:
             async with asyncio.timeout(remaining):
@@ -258,6 +272,7 @@ async def _request_with_retry(
                 else:
                     response = await client.post(url, headers=headers, files=files)
         except TimeoutError as exc:
+            log_started_retry()
             elapsed = time.monotonic() - started
             _record_upstream_attempt(
                 target=target,
@@ -268,6 +283,7 @@ async def _request_with_retry(
             log_terminal_failure(error_class=type(exc).__name__, reason="timeout")
             raise VetmanagerTimeoutError(timeout_message) from exc
         except httpx.ConnectTimeout as exc:
+            log_started_retry()
             elapsed = time.monotonic() - started
             _record_upstream_attempt(
                 target=target,
@@ -287,6 +303,7 @@ async def _request_with_retry(
             )
             raise VetmanagerTimeoutError(timeout_message) from exc
         except httpx.TimeoutException as exc:
+            log_started_retry()
             elapsed = time.monotonic() - started
             _record_upstream_attempt(
                 target=target,
@@ -305,6 +322,7 @@ async def _request_with_retry(
             log_terminal_failure(error_class=type(exc).__name__, reason="timeout")
             raise VetmanagerTimeoutError(timeout_message) from exc
         except httpx.RequestError as exc:
+            log_started_retry()
             elapsed = time.monotonic() - started
             reason = classify_transport_error(exc)
             _record_upstream_attempt(
@@ -331,6 +349,7 @@ async def _request_with_retry(
             log_terminal_failure(error_class=type(exc).__name__, reason=reason)
             raise VetmanagerError(unavailable_message) from exc
 
+        log_started_retry()
         elapsed = time.monotonic() - started
         response_ok = response.status_code < 400
         response_reason = None if response_ok else f"http_{response.status_code}"
