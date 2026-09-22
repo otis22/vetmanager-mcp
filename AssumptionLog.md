@@ -18043,7 +18043,10 @@ push в `main`. Скрипт живёт в LiveHelperAgent
 (`scripts/deploy/mcp-daily-heartbeat.sh`) и ставится на сервер руками; здесь
 этап нужен только как учёт работы. В коде сервиса, `ops/`, env и compose
 изменений нет; новых секретов не заводилось — релей читается из уже стоящего
-`/opt/vps-monitor.sh`.
+`/opt/vps-monitor.sh`. По той же причине у этапа нет файла `PRD/этап-338-*.md`
+и `review_workflow_check.sh` помечает это как `missing_prd`: проектировать в
+этом репозитории нечего, спецификация целиком лежит в пунктах 338.1–338.3
+Roadmap, а код — в чужом репозитории.
 
 **Разделение труда.** Скрипт написал codex в рабочем каталоге LiveHelperAgent
 без доступа к production; ShellCheck (`koalaman/shellcheck:v0.10.0`) и
