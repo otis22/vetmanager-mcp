@@ -561,13 +561,29 @@ Known-issue bootstrap and write-path diagnostic:
 # Run after DB migrations are applied; the script expects known_issues and
 # known_issue_match_events tables to exist.
 python scripts/seed_known_issues.py --dry-run
+# If only created>0 and updated=0, this creates missing issues without
+# overwriting existing ones. Review every would_update=slug:field,field line.
 python scripts/seed_known_issues.py --apply
+
+# Existing issues are never overwritten by the plain --apply command. If an
+# update is intentional, first make a full database backup (the
+# show-known-issue-config command does not include every seed-managed field).
+# Then add --allow-update with the exact slug and field set from dry-run.
 
 # Production-safe diagnostic: pass real non-secret DB ids from an active
 # account/token. Do not pass bearer token strings or Vetmanager credentials.
 python scripts/seed_known_issues.py diagnostic-auto-event --apply \
   --account-id <account_id> --bearer-token-id <bearer_token_id>
 ```
+
+The seed exits nonzero and rolls back the entire transaction when any changed
+issue lacks an exact `--allow-update` approval. A fresh run recomputes the
+field list; if it changed since the dry-run, review it again before approving.
+The argument format is `--allow-update slug:field,field`; repeat the argument
+for each issue whose fields are to be changed.
+The output lists field names only, never their values. On production, if the
+post-deploy dry-run still reports KI-45 as `updated`, stop and inspect its full
+configuration before any apply.
 
 Diagnostic `--apply` requires `FEEDBACK_FINGERPRINT_PEPPER`; without it the
 script fails closed. `diagnostic-auto-event` requires an explicit `--apply` or

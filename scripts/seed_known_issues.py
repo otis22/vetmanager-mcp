@@ -111,6 +111,12 @@ def _playbook(
     }
 
 
+def _stage332_config(filename: str) -> dict[str, Any]:
+    """Read the same versioned KI-45 config used by the Stage 332 apply script."""
+    path = REPO_ROOT / "artifacts" / "known-issues" / "stage-332" / filename
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 SEED_ISSUES: tuple[SeedIssue, ...] = (
     SeedIssue(
         slug="invoice-discount-is-percent",
@@ -329,27 +335,10 @@ SEED_ISSUES: tuple[SeedIssue, ...] = (
         severity="medium",
         priority=74,
         related_tool=None,
-        # Второй маркер добавлен этапом 307. До него «not rest-exportable»
-        # возвращался как `ToolInputError`, когда report_id назвал сам
-        # вызывающий, и проходил мимо механизма целиком: правило на него
-        # выглядело бы рабочим и молчало. Теперь обвинение по-прежнему
-        # выключено, а playbook доезжает — и правило имеет смысл.
-        match_rules=_text_rules(
-            "getting report export file failed",
-            "not rest-exportable",
-        ),
-        agent_playbook=_playbook(
-            "Vetmanager did not produce the export file for this report.",
-            steps=[
-                "Check the export state with get_report_ai_job before asking for the file again.",
-                "If the report is not REST-exportable, build the same data through a Report AI job instead.",
-            ],
-            do_not_do=[
-                "Do not poll the download endpoint in a loop — the file is not being prepared.",
-            ],
-            tools=["get_report_ai_job", "create_report_ai_job"],
-            safe_to_retry=False,
-        ),
+        # Этап 332 применил эти файлы на production. Seed читает их же,
+        # чтобы повторное применение не откатывало более новую конфигурацию.
+        match_rules=_stage332_config("ki45-match-rules.json"),
+        agent_playbook=_stage332_config("ki45-playbook.json"),
         public_summary="Some Vetmanager reports are not available through REST export.",
         workaround="Use a Report AI job to obtain the same rows.",
     ),
@@ -469,15 +458,29 @@ def _issue_values(item: SeedIssue) -> dict[str, Any]:
     }
 
 
-async def seed_known_issues(*, apply: bool) -> dict[str, int | str]:
+def _seed_values_equal(field: str, current: Any, desired: Any) -> bool:
+    if field in {"match_rules_json", "agent_playbook_json"}:
+        try:
+            return json.loads(current) == json.loads(desired)
+        except (TypeError, ValueError):
+            return False
+    return current == desired
+
+
+async def seed_known_issues(
+    *, apply: bool, allow_updates: tuple[str, ...] = (),
+) -> dict[str, Any]:
     validate_seed_definitions()
-    summary = {"status": "ok", "created": 0, "updated": 0, "unchanged": 0, "skipped": 0}
+    summary: dict[str, Any] = {
+        "status": "ok", "created": 0, "updated": 0, "unchanged": 0,
+        "skipped": 0, "changes": [],
+    }
     async with get_session_factory()() as session:
         for item in SEED_ISSUES:
             marker = seed_marker(item.slug)
             rows = (
                 await session.execute(
-                    select(KnownIssue).where(KnownIssue.title.like(f"{marker} %"))
+                    select(KnownIssue).where(KnownIssue.title.like(f"{marker} %")).with_for_update()
                 )
             ).scalars().all()
             if len(rows) > 1:
@@ -489,17 +492,24 @@ async def seed_known_issues(*, apply: bool) -> dict[str, int | str]:
                     session.add(KnownIssue(title=item.title, **values))
                 continue
             issue = rows[0]
-            changed = issue.title != item.title or any(getattr(issue, key) != value for key, value in values.items())
-            if changed:
+            changes = {
+                key: value for key, value in {"title": item.title, **values}.items()
+                if not _seed_values_equal(key, getattr(issue, key), value)
+            }
+            if changes:
                 summary["updated"] += 1
+                summary["changes"].append(f"{item.slug}:{','.join(sorted(changes))}")
                 if apply:
-                    issue.title = item.title
-                    for key, value in values.items():
+                    for key, value in changes.items():
                         setattr(issue, key, value)
             else:
                 summary["unchanged"] += 1
         if apply:
-            await session.commit()
+            if set(summary["changes"]) != set(allow_updates):
+                summary["status"] = "blocked"
+                await session.rollback()
+            else:
+                await session.commit()
         else:
             await session.rollback()
     return summary
@@ -701,7 +711,11 @@ async def diagnostic_auto_event(
 
 
 def _print_summary(summary: dict[str, Any]) -> None:
-    print(" ".join(f"{key}={value}" for key, value in summary.items() if value is not None))
+    print(" ".join(f"{key}={value}" for key, value in summary.items() if key != "changes" and value is not None))
+    for change in summary.get("changes", []):
+        print(f"would_update={change}")
+    if summary.get("status") == "blocked":
+        print("Updates require matching --allow-update slug:field,field for each would_update entry.")
 
 
 async def _main_async(args: argparse.Namespace) -> int:
@@ -714,15 +728,17 @@ async def _main_async(args: argparse.Namespace) -> int:
         )
         _print_summary(summary)
         return 0 if summary.get("status") in {"ok", "skipped"} else 1
-    summary = await seed_known_issues(apply=args.apply)
+    summary = await seed_known_issues(apply=args.apply, allow_updates=tuple(args.allow_update))
     _print_summary(summary)
-    return 0
+    return 2 if summary["status"] == "blocked" else 0
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Seed Stage 157 known issues.")
     parser.add_argument("--dry-run", action="store_true", help="Validate and report planned seed changes.")
     parser.add_argument("--apply", action="store_true", help="Apply seed changes.")
+    parser.add_argument("--allow-update", action="append", default=[], metavar="SLUG:FIELD,FIELD",
+                        help="Explicitly approve exactly these changed fields for one seeded issue.")
     sub = parser.add_subparsers(dest="command")
     diagnostic = sub.add_parser("diagnostic-auto-event")
     diagnostic.add_argument("--apply", action="store_true")
@@ -739,6 +755,8 @@ def main() -> None:
     if args.command is None:
         if args.apply == args.dry_run:
             parser.error("choose exactly one of --dry-run or --apply")
+        if args.allow_update and not args.apply:
+            parser.error("--allow-update requires --apply")
     elif args.command == "diagnostic-auto-event":
         if args.apply == args.dry_run:
             parser.error("choose exactly one of --dry-run or --apply")
