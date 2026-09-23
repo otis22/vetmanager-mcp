@@ -18267,5 +18267,33 @@ thinking_tokens=143, len(result)=15. Общих findings не было. Astra п
 upgrade/downgrade, порядок блоков и переполнение кнопок на 390 px. В
 `needs_client_use` блок следующего шага перемещён выше служебных счётчиков.
 Новых MCP-инструментов не было; живая проверка изменённого инструмента на
-стенде не требуется. Committed diff, полные suite и CI будут зафиксированы
-после первого коммита.
+стенде не требуется.
+
+**Committed diff-review.** Код и PRD коммитом
+`537c5341440bb8e1627c53d4a00e4aa5250774b8` прошли Spark
+`gpt-6-luna`, 1/3, 23.09 22:38:27–22:39:05 UTC:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-341-diff/spark.result.txt`,
+`[]`, `files_read` содержит 13 файлов. Astra и Opus запущены параллельно на
+`origin/main..HEAD`: Astra valid 1/2, 22:39:20–22:40:06 UTC (46 с),
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-341-diff/astra-review-attempt-1-of-3.envelope.json`,
+`[]`; Opus valid 1/2, 22:39:20–22:39:37 UTC (17,008 с),
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-341-diff/2026-09-23T223920Z-git_range-origin_main__HEAD-attempt-1-of-3.QoUo5a/claude-review-attempt-1-of-3.envelope.json`,
+`[]`, subtype=`success`, stop_reason=`tool_use`, output_tokens=1352,
+thinking_tokens=991, len(result)=15. Общих, принятых и отклонённых findings
+нет.
+
+**Полный прогон на финальном code SHA и CI.** Один mock suite
+23.09 22:40:41–22:48:37 UTC: 3299 passed, 2 skipped, 77 deselected,
+exit 0, evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-341-suite/mock.log`
+и `mock.exit`. Один opt-in real
+suite на test-контуре из `.env` 22:48:48–22:52:32 UTC: 66 passed, 9 skipped,
+3303 deselected, отдельный web-flow 1 skipped, exit 0; evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-341-suite/real.log`
+и `real.exit`. Секреты и ответы клиники в журнал
+или диалог не переносились. Push `537c534` в `origin/main` выполнен 23.09.
+GitHub Tests `35930715296`: success в jobs `fast`, `default`,
+`postgres-activation-telemetry`. GitHub Deploy Prod `35931316794`: success
+в jobs `changes` и `deploy`. Статусы получены через GitHub Actions;
+production напрямую не опрашивался. После закрытия Roadmap следует только
+документационный коммит; его CI проверяется по GitHub Actions.
