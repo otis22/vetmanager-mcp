@@ -7,6 +7,7 @@ from oauth_metadata import get_mcp_path, get_site_base_url
 import re
 from datetime import datetime, timezone
 from html import escape
+from first_request_examples import EXAMPLE_DISCLAIMER, FIRST_REQUEST_EXAMPLES
 
 from env_utils import env_email
 from observability_logging import RUNTIME_LOGGER
@@ -486,6 +487,7 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
       font-weight: 700;
       font-size: 0.95rem;
     }}
+    .activation-action {{ margin: 8px 0 12px; background: var(--accent); color: #fff9f3; }}
     .form-status {{
       min-height: 1.2em;
       color: var(--muted);
@@ -650,6 +652,7 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
       white-space: nowrap;
       flex-shrink: 0;
     }}
+    .token-flash .copy-button {{ white-space: normal; max-width: 100%; text-align: left; }}
     .copy-status {{
       min-height: 1.2em;
       margin-top: 10px;
@@ -674,6 +677,11 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
       word-break: break-all;
       font-size: 0.82rem;
     }}
+    .first-request-step {{ margin: 12px 0; font-weight: 650; color: var(--ink); }}
+    .first-request-examples {{ margin-top: 14px; display: grid; gap: 10px; }}
+    .first-request-pair {{ padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,0.7); }}
+    .first-request-pair p {{ margin: 5px 0; }}
+    .first-request-pair button {{ margin-top: 5px; }}
     .grid {{
       display: grid;
       gap: 14px;
@@ -1330,6 +1338,15 @@ def render_account_page(
     )
     issued_token_html = ""
     if issued_raw_token:
+        issued_examples_html = "".join(
+            f'<div class="first-request-pair" data-example-pair="issued">'
+            f'<strong id="first-question-{index}">{escape(question)}</strong>'
+            f'<p>{escape(answer)}</p>'
+            f'<button type="button" class="copy-button" data-copy-source="first-question-{index}" '
+            f'data-copy-kind="example" data-copy-status="first-question-status" '
+            f'data-copied-text="Вопрос скопирован.">Скопировать вопрос</button></div>'
+            for index, (question, answer) in enumerate(FIRST_REQUEST_EXAMPLES[:2])
+        )
         issued_access_html = (
             f'<p><strong>Уровень доступа:</strong> {escape(issued_token_access_label)}</p>'
             if issued_token_access_label
@@ -1353,6 +1370,7 @@ def render_account_page(
             <button class="copy-button link" id="issued-config-copy-button" type="button" data-copy-source="issued-token-config" data-copy-kind="config" data-copy-status="issued-token-copy-status" data-copied-text="Готовый конфиг скопирован — вставьте его в настройки MCP клиента.">Скопировать готовый конфиг</button>
             <span class="copy-status" id="issued-token-copy-status" aria-live="polite"></span>
           </div>
+          <p class="first-request-step" data-motivator="issued"><strong>Остался один шаг:</strong> скопируйте конфиг, вставьте его в MCP-клиент и задайте первый вопрос.</p>
           {issued_access_html}
           {issued_privacy_html}
           <details class="token-flash-example" open data-testid="issued-token-instructions">
@@ -1368,6 +1386,9 @@ def render_account_page(
   }}
 }}</pre>
           </details>
+          <div class="first-request-examples">{issued_examples_html}</div>
+          <p class="hint">Это {escape(EXAMPLE_DISCLAIMER)}.</p>
+          <span class="copy-status" id="first-question-status" aria-live="polite"></span>
         </section>
         """
     token_disabled = "disabled" if active_connection is None or integration_health_status != INTEGRATION_HEALTH_ACTIVE else ""
@@ -1401,17 +1422,11 @@ def render_account_page(
     )
     oauth_success_html = ""
     if has_chatgpt and integration_ready and not has_client_usage:
-        oauth_success_html = """
+        oauth_success_html = f"""
         <section class="panel-card" data-testid="oauth-first-request-guide">
           <strong>Подсказки для вашего помощника</strong>
           <p>Откройте помощника и попробуйте одну из фраз:</p>
-          <ul>
-            <li>Покажи записи на сегодня</li>
-            <li>Найди карточку клиента по фамилии</li>
-            <li>Сколько приёмов было на прошлой неделе?</li>
-            <li>Кого напомнить о визите завтра?</li>
-            <li>Кто не приходил больше полугода?</li>
-          </ul>
+          <ul>{''.join(f'<li>{escape(question)}</li>' for question, _ in FIRST_REQUEST_EXAMPLES[:5])}</ul>
         </section>
         """
     activation_state = compute_activation_state(
@@ -1445,10 +1460,13 @@ def render_account_page(
     # and reloads once the first MCP request lands.
     waiting_html = ""
     if activation_state == "needs_client_use":
+        help_url = f"mailto:{escape(_resolve_support_email())}" if _resolve_support_email() else _SUPPORT_ISSUES_URL
         waiting_html = (
             '<p class="waiting-indicator" data-testid="activation-waiting" '
-            f'data-poll-activation="{activation_state}">'
-            "Ждём первый запрос от MCP-клиента… страница обновится автоматически.</p>"
+            f'data-poll-activation="{activation_state}" data-motivator="waiting">'
+            "Осталось немного: подключение обычно занимает несколько минут. Страница обновится сама после первого запроса.</p>"
+            f'<p>Для пробы спросите: «{escape(FIRST_REQUEST_EXAMPLES[0][0])}» — '
+            f'<a href="{help_url}">не выходит — напишите</a>.</p>'
         )
 
     def _activation_item(done: bool, text: str, *, current: bool = False) -> str:
@@ -1459,10 +1477,15 @@ def render_account_page(
             f"{escape(text)}</li>"
         )
 
+    activation_action_html = (
+        '<a class="link activation-action" href="#token-quick">Перейти к выпуску ключа</a>'
+        if activation_state == "needs_token" else ""
+    )
     activation_html = f"""
         <section class="activation-status" data-testid="activation-status" data-activation-state="{activation_state}">
           <h2>{escape(activation_title)}</h2>
           <p>{escape(activation_summary)}</p>
+          {activation_action_html}
           <ul>
             {_activation_item(integration_ready, "Vetmanager подключён", current=activation_state == "needs_connection")}
             {_activation_item(has_active_token, "Ключ доступа выпущен", current=activation_state == "needs_token")}
@@ -1702,14 +1725,9 @@ def render_account_page(
         client_instructions_html = f"""
         <section class="panel-card client-guide" id="client-connect" data-testid="client-connect-instructions">
           <strong>Почти готово — спросите помощника</strong>
-          <p>Откройте ChatGPT, Claude или Manus и попробуйте одну из фраз:</p>
-          <ul>
-            <li>Покажи записи на сегодня</li>
-            <li>Найди карточку клиента по фамилии</li>
-            <li>Сколько приёмов было на прошлой неделе?</li>
-            <li>Кого напомнить о визите завтра?</li>
-            <li>Кто не приходил больше полугода?</li>
-          </ul>
+          <p>Откройте ChatGPT, Claude или Manus и попробуйте вопрос:</p>
+          <p>Например: «{escape(FIRST_REQUEST_EXAMPLES[0][0])}».</p>
+          <p>Это {escape(EXAMPLE_DISCLAIMER)}.</p>
           <details>
             <summary>Для разработчиков</summary>
             <p>Адрес подключения: <code>{chatgpt_mcp_url_html}</code>. Если токен не сохранился, выпустите новый ниже.</p>
@@ -1723,6 +1741,7 @@ def render_account_page(
             <p>Для ChatGPT ключ доступа не нужен — он подключается сам. Раскройте секцию «Подключения ChatGPT» ниже и следуйте инструкции.</p>
           </details>
           </details>
+          <p class="hint">Помощь с оплатой зарубежных подписок: <a href="https://spoteeq.ru" target="_blank" rel="noopener">spoteeq.ru</a>, Telegram <a href="https://t.me/vromanichev24" target="_blank" rel="noopener">@vromanichev24</a>.</p>
         </section>
         """
     support_email = _resolve_support_email()
@@ -1783,6 +1802,11 @@ def render_account_page(
         <h1>Мой помощник</h1>
         {stepper_html}
         <p>Подключите Vetmanager — и помощник сможет отвечать на вопросы о вашей клинике.</p>
+        {selected_agent_html}
+        {issued_token_html}
+        {activation_html}
+        {oauth_success_html}
+        {client_instructions_html}
         <div class="grid" data-testid="account-summary">
           <section class="metric">
             <span>Статус аккаунта</span>
@@ -1797,11 +1821,6 @@ def render_account_page(
             <strong>{bearer_token_count}</strong>
           </section>
         </div>
-        {selected_agent_html}
-        {issued_token_html}
-        {activation_html}
-        {oauth_success_html}
-        {client_instructions_html}
         {onboarding_html}
         <details class="section-block" id="account-meta" data-testid="account-meta" {meta_open}>
           <summary><h2>Аккаунт и данные</h2></summary>
@@ -2089,21 +2108,46 @@ def render_account_page(
               if (!csrfInput) return;
               const body = new URLSearchParams();
               body.set('{CSRF_FIELD_NAME}', csrfInput.value);
-              body.set('kind', kind);
-              fetch('/account/telemetry/token-copied', {{
+              if (kind !== 'example') body.set('kind', kind);
+              fetch(kind === 'example' ? '/account/telemetry/example-copied' : '/account/telemetry/token-copied', {{
                 method: 'POST',
                 body,
                 headers: {{ 'Content-Type': 'application/x-www-form-urlencoded' }},
               }}).catch(() => {{}});
             }};
+            const motivators = document.querySelectorAll('[data-motivator]');
+            if (csrfInput && motivators.length) {{
+              let shownReported = false;
+              const reportShown = () => {{
+                if (shownReported) return;
+                shownReported = true;
+                const body = new URLSearchParams();
+                body.set('{CSRF_FIELD_NAME}', csrfInput.value);
+                fetch('/account/telemetry/motivator-shown', {{
+                  method: 'POST', body,
+                  headers: {{ 'Content-Type': 'application/x-www-form-urlencoded' }},
+                }}).catch(() => {{}});
+              }};
+              if ('IntersectionObserver' in window) {{
+                const observer = new IntersectionObserver((entries) => {{
+                  for (const entry of entries) if (entry.isIntersecting) {{
+                    reportShown(entry.target);
+                    observer.unobserve(entry.target);
+                  }}
+                }});
+                motivators.forEach((node) => observer.observe(node));
+              }}
+            }}
 
             for (const button of document.querySelectorAll('[data-copy-source]')) {{
               button.addEventListener('click', async () => {{
                 const source = document.getElementById(button.getAttribute('data-copy-source'));
                 const status = document.getElementById(button.getAttribute('data-copy-status'));
                 if (!source) return;
+                let copied = false;
                 try {{
                   await navigator.clipboard.writeText(source.textContent);
+                  copied = true;
                   if (status) status.textContent = button.getAttribute('data-copied-text') || 'Скопировано.';
                 }} catch (_error) {{
                   const range = document.createRange();
@@ -2113,7 +2157,8 @@ def render_account_page(
                   sel.addRange(range);
                   if (status) status.textContent = 'Автокопирование недоступно. Значение выделено, скопируйте вручную.';
                 }}
-                reportCopy(button.getAttribute('data-copy-kind') || 'unknown');
+                const kind = button.getAttribute('data-copy-kind') || 'unknown';
+                if (copied || kind !== 'example') reportCopy(kind);
               }});
             }}
 

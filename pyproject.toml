@@ -41,6 +41,7 @@ only-include = [
     "tool_error_tracking.py",
     "exceptions.py",
     "filters.py",
+    "first_request_examples.py",
     "host_resolver.py",
     "host_validation.py",
     "landing_page.py",

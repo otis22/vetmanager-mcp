@@ -314,11 +314,11 @@ def test_stage146_mcp_onboarding_core_copy_and_privacy():
     # Stage 210: the example questions used to be repeated inside the collapsed
     # technical block as a third copy. They now live only in the public
     # "Какие вопросы можно задавать" section, where every visitor sees them.
-    assert "Какая выручка была за март?" in html
-    assert "Покажи записи врача на завтра" in html
-    assert "Найди клиента по телефону" in html
-    assert "Какие счета оплачены частично?" in html
-    assert "Кому из пациентов пора на прививку?" in html
+    assert "Кто из врачей работает сегодня?" in html
+    assert "Кто свободен завтра после 15:00?" in html
+    assert "У всех ли принятых сегодня пациентов заполнены медкарты?" in html
+    assert "Топ-10 должников" in html
+    assert "Клиенты без визитов 12+ месяцев" in html
     assert "Ключ доступа не нужно отправлять в чат" in main_copy
     assert "/register" in main_copy
     assert "/login" in main_copy

@@ -17,7 +17,7 @@ def test_activation_event_panel_filters_only_persisted_event_names() -> None:
     events_expr = panels["Activation events"]["targets"][0]["expr"]
     funnel_expr = panels["Activation funnel"]["targets"][0]["expr"]
 
-    assert 'event=~"integration_failed|integration_saved|token_copied"' in events_expr
+    assert 'event=~"integration_failed|integration_saved|token_copied|motivator_shown|example_copied"' in events_expr
     assert "token_issued" not in events_expr
     assert "first_mcp_request" not in events_expr
     assert funnel_expr == "vetmanager_activation_funnel_accounts"

@@ -94,7 +94,9 @@
 4. Web-контур (`/register`, `/login`, `/account`) работает через signed session cookie.
    Кабинет — activation-first (stage 199): stepper «Шаг N из 3», секции-`details`
    по состоянию воронки; служебные endpoint'ы кабинета —
-   `POST /account/telemetry/token-copied` (CSRF, аггрегатная телеметрия) и
+   `POST /account/telemetry/token-copied`,
+   `POST /account/telemetry/motivator-shown` и
+   `POST /account/telemetry/example-copied` (CSRF, ограниченная телеметрия без текста вопросов и секретов) и
    `GET /account/activation-status` (JSON для polling-индикатора, stage 197).
 5. Контейнеры запускаются с UID/GID хоста для корректной работы с bind mounts.
 

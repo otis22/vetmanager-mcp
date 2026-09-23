@@ -198,8 +198,8 @@ def test_duplicated_content_is_removed_from_the_technical_block() -> None:
     assert "Примеры задач по ролям" not in html
     assert "Что можно спросить после подключения" not in html
     # The examples themselves stay on the page, in their public homes.
-    assert "Какая выручка была за март?" in html
-    assert "Кому из пациентов пора на прививку?" in html
+    assert "Кто из врачей работает сегодня?" in html
+    assert "У всех ли принятых сегодня пациентов заполнены медкарты?" in html
 
 
 # ------------------------------------------------------------------- landing: D-3

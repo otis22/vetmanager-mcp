@@ -255,7 +255,7 @@ def test_client_instructions_become_primary_content_at_needs_client_use() -> Non
     html = _account_page(bearer_tokens=[_token_view()])
     assert 'data-testid="client-connect-instructions"' in html
     assert "Почти готово — спросите помощника" in html
-    assert "Покажи записи на сегодня" in html
+    assert "Кто из врачей работает сегодня?" in html
     assert "Для разработчиков" in html
     assert "Cursor / Claude Code" in html
     assert "ChatGPT" in html

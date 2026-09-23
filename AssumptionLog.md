@@ -18192,3 +18192,80 @@ deselected; отдельный web-flow 1 skipped; общий exit 0. GitHub Tes
 `35784808957` завершился `success`, включая public read-only MCP smoke.
 Production напрямую не опрашивался; статус доставки получен только из GitHub
 Actions.
+
+## Этап 341. Первый вопрос после выпуска ключа — 24.09.2026
+
+**Решение и границы.** По решению владельца от 24.09 сильные гейты выполняют
+`gpt-6-astra` и Claude Opus, Spark — `gpt-6-luna`; это локальная замена моделей
+для этапа, процессные файлы не менялись. Использован existing `activation_events`
+с миграцией закрытого списка имён. Browser сообщает только показ блока либо
+успешное копирование примера; auth mode берётся из активного подключения на
+сервере, при его отсутствии — `unknown`. Вопросы, токены и клинические данные
+не передаются в события. Шесть вымышленных пар живут в одном модуле, в
+однократной панели ключа показаны только две. Строка о зарубежных подписках —
+только в кабинете. Прямых обращений к production не было.
+
+**PRD-review.** Spark `gpt-6-luna`, 1/3, 23.09 22:16:23–22:17:08 UTC:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-341-prd/spark.result.txt`.
+Принято одно medium: шестой вопрос — вариант сценария пилота, а не дословная
+формулировка. Astra PRD/Architecture Critique, valid 1/2,
+22:17:31–22:18:26 UTC (55 с):
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-341-prd/astra-review-attempt-1-of-3.envelope.json`.
+Принято одно medium: короткий следующий шаг поставлен до длинного конфига, а
+приёмка уточнена до viewport 390×844 без ручной прокрутки. Opus PRD, valid 1/2,
+22:19:15–22:19:29 UTC (14,773 с):
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-341-prd/2026-09-23T221915Z-file-PRD_-341----_md-attempt-1-of-3.GqQb82/claude-review-attempt-1-of-3.envelope.json`;
+subtype=`success`, stop_reason=`tool_use`, output_tokens=1265,
+thinking_tokens=695, len(result)=1485. Приняты high про обязательный `## Цель`
+и medium про `unknown` без активного подключения. Low о повторных просмотрах
+отклонён: событие определено на один просмотр страницы, повторный просмотр —
+новый показ; агрегатная метрика считает уникальные аккаунты в окне. Общих
+findings у Astra и Opus не было. Astra была завершена до изменения постановки
+владельца; Opus догнал тот же PRD-гейт до реализации.
+
+**Простота.** Новая система аналитики не вводилась: таблица, best-effort writer,
+CSRF и Grafana gauge уже были. Общий модуль нужен только для совпадения
+вымышленных вопросов на двух страницах. Дополнительные варианты хранения
+вопроса или собственный счётчик отклонены из-за приватности и дублирования.
+
+**Красные сторожа и фокусные проверки.** Исходный набор stage 341 дал 4 failed:
+не было шести пар на лендинге, двух пар/следующего шага у ключа, текста
+ожидания и двух telemetry routes (404). Отдельный migration guard падал на
+check constraint для `motivator_shown`. После визуальной находки новый guard
+падал из-за отсутствия ссылки на форму выпуска в карточке `needs_token`.
+Guard панели Grafana падал, поскольку фильтр не включал два новых события.
+После исправлений focused набор: 175 passed, exit 0; `ruff check` — exit 0;
+структура Roadmap — exit 0. Локальный Chromium на вымышленных данных подтвердил
+копирование вопроса и оба telemetry-запроса без текста вопроса и токена в body.
+
+**Визуальное ревью 341.7.** Локальный HTTP/Chromium: 20 отдельных viewport
+снимков (лендинг, `needs_token`, `needs_client_use`, `ready`, отдельно
+`issued`; светлая/тёмная схема, 1440×900/390×844) и пять матриц в
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-341-visual/`.
+В issued на 390×844 токен расположен y=271–343, короткий следующий шаг
+y=522–624, конфиг начинается y=700. Astra и Opus стартовали параллельно.
+Astra valid 1/2, 22:29:30–22:29:49 UTC (19 с),
+`stage-341-visual/astra-review-attempt-1-of-3.envelope.json`: принято medium —
+`needs_token` на телефоне не давал перейти к форме без прокрутки; добавлена
+ссылка в карточку текущего шага. Opus valid 1/2, 22:29:30–22:29:41 UTC
+(11,146 с), `stage-341-visual/2026-09-23T222930Z-file-_home_otis__local_share_vetmanager-mcp-review-evidence_stage-341-visual_vis-attempt-1-of-3.7ER2iY/claude-review-attempt-1-of-3.envelope.json`:
+`[]`; subtype=`success`, stop_reason=`tool_use`, output_tokens=777,
+thinking_tokens=299, len(result)=15. Повтор: Astra valid 2/2,
+22:32:45–22:32:57 UTC (12 с),
+`stage-341-visual/astra-review-attempt-2-of-3.envelope.json`: `[]`;
+Opus valid 2/2, 22:32:45–22:32:52 UTC (7,367 с),
+`stage-341-visual/2026-09-23T223245Z-file-_home_otis__local_share_vetmanager-mcp-review-evidence_stage-341-visual_vis-attempt-2-of-3.yP5TqX/claude-review-attempt-2-of-3.envelope.json`:
+`[]`; subtype=`success`, stop_reason=`tool_use`, output_tokens=500,
+thinking_tokens=143, len(result)=15. Общих findings не было. Astra получила
+матрицы как изображения; Opus штатным runner получил файл с путями к ним и
+точной геометрией viewport. Доступность пикселей Opus через `@`-ссылки CLI не
+подтверждена; геометрия и тексты были доступны. Полный набор снимков и
+`layout.json` сохранены вне working copy.
+
+**Аудит.** Проверены одноразовость сырого токена, CSRF/сессия, закрытые
+значения события и режима, отсутствие текста вопроса в payload, миграция
+upgrade/downgrade, порядок блоков и переполнение кнопок на 390 px. В
+`needs_client_use` блок следующего шага перемещён выше служебных счётчиков.
+Новых MCP-инструментов не было; живая проверка изменённого инструмента на
+стенде не требуется. Committed diff, полные suite и CI будут зафиксированы
+после первого коммита.

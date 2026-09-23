@@ -157,6 +157,29 @@ async def _record_activation_event_for_account(
         )
 
 
+async def _active_connection_auth_mode(account_id: int) -> str:
+    """Use the saved connection mode for telemetry; absent connection is unknown."""
+    try:
+        async with get_session_factory()() as session:
+            mode = await session.scalar(
+                select(VetmanagerConnection.auth_mode)
+                .where(VetmanagerConnection.account_id == account_id)
+                .where(VetmanagerConnection.status == CONNECTION_STATUS_ACTIVE)
+                .limit(1)
+            )
+        return mode if mode in {VETMANAGER_AUTH_MODE_DOMAIN_API_KEY, VETMANAGER_AUTH_MODE_USER_TOKEN} else "unknown"
+    except Exception as exc:
+        RUNTIME_LOGGER.warning(
+            "Activation auth mode lookup failed",
+            extra={
+                "event_name": "activation_auth_mode_lookup_failed",
+                "account_id": account_id,
+                "error_class": type(exc).__name__,
+            },
+        )
+        return "unknown"
+
+
 async def _load_activation_state_for_polling(account_id: int) -> str | None:
     """Return activation state for polling without probing Vetmanager upstream.
 
@@ -759,7 +782,7 @@ def register_account_routes(
         await _record_activation_event_for_account(
             account_id=account_id,
             event_name="token_copied",
-            auth_mode="unknown",
+            auth_mode=await _active_connection_auth_mode(account_id),
             device_class=classify_activation_device(request.headers),
             copy_kind=kind,
         )
@@ -773,6 +796,31 @@ def register_account_routes(
         )
         record_business_event("token_copied")
         return Response(status_code=204)
+
+    async def record_first_request_ui_event(request: Request, event_name: str) -> Response:
+        account_id = get_account_id_from_request(request)
+        if account_id is None:
+            return json_response(request, {"error": "unauthorized"}, status_code=401)
+        form = await read_form(request)
+        try:
+            validate_csrf_request(request, form.get(CSRF_FIELD_NAME))
+        except ValueError:
+            return json_response(request, {"error": "csrf"}, status_code=403)
+        await _record_activation_event_for_account(
+            account_id=account_id,
+            event_name=event_name,
+            auth_mode=await _active_connection_auth_mode(account_id),
+            device_class=classify_activation_device(request.headers),
+        )
+        return Response(status_code=204)
+
+    @observed_route(mcp, "/account/telemetry/motivator-shown", methods=["POST"], include_in_schema=False)
+    async def account_motivator_shown(request: Request) -> Response:
+        return await record_first_request_ui_event(request, "motivator_shown")
+
+    @observed_route(mcp, "/account/telemetry/example-copied", methods=["POST"], include_in_schema=False)
+    async def account_example_copied(request: Request) -> Response:
+        return await record_first_request_ui_event(request, "example_copied")
 
     @observed_route(
         mcp,

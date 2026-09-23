@@ -11,6 +11,8 @@ verbatim so existing test_landing_page.py assertions continue to hold.
 from __future__ import annotations
 
 from oauth_metadata import get_mcp_path, get_site_base_url
+from html import escape
+from first_request_examples import EXAMPLE_DISCLAIMER, FIRST_REQUEST_EXAMPLES
 
 # Default to the production host so existing deployments render correctly.
 # Self-hosted operators override via SITE_BASE_URL env (no trailing slash).
@@ -1270,7 +1272,9 @@ def render_landing_page(script_nonce: str = "") -> str:
       font-size: 0.98rem;
       line-height: 1.5;
     }
-    .examples-list li svg { color: var(--accent); margin-top: 2px; }
+    .examples-list li { display: block; }
+    .examples-list li strong { display: block; color: var(--ink-900); }
+    .examples-list li p { margin: 6px 0 0; color: var(--ink-500); }
 
     /* ------------------------------------------------------------ Tech / FAQ (collapsed) */
 
@@ -2003,14 +2007,8 @@ claude mcp add --transport http vetmanager &lt;адрес&gt; --header &quot;Aut
           Сервис рассчитан на повседневные вопросы, которые обычно требуют
           нескольких переходов по Vetmanager или помощи администратора.
         </p>
-        <ul class="examples-list">
-          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Какая выручка была за март?</span></li>
-          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Покажи записи врача на завтра</span></li>
-          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Найди клиента по телефону</span></li>
-          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Какие счета оплачены частично?</span></li>
-          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Кому из пациентов пора на прививку?</span></li>
-          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><span>Покажи должников и суммы задолженности.</span></li>
-        </ul>
+        <ul class="examples-list">__FIRST_REQUEST_EXAMPLES__</ul>
+        <p class="section-lede" style="margin-top: 12px;">Это __EXAMPLE_DISCLAIMER__.</p>
       </div>
     </section>
 
@@ -2247,6 +2245,15 @@ claude mcp add --transport http vetmanager &lt;адрес&gt; --header &quot;Aut
     mcp_url = f"{base_url}{_resolve_mcp_path()}"
     html = html.replace("__MCP_SERVER_URL__", mcp_url)
     html = html.replace("__SCRIPT_NONCE__", script_nonce)
+    html = html.replace(
+        "__FIRST_REQUEST_EXAMPLES__",
+        "".join(
+            f'<li data-example-pair="landing"><strong>{escape(question)}</strong>'
+            f'<p>{escape(answer)}</p></li>'
+            for question, answer in FIRST_REQUEST_EXAMPLES
+        ),
+    )
+    html = html.replace("__EXAMPLE_DISCLAIMER__", escape(EXAMPLE_DISCLAIMER))
     if base_url != _DEFAULT_SITE_BASE_URL:
         html = html.replace(_DEFAULT_SITE_BASE_URL, base_url)
     if "__MCP_SERVER_URL__" in html:
