@@ -461,7 +461,7 @@ def _issue_values(item: SeedIssue) -> dict[str, Any]:
 def _seed_values_equal(field: str, current: Any, desired: Any) -> bool:
     if field in {"match_rules_json", "agent_playbook_json"}:
         try:
-            return json.loads(current) == json.loads(desired)
+            return _json_payload(json.loads(current)) == _json_payload(json.loads(desired))
         except (TypeError, ValueError):
             return False
     return current == desired
@@ -478,10 +478,11 @@ async def seed_known_issues(
     async with get_session_factory()() as session:
         for item in SEED_ISSUES:
             marker = seed_marker(item.slug)
+            query = select(KnownIssue).where(KnownIssue.title.like(f"{marker} %"))
+            if apply:
+                query = query.with_for_update()
             rows = (
-                await session.execute(
-                    select(KnownIssue).where(KnownIssue.title.like(f"{marker} %")).with_for_update()
-                )
+                await session.execute(query)
             ).scalars().all()
             if len(rows) > 1:
                 raise SeedKnownIssuesError(f"duplicate_seed_rows:{item.slug}")

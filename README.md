@@ -579,7 +579,8 @@ python scripts/seed_known_issues.py diagnostic-auto-event --apply \
 The seed exits nonzero and rolls back the entire transaction when any changed
 issue lacks an exact `--allow-update` approval. A fresh run recomputes the
 field list; if it changed since the dry-run, review it again before approving.
-The argument format is `--allow-update slug:field,field`; repeat the argument
+The argument format is `--allow-update slug:field,field`; copy each entire
+`would_update=` value exactly, including field order, and repeat the argument
 for each issue whose fields are to be changed.
 The output lists field names only, never their values. On production, if the
 post-deploy dry-run still reports KI-45 as `updated`, stop and inspect its full

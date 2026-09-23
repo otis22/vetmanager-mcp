@@ -53,6 +53,18 @@ async def test_triage_serialization_is_unchanged_for_seed(
     result = await seed.seed_known_issues(apply=False)
     assert result["updated"] == 0
 
+    async with factory() as session:
+        issue = (await session.execute(select(KnownIssue).where(
+            KnownIssue.title == next(item.title for item in seed.SEED_ISSUES
+                                     if item.slug == "report-export-not-available")
+        ))).scalar_one()
+        playbook = json.loads(issue.agent_playbook_json)
+        playbook["safe_to_retry"] = 0
+        issue.agent_playbook_json = json.dumps(playbook)
+        await session.commit()
+    changed = await seed.seed_known_issues(apply=False)
+    assert changed["changes"] == ["report-export-not-available:agent_playbook_json"]
+
 
 @pytest.mark.asyncio
 async def test_apply_requires_exact_per_issue_field_approval_and_is_atomic(
