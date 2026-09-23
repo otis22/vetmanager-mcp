@@ -1099,6 +1099,27 @@ SEARCH_GUIDANCE_SUFFIXES: dict[str, str] = {
     ),
 }
 
+INVOICE_MONEY_SUFFIXES: dict[str, str] = {
+    "get_invoices": (
+        "Money fields: discount is a discount percentage, increase is a markup "
+        "percentage, percent is a computed percentage (increase - discount "
+        "when discount is nonzero, otherwise 0), and amount is the rouble total "
+        "after discount and markup. Rouble discount per invoice_document line: "
+        "default_price - price*((100-discount)/100)*((100+increase)/100). "
+        "price and default_price are line totals, not unit prices."
+    ),
+    "update_invoice": (
+        "Money fields: discount is a discount percentage, increase is a markup "
+        "percentage, percent is a computed percentage (increase - discount "
+        "when discount is nonzero, otherwise 0), and amount is the rouble total "
+        "after discount and markup. A successful discount update changes the "
+        "percentage but does not recalculate amount; Vetmanager may recalculate it on a "
+        "later save. This tool can write percent independently, which may leave "
+        "it out of sync with discount and increase. A zero discount or percent "
+        "means no change in this tool."
+    ),
+}
+
 
 def compose_tool_description(tool_name: str) -> str | None:
     """Итоговое описание инструмента — ровно то, что уезжает в `tools/list`.
@@ -1114,6 +1135,7 @@ def compose_tool_description(tool_name: str) -> str | None:
     for extra in (
         BULK_DESCRIPTION_SUFFIXES.get(tool_name),
         SEARCH_GUIDANCE_SUFFIXES.get(tool_name),
+        INVOICE_MONEY_SUFFIXES.get(tool_name),
         PRIVACY_DESCRIPTION_SUFFIXES.get(tool_name),
     ):
         if extra:

@@ -92,6 +92,13 @@ def register(mcp: FastMCP) -> None:
     ) -> dict:
         """List invoices in the clinic.
 
+        Money fields: discount is a discount percentage, increase is a markup
+        percentage, percent is a computed field (increase - discount when a
+        discount exists, otherwise 0), and amount is the rouble total after
+        discount and markup. Rouble discount per invoice_document line is
+        default_price - price*((100-discount)/100)*((100+increase)/100).
+        price and default_price are line totals, not unit prices.
+
         Args:
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
@@ -472,6 +479,16 @@ def register(mcp: FastMCP) -> None:
     ) -> dict:
         """Update an existing invoice.
 
+        Money fields: discount is a discount percentage, percent is normally a
+        Vetmanager-computed percentage field, increase is a markup percentage, and amount is the
+        rouble total after both percentages. Writing discount changes the
+        percentage when Vetmanager accepts the update, but does not recalculate
+        amount; a later Vetmanager save
+        may recompute the total. This tool can also write percent independently;
+        that may leave it out of sync with discount and increase.
+        No zero-valued percentage can be set here:
+        0 means no change in this tool.
+
         There is no tool for deleting an invoice or one of its line items: this
         service cannot delete them the way Vetmanager does, so deleting an
         invoice stays a job for Vetmanager itself. Say that plainly instead of
@@ -483,8 +500,8 @@ def register(mcp: FastMCP) -> None:
             pet_id: New pet ID (0 = no change).
             description: Updated description (leave empty to keep current).
             status: Updated invoice status (leave empty to keep current).
-            percent: Updated percent value (0 = no change).
-            discount: Updated discount value (0 = no change).
+            percent: Updated stored percent field (0 = no change).
+            discount: Updated discount percentage (0 = no change).
         """
         payload: dict = {}
         if client_id:

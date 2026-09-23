@@ -74,6 +74,17 @@ If the user already gave a precise criterion, do not ask again. Example: "client
 
 ## Common anchors
 
+### Скидка и итог счёта
+
+`invoice.discount` — процент скидки, `invoice.increase` — процент наценки,
+`invoice.percent` — вычисляемое поле, а `invoice.amount` — рублёвый итог после
+скидки и наценки. Для рублёвой скидки по позиции используйте суммы позиции
+`invoice_document.default_price` и `price`: `default_price - price*((100-discount)/100)*((100+increase)/100)`.
+Здесь `discount` и `increase` — проценты счёта; не суммируйте `invoice.discount`
+как рубли и не умножайте суммы позиции повторно на `quantity`. Разница может
+быть отрицательной при преобладании наценки. Для отчёта по скидкам явно
+опишите эту метрику в `intent_text`, а результат проверьте с учётом округления.
+
 - Revenue/sales/turnover: invoices or payments; clarify accrual vs received money.
   Plain "выручка" without qualifiers defaults to executed invoices, not payments.
 - Payments/cash receipts: payments.

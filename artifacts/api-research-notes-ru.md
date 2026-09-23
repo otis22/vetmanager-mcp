@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-09-23 — Денежные поля счёта: справочник не заменяет проверку контракта
+
+**Источник:** наблюдаемый контракт счёта Ветменеджера, сверка на тестовом контуре.
+
+- `invoice.discount` и `increase` выражены в процентах, `amount` — итог после их применения. `percent` — отдельное вычисляемое поле, не рублёвая сумма и не эффективная ставка: при отсутствии скидки оно равно нулю даже при наценке.
+- `invoice_document.price` и `default_price` уже содержат сумму позиции. Повторное умножение на `quantity` завышает отчёт.
+- Урок: денежную семантику сверять с поведением Ветменеджера; собственный справочник не является независимым источником истины.
+
+---
+
 ## 2026-06-16 — VmLink personal-account link by phone
 
 **Источник:** `artifacts/vetmanager_openapi_v6.json`, `artifacts/openapi-diff-2026-06-15-remote-vs-local.md`, `vetmanager-extjs/rest/protected/controllers/VmLinkController.php`, `vetmanager-extjs/application/src/ServiceIntegration/VmLink.php`, real `devtr6` probe.

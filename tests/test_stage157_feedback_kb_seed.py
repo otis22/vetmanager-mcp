@@ -31,7 +31,8 @@ async def test_seed_definitions_validate() -> None:
     # прежний потолок. Четвёртое было написано и удалено: оно покрывало отказ,
     # который до механизма не доходит. Потолок сторожит `SEED_ISSUES` от
     # превращения в свалку, и поднимать его «про запас» значит ослабить сторож.
-    assert 5 <= len(seed.SEED_ISSUES) <= 11
+    # Этап 340: один подтверждённый контрактный сюжет о проценте скидки.
+    assert 5 <= len(seed.SEED_ISSUES) <= 12
     assert all(item.title.startswith(f"[seed:{item.slug}] ") for item in seed.SEED_ISSUES)
 
 

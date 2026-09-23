@@ -113,6 +113,42 @@ def _playbook(
 
 SEED_ISSUES: tuple[SeedIssue, ...] = (
     SeedIssue(
+        slug="invoice-discount-is-percent",
+        title="[seed:invoice-discount-is-percent] Invoice discount is a percentage",
+        category="contract",
+        severity="high",
+        priority=68,
+        related_tool=None,
+        match_rules={
+            "version": 1,
+            "all": [
+                {"field": "related_tool", "op": "in", "value": [
+                    "get_invoices", "get_report_ai_prompt_helper",
+                ]},
+                {"field": "normalized_error_text", "op": "contains_all", "value": [
+                    "invoice.discount", "скидк",
+                ]},
+            ],
+        },
+        agent_playbook=_playbook(
+            "invoice.discount is a percentage, not a rouble amount.",
+            steps=[
+                "Treat invoice.discount and invoice.increase as percentages; invoice.amount is the total after both.",
+                "Calculate the rouble line discount as default_price - price*((100-discount)/100)*((100+increase)/100), using line totals without multiplying by quantity again.",
+                "For Report AI, describe that calculation explicitly in intent_text and check the resulting metric.",
+                "A related inflated built-in Report AI discount aggregate is a Vetmanager-side issue; this guidance does not repair it.",
+            ],
+            do_not_do=[
+                "Не суммируйте invoice.discount как рублёвую сумму.",
+                "Do not treat invoice.percent as an effective net discount rate.",
+            ],
+            tools=["get_invoices", "get_report_ai_prompt_helper"],
+            safe_to_retry=False,
+        ),
+        public_summary="Invoice discount is a percentage; summing it as money gives an incorrect report.",
+        workaround="Calculate rouble discount from invoice line totals and invoice percentage fields.",
+    ),
+    SeedIssue(
         slug="admission-create-date-field",
         title="[seed:admission-create-date-field] Admission create uses admission_date",
         category="contract",
