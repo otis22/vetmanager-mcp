@@ -3,6 +3,8 @@
 import json
 from argparse import Namespace
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 from sqlalchemy import select
@@ -12,6 +14,29 @@ from storage_models import KnownIssue
 
 ROOT = Path(__file__).parents[1]
 FIXTURE = ROOT / "artifacts/known-issues/stage-332"
+
+
+def test_tool_name_gate_reads_shared_rules_and_rejects_unknown_tool(tmp_path):
+    checker = ROOT / "scripts/check_known_issue_tool_names.py"
+    current = subprocess.run([sys.executable, "-B", str(checker)], cwd=ROOT,
+                             capture_output=True, text=True, check=False)
+    assert current.returncode == 0, current.stderr
+
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    artifact_dir = repo / "artifacts/known-issues/stage-332"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "ki45-match-rules.json").write_text(json.dumps({
+        "version": 1, "all": [{"field": "related_tool", "op": "in",
+                              "value": ["get_clients", "nonexistent_tool"]}],
+    }))
+    source = repo / "scripts/seed_known_issues.py"
+    source.write_text('SEED_ISSUES = (SeedIssue(slug="fixture", related_tool=None, '
+                      'match_rules=_stage332_config("ki45-match-rules.json")),)\n')
+    result = subprocess.run([sys.executable, "-B", str(checker), "--seed-module-path", str(source)],
+                            cwd=ROOT, capture_output=True, text=True, check=False)
+    assert result.returncode != 0
+    assert "nonexistent_tool" in result.stderr
 
 
 def test_ki45_seed_uses_applied_stage332_configuration():

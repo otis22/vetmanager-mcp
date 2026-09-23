@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 from pathlib import Path
 import sys
 from typing import Any
@@ -43,7 +44,9 @@ def _related_tool_rule_values(match_rules: Any) -> list[str]:
     return values
 
 
-def _rule_values_from_node(node: ast.AST, constants: dict[str, str]) -> tuple[list[str], bool]:
+def _rule_values_from_node(
+    node: ast.AST, constants: dict[str, str], seed_path: Path,
+) -> tuple[list[str], bool]:
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
         if node.func.id == "_rules" and node.args:
             tool_name = _literal_string(node.args[0], constants)
@@ -54,6 +57,18 @@ def _rule_values_from_node(node: ast.AST, constants: dict[str, str]) -> tuple[li
                     tool_name = _literal_string(keyword.value, constants)
                     return ([tool_name], True) if tool_name else ([], False)
             return [], True
+        if node.func.id == "_stage332_config" and len(node.args) == 1:
+            filename = _literal_string(node.args[0], constants)
+            if filename and Path(filename).name == filename and filename.endswith(".json"):
+                path = seed_path.resolve().parent.parent / "artifacts/known-issues/stage-332" / filename
+                try:
+                    rules = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    return [], False
+                if not isinstance(rules, dict) or not isinstance(rules.get("all"), list):
+                    return [], False
+                return _related_tool_rule_values(rules), True
+            return [], False
     try:
         return _related_tool_rule_values(ast.literal_eval(node)), True
     except (ValueError, SyntaxError):
@@ -123,6 +138,7 @@ def _seed_issues_from_path(path: Path) -> list[dict[str, Any]]:
                     issue["rule_tools"], issue["rules_parsed"] = _rule_values_from_node(
                         keyword.value,
                         constants,
+                        path,
                     )
             issues.append(issue)
     if not found_seed_issues or not issues:
