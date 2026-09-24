@@ -34,6 +34,7 @@ from vm_transport.retry import RETRY_STATUS_CODES, backoff_seconds, parse_retry_
 
 REQUEST_TIMEOUT = 30.0
 CONNECTION_REQUEST_BUDGET_SECONDS = 45.0
+CONNECTION_FLOW_BUDGET_SECONDS = 55.0
 _CONNECTION_RETRY_MIN_REMAINING_SECONDS = 5.0
 
 INTEGRATION_HEALTH_ACTIVE = "active"
@@ -351,7 +352,7 @@ async def _request_with_retry(
 
         log_started_retry()
         elapsed = time.monotonic() - started
-        response_ok = response.status_code < 400
+        response_ok = 200 <= response.status_code < 300
         response_reason = None if response_ok else f"http_{response.status_code}"
         _record_upstream_attempt(
             target=target,
@@ -428,6 +429,8 @@ async def validate_domain_api_key_connection(
 
     if probe.status_code == 401:
         raise AuthError("Invalid Vetmanager API key.", status_code=401)
+    if 300 <= probe.status_code < 400:
+        raise VetmanagerError("Vetmanager connection test redirected; check clinic address.", status_code=probe.status_code)
     if probe.status_code >= 400:
         raise VetmanagerError(
             f"Vetmanager connection test failed with status {probe.status_code}.",
@@ -500,6 +503,8 @@ async def exchange_user_token(
             "Vetmanager login/password authorization is disabled or unavailable for this clinic. Use API key or verify clinic settings.",
             status_code=403,
         )
+    if 300 <= response.status_code < 400:
+        raise VetmanagerError("Vetmanager authorization redirected; check clinic address.", status_code=response.status_code)
     if response.status_code >= 400:
         detail = _safe_error_detail(response)
         raise VetmanagerError(
@@ -554,6 +559,8 @@ async def validate_user_token_connection(
 
     if probe.status_code == 401:
         raise AuthError("Invalid Vetmanager user token.", status_code=401)
+    if 300 <= probe.status_code < 400:
+        raise VetmanagerError("Vetmanager user-token connection test redirected; check clinic address.", status_code=probe.status_code)
     if probe.status_code >= 400:
         raise VetmanagerError(
             f"Vetmanager user-token connection test failed with status {probe.status_code}.",
@@ -723,18 +730,22 @@ async def save_user_login_password_connection(
     normalized_domain = _validate_domain(domain.strip())
 
     async def _prepare_login_credentials() -> tuple[str, str]:
-        resolved_host, user_token = await exchange_user_token(
-            normalized_domain,
-            login=login,
-            password=password,
-        )
-        await validate_user_token_connection(
-            normalized_domain,
-            user_token,
-            app_name=TOKEN_AUTH_APP_NAME,
-            resolved_host=resolved_host,
-        )
-        return resolved_host, user_token
+        try:
+            async with asyncio.timeout(CONNECTION_FLOW_BUDGET_SECONDS):
+                resolved_host, user_token = await exchange_user_token(
+                    normalized_domain,
+                    login=login,
+                    password=password,
+                )
+                await validate_user_token_connection(
+                    normalized_domain,
+                    user_token,
+                    app_name=TOKEN_AUTH_APP_NAME,
+                    resolved_host=resolved_host,
+                )
+                return resolved_host, user_token
+        except TimeoutError as exc:
+            raise VetmanagerTimeoutError("Vetmanager connection timed out during token creation or validation.") from exc
 
     prepare_key = (
         account_id,
@@ -791,7 +802,7 @@ async def evaluate_connection_health(
                 "Stored user token is invalid. Re-authenticate to issue a fresh token.",
             )
         return INTEGRATION_HEALTH_INVALID, "Stored Vetmanager API key is invalid."
-    except (HostResolutionError, VetmanagerTimeoutError, VetmanagerError):
+    except (HostResolutionError, VetmanagerTimeoutError, VetmanagerError) as exc:
         RUNTIME_LOGGER.warning(
             "Vetmanager connection health probe failed",
             extra={
@@ -803,6 +814,8 @@ async def evaluate_connection_health(
         )
         return (
             INTEGRATION_HEALTH_UNKNOWN,
-            "Integration health could not be verified right now. Try again later.",
+            "Vetmanager redirected the check; verify the clinic address."
+            if isinstance(exc, VetmanagerError) and getattr(exc, "status_code", None) in range(300, 400)
+            else "Integration health could not be verified right now. Try again later.",
         )
     return INTEGRATION_HEALTH_UNKNOWN, "Integration health could not be determined."

@@ -40,6 +40,7 @@ from token_cleanup import scan_token_expiry_warnings, sync_expired_tokens
 from tool_access_registry import PRESET_REPORT_AI, infer_token_preset
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
 from vetmanager_connection_service import (
+    INTEGRATION_HEALTH_ACTIVE,
     INTEGRATION_HEALTH_UNKNOWN,
     evaluate_connection_health,
 )
@@ -337,6 +338,8 @@ def _summarize_scopes(scopes: tuple[str, ...]) -> str:
 
 async def _load_account_dashboard(
     account_id: int,
+    *,
+    health_override: tuple[str, str] | None = None,
 ) -> tuple[
     Account | None,
     int,
@@ -491,7 +494,9 @@ async def _load_account_dashboard(
             max(used_views, key=lambda pair: pair[0])[1]["is_last_used"] = True
         integration_health_status = INTEGRATION_HEALTH_UNKNOWN
         integration_health_reason = "Integration is not configured yet."
-        if active_connection is not None:
+        if active_connection is not None and health_override is not None:
+            integration_health_status, integration_health_reason = health_override
+        elif active_connection is not None:
             integration_health_status, integration_health_reason = await evaluate_connection_health(
                 active_connection,
                 encryption_key=get_storage_encryption_key(),
@@ -543,7 +548,15 @@ async def _render_account_dashboard_response(
         integration_health_reason,
         bearer_tokens,
         oauth_grants,
-    ) = await _load_account_dashboard(account_id)
+    ) = await _load_account_dashboard(
+        account_id,
+        health_override=(
+            (INTEGRATION_HEALTH_ACTIVE, "Integration is active.")
+            if integration_success is not None else
+            (INTEGRATION_HEALTH_UNKNOWN, "Connection was not checked after this form submission.")
+            if integration_error is not None else None
+        ),
+    )
     if account is None:
         response = _redirect_response(request, url="/login", status_code=303)
         clear_account_session_cookie(response)

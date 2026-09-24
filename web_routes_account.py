@@ -87,6 +87,17 @@ def _integration_error_text(exc: Exception) -> str:
             "Vetmanager не принял логин или пароль. Проверьте данные, с которыми "
             "вы входите в Vetmanager, и попробуйте ещё раз."
         )
+    if "redirected" in message:
+        return (
+            "Вместо проверки подключения Vetmanager перенаправил запрос. "
+            "Проверьте поддомен клиники в адресе и попробуйте снова."
+        )
+    if "timed out during token creation or validation" in message:
+        return (
+            "Проверка подключения заняла слишком много времени. Токен мог быть "
+            "создан в Vetmanager; подождите минуту и проверьте подключение "
+            "перед повторной отправкой формы."
+        )
     if isinstance(exc, (VetmanagerTimeoutError, VetmanagerUpstreamUnavailable)) or (
         "timed out" in message or "unavailable" in message
     ):
