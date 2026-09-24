@@ -340,7 +340,6 @@ def register_account_routes(
                 account_id,
                 status_code=403,
                 integration_error=str(exc),
-                health_override=_HEALTH_AFTER_FAILED_SUBMIT,
             )
         domain = form.get("domain", "")
         vm_login = form.get("vm_login", "")
@@ -434,7 +433,6 @@ def register_account_routes(
                 account_id,
                 status_code=403,
                 integration_error=str(exc),
-                health_override=_HEALTH_AFTER_FAILED_SUBMIT,
             )
         auth_mode = form.get("auth_mode", VETMANAGER_AUTH_MODE_DOMAIN_API_KEY).strip()
         domain = form.get("domain", "")
