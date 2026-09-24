@@ -1445,11 +1445,14 @@ def render_account_page(
         and _activation_datetime(grant.get("last_used_at_raw"), grant.get("last_used_at")) is not None
         for grant in oauth_grants
     )
+    active_oauth_grants = [grant for grant in oauth_grants if
+        str(grant.get("status")) == OAUTH_STATUS_ACTIVE and grant.get("has_live_access", True)]
+    has_oauth = bool(active_oauth_grants)
     has_chatgpt = any(
-        str(grant.get("status")) == OAUTH_STATUS_ACTIVE and grant.get("has_live_access", True)
-        for grant in oauth_grants
+        str(grant.get("client_name", "")).strip().casefold() == "chatgpt"
+        for grant in active_oauth_grants
     )
-    has_access = has_active_token or has_chatgpt
+    has_access = has_active_token or has_oauth
     selected_agent_label = {"chatgpt": "ChatGPT", "claude": "Claude", "manus": "Manus"}.get(selected_agent, "")
     selected_agent_html = (
         f"<p>Вы выбрали {escape(selected_agent_label)}. Сначала подключите клинику.</p>"
@@ -1474,7 +1477,7 @@ def render_account_page(
         activation_title = "Выберите способ подключения"
         activation_summary = "Подключите ChatGPT или выпустите Bearer-ключ для Claude, Cursor и других MCP-клиентов."
     elif activation_state == "needs_client_use":
-        activation_title = "Проверьте ChatGPT" if has_chatgpt and not has_active_token else "Подключите MCP-клиент"
+        activation_title = ("Проверьте ChatGPT" if has_chatgpt else "Откройте помощника") if has_oauth and not has_active_token else "Подключите MCP-клиент"
         activation_summary = f"Для проверки спросите: «{FIRST_REQUEST_EXAMPLES[0][0]}»"
     else:
         activation_title = "Готово к работе"
@@ -1509,7 +1512,7 @@ def render_account_page(
         )
 
     access_label = "Доступ настроен" if has_access else "Настройте доступ"
-    access_detail = "Bearer-ключ выпущен" if has_active_token else "ChatGPT подключён" if has_chatgpt else ""
+    access_detail = "Bearer-ключ выпущен" if has_active_token else "ChatGPT подключён" if has_chatgpt else "OAuth-подключение активно" if has_oauth else ""
     if has_chatgpt and has_active_token:
         optional_chatgpt = "ChatGPT уже подключён как дополнительный вариант."
     elif has_chatgpt:

@@ -97,6 +97,14 @@ def test_oauth_waiting_and_access_choice_are_channel_aware() -> None:
     assert 'id="client-connect-config"' in bearer
 
 
+def test_non_chatgpt_oauth_uses_channel_neutral_first_request_copy() -> None:
+    grant = {**_oauth(used=False), "client_name": "Manus"}
+    status = _status(_account_page(oauth_grants=[grant]))
+    assert "Проверьте ChatGPT" not in status
+    assert "ChatGPT подключён" not in status
+    assert "OAuth-подключение активно" in status
+
+
 def test_issued_page_keeps_manual_form_closed_below_the_one_time_key() -> None:
     html = _account_page(issued_raw_token="vm_st_FICTIONAL_ONLY", bearer_tokens=[_token_view()])
     assert 'data-testid="token-manual-form" open' not in html

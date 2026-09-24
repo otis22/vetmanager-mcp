@@ -8,6 +8,7 @@ import pytest
 
 from scripts.capture_visual_matrix import required_scenes, required_keys, validate_matrix
 from scripts import capture_visual_matrix
+from scripts import prepare_visual_review
 
 
 def _manifest(tmp_path: Path) -> list[dict[str, str]]:
@@ -63,6 +64,11 @@ def test_new_code_state_without_scene_is_red(monkeypatch: pytest.MonkeyPatch) ->
 
 def test_only_implemented_themes_enter_matrix() -> None:
     assert all(":light:" in key for key in required_keys())
+
+
+def test_review_sheet_covers_each_implemented_theme(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(prepare_visual_review, "_themes", lambda scene: ("light", "dark"))
+    assert "ready_bearer:dark:phone-first" in prepare_visual_review.scene_image_keys("ready_bearer")
 
 
 def test_issued_scene_has_the_key_it_just_issued() -> None:

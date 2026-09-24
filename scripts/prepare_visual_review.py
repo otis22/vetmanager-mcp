@@ -11,7 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.capture_visual_matrix import _pages, required_scenes, validate_matrix
+from scripts.capture_visual_matrix import _pages, _themes, required_scenes, validate_matrix
+
+
+def scene_image_keys(scene: str) -> tuple[str, ...]:
+    return tuple(f"{scene}:{theme}:{view}" for theme in _themes(scene)
+                 for view in ("desktop-full", "phone-full", "phone-first"))
 
 
 def prepare(directory: Path) -> None:
@@ -31,10 +36,10 @@ def prepare(directory: Path) -> None:
             visible = page.locator("body").inner_text()
             text_lines.extend((f"## {scene}", "", visible, ""))
             images = []
-            for view in ("desktop-full", "phone-full", "phone-first"):
-                path = by_key[f"{scene}:light:{view}"]
+            for key in scene_image_keys(scene):
+                path = by_key[key]
                 uri = "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
-                images.append(f'<div><h2>{view}</h2><img src="{uri}"></div>')
+                images.append(f'<div><h2>{key}</h2><img src="{uri}"></div>')
             sheet = ("<html><style>body{margin:0;padding:12px;background:#f7f5ee;font:18px sans-serif;}"
                      "main{display:flex;align-items:flex-start;gap:12px}h1{font-size:24px;margin:0 0 8px}"
                      "h2{font-size:16px;margin:0 0 6px}img{display:block;max-width:1160px;max-height:3650px;"
