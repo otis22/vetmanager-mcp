@@ -28,7 +28,7 @@ RUN pip install --no-cache-dir \
     "httpcore>=1.0.9,<2" \
     "httpx>=0.27.0,<1" \
     "sentry-sdk>=2.0.0,<3" \
-    "sqlalchemy[asyncio]>=2.0.0,<3" \
+    "sqlalchemy[asyncio]>=2.0.0,<2.1" \
     "aiosqlite>=0.20.0,<1" \
     "asyncpg>=0.29.0,<1" \
     "psycopg2-binary>=2.9.0,<3" \

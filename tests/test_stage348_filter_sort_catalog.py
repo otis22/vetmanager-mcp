@@ -14,11 +14,13 @@ from structured_logging import JsonLogFormatter
 from tests.runtime_factories import patch_runtime_credentials
 
 
-def test_production_sqlalchemy_installs_asyncio_dependency():
-    """The test image can supply greenlet transitively; production must request it."""
-    dockerfile = Path(__file__).resolve().parents[1] / "Dockerfile"
+def test_sqlalchemy_stays_on_2_0_line_in_both_dependency_sources():
+    """Production and test installs must not silently resolve to SQLAlchemy 2.1."""
+    root = Path(__file__).resolve().parents[1]
+    dockerfile = root / "Dockerfile"
     production_dependencies = dockerfile.read_text().split("FROM base AS production", 1)[0]
-    assert '"sqlalchemy[asyncio]>=2.0.0,<3"' in production_dependencies
+    assert '"sqlalchemy[asyncio]>=2.0.0,<2.1"' in production_dependencies
+    assert '"sqlalchemy[asyncio]>=2.0.0,<2.1"' in (root / "pyproject.toml").read_text()
 
 
 @pytest.mark.asyncio
