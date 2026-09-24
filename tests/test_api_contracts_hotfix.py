@@ -181,6 +181,7 @@ async def test_create_medical_card_maps_fields_to_api_contract():
         "doctor_id": 3,
         "clinic_id": 9,
         "date_create": "2026-04-20",
+        "meet_result_id": 0,
         "description": "Checkup",
         "diagnos": '[{"id":32,"type":1}]',
         "treatment": "None",
@@ -189,6 +190,23 @@ async def test_create_medical_card_maps_fields_to_api_contract():
     }
     assert "diagnosis" not in body
     assert "diagnosis_ids" not in body
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_create_medical_card_sends_explicit_zero_meet_result():
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(201, json={"data": {"id": 106}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        await mcp.call_tool("create_medical_card", {
+            "patient_id": 5, "doctor_id": 3, "clinic_id": 9,
+            "date_create": "2026-04-20", "description": "Checkup",
+            "meet_result_id": 0,
+        })
+    assert _body_of(route)["meet_result_id"] == 0
 
 
 @pytest.mark.asyncio

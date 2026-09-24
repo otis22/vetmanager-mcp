@@ -440,7 +440,10 @@ def register(mcp: FastMCP) -> None:
             clinic_id: ID of the clinic branch.
             admission_type: Positive numeric catalogue code of the admission
                 type from combo_manual_items (optional).
-            meet_result_id: ID of the visit result from the combo manual (optional, 0 = none).
+            meet_result_id: Visit result code from the clinic's admission_result
+                combo manual. Omit or pass 0 when no result is recorded; the
+                tool sends 0 explicitly because some API versions require
+                the field to be present.
             weight: Animal weight in kg at the time of visit (optional, 0 = not recorded).
             temperature: Animal body temperature in °C (optional, 0 = not recorded).
         """
@@ -462,8 +465,7 @@ def register(mcp: FastMCP) -> None:
             payload["recomendation"] = recomendation
         if admission_type is not None:
             payload["admission_type"] = admission_type
-        if meet_result_id:
-            payload["meet_result_id"] = meet_result_id
+        payload["meet_result_id"] = meet_result_id
         if weight:
             payload["weight"] = weight
         if temperature:
