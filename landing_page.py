@@ -1257,24 +1257,24 @@ def render_landing_page(script_nonce: str = "") -> str:
       padding: 0;
       margin: 22px 0 0;
       display: grid;
-      gap: 10px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
     }
     .examples-list li {
-      display: grid;
-      grid-template-columns: 26px minmax(0, 1fr);
-      gap: 12px;
-      align-items: start;
-      padding: 14px 18px;
+      display: block;
+      padding: 20px 22px;
       border-radius: 12px;
       background: var(--paper-card);
       border: 1px solid var(--line);
+      border-left: 3px solid var(--moss);
       color: var(--ink-700);
       font-size: 0.98rem;
       line-height: 1.5;
     }
-    .examples-list li { display: block; }
-    .examples-list li strong { display: block; color: var(--ink-900); }
-    .examples-list li p { margin: 6px 0 0; color: var(--ink-500); }
+    .examples-list li strong { display: block; color: var(--ink-900); font-size: 1.05rem; }
+    .examples-list li p { margin: 8px 0 0; padding: 12px 14px; border-radius: 8px; background: var(--moss-50); color: var(--ink-700); }
+    .example-answer-label { display: block; margin-top: 16px; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--moss); }
+    @media (max-width: 700px) { .examples-list { grid-template-columns: 1fr; } }
 
     /* ------------------------------------------------------------ Tech / FAQ (collapsed) */
 
@@ -1647,8 +1647,8 @@ def render_landing_page(script_nonce: str = "") -> str:
             <a class="ghost" href="#examples">Посмотреть пример ответа</a>
           </div>
           <p class="hero-price"><strong>Бесплатно.</strong> Оплата не нужна ни сейчас, ни потом.</p>
-          <p class="hero-fineprint">По умолчанию помощник только читает данные. Доступ можно изменить или отключить в кабинете.</p>
-          <p class="hero-fineprint">Мы не храним данные о клиентах и пациентах. Логин и пароль Vetmanager не сохраняются.</p>
+          <p class="hero-fineprint">По умолчанию помощник читает данные и может запускать отчёты. Изменение записей и удаление требуют других прав.</p>
+          <p class="hero-fineprint">Для обычных ответов данные клиники не сохраняются. Выгрузки отчётов временно хранятся в очищенном виде до трёх суток. Логин и пароль Vetmanager не сохраняются.</p>
           <p class="returning-hint">Уже зарегистрированы? <a href="/login">Войти в кабинет</a></p>
           <div class="trust-strip">
             <span class="trust-item">
@@ -1672,7 +1672,7 @@ def render_landing_page(script_nonce: str = "") -> str:
             <span class="label">Пример ответа</span>
           </div>
           <div class="mock-body">
-            <div class="bubble user">Какая выручка за март 2026?</div>
+            <div class="bubble user">Какая выручка за 1–28 марта 2026?</div>
             <div class="answer-card">
               <span class="who">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
@@ -1682,7 +1682,7 @@ def render_landing_page(script_nonce: str = "") -> str:
                 <span class="total">₽&nbsp;487 200</span>
                 <span class="delta">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 17 10-10"/><path d="M7 7h10v10"/></svg>
-                  +14% к февралю
+                  +14% к 1–28 февраля
                 </span>
               </div>
               <div class="bar-chart" aria-hidden="true">
@@ -1749,7 +1749,7 @@ def render_landing_page(script_nonce: str = "") -> str:
             <a href="/register?agent=claude">Claude</a>
             <a href="/register?agent=manus">Manus</a>
           </div>
-          <p>Пользуетесь ChatGPT? После подключения выберите свою клинику в списке подключений и задавайте вопросы в обычном чате. То же самое работает в Claude и Manus.</p>
+          <p>Для ChatGPT сначала подключите Vetmanager в кабинете, затем добавьте MCP-адрес в ChatGPT и разрешите доступ через OAuth. В Claude и Manus подключение тоже настраивается в интерфейсе помощника.</p>
           <p><a class="inline-link" href="/register">Подключить</a></p>
         </div>
       </div>
@@ -1761,7 +1761,7 @@ def render_landing_page(script_nonce: str = "") -> str:
         <h2 class="section-title">Использование с кодинг-агентом</h2>
         <p class="section-lede">
           Codex, Claude Code, Cursor и другие агенты, которые работают у вас в редакторе.
-          Для ChatGPT, Claude и Manus этот раздел не нужен — там хватает регистрации.
+          Для ChatGPT, Claude и Manus этот раздел не нужен: после регистрации подключите Vetmanager и настройте помощника в его интерфейсе.
         </p>
         <details class="disclosure" id="developer-onboarding" style="margin-top: 24px;">
           <summary>
@@ -2248,8 +2248,8 @@ claude mcp add --transport http vetmanager &lt;адрес&gt; --header &quot;Aut
     html = html.replace(
         "__FIRST_REQUEST_EXAMPLES__",
         "".join(
-            f'<li data-example-pair="landing"><strong>{escape(question)}</strong>'
-            f'<p>{escape(answer)}</p></li>'
+            f'<li data-example-pair="landing"><strong class="example-question">{escape(question)}</strong>'
+            f'<span class="example-answer-label">Пример ответа</span><p>{escape(answer)}</p></li>'
             for question, answer in FIRST_REQUEST_EXAMPLES
         ),
     )

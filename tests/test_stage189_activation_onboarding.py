@@ -181,7 +181,7 @@ def test_activation_panel_guides_connected_account_to_token() -> None:
     html = _account_page(active_connection=_Connection())
 
     assert 'data-activation-state="needs_token"' in html
-    assert "Выпустите ключ доступа" in html
+    assert "Настройте доступ помощнику" in html
 
 
 def test_activation_panel_guides_ready_unused_account_to_client_use(now_utc) -> None:
@@ -339,9 +339,10 @@ def test_activation_panel_ready_state(now_utc) -> None:
     assert "ChatGPT OAuth connection configured" not in html
     # Stage 210: the readiness checklist names each step in plain Russian.
     assert "Vetmanager подключён" in html
-    assert "Ключ доступа выпущен" in html
+    assert "Доступ настроен" in html
+    assert "Bearer-ключ выпущен" in html
     assert "Помощник сделал первый запрос" in html
-    assert "ChatGPT подключён" in html
+    assert "ChatGPT — дополнительный вариант подключения" in html
 
 
 def test_activation_panel_treats_expired_token_as_missing_token(now_utc) -> None:
@@ -367,7 +368,7 @@ def test_activation_panel_treats_expired_token_as_missing_token(now_utc) -> None
     )
 
     assert 'data-activation-state="needs_token"' in html
-    assert "Выпустите ключ доступа" in html
+    assert "Настройте доступ помощнику" in html
 
 
 def test_activation_panel_treats_any_last_used_at_as_client_usage(now_utc) -> None:
@@ -427,7 +428,7 @@ def test_activation_panel_does_not_overflow_common_viewports(page: Page) -> None
                 };
             }"""
         )
-        assert checklist_rows["count"] == 4
+        assert checklist_rows["count"] == 3
         assert checklist_rows["listOverflows"] is False
         assert checklist_rows["rowsOutOfBounds"] is False
 

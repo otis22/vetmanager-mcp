@@ -410,7 +410,8 @@ def test_stage177_landing_mentions_chatgpt_connector_plainly():
     assert 'data-testid="chatgpt-connector-section"' in html
     section_html = html.split('data-testid="chatgpt-connector-section"', 1)[1].split("</section>", 1)[0]
     assert "С какими помощниками работает" in section_html
-    assert "Пользуетесь ChatGPT?" in section_html
+    assert "Для ChatGPT сначала подключите Vetmanager" in section_html
+    assert "Выгрузки отчётов временно хранятся в очищенном виде до трёх суток" in html
     assert '<a class="inline-link" href="/register">Подключить</a>' in section_html
     assert "Bearer" not in section_html
     assert "API key" not in section_html

@@ -48,19 +48,19 @@ def test_needs_token_has_visible_jump_to_issue_form() -> None:
 
 def test_waiting_and_oauth_guides_show_one_concrete_pilot_question() -> None:
     html = _account_page(bearer_tokens=[_token_view()])
-    assert "обычно занимает несколько минут" in html
+    assert "Осталось немного: ждём первый запрос" in html
     assert "Кто из врачей работает сегодня?" in html
     assert 'data-poll-activation="needs_client_use"' in html
-    assert "не выходит — напишите" in html
+    assert "Не получается подключить?" in html
     assert "spoteeq.ru" in html
     assert "@vromanichev24" in html
     oauth_html = _account_page(oauth_grants=[{
         "id": 1, "status": "active", "client_name": "ChatGPT",
         "created_at": "сегодня", "last_used_at": "никогда",
     }])
-    guide = oauth_html.split('data-testid="oauth-first-request-guide"', 1)[1].split('</section>', 1)[0]
-    assert "Кто из врачей работает сегодня?" in guide
-    assert "Покажи записи на сегодня" not in guide
+    status = oauth_html.split('data-testid="activation-status"', 1)[1].split('</section>', 1)[0]
+    assert "Кто из врачей работает сегодня?" in status
+    assert "Покажи записи на сегодня" not in status
 
 
 @pytest.mark.asyncio

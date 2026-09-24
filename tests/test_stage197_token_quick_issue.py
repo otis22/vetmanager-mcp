@@ -50,10 +50,13 @@ def _token_view(**overrides) -> dict[str, object]:
         "expires_at_raw": NOW + timedelta(days=21),
         "expires_at": "2026-07-31 12:00 UTC",
         "last_used_at_raw": None,
-        "last_used_at": "Never",
+        "last_used_at": "Не использовался",
         "request_count": 0,
     }
     token.update(overrides)
+    if token["request_count"] and "last_used_at_raw" not in overrides and "last_used_at" not in overrides:
+        token["last_used_at_raw"] = NOW
+        token["last_used_at"] = "2026-07-10 12:00 UTC"
     return token
 
 
@@ -72,6 +75,8 @@ def _account_page(**overrides) -> str:
         activation_now=NOW,
     )
     kwargs.update(overrides)
+    if "bearer_tokens" in overrides and "bearer_token_count" not in overrides:
+        kwargs["bearer_token_count"] = len(overrides["bearer_tokens"])
     return render_account_page(account, **kwargs)
 
 
@@ -254,9 +259,9 @@ def test_issued_token_panel_has_open_instructions_and_config_copy() -> None:
 def test_client_instructions_become_primary_content_at_needs_client_use() -> None:
     html = _account_page(bearer_tokens=[_token_view()])
     assert 'data-testid="client-connect-instructions"' in html
-    assert "Почти готово — спросите помощника" in html
+    assert "Настройки подключения" in html
     assert "Кто из врачей работает сегодня?" in html
-    assert "Для разработчиков" in html
+    assert 'id="client-connect-config"' in html
     assert "Cursor / Claude Code" in html
     assert "ChatGPT" in html
     assert "ВАШ_ТОКЕН" in html

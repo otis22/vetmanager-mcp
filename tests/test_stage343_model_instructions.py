@@ -9,6 +9,22 @@ import pytest
 FILES = (Path("AGENTS.md"), Path("CLAUDE.md"), Path(".cursor/rules/agent-workflow.mdc"))
 START = "<!-- stage-343-model-contract:start -->"
 END = "<!-- stage-343-model-contract:end -->"
+VISUAL_START = "<!-- stage-345-visual-contract:start -->"
+VISUAL_END = "<!-- stage-345-visual-contract:end -->"
+VISUAL_REQUIRED = (
+    "desktop и phone снимки `full_page`",
+    "первый экран телефона — отдельным PNG",
+    "тема без реализации не включается",
+    "побайтные дубли и пропуски — ошибка подготовки evidence",
+    "прочитать весь видимый текст",
+    "бессмысленные, склеенные, противоречивые фразы",
+    "повторы вопросов/ответов, пустые подписи и элементы вне палитры",
+)
+
+
+def check_visual_contract(text: str) -> list[str]:
+    block = text.split(VISUAL_START, 1)[1].split(VISUAL_END, 1)[0] if VISUAL_START in text and VISUAL_END in text else ""
+    return [part for part in VISUAL_REQUIRED if part not in block]
 REQUIRED = (
     "gpt-6-sol",
     "gpt-6-luna",
@@ -48,6 +64,19 @@ def test_current_model_contract(path: Path) -> None:
 def test_model_contract_blocks_are_identical() -> None:
     blocks = [path.read_text(encoding="utf-8").split(START, 1)[1].split(END, 1)[0] for path in FILES]
     assert blocks[0] == blocks[1] == blocks[2]
+
+
+def test_visual_contract_blocks_are_identical_and_complete() -> None:
+    blocks = [path.read_text(encoding="utf-8").split(VISUAL_START, 1)[1].split(VISUAL_END, 1)[0] for path in FILES]
+    assert blocks[0] == blocks[1] == blocks[2]
+    assert all(not check_visual_contract(path.read_text(encoding="utf-8")) for path in FILES)
+
+
+@pytest.mark.parametrize("part", VISUAL_REQUIRED)
+def test_visual_contract_guard_detects_missing_clause(part: str) -> None:
+    text = FILES[0].read_text(encoding="utf-8")
+    assert part in text
+    assert part in check_visual_contract(text.replace(part, "", 1))
 
 
 @pytest.mark.parametrize("broken_part", REQUIRED)

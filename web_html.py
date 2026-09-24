@@ -71,8 +71,8 @@ REPORT_PRIVACY_NOTE = (
     "человека. Отчёты, выгрузка и свободный текст очищаются необратимо — там "
     "подставлять нечего. Известный остаток: одинокая фамилия без имени, "
     "склонённые формы, слитная запись без пробела и редкое имя, которого нет в "
-    "словаре. Выгрузка проходит те же три слоя: файл скачивает и чистит сам "
-    "vetmanager-mcp, а ссылка на него живёт трое суток и работает, пока жив "
+    "словаре. При выгрузке vetmanager-mcp скачивает файл, скрывает значения "
+    "персональных колонок и очищает остальные ячейки; ссылка на очищенный файл живёт трое суток и работает, пока жив "
     "выдавший её доступ."
 )
 
@@ -298,9 +298,9 @@ def compute_activation_state(
 QUICK_TOKEN_NAME = "Мой первый токен"
 
 _ACTIVATION_STEPPER = {
-    "needs_connection": "Шаг 1 из 3 — Подключите Vetmanager",
-    "needs_token": "Шаг 2 из 3 — Выпустите ключ доступа",
-    "needs_client_use": "Шаг 3 из 3 — Подключите MCP-клиент",
+    "needs_connection": "Шаг 1 из 3 — Подключение клиники",
+    "needs_token": "Шаг 2 из 3 — Настройте доступ помощнику",
+    "needs_client_use": "Шаг 3 из 3 — Первый запрос",
 }
 
 
@@ -549,7 +549,7 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
     }}
     .waiting-indicator {{
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 10px;
       margin-top: 12px;
       color: #1f4b50;
@@ -563,7 +563,9 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
       background: var(--accent);
       animation: waiting-pulse 1.6s ease-in-out infinite;
       flex-shrink: 0;
+      margin-top: 0.45em;
     }}
+    .support-link {{ color: var(--accent); text-decoration-color: currentColor; }}
     @keyframes waiting-pulse {{
       0%, 100% {{ opacity: 0.25; }}
       50% {{ opacity: 1; }}
@@ -717,12 +719,40 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
     }}
     .activation-status ul {{
       margin: 12px 0 0;
-      padding-left: 1.35rem;
+      padding: 0;
       list-style: none;
     }}
     .activation-status li {{
-      margin: 6px 0;
+      margin: 8px 0;
     }}
+    .activation-step {{
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }}
+    .activation-badge {{
+      display: inline-block;
+      flex: 0 0 auto;
+      min-width: 90px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--off-bg);
+      color: var(--off-ink);
+      text-align: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      line-height: 1.6;
+    }}
+    .activation-badge.activation-done {{ background: var(--ok-bg); color: var(--ok-ink); }}
+    .activation-badge.activation-next {{ background: #fce7da; color: #7d2d14; }}
+    .activation-step-text {{ color: var(--ink); padding-top: 1px; line-height: 1.45; }}
+    .activation-step-text small {{ display: block; color: var(--muted); font-size: 0.82rem; line-height: 1.4; }}
+    .activation-optional {{ margin: 12px 0 0; font-size: 0.88rem; }}
+    .ready-examples {{ margin: 18px 0 0; }}
+    .ready-examples h2 {{ margin: 0 0 8px; font-size: 1.3rem; }}
+    .ready-examples-grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }}
+    .ready-examples .first-request-pair {{ background: var(--paper); }}
+    @media (max-width: 680px) {{ .ready-examples-grid {{ grid-template-columns: 1fr; }} }}
     .activation-done {{
       color: #1f4b50;
       font-weight: 700;
@@ -949,15 +979,18 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
       .token-table td {{
         display: flex;
         justify-content: space-between;
-        gap: 18px;
+        gap: 10px;
         padding: 8px 0;
         border-bottom: 0;
       }}
       .token-table td::before {{
         content: attr(data-label);
-        flex: 0 0 34%;
+        flex: 0 0 50%;
         color: var(--muted);
         font-weight: 700;
+        font-size: 0.83rem;
+        overflow-wrap: normal;
+        word-break: normal;
       }}
       .token-table td.token-cell {{
         display: block;
@@ -1243,16 +1276,8 @@ def render_account_page(
     else:
         domain_input_attrs += " disabled"
         api_key_input_attrs += " disabled"
-    onboarding_html = ""
-    if active_connection is None:
-        onboarding_html = """
-        <div class="panel-card">
-          <strong>Сначала подключите Vetmanager</strong>
-          <p>После регистрации шаг один: выбрать способ входа, подключить клинику и только потом выпустить ключ доступа для помощника.</p>
-        </div>
-        """
     active_connection_html = """
-        <p>Vetmanager ещё не подключён. Ключ доступа можно выпустить, но помощник пока не сможет получить данные клиники.</p>
+        <p>Vetmanager ещё не подключён. После проверки подключения можно выпустить Bearer-ключ для помощника.</p>
     """
     if active_connection is not None:
         reauth_html = ""
@@ -1399,9 +1424,11 @@ def render_account_page(
         else (
             "<p>Сначала восстановите подключение к Vetmanager, затем можно выпустить ключ доступа.</p>"
             if integration_health_status != INTEGRATION_HEALTH_ACTIVE
-            else "<p>После создания raw token показывается только один раз, а в storage сохраняется только hash и безопасный prefix.</p>"
+            else "<p>Новый токен показывается только один раз. Затем сохраняются только его отпечаток и короткий префикс.</p>"
         )
     )
+    if issued_raw_token:
+        token_note = ""
     activation_now = activation_now or datetime.now(timezone.utc)
     integration_ready = active_connection is not None and integration_health_status == INTEGRATION_HEALTH_ACTIVE
     has_active_token = any(
@@ -1412,23 +1439,23 @@ def render_account_page(
         _activation_token_is_usable(token, now=activation_now)
         and _activation_token_has_client_usage(token)
         for token in bearer_tokens
+    ) or any(
+        str(grant.get("status")) == OAUTH_STATUS_ACTIVE
+        and grant.get("has_live_access", True)
+        and _activation_datetime(grant.get("last_used_at_raw"), grant.get("last_used_at")) is not None
+        for grant in oauth_grants
     )
-    has_chatgpt = any(str(grant.get("status")) == "active" for grant in oauth_grants)
+    has_chatgpt = any(
+        str(grant.get("status")) == OAUTH_STATUS_ACTIVE and grant.get("has_live_access", True)
+        for grant in oauth_grants
+    )
+    has_access = has_active_token or has_chatgpt
     selected_agent_label = {"chatgpt": "ChatGPT", "claude": "Claude", "manus": "Manus"}.get(selected_agent, "")
     selected_agent_html = (
         f"<p>Вы выбрали {escape(selected_agent_label)}. Сначала подключите клинику.</p>"
         if selected_agent_label
         else ""
     )
-    oauth_success_html = ""
-    if has_chatgpt and integration_ready and not has_client_usage:
-        oauth_success_html = f"""
-        <section class="panel-card" data-testid="oauth-first-request-guide">
-          <strong>Подсказки для вашего помощника</strong>
-          <p>Откройте помощника и попробуйте одну из фраз:</p>
-          <ul>{''.join(f'<li>{escape(question)}</li>' for question, _ in FIRST_REQUEST_EXAMPLES[:5])}</ul>
-        </section>
-        """
     activation_state = compute_activation_state(
         active_connection=active_connection,
         integration_health_status=integration_health_status,
@@ -1436,18 +1463,22 @@ def render_account_page(
         oauth_grants=oauth_grants,
         now=activation_now,
     )
+    page_intro_html = (
+        "<p>Свяжите кабинет с клиникой, чтобы помощник мог отвечать по её данным.</p>"
+        if activation_state == "needs_connection" else ""
+    )
     if activation_state == "needs_connection":
         activation_title = "Подключите Vetmanager"
         activation_summary = "Сначала сохраните рабочую интеграцию клиники."
     elif activation_state == "needs_token":
-        activation_title = "Выпустите ключ доступа"
-        activation_summary = "Интеграция готова; следующий шаг — выдать токен для MCP-клиента."
+        activation_title = "Выберите способ подключения"
+        activation_summary = "Подключите ChatGPT или выпустите Bearer-ключ для Claude, Cursor и других MCP-клиентов."
     elif activation_state == "needs_client_use":
-        activation_title = "Подключите MCP-клиент"
-        activation_summary = "Токен готов; вставьте MCP URL и Authorization bearer token в клиент."
+        activation_title = "Проверьте ChatGPT" if has_chatgpt and not has_active_token else "Подключите MCP-клиент"
+        activation_summary = f"Для проверки спросите: «{FIRST_REQUEST_EXAMPLES[0][0]}»"
     else:
         activation_title = "Готово к работе"
-        activation_summary = "Интеграция и токен уже используются MCP-клиентом."
+        activation_summary = f"Помощник уже получает данные клиники. Например, спросите: «{FIRST_REQUEST_EXAMPLES[0][0]}»"
     # Stage 199.2: compact stepper under the page title while activation is
     # in progress; disappears once the account is fully ready.
     stepper_html = ""
@@ -1464,37 +1495,72 @@ def render_account_page(
         waiting_html = (
             '<p class="waiting-indicator" data-testid="activation-waiting" '
             f'data-poll-activation="{activation_state}" data-motivator="waiting">'
-            "Осталось немного: подключение обычно занимает несколько минут. Страница обновится сама после первого запроса.</p>"
-            f'<p>Для пробы спросите: «{escape(FIRST_REQUEST_EXAMPLES[0][0])}» — '
-            f'<a href="{help_url}">не выходит — напишите</a>.</p>'
+            "Осталось немного: ждём первый запрос. Страница обновится сама после ответа.</p>"
+            f'<p>Не получается подключить? <a class="support-link" href="{help_url}">Напишите нам</a>.</p>'
         )
 
-    def _activation_item(done: bool, text: str, *, current: bool = False) -> str:
+    def _activation_item(done: bool, text: str, *, current: bool = False, detail: str = "") -> str:
         marker_class = "activation-done" if done else ("activation-next" if current else "")
-        marker = "✓" if done else ("следующий шаг" if current else "ожидает")
+        marker = "Готово" if done else ("Сейчас" if current else "Позже")
+        detail_html = f"<small>{escape(detail)}</small>" if detail else ""
         return (
-            f'<li><span class="{marker_class}">{escape(marker)}</span> '
-            f"{escape(text)}</li>"
+            f'<li class="activation-step"><span class="activation-badge {marker_class}">{escape(marker)}</span>'
+            f'<span class="activation-step-text">{escape(text)}{detail_html}</span></li>'
         )
 
-    activation_action_html = (
-        '<a class="link activation-action" href="#token-quick">Перейти к выпуску ключа</a>'
-        if activation_state == "needs_token" else ""
-    )
+    access_label = "Доступ настроен" if has_access else "Настройте доступ"
+    access_detail = "Bearer-ключ выпущен" if has_active_token else "ChatGPT подключён" if has_chatgpt else ""
+    if has_chatgpt and has_active_token:
+        optional_chatgpt = "ChatGPT уже подключён как дополнительный вариант."
+    elif has_chatgpt:
+        optional_chatgpt = "Других помощников можно добавить позже."
+    else:
+        optional_chatgpt = "ChatGPT — дополнительный вариант подключения, необязательный для работы через Claude или Cursor."
+
+    activation_action_html = ""
+    if activation_state == "needs_connection":
+        activation_action_html = '<a class="link activation-action" href="#integration-section">Перейти к подключению</a>'
+    elif activation_state == "needs_token":
+        activation_action_html = (
+            '<a class="link" href="#token-quick">К форме выпуска ключа</a> '
+            '<a class="link" href="#chatgpt-section">Подключить ChatGPT</a>'
+        )
+    elif activation_state == "needs_client_use" and has_active_token and not issued_raw_token:
+        activation_action_html = '<a class="link activation-action" href="#client-connect-config">Настроить Cursor / Claude Code</a>'
+    elif activation_state == "ready":
+        activation_action_html = '<a class="link activation-action" href="#ready-examples">Посмотреть вопросы</a>'
     activation_html = f"""
         <section class="activation-status" data-testid="activation-status" data-activation-state="{activation_state}">
           <h2>{escape(activation_title)}</h2>
           <p>{escape(activation_summary)}</p>
           {activation_action_html}
           <ul>
-            {_activation_item(integration_ready, "Vetmanager подключён", current=activation_state == "needs_connection")}
-            {_activation_item(has_active_token, "Ключ доступа выпущен", current=activation_state == "needs_token")}
-            {_activation_item(has_client_usage, "Помощник сделал первый запрос", current=activation_state == "needs_client_use")}
-            {_activation_item(has_chatgpt, "ChatGPT подключён", current=False)}
+            {_activation_item(integration_ready, "Vetmanager подключён" if integration_ready else "Подключение Vetmanager", current=activation_state == "needs_connection")}
+            {_activation_item(has_access, access_label, current=activation_state == "needs_token", detail=access_detail)}
+            {_activation_item(has_client_usage, "Помощник сделал первый запрос" if has_client_usage else "Задайте первый вопрос", current=activation_state == "needs_client_use")}
           </ul>
+          <p class="activation-optional" data-testid="optional-chatgpt">{escape(optional_chatgpt)}</p>
           {waiting_html}
         </section>
     """
+    ready_examples_html = ""
+    if activation_state == "ready":
+        chosen = (FIRST_REQUEST_EXAMPLES[index] for index in (0, 1, 3, 4))
+        pairs = "".join(
+            f'<div class="first-request-pair" data-example-pair="ready">'
+            f'<strong id="ready-question-{index}">{escape(question)}</strong>'
+            f'<p>{escape(answer)}</p>'
+            f'<button type="button" class="copy-button" data-copy-source="ready-question-{index}" '
+            f'data-copy-kind="example" data-copy-status="ready-question-status" '
+            f'data-copied-text="Вопрос скопирован.">Скопировать вопрос</button></div>'
+            for index, (question, answer) in enumerate(chosen)
+        )
+        ready_examples_html = (
+            '<section class="ready-examples" id="ready-examples" data-testid="ready-examples" data-motivator="ready">'
+            '<h2>Что спросить дальше</h2><div class="ready-examples-grid">'
+            f'{pairs}</div><p class="hint">Это {escape(EXAMPLE_DISCLAIMER)}.</p>'
+            '<span class="copy-status" id="ready-question-status" aria-live="polite"></span></section>'
+        )
     def _token_row(token: dict) -> str:
         status = str(token["status"])
         action_html = "&mdash;"
@@ -1685,7 +1751,7 @@ def render_account_page(
                     <input type="radio" name="quick_ip_choice" value="any" checked data-testid="token-quick-ip-any">
                     <strong>Работать с любого IP</strong>
                   </span>
-                  <p>Подходит для ChatGPT, облачных клиентов и работы из разных сетей. Доступ защищает сам токен — храните его как пароль.</p>
+                  <p>Подходит для Cursor, Claude Code и других клиентов, где Bearer-ключ вводится в настройках. Храните токен как пароль.</p>
                 </label>
                 <label class="choice-option">
                   <span>
@@ -1703,12 +1769,12 @@ def render_account_page(
             <p class="hint">Нужны другие права, срок или IP-маска — раскройте «Выпустить Bearer-токен вручную» ниже.</p>
           </div>
         """
-    manual_form_open = "" if (quick_issue_html and token_error is None) else "open"
+    manual_form_open = "" if (issued_raw_token or (quick_issue_html and token_error is None)) else "open"
     # Stage 197.3: when the token exists but no client used it yet, the
     # connect instructions become the primary content instead of a collapsed
     # afterthought.
     client_instructions_html = ""
-    if activation_state == "needs_client_use":
+    if activation_state == "needs_client_use" and has_active_token and not issued_raw_token:
         chatgpt_mcp_url_html = escape(chatgpt_mcp_url)
         config_placeholder = (
             "{\n"
@@ -1724,36 +1790,27 @@ def render_account_page(
         )
         client_instructions_html = f"""
         <section class="panel-card client-guide" id="client-connect" data-testid="client-connect-instructions">
-          <strong>Почти готово — спросите помощника</strong>
-          <p>Откройте ChatGPT, Claude или Manus и попробуйте вопрос:</p>
-          <p>Например: «{escape(FIRST_REQUEST_EXAMPLES[0][0])}».</p>
-          <p>Это {escape(EXAMPLE_DISCLAIMER)}.</p>
-          <details>
-            <summary>Для разработчиков</summary>
+          <strong>Настройки подключения</strong>
+          <p>Откройте пример конфигурации, подставьте свой токен и вставьте блок в MCP-клиент.</p>
+          <details id="client-connect-config">
+            <summary>Пример конфигурации для Cursor / Claude Code</summary>
             <p>Адрес подключения: <code>{chatgpt_mcp_url_html}</code>. Если токен не сохранился, выпустите новый ниже.</p>
-          <details open>
-            <summary>Cursor / Claude Code</summary>
             <p>Добавьте блок в конфигурацию MCP (Cursor: <code>mcp.json</code>; Claude Code: <code>claude mcp add</code> или <code>.mcp.json</code>) и подставьте свой токен:</p>
             <pre>{config_placeholder}</pre>
+            <p class="hint">Помощь с оплатой зарубежных подписок: <a href="https://spoteeq.ru" target="_blank" rel="noopener">spoteeq.ru</a>, Telegram <a href="https://t.me/vromanichev24" target="_blank" rel="noopener">@vromanichev24</a>.</p>
           </details>
-          <details>
-            <summary>ChatGPT</summary>
-            <p>Для ChatGPT ключ доступа не нужен — он подключается сам. Раскройте секцию «Подключения ChatGPT» ниже и следуйте инструкции.</p>
-          </details>
-          </details>
-          <p class="hint">Помощь с оплатой зарубежных подписок: <a href="https://spoteeq.ru" target="_blank" rel="noopener">spoteeq.ru</a>, Telegram <a href="https://t.me/vromanichev24" target="_blank" rel="noopener">@vromanichev24</a>.</p>
         </section>
         """
     support_email = _resolve_support_email()
     support_mail_html = (
-        f' Или напишите на <a href="mailto:{escape(support_email)}">{escape(support_email)}</a>.'
+        f' Или напишите на <a class="support-link" href="mailto:{escape(support_email)}">{escape(support_email)}</a>.'
         if support_email
         else ""
     )
     support_block_html = f"""
         <section class="panel-card" data-testid="support-block">
           <strong>Что-то не работает?</strong>
-          <p>Расскажите в <a href="{_SUPPORT_ISSUES_URL}" target="_blank" rel="noopener">issues на GitHub</a> —
+          <p>Расскажите в <a class="support-link" href="{_SUPPORT_ISSUES_URL}" target="_blank" rel="noopener">issues на GitHub</a> —
           там видно ответ и историю разбора.{support_mail_html}</p>
         </section>
     """
@@ -1801,11 +1858,10 @@ def render_account_page(
         </header>
         <h1>Мой помощник</h1>
         {stepper_html}
-        <p>Подключите Vetmanager — и помощник сможет отвечать на вопросы о вашей клинике.</p>
+        {page_intro_html}
         {selected_agent_html}
         {issued_token_html}
         {activation_html}
-        {oauth_success_html}
         {client_instructions_html}
         <div class="grid" data-testid="account-summary">
           <section class="metric">
@@ -1817,16 +1873,15 @@ def render_account_page(
             <strong>{active_connection_count}</strong>
           </section>
           <section class="metric">
-            <span>Ключи доступа</span>
+            <span>Bearer-ключи всего</span>
             <strong>{bearer_token_count}</strong>
           </section>
         </div>
-        {onboarding_html}
         <details class="section-block" id="account-meta" data-testid="account-meta" {meta_open}>
           <summary><h2>Аккаунт и данные</h2></summary>
           <div class="metric">
             <span>Что мы храним</span>
-            <p>Сервис не хранит данные вашей клиники. Сохраняются только настройки подключения и служебные сведения о ключах доступа — без них помощник не сможет авторизоваться.</p>
+            <p>Для обычных ответов сервис запрашивает данные у Vetmanager и не сохраняет записи клиники. Исключение — выгрузки отчётов: их очищенная копия временно хранится на сервере до трёх суток. Также сохраняются настройки подключения и служебные сведения о ключах доступа.</p>
             <p>Логин и пароль Vetmanager не сохраняются: они нужны только один раз, чтобы получить ключ подключения. Если вы смените пароль в Vetmanager, ключ может перестать работать — тогда потребуется подключиться заново.</p>
           </div>
 
@@ -1847,19 +1902,19 @@ def render_account_page(
                   <input type="radio" name="auth_mode" value="{VETMANAGER_AUTH_MODE_DOMAIN_API_KEY}" {"checked" if show_domain_api_key_panel else ""} data-testid="auth-mode-domain-api-key-radio">
                   <strong>Подключить по API key</strong>
                 </span>
-                <p>Подходит, если у вас уже есть рабочий Vetmanager REST API key и нужно быстро подключить клинику.</p>
+                <p>Подходит, если в Vetmanager уже создан ключ REST API и нужно быстро подключить клинику.</p>
               </label>
               <label class="choice-option" id="auth-mode-user-token">
                 <span>
                   <input type="radio" name="auth_mode" value="{VETMANAGER_AUTH_MODE_USER_TOKEN}" {"checked" if show_user_token_panel else ""} data-testid="auth-mode-user-token-radio">
                   <strong>Подключить по логину и паролю</strong>
                 </span>
-                <p>Используйте этот вариант, если сервис должен сам получить user token через login/password и дальше хранить только токен.</p>
+                <p>Сервис получит ключ пользователя по логину и паролю, а затем сохранит только этот ключ.</p>
               </label>
             </div>
           </div>
           <div class="panel-card field-panel" data-mode-panel="{VETMANAGER_AUTH_MODE_DOMAIN_API_KEY}" data-testid="panel-domain-api-key" {"hidden" if not show_domain_api_key_panel else ""}>
-            <strong>Шаг 2. Данные клиники для API key</strong>
+            <strong>Данные клиники для API key</strong>
             <p class="hint" data-testid="vetmanager-api-key-help">В Vetmanager откройте Настройки -> Интеграция с сервисами, включите REST API, нажмите редактирование и скопируйте API KEY. Этот ключ даёт широкий доступ к программе, поэтому вставляйте его только здесь и не отправляйте в чат.</p>
             <label>Домен клиники
               <input type="text" name="domain" value="{escape(domain_value)}" placeholder="myclinic" autocapitalize="none" autocorrect="off" spellcheck="false" {domain_input_attrs} data-testid="integration-domain">
@@ -1874,18 +1929,18 @@ def render_account_page(
             <p class="hint">Этот вариант не требует логин и пароль пользователя Vetmanager. Достаточно домена клиники и REST API key.</p>
           </div>
           <div class="panel-card field-panel" data-mode-panel="{VETMANAGER_AUTH_MODE_USER_TOKEN}" data-testid="panel-user-token" {"hidden" if not show_user_token_panel else ""}>
-            <strong>Шаг 2. Данные клиники для логина и пароля</strong>
+            <strong>Данные клиники для логина и пароля</strong>
             <label>Домен клиники
               <input type="text" name="domain" value="{escape(domain_value)}" placeholder="myclinic" autocapitalize="none" autocorrect="off" spellcheck="false" {'' if show_user_token_panel else 'disabled'} data-panel-input="true" data-required-when-active="true" data-testid="integration-domain-user-token">
               <small style="color: var(--muted); font-size: 0.85rem;">Только поддомен: для myclinic.vetmanager.ru — myclinic. Можно вставить полный адрес, мы возьмём из него поддомен.</small>
             </label>
-            <label>Vetmanager login
+            <label>Логин Vetmanager
               <input type="text" name="vm_login" value="{escape(form_vm_login)}" autocomplete="username" placeholder="user login" autocapitalize="none" autocorrect="off" spellcheck="false" {login_input_attrs} data-testid="integration-vm-login">
             </label>
-            <label>Vetmanager password
+            <label>Пароль Vetmanager
               <input type="password" name="vm_password" autocomplete="current-password" placeholder="password" {password_input_attrs} data-testid="integration-vm-password">
             </label>
-            <p class="hint">Для этого режима сервис использует логин и пароль только для получения нового user token. Эти данные не сохраняются в storage, логи и audit trail.</p>
+            <p class="hint">Логин и пароль нужны только для получения ключа пользователя. Они не сохраняются в хранилище или журнале.</p>
           </div>
           <div class="actions">
             <button type="submit" class="primary" data-testid="integration-submit">Сохранить подключение</button>
@@ -1904,13 +1959,13 @@ def render_account_page(
         <summary>Выпустить Bearer-токен вручную</summary>
         <form method="post" action="/account/tokens" data-submit-lock="Выпускаем токен…" data-testid="token-form">
           {hidden_csrf_input(csrf_token)}
-          <label>Token name
+          <label>Название токена
             <input type="text" name="token_name" value="{escape(token_name)}" placeholder="Cursor production" required {token_disabled} data-testid="token-name">
           </label>
-          <label>Expires in days
+          <label>Срок действия, дней
             <input type="number" name="expires_in_days" value="{escape(token_expiry_days)}" min="1" placeholder="30" {token_disabled} data-testid="token-expires-in-days">
           </label>
-          <label>Access preset
+          <label>Уровень доступа
             <select name="access_preset" {token_disabled} data-testid="token-access-preset">
               {preset_options}
             </select>
@@ -1998,6 +2053,7 @@ def render_account_page(
         </div>
         {oauth_grants_html}
         </details>
+        {ready_examples_html}
         <details class="section-block" id="mcp-universal-section" data-testid="mcp-universal-instructions">
           <summary><h2>Другие помощники</h2></summary>
           <p>Для Manus и других клиентов используйте тот же URL: добавьте его как custom MCP connector с OAuth.</p>

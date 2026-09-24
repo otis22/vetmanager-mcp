@@ -562,14 +562,15 @@ async def test_account_page_shows_privacy_and_reauth_notices(tmp_path: Path, mon
 
     assert response.status_code == 200
     # Stage 210: same promise, written for a clinic rather than an engineer.
-    assert "Сервис не хранит данные вашей клиники" in response.text
+    assert "Для обычных ответов сервис запрашивает данные у Vetmanager" in response.text
+    assert "выгрузки отчётов: их очищенная копия временно хранится на сервере до трёх суток" in response.text
     assert "Логин и пароль Vetmanager не сохраняются" in response.text
     assert "Если вы смените пароль в Vetmanager" in response.text
     assert "Выберите способ авторизации Vetmanager" in response.text
     assert "Подключить по API key" in response.text
     assert "Подключить по логину и паролю" in response.text
-    assert "Vetmanager login" in response.text
-    assert "Vetmanager password" in response.text
+    assert "Логин Vetmanager" in response.text
+    assert "Пароль Vetmanager" in response.text
     assert "Vetmanager user token" not in response.text
 
     await engine.dispose()
@@ -602,7 +603,7 @@ async def test_account_page_shows_onboarding_wizard_for_new_account(tmp_path: Pa
         response = await client.get("/account")
 
     assert response.status_code == 200
-    assert "Сначала подключите Vetmanager" in response.text
+    assert 'href="#integration-section">Перейти к подключению' in response.text
     assert 'data-auth-wizard="true"' in response.text
     assert 'value="domain_api_key"' in response.text
     assert 'value="user_token"' in response.text

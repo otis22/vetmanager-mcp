@@ -59,6 +59,8 @@ def _account_page(**overrides) -> str:
         activation_now=NOW,
     )
     kwargs.update(overrides)
+    if "bearer_tokens" in overrides and "bearer_token_count" not in overrides:
+        kwargs["bearer_token_count"] = len(overrides["bearer_tokens"])
     return render_account_page(account, **kwargs)
 
 
@@ -96,9 +98,9 @@ def _section_is_open(html: str, testid: str) -> bool:
 
 
 def test_stepper_reflects_activation_progress() -> None:
-    assert "Шаг 1 из 3 — Подключите Vetmanager" in _needs_connection()
-    assert "Шаг 2 из 3 — Выпустите ключ доступа" in _needs_token()
-    assert "Шаг 3 из 3 — Подключите MCP-клиент" in _needs_client_use()
+    assert "Шаг 1 из 3 — Подключение клиники" in _needs_connection()
+    assert "Шаг 2 из 3 — Настройте доступ помощнику" in _needs_token()
+    assert "Шаг 3 из 3 — Первый запрос" in _needs_client_use()
 
 
 def test_stepper_disappears_when_ready() -> None:
