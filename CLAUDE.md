@@ -54,8 +54,8 @@ Workflow адаптирован из `.cursor/rules/agent-workflow.mdc` с до�
 
 Бюджеты:
 
-- PRD-review сторонней моделью: у Astra и Opus отдельно максимум 2 валидных запуска на задачу; валиден только разбираемый verdict (findings или явный пустой список);
-- code/diff review сторонней моделью: у Astra и Opus отдельно максимум 2 валидных запуска на задачу; валиден только разбираемый verdict (findings или явный пустой список);
+- PRD-review сторонней моделью: у Astra и Opus отдельно максимум 2 валидных запуска на PRD-гейт; Architecture Critique делит этот бюджет, валиден только разбираемый verdict (findings или явный пустой список);
+- code/diff и визуальное review: у Astra и Opus отдельно максимум 2 валидных запуска на каждый из этих гейтов; валиден только разбираемый verdict (findings или явный пустой список);
 - бюджеты раздельные и не расходуют друг друга;
 - `gpt-6-luna` (scout-роль, историческое имя «Spark») можно запускать для вспомогательных задач без лимита; Spark не принимает финальных решений и не расходует бюджет сильного ревью. Перед конкретным гейтом лимит Spark — 3 запуска.
 - Слаги Codex: `gpt-6-sol` (исполнитель), `gpt-6-astra` (сильное ревью), `gpt-6-luna` (scout). Требуется CLI ≥ 0.155.
@@ -75,11 +75,11 @@ output» запрещена. Runner валидирует сохранённый 
 <!-- stage-343-model-contract:start -->
 Постоянная схема моделей (решение владельца 24.09.2026): исполнитель этапа Codex `gpt-6-sol`; Spark/scout `gpt-6-luna` (candidate-only); сильное ревью — `gpt-6-astra` и Claude Opus. Требуется Codex CLI ≥ 0.155. Слаги семейства 5.6 устарели; Terra в GPT-6 нет.
 
-- Перед каждым сильным PRD, Architecture Critique, визуальным и committed diff гейтом выполнить Spark-review; затем запустить Astra и Opus одновременно и дождаться обоих. Spark-бюджет — не более 3 запусков перед конкретным гейтом; scout вне гейта не тратит его бюджет.
-- У Astra и Opus отдельные бюджеты: 2 валидных запуска на каждый гейт у каждого и не более 3 infrastructure attempts у каждого. Валидный запуск — разбираемый verdict `findings` (включая `[]`). Невалидный ответ не тратит валидный слот. Если любая сторона не дала валидного ответа после трёх неуспешных попыток, гейт blocked и push запрещён. Оба результата обязательны даже на визуальном гейте.
-- Astra: `timeout 1800 codex exec -m gpt-6-astra -s danger-full-access -C "$PWD" --output-schema <findings-schema> -o <evidence>/astra-<gate>-attempt-N-of-3.result.json -` с review-only prompt. Сохранять prompt, result, stderr и metadata: модель, объект и reviewed SHA для diff, версия CLI, время начала/конца, exit и validator exit. Проверять результат командой `scripts/validate_review_result.py --plain` с stdin из result. Для Claude Opus использовать `scripts/run_claude_review.sh` и прежнюю проверку envelope через `scripts/validate_review_result.py`.
+- Перед каждым сильным PRD, Architecture Critique, визуальным и committed diff гейтом выполнить Spark-review; затем запустить Astra и Opus одновременно и дождаться обоих. Spark-бюджет — не более 3 запусков перед конкретным гейтом; если он исчерпан, повтор сильной пары допускается с записанным rationale без четвёртого Spark. Scout для проверки правок после сильного бюджета не тратит предгейтовый Spark-бюджет.
+- У Astra и Opus отдельные бюджеты: 2 валидных запуска на каждый гейт у каждого и не более 3 infrastructure attempts у каждого. Architecture Critique делит PRD-бюджет, визуальный гейт имеет отдельный бюджет. Валидный запуск — разбираемый verdict `findings` (включая `[]`). Невалидный ответ не тратит валидный слот. Если любая сторона не дала валидного ответа после трёх неуспешных попыток, гейт blocked и push запрещён. Оба результата обязательны даже на визуальном гейте.
+- Astra: `timeout 1800 codex exec -m gpt-6-astra -s danger-full-access -C "$PWD" --output-schema <findings-schema> -o <evidence>/astra-<gate>-attempt-N-of-3.result.json -` с review-only prompt. Сохранять prompt, result, stderr и metadata: модель, объект и reviewed SHA для diff, версия CLI, время начала/конца, exit и validator exit. Проверять результат командой `scripts/validate_review_result.py --plain` с stdin из result; этот режим принимает severity `critical`/`high`/`medium`. Для Claude Opus использовать `scripts/run_claude_review.sh` и прежнюю проверку envelope через `scripts/validate_review_result.py` без изменения поведения runner.
 - На визуальном гейте Astra получает скриншоты флагом `-i` и даёт решающее визуальное ревью. Opus выполняет текстовую проверку: штатный runner отключает инструменты и не передаёт изображения. Opus `[]` не засчитывается как визуальная проверка. Без валидного визуального вердикта Astra гейт blocked.
-- Свести findings в `AssumptionLog.md` по гейту: что нашла Astra, что Opus, что оба, что принято/отклонено и почему; приложить пути evidence и время. Неустранённые critical/high блокируют выпуск. Если после двух валидных запусков обоих ревьюеров исправлены найденные critical/high, проверить последующую правку Spark и тестами и отметить отдельной строкой в `AssumptionLog.md`; после этого push разрешён при закрытых critical/high. Это не замена неуспешному сильному гейту без валидного verdict.
+- Свести findings в `AssumptionLog.md` по гейту: что нашла Astra, что Opus, что оба, что принято/отклонено и почему; приложить пути evidence и время. Неустранённые critical/high блокируют выпуск. Если после исчерпания бюджетов сильного ревью в код внесена любая правка, проверить её Spark (`gpt-6-luna` как отдельный scout) и тестами и отметить отдельной строкой в `AssumptionLog.md`; push разрешён при закрытых critical/high и валидных verdict обоих ревьюеров. Это не замена неуспешному сильному гейту без валидного verdict.
 - Если исполнитель — Claude-агент, внешнее сильное ревью делает Codex `gpt-6-astra`; Opus работает как дополнительный параллельный reviewer и его verdict также обязателен для гейта.
 <!-- stage-343-model-contract:end -->
 
@@ -240,7 +240,7 @@ Workflow завершён?
 Обязательный code/diff gate **после commit и перед push**. Выполняется сторонней моделью на committed diff.
 
 - Для любого агента сильное code/diff review делают одновременно Codex `gpt-6-astra` и Claude Opus; нужно дождаться обоих.
-- Бюджет: у каждого ревьюера максимум 2 валидных запуска на code/diff review и до 3 infrastructure attempts; валиден только разбираемый verdict (findings или явный пустой список).
+- Бюджет: у каждого ревьюера максимум 2 валидных запуска на code/diff гейт и до 3 infrastructure attempts; валиден только разбираемый verdict (findings или явный пустой список).
 - `gpt-6-luna` остаётся candidate-only scout; перед этим гейтом максимум 3 запуска Spark.
 
 ### 5.1 Порядок вызова

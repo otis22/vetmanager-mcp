@@ -14,11 +14,12 @@ def _invalid(message: str) -> int:
     return 2
 
 
-def _is_finding(value: Any) -> bool:
+def _is_finding(value: Any, *, strict_severity: bool = False) -> bool:
     return (
         isinstance(value, dict)
         and set(value) == {"severity", "file", "line", "reason"}
         and isinstance(value["severity"], str)
+        and (not strict_severity or value["severity"] in {"critical", "high", "medium"})
         and isinstance(value["file"], str)
         and isinstance(value["line"], int)
         and not isinstance(value["line"], bool)
@@ -26,10 +27,10 @@ def _is_finding(value: Any) -> bool:
     )
 
 
-def validate_review(review: Any) -> dict[str, Any]:
+def validate_review(review: Any, *, strict_severity: bool = False) -> dict[str, Any]:
     if not isinstance(review, dict) or not isinstance(review.get("findings"), list):
         raise ValueError("review result does not match findings schema")
-    if not all(_is_finding(finding) for finding in review["findings"]):
+    if not all(_is_finding(finding, strict_severity=strict_severity) for finding in review["findings"]):
         raise ValueError("review result does not match findings schema")
     if set(review) != {"findings"}:
         raise ValueError("review result does not match findings schema")
@@ -58,7 +59,7 @@ def main() -> int:
     except json.JSONDecodeError:
         return _invalid("review input is not JSON")
     try:
-        review = validate_review(payload) if args.plain else validate_envelope(payload)
+        review = validate_review(payload, strict_severity=True) if args.plain else validate_envelope(payload)
     except ValueError as exc:
         return _invalid(str(exc))
     json.dump(review, sys.stdout, ensure_ascii=False)
