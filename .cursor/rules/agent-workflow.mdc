@@ -181,7 +181,7 @@ scripts/run_claude_review.sh --range HEAD^..HEAD --attempt 1/3
 - писать код без тестов
 - пушить без прохождения проверок
 - пушить без Spark-review committed diff либо без явного исчерпания Spark-бюджета с rationale
-- пушить без прохождения code/diff review сторонней моделью либо без явного исчерпания бюджета с rationale
+- пушить без валидных verdict Astra и Opus на committed diff; исчерпание infrastructure attempts не разрешает push
 - пропускать повторный полный прогон после аудита/рефакторинга, если были изменения
 
 ---
