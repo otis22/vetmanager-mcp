@@ -1749,7 +1749,7 @@ def render_landing_page(script_nonce: str = "") -> str:
             <a href="/register?agent=claude">Claude</a>
             <a href="/register?agent=manus">Manus</a>
           </div>
-          <p>Для ChatGPT сначала подключите Vetmanager в кабинете, затем добавьте MCP-адрес в ChatGPT и разрешите доступ через OAuth. В Claude и Manus подключение тоже настраивается в интерфейсе помощника.</p>
+          <p>Для ChatGPT сначала подключите Vetmanager в кабинете, затем добавьте адрес подключения в ChatGPT и разрешите доступ. В Claude и Manus подключение тоже настраивается в интерфейсе помощника.</p>
           <p><a class="inline-link" href="/register">Подключить</a></p>
         </div>
       </div>

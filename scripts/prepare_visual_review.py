@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+from playwright.sync_api import sync_playwright
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -20,8 +22,6 @@ def scene_image_keys(scene: str) -> tuple[str, ...]:
 
 
 def prepare(directory: Path) -> None:
-    from playwright.sync_api import sync_playwright
-
     records = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     validate_matrix(records, directory)
     by_key = {record["key"]: directory / record["path"] for record in records}

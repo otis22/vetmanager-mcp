@@ -9,10 +9,16 @@ import re
 import sys
 from pathlib import Path
 
+from playwright.sync_api import sync_playwright
+
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from landing_page import render_landing_page
+from tests.test_stage197_token_quick_issue import _account_page, _token_view
+
 SCENE_STATES = {
     "needs_connection": "needs_connection",
     "needs_token": "needs_token",
@@ -81,9 +87,6 @@ def validate_matrix(records: list[dict[str, str]], base_dir: Path | None = None)
 
 
 def _pages() -> dict[str, str]:
-    from landing_page import render_landing_page
-    from tests.test_stage197_token_quick_issue import _account_page, _token_view
-
     oauth_unused = {"id": 1, "status": "active", "client_name": "ChatGPT", "has_live_access": True,
                     "created_at": "сегодня", "last_used_at": "Не использовался", "last_used_at_raw": None}
     oauth_used = {**oauth_unused, "last_used_at": "2026-09-24 12:00 UTC",
@@ -119,8 +122,6 @@ def validate_pages(pages: dict[str, str]) -> None:
 
 
 def capture(output_dir: Path) -> list[dict[str, str]]:
-    from playwright.sync_api import sync_playwright
-
     output_dir.mkdir(parents=True, exist_ok=True)
     pages = _pages()
     validate_pages(pages)

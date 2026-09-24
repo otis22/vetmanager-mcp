@@ -62,6 +62,21 @@ async def _some_diagnosis_ids(count: int) -> list[int]:
     return ids[:count]
 
 
+async def _admission_result_id() -> int:
+    manuals = await _client().get("/rest/api/ComboManualName", params={"limit": 100, "offset": 0})
+    names = manuals.get("data", {}).get("comboManualName") or []
+    manual = next((row for row in names if row.get("name") == "admission_result"), None)
+    if not manual:
+        pytest.skip("Admission-result manual is unavailable on this test contour.")
+    items_response = await _client().get("/rest/api/ComboManualItem", params={"limit": 100, "offset": 0})
+    items = items_response.get("data", {}).get("comboManualItem") or []
+    item = next((row for row in items if str(row.get("combo_manual_id")) == str(manual["id"])
+                 and str(row.get("is_active")) in {"1", "True"}), None)
+    if not item:
+        pytest.skip("No active admission result on this test contour.")
+    return int(item["id"])
+
+
 async def _card_context() -> dict:
     listing = await _client().get(_MC_ENDPOINT, params={"limit": 20, "offset": 0})
     records = listing.get("data", {}).get("medicalCards") or []
@@ -77,6 +92,7 @@ async def _card_context() -> dict:
 async def test_real_diagnosis_ids_are_stored_as_a_reference_array() -> None:
     context = await _card_context()
     ids = await _some_diagnosis_ids(2)
+    meet_result_id = await _admission_result_id()
 
     headers_patch, runtime_patch = patch_runtime_credentials(TEST_DOMAIN, TEST_API_KEY)
     with headers_patch, runtime_patch:
@@ -84,6 +100,7 @@ async def test_real_diagnosis_ids_are_stored_as_a_reference_array() -> None:
             "patient_id": int(context["patient_id"]),
             "doctor_id": int(context["doctor_id"]),
             "clinic_id": int(context["clinic_id"]),
+            "meet_result_id": meet_result_id,
             "date_create": "2026-09-01 12:00:00",
             "description": MARKER,
             "diagnosis_ids": ids[:1],
