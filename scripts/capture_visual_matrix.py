@@ -18,8 +18,10 @@ SCENE_STATES = {
     "needs_token": "needs_token",
     "needs_client_use_bearer": "needs_client_use",
     "needs_client_use_oauth": "needs_client_use",
+    "needs_client_use_oauth_other": "needs_client_use",
     "ready_bearer": "ready",
     "ready_oauth": "ready",
+    "ready_oauth_other": "ready",
 }
 EXTRA_SCENES = ("issued", "landing")
 VIEWPORTS = {"desktop": (1440, 900), "phone": (390, 844)}
@@ -86,14 +88,18 @@ def _pages() -> dict[str, str]:
                     "created_at": "сегодня", "last_used_at": "Не использовался", "last_used_at_raw": None}
     oauth_used = {**oauth_unused, "last_used_at": "2026-09-24 12:00 UTC",
                   "last_used_at_raw": "2026-09-24T12:00:00+00:00"}
+    oauth_other_unused = {**oauth_unused, "client_name": "Manus"}
+    oauth_other_used = {**oauth_used, "client_name": "Manus"}
     return {
         "needs_connection": _account_page(active_connection=None, active_connection_count=0,
                                           integration_health_status="unknown"),
         "needs_token": _account_page(),
         "needs_client_use_bearer": _account_page(bearer_tokens=[_token_view()]),
         "needs_client_use_oauth": _account_page(oauth_grants=[oauth_unused]),
+        "needs_client_use_oauth_other": _account_page(oauth_grants=[oauth_other_unused]),
         "ready_bearer": _account_page(bearer_tokens=[_token_view(request_count=5)]),
         "ready_oauth": _account_page(oauth_grants=[oauth_used]),
+        "ready_oauth_other": _account_page(oauth_grants=[oauth_other_used]),
         "issued": _account_page(issued_raw_token="vm_st_FICTIONAL_STAGE345_ONLY",
                                 bearer_tokens=[_token_view()]),
         "landing": render_landing_page(),

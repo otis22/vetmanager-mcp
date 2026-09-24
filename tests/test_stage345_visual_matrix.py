@@ -66,6 +66,11 @@ def test_only_implemented_themes_enter_matrix() -> None:
     assert all(":light:" in key for key in required_keys())
 
 
+def test_other_oauth_copy_has_visual_scenes() -> None:
+    assert "needs_client_use_oauth_other" in required_scenes()
+    assert "ready_oauth_other" in required_scenes()
+
+
 def test_review_sheet_covers_each_implemented_theme(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(prepare_visual_review, "_themes", lambda scene: ("light", "dark"))
     assert "ready_bearer:dark:phone-first" in prepare_visual_review.scene_image_keys("ready_bearer")
