@@ -1,0 +1,37 @@
+{
+  "probe_date": "2026-09-25",
+  "contour": "devtr6",
+  "method": "read-only REST filter and sort probes with impossible scalar value; HTTP 200 means accepted, not proof of narrowing",
+  "entities": {
+    "invoiceDocument": [
+      "document_id",
+      "good_id",
+      "id",
+      "is_default_responsible",
+      "price",
+      "quantity",
+      "responsible_user_id",
+      "sale_param_id"
+    ],
+    "medicalCards": [
+      "admission_type",
+      "clinic_id",
+      "creator_id",
+      "date_create",
+      "date_edit",
+      "description",
+      "diagnos",
+      "doctor_id",
+      "id",
+      "invoice",
+      "meet_result_id",
+      "next_meet_id",
+      "patient_id",
+      "recomendation",
+      "status",
+      "temperature",
+      "weight"
+    ]
+  },
+  "public_excluded_fields": {}
+}

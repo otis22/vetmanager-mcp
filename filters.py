@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from difflib import get_close_matches
 from dataclasses import dataclass
 from enum import Enum
@@ -32,6 +33,17 @@ from service_metrics import record_business_event
 # Stage 235: public fields confirmed by the read-only devtr6 probe. Unprobed
 # endpoints deliberately have no entry and retain their existing behaviour.
 FILTER_FIELDS_BY_ENTITY: dict[str, frozenset[str]] = {
+    # Stage 348: fields checked against the external REST contract and with
+    # read-only filter/sort requests on devtr6 (HTTP 200 for every item).
+    "medicalCards": frozenset({
+        "admission_type", "clinic_id", "creator_id", "date_create", "date_edit",
+        "description", "diagnos", "doctor_id", "id", "invoice", "meet_result_id",
+        "next_meet_id", "patient_id", "recomendation", "status", "temperature", "weight",
+    }),
+    "invoiceDocument": frozenset({
+        "document_id", "good_id", "id", "is_default_responsible", "price",
+        "quantity", "responsible_user_id", "sale_param_id",
+    }),
     "cassaclose": frozenset({
         "amount", "amount_cashless", "closed_user_id", "date", "id", "id_cassa", "status",
     }),
@@ -77,12 +89,10 @@ FILTER_FIELDS_BY_ENTITY: dict[str, frozenset[str]] = {
     # фильтр по имени клиента. Allowlist защищает от опечатки в имени поля,
     # но не обещает, что апстрим отфильтрует.
     #
-    # Остальные четыре инструмента пункта — `get_medical_cards`,
-    # `get_diagnoses`, `get_anonymous_clients`, `get_message_reports` — ходят
-    # не в обычный list-эндпоинт, а в особые пути
-    # (`/rest/api/MedicalCards/AllDiagnoses`, `/rest/api/user/anonymousList`,
-    # `/rest/api/messages/reports`), где общий контракт `filter`/`sort`
-    # неприменим: для них вопрос поставлен неверно, а не остался без ответа.
+    # Из прежних исключений `MedicalCards` проверен отдельно в этапе 348 и
+    # добавлен выше. Три пути (`AllDiagnoses`, `anonymousList`,
+    # `messages/reports`) игнорируют общие `filter`/`sort` — проверено на
+    # devtr6; их аргументы сняты с публичных инструментов.
     "comboManualName": frozenset({"id", "is_readonly", "name", "title"}),
     "comboManualItem": frozenset({
         "combo_manual_id", "dop_param1", "dop_param2", "dop_param3", "id",
@@ -170,8 +180,16 @@ def validate_sort_properties(
         if isinstance(property_name, str) and property_name not in allowed_properties:
             suggestion = get_close_matches(property_name, sorted(allowed_properties), n=1, cutoff=0.6)
             hint = f" Did you mean '{suggestion[0]}'?" if suggestion else ""
+            safe_name = (
+                property_name if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", property_name)
+                else "<invalid_identifier>"
+            )
+            RUNTIME_LOGGER.warning(
+                "Unknown sort property rejected locally",
+                extra={"event_name": "sort_property_rejected", "sort_property": safe_name},
+            )
             raise SortPropertyValidationError(
-                f"Unknown sort property '{property_name}'.{hint} Allowed properties: "
+                f"Unknown sort property '{safe_name}'.{hint} Allowed properties: "
                 f"{', '.join(sorted(allowed_properties))}."
             )
 

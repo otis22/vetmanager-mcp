@@ -41,6 +41,7 @@ def test_filter_allowlists_match_real_probe_artifacts():
         # правкой прежнего: у них разная дата прогона, и смешивать их значило
         # бы приписать старой пробе то, чего она не видела.
         json.loads((artifact_dir / "filter-contracts-unprobed-2026-09-04.json").read_text()),
+        json.loads((artifact_dir / "filter-contracts-stage348-2026-09-25.json").read_text()),
     ]
     expected = {}
     for artifact in artifacts:

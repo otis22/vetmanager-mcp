@@ -5,11 +5,14 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from filters import (
+    FILTER_FIELDS_BY_ENTITY,
     build_list_query_params,
     eq as _filter_eq,
     gte as _filter_gte,
     in_ as _filter_in,
     lt as _filter_lt,
+    validate_filter_properties,
+    validate_sort_properties,
 )
 from exceptions import ToolInputError, reportable_error
 from tools.crud_helpers import crud_get_by_id, crud_create, crud_update, unwrap_single_record
@@ -165,6 +168,8 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
         """
+        validate_sort_properties(sort, FILTER_FIELDS_BY_ENTITY["medicalCards"])
+        validate_filter_properties(filter, FILTER_FIELDS_BY_ENTITY["medicalCards"])
         vc = VetmanagerClient()
         # patient_id filter is required — pet_id param alone is ignored by the API
         extra_filters: list = []
@@ -209,6 +214,7 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset (0-10000).
             sort: Optional Vetmanager sort list. Defaults to date_create ASC, id ASC.
         """
+        validate_sort_properties(sort, FILTER_FIELDS_BY_ENTITY["medicalCards"])
         if date and (date_from or date_to):
             raise ToolInputError("use either `date` or `date_from`/`date_to`, not both")
         if bool(date_from) != bool(date_to):
@@ -284,6 +290,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records per pet to return (1–100, default 20).
             offset: Pagination offset (0–10000).
         """
+        validate_sort_properties(sort, FILTER_FIELDS_BY_ENTITY["medicalCards"])
         vc = VetmanagerClient()
 
         # Step 1: get all pets of the client.

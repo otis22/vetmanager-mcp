@@ -527,6 +527,7 @@ def register(mcp: FastMCP) -> None:
         return await crud_list(
             "/rest/api/invoiceDocument", limit=limit, offset=offset,
             sort=sort, filters=combined_filters,
+            allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["invoiceDocument"],
         )
 
     @mcp.tool

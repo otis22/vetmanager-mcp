@@ -90,14 +90,14 @@ def test_probe_results_are_pinned_not_paraphrased() -> None:
 
 
 def test_special_path_tools_stay_out_of_the_registry() -> None:
-    """Четыре инструмента пункта ходят не в обычный list-эндпоинт.
+    """Три специальных пути не используют обычный контракт list-полей.
 
-    `get_medical_cards` → `/rest/api/pet`, `get_diagnoses` →
-    `/rest/api/MedicalCards/AllDiagnoses`, `get_anonymous_clients` →
+    Этап 348 отдельно проверил обычный list `MedicalCards` на devtr6 и
+    добавил его в реестр. `get_diagnoses` → `/rest/api/MedicalCards/AllDiagnoses`,
+    `get_anonymous_clients` →
     `/rest/api/user/anonymousList`, `get_message_reports` →
-    `/rest/api/messages/reports`. Общий контракт `filter`/`sort` там
-    неприменим, и запись в реестре создала бы ложное впечатление, что вопрос
-    закрыт.
+    `/rest/api/messages/reports`. Их `filter`/`sort` игнорируются.
     """
-    for absent in ("medicalCards", "diagnoses", "anonymousClients", "messageReports"):
+    assert "medicalCards" in FILTER_FIELDS_BY_ENTITY
+    for absent in ("diagnoses", "anonymousClients", "messageReports"):
         assert absent not in FILTER_FIELDS_BY_ENTITY

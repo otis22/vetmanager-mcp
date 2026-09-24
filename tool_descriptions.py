@@ -1,4 +1,32 @@
 from fastmcp import FastMCP
+from filters import FILTER_FIELDS_BY_ENTITY
+
+
+# Each entry is a REST list entity whose accepted field names were checked
+# against the external contract. A missing entry is a catalogue error.
+RAW_CLAUSE_ENTITIES: dict[str, str] = {
+    "get_clients": "client", "get_pets": "pet", "get_admissions": "admission",
+    "get_medical_cards": "medicalCards", "get_medical_cards_by_date": "medicalCards",
+    "get_medical_cards_by_client_id": "medicalCards", "get_invoices": "invoice",
+    "get_goods": "good", "get_users": "user", "get_breeds": "breed",
+    "get_pet_types": "petType", "get_cities": "city", "get_city_types": "cityType",
+    "get_streets": "street", "get_units": "unit", "get_roles": "role",
+    "get_user_positions": "userPosition", "get_combo_manual_names": "comboManualName",
+    "get_combo_manual_items": "comboManualItem", "get_payments": "payment",
+    "get_client_payment_applications": "closingOfInvoices",
+    "get_closing_of_invoices": "closingOfInvoices",
+    "get_invoice_documents": "invoiceDocument", "get_cassas": "cassa",
+    "get_cassa_closes": "cassaclose", "get_good_groups": "goodGroup",
+    "get_good_sale_params": "goodSaleParam", "get_party_accounts": "partyAccount",
+    "get_party_account_docs": "partyAccountDoc", "get_store_documents": "storeDocument",
+    "get_suppliers": "suppliers", "get_hospitalizations": "hospital",
+    "get_hospital_blocks": "hospitalBlock", "get_clinics": "clinics",
+    "get_timesheets": "timesheet", "get_properties": "properties",
+}
+
+# The invoice tool requires its dedicated invoice_id argument for the parent.
+# It rejects document_id in raw filters, though sorting by it is valid.
+RAW_FILTER_FIELD_EXCLUSIONS = {"get_invoice_documents": frozenset({"document_id"})}
 
 
 ENTITY_METADATA: dict[str, dict[str, str | list[str]]] = {
@@ -1211,3 +1239,44 @@ def enhance_tool_descriptions(mcp: FastMCP) -> None:
         fn = getattr(component, "fn", None)
         if fn is not None:
             fn.__doc__ = description
+
+
+def enhance_raw_clause_descriptions(mcp: FastMCP) -> None:
+    """Expose the accepted REST fields in each argument's tools/list schema."""
+    components = mcp._local_provider._components
+    actual: set[str] = set()
+    for key, component in components.items():
+        if not key.startswith("tool:"):
+            continue
+        properties = component.parameters.get("properties", {})
+        clauses = {"sort", "filter"} & properties.keys()
+        if not clauses:
+            continue
+        name = component.name
+        actual.add(name)
+        if name not in RAW_CLAUSE_ENTITIES:
+            raise RuntimeError(f"Raw clause fields not documented for {name}")
+        fields = FILTER_FIELDS_BY_ENTITY[RAW_CLAUSE_ENTITIES[name]]
+        if "sort" in clauses:
+            properties["sort"]["description"] = (
+                'Sort clauses, e.g. [{"property":"id","direction":"ASC"}]. '
+                f"Direction: ASC or DESC. Allowed properties: {', '.join(sorted(fields))}."
+            )
+        if "filter" in clauses:
+            filter_fields = fields - RAW_FILTER_FIELD_EXCLUSIONS.get(name, frozenset())
+            properties["filter"]["description"] = (
+                'Filter clauses, e.g. [{"property":"id","operator":"=","value":123}]. '
+                "Operators: =, !=, <>, <, <=, >, >=, IN, NOT IN, LIKE; "
+                "IN/NOT IN take an array value. "
+                f"Allowed properties: {', '.join(sorted(filter_fields))}."
+            )
+        if name == "get_party_account_docs":
+            hint = (
+                " To find inventory receipts for a good, filter these rows by good_id; "
+                "document_id identifies the party header for get_party_account_by_id."
+            )
+            properties["filter"]["description"] += hint
+            if hint not in component.description:
+                component.description += hint
+    if actual != set(RAW_CLAUSE_ENTITIES):
+        raise RuntimeError(f"Raw clause map mismatch: {sorted(set(RAW_CLAUSE_ENTITIES) ^ actual)}")

@@ -380,8 +380,6 @@ def register(mcp: FastMCP) -> None:
     async def get_anonymous_clients(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
     ) -> dict:
         """List anonymous (walk-in) client records in the system.
 
@@ -390,7 +388,7 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
         """
         return await crud_list(
-            "/rest/api/user/anonymousList", limit=limit, offset=offset, sort=sort, filters=filter,
+            "/rest/api/user/anonymousList", limit=limit, offset=offset,
         )
 
     @mcp.tool
@@ -437,8 +435,6 @@ def register(mcp: FastMCP) -> None:
         limit: LimitParam = 20,
         offset: int = 0,
         campaign: str = "",
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
     ) -> dict:
         """List in-app notification delivery reports and campaign stats."""
         campaign_name = campaign.strip()
@@ -446,7 +442,7 @@ def register(mcp: FastMCP) -> None:
             raise ToolInputError("campaign is required")
         return await crud_list(
             "/rest/api/messages/reports", limit=limit, offset=offset,
-            sort=sort, filters=filter, extra={"campaign": campaign_name},
+            extra={"campaign": campaign_name},
         )
 
     @mcp.tool

@@ -20,7 +20,7 @@ from structured_logging import configure_logging
 from tool_oauth_security import OAuthChallengeMiddleware, apply_tool_oauth_security_metadata
 from tool_scope_security import ToolVisibilityMiddleware
 from tool_error_tracking import ToolErrorTrackingMiddleware
-from tool_descriptions import enhance_tool_descriptions
+from tool_descriptions import enhance_tool_descriptions, enhance_raw_clause_descriptions
 from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
 from request_context import RequestContextHeaderMiddleware
@@ -275,6 +275,7 @@ register_all(mcp)
 register_prompts(mcp)
 register_web_routes(mcp)
 enhance_tool_descriptions(mcp)
+enhance_raw_clause_descriptions(mcp)
 apply_tool_oauth_security_metadata(mcp)
 
 if __name__ == "__main__":

@@ -135,8 +135,6 @@ def register(mcp: FastMCP) -> None:
     async def get_diagnoses(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
     ) -> dict:
         """List all diagnoses recorded across all medical cards.
 
@@ -145,5 +143,5 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
         """
         return await crud_list(
-            "/rest/api/MedicalCards/AllDiagnoses", limit=limit, offset=offset, sort=sort, filters=filter,
+            "/rest/api/MedicalCards/AllDiagnoses", limit=limit, offset=offset,
         )
