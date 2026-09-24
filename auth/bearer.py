@@ -393,7 +393,7 @@ async def resolve_bearer_auth_context(
         ),
     )
     token.mark_used(used_at=now)
-    await session.flush([token])
+    await session.flush()
     await _increment_token_usage_stats(
         session,
         token_id=token.id,
