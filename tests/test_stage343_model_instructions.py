@@ -15,14 +15,15 @@ REQUIRED = (
     "gpt-6-astra",
     "одновременно",
     "дождаться обоих",
-    "2 валидных",
-    "3 infrastructure attempts",
+    "У Astra и Opus отдельные бюджеты: 2 валидных запуска на каждый гейт у каждого и не более 3 infrastructure attempts у каждого.",
+    "Если любая сторона не дала валидного ответа после трёх неуспешных попыток, гейт blocked и push запрещён.",
     "astra-<gate>-attempt-N-of-3.result.json",
     "validate_review_result.py --plain",
-    "-i",
+    "Astra получает скриншоты флагом `-i` и даёт решающее визуальное ревью.",
     "Opus `[]` не засчитывается как визуальная проверка",
+    "Без валидного визуального вердикта Astra гейт blocked.",
     "Codex CLI ≥ 0.155",
-    "Spark и тестами",
+    "после этого push разрешён при закрытых critical/high. Это не замена неуспешному сильному гейту без валидного verdict.",
 )
 
 
@@ -59,3 +60,18 @@ def test_contract_guard_detects_each_missing_rule(path: Path, broken_part: str) 
 def test_contract_guard_detects_old_slug(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     assert "старый слаг gpt-5.6" in check_contract(text + "\ngpt-5.6-sol\n")
+
+
+@pytest.mark.parametrize("path", FILES)
+@pytest.mark.parametrize(
+    ("old", "replacement"),
+    [
+        ("У Astra и Opus отдельные бюджеты: 2 валидных запуска на каждый гейт у каждого и не более 3 infrastructure attempts у каждого.", "У Astra и Opus общий бюджет: 2 валидных запуска и 3 infrastructure attempts."),
+        ("Если любая сторона не дала валидного ответа после трёх неуспешных попыток, гейт blocked и push запрещён.", "Если любая сторона не дала ответа, push разрешён после записи rationale."),
+        ("Без валидного визуального вердикта Astra гейт blocked.", "Без валидного визуального вердикта Astra можно принять текстовый verdict Opus."),
+    ],
+)
+def test_contract_guard_rejects_semantic_regression(path: Path, old: str, replacement: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    assert old in text
+    assert old in check_contract(text.replace(old, replacement, 1))
