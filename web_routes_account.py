@@ -49,6 +49,7 @@ from storage_models import (
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY, VETMANAGER_AUTH_MODE_USER_TOKEN
 from vetmanager_connection_service import (
     INTEGRATION_HEALTH_ACTIVE,
+    INTEGRATION_HEALTH_UNKNOWN,
     save_domain_api_key_connection,
     save_user_login_password_connection,
 )
@@ -65,6 +66,11 @@ INTEGRATION_SAVED_MESSAGE = (
     "Интеграция Vetmanager сохранена. Следующий шаг — выпустите Bearer token."
 )
 INTEGRATION_REAUTH_MESSAGE = "Повторная авторизация выполнена, user token обновлён."
+_HEALTH_AFTER_SAVE = (INTEGRATION_HEALTH_ACTIVE, "Integration is active.")
+_HEALTH_AFTER_FAILED_SUBMIT = (
+    INTEGRATION_HEALTH_UNKNOWN,
+    "Сохранённое подключение не проверялось после отправки формы. Обновите страницу для проверки.",
+)
 
 
 def _integration_error_text(exc: Exception) -> str:
@@ -334,6 +340,7 @@ def register_account_routes(
                 account_id,
                 status_code=403,
                 integration_error=str(exc),
+                health_override=_HEALTH_AFTER_FAILED_SUBMIT,
             )
         domain = form.get("domain", "")
         vm_login = form.get("vm_login", "")
@@ -392,6 +399,7 @@ def register_account_routes(
                 account_id,
                 status_code=400,
                 integration_error=_integration_error_text(exc),
+                health_override=_HEALTH_AFTER_FAILED_SUBMIT,
                 form_auth_mode=auth_mode,
                 form_domain=domain,
             )
@@ -406,6 +414,7 @@ def register_account_routes(
             request,
             account_id,
             integration_success=INTEGRATION_SAVED_MESSAGE,
+            health_override=_HEALTH_AFTER_SAVE,
         )
 
     @observed_route(mcp, "/account/integration/reauth", methods=["POST"], include_in_schema=False)
@@ -425,6 +434,7 @@ def register_account_routes(
                 account_id,
                 status_code=403,
                 integration_error=str(exc),
+                health_override=_HEALTH_AFTER_FAILED_SUBMIT,
             )
         auth_mode = form.get("auth_mode", VETMANAGER_AUTH_MODE_DOMAIN_API_KEY).strip()
         domain = form.get("domain", "")
@@ -474,6 +484,7 @@ def register_account_routes(
                 account_id,
                 status_code=400,
                 integration_error=_integration_error_text(exc),
+                health_override=_HEALTH_AFTER_FAILED_SUBMIT,
                 form_auth_mode=auth_mode,
                 form_domain=domain,
             )
@@ -482,6 +493,7 @@ def register_account_routes(
             request,
             account_id,
             integration_success=INTEGRATION_REAUTH_MESSAGE,
+            health_override=_HEALTH_AFTER_SAVE,
         )
 
     @observed_route(mcp, "/account/tokens", methods=["POST"], include_in_schema=False)

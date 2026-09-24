@@ -721,7 +721,13 @@ async def test_account_integration_form_exchanges_login_password_into_user_token
 @pytest.mark.asyncio
 @respx.mock
 @pytest.mark.security
-async def test_account_integration_form_shows_safe_error_for_failed_login_password_exchange(tmp_path: Path, monkeypatch):
+@pytest.mark.parametrize("token_status, expected_text", [
+    (401, "Vetmanager не принял логин или пароль"),
+    (302, "Проверьте поддомен клиники"),
+])
+async def test_account_integration_form_shows_safe_error_for_failed_login_password_exchange(
+    tmp_path: Path, monkeypatch, token_status: int, expected_text: str,
+):
     engine = await _prepare_web_db(tmp_path, monkeypatch)
     monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
     async with storage.get_session_factory()() as session:
@@ -734,8 +740,12 @@ async def test_account_integration_form_shows_safe_error_for_failed_login_passwo
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-user-bad").mock(
         return_value=httpx.Response(200, json={"data": {"url": "https://clinic-user-bad.vetmanager.cloud"}})
     )
-    respx.post("https://clinic-user-bad.vetmanager.cloud/token_auth.php").mock(
-        return_value=httpx.Response(401, json={"error": "unauthorized"})
+    token_route = respx.post("https://clinic-user-bad.vetmanager.cloud/token_auth.php").mock(
+        return_value=httpx.Response(
+            token_status,
+            json={"error": "unauthorized"} if token_status == 401 else None,
+            headers={"Location": "https://unsafe.example/secret"} if token_status == 302 else None,
+        )
     )
 
     app = mcp.http_app(path="/mcp", transport="streamable-http")
@@ -764,7 +774,9 @@ async def test_account_integration_form_shows_safe_error_for_failed_login_passwo
         )
 
     assert response.status_code == 400
-    assert "Vetmanager не принял логин или пароль" in response.text
+    assert expected_text in response.text
+    assert token_route.call_count == 1
+    assert "unsafe.example" not in response.text
     assert "doctor" not in response.text
     assert "bad-password" not in response.text
 
@@ -773,6 +785,66 @@ async def test_account_integration_form_shows_safe_error_for_failed_login_passwo
 
     assert stored is None
 
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_failed_replacement_keeps_existing_connection_without_extra_probe(tmp_path: Path, monkeypatch):
+    engine = await _prepare_web_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("STORAGE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY)
+    async with storage.get_session_factory()() as session:
+        account = await register_account(
+            session, email="existing-connection@example.com", password="Integration-Pass-123",
+        )
+        old = VetmanagerConnection(
+            account_id=account.id, auth_mode="domain_api_key", status="active", domain="old-clinic",
+        )
+        old.set_credentials(
+            {"domain": "old-clinic", "api_key": "old-key"}, encryption_key=TEST_ENCRYPTION_KEY,
+        )
+        session.add(old)
+        await session.commit()
+
+    respx.get("https://billing-api.vetmanager.cloud/host/old-clinic").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://old-clinic.vetmanager.cloud"}})
+    )
+    old_probe = respx.get("https://old-clinic.vetmanager.cloud/rest/api/client").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    respx.get("https://billing-api.vetmanager.cloud/host/bad-clinic").mock(
+        return_value=httpx.Response(200, json={"data": {"url": "https://bad-clinic.vetmanager.cloud"}})
+    )
+    respx.post("https://bad-clinic.vetmanager.cloud/token_auth.php").mock(
+        return_value=httpx.Response(401, json={"error": "unauthorized"})
+    )
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver", follow_redirects=True,
+    ) as client:
+        await _post_with_csrf(
+            client, "/login",
+            data={"email": "existing-connection@example.com", "password": "Integration-Pass-123"},
+        )
+        before = old_probe.call_count
+        failed = await _post_with_csrf(
+            client, "/account/integration",
+            data={"auth_mode": "user_token", "domain": "bad-clinic", "vm_login": "doctor", "vm_password": "bad"},
+            page_path="/account",
+        )
+        after_failed = old_probe.call_count
+        refreshed = await client.get("/account")
+
+    assert failed.status_code == 400
+    assert "Vetmanager не принял логин или пароль" in failed.text
+    assert "Сохранённое подключение не проверялось" in failed.text
+    assert after_failed - before == 1  # CSRF page only; no post-submit probe.
+    assert old_probe.call_count == after_failed + 1
+    assert "<strong>Health:</strong> <code>active</code>" in refreshed.text
+    async with storage.get_session_factory()() as session:
+        stored = await session.get(VetmanagerConnection, old.id)
+    assert stored is not None and stored.status == "active"
     await engine.dispose()
     storage.reset_storage_state()
 

@@ -40,7 +40,6 @@ from token_cleanup import scan_token_expiry_warnings, sync_expired_tokens
 from tool_access_registry import PRESET_REPORT_AI, infer_token_preset
 from vetmanager_auth import VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
 from vetmanager_connection_service import (
-    INTEGRATION_HEALTH_ACTIVE,
     INTEGRATION_HEALTH_UNKNOWN,
     evaluate_connection_health,
 )
@@ -520,6 +519,7 @@ async def _render_account_dashboard_response(
     status_code: int = 200,
     integration_error: str | None = None,
     integration_success: str | None = None,
+    health_override: tuple[str, str] | None = None,
     form_auth_mode: str = VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
     form_domain: str = "",
     form_vm_login: str = "",
@@ -548,15 +548,7 @@ async def _render_account_dashboard_response(
         integration_health_reason,
         bearer_tokens,
         oauth_grants,
-    ) = await _load_account_dashboard(
-        account_id,
-        health_override=(
-            (INTEGRATION_HEALTH_ACTIVE, "Integration is active.")
-            if integration_success is not None else
-            (INTEGRATION_HEALTH_UNKNOWN, "Connection was not checked after this form submission.")
-            if integration_error is not None else None
-        ),
-    )
+    ) = await _load_account_dashboard(account_id, health_override=health_override)
     if account is None:
         response = _redirect_response(request, url="/login", status_code=303)
         clear_account_session_cookie(response)

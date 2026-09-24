@@ -814,7 +814,7 @@ async def evaluate_connection_health(
         )
         return (
             INTEGRATION_HEALTH_UNKNOWN,
-            "Vetmanager redirected the check; verify the clinic address."
+            "Vetmanager перенаправил проверку; проверьте поддомен клиники в адресе."
             if isinstance(exc, VetmanagerError) and getattr(exc, "status_code", None) in range(300, 400)
             else "Integration health could not be verified right now. Try again later.",
         )

@@ -39,7 +39,7 @@ async def test_saved_connection_redirect_shows_address_hint(monkeypatch):
     monkeypatch.setattr(service, "validate_domain_api_key_connection", redirected)
     status, reason = await service.evaluate_connection_health(connection, encryption_key=key)
     assert status == "unknown"
-    assert "clinic address" in reason
+    assert "поддомен клиники" in reason
 
 
 @pytest.mark.asyncio
