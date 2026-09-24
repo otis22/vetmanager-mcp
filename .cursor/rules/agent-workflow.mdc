@@ -86,20 +86,17 @@ Architecture Critique gate:
 
 ## 3.1. Ревью сторонней моделью и бюджет
 
-`Ревью сторонней моделью` означает:
-
-- если текущий агент работает в Claude, ревью делает Codex `gpt-5.6-sol`
-- если текущий агент работает в Codex, ревью делает Claude Opus
+`Ревью сторонней моделью` следует постоянной схеме ниже: сильный гейт проводит пара Astra и Opus одновременно, включая задачи Codex и Claude.
 
 Бюджеты:
 
 - Spark-review: максимум 3 запуска перед каждым видом review gate; Spark-бюджет отдельный от бюджета сильной модели
-- `gpt-5.6-luna` как обычный scout/subagent для вспомогательных задач можно запускать без лимита; лимит 3 относится только к Spark-review перед конкретным review gate
-- PRD-review сторонней моделью: максимум 2 валидных запуска на задачу; валиден только разбираемый verdict (findings или явный пустой список)
+- `gpt-6-luna` как обычный scout/subagent для вспомогательных задач можно запускать без лимита; лимит 3 относится только к Spark-review перед конкретным review gate
+- PRD-review сторонней моделью: у Astra и Opus отдельно максимум 2 валидных запуска на задачу; валиден только разбираемый verdict (findings или явный пустой список)
 - Architecture Critique, засчитанный как strong PRD-review, расходует тот же бюджет PRD-review сторонней моделью; не добавлять отдельный третий запуск strong-модели только из-за нового gate.
-- code/diff review сторонней моделью: максимум 2 валидных запуска на задачу; валиден только разбираемый verdict (findings или явный пустой список)
+- code/diff review сторонней моделью: у Astra и Opus отдельно максимум 2 валидных запуска на задачу; валиден только разбираемый verdict (findings или явный пустой список)
 - бюджеты раздельные и не расходуют друг друга
-- «Spark» — историческое имя scout-роли, модель — `gpt-5.6-luna`; голый `gpt-5.6` — несуществующий слаг, использовать только `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna`; `gpt-5.3-codex-spark`, `gpt-5.4`, `gpt-5.4-mini` сняты с аккаунта
+- «Spark» — историческое имя scout-роли, модель — `gpt-6-luna`; актуальные слаги перечислены в постоянной схеме ниже
 - Spark не принимает финальных решений: его вывод является candidate-only и обязан пройти проверку на адекватность
 - принимать после Spark можно только адекватные, важные и проверяемые findings; speculative/low-impact/неподтверждённые замечания отклоняются
 - Spark-review должен иметь узкий prompt: что ревьювить (PRD, staged/uncommitted diff, committed diff), какие severity принимать, какой формат ответа нужен; Spark не должен сам менять файлы
@@ -107,10 +104,21 @@ Architecture Critique gate:
 Правильный shell-вызов Spark-review из Codex runtime:
 
 ```bash
-timeout 1200 codex exec -m gpt-5.6-luna -s read-only -C "$PWD" -
+timeout 1200 codex exec -m gpt-6-luna -s danger-full-access -C "$PWD" -
 ```
 
-Если read-only sandbox падает до чтения файлов из-за runtime/sandbox ошибки (например `bwrap`/user namespace failure), это не считается finding проекта. Нужно остановить зависший запуск, повторить тот же `gpt-5.6-luna` один раз с `-s danger-full-access` и prompt: `Review only. Do not edit files. Do not run write commands.` Fallback на другую модель разрешён только при явной model/provider failure, а не при sandbox/runtime failure. Результат Spark-review фиксируется в AssumptionLog вместе с принятыми/отклонёнными findings или `[]`.
+Здесь `read-only` sandbox не читает репозиторий из-за bwrap failure; начинать сразу с `danger-full-access` и prompt: `Review only. Do not edit files. Do not run write commands.` Fallback на другую модель разрешён только при явной model/provider failure. Prompt требует `files_read`; `[]` без прочитанных файлов невалиден. Результат Spark-review фиксируется в AssumptionLog вместе с принятыми/отклонёнными findings или `[]`.
+
+<!-- stage-343-model-contract:start -->
+Постоянная схема моделей (решение владельца 24.09.2026): исполнитель этапа Codex `gpt-6-sol`; Spark/scout `gpt-6-luna` (candidate-only); сильное ревью — `gpt-6-astra` и Claude Opus. Требуется Codex CLI ≥ 0.155. Слаги семейства 5.6 устарели; Terra в GPT-6 нет.
+
+- Перед каждым сильным PRD, Architecture Critique, визуальным и committed diff гейтом выполнить Spark-review; затем запустить Astra и Opus одновременно и дождаться обоих. Spark-бюджет — не более 3 запусков перед конкретным гейтом; scout вне гейта не тратит его бюджет.
+- У Astra и Opus отдельные бюджеты: 2 валидных запуска на каждый гейт у каждого и не более 3 infrastructure attempts у каждого. Валидный запуск — разбираемый verdict `findings` (включая `[]`). Невалидный ответ не тратит валидный слот. Если любая сторона не дала валидного ответа после трёх неуспешных попыток, гейт blocked и push запрещён. Оба результата обязательны даже на визуальном гейте.
+- Astra: `timeout 1800 codex exec -m gpt-6-astra -s danger-full-access -C "$PWD" --output-schema <findings-schema> -o <evidence>/astra-<gate>-attempt-N-of-3.result.json -` с review-only prompt. Сохранять prompt, result, stderr и metadata: модель, объект и reviewed SHA для diff, версия CLI, время начала/конца, exit и validator exit. Проверять результат командой `scripts/validate_review_result.py --plain` с stdin из result. Для Claude Opus использовать `scripts/run_claude_review.sh` и прежнюю проверку envelope через `scripts/validate_review_result.py`.
+- На визуальном гейте Astra получает скриншоты флагом `-i` и даёт решающее визуальное ревью. Opus выполняет текстовую проверку: штатный runner отключает инструменты и не передаёт изображения. Opus `[]` не засчитывается как визуальная проверка. Без валидного визуального вердикта Astra гейт blocked.
+- Свести findings в `AssumptionLog.md` по гейту: что нашла Astra, что Opus, что оба, что принято/отклонено и почему; приложить пути evidence и время. Неустранённые critical/high блокируют выпуск. Если после исчерпания бюджетов сильного ревью внесена правка в код, проверить её Spark и тестами и отметить отдельной строкой в `AssumptionLog.md`; это не замена неуспешному сильному гейту.
+- Если исполнитель — Claude-агент, его сильное ревью делает Codex `gpt-6-astra`; на перечисленных гейтах также работает пара Astra и Opus.
+<!-- stage-343-model-contract:end -->
 
 Claude Opus review из Codex runtime:
 

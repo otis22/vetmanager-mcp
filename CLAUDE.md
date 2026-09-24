@@ -50,19 +50,16 @@ Workflow адаптирован из `.cursor/rules/agent-workflow.mdc` с до�
 
 ## 3.1. Ревью сторонней моделью и бюджет
 
-`Ревью сторонней моделью` означает:
-
-- если текущий агент работает в Claude, ревью делает Codex `gpt-5.6-sol`;
-- если текущий агент работает в Codex, ревью делает Claude Opus.
+`Ревью сторонней моделью` означает одновременное ревью Astra и Opus по постоянной схеме ниже. Для Claude-агента Codex-ревьюер — `gpt-6-astra`.
 
 Бюджеты:
 
-- PRD-review сторонней моделью: максимум 2 валидных запуска на задачу; валиден только разбираемый verdict (findings или явный пустой список);
-- code/diff review сторонней моделью: максимум 2 валидных запуска на задачу; валиден только разбираемый verdict (findings или явный пустой список);
+- PRD-review сторонней моделью: у Astra и Opus отдельно максимум 2 валидных запуска на задачу; валиден только разбираемый verdict (findings или явный пустой список);
+- code/diff review сторонней моделью: у Astra и Opus отдельно максимум 2 валидных запуска на задачу; валиден только разбираемый verdict (findings или явный пустой список);
 - бюджеты раздельные и не расходуют друг друга;
-- `gpt-5.6-luna` (scout-роль, историческое имя «Spark») можно запускать как scout/subagent безлимитно; Spark не принимает финальных решений и не расходует бюджет.
-- Слаги Codex: `gpt-5.6-sol` (сильная), `gpt-5.6-terra` (средняя/fallback), `gpt-5.6-luna` (scout). Голый `gpt-5.6` не существует; `gpt-5.5` устарела, `gpt-5.3-codex-spark`/`gpt-5.4*` сняты с аккаунта.
-- Успех strong review: JSON-конверт Claude разобран, `is_error=false`, непустое поле `.result` разбирается по required findings schema. Валидатор вызывать напрямую как исполняемый `scripts/validate_review_result.py`, не через имя интерпретатора; CI проверяет этот вызов. Сбой: конверт не JSON, `is_error=true`, `.result` пусто/не разбирается/не соответствует schema либо provider/model error. `stop_reason` не участвует: при `--json-schema` structured result штатно доставляется tool call. Infrastructure failure не расходует слот, фиксируется отдельной строкой в `AssumptionLog.md` как неуспешная попытка `N/3`; для одного strong review gate допускается максимум три такие попытки всего (от `1/3` до `3/3`), смена prompt/schema счётчик не сбрасывает. После третьей неуспешной попытки gate фиксируется как blocked и push запрещён до пользовательского решения или восстановления провайдера; Spark имеет отдельный лимит и в этот счётчик не входит.
+- `gpt-6-luna` (scout-роль, историческое имя «Spark») можно запускать для вспомогательных задач без лимита; Spark не принимает финальных решений и не расходует бюджет сильного ревью. Перед конкретным гейтом лимит Spark — 3 запуска.
+- Слаги Codex: `gpt-6-sol` (исполнитель), `gpt-6-astra` (сильное ревью), `gpt-6-luna` (scout). Требуется CLI ≥ 0.155.
+- Успех Claude review: JSON-конверт разобран, `is_error=false`, непустое поле `.result` соответствует findings schema. Astra отдаёт plain JSON той же schema и проверяется `scripts/validate_review_result.py --plain`. Валидатор вызывать напрямую как исполняемый файл. Для Claude `stop_reason` не участвует: при `--json-schema` structured result штатно доставляется tool call. Infrastructure failure любой модели не расходует её валидный слот и фиксируется отдельной строкой в `AssumptionLog.md` как `N/3`; каждой модели на strong gate допускается три неуспешные попытки, смена prompt/schema счётчик не сбрасывает. После третьей неуспешной попытки gate blocked и push запрещён; Spark имеет отдельный лимит.
 
 Каждую попытку Claude strong review запускать через
 `scripts/run_claude_review.sh (--range <range> | --file <review-file>) --attempt <N/3>`.
@@ -74,6 +71,17 @@ CLI version, start и duration. В `AssumptionLog.md` фиксировать с�
 `thinking_tokens`, `len(result)` даже при пустом stdout; запись только «без
 output» запрещена. Runner валидирует сохранённый envelope и возвращает non-zero
 при invalid verdict.
+
+<!-- stage-343-model-contract:start -->
+Постоянная схема моделей (решение владельца 24.09.2026): исполнитель этапа Codex `gpt-6-sol`; Spark/scout `gpt-6-luna` (candidate-only); сильное ревью — `gpt-6-astra` и Claude Opus. Требуется Codex CLI ≥ 0.155. Слаги семейства 5.6 устарели; Terra в GPT-6 нет.
+
+- Перед каждым сильным PRD, Architecture Critique, визуальным и committed diff гейтом выполнить Spark-review; затем запустить Astra и Opus одновременно и дождаться обоих. Spark-бюджет — не более 3 запусков перед конкретным гейтом; scout вне гейта не тратит его бюджет.
+- У Astra и Opus отдельные бюджеты: 2 валидных запуска на каждый гейт у каждого и не более 3 infrastructure attempts у каждого. Валидный запуск — разбираемый verdict `findings` (включая `[]`). Невалидный ответ не тратит валидный слот. Если любая сторона не дала валидного ответа после трёх неуспешных попыток, гейт blocked и push запрещён. Оба результата обязательны даже на визуальном гейте.
+- Astra: `timeout 1800 codex exec -m gpt-6-astra -s danger-full-access -C "$PWD" --output-schema <findings-schema> -o <evidence>/astra-<gate>-attempt-N-of-3.result.json -` с review-only prompt. Сохранять prompt, result, stderr и metadata: модель, объект и reviewed SHA для diff, версия CLI, время начала/конца, exit и validator exit. Проверять результат командой `scripts/validate_review_result.py --plain` с stdin из result. Для Claude Opus использовать `scripts/run_claude_review.sh` и прежнюю проверку envelope через `scripts/validate_review_result.py`.
+- На визуальном гейте Astra получает скриншоты флагом `-i` и даёт решающее визуальное ревью. Opus выполняет текстовую проверку: штатный runner отключает инструменты и не передаёт изображения. Opus `[]` не засчитывается как визуальная проверка. Без валидного визуального вердикта Astra гейт blocked.
+- Свести findings в `AssumptionLog.md` по гейту: что нашла Astra, что Opus, что оба, что принято/отклонено и почему; приложить пути evidence и время. Неустранённые critical/high блокируют выпуск. Если после исчерпания бюджетов сильного ревью внесена правка в код, проверить её Spark и тестами и отметить отдельной строкой в `AssumptionLog.md`; это не замена неуспешному сильному гейту.
+- Если исполнитель — Claude-агент, его сильное ревью делает Codex `gpt-6-astra`; на перечисленных гейтах также работает пара Astra и Opus.
+<!-- stage-343-model-contract:end -->
 
 В пользовательском тексте и чеклистах используй формулировку **«ревью сторонней моделью»**, а не имя конкретного CLI, кроме Evidence/Notes.
 
@@ -186,7 +194,7 @@ output» запрещена. Runner валидирует сохранённый 
 | 2 | PRD создан / обновлён | ✓/✗ | {путь к файлу `PRD/этап-N-*.md`} |
 | 3 | Связанные artifacts изучены | ✓/✗ | {api-research-notes §X, technical requirements §Y, OpenAPI/API reference, другие источники} |
 | 4 | PRD-review выполнен | ✓/✗ | {N findings; N адекватных; повтор после правок если был} |
-| 5 | PRD-review сторонней моделью выполнен | ✓/✗/N-A | {модель, запуск 1/2 или 2/2, findings, rationale если budget exhausted/skipped} |
+| 5 | PRD-review сторонней моделью выполнен | ✓/✗/N-A | {Astra и Opus: отдельные запуски 1/2 или 2/2, findings и сведение, rationale если budget exhausted/skipped} |
 | 6 | Оценка PRD на простоту | ✓/✗/N-A | {triggers проверены; результат; повторные PRD-review gates после правок} |
 | 7 | Тесты написаны (test-first) | ✓/✗ | {файлы tests/test_*.py, количество новых тестов} |
 | 8 | Red → Green реализация | ✓/✗ | {коротко что реализовано} |
@@ -194,7 +202,7 @@ output» запрещена. Runner валидирует сохранённый 
 | 10 | Аудит изменений выполнен | ✓/✗ | {legacy patterns, duplication, field-name contract} |
 | 11 | Повторный прогон после аудита | ✓/✗/N-A | {N passed; или N-A если аудит не потребовал изменений} |
 | 12 | Commit выполнен | ✓/✗ | {commit SHA} |
-| 13 | Ревью сторонней моделью на committed diff выполнено | ✓/✗/N-A | {модель, запуск 1/2 или 2/2, findings, rationale если budget exhausted/skipped} |
+| 13 | Ревью сторонней моделью на committed diff выполнено | ✓/✗/N-A | {Astra и Opus: отдельные запуски 1/2 или 2/2, findings и сведение, rationale если budget exhausted/skipped} |
 | 14 | Адекватные findings устранены | ✓/✗/N-A | {commits/изменения; либо N-A если 0 адекватных} |
 | 15 | Push выполнен | ✓/✗ | {remote/branch, commit SHA} |
 | 16 | Этот чеклист заполнен | ✓ | показан пользователю после push |
@@ -203,7 +211,7 @@ output» запрещена. Runner валидирует сохранённый 
 - **Файлов изменено**: X
 - **LOC diff**: +Y / -Z
 - **Тесты**: N passed
-- **Ревью сторонней моделью**: PRD launches X/2, code launches Y/2; blocker=0, high=0 after fixes
+- **Ревью сторонней моделью**: PRD Astra X/2, Opus Y/2; code Astra Z/2, Opus W/2; blocker=0, high=0 after fixes
 - **PRD**: `PRD/этап-N-*.md`
 - **Commit message draft**: {одна-две строки}
 
@@ -231,10 +239,9 @@ Workflow завершён?
 
 Обязательный code/diff gate **после commit и перед push**. Выполняется сторонней моделью на committed diff.
 
-- Если агент работает в Claude, ревью делает Codex `gpt-5.6-sol`.
-- Если агент работает в Codex, ревью делает Claude Opus.
-- Бюджет: максимум 2 валидных запуска на code/diff review; валиден только разбираемый verdict (findings или явный пустой список).
-- `gpt-5.6-luna` можно запускать как scout/subagent безлимитно; он не расходует бюджет и не принимает финальных решений.
+- Для любого агента сильное code/diff review делают одновременно Codex `gpt-6-astra` и Claude Opus; нужно дождаться обоих.
+- Бюджет: у каждого ревьюера максимум 2 валидных запуска на code/diff review и до 3 infrastructure attempts; валиден только разбираемый verdict (findings или явный пустой список).
+- `gpt-6-luna` остаётся candidate-only scout; перед этим гейтом максимум 3 запуска Spark.
 
 ### 5.1 Порядок вызова
 
@@ -321,13 +328,12 @@ Workflow завершён?
 
 ### 5.4 Лимит итераций ревью
 
-Максимум **2 валидных запуска ревью сторонней моделью на code/diff review одной задачи** (1 первичный + 1 повторный). Пустой/невалидный output или provider/runtime error сильной модели не расходует слот, но фиксируется в `AssumptionLog.md` как неуспешная попытка `N/3`; для одного strong review gate допускается максимум три такие попытки всего независимо от смены prompt/schema. Это отдельный бюджет от PRD-review сторонней моделью и Spark.
+Максимум **2 валидных запуска каждого из Astra и Opus на code/diff review одной задачи** (1 первичный + 1 повторный). Пустой/невалидный output или provider/runtime error соответствующей модели не расходует её слот, но фиксируется в `AssumptionLog.md` как неуспешная попытка `N/3`; каждому ревьюеру на один strong review gate допускается максимум три такие попытки независимо от смены prompt/schema. Это отдельный бюджет от PRD-review и Spark. Если любой ревьюер исчерпал infrastructure attempts без валидного verdict, гейт blocked и push запрещён.
 
-Если после 2 итераций всё ещё остаются адекватные critical:
-- **STOP**: не запускать 3-й валидный review
-- Задокументировать оставшиеся findings в AssumptionLog с пометкой "deferred after 2 external-review iterations"
-- Решить: либо вернуться к задаче в отдельном этапе, либо закоммитить с явным acknowledgement технического долга
-- Спросить пользователя если непонятно как поступить
+Если после 2 валидных итераций у любого ревьюера остаются адекватные critical/high:
+- **STOP**: не запускать 3-й валидный review и не делать push до устранения;
+- Задокументировать оставшиеся findings в AssumptionLog; medium можно отложить только с явным rationale;
+- Если после исчерпания бюджетов сильного ревью код исправлен, проверить правку Spark и тестами и добавить отдельную строку в AssumptionLog.
 
 Цель лимита: избежать infinite loop, когда каждая итерация сторонней модели генерирует новые findings вместо подтверждения чистоты кода.
 

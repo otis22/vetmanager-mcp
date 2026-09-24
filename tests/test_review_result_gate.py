@@ -47,3 +47,27 @@ def test_review_result_gate_documented_command_is_executable() -> None:
 
     assert completed.returncode == 0
     assert json.loads(completed.stdout) == {"findings": []}
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_code"),
+    [
+        ({"findings": []}, 0),
+        ({"findings": [{"severity": "medium", "file": "AGENTS.md", "line": 1, "reason": "drift"}]}, 0),
+        ({"findings": [{"severity": "medium", "file": "AGENTS.md", "line": "1", "reason": "drift"}]}, 2),
+        ({"findings": "bad"}, 2),
+        ({"result": "{}"}, 2),
+    ],
+)
+def test_plain_astra_result_gate(payload: dict, expected_code: int) -> None:
+    completed = subprocess.run(
+        [str(SCRIPT), "--plain"], input=json.dumps(payload), text=True, capture_output=True,
+    )
+    assert completed.returncode == expected_code
+    if expected_code == 0:
+        assert json.loads(completed.stdout) == payload
+
+
+def test_plain_astra_result_rejects_malformed_json() -> None:
+    completed = subprocess.run([str(SCRIPT), "--plain"], input="{", text=True, capture_output=True)
+    assert completed.returncode == 2

@@ -1,0 +1,61 @@
+"""The three active agent instructions must keep the same review contract."""
+
+from pathlib import Path
+import re
+
+import pytest
+
+
+FILES = (Path("AGENTS.md"), Path("CLAUDE.md"), Path(".cursor/rules/agent-workflow.mdc"))
+START = "<!-- stage-343-model-contract:start -->"
+END = "<!-- stage-343-model-contract:end -->"
+REQUIRED = (
+    "gpt-6-sol",
+    "gpt-6-luna",
+    "gpt-6-astra",
+    "одновременно",
+    "дождаться обоих",
+    "2 валидных",
+    "3 infrastructure attempts",
+    "astra-<gate>-attempt-N-of-3.result.json",
+    "validate_review_result.py --plain",
+    "-i",
+    "Opus `[]` не засчитывается как визуальная проверка",
+    "Codex CLI ≥ 0.155",
+    "Spark и тестами",
+)
+
+
+def check_contract(text: str) -> list[str]:
+    block = text.split(START, 1)[1].split(END, 1)[0] if START in text and END in text else ""
+    missing = [part for part in REQUIRED if part not in block]
+    if re.search(r"gpt-5\.6(?:-[a-z]+)?", text):
+        missing.append("старый слаг gpt-5.6")
+    return missing
+
+
+@pytest.mark.parametrize("path", FILES)
+def test_current_model_contract(path: Path) -> None:
+    assert not (missing := check_contract(path.read_text(encoding="utf-8"))), (path, missing)
+
+
+def test_model_contract_blocks_are_identical() -> None:
+    blocks = [path.read_text(encoding="utf-8").split(START, 1)[1].split(END, 1)[0] for path in FILES]
+    assert blocks[0] == blocks[1] == blocks[2]
+
+
+@pytest.mark.parametrize("broken_part", REQUIRED)
+@pytest.mark.parametrize("path", FILES)
+def test_contract_guard_detects_each_missing_rule(path: Path, broken_part: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    prefix, rest = text.split(START, 1)
+    block, suffix = rest.split(END, 1)
+    assert broken_part in block
+    broken = prefix + START + block.replace(broken_part, "") + END + suffix
+    assert broken_part in check_contract(broken)
+
+
+@pytest.mark.parametrize("path", FILES)
+def test_contract_guard_detects_old_slug(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    assert "старый слаг gpt-5.6" in check_contract(text + "\ngpt-5.6-sol\n")

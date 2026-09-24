@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Validate a Claude structured-review envelope and print its verdict."""
+"""Validate a Claude envelope or a plain Astra structured-review result."""
 
 from __future__ import annotations
 
 import json
+import argparse
 import sys
 from typing import Any
 
@@ -25,6 +26,16 @@ def _is_finding(value: Any) -> bool:
     )
 
 
+def validate_review(review: Any) -> dict[str, Any]:
+    if not isinstance(review, dict) or not isinstance(review.get("findings"), list):
+        raise ValueError("review result does not match findings schema")
+    if not all(_is_finding(finding) for finding in review["findings"]):
+        raise ValueError("review result does not match findings schema")
+    if set(review) != {"findings"}:
+        raise ValueError("review result does not match findings schema")
+    return review
+
+
 def validate_envelope(envelope: Any) -> dict[str, Any]:
     if not isinstance(envelope, dict) or envelope.get("is_error") is not False:
         raise ValueError("invalid Claude envelope")
@@ -35,22 +46,19 @@ def validate_envelope(envelope: Any) -> dict[str, Any]:
         review = json.loads(result)
     except json.JSONDecodeError as exc:
         raise ValueError("Claude result is not JSON") from exc
-    if not isinstance(review, dict) or not isinstance(review.get("findings"), list):
-        raise ValueError("review result does not match findings schema")
-    if not all(_is_finding(finding) for finding in review["findings"]):
-        raise ValueError("review result does not match findings schema")
-    if set(review) != {"findings"}:
-        raise ValueError("review result does not match findings schema")
-    return review
+    return validate_review(review)
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plain", action="store_true", help="validate a plain Astra findings JSON result")
+    args = parser.parse_args()
     try:
-        envelope = json.load(sys.stdin)
+        payload = json.load(sys.stdin)
     except json.JSONDecodeError:
-        return _invalid("Claude envelope is not JSON")
+        return _invalid("review input is not JSON")
     try:
-        review = validate_envelope(envelope)
+        review = validate_review(payload) if args.plain else validate_envelope(payload)
     except ValueError as exc:
         return _invalid(str(exc))
     json.dump(review, sys.stdout, ensure_ascii=False)
