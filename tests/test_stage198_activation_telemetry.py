@@ -237,9 +237,7 @@ async def test_stage198_reauth_does_not_persist_activation_events(
     respx.get("https://clinic-198-reauth.vetmanager.cloud/rest/api/client").mock(
         side_effect=[
             httpx.Response(200, json={"data": []}),
-            httpx.Response(200, json={"data": []}),
             httpx.Response(401, json={"error": "unauthorized"}),
-            httpx.Response(200, json={"data": []}),
         ]
     )
 
