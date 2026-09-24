@@ -2,6 +2,7 @@
 
 import logging
 import re
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -11,6 +12,13 @@ from filters import FILTER_FIELDS_BY_ENTITY, SortPropertyValidationError, valida
 from server import mcp
 from structured_logging import JsonLogFormatter
 from tests.runtime_factories import patch_runtime_credentials
+
+
+def test_production_sqlalchemy_installs_asyncio_dependency():
+    """The test image can supply greenlet transitively; production must request it."""
+    dockerfile = Path(__file__).resolve().parents[1] / "Dockerfile"
+    production_dependencies = dockerfile.read_text().split("FROM base AS production", 1)[0]
+    assert '"sqlalchemy[asyncio]>=2.0.0,<3"' in production_dependencies
 
 
 @pytest.mark.asyncio
