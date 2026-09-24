@@ -361,11 +361,13 @@ def test_image_review_rejects_invalid_input_before_cli(tmp_path: Path) -> None:
     _png(good)
     wrong = tmp_path / "wrong.png"
     wrong.write_bytes(b"not a png")
+    truncated = tmp_path / "truncated.png"
+    truncated.write_bytes(good.read_bytes()[:24])
     huge = tmp_path / "huge.png"
     _png(huge, padding=2 * 1024 * 1024)
     wide = tmp_path / "wide.png"
     _png(wide, width=4097)
-    for label, images in (("format", [wrong]), ("size", [huge]), ("dimensions", [wide]), ("count", [good] * 5)):
+    for label, images in (("format", [wrong]), ("truncated", [truncated]), ("size", [huge]), ("dimensions", [wide]), ("count", [good] * 5)):
         case = tmp_path / label
         case.mkdir()
         completed, evidence, logs = _run_image(case, images)

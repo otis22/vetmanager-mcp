@@ -136,6 +136,7 @@ import pathlib
 import stat
 import struct
 import sys
+import zlib
 
 text_path, output_path, manifest_path, *names = sys.argv[1:]
 content = [{"type": "text", "text": pathlib.Path(text_path).read_text(encoding="utf-8")}]
@@ -152,6 +153,27 @@ for name in names:
         width, height = struct.unpack(">II", raw[16:24])
         if not 1 <= width <= 4096 or not 1 <= height <= 4096:
             raise ValueError("PNG dimensions must be 1-4096 pixels")
+        offset = 8
+        has_idat = False
+        has_iend = False
+        while offset < len(raw):
+            if len(raw) - offset < 12:
+                raise ValueError("truncated PNG chunk")
+            length = int.from_bytes(raw[offset:offset + 4], "big")
+            end = offset + 12 + length
+            if end > len(raw):
+                raise ValueError("truncated PNG chunk")
+            kind = raw[offset + 4:offset + 8]
+            expected_crc = int.from_bytes(raw[end - 4:end], "big")
+            if zlib.crc32(raw[offset + 4:end - 4]) != expected_crc:
+                raise ValueError("invalid PNG chunk CRC")
+            has_idat |= kind == b"IDAT"
+            if kind == b"IEND":
+                has_iend = length == 0 and end == len(raw)
+                break
+            offset = end
+        if not has_idat or not has_iend:
+            raise ValueError("PNG requires IDAT and final IEND chunks")
     except (OSError, ValueError, struct.error) as exc:
         print(f"Invalid --image {name}: {exc}", file=sys.stderr)
         sys.exit(64)
