@@ -1923,11 +1923,24 @@ async def test_reauth_submit_replaces_invalid_user_token_connection(tmp_path: Pa
     respx.get("https://billing-api.vetmanager.cloud/host/clinic-rotate").mock(
         return_value=httpx.Response(200, json={"data": {"url": "https://clinic-rotate.vetmanager.cloud"}})
     )
-    respx.post("https://clinic-rotate.vetmanager.cloud/token_auth.php").mock(
-        return_value=httpx.Response(200, json={"data": {"token": "fresh-user-token"}})
-    )
+    token_attempts = 0
+
+    def _token_response(request: httpx.Request) -> httpx.Response:
+        nonlocal token_attempts
+        token_attempts += 1
+        if token_attempts == 1:
+            return httpx.Response(401, json={"error": "unauthorized"})
+        return httpx.Response(200, json={"data": {"token": "fresh-user-token"}})
+
+    respx.post("https://clinic-rotate.vetmanager.cloud/token_auth.php").mock(side_effect=_token_response)
+
+    def _validate_response(request: httpx.Request) -> httpx.Response:
+        if request.headers.get("X-USER-TOKEN") == "stale-user-token":
+            return httpx.Response(401, json={"error": "unauthorized"})
+        return httpx.Response(200, json={"data": []})
+
     validation_route = respx.get("https://clinic-rotate.vetmanager.cloud/rest/api/user").mock(
-        return_value=httpx.Response(200, json={"data": []})
+        side_effect=_validate_response
     )
 
     app = mcp.http_app(path="/mcp", transport="streamable-http")
@@ -1944,6 +1957,23 @@ async def test_reauth_submit_replaces_invalid_user_token_connection(tmp_path: Pa
             data={"email": "reauth-submit@example.com", "password": "Integration-Pass-123"},
         )
         prior_validation_calls = validation_route.call_count
+        failed = await _post_with_csrf(
+            client,
+            "/account/integration/reauth",
+            data={
+                "auth_mode": "user_token",
+                "domain": "clinic-rotate",
+                "vm_login": "doctor",
+                "vm_password": "wrong-password",
+            },
+            page_path="/account",
+        )
+        assert failed.status_code == 400
+        assert 'data-testid="integration-reauth-submit"' in failed.text
+        assert "<strong>Health:</strong> <code>unknown</code>" in failed.text
+        assert 'data-testid="token-quick-issue"' not in failed.text
+        assert "Сначала сохраните рабочую интеграцию клиники" not in failed.text
+        assert "Повторите авторизацию Vetmanager" in failed.text
         response = await _post_with_csrf(
             client,
             "/account/integration/reauth",
@@ -1960,8 +1990,8 @@ async def test_reauth_submit_replaces_invalid_user_token_connection(tmp_path: Pa
     assert "Повторная авторизация выполнена, user token обновлён." in response.text
     assert "fresh-user-token" not in response.text
     assert "new-password-123" not in response.text
-    # _post_with_csrf opens /account once before submit; the other probe is validation.
-    assert validation_route.call_count - prior_validation_calls == 2
+    # Two CSRF page loads probe the stale connection; the third call validates the fresh token.
+    assert validation_route.call_count - prior_validation_calls == 3
     assert "<strong>Health:</strong> <code>active</code>" in response.text
 
     async with storage.get_session_factory()() as session:

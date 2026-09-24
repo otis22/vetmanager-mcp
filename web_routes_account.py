@@ -483,6 +483,7 @@ def register_account_routes(
                 status_code=400,
                 integration_error=_integration_error_text(exc),
                 health_override=_HEALTH_AFTER_FAILED_SUBMIT,
+                reauth_retry_allowed=True,
                 form_auth_mode=auth_mode,
                 form_domain=domain,
             )

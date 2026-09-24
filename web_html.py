@@ -1238,6 +1238,7 @@ def render_account_page(
     oauth_grants: list[dict[str, object]],
     integration_error: str | None = None,
     integration_success: str | None = None,
+    reauth_retry_allowed: bool = False,
     form_auth_mode: str = VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
     form_domain: str = "",
     form_vm_login: str = "",
@@ -1266,6 +1267,11 @@ def render_account_page(
     domain_value = form_domain or (active_connection.domain if active_connection else "")
     show_domain_api_key_panel = selected_auth_mode == VETMANAGER_AUTH_MODE_DOMAIN_API_KEY
     show_user_token_panel = selected_auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN
+    show_reauth_retry = (
+        reauth_retry_allowed
+        and active_connection is not None
+        and active_connection.auth_mode == VETMANAGER_AUTH_MODE_USER_TOKEN
+    )
     domain_input_attrs = 'data-panel-input="true" data-required-when-active="true"'
     api_key_input_attrs = 'data-panel-input="true" data-required-when-active="true"'
     login_input_attrs = 'data-panel-input="true" data-required-when-active="true"'
@@ -1466,13 +1472,18 @@ def render_account_page(
         oauth_grants=oauth_grants,
         now=activation_now,
     )
-    page_intro_html = (
-        "<p>Свяжите кабинет с клиникой, чтобы помощник мог отвечать по её данным.</p>"
-        if activation_state == "needs_connection" else ""
-    )
-    if activation_state == "needs_connection":
+    page_intro_html = ""
+    connection_step_label = "Vetmanager подключён"
+    if show_reauth_retry:
+        page_intro_html = "<p>Проверьте логин и пароль для повторной авторизации.</p>"
+        activation_title = "Повторите авторизацию Vetmanager"
+        activation_summary = "Проверьте логин и пароль и отправьте форму ещё раз."
+        connection_step_label = "Повторная авторизация Vetmanager"
+    elif activation_state == "needs_connection":
+        page_intro_html = "<p>Свяжите кабинет с клиникой, чтобы помощник мог отвечать по её данным.</p>"
         activation_title = "Подключите Vetmanager"
         activation_summary = "Сначала сохраните рабочую интеграцию клиники."
+        connection_step_label = "Подключение Vetmanager"
     elif activation_state == "needs_token":
         activation_title = "Выберите способ подключения"
         activation_summary = "Подключите ChatGPT или выпустите Bearer-ключ для Claude, Cursor и других MCP-клиентов."
@@ -1521,7 +1532,9 @@ def render_account_page(
         optional_chatgpt = "ChatGPT — дополнительный вариант подключения, необязательный для работы через Claude или Cursor."
 
     activation_action_html = ""
-    if activation_state == "needs_connection":
+    if show_reauth_retry:
+        activation_action_html = '<a class="link activation-action" href="#integration-section">Повторить авторизацию</a>'
+    elif activation_state == "needs_connection":
         activation_action_html = '<a class="link activation-action" href="#integration-section">Перейти к подключению</a>'
     elif activation_state == "needs_token":
         activation_action_html = (
@@ -1538,7 +1551,7 @@ def render_account_page(
           <p>{escape(activation_summary)}</p>
           {activation_action_html}
           <ul>
-            {_activation_item(integration_ready, "Vetmanager подключён" if integration_ready else "Подключение Vetmanager", current=activation_state == "needs_connection")}
+            {_activation_item(integration_ready, connection_step_label, current=activation_state == "needs_connection")}
             {_activation_item(has_access, access_label, current=activation_state == "needs_token", detail=access_detail)}
             {_activation_item(has_client_usage, "Помощник сделал первый запрос" if has_client_usage else "Задайте первый вопрос", current=activation_state == "needs_client_use")}
           </ul>
@@ -1709,7 +1722,7 @@ def render_account_page(
     # Stage 196.6: re-auth is meaningless before the first save — show the
     # second submit button only when the saved user token actually went stale.
     reauth_button_html = ""
-    if integration_health_status == INTEGRATION_HEALTH_REAUTH_REQUIRED:
+    if integration_health_status == INTEGRATION_HEALTH_REAUTH_REQUIRED or show_reauth_retry:
         reauth_button_html = (
             '<button type="submit" formaction="/account/integration/reauth" '
             'data-testid="integration-reauth-submit">Переавторизоваться и обновить токен</button>'
