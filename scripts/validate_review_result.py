@@ -19,6 +19,7 @@ def _is_finding(value: Any) -> bool:
         isinstance(value, dict)
         and set(value) == {"severity", "file", "line", "reason"}
         and isinstance(value["severity"], str)
+        and value["severity"] in {"critical", "high", "medium"}
         and isinstance(value["file"], str)
         and isinstance(value["line"], int)
         and not isinstance(value["line"], bool)
