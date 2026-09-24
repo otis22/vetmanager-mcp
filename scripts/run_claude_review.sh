@@ -12,6 +12,7 @@ Usage: scripts/run_claude_review.sh (--range <git-range> | --file <review-file>)
 Options:
   --range <git-range>    Git revision/range for a diff review.
   --file <review-file>   File supplied as the object of a non-diff review (for example PRD).
+  --image <png>          Attach PNG pixels for visual review (repeat 1-4 times).
   --prompt-file <path>   Review prompt (default: built-in structured-review prompt).
   --schema-file <path>   JSON schema (default: findings schema).
   --evidence-dir <path>  Evidence root (default: XDG_DATA_HOME or ~/.local/share).
@@ -33,11 +34,13 @@ repo=$PWD
 model=opus
 timeout_seconds=1200
 kill_grace_seconds=10
+images=()
 
 while (($#)); do
     case $1 in
         --range) range=${2:?missing value for --range}; shift 2 ;;
         --file) review_file=${2:?missing value for --file}; shift 2 ;;
+        --image) images+=("${2:?missing value for --image}"); shift 2 ;;
         --attempt) attempt=${2:?missing value for --attempt}; shift 2 ;;
         --prompt-file) prompt_file=${2:?missing value for --prompt-file}; shift 2 ;;
         --schema-file) schema_file=${2:?missing value for --schema-file}; shift 2 ;;
@@ -54,6 +57,11 @@ done
 if [[ ( -z $range && -z $review_file ) || ( -n $range && -n $review_file ) || ! $attempt =~ ^[1-3]/3$ ]]; then
     printf '%s\n' 'Exactly one of --range or --file and --attempt N/3 are required; N must be 1, 2, or 3.' >&2
     usage >&2
+    exit 64
+fi
+
+if ((${#images[@]} > 4)); then
+    printf '%s\n' 'At most four --image files are allowed.' >&2
     exit 64
 fi
 if ! [[ $timeout_seconds =~ ^[1-9][0-9]*$ ]] || ! [[ $kill_grace_seconds =~ ^([1-9][0-9]*|0\.[0-9]+)$ ]]; then
@@ -116,6 +124,48 @@ else
     fi
 fi
 
+images_manifest=''
+if ((${#images[@]})); then
+    images_manifest=$tmp_dir/images.json
+    image_stdin=$tmp_dir/review.jsonl
+    if ! python3 - "$stdin_file" "$image_stdin" "$images_manifest" "${images[@]}" <<'PY'
+import base64
+import hashlib
+import json
+import pathlib
+import stat
+import struct
+import sys
+
+text_path, output_path, manifest_path, *names = sys.argv[1:]
+content = [{"type": "text", "text": pathlib.Path(text_path).read_text(encoding="utf-8")}]
+images = []
+for name in names:
+    path = pathlib.Path(name)
+    try:
+        info = path.stat()
+        if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= 2 * 1024 * 1024:
+            raise ValueError("PNG must be a regular file of 1 byte to 2 MiB")
+        raw = path.read_bytes()
+        if len(raw) != info.st_size or raw[:8] != b"\x89PNG\r\n\x1a\n" or raw[12:16] != b"IHDR" or raw[8:12] != b"\x00\x00\x00\x0d":
+            raise ValueError("invalid PNG header")
+        width, height = struct.unpack(">II", raw[16:24])
+        if not 1 <= width <= 4096 or not 1 <= height <= 4096:
+            raise ValueError("PNG dimensions must be 1-4096 pixels")
+    except (OSError, ValueError, struct.error) as exc:
+        print(f"Invalid --image {name}: {exc}", file=sys.stderr)
+        sys.exit(64)
+    images.append({"path": str(path.resolve()), "size_bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()})
+    content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.b64encode(raw).decode("ascii")}})
+pathlib.Path(manifest_path).write_text(json.dumps(images) + "\n", encoding="utf-8")
+pathlib.Path(output_path).write_text(json.dumps({"type": "user", "message": {"role": "user", "content": content}}) + "\n", encoding="utf-8")
+PY
+    then
+        exit 64
+    fi
+    stdin_file=$image_stdin
+fi
+
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 started_ns=$(date +%s%N)
 attempt_label=${attempt//\//-of-}
@@ -159,6 +209,7 @@ stderr_file="$prefix.stderr.txt"
 prompt_copy="$prefix.prompt.txt"
 schema_copy="$prefix.schema.json"
 metadata_file="$prefix.metadata.json"
+stream_file=''
 
 cp "$prompt_file" "$prompt_copy"
 cp "$schema_file" "$schema_copy"
@@ -168,12 +219,38 @@ cli_version=$($claude_bin --version 2>&1 || true)
 schema=$(cat "$schema_file")
 
 set +e
-# GNU timeout returns after KILL even if Claude ignores TERM.  -v is deliberately
-# retained in evidence so an empty envelope has an observable termination cause.
-timeout --verbose --kill-after="${kill_grace_seconds}s" "${timeout_seconds}s" "$claude_bin" -p --model "$model" --strict-mcp-config \
-    --mcp-config '{"mcpServers":{}}' --tools '' --output-format json \
-    --json-schema "$schema" < "$stdin_file" > "$envelope_file" 2> "$stderr_file"
-cli_exit=$?
+# GNU timeout returns after KILL even if Claude ignores TERM. -v preserves the cause.
+if [[ -n $images_manifest ]]; then
+    stream_file="$prefix.stream.jsonl"
+    timeout --verbose --kill-after="${kill_grace_seconds}s" "${timeout_seconds}s" "$claude_bin" -p --verbose --model "$model" --strict-mcp-config \
+        --mcp-config '{"mcpServers":{}}' --tools '' --input-format stream-json --output-format stream-json \
+        --json-schema "$schema" < "$stdin_file" > "$stream_file" 2> "$stderr_file"
+    cli_exit=$?
+    : > "$envelope_file"
+    if ((cli_exit == 0)); then
+        python3 - "$stream_file" "$envelope_file" <<'PY'
+import json
+import pathlib
+import sys
+
+try:
+    events = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines() if line]
+    if not all(isinstance(event, dict) for event in events):
+        raise ValueError("stream event is not an object")
+    results = [event for event in events if event.get("type") == "result"]
+    if len(results) != 1:
+        raise ValueError("stream must have exactly one result event")
+    pathlib.Path(sys.argv[2]).write_text(json.dumps(results[0], ensure_ascii=False) + "\n", encoding="utf-8")
+except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+    pass  # Keep empty envelope; the existing validator rejects this attempt.
+PY
+    fi
+else
+    timeout --verbose --kill-after="${kill_grace_seconds}s" "${timeout_seconds}s" "$claude_bin" -p --model "$model" --strict-mcp-config \
+        --mcp-config '{"mcpServers":{}}' --tools '' --output-format json \
+        --json-schema "$schema" < "$stdin_file" > "$envelope_file" 2> "$stderr_file"
+    cli_exit=$?
+fi
 set -e
 
 validator_exit=''
@@ -196,7 +273,7 @@ stdin_lines=$(wc -l < "$stdin_file")
 python3 - "$metadata_file" "$envelope_file" "$prompt_copy" "$schema_copy" "$stderr_file" \
     "$started_at" "$duration_ms" "$review_kind" "$review_target" "$attempt" "$repo" "$evidence_dir" \
     "$stdin_bytes" "$stdin_lines" "$cli_version" "$cli_exit" "$model" "$timeout_seconds" \
-    "$kill_grace_seconds" "$validator_exit" "$verdict_file" "$validator_stderr_file" <<'PY'
+    "$kill_grace_seconds" "$validator_exit" "$verdict_file" "$validator_stderr_file" "$images_manifest" "$stream_file" <<'PY'
 import json
 import pathlib
 import sys
@@ -206,6 +283,7 @@ import sys
     started_at, duration_ms, review_kind, review_target, attempt, repo, evidence_dir,
     stdin_bytes, stdin_lines, cli_version, cli_exit, model, timeout_seconds,
     kill_grace_seconds, validator_exit, verdict_file, validator_stderr_file,
+    images_manifest, stream_file,
 ) = sys.argv[1:]
 
 raw = pathlib.Path(envelope_path).read_bytes()
@@ -265,6 +343,9 @@ metadata = {
     "thinking_tokens": details.get("thinking_tokens"),
     "result_length": len(result) if isinstance(result, str) else 0,
 }
+if images_manifest:
+    metadata["images"] = json.loads(pathlib.Path(images_manifest).read_text(encoding="utf-8"))
+    metadata["stream_file"] = stream_file
 pathlib.Path(metadata_path).write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n")
 print(
     "review evidence: {envelope}; outcome={outcome}; subtype={subtype}; stop_reason={stop_reason}; "

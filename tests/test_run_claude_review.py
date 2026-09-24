@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import base64
+import hashlib
 from pathlib import Path
 import subprocess
+import struct
 import time
+import zlib
 
 
 SCRIPT = Path("scripts/run_claude_review.sh")
@@ -282,3 +286,104 @@ def test_review_attempt_rejects_evidence_directory_inside_repository(tmp_path: P
     assert completed.returncode == 73
     assert "outside the repository working tree" in completed.stderr
     assert not (repo / ".review-evidence").exists()
+
+
+def _png(path: Path, width: int = 8, height: int = 8, padding: int = 0) -> bytes:
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    data = b"\x89PNG\r\n\x1a\n"
+    data += chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+    data += chunk(b"IDAT", zlib.compress((b"\x00" + b"\x00\xe8\x4c" * min(width, 8)) * min(height, 8)))
+    data += chunk(b"IEND", b"")
+    path.write_bytes(data + b"x" * padding)
+    return path.read_bytes()
+
+
+def _run_image(tmp_path: Path, images: list[Path], stream: str | None = None) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    review = tmp_path / "review.md"
+    review.write_text("Review only.\n")
+    fake = tmp_path / "claude"
+    fake.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ ${1:-} == --version ]]; then echo fake-claude; exit 0; fi\n"
+        "printf '%s\\n' \"$*\" > \"$ARGV_LOG\"\n"
+        "cat > \"$STDIN_LOG\"\n"
+        "printf '%s' \"$FAKE_STREAM\"\n"
+    )
+    fake.chmod(0o755)
+    evidence = tmp_path / "data" / "vetmanager-mcp-review-evidence"
+    result = {"type": "result", "is_error": False, "result": '{"findings":[]}', "subtype": "success"}
+    completed = subprocess.run(
+        [str(SCRIPT), "--repo", str(repo), "--file", str(review), "--attempt", "1/3",
+         "--evidence-dir", str(evidence), *[arg for image in images for arg in ("--image", str(image))]],
+        text=True,
+        capture_output=True,
+        env={"PATH": f"{tmp_path}:/usr/local/bin:/usr/bin:/bin", "CLAUDE_BIN": str(fake),
+             "ARGV_LOG": str(tmp_path / "argv.txt"), "STDIN_LOG": str(tmp_path / "stdin.jsonl"),
+             "FAKE_STREAM": stream if stream is not None else json.dumps(result) + "\n",
+             "XDG_DATA_HOME": str(tmp_path / "data")},
+    )
+    return completed, evidence, tmp_path
+
+
+def test_image_review_sends_pixels_and_records_hashes(tmp_path: Path) -> None:
+    first = tmp_path / "first.png"
+    second = tmp_path / "second.png"
+    pixels = [_png(first), _png(second)]
+    completed, evidence, logs = _run_image(tmp_path, [first, second])
+
+    assert completed.returncode == 0, completed.stderr
+    argv = (logs / "argv.txt").read_text()
+    assert "--input-format stream-json" in argv
+    assert "--output-format stream-json" in argv
+    assert "--verbose" in argv
+    assert "--tools " in argv
+    message = json.loads((logs / "stdin.jsonl").read_text())
+    content = message["message"]["content"]
+    assert message["type"] == "user"
+    assert content[0]["type"] == "text"
+    assert [base64.b64decode(item["source"]["data"]) for item in content[1:]] == pixels
+    metadata = json.loads(next(evidence.rglob("*.metadata.json")).read_text())
+    assert metadata["images"] == [
+        {"path": str(path.resolve()), "size_bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+        for path, raw in zip([first, second], pixels)
+    ]
+    assert metadata["stdin_lines"] == 1
+    assert Path(metadata["stream_file"]).is_file()
+    assert json.loads(Path(metadata["envelope_file"]).read_text())["result"] == '{"findings":[]}'
+
+
+def test_image_review_rejects_invalid_input_before_cli(tmp_path: Path) -> None:
+    good = tmp_path / "good.png"
+    _png(good)
+    wrong = tmp_path / "wrong.png"
+    wrong.write_bytes(b"not a png")
+    huge = tmp_path / "huge.png"
+    _png(huge, padding=2 * 1024 * 1024)
+    wide = tmp_path / "wide.png"
+    _png(wide, width=4097)
+    for label, images in (("format", [wrong]), ("size", [huge]), ("dimensions", [wide]), ("count", [good] * 5)):
+        case = tmp_path / label
+        case.mkdir()
+        completed, evidence, logs = _run_image(case, images)
+        assert completed.returncode == 64, (label, completed.stderr)
+        assert not (logs / "argv.txt").exists()
+        assert not evidence.exists()
+
+
+def test_image_review_rejects_missing_or_malformed_result(tmp_path: Path) -> None:
+    for label, stream in (("missing", '{"type":"system"}\n'), ("broken", '{broken}\n'),
+                          ("multiple", '{"type":"result"}\n{"type":"result"}\n')):
+        case = tmp_path / label
+        case.mkdir()
+        picture = case / "sample.png"
+        _png(picture)
+        completed, evidence, _ = _run_image(case, [picture], stream)
+        assert completed.returncode != 0, label
+        metadata = json.loads(next(evidence.rglob("*.metadata.json")).read_text())
+        assert metadata["outcome"] == "invalid_verdict"
+        assert Path(metadata["envelope_file"]).read_bytes() == b""
+        assert Path(metadata["stream_file"]).read_text() == stream
