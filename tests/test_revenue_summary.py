@@ -1,4 +1,5 @@
 import json
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -6,6 +7,7 @@ import pytest
 import respx
 
 from server import mcp
+from fastmcp.exceptions import ToolError
 from tests.runtime_factories import patch_runtime_credentials
 
 DOMAIN = "testclinic"
@@ -498,6 +500,147 @@ async def test_get_average_invoice_defaults_to_invoice_date_exec_half_open():
     assert ("invoice_date", ">=", "2026-06-17 00:00:00") in actual
     assert ("invoice_date", "<", "2026-06-18 00:00:00") in actual
     assert ("status", "=", "exec") in actual
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_average_invoice_scans_more_than_ten_thousand_without_losing_weight():
+    billing_mock()
+
+    def invoice_page(request):
+        query = _query_from_call(type("Call", (), {"request": request})())
+        offset = int(query["offset"][0])
+        rows = [
+            {"id": number + 1, "amount": "1.00" if number < 10000 else "100.00"}
+            for number in range(offset, min(offset + 100, 10001))
+        ]
+        return httpx.Response(200, json={"success": True, "data": {
+            "totalCount": 10001, "invoice": rows,
+        }})
+
+    route = respx.get(f"{BASE}/rest/api/invoice").mock(side_effect=invoice_page)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_average_invoice", {
+            "date_from": "2025-09-25", "date_to": "2026-09-25",
+        })
+
+    data = result.structured_content
+    assert data["invoices_with_amount"] == 10001
+    assert data["total_amount"] == "10100.00"
+    assert data["total_revenue"] == 10100.0
+    assert data["average_invoice"] == 1.01
+    assert len(route.calls) >= 101
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["page_budget", "time_budget", "network"])
+async def test_get_average_invoice_never_returns_partial_total(failure):
+    import tools.invoice as invoice_module
+
+    async def incomplete_scan(*args, **kwargs):
+        assert kwargs["max_calls"] == 1000
+        assert kwargs["max_rows"] is None
+        assert kwargs["collect"] is False
+        assert "No partial result" in kwargs["call_budget_error"]
+        kwargs["on_page"]([{"id": 1, "amount": "99.00"}])
+        if failure == "page_budget":
+            raise ToolError(kwargs["call_budget_error"])
+        if failure == "time_budget":
+            raise TimeoutError()
+        raise ToolError("upstream unavailable")
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with patch.object(invoice_module, "paginate_all", incomplete_scan), headers_patch, runtime_patch:
+        with pytest.raises(Exception) as exc_info:
+            await mcp.call_tool("get_average_invoice", {
+                "date_from": "2026-06-17", "date_to": "2026-06-18",
+            })
+    message = str(exc_info.value)
+    assert "99.00" not in message
+    if failure == "network":
+        assert "upstream unavailable" in message
+    else:
+        assert "No partial result" in message
+        assert "total_amount" in message
+        assert "invoices_with_amount" in message
+
+
+@pytest.mark.asyncio
+async def test_get_average_invoice_single_day_budget_gives_cursor_path():
+    import tools.invoice as invoice_module
+
+    async def budget(*args, **kwargs):
+        raise ToolError(kwargs["call_budget_error"])
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with patch.object(invoice_module, "paginate_all", budget), headers_patch, runtime_patch:
+        with pytest.raises(Exception) as exc_info:
+            await mcp.call_tool("get_average_invoice", {
+                "date_from": "2026-06-17", "date_to": "2026-06-17",
+            })
+    assert "get_invoices" in str(exc_info.value)
+    assert "id > last seen id" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_get_average_invoice_enforces_elapsed_time_budget():
+    import tools.invoice as invoice_module
+
+    class ExpiredBudget:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            raise TimeoutError()
+
+    async def one_page(*args, **kwargs):
+        kwargs["on_page"]([{"id": 1, "amount": "99.00"}])
+        return [], 1
+
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with (
+        patch.object(invoice_module, "paginate_all", one_page),
+        patch.object(invoice_module.asyncio, "timeout", side_effect=lambda seconds: ExpiredBudget()) as timer,
+        headers_patch,
+        runtime_patch,
+    ):
+        with pytest.raises(Exception) as exc_info:
+            await mcp.call_tool("get_average_invoice", {
+                "date_from": "2026-06-17", "date_to": "2026-06-18",
+            })
+    assert timer.call_args.args == (300,)
+    assert "No partial result" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_average_invoice_parts_combine_by_sum_and_count():
+    billing_mock()
+
+    def invoice_page(request):
+        query = parse_qs(urlparse(str(request.url)).query)
+        filters = json.loads(query["filter"][0])
+        start = next(f["value"] for f in filters if f["operator"] == ">=")
+        amounts = ["1.00", "1.00"] if start.startswith("2026-06-17") else ["100.00"]
+        rows = [{"id": idx + 1, "amount": amount} for idx, amount in enumerate(amounts)]
+        return httpx.Response(200, json={"success": True, "data": {
+            "invoice": rows, "totalCount": len(rows),
+        }})
+
+    respx.get(f"{BASE}/rest/api/invoice").mock(side_effect=invoice_page)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        first = (await mcp.call_tool("get_average_invoice", {
+            "date_from": "2026-06-17", "date_to": "2026-06-17",
+        })).structured_content
+        second = (await mcp.call_tool("get_average_invoice", {
+            "date_from": "2026-06-18", "date_to": "2026-06-18",
+        })).structured_content
+    total = sum(float(part["total_amount"]) for part in (first, second))
+    count = sum(part["invoices_with_amount"] for part in (first, second))
+    assert (total, count, round(total / count, 2)) == (102.0, 3, 34.0)
+    assert (first["average_invoice"] + second["average_invoice"]) / 2 != 34.0
 
 
 @pytest.mark.asyncio

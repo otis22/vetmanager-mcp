@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
@@ -372,7 +373,15 @@ def register(mcp: FastMCP) -> None:
         last 365 days are used. By default the period is based on executed
         invoice_date, which matches financial-day reports. Use
         date_basis="create_date" only for legacy record-created/audit
-        semantics.
+        semantics. Scans at most 1000 pages of 100 invoices or 300 seconds,
+        whichever comes first. For a larger period, split it into disjoint
+        date ranges and combine their total_amount and invoices_with_amount;
+        divide the combined sum by the combined count. Never average the
+        per-range averages. If one day alone exceeds the budget, page through
+        get_invoices with limit=100, offset=0, id ASC sort and a raw id > last
+        seen id filter on each next call. Use invoice_date_from/to and
+        status=exec for invoice_date, or date_from/to without status for
+        create_date; sum positive amounts and count them.
 
         Args:
             date_from: Start date. Accepts YYYY-MM-DD or relative forms
@@ -419,26 +428,58 @@ def register(mcp: FastMCP) -> None:
                 "average check, use date_basis=invoice_date."
             )
 
-        invoices, _ = await paginate_all(
-            "/rest/api/invoice",
-            filters=combined_filters,
-            page_size=100,
-            entity_key="invoice",
-        )
-
-        total_sum = 0.0
+        total_sum = Decimal("0")
         total_count = 0
-        for inv in invoices:
-            amount_raw = inv.get("amount") or inv.get("total") or inv.get("sum") or 0
-            try:
-                amount = float(amount_raw)
-            except (TypeError, ValueError):
-                amount = 0.0
-            if amount > 0:
-                total_sum += amount
-                total_count += 1
 
-        average = round(total_sum / total_count, 2) if total_count > 0 else 0.0
+        def add_page(invoices: list[dict]) -> None:
+            nonlocal total_sum, total_count
+            for inv in invoices:
+                amount_raw = inv.get("amount") or inv.get("total") or inv.get("sum") or 0
+                try:
+                    amount = Decimal(str(amount_raw))
+                except (InvalidOperation, ValueError):
+                    continue
+                if amount.is_finite() and amount > 0:
+                    total_sum += amount
+                    total_count += 1
+
+        split_message = (
+            "Average invoice scan exceeded its 1000-page or 300-second budget. "
+            "No partial result is returned. "
+            + (
+                "For this single day, use get_invoices with the same date "
+                "basis and status, limit=100, offset=0, id ASC sort and "
+                "raw id > last seen id filter to page; sum positive amount "
+                "and count across pages."
+                if date_from == date_to
+                else (
+                    "Split the period into disjoint date ranges; add total_amount "
+                    "and invoices_with_amount, then divide the combined sum by "
+                    "the combined count. Do not average per-range averages."
+                )
+            )
+        )
+        try:
+            async with asyncio.timeout(300):
+                await paginate_all(
+                    "/rest/api/invoice",
+                    filters=combined_filters,
+                    page_size=100,
+                    entity_key="invoice",
+                    max_rows=None,
+                    max_calls=1000,
+                    call_budget_error=split_message,
+                    on_page=add_page,
+                    collect=False,
+                )
+        except TimeoutError as exc:
+            raise reportable_error(split_message) from exc
+
+        rounded_total = total_sum.quantize(_MONEY_QUANT, rounding=ROUND_HALF_UP)
+        average = (
+            float((rounded_total / total_count).quantize(_MONEY_QUANT, rounding=ROUND_HALF_UP))
+            if total_count else 0.0
+        )
 
         return {
             "success": True,
@@ -449,8 +490,8 @@ def register(mcp: FastMCP) -> None:
             "amount_field": "amount",
             "status": status,
             "invoices_with_amount": total_count,
-            "total_revenue": round(total_sum, 2),
-            "total_amount": f"{total_sum:.2f}",
+            "total_revenue": float(rounded_total),
+            "total_amount": _money_str(rounded_total),
             "average_invoice": average,
             "applied_filters": [f.to_dict() for f in combined_filters],
             "warnings": warnings,

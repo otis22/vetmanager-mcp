@@ -308,3 +308,25 @@ async def test_paginate_all_boundary_101_fetches_second_page():
     assert total == 101
     assert len(records) == 101
     assert call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_paginate_all_streams_page_and_uses_caller_budget_message():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/client").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {
+            "totalCount": 2, "client": [{"id": 1}],
+        }})
+    )
+    pages = []
+    with bearer_patch():
+        with pytest.raises(Exception, match="split and combine totals"):
+            await paginate_all(
+                "/rest/api/client", entity_key="client", page_size=1,
+                max_calls=1, max_rows=None, collect=False,
+                on_page=pages.append,
+                call_budget_error="split and combine totals",
+            )
+    assert pages == [[{"id": 1}]]
+    assert route.call_count == 1

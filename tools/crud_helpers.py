@@ -11,9 +11,9 @@ proxy label for `vetmanager_tool_call_latency_seconds` and
 
 import json
 from functools import cmp_to_key
-from typing import Any, TypeVar
+from typing import Any, Callable, TypeVar
 
-from exceptions import ToolInputError, reportable_error
+from exceptions import ToolInputError, invariant_error, reportable_error
 from filters import (
     as_dict_list, build_list_query_params, validate_filter_properties,
     validate_sort_properties,
@@ -232,6 +232,9 @@ async def paginate_all(
     entity_key: str,
     max_rows: int | None = 10_000,
     max_calls: int = 1_000,
+    call_budget_error: str | None = None,
+    on_page: Callable[[list[dict]], None] | None = None,
+    collect: bool = True,
 ) -> tuple[list[dict], int]:
     """Fetch all pages of a list endpoint.
 
@@ -242,10 +245,15 @@ async def paginate_all(
             prevents runaway memory use on pathologically large result sets.
             Pass `None` to disable the cap (only for operationally-bounded
             callers that know the result set is limited by other constraints).
+        on_page: Optional synchronous consumer of each validated page.
+        collect: False keeps only the current page in memory; requires on_page.
+        call_budget_error: Caller-specific safe message on max_calls exhaustion.
 
     Returns:
         Tuple of (all_records, total_count).
     """
+    if not collect and on_page is None:
+        raise invariant_error("on_page is required when collect=False")
     vc = VetmanagerClient()
     all_records: list[dict] = []
     offset = 0
@@ -260,7 +268,8 @@ async def paginate_all(
     while True:
         if calls >= max_calls:
             raise reportable_error(
-                f"pagination call budget exceeded for {endpoint}; narrow filters"
+                call_budget_error
+                or f"pagination call budget exceeded for {endpoint}; narrow filters"
             )
         params = build_list_query_params(
             limit=page_size,
@@ -296,13 +305,16 @@ async def paginate_all(
             )
         seen_pages.add(fingerprint)
 
-        all_records.extend(records)
+        if on_page is not None:
+            on_page(records)
+        if collect:
+            all_records.extend(records)
         offset += len(records)
 
-        if max_rows is not None and len(all_records) > max_rows:
+        if max_rows is not None and offset > max_rows:
             raise reportable_error(
                 f"result set too large for {endpoint}: accumulated "
-                f"{len(all_records)} rows exceeds max_rows={max_rows}. "
+                f"{offset} rows exceeds max_rows={max_rows}. "
                 "Narrow your date range or filters."
             )
 
@@ -312,4 +324,4 @@ async def paginate_all(
         ):
             break
 
-    return all_records, len(all_records)
+    return all_records, offset
