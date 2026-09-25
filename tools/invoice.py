@@ -378,8 +378,9 @@ def register(mcp: FastMCP) -> None:
         date ranges and combine their total_amount and invoices_with_amount;
         divide the combined sum by the combined count. Never average the
         per-range averages. If one day alone exceeds the budget, page through
-        get_invoices with limit=100, offset=0, id ASC sort and a raw id > last
-        seen id filter on each next call. Use invoice_date_from/to and
+        get_invoices with limit=100, offset=0 on every call, id ASC sort and
+        filter=[{"property":"id","operator":">","value":last_id}] on each
+        next call. Use invoice_date_from/to and
         status=exec for invoice_date, or date_from/to without status for
         create_date; sum positive amounts and count them.
 
@@ -448,8 +449,9 @@ def register(mcp: FastMCP) -> None:
             "No partial result is returned. "
             + (
                 "For this single day, use get_invoices with the same date "
-                "basis and status, limit=100, offset=0, id ASC sort and "
-                "raw id > last seen id filter to page; sum positive amount "
+                "basis and status, limit=100, offset=0 on every call, id ASC "
+                "sort and filter=[{'property':'id','operator':'>','value':last_id}] "
+                "on each next call; sum positive amount "
                 "and count across pages."
                 if date_from == date_to
                 else (
