@@ -581,7 +581,7 @@ async def test_get_average_invoice_single_day_budget_gives_cursor_path():
             })
     assert "get_invoices" in str(exc_info.value)
     assert "offset=0 on every call" in str(exc_info.value)
-    assert "'operator':'>'" in str(exc_info.value)
+    assert '"operator":">"' in str(exc_info.value)
 
 
 @pytest.mark.asyncio

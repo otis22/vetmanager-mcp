@@ -450,7 +450,7 @@ def register(mcp: FastMCP) -> None:
             + (
                 "For this single day, use get_invoices with the same date "
                 "basis and status, limit=100, offset=0 on every call, id ASC "
-                "sort and filter=[{'property':'id','operator':'>','value':last_id}] "
+                'sort and filter=[{"property":"id","operator":">","value":last_id}] '
                 "on each next call; sum positive amount "
                 "and count across pages."
                 if date_from == date_to
