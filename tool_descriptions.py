@@ -615,6 +615,7 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "get_report_ai_prompt_helper": "report_ai",
     "create_report_ai_job": "report_ai",
     "confirm_report_ai_job_candidate": "report_ai",
+    "reject_report_ai_job_candidate": "report_ai",
     "get_report_ai_job": "report_ai",
     "get_report_ai_job_data": "report_ai",
     "start_report_export": "report_ai",
@@ -964,7 +965,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "queue or stuck in recognizing/building_preview — the job includes "
         "mcp_queue_diagnostics with safe operator hints; age_scope says whether "
         "the age measures the whole job or just the current stage, and a stage "
-        "change restarts that clock. Keep polling bounded; if a report stops "
+        "change restarts that clock. queue_age_seconds is advisory and may be "
+        "skewed outside Moscow time. Keep polling bounded; if a report stops "
         "progressing, explain that processing is on the Vetmanager side, do not "
         "start a duplicate job, and suggest checking later or simplifying/splitting "
         "the report intent. For needs_confirmation, show job.candidates and confirm "
@@ -977,9 +979,12 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "example values, not clinic data: use its columns and types only to check "
         "the expected table structure, and never repeat its values to the user. When "
         "a PREVIEW_FAILED job identifies a provider transport failure, that is not "
-        "an intent error: follow job.mcp_workaround. For other failed or rejected "
-        "jobs, read error_message_safe, explain the reason, and do not recreate an "
-        "unchanged intent; rephrase it first. It does not expose raw SQL. Domain synonyms: отчёт, "
+        "an intent error: follow job.mcp_workaround. For failed jobs, use "
+        "error_code and mcp_workaround: error_message_safe is replaced by a "
+        "neutral explanation because upstream can include SQL. QUEUE_TIMEOUT "
+        "means the queue expired; LLM_UNAVAILABLE means retry once after five "
+        "minutes. Poll at most six times per conversation, then return job_id. "
+        "Domain synonyms: отчёт, "
         "отчет, ИИ отчёт, AI report, конструктор отчётов, аналитика, report ai."
     ),
     "confirm_report_ai_job_candidate": (
@@ -990,14 +995,18 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "Domain synonyms: отчёт, отчет, ИИ отчёт, AI report, "
         "конструктор отчётов, аналитика, report ai."
     ),
+    "reject_report_ai_job_candidate": (
+        "Reject a candidate whose filters, period or grouping do not match. "
+        "Use only in needs_confirmation. Call once, then poll the same job_id "
+        "until ready_to_save or failed; the first status can remain "
+        "needs_confirmation briefly. Never repeat reject automatically after "
+        "timeout or INVALID_TRANSITION. Domain synonyms: отклонить кандидат отчёта."
+    ),
     "get_report_ai_job_data": (
         "Get table rows for a saved or existing_report_matched Report AI job. "
         "Rows are unavailable from ready_to_save; save explicitly first when rows "
-        "are needed. Vetmanager renders AI report data with a hard cap of 1000 rows, "
-        "and limited is NOT the truncation signal here: it is computed against a "
-        "different, larger cap and is never true for AI reports. Exactly 1000 rows "
-        "means the report is almost certainly cut short — say so instead of "
-        "presenting it as the whole period. Responses may include csv_export_url for "
+        "are needed. Vetmanager returns up to 10000 rows; limited=true means "
+        "the response was truncated. Responses may include csv_export_url for "
         "the supported CSV/XLSX export path; take the full data through it for bulk "
         "review, or through get_report_ai_job_export when a report_id is available. "
         "Avoid pasting huge tables into chat; narrow/refine the report when it is "
@@ -1011,16 +1020,17 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "Start a Vetmanager Report Constructor CSV/XLSX export for a known report_id. "
         "This starts the supported CSV/XLSX export path. Use it "
         "when the user provided a known report_id, explicitly asks for CSV/XLSX, or "
-        "get_report_ai_job_data came back at the 1000-row renderer cap and a "
+        "get_report_ai_job_data returned limited=true and a "
         "report_id is available. "
         "For Report AI jobs, prefer get_report_ai_job_export when you have a job_id "
         "rather than manually calling this with the report_id. "
         "The report must have REST export enabled in Vetmanager. Optional filter_json "
         "is report-specific JSON; MCP validates JSON syntax only. The tool returns "
         "report_file_id for get_report_export_download. Vetmanager may respond with busy "
-        "or time-limit states from a tenant-wide REST export guard and provides no "
-        "retry_after. For either recognized guard, wait 30 minutes before one new "
-        "StartReport attempt; do not retry automatically, immediately, or in parallel. "
+        "or time-limit states from a tenant-wide REST export guard. New codes "
+        "CONSTRUCTOR_BUSY and RUN_RATE_LIMITED supply retry_after_seconds; "
+        "wait that delay before one new attempt. Legacy text-only guards use "
+        "30 minutes. Do not retry automatically, immediately, or in parallel. "
         "Do not log or paste export file "
         "locators outside the tool response. Domain synonyms: отчёт, отчет, CSV отчёт, XLSX отчёт, "
         "конструктор отчётов, аналитика."
@@ -1032,7 +1042,10 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "itself, applies the same personal-data protection the report rows "
         "get, and serves it from this server; Vetmanager's own file addresses "
         "are never returned. If Vetmanager says generation is still in "
-        "progress, retry after a delay. The returned link is public to anyone "
+        "progress (FILE_BUILD_NOT_STARTED or FILE_NOT_READY), retry the same "
+        "report_file_id after the given delay, normally five seconds; stop "
+        "after 12 polls or one minute. FILE_BUILD_FAILED is terminal. "
+        "The returned link is public to anyone "
         "holding it and stops working after three days: hand it to the person "
         "who asked, do not post it. Domain synonyms: отчёт, CSV отчёт, "
         "выгрузка отчёта, скачать отчёт, конструктор отчётов."
@@ -1040,8 +1053,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_report_ai_job_export": (
         "Start CSV/XLSX export for a Report AI job only when it is saved or "
         "existing_report_matched and includes job.report_id. This is the supported "
-        "bulk export path for explicit CSV/XLSX requests or for rows cut short at "
-        "the 1000-row renderer cap of get_report_ai_job_data; "
+        "bulk export path for explicit CSV/XLSX requests or when "
+        "get_report_ai_job_data returns limited=true; "
         "it is not the default way to read small Report AI row sets. Check "
         "get_report_ai_job first to verify saved/existing_report_matched status; "
         "this tool delegates export start to start_report_export and returns "

@@ -6,6 +6,33 @@
 
 ---
 
+## 2026-09-25 — Report AI после релиза 18.09
+
+**Источник:** внешний контракт из постановки Д. Сироты от 18.09; живые вызовы
+инструментов на devtr6 25.09, очищенные ответы в evidence этапа 350.
+Локальный OpenAPI v6 описывает `StartReport` и `reportFile`, но не содержит
+`report-ai-job`. Ниже приведены только наблюдаемые поля и статусы, без SQL,
+локаторов выгрузки, идентификаторов клиники и строк отчёта.
+
+- `POST /report-ai-job/{id}/reject`: HTTP 200, `data.job.status=needs_confirmation`
+  сразу после вызова; последующий GET того же job дал HTTP 200,
+  `data.job.status=ready_to_save`. Повторный POST не нужен. Неверный job ID
+  вернул 404 `data.error_code=NOT_FOUND`.
+- `GET /report/StartReport`: HTTP 200, `data.report.report_file_id`.
+  Последующий `GET /report/reportFile` дал 409
+  `data.error_code=FILE_BUILD_NOT_STARTED`, `data.retry_after_seconds=5`.
+  Отдельный уже готовый тестовый file дал 200; коннектор вернул локальную
+  очищенную ссылку, 2 строки и 3 колонки.
+- `GET /report-ai-job/{id}/data` для сохранённого тестового job: HTTP 200,
+  `data.columns/rows/total/limited/csv_export_url`, 1 строка, `limited=false`.
+- Ненаблюдённые в этом прогоне коды `QUEUE_TIMEOUT`, `LLM_UNAVAILABLE`,
+  `FILE_NOT_READY`, `FILE_BUILD_FAILED`, `CONSTRUCTOR_BUSY`,
+  `RUN_RATE_LIMITED`, `REPORT_NOT_ALLOWED_FOR_REST` и предел 10 000 строк
+  следуют проверенному супервизором контракту в постановке, а не объявляются
+  собственным live наблюдением этого коннектора. Сторожа покрывают их форму.
+
+---
+
 ## 2026-09-23 — Денежные поля счёта: справочник не заменяет проверку контракта
 
 **Источник:** наблюдаемый контракт счёта Ветменеджера, сверка на тестовом контуре.

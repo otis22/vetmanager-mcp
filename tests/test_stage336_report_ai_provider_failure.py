@@ -68,7 +68,8 @@ def test_non_transport_http_statuses_do_not_get_provider_workaround(status):
     ),
 )
 def test_non_matching_failures_do_not_get_provider_workaround(message, overrides):
-    assert "mcp_workaround" not in _annotated_job(message, **overrides)
+    workaround = _annotated_job(message, **overrides).get("mcp_workaround")
+    assert not workaround or workaround["code"] != "report_ai_provider_unreachable"
 
 
 def test_provider_workaround_wins_when_transport_and_good_id_markers_overlap():

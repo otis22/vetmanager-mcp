@@ -70,6 +70,15 @@ _REPORT_AI_JOB_DURATION_SECONDS: DefaultDict[str, LatencyAggregate] = defaultdic
     LatencyAggregate
 )
 _REPORT_AI_EXPORTS_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
+_REPORT_AI_OUTCOMES_BY_CODE_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
+REPORT_AI_OBSERVED_CODES = frozenset({
+    "QUEUE_TIMEOUT", "LLM_UNAVAILABLE", "PREVIEW_FAILED",
+    "REPORT_NOT_ALLOWED_FOR_REST", "CONSTRUCTOR_BUSY", "RUN_RATE_LIMITED",
+    "FILE_BUILD_NOT_STARTED", "FILE_NOT_READY", "FILE_BUILD_FAILED",
+    "NOT_FOUND", "INVALID_TRANSITION", "VALIDATION_ERROR", "FORBIDDEN",
+    "INTENT_REJECTED", "SANITIZER_REJECTED", "SAVE_FAILED", "unknown",
+})
+REPORT_AI_OBSERVED_OPERATIONS = frozenset({"status", "reject", "start", "file", "job"})
 _REPORT_AI_EXPORT_DURATION_SECONDS: DefaultDict[str, LatencyAggregate] = defaultdict(
     LatencyAggregate
 )
@@ -131,6 +140,7 @@ def reset_service_metrics() -> None:
         _REPORT_AI_JOB_STAGE_DURATION_SECONDS.clear()
         _REPORT_AI_JOB_DURATION_SECONDS.clear()
         _REPORT_AI_EXPORTS_TOTAL.clear()
+        _REPORT_AI_OUTCOMES_BY_CODE_TOTAL.clear()
         _REPORT_AI_EXPORT_DURATION_SECONDS.clear()
         _BUSINESS_EVENTS_TOTAL.clear()
         _ACCOUNT_LAST_REQUEST_AGE_HOURS.clear()
@@ -438,6 +448,18 @@ def record_report_ai_export(*, operation: str, outcome: str) -> None:
         _REPORT_AI_EXPORTS_TOTAL[(operation, outcome)] += 1
 
 
+def record_report_ai_outcome_code(*, operation: str, code: str | None) -> None:
+    """Bound both labels; upstream codes and messages are untrusted input."""
+    safe_operation = operation if isinstance(operation, str) and operation in REPORT_AI_OBSERVED_OPERATIONS else "job"
+    safe_code = code if isinstance(code, str) and code in REPORT_AI_OBSERVED_CODES else "unknown"
+    with _LOCK:
+        _REPORT_AI_OUTCOMES_BY_CODE_TOTAL[(safe_operation, safe_code)] += 1
+    RUNTIME_LOGGER.info(
+        "report_ai_outcome_code",
+        extra={"event_name": "report_ai_outcome_code", "operation": safe_operation, "code": safe_code},
+    )
+
+
 def record_report_ai_export_duration(*, outcome: str, duration_seconds: float) -> None:
     """Record duration from a successful export start to its observed outcome."""
     with _LOCK:
@@ -546,6 +568,10 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
             "report_ai_exports_total": {
                 f"{operation}|{outcome}": count
                 for (operation, outcome), count in sorted(_REPORT_AI_EXPORTS_TOTAL.items())
+            },
+            "report_ai_outcomes_by_code_total": {
+                f"{operation}|{code}": count
+                for (operation, code), count in sorted(_REPORT_AI_OUTCOMES_BY_CODE_TOTAL.items())
             },
             "report_ai_export_duration_seconds": {
                 outcome: asdict(aggregate)
@@ -846,6 +872,17 @@ def render_prometheus_metrics() -> str:
         lines.append(
             f"vetmanager_report_ai_exports_total"
             f"{_labels_text(operation=operation, outcome=outcome)} {count}"
+        )
+
+    lines.extend([
+        "# HELP vetmanager_report_ai_outcomes_by_code_total Report AI failures by bounded upstream code.",
+        "# TYPE vetmanager_report_ai_outcomes_by_code_total counter",
+    ])
+    for key, count in snapshot.get("report_ai_outcomes_by_code_total", {}).items():
+        operation, code = key.split("|", 1)
+        lines.append(
+            "vetmanager_report_ai_outcomes_by_code_total"
+            f"{_labels_text(operation=operation, code=code)} {count}"
         )
 
     # Stage 110.2: business events counter for product dashboard.

@@ -37,6 +37,7 @@ from token_scopes import (
 LAUNCHING_TOOLS = (
     "create_report_ai_job",
     "confirm_report_ai_job_candidate",
+    "reject_report_ai_job_candidate",
     "start_report_export",
     "get_report_ai_job_export",
     "save_report_ai_job_as_report",
@@ -93,6 +94,7 @@ def test_analytics_and_full_access_keep_the_whole_flow(preset, tool_name):
     [
         ("POST", "/rest/api/report-ai-job", SCOPE_REPORT_AI_WRITE),
         ("POST", "/rest/api/report-ai-job/2/confirm", SCOPE_REPORT_AI_WRITE),
+        ("POST", "/rest/api/report-ai-job/2/reject", SCOPE_REPORT_AI_WRITE),
         ("POST", "/rest/api/report-ai-job/2/save", SCOPE_REPORT_AI_WRITE),
         ("GET", "/rest/api/report/StartReport", SCOPE_REPORT_AI_WRITE),
         ("GET", "/rest/api/report/reportFile", SCOPE_ANALYTICS_READ),

@@ -224,6 +224,7 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
     "get_revenue_summary": (SCOPE_FINANCE_READ,),
     "create_report_ai_job": (SCOPE_REPORT_AI_WRITE,),
     "confirm_report_ai_job_candidate": (SCOPE_REPORT_AI_WRITE,),
+    "reject_report_ai_job_candidate": (SCOPE_REPORT_AI_WRITE,),
     "get_report_ai_job": (SCOPE_ANALYTICS_READ,),
     "get_report_ai_job_data": (SCOPE_ANALYTICS_READ,),
     "start_report_export": (SCOPE_REPORT_AI_WRITE,),

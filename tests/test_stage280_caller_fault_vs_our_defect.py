@@ -19,14 +19,15 @@
     PREVIEW_FAILED,
     SAVE_FAILED         — апстрим не справился.
 
-Однозначен ровно один код. Все четыре места, где апстрим поднимает
+Однозначен ровно один код порядка вызовов. Все четыре места, где апстрим поднимает
 `INVALID_TRANSITION`, — про статус job против запрошенной операции:
 подтверждение не из `needs_confirmation`, сохранение из неподходящего статуса,
 данные до сохранения, недопустимый переход. Это всегда порядок вызовов, то есть
 вызывающий, и на это у агента есть понятное следующее действие.
 
-Остальные остаются приглашающими к отчёту сознательно: молчать о своей поломке
-дороже, чем лишний раз спросить.
+После этапа 350 сырой текст ошибки может содержать SQL. Код класса ошибки и
+safe guidance сохраняются, но сообщение апстрима больше не копируется агенту.
+Остальные коды остаются приглашающими к отчёту сознательно.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ from __future__ import annotations
 import pytest
 
 from exceptions import ToolInputError, VetmanagerError
-from tools.report_ai import UPSTREAM_CALLER_FAULT_CODES, _tool_error_from_vm
+from tools.report_ai import _tool_error_from_vm
 from agent_feedback_service import should_skip_report_hint
 
 
@@ -53,7 +54,8 @@ def test_wrong_call_order_is_not_our_defect() -> None:
 
     assert isinstance(exc, ToolInputError)
     assert should_skip_report_hint(exc) is True
-    assert "saved" in str(exc), "текст апстрима не должен теряться: в нём следующее действие"
+    assert "Read the current job status" in str(exc)
+    assert "saved или existing_report_matched" not in str(exc)
 
 
 @pytest.mark.parametrize(
@@ -86,11 +88,7 @@ def test_error_without_a_code_stays_reportable() -> None:
     assert not isinstance(exc, ToolInputError)
 
 
-def test_the_caller_fault_set_is_deliberately_narrow() -> None:
-    """Список не должен разрастись без разбора мест, где код поднимается.
-
-    Расширение допустимо только вместе с проверкой всех raise-сайтов в
-    `vetmanager-extjs`: код, поднимаемый и на вине вызывающего, и на нашей,
-    в этот список не входит.
-    """
-    assert UPSTREAM_CALLER_FAULT_CODES == frozenset({"INVALID_TRANSITION"})
+def test_ambiguous_code_does_not_echo_raw_sql() -> None:
+    exc = _tool_error_from_vm(_vm_error("PREVIEW_FAILED", "SQLSTATE SELECT secret"))
+    assert "SQLSTATE" not in str(exc)
+    assert not isinstance(exc, ToolInputError)

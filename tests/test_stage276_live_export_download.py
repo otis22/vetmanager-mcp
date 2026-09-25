@@ -61,7 +61,9 @@ async def test_real_export_is_downloaded_cleaned_and_served_by_us(live_export_ro
             # держится 30 минут: соседний прогон или чужая выгрузка на стенде
             # закрывают дверь этому тесту. Это не отказ продукта и не то, что
             # тест доказывает, — тот же случай, что и незавершённая сборка ниже.
-            if "REST export guard" not in str(exc):
+            if not any(marker in str(exc) for marker in (
+                "REST export guard", "CONSTRUCTOR_BUSY", "RUN_RATE_LIMITED",
+            )):
                 raise
             pytest.skip(f"Vetmanager tenant-wide REST export guard is active: {exc}")
         report_file_id = started.structured_content["data"]["report"]["report_file_id"]
@@ -73,7 +75,9 @@ async def test_real_export_is_downloaded_cleaned_and_served_by_us(live_export_ro
                     "get_report_export_download", {"report_file_id": int(report_file_id)}
                 )
             except Exception as exc:  # build not ready yet is an ordinary state here
-                if "not ready" not in str(exc):
+                if not any(marker in str(exc) for marker in (
+                    "not ready", "FILE_BUILD_NOT_STARTED", "FILE_NOT_READY",
+                )):
                     raise
                 await asyncio.sleep(5)
                 continue

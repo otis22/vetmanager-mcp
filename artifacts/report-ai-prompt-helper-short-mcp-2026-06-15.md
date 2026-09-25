@@ -9,7 +9,7 @@ Your task is to convert the user's business question into a clear Russian `inten
 - Canonical MCP order: `get_report_ai_prompt_helper` → `create_report_ai_job` →
   `get_report_ai_job`, then confirm, save, read rows, or export according to the
   returned status.
-- Report AI jobs are async. After creating a job, poll the job status instead of expecting immediate rows.
+- Report AI jobs are async. After creating a job, poll the job status instead of expecting immediate rows. Poll at most six times in one conversation; if still pending, give the person the job_id to check later.
 - Наблюдаемый порядок ожидания до `ready_to_save` на одном контуре — от одной до трёх минут, не гарантия. Диагностика queued появляется через 30 секунд,
   но сама по себе не означает поломку: продолжайте ограниченный polling.
 - Один вопрос — один отчёт. Создавайте jobs последовательно.
@@ -21,7 +21,8 @@ Your task is to convert the user's business question into a clear Russian `inten
 - `ready_to_save` does not expose report rows. It exposes safe recognized structure and preview summary only.
 - Rows are available only after `saved` or `existing_report_matched`.
 - If rows are needed from `ready_to_save`, use an explicit save step with a meaningful report title.
-- If status is `needs_confirmation`, show the user `job.candidates` and confirm only a `report_id` from that list with `confirm_report_ai_job_candidate`. After confirmation, rows are available through `get_report_ai_job_data` without saving a new report.
+- If status is `needs_confirmation`, confirm only a candidate with the same filters, period and grouping. If none fits, call `reject_report_ai_job_candidate` once and poll the same job until `ready_to_save` or `failed`; the first status can still be `needs_confirmation`. Never repeat reject automatically after timeout or 409. After confirmation, rows are available through `get_report_ai_job_data` without saving a new report.
+- `QUEUE_TIMEOUT` means the job failed after an hour in queue: stop polling it. `LLM_UNAVAILABLE` means provider timeout: wait at least five minutes, then retry the same intent only once. A `PREVIEW_FAILED` may contain SQL in the upstream diagnostic; use the MCP workaround and never quote raw SQL.
 - `recognized.preview_example_row`, если присутствует, содержит намеренно
   выдуманные правдоподобные значения, а не данные клиники и не реальную строку.
   Используйте его только до получения реальных строк, чтобы проверить структуру
@@ -106,7 +107,7 @@ For goods sold through invoices, describe the business relation as "позици
 
 ## Data and export
 
-- `get_report_ai_job_data` returns JSON rows for `saved` or `existing_report_matched` jobs. Vetmanager caps this response at 10000 rows.
+- `get_report_ai_job_data` returns JSON rows for `saved` or `existing_report_matched` jobs. Vetmanager caps this response at 10000 rows; `limited=true` means truncation.
 - If `limited=true` or the total is close to 10000, avoid pasting the full table into chat. Narrow the report with period, filters, or aggregation when possible.
 - For bulk review, use the supported CSV/XLSX export path through `csv_export_url`, `get_report_ai_job_export`, or `start_report_export` when a `report_id` is available.
 

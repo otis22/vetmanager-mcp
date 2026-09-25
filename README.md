@@ -677,7 +677,7 @@ COMMIT;
 - После успешного `POST`/`PUT`/`DELETE` кеш для соответствующего тега `domain:entity` инвалидируется.
 - Ограничение подхода: кеш живёт только в памяти процесса и полностью сбрасывается при рестарте сервера.
 
-**124 инструмента** по 15 группам сущностей:
+**125 инструментов** по 15 группам сущностей:
 
 | Группа | Инструменты | Кол-во |
 |--------|-------------|--------|
@@ -694,7 +694,7 @@ COMMIT;
 | Reference | `get_breeds`, `get_breed_by_id`, `get_pet_types`, `get_pet_type_by_id`, `get_cities`, `get_city_by_id`, `get_city_types`, `get_streets`, `get_street_by_id`, `get_units`, `get_unit_by_id`, `get_roles`, `get_role_by_id`, `get_user_positions`, `get_user_position_by_id`, `get_combo_manual_names`, `get_combo_manual_name_by_id`, `get_combo_manual_items`, `get_combo_manual_item_by_id` | 19 |
 | Operations | `get_clinics`, `get_clinic_by_id`, `get_timesheets`, `get_timesheet_by_id`, `get_timesheet_types`, `create_timesheet`, `update_timesheet`, `delete_timesheet`, `get_properties`, `get_anonymous_clients`, `send_message_to_all`, `send_message_to_users`, `send_message_to_roles`, `get_message_reports` | 14 |
 | Schedule | `get_doctor_free_slots` | 1 |
-| Report AI | `get_report_ai_prompt_helper`, `create_report_ai_job`, `get_report_ai_job`, `confirm_report_ai_job_candidate`, `get_report_ai_job_data`, `start_report_export`, `get_report_export_download`, `get_report_ai_job_export`, `save_report_ai_job_as_report` | 9 |
+| Report AI | `get_report_ai_prompt_helper`, `create_report_ai_job`, `get_report_ai_job`, `confirm_report_ai_job_candidate`, `reject_report_ai_job_candidate`, `get_report_ai_job_data`, `start_report_export`, `get_report_export_download`, `get_report_ai_job_export`, `save_report_ai_job_as_report` | 10 |
 | Feedback | `report_problem` | 1 |
 
 Payment REST API доступен только на чтение: Vetmanager Payment entity разрешает `restList`/`restView`, поэтому MCP не публикует `create_payment`. В реальном Payment REST нет прямых `client_id`/`pet_id`; для клиентского или pet-scoped контекста оплат используйте `get_client_payment_applications`, который читает применения оплат через `closingOfInvoices`.
@@ -739,8 +739,8 @@ Prompts работают по тому же bearer-only контракту, чт
 
 1. `get_report_ai_prompt_helper` или `report_ai_prompt_helper` — получить правила формулировки intent и ограничения.
 2. `create_report_ai_job(intent_text)` — создать Report AI job.
-3. `get_report_ai_job(job_id)` — poll с bounded retry; статусы `queued`/`recognizing`/`building_preview` означают ожидание, `failed` возвращается пользователю как ошибка источника.
-4. Если статус `needs_confirmation`, показать `job.candidates`, выбрать только `report_id` из этого списка и вызвать `confirm_report_ai_job_candidate`. Обработать это в текущем workflow: API не возвращает срок действия или retry metadata.
+3. `get_report_ai_job(job_id)` — poll не более шести раз за диалог; затем сообщить человеку `job_id` для поздней проверки. `QUEUE_TIMEOUT` — завершённый отказ после часа в очереди, `LLM_UNAVAILABLE` — таймаут провайдера: подождать минимум пять минут и один раз повторить тот же intent.
+4. Если статус `needs_confirmation`, подтвердить только кандидата с теми же фильтрами, периодом и группировкой. Если подходящего нет, вызвать `reject_report_ai_job_candidate` один раз и опрашивать тот же `job_id` до `ready_to_save` или `failed`; сразу после отказа статус может ещё быть `needs_confirmation`. После timeout или 409 не повторять POST автоматически.
 5. Если статус `existing_report_matched`, сразу вызвать `get_report_ai_job_data`.
 6. Если статус `ready_to_save` и нужны строки, явно вызвать `save_report_ai_job_as_report` с вменяемым названием отчёта; это write-tool, отчёт станет видимым в Vetmanager. Не обещать срок на save: API не возвращает expiry или retry metadata.
 7. `get_report_ai_job_data(job_id)` — получить `columns`, `rows`, `total`, `limited` и, когда upstream отдаёт, `csv_export_url`.
@@ -749,13 +749,13 @@ Prompts работают по тому же bearer-only контракту, чт
 
 `save_report_ai_job_as_report` нельзя прятать внутри read-only сценария: пользователь или вызывающий агент должен понимать, что создаётся persistent report. Для этого есть preset `Analytics` (`report_ai`): full read-only scopes + `report_ai.write`, без общего Full access. Для названий использовать короткие осмысленные заголовки с вопросом, периодом и MCP-origin, например `MCP debtors by negative balance 2026-06-15`.
 
-`get_report_ai_job_data` отдаёт не более **1000 строк**, и признака обрезки в ответе нет. В апстриме два разных предела: `AiReportRenderer::VIEW_ROW_LIMIT = 1000` режет SQL отчёта и возвращает `total` от уже обрезанного набора, а `JobService::DATA_ROW_LIMIT = 10000` — предел выдачи, по которому считается `limited`. Поэтому `limited = (total > 10000)` для данных ИИ-отчёта **структурно всегда `false`**: доверять ему как признаку полноты нельзя. Ровно 1000 строк означают, что отчёт почти наверняка обрезан — MCP добавляет к такому ответу подсказку `report_ai_probable_truncation`. Экспорт идёт другим путём (`AiReportRenderer::getStatement()` предела рендера не применяет), поэтому полные данные берутся именно через CSV/XLSX export:
+`get_report_ai_job_data` отдаёт до **10 000 строк**. `limited=true` означает обрезку ответа; ровно 1000 строк больше не считаются доказательством обрезки. Для больших результатов можно сузить период или взять CSV export:
 
-1. `start_report_export(report_id, filter_json=None)` — запуск `/rest/api/report/StartReport`; использовать если пользователь дал `report_id`, явно просит CSV/XLSX или данные пришли ровно на пределе в 1000 строк и `report_id` доступен.
+1. `start_report_export(report_id, filter_json=None)` — запуск `/rest/api/report/StartReport`; использовать если пользователь дал `report_id`, явно просит CSV/XLSX или данные пришли с `limited=true` и `report_id` доступен.
 2. `get_report_export_download(report_file_id)` — follow-up после `start_report_export`; MCP сам скачивает CSV, чистит его теми же слоями защиты персональных данных, что и строки отчёта, кладёт у себя и возвращает ссылку на свой домен: `download_url`, `expires_at`, `rows`, `columns`. Адреса файлов на стороне Ветменеджера наружу не отдаются. Если генерация ещё идёт, повторить вызов после задержки с bounded retry.
 3. `get_report_ai_job_export(job_id, filter_json=None)` — convenience export только для `saved`/`existing_report_matched` jobs с `job.report_id`; не сохраняет `ready_to_save` jobs автоматически.
 
-Ограничения export flow: список отчётов по REST не опубликован, поэтому `list_reports` tool нет; export работает только для отчётов с включённым REST access (`allow_rest_api=1`). Новый upstream включает REST access для AI reports, но старые/частично обновлённые контуры могут возвращать отказ. `StartReport` также может вернуть 403 `Report creating in progress` или `can not run a report more than 10 minutes`: это временный guard для REST export всего tenant, а не гарантия о конкретном `report_id`; API не возвращает `retry_after`. Для этих двух распознанных guard подождать 30 минут и выполнить одну новую попытку `StartReport`; не повторять автоматически, немедленно или параллельно. После успешного запуска poll только его `report_file_id` через `get_report_export_download`.
+Ограничения export flow: список отчётов по REST не опубликован, поэтому `list_reports` tool нет; export работает только для отчётов с включённым REST access (`allow_rest_api=1`). `REPORT_NOT_ALLOWED_FOR_REST` означает постоянный отказ; `CONSTRUCTOR_BUSY` и `RUN_RATE_LIMITED` — временный отказ с `retry_after_seconds`, после которого допустима одна новая попытка. Для старых текстовых отказов без кода задержка 30 минут. После успешного запуска опрашивать только тот же `report_file_id`: `FILE_BUILD_NOT_STARTED` и `FILE_NOT_READY` требуют подождать обычно 5 секунд, максимум 12 опросов или минуту; `FILE_BUILD_FAILED` завершает ожидание.
 
 Про саму ссылку: она публичная — кто её получил, тот скачает файл, поэтому она непредсказуема (два сегмента по 128 бит на HMAC с серверным секретом), живёт трое суток и перестаёт работать, как только отозван доступ, которым выгрузка сделана. Файл отдаётся вложением, не индексируется и не кэшируется. Отдаётся только CSV (UTF-8 с BOM, разделитель `;`) — XLSX собрать без новой зависимости нельзя. Предел размера выгрузки — 25 МБ.
 

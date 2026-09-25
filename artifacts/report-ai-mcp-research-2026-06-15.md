@@ -82,6 +82,7 @@ Intent requested clients with negative balance and no personal data.
 - `save` is valid from `ready_to_save`; if the job is already `saved`, it is idempotent and returns the existing `report_id`.
 - `save` request body is strict and accepts only `title`.
 - `getData` returns at most 1000 rows to the MCP/client side; `limited=true` means the rendered report has more rows than returned.
+  - **ОПРОВЕРГНУТО 25.09.2026:** после релиза 18.09 `/data` отдаёт до 10 000 строк; `limited=true` — признак обрезки. Текущий контракт описан в `artifacts/api-research-notes-ru.md`.
 - `confirm` is valid only from `needs_confirmation`; `report_id` must be one of the job candidates.
 - Safe job payload from `ReportAiJob::toSafeArray()` includes `candidates`; source-level candidate shape from `ExistingReportFinder` is `report_id`, `title`, and `match_score`. This branch was not observed at runtime on `devtr6` during research.
 - `save` is not valid from in-progress states (`queued`, `recognizing`, `building_preview`) and should preserve `409 INVALID_TRANSITION`.
@@ -167,6 +168,7 @@ Known transitions from source:
 - Valid only for `saved` or `existing_report_matched`.
 - Returns `columns`, `rows`, `total`, `limited`.
 - Tool description must mention the 1000-row MCP/client cap and `limited=true` behavior.
+  - **ОПРОВЕРГНУТО 25.09.2026:** описание теперь говорит о 10 000 строках и честном `limited=true`.
 
 ### Explicit write tool
 

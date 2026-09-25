@@ -26,6 +26,9 @@ def _error(exc: BaseException) -> str:
 
 FAILURES = (
     ("start_report_export", _error(report_ai._safe_export_error(
+        VetmanagerError("refused", 403, error_code="REPORT_NOT_ALLOWED_FOR_REST"),
+        "Starting report export", report_id_from_caller=True)), "ki45"),
+    ("start_report_export", _error(report_ai._safe_export_error(
         VetmanagerError("Report creating in progress", 403), "Starting report export")), "ki45"),
     ("start_report_export", _error(report_ai._safe_export_error(
         VetmanagerError("can not run a report more than 10 minutes", 403), "Starting report export")), "ki45"),

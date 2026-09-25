@@ -11,11 +11,13 @@ class VetmanagerError(Exception):
         *,
         error_code: str | None = None,
         details: dict | None = None,
+        retry_after_seconds: int | None = None,
     ):
         super().__init__(message)
         self.status_code = status_code
         self.error_code = error_code
         self.details = details or {}
+        self.retry_after_seconds = retry_after_seconds
 
 
 class AuthError(VetmanagerError):

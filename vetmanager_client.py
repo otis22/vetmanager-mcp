@@ -710,21 +710,44 @@ class VetmanagerClient:
         if response.status_code == 403:
             normalized_path = path.split("?", 1)[0].strip("/").lower()
             vm_message = None
+            vm_error_code = None
+            retry_after_seconds = None
             try:
                 body = response.json()
                 if isinstance(body, dict):
                     vm_message = body.get("message") if isinstance(body.get("message"), str) else None
+                    data = body.get("data")
+                    if isinstance(data, dict):
+                        code = data.get("error_code")
+                        vm_error_code = code if isinstance(code, str) and code else None
+                        delay = data.get("retry_after_seconds")
+                        if delay is None and isinstance(data.get("details"), dict):
+                            delay = data["details"].get("retry_after_seconds")
+                        if type(delay) is int and 1 <= delay <= 3600:
+                            retry_after_seconds = delay
             except ValueError:
                 pass
-            if normalized_path == "rest/api/report/startreport" and vm_message:
-                raise VetmanagerError(vm_message, status_code=403)
+            if normalized_path == "rest/api/report/startreport" and (vm_message or vm_error_code):
+                raise VetmanagerError(
+                    vm_message or "Report export refused", status_code=403,
+                    error_code=vm_error_code, retry_after_seconds=retry_after_seconds,
+                )
             raise AuthError("Access forbidden", status_code=403)
         if response.status_code == 404:
-            raise NotFoundError("Resource not found", status_code=404)
+            vm_error_code = None
+            try:
+                body = response.json()
+                data = body.get("data") if isinstance(body, dict) else None
+                code = data.get("error_code") if isinstance(data, dict) else None
+                vm_error_code = code if isinstance(code, str) and code else None
+            except ValueError:
+                pass
+            raise NotFoundError("Resource not found", status_code=404, error_code=vm_error_code)
         if response.status_code >= 400:
             vm_error_code: str | None = None
             vm_message: str | None = None
             vm_details: dict = {}
+            retry_after_seconds = None
             try:
                 body = response.json()
                 if isinstance(body, dict):
@@ -737,6 +760,11 @@ class VetmanagerClient:
                         details = data.get("details")
                         if isinstance(details, dict):
                             vm_details = details
+                        delay = data.get("retry_after_seconds")
+                        if delay is None:
+                            delay = vm_details.get("retry_after_seconds")
+                        if type(delay) is int and 1 <= delay <= 3600:
+                            retry_after_seconds = delay
             except ValueError:
                 pass
             # Stage 98.5: only 5xx counts as upstream failure (upstream health
@@ -757,6 +785,7 @@ class VetmanagerClient:
                 status_code=response.status_code,
                 error_code=vm_error_code,
                 details=vm_details,
+                retry_after_seconds=retry_after_seconds,
             )
 
     async def get(self, path: str, params: dict | None = None, *, retry: bool = True) -> Any:

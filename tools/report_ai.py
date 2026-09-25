@@ -31,6 +31,8 @@ from service_metrics import (
     record_report_ai_job_transition,
     record_report_ai_long_queued_poll,
     record_report_ai_stage_stall_poll,
+    record_report_ai_outcome_code,
+    REPORT_AI_OBSERVED_CODES,
 )
 from vetmanager_client import VetmanagerClient
 from clinic_timezone import (
@@ -42,18 +44,8 @@ from clinic_timezone import (
 
 
 INTENT_MAX_LENGTH = 20000
-# Два разных предела в одной подсистеме апстрима — сводить их в один нельзя,
-# именно это и породило отчёт #62 (этап 296).
-#
-# `JobService::DATA_ROW_LIMIT = 10000` — предел выдачи: сколько строк отдаётся
-# клиенту и по чему считается флаг `limited`.
+# Релиз 18.09: `/data` отдаёт до 10000 строк; `limited` показывает обрезку.
 REPORT_AI_DATA_ROW_LIMIT = 10000
-# `AiReportRenderer::VIEW_ROW_LIMIT = 1000` — предел рендера: к SQL отчёта
-# применяется `SqlRowLimiter::apply($sql, 1000)`, и `total` возвращается как
-# `count($rows)` уже обрезанного набора. Поэтому у данных ИИ-отчёта
-# `limited = (total > 10000)` не может стать истиной: рендер физически не
-# отдаёт больше 1000 строк. Признака обрезки в ответе нет — его называем мы.
-REPORT_AI_RENDERER_ROW_LIMIT = 1000
 REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD = 9000
 REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS = 30
 REPORT_AI_QUEUE_WAIT_LIMIT_SECONDS = 15 * 60
@@ -488,10 +480,43 @@ def _annotate_report_ai_workarounds(payload: dict) -> dict:
     job = data.get("job") if isinstance(data, dict) else payload.get("job")
     if not isinstance(job, dict):
         return payload
-    if _looks_like_report_ai_provider_failure(job):
+    code = job.get("error_code")
+    if job.get("status") == "failed" and code == "QUEUE_TIMEOUT":
+        job.setdefault("mcp_workaround", {
+            "code": "QUEUE_TIMEOUT", "safe_to_retry": True,
+            "summary": "Vetmanager did not start this job within one hour.",
+            "steps": ["Stop polling this job; it has failed.",
+                      "If still needed, create one new job later with the same intent."],
+        })
+    elif job.get("status") == "failed" and code == "INTENT_REJECTED":
+        job.setdefault("mcp_workaround", {
+            "code": "INTENT_REJECTED", "safe_to_retry": True,
+            "summary": "Vetmanager could not recognize the report request.",
+            "steps": ["Read the Report AI prompt helper and rephrase the intent with explicit period, filters and grouping.",
+                      "Create a new job only after changing the intent."],
+        })
+    elif job.get("status") == "failed" and code == "LLM_UNAVAILABLE":
+        job.setdefault("mcp_workaround", {
+            "code": "LLM_UNAVAILABLE", "safe_to_retry": True,
+            "summary": "The model provider is temporarily unavailable; the intent is not proven wrong.",
+            "steps": ["Wait at least five minutes, then try once with the same intent.",
+                      "If it fails again, use direct tools or tell the person."],
+        })
+    elif _looks_like_report_ai_provider_failure(job):
         job.setdefault("mcp_workaround", _report_ai_provider_unreachable_workaround())
     elif _looks_like_goods_good_id_preview_failure(job):
         job.setdefault("mcp_workaround", _report_ai_goods_good_id_workaround())
+    # The upstream calls this field safe, but PREVIEW_FAILED can contain raw
+    # SQLSTATE and SQL. Classify legacy messages above, then drop their text.
+    if "error_message_safe" in job:
+        job["error_message_safe"] = (
+            "Report AI job failed; follow mcp_workaround when present."
+            if job.get("status") == "failed" else "Report AI status detail withheld."
+        )
+    if "error_code" in job and (
+        not isinstance(code, str) or code not in REPORT_AI_OBSERVED_CODES
+    ):
+        job["error_code"] = "unknown"
     return payload
 
 
@@ -609,6 +634,9 @@ async def _annotate_report_ai_job_payload(payload: dict) -> dict:
     # stage a stale observation would still hold the previous stage's time.
     job = _extract_job(annotated)
     if job:
+        key = _report_ai_queue_observation_key(job)
+        if job.get("status") == "failed" and key not in _REPORT_AI_FINALIZED_OBSERVATIONS:
+            record_report_ai_outcome_code(operation="status", code=job.get("error_code"))
         _observe_report_ai_lifecycle(job, now=observed_at)
     return await _annotate_report_ai_queue_diagnostics(annotated, now=observed_at)
 
@@ -624,45 +652,22 @@ def _annotate_report_ai_data_payload(payload: dict) -> dict:
     except (TypeError, ValueError):
         total = None
 
-    rows = data.get("rows")
-    row_count = len(rows) if isinstance(rows, list) else None
-    # Ровно предел рендера — почти наверняка обрезка, и `limited` об этом не
-    # скажет никогда. Вывод делается по числу строк, а не по флагу; равенство
-    # строгое, потому что 1001 строка означала бы, что апстрим изменился и
-    # вердикт «обрезано» стал бы выдумкой.
-    truncated_at_renderer_cap = row_count == REPORT_AI_RENDERER_ROW_LIMIT
-
     near_cap = total is not None and total >= REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD
-    if not limited and not near_cap and not truncated_at_renderer_cap:
+    if not limited and not near_cap:
         return payload
 
-    if truncated_at_renderer_cap:
-        guidance = {
-            "code": "report_ai_probable_truncation",
-            "renderer_row_limit": REPORT_AI_RENDERER_ROW_LIMIT,
-            "limited": limited,
-            "total": total,
-            "summary": (
-                "Report AI returned exactly the upstream renderer cap of "
-                f"{REPORT_AI_RENDERER_ROW_LIMIT} rows, so the report is almost "
-                "certainly cut short. The `limited` flag is computed against a "
-                "different, larger cap and cannot report this truncation. Do not "
-                "present these rows as the complete period: narrow the report or "
-                "take the full data through CSV/XLSX export."
-            ),
-        }
-    else:
-        guidance = {
-            "code": "report_ai_large_result",
-            "row_limit": REPORT_AI_DATA_ROW_LIMIT,
-            "threshold": REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD,
-            "limited": limited,
-            "total": total,
-            "summary": (
-                "Report AI returned a large row set. Avoid pasting huge tables into chat; "
-                "narrow the report or use CSV/XLSX export for bulk review."
-            ),
-        }
+    guidance = {
+        "code": "report_ai_large_result",
+        "row_limit": REPORT_AI_DATA_ROW_LIMIT,
+        "threshold": REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD,
+        "limited": limited,
+        "total": total,
+        "summary": (
+            "Vetmanager marked these rows as truncated; narrow the report or use export."
+            if limited else
+            "Report AI returned a large row set. Avoid pasting huge tables into chat."
+        ),
+    }
     if data.get("csv_export_url"):
         guidance["export_available"] = True
     data.setdefault("mcp_large_result_guidance", guidance)
@@ -721,37 +726,24 @@ def _validate_report_title(title: str) -> str:
     return value
 
 
-# Этап 280. Коды апстрима, за которыми всегда стоит запрос вызывающего, а не
-# наша поломка. Список намеренно узкий: расширять его можно только вместе с
-# разбором всех мест, где апстрим этот код поднимает.
-#
-# `INVALID_TRANSITION` разобран целиком — все четыре места в `JobService`
-# говорят об одном: статус job не подходит для запрошенной операции
-# (подтверждение не из `needs_confirmation`, сохранение из неподходящего
-# статуса, данные до сохранения, недопустимый переход). Это порядок вызовов.
-#
-# Остальные коды остаются приглашающими к отчёту, и это решение, а не недосмотр:
-# `VALIDATION_ERROR` покрывает и «Некорректный id job» от вызывающего, и
-# «{поле} должен быть целым числом» о запросе, который собрали мы;
-# `FORBIDDEN` — и «Нет доступа к этой job», и «Клиника не определена», то есть
-# не прошедшую авторизацию; `INTENT_REJECTED` поднимается, когда распознаватель
-# апстрима не вернул структуру; `SANITIZER_REJECTED` — когда санитайзер отверг
-# SQL, сгенерированный апстримом. Отнести их к вине вызывающего значит замолчать
-# собственные поломки.
-UPSTREAM_CALLER_FAULT_CODES = frozenset({"INVALID_TRANSITION"})
-
-
 def _tool_error_from_vm(exc: VetmanagerError) -> ToolError:
-    """Отказ апстрима: вина вызывающего или наш дефект.
-
-    Раньше здесь было безусловное `reportable_error`, и агент, попросивший
-    данные до сохранения отчёта, получал приглашение завести баг про
-    собственную последовательность вызовов.
-    """
-    if getattr(exc, "error_code", None) in UPSTREAM_CALLER_FAULT_CODES:
-        # Текст апстрима сохраняем целиком: в нём и есть следующее действие.
-        return ToolInputError(str(exc))
-    return reportable_error(str(exc))
+    """Keep machine codes, but never pass arbitrary upstream messages or SQL."""
+    if isinstance(exc, AuthError) and exc.error_code == SCOPE_DENIED_ERROR_CODE:
+        # Generated by our scope layer, not Vetmanager. Its group guidance is
+        # the point of the denial and is safe to preserve verbatim.
+        return reportable_error(str(exc))
+    code = exc.error_code if exc.error_code in REPORT_AI_OBSERVED_CODES else "unknown"
+    message = f"Report AI request failed ({code})."
+    if code == "INVALID_TRANSITION":
+        message += " Read the current job status before the next action; do not repeat a rejected transition."
+        return ToolInputError(message)
+    if code == "NOT_FOUND":
+        return ToolInputError("Report AI request failed (NOT_FOUND). Check the job ID.")
+    if code == "INTENT_REJECTED":
+        message += " Read the prompt helper and rephrase the intent before one new job."
+    elif code == "FORBIDDEN":
+        message += " Check access to this job with the clinic administrator."
+    return reportable_error(message)
 
 
 def _validate_positive_int(name: str, value: int) -> int:
@@ -843,8 +835,37 @@ def _safe_export_error(
 ) -> ToolError:
     if isinstance(exc, AuthError) and exc.error_code == SCOPE_DENIED_ERROR_CODE:
         return _tool_error_from_vm(exc)
+    machine_code = exc.error_code
+    retry_after = exc.retry_after_seconds
+    if retry_on_conflict and machine_code in {"FILE_BUILD_NOT_STARTED", "FILE_NOT_READY"}:
+        delay = retry_after or 5
+        return reportable_error(
+            f"{machine_code}: export file is still building. Retry this same report_file_id "
+            f"after {delay} seconds; stop after 12 polls or one minute. Do not start another export."
+        )
+    if retry_on_conflict and machine_code == "FILE_BUILD_FAILED":
+        return reportable_error(
+            "FILE_BUILD_FAILED: export build failed. Stop polling and tell the person; "
+            "start a new export only after their decision."
+        )
+    if machine_code in {"CONSTRUCTOR_BUSY", "RUN_RATE_LIMITED"}:
+        delay = retry_after or 30
+        return reportable_error(
+            f"{machine_code}: Vetmanager temporarily refused export. Wait {delay} seconds "
+            "before one new attempt; do not retry automatically or in parallel."
+        )
+    if machine_code == "REPORT_NOT_ALLOWED_FOR_REST":
+        message = "REPORT_NOT_ALLOWED_FOR_REST: report is not REST-exportable. It cannot be exported over REST."
+        return ToolInputError(message) if report_id_from_caller else reportable_error(message)
+    if machine_code == "NOT_FOUND":
+        return ToolInputError(
+            "NOT_FOUND: check the report or file ID; do not retry this missing resource."
+        )
     status = f" HTTP {exc.status_code}" if exc.status_code is not None else ""
-    code = f" ({exc.error_code})" if exc.error_code else ""
+    code = f" ({exc.error_code})" if exc.error_code in {
+        "FILE_BUILD_NOT_STARTED", "FILE_NOT_READY", "FILE_BUILD_FAILED",
+        "CONSTRUCTOR_BUSY", "RUN_RATE_LIMITED", "REPORT_NOT_ALLOWED_FOR_REST",
+    } else ""
     lowered = str(exc).lower()
     if retry_on_conflict and _is_retryable_export_file_error(exc):
         return reportable_error(
@@ -885,6 +906,8 @@ def _safe_export_error(
 def _is_retryable_export_file_error(exc: VetmanagerError) -> bool:
     """Return the single retryable classification shared by tool and metrics."""
     lowered = str(exc).lower()
+    if exc.error_code:
+        return exc.error_code in {"FILE_BUILD_NOT_STARTED", "FILE_NOT_READY"}
     return exc.status_code in {401, 409} and (
         exc.status_code == 409
         or "build in progress" in lowered
@@ -996,7 +1019,7 @@ async def _call_vm(
         if method == "GET":
             return await client.get(path, params=params)
         if method == "POST":
-            return await client.post(path, json=json or {})
+            return await client.post(path, json=json)
         raise RuntimeError(f"Unsupported Report AI method: {method}")
 
     try:
@@ -1004,6 +1027,8 @@ async def _call_vm(
             metric_endpoint, method, request, tool_name=tool_name
         )
     except VetmanagerError as exc:
+        operation = "reject" if path.endswith("/reject") else "job"
+        record_report_ai_outcome_code(operation=operation, code=exc.error_code)
         raise _tool_error_from_vm(exc) from None
 
 
@@ -1029,6 +1054,7 @@ async def _start_report_export(
         _remember_report_ai_export(report_file_id)
         return payload
     except VetmanagerError as exc:
+        record_report_ai_outcome_code(operation="start", code=exc.error_code)
         record_report_ai_export(operation="start", outcome="error")
         raise _safe_export_error(
             exc, "Starting report export", report_id_from_caller=report_id_from_caller,
@@ -1076,6 +1102,7 @@ def register(mcp: FastMCP) -> None:
             record_report_ai_job_created(outcome="error")
             raise
         record_report_ai_job_created(outcome="success")
+        payload = _annotate_report_ai_workarounds(payload)
         job = _extract_job(payload)
         _observe_report_ai_lifecycle(job)
         _observe_report_ai_queue(job)
@@ -1102,8 +1129,10 @@ def register(mcp: FastMCP) -> None:
                 working stages alike: age_scope says whether the age measures
                 the whole job (queued) or the current stage (recognizing,
                 building_preview), and a stage change restarts that clock.
-                The age is process-local, not a Vetmanager SLA. At 15 minutes
-                stop automatic polling and do not create a duplicate: the same
+                The age is process-local, not a Vetmanager SLA. Poll at most
+                six times per conversation, then return the job_id to resume
+                later. At 15 minutes on a working stage stop automatic polling.
+                Do not create a duplicate: the same
                 job may still finish, and on a working stage a duplicate only
                 doubles the queue. Re-check the same job later. Invoice KPI
                 fallback needs complete get_invoices pagination before summing amount
@@ -1132,6 +1161,26 @@ def register(mcp: FastMCP) -> None:
             tool_name="confirm_report_ai_job_candidate",
             metric_endpoint="/rest/api/report-ai-job/{id}/confirm",
         )
+        payload = _annotate_report_ai_workarounds(payload)
+        _observe_report_ai_lifecycle(_extract_job(payload))
+        return payload
+
+    @mcp.tool
+    async def reject_report_ai_job_candidate(job_id: int) -> dict:
+        """Reject an unsuitable candidate and let the same job build its own preview.
+
+        Args:
+            job_id: Job currently in needs_confirmation. Call once, then poll
+                the same job. An immediate needs_confirmation after success is
+                expected; do not repeat reject. After timeout or 409, read the
+                status and ask the person before another attempt.
+        """
+        payload = await _call_vm(
+            "POST", f"/rest/api/report-ai-job/{job_id}/reject",
+            tool_name="reject_report_ai_job_candidate",
+            metric_endpoint="/rest/api/report-ai-job/{id}/reject",
+        )
+        payload = _annotate_report_ai_workarounds(payload)
         _observe_report_ai_lifecycle(_extract_job(payload))
         return payload
 
@@ -1143,13 +1192,9 @@ def register(mcp: FastMCP) -> None:
             job_id: Report AI job ID. Data is available only for saved or
                 existing_report_matched jobs. ready_to_save has preview summary
                 only; call save_report_ai_job_as_report first when rows are
-                needed. Vetmanager renders AI report data with a hard cap of
-                1000 rows, and `limited` is NOT the truncation signal here: it
-                is computed against a different, larger cap and is never true
-                for AI reports. Exactly 1000 rows means the report is almost
-                certainly cut short — say so instead of presenting it as the
-                whole period, and take the full data through CSV/XLSX export
-                via the returned csv_export_url/report_id.
+                needed. Vetmanager returns up to 10000 rows; `limited=true`
+                means the response was truncated. Narrow the report or use
+                CSV export for large results.
         """
         payload = await _call_vm(
             "GET", f"/rest/api/report-ai-job/{job_id}/data", tool_name="get_report_ai_job_data",
@@ -1176,6 +1221,7 @@ def register(mcp: FastMCP) -> None:
             tool_name="save_report_ai_job_as_report",
             metric_endpoint="/rest/api/report-ai-job/{id}/save",
         )
+        payload = _annotate_report_ai_workarounds(payload)
         _observe_report_ai_lifecycle(_extract_job(payload))
         return payload
 
@@ -1216,6 +1262,7 @@ def register(mcp: FastMCP) -> None:
             )
             payload = _ensure_report_file_payload(payload)
         except VetmanagerError as exc:
+            record_report_ai_outcome_code(operation="file", code=exc.error_code)
             if _is_retryable_export_file_error(exc):
                 observed_wait = _report_ai_export_observed_wait_seconds(file_id)
                 if (
