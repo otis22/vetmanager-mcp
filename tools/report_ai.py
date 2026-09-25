@@ -13,7 +13,10 @@ from fastmcp.exceptions import ToolError
 
 import report_export
 from report_export_transport import PinnedExportTransport, resolve_export_target
-from exceptions import AuthError, ToolInputError, VetmanagerError, reportable_error
+from exceptions import (
+    AuthError, RateLimitError, ToolInputError, VetmanagerError,
+    VetmanagerTimeoutError, reportable_error,
+)
 from observability_logging import RUNTIME_LOGGER
 from prompts import get_report_ai_prompt_helper_text
 from tool_access_registry import SCOPE_DENIED_ERROR_CODE
@@ -508,12 +511,12 @@ def _annotate_report_ai_workarounds(payload: dict) -> dict:
         job.setdefault("mcp_workaround", _report_ai_goods_good_id_workaround())
     # The upstream calls this field safe, but PREVIEW_FAILED can contain raw
     # SQLSTATE and SQL. Classify legacy messages above, then drop their text.
-    if "error_message_safe" in job:
+    if job.get("error_message_safe") is not None and job["error_message_safe"] != "":
         job["error_message_safe"] = (
             "Report AI job failed; follow mcp_workaround when present."
             if job.get("status") == "failed" else "Report AI status detail withheld."
         )
-    if "error_code" in job and (
+    if job.get("error_code") is not None and (
         not isinstance(code, str) or code not in REPORT_AI_OBSERVED_CODES
     ):
         job["error_code"] = "unknown"
@@ -743,6 +746,21 @@ def _tool_error_from_vm(exc: VetmanagerError) -> ToolError:
         message += " Read the prompt helper and rephrase the intent before one new job."
     elif code == "FORBIDDEN":
         message += " Check access to this job with the clinic administrator."
+    elif code == "unknown":
+        if isinstance(exc, RateLimitError) or exc.status_code == 429:
+            delay = exc.retry_after_seconds
+            if isinstance(delay, int) and not isinstance(delay, bool) and 1 <= delay <= 3600:
+                message += f" Wait {delay} seconds before checking the current job."
+            else:
+                message += " Wait before checking the current job."
+            message += " Do not immediately repeat a write."
+        elif isinstance(exc, VetmanagerTimeoutError) or (
+            isinstance(exc.status_code, int) and exc.status_code >= 500
+        ) or (exc.status_code is None and not isinstance(exc, AuthError)):
+            message += (
+                " The outcome may be uncertain. Read the current job status or list recent jobs"
+                " before retrying a write; do not immediately repeat it."
+            )
     return reportable_error(message)
 
 

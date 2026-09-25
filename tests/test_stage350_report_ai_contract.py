@@ -197,6 +197,21 @@ def test_known_legacy_intent_rejection_keeps_code_and_next_action():
     assert "SELECT secret" not in str(job)
 
 
+def test_successful_job_keeps_null_error_fields():
+    payload = {"data": {"job": {"status": "needs_confirmation", "error_code": None,
+                                "error_message_safe": None}}}
+    job = _annotate_report_ai_workarounds(payload)["data"]["job"]
+    assert job["error_code"] is None
+    assert job["error_message_safe"] is None
+
+
+def test_malformed_error_message_does_not_expose_sql():
+    payload = {"data": {"job": {"status": "failed", "error_code": "PREVIEW_FAILED",
+                                "error_message_safe": ["SELECT secret"]}}}
+    job = _annotate_report_ai_workarounds(payload)["data"]["job"]
+    assert "SELECT secret" not in str(job)
+
+
 @respx.mock
 @pytest.mark.asyncio
 async def test_reject_failed_response_does_not_return_raw_sql():
@@ -220,7 +235,7 @@ async def test_reject_timeout_is_never_retried():
         side_effect=httpx.ReadTimeout("uncertain outcome")
     )
     headers, runtime = bearer_runtime_patch()
-    with headers, runtime, pytest.raises(ToolError):
+    with headers, runtime, pytest.raises(ToolError, match="outcome may be uncertain"):
         await mcp.call_tool("reject_report_ai_job_candidate", {"job_id": 22})
     assert route.call_count == 1
 
