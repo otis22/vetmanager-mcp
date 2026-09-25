@@ -3,11 +3,11 @@
 Статусы: `todo` | `in_progress` | `supervisor_pending` | `done` | `stop`.
 Структуру проверяет `scripts/check_roadmap_structure.py`.
 
-## Этап 350. Report AI после релиза 18.09 — `in_progress`
+## Этап 350. Report AI после релиза 18.09 — `done`
 
 - 350.1 Сверить контракт и оформить PRD с ревью. — `done`
 - 350.2 Закрепить красные сторожа и обновить инструменты, метрики и подсказки. — `done`
-- 350.3 Проверить devtr6, провести аудит, review и выпуск с зелёным CI. — `in_progress`
+- 350.3 Проверить devtr6, провести аудит, review и выпуск с зелёным CI. — `done`
 
 ## Этап 349. Переход на SQLAlchemy 2.1 — `todo`
 
