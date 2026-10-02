@@ -21,6 +21,7 @@ from tool_oauth_security import OAuthChallengeMiddleware, apply_tool_oauth_secur
 from tool_scope_security import ToolVisibilityMiddleware
 from tool_error_tracking import ToolErrorTrackingMiddleware
 from tool_descriptions import enhance_tool_descriptions, enhance_raw_clause_descriptions
+from placeholder_resolution_guidance import AGENT_RESOLUTION_GUIDANCE
 from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
 from request_context import RequestContextHeaderMiddleware
@@ -244,19 +245,9 @@ mcp = FastMCP(
         "Do not paste raw tool response bodies, raw record IDs, user's verbatim message, "
         "or full error payloads. Describe the shape of the problem, not raw clinic data. "
         "Replace client and owner surnames, phones, and addresses with <client>, <owner>, "
-        "<phone>, and <address>. Keep the pet's nickname and a person's first name as they "
-        "are: they identify nobody and are what makes the report reproducible. "
-        "Personal fields may come back as an addressed placeholder such as "
-        "[client:123:last_name] or [user:5:doctor_name]. A placeholder is the final value, "
-        "not a reference to fetch: the record is hidden from you on purpose, and asking for "
-        "it again with get_client_by_id or get_user_by_id will return the same placeholder. "
-        "Carry it verbatim into your answer — do not rewrite, decline, translate, or "
-        "expand it, and do not tell the user that anything is hidden: the application "
-        "shows them the real value. Never pass a placeholder as a tool argument: it is a "
-        "value for a person to read, not one to store or send, and such a call is "
-        "rejected. Pass the real value, omit the field, or let the application resolve "
-        "the placeholder first. Two people with different placeholders "
-        "are different people, and the same placeholder in two answers is the same person."
+        "<phone>, and <address>. Use <staff> for staff names in problem reports. "
+        "Keep the pet's nickname. "
+        + AGENT_RESOLUTION_GUIDANCE
     ),
     lifespan=_runtime_lifespan,
 )

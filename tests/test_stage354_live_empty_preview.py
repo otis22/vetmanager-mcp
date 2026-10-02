@@ -28,7 +28,7 @@ async def test_live_zero_preview_guidance():
         return response
 
     headers, runtime = patch_runtime_credentials(
-        "devtr6", os.environ["TEST_API_KEY"],
+        "devtr6", os.environ["TEST_API_KEY"], is_depersonalized=True,
     )
     intent = (
         "Покажи список медицинских карт за 1 января 1900 года: "
@@ -48,6 +48,7 @@ async def test_live_zero_preview_guidance():
         "status": job.get("status"),
         "preview_summary": job.get("preview_summary"),
         "guidance_code": (job.get("mcp_empty_preview_guidance") or {}).get("code"),
+        "personal_guidance_code": (job.get("mcp_personal_data_guidance") or {}).get("code"),
     }
     print(f"stage354 devtr6 HTTP codes={http_codes} body={safe_body}")
     assert ("POST", 200) in http_codes or ("POST", 201) in http_codes
@@ -55,3 +56,4 @@ async def test_live_zero_preview_guidance():
     assert job.get("status") == "ready_to_save"
     assert "Превью: 0 строк" in job.get("preview_summary", "")
     assert safe_body["guidance_code"] == "report_ai_empty_preview"
+    assert safe_body["personal_guidance_code"] == "report_ai_staff_ids_in_private_mode"

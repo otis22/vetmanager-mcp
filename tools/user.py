@@ -134,7 +134,9 @@ def register(mcp: FastMCP) -> None:
         placeholders such as `[user:3:first_name]`. They are final display
         values: copy them verbatim; do not perform another user lookup.
         A placeholder returned by another tool (for example daily schedule) is
-        likewise final in every access mode and is resolved by the application.
+        likewise final in every access mode. Уполномоченный сотрудник клиники
+        может подставить имя вне сессии агента с отдельным REST-ключом; см.
+        инструкции сервера. Агент не запускает скрипт и не читает его результат.
 
         By default only active staff are returned. Pass is_active=False to
         list only inactive users, or is_active=None to include all.
@@ -231,7 +233,9 @@ def register(mcp: FastMCP) -> None:
         placeholders such as `[user:3:first_name]`. They are final display
         values: copy them verbatim; do not perform another user lookup.
         A placeholder returned by another tool (for example daily schedule) is
-        likewise final in every access mode and is resolved by the application.
+        likewise final in every access mode. Уполномоченный сотрудник клиники
+        может подставить имя вне сессии агента с отдельным REST-ключом; см.
+        инструкции сервера. Агент не запускает скрипт и не читает его результат.
 
         Args:
             user_id: Unique numeric ID of the user.

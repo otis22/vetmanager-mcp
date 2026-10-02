@@ -666,8 +666,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "response bodies, raw record IDs, user's verbatim message, or full error payloads. "
         "Do not include secrets, raw clinic payloads, client or owner surnames, phones, "
         "or addresses. Describe the shape of the problem, not the data. Use placeholders "
-        "<client>, <owner>, <phone>, and <address>. Keep the pet's nickname and a person's "
-        "first name as they are — they identify nobody and make the report reproducible. "
+        "<client>, <owner>, <phone>, and <address>. Use <staff> for staff names "
+        "in problem reports. Keep the pet's nickname. "
         "Category mapping: "
         "empty result or missing fields -> bug; suspicious or inconsistent response -> bug; "
         "missing tool/parameter/filter/sort/pagination/date semantics -> missing_tool; "
@@ -1082,19 +1082,25 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
 }
 
 
+ADDRESSABLE_PERSON_NAME_NOTE = (
+    "Адресный плейсхолдер имени остаётся скрытым от агента. Подстановку может "
+    "выполнить только уполномоченный сотрудник клиники вне сессии агента; "
+    "см. инструкции сервера."
+)
+
 PRIVACY_DESCRIPTION_SUFFIXES: dict[str, str] = {
     "get_users": (
         "Privacy contract: the response is limited to approved staff identity, "
         "role/activity, and contact fields; credentials, login, tax, and "
-        "compensation fields are not returned."
+        "compensation fields are not returned. " + ADDRESSABLE_PERSON_NAME_NOTE
     ),
     "get_user_by_id": (
         "Privacy contract: the response is limited to approved staff identity, "
         "role/activity, and contact fields; credentials, login, tax, and "
-        "compensation fields are not returned."
+        "compensation fields are not returned. " + ADDRESSABLE_PERSON_NAME_NOTE
     ),
-    "get_clients": "Privacy contract: client passport series is not returned.",
-    "get_client_by_id": "Privacy contract: client passport series is not returned.",
+    "get_clients": "Privacy contract: client passport series is not returned. " + ADDRESSABLE_PERSON_NAME_NOTE,
+    "get_client_by_id": "Privacy contract: client passport series is not returned. " + ADDRESSABLE_PERSON_NAME_NOTE,
     "get_debtors": "Privacy contract: client passport series is not returned.",
     "get_client_profile": "Privacy contract: client passport series is not returned.",
     "get_pets": "Privacy contract: returned owner context excludes client passport series.",

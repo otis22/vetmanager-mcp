@@ -238,7 +238,9 @@ def register(mcp: FastMCP) -> None:
         (deleted/not_approved) statuses. Each admission with `user_id` includes
         `doctor_name` as `[user:<user_id>:first_name]` in every access mode:
         this is the final display value, so copy it verbatim rather than calling
-        `get_user_by_id`; the application resolver renders the staff name.
+        `get_user_by_id`. Этот плейсхолдер обозначает только first_name,
+        не полное ФИО врача. Подстановку выполняет сотрудник клиники вне
+        сессии агента с отдельным REST-ключом; см. инструкции сервера.
 
         Args:
             date: Target day (YYYY-MM-DD or relative: today, tomorrow, +1d,

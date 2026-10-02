@@ -92,6 +92,9 @@ async def test_staff_id_guidance_follows_privacy_mode(depersonalized):
         assert "настройк" in message
         assert "не ошибка конструктора" in message
         assert "не обходите" in message
+        assert "get_report_ai_prompt_helper" in message
+        assert "вне сессии агента" in message
+        assert "не возвращается модели" in message
 
 
 @pytest.mark.asyncio

@@ -191,6 +191,31 @@ def render_landing_page(script_nonce: str = "") -> str:
     }
     .section.no-top { border-top: 0; }
 
+    .privacy-keys-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 28px;
+    }
+    .privacy-keys-card {
+      background: var(--paper-card);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow-sm);
+      padding: clamp(20px, 2.5vw, 30px);
+    }
+    .privacy-keys-card .num {
+      color: var(--accent-700);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+    }
+    .privacy-keys-card h3 { font-size: 1.12rem; margin: 10px 0 8px; }
+    .privacy-keys-card p { color: var(--ink-500); }
+    @media (max-width: 700px) {
+      .privacy-keys-grid { grid-template-columns: 1fr; }
+    }
+
     .section-label {
       display: inline-flex;
       align-items: center;
@@ -1731,6 +1756,31 @@ def render_landing_page(script_nonce: str = "") -> str:
             <div class="step-row"><div><strong>Подключить Vetmanager</strong><span>Указать домен клиники и настроить безопасный доступ один раз.</span></div></div>
             <div class="step-row"><div><strong>Спрашивать</strong><span>Задавать вопросы по клиентам, пациентам, приёмам, финансам и складу в привычном чате.</span></div></div>
             </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="privacy-two-keys">
+      <div class="shell">
+        <p class="section-label">Персональные данные</p>
+        <h2 class="section-title">Как человек видит имена, а модель — нет</h2>
+        <p class="section-lede">Если нужно показать человеку имена в режиме без персональных данных, для подстановки нужны два ключа. В этом режиме в ответах сервиса помощник получает метки вместо имён клиентов и сотрудников, включая врачей.</p>
+        <div class="privacy-keys-grid">
+          <div class="privacy-keys-card">
+            <span class="num">Ключ 1</span>
+            <h3>Для помощника</h3>
+            <p>Ограниченный обезличенный ключ подключения. При таком подключении модель видит плейсхолдер вместо имени и может подготовить ответ без ФИО.</p>
+          </div>
+          <div class="privacy-keys-card">
+            <span class="num">Ключ 2</span>
+            <h3>Для локальной подстановки</h3>
+            <p>Сотрудник хранит полный REST-ключ Vetmanager для скрипта в защищённом окружении клиники, отдельно от настройки подключения сервиса в кабинете. Не передавайте этот ключ помощнику.</p>
+          </div>
+          <div class="privacy-keys-card">
+            <span class="num">Результат</span>
+            <h3>Для человека</h3>
+            <p>Агент может подготовить скрипт подстановки. Сотрудник проверяет и запускает его у себя: человек видит имена на экране или в файле. Результат не нужно отправлять обратно помощнику.</p>
           </div>
         </div>
       </div>

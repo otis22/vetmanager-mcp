@@ -307,7 +307,7 @@ def test_the_server_explains_that_a_placeholder_is_already_the_value() -> None:
     instructions = mcp.instructions
 
     assert "[client:123:last_name]" in instructions, "формат должен быть показан примером"
-    for promise in ("final value", "verbatim", "will return the same placeholder"):
+    for promise in ("окончательное значение", "без изменений", "вернёт тот же плейсхолдер"):
         assert promise in instructions, promise
 
 

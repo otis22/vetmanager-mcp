@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastmcp import FastMCP
 from fastmcp.prompts import Message
+from placeholder_resolution_guidance import AGENT_RESOLUTION_GUIDANCE
 
 PROMPT_SCOPE_GUIDANCE = (
     "If a tool is denied because of token scopes, use a service token or access "
@@ -16,7 +17,7 @@ def _bearer_runtime_prefix() -> str:
     return (
         "Credentials are already available from the MCP Bearer token. "
         "Do not ask for a clinic domain or API key and do not pass them as tool arguments. "
-        + PROMPT_SCOPE_GUIDANCE
+        + PROMPT_SCOPE_GUIDANCE + AGENT_RESOLUTION_GUIDANCE + " "
     )
 
 
