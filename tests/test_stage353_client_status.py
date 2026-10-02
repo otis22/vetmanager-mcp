@@ -42,6 +42,24 @@ async def test_get_clients_rejects_unknown_status_before_http():
 
 @pytest.mark.asyncio
 @respx.mock
+@pytest.mark.parametrize("value", ["INACTIVE", ["ACTIVE", "INACTIVE"]])
+async def test_raw_status_filter_rejects_unknown_values_before_http(value):
+    billing_mock()
+    route = respx.route(host__regex=r".*").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch, pytest.raises(ToolError) as error:
+        await mcp.call_tool("get_clients", {
+            "status": "",
+            "filter": [{"property": "status", "operator": "IN", "value": value}],
+        })
+    assert "DISABLED" in str(error.value)
+    assert route.call_count == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_disabled_is_sent_by_both_tools():
     billing_mock()
     update = respx.put(f"{BASE}/rest/api/client/42").mock(

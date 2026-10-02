@@ -37,9 +37,9 @@ _CLIENT_READ_STATUSES = frozenset({"ACTIVE", "DISABLED", "DELETED"})
 _CLIENT_WRITE_STATUSES = frozenset({"ACTIVE", "DISABLED"})
 
 
-def _validate_client_status(status: str, *, for_write: bool) -> None:
+def _validate_client_status(status: object, *, for_write: bool) -> None:
     allowed = _CLIENT_WRITE_STATUSES if for_write else _CLIENT_READ_STATUSES
-    if status and status not in allowed:
+    if not isinstance(status, str) or (status and status not in allowed):
         raise ToolInputError(
             f"invalid client status: {status!r}. Allowed for this operation: "
             "ACTIVE = active client; DISABLED = inactive client; "
@@ -317,6 +317,11 @@ def register(mcp: FastMCP) -> None:
                 unsubscribe, vip, work_phone, zip.
         """
         _validate_client_status(status, for_write=False)
+        for clause in filter or ():
+            if isinstance(clause, dict) and clause.get("property") == "status":
+                raw_value = clause.get("value")
+                for value in (raw_value if isinstance(raw_value, list) else [raw_value]):
+                    _validate_client_status(value, for_write=False)
         if name and offset:
             raise ToolInputError(
                 "offset is not supported with name search because Vetmanager "
