@@ -697,8 +697,18 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "filters, and paginated client lists. Use get_client_profile instead for "
         "one consolidated owner card with invoices/admissions, get_debtors for "
         "negative-balance debtor lists, and get_inactive_clients for reactivation "
-        "segments. Domain synonyms: клиент, владелец, хозяин, контакт, "
+        "segments. Status filter: ACTIVE = active client (default), "
+        "DISABLED = inactive client, DELETED = deleted client; empty includes "
+        "all records, including internal TEMPORARY records. Domain synonyms: "
+        "клиент, владелец, хозяин, контакт, "
         "клиентская база, client."
+    ),
+    "update_client": (
+        "Update an existing client / owner. Status may be ACTIVE = active client "
+        "or DISABLED = inactive client. DELETED = deleted client is filter-only; "
+        "deletion requires the separate delete tool and its own permission. "
+        "An empty status leaves it unchanged. Domain synonyms: клиент, "
+        "владелец, хозяин, контакт, клиентская база, client."
     ),
     "create_client": (
         "Create a new client / owner record only after checking whether the owner "

@@ -62,7 +62,7 @@
 | `balance` | string | Нет | Финансовый баланс клиента. |
 | `date_register` | string | Нет | Дата регистрации. Формат: `YYYY-MM-DD HH:MM:SS`. |
 | `city_id` | integer | Нет | Внешний ключ к сущности `city`. |
-| `status` | string | Нет | Статус записи клиента (например, `ACTIVE`, `DELETED`). |
+| `status` | string | Нет | Статус клиента: `ACTIVE` — активный, `DISABLED` — неактивный, `DELETED` — удалённый. |
 | `discount` | integer | Нет | Процент скидки, связанный с клиентом. |
 | `city_data` | object | Да | Вложенный объект с деталями города. |
 
@@ -184,7 +184,7 @@
 | `last_name` | string | Нет | Фамилия клиента. |
 | `first_name` | string | Нет | Имя клиента. |
 | `middle_name` | string | Нет | Отчество клиента. |
-| `status` | string | Нет | Статус записи (например, `ACTIVE`, `DELETED`). |
+| `status` | string | Нет | Статус клиента: `ACTIVE` — активный, `DISABLED` — неактивный, `DELETED` — удалённый. `TEMPORARY` встречается во внутренних временных записях. |
 | `discount` | integer | Нет | Процент скидки для этого клиента. |
 | `passport_series` | string | Да | Серия паспорта. |
 | `lab_number` | string | Да | Лабораторный номер. |

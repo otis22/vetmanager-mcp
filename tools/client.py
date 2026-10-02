@@ -33,6 +33,19 @@ _PERSONAL_ACCOUNT_LINK_WARNING = (
     "Personal account link is persistent and sensitive; show it only in the "
     "relevant known-phone client context."
 )
+_CLIENT_READ_STATUSES = frozenset({"ACTIVE", "DISABLED", "DELETED"})
+_CLIENT_WRITE_STATUSES = frozenset({"ACTIVE", "DISABLED"})
+
+
+def _validate_client_status(status: str, *, for_write: bool) -> None:
+    allowed = _CLIENT_WRITE_STATUSES if for_write else _CLIENT_READ_STATUSES
+    if status and status not in allowed:
+        raise ToolInputError(
+            f"invalid client status: {status!r}. Allowed for this operation: "
+            "ACTIVE = active client; DISABLED = inactive client; "
+            "DELETED = deleted client (filter only, not update). "
+            "Use the exact uppercase value."
+        )
 
 
 async def _search_client_phones(search_digits: str) -> list[int]:
@@ -274,7 +287,7 @@ def register(mcp: FastMCP) -> None:
         """List clients of the clinic.
 
         By default only ACTIVE clients are returned.  Pass status="" to include
-        all statuses (ACTIVE, DELETED, INACTIVE).
+        all records regardless of status, including internal TEMPORARY records.
 
         Args:
             limit: Max number of records to return (1–100, default 20).
@@ -292,8 +305,9 @@ def register(mcp: FastMCP) -> None:
                 like "+7 (918) 414-02-59" correctly finds the stored
                 "(918)414-02-59". Must contain at least 4 digits.
             email: Filter by email address (LIKE match).
-            status: Filter by client status: 'ACTIVE' (default), 'DELETED',
-                    'INACTIVE', or '' for all.
+            status: Filter by client status: 'ACTIVE' (active client, default),
+                    'DISABLED' (inactive client), 'DELETED' (deleted client),
+                    or '' for all records.
             filter: Extra raw filters. Allowed properties: address, apartment,
                 balance, cell_phone, city, city_id, date_register, discount,
                 email, first_name, has_contract, home_phone, how_find, id,
@@ -302,6 +316,7 @@ def register(mcp: FastMCP) -> None:
                 registration_index, status, street_id, type_id,
                 unsubscribe, vip, work_phone, zip.
         """
+        _validate_client_status(status, for_write=False)
         if name and offset:
             raise ToolInputError(
                 "offset is not supported with name search because Vetmanager "
@@ -674,8 +689,12 @@ def register(mcp: FastMCP) -> None:
             city_id: New city ID (0 = no change).
             street_id: New street ID (0 = no change).
             note: Updated notes.
-            status: New status: 'ACTIVE', 'DELETED', 'INACTIVE' (leave empty to keep current).
+            status: New status: 'ACTIVE' (active client) or 'DISABLED'
+                (inactive client). 'DELETED' means deleted client and is
+                filter-only; use the separate delete operation with its own
+                permission. Leave empty to keep current.
         """
+        _validate_client_status(status, for_write=True)
         payload: dict = {}
         if first_name:
             payload["first_name"] = first_name
