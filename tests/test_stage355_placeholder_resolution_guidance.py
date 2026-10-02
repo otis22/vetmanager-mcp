@@ -55,16 +55,40 @@ async def test_tool_descriptions_do_not_promise_automatic_resolution() -> None:
         assert "плейсхолдер" in description.lower()
 
 
-def test_landing_explains_two_keys_and_human_only_result() -> None:
+def test_landing_faq_explains_private_mode_and_resolution() -> None:
     html = render_landing_page()
-    block = html.split('id="privacy-two-keys"', 1)[1].split("</section>", 1)[0]
-    for phrase in ("два ключа", "ключ подключения", "REST-ключ Vetmanager",
-                   "модель", "плейсхолдер", "человек", "сотрудников", "врачей"):
-        assert phrase in block.lower() if phrase.islower() else phrase in block
-    assert "<pre" not in block and "<code" not in block
-    assert "вставьте ключ в чат" not in block.lower()
-    assert "В этом режиме в ответах сервиса" in block
-    assert "При таком подключении модель видит плейсхолдер" in block
+    faq = html.split('id="faq"', 1)[1].split("</section>", 1)[0]
+    questions = (
+        "Безопасно ли это?",
+        "Что такое режим без персональных данных?",
+        "Как пользователь увидит имена, если помощнику они недоступны?",
+        "Как устроена подстановка значений (резолв)?",
+        "Как сделать подстановку на примере Telegram-бота?",
+        "Что происходит, если подстановка не выполнена?",
+    )
+    assert all(faq.count(question) == 1 for question in questions)
+    assert [faq.index(question) for question in questions] == sorted(faq.index(question) for question in questions)
+    assert len(re.findall(r"<details\b", faq)) == 9
+    for phrase in (
+        "[client:123:last_name]", "[user:5:doctor_name]", "[client:123:cell_phone]",
+        "get_client_by_id", "get_user_by_id", "get_pet_by_id", "не более 50 уникальных",
+        "не более 10 секунд на одну попытку подстановки.", "ключ 1", "ключ 2", "CSV, Markdown, TXT",
+        "Метка остаётся в тексте без изменений",
+        "Подставляйте значения только для известных меток.",
+        "Подставляйте контактные данные — телефон, адрес электронной почты и почтовый адрес — только для меток, полученных из ответа Vetmanager в этом же запросе",
+        "так модель не сможет получить контакты перебором идентификаторов.",
+        "Значения обезличенных полей видит только пользователь: в модель они не передаются.",
+        "Имена, которые сотрудники вписали в свободный текст, например в заметки медкарты, режим не распознаёт.",
+    ):
+        assert phrase.lower() in faq.lower()
+    assert "Имена подставляются для любых меток" not in faq
+    assert "не более 10 секунд на всю подстановку" not in faq
+    assert "Персональные данные видит только пользователь, а в модель они не попадают ни на одном этапе." not in faq
+    assert 'id="privacy-two-keys"' not in html
+    assert "Как человек видит имена, а модель — нет" not in html
+    assert "privacy-keys-card" not in html
+    assert not re.search(r"(?:vm_st_|(?:api[_ -]?key|rest[_ -]?key)\s*[=:]\s*[\"']?\w{8,})", faq, re.I)
+    assert not re.search(r"(?:передайте|пришлите|вставьте).{0,40}ключ.{0,25}(?:модел|чат|агент)", faq, re.I)
 
 
 def test_guidance_has_no_key_literal_or_instruction_to_share_key() -> None:

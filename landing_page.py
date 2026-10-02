@@ -191,30 +191,6 @@ def render_landing_page(script_nonce: str = "") -> str:
     }
     .section.no-top { border-top: 0; }
 
-    .privacy-keys-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 16px;
-      margin-top: 28px;
-    }
-    .privacy-keys-card {
-      background: var(--paper-card);
-      border: 1px solid var(--line);
-      border-radius: var(--r-lg);
-      box-shadow: var(--shadow-sm);
-      padding: clamp(20px, 2.5vw, 30px);
-    }
-    .privacy-keys-card .num {
-      color: var(--accent-700);
-      font-size: 0.82rem;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-    }
-    .privacy-keys-card h3 { font-size: 1.12rem; margin: 10px 0 8px; }
-    .privacy-keys-card p { color: var(--ink-500); }
-    @media (max-width: 700px) {
-      .privacy-keys-grid { grid-template-columns: 1fr; }
-    }
 
     .section-label {
       display: inline-flex;
@@ -1361,6 +1337,9 @@ def render_landing_page(script_nonce: str = "") -> str:
     }
     .disclosure .body p { margin: 0 0 12px; }
     .disclosure .body p:last-child { margin-bottom: 0; }
+    .disclosure .body ul,
+    .disclosure .body ol { margin: 0 0 12px; padding-left: 24px; }
+    .disclosure .body li + li { margin-top: 8px; }
     .disclosure .body code,
     .disclosure .body pre {
       font-family: var(--font-mono);
@@ -1761,31 +1740,6 @@ def render_landing_page(script_nonce: str = "") -> str:
       </div>
     </section>
 
-    <section class="section" id="privacy-two-keys">
-      <div class="shell">
-        <p class="section-label">Персональные данные</p>
-        <h2 class="section-title">Как человек видит имена, а модель — нет</h2>
-        <p class="section-lede">Если нужно показать человеку имена в режиме без персональных данных, для подстановки нужны два ключа. В этом режиме в ответах сервиса помощник получает метки вместо имён клиентов и сотрудников, включая врачей.</p>
-        <div class="privacy-keys-grid">
-          <div class="privacy-keys-card">
-            <span class="num">Ключ 1</span>
-            <h3>Для помощника</h3>
-            <p>Ограниченный обезличенный ключ подключения. При таком подключении модель видит плейсхолдер вместо имени и может подготовить ответ без ФИО.</p>
-          </div>
-          <div class="privacy-keys-card">
-            <span class="num">Ключ 2</span>
-            <h3>Для локальной подстановки</h3>
-            <p>Сотрудник хранит полный REST-ключ Vetmanager для скрипта в защищённом окружении клиники, отдельно от настройки подключения сервиса в кабинете. Не передавайте этот ключ помощнику.</p>
-          </div>
-          <div class="privacy-keys-card">
-            <span class="num">Результат</span>
-            <h3>Для человека</h3>
-            <p>Агент может подготовить скрипт подстановки. Сотрудник проверяет и запускает его у себя: человек видит имена на экране или в файле. Результат не нужно отправлять обратно помощнику.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <section class="section" id="chatgpt-connector">
       <div class="shell explainer" data-testid="chatgpt-connector-section">
         <div class="label-block">
@@ -2067,7 +2021,7 @@ claude mcp add --transport http vetmanager &lt;адрес&gt; --header &quot;Aut
         <p class="section-label">Ваши данные</p>
         <h2 class="section-title">Как мы работаем с данными</h2>
         <p class="section-lede">
-          Здесь — короткие ответы о подключении и данных вашей клиники.
+          Здесь — ответы о подключении, защите и работе с данными вашей клиники.
         </p>
 
         <details class="disclosure" style="margin-top: 24px;">
@@ -2130,6 +2084,67 @@ claude mcp add --transport http vetmanager &lt;адрес&gt; --header &quot;Aut
               Логин и пароль Vetmanager не сохраняются. Защищённый ключ подключения
               хранится зашифрованно; доступ можно отключить в кабинете.
             </p>
+          </div>
+        </details>
+
+        <details class="disclosure">
+          <summary><span class="ic-pre"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg></span>Что такое режим без персональных данных?<svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></summary>
+          <div class="body">
+            <p>Это настройка подключения в личном кабинете. Когда она включена, сервис передаёт помощнику метки вместо ФИО, телефонов, адресов электронной почты и почтовых адресов клиентов и сотрудников, включая врачей. Метка указывает на запись, но не содержит значения:</p>
+            <ul>
+              <li><code>[client:123:last_name]</code> — фамилия клиента с идентификатором 123</li>
+              <li><code>[user:5:doctor_name]</code> — ФИО сотрудника с идентификатором 5</li>
+              <li><code>[client:123:cell_phone]</code> — мобильный телефон клиента</li>
+            </ul>
+            <p>Помощник выполняет расчёты, группировку и построение отчётов по идентификаторам. Персональные данные ему недоступны: повторный запрос записи возвращает ту же метку.</p>
+          </div>
+        </details>
+
+        <details class="disclosure">
+          <summary><span class="ic-pre"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12s4-6 9-6 9 6 9 6-4 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2"/></svg></span>Как пользователь увидит имена, если помощнику они недоступны?<svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></summary>
+          <div class="body">
+            <p>Для этого используются два ключа доступа:</p>
+            <ul>
+              <li><strong>Ключ 1 — для помощника.</strong> Это обезличенное подключение. Помощник работает только с метками и формирует ответ без персональных данных.</li>
+              <li><strong>Ключ 2 — для подстановки значений.</strong> Это ключ с полным доступом: REST-ключ Vetmanager или отдельное подключение без обезличивания. Он хранится в защищённом окружении клиники и помощнику не передаётся.</li>
+            </ul>
+            <p>Подстановку выполняет отдельная программа после того, как помощник сформировал ответ. Она находит в ответе метки и заменяет их значениями, полученными по второму ключу. Значения обезличенных полей видит только пользователь: в модель они не передаются. Имена, которые сотрудники вписали в свободный текст, например в заметки медкарты, режим не распознаёт.</p>
+          </div>
+        </details>
+
+        <details class="disclosure">
+          <summary><span class="ic-pre"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg></span>Как устроена подстановка значений (резолв)?<svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></summary>
+          <div class="body">
+            <ol>
+              <li>Найти в тексте ответа метки по шаблону <code>[тип:ID:поле]</code>, где тип — <code>client</code>, <code>user</code> или <code>pet</code>.</li>
+              <li>Сформировать список уникальных пар «тип + идентификатор»: каждая запись запрашивается один раз, сколько бы меток на неё ни ссылалось.</li>
+              <li>Для каждой пары получить запись по второму ключу: <code>get_client_by_id</code>, <code>get_user_by_id</code> или <code>get_pet_by_id</code>.</li>
+              <li>Заменить метку значением поля. Составные поля <code>doctor_name</code> и <code>owner_name</code> собираются из фамилии, имени и отчества.</li>
+              <li>Показать результат пользователю на экране или в файле, не передавая его обратно помощнику.</li>
+            </ol>
+            <p>Помощник может подготовить такой скрипт по этому описанию. Сотрудник клиники проверяет скрипт и запускает его в своём окружении.</p>
+          </div>
+        </details>
+
+        <details class="disclosure">
+          <summary><span class="ic-pre"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></span>Как сделать подстановку на примере Telegram-бота?<svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></summary>
+          <div class="body">
+            <p>Схема применима к любому приложению, которое показывает пользователю ответы помощника. На примере бота:</p>
+            <ol>
+              <li><strong>Разделите ключи по компонентам.</strong> Модель работает через обезличенное подключение (ключ 1). Второй ключ получает только модуль отправки сообщений, и только после того, как модель завершила работу.</li>
+              <li><strong>Подставляйте значения на выходе.</strong> Перед отправкой в Telegram модуль находит метки в тексте ответа и в текстовых вложениях (CSV, Markdown, TXT), запрашивает записи по второму ключу и подставляет значения.</li>
+              <li><strong>Не сохраняйте результат подстановки.</strong> История диалога, промпт и журналы содержат только метки. Вложения с персональными данными создаются как временные копии и удаляются после отправки.</li>
+              <li><strong>Ограничьте объём и время.</strong> В нашей реализации — не более 50 уникальных записей на ответ и не более 10 секунд на одну попытку подстановки.</li>
+              <li><strong>Подставляйте значения только для известных меток.</strong> Подставляйте контактные данные — телефон, адрес электронной почты и почтовый адрес — только для меток, полученных из ответа Vetmanager в этом же запросе: так модель не сможет получить контакты перебором идентификаторов.</li>
+              <li><strong>Не подставляйте значения в изображения.</strong> В графиках и других изображениях модель указывает идентификатор или роль сотрудника.</li>
+            </ol>
+          </div>
+        </details>
+
+        <details class="disclosure">
+          <summary><span class="ic-pre"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 7v6M12 17h.01"/></svg></span>Что происходит, если подстановка не выполнена?<svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></summary>
+          <div class="body">
+            <p>Метка остаётся в тексте без изменений: пользователь увидит <code>[client:123:last_name]</code> вместо фамилии, при этом ответ не будет искажён. Рекомендуется уведомлять администратора о причине сбоя, например, об истёкшем ключе или превышении времени ожидания. Передавать второй ключ помощнику нельзя ни при каких условиях: это полностью отменяет защиту персональных данных.</p>
           </div>
         </details>
       </div>
