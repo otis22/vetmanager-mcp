@@ -3,7 +3,7 @@
 Статусы: `todo` | `in_progress` | `supervisor_pending` | `done` | `stop`.
 Структуру проверяет `scripts/check_roadmap_structure.py`.
 
-## Этап 359. Скан телеметрии активации таймаутит и растёт вместе с трафиком — `in_progress`
+## Этап 359. Скан телеметрии активации таймаутит и растёт вместе с трафиком — `done`
 
 Источник: разбор прод-логов 02.10.2026 супервизором. Предупреждение
 `activation_telemetry_scan_failed` (`TimeoutError`) растёт день ко дню: 28.09 — 22, 29.09 — 43,
@@ -19,7 +19,10 @@
 - 359.2 Красный сторож на объёме журнала, при котором текущий скан не укладывается в бюджет;
   исправление; результат метрик не меняется. — `done`
 - 359.3 Аудит соседних мест, читающих журнал целиком; review; выпуск с зелёным CI; после выката —
-  ноль `activation_telemetry_scan_failed` за час. — `in_progress`
+  ноль `activation_telemetry_scan_failed` с момента запуска контейнера по проверке супервизора. — `done`
+
+Кодовый SHA `50a35d3`: [Tests](https://github.com/otis22/vetmanager-mcp/actions/runs/37024259577)
+и [Deploy Prod](https://github.com/otis22/vetmanager-mcp/actions/runs/37025193297) — `success`.
 
 ## Этап 355. Резолв плейсхолдеров: персональные данные видит человек, а не модель — `done`
 
