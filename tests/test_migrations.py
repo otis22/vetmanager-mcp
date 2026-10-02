@@ -477,7 +477,7 @@ def test_postgres_url_is_normalized_for_migrations():
         storage.normalize_database_url_for_migrations(
             "postgresql+asyncpg://user:pass@db/app"
         )
-        == "postgresql://user:pass@db/app"
+        == "postgresql+psycopg2://user:pass@db/app"
     )
 
 

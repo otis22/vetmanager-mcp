@@ -50,7 +50,9 @@ def normalize_database_url_for_migrations(raw_url: str | None) -> str:
     """Normalize configured database URL to a sync URL suitable for Alembic."""
     normalized_url = normalize_database_url(raw_url)
     if normalized_url.startswith("postgresql+asyncpg://"):
-        return "postgresql://" + normalized_url[len("postgresql+asyncpg://") :]
+        return "postgresql+psycopg2://" + normalized_url[len("postgresql+asyncpg://") :]
+    if normalized_url.startswith("postgresql://"):
+        return "postgresql+psycopg2://" + normalized_url[len("postgresql://") :]
     if normalized_url.startswith("sqlite+aiosqlite:///"):
         return "sqlite:///" + normalized_url[len("sqlite+aiosqlite:///") :]
     return normalized_url
