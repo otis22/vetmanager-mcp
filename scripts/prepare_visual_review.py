@@ -13,7 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.capture_visual_matrix import _pages, _themes, required_scenes, validate_matrix
+from scripts.capture_visual_matrix import (
+    _pages, _themes, open_visual_scene, required_scenes, validate_matrix,
+)
 
 
 def scene_image_keys(scene: str) -> tuple[str, ...]:
@@ -26,13 +28,14 @@ def prepare(directory: Path) -> None:
     validate_matrix(records, directory)
     by_key = {record["key"]: directory / record["path"] for record in records}
     pages = _pages()
-    text_lines = ["# Весь видимый текст локальной матрицы 345", ""]
+    text_lines = ["# Весь видимый текст локальной визуальной матрицы", ""]
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         for scene in required_scenes():
             page = browser.new_page(viewport={"width": 2000, "height": 900})
             page.route("**/*", lambda route: route.abort())
             page.set_content(pages[scene], wait_until="domcontentloaded")
+            open_visual_scene(page, scene)
             visible = page.locator("body").inner_text()
             text_lines.extend((f"## {scene}", "", visible, ""))
             images = []

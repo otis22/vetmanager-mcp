@@ -181,12 +181,12 @@ async def crud_list(
     )
 
 
-async def crud_get_by_id(endpoint: str, entity_id: int) -> dict:
+async def crud_get_by_id(endpoint: str, entity_id: int, *, fresh: bool = False) -> dict:
     """GET a single entity by ID."""
     return await _instrumented_call(
         endpoint,
         "GET",
-        lambda: VetmanagerClient().get(f"{endpoint}/{entity_id}"),
+        lambda: VetmanagerClient().get(f"{endpoint}/{entity_id}", fresh=fresh),
         operation="get_by_id",
     )
 

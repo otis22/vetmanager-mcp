@@ -58,7 +58,7 @@ ACCESS_AREAS: tuple[AccessArea, ...] = (
     AccessArea("приёмы", SCOPE_ADMISSIONS_READ, SCOPE_ADMISSIONS_WRITE),
     AccessArea("медкарты и госпитализация", SCOPE_MEDICAL_CARDS_READ, SCOPE_MEDICAL_CARDS_WRITE),
     AccessArea("финансы", SCOPE_FINANCE_READ, SCOPE_FINANCE_WRITE),
-    AccessArea("склад", SCOPE_INVENTORY_READ, SCOPE_INVENTORY_WRITE),
+    AccessArea("номенклатура и склад", SCOPE_INVENTORY_READ, SCOPE_INVENTORY_WRITE),
     AccessArea("сотрудники", SCOPE_USERS_READ, SCOPE_USERS_WRITE),
     AccessArea("смены и статистика", SCOPE_ANALYTICS_READ, SCOPE_SCHEDULE_WRITE),
     AccessArea("справочники", SCOPE_REFERENCE_READ, None),

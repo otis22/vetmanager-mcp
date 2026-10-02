@@ -269,6 +269,7 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
     # `confirm=true` ничего не пишет; право доступа то же, что у остальных
     # изменений номенклатуры.
     "update_good_sale_price": (SCOPE_INVENTORY_WRITE,),
+    "set_good_sale_param_status": (SCOPE_INVENTORY_WRITE,),
     "update_hospitalization": (SCOPE_MEDICAL_CARDS_WRITE,),
     "update_invoice": (SCOPE_FINANCE_WRITE,),
     "update_medical_card": (SCOPE_MEDICAL_CARDS_WRITE,),

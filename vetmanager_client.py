@@ -377,11 +377,12 @@ class VetmanagerClient:
         base = await self._resolve_host()
         url = f"{base}{path}"
         retry_enabled = bool(kwargs.pop("retry", True))
+        fresh = bool(kwargs.pop("fresh", False))
         params = kwargs.get("params")
         cache_key = ""
         entity_tag = self._entity_tag(path)
         upper_method = method.upper()
-        should_cache_get = upper_method == "GET" and self._should_cache_get(path)
+        should_cache_get = upper_method == "GET" and not fresh and self._should_cache_get(path)
         if should_cache_get:
             full_url = self._canonical_url(url, params if isinstance(params, dict) else None)
             cache_key = self._cache_key(method, full_url)
@@ -788,8 +789,9 @@ class VetmanagerClient:
                 retry_after_seconds=retry_after_seconds,
             )
 
-    async def get(self, path: str, params: dict | None = None, *, retry: bool = True) -> Any:
-        return await self._request("GET", path, params=params, retry=retry)
+    async def get(self, path: str, params: dict | None = None, *, retry: bool = True,
+                  fresh: bool = False) -> Any:
+        return await self._request("GET", path, params=params, retry=retry, fresh=fresh)
 
     async def post(self, path: str, json: Any = None) -> Any:
         return await self._request("POST", path, json=json)

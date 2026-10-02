@@ -43,7 +43,7 @@ TOKEN_PRESET_DISPLAY_LABELS: dict[str, str] = {
     PRESET_FRONTDESK: "Регистратура",
     PRESET_DOCTOR: "Врач",
     PRESET_FINANCE: "Финансы",
-    PRESET_INVENTORY: "Склад",
+    PRESET_INVENTORY: "Номенклатура и склад",
     PRESET_REPORT_AI: "Аналитика",
 }
 

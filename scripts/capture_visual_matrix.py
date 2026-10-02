@@ -29,7 +29,7 @@ SCENE_STATES = {
     "ready_oauth": "ready",
     "ready_oauth_other": "ready",
 }
-EXTRA_SCENES = ("issued", "landing")
+EXTRA_SCENES = ("issued", "landing", "inventory_issuance")
 VIEWPORTS = {"desktop": (1440, 900), "phone": (390, 844)}
 
 
@@ -103,9 +103,10 @@ def _pages() -> dict[str, str]:
         "ready_bearer": _account_page(bearer_tokens=[_token_view(request_count=5)]),
         "ready_oauth": _account_page(oauth_grants=[oauth_used]),
         "ready_oauth_other": _account_page(oauth_grants=[oauth_other_used]),
-        "issued": _account_page(issued_raw_token="vm_st_FICTIONAL_STAGE345_ONLY",
+        "issued": _account_page(issued_raw_token="vm_st_FICTIONAL_VISUAL_ONLY",
                                 bearer_tokens=[_token_view()]),
         "landing": render_landing_page(),
+        "inventory_issuance": _account_page(token_access_preset="inventory"),
     }
 
 
@@ -119,6 +120,15 @@ def validate_pages(pages: dict[str, str]) -> None:
         raise ValueError("missing one-time token scene")
     if 'id="examples"' not in pages["landing"]:
         raise ValueError("missing landing examples")
+    if 'value="inventory" selected' not in pages["inventory_issuance"]:
+        raise ValueError("inventory issuance scene must select inventory access")
+
+
+def open_visual_scene(page, scene: str) -> None:
+    if scene == "inventory_issuance":
+        for selector in ('[data-testid="token-section"]',
+                         '[data-testid="token-manual-form"]'):
+            page.locator(selector).evaluate("element => element.open = true")
 
 
 def capture(output_dir: Path) -> list[dict[str, str]]:
@@ -136,6 +146,7 @@ def capture(output_dir: Path) -> list[dict[str, str]]:
                     context.route("**/*", lambda route: route.abort())
                     page = context.new_page()
                     page.set_content(html, wait_until="domcontentloaded")
+                    open_visual_scene(page, scene)
                     page.wait_for_timeout(150)
                     modes = ("full", "first") if device == "phone" else ("full",)
                     for mode in modes:

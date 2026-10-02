@@ -626,6 +626,18 @@ TOOL_ENTITY_MAP: dict[str, str] = {
 
 
 SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "set_good_sale_param_status": (
+        "Disable or restore exactly one good sale option for one clinic and sale unit. "
+        "Two steps: first call with confirm=false to preview the good, clinic, "
+        "sale unit, current status and effect; no write is sent. Then use the "
+        "returned confirmation in a separate call with confirm=true and the "
+        "same sale_param_id, clinic_id and target_status. The confirmation expires "
+        "after 10 minutes and fails if the sale parameter changed. 'disabled' "
+        "hides this combination from new invoice selection; 'active' restores it. "
+        "Other clinics and sale units are untouched. Domain synonyms: выключить "
+        "параметр продажи, включить параметр продажи, убрать дубль товара из счёта, "
+        "номенклатура, sale option, goodSaleParam status."
+    ),
     # Этап 298.8. До 06.09.2026 инструмент уезжал в `tools/list` generic-строкой
     # «Update an existing good / service catalog item»: ни цены, ни подтверждения,
     # ни того, что группа переоценивается только процентом. От правки карточки
