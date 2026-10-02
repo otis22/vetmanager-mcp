@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 import report_export
+import clinic_timezone
 import tools.report_ai as report_ai
 
 
@@ -143,14 +144,24 @@ async def test_timezone_cache_has_absolute_ttl_and_refreshes_without_cleanup(mon
     assert client.calls == 2
 
 
-def test_timezone_cache_participates_in_shared_ttl_and_size_cleanup(monkeypatch):
+@pytest.mark.asyncio
+async def test_timezone_cache_participates_in_shared_ttl_and_size_cleanup(monkeypatch):
     report_ai._reset_report_ai_queue_observations()
-    monkeypatch.setattr(report_ai, "REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES", 2)
-    ttl = report_ai.REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS
-    report_ai._REPORT_AI_CLINIC_TIMEZONES[(1, 1, 1)] = ("UTC", 0.0)
-    report_ai._REPORT_AI_CLINIC_TIMEZONES[(1, 1, 2)] = ("UTC", ttl)
-    report_ai._REPORT_AI_CLINIC_TIMEZONES[(1, 1, 3)] = ("UTC", ttl)
+    monkeypatch.setattr(clinic_timezone, "CLINIC_TIMEZONE_MAX_ENTRIES", 3)
+    monkeypatch.setattr(clinic_timezone, "_key", lambda clinic_id: (1, 1, clinic_id))
+    ttl = clinic_timezone.CLINIC_TIMEZONE_TTL_SECONDS
 
+    class Client:
+        async def get(self, path):
+            return {"data": {"clinics": {"time_zone": "UTC"}}}
+
+    for clinic_id, now in [(1, 0.0), (2, ttl), (3, ttl)]:
+        await clinic_timezone.resolve_clinic_timezone(
+            clinic_id, client_factory=Client, monotonic=lambda: now
+        )
+
+    assert len(clinic_timezone._CACHE) == 3
+    monkeypatch.setattr(clinic_timezone, "CLINIC_TIMEZONE_MAX_ENTRIES", 2)
     report_ai._cleanup_report_ai_queue_observations(ttl + 1.0)
 
-    assert list(report_ai._REPORT_AI_CLINIC_TIMEZONES) == [(1, 1, 2), (1, 1, 3)]
+    assert list(clinic_timezone._CACHE) == [(1, 1, 2), (1, 1, 3)]

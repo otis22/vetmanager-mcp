@@ -1,6 +1,7 @@
 """Report AI job tools for Vetmanager report constructor workflows."""
 
 import asyncio
+from collections.abc import Callable
 import httpx
 import io
 import json
@@ -12,6 +13,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 import report_export
+from error_tracking import capture_report_ai_observation_failure
 from report_export_transport import PinnedExportTransport, resolve_export_target
 from exceptions import (
     AuthError, RateLimitError, ToolInputError, VetmanagerError,
@@ -41,7 +43,8 @@ from vetmanager_client import VetmanagerClient
 from clinic_timezone import (
     CLINIC_TIMEZONE_MAX_ENTRIES,
     CLINIC_TIMEZONE_TTL_SECONDS,
-    _CACHE as _REPORT_AI_CLINIC_TIMEZONES,
+    cleanup_clinic_timezone_cache,
+    reset_clinic_timezone_cache,
     resolve_clinic_timezone,
 )
 
@@ -141,7 +144,24 @@ def _reset_report_ai_queue_observations() -> None:
     _REPORT_AI_LIFECYCLE_OBSERVATIONS.clear()
     _REPORT_AI_FINALIZED_OBSERVATIONS.clear()
     _REPORT_AI_EXPORT_OBSERVATIONS.clear()
-    _REPORT_AI_CLINIC_TIMEZONES.clear()
+    reset_clinic_timezone_cache()
+
+
+def _report_ai_observation_failed(exc: Exception, *, operation: str) -> None:
+    RUNTIME_LOGGER.warning(
+        "report_ai_observation_failed",
+        extra={"event_name": "report_ai_observation_failed", "operation": operation,
+               "error_type": type(exc).__name__},
+    )
+    capture_report_ai_observation_failure(exc, operation=operation)
+
+
+def _best_effort_observation(observation_name: str, callback: Callable, *args, **kwargs):
+    try:
+        return callback(*args, **kwargs)
+    except Exception as exc:
+        _report_ai_observation_failed(exc, operation=observation_name)
+        return None
 
 
 def _report_ai_queue_observation_count() -> int:
@@ -149,15 +169,7 @@ def _report_ai_queue_observation_count() -> int:
 
 
 def _cleanup_report_ai_queue_observations(now: float) -> None:
-    expired_timezone_keys = [
-        key
-        for key, (_, fetched_at) in _REPORT_AI_CLINIC_TIMEZONES.items()
-        if now - fetched_at > REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS
-    ]
-    for key in expired_timezone_keys:
-        _REPORT_AI_CLINIC_TIMEZONES.pop(key, None)
-    while len(_REPORT_AI_CLINIC_TIMEZONES) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
-        _REPORT_AI_CLINIC_TIMEZONES.popitem(last=False)
+    cleanup_clinic_timezone_cache(now)
 
     expired_job_ids = [
         job_id
@@ -178,19 +190,20 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
         observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.pop(key)
         stage = str(observation["stage"])
         stage_duration = now - float(observation["stage_started"])
-        record_report_ai_job_stage_duration(stage=stage, duration_seconds=stage_duration)
-        record_report_ai_job_terminal_outcome(
+        _best_effort_observation("lifecycle_stage_duration", record_report_ai_job_stage_duration,
+                                 stage=stage, duration_seconds=stage_duration)
+        _best_effort_observation("lifecycle_terminal", record_report_ai_job_terminal_outcome,
             outcome="abandoned_wait",
             duration_seconds=now - float(observation["first_seen"]),
         )
 
     while len(_REPORT_AI_LIFECYCLE_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
         _, observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.popitem(last=False)
-        record_report_ai_job_stage_duration(
+        _best_effort_observation("lifecycle_stage_duration", record_report_ai_job_stage_duration,
             stage=str(observation["stage"]),
             duration_seconds=now - float(observation["stage_started"]),
         )
-        record_report_ai_job_terminal_outcome(
+        _best_effort_observation("lifecycle_terminal", record_report_ai_job_terminal_outcome,
             outcome="abandoned_wait",
             duration_seconds=now - float(observation["first_seen"]),
         )
@@ -251,8 +264,9 @@ def _record_abandoned_report_ai_export(
     observation: dict[str, float | bool], *, now: float
 ) -> None:
     operation = "poll" if observation["has_polled"] else "start"
-    record_report_ai_export(operation=operation, outcome="abandoned_wait")
-    record_report_ai_export_duration(
+    _best_effort_observation("export_abandoned", record_report_ai_export,
+                             operation=operation, outcome="abandoned_wait")
+    _best_effort_observation("export_abandoned_duration", record_report_ai_export_duration,
         outcome="abandoned_wait", duration_seconds=now - float(observation["started_at"])
     )
 
@@ -280,12 +294,13 @@ def _report_ai_export_observed_wait_seconds(report_file_id: object) -> int | Non
 
 def _complete_report_ai_export(report_file_id: object, *, outcome: str) -> None:
     key = _report_ai_queue_observation_key({"id": report_file_id})
-    record_report_ai_export(operation="poll", outcome=outcome)
+    _best_effort_observation("export_poll", record_report_ai_export,
+                             operation="poll", outcome=outcome)
     if key is None:
         return
     observation = _REPORT_AI_EXPORT_OBSERVATIONS.pop(key, None)
     if observation is not None:
-        record_report_ai_export_duration(
+        _best_effort_observation("export_duration", record_report_ai_export_duration,
             outcome=outcome,
             duration_seconds=_monotonic_seconds() - float(observation["started_at"]),
         )
@@ -293,7 +308,8 @@ def _complete_report_ai_export(report_file_id: object, *, outcome: str) -> None:
 
 def _record_pending_report_ai_export_poll() -> None:
     """Count a retryable export-file poll without ending its observation."""
-    record_report_ai_export(operation="poll", outcome="not_ready")
+    _best_effort_observation("export_not_ready", record_report_ai_export,
+                             operation="poll", outcome="not_ready")
 
 
 def _remember_finalized_report_ai_job(
@@ -365,8 +381,10 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
     observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.get(observation_key)
     if observation is None:
         if stage in _REPORT_AI_TERMINAL_OUTCOMES:
-            record_report_ai_job_stage_duration(stage=stage, duration_seconds=0.0)
-            record_report_ai_job_terminal_outcome(outcome=stage, duration_seconds=0.0)
+            _best_effort_observation("lifecycle_stage_duration", record_report_ai_job_stage_duration,
+                                     stage=stage, duration_seconds=0.0)
+            _best_effort_observation("lifecycle_terminal", record_report_ai_job_terminal_outcome,
+                                     outcome=stage, duration_seconds=0.0)
             _remember_finalized_report_ai_job(observation_key, now=current_time)
             return
         _REPORT_AI_LIFECYCLE_OBSERVATIONS[observation_key] = {
@@ -383,14 +401,16 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
     if stage == previous_stage:
         return
 
-    record_report_ai_job_stage_duration(
+    _best_effort_observation("lifecycle_stage_duration", record_report_ai_job_stage_duration,
         stage=previous_stage,
         duration_seconds=current_time - float(observation["stage_started"]),
     )
-    record_report_ai_job_transition(from_stage=previous_stage, to_stage=stage)
+    _best_effort_observation("lifecycle_transition", record_report_ai_job_transition,
+                             from_stage=previous_stage, to_stage=stage)
     if stage in _REPORT_AI_TERMINAL_OUTCOMES:
-        record_report_ai_job_stage_duration(stage=stage, duration_seconds=0.0)
-        record_report_ai_job_terminal_outcome(
+        _best_effort_observation("lifecycle_stage_duration", record_report_ai_job_stage_duration,
+                                 stage=stage, duration_seconds=0.0)
+        _best_effort_observation("lifecycle_terminal", record_report_ai_job_terminal_outcome,
             outcome=stage, duration_seconds=current_time - float(observation["first_seen"])
         )
         _REPORT_AI_LIFECYCLE_OBSERVATIONS.pop(observation_key, None)
@@ -639,9 +659,16 @@ async def _annotate_report_ai_job_payload(payload: dict) -> dict:
     if job:
         key = _report_ai_queue_observation_key(job)
         if job.get("status") == "failed" and key not in _REPORT_AI_FINALIZED_OBSERVATIONS:
-            record_report_ai_outcome_code(operation="status", code=job.get("error_code"))
-        _observe_report_ai_lifecycle(job, now=observed_at)
-    return await _annotate_report_ai_queue_diagnostics(annotated, now=observed_at)
+            _best_effort_observation(
+                "status_outcome", record_report_ai_outcome_code,
+                operation="status", code=job.get("error_code"),
+            )
+        _best_effort_observation("status_lifecycle", _observe_report_ai_lifecycle, job, now=observed_at)
+    try:
+        return await _annotate_report_ai_queue_diagnostics(annotated, now=observed_at)
+    except Exception as exc:
+        _report_ai_observation_failed(exc, operation="status_queue_diagnostics")
+        return annotated
 
 
 def _annotate_report_ai_data_payload(payload: dict) -> dict:
@@ -1042,11 +1069,15 @@ async def _call_vm(
 
     try:
         return await instrument_call(
-            metric_endpoint, method, request, tool_name=tool_name
+            metric_endpoint, method, request, tool_name=tool_name,
+            on_metric_error=lambda exc: _report_ai_observation_failed(
+                exc, operation="upstream_call_metric"
+            ),
         )
     except VetmanagerError as exc:
         operation = "reject" if path.endswith("/reject") else "job"
-        record_report_ai_outcome_code(operation=operation, code=exc.error_code)
+        _best_effort_observation("upstream_error_code", record_report_ai_outcome_code,
+                                 operation=operation, code=exc.error_code)
         raise _tool_error_from_vm(exc) from None
 
 
@@ -1065,20 +1096,27 @@ async def _start_report_export(
             "GET",
             lambda: client.get("/rest/api/report/StartReport", params=params, retry=False),
             tool_name=tool_name,
+            on_metric_error=lambda exc: _report_ai_observation_failed(
+                exc, operation="upstream_call_metric"
+            ),
         )
         payload = _ensure_start_report_payload(payload)
         report_file_id = _extract_report(payload).get("report_file_id")
-        record_report_ai_export(operation="start", outcome="success")
+        _best_effort_observation("export_start", record_report_ai_export,
+                                 operation="start", outcome="success")
         _remember_report_ai_export(report_file_id)
         return payload
     except VetmanagerError as exc:
-        record_report_ai_outcome_code(operation="start", code=exc.error_code)
-        record_report_ai_export(operation="start", outcome="error")
+        _best_effort_observation("export_start_error_code", record_report_ai_outcome_code,
+                                 operation="start", code=exc.error_code)
+        _best_effort_observation("export_start_error", record_report_ai_export,
+                                 operation="start", outcome="error")
         raise _safe_export_error(
             exc, "Starting report export", report_id_from_caller=report_id_from_caller,
         ) from None
     except ToolError:
-        record_report_ai_export(operation="start", outcome="error")
+        _best_effort_observation("export_start_error", record_report_ai_export,
+                                 operation="start", outcome="error")
         raise
 
 
@@ -1117,13 +1155,13 @@ def register(mcp: FastMCP) -> None:
                 metric_endpoint="/rest/api/report-ai-job",
             )
         except Exception:
-            record_report_ai_job_created(outcome="error")
+            _best_effort_observation("job_created_error", record_report_ai_job_created, outcome="error")
             raise
-        record_report_ai_job_created(outcome="success")
+        _best_effort_observation("job_created_success", record_report_ai_job_created, outcome="success")
         payload = _annotate_report_ai_workarounds(payload)
         job = _extract_job(payload)
-        _observe_report_ai_lifecycle(job)
-        _observe_report_ai_queue(job)
+        _best_effort_observation("create_lifecycle", _observe_report_ai_lifecycle, job)
+        _best_effort_observation("create_queue", _observe_report_ai_queue, job)
         return payload
 
     @mcp.tool
@@ -1180,7 +1218,7 @@ def register(mcp: FastMCP) -> None:
             metric_endpoint="/rest/api/report-ai-job/{id}/confirm",
         )
         payload = _annotate_report_ai_workarounds(payload)
-        _observe_report_ai_lifecycle(_extract_job(payload))
+        _best_effort_observation("confirm_lifecycle", _observe_report_ai_lifecycle, _extract_job(payload))
         return payload
 
     @mcp.tool
@@ -1199,7 +1237,7 @@ def register(mcp: FastMCP) -> None:
             metric_endpoint="/rest/api/report-ai-job/{id}/reject",
         )
         payload = _annotate_report_ai_workarounds(payload)
-        _observe_report_ai_lifecycle(_extract_job(payload))
+        _best_effort_observation("reject_lifecycle", _observe_report_ai_lifecycle, _extract_job(payload))
         return payload
 
     @mcp.tool
@@ -1240,7 +1278,7 @@ def register(mcp: FastMCP) -> None:
             metric_endpoint="/rest/api/report-ai-job/{id}/save",
         )
         payload = _annotate_report_ai_workarounds(payload)
-        _observe_report_ai_lifecycle(_extract_job(payload))
+        _best_effort_observation("save_lifecycle", _observe_report_ai_lifecycle, _extract_job(payload))
         return payload
 
     @mcp.tool
@@ -1277,17 +1315,22 @@ def register(mcp: FastMCP) -> None:
                 "GET",
                 lambda: client.get("/rest/api/report/reportFile", params={"file_id": file_id}),
                 tool_name="get_report_export_download",
+                on_metric_error=lambda exc: _report_ai_observation_failed(
+                    exc, operation="upstream_call_metric"
+                ),
             )
             payload = _ensure_report_file_payload(payload)
         except VetmanagerError as exc:
-            record_report_ai_outcome_code(operation="file", code=exc.error_code)
+            _best_effort_observation("export_file_error_code", record_report_ai_outcome_code,
+                                     operation="file", code=exc.error_code)
             if _is_retryable_export_file_error(exc):
                 observed_wait = _report_ai_export_observed_wait_seconds(file_id)
                 if (
                     observed_wait is not None
                     and observed_wait >= REPORT_AI_EXPORT_WAIT_LIMIT_SECONDS
                 ):
-                    record_report_ai_export(operation="poll", outcome="wait_limit_reached")
+                    _best_effort_observation("export_wait_limit", record_report_ai_export,
+                                             operation="poll", outcome="wait_limit_reached")
                     RUNTIME_LOGGER.warning(
                         "report_ai_export_wait_limit_reached",
                         extra={
@@ -1342,15 +1385,15 @@ def register(mcp: FastMCP) -> None:
                 download_name=f"report-export-{file_id}.csv",
             )
         except report_export.ReportExportError as exc:
-            record_report_export_download(outcome="refused")
+            _best_effort_observation("export_download_refused", record_report_export_download, outcome="refused")
             _complete_report_ai_export(file_id, outcome="error")
             raise reportable_error(str(exc)) from None
         except ToolError:
-            record_report_export_download(outcome="refused")
+            _best_effort_observation("export_download_refused", record_report_export_download, outcome="refused")
             _complete_report_ai_export(file_id, outcome="error")
             raise
         except Exception:
-            record_report_export_download(outcome="error")
+            _best_effort_observation("export_download_error", record_report_export_download, outcome="error")
             _complete_report_ai_export(file_id, outcome="error")
             RUNTIME_LOGGER.error(
                 "report_export_download_failed",
@@ -1359,7 +1402,7 @@ def register(mcp: FastMCP) -> None:
             )
             raise reportable_error("Preparing the export file failed.") from None
 
-        record_report_export_download(outcome="success")
+        _best_effort_observation("export_download_success", record_report_export_download, outcome="success")
         _complete_report_ai_export(file_id, outcome="success")
         expires_at = datetime.now(timezone.utc) + timedelta(
             seconds=report_export.REPORT_EXPORT_TTL_SECONDS

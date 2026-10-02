@@ -41,6 +41,24 @@ def cdn_mock(body: bytes = b"Column\n1\n"):
     )
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_download_success_metric_failure_keeps_link(monkeypatch):
+    billing_mock()
+    cdn_mock()
+    route = respx.get(f"{BASE}/rest/api/report/reportFile").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {
+            "report": {"csv_file": CDN}
+        }})
+    )
+    monkeypatch.setattr(report_ai, "record_report_export_download", lambda **kw: (_ for _ in ()).throw(RuntimeError("metric failed")))
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        result = await mcp.call_tool("get_report_export_download", {"report_file_id": 35202})
+    assert route.call_count == 1
+    assert result.structured_content["download_url"].startswith("https://")
+
+
 def billing_mock():
     return respx.get(f"https://billing-api.vetmanager.cloud/host/{DOMAIN}").mock(
         return_value=httpx.Response(200, json={"data": {"url": BASE}})

@@ -30,6 +30,14 @@ def reset_clinic_timezone_cache() -> None:
     _CACHE.clear()
 
 
+def cleanup_clinic_timezone_cache(now: float) -> None:
+    """Expire and trim entries without exposing their internal representation."""
+    for key, (_, fetched_at, ttl) in list(_CACHE.items()):
+        if now - fetched_at > ttl:
+            _CACHE.pop(key, None)
+    _trim_cache()
+
+
 def process_local_today(*, relative: bool = False) -> date:
     """Documented fallback for a multi-clinic call without a clinic id."""
     if relative:

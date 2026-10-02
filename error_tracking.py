@@ -239,6 +239,7 @@ def _is_private_handled_event(event: dict[str, Any]) -> bool:
     return isinstance(tags, dict) and (
         tags.get(_HANDLED_CONNECTION_FAILURE_TAG) == "true"
         or tags.get(_MANUAL_TOOL_FAILURE_TAG) == _MANUAL_TOOL_FAILURE_VALUE
+        or tags.get("report_ai_observation_failure") == "true"
     )
 
 
@@ -477,6 +478,21 @@ def capture_handled_connection_failure(exc: BaseException, *, account_id: int) -
             sentry_sdk.capture_exception(exc)
     except Exception:
         # Error tracking must never alter a user-visible handled failure.
+        return
+
+
+def capture_report_ai_observation_failure(exc: BaseException, *, operation: str) -> None:
+    """Report a handled accounting failure without its message, stack or locals."""
+    if not _configured or not sentry_sdk.is_initialized():
+        return
+    try:
+        with sentry_sdk.push_scope() as scope:
+            scope.set_tag("report_ai_observation_failure", "true")
+            scope.set_tag("operation", operation)
+            scope.set_tag("exc_type", type(exc).__name__)
+            scope.clear_breadcrumbs()
+            sentry_sdk.capture_message("report_ai_observation_failed", level="error")
+    except Exception:
         return
 
 

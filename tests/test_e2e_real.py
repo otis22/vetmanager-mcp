@@ -26,6 +26,7 @@ import httpx
 from fastmcp.exceptions import ToolError
 
 import auth.request as auth_request
+import clinic_timezone
 from server import _graceful_shutdown, mcp
 from tests.conftest import TEST_ENCRYPTION_KEY
 from vetmanager_client import VetmanagerClient
@@ -344,6 +345,10 @@ async def test_real_report_ai_create_and_bounded_poll_non_polluting():
     )
     assert len(intent) > 1000
     with headers_patch, runtime_patch:
+        # The resolver itself writes the process cache; this must be the same
+        # process and credentials as the following Report AI POST.
+        await call(clinic_timezone.resolve_clinic_timezone(1, client_factory=vc))
+        assert clinic_timezone._CACHE
         created = _tool_payload(await call(mcp.call_tool(
             "create_report_ai_job",
             {"intent_text": intent},

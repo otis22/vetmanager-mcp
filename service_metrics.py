@@ -270,6 +270,7 @@ async def instrument_call(
     *,
     operation: str = "",
     tool_name: str | None = None,
+    on_metric_error=None,
 ):
     """Wrap a coroutine with latency + outcome metric recording.
 
@@ -293,13 +294,18 @@ async def instrument_call(
         raise
     finally:
         elapsed = time.monotonic() - started
-        record_tool_call(
-            endpoint=endpoint_label,
-            method=method,
-            outcome=outcome,
-            duration_seconds=elapsed,
-            tool_name=tool_name,
-        )
+        try:
+            record_tool_call(
+                endpoint=endpoint_label,
+                method=method,
+                outcome=outcome,
+                duration_seconds=elapsed,
+                tool_name=tool_name,
+            )
+        except Exception as exc:
+            if on_metric_error is None:
+                raise
+            on_metric_error(exc)
 
 
 def record_tool_call(
