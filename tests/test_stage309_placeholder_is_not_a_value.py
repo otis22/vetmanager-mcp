@@ -252,8 +252,9 @@ def test_server_instructions_no_longer_ask_to_carry_it_into_arguments():
     from server import mcp as server_mcp
 
     instructions = server_mcp.instructions or ""
-    assert "placeholder" in instructions.lower()
-    assert "into tool arguments" not in instructions.lower()
+    assert "плейсхолдер" in instructions.lower()
+    assert "не передавайте плейсхолдер аргументом" in instructions.lower()
+    assert "такой вызов отклоняется" in instructions.lower()
 
 
 @pytest.mark.asyncio
