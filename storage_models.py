@@ -436,6 +436,12 @@ class TokenUsageLog(Base):
             "event_type",
             "event_at",
         ),
+        Index(
+            "ix_token_usage_logs_account_event_at",
+            "account_id",
+            "event_type",
+            "event_at",
+        ),
         # Stage 260: a row belongs to exactly one credential kind. Without the
         # constraint the table would silently accept a row with neither
         # subject — invisible to both channel aggregates — or with both.

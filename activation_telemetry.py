@@ -44,19 +44,24 @@ def _latest(*values: datetime | None) -> datetime | None:
     return max(present) if present else None
 
 
-async def _accounts_with_requests(session, *, since: datetime | None = None) -> set[int]:
+async def _accounts_with_requests(
+    session, *, account_ids: set[int], since: datetime | None = None
+) -> set[int]:
     """Accounts that authenticated at least once, on either channel (stage 260).
 
     Reads the journal instead of the bearer tokens: an account working through
     OAuth has no bearer token at all and used to look like it never called.
     """
-    stmt = (
-        select(TokenUsageLog.account_id)
+    if not account_ids:
+        return set()
+    journal_match = (
+        select(TokenUsageLog.id)
+        .where(TokenUsageLog.account_id == Account.id)
         .where(TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED)
-        .where(TokenUsageLog.account_id.is_not(None))
     )
     if since is not None:
-        stmt = stmt.where(TokenUsageLog.event_at >= since)
+        journal_match = journal_match.where(TokenUsageLog.event_at >= since)
+    stmt = select(Account.id).where(Account.id.in_(account_ids)).where(exists(journal_match))
     return {int(account_id) for account_id in (await session.execute(stmt)).scalars().all()}
 
 
@@ -209,7 +214,9 @@ async def scan_activation_telemetry(
         oauth_access_account_ids = await accounts_with_live_oauth_access(session, now=current)
         active_token_account_ids |= oauth_access_account_ids
         recent_usage_account_ids |= await _accounts_with_requests(
-            session, since=recent_usage_cutoff
+            session,
+            account_ids=connected_account_ids & active_token_account_ids,
+            since=recent_usage_cutoff,
         )
         connected_with_active_token_ids = connected_account_ids & active_token_account_ids
         connected_recent_usage_ids = connected_with_active_token_ids & recent_usage_account_ids
@@ -285,7 +292,9 @@ async def scan_activation_telemetry(
             ).scalars().all()
         )
         # Stage 260: the journal is the channel-neutral answer to "did they call".
-        first_mcp_request_ids |= (await _accounts_with_requests(session)) & new_account_ids
+        first_mcp_request_ids |= await _accounts_with_requests(
+            session, account_ids=new_account_ids
+        )
         funnel_values = {
             "registered": len(account_ids),
             "connected": len(connected_account_ids),
@@ -363,24 +372,6 @@ async def scan_activation_telemetry(
     )
     rows = (await session.execute(stmt)).all()
 
-    # Stage 260: "when did this account last call" now comes from the journal,
-    # which covers both channels; `ServiceBearerToken.last_used_at` only ever
-    # answered for one of them.
-    last_request_by_account = {
-        int(account_id): last_at
-        for account_id, last_at in (
-            await session.execute(
-                select(
-                    TokenUsageLog.account_id,
-                    func.max(TokenUsageLog.event_at),
-                )
-                .where(TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED)
-                .where(TokenUsageLog.account_id.is_not(None))
-                .group_by(TokenUsageLog.account_id)
-            )
-        ).all()
-    }
-
     # Accounts whose only access is OAuth have no bearer row above, so they are
     # added here with the grant as the age anchor. A grant whose access has
     # already died is not counted: it would keep raising silence alerts for
@@ -406,6 +397,28 @@ async def scan_activation_telemetry(
     ).all()
     bearer_account_ids = {int(row.account_id) for row in rows}
     oauth_only_rows = [row for row in oauth_rows if int(row.account_id) not in bearer_account_ids]
+
+    # Only accounts with a live access anchor can emit silence warnings. One
+    # descending index probe per account replaces the full-journal GROUP BY.
+    anchored_ids = bearer_account_ids | {int(row.account_id) for row in oauth_only_rows}
+    last_request_by_account = {}
+    if anchored_ids:
+        latest_event = (
+            select(TokenUsageLog.event_at)
+            .where(TokenUsageLog.account_id == Account.id)
+            .where(TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED)
+            .order_by(TokenUsageLog.event_at.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        last_request_by_account = {
+            int(account_id): last_at
+            for account_id, last_at in (
+                await session.execute(
+                    select(Account.id, latest_event).where(Account.id.in_(anchored_ids))
+                )
+            ).all()
+        }
 
     gauges: dict[int, float] = {}
     live_account_ids: set[int] = set()

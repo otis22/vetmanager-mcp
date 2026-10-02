@@ -25,7 +25,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import httpx
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from agent_feedback_service import sanitize_text
@@ -142,18 +142,23 @@ async def _count_live_accounts(session, *, now: datetime, window: timedelta) -> 
             )
         ).scalars().all()
     )
-    by_journal = set(
-        (
-            await session.execute(
-                select(TokenUsageLog.account_id)
-                .join(Account, Account.id == TokenUsageLog.account_id)
-                .where(Account.archived_at.is_(None))
-                .where(TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED)
-                .where(TokenUsageLog.event_at >= cutoff)
-            )
-        ).scalars().all()
-    )
+    by_journal = await _journal_accounts_since(session, cutoff)
     return len(by_stat | by_journal)
+
+
+async def _journal_accounts_since(session, cutoff: datetime) -> set[int]:
+    """Account-sized activity result, independent of journal row count."""
+    matching_event = (
+        select(TokenUsageLog.id)
+        .where(TokenUsageLog.account_id == Account.id)
+        .where(TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED)
+        .where(TokenUsageLog.event_at >= cutoff)
+    )
+    return set((await session.execute(
+        select(Account.id)
+        .where(Account.archived_at.is_(None))
+        .where(exists(matching_event))
+    )).scalars().all())
 
 
 async def _count_dead_accounts(session, *, now: datetime) -> int:
@@ -346,17 +351,7 @@ async def _collect_activation_funnel(session, *, now: datetime) -> dict[str, int
     # Stage 260: OAuth requests live only in the journal, and an OAuth grant is
     # usable access just like an issued token — without both, a working account
     # shows up as "issue a token" and "go make your first request".
-    with_recent_usage |= set(
-        (
-            await session.execute(
-                select(TokenUsageLog.account_id)
-                .join(Account, Account.id == TokenUsageLog.account_id)
-                .where(Account.archived_at.is_(None))
-                .where(TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED)
-                .where(TokenUsageLog.event_at >= recent_usage_cutoff)
-            )
-        ).scalars().all()
-    )
+    with_recent_usage |= await _journal_accounts_since(session, recent_usage_cutoff)
     usable_tokens |= await accounts_with_live_oauth_access(session, now=now) & account_ids
 
     ready = connected & usable_tokens

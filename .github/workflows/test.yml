@@ -102,4 +102,4 @@ jobs:
             -v "${{ github.workspace }}:/app" \
             -u 1001:1001 \
             vetmanager-mcp-test \
-            pytest -q tests/test_stage227_postgres_activation_telemetry.py
+            pytest -q tests/test_stage227_postgres_activation_telemetry.py tests/test_stage359_postgres_activation_journal.py
