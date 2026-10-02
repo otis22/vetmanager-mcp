@@ -540,7 +540,40 @@ def _annotate_report_ai_workarounds(payload: dict) -> dict:
         not isinstance(code, str) or code not in REPORT_AI_OBSERVED_CODES
     ):
         job["error_code"] = "unknown"
+    _annotate_report_ai_preview_guidance(job)
     return payload
+
+
+_ZERO_PREVIEW_SUMMARY = re.compile(
+    r"^Превью:\s*0\s+строк(?:\s*,\s*\d+\s+колон\w*)?\s*$"
+)
+
+
+def _annotate_report_ai_preview_guidance(job: dict) -> None:
+    if job.get("status") not in {"ready_to_save", "saved", "existing_report_matched"}:
+        return
+    summary = job.get("preview_summary")
+    if (
+        job.get("status") == "ready_to_save"
+        and isinstance(summary, str)
+        and _ZERO_PREVIEW_SUMMARY.fullmatch(summary)
+    ):
+        job.setdefault("mcp_empty_preview_guidance", {
+            "code": "report_ai_empty_preview",
+            "steps": [
+                "До сохранения сверьте наличие исходных записей прямым чтением, например get_medical_cards_by_date для медкарт, с тем же периодом и клиникой.",
+                "Не называйте отчёт рабочим по одному статусу ready_to_save: нулевое превью может не совпадать с исходными данными.",
+                "Не сохраняйте пустой отчёт без согласия человека; если прямое чтение нашло записи, объясните расхождение.",
+            ],
+        })
+    if _answers_must_hide_personal_data():
+        job.setdefault("mcp_personal_data_guidance", {
+            "code": "report_ai_staff_ids_in_private_mode",
+            "steps": [
+                "Если врач или другой сотрудник показан идентификатором вместо ФИО, объясните человеку: режим «без персональных данных» — настройка подключения клиники; это не ошибка конструктора.",
+                "Не обходите этот режим и не подставляйте ФИО сотрудника через другие инструменты.",
+            ],
+        })
 
 
 async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | None = None) -> dict:
