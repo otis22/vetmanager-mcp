@@ -11,7 +11,11 @@ from tests.runtime_factories import make_client_with_resolved_runtime, patch_run
 TEST_DOMAIN = os.environ.get("TEST_DOMAIN", "")
 TEST_API_KEY = os.environ.get("TEST_API_KEY", "")
 _ENDPOINT = "/rest/api/MedicalCards"
-_PROBE = "stage361: показатели 120 100 80 60; тел. 000 000 00 00"
+_PROBE = (
+    "stage361: таблица диуреза\n"
+    "Показатели: 120 100 80 60 мл\n"
+    "Примечание: тел. 000 000 00 00"
+)
 
 
 def _card(response: dict) -> dict:
@@ -58,10 +62,10 @@ async def test_live_medical_card_numeric_row_and_marked_phone() -> None:
             result = await mcp.call_tool("get_medical_card_by_id", {"card_id": card_id})
         assert not result.is_error
         cleaned = str(_card(result.structured_content).get("description") or "")
-        assert "показатели 120 100 80 60" in cleaned
-        assert "тел. [redacted-phone]" in cleaned
+        assert "Показатели: 120 100 80 60 мл" in cleaned
+        assert "Примечание: тел. [redacted-phone]" in cleaned
         assert "000 000 00 00" not in cleaned
-        print("stage361_live_mcp_code=success body=stage361: показатели 120 100 80 60; тел. [redacted-phone]")
+        print("stage361_live_mcp_code=success body=stage361: таблица диуреза | Показатели: 120 100 80 60 мл | Примечание: тел. [redacted-phone]")
     finally:
         current = _card(await client.get(f"{_ENDPOINT}/{card_id}"))
         current_description = str(current.get("description") or "")

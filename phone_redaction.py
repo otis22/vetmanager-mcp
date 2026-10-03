@@ -46,32 +46,33 @@ _CONTACT_WORD_RE = re.compile(
 _IDENTIFIER_BEFORE_RE = re.compile(r"(?iu)\b(?:id|ид|инн|chip|чип|microchip|микрочип|barcode|штрихкод)\s*[:=]?\s*$")
 _EXPLICIT_PHONE_BEFORE_RE = re.compile(
     r"(?iu)\b(?:тел(?:ефон(?:а)?)?\.?|моб\.?|мобильный|звонить|звоните|"
-    r"перезвонить|сот\.?|сотовый|whatsapp|вотсап|phone|tel)[ \t:№#-]*\Z"
+    r"перезвонить|сот\.?|сотовый|whatsapp|вотсап|phone|tel)[ \t:№#=-]*\Z"
 )
 _CONTACT_LIST_JOIN_RE = re.compile(r"(?:[ \t]*,[ \t]*|[ \t]+и[ \t]+)\Z", re.IGNORECASE)
-_MORE_NUMBER_GROUPS_RE = re.compile(r"[ .\t-]\d+(?![:\d])")
+_FOLLOWING_GROUP_RE = re.compile(r"[ .\t-]\d{1,3}(?!\d)")
 
 
 def iter_phone_matches(text: str) -> Iterator[re.Match[str]]:
     """Yield phone matches which are not the number in a clinical context."""
-    previous_ambiguous_end: int | None = None
+    previous_contact_end: int | None = None
     for match in _PHONE_RE.finditer(text):
+        explicitly_marked = _explicit_phone_context(text, match)
+        in_contact_list = previous_contact_end is not None and bool(
+            _CONTACT_LIST_JOIN_RE.fullmatch(text[previous_contact_end:match.start()])
+        )
         if match.group("ambiguous"):
             after = text[match.end():match.end() + 24]
-            in_contact_list = previous_ambiguous_end is not None and bool(
-                _CONTACT_LIST_JOIN_RE.fullmatch(text[previous_ambiguous_end:match.start()])
-            )
             if (
                 _UNIT_AFTER_RE.match(after)
-                or _MORE_NUMBER_GROUPS_RE.match(after)
-                or not (_explicit_phone_context(text, match) or in_contact_list)
+                or _continues_clinical_series(text[match.end():])
+                or not (explicitly_marked or in_contact_list)
             ):
-                previous_ambiguous_end = None
+                previous_contact_end = None
                 continue
         if _has_clinical_context(text, match) or _is_valid_iso_date(match.group()):
-            previous_ambiguous_end = None
+            previous_contact_end = None
             continue
-        previous_ambiguous_end = match.end() if match.group("ambiguous") else None
+        previous_contact_end = match.end() if explicitly_marked or in_contact_list else None
         yield match
 
 
@@ -94,6 +95,19 @@ def _explicit_phone_context(text: str, match: re.Match[str]) -> bool:
     if _IDENTIFIER_BEFORE_RE.search(before):
         return False
     return bool(_EXPLICIT_PHONE_BEFORE_RE.search(before))
+
+
+def _continues_clinical_series(after: str) -> bool:
+    group = _FOLLOWING_GROUP_RE.match(after)
+    if group is None:
+        return False
+    rest = after[group.end():]
+    return bool(
+        not rest
+        or rest[0] in ",;)]\n"
+        or _UNIT_AFTER_RE.match(rest)
+        or re.match(r"[ \t]+\d", rest)
+    )
 
 
 def _has_clinical_context(text: str, match: re.Match[str]) -> bool:

@@ -11,7 +11,7 @@ from report_export import build_export_csv
 @pytest.mark.parametrize("marker", [
     "тел.", "Тел:", "телефон:", "телефона:", "моб.", "мобильный:",
     "звонить", "звоните", "перезвонить", "phone:", "tel:", "контактный телефон:",
-    "тел.: #",
+    "тел.: #", "phone=", "телефон=",
     "сот.", "сотовый:", "whatsapp:", "вотсап:",
 ])
 @pytest.mark.parametrize("number", ["912 345 67 89", "912.345.67.89"])
@@ -30,6 +30,10 @@ def test_marked_number_is_hidden_in_diagnostics_and_feedback(number: str) -> Non
     text = f"звонить {number}"
     assert _redact_exception_value(text) == "звонить [Filtered]"
     assert sanitize_feedback_text(text, limit=500) == "звонить [REDACTED]"
+
+
+def test_phone_equals_marker_hides_the_entire_number_in_diagnostics() -> None:
+    assert _redact_exception_value("phone=912 345 67 89") == "phone=[Filtered]"
 
 
 @pytest.mark.parametrize("value", [
@@ -61,6 +65,23 @@ def test_explicit_contact_list_hides_each_number() -> None:
     assert cleaned == "тел. [redacted-phone], [redacted-phone] и [redacted-phone]"
     csv_text, _, _ = build_export_csv(f'Примечание\n"{text}"\n'.encode(), delimiter=",", depersonalize=True)
     assert csv_text.count(REDACTED_PHONE) == 3
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("телефон: 79123456789, 913 456 78 90", "телефон: [redacted-phone], [redacted-phone]"),
+    ("тел. 912 345 67 89, 8 913 456 78 90, 914 222 33 44",
+     "тел. [redacted-phone], [redacted-phone], [redacted-phone]"),
+])
+def test_contact_list_survives_a_mixed_phone_format(text: str, expected: str) -> None:
+    assert sanitize_tool_result({"description": text})["description"] == expected
+    csv_text, _, _ = build_export_csv(f'Примечание\n"{text}"\n'.encode(), delimiter=",", depersonalize=True)
+    assert csv_text.count(REDACTED_PHONE) == expected.count(REDACTED_PHONE)
+
+
+@pytest.mark.parametrize("suffix", ["03.10", "9-18", "2 раза"])
+def test_a_following_date_hours_or_count_does_not_expose_marked_phone(suffix: str) -> None:
+    text = f"тел. 912 345 67 89 {suffix}"
+    assert sanitize_tool_result({"description": text})["description"] == f"тел. {REDACTED_PHONE} {suffix}"
 
 
 def test_longer_clinical_series_is_not_partly_redacted() -> None:
