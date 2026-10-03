@@ -91,7 +91,8 @@ def test_stage330_eight_prefix_requires_a_separator() -> None:
 
 @pytest.mark.parametrize(
     "clinical_text",
-    ["150 45 60 55 40", "Диурез: 120 45 60 мл", "150 120 45 60 мл", "Показатели: 150 120 45 60"],
+    ["150 45 60 55 40", "Диурез: 120 45 60 мл", "150 120 45 60 мл", "Показатели: 150 120 45 60",
+     "Показатели: 912 345 67 89"],
 )
 def test_stage330_space_separated_short_groups_are_not_phones(clinical_text: str) -> None:
     assert _free_text(clinical_text) == clinical_text

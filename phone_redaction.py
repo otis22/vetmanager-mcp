@@ -8,9 +8,9 @@ from datetime import date
 
 
 # A phone is either a contiguous 10–15 digit number, a deliberately structured
-# local form (3–5/3/2/2), or an explicitly international grouped form.  The
-# shape is intentionally narrower than "digits and separators": clinical rows
-# and SVG coordinates must not become personal data.
+# local form, or an explicitly international grouped form. Prefixless 3/3/2/2
+# groups require a nearby contact marker: clinical rows and SVG coordinates
+# must not become personal data.
 _PHONE_RE = re.compile(
     r"(?<!\d)(?:"
     r"(?:\+\d{10,11}|[0-79]\d{9}|\d{11})"
@@ -29,6 +29,7 @@ _PHONE_RE = re.compile(
     r"|\+\d{1,3}[ .-]\d{3,5}[ .-]\d{2}[ .-]\d{2}(?:[ .-]\d{2})?"
     r"|\d{3,5}-\d{2}-\d{2}(?:-\d{2})?"
     r"|(?<=тел\. )\d{3,5}[ .]\d{2}[ .]\d{2}"
+    r"|(?P<ambiguous>\d{3}[ .]\d{3}[ .]\d{2}[ .]\d{2})"
     r")(?!\d)"
 )
 _UNIT_AFTER_RE = re.compile(
@@ -43,24 +44,56 @@ _CONTACT_WORD_RE = re.compile(
     r"(?iu)\b(?:тел(?:ефон)?|звоните|звонить|перезвонить|с|до|после|в|на)\b"
 )
 _IDENTIFIER_BEFORE_RE = re.compile(r"(?iu)\b(?:id|ид|инн|chip|чип|microchip|микрочип|barcode|штрихкод)\s*[:=]?\s*$")
+_EXPLICIT_PHONE_BEFORE_RE = re.compile(
+    r"(?iu)\b(?:тел(?:ефон(?:а)?)?\.?|моб\.?|мобильный|звонить|звоните|"
+    r"перезвонить|сот\.?|сотовый|whatsapp|вотсап|phone|tel)[ \t:№#-]*\Z"
+)
+_CONTACT_LIST_JOIN_RE = re.compile(r"(?:[ \t]*,[ \t]*|[ \t]+и[ \t]+)\Z", re.IGNORECASE)
+_MORE_NUMBER_GROUPS_RE = re.compile(r"[ .\t-]\d+(?![:\d])")
 
 
 def iter_phone_matches(text: str) -> Iterator[re.Match[str]]:
     """Yield phone matches which are not the number in a clinical context."""
+    previous_ambiguous_end: int | None = None
     for match in _PHONE_RE.finditer(text):
+        if match.group("ambiguous"):
+            after = text[match.end():match.end() + 24]
+            in_contact_list = previous_ambiguous_end is not None and bool(
+                _CONTACT_LIST_JOIN_RE.fullmatch(text[previous_ambiguous_end:match.start()])
+            )
+            if (
+                _UNIT_AFTER_RE.match(after)
+                or _MORE_NUMBER_GROUPS_RE.match(after)
+                or not (_explicit_phone_context(text, match) or in_contact_list)
+            ):
+                previous_ambiguous_end = None
+                continue
         if _has_clinical_context(text, match) or _is_valid_iso_date(match.group()):
+            previous_ambiguous_end = None
             continue
+        previous_ambiguous_end = match.end() if match.group("ambiguous") else None
         yield match
 
 
 def redact_phone_numbers(text: str, replacement: str) -> str:
     """Replace shared phone matches without making callers share placeholders."""
-    return _PHONE_RE.sub(
-        lambda match: match.group(0)
-        if _has_clinical_context(text, match) or _is_valid_iso_date(match.group())
-        else replacement,
-        text,
-    )
+    parts: list[str] = []
+    position = 0
+    for match in iter_phone_matches(text):
+        parts.extend((text[position:match.start()], replacement))
+        position = match.end()
+    parts.append(text[position:])
+    return "".join(parts)
+
+
+def _explicit_phone_context(text: str, match: re.Match[str]) -> bool:
+    before = text[max(0, match.start() - 32):match.start()]
+    after = text[match.end():match.end() + 24]
+    if _UNIT_AFTER_RE.match(after) or _UNIT_BEFORE_RE.search(before):
+        return False
+    if _IDENTIFIER_BEFORE_RE.search(before):
+        return False
+    return bool(_EXPLICIT_PHONE_BEFORE_RE.search(before))
 
 
 def _has_clinical_context(text: str, match: re.Match[str]) -> bool:
