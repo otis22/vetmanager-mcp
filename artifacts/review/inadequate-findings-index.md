@@ -378,3 +378,24 @@ Source: `artifacts/review/2026-09-16-full-stage-319.md`
 
 - reviewer: security + spark-scout + aggregator, pre-arbitration confidence: 0.99; Claude Opus verdict: false_positive / low
 - **Причина dismiss**: capability намеренно следует за долговечным OAuth grant, а не часовым access token; привязка трёхдневной ссылки к expiry токена сломает штатную доступность, тогда как revoke grant уже закрывает ссылку. Семантику независимого exact-token revocation следует сначала отдельно определить как продуктовый контракт.
+
+---
+
+## 2026-10-03 super-review full, stage 360
+
+Source: `artifacts/review/2026-10-03-full-stage-360.md`
+
+### 1. `landing_page.py:2099` — общая фраза о недоступности персональных данных
+
+- reviewer: spark-scout, confidence: 0.88
+- **Причина dismiss**: рядом (`landing_page.py:2111`) прямо сказано, что имена в свободном тексте режим не распознаёт. Редакция FAQ утверждена владельцем; отдельный доказанный сбой этот кандидат не показывает.
+
+### 2. `AssumptionLog.md:N/A` — нет записи для этапа 357
+
+- reviewer: workflow-check, confidence: 0.95
+- **Причина dismiss**: этап 357 — операционный triage `known_issues` без кодовой задачи. `AGENTS.md` запрещает создавать записи репозитория только по результатам такого triage.
+
+### 3. `PRD/этап-340-денежная-семантика-счёта.md:3-5` и `PRD/этап-342-seed-ki45-safety.md:3-10` — нет буквального заголовка «Цель»
+
+- reviewer: workflow-check, confidence: 0.65
+- **Причина dismiss**: разделы «Проблема и результат» и «Проблема и факты» содержат цель и ожидаемый результат. Буквальная проверка заголовка даёт формальное срабатывание без потери требования.
