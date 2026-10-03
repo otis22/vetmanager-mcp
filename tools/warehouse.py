@@ -653,7 +653,10 @@ def register(mcp: FastMCP) -> None:
                 "expected_price is only valid with scope='row' and confirm=true."
             )
 
-        row = _price_row(await crud_get_by_id("/rest/api/goodSaleParam", sale_param_id))
+        row = _price_row(await crud_get_by_id(
+            "/rest/api/goodSaleParam", sale_param_id,
+            fresh=bool(confirm and expected_price),
+        ))
         if str(row.get("price_formation") or "") == "increase":
             raise ToolInputError(
                 f"Sale parameter {sale_param_id} derives its price from a markup "
@@ -667,7 +670,8 @@ def register(mcp: FastMCP) -> None:
             if current != expected:
                 raise ToolInputError(
                     f"expected_price does not match the current price of sale parameter "
-                    f"{sale_param_id}; no price was changed. Read the row again before retrying."
+                    f"{sale_param_id}; current price is {current}. No price was changed. "
+                    "Read the row again before retrying."
                 )
         target = _apply_change(current, new_price, change_percent)
 

@@ -382,13 +382,14 @@ class VetmanagerClient:
         cache_key = ""
         entity_tag = self._entity_tag(path)
         upper_method = method.upper()
-        should_cache_get = upper_method == "GET" and not fresh and self._should_cache_get(path)
+        should_cache_get = upper_method == "GET" and self._should_cache_get(path)
         if should_cache_get:
             full_url = self._canonical_url(url, params if isinstance(params, dict) else None)
             cache_key = self._cache_key(method, full_url)
-            cached = await REQUEST_CACHE.get(cache_key)
-            if cached is not None:
-                return cached
+            if not fresh:
+                cached = await REQUEST_CACHE.get(cache_key)
+                if cached is not None:
+                    return cached
 
         # Circuit breaker fast-path: if domain is currently OPEN and cooldown
         # has not elapsed, fail fast instead of waiting the full timeout.
