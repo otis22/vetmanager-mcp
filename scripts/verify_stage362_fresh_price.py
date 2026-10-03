@@ -67,7 +67,8 @@ async def main() -> None:
             raise RuntimeError("Test row must be active with a directly writable price")
         original_price = str(original["price"])
         probe_price = str(Decimal(original_price) + Decimal("1.00"))
-        applied_price = float(Decimal(original_price) + Decimal("2.00"))
+        applied_decimal = Decimal(original_price) + Decimal("2.00")
+        applied_price = float(applied_decimal)
         tool_requests: list[tuple[str, int]] = []
         original_request = httpx.AsyncClient.request
 
@@ -102,12 +103,11 @@ async def main() -> None:
                                     scope="row", confirm=True)
             print(json.dumps({"confirmed_tool_body": answer,
                               "tool_upstream_http": tool_requests}))
-            if not answer.get("applied") or Decimal(str((await read())["price"])) != Decimal(
-                    str(applied_price)):
+            if not answer.get("applied") or Decimal(str((await read())["price"])) != applied_decimal:
                 raise RuntimeError("Confirmed tool price was not observed")
         finally:
-            if Decimal(str((await read())["price"])) != Decimal(original_price):
-                await direct_price(original_price)
+            # Always attempt restoration, even when a preceding GET failed.
+            await direct_price(original_price)
             if Decimal(str((await read())["price"])) != Decimal(original_price):
                 raise RuntimeError("Test row price was not restored")
         print(json.dumps({"restored": True, "original_price": original_price}))
