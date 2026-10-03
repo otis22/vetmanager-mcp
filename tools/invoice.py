@@ -473,6 +473,7 @@ def register(mcp: FastMCP) -> None:
                     call_budget_error=split_message,
                     on_page=add_page,
                     collect=False,
+                    keyset_id=True,
                 )
         except TimeoutError as exc:
             raise reportable_error(split_message) from exc

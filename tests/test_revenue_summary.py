@@ -509,13 +509,15 @@ async def test_get_average_invoice_scans_more_than_ten_thousand_without_losing_w
 
     def invoice_page(request):
         query = _query_from_call(type("Call", (), {"request": request})())
-        offset = int(query["offset"][0])
+        assert query["offset"] == ["0"]
+        filters = json.loads(query["filter"][0])
+        offset = next((int(item["value"]) for item in filters if item["property"] == "id"), 0)
         rows = [
             {"id": number + 1, "amount": "1.00" if number < 10000 else "100.00"}
             for number in range(offset, min(offset + 100, 10001))
         ]
         return httpx.Response(200, json={"success": True, "data": {
-            "totalCount": 10001, "invoice": rows,
+            "totalCount": 10001 - offset, "invoice": rows,
         }})
 
     route = respx.get(f"{BASE}/rest/api/invoice").mock(side_effect=invoice_page)

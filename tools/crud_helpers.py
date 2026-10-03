@@ -235,6 +235,7 @@ async def paginate_all(
     call_budget_error: str | None = None,
     on_page: Callable[[list[dict]], None] | None = None,
     collect: bool = True,
+    keyset_id: bool = False,
 ) -> tuple[list[dict], int]:
     """Fetch all pages of a list endpoint.
 
@@ -248,6 +249,8 @@ async def paginate_all(
         on_page: Optional synchronous consumer of each validated page.
         collect: False keeps only the current page in memory; requires on_page.
         call_budget_error: Caller-specific safe message on max_calls exhaustion.
+        keyset_id: Scan by ascending id with offset=0 on every request. Only
+            internal bounded callers should enable this mode.
 
     Returns:
         Tuple of (all_records, total_count).
@@ -259,11 +262,14 @@ async def paginate_all(
     offset = 0
     calls = 0
     seen_pages: set[str] = set()
+    if keyset_id and sort:
+        raise invariant_error("keyset_id owns the id sort")
     effective_sort = total_order_sort(sort, allowed_filter_properties)
 
     normalized_filters = as_dict_list(filters) if filters else None
     if allowed_filter_properties is not None:
         validate_filter_properties(filters, allowed_filter_properties)
+    last_id: int | None = None
 
     while True:
         if calls >= max_calls:
@@ -271,11 +277,15 @@ async def paginate_all(
                 call_budget_error
                 or f"pagination call budget exceeded for {endpoint}; narrow filters"
             )
+        page_filters = normalized_filters
+        if keyset_id and last_id is not None:
+            page_filters = [*(normalized_filters or []),
+                            {"property": "id", "operator": ">", "value": last_id}]
         params = build_list_query_params(
             limit=page_size,
-            offset=offset,
+            offset=0 if keyset_id else offset,
             sort=effective_sort,
-            filters=normalized_filters,
+            filters=page_filters,
             extra=extra,
         )
 
@@ -292,7 +302,10 @@ async def paginate_all(
             )
 
         if not records:
-            if page_total_count is not None and offset < page_total_count:
+            if page_total_count is not None and (
+                (keyset_id and page_total_count > 0)
+                or (not keyset_id and offset < page_total_count)
+            ):
                 raise reportable_error(
                     f"pagination ended before totalCount for {endpoint}"
                 )
@@ -304,6 +317,17 @@ async def paginate_all(
                 f"pagination made no progress for {endpoint}"
             )
         seen_pages.add(fingerprint)
+
+        if keyset_id:
+            for record in records:
+                raw_id = record.get("id")
+                try:
+                    current_id = int(raw_id) if not isinstance(raw_id, bool) else 0
+                except (TypeError, ValueError):
+                    current_id = 0
+                if current_id <= (last_id or 0):
+                    raise reportable_error(f"pagination id order invalid for {endpoint}")
+                last_id = current_id
 
         if on_page is not None:
             on_page(records)
@@ -320,7 +344,10 @@ async def paginate_all(
 
         if (
             len(records) < page_size
-            and (page_total_count is None or offset >= page_total_count)
+            and (page_total_count is None or (
+                page_total_count <= len(records) if keyset_id
+                else offset >= page_total_count
+            ))
         ):
             break
 

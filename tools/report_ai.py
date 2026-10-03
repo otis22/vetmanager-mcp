@@ -378,6 +378,9 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
         _remember_finalized_report_ai_job(observation_key, now=current_time)
         return
     stage = _REPORT_AI_STAGE_BY_STATUS.get(str(job.get("status") or ""), "unknown")
+    if stage == "failed":
+        _best_effort_observation("lifecycle_outcome_code", record_report_ai_outcome_code,
+                                 operation="status", code=job.get("error_code"))
     observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.get(observation_key)
     if observation is None:
         if stage in _REPORT_AI_TERMINAL_OUTCOMES:
@@ -691,12 +694,6 @@ async def _annotate_report_ai_job_payload(payload: dict) -> dict:
     # stage a stale observation would still hold the previous stage's time.
     job = _extract_job(annotated)
     if job:
-        key = _report_ai_queue_observation_key(job)
-        if job.get("status") == "failed" and key not in _REPORT_AI_FINALIZED_OBSERVATIONS:
-            _best_effort_observation(
-                "status_outcome", record_report_ai_outcome_code,
-                operation="status", code=job.get("error_code"),
-            )
         _best_effort_observation("status_lifecycle", _observe_report_ai_lifecycle, job, now=observed_at)
     try:
         return await _annotate_report_ai_queue_diagnostics(annotated, now=observed_at)
