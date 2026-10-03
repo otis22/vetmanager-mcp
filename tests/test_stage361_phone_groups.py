@@ -89,6 +89,14 @@ def test_longer_clinical_series_is_not_partly_redacted() -> None:
     assert sanitize_tool_result({"description": text})["description"] == text
 
 
+@pytest.mark.parametrize("text", [
+    "тел. 120.100.80.60.40.20",
+    "звонить: 912 345 67 89 10.",
+])
+def test_clinical_series_with_dots_is_not_partly_redacted(text: str) -> None:
+    assert sanitize_tool_result({"description": text})["description"] == text
+
+
 def test_structured_phone_fields_mask_even_without_marker() -> None:
     assert sanitize_tool_result({"phone": "912 345 67 89"})["phone"] == REDACTED_PHONE
     csv_text, _, _ = build_export_csv("Телефон\n912 345 67 89\n".encode(), delimiter=",", depersonalize=True)

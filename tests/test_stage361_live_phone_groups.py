@@ -13,8 +13,15 @@ TEST_API_KEY = os.environ.get("TEST_API_KEY", "")
 _ENDPOINT = "/rest/api/MedicalCards"
 _PROBE = (
     "stage361: таблица диуреза\n"
-    "Показатели: 120 100 80 60 мл\n"
+    "Показатели: 120 100 80 60\n"
+    "Единица: мл\n"
     "Примечание: тел. 000 000 00 00"
+)
+_OLD_PROBES = (
+    "stage361: показатели 120 100 80 60; тел. 912 345 67 89",
+    "stage361: показатели 120 100 80 60; тел. 000 000 00 00",
+    "stage361: таблица диуреза\nПоказатели: 120 100 80 60 мл\n"
+    "Примечание: тел. 000 000 00 00",
 )
 
 
@@ -45,12 +52,16 @@ async def test_live_medical_card_numeric_row_and_marked_phone() -> None:
     if "description" not in original or not all(original.get(k) for k in required):
         pytest.skip("Stored card lacks description or update context")
     baseline = str(original.get("description") or "")
-    if baseline.endswith("\n" + _PROBE):
-        baseline = baseline[:-(len(_PROBE) + 1)]
-        await client.put(
-            f"{_ENDPOINT}/{card_id}",
-            json={**{key: original[key] for key in required}, "description": baseline},
-        )
+    for stale_probe in (_PROBE, *_OLD_PROBES):
+        if baseline.endswith("\n" + stale_probe):
+            baseline = baseline[:-(len(stale_probe) + 1)]
+            await client.put(
+                f"{_ENDPOINT}/{card_id}",
+                json={**{key: original[key] for key in required}, "description": baseline},
+            )
+            cleaned = _card(await client.get(f"{_ENDPOINT}/{card_id}"))
+            assert str(cleaned.get("description") or "") == baseline
+            break
     probe = baseline + "\n" + _PROBE
     payload = {key: original[key] for key in required}
     try:
@@ -62,10 +73,10 @@ async def test_live_medical_card_numeric_row_and_marked_phone() -> None:
             result = await mcp.call_tool("get_medical_card_by_id", {"card_id": card_id})
         assert not result.is_error
         cleaned = str(_card(result.structured_content).get("description") or "")
-        assert "Показатели: 120 100 80 60 мл" in cleaned
+        assert "Показатели: 120 100 80 60\nЕдиница: мл" in cleaned
         assert "Примечание: тел. [redacted-phone]" in cleaned
         assert "000 000 00 00" not in cleaned
-        print("stage361_live_mcp_code=success body=stage361: таблица диуреза | Показатели: 120 100 80 60 мл | Примечание: тел. [redacted-phone]")
+        print("stage361_live_mcp_code=success body=stage361: таблица диуреза | Показатели: 120 100 80 60 | Единица: мл | Примечание: тел. [redacted-phone]")
     finally:
         current = _card(await client.get(f"{_ENDPOINT}/{card_id}"))
         current_description = str(current.get("description") or "")

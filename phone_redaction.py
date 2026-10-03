@@ -104,7 +104,10 @@ def _continues_clinical_series(after: str) -> bool:
     rest = after[group.end():]
     return bool(
         not rest
+        or after.startswith(".")
         or rest[0] in ",;)]\n"
+        or rest == "."
+        or rest.startswith((". ", ".\n"))
         or _UNIT_AFTER_RE.match(rest)
         or re.match(r"[ \t]+\d", rest)
     )
