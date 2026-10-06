@@ -375,9 +375,13 @@ def register(mcp: FastMCP) -> None:
         date_basis="create_date" only for legacy record-created/audit
         semantics. Scans at most 1000 pages of 100 invoices or 300 seconds,
         whichever comes first. For a larger period, split it into disjoint
-        date ranges and combine their total_amount and invoices_with_amount;
-        divide the combined sum by the combined count. Never average the
-        per-range averages. If one day alone exceeds the budget, page through
+        date ranges and combine their unrounded_total_amount and
+        invoices_with_amount; round the combined sum to cents and divide by
+        the combined count, then round the average to cents. Never average
+        the per-range averages. complete=true verifies the observed REST
+        counts, but Vetmanager does not provide a snapshot across pages;
+        concurrent changes can still move rows into a passed cursor range.
+        If one day alone exceeds the budget, page through
         get_invoices with limit=100, offset=0 on every call, id ASC sort and
         filter=[{"property":"id","operator":">","value":last_id}] on each
         next call. Use invoice_date_from/to and
@@ -431,18 +435,36 @@ def register(mcp: FastMCP) -> None:
 
         total_sum = Decimal("0")
         total_count = 0
+        excluded_amount_count = 0
+        upstream_total_count: int | None = None
+
+        def record_initial_count(value: int) -> None:
+            nonlocal upstream_total_count
+            upstream_total_count = value
 
         def add_page(invoices: list[dict]) -> None:
-            nonlocal total_sum, total_count
+            nonlocal total_sum, total_count, excluded_amount_count
             for inv in invoices:
-                amount_raw = inv.get("amount") or inv.get("total") or inv.get("sum") or 0
+                amount_raw = inv.get("amount")
+                if amount_raw is None or amount_raw == "":
+                    raise reportable_error(
+                        "Average invoice incomplete: missing mandatory amount"
+                    )
                 try:
                     amount = Decimal(str(amount_raw))
                 except (InvalidOperation, ValueError):
-                    continue
-                if amount.is_finite() and amount > 0:
+                    raise reportable_error(
+                        "Average invoice incomplete: invalid mandatory amount"
+                    ) from None
+                if not amount.is_finite():
+                    raise reportable_error(
+                        "Average invoice incomplete: non-finite mandatory amount"
+                    )
+                if amount > 0:
                     total_sum += amount
                     total_count += 1
+                else:
+                    excluded_amount_count += 1
 
         split_message = (
             "Average invoice scan exceeded its 1000-page or 300-second budget. "
@@ -455,9 +477,10 @@ def register(mcp: FastMCP) -> None:
                 "and count across pages."
                 if date_from == date_to
                 else (
-                    "Split the period into disjoint date ranges; add total_amount "
-                    "and invoices_with_amount, then divide the combined sum by "
-                    "the combined count. Do not average per-range averages."
+                    "Split the period into disjoint date ranges; add "
+                    "unrounded_total_amount and invoices_with_amount, round the "
+                    "combined sum to cents, then divide by the combined count. "
+                    "Do not average per-range averages."
                 )
             )
         )
@@ -474,6 +497,8 @@ def register(mcp: FastMCP) -> None:
                     on_page=add_page,
                     collect=False,
                     keyset_id=True,
+                    require_complete_count=True,
+                    on_initial_total_count=record_initial_count,
                 )
         except TimeoutError as exc:
             raise reportable_error(split_message) from exc
@@ -486,6 +511,8 @@ def register(mcp: FastMCP) -> None:
 
         return {
             "success": True,
+            "complete": True,
+            "snapshot_consistency": "not_guaranteed",
             "date_from": date_from,
             "date_to": date_to,
             "date_basis": date_basis,
@@ -493,8 +520,12 @@ def register(mcp: FastMCP) -> None:
             "amount_field": "amount",
             "status": status,
             "invoices_with_amount": total_count,
+            "excluded_amount_count": excluded_amount_count,
+            "scanned_count": total_count + excluded_amount_count,
+            "upstream_total_count": upstream_total_count,
             "total_revenue": float(rounded_total),
             "total_amount": _money_str(rounded_total),
+            "unrounded_total_amount": str(total_sum),
             "average_invoice": average,
             "applied_filters": [f.to_dict() for f in combined_filters],
             "warnings": warnings,

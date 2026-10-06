@@ -236,6 +236,8 @@ async def paginate_all(
     on_page: Callable[[list[dict]], None] | None = None,
     collect: bool = True,
     keyset_id: bool = False,
+    require_complete_count: bool = False,
+    on_initial_total_count: Callable[[int], None] | None = None,
 ) -> tuple[list[dict], int]:
     """Fetch all pages of a list endpoint.
 
@@ -251,12 +253,18 @@ async def paginate_all(
         call_budget_error: Caller-specific safe message on max_calls exhaustion.
         keyset_id: Scan by ascending id with offset=0 on every request. Only
             internal bounded callers should enable this mode.
+        require_complete_count: In keyset mode, require each page's totalCount
+            to equal the initial count minus already scanned rows. Opt in for
+            aggregates that must not present an unverifiable partial result.
+        on_initial_total_count: Receive the verified count from the first page.
 
     Returns:
         Tuple of (all_records, total_count).
     """
     if not collect and on_page is None:
         raise invariant_error("on_page is required when collect=False")
+    if require_complete_count and not keyset_id:
+        raise invariant_error("complete count requires keyset_id")
     vc = VetmanagerClient()
     all_records: list[dict] = []
     offset = 0
@@ -270,6 +278,7 @@ async def paginate_all(
     if allowed_filter_properties is not None:
         validate_filter_properties(filters, allowed_filter_properties)
     last_id: int | None = None
+    initial_total_count: int | None = None
 
     while True:
         if calls >= max_calls:
@@ -294,6 +303,20 @@ async def paginate_all(
         records, page_total_count = extract_list_page(
             resp, endpoint=endpoint, entity_key=entity_key,
         )
+
+        if require_complete_count:
+            if page_total_count is None:
+                raise reportable_error(
+                    f"incomplete upstream totalCount for {endpoint}"
+                )
+            if initial_total_count is None:
+                initial_total_count = page_total_count
+                if on_initial_total_count is not None:
+                    on_initial_total_count(initial_total_count)
+            if page_total_count != initial_total_count - offset:
+                raise reportable_error(
+                    f"inconsistent upstream totalCount for {endpoint}"
+                )
 
         if max_rows is not None and page_total_count is not None and page_total_count > max_rows:
             raise reportable_error(
@@ -335,6 +358,9 @@ async def paginate_all(
             all_records.extend(records)
         offset += len(records)
 
+        if require_complete_count and initial_total_count is not None and offset > initial_total_count:
+            raise reportable_error(f"incomplete upstream totalCount for {endpoint}")
+
         if max_rows is not None and offset > max_rows:
             raise reportable_error(
                 f"result set too large for {endpoint}: accumulated "
@@ -351,4 +377,6 @@ async def paginate_all(
         ):
             break
 
+    if require_complete_count and offset != initial_total_count:
+        raise reportable_error(f"incomplete upstream totalCount for {endpoint}")
     return all_records, offset

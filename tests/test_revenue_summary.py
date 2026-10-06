@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal, ROUND_HALF_UP
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
@@ -644,6 +645,36 @@ async def test_get_average_invoice_parts_combine_by_sum_and_count():
     count = sum(part["invoices_with_amount"] for part in (first, second))
     assert (total, count, round(total / count, 2)) == (102.0, 3, 34.0)
     assert (first["average_invoice"] + second["average_invoice"]) / 2 != 34.0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_average_fractional_cent_parts_combine_unrounded_totals():
+    billing_mock()
+
+    def invoice_page(request):
+        filters = json.loads(parse_qs(urlparse(str(request.url)).query)["filter"][0])
+        start = next(f["value"] for f in filters if f["operator"] == ">=")
+        row_id = 1 if start.startswith("2026-06-17") else 2
+        return httpx.Response(200, json={"success": True, "data": {
+            "invoice": [{"id": row_id, "amount": "1.004"}], "totalCount": 1,
+        }})
+
+    respx.get(f"{BASE}/rest/api/invoice").mock(side_effect=invoice_page)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        parts = [
+            (await mcp.call_tool("get_average_invoice", {
+                "date_from": day, "date_to": day,
+            })).structured_content
+            for day in ("2026-06-17", "2026-06-18")
+        ]
+    total = sum((Decimal(part["unrounded_total_amount"]) for part in parts), Decimal("0"))
+    count = sum(part["invoices_with_amount"] for part in parts)
+    assert (total, count) == (Decimal("2.008"), 2)
+    assert (total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) / count).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP) == Decimal("1.01")
+    assert sum(Decimal(part["total_amount"]) for part in parts) == Decimal("2.00")
 
 
 @pytest.mark.asyncio
