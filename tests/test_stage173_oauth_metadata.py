@@ -2204,7 +2204,7 @@ async def test_account_ui_lists_and_revokes_oauth_grant_family(tmp_path, monkeyp
     # Stage 210: the cabinet shows a Russian label for a hand-configured grant.
     assert "Настроен вручную" in page_response.text
     assert "Персональные данные" in page_response.text
-    assert "Скрыты" in page_response.text
+    assert "Очистка включена; остаточные данные возможны" in page_response.text
     assert "clients.read" in page_response.text
     assert f'action="/account/oauth-grants/{grant_id}/revoke"' in page_response.text
     assert revoke_response.status_code == 200

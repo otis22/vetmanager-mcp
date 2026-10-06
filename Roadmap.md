@@ -3,7 +3,7 @@
 Статусы: `todo` | `in_progress` | `supervisor_pending` | `done` | `stop`.
 Структуру проверяет `scripts/check_roadmap_structure.py`.
 
-## Этап 368. Числовые результаты Report AI не должны маскироваться как телефоны — `supervisor_pending`
+## Этап 368. Числовые результаты Report AI не должны маскироваться как телефоны — `in_progress`
 
 Источник: feedback report `#122` от 05.10.2026, свежий product dashboard. В
 `get_report_ai_job_data` числовые количества Report AI были замаскированы как

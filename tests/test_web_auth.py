@@ -1457,7 +1457,7 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
         assert "chatgpt.com/plugins" in account_page.text
         assert "Developer mode" in account_page.text
         assert "Scan Tools" in account_page.text
-        assert "Полный доступ и персональные данные" in account_page.text
+        assert "полный доступ и режим с персональными данными" in account_page.text
         assert "plugin/app" in account_page.text
         assert "Откройте ChatGPT web" in account_page.text
         assert "Ключ доступа копировать не нужно" in account_page.text
@@ -1488,7 +1488,7 @@ async def test_account_token_issue_supports_access_preset_and_depersonalized_pol
     # Stage 210: the issued-token block speaks Russian; the English preset
     # labels stay in tool_access_registry for MCP scope-denied messages.
     assert "Уровень доступа:</strong> Регистратура" in response.text
-    assert "Персональные данные:</strong> Без персональных данных" in response.text
+    assert "Персональные данные:</strong> Очистка включена; остаточные данные возможны" in response.text
     assert "Регистратура" in response.text
 
     async with storage.get_session_factory()() as session:

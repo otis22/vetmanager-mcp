@@ -634,7 +634,7 @@ def register_account_routes(
             issued_raw_token=raw_token,
             issued_token_access_label=display_access_label(access_preset),
             issued_token_privacy_label=(
-                "Без персональных данных" if is_depersonalized else "Обычные данные"
+                "Очистка включена; остаточные данные возможны" if is_depersonalized else "Обычные данные"
             ),
         )
 

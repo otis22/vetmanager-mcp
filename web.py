@@ -428,7 +428,7 @@ async def _load_account_dashboard(
                     "access_preset": inferred_preset or "legacy",
                     "access_label": access_label,
                     "privacy_label": (
-                        "Без персональных данных" if token.is_depersonalized else "Обычные данные"
+                        "Очистка включена; остаточные данные возможны" if token.is_depersonalized else "Обычные данные"
                     ),
                 }
             )
@@ -469,7 +469,7 @@ async def _load_account_dashboard(
                     "privacy_label": (
                         "Разрешены"
                         if grant.is_depersonalized is False
-                        else "Скрыты"
+                        else "Очистка включена; остаточные данные возможны"
                     ),
                     "legacy_privacy": grant.is_depersonalized is None,
                     "status": grant.status,

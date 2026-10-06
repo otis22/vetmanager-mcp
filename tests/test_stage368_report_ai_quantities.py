@@ -83,3 +83,61 @@ def test_privacy_note_explains_quantity_tradeoff() -> None:
     assert "телефон" in REPORT_PRIVACY_NOTE
     assert "может остаться видимым" in REPORT_PRIVACY_NOTE
     assert "Явно помеченные" in REPORT_PRIVACY_NOTE
+
+
+def test_privacy_choice_copy_qualifies_report_limit_on_account_and_oauth() -> None:
+    from tests.test_stage199_activation_first import _account_page
+    from web_html import render_oauth_consent_page
+
+    pages = [
+        _account_page(),
+        render_oauth_consent_page(
+            csrf_token="csrf", request_state="state", client_name="assistant",
+            connections=[], script_nonce="nonce",
+        ),
+    ]
+    for page in pages:
+        assert "Распознаваемые ФИО, телефоны, email и адреса скрываются" in page
+        assert "white-space: pre-line" in page
+        assert "полной гарантии скрытия персональных данных нет" in page
+        assert "Числовые значения в колонках количества сохраняются" in page
+        assert "ФИО, телефоны, email и адреса будут скрыты" not in page
+        assert "Скрывает ФИО, телефоны, email и адреса" not in page
+
+
+def test_quick_issue_and_oauth_hint_do_not_promise_zero_personal_data() -> None:
+    from tests.test_stage199_activation_first import _needs_token
+
+    page = _needs_token()
+    quick_start = page.split('data-testid="token-quick-issue"', 1)[1].split('data-testid="token-quick-form"', 1)[0]
+    assert "отчёты с очисткой распознаваемых персональных данных" in quick_start
+    assert "остаточные персональные данные" in quick_start
+    assert "аналитику с очисткой распознаваемых персональных данных" in page
+    assert "отчёты без персональных данных" not in page
+    assert "аналитику без персональных данных" not in page
+
+
+def test_existing_non_chatgpt_oauth_is_not_described_as_claude_or_cursor() -> None:
+    from tests.test_stage197_token_quick_issue import _account_page
+    from tests.test_stage345_account_copy import _oauth
+
+    grant = {**_oauth(used=False), "client_name": "Manus"}
+    page = _account_page(oauth_grants=[grant])
+    assert "Текущий помощник уже подключён через OAuth" in page
+    assert "необязательный для работы через Claude или Cursor" not in page
+
+
+def test_privacy_labels_describe_processing_without_absolute_promise() -> None:
+    from tests.test_stage197_token_quick_issue import _account_page
+    from tests.test_stage345_account_copy import _oauth
+    from web_html import render_oauth_consent_page
+
+    consent = render_oauth_consent_page(
+        csrf_token="csrf", request_state="state", client_name="assistant",
+        connections=[], script_nonce="nonce",
+    )
+    account = _account_page(oauth_grants=[_oauth(used=False)])
+    assert "С очисткой персональных данных" in consent
+    assert "Без персональных данных</strong>" not in consent
+    assert "Очистка включена; остаточные данные возможны" in account
+    assert "Персональные данные\">Скрыты" not in account

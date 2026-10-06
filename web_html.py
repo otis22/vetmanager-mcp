@@ -60,22 +60,15 @@ TOKEN_STATUS_DISPLAY: dict[str, str] = {
 # without its limit is exactly what sent a reader of this service to write that
 # it hands out full access to the clinic database.
 REPORT_PRIVACY_NOTE = (
-    "Отчёты строятся по свободному запросу, поэтому полной гарантии по персональным "
-    "данным в них нет. vetmanager-mcp накладывает три слоя защиты: скрывает "
-    "персональные колонки по названию, вычищает из значений распознанные телефоны, почту, адреса "
-    "и узнаваемые формы ФИО, включая имя из двух слов — по "
-    "словарю русских личных имён, — и требует от генератора отчёта не включать "
-    "персональные данные. Персональные поля рядом с идентификатором записи "
-    "возвращаются адресным плейсхолдером вида [client:123:last_name]: значение "
-    "скрыто от модели, а приложение на своей стороне может подставить его для "
-    "человека. Отчёты, выгрузка и свободный текст очищаются необратимо — там "
-    "подставлять нечего. Известный остаток: одинокая фамилия без имени, "
-    "склонённые формы, слитная запись без пробела и редкое имя, которого нет в "
-    "словаре. Числовые значения в колонках количества сохраняются: если телефон "
-    "попал туда без явной подписи, он может остаться видимым. Явно помеченные "
-    "телефонные номера распознаваемых форм скрываются. При выгрузке vetmanager-mcp скачивает файл, скрывает значения "
-    "персональных колонок и очищает остальные ячейки; ссылка на очищенный файл живёт трое суток и работает, пока жив "
-    "выдавший её доступ."
+    "Отчёты строятся по свободному запросу, поэтому полной гарантии скрытия персональных данных нет. "
+    "Мы применяем три слоя защиты: персональные колонки скрываются по названию, распознаваемые телефоны, "
+    "почта, адреса и формы ФИО — в значениях; генератору поручено не включать персональные данные.\n\n"
+    "Числовые значения в колонках количества сохраняются: телефон без явной подписи может остаться видимым. "
+    "Явно помеченные телефонные номера распознаваемых форм скрываются. Одинокая фамилия, склонённая "
+    "или слитная запись и редкое имя могут не распознаться.\n\n"
+    "Поля записи с ID возвращаются как адресный плейсхолдер для подстановки приложением. "
+    "Отчёты, свободный текст и выгрузки очищаются необратимо; ссылка на очищенную выгрузку "
+    "живёт трое суток, пока действует выдавший её доступ."
 )
 
 
@@ -1186,9 +1179,9 @@ def render_oauth_consent_page(
             <label style="display: flex; gap: 10px; align-items: start;">
               <input type="radio" name="privacy_mode" value="depersonalized" {depersonalized_checked} data-testid="oauth-privacy-depersonalized" style="width: auto; margin-top: 6px;">
               <span>
-                <strong style="display: block; color: var(--ink);">Без персональных данных</strong>
-                <small style="color: var(--muted); font-size: 0.85rem;">ФИО, телефоны, email и адреса будут скрыты в ответах помощника.</small>
-                <small style="display: block; color: var(--muted); font-size: 0.85rem; margin-top: 6px;">{escape(REPORT_PRIVACY_NOTE)}</small>
+                <strong style="display: block; color: var(--ink);">С очисткой персональных данных</strong>
+                <small style="color: var(--muted); font-size: 0.85rem;">Распознаваемые ФИО, телефоны, email и адреса скрываются в ответах помощника; отчёты могут содержать остаточные данные.</small>
+                <small style="display: block; color: var(--muted); font-size: 0.85rem; margin-top: 6px; white-space: pre-line;">{escape(REPORT_PRIVACY_NOTE)}</small>
               </span>
             </label>
             <label style="display: flex; gap: 10px; align-items: start;">
@@ -1530,6 +1523,8 @@ def render_account_page(
         optional_chatgpt = "ChatGPT уже подключён как дополнительный вариант."
     elif has_chatgpt:
         optional_chatgpt = "Других помощников можно добавить позже."
+    elif has_oauth:
+        optional_chatgpt = "ChatGPT — дополнительный вариант подключения. Текущий помощник уже подключён через OAuth."
     else:
         optional_chatgpt = "ChatGPT — дополнительный вариант подключения, необязательный для работы через Claude или Cursor."
 
@@ -1689,7 +1684,7 @@ def render_account_page(
                 "<tr>"
                 f'<td class="grant-name-cell" data-label="Помощник">{escape(client_name)}{in_use_html}</td>'
                 f'<td data-label="Доступ">{escape(str(grant.get("access_label", "Настроен вручную")))}</td>'
-                f'<td data-label="Персональные данные">{escape(str(grant.get("privacy_label", "Скрыты")))}</td>'
+                f'<td data-label="Персональные данные">{escape(str(grant.get("privacy_label", "Очистка включена; остаточные данные возможны")))}</td>'
                 f'<td data-label="Статус"><span class="token-status status-{escape(status)}">'
                 f'{escape(TOKEN_STATUS_DISPLAY.get(status, status))}</span></td>'
                 f'<td data-label="Подключено">'
@@ -1757,7 +1752,8 @@ def render_account_page(
         quick_issue_html = f"""
           <div class="panel-card" id="token-quick" data-testid="token-quick-issue">
             <strong>Быстрый старт: токен с рекомендуемыми настройками</strong>
-            <p class="section-note">Доступ Analytics (отчёты без персональных данных), срок 30 дней, имя «{escape(QUICK_TOKEN_NAME)}».</p>
+            <p class="section-note">Доступ Analytics (отчёты с очисткой распознаваемых персональных данных), срок 30 дней, имя «{escape(QUICK_TOKEN_NAME)}».</p>
+            <p class="section-note">В отчётах возможны остаточные персональные данные, например телефон в колонке количества. Полной гарантии скрытия нет.</p>
             <form method="post" action="/account/tokens" data-submit-lock="Выпускаем токен…" data-testid="token-quick-form">
               {hidden_csrf_input(csrf_token)}
               <input type="hidden" name="token_name" value="{escape(QUICK_TOKEN_NAME)}">
@@ -1996,8 +1992,8 @@ def render_account_page(
             <input type="checkbox" name="is_depersonalized" value="1" {"checked" if token_is_depersonalized else ""} {token_disabled} data-testid="token-is-depersonalized" style="width: auto; margin-top: 6px;">
             <span>
               <strong style="display: block; color: var(--ink);">Деперсонализировать ответы</strong>
-              <small style="color: var(--muted); font-size: 0.85rem;">Скрывает ФИО, телефоны, email и адреса в ответах помощника.</small>
-              <small style="display: block; color: var(--muted); font-size: 0.85rem; margin-top: 6px;">{escape(REPORT_PRIVACY_NOTE)}</small>
+              <small style="color: var(--muted); font-size: 0.85rem;">Распознаваемые ФИО, телефоны, email и адреса скрываются в ответах помощника; отчёты могут содержать остаточные данные.</small>
+              <small style="display: block; color: var(--muted); font-size: 0.85rem; margin-top: 6px; white-space: pre-line;">{escape(REPORT_PRIVACY_NOTE)}</small>
             </span>
           </label>
           <label>Ограничение по IP
@@ -2067,7 +2063,7 @@ def render_account_page(
             <button class="copy-button" id="chatgpt-mcp-copy-button" type="button" data-copy-source="chatgpt-mcp-url" data-copy-kind="mcp_url" data-copy-status="chatgpt-mcp-copy-status" data-copied-text="URL скопирован в буфер обмена.">Скопировать URL</button>
             <span class="copy-status" id="chatgpt-mcp-copy-status" aria-live="polite"></span>
           </div>
-          <p class="hint">По умолчанию помощник получает аналитику без персональных данных — этого хватает для отчётов. Полный доступ и персональные данные нужно выбирать отдельно и явно.</p>
+          <p class="hint">По умолчанию помощник получает аналитику с очисткой распознаваемых персональных данных. В отчётах возможны остаточные данные; полный доступ и режим с персональными данными выбираются отдельно.</p>
         </div>
         {oauth_grants_html}
         </details>

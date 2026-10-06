@@ -89,7 +89,8 @@ def validate_matrix(records: list[dict[str, str]], base_dir: Path | None = None)
 def _pages() -> dict[str, str]:
     oauth_unused = {"id": 1, "status": "active", "client_name": "ChatGPT", "has_live_access": True,
                     "created_at": "сегодня", "last_used_at": "Не использовался", "last_used_at_raw": None}
-    oauth_used = {**oauth_unused, "last_used_at": "2026-09-24 12:00 UTC",
+    oauth_used = {**oauth_unused, "created_at": "23 сент. 2026 г.",
+                  "last_used_at": "2026-09-24 12:00 UTC",
                   "last_used_at_raw": "2026-09-24T12:00:00+00:00"}
     oauth_other_unused = {**oauth_unused, "client_name": "Manus"}
     oauth_other_used = {**oauth_used, "client_name": "Manus"}
@@ -104,7 +105,8 @@ def _pages() -> dict[str, str]:
         "ready_oauth": _account_page(oauth_grants=[oauth_used]),
         "ready_oauth_other": _account_page(oauth_grants=[oauth_other_used]),
         "issued": _account_page(issued_raw_token="vm_st_FICTIONAL_VISUAL_ONLY",
-                                bearer_tokens=[_token_view()]),
+                                bearer_tokens=[_token_view(name="Мой первый токен",
+                                                           token_prefix="vm_st_FICTIONAL")]),
         "landing": render_landing_page(),
         "inventory_issuance": _account_page(token_access_preset="inventory"),
     }
