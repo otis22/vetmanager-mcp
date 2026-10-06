@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import os
 import re
+import errno
+import logging
+import socket
+import ssl
+import time
+from threading import Lock, local
 from ipaddress import ip_address
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
@@ -11,9 +17,13 @@ from typing import Any
 import sentry_sdk
 from sentry_sdk.integrations.logging import ignore_logger
 from sentry_sdk.integrations.starlette import StarletteIntegration
+from sentry_sdk.transport import HttpTransport
+from urllib3.exceptions import HTTPError as UrllibHTTPError, TimeoutError as UrllibTimeoutError
 
 from privacy_utils import scrub_report_export_path
 from phone_redaction import redact_phone_numbers
+from observability_logging import RUNTIME_LOGGER
+from service_metrics import record_sentry_delivery_accepted, record_sentry_delivery_lost
 
 SUPPORTED_ERROR_TRACKING_BACKENDS = {"sentry"}
 _REDACTED = "[Filtered]"
@@ -405,6 +415,135 @@ def _sanitize_event(event: dict[str, Any], hint: dict[str, Any] | None) -> dict[
 _FASTMCP_TOOL_LOGGER = "fastmcp.server.server"
 
 
+_SENTRY_REQUEST = local()
+
+
+class _SafeTransportLogFilter(logging.Filter):
+    """Suppress SDK payloads and only urllib3 records made by Sentry's worker."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name.startswith("urllib3") and not getattr(_SENTRY_REQUEST, "active", False):
+            return True
+        record.msg = "sentry_transport_diagnostic_suppressed"
+        record.args = ()
+        record.exc_info = None
+        record.stack_info = None
+        return True
+
+
+_SAFE_TRANSPORT_LOG_FILTER = _SafeTransportLogFilter()
+
+
+def _install_transport_log_filters() -> None:
+    # urllib3 emits through several module loggers during retries/TLS, not
+    # only connectionpool. Logger filters do not apply to propagated children.
+    for logger_name in (
+        "sentry_sdk.errors", "sentry_sdk.envelopes", "urllib3",
+        "urllib3.connection", "urllib3.connectionpool", "urllib3.poolmanager",
+        "urllib3.response", "urllib3.util.retry", "urllib3.http2.connection",
+        "urllib3.contrib.pyopenssl",
+    ):
+        logger = logging.getLogger(logger_name)
+        if _SAFE_TRANSPORT_LOG_FILTER not in logger.filters:
+            logger.addFilter(_SAFE_TRANSPORT_LOG_FILTER)
+
+
+def _network_failure_class(exc: BaseException) -> str:
+    """Classify causes without ever formatting exception text or endpoint URLs."""
+    seen: set[int] = set()
+    pending = [exc]
+    network_exception = False
+    while pending:
+        cause = pending.pop()
+        if id(cause) in seen:
+            continue
+        seen.add(id(cause))
+        if isinstance(cause, socket.gaierror):
+            return "dns"
+        if isinstance(cause, ssl.SSLError):
+            return "tls"
+        if isinstance(cause, (TimeoutError, UrllibTimeoutError)):
+            return "timeout"
+        if isinstance(cause, OSError) and cause.errno in {errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ENETDOWN, errno.EHOSTDOWN}:
+            return "route"
+        network_exception |= isinstance(cause, (OSError, UrllibHTTPError))
+        for nested in (cause.__cause__, cause.__context__, getattr(cause, "reason", None)):
+            if isinstance(nested, BaseException):
+                pending.append(nested)
+    return "network_other" if network_exception else "sdk_error"
+
+
+class ObservableSentryTransport(HttpTransport):
+    """Keep SDK background delivery; expose only bounded local outcomes."""
+
+    def __init__(self, options: dict[str, Any]) -> None:
+        _install_transport_log_filters()
+        self._failure = local()
+        self._warning_lock = Lock()
+        self._warning_state: dict[str, tuple[float, int]] = {}
+        super().__init__(options)
+
+    def _request(self, method: str, endpoint_type: Any, body: Any, headers: Any) -> Any:
+        _SENTRY_REQUEST.active = True
+        try:
+            return super()._request(method, endpoint_type, body, headers)
+        except Exception as exc:
+            self._failure.reason = _network_failure_class(exc)
+            raise
+        finally:
+            _SENTRY_REQUEST.active = False
+
+    def _send_request(self, body: bytes, headers: dict[str, str], endpoint_type: Any, envelope: Any = None) -> None:
+        self._failure.reason = None
+        try:
+            super()._send_request(body, headers, endpoint_type, envelope=envelope)
+        except Exception:
+            # The SDK has already called record_lost_event. Prevent its outer
+            # worker wrapper from logging the raw exception, URL or request.
+            pass
+        finally:
+            self._failure.reason = None
+
+    def _handle_response(self, response: Any, envelope: Any) -> None:
+        error_count = sum(item.data_category == "error" for item in envelope.items) if envelope else 0
+        if response.status == 429 and error_count:
+            self._record_loss("rate_limited", error_count)
+        super()._handle_response(response, envelope)
+        if 200 <= response.status < 300 and error_count:
+            record_sentry_delivery_accepted(error_count)
+
+    def record_lost_event(self, reason: str, data_category: Any = None, item: Any = None, *, quantity: int = 1) -> None:
+        category = item.data_category if item is not None else data_category
+        if category == "error" and reason in {"network_error", "send_error", "queue_overflow", "ratelimit_backoff"}:
+            label = {
+                "network_error": self._failure.reason or "http_error",
+                "send_error": "http_error",
+                "queue_overflow": "queue_overflow",
+                "ratelimit_backoff": "backoff",
+            }[reason]
+            self._record_loss(label, 1 if item is not None else quantity)
+        super().record_lost_event(reason, data_category=data_category, item=item, quantity=quantity)
+
+    def _record_loss(self, reason: str, count: int) -> None:
+        try:
+            record_sentry_delivery_lost(reason, count)
+            with self._warning_lock:
+                now = time.monotonic()
+                last, pending = self._warning_state.get(reason, (0.0, 0))
+                if last and now - last < 60:
+                    self._warning_state[reason] = (last, pending + count)
+                    return
+                self._warning_state[reason] = (now, 0)
+            RUNTIME_LOGGER.warning(
+                "sentry_delivery_lost reason=%s count=%d", reason, pending + count,
+                extra={"event_name": "sentry_delivery_lost", "reason": reason, "count": pending + count},
+            )
+        except Exception:
+            # This callback can run on the caller when the SDK queue is full.
+            # A broken metric or logger must not alter the MCP response.
+            pass
+
+
 def configure_error_tracking() -> bool:
     """Initialize optional error tracking backend if runtime config is present."""
     global _configured
@@ -435,6 +574,7 @@ def configure_error_tracking() -> bool:
         traces_sample_rate=traces_sample_rate,
         integrations=[StarletteIntegration()],
         before_send=_sanitize_event,
+        transport=ObservableSentryTransport,
     )
     _configured = True
     return True

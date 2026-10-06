@@ -36,6 +36,23 @@ _HTTP_REQUEST_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = 
 )
 _AUTH_FAILURES_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
 _UPSTREAM_FAILURES_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
+_SENTRY_DELIVERY_LOST_TOTAL: DefaultDict[str, int] = defaultdict(int)
+_SENTRY_DELIVERY_ACCEPTED_TOTAL = 0
+
+
+def record_sentry_delivery_lost(reason: str, count: int = 1) -> None:
+    """Count failed error-item deliveries using a bounded transport reason."""
+    if reason not in {"dns", "route", "timeout", "tls", "network_other", "sdk_error", "http_error", "rate_limited", "queue_overflow", "backoff"}:
+        reason = "network_other"
+    with _LOCK:
+        _SENTRY_DELIVERY_LOST_TOTAL[reason] += count
+
+
+def record_sentry_delivery_accepted(count: int) -> None:
+    """Count error items in HTTP 2xx ingestion responses."""
+    global _SENTRY_DELIVERY_ACCEPTED_TOTAL
+    with _LOCK:
+        _SENTRY_DELIVERY_ACCEPTED_TOTAL += count
 # Этап 283.1. Знаменатель для «инжекция сработала 0 раз». Без него ноль не
 # читается: это либо «отказов не было», либо «было N и не совпало ни разу».
 # В Sentry такие отказы не летят — они обработаны, — поэтому счёт ведётся здесь.
@@ -115,11 +132,13 @@ def reset_service_metrics() -> None:
     """Clear all in-memory metrics. Tests should call this to isolate assertions."""
     with _LOCK:
         global _REPORT_AI_LONG_QUEUED_POLLS_TOTAL, _REPORT_AI_STAGE_STALL_POLLS_TOTAL
-        global _SANITIZER_FAILURES_TOTAL, _REST_UNMAPPED_READ_TOTAL
+        global _SANITIZER_FAILURES_TOTAL, _REST_UNMAPPED_READ_TOTAL, _SENTRY_DELIVERY_ACCEPTED_TOTAL
         _HTTP_REQUESTS_TOTAL.clear()
         _HTTP_REQUEST_LATENCY_SECONDS.clear()
         _AUTH_FAILURES_TOTAL.clear()
         _UPSTREAM_FAILURES_TOTAL.clear()
+        _SENTRY_DELIVERY_LOST_TOTAL.clear()
+        _SENTRY_DELIVERY_ACCEPTED_TOTAL = 0
         _KNOWN_ISSUE_LOOKUPS_TOTAL.clear()
         _UPSTREAM_REQUESTS_TOTAL.clear()
         _UPSTREAM_LATENCY_SECONDS.clear()
@@ -522,6 +541,8 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 f"{target}|{reason}": count
                 for (target, reason), count in sorted(_UPSTREAM_FAILURES_TOTAL.items())
             },
+            "sentry_delivery_lost_total": dict(sorted(_SENTRY_DELIVERY_LOST_TOTAL.items())),
+            "sentry_delivery_accepted_total": _SENTRY_DELIVERY_ACCEPTED_TOTAL,
             "known_issue_lookups_total": {
                 f"{tool}|{outcome}|{kind}": count
                 for (tool, outcome, kind), count in sorted(_KNOWN_ISSUE_LOOKUPS_TOTAL.items())
@@ -664,6 +685,18 @@ def render_prometheus_metrics() -> str:
             f"vetmanager_upstream_failures_total"
             f"{_labels_text(target=target, reason=reason)} {value}"
         )
+
+    lines.extend([
+        "# HELP vetmanager_sentry_delivery_lost_total Sentry error items lost before acceptance by reason.",
+        "# TYPE vetmanager_sentry_delivery_lost_total counter",
+    ])
+    for reason, value in snapshot["sentry_delivery_lost_total"].items():
+        lines.append(f"vetmanager_sentry_delivery_lost_total{_labels_text(reason=reason)} {value}")
+    lines.extend([
+        "# HELP vetmanager_sentry_delivery_accepted_total Sentry error items in HTTP 2xx ingestion responses.",
+        "# TYPE vetmanager_sentry_delivery_accepted_total counter",
+        f"vetmanager_sentry_delivery_accepted_total {snapshot['sentry_delivery_accepted_total']}",
+    ])
 
     lines.extend(
         [

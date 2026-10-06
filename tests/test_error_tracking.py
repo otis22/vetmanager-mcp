@@ -115,6 +115,7 @@ def test_configure_error_tracking_initializes_sentry(monkeypatch):
     assert kwargs["send_default_pii"] is False
     assert kwargs["traces_sample_rate"] == 0.25
     assert kwargs["before_send"] is error_tracking._sanitize_event
+    assert kwargs["transport"] is error_tracking.ObservableSentryTransport
     assert len(kwargs["integrations"]) == 1
     assert type(kwargs["integrations"][0]).__name__ == "StarletteIntegration"
     error_tracking._configured = False
