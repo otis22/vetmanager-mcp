@@ -65,6 +65,11 @@ _PHONE_KEYS = frozenset({
     "контактныйтелефон",
     "номертелефона",
 })
+# Generated report aliases are untrusted. Only these exact, unambiguous
+# quantitative headings can preserve a bare 10–11 digit count. A contact marker,
+# extra punctuation or a mixed value still goes through normal PII matching.
+_REPORT_QUANTITY_KEYS = frozenset({"количество", "count", "qty"})
+_BARE_PHONE_LENGTH_COUNT_RE = re.compile(r"[0-9]{10,11}\Z")
 _EMAIL_KEYS = frozenset({"email", "mail", "почта", "электроннаяпочта", "емейл", "имейл"})
 _ADDRESS_KEYS = frozenset({"address", "адрес", "адресклиента", "адресдоставки"})
 # Этап 308. Кто такой владелец записи — по ключу, под которым она пришла.
@@ -556,7 +561,9 @@ def sanitize_report_cell(column: str, value: str) -> str:
     Stage 276: a CSV export is a report with its column names in the header
     row. Same two layers, same order — the name decides first, then the value.
     """
-    return _sanitize_value(value, key=column or None, report_mode=True)
+    return _sanitize_value(
+        value, key=column or None, report_mode=True, quantity_cell=True,
+    )
 
 
 # Ответ на «дай одну запись» приходит без ключа-контейнера: `get_client_by_id`
@@ -584,7 +591,8 @@ def sanitize_tool_result(
     """
     entity = _ENTITY_BY_TOOL.get(tool_name or "")
     return _sanitize_value(
-        payload, report_mode=report_mode, address=(entity, None) if entity else None
+        payload, report_mode=report_mode, address=(entity, None) if entity else None,
+        quantity_path="root" if tool_name == "get_report_ai_job_data" else None,
     )
 
 
@@ -595,6 +603,8 @@ def _sanitize_value(
     report_mode: bool = False,
     address: tuple | None = None,
     record: Mapping | None = None,
+    quantity_path: str | None = None,
+    quantity_cell: bool = False,
 ) -> Any:
     """`address` — чья запись сейчас разбирается, `record` — сама запись.
 
@@ -611,13 +621,21 @@ def _sanitize_value(
                 report_mode=report_mode,
                 address=child_address,
                 record=value,
+                quantity_path=(
+                    "data" if quantity_path == "root" and child_key == "data"
+                    else "rows" if quantity_path == "data" and child_key == "rows"
+                    else None
+                ),
+                quantity_cell=quantity_cell and key == "rows",
             )
             for child_key, child_value in value.items()
         }
     if isinstance(value, (list, tuple)):
         return [
             _sanitize_value(
-                item, key=key, report_mode=report_mode, address=address, record=record
+                item, key=key, report_mode=report_mode, address=address, record=record,
+                quantity_path=quantity_path,
+                quantity_cell=quantity_cell or quantity_path == "rows",
             )
             for item in value
         ]
@@ -656,5 +674,13 @@ def _sanitize_value(
         if replacement is not None:
             return _addressed_placeholder(key, record=record, address=address) or replacement
     if report_mode:
+        if (
+            quantity_cell
+            and report_mode
+            and key is not None
+            and key.strip().casefold() in _REPORT_QUANTITY_KEYS
+            and _BARE_PHONE_LENGTH_COUNT_RE.fullmatch(value)
+        ):
+            return value
         return sanitize_report_value(value)
     return value
