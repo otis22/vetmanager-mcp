@@ -1128,7 +1128,7 @@ async def _call_vm(
     client = VetmanagerClient()
     is_create = method == "POST" and path == "/rest/api/report-ai-job"
     if is_create:
-        client.generated_outbound_correlation = True
+        client.prepare_generated_correlation()
 
     async def request() -> dict:
         if method == "GET":
@@ -1174,7 +1174,8 @@ async def _call_vm(
                 raise _uncertain_create_error(client, code=code) from None
         operation = "reject" if path.endswith("/reject") else "job"
         _best_effort_observation("upstream_error_code", record_report_ai_outcome_code,
-                                 operation=operation, code=exc.error_code)
+                                 operation=operation, code=exc.error_code,
+                                 correlation_id=(client.prepared_correlation_id if is_create else None))
         raise _tool_error_from_vm(
             exc, create_not_sent=is_create and not client.last_outbound_correlation_id
         ) from None

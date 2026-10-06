@@ -215,6 +215,12 @@ class VetmanagerClient:
         self.last_outbound_correlation_id: str | None = None
         self.last_response_status_code: int | None = None
         self.generated_outbound_correlation = False
+        self.prepared_correlation_id: str | None = None
+
+    def prepare_generated_correlation(self) -> None:
+        """Reserve a safe id before host resolution; dispatch remains unstarted."""
+        self.generated_outbound_correlation = True
+        self.prepared_correlation_id = str(uuid.uuid4())
 
     async def _ensure_runtime_credentials(self) -> None:
         """Resolve runtime credentials lazily from bearer auth."""
@@ -308,10 +314,12 @@ class VetmanagerClient:
         if not self._domain:
             raise VetmanagerError("Missing Vetmanager domain in runtime credentials.")
         await self._pace_requests()
-        context = {} if getattr(self, "generated_outbound_correlation", False) else get_current_request_context()
+        generated = getattr(self, "generated_outbound_correlation", False)
+        context = {} if generated else get_current_request_context()
         self._base_url = await resolve_vetmanager_host(
             self._domain,
-            correlation_id=context.get("correlation_id"),
+            correlation_id=(getattr(self, "prepared_correlation_id", None) if generated
+                            else context.get("correlation_id")),
         )
         return self._base_url
 
@@ -326,7 +334,8 @@ class VetmanagerClient:
         generated_correlation = getattr(self, "generated_outbound_correlation", False)
         ctx = {} if generated_correlation else get_current_request_context()
         correlation_id = ctx.get("correlation_id") if ctx else None
-        generated_id = str(uuid.uuid4()) if generated_correlation else uuid.uuid4().hex
+        generated_id = (getattr(self, "prepared_correlation_id", None) or str(uuid.uuid4())
+                        if generated_correlation else uuid.uuid4().hex)
         self.last_outbound_correlation_id = correlation_id or generated_id
         headers["X-Correlation-ID"] = self.last_outbound_correlation_id
         return headers

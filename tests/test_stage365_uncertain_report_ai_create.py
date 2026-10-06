@@ -213,3 +213,62 @@ def test_feedback_fingerprint_ignores_create_correlation(monkeypatch):
         assert correlation not in incident.error_excerpt
         codes.append(agent_feedback_service.build_error_fingerprint_hash(incident))
     assert codes[0] == codes[1]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_known_4xx_logs_only_generated_correlation(monkeypatch, caplog):
+    import structured_logging
+    import vetmanager_client
+
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/report-ai-job").mock(
+        return_value=httpx.Response(400, json={
+            "data": {"error_code": "VALIDATION_ERROR"}, "message": SECRET,
+        })
+    )
+    caller_value = "PrivatePatientSmith"
+    monkeypatch.setattr(vetmanager_client, "get_current_request_context",
+                        lambda: {"correlation_id": caller_value})
+    monkeypatch.setattr(structured_logging, "get_current_request_context",
+                        lambda: {"correlation_id": caller_value})
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        with pytest.raises(ToolError):
+            await mcp.call_tool("create_report_ai_job", {"intent_text": "Количество за 1900 год"})
+    correlation = route.calls.last.request.headers["X-Correlation-ID"]
+    for record in caplog.records:
+        structured_logging.RequestContextLogFilter().filter(record)
+        assert getattr(record, "correlation_id", None) != caller_value
+        if record.getMessage() == "report_ai_outcome_code":
+            assert record.correlation_id == correlation
+
+
+@pytest.mark.asyncio
+async def test_host_resolution_failure_uses_generated_correlation(monkeypatch, caplog):
+    import structured_logging
+    import vetmanager_client
+    from exceptions import HostResolutionError
+
+    caller_value = "PrivatePatientSmith"
+    seen = []
+
+    async def fail_resolution(_domain, *, correlation_id):
+        seen.append(correlation_id)
+        raise HostResolutionError("safe resolver refusal")
+
+    monkeypatch.setattr(vetmanager_client, "resolve_vetmanager_host", fail_resolution)
+    monkeypatch.setattr(vetmanager_client, "get_current_request_context",
+                        lambda: {"correlation_id": caller_value})
+    monkeypatch.setattr(structured_logging, "get_current_request_context",
+                        lambda: {"correlation_id": caller_value})
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        with pytest.raises(ToolError) as caught:
+            await mcp.call_tool("create_report_ai_job", {"intent_text": "Количество за 1900 год"})
+    assert "was not sent" in str(caught.value)
+    assert len(seen) == 1
+    assert re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", seen[0])
+    for record in caplog.records:
+        structured_logging.RequestContextLogFilter().filter(record)
+        assert getattr(record, "correlation_id", None) != caller_value
