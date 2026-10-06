@@ -18,7 +18,11 @@ import sentry_sdk
 from sentry_sdk.integrations.logging import ignore_logger
 from sentry_sdk.integrations.starlette import StarletteIntegration
 from sentry_sdk.transport import HttpTransport
-from urllib3.exceptions import HTTPError as UrllibHTTPError, TimeoutError as UrllibTimeoutError
+from urllib3.exceptions import (
+    HTTPError as UrllibHTTPError,
+    NewConnectionError,
+    TimeoutError as UrllibTimeoutError,
+)
 
 from privacy_utils import scrub_report_export_path
 from phone_redaction import redact_phone_numbers
@@ -453,6 +457,7 @@ def _network_failure_class(exc: BaseException) -> str:
     seen: set[int] = set()
     pending = [exc]
     network_exception = False
+    timeout_exception = False
     while pending:
         cause = pending.pop()
         if id(cause) in seen:
@@ -462,15 +467,23 @@ def _network_failure_class(exc: BaseException) -> str:
             return "dns"
         if isinstance(cause, ssl.SSLError):
             return "tls"
-        if isinstance(cause, (TimeoutError, UrllibTimeoutError)):
-            return "timeout"
         if isinstance(cause, OSError) and cause.errno in {errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ENETDOWN, errno.EHOSTDOWN}:
             return "route"
         network_exception |= isinstance(cause, (OSError, UrllibHTTPError))
-        for nested in (cause.__cause__, cause.__context__, getattr(cause, "reason", None)):
+        # urllib3's NameResolutionError and NewConnectionError inherit its
+        # timeout base even for DNS and ENETUNREACH. Inspect their root cause
+        # before accepting any timeout wrapper.
+        timeout_exception |= (
+            isinstance(cause, (TimeoutError, UrllibTimeoutError))
+            and not isinstance(cause, NewConnectionError)
+        )
+        for nested in (
+            cause.__cause__, cause.__context__,
+            getattr(cause, "reason", None), getattr(cause, "_reason", None),
+        ):
             if isinstance(nested, BaseException):
                 pending.append(nested)
-    return "network_other" if network_exception else "sdk_error"
+    return "timeout" if timeout_exception else "network_other" if network_exception else "sdk_error"
 
 
 class ObservableSentryTransport(HttpTransport):
@@ -515,12 +528,14 @@ class ObservableSentryTransport(HttpTransport):
     def record_lost_event(self, reason: str, data_category: Any = None, item: Any = None, *, quantity: int = 1) -> None:
         category = item.data_category if item is not None else data_category
         if category == "error" and reason in {"network_error", "send_error", "queue_overflow", "ratelimit_backoff"}:
-            label = {
-                "network_error": self._failure.reason or "http_error",
-                "send_error": "http_error",
-                "queue_overflow": "queue_overflow",
-                "ratelimit_backoff": "backoff",
-            }[reason]
+            if reason == "network_error":
+                label = getattr(self._failure, "reason", None) or "http_error"
+            else:
+                label = {
+                    "send_error": "http_error",
+                    "queue_overflow": "queue_overflow",
+                    "ratelimit_backoff": "backoff",
+                }[reason]
             self._record_loss(label, 1 if item is not None else quantity)
         super().record_lost_event(reason, data_category=data_category, item=item, quantity=quantity)
 

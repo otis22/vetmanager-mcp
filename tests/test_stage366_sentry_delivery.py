@@ -143,3 +143,25 @@ def test_internal_sdk_request_failure_is_distinct_from_network_failure(transport
     with patch.object(transport._pool, "request", side_effect=RuntimeError("private request state")):
         transport._send_envelope(_envelope("event"))
     assert snapshot_service_metrics()["sentry_delivery_lost_total"] == {"sdk_error": 1}
+
+
+def test_queue_overflow_on_caller_thread_is_counted_without_changing_capture(transport):
+    with patch.object(transport._worker, "submit", return_value=False):
+        transport.capture_envelope(_envelope("event"))
+    assert snapshot_service_metrics()["sentry_delivery_lost_total"] == {"queue_overflow": 1}
+
+
+@pytest.mark.parametrize(
+    ("socket_failure", "reason"),
+    [
+        (socket.gaierror("fixture DNS failure"), "dns"),
+        (OSError(errno.ENETUNREACH, "fixture route failure"), "route"),
+        (socket.timeout("fixture connect timeout"), "timeout"),
+    ],
+)
+def test_urllib3_wrapped_network_failure_keeps_root_cause(transport, socket_failure, reason):
+    # Let urllib3 build its own NameResolutionError/NewConnectionError and
+    # MaxRetryError wrappers; mocking _pool.request would skip the risky path.
+    with patch("urllib3.connection.connection.create_connection", side_effect=socket_failure):
+        transport._send_envelope(_envelope("event"))
+    assert snapshot_service_metrics()["sentry_delivery_lost_total"] == {reason: 1}
