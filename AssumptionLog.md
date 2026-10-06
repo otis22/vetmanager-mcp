@@ -11956,6 +11956,16 @@ Checks so far:
   (provider failure); fallback-review выявил, что нельзя заранее фиксировать
   «взвешенную» формулу. Finding принят: этап 367 требует итог только по
   подтверждённой формуле текущего контракта.
+- Claude code/diff review для диапазона `HEAD~2..HEAD`: три infrastructure
+  failures подряд, verdict отсутствует из-за ограничения аккаунта Claude
+  Code. Evidence: `2026-10-06T074126Z-git_range-HEAD2__HEAD-attempt-1-of-3.wiKK6b`,
+  `2026-10-06T074212Z-git_range-HEAD2__HEAD-attempt-2-of-3.dJXlq6`,
+  `2026-10-06T074223Z-git_range-HEAD2__HEAD-attempt-3-of-3.CeCSvk` в
+  `/home/otis/.local/share/vetmanager-mcp-review-evidence/`; для каждой:
+  `subtype=success`, `stop_reason=stop_sequence`, `output_tokens=0`,
+  `thinking_tokens=0`, `len(result)=103`, `is_error=true`. Review gate
+  blocked; по policy проекта push запрещён до восстановления provider или
+  отдельного решения владельца.
 - #122 требует узкой проверки границы phone redaction в данных Report AI.
   Запрещено решать его broad-исключением для чисел: сохраняются guarantees
   этапов 330/361 для клинических рядов и явно помеченных телефонов.
