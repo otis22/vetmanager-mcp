@@ -210,6 +210,11 @@ class VetmanagerClient:
         self._last_request_started_at = 0.0
         self._pace_lock = asyncio.Lock()
         self._credentials_lock = asyncio.Lock()
+        # One client instance serves one Report AI tool call. Keep only safe
+        # transport metadata so uncertain writes can be reconciled by operator.
+        self.last_outbound_correlation_id: str | None = None
+        self.last_response_status_code: int | None = None
+        self.generated_outbound_correlation = False
 
     async def _ensure_runtime_credentials(self) -> None:
         """Resolve runtime credentials lazily from bearer auth."""
@@ -303,7 +308,7 @@ class VetmanagerClient:
         if not self._domain:
             raise VetmanagerError("Missing Vetmanager domain in runtime credentials.")
         await self._pace_requests()
-        context = get_current_request_context()
+        context = {} if getattr(self, "generated_outbound_correlation", False) else get_current_request_context()
         self._base_url = await resolve_vetmanager_host(
             self._domain,
             correlation_id=context.get("correlation_id"),
@@ -318,9 +323,12 @@ class VetmanagerClient:
         # joined with our incoming request logs. For non-HTTP transports
         # (stdio, tests) get_current_request_context() returns {} — fall
         # back to a fresh UUID so upstream logs are still distinguishable.
-        ctx = get_current_request_context()
+        generated_correlation = getattr(self, "generated_outbound_correlation", False)
+        ctx = {} if generated_correlation else get_current_request_context()
         correlation_id = ctx.get("correlation_id") if ctx else None
-        headers["X-Correlation-ID"] = correlation_id or uuid.uuid4().hex
+        generated_id = str(uuid.uuid4()) if generated_correlation else uuid.uuid4().hex
+        self.last_outbound_correlation_id = correlation_id or generated_id
+        headers["X-Correlation-ID"] = self.last_outbound_correlation_id
         return headers
 
     def _require_scope(self, method: str, path: str) -> None:
@@ -402,7 +410,7 @@ class VetmanagerClient:
 
         # Stage 98.1: capture correlation_id once so structured warnings on
         # timeout / network / retry can tie back to the inbound MCP request.
-        _corr_ctx = get_current_request_context()
+        _corr_ctx = {} if getattr(self, "generated_outbound_correlation", False) else get_current_request_context()
         outbound_correlation_id = _corr_ctx.get("correlation_id") if _corr_ctx else None
 
         if not retry_enabled:
@@ -492,6 +500,7 @@ class VetmanagerClient:
                     if timeout is not None:
                         request_kwargs["timeout"] = timeout
                     response = await client.request(method, url, headers=self._headers(), **request_kwargs)
+                    self.last_response_status_code = response.status_code
                     elapsed = time.monotonic() - started
                     record_upstream_request(
                         target="vetmanager_api",
