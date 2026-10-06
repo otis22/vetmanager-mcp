@@ -918,7 +918,8 @@ def build_incident_from_exception(tool_name: str, exc: BaseException) -> Feedbac
         http_status=status if isinstance(status, int) else None,
         error_code=upstream_code if isinstance(upstream_code, str) and upstream_code
         else exc.__class__.__name__,
-        error_excerpt=str(exc) or exc.__class__.__name__,
+        error_excerpt=(getattr(exc, "feedback_safe_excerpt", None)
+                       or str(exc) or exc.__class__.__name__),
         params_shape=None,
     )
 

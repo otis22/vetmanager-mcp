@@ -541,7 +541,7 @@ class VetmanagerClient:
                             "VM upstream retryable status",
                             extra={
                                 "event_name": "vm_upstream_retry",
-                                "correlation_id": outbound_correlation_id,
+                                "correlation_id": self.last_outbound_correlation_id or outbound_correlation_id,
                                 "domain": self._domain,
                                 "method": upper_method,
                                 "entity": _entity_from_path_fn(path),
@@ -560,9 +560,9 @@ class VetmanagerClient:
                         _breaker_resolved = True
 
                     self._raise_for_status(response, path=path)
-                    payload = response.json()
                     await _breaker_record_success(domain_key)
                     _breaker_resolved = True
+                    payload = response.json()
                     if should_cache_get:
                         # TTLs read through module-level names so existing tests
                         # that monkey-patch `vetmanager_client.CACHE_TTL_*` keep
@@ -599,7 +599,7 @@ class VetmanagerClient:
                             "VM upstream timeout on retry attempt",
                             extra={
                                 "event_name": "vm_upstream_timeout_retry",
-                                "correlation_id": outbound_correlation_id,
+                                "correlation_id": self.last_outbound_correlation_id or outbound_correlation_id,
                                 "domain": self._domain,
                                 "method": upper_method,
                                 "entity": _entity_from_path_fn(path),
@@ -628,7 +628,7 @@ class VetmanagerClient:
                         "VM upstream timeout",
                         extra={
                             "event_name": "vm_upstream_timeout",
-                            "correlation_id": outbound_correlation_id,
+                            "correlation_id": self.last_outbound_correlation_id or outbound_correlation_id,
                             "domain": self._domain,
                             "method": upper_method,
                             "entity": _entity_from_path_fn(path),
@@ -679,7 +679,7 @@ class VetmanagerClient:
                         "VM upstream network error",
                         extra={
                             "event_name": "vm_upstream_network_error",
-                            "correlation_id": outbound_correlation_id,
+                            "correlation_id": self.last_outbound_correlation_id or outbound_correlation_id,
                             "domain": self._domain,
                             "method": upper_method,
                             "entity": _entity_from_path_fn(path),

@@ -2,6 +2,7 @@
 
 from unittest.mock import patch
 import re
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -14,6 +15,7 @@ import tools as tool_module
 from server import mcp
 from tests.test_stage170_report_ai_tools import BASE, bearer_runtime_patch, billing_mock
 from vm_transport.retry import MAX_RETRIES_WRITE
+from vm_transport.breaker import get_breaker_state, reset_breakers
 
 
 SECRET = "private-intent-and-upstream-message"
@@ -31,6 +33,7 @@ SECRET = "private-intent-and-upstream-message"
 ])
 async def test_uncertain_create_is_safe_and_not_replayed(response, expected_code, status, caplog):
     assert MAX_RETRIES_WRITE == 0
+    await reset_breakers()
     billing_mock()
     route = respx.post(f"{BASE}/rest/api/report-ai-job")
     if isinstance(response, Exception):
@@ -63,13 +66,17 @@ async def test_uncertain_create_is_safe_and_not_replayed(response, expected_code
     assert "secret transport detail" not in message
     assert incident[0].error_code == expected_code
     assert incident[0].http_status == status
-    assert correlation in (agent_feedback_service.sanitize_text(incident[0].error_excerpt, limit=1000) or "")
+    assert correlation not in (agent_feedback_service.sanitize_text(incident[0].error_excerpt, limit=1000) or "")
     assert SECRET not in incident[0].error_excerpt
     assert SECRET not in caplog.text
     assert "secret transport detail" not in caplog.text
     assert service_metrics.snapshot_service_metrics()["report_ai_outcomes_by_code_total"] == {
         f"job|{expected_code}": 1,
     }
+    if status in {200, 204}:
+        state = get_breaker_state("testclinic")
+        assert state["state"] == "closed"
+        assert state["consecutive_failures"] == 0
 
 
 @pytest.mark.asyncio
@@ -152,15 +159,25 @@ async def test_legacy_top_level_job_id_remains_a_success():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_caller_chosen_correlation_is_not_exposed(monkeypatch, caplog):
+@pytest.mark.parametrize("response", [
+    httpx.Response(503, json={"message": SECRET}),
+    httpx.ReadTimeout("secret transport detail"),
+    httpx.ConnectError("secret transport detail"),
+])
+async def test_caller_chosen_correlation_is_not_exposed(monkeypatch, caplog, response):
     import vetmanager_client
+    import structured_logging
 
     billing_mock()
-    route = respx.post(f"{BASE}/rest/api/report-ai-job").mock(
-        return_value=httpx.Response(503, json={"message": SECRET})
-    )
+    route = respx.post(f"{BASE}/rest/api/report-ai-job")
+    if isinstance(response, Exception):
+        route.mock(side_effect=response)
+    else:
+        route.mock(return_value=response)
     caller_value = "PrivatePatientSmith"
     monkeypatch.setattr(vetmanager_client, "get_current_request_context",
+                        lambda: {"correlation_id": caller_value})
+    monkeypatch.setattr(structured_logging, "get_current_request_context",
                         lambda: {"correlation_id": caller_value})
     headers, runtime = bearer_runtime_patch()
     with headers, runtime:
@@ -171,3 +188,28 @@ async def test_caller_chosen_correlation_is_not_exposed(monkeypatch, caplog):
     assert correlation in str(caught.value)
     assert caller_value not in str(caught.value)
     assert caller_value not in caplog.text
+    for record in caplog.records:
+        structured_logging.RequestContextLogFilter().filter(record)
+        assert getattr(record, "correlation_id", None) != caller_value
+        if record.getMessage() in {"VM upstream timeout", "VM upstream network error"}:
+            assert record.correlation_id == correlation
+
+
+def test_feedback_fingerprint_ignores_create_correlation(monkeypatch):
+    from tools.report_ai import _uncertain_create_error
+
+    monkeypatch.setenv("FEEDBACK_FINGERPRINT_PEPPER", "stage365-test-pepper")
+    codes = []
+    for correlation in (
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+    ):
+        client = SimpleNamespace(last_outbound_correlation_id=correlation,
+                                 last_response_status_code=None)
+        error = _uncertain_create_error(client, code="REPORT_AI_CREATE_TIMEOUT")
+        incident = agent_feedback_service.build_incident_from_exception(
+            "create_report_ai_job", error
+        )
+        assert correlation not in incident.error_excerpt
+        codes.append(agent_feedback_service.build_error_fingerprint_hash(incident))
+    assert codes[0] == codes[1]

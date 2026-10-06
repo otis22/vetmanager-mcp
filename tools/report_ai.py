@@ -1098,8 +1098,8 @@ def _uncertain_create_error(client: VetmanagerClient, *, code: str) -> Vetmanage
                "status_code": status, "correlation_id": correlation},
     )
     _best_effort_observation("create_outcome_code", record_report_ai_outcome_code,
-                             operation="job", code=code)
-    return VetmanagerError(
+                             operation="job", code=code, correlation_id=correlation)
+    error = VetmanagerError(
         f"Report AI creation outcome is uncertain (class {failure_class}; code {code}; "
         f"HTTP {status if status is not None else 'unknown'}; "
         f"correlation {correlation}). Do not send another POST automatically. "
@@ -1107,6 +1107,13 @@ def _uncertain_create_error(client: VetmanagerClient, *, code: str) -> Vetmanage
         "Otherwise give the correlation to an operator to check the job state before any new creation.",
         status_code=status, error_code=code,
     )
+    # The public response and structured log carry the correlation. Feedback
+    # fingerprints must group the same failure across different requests.
+    error.feedback_safe_excerpt = (
+        f"Report AI creation outcome is uncertain (class {failure_class}; "
+        f"code {code}; HTTP {status if status is not None else 'unknown'})."
+    )
+    return error
 
 
 async def _call_vm(

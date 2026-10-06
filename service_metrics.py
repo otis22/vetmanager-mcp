@@ -475,7 +475,8 @@ def record_report_ai_export(*, operation: str, outcome: str) -> None:
         _REPORT_AI_EXPORTS_TOTAL[(operation, outcome)] += 1
 
 
-def record_report_ai_outcome_code(*, operation: str, code: str | None) -> None:
+def record_report_ai_outcome_code(*, operation: str, code: str | None,
+                                  correlation_id: str | None = None) -> None:
     """Bound both labels; upstream codes and messages are untrusted input."""
     safe_operation = operation if isinstance(operation, str) and operation in REPORT_AI_OBSERVED_OPERATIONS else "job"
     safe_code = code if isinstance(code, str) and code in REPORT_AI_OBSERVED_CODES else "unknown"
@@ -483,7 +484,8 @@ def record_report_ai_outcome_code(*, operation: str, code: str | None) -> None:
         _REPORT_AI_OUTCOMES_BY_CODE_TOTAL[(safe_operation, safe_code)] += 1
     RUNTIME_LOGGER.info(
         "report_ai_outcome_code",
-        extra={"event_name": "report_ai_outcome_code", "operation": safe_operation, "code": safe_code},
+        extra={"event_name": "report_ai_outcome_code", "operation": safe_operation,
+               "code": safe_code, "correlation_id": correlation_id},
     )
 
 
