@@ -1182,6 +1182,9 @@ async def test_save_report_ai_job_as_report_preserves_invalid_transition_error_c
             },
         )
     )
+    current = respx.get(f"{BASE}/rest/api/report-ai-job/22").mock(
+        return_value=httpx.Response(200, json={"data": {"job": {"id": 22, "status": "queued"}}})
+    )
 
     headers_patch, runtime_patch = bearer_runtime_patch()
     with headers_patch, runtime_patch:
@@ -1192,3 +1195,4 @@ async def test_save_report_ai_job_as_report_preserves_invalid_transition_error_c
             )
 
     assert route.call_count == 1
+    assert current.call_count == 1

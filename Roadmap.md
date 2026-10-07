@@ -3,7 +3,7 @@
 Статусы: `todo` | `in_progress` | `supervisor_pending` | `done` | `stop`.
 Структуру проверяет `scripts/check_roadmap_structure.py`.
 
-## Этап 369. Report AI доводит задание до сохранения: wait, next_action и учёт попыток save — `todo`
+## Этап 369. Report AI доводит задание до сохранения: wait, next_action и учёт попыток save — `in_progress`
 
 Источник: product dashboard 07.10.2026 и разбор прод-метрик (лог супервизора
 `logs/mcp/2026-10-07-report-ai-saved-zero-analysis.md`). За 30 дней в
@@ -25,7 +25,7 @@ dedup-политика и права не переоткрываются.
 
 - 369.1 Server-side ожидание терминала: `create_report_ai_job`/`get_report_ai_job`
   с bounded wait (таймаут, без авто-повтора записи) возвращают конечный статус
-  за один вызов; красные сторожа на границы таймаута и отсутствие дубля записи. — `todo`
+  за один вызов; красные сторожа на границы таймаута и отсутствие дубля записи. — `done`
 - 369.2 Runtime-ответ `get_report_ai_job` при `needs_confirmation`/`ready_to_save`
   содержит явный `next_action` с готовым вызовом confirm/reject/save; ошибка save
   при неподтверждённом кандидате сама называет оба инструмента, не полагаясь на
@@ -33,10 +33,10 @@ dedup-политика и права не переоткрываются.
   (`preview_summary`, `preview_example_row`) — это только образец для решения о
   запуске полноценного отчёта, а не живые данные; отвечать пользователю по превью
   нельзя, реальные строки читаются через `get_report_ai_job_data` после
-  save/confirm. — `todo`
+  save/confirm. — `done`
 - 369.3 Учёт попыток: `report_ai_save_attempts_total{outcome}` или stage-метка в
   terminal outcome; красный сторож на новые series без high-cardinality labels;
-  критерий на проде после выпуска: saved > 0, доля ready_to_save→saved растёт. — `todo`
+  критерий на проде после выпуска: saved > 0, доля ready_to_save→saved растёт. — `in_progress`
 
 ## Этап 368. Числовые результаты Report AI не должны маскироваться как телефоны — `done`
 

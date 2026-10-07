@@ -114,6 +114,7 @@ services:
       # переменной в репозитории, значение — только в `.env` на сервере.
       - CUSTOM_CLINIC_HOSTS
       - VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS
+      - REPORT_AI_WAIT_ENABLED
       - STREAMABLE_HTTP_DRAIN_ENABLED
       # База и хранилище
       - DB_POOL_SIZE

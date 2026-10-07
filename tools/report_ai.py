@@ -5,6 +5,7 @@ from collections.abc import Callable
 import httpx
 import io
 import json
+import os
 import re
 import time
 from collections import OrderedDict
@@ -31,6 +32,7 @@ from service_metrics import (
     record_report_ai_export,
     record_report_ai_export_duration,
     record_report_ai_job_created,
+    record_report_ai_save_attempt,
     record_report_ai_job_stage_duration,
     record_report_ai_job_terminal_outcome,
     record_report_ai_job_transition,
@@ -55,6 +57,9 @@ REPORT_AI_DATA_ROW_LIMIT = 10000
 REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD = 9000
 REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS = 30
 REPORT_AI_QUEUE_WAIT_LIMIT_SECONDS = 15 * 60
+REPORT_AI_TOOL_WAIT_MAX_SECONDS = 30
+REPORT_AI_TOOL_WAIT_INTERVAL_SECONDS = 2
+REPORT_AI_TOOL_WAIT_MAX_GETS = 16
 REPORT_AI_EXPORT_WAIT_LIMIT_SECONDS = 30 * 60
 REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS = CLINIC_TIMEZONE_TTL_SECONDS
 REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES = CLINIC_TIMEZONE_MAX_ENTRIES
@@ -88,6 +93,7 @@ _REPORT_AI_LIFECYCLE_OBSERVATIONS: OrderedDict[
     _ReportAiQueueObservationKey, dict[str, float | str]
 ] = OrderedDict()
 _REPORT_AI_FINALIZED_OBSERVATIONS: OrderedDict[_ReportAiQueueObservationKey, float] = OrderedDict()
+_REPORT_AI_REJECT_PENDING: OrderedDict[_ReportAiQueueObservationKey, float] = OrderedDict()
 _REPORT_AI_EXPORT_OBSERVATIONS: OrderedDict[
     _ReportAiQueueObservationKey, dict[str, float | bool]
 ] = OrderedDict()
@@ -109,6 +115,99 @@ _REPORT_AI_TERMINAL_OUTCOMES = frozenset({
 # past the limit is a hang; `needs_confirmation` waits for a person and
 # `ready_to_save` waits for the caller, so neither belongs.
 _REPORT_AI_ACTIVE_STAGE_STATUSES = ("recognizing", "building_preview")
+_REPORT_AI_WAIT_DONE_STATUSES = frozenset({
+    "needs_confirmation", "ready_to_save", "saved", "existing_report_matched",
+    "failed", "rejected",
+})
+_REPORT_AI_WAIT_ACTIVE_STATUSES = frozenset({"queued", "recognizing", "building_preview"})
+
+
+async def _report_ai_wait_sleep(seconds: float) -> None:
+    await asyncio.sleep(seconds)
+
+
+def _validate_report_ai_wait_seconds(value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= REPORT_AI_TOOL_WAIT_MAX_SECONDS:
+        raise ToolInputError("wait_seconds must be an integer from 0 to 30.")
+    return value
+
+
+def _report_ai_wait_enabled() -> bool:
+    return os.environ.get("REPORT_AI_WAIT_ENABLED", "1") != "0"
+
+
+def _report_ai_wait_diagnostics(payload: dict, *, code: str, job_id: int) -> dict:
+    job = _extract_job(payload)
+    if job:
+        job["mcp_wait_diagnostics"] = {
+            "code": code, "job_id": job_id,
+            "next_step": (
+                "Reading this job needs analytics.read. Keep this job_id; ask for that access, then call get_report_ai_job. Do not create a duplicate."
+                if code == "missing_analytics_scope" else
+                "Read the same job later with get_report_ai_job; do not create or save a duplicate automatically."
+            ),
+        }
+    return payload
+
+
+def _remember_reject_pending(job: dict) -> None:
+    key = _report_ai_queue_observation_key(job)
+    if key is not None:
+        _REPORT_AI_REJECT_PENDING[key] = _monotonic_seconds()
+        _REPORT_AI_REJECT_PENDING.move_to_end(key)
+        while len(_REPORT_AI_REJECT_PENDING) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
+            _REPORT_AI_REJECT_PENDING.popitem(last=False)
+
+
+def _is_reject_pending(job: dict) -> bool:
+    key = _report_ai_queue_observation_key(job)
+    if key is None:
+        return False
+    started = _REPORT_AI_REJECT_PENDING.get(key)
+    if started is None:
+        return False
+    if _monotonic_seconds() - started > REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS:
+        _REPORT_AI_REJECT_PENDING.pop(key, None)
+        return False
+    if job.get("status") in _REPORT_AI_WAIT_DONE_STATUSES - {"needs_confirmation"}:
+        _REPORT_AI_REJECT_PENDING.pop(key, None)
+        return False
+    return True
+
+
+def _annotate_report_ai_next_action(job: dict) -> None:
+    job_id = job.get("id")
+    if isinstance(job_id, bool) or not isinstance(job_id, int) or job_id <= 0:
+        return
+    status = job.get("status")
+    if status == "needs_confirmation":
+        if _is_reject_pending(job):
+            job["next_action"] = {
+                "type": "wait_after_reject",
+                "call": {"tool": "get_report_ai_job", "arguments": {"job_id": job_id, "wait_seconds": 30}},
+                "guidance": "Do not repeat reject or confirm on a stale needs_confirmation status.",
+            }
+            return
+        calls = []
+        candidates = job.get("candidates")
+        if isinstance(candidates, list):
+            for candidate in candidates:
+                report_id = candidate.get("report_id") if isinstance(candidate, dict) else None
+                if isinstance(report_id, int) and not isinstance(report_id, bool) and report_id > 0:
+                    calls.append({"tool": "confirm_report_ai_job_candidate",
+                                  "arguments": {"job_id": job_id, "report_id": report_id}})
+        calls.append({"tool": "reject_report_ai_job_candidate", "arguments": {"job_id": job_id}})
+        job["next_action"] = {
+            "type": "choose_candidate", "calls": calls,
+            "guidance": "Compare candidates, then confirm one report_id or reject candidates once.",
+        }
+    elif status == "ready_to_save":
+        job["next_action"] = {
+            "type": "save_report",
+            "call": {"tool": "save_report_ai_job_as_report",
+                     "arguments": {"job_id": job_id, "title": f"Отчёт по заданию {job_id}"}},
+            "guidance": "Use a meaningful title for the report, then read real rows with get_report_ai_job_data.",
+        }
 
 
 def _monotonic_seconds() -> float:
@@ -143,6 +242,7 @@ def _reset_report_ai_queue_observations() -> None:
     _REPORT_AI_QUEUE_OBSERVATIONS.clear()
     _REPORT_AI_LIFECYCLE_OBSERVATIONS.clear()
     _REPORT_AI_FINALIZED_OBSERVATIONS.clear()
+    _REPORT_AI_REJECT_PENDING.clear()
     _REPORT_AI_EXPORT_OBSERVATIONS.clear()
     reset_clinic_timezone_cache()
 
@@ -544,6 +644,7 @@ def _annotate_report_ai_workarounds(payload: dict) -> dict:
     ):
         job["error_code"] = "unknown"
     _annotate_report_ai_preview_guidance(job)
+    _annotate_report_ai_next_action(job)
     return payload
 
 
@@ -700,6 +801,58 @@ async def _annotate_report_ai_job_payload(payload: dict) -> dict:
     except Exception as exc:
         _report_ai_observation_failed(exc, operation="status_queue_diagnostics")
         return annotated
+
+
+def _annotate_report_ai_wait_payload(payload: dict) -> dict:
+    """Observe a wait poll without a second, unbounded clinic-timezone lookup."""
+    annotated = _annotate_report_ai_workarounds(payload)
+    job = _extract_job(annotated)
+    _best_effort_observation("status_lifecycle", _observe_report_ai_lifecycle, job)
+    _best_effort_observation("status_queue", _observe_report_ai_queue, job)
+    return annotated
+
+
+async def _wait_for_report_ai_job(
+    payload: dict, *, job_id: int, deadline: float, max_gets: int = REPORT_AI_TOOL_WAIT_MAX_GETS,
+) -> dict:
+    """Poll only the known job with a single bounded deadline and no read retry."""
+    latest = _annotate_report_ai_wait_payload(payload)
+    for _ in range(max_gets):
+        job = _extract_job(latest)
+        status = job.get("status")
+        pending_reject = status == "needs_confirmation" and _is_reject_pending(job)
+        if status in _REPORT_AI_WAIT_DONE_STATUSES and not pending_reject:
+            return latest
+        if status not in _REPORT_AI_WAIT_ACTIVE_STATUSES and not pending_reject:
+            return _report_ai_wait_diagnostics(latest, code="unknown_status", job_id=job_id)
+        remaining = deadline - _monotonic_seconds()
+        if remaining <= 0:
+            return _report_ai_wait_diagnostics(latest, code="wait_timeout", job_id=job_id)
+        await _report_ai_wait_sleep(min(REPORT_AI_TOOL_WAIT_INTERVAL_SECONDS, remaining))
+        remaining = deadline - _monotonic_seconds()
+        if remaining <= 0:
+            return _report_ai_wait_diagnostics(latest, code="wait_timeout", job_id=job_id)
+        observed_error_code = None
+
+        def remember_wait_error(exc: VetmanagerError) -> None:
+            nonlocal observed_error_code
+            observed_error_code = exc.error_code
+
+        try:
+            next_payload = await asyncio.wait_for(
+                _call_vm("GET", f"/rest/api/report-ai-job/{job_id}",
+                         tool_name="get_report_ai_job",
+                         metric_endpoint="/rest/api/report-ai-job/{id}", retry=False,
+                         on_vm_error=remember_wait_error),
+                timeout=remaining,
+            )
+        except asyncio.TimeoutError:
+            return _report_ai_wait_diagnostics(latest, code="wait_timeout", job_id=job_id)
+        except ToolError:
+            code = "missing_analytics_scope" if observed_error_code == SCOPE_DENIED_ERROR_CODE else "poll_failed"
+            return _report_ai_wait_diagnostics(latest, code=code, job_id=job_id)
+        latest = _annotate_report_ai_wait_payload(next_payload)
+    return _report_ai_wait_diagnostics(latest, code="wait_timeout", job_id=job_id)
 
 
 def _annotate_report_ai_data_payload(payload: dict) -> dict:
@@ -1124,6 +1277,8 @@ async def _call_vm(
     params: dict | None = None,
     tool_name: str,
     metric_endpoint: str,
+    retry: bool = True,
+    on_vm_error: Callable[[VetmanagerError], None] | None = None,
 ) -> dict:
     client = VetmanagerClient()
     is_create = method == "POST" and path == "/rest/api/report-ai-job"
@@ -1132,7 +1287,7 @@ async def _call_vm(
 
     async def request() -> dict:
         if method == "GET":
-            return await client.get(path, params=params)
+            return await client.get(path, params=params, retry=retry)
         if method == "POST":
             return await client.post(path, json=json)
         raise RuntimeError(f"Unsupported Report AI method: {method}")
@@ -1158,6 +1313,8 @@ async def _call_vm(
                 raise _uncertain_create_error(client, code="REPORT_AI_CREATE_RESPONSE_UNKNOWN")
         return payload
     except VetmanagerError as exc:
+        if on_vm_error is not None:
+            _best_effort_observation("upstream_error_callback", on_vm_error, exc)
         if is_create and client.last_outbound_correlation_id:
             code = None
             if exc.error_code == "REPORT_AI_CREATE_RESPONSE_UNKNOWN":
@@ -1237,7 +1394,7 @@ def register(mcp: FastMCP) -> None:
         return {"helper_text": get_report_ai_prompt_helper_text()}
 
     @mcp.tool
-    async def create_report_ai_job(intent_text: str) -> dict:
+    async def create_report_ai_job(intent_text: str, wait_seconds: int = 0) -> dict:
         """Create an async Vetmanager Report AI job from Russian report intent.
 
         Args:
@@ -1247,7 +1404,10 @@ def register(mcp: FastMCP) -> None:
                 For complex or multi-condition reports, prefer narrower
                 periods and simpler grouped requests; do not create duplicate
                 queued jobs without user consent.
+            wait_seconds: Optional bounded server-side wait, 0 to 30 seconds.
+                One POST is followed only by GET polls of the same job.
         """
+        wait_seconds = _validate_report_ai_wait_seconds(wait_seconds)
         try:
             # The requirement is part of what upstream must fit, so its length
             # is reserved before the user's own text is measured.
@@ -1266,10 +1426,14 @@ def register(mcp: FastMCP) -> None:
         job = _extract_job(payload)
         _best_effort_observation("create_lifecycle", _observe_report_ai_lifecycle, job)
         _best_effort_observation("create_queue", _observe_report_ai_queue, job)
+        if wait_seconds and _report_ai_wait_enabled():
+            return await _wait_for_report_ai_job(
+                payload, job_id=int(job["id"]), deadline=_monotonic_seconds() + wait_seconds,
+            )
         return payload
 
     @mcp.tool
-    async def get_report_ai_job(job_id: int) -> dict:
+    async def get_report_ai_job(job_id: int, wait_seconds: int = 0) -> dict:
         """Get safe Report AI job status and recognized structure without raw SQL.
 
         Args:
@@ -1289,19 +1453,52 @@ def register(mcp: FastMCP) -> None:
                 working stages alike: age_scope says whether the age measures
                 the whole job (queued) or the current stage (recognizing,
                 building_preview), and a stage change restarts that clock.
-                The age is process-local, not a Vetmanager SLA. Poll at most
-                six times per conversation, then return the job_id to resume
-                later. At 15 minutes on a working stage stop automatic polling.
+                The age is process-local, not a Vetmanager SLA. Use bounded
+                wait_seconds instead of a manual poll series; on timeout
+                return the job_id to resume later. At 15 minutes on a working
+                stage stop automatic polling.
                 Do not create a duplicate: the same
                 job may still finish, and on a working stage a duplicate only
                 doubles the queue. Re-check the same job later. Invoice KPI
                 fallback needs complete get_invoices pagination before summing amount
                 by doctor_id; it is not a direct aggregate.
+            wait_seconds: Optional bounded wait, 0 to 30 seconds. A timeout
+                returns the same job_id and mcp_wait_diagnostics. Follow
+                job.next_action at needs_confirmation or ready_to_save.
+                preview_summary and preview_example_row are only samples for
+                deciding whether to run the report, not live clinic rows.
+                Do not answer the user from preview. Read real rows with
+                get_report_ai_job_data after save or confirmation.
         """
-        payload = await _call_vm(
-            "GET", f"/rest/api/report-ai-job/{job_id}", tool_name="get_report_ai_job",
-            metric_endpoint="/rest/api/report-ai-job/{id}",
-        )
+        wait_seconds = _validate_report_ai_wait_seconds(wait_seconds)
+        waiting = bool(wait_seconds and _report_ai_wait_enabled())
+        deadline = _monotonic_seconds() + wait_seconds if waiting else 0.0
+        try:
+            if waiting:
+                remaining = deadline - _monotonic_seconds()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError
+                payload = await asyncio.wait_for(
+                    _call_vm("GET", f"/rest/api/report-ai-job/{job_id}",
+                             tool_name="get_report_ai_job",
+                             metric_endpoint="/rest/api/report-ai-job/{id}", retry=False),
+                    timeout=remaining,
+                )
+            else:
+                payload = await _call_vm(
+                    "GET", f"/rest/api/report-ai-job/{job_id}", tool_name="get_report_ai_job",
+                    metric_endpoint="/rest/api/report-ai-job/{id}",
+                )
+        except asyncio.TimeoutError:
+            raise ToolInputError(
+                f"Report AI wait timed out before the first status for job {job_id}. "
+                "Read the same job later with get_report_ai_job; do not create a duplicate."
+            ) from None
+        if waiting:
+            return await _wait_for_report_ai_job(
+                payload, job_id=job_id, deadline=deadline,
+                max_gets=REPORT_AI_TOOL_WAIT_MAX_GETS - 1,
+            )
         return await _annotate_report_ai_job_payload(payload)
 
     @mcp.tool
@@ -1322,7 +1519,14 @@ def register(mcp: FastMCP) -> None:
             metric_endpoint="/rest/api/report-ai-job/{id}/confirm",
         )
         payload = _annotate_report_ai_workarounds(payload)
-        _best_effort_observation("confirm_lifecycle", _observe_report_ai_lifecycle, _extract_job(payload))
+        data = payload.get("data") if isinstance(payload, dict) else None
+        confirmed_id = data.get("report_id") if isinstance(data, dict) else None
+        confirmed_job = (
+            {"id": job_id, "status": "existing_report_matched"}
+            if isinstance(confirmed_id, int) and not isinstance(confirmed_id, bool) and confirmed_id > 0
+            else _extract_job(payload)
+        )
+        _best_effort_observation("confirm_lifecycle", _observe_report_ai_lifecycle, confirmed_job)
         return payload
 
     @mcp.tool
@@ -1342,6 +1546,10 @@ def register(mcp: FastMCP) -> None:
         )
         payload = _annotate_report_ai_workarounds(payload)
         _best_effort_observation("reject_lifecycle", _observe_report_ai_lifecycle, _extract_job(payload))
+        _remember_reject_pending({"id": job_id})
+        job = _extract_job(payload)
+        if job.get("status") == "needs_confirmation":
+            _annotate_report_ai_next_action(job)
         return payload
 
     @mcp.tool
@@ -1373,17 +1581,68 @@ def register(mcp: FastMCP) -> None:
                 purpose and period when applicable, for example
                 'MCP debtors by negative balance 2026-06-15'.
         """
-        safe_title = _validate_report_title(title)
-        payload = await _call_vm(
-            "POST",
-            f"/rest/api/report-ai-job/{job_id}/save",
-            json={"title": safe_title},
-            tool_name="save_report_ai_job_as_report",
-            metric_endpoint="/rest/api/report-ai-job/{id}/save",
-        )
-        payload = _annotate_report_ai_workarounds(payload)
-        _best_effort_observation("save_lifecycle", _observe_report_ai_lifecycle, _extract_job(payload))
-        return payload
+        outcome = "unknown"
+        save_error_code = None
+
+        def classify_save_error(exc: VetmanagerError) -> None:
+            nonlocal outcome, save_error_code
+            save_error_code = exc.error_code
+            if isinstance(exc, VetmanagerTimeoutError) or (
+                exc.status_code is None and not isinstance(exc, AuthError)
+            ) or (isinstance(exc.status_code, int) and exc.status_code >= 500):
+                outcome = "unknown"
+            else:
+                outcome = "error"
+
+        try:
+            try:
+                safe_title = _validate_report_title(title)
+            except ToolError:
+                outcome = "invalid_input"
+                raise
+            try:
+                payload = await _call_vm(
+                    "POST",
+                    f"/rest/api/report-ai-job/{job_id}/save",
+                    json={"title": safe_title},
+                    tool_name="save_report_ai_job_as_report",
+                    metric_endpoint="/rest/api/report-ai-job/{id}/save",
+                    on_vm_error=classify_save_error,
+                )
+            except ToolError:
+                if save_error_code == "INVALID_TRANSITION":
+                    current_status = None
+                    try:
+                        current = await _call_vm(
+                            "GET", f"/rest/api/report-ai-job/{job_id}",
+                            tool_name="get_report_ai_job",
+                            metric_endpoint="/rest/api/report-ai-job/{id}", retry=False,
+                        )
+                        current_status = _extract_job(current).get("status")
+                    except ToolError:
+                        pass
+                    if current_status == "needs_confirmation":
+                        raise ToolInputError(
+                            "Report AI request failed (INVALID_TRANSITION). "
+                            "Use confirm_report_ai_job_candidate with a current candidate "
+                            "or reject_report_ai_job_candidate, then read the same job."
+                        ) from None
+                raise
+            payload = _annotate_report_ai_workarounds(payload)
+            data = payload.get("data") if isinstance(payload, dict) else None
+            report_id = data.get("report_id") if isinstance(data, dict) else None
+            if payload.get("success") is False:
+                outcome = "error"
+                raise ToolInputError("Report AI save was rejected. Read the same job before another action.")
+            if isinstance(report_id, int) and not isinstance(report_id, bool) and report_id > 0:
+                outcome = "success"
+                observed_job = {"id": job_id, "status": "saved"}
+            else:
+                observed_job = _extract_job(payload)
+            _best_effort_observation("save_lifecycle", _observe_report_ai_lifecycle, observed_job)
+            return payload
+        finally:
+            _best_effort_observation("save_attempt", record_report_ai_save_attempt, outcome=outcome)
 
     @mcp.tool
     async def start_report_export(report_id: int, filter_json: str | None = None) -> dict:

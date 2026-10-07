@@ -78,6 +78,7 @@ _REPORT_EXPORT_SERVE_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _REPORT_AI_LONG_QUEUED_POLLS_TOTAL = 0
 _REPORT_AI_STAGE_STALL_POLLS_TOTAL = 0
 _REPORT_AI_JOBS_TOTAL: DefaultDict[str, int] = defaultdict(int)
+_REPORT_AI_SAVE_ATTEMPTS_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _REPORT_AI_JOB_TRANSITIONS_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
 _REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _REPORT_AI_JOB_STAGE_DURATION_SECONDS: DefaultDict[str, LatencyAggregate] = defaultdict(
@@ -156,6 +157,7 @@ def reset_service_metrics() -> None:
         _REPORT_AI_LONG_QUEUED_POLLS_TOTAL = 0
         _REPORT_AI_STAGE_STALL_POLLS_TOTAL = 0
         _REPORT_AI_JOBS_TOTAL.clear()
+        _REPORT_AI_SAVE_ATTEMPTS_TOTAL.clear()
         _REPORT_AI_JOB_TRANSITIONS_TOTAL.clear()
         _REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL.clear()
         _REPORT_AI_JOB_STAGE_DURATION_SECONDS.clear()
@@ -450,6 +452,17 @@ def record_report_ai_job_created(*, outcome: str) -> None:
         _REPORT_AI_JOBS_TOTAL[outcome] += 1
 
 
+def record_report_ai_save_attempt(*, outcome: str) -> None:
+    """Count save calls with a closed label set; never use report or person data."""
+    safe_outcome = (
+        outcome if isinstance(outcome, str)
+        and outcome in {"success", "error", "unknown", "invalid_input"}
+        else "unknown"
+    )
+    with _LOCK:
+        _REPORT_AI_SAVE_ATTEMPTS_TOTAL[safe_outcome] += 1
+
+
 def record_report_ai_job_transition(*, from_stage: str, to_stage: str) -> None:
     """Record one locally observed Report AI lifecycle transition."""
     with _LOCK:
@@ -581,6 +594,7 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
             "report_ai_long_queued_polls_total": _REPORT_AI_LONG_QUEUED_POLLS_TOTAL,
             "report_ai_stage_stall_polls_total": _REPORT_AI_STAGE_STALL_POLLS_TOTAL,
             "report_ai_jobs_total": dict(sorted(_REPORT_AI_JOBS_TOTAL.items())),
+            "report_ai_save_attempts_total": dict(sorted(_REPORT_AI_SAVE_ATTEMPTS_TOTAL.items())),
             "report_ai_job_transitions_total": {
                 f"{from_stage}|{to_stage}": count
                 for (from_stage, to_stage), count in sorted(_REPORT_AI_JOB_TRANSITIONS_TOTAL.items())
@@ -854,6 +868,13 @@ def render_prometheus_metrics() -> str:
     ])
     for outcome, count in snapshot.get("report_ai_jobs_total", {}).items():
         lines.append(f"vetmanager_report_ai_jobs_total{_labels_text(outcome=outcome)} {count}")
+
+    lines.extend([
+        "# HELP vetmanager_report_ai_save_attempts_total Report AI save tool attempts by bounded outcome.",
+        "# TYPE vetmanager_report_ai_save_attempts_total counter",
+    ])
+    for outcome, count in snapshot.get("report_ai_save_attempts_total", {}).items():
+        lines.append(f"vetmanager_report_ai_save_attempts_total{_labels_text(outcome=outcome)} {count}")
 
     lines.extend([
         "# HELP vetmanager_report_ai_job_transitions_total Total locally observed Report AI job stage transitions.",
