@@ -3,7 +3,7 @@
 Статусы: `todo` | `in_progress` | `supervisor_pending` | `done` | `stop`.
 Структуру проверяет `scripts/check_roadmap_structure.py`.
 
-## Этап 369. Report AI доводит задание до сохранения: wait, next_action и учёт попыток save — `in_progress`
+## Этап 369. Report AI доводит задание до сохранения: wait, next_action и учёт попыток save — `done`
 
 Источник: product dashboard 07.10.2026 и разбор прод-метрик (лог супервизора
 `logs/mcp/2026-10-07-report-ai-saved-zero-analysis.md`). За 30 дней в
@@ -36,7 +36,7 @@ dedup-политика и права не переоткрываются.
   save/confirm. — `done`
 - 369.3 Учёт попыток: `report_ai_save_attempts_total{outcome}` или stage-метка в
   terminal outcome; красный сторож на новые series без high-cardinality labels;
-  критерий на проде после выпуска: saved > 0, доля ready_to_save→saved растёт. — `in_progress`
+  критерий на проде после выпуска: saved > 0, доля ready_to_save→saved растёт. — `done`
 
 ## Этап 368. Числовые результаты Report AI не должны маскироваться как телефоны — `done`
 
