@@ -94,6 +94,35 @@ async def test_create_wait_uses_one_post_and_reaches_ready_with_save_call(monkey
 
 @pytest.mark.asyncio
 @respx.mock
+@pytest.mark.parametrize("bad_response", [
+    httpx.Response(200, text="invalid-json"),
+    httpx.Response(200, json=None),
+    httpx.Response(200, json={}),
+])
+async def test_create_wait_preserves_job_id_on_malformed_poll(monkeypatch, bad_response):
+    billing_mock()
+    post = respx.post(f"{BASE}/rest/api/report-ai-job").mock(
+        return_value=httpx.Response(201, json=_job("queued"))
+    )
+    get = respx.get(f"{BASE}/rest/api/report-ai-job/369").mock(return_value=bad_response)
+
+    async def no_sleep(_seconds):
+        pass
+
+    monkeypatch.setattr(report_ai, "_report_ai_wait_sleep", no_sleep)
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        result = await mcp.call_tool("create_report_ai_job", {
+            "intent_text": "Количество счетов за май 1900 года", "wait_seconds": 30,
+        })
+    job = _result(result)
+    assert post.call_count == 1 and get.call_count == 1
+    assert job["id"] == 369 and job["status"] == "queued"
+    assert job["mcp_wait_diagnostics"]["code"] == "poll_failed"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_wait_timeout_keeps_same_job_and_never_recreates():
     billing_mock()
     post = respx.post(f"{BASE}/rest/api/report-ai-job").mock(
@@ -397,6 +426,46 @@ async def test_unknown_save_outcomes_require_read_before_retry():
             assert "get_report_ai_job" in str(error.value)
             assert "automatically" in str(error.value)
     assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("bad_response", [
+    httpx.Response(200, text="invalid-json"),
+    httpx.Response(200, json=None),
+    httpx.Response(200, json=[]),
+])
+async def test_malformed_save_success_requires_read_before_retry(bad_response):
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/report-ai-job/369/save").mock(
+        return_value=bad_response
+    )
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime, pytest.raises(ToolError) as error:
+        await mcp.call_tool("save_report_ai_job_as_report", {
+            "job_id": 369, "title": "MCP invoices May 1900",
+        })
+    assert route.call_count == 1
+    assert "get_report_ai_job" in str(error.value)
+    assert "automatically" in str(error.value)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_save_without_report_id_does_not_suggest_second_save():
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/report-ai-job/369/save").mock(
+        return_value=httpx.Response(200, json=_job("ready_to_save"))
+    )
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        result = await mcp.call_tool("save_report_ai_job_as_report", {
+            "job_id": 369, "title": "MCP invoices May 1900",
+        })
+    job = _result(result)
+    assert route.call_count == 1
+    assert job["next_action"]["call"]["tool"] == "get_report_ai_job"
+    assert "automatically" in job["next_action"]["guidance"]
 
 
 @pytest.mark.asyncio

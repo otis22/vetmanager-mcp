@@ -848,9 +848,13 @@ async def _wait_for_report_ai_job(
             )
         except asyncio.TimeoutError:
             return _report_ai_wait_diagnostics(latest, code="wait_timeout", job_id=job_id)
-        except ToolError:
+        except (ToolError, ValueError):
             code = "missing_analytics_scope" if observed_error_code == SCOPE_DENIED_ERROR_CODE else "poll_failed"
             return _report_ai_wait_diagnostics(latest, code=code, job_id=job_id)
+        poll_job = _extract_job(next_payload) if isinstance(next_payload, dict) else {}
+        poll_id = poll_job.get("id")
+        if isinstance(poll_id, bool) or str(poll_id) != str(job_id):
+            return _report_ai_wait_diagnostics(latest, code="poll_failed", job_id=job_id)
         latest = _annotate_report_ai_wait_payload(next_payload)
     return _report_ai_wait_diagnostics(latest, code="wait_timeout", job_id=job_id)
 
@@ -1611,6 +1615,11 @@ def register(mcp: FastMCP) -> None:
                     metric_endpoint="/rest/api/report-ai-job/{id}/save",
                     on_vm_error=classify_save_error,
                 )
+            except ValueError:
+                raise ToolInputError(
+                    "Report AI save outcome is unknown. Read the same job with "
+                    "get_report_ai_job; do not retry save automatically."
+                ) from None
             except ToolError:
                 if save_error_code == "INVALID_TRANSITION":
                     current_status = None
@@ -1641,6 +1650,11 @@ def register(mcp: FastMCP) -> None:
                         "get_report_ai_job; do not retry save automatically."
                     ) from None
                 raise
+            if not isinstance(payload, dict):
+                raise ToolInputError(
+                    "Report AI save outcome is unknown. Read the same job with "
+                    "get_report_ai_job; do not retry save automatically."
+                )
             payload = _annotate_report_ai_workarounds(payload)
             data = payload.get("data") if isinstance(payload, dict) else None
             report_id = data.get("report_id") if isinstance(data, dict) else None
@@ -1657,6 +1671,16 @@ def register(mcp: FastMCP) -> None:
                         "Report AI save outcome is unknown: report_id and job are missing. "
                         "Read the same job with get_report_ai_job; do not retry save automatically."
                     )
+                if observed_job.get("status") not in {
+                    "saved", "existing_report_matched", "failed", "rejected",
+                }:
+                    observed_job["next_action"] = {
+                        "type": "verify_save_outcome",
+                        "call": {"tool": "get_report_ai_job", "arguments": {
+                            "job_id": job_id, "wait_seconds": 30,
+                        }},
+                        "guidance": "Read the same job; do not retry save automatically.",
+                    }
             _best_effort_observation("save_lifecycle", _observe_report_ai_lifecycle, observed_job)
             return payload
         finally:
