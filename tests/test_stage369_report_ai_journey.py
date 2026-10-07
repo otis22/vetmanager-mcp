@@ -92,6 +92,30 @@ async def test_wait_timeout_keeps_same_job_and_never_recreates():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_cancel_after_create_response_never_replays_post(monkeypatch):
+    billing_mock()
+    post = respx.post(f"{BASE}/rest/api/report-ai-job").mock(
+        return_value=httpx.Response(201, json=_job("queued"))
+    )
+    get = respx.get(f"{BASE}/rest/api/report-ai-job/369").mock(
+        return_value=httpx.Response(200, json=_job("queued"))
+    )
+
+    async def cancelled(_seconds):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(report_ai, "_report_ai_wait_sleep", cancelled)
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime, pytest.raises(asyncio.CancelledError):
+        await mcp.call_tool("create_report_ai_job", {
+            "intent_text": "Количество счетов за май 1900 года", "wait_seconds": 30,
+        })
+    assert post.call_count == 1
+    assert get.call_count == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_get_wait_stops_on_429_without_transport_retry(monkeypatch):
     billing_mock()
     route = respx.get(f"{BASE}/rest/api/report-ai-job/369").mock(side_effect=[
