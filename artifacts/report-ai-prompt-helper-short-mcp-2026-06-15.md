@@ -19,7 +19,9 @@ Your task is to convert the user's business question into a clear Russian `inten
    `get_report_ai_job(wait_seconds=30)`; первый ответ ещё может содержать
    устаревший `needs_confirmation`, повторять reject автоматически нельзя.
 3. При `ready_to_save` вызовите `save_report_ai_job_as_report` с осмысленным
-   названием. Затем читайте реальные строки через `get_report_ai_job_data`.
+   названием. Поле `title` в `next_action.call` — шаблон; замените его целью и
+   периодом отчёта, буквальный шаблон не отправляйте. Затем читайте реальные
+   строки через `get_report_ai_job_data`.
    После confirm статус `existing_report_matched` позволяет сразу вызвать
    `get_report_ai_job_data` без save. При неопределённом исходе save сначала
    перечитайте тот же job, не повторяйте запись автоматически.

@@ -1101,7 +1101,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "save_report_ai_job_as_report": (
         "Explicit write action: persist a ready_to_save Report AI job as a visible "
-        "Vetmanager report with a meaningful title. This creates or reuses a "
+        "Vetmanager report with a meaningful title. Replace the next_action title "
+        "template with the report purpose and period; the template and generic "
+        "job-number titles are rejected before POST. This creates or reuses a "
         "persistent report; do not hide it behind read-only workflows. Domain "
         "synonyms: отчёт, отчет, ИИ отчёт, AI report, конструктор отчётов, "
         "аналитика, report ai."

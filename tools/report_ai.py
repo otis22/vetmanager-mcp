@@ -65,6 +65,7 @@ REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS = CLINIC_TIMEZONE_TTL_SECONDS
 REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES = CLINIC_TIMEZONE_MAX_ENTRIES
 REPORT_AI_GOODS_GOOD_ID_WORKAROUND_CODE = "report_ai_goods_good_id_preview_failed"
 REPORT_AI_PROVIDER_UNREACHABLE_WORKAROUND_CODE = "report_ai_provider_unreachable"
+_REPORT_AI_TITLE_TEMPLATE = "<цель и период отчёта>"
 _GENERIC_REPORT_TITLES = {
     "report",
     "отчет",
@@ -205,8 +206,9 @@ def _annotate_report_ai_next_action(job: dict) -> None:
         job["next_action"] = {
             "type": "save_report",
             "call": {"tool": "save_report_ai_job_as_report",
-                     "arguments": {"job_id": job_id, "title": f"Отчёт по заданию {job_id}"}},
-            "guidance": "Use a meaningful title for the report, then read real rows with get_report_ai_job_data.",
+                     "arguments": {"job_id": job_id, "title": _REPORT_AI_TITLE_TEMPLATE}},
+            "title_requires_choice": True,
+            "guidance": "Replace the title template with the report purpose and period before calling save; then read real rows with get_report_ai_job_data.",
         }
 
 
@@ -937,7 +939,12 @@ def _intent_with_privacy_requirement(intent: str) -> str:
 
 def _validate_report_title(title: str) -> str:
     value = (title or "").strip()
-    if len(value) < 12 or value.lower() in _GENERIC_REPORT_TITLES:
+    normalized = value.casefold().replace("ё", "е")
+    if (
+        len(value) < 12 or value.lower() in _GENERIC_REPORT_TITLES
+        or normalized == _REPORT_AI_TITLE_TEMPLATE.casefold().replace("ё", "е")
+        or re.fullmatch(r"отчет по заданию \d+", normalized)
+    ):
         raise ToolInputError(
             "title must be meaningful: include the report purpose and period when applicable."
         )
@@ -1629,8 +1636,9 @@ def register(mcp: FastMCP) -> None:
                             tool_name="get_report_ai_job",
                             metric_endpoint="/rest/api/report-ai-job/{id}", retry=False,
                         )
-                        current_status = _extract_job(current).get("status")
-                    except ToolError:
+                        if isinstance(current, dict):
+                            current_status = _extract_job(current).get("status")
+                    except (ToolError, ValueError):
                         pass
                     if current_status == "needs_confirmation":
                         if _is_reject_pending({"id": job_id, "status": current_status}):

@@ -361,6 +361,33 @@ def test_needs_confirmation_calls_are_bounded_to_upstream_candidate_ids():
 
 @pytest.mark.asyncio
 @respx.mock
+@pytest.mark.parametrize("forbidden_title", [
+    "<цель и период отчёта>",
+    "<Цель и период отчёта>",
+    "<цель и период отчета>",
+    "Отчёт по заданию 369",
+    "Отчет по заданию 369",
+])
+async def test_ready_to_save_requires_a_chosen_title_before_post(forbidden_title):
+    billing_mock()
+    job = report_ai._annotate_report_ai_workarounds(_job("ready_to_save"))["data"]["job"]
+    action = job["next_action"]
+    assert action["call"]["tool"] == "save_report_ai_job_as_report"
+    assert action["title_requires_choice"] is True
+    assert action["call"]["arguments"]["title"] == "<цель и период отчёта>"
+    save = respx.post(f"{BASE}/rest/api/report-ai-job/369/save").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": {"report_id": 1}})
+    )
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime, pytest.raises(ToolError):
+        await mcp.call_tool("save_report_ai_job_as_report", {
+            "job_id": 369, "title": forbidden_title,
+        })
+    assert save.call_count == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_save_refusal_names_both_choices_only_after_fresh_confirmation_status():
     billing_mock()
     save = respx.post(f"{BASE}/rest/api/report-ai-job/369/save").mock(
@@ -378,6 +405,29 @@ async def test_save_refusal_names_both_choices_only_after_fresh_confirmation_sta
     assert view.call_count == 1
     assert "confirm_report_ai_job_candidate" in str(error.value)
     assert "reject_report_ai_job_candidate" in str(error.value)
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("bad_response", [
+    httpx.Response(200, text="not-json"),
+    httpx.Response(200, json=None),
+    httpx.Response(200, json=[]),
+])
+async def test_save_refusal_with_bad_followup_keeps_safe_error(bad_response):
+    billing_mock()
+    save = respx.post(f"{BASE}/rest/api/report-ai-job/369/save").mock(
+        return_value=httpx.Response(409, json={"data": {"error_code": "INVALID_TRANSITION"}})
+    )
+    view = respx.get(f"{BASE}/rest/api/report-ai-job/369").mock(return_value=bad_response)
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime, pytest.raises(ToolError) as error:
+        await mcp.call_tool("save_report_ai_job_as_report", {
+            "job_id": 369, "title": "MCP invoices May 1900",
+        })
+    assert save.call_count == 1 and view.call_count == 1
+    assert "INVALID_TRANSITION" in str(error.value)
+    assert "not-json" not in str(error.value)
 
 
 @pytest.mark.asyncio
