@@ -1624,11 +1624,22 @@ def register(mcp: FastMCP) -> None:
                     except ToolError:
                         pass
                     if current_status == "needs_confirmation":
+                        if _is_reject_pending({"id": job_id, "status": current_status}):
+                            raise ToolInputError(
+                                "Report AI request failed (INVALID_TRANSITION). "
+                                "Read the same job with get_report_ai_job; do not repeat "
+                                "candidate actions while rejection is pending."
+                            ) from None
                         raise ToolInputError(
                             "Report AI request failed (INVALID_TRANSITION). "
                             "Use confirm_report_ai_job_candidate with a current candidate "
                             "or reject_report_ai_job_candidate, then read the same job."
                         ) from None
+                if outcome == "unknown":
+                    raise ToolInputError(
+                        "Report AI save outcome is unknown. Read the same job with "
+                        "get_report_ai_job; do not retry save automatically."
+                    ) from None
                 raise
             payload = _annotate_report_ai_workarounds(payload)
             data = payload.get("data") if isinstance(payload, dict) else None
@@ -1641,6 +1652,11 @@ def register(mcp: FastMCP) -> None:
                 observed_job = {"id": job_id, "status": "saved"}
             else:
                 observed_job = _extract_job(payload)
+                if not observed_job:
+                    raise ToolInputError(
+                        "Report AI save outcome is unknown: report_id and job are missing. "
+                        "Read the same job with get_report_ai_job; do not retry save automatically."
+                    )
             _best_effort_observation("save_lifecycle", _observe_report_ai_lifecycle, observed_job)
             return payload
         finally:

@@ -4,14 +4,41 @@ Use this helper before creating a Vetmanager Report AI job.
 
 Your task is to convert the user's business question into a clear Russian `intent_text` for the Vetmanager report constructor. Do not write SQL. Do not invent database fields, custom directory values, statuses, tags, product groups, diagnoses, visit types, acquisition channels, or loyalty-card types.
 
+## Report AI journey
+
+1. После подготовки интента вызовите `create_report_ai_job(wait_seconds=30)` один
+   раз. Вызов делает один POST и ограниченное ожидание статуса на сервере MCP.
+   Если вернулось ещё обрабатываемое задание или timeout, сохраните `job_id` и
+   вызовите `get_report_ai_job(wait_seconds=30)` для того же задания: это тоже
+   один ограниченный вызов. При необходимости повторите его позже; не создавайте
+   job заново и не запускайте ручную серию быстрых GET.
+2. При `needs_confirmation` сравните кандидатов с фильтрами, периодом и
+   группировкой. Выберите **одно** действие: `confirm_report_ai_job_candidate`
+   для подходящего кандидата или `reject_report_ai_job_candidate` один раз,
+   если подходящего нет. После reject читайте тот же job через
+   `get_report_ai_job(wait_seconds=30)`; первый ответ ещё может содержать
+   устаревший `needs_confirmation`, повторять reject автоматически нельзя.
+3. При `ready_to_save` вызовите `save_report_ai_job_as_report` с осмысленным
+   названием. Затем читайте реальные строки через `get_report_ai_job_data`.
+   После confirm статус `existing_report_matched` позволяет сразу вызвать
+   `get_report_ai_job_data` без save. При неопределённом исходе save сначала
+   перечитайте тот же job, не повторяйте запись автоматически.
+4. `preview_summary` и `preview_example_row` — только образец для решения о
+   запуске полноценного отчёта, не живые данные клиники.
+   Нельзя отвечать пользователю по превью, включая его числа, значения и
+   вывод «данных нет».
+   Для ответа используйте только реальные строки из `get_report_ai_job_data`
+   после save или confirm.
+
 ## Agent flow constraints
 
 - Canonical MCP order: `get_report_ai_prompt_helper` → `create_report_ai_job` →
   `get_report_ai_job`, then confirm, save, read rows, or export according to the
   returned status.
-- Report AI jobs are async. After creating a job, poll the job status instead of expecting immediate rows. Poll at most six times in one conversation; if still pending, give the person the job_id to check later.
+- Report AI jobs are async. Use the bounded wait of create/get above; if the job
+  is still pending after a bounded call, keep its `job_id` and check later.
 - Наблюдаемый порядок ожидания до `ready_to_save` на одном контуре — от одной до трёх минут, не гарантия. Диагностика queued появляется через 30 секунд,
-  но сама по себе не означает поломку: продолжайте ограниченный polling.
+  но сама по себе не означает поломку: повторите bounded get того же `job_id` позже.
 - Один вопрос — один отчёт. Создавайте jobs последовательно.
 - Дождитесь завершения предыдущего job, прежде чем создавать следующий. Не запускайте несколько отчётов одновременно.
 - Если нужны несколько разрезов, сначала попробуйте один отчёт с нужной группировкой; если нужны отдельные отчёты, создавайте их по очереди. Наблюдение одного
@@ -21,8 +48,8 @@ Your task is to convert the user's business question into a clear Russian `inten
 - `ready_to_save` does not expose report rows. It exposes safe recognized structure and preview summary only.
 - Rows are available only after `saved` or `existing_report_matched`.
 - If rows are needed from `ready_to_save`, use an explicit save step with a meaningful report title.
-- If status is `needs_confirmation`, confirm only a candidate with the same filters, period and grouping. If none fits, call `reject_report_ai_job_candidate` once and poll the same job until `ready_to_save` or `failed`; the first status can still be `needs_confirmation`. Never repeat reject automatically after timeout or 409. After confirmation, rows are available through `get_report_ai_job_data` without saving a new report.
-- `QUEUE_TIMEOUT` means the job failed after an hour in queue: stop polling it. `LLM_UNAVAILABLE` means provider timeout: wait at least five minutes, then retry the same intent only once. A `PREVIEW_FAILED` may contain SQL in the upstream diagnostic; use the MCP workaround and never quote raw SQL.
+- If status is `needs_confirmation`, confirm only a candidate with the same filters, period and grouping. If none fits, call `reject_report_ai_job_candidate` once and use bounded `get_report_ai_job(wait_seconds=30)` on the same job until `ready_to_save` or `failed`; the first status can still be `needs_confirmation`. Never repeat reject automatically after timeout or 409. After confirmation, rows are available through `get_report_ai_job_data` without saving a new report.
+- `QUEUE_TIMEOUT` means the job failed after an hour in queue: stop checking it. `LLM_UNAVAILABLE` means provider timeout: wait at least five minutes, then retry the same intent only once. A `PREVIEW_FAILED` may contain SQL in the upstream diagnostic; use the MCP workaround and never quote raw SQL.
 - `recognized.preview_example_row`, если присутствует, содержит намеренно
   выдуманные правдоподобные значения, а не данные клиники и не реальную строку.
   Используйте его только до получения реальных строк, чтобы проверить структуру
@@ -72,10 +99,10 @@ If the user already gave a precise criterion, do not ask again. Example: "client
 Пустой результат — это результат, а не ошибка. Не пересоздавайте тот же job.
 Сначала подходящим прямым read-инструментом проверьте, есть ли исходные записи
 за период. Если записей нет, сообщите пользователю: «за период данных нет».
-Если `ready_to_save` показывает 0 строк, не называйте отчёт рабочим и не
-сохраняйте его без согласия человека: сначала сравните с прямым чтением за тот
-же период и клинику. При расхождении объясните, что превью не подтвердило
-корректность отчёта.
+Если превью при `ready_to_save` показывает 0 строк, это ещё не результат
+отчёта и не основание отвечать «данных нет». Сначала сравните структуру с
+запросом и при необходимости проверьте исходные записи прямым read-инструментом
+за тот же период и клинику. Реальные строки доступны только после save/confirm.
 
 ## Medical card text
 

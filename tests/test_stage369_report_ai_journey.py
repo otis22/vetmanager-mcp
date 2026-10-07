@@ -8,6 +8,7 @@ import pytest
 import respx
 from fastmcp.exceptions import ToolError
 
+from prompts import get_report_ai_prompt_helper_text
 import service_metrics
 import tools as tool_module
 import tools.report_ai as report_ai
@@ -31,6 +32,30 @@ def _job(status, *, job_id=369, **fields):
 
 def _result(result):
     return result.structured_content["data"]["job"]
+
+
+def test_prompt_helper_carries_bounded_journey_and_preview_boundary():
+    helper = get_report_ai_prompt_helper_text()
+    journey = helper.split("## Report AI journey", 1)[1].split("\n## ", 1)[0]
+    steps = (
+        "create_report_ai_job(wait_seconds=30)",
+        "get_report_ai_job(wait_seconds=30)",
+        "needs_confirmation",
+        "confirm_report_ai_job_candidate",
+        "reject_report_ai_job_candidate",
+        "save_report_ai_job_as_report",
+        "get_report_ai_job_data",
+    )
+    assert all(step in journey for step in steps)
+    assert [journey.index(step) for step in steps] == sorted(journey.index(step) for step in steps)
+    assert "preview_summary" in journey and "preview_example_row" in journey
+    assert "Нельзя отвечать пользователю по превью" in journey
+    assert "manual poll" not in journey.lower()
+    descriptions = " ".join(SPECIAL_TOOL_DESCRIPTIONS[name] for name in (
+        "create_report_ai_job", "get_report_ai_prompt_helper", "get_report_ai_job",
+    ))
+    assert "preview_summary" in descriptions and "preview_example_row" in descriptions
+    assert "Do not answer the user from either preview field" in descriptions
 
 
 @pytest.mark.asyncio
@@ -324,6 +349,54 @@ async def test_save_refusal_names_both_choices_only_after_fresh_confirmation_sta
     assert view.call_count == 1
     assert "confirm_report_ai_job_candidate" in str(error.value)
     assert "reject_report_ai_job_candidate" in str(error.value)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_save_refusal_after_reject_suggests_poll_only():
+    billing_mock()
+    report_ai._reset_report_ai_queue_observations()
+    respx.post(f"{BASE}/rest/api/report-ai-job/369/reject").mock(
+        return_value=httpx.Response(200, json=_job("needs_confirmation"))
+    )
+    respx.post(f"{BASE}/rest/api/report-ai-job/369/save").mock(
+        return_value=httpx.Response(409, json={"data": {"error_code": "INVALID_TRANSITION"}})
+    )
+    respx.get(f"{BASE}/rest/api/report-ai-job/369").mock(
+        return_value=httpx.Response(200, json=_job("needs_confirmation"))
+    )
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        await mcp.call_tool("reject_report_ai_job_candidate", {"job_id": 369})
+        with pytest.raises(ToolError) as error:
+            await mcp.call_tool("save_report_ai_job_as_report", {
+                "job_id": 369, "title": "MCP invoices May 1900",
+            })
+    assert "get_report_ai_job" in str(error.value)
+    assert "confirm_report_ai_job_candidate" not in str(error.value)
+    assert "reject_report_ai_job_candidate" not in str(error.value)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_unknown_save_outcomes_require_read_before_retry():
+    billing_mock()
+    route = respx.post(f"{BASE}/rest/api/report-ai-job/369/save").mock(
+        side_effect=[
+            httpx.Response(503, json={"data": {"error_code": "SAVE_FAILED"}}),
+            httpx.Response(200, json={"success": True, "data": {}}),
+        ]
+    )
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        for _ in range(2):
+            with pytest.raises(ToolError) as error:
+                await mcp.call_tool("save_report_ai_job_as_report", {
+                    "job_id": 369, "title": "MCP invoices May 1900",
+                })
+            assert "get_report_ai_job" in str(error.value)
+            assert "automatically" in str(error.value)
+    assert route.call_count == 2
 
 
 @pytest.mark.asyncio
