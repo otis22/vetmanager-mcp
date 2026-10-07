@@ -199,6 +199,27 @@ async def test_reject_followed_by_stale_confirmation_only_suggests_poll():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_failed_reject_response_does_not_hide_confirmation_choice():
+    billing_mock()
+    report_ai._reset_report_ai_queue_observations()
+    respx.post(f"{BASE}/rest/api/report-ai-job/369/reject").mock(
+        return_value=httpx.Response(200, json={"success": False, "data": {"job": {
+            "id": 369, "status": "needs_confirmation",
+        }}})
+    )
+    respx.get(f"{BASE}/rest/api/report-ai-job/369").mock(
+        return_value=httpx.Response(200, json=_job("needs_confirmation"))
+    )
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        with pytest.raises(ToolError):
+            await mcp.call_tool("reject_report_ai_job_candidate", {"job_id": 369})
+        current = await mcp.call_tool("get_report_ai_job", {"job_id": 369})
+    assert "reject_report_ai_job_candidate" in str(_result(current)["next_action"])
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_wait_validation_and_rollback_do_not_write(monkeypatch):
     billing_mock()
     post = respx.post(f"{BASE}/rest/api/report-ai-job").mock(

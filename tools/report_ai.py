@@ -1544,6 +1544,8 @@ def register(mcp: FastMCP) -> None:
             tool_name="reject_report_ai_job_candidate",
             metric_endpoint="/rest/api/report-ai-job/{id}/reject",
         )
+        if payload.get("success") is False:
+            raise reportable_error("Rejecting Report AI candidate failed; read the job before retrying.")
         payload = _annotate_report_ai_workarounds(payload)
         _best_effort_observation("reject_lifecycle", _observe_report_ai_lifecycle, _extract_job(payload))
         _remember_reject_pending({"id": job_id})
