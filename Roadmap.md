@@ -3,6 +3,28 @@
 Статусы: `todo` | `in_progress` | `supervisor_pending` | `done` | `stop`.
 Структуру проверяет `scripts/check_roadmap_structure.py`.
 
+## Этап 369. Report AI доводит задание до сохранения: wait, next_action и учёт попыток save — `todo`
+
+Источник: product dashboard 07.10.2026 и разбор прод-метрик (лог супервизора
+`logs/mcp/2026-10-07-report-ai-saved-zero-analysis.md`). За 30 дней в
+`ready_to_save` вошло ~87 заданий, сохранено **0**; в `needs_confirmation` вошло
+26, через confirm вышло 1; 63 задания брошены на ожидании. Метрики проверены,
+дефекта нет: три независимых счётчика согласуются. Две стены: агент бросает
+poll-цикл до терминала и не вызывает confirm/reject/save на последнем шаге.
+Этап меняет только MCP-сторону: контракт Ветменеджера, dedup-политика и права
+не переоткрываются.
+
+- 369.1 Server-side ожидание терминала: `create_report_ai_job`/`get_report_ai_job`
+  с bounded wait (таймаут, без авто-повтора записи) возвращают конечный статус
+  за один вызов; красные сторожа на границы таймаута и отсутствие дубля записи. — `todo`
+- 369.2 Runtime-ответ `get_report_ai_job` при `needs_confirmation`/`ready_to_save`
+  содержит явный `next_action` с готовым вызовом confirm/reject/save; ошибка save
+  при неподтверждённом кандидате сама называет оба инструмента, не полагаясь на
+  known-issue lookup. — `todo`
+- 369.3 Учёт попыток: `report_ai_save_attempts_total{outcome}` или stage-метка в
+  terminal outcome; красный сторож на новые series без high-cardinality labels;
+  критерий на проде после выпуска: saved > 0, доля ready_to_save→saved растёт. — `todo`
+
 ## Этап 368. Числовые результаты Report AI не должны маскироваться как телефоны — `done`
 
 Источник: feedback report `#122` от 05.10.2026, свежий product dashboard. В
@@ -318,8 +340,3 @@ DELETED; REST принимает `status=INACTIVE` с успехом, но со�
 - 350.1 Сверить контракт и оформить PRD с ревью. — `done`
 - 350.2 Закрепить красные сторожа и обновить инструменты, метрики и подсказки. — `done`
 - 350.3 Проверить devtr6, провести аудит, review и выпуск с зелёным CI. — `done`
-
-## Этап 349. Переход на SQLAlchemy 2.1 — `done`
-
-- 349.1 Описать совместимость зависимостей и миграций в PRD. — `done`
-- 349.2 Реализовать переход с полными тестами и отдельным выпуском. — `done`
