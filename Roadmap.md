@@ -39,6 +39,20 @@
   обоснованием. — `todo`
 - 370.2 Перепроверить KI-19/67/28 на закрытость этапами 352–369, при закрытии
   перевести в fixed с фиксацией версии. — `todo`
+- 370.3 Пробелы в описаниях тулов (аудит 09.10, сравнение playbook↔tool_descriptions):
+  (a) `get_invoices` — docstring обещает «created on or after / on or before»,
+  но KI-43: timestamp create_date сравнивается с голой датой, однодневный
+  диапазон пуст и последний день теряется; добавить предупреждение и путь
+  через invoice_date_from/to; (b) общая подсказка по filter/sort для KI-46
+  (19 репортов): имена свойств точные, allowed-лист — в тексте ошибки, не
+  угадывать и не сбрасывать фильтр; (c) `create_report_ai_job` + KI-58:
+  отчёты по составу комбинаций падают с SQL-ошибкой — прямо в описании
+  отправлять на get_good_combination/calculate_good_combination_price;
+  (d) сверить KI-20 «ровно 1000 строк = усечение» с описанием
+  get_report_ai_job_data «до 10000 строк, limited=true» — расхождение
+  границ. Уже покрыто описаниями, добавлять нечего: KI-61 (stem-поиск),
+  KI-37 (technical rows в get_revenue_summary), KI-35/57 (reject описан в
+  reject_report_ai_job_candidate). — `todo`
 
 ## Этап 369. Report AI доводит задание до сохранения: wait, next_action и учёт попыток save — `done`
 
