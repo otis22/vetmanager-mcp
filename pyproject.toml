@@ -43,6 +43,7 @@ only-include = [
     "exceptions.py",
     "filters.py",
     "first_request_examples.py",
+    "first_session.py",
     "host_resolver.py",
     "host_validation.py",
     "landing_page.py",
