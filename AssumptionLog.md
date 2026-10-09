@@ -2,6 +2,18 @@
 
 Журнал допущений, неясностей и архитектурных решений по проекту vetmanager-mcp.
 
+## 2026-10-10 — Этап 375.1: PRD welcome_first_session
+
+**Граница.** Подготовлен только `PRD/этап-375-welcome-first-session.md`; реализация, live-вызовы и push не выполнялись. `Roadmap.md`: 375.1 — `in_progress` («PRD на ревью супервизора»), 375.2/375.3 — `todo`. Указатель в `initialize.instructions` запланирован отдельной подзадачей 375.2c только после регистрации промпта. Контур live-проверки 375.2 — `TEST_DOMAIN=devtr6` и `TEST_API_KEY` из `.env` через тестовый bearer HTTP server; bearer/OAuth-стенд не смешивать с ним. Публичный PRD не содержит секретов или значений клиники.
+
+**Решение и простота.** Один prompt без аргументов в `prompts.py` задаёт порядок и объяснения; состояние задания и варианты восстановления читаются из действующих `next_action`, wait/empty guidance, без нового оркестратора, API или второго перечня правил. Первый шаг при нескольких филиалах требует выбрать филиал, отфильтровать timesheets по `clinic_id` и сверить `clinic_id` показанных строк. `preview_summary`/`preview_example_row` не объявляются живыми данными; после согласованного save реальные строки читаются через `get_report_ai_job_data`. 15 минут — ориентир, не SLA. Architecture Critique включён в сильный PRD-review из-за публичного MCP contract и границы instructions/prompts.
+
+**Spark-review PRD, candidate-only.** `gpt-6-luna`, 1/3, exit 0, `files_read` — PRD, Roadmap, prompts.py, server.py, tools/operations.py, tools/report_ai.py, PRD 373 и workflow. Один medium: `get_timesheets(date)` не ограничивает филиал — принят, в PRD добавлены выбор филиала, фильтр и проверка строк; отклонённых findings нет. Evidence: `/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-375-1/spark-prd.prompt.txt`, `.stdout.txt`, `.stderr.txt`, `.exit`.
+
+**Astra strong PRD + Architecture Critique.** `gpt-6-astra`, 1 валидный запуск из 2; 2026-10-09 22:03:32–22:04:01 UTC, codex-cli 0.160.1, process exit 0, validator exit 0; `findings: []`, принято/отклонено — нет. Evidence: `/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-375-1/astra-prd-attempt-1-of-3.prompt.txt`, `.result.json`, `.stderr.txt`, `.metadata.json`, `findings-schema.json`. Opus не запускался по прямому указанию владельца; второй сильный reviewer — супервизор Kimi, решение ожидается. 375.2 до него не начинать.
+
+**Проверки PRD.** `python3 scripts/check_roadmap_structure.py` и `git diff --check` — exit 0. Красные сторожа и live `prompts/list`/`prompts/get` запланированы для 375.2; PRD-only ход не заявляет их выполненными.
+
 ## Этап 370.1. Живые вердикты по восьми KI на devtr6 (09.10.2026)
 
 - Контур до запуска: `TEST_DOMAIN=devtr6` и `TEST_API_KEY` из `.env`, resolved host проверен как devtr6; локальный MCP вызван с тестовыми credentials. Production и bearer-стенд не трогали. Ниже только HTTP-коды и очищенные тела: без ключей, ФИО, сумм, SQL и строк клиники. Код/тесты/PRD не изменялись; job 312/314/316/318/320/322 созданы только на devtr6.
