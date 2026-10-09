@@ -35,6 +35,8 @@ from service_metrics import (
     record_report_ai_save_attempt,
     record_report_ai_job_stage_duration,
     record_report_ai_job_terminal_outcome,
+    record_report_ai_empty_preview_guidance,
+    record_report_ai_empty_preview_outcome,
     record_report_ai_job_transition,
     record_report_ai_long_queued_poll,
     record_report_ai_stage_stall_poll,
@@ -91,9 +93,11 @@ _REPORT_AI_QUEUE_OBSERVATIONS: OrderedDict[
     _ReportAiQueueObservationKey, dict[str, float]
 ] = OrderedDict()
 _REPORT_AI_LIFECYCLE_OBSERVATIONS: OrderedDict[
-    _ReportAiQueueObservationKey, dict[str, float | str]
+    _ReportAiQueueObservationKey, dict[str, float | str | bool]
 ] = OrderedDict()
-_REPORT_AI_FINALIZED_OBSERVATIONS: OrderedDict[_ReportAiQueueObservationKey, float] = OrderedDict()
+_REPORT_AI_FINALIZED_OBSERVATIONS: OrderedDict[
+    _ReportAiQueueObservationKey, dict[str, float | str | bool]
+] = OrderedDict()
 _REPORT_AI_REJECT_PENDING: OrderedDict[_ReportAiQueueObservationKey, float] = OrderedDict()
 _REPORT_AI_EXPORT_OBSERVATIONS: OrderedDict[
     _ReportAiQueueObservationKey, dict[str, float | bool]
@@ -270,8 +274,84 @@ def _report_ai_queue_observation_count() -> int:
     return len(_REPORT_AI_QUEUE_OBSERVATIONS)
 
 
+def _find_guided_job(key: _ReportAiQueueObservationKey):
+    """Find a logical job across connections in the existing bounded observers."""
+    for registry in (_REPORT_AI_LIFECYCLE_OBSERVATIONS, _REPORT_AI_FINALIZED_OBSERVATIONS):
+        for candidate, observation in registry.items():
+            same_job = candidate[2] == key[2]
+            same_owner = (candidate[0] == key[0] if key[0] is not None else candidate == key)
+            if same_job and same_owner and "guidance_issued_at" in observation:
+                return observation
+    return None
+
+
+def _resolve_guidance_outcome(observation: dict, outcome: str) -> None:
+    if "guidance_issued_at" not in observation or observation.get("guidance_outcome"):
+        return
+    observation["guidance_outcome"] = outcome
+    _best_effort_observation("empty_preview_outcome", record_report_ai_empty_preview_outcome,
+                             outcome=outcome)
+
+
+def _preview_certainty(job: dict) -> str | None:
+    summary = job.get("preview_summary")
+    if not isinstance(summary, str):
+        return None
+    if _ZERO_PREVIEW_SUMMARY.fullmatch(summary):
+        return "zero"
+    if re.fullmatch(r"Превью:\s*[1-9]\d*\s+строк(?:\s*,\s*\d+\s+колон\w*)?\s*", summary):
+        return "nonzero"
+    return None
+
+
+def _issued_empty_preview_guidance(payload: dict) -> dict:
+    job = _extract_job(payload)
+    if "mcp_empty_preview_guidance" not in job:
+        return payload
+    key = _report_ai_queue_observation_key(job)
+    if key is None:
+        return payload
+    now = _monotonic_seconds()
+    _cleanup_report_ai_queue_observations(now)
+    observation = _find_guided_job(key)
+    first = observation is None
+    if first:
+        observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.get(key)
+        if observation is None:
+            _observe_report_ai_lifecycle(job, now=now)
+            observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.get(key)
+        if observation is None:
+            return payload
+        observation["guidance_issued_at"] = now
+        observation["preview_certainty"] = "zero"
+    _best_effort_observation("empty_preview_issued", record_report_ai_empty_preview_guidance,
+                             first=first)
+    return payload
+
+
+def _match_recreated_report_ai_job(job: dict, *, is_deduplicated: bool = False) -> None:
+    key = _report_ai_queue_observation_key(job)
+    if key is None or key[0] is None or is_deduplicated or job.get("is_deduplicated") is True:
+        return
+    now = _monotonic_seconds()
+    _cleanup_report_ai_queue_observations(now)
+    seen: set[int] = set()
+    for registry in (_REPORT_AI_LIFECYCLE_OBSERVATIONS, _REPORT_AI_FINALIZED_OBSERVATIONS):
+        for previous_key, observation in registry.items():
+            if (previous_key[0] == key[0] and previous_key[2] != key[2]
+                    and id(observation) not in seen and "guidance_issued_at" in observation
+                    and now - float(observation["guidance_issued_at"]) <= REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS):
+                seen.add(id(observation))
+                _resolve_guidance_outcome(observation, "recreated")
+
+
 def _cleanup_report_ai_queue_observations(now: float) -> None:
     cleanup_clinic_timezone_cache(now)
+
+    for observation in list(_REPORT_AI_LIFECYCLE_OBSERVATIONS.values()) + list(_REPORT_AI_FINALIZED_OBSERVATIONS.values()):
+        issued = observation.get("guidance_issued_at")
+        if issued is not None and now - float(issued) >= REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS:
+            _resolve_guidance_outcome(observation, "abandoned_wait")
 
     expired_job_ids = [
         job_id
@@ -290,6 +370,9 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
     ]
     for key in expired_lifecycle_keys:
         observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.pop(key)
+        if "guidance_issued_at" in observation:
+            _remember_finalized_report_ai_job(key, now=now, observation=observation)
+            _resolve_guidance_outcome(observation, "abandoned_wait")
         stage = str(observation["stage"])
         stage_duration = now - float(observation["stage_started"])
         _best_effort_observation("lifecycle_stage_duration", record_report_ai_job_stage_duration,
@@ -300,7 +383,10 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
         )
 
     while len(_REPORT_AI_LIFECYCLE_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
-        _, observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.popitem(last=False)
+        key, observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.popitem(last=False)
+        if "guidance_issued_at" in observation:
+            _remember_finalized_report_ai_job(key, now=now, observation=observation)
+            _resolve_guidance_outcome(observation, "abandoned_wait")
         _best_effort_observation("lifecycle_stage_duration", record_report_ai_job_stage_duration,
             stage=str(observation["stage"]),
             duration_seconds=now - float(observation["stage_started"]),
@@ -312,8 +398,8 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
 
     expired_finalized_keys = [
         key
-        for key, last_seen in _REPORT_AI_FINALIZED_OBSERVATIONS.items()
-        if now - last_seen > REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS
+        for key, observation in _REPORT_AI_FINALIZED_OBSERVATIONS.items()
+        if now - float(observation["last_seen"]) > REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS
     ]
     for key in expired_finalized_keys:
         _REPORT_AI_FINALIZED_OBSERVATIONS.pop(key, None)
@@ -415,10 +501,12 @@ def _record_pending_report_ai_export_poll() -> None:
 
 
 def _remember_finalized_report_ai_job(
-    observation_key: _ReportAiQueueObservationKey, *, now: float
+    observation_key: _ReportAiQueueObservationKey, *, now: float, observation: dict | None = None
 ) -> None:
     """Keep a bounded, recently-finalized job key to deduplicate later polls."""
-    _REPORT_AI_FINALIZED_OBSERVATIONS[observation_key] = now
+    stored = observation or _REPORT_AI_FINALIZED_OBSERVATIONS.get(observation_key) or {}
+    stored["last_seen"] = now
+    _REPORT_AI_FINALIZED_OBSERVATIONS[observation_key] = stored
     _REPORT_AI_FINALIZED_OBSERVATIONS.move_to_end(observation_key)
     while len(_REPORT_AI_FINALIZED_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
         _REPORT_AI_FINALIZED_OBSERVATIONS.popitem(last=False)
@@ -476,6 +564,15 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
         return
     current_time = _monotonic_seconds() if now is None else now
     _cleanup_report_ai_queue_observations(current_time)
+    guided = _find_guided_job(observation_key)
+    if guided is not None:
+        certainty = _preview_certainty(job)
+        if certainty is not None:
+            guided["preview_certainty"] = certainty
+        if certainty == "nonzero":
+            _resolve_guidance_outcome(guided, "preview_changed")
+        elif job.get("status") == "saved" and guided.get("preview_certainty") == "zero":
+            _resolve_guidance_outcome(guided, "saved_empty")
     if observation_key in _REPORT_AI_FINALIZED_OBSERVATIONS:
         _remember_finalized_report_ai_job(observation_key, now=current_time)
         return
@@ -519,7 +616,7 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
             outcome=stage, duration_seconds=current_time - float(observation["first_seen"])
         )
         _REPORT_AI_LIFECYCLE_OBSERVATIONS.pop(observation_key, None)
-        _remember_finalized_report_ai_job(observation_key, now=current_time)
+        _remember_finalized_report_ai_job(observation_key, now=current_time, observation=observation)
         return
     observation["stage"] = stage
     observation["stage_started"] = current_time
@@ -669,6 +766,8 @@ def _annotate_report_ai_preview_guidance(job: dict) -> None:
             "steps": [
                 "До сохранения сверьте наличие исходных записей прямым чтением, например get_medical_cards_by_date для медкарт, с тем же периодом и клиникой.",
                 "Не называйте отчёт рабочим по одному статусу ready_to_save: нулевое превью может не совпадать с исходными данными.",
+                "Частый виновник пустого превью — лишний фильтр по названию клиники или клиента; это не доказывает причину данного нуля. Если исходные записи есть, предложите человеку создать новое задание с минимальным фильтром (только период), затем сужать фильтры по одному и проверять результат. Не повторяйте POST автоматически.",
+                "Сводка превью — не живые данные; она лишь повод запустить полноценную проверку отчётом. Не отвечайте пользователю по превью: реальные строки доступны через get_report_ai_job_data после необходимого сохранения или подтверждения.",
                 "Не сохраняйте пустой отчёт без согласия человека; если прямое чтение нашло записи, объясните расхождение.",
             ],
         })
@@ -1435,13 +1534,18 @@ def register(mcp: FastMCP) -> None:
         _best_effort_observation("job_created_success", record_report_ai_job_created, outcome="success")
         payload = _annotate_report_ai_workarounds(payload)
         job = _extract_job(payload)
+        data = payload.get("data") if isinstance(payload, dict) else None
+        deduplicated = isinstance(data, dict) and data.get("is_deduplicated") is True
+        _best_effort_observation("create_recreated_match", _match_recreated_report_ai_job,
+                                 job, is_deduplicated=deduplicated)
         _best_effort_observation("create_lifecycle", _observe_report_ai_lifecycle, job)
         _best_effort_observation("create_queue", _observe_report_ai_queue, job)
         if wait_seconds and _report_ai_wait_enabled():
-            return await _wait_for_report_ai_job(
+            response = await _wait_for_report_ai_job(
                 payload, job_id=int(job["id"]), deadline=_monotonic_seconds() + wait_seconds,
             )
-        return payload
+            return _best_effort_observation("create_guidance_issued", _issued_empty_preview_guidance, response) or response
+        return _best_effort_observation("create_guidance_issued", _issued_empty_preview_guidance, payload) or payload
 
     @mcp.tool
     async def get_report_ai_job(job_id: int, wait_seconds: int = 0) -> dict:
@@ -1506,11 +1610,13 @@ def register(mcp: FastMCP) -> None:
                 "Read the same job later with get_report_ai_job; do not create a duplicate."
             ) from None
         if waiting:
-            return await _wait_for_report_ai_job(
+            response = await _wait_for_report_ai_job(
                 payload, job_id=job_id, deadline=deadline,
                 max_gets=REPORT_AI_TOOL_WAIT_MAX_GETS - 1,
             )
-        return await _annotate_report_ai_job_payload(payload)
+        else:
+            response = await _annotate_report_ai_job_payload(payload)
+        return _best_effort_observation("get_guidance_issued", _issued_empty_preview_guidance, response) or response
 
     @mcp.tool
     async def confirm_report_ai_job_candidate(job_id: int, report_id: int) -> dict:

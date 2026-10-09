@@ -81,6 +81,12 @@ _REPORT_AI_JOBS_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _REPORT_AI_SAVE_ATTEMPTS_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _REPORT_AI_JOB_TRANSITIONS_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
 _REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL: DefaultDict[str, int] = defaultdict(int)
+_REPORT_AI_EMPTY_PREVIEW_GUIDANCE_ISSUED_TOTAL = 0
+_REPORT_AI_EMPTY_PREVIEW_GUIDANCE_JOBS_TOTAL = 0
+_REPORT_AI_EMPTY_PREVIEW_GUIDANCE_OUTCOMES_TOTAL: DefaultDict[str, int] = defaultdict(int)
+REPORT_AI_EMPTY_PREVIEW_OUTCOMES = frozenset({
+    "recreated", "saved_empty", "abandoned_wait", "preview_changed",
+})
 _REPORT_AI_JOB_STAGE_DURATION_SECONDS: DefaultDict[str, LatencyAggregate] = defaultdict(
     LatencyAggregate
 )
@@ -135,6 +141,7 @@ def reset_service_metrics() -> None:
     """Clear all in-memory metrics. Tests should call this to isolate assertions."""
     with _LOCK:
         global _REPORT_AI_LONG_QUEUED_POLLS_TOTAL, _REPORT_AI_STAGE_STALL_POLLS_TOTAL
+        global _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_ISSUED_TOTAL, _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_JOBS_TOTAL
         global _SANITIZER_FAILURES_TOTAL, _REST_UNMAPPED_READ_TOTAL, _SENTRY_DELIVERY_ACCEPTED_TOTAL
         _HTTP_REQUESTS_TOTAL.clear()
         _HTTP_REQUEST_LATENCY_SECONDS.clear()
@@ -160,6 +167,9 @@ def reset_service_metrics() -> None:
         _REPORT_AI_SAVE_ATTEMPTS_TOTAL.clear()
         _REPORT_AI_JOB_TRANSITIONS_TOTAL.clear()
         _REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL.clear()
+        _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_ISSUED_TOTAL = 0
+        _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_JOBS_TOTAL = 0
+        _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_OUTCOMES_TOTAL.clear()
         _REPORT_AI_JOB_STAGE_DURATION_SECONDS.clear()
         _REPORT_AI_JOB_DURATION_SECONDS.clear()
         _REPORT_AI_EXPORTS_TOTAL.clear()
@@ -476,6 +486,22 @@ def record_report_ai_job_terminal_outcome(*, outcome: str, duration_seconds: flo
         _REPORT_AI_JOB_DURATION_SECONDS[outcome].observe(max(0.0, duration_seconds))
 
 
+def record_report_ai_empty_preview_guidance(*, first: bool) -> None:
+    """Count prepared guidance responses and locally first-seen jobs."""
+    global _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_ISSUED_TOTAL, _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_JOBS_TOTAL
+    with _LOCK:
+        _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_ISSUED_TOTAL += 1
+        if first:
+            _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_JOBS_TOTAL += 1
+
+
+def record_report_ai_empty_preview_outcome(*, outcome: str) -> None:
+    if outcome not in REPORT_AI_EMPTY_PREVIEW_OUTCOMES:
+        raise ValueError("unsupported empty-preview outcome")
+    with _LOCK:
+        _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_OUTCOMES_TOTAL[outcome] += 1
+
+
 def record_report_ai_job_stage_duration(*, stage: str, duration_seconds: float) -> None:
     """Record one completed locally observed Report AI stage duration."""
     with _LOCK:
@@ -602,6 +628,9 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
             "report_ai_job_terminal_outcomes_total": dict(
                 sorted(_REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL.items())
             ),
+            "report_ai_empty_preview_guidance_issued_total": _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_ISSUED_TOTAL,
+            "report_ai_empty_preview_guidance_jobs_total": _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_JOBS_TOTAL,
+            "report_ai_empty_preview_guidance_outcomes_total": dict(sorted(_REPORT_AI_EMPTY_PREVIEW_GUIDANCE_OUTCOMES_TOTAL.items())),
             "report_ai_job_stage_duration_seconds": {
                 stage: asdict(aggregate)
                 for stage, aggregate in sorted(_REPORT_AI_JOB_STAGE_DURATION_SECONDS.items())
@@ -896,6 +925,19 @@ def render_prometheus_metrics() -> str:
             f"vetmanager_report_ai_job_terminal_outcomes_total"
             f"{_labels_text(outcome=outcome)} {count}"
         )
+
+    lines.extend([
+        "# HELP vetmanager_report_ai_empty_preview_guidance_issued_total Prepared MCP responses with empty-preview guidance in this process; delivery or reading is unverified.",
+        "# TYPE vetmanager_report_ai_empty_preview_guidance_issued_total counter",
+        f"vetmanager_report_ai_empty_preview_guidance_issued_total {snapshot.get('report_ai_empty_preview_guidance_issued_total', 0)}",
+        "# HELP vetmanager_report_ai_empty_preview_guidance_jobs_total Locally first-seen Report AI jobs with prepared empty-preview guidance; process-local and bounded.",
+        "# TYPE vetmanager_report_ai_empty_preview_guidance_jobs_total counter",
+        f"vetmanager_report_ai_empty_preview_guidance_jobs_total {snapshot.get('report_ai_empty_preview_guidance_jobs_total', 0)}",
+        "# HELP vetmanager_report_ai_empty_preview_guidance_outcomes_total Process-local observed outcomes within one hour of first guidance; recreated is a same-account heuristic, and abandoned_wait means no locally observed continuation in the window, not an upstream abandoned job.",
+        "# TYPE vetmanager_report_ai_empty_preview_guidance_outcomes_total counter",
+    ])
+    for outcome in sorted(REPORT_AI_EMPTY_PREVIEW_OUTCOMES):
+        lines.append(f"vetmanager_report_ai_empty_preview_guidance_outcomes_total{_labels_text(outcome=outcome)} {snapshot.get('report_ai_empty_preview_guidance_outcomes_total', {}).get(outcome, 0)}")
 
     for metric_name, snapshot_name, label_name, help_text in (
         (
