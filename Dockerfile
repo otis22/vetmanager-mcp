@@ -1,4 +1,5 @@
-FROM python:3.12-slim AS base
+ARG BASE_IMAGE=public.ecr.aws/docker/library/python:3.12-slim
+FROM ${BASE_IMAGE} AS base
 
 # Build args so files created in the container are owned by the host user,
 # preventing permission issues with bind-mounted source code.

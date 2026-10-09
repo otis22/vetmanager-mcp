@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Build Docker image
-        run: docker build --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp .
+        run: docker build --build-arg BASE_IMAGE=public.ecr.aws/docker/library/python:3.12-slim --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp .
 
       - name: Run opt-in real contour
         env:
