@@ -19027,3 +19027,7 @@ validator exit 0. Полный прогон 3719 passed. Коммит `e05b571`.
   tools/list без дублирующих списков полей; сторожа тестируют экспортированный
   контракт tools/list с негативными утверждениями; запрет «ровно 1000 = усечение»
   и «extend date_to» закреплён; live devtr6 36 raw + 2 Report AI HTTP 200.
+- Kimi-review committed diff 370.1 (`bf03f1b`): findings=[] (слот Opus, Claude CLI
+  «account is on hold», 3/3 infrastructure failure, валидные слоты не расходовались).
+  Diff содержит только Roadmap и AssumptionLog; код/тесты не менялись; живые
+  вердикты приведены с очищенными телами; выводы по сторонам обоснованы.
