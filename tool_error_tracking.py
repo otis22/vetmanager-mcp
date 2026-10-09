@@ -4,13 +4,33 @@ from __future__ import annotations
 
 from fastmcp.exceptions import FastMCPError, ValidationError
 from fastmcp.server.middleware import Middleware, MiddlewareContext
-from mcp.types import CallToolRequestParams
+from fastmcp.tools.tool import ToolResult
+from mcp.types import CallToolRequestParams, TextContent
 
 from error_tracking import capture_tool_failure, mark_tool_error_as_handled
 from exceptions import ToolInputError
 from filters import FilterPropertyValidationError, SortPropertyValidationError
 from runtime_auth import get_current_runtime_credentials
 from first_session import observe_first_action
+from observability_logging import RUNTIME_LOGGER
+import token_expiry_notice
+
+
+async def _add_expiry_notice(result: ToolResult, account_id: int, bearer_token_id: int) -> ToolResult:
+    def prepare(days: int) -> ToolResult:
+        candidate = ToolResult(
+            content=[*result.content, TextContent(type="text", text=token_expiry_notice.expiry_notice_text(days))],
+            structured_content=result.structured_content,
+            meta=result.meta,
+            is_error=result.is_error,
+        )
+        candidate.to_mcp_result()  # Fail before spending the claim if this FastMCP shape changes.
+        return candidate
+
+    prepared = await token_expiry_notice.claim_expiry_notice(
+        account_id, bearer_token_id, prepare=prepare,
+    )
+    return prepared if prepared is not None else result
 
 
 def _exception_chain_contains(
@@ -33,6 +53,7 @@ class ToolErrorTrackingMiddleware(Middleware):
     """Capture one semantic event after OAuth has placed credentials in context."""
 
     async def on_call_tool(self, context: MiddlewareContext[CallToolRequestParams], call_next):
+        notice_slot = token_expiry_notice.open_notice_subject()
         try:
             result = await call_next(context)
             # FastMCP 3.4.7 returns ToolResult.is_error here; errors raised by
@@ -43,6 +64,19 @@ class ToolErrorTrackingMiddleware(Middleware):
                     and not getattr(result, "is_error", True) and not failed_payload):
                 credentials = get_current_runtime_credentials()
                 await observe_first_action(getattr(credentials, "account_id", None), "first_tool_success_at")
+            if not getattr(result, "is_error", True) and not failed_payload:
+                subject = token_expiry_notice.get_notice_subject()
+                if subject is not None:
+                    try:
+                        result = await _add_expiry_notice(result, *subject)
+                    except Exception as exc:
+                        try:
+                            RUNTIME_LOGGER.warning(
+                                "Expiry notice unavailable; returning original tool result.",
+                                extra={"event_name": "expiry_notice_failed", "error_class": exc.__class__.__name__},
+                            )
+                        except Exception:
+                            pass
             return result
         except ValidationError:
             # Stage 266: arguments that do not match the schema — the caller's
@@ -75,3 +109,5 @@ class ToolErrorTrackingMiddleware(Middleware):
                     account_id=getattr(credentials, "account_id", None),
                 )
             raise
+        finally:
+            token_expiry_notice.reset_notice_subject(notice_slot)

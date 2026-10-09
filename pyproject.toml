@@ -76,6 +76,7 @@ only-include = [
     "structured_logging.py",
     "test_contours.py",
     "token_cleanup.py",
+    "token_expiry_notice.py",
     "token_scopes.py",
     "tool_access_registry.py",
     "tool_descriptions.py",

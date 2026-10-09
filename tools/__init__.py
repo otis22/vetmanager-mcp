@@ -18,6 +18,7 @@ from exceptions import (
 from filters import FilterPropertyValidationError, SortPropertyValidationError
 from privacy_utils import redact_sensitive_output_fields, redact_tool_error
 from runtime_auth import use_runtime_credentials
+from token_expiry_notice import set_notice_subject
 from service_metrics import (
     record_placeholder_argument_rejection,
     record_sanitizer_failure,
@@ -129,6 +130,10 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
                 error_description="OAuth authorization is required for this tool.",
             ) from None
         _ensure_tool_scopes_allowed(resolved_tool_name, credentials)
+        set_notice_subject(
+            getattr(credentials, "account_id", None),
+            getattr(credentials, "bearer_token_id", None) if credentials.source == "bearer" else None,
+        )
         set_affected_account(getattr(credentials, "account_id", None))
 
         with use_runtime_credentials(credentials):
