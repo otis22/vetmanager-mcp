@@ -18925,3 +18925,16 @@ Spark 3 перед сильной парой 2 прочитал обновлён
 **CI, deploy и закрытие.** [GitHub Tests run 37619295490](https://github.com/otis22/vetmanager-mcp/actions/runs/37619295490) завершился success: default, fast и PostgreSQL telemetry зелёные на SHA `7c6d10b`. Связанный [Deploy Prod run 37620255789](https://github.com/otis22/vetmanager-mcp/actions/runs/37620255789) завершился success: jobs changes и deploy, включая штатную проверку публичного MCP read-only инструмента. Этап 369 и 369.3 переведены в `done` после выкладки. Факт появления новых `saved > 0` после выпуска и рост доли конверсии ещё не измерены; эти продуктовые показатели не приписываются CI или деплою. Прямых production-вызовов агент не делал.
 
 **Self-attestation этапа 369.** Roadmap, PRD, контракт extjs и описание helper сверены. Сторожа приняты красными: исходный код дал 9 failures, полный набор на исходном SHA — 18 failures; дополнительно ломали границу 16 GET, `success:false` reject, повреждённый GET после save, буквальный/общий title (включая регистр и `ё/е`), обязательные шаги helper и запрет ответа по preview; соответствующие `*-red.log` и зелёные прогоны лежат в приватном `stage369/`. Изменённые create/get/confirm/reject/save и helper вызваны вживую на devtr6 с кодами и безопасными телами; mock и real suite на финальном кодовом SHA зелёные. PRD и committed diff получили валидные verdict Astra и обеих Kimi; после исчерпания сильных бюджетов изменения проверены отдельным Spark scout и фокусными тестами, неустранённых critical/high нет. Аудит, commit, push, CI и штатный Deploy Prod выполнены. Документальное закрытие не меняет код или тесты и потому не требует нового сильного diff-гейта; структура Roadmap и `git diff --check` проверяются перед коммитом.
+
+## 2026-10-09 — Этап 371.1, strong PRD gate: Opus заменён Kimi (решение владельца)
+
+Claude CLI отказал трижды (`account is on hold`) — три infrastructure failure,
+валидные слоты не расходовались. По решению владельца (зафиксировано ранее)
+сильное ревью вместо Claude Code делает Kimi. Kimi-review PRD
+`PRD/этап-371-подсказки-ki-43-46-58-20.md`: факты KI-43/20 сверены с кодом
+(stage 293 whole-day ranges; stage 350 cap 10000/limited=true — обе защищены
+тестами), декомпозиция ≤2ч/≤150 строк, красные сторожа описаны, секретов нет.
+Findings: нет блокирующих. Наблюдение (не блокер): production playbook KI-43/20
+устарели относительно кода — операционная сверка закреплена за этапом 372.
+Spark: 2 раунда, 3 findings принято и исправлено. Astra: валидный `findings=[]`,
+validator exit 0. Полный прогон 3719 passed. Коммит `e05b571`.
