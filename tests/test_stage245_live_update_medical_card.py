@@ -2,7 +2,8 @@
 
 Stage 245 shipped the fix that carries `patient_id`, `doctor_id` and `clinic_id`
 from the stored record into the PUT body, because Vetmanager rejects a partial
-medical-card update with `400 Patient does not exist`. That fix was verified by
+medical-card update with a missing-patient error (`Patient does not exist` or
+`No Pet selected`). That fix was verified by
 hand with raw REST on 2026-08-23; this test makes the same verification
 repeatable through the tool itself.
 
@@ -134,7 +135,8 @@ async def test_real_partial_medical_card_put_is_still_rejected_upstream() -> Non
         await _client().put(f"{_MC_ENDPOINT}/{card_id}", json={"recomendation": MARKER})
     except VetmanagerError as exc:
         rejected = True
-        assert "patient" in str(exc).lower()
+        message = str(exc).lower()
+        assert "patient" in message or "no pet selected" in message
     finally:
         # Any other exception may still have reached the server, so restore
         # whenever the request was not explicitly rejected.
