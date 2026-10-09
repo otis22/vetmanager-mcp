@@ -65,6 +65,7 @@ services:
       # Значение справа от `=` пишется только там, где оно действительно
       # фиксировано этим окружением.
       - DATABASE_URL
+      - FIRST_SESSION_RELEASE_CUTOFF_UTC
       - LOG_LEVEL
       - PERSISTENT_LOG_PATH=/var/log/vetmanager-mcp
       - ERROR_TRACKING_DSN

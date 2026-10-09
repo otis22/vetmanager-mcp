@@ -15,6 +15,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bearer_token_manager import build_token_prefix, hash_bearer_token
+from first_session import anchor_first_credential, lock_account_and_check_first_credential
 from oauth_metadata import OAUTH_SCOPE_OFFLINE_ACCESS, get_mcp_resource_url
 from observability_logging import RUNTIME_LOGGER
 from storage_models import (
@@ -613,6 +614,8 @@ async def exchange_oauth_authorization_code(session: AsyncSession, form: dict[st
     if not hmac.compare_digest(_pkce_s256_challenge(code_verifier), code.code_challenge):
         raise OAuthRequestError("invalid_grant", "PKCE verification failed.")
 
+    first_credential = await lock_account_and_check_first_credential(session, code.account_id)
+
     result = await session.execute(
         update(OAuthAuthorizationCode)
         .where(
@@ -643,6 +646,7 @@ async def exchange_oauth_authorization_code(session: AsyncSession, form: dict[st
         scope=code.scope,
         resource=code.resource,
     )
+    await anchor_first_credential(session, code.account_id, first_credential)
     await session.commit()
     return token_payload
 

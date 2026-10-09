@@ -174,6 +174,18 @@ class Account(Base):
     )
 
 
+class AccountFirstSession(Base):
+    """Durable first observed credential and successful actions for new accounts."""
+
+    __tablename__ = "account_first_sessions"
+    __table_args__ = (Index("ix_account_first_sessions_first_token_issued_at", "first_token_issued_at"),)
+
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True)
+    first_token_issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    first_tool_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_report_saved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class ActivationEvent(Base):
     """Persisted product telemetry for activation funnel analysis."""
 

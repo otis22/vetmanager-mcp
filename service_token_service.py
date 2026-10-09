@@ -15,6 +15,7 @@ from auth_audit import (
     commit_token_usage_log,
 )
 from bearer_token_manager import generate_bearer_token
+from first_session import anchor_first_credential, lock_account_and_check_first_credential
 from observability_logging import RUNTIME_LOGGER
 from storage_models import ServiceBearerToken
 from tool_access_registry import PRESET_FULL_ACCESS, get_token_preset_scopes, normalize_token_preset
@@ -58,6 +59,8 @@ async def issue_service_bearer_token(
     effective_ip_mask = validate_ip_mask(ip_mask)
     normalized_preset = normalize_token_preset(access_preset)
 
+    first_credential = await lock_account_and_check_first_credential(session, account_id)
+
     raw_token = generate_bearer_token()
     expires_at = None
     if expires_in_days is not None:
@@ -75,6 +78,7 @@ async def issue_service_bearer_token(
     token.set_scopes(get_token_preset_scopes(normalized_preset))
     session.add(token)
     await session.flush()
+    await anchor_first_credential(session, account_id, first_credential)
     audit_event = add_token_usage_log(
         session,
         account_id=token.account_id,

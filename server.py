@@ -247,6 +247,9 @@ mcp = FastMCP(
         "Replace client and owner surnames, phones, and addresses with <client>, <owner>, "
         "<phone>, and <address>. Use <staff> for staff names in problem reports. "
         "Keep the pet's nickname. "
+        "For a first session, start with a safe read tool to find who among the doctors works today. "
+        "Compare the answer with the person's expectation and the clinic's real data, and clarify any discrepancy. "
+        "Before saving a first Report AI, check readiness, preview and the meaning of its rows, then ask the person to approve saving; a preview is not verified real data. "
         + AGENT_RESOLUTION_GUIDANCE
     ),
     lifespan=_runtime_lifespan,

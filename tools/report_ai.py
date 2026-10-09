@@ -24,6 +24,7 @@ from observability_logging import RUNTIME_LOGGER
 from prompts import get_report_ai_prompt_helper_text
 from tool_access_registry import SCOPE_DENIED_ERROR_CODE
 from runtime_auth import get_current_runtime_credentials
+from first_session import observe_first_action
 from oauth_metadata import get_site_base_url
 from service_metrics import (
     instrument_call,
@@ -1778,6 +1779,8 @@ def register(mcp: FastMCP) -> None:
             if isinstance(report_id, int) and not isinstance(report_id, bool) and report_id > 0:
                 outcome = "success"
                 observed_job = {"id": job_id, "status": "saved"}
+                credentials = get_current_runtime_credentials()
+                await observe_first_action(getattr(credentials, "account_id", None), "first_report_saved_at")
             else:
                 observed_job = _extract_job(payload)
                 if not observed_job:

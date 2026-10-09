@@ -126,6 +126,7 @@ _ACTIVATION_FUNNEL_ACCOUNTS: dict[str, int] = {
     for stage in _ACTIVATION_FUNNEL_STAGES
 }
 _ACTIVATION_EVENT_ACCOUNTS: DefaultDict[tuple[str, str, str, str], int] = defaultdict(int)
+_FIRST_SESSION_GAUGES: dict[str, int | float | None] = {}
 # Stage 110.2: business events counter. Accumulated in-process since last reset;
 # reset_service_metrics() zeros it. Persistent counts live in the DB
 # (TokenUsageLog + Account); this metric is the hook for Grafana panels without
@@ -183,6 +184,7 @@ def reset_service_metrics() -> None:
             for stage in _ACTIVATION_FUNNEL_STAGES
         })
         _ACTIVATION_EVENT_ACCOUNTS.clear()
+        _FIRST_SESSION_GAUGES.clear()
 
 
 _ALLOWED_BUSINESS_EVENTS = frozenset({
@@ -564,6 +566,13 @@ def set_activation_event_accounts(values: dict[tuple[str, str, str, str], int]) 
         })
 
 
+def set_first_session_gauges(values: dict[str, int | float | None]) -> None:
+    """Replace the label-free completed-cohort snapshot after a successful scan."""
+    with _LOCK:
+        _FIRST_SESSION_GAUGES.clear()
+        _FIRST_SESSION_GAUGES.update(values)
+
+
 def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, int | float]]]:
     """Return a stable JSON-serializable snapshot of current service metrics."""
     with _LOCK:
@@ -657,6 +666,7 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 for account_id, age_hours in sorted(_ACCOUNT_LAST_REQUEST_AGE_HOURS.items())
             },
             "activation_funnel_accounts": dict(sorted(_ACTIVATION_FUNNEL_ACCOUNTS.items())),
+            "first_session_gauges": dict(_FIRST_SESSION_GAUGES),
             "activation_event_accounts": {
                 f"{event}|{device}|{auth_mode}|{reason}": count
                 for (event, device, auth_mode, reason), count in sorted(
@@ -1043,6 +1053,19 @@ def render_prometheus_metrics() -> str:
             f"vetmanager_activation_event_accounts"
             f"{_labels_text(event=event, device=device, auth_mode=auth_mode, reason=reason)} {count}"
         )
+
+    first_session_help = {
+        "eligible_accounts": "Active accounts in completed 30-day cohort [now-30d, now-7d), measured only after rollout.",
+        "report_saved_7d_accounts": "Accounts in completed 30-day cohort with first observed successful Report AI save call within 7 days of first token; measured only after rollout.",
+        "tool_success_7d_accounts": "Accounts in completed 30-day cohort with first successful data tool within 7 days of first token; measured only after rollout.",
+        "tool_time_median_seconds": "Median seconds to first successful data tool within 7 days for completed 30-day cohort; measured only after rollout.",
+    }
+    for suffix, help_text in first_session_help.items():
+        name = f"vetmanager_first_session_{suffix}"
+        lines.extend([f"# HELP {name} {help_text}", f"# TYPE {name} gauge"])
+        value = snapshot.get("first_session_gauges", {}).get(suffix)
+        if value is not None:
+            lines.append(f"{name} {value}")
 
     # Cache metrics (from request_cache singleton).
     m = REQUEST_CACHE.metrics

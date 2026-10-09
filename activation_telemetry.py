@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from statistics import median
 
 from sqlalchemy import distinct, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,10 +14,12 @@ from activation_events import (
     mark_activation_event_cleanup_succeeded,
 )
 from observability_logging import RUNTIME_LOGGER
+from first_session import release_cutoff
 from service_metrics import (
     set_account_last_request_age_hours,
     set_activation_event_accounts,
     set_activation_funnel_accounts,
+    set_first_session_gauges,
 )
 from auth_audit import TOKEN_EVENT_AUTH_SUCCEEDED
 from oauth_service import accounts_with_live_oauth_access
@@ -26,6 +29,7 @@ from storage_models import (
     OAUTH_STATUS_ACTIVE,
     TOKEN_STATUS_ACTIVE,
     Account,
+    AccountFirstSession,
     ActivationEvent,
     OAuthGrant,
     ServiceBearerToken,
@@ -72,15 +76,17 @@ _ALERTED_THRESHOLDS: set[tuple[int, int]] = set()
 _ACTIVATION_SCAN_CACHE_AT: datetime | None = None
 _ACTIVATION_SCAN_CACHE_FUNNEL: dict[str, int] | None = None
 _ACTIVATION_SCAN_CACHE_EVENTS: dict[tuple[str, str, str, str], int] | None = None
+_FIRST_SESSION_CACHE: dict[str, int | float | None] | None = None
 
 
 def reset_activation_telemetry_state() -> None:
     """Clear process-local no-traffic warning dedup state for tests."""
-    global _ACTIVATION_SCAN_CACHE_AT, _ACTIVATION_SCAN_CACHE_FUNNEL, _ACTIVATION_SCAN_CACHE_EVENTS
+    global _ACTIVATION_SCAN_CACHE_AT, _ACTIVATION_SCAN_CACHE_FUNNEL, _ACTIVATION_SCAN_CACHE_EVENTS, _FIRST_SESSION_CACHE
     _ALERTED_THRESHOLDS.clear()
     _ACTIVATION_SCAN_CACHE_AT = None
     _ACTIVATION_SCAN_CACHE_FUNNEL = None
     _ACTIVATION_SCAN_CACHE_EVENTS = None
+    _FIRST_SESSION_CACHE = None
 
 
 def _ensure_aware_utc(value: datetime) -> datetime:
@@ -116,6 +122,8 @@ def _apply_activation_scan_cache(current: datetime) -> bool:
         return False
     set_activation_funnel_accounts(dict(_ACTIVATION_SCAN_CACHE_FUNNEL))
     set_activation_event_accounts(dict(_ACTIVATION_SCAN_CACHE_EVENTS))
+    if _FIRST_SESSION_CACHE is not None:
+        set_first_session_gauges(_FIRST_SESSION_CACHE)
     return True
 
 
@@ -128,6 +136,38 @@ def _store_activation_scan_cache(
     _ACTIVATION_SCAN_CACHE_AT = current
     _ACTIVATION_SCAN_CACHE_FUNNEL = dict(funnel_values)
     _ACTIVATION_SCAN_CACHE_EVENTS = dict(event_values)
+
+
+async def scan_first_session_cohort(session: AsyncSession, *, now: datetime) -> dict[str, int | float | None]:
+    """Read a completed rolling cohort; timestamps and account IDs stay in DB/process memory."""
+    rows = (await session.execute(
+        select(
+            AccountFirstSession.first_token_issued_at,
+            AccountFirstSession.first_tool_success_at,
+            AccountFirstSession.first_report_saved_at,
+        )
+        .join(Account, Account.id == AccountFirstSession.account_id)
+        .where(Account.status == ACCOUNT_STATUS_ACTIVE)
+        .where(Account.archived_at.is_(None))
+        .where(Account.created_at >= release_cutoff())
+        .where(AccountFirstSession.first_token_issued_at >= now - timedelta(days=30))
+        .where(AccountFirstSession.first_token_issued_at < now - timedelta(days=7))
+    )).all()
+    tool_times: list[float] = []
+    report_count = 0
+    for issued, tool_at, report_at in rows:
+        start = _ensure_aware_utc(issued)
+        end = start + timedelta(days=7)
+        if tool_at is not None and start <= _ensure_aware_utc(tool_at) < end:
+            tool_times.append((_ensure_aware_utc(tool_at) - start).total_seconds())
+        if report_at is not None and start <= _ensure_aware_utc(report_at) < end:
+            report_count += 1
+    return {
+        "eligible_accounts": len(rows),
+        "report_saved_7d_accounts": report_count,
+        "tool_success_7d_accounts": len(tool_times),
+        "tool_time_median_seconds": median(tool_times) if tool_times else None,
+    }
 
 
 async def scan_activation_telemetry(
@@ -155,6 +195,21 @@ async def scan_activation_telemetry(
         )
 
     if not _apply_activation_scan_cache(current):
+        global _FIRST_SESSION_CACHE
+        try:
+            first_session_values = await scan_first_session_cohort(session, now=current)
+        except Exception as exc:
+            # PostgreSQL leaves the transaction aborted after a failed SELECT;
+            # clear it so the existing funnel can still refresh.
+            try:
+                await session.rollback()
+            except Exception:
+                pass
+            RUNTIME_LOGGER.warning(
+                "First-session cohort scan failed",
+                extra={"event_name": "first_session_scan_failed", "error_class": type(exc).__name__},
+            )
+            first_session_values = None
         new_account_cutoff = current - timedelta(days=30)
         active_accounts_stmt = (
             select(Account.id)
@@ -341,6 +396,9 @@ async def scan_activation_telemetry(
             for row in event_rows
         }
         set_activation_event_accounts(event_values)
+        if first_session_values is not None:
+            _FIRST_SESSION_CACHE = first_session_values
+            set_first_session_gauges(first_session_values)
         _store_activation_scan_cache(current, funnel_values, event_values)
 
     stmt = (

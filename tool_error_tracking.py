@@ -10,6 +10,7 @@ from error_tracking import capture_tool_failure, mark_tool_error_as_handled
 from exceptions import ToolInputError
 from filters import FilterPropertyValidationError, SortPropertyValidationError
 from runtime_auth import get_current_runtime_credentials
+from first_session import observe_first_action
 
 
 def _exception_chain_contains(
@@ -33,7 +34,16 @@ class ToolErrorTrackingMiddleware(Middleware):
 
     async def on_call_tool(self, context: MiddlewareContext[CallToolRequestParams], call_next):
         try:
-            return await call_next(context)
+            result = await call_next(context)
+            # FastMCP 3.4.7 returns ToolResult.is_error here; errors raised by
+            # tools take the exception path below. Baseline helpers are excluded.
+            structured = getattr(result, "structured_content", None)
+            failed_payload = isinstance(structured, dict) and structured.get("success") is False
+            if (context.message.name not in {"report_problem", "get_report_ai_prompt_helper"}
+                    and not getattr(result, "is_error", True) and not failed_payload):
+                credentials = get_current_runtime_credentials()
+                await observe_first_action(getattr(credentials, "account_id", None), "first_tool_success_at")
+            return result
         except ValidationError:
             # Stage 266: arguments that do not match the schema — the caller's
             # own mistake, one level before our own validation. FastMCP logs it
