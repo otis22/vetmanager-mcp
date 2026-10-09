@@ -18991,3 +18991,8 @@ validator exit 0. Полный прогон 3719 passed. Коммит `e05b571`.
 **Ревью.** Claude Opus не запускается: account on hold; по решению владельца этапа 371.1 его слот после кодового коммита закрывает Kimi-ревью супервизора. Spark и Astra committed diff выполняются исполнителем.
 
 **Committed diff gate 371.2, 09.10.2026.** Объект `41701fdf85b9f6839ca938f410864fb9b8fda8c7` (`HEAD^..HEAD` на момент ревью). Spark `gpt-6-luna`: `/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-371-2/spark-diff.result.txt`, `files_read` содержит PRD, код и тесты, `findings=[]`. Astra `gpt-6-astra`: `/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-371-2/astra-diff-attempt-1-of-3.result.json`, валидный слот 1/2, metadata рядом: 10:17:13–10:18:00 UTC, CLI 0.160.1, exit 0, validator exit 0, `findings=[]`. Общих, принятых и отклонённых findings нет; неустранённых critical/high нет. Kimi-ревью супервизора заменяет недоступный Opus по решению владельца; результат Kimi в этой записи ещё отсутствует.
+- Kimi-review committed diff 371.2 (`41701fd`+`0ec679d`): findings=[] (слот Opus,
+  Claude on hold). Проверено: подсказки собраны через действующий генератор
+  tools/list без дублирующих списков полей; сторожа тестируют экспортированный
+  контракт tools/list с негативными утверждениями; запрет «ровно 1000 = усечение»
+  и «extend date_to» закреплён; live devtr6 36 raw + 2 Report AI HTTP 200.
