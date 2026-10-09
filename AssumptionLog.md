@@ -2,6 +2,42 @@
 
 Журнал допущений, неясностей и архитектурных решений по проекту vetmanager-mcp.
 
+## 2026-10-10 — Этап 377.1: PRD welcome-маршрутов под права
+
+**Факты и решение.** `FastMCP(instructions=...)` создан с общей строкой;
+`welcome_first_session` зарегистрирован без prompt auth, а middleware
+фильтрует только `tools/list`. Поэтому токен без `report_ai.write` сегодня
+видит имя в `prompts/list` и получает общий маршрут 375 в `prompts/get`;
+live-подтверждение этого вывода назначено 377.2. Выбран один prompt с явной
+развилкой по фактическому каталогу: read-маршрут исследует разрешённые
+реальные данные и объясняет право на отчёт, полный сохраняет шаги 375.
+Названия подходящих пресетов вычисляются из `tool_access_registry.py`
+узкие прежде широких; второго состава групп нет. `first_report_saved_at`
+не изменяется: отсутствие save у read-only аккаунта является ожидаемым
+исходом, а не ошибкой телеметрии. В PRD назначено уточнение HELP/витрины.
+Для live 377.2 выбран контур `TEST_DOMAIN=devtr6`/`TEST_API_KEY` из `.env`:
+два локальных bearer с формой `access_preset=frontdesk` и `report_ai`,
+без сохранения секретов или персональных строк. Реализация и live в 377.1
+не начинались.
+
+**Spark-review PRD, candidate-only.** `gpt-6-luna`, 1/3, exit 0,
+`files_read` содержит PRD, Roadmap и 9 файлов реализации; `findings=[]`.
+Принятых и отклонённых замечаний нет. Evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-377-1/spark-prd.{prompt.txt,result.txt,stderr.txt}`.
+
+**Astra Architecture Critique + strong PRD review.** `gpt-6-astra`,
+1 валидный запуск, 2026-10-09 23:57:49–23:58:10 UTC, CLI 0.160.1,
+command exit 0, validator exit 0, `findings=[]`. Astra и Spark не нашли
+общих или отдельных дефектов medium/high/critical; принятых/отклонённых
+findings нет. Evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-377-1/astra-prd-attempt-1-of-3.{result.json,stdout.txt,stderr.txt,metadata.json,validated.json}`;
+prompt и schema находятся рядом. После вердикта изменена только редакционная
+запись точной команды проверки Roadmap. Opus не запускался по прямому указанию
+владельца: второе сильное ревью PRD выполняет супервизор Kimi после этого
+хода. До его решения 377.1 остаётся `in_progress` («PRD на ревью
+супервизора»), 377.2 не начинается. `python3
+scripts/check_roadmap_structure.py` завершился с exit 0.
+
 ## 2026-10-10 — Этап 376.1: PRD предупреждения об истечении bearer-токена
 
 **Граница и решение.** Подготовлен только PRD; код, тесты, live и push не выполнялись. `Roadmap.md`: 376/376.1 — `in_progress` («PRD на ревью супервизора»), 376.2/376.3 — `todo`. Предупреждение планируется только для service bearer с конечным `expires_at`; OAuth access token обновляется refresh flow. Общий postprocessor в `ToolErrorTrackingMiddleware.on_call_tool` получает проверенный bearer id из request-local handoff wrapper, поскольку текущий credentials context завершается раньше возврата в middleware. Суточный dedup — атомарная nullable отметка в `token_usage_stats` за скользящие 24 часа; process-local cache и поиск audit rows не гарантируют частоту между воркерами. Ответ сохраняется при сбое/таймауте необязательной аннотации. Live-план для 376.2 фиксирует отдельный контур `TEST_DOMAIN=devtr6`, выпуск тестового bearer на 1 день через кабинет и очищенный MCP `tools/call`; bearer/OAuth-стенд не смешивать. Публичный PRD не содержит ключей, токенов и клинических данных.
