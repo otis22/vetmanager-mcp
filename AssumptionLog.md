@@ -18938,3 +18938,54 @@ Findings: нет блокирующих. Наблюдение (не блокер
 устарели относительно кода — операционная сверка закреплена за этапом 372.
 Spark: 2 раунда, 3 findings принято и исправлено. Astra: валидный `findings=[]`,
 validator exit 0. Полный прогон 3719 passed. Коммит `e05b571`.
+
+## 2026-10-09 — Этап 371.2: подсказки инструментов KI-43/46/58/20
+
+**Контракт и решение.** `tools/invoice.py` применяет к `create_date` timestamp границы `>= day_start` и `< next_day_start` (stage 293); `tools/report_ai.py` и тесты stage 296/350 закрепляют до 10000 строк и `limited=true` при усечении. Описания дополнены через действующие `compose_tool_description` и `enhance_raw_clause_descriptions`; поля `filter`/`sort` берутся из существующего реестра, исключение `get_invoice_documents.filter.document_id` сохранено. API, права и данные не менялись. Учётные данные не переосмысляются, миграция не требуется.
+
+**Красный → зелёный.** Новый сторож на `tools/list` до правки: 4 failed, 1 passed. Искусственные поломки и ожидаемые `AssertionError` проверены отдельно: удалены `create_date`/полные дни/финансовая пара, добавлен совет расширять `date_to`; удалены `exact property` и `direction`, возвращён `document_id` в исключённый фильтр; удалены SQL-предупреждение и оба адресных инструмента; заменены 10000 на 1000 и `limited=true` на `limited=false`, добавлено ложное утверждение про ровно 1000. После правки фокусный набор: 138 passed (stage 371, 348, 296, 293, 170, 350, tools/list).
+
+**Живой контур.** До вызовов выбран `TEST_DOMAIN=devtr6` с `TEST_API_KEY` из `.env`, не bearer-стенд; домен и resolved host проверены без вывода ключа. Все вызовы прошли через настоящий `mcp.call_tool` и HTTP транспорт. В таблице только код HTTP и очищенное тело: имена верхних ключей и коллекций, числа строк и флаги; значения строк, клиник, URL и ключи не записаны. `get_invoices` вызван с одинаковыми `date_from/date_to=2026-10-09`; raw инструменты с допустимыми `sort` и где возможно `filter`; Report AI вызван с безопасным запросом о числе счетов за январь 1900 года, чтение данных — по готовой тестовой фикстуре.
+
+| Инструмент | HTTP | Очищенное тело ответа |
+|---|---:|---|
+| `get_clients` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["client","totalCount"],"client_count":0}` |
+| `get_pets` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["pet","totalCount"],"pet_count":0}` |
+| `get_admissions` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["admission","totalCount"],"admission_count":0}` |
+| `get_medical_cards` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["medicalCards","totalCount"],"medicalCards_count":0}` |
+| `get_medical_cards_by_date` | 200 | `{"success":true,"top_keys":["clinic_filter_applied","clinic_id","date_from","date_to","limit","medical_cards","medical_cards_count","offset","owner_context_available","success","total","total_known","truncated"]}` |
+| `get_medical_cards_by_client_id` | 200,200 | `{"success":true,"top_keys":["client_id","medical_cards","medical_cards_count","pets_count","pets_total","pets_truncated","success"]}` |
+| `get_invoices` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["invoice","totalCount"],"invoice_count":0}` |
+| `get_goods` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["good","totalCount"],"good_count":0}` |
+| `get_users` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["totalCount","user"],"user_count":0}` |
+| `get_breeds` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["breed","totalCount"],"breed_count":0}` |
+| `get_pet_types` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["petType","totalCount"],"petType_count":0}` |
+| `get_cities` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["city","totalCount"],"city_count":0}` |
+| `get_city_types` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["cityType","totalCount"],"cityType_count":0}` |
+| `get_streets` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["street","totalCount"],"street_count":0}` |
+| `get_units` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["totalCount","unit"],"unit_count":1}` |
+| `get_roles` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["role","totalCount"],"role_count":0}` |
+| `get_user_positions` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["totalCount","userPosition"],"userPosition_count":0}` |
+| `get_combo_manual_names` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["comboManualName","totalCount"],"comboManualName_count":0}` |
+| `get_combo_manual_items` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["comboManualItem","totalCount"],"comboManualItem_count":0}` |
+| `get_payments` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["payment","totalCount"],"payment_count":0}` |
+| `get_client_payment_applications` | 200 | `{"success":true,"top_keys":["data","success"],"data_keys":["client_id","closingOfInvoices","count","date_from","date_to","limit","offset","pet_id","total","truncated"],"closingOfInvoices_count":1}` |
+| `get_closing_of_invoices` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["closingOfInvoices","totalCount"],"closingOfInvoices_count":0}` |
+| `get_invoice_documents` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["invoiceDocument","totalCount"],"invoiceDocument_count":0}` |
+| `get_cassas` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["cassa","totalCount"],"cassa_count":0}` |
+| `get_cassa_closes` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["cassaclose","totalCount"],"cassaclose_count":0}` |
+| `get_good_groups` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["goodGroup","totalCount"],"goodGroup_count":0}` |
+| `get_good_sale_params` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["goodSaleParam","totalCount"],"goodSaleParam_count":0}` |
+| `get_party_accounts` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["partyAccount","totalCount"],"partyAccount_count":0}` |
+| `get_party_account_docs` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["partyAccountDoc","totalCount"],"partyAccountDoc_count":0}` |
+| `get_store_documents` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["storeDocument","totalCount"],"storeDocument_count":0}` |
+| `get_suppliers` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["suppliers","totalCount"],"suppliers_count":0}` |
+| `get_hospitalizations` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["hospital","totalCount"],"hospital_count":0}` |
+| `get_hospital_blocks` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["hospitalBlock","totalCount"],"hospitalBlock_count":0}` |
+| `get_clinics` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["clinics","totalCount"],"clinics_count":0}` |
+| `get_timesheets` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["is_empty_shedules","timesheet","totalCount"],"timesheet_count":0}` |
+| `get_properties` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["properties","totalCount"],"properties_count":0}` |
+| `create_report_ai_job` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["is_deduplicated","job"],"job_status":"ready_to_save"}` |
+| `get_report_ai_job_data` | 200 | `{"success":true,"top_keys":["data","message","success"],"data_keys":["columns","csv_export_url","limited","rows","total"],"columns_count":1,"rows_count":1,"limited":false,"total":1}` |
+
+**Ревью.** Claude Opus не запускается: account on hold; по решению владельца этапа 371.1 его слот после кодового коммита закрывает Kimi-ревью супервизора. Spark и Astra committed diff выполняются исполнителем.

@@ -962,6 +962,11 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "period, thousands of invoices, or an aggregate across many records "
         "belongs here rather than in a per-record loop over the read tools. "
         "The intent is limited to 20000 characters. "
+        "Report AI does not support combination composition reports; they may "
+        "fail with an SQL error. For a single combination, use "
+        "get_good_combination for its positions and "
+        "calculate_good_combination_price for its price. Other analytic "
+        "reports continue through this job workflow. "
         "For a new job use wait_seconds=30: one POST then bounded GET polling "
         "for up to 30 seconds, with no automatic repeat of the write. A timeout "
         "returns the same job_id; resume with get_report_ai_job, not a new POST. "
@@ -1041,11 +1046,14 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_report_ai_job_data": (
         "Get table rows for a saved or existing_report_matched Report AI job. "
-        "Rows are unavailable from ready_to_save; save explicitly first when rows "
-        "are needed. Vetmanager returns up to 10000 rows; limited=true means "
-        "the response was truncated. Responses may include csv_export_url for "
-        "the supported CSV/XLSX export path; take the full data through it for bulk "
-        "review, or through get_report_ai_job_export when a report_id is available. "
+        "Rows are unavailable from ready_to_save; save explicitly or confirm an "
+        "existing report first when rows are needed. Vetmanager returns up to "
+        "10000 rows; limited=true means the response was truncated. Exactly 1000 rows "
+        "with limited=false is not evidence of truncation. If limited=true, narrow "
+        "the request or use a supported export for bulk review when available. "
+        "Responses may "
+        "include csv_export_url for a supported CSV/XLSX export path, or use "
+        "get_report_ai_job_export when a report_id is available. "
         "Avoid pasting huge tables into chat; narrow/refine the report when it is "
         "large. "
         "An empty rows result is valid: do not recreate the job; first verify source "
@@ -1302,6 +1310,12 @@ def enhance_tool_descriptions(mcp: FastMCP) -> None:
 def enhance_raw_clause_descriptions(mcp: FastMCP) -> None:
     """Expose the accepted REST fields in each argument's tools/list schema."""
     components = mcp._local_provider._components
+    clause_hint = (
+        "Use the exact property name from this tool's Allowed properties list. "
+        "If rejected, read the allowed names in the error and retry with one of "
+        "them. Do not guess a similar field."
+    )
+    filter_hint = clause_hint + " Do not remove the filter entirely."
     actual: set[str] = set()
     for key, component in components.items():
         if not key.startswith("tool:"):
@@ -1315,10 +1329,27 @@ def enhance_raw_clause_descriptions(mcp: FastMCP) -> None:
         if name not in RAW_CLAUSE_ENTITIES:
             raise RuntimeError(f"Raw clause fields not documented for {name}")
         fields = FILTER_FIELDS_BY_ENTITY[RAW_CLAUSE_ENTITIES[name]]
+        component.description += " " + (filter_hint if "filter" in clauses else clause_hint)
+        if name == "get_invoices":
+            date_hint = (
+                "create_date is a timestamp; date_from/date_to include full days "
+                "by create_date. For financial executed invoices, use "
+                "invoice_date_from/invoice_date_to instead. Do not mix the date pairs."
+            )
+            component.description += " " + date_hint
+            for argument in ("date_from", "date_to"):
+                properties[argument]["description"] = (
+                    properties[argument].get("description", "") + " " + date_hint
+                ).strip()
+            for argument in ("invoice_date_from", "invoice_date_to"):
+                properties[argument]["description"] = (
+                    properties[argument].get("description", "") + " " + date_hint
+                ).strip()
         if "sort" in clauses:
             properties["sort"]["description"] = (
                 'Sort clauses, e.g. [{"property":"id","direction":"ASC"}]. '
-                f"Direction: ASC or DESC. Allowed properties: {', '.join(sorted(fields))}."
+                f"Direction: ASC or DESC. Allowed properties: {', '.join(sorted(fields))}. "
+                + clause_hint
             )
         if "filter" in clauses:
             filter_fields = fields - RAW_FILTER_FIELD_EXCLUSIONS.get(name, frozenset())
@@ -1326,7 +1357,8 @@ def enhance_raw_clause_descriptions(mcp: FastMCP) -> None:
                 'Filter clauses, e.g. [{"property":"id","operator":"=","value":123}]. '
                 "Operators: =, !=, <>, <, <=, >, >=, IN, NOT IN, LIKE; "
                 "IN/NOT IN take an array value. "
-                f"Allowed properties: {', '.join(sorted(filter_fields))}."
+                f"Allowed properties: {', '.join(sorted(filter_fields))}. "
+                + filter_hint
             )
         if name == "get_party_account_docs":
             hint = (
