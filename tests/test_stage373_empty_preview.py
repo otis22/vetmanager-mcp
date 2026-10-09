@@ -132,6 +132,27 @@ def test_finalized_capacity_eviction_allows_local_reissue(monkeypatch):
     assert counts()[2] == {"saved_empty": 1}
 
 
+@pytest.mark.parametrize("evict", [False, True])
+def test_guided_lifecycle_expiry_or_eviction_preserves_old_terminal_counter(monkeypatch, evict):
+    clock = [100.0]
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: clock[0])
+    if evict:
+        monkeypatch.setattr(report_ai, "REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES", 1)
+    with as_account():
+        issue(job(1), clock[0])
+        if evict:
+            clock[0] = 101.0
+            report_ai._observe_report_ai_lifecycle(job(2), now=clock[0])
+        else:
+            clock[0] = 3701.0
+            report_ai._cleanup_report_ai_queue_observations(clock[0])
+        report_ai._observe_report_ai_lifecycle(job(1, "saved", None), now=clock[0])
+    assert counts()[2] == {"abandoned_wait": 1}
+    assert metrics.snapshot_service_metrics()["report_ai_job_terminal_outcomes_total"] == {
+        "abandoned_wait": 1, "saved": 1,
+    }
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_mcp_create_get_wait_guidance_text_and_metrics():

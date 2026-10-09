@@ -371,7 +371,6 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
     for key in expired_lifecycle_keys:
         observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.pop(key)
         if "guidance_issued_at" in observation:
-            _remember_finalized_report_ai_job(key, now=now, observation=observation)
             _resolve_guidance_outcome(observation, "abandoned_wait")
         stage = str(observation["stage"])
         stage_duration = now - float(observation["stage_started"])
@@ -385,7 +384,6 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
     while len(_REPORT_AI_LIFECYCLE_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
         key, observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.popitem(last=False)
         if "guidance_issued_at" in observation:
-            _remember_finalized_report_ai_job(key, now=now, observation=observation)
             _resolve_guidance_outcome(observation, "abandoned_wait")
         _best_effort_observation("lifecycle_stage_duration", record_report_ai_job_stage_duration,
             stage=str(observation["stage"]),
