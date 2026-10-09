@@ -153,6 +153,22 @@ def test_guided_lifecycle_expiry_or_eviction_preserves_old_terminal_counter(monk
     }
 
 
+@pytest.mark.parametrize("evict_in_cleanup", [False, True])
+def test_unresolved_guidance_finalized_eviction_counts_abandoned(monkeypatch, evict_in_cleanup):
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: 100.0)
+    with as_account():
+        issue(job(1), 100.0)
+        report_ai._observe_report_ai_lifecycle(job(1, "failed", None), now=101.0)
+        assert counts()[2] == {}
+        if evict_in_cleanup:
+            monkeypatch.setattr(report_ai, "REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES", 0)
+            report_ai._cleanup_report_ai_queue_observations(102.0)
+        else:
+            monkeypatch.setattr(report_ai, "REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES", 1)
+            report_ai._observe_report_ai_lifecycle(job(2, "failed", None), now=102.0)
+    assert counts()[2] == {"abandoned_wait": 1}
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_mcp_create_get_wait_guidance_text_and_metrics():

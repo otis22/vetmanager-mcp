@@ -402,7 +402,8 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
     for key in expired_finalized_keys:
         _REPORT_AI_FINALIZED_OBSERVATIONS.pop(key, None)
     while len(_REPORT_AI_FINALIZED_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
-        _REPORT_AI_FINALIZED_OBSERVATIONS.popitem(last=False)
+        _, observation = _REPORT_AI_FINALIZED_OBSERVATIONS.popitem(last=False)
+        _resolve_guidance_outcome(observation, "abandoned_wait")
 
     expired_export_keys = [
         key
@@ -507,7 +508,8 @@ def _remember_finalized_report_ai_job(
     _REPORT_AI_FINALIZED_OBSERVATIONS[observation_key] = stored
     _REPORT_AI_FINALIZED_OBSERVATIONS.move_to_end(observation_key)
     while len(_REPORT_AI_FINALIZED_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
-        _REPORT_AI_FINALIZED_OBSERVATIONS.popitem(last=False)
+        _, discarded = _REPORT_AI_FINALIZED_OBSERVATIONS.popitem(last=False)
+        _resolve_guidance_outcome(discarded, "abandoned_wait")
 
 
 def _observe_report_ai_queue(job: dict, *, now: float | None = None) -> int | None:
