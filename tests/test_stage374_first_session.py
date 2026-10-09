@@ -50,7 +50,7 @@ async def test_instructions_keep_first_journey_and_privacy():
                    "preview", "approve saving", "not verified real data", "report_problem",
                    "Do not paste raw tool response bodies"):
         assert phrase in text
-    assert "welcome_first_session" not in text
+    assert "welcome_first_session" in text
 
 
 @pytest.mark.asyncio

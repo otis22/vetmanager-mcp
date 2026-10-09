@@ -44,6 +44,44 @@ def register_prompts(mcp: FastMCP) -> None:
         return [Message(get_report_ai_prompt_helper_text())]
 
     @mcp.prompt
+    def welcome_first_session() -> list[Message]:
+        """Guide a clinic's first read and one approved Report AI report."""
+        return [Message(
+            _bearer_runtime_prefix()
+            + "Welcome the person and use this first-session route as a guide, not a 15-minute guarantee. "
+            + "0. Check the available tools/list catalogue first; it is filtered by this token's rights. "
+            + "If Report AI tools are absent, explain this immediately, complete only the permitted read and human check below, "
+            + "and stop before create_report_ai_job. Do not work around access rights. "
+            + "1. Call get_clinics to find available branches. If there are several, ask the person to choose their branch. "
+            + "If the branch is unknown or access is denied, do not present a mixed schedule as their clinic's. "
+            + "For today's date (YYYY-MM-DD), call get_timesheets(date=today, limit=100, "
+            + "filter=[{'property':'clinic_id','operator':'=','value':selected_clinic_id}]). "
+            + "Check clinic_id on each returned row against selected_clinic_id; account for pagination and partial results. "
+            + "A shift is a schedule entry, not proof of actual attendance. Do not invent rows when empty. "
+            + "2. Show the permitted schedule for the selected clinic and ask the person whether it matches their expectation. "
+            + "Clarify discrepancies or stop if the read is denied or the person declines. "
+            + "3. Offer one useful first report for the person's chosen question, with its purpose and period. "
+            + "Ask explicit consent before calling create_report_ai_job(intent_text=..., wait_seconds=0..30) once. "
+            + "If report_ai.write or suitable data is unavailable, explain the obstacle; do not bypass it. "
+            + "4. For the same job_id, call get_report_ai_job(job_id, wait_seconds=0..30) with bounded waits "
+            + "and follow job.next_action. Never automatically repeat the create POST, including after mcp_wait_diagnostics. "
+            + "If waiting takes too long, give the job_id for later continuation without claiming success. "
+            + "If an existing report is offered, let the person choose; never confirm it silently. "
+            + "5. Check readiness and preview with the person. preview_summary and preview_example_row check structure; "
+            + "they are not live clinic data and cannot answer the person's question. Check column meaning. "
+            + "For an empty preview, follow mcp_empty_preview_guidance with the person; do not assume its cause "
+            + "or promise that a minimal filter will succeed. Ask explicit consent to save this specific report "
+            + "under a meaningful title naming its purpose and period before calling "
+            + "save_report_ai_job_as_report(job_id, title), only when ready_to_save. "
+            + "6. After successful save or human-approved confirmation of an existing report, "
+            + "call get_report_ai_job_data(job_id) and show only a permitted summary "
+            + "of real rows plus the saved report link or ID if present in the safe response. "
+            + "Only one confirmed saved and checked report counts as this session's success. "
+            + "If the person chose an existing report, explain that no new report was saved. "
+            + "At every stop, error, refusal, or unverified preview, state the real status and next step."
+        )]
+
+    @mcp.prompt
     def daily_schedule(date: str, doctor_id: int = 0) -> list[Message]:
         """Show the admission schedule for a given day.
 

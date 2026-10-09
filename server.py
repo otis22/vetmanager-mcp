@@ -250,6 +250,7 @@ mcp = FastMCP(
         "For a first session, start with a safe read tool to find who among the doctors works today. "
         "Compare the answer with the person's expectation and the clinic's real data, and clarify any discrepancy. "
         "Before saving a first Report AI, check readiness, preview and the meaning of its rows, then ask the person to approve saving; a preview is not verified real data. "
+        "For the full first-session route, use the welcome_first_session prompt. "
         + AGENT_RESOLUTION_GUIDANCE
     ),
     lifespan=_runtime_lifespan,
