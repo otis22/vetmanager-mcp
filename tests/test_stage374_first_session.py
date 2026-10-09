@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -32,6 +33,12 @@ from tool_error_tracking import ToolErrorTrackingMiddleware
 from runtime_auth import use_runtime_credentials
 import tools.report_ai as report_ai
 from tests.test_stage170_report_ai_tools import BASE, bearer_runtime_patch, billing_mock
+
+
+def test_postgres_race_guard_runs_in_ci():
+    workflow = Path(".github/workflows/test.yml").read_text()
+    postgres_job = workflow.split("  postgres-activation-telemetry:", 1)[1]
+    assert "tests/test_stage374_first_session.py" in postgres_job
 
 
 @pytest.mark.asyncio
