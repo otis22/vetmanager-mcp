@@ -24,6 +24,7 @@ def _mutate_text(body: str) -> str:
         "remove_preview_boundary": ("they are not live clinic data", "they are live clinic data"),
         "guarantee_15_minutes": ("not a 15-minute guarantee", "guaranteed in 15 minutes"),
         "auto_repeat_post": ("Never automatically repeat the create POST", "Automatically repeat the create POST"),
+        "remove_existing_confirmation": ("confirm_report_ai_job_candidate(job_id, report_id)", "skip candidate confirmation"),
     }
     if MUTATION in replacements:
         old, new = replacements[MUTATION]
@@ -68,6 +69,7 @@ async def test_welcome_prompt_protocol_and_rendered_route():
             "Ask explicit consent before calling create_report_ai_job",
             "one useful first report", "same job_id", "bounded waits", "job.next_action",
             "Never automatically repeat the create POST", "mcp_wait_diagnostics",
+            "confirm_report_ai_job_candidate(job_id, report_id)",
             "preview_summary and preview_example_row", "they are not live clinic data",
             "mcp_empty_preview_guidance", "Ask explicit consent to save this specific report",
             "meaningful title naming its purpose and period", "save_report_ai_job_as_report",

@@ -67,6 +67,8 @@ def register_prompts(mcp: FastMCP) -> None:
             + "and follow job.next_action. Never automatically repeat the create POST, including after mcp_wait_diagnostics. "
             + "If waiting takes too long, give the job_id for later continuation without claiming success. "
             + "If an existing report is offered, let the person choose; never confirm it silently. "
+            + "After approval, use its candidate report_id with confirm_report_ai_job_candidate(job_id, report_id) "
+            + "and verify existing_report_matched before reading rows. "
             + "5. Check readiness and preview with the person. preview_summary and preview_example_row check structure; "
             + "they are not live clinic data and cannot answer the person's question. Check column meaning. "
             + "For an empty preview, follow mcp_empty_preview_guidance with the person; do not assume its cause "
