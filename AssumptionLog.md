@@ -2,6 +2,22 @@
 
 Журнал допущений, неясностей и архитектурных решений по проекту vetmanager-mcp.
 
+## 2026-10-10 — Этап 378.1: Kimi-review PRD — approved
+
+Второй сильный PRD-гейт (решение владельца: Kimi вместо Claude Opus). Лично
+сверил факты PRD с кодом: `FEEDBACK_SOURCE_*` и CHECK constraint по
+`FEEDBACK_SOURCES` (`storage_models.py`:71-79,674) — алиас в constraint не
+входит, верно; `create_feedback_report` отклоняет не-`model`/`human` до БД
+(`agent_feedback_service.py`:743); фактическое описание `report_problem` в
+`tools/list` берётся из `SPECIAL_TOOL_DESCRIPTIONS` (`tool_descriptions.py`:663),
+а не из docstring — ключевой факт PRD подтверждён; fixtures `prepared_web_db`/
+`live_server_url` (`tests/conftest.py`:213,331) дают изолированную SQLite для
+live-проверки, прод-витрина не загрязняется. Решение (б) — входной алиас
+`agent` → `model` при каноническом enum в описании и отказе — принимаю:
+потерянный репорт #132 хуже скрытого синонима, статистика не раздваивается,
+сохранение каноническим. `category`/`severity` обоснованно вне границы этапа.
+Замечаний нет; 378.1 → done, 378.2 разрешён.
+
 ## 2026-10-10 — Этап 378.1: PRD контракта `report_problem.source`
 
 **Проверенные факты и решение.** `create_feedback_report` принимает `model`/`human`, отказывает `ToolInputError("Invalid feedback source.")` на `agent`; `auto` пишет системное событие. Фактическое описание `tools/list` заменяется из `tool_descriptions.py`, а не остаётся docstring `tools/feedback.py`: экспорт `mcp.list_tools()`/`to_mcp_tool()` дал 2029 символов без обрезки, `inputSchema.source` — строка с default `model` без enum. В PRD выбран узкий входной алиас `agent` → сохранять `model`, плюс канонический enum в описании и отказе: потеря репорта #132 хуже ограниченного синонима; статистика `recent --source` и `match-effectiveness` останется единой. `category`/`severity` тоже дают отказ без перечня, но их изменение вынесено за границу этапа. Rate limit и очистка репортов сохраняются. Для live 378.2 выбран upstream devtr6 через `.env` и локальный MCP HTTP с временной SQLite БД `prepared_web_db`/`live_server_url`; `TEST_DOMAIN` сам БД MCP не выбирает. В 378.1 live-вызовов и изменений инструмента нет.
