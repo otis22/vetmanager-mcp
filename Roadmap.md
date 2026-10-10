@@ -3,7 +3,7 @@
 Статусы: `todo` | `in_progress` | `supervisor_pending` | `done` | `stop`.
 Структуру проверяет `scripts/check_roadmap_structure.py`.
 
-## Этап 378. report_problem: контракт `source` должен быть виден агенту до вызова — `in_progress`
+## Этап 378. report_problem: контракт `source` должен быть виден агенту до вызова — `done`
 
 Источник: репорт #132 (10.10.2026, account 6, low/contract). Агент передал
 `source='agent'` и получил отказ «Invalid feedback source.»: описание
@@ -29,7 +29,7 @@
   отказ с перечнем значений; валидные `model`/`human` проходят; алиас, если
   принят, сохраняется как `model`); live-проверка на devtr6 с телом ответа. — `done`
 - 378.3 Аудит diff, сильное ревью committed diff, полный прогон, AssumptionLog,
-  выпуск с зелёным CI; после выпуска `resolve-report` #132 к закрывшей KI. — `todo`
+  выпуск с зелёным CI; после выпуска `resolve-report` #132 к закрывшей KI. — `done`
 
 ## Этап 377. Welcome-маршруты под права токена — `done`
 
