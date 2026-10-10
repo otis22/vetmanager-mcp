@@ -19349,6 +19349,25 @@ vetmanager_report_ai_empty_preview_guidance_outcomes_total{outcome="saved_empty"
 **Полный прогон и self-attestation.** По финальному кодовому SHA `b598444` ровно один запуск `docker compose --profile test run --rm test python scripts/run_default_test_suite.py`: exit 0, `3783 passed, 2 skipped, 85 deselected`, 607.18 с. Один запуск `docker compose --env-file .env --profile test run --rm test python scripts/run_opt_in_real_test_suite.py`: exit 0, `72 passed, 9 skipped, 3789 deselected`, 243.53 с; дополнительный поднабор `1 skipped`. `tests/test_stage376_live.py::test_expiry_notice_live_devtr6` — PASSED; очищенные HTTP коды и тела предупреждения/повтора/сбоя аннотации приведены в записи 376.2 выше. Для новой регрессионной защиты красный показан в 376.2 четырнадцатью мутациями; конкретно отключение ветки аннотации дало FAILED у `test_middleware_appends_only_to_success_and_resets_handoff`, затем восстановление вернуло зелёный. Shell-скрипты не менялись, ShellCheck не требуется; новая процессная команда в документацию не внесена. Evidence полных прогонов: `/home/otis/.local/share/vetmanager-mcp-review-evidence/stage-376-3/full-default.{stdout.txt,stderr.txt,metadata.json}` и `full-real.{stdout.txt,stderr.txt,metadata.json}`. После полного прогона менялись только `AssumptionLog.md` и `Roadmap.md`; код и тесты не менялись.
 
 **Kimi-review PRD 377 (второй сильный reviewer вместо Opus), 1 валидный запуск.** Факты сверены с кодом: `ToolVisibilityMiddleware` реализует только `on_list_tools` (`tool_scope_security.py:162-168`) — prompts/list сегодня не фильтруется правами, утверждение PRD верно; `frontdesk` без `report_ai.write`, но с `analytics.read`/`reference.read` (`tool_access_registry.py:72-86`); `report_ai` (Analytics) со `SCOPE_REPORT_AI_WRITE` (`:122-134`); `get_clinics` → reference.read, `get_timesheets` → analytics.read (`:177,250`); `get_presets_allowing_tool`/`get_presets_granting_scope`/`_presets_narrowest_first` (`:308,348,362`). Findings: 0 critical/high/medium, approved. Ключевое решение согласовано: один промпт с развилкой после tools/list (вариант а) — вариант «два промпта» отклонён, т.к. prompts/list правами не фильтруется и потребовал бы новой auth-машинерии. Сильные места: проверка всей цепочки create/get/save/data/confirm, а не одного create; пустой каталог не доказательство прав; учтён фолбэк полного списка stage 271; названия пресетов из реестра узкие→широкие без второго списка; HELP report_saved_7d_accounts уточняется без изменения знаменателя; процедура выдачи тестовых токенов зафиксирована до реализации. Гейт пройден: Spark `[]`, Astra `[]`, Kimi 1; 377.1 → done, 377.2 разблокирован.
+## 2026-10-10 — Этап 379.2: Kimi-review committed diff `30db756` — approved
+
+Сильный committed-diff гейт (Kimi вместо Claude Opus). Лично разобрал diff:
+middleware считает list один раз за имя в успешном каталоге (дедуп через set)
+и get один раз за подготовленный ответ, исключения проглатываются (best
+effort, ответ не зависит от телеметрии); нормализация имён по allowlist из
+фактической регистрации с `other`; причина пропуска notice передаётся через
+ContextVar `_CLAIM_SKIP` без новых SQL и без изменения атомарности claim;
+`claim_recent` честно документирован как широкий бакет (гонка claim
+неотличима от свежего claim без лишнего запроса); HELP не обещает
+delivery/read; threshold-бакеты 1d/7d/14d; закрытый набор skipped-исходов;
+labels без аргументов/id/дат. Приватный доступ `mcp._local_provider` для
+allowlist принят: сторож `names == allowed_names` против фактической
+регистрации краснеет при поломке introspection на апгрейде FastMCP.
+Собственный красный прогон: замена нормализации на сырое имя промпта —
+`test_prompt_hooks_count_only_success_and_registered_names` упал
+(`1 failed, 3 passed`), файл восстановлен из index. Фокусный прогон 4 passed.
+Замечаний нет; 379.2 → done, 379.3 (аудит + полный suite + выпуск) разрешён.
+
 ## 2026-10-10 — Этап 379.2: observability prompts и expiry notice
 
 **Решение.** `PromptMetricsMiddleware` подключён к FastMCP `on_list_prompts`/`on_get_prompt`; allowlist из фактически зарегистрированных `Prompt` после `register_prompts`. `list` считает каждое имя успешного каталога один раз, `get` — успешный подготовленный ответ. Неизвестное имя становится `other`, аргументы не используются. Notice считается после успешного claim и подготовки `ToolResult`; бакеты: 1→`1d`, 2–7→`7d`, 8–14→`14d`. Пропуски: `no_subject` только для успешного tool-ответа без bearer subject; `ineligible` объединяет отсутствующий, неактивный, бессрочный или внеоконный токен; `claim_recent` включает неразличимое без нового SQL конкурентное изменение токена; `deadline` — `TimeoutError`, остальные ошибки — `unavailable`. Новых SQL, таблиц и изменений атомарного UPDATE нет. Счётчики process-local и не доказывают доставку или чтение ответа.
