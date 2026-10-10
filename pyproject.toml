@@ -53,6 +53,7 @@ only-include = [
     "oauth_service.py",
     "phone_redaction.py",
     "placeholder_resolution_guidance.py",
+    "prompt_metrics.py",
     "privacy_utils.py",
     "prompts.py",
     "rate_limit_backend.py",
