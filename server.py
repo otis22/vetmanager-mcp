@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 
 from fastmcp import FastMCP
+from fastmcp.prompts import Prompt
 
 from agent_feedback_service import validate_feedback_runtime_config
 from error_tracking import configure_error_tracking
@@ -20,6 +21,7 @@ from structured_logging import configure_logging
 from tool_oauth_security import OAuthChallengeMiddleware, apply_tool_oauth_security_metadata
 from tool_scope_security import ToolVisibilityMiddleware
 from tool_error_tracking import ToolErrorTrackingMiddleware
+from prompt_metrics import PromptMetricsMiddleware
 from tool_descriptions import enhance_tool_descriptions, enhance_raw_clause_descriptions
 from placeholder_resolution_guidance import AGENT_RESOLUTION_GUIDANCE
 from vetmanager_client import reset_breakers, reset_shared_http_client
@@ -262,12 +264,18 @@ mcp.add_middleware(ToolErrorTrackingMiddleware())
 # Stage 271: catalogue only. Registered last and implementing just
 # `on_list_tools`, so the call chain above is untouched.
 mcp.add_middleware(ToolVisibilityMiddleware())
+_prompt_metrics = PromptMetricsMiddleware()
+mcp.add_middleware(_prompt_metrics)
 
 from tools import register_all  # noqa: E402
 from prompts import register_prompts  # noqa: E402
 
 register_all(mcp)
 register_prompts(mcp)
+_prompt_metrics.allowed_names = frozenset(
+    component.name for component in mcp._local_provider._components.values()
+    if isinstance(component, Prompt)
+)
 register_web_routes(mcp)
 enhance_tool_descriptions(mcp)
 enhance_raw_clause_descriptions(mcp)

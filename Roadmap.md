@@ -3,7 +3,7 @@
 Статусы: `todo` | `in_progress` | `supervisor_pending` | `done` | `stop`.
 Структуру проверяет `scripts/check_roadmap_structure.py`.
 
-## Этап 379. Дыры наблюдаемости: промпты и предупреждение об истечении токена — `todo`
+## Этап 379. Дыры наблюдаемости: промпты и предупреждение об истечении токена — `in_progress`
 
 Источник: аудит наблюдаемости супервизором 10.10.2026 (инвентарь 55 series на
 проде + сверка с кодом). Две фичи выпущены «пассивными» — как guidance до
@@ -30,7 +30,7 @@ known-issue подсказки (`known_issue_lookups_total` tool/outcome/error k
 - 379.2 Реализация: сторожа принимаются только красными (в т.ч. на отсутствие
   high-cardinality labels); live-проверка на devtr6: prompts/get welcome →
   рост счётчика, выдача notice под токеном близкого срока → рост по threshold;
-  фрагмент /metrics приложить. — `in_progress`
+  фрагмент /metrics приложить. — `done`
 - 379.3 Аудит diff, сильное ревью committed diff, полный прогон, AssumptionLog,
   выпуск с зелёным CI; после выпуска сверить рост series на проде. — `todo`
 

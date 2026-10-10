@@ -13,11 +13,15 @@ from filters import FilterPropertyValidationError, SortPropertyValidationError
 from runtime_auth import get_current_runtime_credentials
 from first_session import observe_first_action
 from observability_logging import RUNTIME_LOGGER
+from service_metrics import record_token_expiry_notice_issued, record_token_expiry_notice_skipped
 import token_expiry_notice
 
 
 async def _add_expiry_notice(result: ToolResult, account_id: int, bearer_token_id: int) -> ToolResult:
+    prepared_days: int | None = None
+
     def prepare(days: int) -> ToolResult:
+        nonlocal prepared_days
         candidate = ToolResult(
             content=[*result.content, TextContent(type="text", text=token_expiry_notice.expiry_notice_text(days))],
             structured_content=result.structured_content,
@@ -25,12 +29,24 @@ async def _add_expiry_notice(result: ToolResult, account_id: int, bearer_token_i
             is_error=result.is_error,
         )
         candidate.to_mcp_result()  # Fail before spending the claim if this FastMCP shape changes.
+        prepared_days = days
         return candidate
 
     prepared = await token_expiry_notice.claim_expiry_notice(
         account_id, bearer_token_id, prepare=prepare,
     )
-    return prepared if prepared is not None else result
+    if prepared is not None:
+        if prepared_days is not None:
+            try:
+                record_token_expiry_notice_issued(prepared_days)
+            except Exception:
+                pass
+        return prepared
+    try:
+        record_token_expiry_notice_skipped(token_expiry_notice.get_claim_skip() or "ineligible")
+    except Exception:
+        pass
+    return result
 
 
 def _exception_chain_contains(
@@ -71,12 +87,23 @@ class ToolErrorTrackingMiddleware(Middleware):
                         result = await _add_expiry_notice(result, *subject)
                     except Exception as exc:
                         try:
+                            record_token_expiry_notice_skipped(
+                                "deadline" if isinstance(exc, TimeoutError) else "unavailable"
+                            )
+                        except Exception:
+                            pass
+                        try:
                             RUNTIME_LOGGER.warning(
                                 "Expiry notice unavailable; returning original tool result.",
                                 extra={"event_name": "expiry_notice_failed", "error_class": exc.__class__.__name__},
                             )
                         except Exception:
                             pass
+                else:
+                    try:
+                        record_token_expiry_notice_skipped("no_subject")
+                    except Exception:
+                        pass
             return result
         except ValidationError:
             # Stage 266: arguments that do not match the schema — the caller's

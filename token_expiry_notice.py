@@ -15,6 +15,7 @@ from storage import get_session_factory
 from storage_models import ServiceBearerToken, TOKEN_STATUS_ACTIVE, TokenUsageStat
 
 _NOTICE_SUBJECT: ContextVar[tuple[int, int] | None] = ContextVar("expiry_notice_subject", default=None)
+_CLAIM_SKIP: ContextVar[str | None] = ContextVar("expiry_notice_claim_skip", default=None)
 T = TypeVar("T")
 
 
@@ -32,6 +33,10 @@ def set_notice_subject(account_id: int | None, bearer_token_id: int | None) -> N
 
 def get_notice_subject() -> tuple[int, int] | None:
     return _NOTICE_SUBJECT.get()
+
+
+def get_claim_skip() -> str | None:
+    return _CLAIM_SKIP.get()
 
 
 def _utc(value: datetime) -> datetime:
@@ -59,6 +64,7 @@ async def claim_expiry_notice(
 ) -> T | int | None:
     """Return prepared notice only for the winning transaction; deadline includes pool and commit."""
     current = _utc(now or datetime.now(timezone.utc))
+    _CLAIM_SKIP.set(None)
     factory = session_factory or get_session_factory()
     async with asyncio.timeout(0.5):
         async with factory() as session:
@@ -74,10 +80,12 @@ async def claim_expiry_notice(
                     .with_for_update()
                 )
                 if token is None or token.expires_at is None:
+                    _CLAIM_SKIP.set("ineligible")
                     return None
                 remaining = (_utc(token.expires_at) - current).total_seconds()
                 days = ceil(remaining / 86400)
                 if not 1 <= days <= 14:
+                    _CLAIM_SKIP.set("ineligible")
                     return None
                 candidate = prepare(days) if prepare else days
                 await session.execute(_token_usage_stat_conflict_insert_statement(
@@ -100,5 +108,8 @@ async def claim_expiry_notice(
                     .returning(TokenUsageStat.id)
                 )
                 if claimed.scalar_one_or_none() is None:
+                    # A concurrent token change is indistinguishable from a recent
+                    # claim without another query. Count it in this broad bucket.
+                    _CLAIM_SKIP.set("claim_recent")
                     return None
             return candidate

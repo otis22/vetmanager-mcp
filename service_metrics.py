@@ -62,6 +62,10 @@ _UPSTREAM_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = defa
     LatencyAggregate
 )
 _TOOL_CALLS_TOTAL: DefaultDict[tuple[str, str, str], int] = defaultdict(int)
+_PROMPT_REQUESTS_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
+_TOKEN_EXPIRY_NOTICE_ISSUED_TOTAL: DefaultDict[str, int] = defaultdict(int)
+_TOKEN_EXPIRY_NOTICE_SKIPPED_TOTAL: DefaultDict[str, int] = defaultdict(int)
+NOTICE_SKIP_OUTCOMES = frozenset({"claim_recent", "deadline", "no_subject", "ineligible", "unavailable"})
 _TOOL_CALL_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = defaultdict(
     LatencyAggregate
 )
@@ -154,6 +158,9 @@ def reset_service_metrics() -> None:
         _UPSTREAM_REQUESTS_TOTAL.clear()
         _UPSTREAM_LATENCY_SECONDS.clear()
         _TOOL_CALLS_TOTAL.clear()
+        _PROMPT_REQUESTS_TOTAL.clear()
+        _TOKEN_EXPIRY_NOTICE_ISSUED_TOTAL.clear()
+        _TOKEN_EXPIRY_NOTICE_SKIPPED_TOTAL.clear()
         _TOOL_CALL_LATENCY_SECONDS.clear()
         _TOKEN_PRESET_ISSUED_TOTAL.clear()
         _PLACEHOLDER_ARGUMENT_REJECTIONS_TOTAL.clear()
@@ -341,6 +348,29 @@ async def instrument_call(
             if on_metric_error is None:
                 raise
             on_metric_error(exc)
+
+
+def record_prompt_request(*, method: str, prompt: str, allowed_names: frozenset[str]) -> None:
+    if method not in {"list", "get"}:
+        return
+    name = prompt if prompt in allowed_names else "other"
+    with _LOCK:
+        _PROMPT_REQUESTS_TOTAL[(method, name)] += 1
+
+
+def record_token_expiry_notice_issued(days: int) -> None:
+    threshold = "1d" if days == 1 else "7d" if 2 <= days <= 7 else "14d" if 8 <= days <= 14 else None
+    if threshold is None:
+        return
+    with _LOCK:
+        _TOKEN_EXPIRY_NOTICE_ISSUED_TOTAL[threshold] += 1
+
+
+def record_token_expiry_notice_skipped(outcome: str) -> None:
+    if outcome not in NOTICE_SKIP_OUTCOMES:
+        return
+    with _LOCK:
+        _TOKEN_EXPIRY_NOTICE_SKIPPED_TOTAL[outcome] += 1
 
 
 def record_tool_call(
@@ -611,6 +641,12 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 f"{endpoint}|{method}|{outcome}": count
                 for (endpoint, method, outcome), count in sorted(_TOOL_CALLS_TOTAL.items())
             },
+            "prompt_requests_total": {
+                f"{method}|{prompt}": count
+                for (method, prompt), count in sorted(_PROMPT_REQUESTS_TOTAL.items())
+            },
+            "token_expiry_notice_issued_total": dict(sorted(_TOKEN_EXPIRY_NOTICE_ISSUED_TOTAL.items())),
+            "token_expiry_notice_skipped_total": dict(sorted(_TOKEN_EXPIRY_NOTICE_SKIPPED_TOTAL.items())),
             "tool_call_latency_seconds": {
                 f"{endpoint}|{method}": asdict(aggregate)
                 for (endpoint, method), aggregate in sorted(_TOOL_CALL_LATENCY_SECONDS.items())
@@ -692,9 +728,22 @@ def render_prometheus_metrics() -> str:
     """Render current registry snapshot in Prometheus text exposition format."""
     snapshot = snapshot_service_metrics()
     lines = [
+        "# HELP vetmanager_prompt_requests_total Successful MCP prompt catalogue appearances (list) and prepared responses (get); neither proves delivery or reading.",
+        "# TYPE vetmanager_prompt_requests_total counter",
+        "# HELP vetmanager_token_expiry_notice_issued_total Expiry notices appended to prepared tool responses; delivery and reading are not observed.",
+        "# TYPE vetmanager_token_expiry_notice_issued_total counter",
+        "# HELP vetmanager_token_expiry_notice_skipped_total Successful tool responses without an expiry notice, by bounded reason; ineligible includes absent, inactive, timeless, or out-of-window tokens; claim_recent also includes a concurrent token change indistinguishable without another query.",
+        "# TYPE vetmanager_token_expiry_notice_skipped_total counter",
         "# HELP vetmanager_http_requests_total Total observed HTTP requests by route, method, and status code.",
         "# TYPE vetmanager_http_requests_total counter",
     ]
+    for key, count in snapshot["prompt_requests_total"].items():
+        method, prompt = key.split("|", 1)
+        lines.append(f"vetmanager_prompt_requests_total{_labels_text(method=method, prompt=prompt)} {count}")
+    for threshold, count in snapshot["token_expiry_notice_issued_total"].items():
+        lines.append(f"vetmanager_token_expiry_notice_issued_total{_labels_text(threshold=threshold, outcome='appended')} {count}")
+    for outcome, count in snapshot["token_expiry_notice_skipped_total"].items():
+        lines.append(f"vetmanager_token_expiry_notice_skipped_total{_labels_text(outcome=outcome)} {count}")
     for key, value in snapshot["http_requests_total"].items():
         route, method, status_code = key.split("|", 2)
         lines.append(
