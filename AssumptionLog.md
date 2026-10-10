@@ -2,6 +2,22 @@
 
 Журнал допущений, неясностей и архитектурных решений по проекту vetmanager-mcp.
 
+## 2026-10-10 — Этап 379.1: Kimi-review PRD — approved
+
+Второй сильный PRD-гейт (Kimi вместо Claude Opus, решение владельца). Лично
+сверил факты PRD с кодом и окружением: 21 prompt через `@mcp.prompt`
+(`prompts.py`); FastMCP **3.4.7** в тестовом образе, `Middleware` имеет
+`on_list_prompts`/`on_get_prompt` — выбранная точка инструментации реальна;
+`claim_expiry_notice` с `asyncio.timeout(0.5)` (`token_expiry_notice.py`:55,63)
+и граница `_add_expiry_notice` после успешного tools/call
+(`tool_error_tracking.py`:19,30,71) — как описано. Дизайн принимаю: allowlist
+имён из фактической регистрации (не второй рукописный список), неизвестное имя
+→ `other`, аргументы промптов никогда не labels; threshold-бакеты 1d/7d/14d;
+закрытый набор skipped-исходов без лишних SQL; метрики best effort внутри
+существующего deadline; HELP честно называет «подготовленная выдача», а не
+«прочтено». Косвенное покрытие instructions/next_action зафиксировано честно.
+Замечаний нет; 379.1 → done, 379.2 разрешён.
+
 ## 2026-10-10 — Этап 379.1: PRD наблюдаемости prompts и expiry notice
 
 **Проверенные факты и решение.** FastMCP 3.4.7 предоставляет `on_list_prompts` и `on_get_prompt`; `GetPromptRequestParams` несёт `name` и необязательные `arguments`. В `prompts.py` 21 статическая регистрация. В `tool_error_tracking.py` успешный `tools/call` вызывает notice при наличии request-local subject; `claim_expiry_notice` возвращает `None` как при пропуске rolling-24h claim, так и вне применимого окна, и ограничен 500 мс. PRD выбрал два hook с allowlist имён, отдельные счётчики подготовленной выдачи и ограниченных исходов пропуска, без персональных labels и без изменения claim/прав. `prompts/list` остаётся нефильтрованным. Для `/metrics` учтён отдельный `METRICS_AUTH_TOKEN`. Process-local счётчики обнуляются при рестарте; долгие окна остаются в DB-витринах.
