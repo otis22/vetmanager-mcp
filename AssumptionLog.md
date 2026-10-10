@@ -2,6 +2,20 @@
 
 Журнал допущений, неясностей и архитектурных решений по проекту vetmanager-mcp.
 
+## 2026-10-10 — Этап 378.2: Kimi-review committed diff `ca287aa` — approved
+
+Сильный committed-diff гейт (решение владельца: Kimi вместо Claude Opus).
+Лично разобрал diff: нормализация `agent` → `model` стоит до проверки и до БД
+(`agent_feedback_service.py`:743), `auto`/`user_complaint` на входе отклоняются,
+перечень в отказе канонический; `FEEDBACK_SOURCES`/CHECK constraint/витрины не
+тронуты; описание дополнено в `SPECIAL_TOOL_DESCRIPTIONS` и docstring без
+рекламы алиаса. Собственный красный прогон: удалил две строки нормализации —
+`test_source_is_stored_canonically[agent]` упал (`1 failed, 6 passed`), файл
+восстановлен из index; сторож реальный. Live-evidence изолировано: тест
+утверждает `DATABASE_URL` == временной SQLite под pytest `tmp_path`, прод-БД и
+витрина не затронуты, очищенные тела без значений клиники. Замечаний нет;
+378.2 → done, 378.3 (аудит + полный suite + выпуск) разрешён.
+
 ## 2026-10-10 — Этап 378.2: входной source и контракт report_problem
 
 **Решение.** Только `create_feedback_report` преобразует входной `agent` в `model` до проверки и сохранения. Отказ на иной source перечисляет канонические `model` и `human`; `auto` и `user_complaint` на входе по-прежнему запрещены. В фактическом `SPECIAL_TOOL_DESCRIPTIONS["report_problem"]` и docstring перечислены `model` (проблема от агента, default) и `human` (жалоба человека); алиас не рекламируется. `FEEDBACK_SOURCES`, CHECK constraint, rate limit, санитайзер, форма успеха и витрины не менялись.
