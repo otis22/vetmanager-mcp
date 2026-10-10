@@ -6,6 +6,7 @@ from pathlib import Path
 from fastmcp import FastMCP
 from fastmcp.prompts import Message
 from placeholder_resolution_guidance import AGENT_RESOLUTION_GUIDANCE
+from tool_access_registry import get_presets_granting_scope
 
 PROMPT_SCOPE_GUIDANCE = (
     "If a tool is denied because of token scopes, use a service token or access "
@@ -46,12 +47,33 @@ def register_prompts(mcp: FastMCP) -> None:
     @mcp.prompt
     def welcome_first_session() -> list[Message]:
         """Guide a clinic's first read and one approved Report AI report."""
+        report_presets = ", ".join(get_presets_granting_scope("report_ai.write"))
         return [Message(
             _bearer_runtime_prefix()
             + "Welcome the person and use this first-session route as a guide, not a 15-minute guarantee. "
             + "0. Check the available tools/list catalogue first; it is filtered by this token's rights. "
-            + "If Report AI tools are absent, explain this immediately, complete only the permitted read and human check below, "
-            + "and stop before create_report_ai_job. Do not work around access rights. "
+            + "Use the full report route only when the catalogue contains create_report_ai_job, "
+            + "get_report_ai_job, save_report_ai_job_as_report, and get_report_ai_job_data. "
+            + "If a candidate is offered, confirm_report_ai_job_candidate must also be available before confirming it. "
+            + "If any required tool is missing, use the read route below immediately; never try create_report_ai_job to test access. "
+            + "If tools/list is empty, fails, or cannot be trusted, do not infer access or start a report. "
+            + "If a later call returns scope denial despite a visible tool, stop and relay the denial's access guidance without retrying. "
+            + "Do not work around access rights. "
+            + "Even if the report chain is visible, if get_clinics or get_timesheets is missing, use the read route and do not start Report AI. "
+            + "Read route: choose a safe read tool actually present in tools/list for the person's question and call it. "
+            + "Prefer get_clinics plus get_timesheets if both are present: ask for the branch and date, "
+            + "then follow steps 1 and 2, including the clinic_id row check and pagination, and stop after the human check. "
+            + "If the pair is unavailable, choose another visible safe read tool, make one real data read, "
+            + "and explain what that result can and cannot establish. Never substitute a write tool or invent an API path. "
+            + "Show only returned data and check with the person whether it matches their expectation. "
+            + "If the read is denied or empty, no safe read tool is available, or the person cannot confirm the context, "
+            + "stop honestly without claiming real clinic data was shown. Preview is not evidence of real rows. "
+            + "For a report, ask the account owner for a suitable token with report_ai.write. "
+            + "Access presets granting report_ai.write, narrowest first (from the access registry): "
+            + report_presets + ". Never ask the person to paste a token into chat or promise a report already exists. "
+            + "If create_report_ai_job is visible but another chain tool is missing, name that missing tool, "
+            + "not a presumed lack of report_ai.write. Stop before create_report_ai_job on the read route. "
+            + "Full report route (only after the catalogue check and a successful human-checked read): "
             + "1. Call get_clinics to find available branches. If there are several, ask the person to choose their branch. "
             + "If the branch is unknown or access is denied, do not present a mixed schedule as their clinic's. "
             + "For today's date (YYYY-MM-DD), call get_timesheets(date=today, limit=100, "

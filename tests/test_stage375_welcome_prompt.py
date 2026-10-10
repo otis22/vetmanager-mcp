@@ -62,7 +62,7 @@ async def test_welcome_prompt_protocol_and_rendered_route():
         assert steps == sorted(steps)
         for phrase in (
             "tools/list catalogue first", "filtered by this token's rights",
-            "If Report AI tools are absent", "stop before create_report_ai_job",
+            "Read route: choose a safe read tool", "Stop before create_report_ai_job",
             "1. Call get_clinics", "filter=[{'property':'clinic_id','operator':'=','value':selected_clinic_id}]",
             "Check clinic_id on each returned row", "pagination and partial results",
             "ask the person whether it matches their expectation",
@@ -102,8 +102,8 @@ async def test_initialize_points_to_registered_prompt_and_keeps_prior_rules():
         assert "welcome_first_session" in instructions
         assert "welcome_first_session" in names
         for phrase in (
-            "doctors works today", "person's expectation", "clinic's real data",
-            "preview", "approve saving", "not verified real data", "report_problem",
+            "safe read route", "check the result with the person",
+            "preview", "approval before create and save", "not verified real data", "report_problem",
             "Do not paste raw tool response bodies", "<client>", "<staff>",
         ):
             assert phrase in instructions

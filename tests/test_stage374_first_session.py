@@ -46,8 +46,8 @@ async def test_instructions_keep_first_journey_and_privacy():
     from server import mcp
     async with Client(mcp) as client:
         text = client.initialize_result.instructions
-    for phrase in ("doctors works today", "person's expectation", "clinic's real data",
-                   "preview", "approve saving", "not verified real data", "report_problem",
+    for phrase in ("safe read route", "check the result with the person",
+                   "preview", "approval before create and save", "not verified real data", "report_problem",
                    "Do not paste raw tool response bodies"):
         assert phrase in text
     assert "welcome_first_session" in text

@@ -1056,7 +1056,7 @@ def render_prometheus_metrics() -> str:
 
     first_session_help = {
         "eligible_accounts": "Active accounts in completed 30-day cohort [now-30d, now-7d), measured only after rollout.",
-        "report_saved_7d_accounts": "Accounts in completed 30-day cohort with first observed successful Report AI save call within 7 days of first token; measured only after rollout.",
+        "report_saved_7d_accounts": "Accounts in completed 30-day cohort with first observed successful Report AI save call within 7 days of first token; read-only accounts normally have no save event but remain in the eligible denominator; measured only after rollout.",
         "tool_success_7d_accounts": "Accounts in completed 30-day cohort with first successful data tool within 7 days of first token; measured only after rollout.",
         "tool_time_median_seconds": "Median seconds to first successful data tool within 7 days for completed 30-day cohort; measured only after rollout.",
     }
