@@ -61,8 +61,10 @@ def test_first_session_live_devtr6(live_server_url, monkeypatch):
         assert initialized.status_code == 200
         body = _rpc(initialized)
         instructions = body["result"]["instructions"]
-        assert "doctors works today" in instructions
-        print("INITIALIZE", initialized.status_code, json.dumps({"instructions": instructions}, ensure_ascii=False))
+        assert "welcome_first_session" in instructions
+        assert "tools/list before any write" in instructions
+        assert "safe read route" in instructions
+        print("INITIALIZE", initialized.status_code, '{"welcome_pointer":true,"read_route":true}')
         engine = create_engine(normalize_database_url_for_migrations(os.environ["DATABASE_URL"]))
         with engine.connect() as conn:
             anchored, tool_success = conn.execute(text(
