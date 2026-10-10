@@ -2,6 +2,16 @@
 
 Журнал допущений, неясностей и архитектурных решений по проекту vetmanager-mcp.
 
+## 2026-10-10 — Этап 378.2: входной source и контракт report_problem
+
+**Решение.** Только `create_feedback_report` преобразует входной `agent` в `model` до проверки и сохранения. Отказ на иной source перечисляет канонические `model` и `human`; `auto` и `user_complaint` на входе по-прежнему запрещены. В фактическом `SPECIAL_TOOL_DESCRIPTIONS["report_problem"]` и docstring перечислены `model` (проблема от агента, default) и `human` (жалоба человека); алиас не рекламируется. `FEEDBACK_SOURCES`, CHECK constraint, rate limit, санитайзер, форма успеха и витрины не менялись.
+
+**Сторожа, принятые красными.** Исходный код: `5 failed, 2 passed` в `tests/test_stage378_feedback_source.py`. После реализации три контролируемые поломки с восстановлением файла после каждого запуска: удаление двух строк нормализации `agent` → `model` дало `1 failed` (`test_source_is_stored_canonically[agent]`); возврат старого текста `Invalid feedback source.` без перечня дал `3 failed` (неизвестный `system` и запретные `auto`, `user_complaint`); удаление нового текста `Source values` из `SPECIAL_TOOL_DESCRIPTIONS` дало `1 failed` (экспорт `mcp.list_tools()`/`to_mcp_tool()`). После восстановления фокусный прогон `tests/test_stage378_feedback_source.py`, `tests/test_stage378_live.py`, `tests/test_stage160_feedback_trigger_instructions.py`: exit 0, `13 passed`.
+
+**Живая проверка.** Upstream — `TEST_DOMAIN=devtr6`/`TEST_API_KEY` из `.env`; отдельный bearer production-стенд не использовался. Локальный HTTP MCP — `live_server_url`; до вызовов проверено, что `DATABASE_URL` точно равен пути `prepared_web_db` под pytest `tmp_path` (SQLite). `tools/list`: HTTP 200, описание `Source values: source='model' for a problem detected by the agent (default); source='human' for a complaint from a person.`; `auto` в перечне отсутствует, конец описания на месте. `tools/call report_problem`: `system` — HTTP 200, `isError=true`, тело `Invalid feedback source. Use model or human.`; `model` — HTTP 200, `isError=false`, очищенное тело `{ok: true, feedback_id: <redacted>, known_issue: null, message: feedback_saved}`, изолированная БД `source=model`; `human` — HTTP 200, `isError=false`, то же очищенное тело, БД `source=human`; `agent` — HTTP 200, `isError=false`, то же очищенное тело, БД `source=model`. Записи сверены по возвращённым `feedback_id`; временная SQLite удалена после evidence. Живой тест после коммита: exit 0, `1 passed`.
+
+**Остаток.** В 378.3 — аудит committed diff, Spark/Astra/Opus review по установленному гейту, полный mock и применимый real suite по финальному SHA, затем выпуск и CI. Push в 378.2 запрещён.
+
 ## 2026-10-10 — Этап 378.1: Kimi-review PRD — approved
 
 Второй сильный PRD-гейт (решение владельца: Kimi вместо Claude Opus). Лично

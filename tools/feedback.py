@@ -26,6 +26,9 @@ def register(mcp: FastMCP) -> None:
     ) -> dict:
         """Report a suspected Vetmanager MCP problem for developer triage.
 
+        Source values: source="model" for a problem detected by the agent (default);
+        source="human" for a complaint from a person.
+
         Call report_problem when a tool error is unclear or even when the tool call succeeded
         but the result does not let you answer the user well:
         empty result but relevant records were expected; response is missing fields needed to answer;

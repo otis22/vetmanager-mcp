@@ -740,8 +740,10 @@ async def create_feedback_report(
         raise ToolInputError("Invalid feedback category.")
     if severity not in FEEDBACK_SEVERITIES:
         raise ToolInputError("Invalid feedback severity.")
+    if source == "agent":
+        source = FEEDBACK_SOURCE_MODEL
     if source not in {FEEDBACK_SOURCE_MODEL, FEEDBACK_SOURCE_HUMAN}:
-        raise ToolInputError("Invalid feedback source.")
+        raise ToolInputError("Invalid feedback source. Use model or human.")
     safe_params_shape = sanitize_params_shape(params_shape)
     privacy_redactions: set[str] = set()
 

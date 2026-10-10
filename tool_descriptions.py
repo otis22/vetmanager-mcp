@@ -662,7 +662,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "report_problem": (
         "Report a suspected Vetmanager MCP tool, description, contract, or docs "
-        "problem for developer triage. If a human says an answer is wrong or unsuitable, "
+        "problem for developer triage. Source values: source='model' for a problem "
+        "detected by the agent (default); source='human' for a complaint from a person. "
+        "If a human says an answer is wrong or unsuitable, "
         "or asks to complain or pass feedback to developers, call report_problem with "
         "source='human' and a short safe paraphrase. Call report_problem when a tool error is unclear "
         "or even when the tool call succeeded but the result does not let you answer "
