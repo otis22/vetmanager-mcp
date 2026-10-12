@@ -2,6 +2,30 @@
 
 Журнал допущений, неясностей и архитектурных решений по проекту vetmanager-mcp.
 
+## 2026-10-12 — Этап 380.1: Kimi-review PRD — approved
+
+Второй сильный PRD-гейт (Kimi вместо Claude Opus, решение владельца). Особость
+хода: codex написал PRD и упёрся в лимит аккаунта ChatGPT (исчерпан 12.10,
+сброс 11.11.2026) — Spark/Terra гейты не выполнялись; компенсация — моя личная
+сверка всех фактов PRD с кодом. Проверено: `FILTER_FIELDS_BY_ENTITY["medicalCards"]`
+содержит `doctor_id` и `creator_id` (`filters.py`); сигнатура
+`get_medical_cards_by_date` и семантика `clinic_id > 0`
+(`tools/medical_card.py`:192,239) — как описано; обёртка ответа с
+`total/total_known/truncated/medical_cards_count/medical_cards`
+(`tools/medical_card.py`:258-271) — совпадает с заявленной; `get_medical_cards`
+всегда добавляет `patient_id` (`tools/medical_card.py`:179); фактическое
+описание tools/list из `tool_descriptions.py` (подтверждено этапом 378).
+Дизайн принимаю: typed optional параметры вместо нового инструмента; `0`/
+отрицательные/None повторяют семантику clinic_id; AND-сочетание с остальными
+фильтрами; обратное правило в описании `get_medical_cards`. Принятое
+наблюдение (не блокер): новые параметры не эхо-возвращаются, хотя clinic
+эхо-возвращает `clinic_filter_applied`/`clinic_id` — отклонение осознанное,
+минимальность ответа сохранена, описание инструмента компенсирует. Замечаний
+нет; 380.1 → done, 380.2 разрешён. Исполнителем 380.2 остаётся codex — при
+восстановлении квоты; иначе решение владельца.
+
+Co-Authored-By: Kimi CLI <noreply@moonshot.cn>
+
 ## 2026-10-10 — Этап 379.1: Kimi-review PRD — approved
 
 Второй сильный PRD-гейт (Kimi вместо Claude Opus, решение владельца). Лично
