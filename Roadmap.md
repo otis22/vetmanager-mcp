@@ -3,6 +3,39 @@
 Статусы: `todo` | `in_progress` | `supervisor_pending` | `done` | `stop`.
 Структуру проверяет `scripts/check_roadmap_structure.py`.
 
+## Этап 383. Коды отказов Report AI: unknown должен распадаться на классы — `todo`
+
+Источник: разбор failed-заданий 12.10.2026 (381, супервизор). За 30д 9 отказов
+записаны как `unknown`: сверка с исходниками ВМ (vetmanager-extjs master,
+release 0.549) показала, что все 16 семантических кодов (`JobException` +
+`ReportController`: VALIDATION_ERROR, FORBIDDEN, NOT_FOUND, INTENT_REJECTED,
+SANITIZER_REJECTED, LLM_UNAVAILABLE, QUEUE_TIMEOUT, PREVIEW_FAILED, SAVE_FAILED,
+INVALID_TRANSITION, REPORT_NOT_ALLOWED_FOR_REST, CONSTRUCTOR_BUSY,
+RUN_RATE_LIMITED, FILE_*) уже в `REPORT_AI_OBSERVED_CODES` — новых кодов нет.
+`unknown` = ответы ВМ без структурированного `data.error_code` (HTTP 4xx/5xx
+инфра-уровня) или пустой код (`vetmanager_client.py` пробрасывает
+`error_code=None`). Сейчас они сливаются в один непонятный класс, а событие
+`report_ai_outcome_code` в логе не несёт account_id/job_id — ретроспектива по
+конкретному отказу невозможна. Подтипы PREVIEW_FAILED (у ВМ есть
+SqlErrorClassifier: UNKNOWN_COLUMN/UNKNOWN_TABLE/SYNTAX/OTHER и
+ERROR_KIND_LLM_UNAVAILABLE) запрошены у ВМ отдельным полем — VM-side, ждать в
+этом этапе нечего.
+
+- 383.1 PRD: (a) расщепить `unknown` на bounded-классы по наблюдаемым фактам
+  (например `no_code_http_5xx`, `no_code_http_4xx`, `no_code_no_status`) —
+  классы из нашего `status_code`, а не из текста ВМ; low-cardinality сторож;
+  (b) в лог-событие `report_ai_outcome_code` добавить account_id и job_id
+  (числа, без ПД) при наличии; (c) сверка словаря с кодом ВМ — зафиксировать в
+  PRD процедуру: при появлении у ВМ нового кода он виден как
+  `unlisted_code_seen` (счётчик), а не тонет в unknown. PRD с ревью по схеме
+  моделей. — `todo`
+- 383.2 Реализация: сторожа только красными (ответ ВМ 500 без тела → класс
+  `no_code_http_5xx`; код вне словаря → `unlisted_code_seen` + не терять
+  факт); live-проверка на devtr6 не требует слома ВМ — достаточно
+  контрактных тестов, живую строку лога с account_id/job_id приложить. — `todo`
+- 383.3 Аудит diff, сильное ревью, полный прогон, AssumptionLog, выпуск с
+  зелёным CI. — `todo`
+
 ## Этап 382. Контрольная точка метрик 15–17.10: вердикт по пассивным выпускам 373–379 — `todo`
 
 Источник: план супервизора 10–12.10.2026. Выпуски 373 (empty preview guidance),
@@ -39,7 +72,7 @@
   лечащий врач карты, creator_id — автор записи; сочетаются с date/period и
   clinic_id); обновить описание в `tool_descriptions.py`; сверить покрытие со
   смежным `get_medical_cards` (принимает произвольный filter — описать, когда
-  какой маршрут). PRD с ревью по схеме моделей. — `todo`
+  какой маршрут). PRD с ревью по схеме моделей. PRD на ревью супервизора. — `in_progress`
 - 380.2 Реализация: сторожа только красными; live-проверка на devtr6 — запрос
   с doctor_id возвращает только карты этого врача, код и тело ответа приложить
   в AssumptionLog. — `todo`
@@ -497,25 +530,6 @@ ingestion endpoint (`Network is unreachable`); сам MCP продолжил р�
   внешнее приложение клиники и что помощнику разрешено сгенерировать. — `done`
 - 364.2 Правка FAQ и, если решено, инструкции агенту; сторож согласованности FAQ с инструкцией;
   визуальный гейт, review, выпуск с зелёным CI. — `done`
-
-## Этап 363. Средний чек на больших выборках и коды ошибок Report AI в метриках — `done`
-
-Источник: полное супер-ревью 03.10.2026, SR360-3 и SR360-6 (medium).
-(1) `get_average_invoice` разрешает бюджет 1000 страниц, но общий построитель запроса отклоняет
-`offset > 10000`. Выборка ровно на 10 100 счетов требует запроса с `offset=10100` и падает,
-хотя бюджет не исчерпан. Клиника с ~30 счетами в день упирается в это на годовом периоде.
-Продолжение этапа 351. (2) Если ответ confirm/reject/save Report AI содержит упавшее задание,
-код ошибки не попадает в `vetmanager_report_ai_outcomes_by_code_total`; последующий опрос его
-тоже может пропустить, потому что первое наблюдение уже закрыло ключ задания.
-
-- 363.1 Сверить фактический предел `offset` у REST Vetmanager (vetmanager-extjs после `git pull`
-  и дымный вызов на devtr6); PRD для внутреннего полного прохода без публичного лимита или
-  keyset-пагинации; ревью. — `done`
-- 363.2 Красные сторожа: выборка 10 100 и больше через настоящий построитель запроса; упавшее
-  задание в ответе confirm/reject/save учитывается в метрике один раз и не дублируется опросом;
-  исправление. — `done`
-- 363.3 Review, выпуск с зелёным CI. — `done`
-
 
 ## Этап 358. Превью строк Report AI до сохранения — `todo`
 
