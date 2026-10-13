@@ -13,9 +13,12 @@ MIB = 1024**2
 
 def mcp_limit_bytes() -> int:
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
-    value = compose["services"]["mcp"]["deploy"]["resources"]["limits"]["memory"]
     suffixes = {"M": MIB, "G": 1024 * MIB}
-    return int(value[:-1]) * suffixes[value[-1].upper()]
+    values = [
+        compose["services"][name]["deploy"]["resources"]["limits"]["memory"]
+        for name in ("mcp", "mcp2", "mcp3")
+    ]
+    return sum(int(value[:-1]) * suffixes[value[-1].upper()] for value in values)
 
 
 def fits_three_workers(*, peak_rss_bytes: int, reserve_bytes: int = 512 * MIB,

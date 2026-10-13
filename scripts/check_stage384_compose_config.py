@@ -11,7 +11,9 @@ MIB = 1024**2
 EXPECTED = {
     "postgres": (1, 1024 * MIB),
     "redis": (0.5, 512 * MIB),
-    "mcp": (3, 2048 * MIB),
+    "mcp": (1, 640 * MIB),
+    "mcp2": (1, 640 * MIB),
+    "mcp3": (1, 640 * MIB),
     "prometheus": (0.5, 768 * MIB),
     "grafana": (0.5, 512 * MIB),
 }

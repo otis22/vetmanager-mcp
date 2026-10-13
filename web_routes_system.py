@@ -17,7 +17,7 @@ from landing_page import render_landing_page
 from observability_logging import RUNTIME_LOGGER, SECURITY_LOGGER
 from request_context import get_request_context
 from service_metrics import PROMETHEUS_CONTENT_TYPE, record_auth_failure, render_prometheus_metrics
-from shutdown_state import is_draining
+from shutdown_state import in_flight_writes, is_draining
 
 # Stage 153 (F15): bounded timeout so /readyz never hangs the orchestrator if
 # the storage probe stalls. Module-level so tests can monkeypatch.
@@ -65,7 +65,8 @@ def register_system_routes(mcp, *, observed_route, html_response, json_response,
             return json_response(
                 request,
                 {"status": "degraded", "probe": "readiness", "service": "vetmanager-mcp",
-                 "checks": {"storage": {"status": "failed", "reason": "shutting_down"}}},
+                 "checks": {"storage": {"status": "failed", "reason": "shutting_down"}},
+                 "in_flight_writes": in_flight_writes()},
                 status_code=503,
             )
         # Read late-bound module attr so tests can monkeypatch the probe.

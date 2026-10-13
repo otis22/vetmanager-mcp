@@ -29,6 +29,22 @@ class StorageError(RuntimeError):
     """Raised when the persistence layer cannot be initialized safely."""
 
 
+def validate_mcp_pool_budget() -> tuple[int, int]:
+    """Bound the combined PostgreSQL connections of the three MCP slots."""
+    slots = os.environ.get("MCP_WORKER_SLOTS")
+    if slots is None:
+        return (env_int("DB_POOL_SIZE", 10, positive_only=False),
+                env_int("DB_MAX_OVERFLOW", 20, positive_only=False))
+    try:
+        pool_size = int(os.environ["DB_POOL_SIZE"])
+        max_overflow = int(os.environ["DB_MAX_OVERFLOW"])
+    except (KeyError, ValueError) as exc:
+        raise StorageError("Three-slot PostgreSQL pool settings must be integers.") from exc
+    if slots != "3" or pool_size <= 0 or max_overflow < 0 or 3 * (pool_size + max_overflow) > 40:
+        raise StorageError("Three-slot PostgreSQL pool budget exceeds 40 or has invalid settings.")
+    return pool_size, max_overflow
+
+
 class Base(DeclarativeBase):
     """Declarative base for future bearer-service models."""
 
@@ -84,14 +100,14 @@ def create_database_engine(database_url: str | None = None) -> AsyncEngine:
     }
 
     if normalized_url.startswith("postgresql"):
+        pool_size, max_overflow = validate_mcp_pool_budget()
         kwargs.update({
             # Этап 285: env_int терпит пустое значение и возвращает дефолт;
             # сырой int("") ронял бы старт при `DB_POOL_SIZE=` в .env.
-            # positive_only отключён: ноль здесь осмыслен — у SQLAlchemy это
-            # «без ограничения» для pool_size и «без запаса» для overflow,
-            # и раньше сырой int() такое значение принимал.
-            "pool_size": env_int("DB_POOL_SIZE", 10, positive_only=False),
-            "max_overflow": env_int("DB_MAX_OVERFLOW", 20, positive_only=False),
+            # Для single-process legacy конфигурации ноль остаётся допустим;
+            # режим трёх slot запрещает pool_size=0 через startup guard.
+            "pool_size": pool_size,
+            "max_overflow": max_overflow,
             "pool_timeout": 30,
             "pool_recycle": 1800,
         })
@@ -119,6 +135,7 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 
 async def initialize_storage() -> None:
     """Validate the configured DB connection and bootstrap local SQLite path."""
+    validate_mcp_pool_budget()
     engine = get_engine()
     try:
         async with engine.begin() as conn:

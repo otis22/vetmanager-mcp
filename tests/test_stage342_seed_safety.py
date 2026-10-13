@@ -54,7 +54,9 @@ def test_ki45_seed_uses_applied_stage332_configuration():
     assert '_stage332_config("ki45-playbook.json")' in seed_source
     dockerfile = (ROOT / "Dockerfile").read_text()
     assert "FROM base AS production\n\nCOPY . ." in dockerfile
-    assert not (ROOT / ".dockerignore").exists()
+    dockerignore = (ROOT / ".dockerignore").read_text().splitlines()
+    assert "!artifacts/known-issues/stage-332/**" in dockerignore
+    assert "artifacts/" not in dockerignore
 
 
 @pytest.mark.asyncio

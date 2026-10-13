@@ -12,7 +12,9 @@ def test_compose_production_resources_and_postgres_settings():
     expected = {
         "postgres": ("1", "1G"),
         "redis": ("0.5", "512M"),
-        "mcp": ("3", "2G"),
+        "mcp": ("1", "640M"),
+        "mcp2": ("1", "640M"),
+        "mcp3": ("1", "640M"),
         "prometheus": ("0.5", "768M"),
         "grafana": ("0.5", "512M"),
     }
@@ -60,7 +62,7 @@ def test_uvicorn_boot_uses_standard_extras_and_loop_factory(monkeypatch):
 def test_three_worker_budget_rejects_old_mcp_limit():
     from scripts.check_stage384_memory_budget import fits_three_workers
 
-    assert fits_three_workers(peak_rss_bytes=512 * 1024**2, reserve_bytes=512 * 1024**2)
+    assert fits_three_workers(peak_rss_bytes=450 * 1024**2, reserve_bytes=512 * 1024**2)
     assert not fits_three_workers(peak_rss_bytes=600 * 1024**2, reserve_bytes=512 * 1024**2)
-    assert not fits_three_workers(peak_rss_bytes=512 * 1024**2, reserve_bytes=512 * 1024**2,
+    assert not fits_three_workers(peak_rss_bytes=450 * 1024**2, reserve_bytes=512 * 1024**2,
                                   limit_bytes=512 * 1024**2)

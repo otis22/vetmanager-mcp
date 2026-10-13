@@ -51,7 +51,7 @@ services:
     profiles:
       - production
 
-  mcp:
+  mcp: &mcp_slot
     build:
       context: .
       target: production
@@ -123,8 +123,9 @@ services:
       - REPORT_AI_WAIT_ENABLED
       - STREAMABLE_HTTP_DRAIN_ENABLED
       # База и хранилище
-      - DB_POOL_SIZE
-      - DB_MAX_OVERFLOW
+      - MCP_WORKER_SLOTS=3
+      - DB_POOL_SIZE=8
+      - DB_MAX_OVERFLOW=5
       - REPORT_EXPORT_DIR
       - REPORT_EXPORT_ALLOWED_ORIGINS
       # Журналы и трекинг ошибок
@@ -138,8 +139,7 @@ services:
     ports:
       - "127.0.0.1:${PORT:-8000}:8000"
     volumes:
-      - .:/app
-      - mcp-data:/app/data  # SQLite fallback for local dev
+      - mcp-data:/app/data
       - mcp-logs:/var/log/vetmanager-mcp
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
@@ -159,8 +159,22 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '3'
-          memory: 2G
+          cpus: '1'
+          memory: 640M
+
+  mcp2:
+    <<: *mcp_slot
+    ports:
+      - "127.0.0.1:8001:8000"
+    profiles:
+      - production
+
+  mcp3:
+    <<: *mcp_slot
+    ports:
+      - "127.0.0.1:8002:8000"
+    profiles:
+      - production
 
   prometheus:
     image: prom/prometheus:v2.55.1
