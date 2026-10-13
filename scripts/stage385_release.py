@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Stage a versioned release and freeze a single-slot pre-385 rollback manifest."""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import os
+from pathlib import Path
+import re
+import shlex
+import subprocess
+
+import yaml
+
+
+SHA = re.compile(r"[0-9a-f]{40,64}\Z")
+IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
+EXCLUDES = (".git/", ".venv/", ".cursor/", "__pycache__/",
+            ".pytest_cache/", ".env", "data/", "logs/")
+
+
+def _run(args: list[str]) -> None:
+    subprocess.run(args, check=True)
+
+
+def stage_remote_release(checkout: Path, ssh_target: str,
+                         remote_dir: str, sha: str) -> str:
+    """Rsync only into a fresh SHA directory; leave the live checkout untouched."""
+    if not SHA.fullmatch(sha):
+        raise ValueError("Release SHA must be a full lowercase Git SHA")
+    if not remote_dir.startswith("/") or ".." in Path(remote_dir).parts or "\n" in remote_dir:
+        raise ValueError("Remote directory must be an absolute safe path")
+    if not ssh_target or any(char.isspace() for char in ssh_target):
+        raise ValueError("Invalid SSH target")
+    release_dir = f"{remote_dir.rstrip('/')}/releases/{sha}"
+    _run(["ssh", ssh_target, f"mkdir -p -- {shlex.quote(release_dir)}"])
+    _run(["rsync", "-az", "--delete", *(f"--exclude={item}" for item in EXCLUDES),
+          f"{checkout.resolve()}/", f"{ssh_target}:{release_dir}/"])
+    return release_dir
+
+
+def _volume_target(volume: object) -> str:
+    if isinstance(volume, dict):
+        return str(volume.get("target", ""))
+    if isinstance(volume, str):
+        fields = volume.split(":")
+        return fields[1] if len(fields) > 1 else ""
+    raise ValueError("Unknown Compose volume syntax")
+
+
+def _is_code_bind(volume: object) -> bool:
+    target = _volume_target(volume)
+    if target == "/app":
+        return True
+    if not target.startswith("/app/"):
+        return False
+    if isinstance(volume, dict):
+        source = str(volume.get("source", ""))
+        return volume.get("type") == "bind" or source.startswith((".", "/"))
+    source = volume.split(":", 1)[0]
+    return source.startswith((".", "/"))
+
+
+def make_rollback_manifest(compose: dict, pre385_image_id: str) -> dict:
+    if not IMAGE_ID.fullmatch(pre385_image_id):
+        raise ValueError("Rollback image must be a pinned sha256 image ID")
+    manifest = copy.deepcopy(compose)
+    services = manifest.get("services")
+    if not isinstance(services, dict) or "mcp" not in services:
+        raise ValueError("Compose manifest has no MCP service")
+    services.pop("mcp2", None)
+    services.pop("mcp3", None)
+    mcp = services["mcp"]
+    mcp.pop("build", None)
+    mcp["image"] = pre385_image_id
+    volumes = mcp.get("volumes", [])
+    mcp["volumes"] = [volume for volume in volumes if not _is_code_bind(volume)]
+    if not any(_volume_target(volume) == "/app/data" for volume in mcp["volumes"]):
+        raise ValueError("Rollback manifest must retain shared /app/data")
+    environment = mcp.get("environment", [])
+    if not isinstance(environment, list):
+        raise ValueError("MCP environment must be Compose list syntax")
+    mcp["environment"] = [
+        "MCP_WORKER_SLOTS=1" if str(item).startswith("MCP_WORKER_SLOTS=") else item
+        for item in environment
+    ]
+    return manifest
+
+
+def write_rollback_manifest(output: Path, manifest: dict) -> None:
+    """Create once so a later checkout cannot silently rewrite rollback evidence."""
+    fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            yaml.safe_dump(manifest, handle, sort_keys=False, allow_unicode=True)
+    except BaseException:
+        output.unlink(missing_ok=True)
+        raise
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    commands = parser.add_subparsers(dest="command", required=True)
+    stage = commands.add_parser("stage")
+    stage.add_argument("checkout", type=Path)
+    stage.add_argument("ssh_target")
+    stage.add_argument("remote_dir")
+    stage.add_argument("sha")
+    rollback = commands.add_parser("rollback-manifest")
+    rollback.add_argument("compose_file", type=Path)
+    rollback.add_argument("pre385_image_id")
+    rollback.add_argument("output", type=Path)
+    args = parser.parse_args()
+    if args.command == "stage":
+        print(stage_remote_release(args.checkout, args.ssh_target, args.remote_dir, args.sha))
+    else:
+        source = yaml.safe_load(args.compose_file.read_text())
+        write_rollback_manifest(args.output,
+                                make_rollback_manifest(source, args.pre385_image_id))
+        print(args.output)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

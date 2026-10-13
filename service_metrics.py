@@ -11,6 +11,7 @@ from typing import DefaultDict
 
 from observability_logging import RUNTIME_LOGGER
 from request_cache import REQUEST_CACHE
+import shared_metric_counters
 
 PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
@@ -40,12 +41,40 @@ _SENTRY_DELIVERY_LOST_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _SENTRY_DELIVERY_ACCEPTED_TOTAL = 0
 
 
+def _record_shared_counter(family: str, label_key: str, count: int = 1) -> None:
+    """Metric delivery cannot change a completed upstream operation's result."""
+    try:
+        backend = shared_metric_counters.get_backend()
+        if backend is not None:
+            backend.increment(family, label_key, count)
+    except Exception as exc:
+        RUNTIME_LOGGER.warning(
+            "Shared metric event lost",
+            extra={"event_name": "shared_metric_event_lost",
+                   "metric_family": family, "error_class": type(exc).__name__},
+        )
+
+
+def _record_shared_latency(family: str, label_key: str, duration_seconds: float) -> None:
+    try:
+        backend = shared_metric_counters.get_backend()
+        if backend is not None:
+            backend.observe(family, label_key, duration_seconds)
+    except Exception as exc:
+        RUNTIME_LOGGER.warning(
+            "Shared metric event lost",
+            extra={"event_name": "shared_metric_event_lost",
+                   "metric_family": family, "error_class": type(exc).__name__},
+        )
+
+
 def record_sentry_delivery_lost(reason: str, count: int = 1) -> None:
     """Count failed error-item deliveries using a bounded transport reason."""
     if reason not in {"dns", "route", "timeout", "tls", "network_other", "sdk_error", "http_error", "rate_limited", "queue_overflow", "backoff"}:
         reason = "network_other"
     with _LOCK:
         _SENTRY_DELIVERY_LOST_TOTAL[reason] += count
+    _record_shared_counter("sentry_delivery_lost_total", reason, count)
 
 
 def record_sentry_delivery_accepted(count: int) -> None:
@@ -53,6 +82,7 @@ def record_sentry_delivery_accepted(count: int) -> None:
     global _SENTRY_DELIVERY_ACCEPTED_TOTAL
     with _LOCK:
         _SENTRY_DELIVERY_ACCEPTED_TOTAL += count
+    _record_shared_counter("sentry_delivery_accepted_total", "", count)
 # Этап 283.1. Знаменатель для «инжекция сработала 0 раз». Без него ноль не
 # читается: это либо «отказов не было», либо «было N и не совпало ни разу».
 # В Sentry такие отказы не летят — они обработаны, — поэтому счёт ведётся здесь.
@@ -235,6 +265,7 @@ def record_business_event(event_name: str) -> None:
         return
     with _LOCK:
         _BUSINESS_EVENTS_TOTAL[event_name] += 1
+    _record_shared_counter("business_events_total", event_name)
 
 
 def record_http_request(*, route: str, method: str, status_code: int, duration_seconds: float) -> None:
@@ -243,18 +274,23 @@ def record_http_request(*, route: str, method: str, status_code: int, duration_s
     with _LOCK:
         _HTTP_REQUESTS_TOTAL[(route, normalized_method, status_code)] += 1
         _HTTP_REQUEST_LATENCY_SECONDS[(route, normalized_method)].observe(duration_seconds)
+    _record_shared_counter("http_requests_total", f"{route}|{normalized_method}|{status_code}")
+    _record_shared_latency("http_request_latency_seconds", f"{route}|{normalized_method}",
+                           duration_seconds)
 
 
 def record_auth_failure(*, source: str, reason: str) -> None:
     """Record an auth failure grouped by source and machine-readable reason."""
     with _LOCK:
         _AUTH_FAILURES_TOTAL[(source, reason)] += 1
+    _record_shared_counter("auth_failures_total", f"{source}|{reason}")
 
 
 def record_upstream_failure(*, target: str, reason: str) -> None:
     """Record a failed upstream interaction grouped by target and reason."""
     with _LOCK:
         _UPSTREAM_FAILURES_TOTAL[(target, reason)] += 1
+    _record_shared_counter("upstream_failures_total", f"{target}|{reason}")
 
 
 KNOWN_ISSUE_LOOKUP_OUTCOMES = ("matched", "no_match", "lookup_failed")
@@ -285,10 +321,10 @@ def record_known_issue_lookup(*, tool_name: str, outcome: str, kind: str = "fail
             extra={"event_name": "known_issue_lookup_kind_unknown", "dropped": kind},
         )
         return
+    safe_tool = _TOOL_LABEL_ALLOWED_RE.sub("_", tool_name or "") or "unknown"
     with _LOCK:
-        _KNOWN_ISSUE_LOOKUPS_TOTAL[
-            (_TOOL_LABEL_ALLOWED_RE.sub("_", tool_name or "") or "unknown", outcome, kind)
-        ] += 1
+        _KNOWN_ISSUE_LOOKUPS_TOTAL[(safe_tool, outcome, kind)] += 1
+    _record_shared_counter("known_issue_lookups_total", f"{safe_tool}|{outcome}|{kind}")
 
 
 def record_upstream_request(
@@ -303,6 +339,9 @@ def record_upstream_request(
     with _LOCK:
         _UPSTREAM_REQUESTS_TOTAL[(target, status)] += 1
         _UPSTREAM_LATENCY_SECONDS[(target, status)].observe(duration_seconds)
+    _record_shared_counter("upstream_requests_total", f"{target}|{status}")
+    _record_shared_latency("upstream_request_latency_seconds", f"{target}|{status}",
+                           duration_seconds)
 
 
 async def instrument_call(
@@ -356,6 +395,7 @@ def record_prompt_request(*, method: str, prompt: str, allowed_names: frozenset[
     name = prompt if prompt in allowed_names else "other"
     with _LOCK:
         _PROMPT_REQUESTS_TOTAL[(method, name)] += 1
+    _record_shared_counter("prompt_requests_total", f"{method}|{name}")
 
 
 def record_token_expiry_notice_issued(days: int) -> None:
@@ -364,6 +404,7 @@ def record_token_expiry_notice_issued(days: int) -> None:
         return
     with _LOCK:
         _TOKEN_EXPIRY_NOTICE_ISSUED_TOTAL[threshold] += 1
+    _record_shared_counter("token_expiry_notice_issued_total", threshold)
 
 
 def record_token_expiry_notice_skipped(outcome: str) -> None:
@@ -371,6 +412,7 @@ def record_token_expiry_notice_skipped(outcome: str) -> None:
         return
     with _LOCK:
         _TOKEN_EXPIRY_NOTICE_SKIPPED_TOTAL[outcome] += 1
+    _record_shared_counter("token_expiry_notice_skipped_total", outcome)
 
 
 def record_tool_call(
@@ -398,6 +440,10 @@ def record_tool_call(
         _TOOL_CALL_LATENCY_SECONDS[(labeled_endpoint, normalized_method)].observe(
             duration_seconds
         )
+    _record_shared_counter("tool_calls_total",
+                           f"{labeled_endpoint}|{normalized_method}|{outcome}")
+    _record_shared_latency("tool_call_latency_seconds", f"{labeled_endpoint}|{normalized_method}",
+                           duration_seconds)
 
 
 def _sanitize_tool_endpoint_label(endpoint: str) -> str:
@@ -421,20 +467,22 @@ def record_token_preset_issued(preset: str) -> None:
     """Increment token issuance metric for one access preset."""
     with _LOCK:
         _TOKEN_PRESET_ISSUED_TOTAL[preset] += 1
+    _record_shared_counter("token_preset_issued_total", preset)
 
 
 def record_placeholder_argument_rejection(tool_name: str) -> None:
     """Аргумент инструмента содержал адресный плейсхолдер и был отклонён."""
+    safe_tool = _TOOL_LABEL_ALLOWED_RE.sub("_", tool_name or "") or "unknown"
     with _LOCK:
-        _PLACEHOLDER_ARGUMENT_REJECTIONS_TOTAL[
-            _TOOL_LABEL_ALLOWED_RE.sub("_", tool_name or "") or "unknown"
-        ] += 1
+        _PLACEHOLDER_ARGUMENT_REJECTIONS_TOTAL[safe_tool] += 1
+    _record_shared_counter("placeholder_argument_rejections_total", safe_tool)
 
 
 def record_rate_limit_backend_degraded(reason: str) -> None:
     """Increment Redis rate-limit backend degradation counter."""
     with _LOCK:
         _RATE_LIMIT_BACKEND_DEGRADED_TOTAL[reason] += 1
+    _record_shared_counter("rate_limit_backend_degraded_total", reason)
 
 
 def record_sanitizer_failure() -> None:
@@ -442,18 +490,21 @@ def record_sanitizer_failure() -> None:
     with _LOCK:
         global _SANITIZER_FAILURES_TOTAL
         _SANITIZER_FAILURES_TOTAL += 1
+    _record_shared_counter("sanitizer_failures_total", "")
 
 
 def record_report_export_download(*, outcome: str) -> None:
     """Count one attempt to turn a Vetmanager export into a served file."""
     with _LOCK:
         _REPORT_EXPORT_DOWNLOAD_TOTAL[outcome] += 1
+    _record_shared_counter("report_export_download_total", outcome)
 
 
 def record_report_export_serve(*, outcome: str) -> None:
     """Count one request to the public export route."""
     with _LOCK:
         _REPORT_EXPORT_SERVE_TOTAL[outcome] += 1
+    _record_shared_counter("report_export_serve_total", outcome)
 
 
 def record_rest_unmapped_read() -> None:
@@ -466,6 +517,7 @@ def record_rest_unmapped_read() -> None:
     with _LOCK:
         global _REST_UNMAPPED_READ_TOTAL
         _REST_UNMAPPED_READ_TOTAL += 1
+    _record_shared_counter("rest_unmapped_read_total", "")
 
 
 def record_report_ai_long_queued_poll() -> None:
@@ -473,6 +525,7 @@ def record_report_ai_long_queued_poll() -> None:
     with _LOCK:
         global _REPORT_AI_LONG_QUEUED_POLLS_TOTAL
         _REPORT_AI_LONG_QUEUED_POLLS_TOTAL += 1
+    _record_shared_counter("report_ai_long_queued_polls_total", "")
 
 
 def record_report_ai_stage_stall_poll() -> None:
@@ -486,12 +539,14 @@ def record_report_ai_stage_stall_poll() -> None:
     with _LOCK:
         global _REPORT_AI_STAGE_STALL_POLLS_TOTAL
         _REPORT_AI_STAGE_STALL_POLLS_TOTAL += 1
+    _record_shared_counter("report_ai_stage_stall_polls_total", "")
 
 
 def record_report_ai_job_created(*, outcome: str) -> None:
     """Record one Report AI job creation attempt with a bounded outcome."""
     with _LOCK:
         _REPORT_AI_JOBS_TOTAL[outcome] += 1
+    _record_shared_counter("report_ai_jobs_total", outcome)
 
 
 def record_report_ai_save_attempt(*, outcome: str) -> None:
@@ -503,12 +558,14 @@ def record_report_ai_save_attempt(*, outcome: str) -> None:
     )
     with _LOCK:
         _REPORT_AI_SAVE_ATTEMPTS_TOTAL[safe_outcome] += 1
+    _record_shared_counter("report_ai_save_attempts_total", safe_outcome)
 
 
 def record_report_ai_job_transition(*, from_stage: str, to_stage: str) -> None:
     """Record one locally observed Report AI lifecycle transition."""
     with _LOCK:
         _REPORT_AI_JOB_TRANSITIONS_TOTAL[(from_stage, to_stage)] += 1
+    _record_shared_counter("report_ai_job_transitions_total", f"{from_stage}|{to_stage}")
 
 
 def record_report_ai_job_terminal_outcome(*, outcome: str, duration_seconds: float) -> None:
@@ -516,6 +573,9 @@ def record_report_ai_job_terminal_outcome(*, outcome: str, duration_seconds: flo
     with _LOCK:
         _REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL[outcome] += 1
         _REPORT_AI_JOB_DURATION_SECONDS[outcome].observe(max(0.0, duration_seconds))
+    _record_shared_counter("report_ai_job_terminal_outcomes_total", outcome)
+    _record_shared_latency("report_ai_job_duration_seconds", outcome,
+                           max(0.0, duration_seconds))
 
 
 def record_report_ai_empty_preview_guidance(*, first: bool) -> None:
@@ -525,6 +585,9 @@ def record_report_ai_empty_preview_guidance(*, first: bool) -> None:
         _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_ISSUED_TOTAL += 1
         if first:
             _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_JOBS_TOTAL += 1
+    _record_shared_counter("report_ai_empty_preview_guidance_issued_total", "")
+    if first:
+        _record_shared_counter("report_ai_empty_preview_guidance_jobs_total", "")
 
 
 def record_report_ai_empty_preview_outcome(*, outcome: str) -> None:
@@ -532,18 +595,22 @@ def record_report_ai_empty_preview_outcome(*, outcome: str) -> None:
         raise ValueError("unsupported empty-preview outcome")
     with _LOCK:
         _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_OUTCOMES_TOTAL[outcome] += 1
+    _record_shared_counter("report_ai_empty_preview_guidance_outcomes_total", outcome)
 
 
 def record_report_ai_job_stage_duration(*, stage: str, duration_seconds: float) -> None:
     """Record one completed locally observed Report AI stage duration."""
     with _LOCK:
         _REPORT_AI_JOB_STAGE_DURATION_SECONDS[stage].observe(max(0.0, duration_seconds))
+    _record_shared_latency("report_ai_job_stage_duration_seconds", stage,
+                           max(0.0, duration_seconds))
 
 
 def record_report_ai_export(*, operation: str, outcome: str) -> None:
     """Record one Report AI-related export start or file-poll outcome."""
     with _LOCK:
         _REPORT_AI_EXPORTS_TOTAL[(operation, outcome)] += 1
+    _record_shared_counter("report_ai_exports_total", f"{operation}|{outcome}")
 
 
 def record_report_ai_outcome_code(*, operation: str, code: str | None,
@@ -553,6 +620,7 @@ def record_report_ai_outcome_code(*, operation: str, code: str | None,
     safe_code = code if isinstance(code, str) and code in REPORT_AI_OBSERVED_CODES else "unknown"
     with _LOCK:
         _REPORT_AI_OUTCOMES_BY_CODE_TOTAL[(safe_operation, safe_code)] += 1
+    _record_shared_counter("report_ai_outcomes_by_code_total", f"{safe_operation}|{safe_code}")
     RUNTIME_LOGGER.info(
         "report_ai_outcome_code",
         extra={"event_name": "report_ai_outcome_code", "operation": safe_operation,
@@ -564,6 +632,8 @@ def record_report_ai_export_duration(*, outcome: str, duration_seconds: float) -
     """Record duration from a successful export start to its observed outcome."""
     with _LOCK:
         _REPORT_AI_EXPORT_DURATION_SECONDS[outcome].observe(max(0.0, duration_seconds))
+    _record_shared_latency("report_ai_export_duration_seconds", outcome,
+                           max(0.0, duration_seconds))
 
 
 def set_account_last_request_age_hours(values: dict[int, float]) -> None:
@@ -606,7 +676,7 @@ def set_first_session_gauges(values: dict[str, int | float | None]) -> None:
 def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, int | float]]]:
     """Return a stable JSON-serializable snapshot of current service metrics."""
     with _LOCK:
-        return {
+        snapshot = {
             "http_requests_total": {
                 f"{route}|{method}|{status_code}": count
                 for (route, method, status_code), count in sorted(_HTTP_REQUESTS_TOTAL.items())
@@ -710,6 +780,15 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 )
             },
         }
+    try:
+        backend = shared_metric_counters.get_backend()
+        if backend is not None:
+            snapshot.update(backend.snapshot())
+    except Exception as exc:
+        raise shared_metric_counters.SharedMetricsUnavailable(
+            "Shared metrics are unavailable"
+        ) from exc
+    return snapshot
 
 
 def _escape_label_value(value: object) -> str:
@@ -965,7 +1044,7 @@ def render_prometheus_metrics() -> str:
         lines.append(f"vetmanager_report_ai_save_attempts_total{_labels_text(outcome=outcome)} {count}")
 
     lines.extend([
-        "# HELP vetmanager_report_ai_job_transitions_total Total locally observed Report AI job stage transitions.",
+        "# HELP vetmanager_report_ai_job_transitions_total MCP-observed Report AI job stage transitions; one job may be observed on more than one slot.",
         "# TYPE vetmanager_report_ai_job_transitions_total counter",
     ])
     for key, count in snapshot.get("report_ai_job_transitions_total", {}).items():
@@ -976,7 +1055,7 @@ def render_prometheus_metrics() -> str:
         )
 
     lines.extend([
-        "# HELP vetmanager_report_ai_job_terminal_outcomes_total Total locally observed Report AI terminal outcomes.",
+        "# HELP vetmanager_report_ai_job_terminal_outcomes_total MCP-observed Report AI terminal outcomes; one job may be observed on more than one slot.",
         "# TYPE vetmanager_report_ai_job_terminal_outcomes_total counter",
     ])
     for outcome, count in snapshot.get("report_ai_job_terminal_outcomes_total", {}).items():
@@ -986,13 +1065,13 @@ def render_prometheus_metrics() -> str:
         )
 
     lines.extend([
-        "# HELP vetmanager_report_ai_empty_preview_guidance_issued_total Prepared MCP responses with empty-preview guidance in this process; delivery or reading is unverified.",
+        "# HELP vetmanager_report_ai_empty_preview_guidance_issued_total Prepared MCP responses with empty-preview guidance; delivery or reading is unverified.",
         "# TYPE vetmanager_report_ai_empty_preview_guidance_issued_total counter",
         f"vetmanager_report_ai_empty_preview_guidance_issued_total {snapshot.get('report_ai_empty_preview_guidance_issued_total', 0)}",
-        "# HELP vetmanager_report_ai_empty_preview_guidance_jobs_total Locally first-seen Report AI jobs with prepared empty-preview guidance; process-local and bounded.",
+        "# HELP vetmanager_report_ai_empty_preview_guidance_jobs_total Report AI jobs first seen with prepared empty-preview guidance by each slot; cross-slot duplicates remain possible.",
         "# TYPE vetmanager_report_ai_empty_preview_guidance_jobs_total counter",
         f"vetmanager_report_ai_empty_preview_guidance_jobs_total {snapshot.get('report_ai_empty_preview_guidance_jobs_total', 0)}",
-        "# HELP vetmanager_report_ai_empty_preview_guidance_outcomes_total Process-local observed outcomes within one hour of first guidance; recreated is a same-account heuristic, and abandoned_wait means no locally observed continuation in the window, not an upstream abandoned job.",
+        "# HELP vetmanager_report_ai_empty_preview_guidance_outcomes_total MCP-observed outcomes within one hour of first guidance; cross-slot duplicates remain possible, recreated is a same-account heuristic, and abandoned_wait means no observed continuation in the window, not an upstream abandoned job.",
         "# TYPE vetmanager_report_ai_empty_preview_guidance_outcomes_total counter",
     ])
     for outcome in sorted(REPORT_AI_EMPTY_PREVIEW_OUTCOMES):
@@ -1003,13 +1082,13 @@ def render_prometheus_metrics() -> str:
             "vetmanager_report_ai_job_stage_duration_seconds",
             "report_ai_job_stage_duration_seconds",
             "stage",
-            "Completed locally observed Report AI stage durations.",
+            "Completed MCP-observed Report AI stage durations; cross-slot observations may duplicate until job-level deduplication.",
         ),
         (
             "vetmanager_report_ai_job_duration_seconds",
             "report_ai_job_duration_seconds",
             "outcome",
-            "Completed locally observed Report AI job durations.",
+            "Completed MCP-observed Report AI job durations; cross-slot observations may duplicate until job-level deduplication.",
         ),
         (
             "vetmanager_report_ai_export_duration_seconds",
@@ -1118,22 +1197,27 @@ def render_prometheus_metrics() -> str:
 
     # Cache metrics (from request_cache singleton).
     m = REQUEST_CACHE.metrics
+    cache_hits = snapshot.get("cache_hits_total", m.hits)
+    cache_misses = snapshot.get("cache_misses_total", m.misses)
+    cache_invalidations = snapshot.get("cache_invalidations_total", m.invalidations)
+    cache_evictions = snapshot.get("cache_evictions_total", m.evictions)
+    cache_entries = snapshot.get("cache_entries", REQUEST_CACHE.size)
     lines.extend([
         "# HELP vetmanager_cache_hits_total Total cache hits.",
         "# TYPE vetmanager_cache_hits_total counter",
-        f"vetmanager_cache_hits_total {m.hits}",
+        f"vetmanager_cache_hits_total {cache_hits}",
         "# HELP vetmanager_cache_misses_total Total cache misses.",
         "# TYPE vetmanager_cache_misses_total counter",
-        f"vetmanager_cache_misses_total {m.misses}",
+        f"vetmanager_cache_misses_total {cache_misses}",
         "# HELP vetmanager_cache_invalidations_total Total cache tag invalidations.",
         "# TYPE vetmanager_cache_invalidations_total counter",
-        f"vetmanager_cache_invalidations_total {m.invalidations}",
+        f"vetmanager_cache_invalidations_total {cache_invalidations}",
         "# HELP vetmanager_cache_evictions_total Total LRU cache evictions.",
         "# TYPE vetmanager_cache_evictions_total counter",
-        f"vetmanager_cache_evictions_total {m.evictions}",
+        f"vetmanager_cache_evictions_total {cache_evictions}",
         "# HELP vetmanager_cache_entries Current number of cached entries.",
         "# TYPE vetmanager_cache_entries gauge",
-        f"vetmanager_cache_entries {REQUEST_CACHE.size}",
+        f"vetmanager_cache_entries {cache_entries}",
     ])
 
     return "\n".join(lines) + "\n"

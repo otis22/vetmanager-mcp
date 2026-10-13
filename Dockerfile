@@ -34,6 +34,7 @@ RUN pip install --no-cache-dir \
     "asyncpg>=0.29.0,<1" \
     "psycopg2-binary>=2.9.0,<3" \
     "redis>=5.0.0,<6" \
+    "PyYAML>=6.0.0,<7" \
     "uvicorn[standard]==0.42.0"
 
 # ── Production image ─────────────────────────────────────────────────────────

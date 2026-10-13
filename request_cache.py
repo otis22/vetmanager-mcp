@@ -4,12 +4,45 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import os
+import socket
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from observability_logging import RUNTIME_LOGGER
+import shared_metric_counters
+
 
 _DEFAULT_MAX_ENTRIES = 2048
+
+
+def _slot_identity() -> str:
+    return f"{socket.gethostname()}:{os.getpid()}"
+
+
+def _shared_cache_event(family: str) -> None:
+    try:
+        backend = shared_metric_counters.get_backend()
+        if backend is not None:
+            backend.increment(family, "")
+    except Exception as exc:
+        RUNTIME_LOGGER.warning("Shared cache metric event lost", extra={
+            "event_name": "shared_metric_event_lost", "metric_family": family,
+            "error_class": type(exc).__name__,
+        })
+
+
+def _shared_cache_gauge(count: int) -> None:
+    try:
+        backend = shared_metric_counters.get_backend()
+        if backend is not None:
+            backend.publish_cache_entries(_slot_identity(), count)
+    except Exception as exc:
+        RUNTIME_LOGGER.warning("Shared cache gauge unavailable", extra={
+            "event_name": "shared_metric_event_lost", "metric_family": "cache_entries",
+            "error_class": type(exc).__name__,
+        })
 
 
 @dataclass
@@ -48,9 +81,11 @@ class InMemoryTaggedCache:
             entry = self._entries.get(key)
             if entry is None:
                 self.metrics.misses += 1
+                _shared_cache_event("cache_misses_total")
                 return None
             entry.last_accessed = time.monotonic()
             self.metrics.hits += 1
+            _shared_cache_event("cache_hits_total")
             return copy.deepcopy(entry.value)
 
     async def set(self, key: str, value: Any, ttl_seconds: float, tags: tuple[str, ...]) -> None:
@@ -80,11 +115,13 @@ class InMemoryTaggedCache:
             )
             for tag in tags:
                 self._tag_index.setdefault(tag, set()).add(key)
+            _shared_cache_gauge(len(self._entries))
 
     async def invalidate_tag(self, tag: str) -> None:
         async with self._lock:
             keys = self._tag_index.pop(tag, set())
             self.metrics.invalidations += 1
+            _shared_cache_event("cache_invalidations_total")
             for key in keys:
                 entry = self._entries.pop(key, None)
                 if entry is None:
@@ -97,6 +134,13 @@ class InMemoryTaggedCache:
                         tag_keys.discard(key)
                         if not tag_keys:
                             self._tag_index.pop(entry_tag, None)
+            _shared_cache_gauge(len(self._entries))
+
+    async def refresh_shared_gauge(self) -> None:
+        """Renew the slot lease and expire stale local entries even when idle."""
+        async with self._lock:
+            self._cleanup_expired_unlocked()
+            _shared_cache_gauge(len(self._entries))
 
     @property
     def size(self) -> int:
@@ -108,6 +152,7 @@ class InMemoryTaggedCache:
         lru_key = min(self._entries, key=lambda k: self._entries[k].last_accessed)
         entry = self._entries.pop(lru_key)
         self.metrics.evictions += 1
+        _shared_cache_event("cache_evictions_total")
         for tag in entry.tags:
             tag_keys = self._tag_index.get(tag)
             if tag_keys is not None:

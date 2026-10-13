@@ -1,7 +1,7 @@
 import asyncio
 import os
 import signal
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import uvicorn
 
@@ -28,6 +28,8 @@ from placeholder_resolution_guidance import AGENT_RESOLUTION_GUIDANCE
 from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
 from request_context import RequestContextHeaderMiddleware
+from request_cache import REQUEST_CACHE, _slot_identity
+import shared_metric_counters
 from write_admission import ExecutionAdmissionMiddleware, WriteAdmissionMiddleware
 
 SHUTDOWN_STEP_TIMEOUT_SECONDS = 3
@@ -83,14 +85,37 @@ async def _runtime_lifespan(_server):
         "HTTP event loop selected",
         extra={"event_name": "http_event_loop_selected", "loop_module": loop_type.__module__, "loop_class": loop_type.__name__},
     )
+    cache_gauge_task = None
     try:
         validate_allowed_origins_config()
+        shared_metric_counters.require_shared_metrics_config()
         await initialize_storage()
         if get_database_url().startswith("sqlite"):
             await bootstrap_storage_schema()
+        if os.environ.get("REDIS_URL", "").strip():
+            await REQUEST_CACHE.refresh_shared_gauge()
+            cache_gauge_task = asyncio.create_task(_cache_gauge_heartbeat())
         yield
     finally:
+        if cache_gauge_task is not None:
+            cache_gauge_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await cache_gauge_task
+            try:
+                backend = shared_metric_counters.get_backend()
+                if backend is not None:
+                    backend.clear_cache_entries(_slot_identity())
+            except Exception:
+                RUNTIME_LOGGER.warning("Shared cache gauge cleanup failed", extra={
+                    "event_name": "shared_cache_gauge_cleanup_failed",
+                })
         await _graceful_shutdown()
+
+
+async def _cache_gauge_heartbeat() -> None:
+    while True:
+        await asyncio.sleep(10)
+        await REQUEST_CACHE.refresh_shared_gauge()
 
 
 def _streamable_http_drain_enabled() -> bool:

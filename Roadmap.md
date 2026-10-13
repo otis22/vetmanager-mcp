@@ -30,10 +30,12 @@
   и на отсутствие потери notice/claim; live-проверка на devtr6 с тремя
   воркерами. — `in_progress` (14.10.2026: 385.2a1 с изолированным live devtr6,
   безопасный шаблон/affinity и OAuth refresh 385.2a2 (активация 3 backend
-  ждёт cutover a4), частично 385.2a3,
-  385.2b с изолированным PostgreSQL live; остаются unknown-write сверка a3,
-  первая миграция/откат a4 и 385.2c–g,
-  включая общие метрики и ресурсный gate. Production не трогали.)
+  ждёт cutover a4), 385.2a3 с read-only сверкой неизвестного исхода write,
+  385.2b с изолированным PostgreSQL live; 385.2c — общий Redis core,
+  counters, latency и cache metrics с живыми тремя slot, но без полного
+  каталога/Report AI dedup; a4 — подготовка release/rollback manifest без
+  cutover и испытания старого image. Остаются завершение a4, c–g и гейты.
+  Production не трогали.)
 - 385.3 Аудит, сильное ревью, полный прогон, AssumptionLog, выпуск с зелёным
   CI; после выпуска сверка утилизации ядер на проде. — `todo`
 

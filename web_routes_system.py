@@ -17,6 +17,7 @@ from landing_page import render_landing_page
 from observability_logging import RUNTIME_LOGGER, SECURITY_LOGGER
 from request_context import get_request_context
 from service_metrics import PROMETHEUS_CONTENT_TYPE, record_auth_failure, render_prometheus_metrics
+from shared_metric_counters import SharedMetricsUnavailable
 from shutdown_state import in_flight_writes, is_draining
 
 # Stage 153 (F15): bounded timeout so /readyz never hangs the orchestrator if
@@ -134,8 +135,8 @@ def register_system_routes(mcp, *, observed_route, html_response, json_response,
                         **get_request_context(request),
                     },
                 )
-        return plain_text_response(
-            request,
-            render_prometheus_metrics(),
-            media_type=PROMETHEUS_CONTENT_TYPE,
-        )
+        try:
+            rendered = render_prometheus_metrics()
+        except SharedMetricsUnavailable:
+            return plain_text_response(request, "metrics unavailable", status_code=503)
+        return plain_text_response(request, rendered, media_type=PROMETHEUS_CONTENT_TYPE)
