@@ -16,7 +16,7 @@ from observability_logging import RUNTIME_LOGGER
 from rate_limit_backend import shutdown_rate_limit_backend
 from report_export_origin import validate_allowed_origins_config
 from storage import bootstrap_storage_schema, get_database_url, initialize_storage, shutdown_storage
-from shutdown_state import begin_draining, in_flight_writes, is_draining, reset_draining, wait_for_writes
+from shutdown_state import begin_draining, in_flight_writes, is_draining, request_drain_from_signal, reset_draining, wait_for_writes
 from custom_clinic_hosts import log_custom_clinic_hosts
 from structured_logging import configure_logging
 from tool_oauth_security import OAuthChallengeMiddleware, apply_tool_oauth_security_metadata
@@ -223,7 +223,7 @@ def _run_http_server(*, transport: str, host: str, port: int, path: str) -> None
     # клиенту (и нашему смоуку) нечем связать свой отказ с нашим журналом.
     served_app = RequestContextHeaderMiddleware(WriteAdmissionMiddleware(app))
     if hasattr(signal, "SIGUSR1"):
-        signal.signal(signal.SIGUSR1, lambda _sig, _frame: begin_draining())
+        signal.signal(signal.SIGUSR1, lambda _sig, _frame: request_drain_from_signal())
     if transport == "streamable-http" and hasattr(signal, "SIGUSR2"):
         def _close_sse_signal(_sig, _frame) -> None:
             manager = _get_streamable_session_manager(app, path=path, report_missing=True)

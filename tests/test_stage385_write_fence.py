@@ -5,6 +5,23 @@ import asyncio
 import pytest
 
 from shutdown_state import begin_draining, in_flight_writes, reset_draining
+
+
+def test_signal_drain_handoff_does_not_enter_held_admission_lock():
+    import time
+    import shutdown_state
+
+    reset_draining()
+    lock = shutdown_state._condition
+    with lock:
+        started = time.monotonic()
+        worker = shutdown_state.request_drain_from_signal()
+        assert time.monotonic() - started < 0.1
+        assert not shutdown_state._draining
+    worker.join(timeout=1)
+    assert not worker.is_alive()
+    assert shutdown_state.is_draining()
+    reset_draining()
 from write_admission import WriteAdmissionMiddleware
 
 

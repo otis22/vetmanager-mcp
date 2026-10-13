@@ -1,6 +1,6 @@
 """Atomic write admission state shared by the signal handler and HTTP requests."""
 
-from threading import Condition
+from threading import Condition, Thread
 
 
 _condition = Condition()
@@ -13,6 +13,13 @@ def begin_draining() -> None:
     with _condition:
         _draining = True
         _condition.notify_all()
+
+
+def request_drain_from_signal() -> Thread:
+    """Apply the fence after any interrupted admission section releases its lock."""
+    worker = Thread(target=begin_draining, name="mcp-write-drain", daemon=True)
+    worker.start()
+    return worker
 
 
 def is_draining() -> bool:
