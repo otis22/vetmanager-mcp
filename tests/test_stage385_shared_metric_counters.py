@@ -88,6 +88,29 @@ async def test_metrics_scrape_timeout_does_not_cancel_queued_delivery():
         gate.set()
 
 
+@pytest.mark.asyncio
+async def test_tool_metric_delivery_has_one_bounded_wait(monkeypatch):
+    class SlowBackend:
+        def increment(self, *_args):
+            time.sleep(.4)
+
+        def observe(self, *_args):
+            time.sleep(.4)
+
+    monkeypatch.setattr(service_metrics.shared_metric_counters, "get_backend",
+                        lambda: SlowBackend())
+
+    async def completed_upstream():
+        return {"ok": True}
+
+    started = time.monotonic()
+    result = await service_metrics.instrument_call(
+        "/rest/api/client", "GET", completed_upstream, operation="list")
+    assert result == {"ok": True}
+    assert time.monotonic() - started < .65
+    assert await service_metrics.shared_metric_counters.wait_pending()
+
+
 def test_http_tool_auth_and_upstream_counters_are_shared(monkeypatch):
     server = fakeredis.FakeServer()
     worker_a = RedisMetricCounters(fakeredis.FakeRedis(server=server, decode_responses=True))

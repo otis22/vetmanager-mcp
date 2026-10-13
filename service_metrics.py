@@ -404,13 +404,14 @@ async def instrument_call(
                 duration_seconds=elapsed,
                 tool_name=tool_name,
             )
-            for delivery in pending:
-                if delivery is not None:
-                    try:
-                        await asyncio.wait_for(
-                            asyncio.shield(asyncio.wrap_future(delivery)), timeout=2)
-                    except Exception:
-                        pass
+            deliveries = [asyncio.wrap_future(delivery) for delivery in pending
+                          if delivery is not None]
+            if deliveries:
+                try:
+                    await asyncio.wait_for(asyncio.shield(asyncio.gather(
+                        *deliveries, return_exceptions=True)), timeout=.5)
+                except asyncio.TimeoutError:
+                    pass
         except Exception as exc:
             if on_metric_error is None:
                 raise
