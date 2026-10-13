@@ -36,7 +36,7 @@ Process-local inventory (кодовая проверка; список расш�
 
 | Состояние | Сейчас | Требование для трёх процессов |
 |---|---|---|
-| `service_metrics.py`: counters, latency count/sum/max, gauges, snapshots | dict + Lock | Общий точный снимок, без client/account/token labels. Текущие имена/HELP/TYPE сохраняются. |
+| `service_metrics.py`: counters, latency count/sum/max, gauges, snapshots | dict + Lock | Общий точный снимок, без client/account/token labels. Имена/TYPE сохраняются, кроме явно заменённого account-age gauge; HELP с утверждением «в этом процессе» обновляется до реальной общей семантики. |
 | `tools/report_ai.py`: queue, lifecycle, finalized, reject pending, export observations | `OrderedDict`, TTL/лимит | Общие атомарные переходы и дедуп в пределах текущего TTL; событие terminal/guidance учитывается один раз между воркерами. |
 | FastMCP streamable HTTP sessions, GET SSE | память воркера | Все сообщения данной bearer-сессии попадают на один живой воркер; при restart документированный reconnect/reinitialize. |
 | `activation_telemetry.py`: funnel/first-session cache, cleanup-due, `_ALERTED_THRESHOLDS` | память воркера, скан по `/metrics` | Единственный scan за интервал через Redis lease либо PG advisory lock; gauges публикуются общим snapshot. Alert dedup — общая атомарная запись, проверяется при смене scan owner. Первый сеанс как факт уже в PG (`FOR UPDATE`), не переносить. |
@@ -160,7 +160,11 @@ upstream write, рестарт PG до истечения cache TTL. Допол�
 | `vetmanager_account_last_request_age_hours{account_id}` | Удалить ряд с account ID; scan публикует два gauge: `vetmanager_account_last_request_age_avg_hours` и `vetmanager_account_last_request_age_p95_hours`. Обновить Grafana выражения и сторожа; сверить смысл среднего/p95 по тем же аккаунтам. |
 
 Имена в таблице сверяются с фактическими `# TYPE` и snapshot перед 385.2:
-ни одно семейство не остаётся process-local. Новых client/account/token labels
+ни одно семейство не остаётся process-local. Все `# HELP` про локальный
+процесс или локальное наблюдение пересматриваются: сохраняются точные
+ограничения наблюдаемости Report AI, но не ложное утверждение о единственном
+PID. Сторож падает, если HELP общей серии продолжает обещать process-local
+значение. Новых client/account/token labels
 не добавлять, прежний account ID gauge заменить указанным агрегатом.
 Redis отказ: `/metrics` возвращает 503 (не старый или неполный local snapshot),
 recording не меняет успешный ответ инструмента **после выполненного upstream
@@ -189,8 +193,13 @@ upstream job; отметить degraded метрику/лог без ПД. Де�
 не гарантируется, как и после нынешнего restart process. Уточнить все пять
 семейств observation из таблицы, не переносить только lifecycle/finalized.
 
-**Инварианты.** N успешных tool calls на трёх PID увеличивают общий counter
-ровно на N; один и тот же `/metrics` с любого slot возвращает ту же сумму.
+**Инварианты.** При доступном Redis и без его restart N успешных tool calls
+на трёх PID увеличивают общий counter ровно на N; один и тот же `/metrics`
+с любого slot возвращает ту же сумму. При отказе Redis после upstream
+успеха ответ инструмента остаётся успешным, metric event может потеряться;
+`/metrics` в этот период 503, после восстановления фиксируется потеря
+событий, а при Redis restart — reset counters. Строгий N-критерий к этому
+интервалу не применяется.
 Один logical job не даёт три terminal/guidance outcomes. Notice остаётся
 ≤1/24 ч на токен, first-session claim не повторяется. Суммарный pool ≤40,
 health/readiness работают через публичный адрес и напрямую для каждого slot.
@@ -254,6 +263,7 @@ production выпуска, выпуск блокируется.
 | 385.2c2b (≤2 ч): report export/Report AI counters | Отключить запись одного outcome: inventory и сумма красные. | Безопасный тестовый job/export на разных slot; общий bounded outcome, код и очищенное тело. |
 | 385.2c2c (≤2 ч): sentry/known-issue/business counters и полнота каталога | Оставить одну серию локальной: inventory test красный. | Сверить доступные безопасные события и один target Prometheus, имена/TYPE и отсутствие PID labels; недостижимые вручную семейства проверить mock интеграцией. |
 | 385.2c3 (≤2 ч): latency count/sum/max и cache counters | Убрать atomic max или локализовать cache counter: тест красный. | Три slot дают одинаковый summary, max равен максимуму наблюдений; `/metrics` 503 при Redis outage, затем 200. |
+| 385.2c4 (≤2 ч): HELP/TYPE audit | Вернуть в HELP общей серии «process-local»/«in this process»: текстовый сторож красный. | `/metrics` 200 с одинаковыми HELP/TYPE и очищенными значениями на трёх slot; Grafana/Prometheus target up. |
 | 385.2d1 (≤2 ч): activation scan lease, gauges/age aggregates | Раздвоить scan или оставить account_id label: сторож красный. | Один scan за интервал, одинаковые gauges на slot, новый avg/p95 в Grafana, head_series без 3× роста. |
 | 385.2d2 (≤2 ч): activation alert dedup и owner handoff | Убрать общий claim `_ALERTED_THRESHOLDS`: двойное предупреждение красное. | При смене scan owner одна alert запись на account/threshold; после восстановления трафика повторное событие допустимо. |
 | 385.2e1a (≤2 ч): Report AI queue/reject observations | Два slot, один job: снять атомарную запись — красный двойной исход. | Безопасный тестовый job через два slot, коды/очищенные тела и общие значения метрики. |
