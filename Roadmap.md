@@ -42,13 +42,14 @@ prometheus 0.5/384M при растущем числе series (60+). Сумма�
 ~1,7 ГБ из 4/7,8. uvicorn 0.42.0 без extras `standard` — работает на чистом
 asyncio без uvloop/httptools.
 
-- 384.1 PRD: новые лимиты (предложение: mcp 2 cpu/1G, grafana 384–512M,
-  postgres shared_buffers 512MB / effective_cache_size 2GB / work_mem 16MB,
-  prometheus оценить heap по факту роста series); лимиты mcp сверить с
+- 384.1 PRD: новые лимиты (итог: см. `PRD/этап-384-ретюнинг-прода-4cpu-8gb.md`:
+  mcp 3 cpu/2G, grafana 0.5 cpu/512M, postgres shared_buffers 256MB /
+  effective_cache_size 512MB / work_mem 4MB, prometheus 0.5 cpu/768M);
+  лимиты mcp сверить с
   будущими 3 воркерами этапа 385, чтобы не тюнить дважды; `uvicorn[standard]`
   (uvloop, httptools) — сверить совместимость с `ws="websockets-sansio"` и
   кастомным `_DrainingUvicornServer`; риски рестарта и откат. PRD с ревью по
-  схеме моделей. — `todo`
+  схеме моделей. — `done` (13.10.2026; см. AssumptionLog, этап 384.1)
 - 384.2 Реализация: конфиг + сторожа (образ и конфиг собираются, uvloop активен
   в логе старта или зафиксирован отказ от него); live-проверка на devtr6. — `todo`
 - 384.3 Аудит, сильное ревью, полный прогон, AssumptionLog, выпуск с зелёным
