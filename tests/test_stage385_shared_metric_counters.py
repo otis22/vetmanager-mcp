@@ -12,7 +12,7 @@ import re
 import service_metrics
 from shared_metric_counters import (
     RedisMetricCounters, SHARED_COUNTER_FAMILIES, require_shared_metrics_config,
-    verify_shared_metrics_startup,
+    verify_shared_metrics_startup, cancel_pending,
 )
 from request_cache import InMemoryTaggedCache
 from server import mcp
@@ -89,6 +89,20 @@ async def test_metrics_scrape_timeout_does_not_cancel_queued_delivery():
 
 
 @pytest.mark.asyncio
+async def test_shutdown_can_cancel_outage_backlog_without_waiting_for_every_socket():
+    gate = threading.Event()
+    first = service_metrics.shared_metric_counters.dispatch(lambda: gate.wait(.5))
+    second = service_metrics.shared_metric_counters.dispatch(lambda: None)
+    try:
+        assert not await service_metrics.shared_metric_counters.wait_pending(.01)
+        cancel_pending()
+        assert second.cancelled()
+    finally:
+        gate.set()
+        await asyncio.wrap_future(first)
+
+
+@pytest.mark.asyncio
 async def test_tool_metric_delivery_has_one_bounded_wait(monkeypatch):
     class SlowBackend:
         def increment(self, *_args):
@@ -109,6 +123,68 @@ async def test_tool_metric_delivery_has_one_bounded_wait(monkeypatch):
     assert result == {"ok": True}
     assert time.monotonic() - started < .65
     assert await service_metrics.shared_metric_counters.wait_pending()
+
+
+@pytest.mark.asyncio
+async def test_tool_count_survives_saturated_best_effort_queue(monkeypatch):
+    server = fakeredis.FakeServer()
+    backend = RedisMetricCounters(fakeredis.FakeRedis(server=server, decode_responses=True))
+    monkeypatch.setattr(service_metrics.shared_metric_counters, "get_backend", lambda: backend)
+    monkeypatch.setattr(service_metrics.shared_metric_counters, "dispatch",
+                        lambda operation: (_ for _ in ()).throw(
+                            service_metrics.shared_metric_counters.SharedMetricsUnavailable(
+                                "queue full")))
+
+    async def completed_upstream():
+        return {"ok": True}
+
+    result = await service_metrics.instrument_call(
+        "/rest/api/client", "GET", completed_upstream, operation="list")
+    assert result == {"ok": True}
+    assert backend.snapshot()["tool_calls_total"]["/rest/api/client#list|GET|success"] == 1
+
+
+@pytest.mark.asyncio
+async def test_saturated_delivery_coalesces_non_tool_counters(monkeypatch):
+    class FullCapacity:
+        def acquire(self, **_kwargs):
+            return False
+
+    server = fakeredis.FakeServer()
+    backend = RedisMetricCounters(fakeredis.FakeRedis(server=server, decode_responses=True))
+    monkeypatch.setattr(service_metrics.shared_metric_counters, "get_backend", lambda: backend)
+    monkeypatch.setattr(service_metrics.shared_metric_counters, "_DELIVERY_CAPACITY",
+                        FullCapacity())
+    service_metrics.record_auth_failure(source="bearer", reason="invalid_token")
+    service_metrics.record_auth_failure(source="bearer", reason="invalid_token")
+    assert await service_metrics.shared_metric_counters.wait_pending()
+    assert backend.snapshot()["auth_failures_total"]["bearer|invalid_token"] == 2
+
+
+@pytest.mark.asyncio
+async def test_saturated_delivery_keeps_latency_max_and_cache_gauge(monkeypatch):
+    class FullCapacity:
+        def acquire(self, **_kwargs):
+            return False
+
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    monkeypatch.setattr(service_metrics.shared_metric_counters, "get_backend", lambda: backend)
+    monkeypatch.setattr(service_metrics.shared_metric_counters, "_DELIVERY_CAPACITY",
+                        FullCapacity())
+    for duration in (.01, .09, .03):
+        service_metrics.record_tool_call(endpoint="/rest/api/client#list", method="GET",
+                                         outcome="success", duration_seconds=duration)
+    cache = InMemoryTaggedCache()
+    monkeypatch.setattr("request_cache.shared_metric_counters.get_backend", lambda: backend)
+    monkeypatch.setattr("request_cache._slot_identity", lambda: "overflow-slot")
+    await cache.set("one", {"ok": True}, 60, ("one",))
+    assert await service_metrics.shared_metric_counters.wait_pending()
+    snapshot = backend.snapshot()
+    assert snapshot["tool_calls_total"]["/rest/api/client#list|GET|success"] == 3
+    latency = snapshot["tool_call_latency_seconds"]["/rest/api/client#list|GET"]
+    assert latency["count"] == 3 and abs(latency["sum_seconds"] - .13) < 1e-9
+    assert latency["max_seconds"] == .09
+    assert snapshot["cache_entries"] == 1
 
 
 def test_http_tool_auth_and_upstream_counters_are_shared(monkeypatch):
@@ -225,6 +301,14 @@ async def test_cache_events_and_slot_entries_are_shared(monkeypatch):
     assert snapshot["cache_evictions_total"] == 2
     assert snapshot["cache_invalidations_total"] == 2
     assert snapshot["cache_entries"] == 0
+
+
+def test_stopped_slot_cannot_resurrect_cache_gauge():
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    backend.publish_cache_entries("stopped-slot", 3)
+    backend.clear_cache_entries("stopped-slot")
+    backend.publish_cache_entries("stopped-slot", 3)  # delayed queued publish
+    assert backend.snapshot()["cache_entries"] == 0
 
 
 @pytest.mark.asyncio

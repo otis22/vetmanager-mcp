@@ -12,6 +12,7 @@ def test_release_sync_never_deletes_the_live_checkout(monkeypatch, tmp_path):
     commands = []
     monkeypatch.setattr(stage385_release, "_run", lambda args: commands.append(args))
     monkeypatch.setattr(stage385_release, "_verified_checkout_sha", lambda checkout: "a" * 40)
+    monkeypatch.setattr(stage385_release, "_tracked_files", lambda checkout: b"server.py\0")
     stage385_release.stage_remote_release(
         Path("/checkout"), "test@host", "/opt/vetmanager-mcp", "a" * 40)
     rsync = next(args for args in commands if args[0] == "rsync")
@@ -19,6 +20,8 @@ def test_release_sync_never_deletes_the_live_checkout(monkeypatch, tmp_path):
     assert rsync[-1] == "test@host:/opt/vetmanager-mcp/releases/" + "a" * 40 + "/"
     assert rsync[-1] != "test@host:/opt/vetmanager-mcp/"
     assert "--exclude=.env" in rsync
+    assert "--from0" in rsync
+    assert any(part.startswith("--files-from=") for part in rsync)
     assert any(args[0] == "ssh" and "mkdir -m 700" in args[-1] for args in commands)
 
 

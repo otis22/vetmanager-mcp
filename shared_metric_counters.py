@@ -8,12 +8,15 @@ import json
 import hashlib
 import math
 import os
-from threading import BoundedSemaphore, Lock
+from threading import BoundedSemaphore, Event, Lock
+
+from observability_logging import RUNTIME_LOGGER
 
 
 COUNTERS_KEY = "vetmanager:metrics:v1:counters"
 LATENCY_KEY_PREFIX = "vetmanager:metrics:v1:latency:"
 CACHE_ENTRIES_KEY_PREFIX = "vetmanager:metrics:v1:cache-entries:"
+CACHE_STOPPED_KEY_PREFIX = "vetmanager:metrics:v1:cache-stopped:"
 SHARED_LATENCY_FAMILIES = frozenset({
     "http_request_latency_seconds", "upstream_request_latency_seconds",
     "tool_call_latency_seconds", "report_ai_job_stage_duration_seconds",
@@ -72,6 +75,12 @@ class RedisMetricCounters:
         if family not in SHARED_LATENCY_FAMILIES or not math.isfinite(duration_seconds):
             raise ValueError("Unsupported metric latency")
         duration = max(0.0, duration_seconds)
+        self.observe_aggregate(family, label_key, 1, duration, duration)
+
+    def observe_aggregate(self, family: str, label_key: str, count: int,
+                          total_seconds: float, max_seconds: float) -> None:
+        if family not in SHARED_LATENCY_FAMILIES or count <= 0:
+            raise ValueError("Unsupported metric latency aggregate")
         digest = hashlib.sha256(f"{family}\0{label_key}".encode()).hexdigest()
         key = LATENCY_KEY_PREFIX + digest
         from redis.exceptions import WatchError
@@ -81,12 +90,12 @@ class RedisMetricCounters:
                 with self._redis.pipeline() as pipe:
                     pipe.watch(key)
                     current = pipe.hgetall(key)
-                    count = int(current.get("count", 0)) + 1
-                    total = float(current.get("sum_seconds", 0)) + duration
-                    maximum = max(float(current.get("max_seconds", 0)), duration)
+                    merged_count = int(current.get("count", 0)) + count
+                    total = float(current.get("sum_seconds", 0)) + total_seconds
+                    maximum = max(float(current.get("max_seconds", 0)), max_seconds)
                     pipe.multi()
                     pipe.hset(key, mapping={
-                        "family": family, "label_key": label_key, "count": count,
+                        "family": family, "label_key": label_key, "count": merged_count,
                         "sum_seconds": total, "max_seconds": maximum,
                     })
                     pipe.execute()
@@ -103,10 +112,31 @@ class RedisMetricCounters:
     def publish_cache_entries(self, slot_identity: str, count: int) -> None:
         if count < 0:
             raise ValueError("Cache entry count cannot be negative")
-        self._redis.setex(self._cache_slot_key(slot_identity), 30, count)
+        gauge_key = self._cache_slot_key(slot_identity)
+        stopped_key = CACHE_STOPPED_KEY_PREFIX + gauge_key.rsplit(":", 1)[1]
+        from redis.exceptions import WatchError
+
+        for _ in range(5):
+            try:
+                with self._redis.pipeline() as pipe:
+                    pipe.watch(stopped_key)
+                    if pipe.exists(stopped_key):
+                        return
+                    pipe.multi()
+                    pipe.setex(gauge_key, 30, count)
+                    pipe.execute()
+                    return
+            except WatchError:
+                continue
+        raise SharedMetricsUnavailable("Cache gauge write contention")
 
     def clear_cache_entries(self, slot_identity: str) -> None:
-        self._redis.delete(self._cache_slot_key(slot_identity))
+        gauge_key = self._cache_slot_key(slot_identity)
+        stopped_key = CACHE_STOPPED_KEY_PREFIX + gauge_key.rsplit(":", 1)[1]
+        with self._redis.pipeline(transaction=True) as pipe:
+            pipe.setex(stopped_key, 60, "1")
+            pipe.delete(gauge_key)
+            pipe.execute()
 
     def snapshot(self) -> dict[str, dict[str, int] | int]:
         try:
@@ -152,9 +182,89 @@ _DELIVERY_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="shared-me
 _DELIVERY_CAPACITY = BoundedSemaphore(4096)
 _PENDING_LOCK = Lock()
 _PENDING: set[Future] = set()
+_OVERFLOW_LOCK = Lock()
+_OVERFLOW_COUNTERS: dict[tuple, int] = {}
+_OVERFLOW_LATENCIES: dict[tuple, tuple[int, float, float]] = {}
+_OVERFLOW_GAUGES: dict[tuple, int] = {}
+_OVERFLOW_FUTURE: Future | None = None
+_OVERFLOW_STOP = Event()
 
 
-def dispatch(operation) -> Future | None:
+def _schedule_overflow() -> Future:
+    global _OVERFLOW_FUTURE
+    if _OVERFLOW_FUTURE is None or _OVERFLOW_FUTURE.done():
+        _OVERFLOW_FUTURE = _DELIVERY_POOL.submit(_drain_overflow)
+    return _OVERFLOW_FUTURE
+
+
+def coalesce_counter(backend: RedisMetricCounters, family: str,
+                     label_key: str, count: int) -> Future:
+    with _OVERFLOW_LOCK:
+        key = (backend, family, label_key)
+        _OVERFLOW_COUNTERS[key] = _OVERFLOW_COUNTERS.get(key, 0) + count
+        return _schedule_overflow()
+
+
+def coalesce_latency(backend: RedisMetricCounters, family: str,
+                     label_key: str, duration: float) -> Future:
+    with _OVERFLOW_LOCK:
+        key = (backend, family, label_key)
+        previous = _OVERFLOW_LATENCIES.get(key, (0, 0.0, 0.0))
+        _OVERFLOW_LATENCIES[key] = (previous[0] + 1, previous[1] + duration,
+                                    max(previous[2], duration))
+        return _schedule_overflow()
+
+
+def coalesce_cache_gauge(backend: RedisMetricCounters, slot: str,
+                         count: int) -> Future:
+    with _OVERFLOW_LOCK:
+        _OVERFLOW_GAUGES[(backend, slot)] = count
+        return _schedule_overflow()
+
+
+def _drain_overflow() -> None:
+    global _OVERFLOW_FUTURE
+    while not _OVERFLOW_STOP.is_set():
+        with _OVERFLOW_LOCK:
+            if _OVERFLOW_COUNTERS:
+                kind = "counter"
+                key, value = _OVERFLOW_COUNTERS.popitem()
+            elif _OVERFLOW_LATENCIES:
+                kind = "latency"
+                key, value = _OVERFLOW_LATENCIES.popitem()
+            elif _OVERFLOW_GAUGES:
+                kind = "gauge"
+                key, value = _OVERFLOW_GAUGES.popitem()
+            else:
+                _OVERFLOW_FUTURE = None
+                return
+        backend = key[0]
+        try:
+            if kind == "counter":
+                backend.increment(key[1], key[2], value)
+            elif kind == "latency":
+                backend.observe_aggregate(key[1], key[2], *value)
+            else:
+                backend.publish_cache_entries(key[1], value)
+        except Exception as exc:
+            with _OVERFLOW_LOCK:
+                if kind == "counter":
+                    _OVERFLOW_COUNTERS[key] = _OVERFLOW_COUNTERS.get(key, 0) + value
+                elif kind == "latency":
+                    current = _OVERFLOW_LATENCIES.get(key, (0, 0.0, 0.0))
+                    _OVERFLOW_LATENCIES[key] = (current[0] + value[0],
+                                                 current[1] + value[1],
+                                                 max(current[2], value[2]))
+                else:
+                    _OVERFLOW_GAUGES.setdefault(key, value)
+            RUNTIME_LOGGER.warning("Shared metric overflow retry", extra={
+                "event_name": "shared_metric_overflow_retry",
+                "error_class": type(exc).__name__,
+            })
+            _OVERFLOW_STOP.wait(1)
+
+
+def dispatch(operation, *, on_full=None) -> Future | None:
     """Keep Redis socket waits outside the async request loop with bounded work."""
     try:
         asyncio.get_running_loop()
@@ -162,7 +272,9 @@ def dispatch(operation) -> Future | None:
         operation()
         return None
     if not _DELIVERY_CAPACITY.acquire(blocking=False):
-        raise SharedMetricsUnavailable("Shared metrics delivery queue is full")
+        if on_full is None:
+            raise SharedMetricsUnavailable("Shared metrics delivery queue is full")
+        return on_full()
     try:
         future = _DELIVERY_POOL.submit(operation)
     except BaseException:
@@ -183,6 +295,9 @@ def dispatch(operation) -> Future | None:
 async def wait_pending(timeout_seconds: float = 2) -> bool:
     with _PENDING_LOCK:
         pending = tuple(_PENDING)
+    with _OVERFLOW_LOCK:
+        if _OVERFLOW_FUTURE is not None:
+            pending += (_OVERFLOW_FUTURE,)
     if not pending:
         return True
     try:
@@ -193,6 +308,17 @@ async def wait_pending(timeout_seconds: float = 2) -> bool:
         return True
     except asyncio.TimeoutError:
         return False
+
+
+def cancel_pending() -> int:
+    """Discard queued outage work at shutdown after the drain deadline."""
+    with _PENDING_LOCK:
+        pending = tuple(_PENDING)
+    with _OVERFLOW_LOCK:
+        if _OVERFLOW_FUTURE is not None:
+            _OVERFLOW_STOP.set()
+            pending += (_OVERFLOW_FUTURE,)
+    return sum(future.cancel() for future in pending)
 
 
 def require_shared_metrics_config() -> None:

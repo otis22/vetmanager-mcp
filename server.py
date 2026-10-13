@@ -101,6 +101,11 @@ async def _runtime_lifespan(_server):
             cache_gauge_task.cancel()
             with suppress(asyncio.CancelledError):
                 await cache_gauge_task
+            if not await shared_metric_counters.wait_pending(timeout_seconds=20):
+                cancelled = shared_metric_counters.cancel_pending()
+                RUNTIME_LOGGER.warning("Shared metric shutdown drain timed out", extra={
+                    "event_name": "shared_metric_shutdown_timeout", "cancelled": cancelled,
+                })
             try:
                 backend = shared_metric_counters.get_backend()
                 if backend is not None:

@@ -57,7 +57,9 @@ def _record_shared_counter(family: str, label_key: str, count: int = 1) -> None:
                                "metric_family": family, "error_class": type(exc).__name__},
                     )
 
-            return shared_metric_counters.dispatch(deliver)
+            return shared_metric_counters.dispatch(
+                deliver, on_full=lambda: shared_metric_counters.coalesce_counter(
+                    backend, family, label_key, count))
     except Exception as exc:
         RUNTIME_LOGGER.warning(
             "Shared metric event lost",
@@ -80,7 +82,9 @@ def _record_shared_latency(family: str, label_key: str, duration_seconds: float)
                                "metric_family": family, "error_class": type(exc).__name__},
                     )
 
-            return shared_metric_counters.dispatch(deliver)
+            return shared_metric_counters.dispatch(
+                deliver, on_full=lambda: shared_metric_counters.coalesce_latency(
+                    backend, family, label_key, duration_seconds))
     except Exception as exc:
         RUNTIME_LOGGER.warning(
             "Shared metric event lost",
@@ -397,21 +401,42 @@ async def instrument_call(
     finally:
         elapsed = time.monotonic() - started
         try:
-            pending = record_tool_call(
+            record_tool_call(
                 endpoint=endpoint_label,
                 method=method,
                 outcome=outcome,
                 duration_seconds=elapsed,
                 tool_name=tool_name,
+                shared=False,
             )
-            deliveries = [asyncio.wrap_future(delivery) for delivery in pending
-                          if delivery is not None]
-            if deliveries:
-                try:
-                    await asyncio.wait_for(asyncio.shield(asyncio.gather(
-                        *deliveries, return_exceptions=True)), timeout=.5)
-                except asyncio.TimeoutError:
-                    pass
+            try:
+                backend = shared_metric_counters.get_backend()
+            except Exception as exc:
+                RUNTIME_LOGGER.warning("Shared metric event lost", extra={
+                    "event_name": "shared_metric_event_lost",
+                    "metric_family": "tool_calls_total", "error_class": type(exc).__name__,
+                })
+                backend = None
+            if backend is not None:
+                labeled_endpoint, normalized_method = _tool_metric_keys(
+                    endpoint_label, method, tool_name)
+
+                async def deliver(operation, family: str, *args) -> None:
+                    try:
+                        await asyncio.to_thread(operation, *args)
+                    except Exception as exc:
+                        RUNTIME_LOGGER.warning("Shared metric event lost", extra={
+                            "event_name": "shared_metric_event_lost",
+                            "metric_family": family, "error_class": type(exc).__name__,
+                        })
+
+                await asyncio.gather(
+                    deliver(backend.increment, "tool_calls_total", "tool_calls_total",
+                            f"{labeled_endpoint}|{normalized_method}|{outcome}"),
+                    deliver(backend.observe, "tool_call_latency_seconds",
+                            "tool_call_latency_seconds",
+                            f"{labeled_endpoint}|{normalized_method}", elapsed),
+                )
         except Exception as exc:
             if on_metric_error is None:
                 raise
@@ -451,6 +476,7 @@ def record_tool_call(
     outcome: str,
     duration_seconds: float,
     tool_name: str | None = None,
+    shared: bool = True,
 ) -> tuple:
     """Record one MCP tool invocation with its outcome and latency.
 
@@ -461,20 +487,26 @@ def record_tool_call(
     endpoint key as `endpoint:tool_name` so aggregator tools get a
     distinct series vs CRUD tools on the same VM endpoint.
     """
-    normalized_method = method.upper()
-    labeled_endpoint = f"{endpoint}:{tool_name}" if tool_name else endpoint
-    labeled_endpoint = _sanitize_tool_endpoint_label(labeled_endpoint)
+    labeled_endpoint, normalized_method = _tool_metric_keys(endpoint, method, tool_name)
     with _LOCK:
         _TOOL_CALLS_TOTAL[(labeled_endpoint, normalized_method, outcome)] += 1
         _TOOL_CALL_LATENCY_SECONDS[(labeled_endpoint, normalized_method)].observe(
             duration_seconds
         )
-    counter = _record_shared_counter("tool_calls_total",
-                                     f"{labeled_endpoint}|{normalized_method}|{outcome}")
-    latency = _record_shared_latency("tool_call_latency_seconds",
-                                     f"{labeled_endpoint}|{normalized_method}",
-                                     duration_seconds)
-    return counter, latency
+    if shared:
+        counter = _record_shared_counter("tool_calls_total",
+                                         f"{labeled_endpoint}|{normalized_method}|{outcome}")
+        latency = _record_shared_latency("tool_call_latency_seconds",
+                                         f"{labeled_endpoint}|{normalized_method}",
+                                         duration_seconds)
+        return counter, latency
+    return None, None
+
+
+def _tool_metric_keys(endpoint: str, method: str,
+                      tool_name: str | None) -> tuple[str, str]:
+    labeled_endpoint = f"{endpoint}:{tool_name}" if tool_name else endpoint
+    return _sanitize_tool_endpoint_label(labeled_endpoint), method.upper()
 
 
 def _sanitize_tool_endpoint_label(endpoint: str) -> str:

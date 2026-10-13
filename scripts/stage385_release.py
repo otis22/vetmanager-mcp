@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import shlex
 import subprocess
+import tempfile
 
 import yaml
 
@@ -37,6 +38,15 @@ def _verified_checkout_sha(checkout: Path) -> str:
     return head
 
 
+def _tracked_files(checkout: Path) -> bytes:
+    files = subprocess.run(["git", "-C", str(checkout), "ls-files", "--cached", "-z"],
+                           check=True, capture_output=True).stdout
+    if not files or any(path == b".env" or path.startswith(b".env/")
+                        for path in files.split(b"\0") if path):
+        raise ValueError("Release tracked files are empty or include .env")
+    return files
+
+
 def stage_remote_release(checkout: Path, ssh_target: str,
                          remote_dir: str, sha: str) -> str:
     """Rsync only into a fresh SHA directory; leave the live checkout untouched."""
@@ -52,8 +62,12 @@ def stage_remote_release(checkout: Path, ssh_target: str,
     release_parent = f"{remote_dir.rstrip('/')}/releases"
     _run(["ssh", ssh_target, f"mkdir -p -- {shlex.quote(release_parent)} && "
           f"mkdir -m 700 -- {shlex.quote(release_dir)}"])
-    _run(["rsync", "-az", *(f"--exclude={item}" for item in EXCLUDES),
-          f"{checkout.resolve()}/", f"{ssh_target}:{release_dir}/"])
+    with tempfile.NamedTemporaryFile() as file_list:
+        file_list.write(_tracked_files(checkout))
+        file_list.flush()
+        _run(["rsync", "-az", "--from0", f"--files-from={file_list.name}",
+              *(f"--exclude={item}" for item in EXCLUDES),
+              f"{checkout.resolve()}/", f"{ssh_target}:{release_dir}/"])
     return release_dir
 
 
