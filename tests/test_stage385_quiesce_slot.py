@@ -8,7 +8,9 @@ from scripts import quiesce_mcp_slot
 from scripts.quiesce_mcp_slot import remove_backend_from_site
 
 
-SITE = (Path(__file__).resolve().parents[1] / "scripts/init_server.sh").read_text()
+SITE = (Path(__file__).resolve().parents[1] / "scripts/init_server.sh").read_text().replace(
+    "server 127.0.0.1:8001 down;", "server 127.0.0.1:8001;"
+).replace("server 127.0.0.1:8002 down;", "server 127.0.0.1:8002;")
 
 
 def test_remove_one_slot_only_from_sticky_upstream():

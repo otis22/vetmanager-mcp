@@ -9,7 +9,9 @@ def test_nginx_mcp_routes_use_authorization_consistent_hash():
     upstream = re.search(r"upstream mcp_session_backend \{(.*?)\n\}", source, re.S)
     assert upstream is not None
     assert r"hash \$http_authorization consistent;" in upstream.group(1)
-    assert all(f"server 127.0.0.1:{port};" in upstream.group(1) for port in (8000, 8001, 8002))
+    assert "server 127.0.0.1:8000;" in upstream.group(1)
+    assert "server 127.0.0.1:8001 down;" in upstream.group(1)
+    assert "server 127.0.0.1:8002 down;" in upstream.group(1)
     route = re.search(r"location /mcp \{(.*?)\n    \}", source, re.S)
     assert route is not None
     assert "proxy_pass http://mcp_session_backend;" in route.group(1)

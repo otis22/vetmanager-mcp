@@ -145,8 +145,8 @@ upstream mcp_backend {
 upstream mcp_session_backend {
     hash \$http_authorization consistent;
     server 127.0.0.1:8000;
-    server 127.0.0.1:8001;
-    server 127.0.0.1:8002;
+    server 127.0.0.1:8001 down;
+    server 127.0.0.1:8002 down;
     keepalive 32;
 }
 
