@@ -139,6 +139,8 @@ NGINX_SITE="/etc/nginx/sites-available/vetmanager-mcp.conf"
 ${SUDO} tee "${NGINX_SITE}" >/dev/null <<EOF
 upstream mcp_backend {
     server 127.0.0.1:8000;
+    server 127.0.0.1:8001 down;
+    server 127.0.0.1:8002 down;
     keepalive 32;
 }
 

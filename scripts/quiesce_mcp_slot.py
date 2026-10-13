@@ -19,22 +19,37 @@ import urllib.request
 
 
 SLOTS = {"mcp": 8000, "mcp2": 8001, "mcp3": 8002}
-UPSTREAM = re.compile(r"(upstream mcp_session_backend \{\n)(.*?)(\n\})", re.S)
-SERVER = re.compile(r"^    server 127\.0\.0\.1:(\d+);$", re.M)
+UPSTREAM = re.compile(r"(upstream (mcp_backend|mcp_session_backend) \{\n)(.*?)(\n\})", re.S)
+SERVER = re.compile(r"^    server 127\.0\.0\.1:(\d+)( down)?;$", re.M)
 
 
 def remove_backend_from_site(source: str, port: int) -> str:
-    match = UPSTREAM.search(source)
-    if match is None or "hash " not in match.group(2) or "http_authorization consistent;" not in match.group(2):
+    matches = {match.group(2): match for match in UPSTREAM.finditer(source)}
+    sticky = matches.get("mcp_session_backend")
+    web = matches.get("mcp_backend")
+    if sticky is None or "hash " not in sticky.group(3) or "http_authorization consistent;" not in sticky.group(3):
         raise ValueError("nginx sticky upstream is missing")
-    body = match.group(2)
-    ports = [int(value) for value in SERVER.findall(body)]
-    if port not in ports:
-        raise ValueError("slot is not in nginx upstream")
-    if len(ports) <= 1:
-        raise ValueError("cannot remove the last nginx slot; enter fleet maintenance")
-    updated_body = re.sub(rf"(?m)^    server 127\.0\.0\.1:{port};\n", "", body, count=1)
-    return source[:match.start(2)] + updated_body + source[match.end(2):]
+    if web is None:
+        raise ValueError("nginx web backend is missing")
+    replacements = []
+    for name, match in (("mcp_backend", web), ("mcp_session_backend", sticky)):
+        body = match.group(3)
+        servers = [(int(p), down) for p, down in SERVER.findall(body)]
+        if port not in [p for p, _ in servers]:
+            raise ValueError(f"slot is not in nginx {name}")
+        if not any(p != port and not down for p, down in servers):
+            label = "web backend" if name == "mcp_backend" else "last nginx slot"
+            raise ValueError(f"cannot remove {label}; enter fleet maintenance")
+        updated_body = re.sub(rf"(?m)^    server 127\.0\.0\.1:{port}(?: down)?;\n", "", body, count=1)
+        replacements.append((match.start(3), match.end(3), updated_body))
+    for start, end, body in sorted(replacements, reverse=True):
+        source = source[:start] + body + source[end:]
+    return source
+
+
+def _drain_finished(logs: str) -> bool:
+    return ("event_name=streamable_http_drain_finished" in logs
+            or bool(re.search(r'"event_name"\s*:\s*"streamable_http_drain_finished"', logs)))
 
 
 def _run(*args: str) -> str:
@@ -80,7 +95,7 @@ def _wait_sse_close(cid: str, since: str, *, seconds: float) -> None:
         logs = subprocess.run(
             ["docker", "logs", "--since", since, cid], capture_output=True, text=True, check=True,
         )
-        if "event_name=streamable_http_drain_finished" in logs.stdout + logs.stderr:
+        if _drain_finished(logs.stdout + logs.stderr):
             return
         time.sleep(.25)
     raise TimeoutError("SSE close was not observed; slot remains in nginx")
@@ -109,6 +124,7 @@ def quiesce_slot(service: str, site: Path, *, project_name: str,
         _write_atomic(site, original)
         _run("nginx", "-t")
         _run("systemctl", "reload", "nginx")
+        _run("docker", "compose", "-p", project_name, "--profile", "production", "restart", service)
         raise
     _run("docker", "stop", "--time", "30", cid)
     print(f"slot {service} quiesced, removed from nginx, and stopped")

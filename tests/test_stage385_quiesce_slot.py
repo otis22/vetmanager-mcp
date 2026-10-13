@@ -13,19 +13,30 @@ SITE = (Path(__file__).resolve().parents[1] / "scripts/init_server.sh").read_tex
 ).replace("server 127.0.0.1:8002 down;", "server 127.0.0.1:8002;")
 
 
-def test_remove_one_slot_only_from_sticky_upstream():
+def test_remove_one_slot_from_both_upstreams():
     updated = remove_backend_from_site(SITE, 8001)
     sticky = updated.split("upstream mcp_session_backend {", 1)[1].split("}", 1)[0]
     assert "server 127.0.0.1:8001;" not in sticky
     assert "server 127.0.0.1:8000;" in sticky
     assert "server 127.0.0.1:8002;" in sticky
     assert "hash \\$http_authorization consistent;" in sticky
+    assert "server 127.0.0.1:8001;" not in updated.split("upstream mcp_backend {", 1)[1].split("}", 1)[0]
     assert "upstream mcp_backend {\n    server 127.0.0.1:8000;" in updated
+
+
+def test_cannot_remove_only_active_web_slot():
+    original = (Path(__file__).resolve().parents[1] / "scripts/init_server.sh").read_text()
+    with pytest.raises(ValueError, match="web backend"):
+        remove_backend_from_site(original, 8000)
+
+
+def test_json_drain_event_is_recognized():
+    assert quiesce_mcp_slot._drain_finished('{"event_name": "streamable_http_drain_finished"}')
 
 
 def test_cannot_remove_final_slot():
     one_slot = remove_backend_from_site(remove_backend_from_site(SITE, 8001), 8002)
-    with pytest.raises(ValueError, match="last"):
+    with pytest.raises(ValueError, match="web backend|last"):
         remove_backend_from_site(one_slot, 8000)
 
 
@@ -51,4 +62,5 @@ def test_invalid_nginx_config_restores_site_without_stopping_worker(tmp_path, mo
     assert site.read_text() == SITE
     assert calls.index(("fence",)) < calls.index(("sse",)) < calls.index(("nginx", "-t"))
     assert ("docker", "stop", "--time", "30", "test-container") not in calls
+    assert ("docker", "compose", "-p", "stage385probe", "--profile", "production", "restart", "mcp2") in calls
     assert any(call[:5] == ("docker", "compose", "-p", "stage385probe", "--profile") for call in calls)
