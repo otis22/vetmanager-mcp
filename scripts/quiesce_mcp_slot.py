@@ -127,7 +127,22 @@ def quiesce_slot(service: str, site: Path, *, project_name: str,
     time.sleep(grace_seconds)
     since = datetime.now(timezone.utc).isoformat()
     _run("docker", "kill", "--signal=USR2", cid)
-    _wait_sse_close(cid, since, seconds=timeout_seconds)
+    try:
+        _wait_sse_close(cid, since, seconds=timeout_seconds)
+    except (TimeoutError, subprocess.CalledProcessError) as exc:
+        # The write fence is complete. Remove new traffic but retain this
+        # process until the operator can establish the SSE outcome.
+        _write_atomic(site, updated)
+        try:
+            _run("nginx", "-t")
+            _run("systemctl", "reload", "nginx")
+        except Exception:
+            _write_atomic(site, original)
+            _run("nginx", "-t")
+            _run("systemctl", "reload", "nginx")
+            _run("docker", "compose", "-p", project_name, "--profile", "production", "restart", service)
+            raise RuntimeError("SSE close unknown and nginx route removal failed") from exc
+        raise TimeoutError("SSE close unknown; route removed, worker still running") from exc
     _write_atomic(site, updated)
     try:
         _run("nginx", "-t")

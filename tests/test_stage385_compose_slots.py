@@ -41,3 +41,4 @@ def test_production_build_context_excludes_local_secrets():
     assert "data/" in patterns
     assert "*.db" in patterns
     assert "*.db.*" in patterns
+    assert ".feedback_fingerprint_pepper.*" in patterns

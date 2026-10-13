@@ -1,9 +1,24 @@
 """Reject new HTTP writes while a worker is quiescing for shutdown."""
 
+from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware import Middleware
+
 from shutdown_state import admit_write, finish_write
 
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+class ExecutionAdmissionMiddleware(Middleware):
+    """Keep tool execution counted after its HTTP response disconnects."""
+
+    async def on_call_tool(self, context, call_next):
+        if not admit_write():
+            raise ToolError("Worker is draining; reconnect and retry after checking the operation outcome.")
+        try:
+            return await call_next(context)
+        finally:
+            finish_write()
 
 
 class WriteAdmissionMiddleware:

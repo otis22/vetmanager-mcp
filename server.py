@@ -28,7 +28,7 @@ from placeholder_resolution_guidance import AGENT_RESOLUTION_GUIDANCE
 from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
 from request_context import RequestContextHeaderMiddleware
-from write_admission import WriteAdmissionMiddleware
+from write_admission import ExecutionAdmissionMiddleware, WriteAdmissionMiddleware
 
 SHUTDOWN_STEP_TIMEOUT_SECONDS = 3
 STREAMABLE_HTTP_DRAIN_ENABLED_ENV = "STREAMABLE_HTTP_DRAIN_ENABLED"
@@ -294,6 +294,7 @@ mcp.add_middleware(ToolErrorTrackingMiddleware())
 # Stage 271: catalogue only. Registered last and implementing just
 # `on_list_tools`, so the call chain above is untouched.
 mcp.add_middleware(ToolVisibilityMiddleware())
+mcp.add_middleware(ExecutionAdmissionMiddleware())
 _prompt_metrics = PromptMetricsMiddleware()
 mcp.add_middleware(_prompt_metrics)
 

@@ -85,3 +85,26 @@ def test_fence_timeout_detaches_route_but_keeps_worker(tmp_path, monkeypatch):
     assert "server 127.0.0.1:8001;" not in site.read_text()
     assert ("systemctl", "reload", "nginx") in calls
     assert ("docker", "stop", "--time", "30", "test-container") not in calls
+
+
+def test_sse_log_timeout_detaches_fenced_route(tmp_path, monkeypatch):
+    site = tmp_path / "site.conf"
+    site.write_text(SITE)
+    calls = []
+
+    def fake_run(*args):
+        calls.append(args)
+        return "test-container" if args[:3] == ("docker", "compose", "-p") else ""
+
+    def timeout(*_args, **_kwargs):
+        raise TimeoutError("SSE close was not observed")
+
+    monkeypatch.setattr(quiesce_mcp_slot, "_run", fake_run)
+    monkeypatch.setattr(quiesce_mcp_slot, "_wait_write_fence", lambda *a, **k: None)
+    monkeypatch.setattr(quiesce_mcp_slot, "_wait_sse_close", timeout)
+    monkeypatch.setattr(quiesce_mcp_slot.time, "sleep", lambda *_: None)
+    with pytest.raises(TimeoutError, match="route removed"):
+        quiesce_mcp_slot.quiesce_slot("mcp2", site, project_name="stage385probe", grace_seconds=0)
+    assert "server 127.0.0.1:8001;" not in site.read_text()
+    assert ("systemctl", "reload", "nginx") in calls
+    assert ("docker", "stop", "--time", "30", "test-container") not in calls

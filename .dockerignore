@@ -1,5 +1,6 @@
 .env
 .env.*
+.feedback_fingerprint_pepper.*
 !.env.example
 .git
 .codex
