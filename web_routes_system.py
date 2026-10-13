@@ -18,6 +18,7 @@ from observability_logging import RUNTIME_LOGGER, SECURITY_LOGGER
 from request_context import get_request_context
 from service_metrics import PROMETHEUS_CONTENT_TYPE, record_auth_failure, render_prometheus_metrics
 from shared_metric_counters import SharedMetricsUnavailable
+import shared_metric_counters
 from shutdown_state import in_flight_writes, is_draining
 
 # Stage 153 (F15): bounded timeout so /readyz never hangs the orchestrator if
@@ -136,7 +137,10 @@ def register_system_routes(mcp, *, observed_route, html_response, json_response,
                     },
                 )
         try:
-            rendered = render_prometheus_metrics()
-        except SharedMetricsUnavailable:
+            if not await shared_metric_counters.wait_pending(timeout_seconds=2):
+                raise SharedMetricsUnavailable("Metric delivery is pending")
+            rendered = await asyncio.wait_for(asyncio.to_thread(render_prometheus_metrics),
+                                              timeout=3)
+        except (SharedMetricsUnavailable, asyncio.TimeoutError):
             return plain_text_response(request, "metrics unavailable", status_code=503)
         return plain_text_response(request, rendered, media_type=PROMETHEUS_CONTENT_TYPE)

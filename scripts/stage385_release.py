@@ -16,6 +16,7 @@ import yaml
 
 SHA = re.compile(r"[0-9a-f]{40,64}\Z")
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
+PROJECT = re.compile(r"[a-z0-9][a-z0-9_-]*\Z")
 EXCLUDES = (".git/", ".venv/", ".cursor/", "__pycache__/",
             ".pytest_cache/", ".env", "data/", "logs/")
 
@@ -24,18 +25,34 @@ def _run(args: list[str]) -> None:
     subprocess.run(args, check=True)
 
 
+def _git_output(checkout: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(checkout), *args], check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def _verified_checkout_sha(checkout: Path) -> str:
+    head = _git_output(checkout, "rev-parse", "HEAD")
+    if _git_output(checkout, "status", "--porcelain", "--untracked-files=all"):
+        raise ValueError("Release checkout must be clean")
+    return head
+
+
 def stage_remote_release(checkout: Path, ssh_target: str,
                          remote_dir: str, sha: str) -> str:
     """Rsync only into a fresh SHA directory; leave the live checkout untouched."""
     if not SHA.fullmatch(sha):
         raise ValueError("Release SHA must be a full lowercase Git SHA")
+    if _verified_checkout_sha(checkout) != sha:
+        raise ValueError("Release SHA does not match checkout HEAD")
     if not remote_dir.startswith("/") or ".." in Path(remote_dir).parts or "\n" in remote_dir:
         raise ValueError("Remote directory must be an absolute safe path")
     if not ssh_target or any(char.isspace() for char in ssh_target):
         raise ValueError("Invalid SSH target")
     release_dir = f"{remote_dir.rstrip('/')}/releases/{sha}"
-    _run(["ssh", ssh_target, f"mkdir -p -- {shlex.quote(release_dir)}"])
-    _run(["rsync", "-az", "--delete", *(f"--exclude={item}" for item in EXCLUDES),
+    release_parent = f"{remote_dir.rstrip('/')}/releases"
+    _run(["ssh", ssh_target, f"mkdir -p -- {shlex.quote(release_parent)} && "
+          f"mkdir -m 700 -- {shlex.quote(release_dir)}"])
+    _run(["rsync", "-az", *(f"--exclude={item}" for item in EXCLUDES),
           f"{checkout.resolve()}/", f"{ssh_target}:{release_dir}/"])
     return release_dir
 
@@ -62,15 +79,22 @@ def _is_code_bind(volume: object) -> bool:
     return source.startswith((".", "/"))
 
 
-def make_rollback_manifest(compose: dict, pre385_image_id: str) -> dict:
+def make_rollback_manifest(compose: dict, pre385_image_id: str,
+                           compose_project_name: str) -> dict:
     if not IMAGE_ID.fullmatch(pre385_image_id):
         raise ValueError("Rollback image must be a pinned sha256 image ID")
+    if not PROJECT.fullmatch(compose_project_name):
+        raise ValueError("Rollback requires the existing Compose project name")
     manifest = copy.deepcopy(compose)
+    if manifest.get("name") and manifest["name"] != compose_project_name:
+        raise ValueError("Compose project name conflicts with rollback source")
+    manifest["name"] = compose_project_name
     services = manifest.get("services")
     if not isinstance(services, dict) or "mcp" not in services:
         raise ValueError("Compose manifest has no MCP service")
     services.pop("mcp2", None)
     services.pop("mcp3", None)
+    services.pop("test", None)
     mcp = services["mcp"]
     mcp.pop("build", None)
     mcp["image"] = pre385_image_id
@@ -85,6 +109,15 @@ def make_rollback_manifest(compose: dict, pre385_image_id: str) -> dict:
         "MCP_WORKER_SLOTS=1" if str(item).startswith("MCP_WORKER_SLOTS=") else item
         for item in environment
     ]
+    volumes = manifest.get("volumes")
+    if not isinstance(volumes, dict):
+        raise ValueError("Compose named volumes are missing")
+    for volume_name, config in volumes.items():
+        explicit = config.get("name") if isinstance(config, dict) else None
+        volumes[volume_name] = {
+            "external": True,
+            "name": explicit or f"{compose_project_name}_{volume_name}",
+        }
     return manifest
 
 
@@ -110,6 +143,7 @@ def main() -> int:
     rollback = commands.add_parser("rollback-manifest")
     rollback.add_argument("compose_file", type=Path)
     rollback.add_argument("pre385_image_id")
+    rollback.add_argument("compose_project_name")
     rollback.add_argument("output", type=Path)
     args = parser.parse_args()
     if args.command == "stage":
@@ -117,7 +151,8 @@ def main() -> int:
     else:
         source = yaml.safe_load(args.compose_file.read_text())
         write_rollback_manifest(args.output,
-                                make_rollback_manifest(source, args.pre385_image_id))
+                                make_rollback_manifest(source, args.pre385_image_id,
+                                                       args.compose_project_name))
         print(args.output)
     return 0
 

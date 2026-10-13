@@ -88,7 +88,7 @@ async def _runtime_lifespan(_server):
     cache_gauge_task = None
     try:
         validate_allowed_origins_config()
-        shared_metric_counters.require_shared_metrics_config()
+        await shared_metric_counters.verify_shared_metrics_startup()
         await initialize_storage()
         if get_database_url().startswith("sqlite"):
             await bootstrap_storage_schema()
@@ -104,7 +104,8 @@ async def _runtime_lifespan(_server):
             try:
                 backend = shared_metric_counters.get_backend()
                 if backend is not None:
-                    backend.clear_cache_entries(_slot_identity())
+                    await asyncio.wait_for(asyncio.to_thread(
+                        backend.clear_cache_entries, _slot_identity()), timeout=2)
             except Exception:
                 RUNTIME_LOGGER.warning("Shared cache gauge cleanup failed", extra={
                     "event_name": "shared_cache_gauge_cleanup_failed",

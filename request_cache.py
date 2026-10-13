@@ -25,7 +25,16 @@ def _shared_cache_event(family: str) -> None:
     try:
         backend = shared_metric_counters.get_backend()
         if backend is not None:
-            backend.increment(family, "")
+            def deliver() -> None:
+                try:
+                    backend.increment(family, "")
+                except Exception as exc:
+                    RUNTIME_LOGGER.warning("Shared cache metric event lost", extra={
+                        "event_name": "shared_metric_event_lost", "metric_family": family,
+                        "error_class": type(exc).__name__,
+                    })
+
+            shared_metric_counters.dispatch(deliver)
     except Exception as exc:
         RUNTIME_LOGGER.warning("Shared cache metric event lost", extra={
             "event_name": "shared_metric_event_lost", "metric_family": family,
@@ -37,7 +46,18 @@ def _shared_cache_gauge(count: int) -> None:
     try:
         backend = shared_metric_counters.get_backend()
         if backend is not None:
-            backend.publish_cache_entries(_slot_identity(), count)
+            slot = _slot_identity()
+
+            def deliver() -> None:
+                try:
+                    backend.publish_cache_entries(slot, count)
+                except Exception as exc:
+                    RUNTIME_LOGGER.warning("Shared cache gauge unavailable", extra={
+                        "event_name": "shared_metric_event_lost", "metric_family": "cache_entries",
+                        "error_class": type(exc).__name__,
+                    })
+
+            shared_metric_counters.dispatch(deliver)
     except Exception as exc:
         RUNTIME_LOGGER.warning("Shared cache gauge unavailable", extra={
             "event_name": "shared_metric_event_lost", "metric_family": "cache_entries",

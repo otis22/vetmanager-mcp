@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import Future, ThreadPoolExecutor
 import json
 import hashlib
 import math
 import os
-from threading import Lock
+from threading import BoundedSemaphore, Lock
 
 
 COUNTERS_KEY = "vetmanager:metrics:v1:counters"
@@ -54,6 +56,10 @@ class SharedMetricsUnavailable(RuntimeError):
 class RedisMetricCounters:
     def __init__(self, redis_client) -> None:
         self._redis = redis_client
+
+    def ping(self) -> None:
+        if not self._redis.ping():
+            raise SharedMetricsUnavailable("Shared metrics Redis did not answer PING")
 
     def increment(self, family: str, label_key: str, count: int = 1) -> None:
         if family not in SHARED_COUNTER_FAMILIES or count <= 0:
@@ -142,11 +148,66 @@ class RedisMetricCounters:
 _BACKEND_LOCK = Lock()
 _BACKEND_URL = ""
 _BACKEND: RedisMetricCounters | None = None
+_DELIVERY_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="shared-metrics")
+_DELIVERY_CAPACITY = BoundedSemaphore(4096)
+_PENDING_LOCK = Lock()
+_PENDING: set[Future] = set()
+
+
+def dispatch(operation) -> Future | None:
+    """Keep Redis socket waits outside the async request loop with bounded work."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        operation()
+        return None
+    if not _DELIVERY_CAPACITY.acquire(blocking=False):
+        raise SharedMetricsUnavailable("Shared metrics delivery queue is full")
+    try:
+        future = _DELIVERY_POOL.submit(operation)
+    except BaseException:
+        _DELIVERY_CAPACITY.release()
+        raise
+    with _PENDING_LOCK:
+        _PENDING.add(future)
+
+    def completed(done: Future) -> None:
+        with _PENDING_LOCK:
+            _PENDING.discard(done)
+        _DELIVERY_CAPACITY.release()
+
+    future.add_done_callback(completed)
+    return future
+
+
+async def wait_pending(timeout_seconds: float = 2) -> bool:
+    with _PENDING_LOCK:
+        pending = tuple(_PENDING)
+    if not pending:
+        return True
+    try:
+        await asyncio.wait_for(asyncio.shield(asyncio.gather(
+            *(asyncio.wrap_future(future) for future in pending),
+            return_exceptions=True,
+        )), timeout=timeout_seconds)
+        return True
+    except asyncio.TimeoutError:
+        return False
 
 
 def require_shared_metrics_config() -> None:
     if os.environ.get("MCP_WORKER_SLOTS", "1") == "3" and not os.environ.get("REDIS_URL", "").strip():
         raise ValueError("REDIS_URL is required for three MCP slots")
+
+
+async def verify_shared_metrics_startup() -> None:
+    require_shared_metrics_config()
+    try:
+        backend = get_backend()
+        if backend is not None:
+            await asyncio.wait_for(asyncio.to_thread(backend.ping), timeout=2)
+    except Exception as exc:
+        raise SharedMetricsUnavailable("Shared metrics Redis unavailable at startup") from exc
 
 
 def get_backend() -> RedisMetricCounters | None:

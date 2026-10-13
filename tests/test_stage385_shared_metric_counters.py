@@ -1,5 +1,9 @@
 """Stage 385.2c1: counters from separate workers have one Redis value."""
 
+import asyncio
+import time
+import threading
+
 import fakeredis
 import httpx
 import pytest
@@ -8,6 +12,7 @@ import re
 import service_metrics
 from shared_metric_counters import (
     RedisMetricCounters, SHARED_COUNTER_FAMILIES, require_shared_metrics_config,
+    verify_shared_metrics_startup,
 )
 from request_cache import InMemoryTaggedCache
 from server import mcp
@@ -31,6 +36,56 @@ def test_three_slots_cannot_start_with_process_local_metrics(monkeypatch):
     monkeypatch.delenv("REDIS_URL", raising=False)
     with pytest.raises(ValueError, match="REDIS_URL"):
         require_shared_metrics_config()
+
+
+@pytest.mark.asyncio
+async def test_three_slots_cannot_report_ready_with_unreachable_redis(monkeypatch):
+    class BrokenBackend:
+        def ping(self):
+            raise ConnectionError("redis down")
+
+    monkeypatch.setenv("MCP_WORKER_SLOTS", "3")
+    monkeypatch.setenv("REDIS_URL", "redis://example.invalid:6379/0")
+    monkeypatch.setattr(service_metrics.shared_metric_counters, "get_backend",
+                        lambda: BrokenBackend())
+    with pytest.raises(Exception, match="Shared metrics"):
+        await verify_shared_metrics_startup()
+
+
+@pytest.mark.asyncio
+async def test_slow_metric_backend_does_not_block_request_event_loop(monkeypatch):
+    class SlowBackend:
+        def increment(self, *_args):
+            time.sleep(.2)
+
+        def observe(self, *_args):
+            time.sleep(.2)
+
+    monkeypatch.setattr(service_metrics.shared_metric_counters, "get_backend",
+                        lambda: SlowBackend())
+    tick = asyncio.create_task(asyncio.sleep(.01))
+    started = time.monotonic()
+    service_metrics.record_tool_call(endpoint="/rest/api/client#list", method="GET",
+                                     outcome="success", duration_seconds=.01)
+    await tick
+    assert time.monotonic() - started < .1
+    assert await service_metrics.shared_metric_counters.wait_pending()
+
+
+@pytest.mark.asyncio
+async def test_metrics_scrape_timeout_does_not_cancel_queued_delivery():
+    gate = threading.Event()
+    called = []
+    first = service_metrics.shared_metric_counters.dispatch(lambda: gate.wait(.5))
+    second = service_metrics.shared_metric_counters.dispatch(lambda: called.append("delivered"))
+    try:
+        assert not await service_metrics.shared_metric_counters.wait_pending(.01)
+        gate.set()
+        await asyncio.wrap_future(first)
+        await asyncio.wrap_future(second)
+        assert called == ["delivered"]
+    finally:
+        gate.set()
 
 
 def test_http_tool_auth_and_upstream_counters_are_shared(monkeypatch):
@@ -133,12 +188,14 @@ async def test_cache_events_and_slot_entries_are_shared(monkeypatch):
         assert await cache.get("a") == {"ok": True}
         await cache.set("b", {"ok": True}, 60, ("b",))
         await cache.refresh_shared_gauge()
+    assert await service_metrics.shared_metric_counters.wait_pending()
     assert workers[0].snapshot()["cache_entries"] == 2
     for index, (worker, cache) in enumerate(zip(workers, caches)):
         monkeypatch.setattr("request_cache.shared_metric_counters.get_backend", lambda: worker)
         monkeypatch.setattr("request_cache._slot_identity", lambda: f"slot-{index}")
         await cache.invalidate_tag("b")
         await cache.refresh_shared_gauge()
+    assert await service_metrics.shared_metric_counters.wait_pending()
     snapshot = workers[0].snapshot()
     assert snapshot["cache_misses_total"] == 2
     assert snapshot["cache_hits_total"] == 2
@@ -165,3 +222,29 @@ async def test_metrics_returns_503_when_shared_store_fails_after_a_tool_event(mo
                                  base_url="http://testserver") as client:
         response = await client.get("/metrics")
     assert response.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_slow_metric_scrape_does_not_block_event_loop(monkeypatch):
+    class SlowBackend:
+        def snapshot(self):
+            time.sleep(.2)
+            return {}
+
+        def increment(self, *_args):
+            return None
+
+        def observe(self, *_args):
+            return None
+
+    monkeypatch.setattr(service_metrics.shared_metric_counters, "get_backend",
+                        lambda: SlowBackend())
+    app = mcp.http_app(path="/mcp", transport="streamable-http")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url="http://testserver") as client:
+        tick = asyncio.create_task(asyncio.sleep(.01))
+        started = time.monotonic()
+        metrics = asyncio.create_task(client.get("/metrics"))
+        await tick
+        assert time.monotonic() - started < .1
+        assert (await metrics).status_code == 200

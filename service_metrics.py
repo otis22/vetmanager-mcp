@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass
@@ -46,7 +47,17 @@ def _record_shared_counter(family: str, label_key: str, count: int = 1) -> None:
     try:
         backend = shared_metric_counters.get_backend()
         if backend is not None:
-            backend.increment(family, label_key, count)
+            def deliver() -> None:
+                try:
+                    backend.increment(family, label_key, count)
+                except Exception as exc:
+                    RUNTIME_LOGGER.warning(
+                        "Shared metric event lost",
+                        extra={"event_name": "shared_metric_event_lost",
+                               "metric_family": family, "error_class": type(exc).__name__},
+                    )
+
+            return shared_metric_counters.dispatch(deliver)
     except Exception as exc:
         RUNTIME_LOGGER.warning(
             "Shared metric event lost",
@@ -59,7 +70,17 @@ def _record_shared_latency(family: str, label_key: str, duration_seconds: float)
     try:
         backend = shared_metric_counters.get_backend()
         if backend is not None:
-            backend.observe(family, label_key, duration_seconds)
+            def deliver() -> None:
+                try:
+                    backend.observe(family, label_key, duration_seconds)
+                except Exception as exc:
+                    RUNTIME_LOGGER.warning(
+                        "Shared metric event lost",
+                        extra={"event_name": "shared_metric_event_lost",
+                               "metric_family": family, "error_class": type(exc).__name__},
+                    )
+
+            return shared_metric_counters.dispatch(deliver)
     except Exception as exc:
         RUNTIME_LOGGER.warning(
             "Shared metric event lost",
@@ -376,13 +397,20 @@ async def instrument_call(
     finally:
         elapsed = time.monotonic() - started
         try:
-            record_tool_call(
+            pending = record_tool_call(
                 endpoint=endpoint_label,
                 method=method,
                 outcome=outcome,
                 duration_seconds=elapsed,
                 tool_name=tool_name,
             )
+            for delivery in pending:
+                if delivery is not None:
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.shield(asyncio.wrap_future(delivery)), timeout=2)
+                    except Exception:
+                        pass
         except Exception as exc:
             if on_metric_error is None:
                 raise
@@ -422,7 +450,7 @@ def record_tool_call(
     outcome: str,
     duration_seconds: float,
     tool_name: str | None = None,
-) -> None:
+) -> tuple:
     """Record one MCP tool invocation with its outcome and latency.
 
     `endpoint` is the VM REST path (e.g. `/rest/api/client`), `method` is
@@ -440,10 +468,12 @@ def record_tool_call(
         _TOOL_CALL_LATENCY_SECONDS[(labeled_endpoint, normalized_method)].observe(
             duration_seconds
         )
-    _record_shared_counter("tool_calls_total",
-                           f"{labeled_endpoint}|{normalized_method}|{outcome}")
-    _record_shared_latency("tool_call_latency_seconds", f"{labeled_endpoint}|{normalized_method}",
-                           duration_seconds)
+    counter = _record_shared_counter("tool_calls_total",
+                                     f"{labeled_endpoint}|{normalized_method}|{outcome}")
+    latency = _record_shared_latency("tool_call_latency_seconds",
+                                     f"{labeled_endpoint}|{normalized_method}",
+                                     duration_seconds)
+    return counter, latency
 
 
 def _sanitize_tool_endpoint_label(endpoint: str) -> str:
