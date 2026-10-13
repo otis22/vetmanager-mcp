@@ -73,11 +73,11 @@ def test_stage190_observability_security_and_resource_limits() -> None:
     assert "printenv METRICS_AUTH_TOKEN > /tmp/metrics_bearer_token" in prometheus_command
     assert "$${METRICS_AUTH_TOKEN" not in prometheus_command
     assert prometheus["cpus"] == "0.5"
-    assert prometheus["mem_limit"] == "384m"
+    assert prometheus["mem_limit"] == "768m"
     assert grafana["cpus"] == "0.5"
-    assert grafana["mem_limit"] == "256m"
-    assert prometheus["deploy"]["resources"]["limits"]["memory"]
-    assert grafana["deploy"]["resources"]["limits"]["memory"]
+    assert grafana["mem_limit"] == "512m"
+    assert prometheus["deploy"]["resources"]["limits"]["memory"] == "768M"
+    assert grafana["deploy"]["resources"]["limits"]["memory"] == "512M"
     assert grafana["environment"]["GF_USERS_ALLOW_SIGN_UP"] == "false"
     assert grafana["environment"]["GF_AUTH_ANONYMOUS_ENABLED"] == "false"
     assert grafana["environment"]["GF_SECURITY_ADMIN_PASSWORD"] == "${GRAFANA_ADMIN_PASSWORD:-}"

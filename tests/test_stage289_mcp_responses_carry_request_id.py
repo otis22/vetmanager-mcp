@@ -75,11 +75,10 @@ def test_the_middleware_is_actually_installed_on_the_served_app(monkeypatch) -> 
         def __init__(self, *args, **kwargs) -> None:
             pass
 
-        def serve(self) -> None:
+        def run(self) -> None:
             return None
 
     monkeypatch.setattr(server, "_DrainingUvicornServer", _Server)
-    monkeypatch.setattr(server.asyncio, "run", lambda coro: None)
 
     server._run_http_server(
         transport="streamable-http", host="127.0.0.1", port=8000, path="/mcp"

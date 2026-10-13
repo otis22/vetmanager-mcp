@@ -33,7 +33,8 @@ RUN pip install --no-cache-dir \
     "aiosqlite>=0.20.0,<1" \
     "asyncpg>=0.29.0,<1" \
     "psycopg2-binary>=2.9.0,<3" \
-    "redis>=5.0.0,<6"
+    "redis>=5.0.0,<6" \
+    "uvicorn[standard]==0.42.0"
 
 # ── Production image ─────────────────────────────────────────────────────────
 FROM base AS production
@@ -55,7 +56,7 @@ FROM base AS test
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-RUN pip install --no-cache-dir \
+RUN pip install --timeout 120 --no-cache-dir \
     "playwright>=1.54.0,<2" \
     "pytest>=8.0.0,<9" \
     "pytest-asyncio>=0.23.0,<0.24" \

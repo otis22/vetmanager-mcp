@@ -14,11 +14,11 @@ services:
       resources:
         limits:
           cpus: '1'
-          memory: 512M
+          memory: 1G
     command: >
       postgres
-      -c shared_buffers=128MB
-      -c effective_cache_size=256MB
+      -c shared_buffers=256MB
+      -c effective_cache_size=512MB
       -c max_connections=50
       -c work_mem=4MB
       -c maintenance_work_mem=64MB
@@ -37,6 +37,11 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--save", "", "--appendonly", "no"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -154,14 +159,14 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1'
-          memory: 512M
+          cpus: '3'
+          memory: 2G
 
   prometheus:
     image: prom/prometheus:v2.55.1
     restart: unless-stopped
     cpus: '0.5'
-    mem_limit: 384m
+    mem_limit: 768m
     environment:
       METRICS_AUTH_TOKEN: ${METRICS_AUTH_TOKEN:-}
     entrypoint:
@@ -191,13 +196,13 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 384M
+          memory: 768M
 
   grafana:
     image: grafana/grafana:11.4.0
     restart: unless-stopped
     cpus: '0.5'
-    mem_limit: 256m
+    mem_limit: 512m
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
@@ -219,7 +224,7 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 256M
+          memory: 512M
 
   test:
     build:

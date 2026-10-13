@@ -38,6 +38,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Validate production Compose resources
+        run: python3 scripts/check_stage384_compose_config.py
+
       - name: Build Docker image
         run: docker build --target test --build-arg BASE_IMAGE=public.ecr.aws/docker/library/python:3.12-slim --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp-test .
 

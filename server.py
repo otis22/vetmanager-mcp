@@ -76,6 +76,11 @@ async def _graceful_shutdown() -> None:
 @asynccontextmanager
 async def _runtime_lifespan(_server):
     reset_draining()
+    loop_type = type(asyncio.get_running_loop())
+    RUNTIME_LOGGER.info(
+        "HTTP event loop selected",
+        extra={"event_name": "http_event_loop_selected", "loop_module": loop_type.__module__, "loop_class": loop_type.__name__},
+    )
     try:
         validate_allowed_origins_config()
         await initialize_storage()
@@ -214,13 +219,11 @@ def _run_http_server(*, transport: str, host: str, port: int, path: str) -> None
         proxy_headers=True,
         forwarded_allow_ips=os.environ.get("FORWARDED_ALLOW_IPS"),
     )
-    asyncio.run(
-        _DrainingUvicornServer(
-            config,
-            streamable_http_app=app if transport == "streamable-http" else None,
-            path=path if transport == "streamable-http" else None,
-        ).serve()
-    )
+    _DrainingUvicornServer(
+        config,
+        streamable_http_app=app if transport == "streamable-http" else None,
+        path=path if transport == "streamable-http" else None,
+    ).run()
 
 
 configure_logging()
