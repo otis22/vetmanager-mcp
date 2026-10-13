@@ -111,7 +111,19 @@ def quiesce_slot(service: str, site: Path, *, project_name: str,
     if not cid:
         raise RuntimeError("slot container is missing")
     _run("docker", "kill", "--signal=USR1", cid)
-    _wait_write_fence(port, seconds=timeout_seconds)
+    try:
+        _wait_write_fence(port, seconds=timeout_seconds)
+    except TimeoutError as exc:
+        # A timed-out write may still be running. Stop new traffic, but do not
+        # terminate or restart its process before the outcome is reconciled.
+        _write_atomic(site, updated)
+        try:
+            _run("nginx", "-t")
+            _run("systemctl", "reload", "nginx")
+        except Exception:
+            _write_atomic(site, original)
+            raise RuntimeError("write fence timed out and nginx route removal failed; operator recovery required") from exc
+        raise TimeoutError("write fence timed out; route removed, worker still running for reconciliation") from exc
     time.sleep(grace_seconds)
     since = datetime.now(timezone.utc).isoformat()
     _run("docker", "kill", "--signal=USR2", cid)

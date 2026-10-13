@@ -64,3 +64,24 @@ def test_invalid_nginx_config_restores_site_without_stopping_worker(tmp_path, mo
     assert ("docker", "stop", "--time", "30", "test-container") not in calls
     assert ("docker", "compose", "-p", "stage385probe", "--profile", "production", "restart", "mcp2") in calls
     assert any(call[:5] == ("docker", "compose", "-p", "stage385probe", "--profile") for call in calls)
+
+
+def test_fence_timeout_detaches_route_but_keeps_worker(tmp_path, monkeypatch):
+    site = tmp_path / "site.conf"
+    site.write_text(SITE)
+    calls = []
+
+    def fake_run(*args):
+        calls.append(args)
+        return "test-container" if args[:3] == ("docker", "compose", "-p") else ""
+
+    def timeout(*_args, **_kwargs):
+        raise TimeoutError("write fence did not reach zero")
+
+    monkeypatch.setattr(quiesce_mcp_slot, "_run", fake_run)
+    monkeypatch.setattr(quiesce_mcp_slot, "_wait_write_fence", timeout)
+    with pytest.raises(TimeoutError, match="route removed"):
+        quiesce_mcp_slot.quiesce_slot("mcp2", site, project_name="stage385probe", grace_seconds=0)
+    assert "server 127.0.0.1:8001;" not in site.read_text()
+    assert ("systemctl", "reload", "nginx") in calls
+    assert ("docker", "stop", "--time", "30", "test-container") not in calls
