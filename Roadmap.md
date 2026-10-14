@@ -28,21 +28,21 @@
   (14.10.2026; см. AssumptionLog, этап 385.1)
 - 385.2 Реализация по PRD: сторожа красными на единый /metrics при 3 воркерах
   и на отсутствие потери notice/claim; live-проверка на devtr6 с тремя
-  воркерами. — `in_progress` (14.10.2026: 385.2a1 с изолированным live devtr6,
-  безопасный шаблон/affinity и OAuth refresh 385.2a2 (активация 3 backend
-  ждёт cutover a4), 385.2a3 с read-only сверкой неизвестного исхода write,
-  385.2b с изолированным PostgreSQL live; 385.2c — общий Redis core,
-  counters, latency и cache metrics с живыми тремя slot, но без полного
-  каталога/Report AI dedup; a4 — подготовка release/rollback manifest без
-  cutover и испытания старого image. a3 завершён сверкой неизвестного исхода
-  записи на devtr6. Остаток: a4 — первый cutover и rollback старого image
-  в изолированном контуре; c2–c4 — живые редкие серии, Redis outage,
-  полный HELP/TYPE и Prometheus target; d — общий activation scan/alerts;
-  e — атомарные Report AI observations, dedup и expiry; f — claims, locks,
-  rate limiter, PG cache/write barrier и export storage; g — ресурсный gate
-  на 200 вызовах. Полный mock suite по коду 6907143 зелёный; Spark/Astra/Sol
-  committed review проведён, post-budget правки проверены Spark scout.
-  Production не трогали.)
+  воркерами. — `in_progress` (14.10.2026: a1–a3, b и c1 закрыты ранее;
+  a4 — изолированный cutover на три slot и откат точного pre-385 image
+  проверены с health/metrics/tools/list/SSE/export; прежняя session после
+  отката дала 404, re-initialize и GET SSE — 200. При испытании исправлено
+  столкновение PID 1 в общем томе логов, сторож показан красным. Для c2
+  проверен полный каталог shared counter/latency, живые bearer/Report AI
+  и export серии, mock редких событий; c3 — Redis outage 503→200 и равный
+  count/sum/max/cache на трёх slot; c4 — 49 HELP/TYPE и target `up=1`.
+  Остаток: c2a — живые guard/rate-limit события; c2b — безопасный export
+  outcome, не только serve; c2c — недостижимые вручную события покрыты mock,
+  требуется финальная сверка полного каталога; d — общий activation scan/alerts;
+  e — Report AI observation dedup/expiry (два slot пока дают двойной terminal);
+  f — claims, locks, limiter, PG cache/write barrier и export storage;
+  g — ресурсный gate на 200 вызовах. Новый полный mock и committed review
+  фиксируются в AssumptionLog. Production не трогали.)
 - 385.3 Аудит, сильное ревью, полный прогон, AssumptionLog, выпуск с зелёным
   CI; после выпуска сверка утилизации ядер на проде. — `todo`
 
@@ -550,21 +550,6 @@ production.
 - 367.3 Полный suite, audit, review и выпуск с зелёными CI/Deploy Prod
   без прямого обращения к production. — `done`
 
-## Этап 366. Доставка событий Sentry не должна молча исчезать — `done`
-
-Источник: production-лог 04.10.2026. SDK Sentry не смог открыть соединение с
-ingestion endpoint (`Network is unreachable`); сам MCP продолжил работу, но это
-оставляет ошибку без внешнего события. Нужна безопасная наблюдаемость контура,
-а не повторная отправка бизнес-операции и не выгрузка содержимого запросов.
-
-- 366.1 Диагностика: отделить DNS/маршрут/egress VDS от ошибки SDK; подтвердить,
-  что отправка выполняется неблокирующе и не влияет на ответ MCP. Не печатать
-  DSN, токены, URL экспортов или ПД. — `done`
-- 366.2 Метрика/структурный счётчик отброшенных событий и безопасное
-  предупреждение с причиной; красный сторож на транспортный отказ без утечки
-  полей события. — `done`
-- 366.3 Проверка доставки на production после штатного деплоя, review и выпуск с зелёным CI. — `done`
-
 ## Этап 358. Превью строк Report AI до сохранения — `todo`
 
 Решение Владимира 02.10.2026 (репорты #94, #110): у Ветменеджера просим превью строк до
@@ -591,3 +576,16 @@ endpoint, принимающий filter_json и возвращающий тол�
 
 - 358.1 Дождаться контракта превью строк от Ветменеджера, сверить на devtr6. — `todo`
 - 358.2 Инструмент/поле превью, подсказка «проверь до сохранения», сторожа, выпуск с зелёным CI. — `todo`
+
+## Этап 386. Наблюдаемость потерянной MCP-сессии и восстановление клиента — `todo`
+
+Источник: наблюдение супервизора 14.10.2026 — один клиент повторяет `POST /mcp`
+с ответом 404 без повторного initialize. Текущий `record_http_request` охватывает
+custom web routes, а не ответы FastMCP `/mcp`; доля `session-not-found` 404
+в `/metrics` не видна. Серия 400 и `missing_authorization` от другого IP
+не похожа на health-check: Docker проверяет `GET /healthz`.
+
+- 386.1 Различить причины 404/400 на `/mcp` безопасными bounded метками,
+  проверить поведение клиента после потери сессии и добавить восстановление
+  через re-initialize или явную подсказку без session ID/IP в метриках. PRD,
+  красные сторожа и живой изолированный тест перед реализацией. — `todo`

@@ -6,6 +6,8 @@ import json
 import logging
 import os
 from pathlib import Path
+import secrets
+import tempfile
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -156,17 +158,23 @@ class PersistentRotatingFileHandler(logging.Handler):
         self.directory.mkdir(parents=True, exist_ok=True)
         if not self.directory.is_dir():
             raise RuntimeError(f"Persistent log path is not a directory: {directory}")
-        probe_path = self.directory / f".write-probe-{os.getpid()}"
-        with probe_path.open("x", encoding="utf-8"):
+        # Every container has PID 1. A fixed probe collides during concurrent
+        # startup (or after a crash), and a shared daily filename interleaves
+        # records from independent handlers without a shared logging lock.
+        with tempfile.NamedTemporaryFile(prefix=".write-probe-", dir=self.directory):
             pass
-        probe_path.unlink()
+        self._file_tag = secrets.token_hex(16)
         self.current_path: Path | None = None
 
     def _next_path(self) -> Path:
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        existing = sorted(self.directory.glob(f"runtime-{day}-*.log"))
-        index = len(existing) + 1
-        return self.directory / f"runtime-{day}-{index:03d}.log"
+        existing = sorted(self.directory.glob(f"runtime-{day}-{self._file_tag}-*.log"))
+        index = 1
+        for path in existing:
+            suffix = path.stem.rsplit("-", 1)[-1]
+            if suffix.isdecimal():
+                index = max(index, int(suffix) + 1)
+        return self.directory / f"runtime-{day}-{self._file_tag}-{index:03d}.log"
 
     def _path_for_record(self, rendered: str) -> Path:
         encoded_size = len((rendered + "\n").encode("utf-8"))
