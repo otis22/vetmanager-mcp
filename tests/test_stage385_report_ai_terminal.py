@@ -74,14 +74,16 @@ def test_same_clinic_job_on_different_connections_has_one_terminal(monkeypatch):
 @pytest.mark.asyncio
 async def test_slow_terminal_claim_does_not_block_event_loop(monkeypatch):
     backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
-    real_claim = backend.claim_report_ai_terminal
+    real_claim = backend.observe_report_ai_lifecycle
+    calls = []
 
-    def slow_claim(*args):
+    def slow_claim(*args, **kwargs):
+        calls.append(1)
         time.sleep(.2)
-        return real_claim(*args)
+        return real_claim(*args, **kwargs)
 
     monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
-    monkeypatch.setattr(backend, "claim_report_ai_terminal", slow_claim)
+    monkeypatch.setattr(backend, "observe_report_ai_lifecycle", slow_claim)
     monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
     loop = asyncio.get_running_loop()
     started = loop.time()
@@ -89,7 +91,7 @@ async def test_slow_terminal_claim_does_not_block_event_loop(monkeypatch):
     loop.call_later(.01, lambda: ticks.append(loop.time() - started))
     report_ai._observe_report_ai_lifecycle({"id": 385003, "status": "saved"}, now=10.0)
     await asyncio.sleep(.03)
-    assert ticks and ticks[0] < .1
+    assert calls and ticks and ticks[0] < .1
     assert await shared_metric_counters.wait_pending()
 
 
@@ -255,6 +257,32 @@ def test_guidance_first_job_and_outcome_are_shared_across_slots():
     assert snapshot["report_ai_empty_preview_guidance_outcomes_total"] == {"saved_empty": 1}
 
 
+def test_guidance_resolution_before_delayed_issue_is_saved():
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    digest = "a" * 64
+    backend.resolve_report_ai_guidance(digest, "saved_empty", 2.0, 3600)
+    backend.issue_report_ai_guidance(digest, 1.0, 3600)
+    snapshot = backend.snapshot()
+    assert snapshot["report_ai_empty_preview_guidance_jobs_total"] == 1
+    assert snapshot["report_ai_empty_preview_guidance_outcomes_total"] == {"saved_empty": 1}
+
+
+def test_local_guidance_expiry_does_not_override_shared_refresh(monkeypatch):
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    digest = "b" * 64
+    backend.issue_report_ai_guidance(digest, 1.0, 3600)
+    backend.issue_report_ai_guidance(digest, 1000.0, 3600)
+    key = (1, 1, 385055)
+    report_ai._REPORT_AI_LIFECYCLE_OBSERVATIONS[key] = {
+        "last_seen": 1.0, "guidance_issued_at": 1.0,
+        "guidance_digest": digest,
+    }
+    report_ai._cleanup_report_ai_queue_observations(3602.0)
+    backend.resolve_report_ai_guidance(digest, "saved_empty", 3603.0, 3600)
+    assert backend.snapshot()["report_ai_empty_preview_guidance_outcomes_total"] == {"saved_empty": 1}
+
+
 def test_guidance_issued_on_two_slots_resolves_after_handoff(monkeypatch):
     backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
     monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
@@ -346,6 +374,27 @@ def test_export_poll_before_async_start_preserves_poll_state():
     backend.remember_report_ai_export(digest, 3.0, 3600)
     backend.cleanup_report_ai_exports(3604.0, 3600)
     assert backend.snapshot()["report_ai_exports_total"]["poll|abandoned_wait"] == 1
+
+
+def test_export_poll_before_start_preserves_true_start_duration():
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    digest = "c" * 64
+    backend.mark_report_ai_export_poll(digest, 2.0, 3600)
+    backend.remember_report_ai_export(digest, 1.0, 3600)
+    backend.complete_report_ai_export(digest, "success", 6.0, 3600)
+    assert backend.snapshot()["report_ai_export_duration_seconds"]["success"]["sum_seconds"] == 5.0
+
+
+def test_old_slot_update_cannot_move_shared_stage_backwards():
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    digest = "d" * 64
+    backend.observe_report_ai_lifecycle(digest, "queued", 1.0, 3600)
+    backend.observe_report_ai_lifecycle(digest, "preview", 3.0, 3600)
+    backend.observe_report_ai_lifecycle(digest, "queued", 2.0, 3600)
+    backend.observe_report_ai_lifecycle(digest, "saved", 4.0, 3600)
+    assert backend.snapshot()["report_ai_job_transitions_total"] == {
+        "queued|preview": 1, "preview|saved": 1,
+    }
 
 
 @pytest.mark.asyncio

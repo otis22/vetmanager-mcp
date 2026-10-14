@@ -382,7 +382,8 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
 
     for observation in list(_REPORT_AI_LIFECYCLE_OBSERVATIONS.values()) + list(_REPORT_AI_FINALIZED_OBSERVATIONS.values()):
         issued = observation.get("guidance_issued_at")
-        if issued is not None and now - float(issued) >= REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS:
+        if (shared_metric_counters.get_backend() is None and issued is not None
+                and now - float(issued) >= REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS):
             _resolve_guidance_outcome(observation, "abandoned_wait")
 
     expired_job_ids = [
@@ -402,14 +403,14 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
     ]
     for key in expired_lifecycle_keys:
         observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.pop(key)
-        if "guidance_issued_at" in observation:
+        if shared_metric_counters.get_backend() is None and "guidance_issued_at" in observation:
             _resolve_guidance_outcome(observation, "abandoned_wait")
         if shared_metric_counters.get_backend() is None:
             _finalize_abandoned_lifecycle(key, observation, now=now)
 
     while len(_REPORT_AI_LIFECYCLE_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
         key, observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.popitem(last=False)
-        if "guidance_issued_at" in observation:
+        if shared_metric_counters.get_backend() is None and "guidance_issued_at" in observation:
             _resolve_guidance_outcome(observation, "abandoned_wait")
         if shared_metric_counters.get_backend() is None:
             _finalize_abandoned_lifecycle(key, observation, now=now)
@@ -423,7 +424,8 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
         _REPORT_AI_FINALIZED_OBSERVATIONS.pop(key, None)
     while len(_REPORT_AI_FINALIZED_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
         _, observation = _REPORT_AI_FINALIZED_OBSERVATIONS.popitem(last=False)
-        _resolve_guidance_outcome(observation, "abandoned_wait")
+        if shared_metric_counters.get_backend() is None:
+            _resolve_guidance_outcome(observation, "abandoned_wait")
 
     expired_export_keys = [
         key
@@ -1684,6 +1686,18 @@ async def _start_report_export(
         _best_effort_observation("export_start", record_report_ai_export,
                                  operation="start", outcome="success")
         _remember_report_ai_export(report_file_id)
+        key = _report_ai_queue_observation_key({"id": report_file_id})
+        backend = shared_metric_counters.get_backend()
+        if key is not None and backend is not None:
+            try:
+                await asyncio.to_thread(
+                    backend.remember_report_ai_export,
+                    _report_ai_terminal_digest(key),
+                    _REPORT_AI_EXPORT_OBSERVATIONS[key]["started_at"],
+                    REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS,
+                )
+            except Exception as exc:
+                _report_ai_observation_failed(exc, operation="export_start_barrier")
         return payload
     except VetmanagerError as exc:
         _best_effort_observation("export_start_error_code", record_report_ai_outcome_code,
