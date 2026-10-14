@@ -19,4 +19,4 @@ def test_deploy_runs_mcp_tool_smoke_after_remote_deploy() -> None:
     text = (Path(__file__).resolve().parent.parent / ".github/workflows/deploy-prod.yml").read_text()
     assert "Verify public MCP read-only tool" in text
     assert "pip install --disable-pip-version-check httpx" in text
-    assert text.index("./scripts/deploy_server.sh") < text.index("post_deploy_mcp_tool_smoke.py")
+    assert text.index("scripts.stage385_deploy") < text.index("post_deploy_mcp_tool_smoke.py")

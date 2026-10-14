@@ -20,6 +20,8 @@ IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
 PROJECT = re.compile(r"[a-z0-9][a-z0-9_-]*\Z")
 EXCLUDES = (".git/", ".venv/", ".cursor/", "__pycache__/",
             ".pytest_cache/", ".env", "data/", "logs/")
+SSH_OPTIONS = ("-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
+               "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=20")
 
 
 def _run(args: list[str]) -> None:
@@ -60,12 +62,13 @@ def stage_remote_release(checkout: Path, ssh_target: str,
         raise ValueError("Invalid SSH target")
     release_dir = f"{remote_dir.rstrip('/')}/releases/{sha}"
     release_parent = f"{remote_dir.rstrip('/')}/releases"
-    _run(["ssh", ssh_target, f"mkdir -p -- {shlex.quote(release_parent)} && "
+    _run(["ssh", *SSH_OPTIONS, ssh_target, f"mkdir -p -- {shlex.quote(release_parent)} && "
           f"mkdir -m 700 -- {shlex.quote(release_dir)}"])
     with tempfile.NamedTemporaryFile() as file_list:
         file_list.write(_tracked_files(checkout))
         file_list.flush()
-        _run(["rsync", "-az", "--from0", f"--files-from={file_list.name}",
+        _run(["rsync", "-az", "-e", "ssh " + " ".join(SSH_OPTIONS),
+              "--from0", f"--files-from={file_list.name}",
               *(f"--exclude={item}" for item in EXCLUDES),
               f"{checkout.resolve()}/", f"{ssh_target}:{release_dir}/"])
     return release_dir
@@ -94,7 +97,7 @@ def _is_code_bind(volume: object) -> bool:
 
 
 def make_rollback_manifest(compose: dict, pre385_image_id: str,
-                           compose_project_name: str) -> dict:
+                           compose_project_name: str, *, slot_count: int = 1) -> dict:
     if not IMAGE_ID.fullmatch(pre385_image_id):
         raise ValueError("Rollback image must be a pinned sha256 image ID")
     if not PROJECT.fullmatch(compose_project_name):
@@ -106,23 +109,29 @@ def make_rollback_manifest(compose: dict, pre385_image_id: str,
     services = manifest.get("services")
     if not isinstance(services, dict) or "mcp" not in services:
         raise ValueError("Compose manifest has no MCP service")
-    services.pop("mcp2", None)
-    services.pop("mcp3", None)
+    if slot_count not in (1, 3):
+        raise ValueError("Rollback slot count must be one or three")
+    if slot_count == 1:
+        services.pop("mcp2", None)
+        services.pop("mcp3", None)
     services.pop("test", None)
-    mcp = services["mcp"]
-    mcp.pop("build", None)
-    mcp["image"] = pre385_image_id
-    volumes = mcp.get("volumes", [])
-    mcp["volumes"] = [volume for volume in volumes if not _is_code_bind(volume)]
-    if not any(_volume_target(volume) == "/app/data" for volume in mcp["volumes"]):
-        raise ValueError("Rollback manifest must retain shared /app/data")
-    environment = mcp.get("environment", [])
-    if not isinstance(environment, list):
-        raise ValueError("MCP environment must be Compose list syntax")
-    mcp["environment"] = [
-        "MCP_WORKER_SLOTS=1" if str(item).startswith("MCP_WORKER_SLOTS=") else item
-        for item in environment
-    ]
+    for service in ("mcp", "mcp2", "mcp3")[:slot_count]:
+        if service not in services:
+            raise ValueError(f"Rollback manifest has no {service} service")
+        mcp = services[service]
+        mcp.pop("build", None)
+        mcp["image"] = pre385_image_id
+        volumes = mcp.get("volumes", [])
+        mcp["volumes"] = [volume for volume in volumes if not _is_code_bind(volume)]
+        if not any(_volume_target(volume) == "/app/data" for volume in mcp["volumes"]):
+            raise ValueError("Rollback manifest must retain shared /app/data")
+        environment = mcp.get("environment", [])
+        if not isinstance(environment, list):
+            raise ValueError("MCP environment must be Compose list syntax")
+        mcp["environment"] = [
+            f"MCP_WORKER_SLOTS={slot_count}" if str(item).startswith("MCP_WORKER_SLOTS=") else item
+            for item in environment
+        ]
     volumes = manifest.get("volumes")
     if not isinstance(volumes, dict):
         raise ValueError("Compose named volumes are missing")

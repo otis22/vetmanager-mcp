@@ -10,45 +10,14 @@ SYNC_SCRIPT_PATH = REPO_ROOT / "scripts" / "sync_and_deploy_server.sh"
 ENV_WRITER_PATH = REPO_ROOT / "scripts" / "update_env_secret.py"
 
 
-def test_deploy_server_has_compose_helper_and_postgres_support() -> None:
-    script_text = SCRIPT_PATH.read_text(encoding="utf-8")
-
-    assert 'compose() {' in script_text
-    assert 'docker compose' in script_text
-    assert 'pg_isready' in script_text
-    assert 'compose run -T --rm mcp alembic upgrade head </dev/null' in script_text
-    assert 'pre-deploy' in script_text
-    assert 'compose up -d --force-recreate --no-build mcp' in script_text
-    assert 'git rev-parse --verify HEAD' in script_text
-    assert '--build-arg ERROR_TRACKING_RELEASE="${DEPLOY_GIT_SHA}"' in script_text
-    assert 'post_deploy_smoke_checks.sh' in script_text
-
-
-def test_deploy_server_feedback_pepper_not_passed_via_argv_or_sed() -> None:
-    script_text = SCRIPT_PATH.read_text(encoding="utf-8")
-
-    assert "FEEDBACK_FINGERPRINT_PEPPER_ARG" not in script_text
-    assert "DEPLOY_FEEDBACK_FINGERPRINT_PEPPER" not in script_text
-    assert "sed -i" not in script_text
-    assert "update_env_secret.py" in script_text
-    assert "mktemp" in script_text
-    assert "cleanup_upload_pepper" in script_text
-    assert "__FEEDBACK_PEPPER_FILE__=" in script_text
-    assert "bash -c" in script_text
-    assert "bash -lc" not in script_text
-    assert "trap cleanup_remote_pepper EXIT INT TERM" in script_text
-    assert "printenv FEEDBACK_FINGERPRINT_PEPPER" not in script_text
-    assert 'echo "$FEEDBACK_FINGERPRINT_PEPPER"' not in script_text
-    assert "set -x" not in script_text
-    assert "bash -x" not in script_text
-    assert script_text.index("git pull --ff-only") < script_text.index("python3 scripts/update_env_secret.py")
-
-
-def test_sync_deploy_forwards_feedback_pepper_contract() -> None:
-    script_text = SYNC_SCRIPT_PATH.read_text(encoding="utf-8")
-
-    assert "FEEDBACK_FINGERPRINT_PEPPER is required" in script_text
-    assert 'FEEDBACK_FINGERPRINT_PEPPER="${FEEDBACK_FINGERPRINT_PEPPER}"' in script_text
+def test_retired_deploy_scripts_fail_before_any_mutation() -> None:
+    for path in (SCRIPT_PATH, SYNC_SCRIPT_PATH):
+        script_text = path.read_text(encoding="utf-8")
+        commands = "\n".join(line for line in script_text.splitlines() if not line.startswith("#"))
+        assert "docker" not in commands and "rsync" not in commands
+        result = subprocess.run(["bash", str(path)], capture_output=True, text=True)
+        assert result.returncode == 1
+        assert "disabled" in result.stderr
 
 
 def _source_env_value(env_path: Path) -> str:

@@ -9,15 +9,7 @@ permissions:
   actions: read
   contents: read
 
-# Этап 297. Два выката не должны идти одновременно: они синхронизируют код одним
-# и тем же `rsync -az --delete` в один и тот же каталог на сервере, и второй
-# стирает временный файл секрета, загруженный первым. Первый потом падает на
-# проверке с текстом «MCP container did not receive the deployed feedback
-# fingerprint pepper» — то есть обвиняет контейнер в собственной гонке.
-# Наблюдалось 04.09.2026: на коммит 15b5ac3 два запуска, один зелёный, один
-# красный, приложение при этом было здорово всё время.
-# Очередь вместо параллели; текущий выкат не отменяем — прерванный деплой хуже
-# лишней минуты ожидания.
+# Releases share one Compose project and nginx site. Queue every cutover.
 concurrency:
   group: deploy-prod
   cancel-in-progress: false
@@ -79,6 +71,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
 
       - name: Validate required secrets
         env:
@@ -126,46 +121,37 @@ jobs:
           fi
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Sync code to server (rsync)
+      - name: Stage immutable release
         env:
           PROD_SSH_TARGET: ${{ secrets.PROD_SSH_TARGET }}
           PROD_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR }}
+          GIT_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          python -m pip install --disable-pip-version-check PyYAML==6.0.1
           REMOTE_DIR="${PROD_REMOTE_DIR:-/opt/vetmanager-mcp}"
-          SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=30 -o ConnectionAttempts=3 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${HOME}/.ssh/known_hosts"
-          timeout 180 ssh ${SSH_OPTS} "${PROD_SSH_TARGET}" "mkdir -p '${REMOTE_DIR}'"
-          timeout 420 rsync -az --delete \
-            -e "ssh ${SSH_OPTS}" \
-            --exclude '.git/' \
-            --exclude '.venv/' \
-            --exclude '.cursor/' \
-            --exclude '__pycache__/' \
-            --exclude '.pytest_cache/' \
-            --exclude '.env' \
-            ./ "${PROD_SSH_TARGET}:${REMOTE_DIR}/"
+          python3 -m scripts.stage385_release stage . "${PROD_SSH_TARGET}" "${REMOTE_DIR}" "${GIT_SHA}"
 
-      - name: Run remote deploy
-        timeout-minutes: 10
+      - name: Run staged maintenance cutover
+        timeout-minutes: 25
         env:
           PROD_SSH_TARGET: ${{ secrets.PROD_SSH_TARGET }}
           PROD_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR }}
-          PROD_SSL_DOMAIN: ${{ secrets.PROD_SSL_DOMAIN }}
-          PROD_CERTBOT_EMAIL: ${{ secrets.PROD_CERTBOT_EMAIL }}
           FEEDBACK_FINGERPRINT_PEPPER: ${{ secrets.FEEDBACK_FINGERPRINT_PEPPER }}
           GIT_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           REMOTE_DIR="${PROD_REMOTE_DIR:-/opt/vetmanager-mcp}"
-          SSL_DOMAIN="${PROD_SSL_DOMAIN:-vetmanager-mcp.vromanichev.ru}"
-          SKIP_GIT_PULL=1 SSL_DOMAIN="${SSL_DOMAIN}" CERTBOT_EMAIL="${PROD_CERTBOT_EMAIL}" \
-          FEEDBACK_FINGERPRINT_PEPPER="${FEEDBACK_FINGERPRINT_PEPPER}" \
-          GIT_SHA="${GIT_SHA}" \
-          SSH_KEEPALIVE=1 \
-            ./scripts/deploy_server.sh "${PROD_SSH_TARGET}" "${REMOTE_DIR}"
+          printf '%s' "${FEEDBACK_FINGERPRINT_PEPPER}" | \
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+              "${PROD_SSH_TARGET}" \
+              "cd '${REMOTE_DIR}/releases/${GIT_SHA}' && python3 -m scripts.stage385_deploy '${REMOTE_DIR}/releases/${GIT_SHA}' '${REMOTE_DIR}' '${GIT_SHA}'"
 
       - name: Verify public MCP read-only tool
         env:
           PROD_SMOKE_BEARER_TOKEN: ${{ secrets.PROD_SMOKE_BEARER_TOKEN }}
-          PROD_SSL_DOMAIN: ${{ secrets.PROD_SSL_DOMAIN }}
+          PROD_SSH_TARGET: ${{ secrets.PROD_SSH_TARGET }}
         run: |
           python -m pip install --disable-pip-version-check httpx
-          python scripts/post_deploy_mcp_tool_smoke.py "https://${PROD_SSL_DOMAIN:-vetmanager-mcp.vromanichev.ru}"
+          DEPLOYED_DOMAIN="$(ssh -o BatchMode=yes "${PROD_SSH_TARGET}" \
+            "awk '/server_name/ { gsub(/;/, \"\", \$2); print \$2; exit }' /etc/nginx/sites-available/vetmanager-mcp.conf")"
+          test -n "${DEPLOYED_DOMAIN}"
+          python scripts/post_deploy_mcp_tool_smoke.py "https://${DEPLOYED_DOMAIN}"

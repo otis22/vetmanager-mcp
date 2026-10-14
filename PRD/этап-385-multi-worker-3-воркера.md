@@ -221,6 +221,18 @@ zero downtime для первой миграции не обещается. Ст
 Дальнейшее поочерёдное обновление допускается только при совместимом
 контракте Redis/PG и пройденном write-admission fence.
 
+**385.3a: постоянный путь выпуска.** Deploy Prod всегда выкладывает чистый
+checkout по SHA в отдельный release directory и запускает maintenance cutover.
+Повторный выпуск также останавливает все три slot после admission fence и
+поднимает три новых slot на закреплённом image ID; до готовности всех трёх
+nginx остаётся в maintenance. Для каждого выпуска сохраняются image ID текущих
+slot, rollback Compose manifest с прежним числом slot, nginx config и backup
+PostgreSQL вне Docker build context. Первый rollback имеет один slot, следующие
+— три. Rolling update допускается позже только отдельным изменением контракта.
+Кандидат nginx строится из фактического production TLS site, а не из шаблона
+`init_server.sh`; неожиданное расхождение layout останавливает выпуск до
+cutover. Readiness и `nginx -t` обязательны перед переключением.
+
 **Откат.** Конфигом вернуть один Compose slot/старый nginx upstream, сохранив
 PG/Redis schema без обратных миграций. Redis keys
 общих метрик имеют namespace/version без автоматического TTL для counters,

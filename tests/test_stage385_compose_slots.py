@@ -14,7 +14,7 @@ def test_three_immutable_mcp_slots_with_shared_data_and_bounded_resources():
     slots = [services[name] for name in SLOTS]
     assert sum(float(s["deploy"]["resources"]["limits"]["cpus"]) for s in slots) <= 3
     assert all(s["deploy"]["resources"]["limits"]["memory"] == "640M" for s in slots)
-    assert {s["image"] for s in slots} == {"vetmanager-mcp"}
+    assert {s["image"] for s in slots} == {"${MCP_IMAGE:-vetmanager-mcp}"}
     assert all("WEB_SESSION_SECRET" in s["environment"] for s in slots)
     assert all("STORAGE_ENCRYPTION_KEY" in s["environment"] for s in slots)
     assert {s["ports"][0] for s in slots} == {

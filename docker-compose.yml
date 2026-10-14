@@ -59,7 +59,7 @@ services:
         UID: ${UID:-1000}
         GID: ${GID:-1000}
         ERROR_TRACKING_RELEASE: ${GIT_SHA:-unknown}
-    image: vetmanager-mcp
+    image: ${MCP_IMAGE:-vetmanager-mcp}
     environment:
       # Этап 285. Форма записи здесь — не стиль, а поведение. `NAME=${NAME:-}`
       # кладёт в контейнер ПУСТУЮ строку, и читатель вида

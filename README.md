@@ -355,48 +355,18 @@ bearer-токеном — одна. Обнаружилось это неприя
 
 ## Деплой на сервер
 
-Предусловие: `ssh-copy-id user@host` выполнен.
+Первичную настройку выполняет `scripts/init_server.sh`. Production-выпуски
+проходят через `.github/workflows/deploy-prod.yml` после успешного `Tests` на
+`main`. Workflow выкладывает чистый checkout в отдельный `releases/<SHA>`,
+сохраняет rollback bundle и backup, переводит nginx в maintenance, дожидается
+остановки прежних slot, проверяет готовность трёх новых slot и переключает nginx
+после `nginx -t`. При неудаче после остановки прежнего приложения запускается
+его закреплённый image и восстанавливается прежний nginx site.
 
-Прод-хост проекта: `<your-domain>` (например, `mcp.example.com`).
-
-```bash
-# Первичная настройка (один раз)
-./scripts/init_server.sh user@host
-
-# Обновление кода и перезапуск
-export FEEDBACK_FINGERPRINT_PEPPER="<stored-production-pepper>"
-./scripts/deploy_server.sh user@host
-```
-
-По умолчанию код размещается в `/opt/vetmanager-mcp`. Альтернативный путь:
-
-```bash
-./scripts/init_server.sh user@host /srv/vetmanager-mcp
-export FEEDBACK_FINGERPRINT_PEPPER="<stored-production-pepper>"
-./scripts/deploy_server.sh user@host /srv/vetmanager-mcp
-```
-
-Используйте тот же сохранённый `FEEDBACK_FINGERPRINT_PEPPER`, что и для
-автоматического deploy; не генерируйте новое значение для каждого запуска.
-
-### Режим для приватного репозитория: rsync + deploy
-
-Если сервер не может делать `git clone/pull` (приватный repo), используйте синхронизацию кода по SSH:
-
-```bash
-export FEEDBACK_FINGERPRINT_PEPPER="$(openssl rand -hex 32)"  # один раз для production, хранить как secret
-./scripts/sync_and_deploy_server.sh root@<your-server-ip> /opt/vetmanager-mcp
-```
-
-`FEEDBACK_FINGERPRINT_PEPPER` нужно сгенерировать один раз, сохранить постоянно
-на уровне `STORAGE_ENCRYPTION_KEY` и переиспользовать во всех последующих
-deploy. Не регенерируйте его перед каждым запуском: смена значения ломает
-сопоставление уже сохранённых feedback fingerprints без отдельной миграции.
-
-Скрипт:
-- синхронизирует проект через `rsync` (без `.git`, `.env`, служебных директорий);
-- запускает `deploy_server.sh` с `SKIP_GIT_PULL=1`;
-- выполняет те же smoke-check и TLS-check, что обычный deploy.
+Старые `deploy_server.sh` и `sync_and_deploy_server.sh` выключены: они меняли
+live checkout и поднимали только один slot. Для self-hosted выпуска адаптируйте
+staged workflow и сначала проверьте nginx site и rollback в изолированном
+контуре. Конфигурация TLS сохраняется из действующего site.
 
 ### Post-deploy smoke
 
@@ -410,47 +380,16 @@ deploy. Не регенерируйте его перед каждым запу�
 Если `/metrics` защищён `METRICS_AUTH_TOKEN`, smoke script автоматически
 передаёт `Authorization: Bearer $METRICS_AUTH_TOKEN`.
 
-### Полностью автоматический деплой после push в main
+### Автоматический production deploy
 
-Добавлен workflow: `.github/workflows/deploy-prod.yml`.
+`deploy-prod.yml` запускается после успешного `Tests` для `main`. Он использует
+точный проверенный SHA, staged release, maintenance cutover и закреплённый
+rollback manifest. Необходимые секреты задаются в GitHub Actions вне
+репозитория. Текущий hostname для smoke берётся из действующего nginx site.
 
-Он срабатывает после успешного workflow `Tests` для ветки `main` и делает:
-- `rsync` кода на прод-сервер;
-- запуск `deploy_server.sh` в режиме `SKIP_GIT_PULL=1`.
-
-Нужные GitHub Secrets:
-- `PROD_SSH_TARGET` (пример: `root@<your-server-ip>`)
-- `PROD_SSH_PRIVATE_KEY` (приватный ключ для SSH)
-- `FEEDBACK_FINGERPRINT_PEPPER` (обязателен для production/PostgreSQL feedback fingerprints)
-- `FEEDBACK_CONTACT_EMAIL` (необязательный контакт, показывается только в форме жалобы кабинета)
-- `PROD_REMOTE_DIR` (опционально, по умолчанию `/opt/vetmanager-mcp`)
-- `PROD_SSL_DOMAIN` (опционально, ваш домен)
-- `PROD_CERTBOT_EMAIL` (опционально, email для certbot)
-
-`FEEDBACK_FINGERPRINT_PEPPER` храните как долгоживущий production secret: он
-должен оставаться тем же между deploy и не ротироваться без плана миграции
-исторических feedback fingerprints.
-
-### TLS (Let's Encrypt) и автообновление
-
-`init_server.sh` настраивает `nginx` reverse proxy, а `deploy_server.sh` автоматически вызывает проверку сертификата:
-- если сертификата нет — будет первичный выпуск;
-- если до истечения осталось меньше 30 дней — будет выполнено продление;
-- после обновления сертификата `nginx` перезагружается автоматически.
-
-При необходимости можно переопределить домен и email для certbot:
-
-```bash
-SSL_DOMAIN=mcp.example.com CERTBOT_EMAIL=ops@example.com \
-./scripts/init_server.sh root@<your-server-ip>
-
-SSL_DOMAIN=mcp.example.com CERTBOT_EMAIL=ops@example.com \
-./scripts/deploy_server.sh root@<your-server-ip>
-```
-
-Обязательные внешние условия:
-- DNS A-record вашего домена должен указывать на IP сервера;
-- на сервере/в облачном firewall должны быть открыты порты `80/tcp` и `443/tcp`.
+TLS настраивается при первичной установке через `init_server.sh`; сертификат и
+Certbot-директивы в действующем nginx site сохраняются при cutover. Продление
+сертификата выполняется отдельно от выпуска.
 
 ### Прод-конфиг Cursor MCP (локально, не в репозиторий)
 
@@ -868,10 +807,9 @@ payload-derived labels.
 git clone https://github.com/otis22/vetmanager-mcp.git
 cd vetmanager-mcp
 ./scripts/init_server.sh root@<your-server-ip>
-./scripts/deploy_server.sh root@<your-server-ip>
 ```
 
-Скрипт `init_server.sh` автоматически настроит Docker, PostgreSQL, Nginx reverse proxy и TLS-сертификат через Let's Encrypt. Подробнее — в секции [Деплой на сервер](#деплой-на-сервер).
+Production-обновления выполняются через staged workflow. Скрипт `init_server.sh` автоматически настроит Docker, PostgreSQL, Nginx reverse proxy и TLS-сертификат через Let's Encrypt. Подробнее — в секции [Деплой на сервер](#деплой-на-сервер).
 
 ## Contributing
 

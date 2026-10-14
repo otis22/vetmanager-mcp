@@ -20,7 +20,7 @@ GRAFANA_DATASOURCE = (
     REPO_ROOT / "ops" / "grafana" / "provisioning" / "datasources" / "prometheus.yml"
 )
 GRAFANA_DASHBOARD = REPO_ROOT / "ops" / "grafana" / "dashboards" / "vetmanager-overview.json"
-DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy_server.sh"
+DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "stage385_deploy.py"
 
 
 def _compose() -> dict:
@@ -201,17 +201,6 @@ def test_stage190_deploy_script_guards_grafana_password_and_warns_observability(
 
     assert "GRAFANA_ADMIN_PASSWORD must be set to a non-default secret value" in text
     assert "METRICS_AUTH_TOKEN must be set before production deploy" in text
-    assert '""|admin|password|changeme|CHANGE_ME)' in text
-    assert "METRICS_AUTH_TOKEN_LINE" in text
-    assert "export METRICS_AUTH_TOKEN" in text
-    assert "compose up -d --no-build prometheus grafana" in text
-    assert "observability services failed to start; app deploy remains complete" in text
-    assert "prometheus_mcp_target_is_up()" in text
-    assert 'target.get("scrapePool") == "vetmanager-mcp"' in text
-    assert 'target.get("health") == "up"' in text
-    assert "Prometheus target health is not up yet" in text
-    assert "api/datasources/name/Prometheus" in text
-    assert "api/dashboards/uid/vetmanager-mcp-overview" in text
-    assert "curl -fsS -u" not in text
-    assert "grafana_api_check()" in text
-    assert "must not contain double quote or backslash" in text
+    assert "_check_observability_secrets(live / \".env\")" in text
+    assert '"prometheus", "grafana"' in text
+    assert "observability restart failed after app cutover" in text

@@ -1,7 +1,7 @@
 """Stage 153 — Review-followup hardening (Kimi 2026-04-30).
 
 Targeted regression tests for 6 fixes:
-- F1: deploy_server.sh whitelist .env extract (no eval)
+- F1: deploy scripts do not eval .env
 - F4/F5: atomic report_count increment via SQL UPDATE
 - F13: collection-aware contains_any/contains_all
 - F14: build_error_fingerprint_hash uses explicit `is not None`
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import subprocess
+import secrets
 from pathlib import Path
 
 import httpx
@@ -29,112 +29,27 @@ from tests.runtime_factories import make_runtime_credentials
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-# ─── F1: deploy_server.sh whitelist .env extract ─────────────────────────────
+# ─── F1: production deploy does not evaluate .env as shell ─────────────────
 
 
-@pytest.mark.parametrize(
-    "script_name",
-    ["deploy_server.sh", "backup_daily_cron.sh", "rollback_db.sh"],
-)
+@pytest.mark.parametrize("script_name", ["deploy_server.sh", "backup_daily_cron.sh", "rollback_db.sh"])
 def test_f1_deploy_scripts_do_not_eval_env_file(script_name: str) -> None:
     script_text = (REPO_ROOT / "scripts" / script_name).read_text(encoding="utf-8")
-    assert 'eval "$(grep' not in script_text, (
-        f"F1: eval-based .env source in {script_name} must be replaced with whitelist extract"
-    )
-    assert 'eval "$(' not in script_text, (
-        f"F1: no eval-based command substitution allowed in {script_name}"
-    )
+    assert 'eval "$(grep' not in script_text
+    assert 'eval "$(' not in script_text
 
 
-def test_f1_whitelist_extract_survives_env_without_postgres_keys(tmp_path: Path) -> None:
-    """Regression: under `set -euo pipefail`, grep no-match (exit 1) must NOT kill the script.
-    Reproduces the prod-deploy failure observed on commit d548a15 when .env lacked POSTGRES_USER.
-    """
-    env_path = tmp_path / ".env"
-    env_path.write_text(
-        "LOG_LEVEL=INFO\nFEEDBACK_FINGERPRINT_PEPPER=test\n",
-        encoding="utf-8",
-    )
+def test_f1_stage385_secret_check_does_not_evaluate_other_env_lines(tmp_path: Path) -> None:
+    from scripts.stage385_deploy import _check_observability_secrets
 
-    script_text = (REPO_ROOT / "scripts" / "deploy_server.sh").read_text(encoding="utf-8")
-    start = script_text.find("# Stage 153 (F1): whitelist-extract")
-    end = script_text.find("# ── Build image once")
-    assert start != -1 and end != -1
-    env_block = script_text[start:end]
-
-    bash_script = (
-        f'set -euo pipefail\n'
-        f'cd "$1"\n'
-        f'POSTGRES_USER=defaultuser\n'
-        f'POSTGRES_DB=defaultdb\n'
-        f'GRAFANA_ADMIN_PASSWORD=stage153-safe-default\n'
-        f'METRICS_AUTH_TOKEN=stage153-safe-metrics-token\n'
-        f'{env_block}\n'
-        f'echo "USER=${{POSTGRES_USER}}"\n'
-        f'echo "DB=${{POSTGRES_DB}}"\n'
-    )
-    result = subprocess.run(
-        ["bash", "-c", bash_script, "_", str(tmp_path)],
-        check=True,
-        text=True,
-        capture_output=True,
-    )
-    out = result.stdout
-    assert "USER=defaultuser" in out, "F1: defaults must survive when .env lacks POSTGRES_USER"
-    assert "DB=defaultdb" in out, "F1: defaults must survive when .env lacks POSTGRES_DB"
-
-
-def test_f1_deploy_server_whitelist_extracts_only_allowed_keys(tmp_path: Path) -> None:
-    """Extract allowed deploy keys from a metachar-laden .env, prove malicious values do not execute."""
-    env_path = tmp_path / ".env"
     canary = tmp_path / "PWNED"
+    env_path = tmp_path / ".env"
     env_path.write_text(
-        "# header comment\n"
-        "POSTGRES_USER=safeuser\n"
-        "GRAFANA_ADMIN_USER=observability\n"
-        "GRAFANA_ADMIN_PASSWORD=stage153-safe-secret\n"
-        "METRICS_AUTH_TOKEN=stage153-safe-metrics-token\n"
-        f'MALICIOUS=$(touch "{canary}")\n'
-        'POSTGRES_DB="quoteddb"\n'
-        "OTHER_KEY=ignored_value\n"
-        "DATABASE_URL=postgres://u:p@h/db?sslmode=require\n",
-        encoding="utf-8",
-    )
-
-    script_text = (REPO_ROOT / "scripts" / "deploy_server.sh").read_text(encoding="utf-8")
-    start = script_text.find("# Stage 153 (F1): whitelist-extract")
-    end = script_text.find("# ── Build image once")
-    assert start != -1 and end != -1, "Could not isolate .env source block in deploy_server.sh"
-    env_block = script_text[start:end]
-
-    bash_script = (
-        f'cd "$1"\n'
-        f'POSTGRES_USER=defaultuser\n'
-        f'POSTGRES_DB=defaultdb\n'
-        f'GRAFANA_ADMIN_USER=admin\n'
-        f'GRAFANA_ADMIN_PASSWORD=stage153-safe-default\n'
-        f'METRICS_AUTH_TOKEN=stage153-safe-default-metrics\n'
-        f'{env_block}\n'
-        f'printf "USER=%s\\nDB=%s\\nGRAFANA_USER=%s\\nGRAFANA_PASSWORD=%s\\nMETRICS=%s\\n" "$POSTGRES_USER" "$POSTGRES_DB" "$GRAFANA_ADMIN_USER" "$GRAFANA_ADMIN_PASSWORD" "$METRICS_AUTH_TOKEN"\n'
-        f'if [ -n "${{MALICIOUS:-}}" ]; then echo "MALICIOUS_SOURCED=$MALICIOUS"; else echo "MALICIOUS_NOT_SOURCED"; fi\n'
-        f'if [ -n "${{OTHER_KEY:-}}" ]; then echo "OTHER_SOURCED=$OTHER_KEY"; else echo "OTHER_NOT_SOURCED"; fi\n'
-    )
-    result = subprocess.run(
-        ["bash", "-c", bash_script, "_", str(tmp_path)],
-        check=True,
-        text=True,
-        capture_output=True,
-    )
-
-    out = result.stdout
-    assert "USER=safeuser" in out
-    assert "DB=quoteddb" in out
-    assert "GRAFANA_USER=observability" in out
-    assert "GRAFANA_PASSWORD=stage153-safe-secret" in out
-    assert "METRICS=stage153-safe-metrics-token" in out
-    assert "MALICIOUS_NOT_SOURCED" in out, "F1: malicious key must NOT be sourced (whitelist only)"
-    assert "OTHER_NOT_SOURCED" in out, "F1: non-whitelisted keys must NOT leak into env"
-    assert not canary.exists(), "F1 CRITICAL: $(touch ...) inside .env value MUST NOT execute"
+        f"GRAFANA_ADMIN_PASSWORD={secrets.token_hex(24)}\n"
+        f"METRICS_AUTH_TOKEN={secrets.token_hex(24)}\n"
+        f'MALICIOUS=$(touch "{canary}")\n', encoding="utf-8")
+    _check_observability_secrets(env_path)
+    assert not canary.exists()
 
 
 # ─── F4/F5: atomic report_count via UPDATE ────────────────────────────────────
@@ -459,11 +374,11 @@ def test_f23_deploy_prod_yml_deploy_step_has_timeout_minutes() -> None:
     steps = deploy_job["steps"]
 
     deploy_step = next(
-        (s for s in steps if "deploy_server.sh" in (s.get("run") or "")),
+        (s for s in steps if "scripts.stage385_deploy" in (s.get("run") or "")),
         None,
     )
-    assert deploy_step is not None, "F23: could not find step running deploy_server.sh"
-    assert "timeout-minutes" in deploy_step, "F23: deploy_server.sh step must have timeout-minutes"
+    assert deploy_step is not None, "F23: could not find staged deploy step"
+    assert "timeout-minutes" in deploy_step, "F23: staged deploy step must have timeout-minutes"
     assert isinstance(deploy_step["timeout-minutes"], int)
     assert 5 <= deploy_step["timeout-minutes"] <= 30, (
         f"F23: timeout-minutes should be 5..30 (got {deploy_step['timeout-minutes']})"
