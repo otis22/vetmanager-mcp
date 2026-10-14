@@ -10,6 +10,9 @@ import math
 import os
 from threading import BoundedSemaphore, Event, Lock
 
+import redis
+from redis.exceptions import WatchError
+
 from observability_logging import RUNTIME_LOGGER
 
 
@@ -83,8 +86,6 @@ class RedisMetricCounters:
             raise ValueError("Unsupported metric latency aggregate")
         digest = hashlib.sha256(f"{family}\0{label_key}".encode()).hexdigest()
         key = LATENCY_KEY_PREFIX + digest
-        from redis.exceptions import WatchError
-
         for _ in range(20):
             try:
                 with self._redis.pipeline() as pipe:
@@ -114,8 +115,6 @@ class RedisMetricCounters:
             raise ValueError("Cache entry count cannot be negative")
         gauge_key = self._cache_slot_key(slot_identity)
         stopped_key = CACHE_STOPPED_KEY_PREFIX + gauge_key.rsplit(":", 1)[1]
-        from redis.exceptions import WatchError
-
         for _ in range(5):
             try:
                 with self._redis.pipeline() as pipe:
@@ -344,8 +343,6 @@ def get_backend() -> RedisMetricCounters | None:
         return None
     with _BACKEND_LOCK:
         if url != _BACKEND_URL or _BACKEND is None:
-            import redis
-
             _BACKEND = RedisMetricCounters(redis.Redis.from_url(
                 url, decode_responses=True, socket_connect_timeout=1,
                 socket_timeout=1,
