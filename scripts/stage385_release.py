@@ -123,6 +123,12 @@ def make_rollback_manifest(compose: dict, pre385_image_id: str,
         mcp["image"] = pre385_image_id
         volumes = mcp.get("volumes", [])
         mcp["volumes"] = [volume for volume in volumes if not _is_code_bind(volume)]
+        # The pre-385 image reads /app/.env at startup. The bundle contains a
+        # symlink to the live secret file; Compose resolves it from this manifest.
+        mcp["volumes"].append({
+            "type": "bind", "source": "./.env", "target": "/app/.env",
+            "read_only": True, "bind": {"create_host_path": False},
+        })
         if not any(_volume_target(volume) == "/app/data" for volume in mcp["volumes"]):
             raise ValueError("Rollback manifest must retain shared /app/data")
         environment = mcp.get("environment", [])

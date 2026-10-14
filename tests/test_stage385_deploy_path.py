@@ -22,6 +22,13 @@ def test_workflow_uses_staged_release_only():
     assert "scripts.stage385_deploy" in workflow
     assert "rsync -az --delete" not in workflow
     assert "./scripts/deploy_server.sh" not in workflow
+    steps = yaml.safe_load(workflow)["jobs"]["deploy"]["steps"]
+    public = next(step for step in steps if step.get("id") == "public_smoke")
+    alert = next(step for step in steps if step.get("name") == "Alert on public smoke failure")
+    assert public["continue-on-error"] is True
+    assert "server_name" not in public["run"]
+    assert "python scripts/post_deploy_mcp_tool_smoke.py" in public["run"]
+    assert "public_smoke.outcome == 'failure'" in alert["if"]
 
 
 def test_legacy_deploy_fails_closed():
@@ -72,8 +79,8 @@ def test_nginx_candidate_preserves_tls_and_gates_all_routes():
         render_nginx_site("server { location / { return 200; } }", "active")
 
 
-def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, repeat=False,
-                      partial_new=False):
+def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=False,
+                      repeat=False, partial_new=False):
     live = tmp_path / "live"
     release = live / "releases" / ("a" * 40)
     release.mkdir(parents=True)
@@ -102,17 +109,30 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, repeat=False,
         events.append(("run", args))
         if args[:2] == ("bash", "scripts/post_deploy_smoke_checks.sh"):
             events.append(("smoke_token", bool(kw["env"].get("METRICS_AUTH_TOKEN"))))
+            assert args[2:] == ("http://127.0.0.1:8000",)
+            if fail_smoke:
+                raise RuntimeError("injected internal smoke failure")
         if args[:3] == ("docker", "image", "inspect"):
             return new_image
         return old_image if args[:2] == ("docker", "inspect") else ""
 
     monkeypatch.setattr(stage385_deploy, "_run", run)
     monkeypatch.setattr(stage385_deploy, "_container", lambda project, service: service)
-    monkeypatch.setattr(stage385_deploy, "_compose", lambda path, project, image, *args, **kw: (
-        events.append(("compose", path.name, image, args)) or
-        (json.dumps({"services": {"mcp": {"environment": {
-            "METRICS_AUTH_TOKEN": secrets.token_hex(24)}}}})
-         if args == ("config", "--format", "json") else "")))
+    def compose(path, project, image, *args, **kw):
+        events.append(("compose", path.name, image, args))
+        if path.name == "rollback.yml" and "up" in args:
+            manifest = yaml.safe_load(path.read_text())
+            for service in (("mcp", "mcp2", "mcp3") if repeat else ("mcp",)):
+                assert any(isinstance(volume, dict) and volume.get("target") == "/app/.env"
+                           and volume.get("source") == "./.env"
+                           for volume in manifest["services"][service]["volumes"])
+            assert (path.parent / ".env").resolve() == live / ".env"
+        if args == ("config", "--format", "json"):
+            return json.dumps({"services": {"mcp": {"environment": {
+                "METRICS_AUTH_TOKEN": secrets.token_hex(24)}}}})
+        return ""
+
+    monkeypatch.setattr(stage385_deploy, "_compose", compose)
     monkeypatch.setattr(stage385_deploy, "_backup_pg", lambda project, bundle: (
         events.append(("backup",)) or bundle / "backup"))
     monkeypatch.setattr(stage385_deploy, "_write_site", lambda candidate, path: (
@@ -133,8 +153,9 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, repeat=False,
             raise TimeoutError("slot failed")
 
     monkeypatch.setattr(stage385_deploy, "_ready", ready)
-    if fail_ready:
-        with pytest.raises(TimeoutError, match="slot failed"):
+    if fail_ready or fail_smoke:
+        with pytest.raises((TimeoutError, RuntimeError),
+                           match="slot failed|injected internal smoke failure"):
             stage385_deploy.deploy(release, live, release.name, site=site, pepper="new")
     else:
         stage385_deploy.deploy(release, live, release.name, site=site, pepper="new")
@@ -168,6 +189,15 @@ def test_failed_cutover_rolls_back_pinned_image(monkeypatch, tmp_path):
                           if e[:3] == ("compose", "rollback.yml", old_image) and "up" in e[3])
     assert [i for i, e in enumerate(events) if e == ("stop_old",)][1] < rollback_index
     assert any(e[:3] == ("compose", "rollback.yml", old_image) and "up" in e[3] for e in events)
+    assert events[-1] == ("nginx", "old")
+    assert site.read_text() == PROD_SITE
+
+
+def test_failed_smoke_automatically_restores_manifest_and_nginx(monkeypatch, tmp_path):
+    events, site, old_image = _simulate_cutover(monkeypatch, tmp_path, fail_smoke=True)
+    assert ("smoke_token", True) in events
+    assert any(e[:3] == ("compose", "rollback.yml", old_image) and "up" in e[3]
+               for e in events)
     assert events[-1] == ("nginx", "old")
     assert site.read_text() == PROD_SITE
 

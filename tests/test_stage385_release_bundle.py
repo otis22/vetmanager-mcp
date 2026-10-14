@@ -51,6 +51,9 @@ def test_rollback_manifest_has_one_pinned_slot_and_no_source_bind(tmp_path):
     assert all(not str(volume).endswith(":/app") for volume in services["mcp"]["volumes"])
     assert "./tools:/app/tools:ro" not in services["mcp"]["volumes"]
     assert "mcp-data:/app/data" in services["mcp"]["volumes"]
+    assert any(isinstance(volume, dict) and volume.get("source") == "./.env"
+               and volume.get("target") == "/app/.env" and volume.get("read_only") is True
+               for volume in services["mcp"]["volumes"])
     assert "MCP_WORKER_SLOTS=1" in services["mcp"]["environment"]
     assert manifest["name"] == "stage385probe"
     assert manifest["volumes"]["mcp-data"] == {

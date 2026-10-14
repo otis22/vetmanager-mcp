@@ -146,12 +146,16 @@ jobs:
               "cd '${REMOTE_DIR}/releases/${GIT_SHA}' && python3 -m scripts.stage385_deploy '${REMOTE_DIR}/releases/${GIT_SHA}' '${REMOTE_DIR}' '${GIT_SHA}'"
 
       - name: Verify public MCP read-only tool
+        id: public_smoke
+        # External DNS/TLS can be unavailable from the runner after a healthy
+        # internal cutover. Report it without triggering another deployment.
+        continue-on-error: true
         env:
           PROD_SMOKE_BEARER_TOKEN: ${{ secrets.PROD_SMOKE_BEARER_TOKEN }}
-          PROD_SSH_TARGET: ${{ secrets.PROD_SSH_TARGET }}
         run: |
           python -m pip install --disable-pip-version-check httpx
-          DEPLOYED_DOMAIN="$(ssh -o BatchMode=yes "${PROD_SSH_TARGET}" \
-            "awk '/server_name/ { gsub(/;/, \"\", \$2); print \$2; exit }' /etc/nginx/sites-available/vetmanager-mcp.conf")"
-          test -n "${DEPLOYED_DOMAIN}"
-          python scripts/post_deploy_mcp_tool_smoke.py "https://${DEPLOYED_DOMAIN}"
+          python scripts/post_deploy_mcp_tool_smoke.py
+
+      - name: Alert on public smoke failure
+        if: ${{ steps.public_smoke.outcome == 'failure' }}
+        run: echo '::warning::Public MCP smoke failed after cutover; check external DNS and TLS.'

@@ -298,10 +298,6 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
         slots = ("mcp",)
     maintenance = render_nginx_site(base, "maintenance")
     active = render_nginx_site(base, "active")
-    host_match = re.search(r"(?m)^\s*server_name\s+([a-z0-9.-]+);", base)
-    if host_match is None:
-        raise RuntimeError("Base nginx hostname is missing")
-    hostname = host_match.group(1)
     # Persist the exact active nginx file and immutable rollback before any stop.
     bundle = state_dir / "rollback" / sha
     bundle.parent.mkdir(mode=0o700, exist_ok=True)
@@ -359,7 +355,7 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
             _ready(port)
         _write_site(active, site)
         _run("bash", "scripts/post_deploy_smoke_checks.sh", "http://127.0.0.1:8000",
-             hostname, cwd=release, env=dict(os.environ, METRICS_AUTH_TOKEN=metrics_token),
+             cwd=release, env=dict(os.environ, METRICS_AUTH_TOKEN=metrics_token),
              timeout=180)
         if not state:
             (state_dir / "base-nginx.conf").write_text(base)

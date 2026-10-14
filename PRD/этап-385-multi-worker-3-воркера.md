@@ -295,3 +295,12 @@ production выпуска, выпуск блокируется.
 файлом; deployment script обязан иметь полный rollback bundle. PRD-review
 385.1 совмещает Architecture Critique: reviewers проверяют affinity,
 атомарность, cardinality, pool, живые критерии и откат.
+
+**385.3-fix после остановленного выпуска 14.10.2026.** Блокирующий smoke
+обращается только к локальному порту нового slot; внешний read-only smoke
+идёт по canonical URL после cutover и при сетевом отказе даёт предупреждение. Rollback
+manifest монтирует сохранённый `.env` в `/app/.env` для pinned pre-385 image
+без ручного override. При искусственном падении внутреннего smoke изолированный
+контур должен автоматически вернуть старый image, `/healthz`, `/readyz` и
+nginx; затем тот же путь должен успешно поднять три новых slot. Статус 385.3
+остаётся `stop` до отдельного реального выпуска.
