@@ -373,7 +373,10 @@ class RedisMetricCounters:
                     pipe.watch(key)
                     state = pipe.hgetall(key)
                     first = "issued_at" not in state
-                    pending_outcome = state.get("pending_outcome") if first else None
+                    pending_outcome = (state.get("pending_outcome") if first
+                                       and float(state.get("pending_at", "-inf")) >= now
+                                       else None)
+                    latest_seen = max(float(state.get("last_seen", now)), now)
                     pipe.multi()
                     pipe.hincrby(COUNTERS_KEY, json.dumps([
                         "report_ai_empty_preview_guidance_issued_total", ""],
@@ -382,20 +385,21 @@ class RedisMetricCounters:
                         pipe.hincrby(COUNTERS_KEY, json.dumps([
                             "report_ai_empty_preview_guidance_jobs_total", ""],
                             separators=(",", ":")), 1)
-                        pipe.hset(key, mapping={"issued_at": now, "last_seen": now,
+                        pipe.hset(key, mapping={"issued_at": now, "last_seen": latest_seen,
                                                 "outcome": pending_outcome or ""})
+                        if state.get("pending_outcome"):
+                            pipe.hdel(key, "pending_outcome", "pending_at")
                         if pending_outcome:
-                            pipe.hdel(key, "pending_outcome")
                             pipe.hincrby(COUNTERS_KEY, json.dumps([
                                 "report_ai_empty_preview_guidance_outcomes_total",
                                 pending_outcome], separators=(",", ":")), 1)
                     else:
-                        pipe.hset(key, "last_seen", now)
+                        pipe.hset(key, "last_seen", latest_seen)
                     if state.get("outcome") or pending_outcome:
                         pipe.expire(key, ttl_seconds)
                     else:
                         pipe.zadd(REPORT_AI_GUIDANCE_EXPIRY_INDEX,
-                                  {identity_digest: now + ttl_seconds})
+                                  {identity_digest: latest_seen + ttl_seconds})
                     pipe.execute()
                     return first
             except WatchError:
@@ -420,6 +424,7 @@ class RedisMetricCounters:
                     if not state and not expiry_only and outcome != "abandoned_wait":
                         pipe.multi()
                         pipe.hset(key, mapping={"pending_outcome": outcome,
+                                                "pending_at": now,
                                                 "last_seen": now})
                         pipe.expire(key, ttl_seconds)
                         pipe.execute()
@@ -508,14 +513,15 @@ class RedisMetricCounters:
                     pipe.watch(key, done)
                     if pipe.exists(done):
                         return
-                    exists = pipe.exists(key)
+                    state = pipe.hgetall(key)
+                    latest_seen = max(float(state.get("last_seen", now)), now)
                     pipe.multi()
-                    values = {"last_seen": now, "has_polled": 1}
-                    if not exists:
+                    values = {"last_seen": latest_seen, "has_polled": 1}
+                    if not state:
                         values["started_at"] = now
                     pipe.hset(key, mapping=values)
                     pipe.zadd(REPORT_AI_EXPORT_EXPIRY_INDEX,
-                              {identity_digest: now + ttl_seconds})
+                              {identity_digest: latest_seen + ttl_seconds})
                     pipe.execute()
                     return
             except WatchError:

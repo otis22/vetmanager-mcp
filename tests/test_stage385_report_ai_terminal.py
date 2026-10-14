@@ -267,6 +267,41 @@ def test_guidance_resolution_before_delayed_issue_is_saved():
     assert snapshot["report_ai_empty_preview_guidance_outcomes_total"] == {"saved_empty": 1}
 
 
+def test_earlier_preview_change_is_not_future_guidance_outcome():
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    digest = "2" * 64
+    backend.resolve_report_ai_guidance(digest, "preview_changed", 1.0, 3600)
+    backend.issue_report_ai_guidance(digest, 2.0, 3600)
+    backend.resolve_report_ai_guidance(digest, "saved_empty", 3.0, 3600)
+    assert backend.snapshot()["report_ai_empty_preview_guidance_outcomes_total"] == {"saved_empty": 1}
+
+
+def test_delayed_guidance_issue_cannot_shorten_shared_expiry():
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    digest = "e" * 64
+    backend.issue_report_ai_guidance(digest, 20.0, 3600)
+    backend.issue_report_ai_guidance(digest, 10.0, 3600)
+    backend.cleanup_report_ai_guidance(3611.0, 3600)
+    backend.resolve_report_ai_guidance(digest, "saved_empty", 3612.0, 3600)
+    assert backend.snapshot()["report_ai_empty_preview_guidance_outcomes_total"] == {"saved_empty": 1}
+
+
+def test_shared_guidance_survives_local_finalized_eviction(monkeypatch):
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    monkeypatch.setattr(report_ai, "REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES", 1)
+    digest = "f" * 64
+    backend.issue_report_ai_guidance(digest, 1.0, 3600)
+    backend.issue_report_ai_guidance(digest, 1000.0, 3600)
+    report_ai._remember_finalized_report_ai_job(
+        (1, 1, 385061), now=1.0,
+        observation={"guidance_issued_at": 1.0, "guidance_digest": digest},
+    )
+    report_ai._remember_finalized_report_ai_job((1, 1, 385062), now=2.0)
+    backend.resolve_report_ai_guidance(digest, "recreated", 1001.0, 3600)
+    assert backend.snapshot()["report_ai_empty_preview_guidance_outcomes_total"] == {"recreated": 1}
+
+
 def test_local_guidance_expiry_does_not_override_shared_refresh(monkeypatch):
     backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
     monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
@@ -383,6 +418,17 @@ def test_export_poll_before_start_preserves_true_start_duration():
     backend.remember_report_ai_export(digest, 1.0, 3600)
     backend.complete_report_ai_export(digest, "success", 6.0, 3600)
     assert backend.snapshot()["report_ai_export_duration_seconds"]["success"]["sum_seconds"] == 5.0
+
+
+def test_delayed_export_poll_cannot_shorten_shared_expiry():
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    digest = "1" * 64
+    backend.remember_report_ai_export(digest, 1.0, 3600)
+    backend.mark_report_ai_export_poll(digest, 20.0, 3600)
+    backend.mark_report_ai_export_poll(digest, 10.0, 3600)
+    backend.cleanup_report_ai_exports(3611.0, 3600)
+    backend.complete_report_ai_export(digest, "success", 3612.0, 3600)
+    assert backend.snapshot()["report_ai_exports_total"]["poll|success"] == 1
 
 
 def test_old_slot_update_cannot_move_shared_stage_backwards():

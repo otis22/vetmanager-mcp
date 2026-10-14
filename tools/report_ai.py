@@ -636,7 +636,8 @@ def _remember_finalized_report_ai_job(
     _REPORT_AI_FINALIZED_OBSERVATIONS.move_to_end(observation_key)
     while len(_REPORT_AI_FINALIZED_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
         _, discarded = _REPORT_AI_FINALIZED_OBSERVATIONS.popitem(last=False)
-        _resolve_guidance_outcome(discarded, "abandoned_wait")
+        if shared_metric_counters.get_backend() is None:
+            _resolve_guidance_outcome(discarded, "abandoned_wait")
 
 
 def _observe_report_ai_queue(job: dict, *, now: float | None = None) -> int | None:
