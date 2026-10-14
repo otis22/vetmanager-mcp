@@ -51,14 +51,15 @@
   create Report AI на одном slot и read на другом дали 200/200 и закрытый
   барьер, Redis outage отказал на всех трёх slot. Для g изолированные 200
   вызовов дали 200 успешных ответов, OOM=0, общий счётчик +200 и ресурсный
-  gate ниже 70% 2 GiB. Остаток до `done`: живые e reject/guidance на реальном
-  подходящем job, f конкурентное изменение test connection, first-session и
-  stale GET после изменения сущности через другой slot, восстановление после
-  потери PG после upstream write, суммарная нагрузка локальных breaker
-  half-open проб, event loop задержка синхронных Redis observations и
-  очистка resolved guidance из account index; g — повтор 200 вызовов на
-  финальном image после clinic/entity barrier correction. Финальный suite и committed review этого
-  хода фиксируются в AssumptionLog. Production не трогали.)
+  gate ниже 70% 2 GiB. В ходе 7 живые devtr6 reject/guidance, конкурентный
+  save соединения, first-session, stale GET через другой slot и рестарт
+  изолированной PG после upstream write подтверждены. Три slot при half-open
+  дали суммарно три upstream-пробы и 12 отказов; задержка Redis observation
+  закрыта красным сторожем и переносом за event loop, разрешённый guidance
+  удаляется из account index. Повтор 200 вызовов на исправленном image:
+  200 HTTP 200, общая метрика +200, OOM=0, память ниже 70% 2 GiB.
+  Остаток до `done`: финальные suite и committed review этого хода;
+  production не трогали.)
 - 385.3 Аудит, сильное ревью, полный прогон, AssumptionLog, выпуск с зелёным
   CI; после выпуска сверка утилизации ядер на проде. — `todo`
 

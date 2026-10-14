@@ -412,7 +412,8 @@ class RedisMetricCounters:
                             "report_ai_empty_preview_guidance_jobs_total", ""],
                             separators=(",", ":")), 1)
                         pipe.hset(key, mapping={"issued_at": now, "last_seen": latest_seen,
-                                                "outcome": pending_outcome or ""})
+                                                "outcome": pending_outcome or "",
+                                                "account_digest": account_digest or ""})
                         if state.get("pending_outcome"):
                             pipe.hdel(key, "pending_outcome", "pending_at")
                         if pending_outcome:
@@ -426,7 +427,7 @@ class RedisMetricCounters:
                     else:
                         pipe.zadd(REPORT_AI_GUIDANCE_EXPIRY_INDEX,
                                   {identity_digest: latest_seen + ttl_seconds})
-                    if account_digest is not None:
+                    if account_digest is not None and not (state.get("outcome") or pending_outcome):
                         account_key = REPORT_AI_GUIDANCE_ACCOUNT_PREFIX + account_digest
                         pipe.zadd(account_key, {identity_digest: latest_seen})
                         pipe.zremrangebyscore(account_key, "-inf", now - ttl_seconds)
@@ -489,6 +490,9 @@ class RedisMetricCounters:
                     pipe.hset(key, "outcome", outcome)
                     pipe.expire(key, ttl_seconds)
                     pipe.zrem(REPORT_AI_GUIDANCE_EXPIRY_INDEX, identity_digest)
+                    if state.get("account_digest"):
+                        pipe.zrem(REPORT_AI_GUIDANCE_ACCOUNT_PREFIX + state["account_digest"],
+                                  identity_digest)
                     pipe.hincrby(COUNTERS_KEY, field, 1)
                     pipe.execute()
                     return True

@@ -1150,7 +1150,7 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
 
 async def _annotate_report_ai_job_payload(payload: dict) -> dict:
     observed_at = _monotonic_seconds()
-    annotated = _annotate_report_ai_workarounds(payload)
+    annotated = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
     # Stage 252.3: the lifecycle observation is updated first — the diagnostics
     # read the current stage's clock from it, and on the first poll of a new
     # stage a stale observation would still hold the previous stage's time.
@@ -1166,7 +1166,7 @@ async def _annotate_report_ai_job_payload(payload: dict) -> dict:
 
 async def _annotate_report_ai_wait_payload(payload: dict) -> dict:
     """Observe a wait poll without a second, unbounded clinic-timezone lookup."""
-    annotated = _annotate_report_ai_workarounds(payload)
+    annotated = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
     job = _extract_job(annotated)
     _best_effort_observation("status_lifecycle", _observe_report_ai_lifecycle, job)
     await asyncio.to_thread(_best_effort_observation, "status_queue", _observe_report_ai_queue, job)
@@ -1181,7 +1181,8 @@ async def _wait_for_report_ai_job(
     for _ in range(max_gets):
         job = _extract_job(latest)
         status = job.get("status")
-        pending_reject = status == "needs_confirmation" and _is_reject_pending(job)
+        pending_reject = (status == "needs_confirmation"
+                          and await asyncio.to_thread(_is_reject_pending, job))
         if status in _REPORT_AI_WAIT_DONE_STATUSES and not pending_reject:
             return latest
         if status not in _REPORT_AI_WAIT_ACTIVE_STATUSES and not pending_reject:
@@ -1804,7 +1805,7 @@ def register(mcp: FastMCP) -> None:
             _best_effort_observation("job_created_error", record_report_ai_job_created, outcome="error")
             raise
         _best_effort_observation("job_created_success", record_report_ai_job_created, outcome="success")
-        payload = _annotate_report_ai_workarounds(payload)
+        payload = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
         job = _extract_job(payload)
         data = payload.get("data") if isinstance(payload, dict) else None
         deduplicated = isinstance(data, dict) and data.get("is_deduplicated") is True
@@ -1915,7 +1916,7 @@ def register(mcp: FastMCP) -> None:
             tool_name="confirm_report_ai_job_candidate",
             metric_endpoint="/rest/api/report-ai-job/{id}/confirm",
         )
-        payload = _annotate_report_ai_workarounds(payload)
+        payload = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
         data = payload.get("data") if isinstance(payload, dict) else None
         confirmed_id = data.get("report_id") if isinstance(data, dict) else None
         confirmed_job = (
@@ -1943,12 +1944,12 @@ def register(mcp: FastMCP) -> None:
         )
         if payload.get("success") is False:
             raise reportable_error("Rejecting Report AI candidate failed; read the job before retrying.")
-        payload = _annotate_report_ai_workarounds(payload)
+        payload = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
         _best_effort_observation("reject_lifecycle", _observe_report_ai_lifecycle, _extract_job(payload))
-        _remember_reject_pending({"id": job_id})
+        await asyncio.to_thread(_remember_reject_pending, {"id": job_id})
         job = _extract_job(payload)
         if job.get("status") == "needs_confirmation":
-            _annotate_report_ai_next_action(job)
+            await asyncio.to_thread(_annotate_report_ai_next_action, job)
         return payload
 
     @mcp.tool
@@ -2027,7 +2028,8 @@ def register(mcp: FastMCP) -> None:
                     except (ToolError, ValueError):
                         pass
                     if current_status == "needs_confirmation":
-                        if _is_reject_pending({"id": job_id, "status": current_status}):
+                        if await asyncio.to_thread(
+                                _is_reject_pending, {"id": job_id, "status": current_status}):
                             raise ToolInputError(
                                 "Report AI request failed (INVALID_TRANSITION). "
                                 "Read the same job with get_report_ai_job; do not repeat "
@@ -2049,7 +2051,7 @@ def register(mcp: FastMCP) -> None:
                     "Report AI save outcome is unknown. Read the same job with "
                     "get_report_ai_job; do not retry save automatically."
                 )
-            payload = _annotate_report_ai_workarounds(payload)
+            payload = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
             data = payload.get("data") if isinstance(payload, dict) else None
             report_id = data.get("report_id") if isinstance(data, dict) else None
             if payload.get("success") is False:

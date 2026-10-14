@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import uuid
 
 import httpx
 import pytest
@@ -104,6 +105,40 @@ def test_report_ai_write_commits_pg_barrier_before_cross_slot_read(prepared_web_
             "safe_bodies": {"create_error": False, "read_error": False},
             "generation": 1, "active_writes": 0,
         })
+
+        # Read on B first so it holds an old cache entry; update on A must
+        # advance the shared generation before B serves that entry again.
+        marker = uuid.uuid4().hex[:12]
+        client_id = None
+        def record(payload: dict) -> dict:
+            clients_data = payload["data"]["client"]
+            return clients_data[0] if isinstance(clients_data, list) else clients_data
+        def call(slot: int, request_id: int, name: str, arguments: dict):
+            response = clients[slot].post("/mcp", json={
+                "jsonrpc": "2.0", "id": request_id, "method": "tools/call",
+                "params": {"name": name, "arguments": arguments},
+            })
+            body = _jsonrpc(response)
+            assert response.status_code == 200
+            assert "error" not in body and not body["result"].get("isError")
+            return response.status_code, body["result"]["structuredContent"]
+        try:
+            create_code, created_client = call(0, 10, "create_client", {
+                "first_name": f"Stage385-{marker}", "last_name": "Probe"})
+            client_id = int(record(created_client)["id"])
+            old_code, old_client = call(1, 11, "get_client_by_id", {"client_id": client_id})
+            assert record(old_client)["first_name"] == f"Stage385-{marker}"
+            update_code, _ = call(0, 12, "update_client", {
+                "client_id": client_id, "first_name": f"Stage385-updated-{marker}"})
+            new_code, new_client = call(1, 13, "get_client_by_id", {"client_id": client_id})
+            assert record(new_client)["first_name"] == f"Stage385-updated-{marker}"
+            print("STAGE385_CROSS_SLOT_ENTITY", {
+                "slots": 3, "http_codes": [create_code, old_code, update_code, new_code],
+                "changed": True, "stale_get": False,
+            })
+        finally:
+            if client_id is not None:
+                call(0, 14, "delete_client", {"client_id": client_id})
     finally:
         for client in clients:
             client.close()

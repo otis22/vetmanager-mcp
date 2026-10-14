@@ -5,13 +5,17 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 
 import fakeredis
+import httpx
 import pytest
+import respx
 
 import shared_metric_counters
 import tools.report_ai as report_ai
 from runtime_auth import use_runtime_credentials
 from shared_metric_counters import RedisMetricCounters
 from tests.runtime_factories import make_runtime_credentials
+from tests.test_stage170_report_ai_tools import BASE, bearer_runtime_patch, billing_mock
+from server import mcp
 
 
 def test_terminal_outcome_is_atomic_across_two_slot_observers(monkeypatch):
@@ -93,6 +97,64 @@ async def test_slow_terminal_claim_does_not_block_event_loop(monkeypatch):
     await asyncio.sleep(.03)
     assert calls and ticks and ticks[0] < .1
     assert await shared_metric_counters.wait_pending()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_slow_recreated_observation_does_not_block_event_loop(monkeypatch):
+    billing_mock()
+    respx.post(f"{BASE}/rest/api/report-ai-job").mock(return_value=httpx.Response(
+        201, json={"success": True, "data": {"job": {"id": 385017, "status": "queued"}}}))
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    real_resolve = backend.resolve_recreated_report_ai_guidance
+    entered = []
+    ticks = []
+    loop = asyncio.get_running_loop()
+
+    def slow_resolve(*args, **kwargs):
+        entered.append(loop.time())
+        loop.call_soon_threadsafe(lambda: ticks.append(loop.time()))
+        time.sleep(.2)
+        return real_resolve(*args, **kwargs)
+
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(backend, "resolve_recreated_report_ai_guidance", slow_resolve)
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        result = await mcp.call_tool("create_report_ai_job", {
+            "intent_text": "Количество клиентов за январь 1900 года"})
+    assert result.structured_content["data"]["job"]["id"] == 385017
+    assert entered and ticks and ticks[0] - entered[0] < .1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_slow_reject_observation_does_not_block_status_request(monkeypatch):
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/report-ai-job/385018").mock(return_value=httpx.Response(
+        200, json={"success": True, "data": {"job": {
+            "id": 385018, "status": "needs_confirmation", "candidates": []}}}))
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    real_pending = backend.report_ai_reject_pending
+    loop = asyncio.get_running_loop()
+    entered = []
+    ticks = []
+
+    def slow_pending(*args, **kwargs):
+        entered.append(loop.time())
+        loop.call_soon_threadsafe(lambda: ticks.append(loop.time()))
+        time.sleep(.2)
+        return real_pending(*args, **kwargs)
+
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(backend, "report_ai_reject_pending", slow_pending)
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        result = await mcp.call_tool("get_report_ai_job", {"job_id": 385018})
+    assert result.structured_content["data"]["job"]["id"] == 385018
+    assert entered and ticks and ticks[0] - entered[0] < .1
 
 
 def test_late_terminal_poll_keeps_prior_stage_observation(monkeypatch):
@@ -546,3 +608,15 @@ def test_guidance_account_index_is_bounded():
     key = shared_metric_counters.REPORT_AI_GUIDANCE_ACCOUNT_PREFIX + "a" * 64
     assert backend._redis.zcard(key) == 2
     assert backend._redis.zrange(key, 0, -1) == [f"{number:064x}" for number in (1, 2)]
+
+
+def test_resolved_guidance_leaves_account_index_immediately():
+    server = fakeredis.FakeServer()
+    backend = RedisMetricCounters(fakeredis.FakeRedis(server=server, decode_responses=True))
+    account = "a" * 64
+    digest = "b" * 64
+    backend.issue_report_ai_guidance(digest, 10.0, 3600, account_digest=account)
+    key = shared_metric_counters.REPORT_AI_GUIDANCE_ACCOUNT_PREFIX + account
+    assert backend._redis.zcard(key) == 1
+    assert backend.resolve_report_ai_guidance(digest, "saved_empty", 11.0, 3600)
+    assert backend._redis.zcard(key) == 0
