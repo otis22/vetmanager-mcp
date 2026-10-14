@@ -2,8 +2,10 @@
 
 from pathlib import Path
 import json
+import io
 import secrets
 import tarfile
+import urllib.error
 
 import pytest
 import yaml
@@ -77,6 +79,50 @@ def test_nginx_candidate_preserves_tls_and_gates_all_routes():
     assert "old.example/fullchain.pem" in maintenance
     with pytest.raises(ValueError):
         render_nginx_site("server { location / { return 200; } }", "active")
+
+
+def test_local_nginx_smoke_rejects_missing_mcp_and_redirect(monkeypatch):
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self, size):
+            return b'{"status":"ok"}'
+
+    class Opener:
+        def __init__(self, mcp_status):
+            self.mcp_status = mcp_status
+            self.urls = []
+
+        def open(self, request, timeout):
+            self.urls.append(request.full_url)
+            if request.full_url.endswith("/mcp"):
+                raise urllib.error.HTTPError(request.full_url, self.mcp_status,
+                                             "failed", {}, io.BytesIO())
+            return Response()
+
+    for status in (302, 404):
+        opener = Opener(status)
+        handlers = []
+
+        def build_opener(*args):
+            handlers.extend(args)
+            return opener
+
+        monkeypatch.setattr(stage385_deploy.urllib.request, "build_opener", build_opener)
+        with pytest.raises(TimeoutError, match="local nginx healthz"):
+            stage385_deploy._nginx_local_smoke("old.example", seconds=0.1)
+        assert opener.urls == ["https://127.0.0.1:443/healthz",
+                               "https://127.0.0.1:443/mcp"]
+        redirects = [handler for handler in handlers
+                     if isinstance(handler, stage385_deploy.urllib.request.HTTPRedirectHandler)]
+        assert len(redirects) == 1
+        assert redirects[0].redirect_request(None, None, 302, "", {}, "https://elsewhere") is None
 
 
 def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=False,

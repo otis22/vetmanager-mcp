@@ -182,18 +182,33 @@ def _nginx_local_smoke(hostname: str, *, port: int = 443, seconds: int = 10) -> 
         raise ValueError("Invalid nginx hostname")
     # The certificate name cannot match a loopback URL; this checks local
     # proxy routing only. The separate public smoke checks TLS identity.
+    class NoRedirects(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, request, fp, code, msg, headers, newurl):
+            return None
+
     opener = urllib.request.build_opener(
         urllib.request.ProxyHandler({}),
         urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
+        NoRedirects(),
     )
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         try:
-            request = urllib.request.Request(f"https://127.0.0.1:{port}/healthz",
-                                             headers={"Host": hostname})
-            with opener.open(request, timeout=2) as response:
-                if response.status == 200 and json.loads(response.read(1024)).get("status") == "ok":
-                    return
+            def fetch(path: str) -> tuple[int, bytes]:
+                request = urllib.request.Request(f"https://127.0.0.1:{port}{path}",
+                                                 headers={"Host": hostname})
+                try:
+                    with opener.open(request, timeout=2) as response:
+                        return response.status, response.read(1024) if path == "/healthz" else b""
+                except urllib.error.HTTPError as exc:
+                    return exc.code, exc.read(1024)
+
+            health_status, health_body = fetch("/healthz")
+            mcp_status, _ = fetch("/mcp")
+            if (health_status == 200 and json.loads(health_body).get("status") == "ok"
+                    and (200 <= mcp_status < 300 or 400 <= mcp_status < 500)
+                    and mcp_status != 404):
+                return
         except (urllib.error.URLError, TimeoutError, OSError, ValueError, AttributeError):
             pass
         time.sleep(0.2)
