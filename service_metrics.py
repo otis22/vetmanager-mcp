@@ -11,6 +11,7 @@ from threading import Lock
 from typing import DefaultDict
 
 from observability_logging import RUNTIME_LOGGER
+from tool_access_registry import SCOPE_DENIED_ERROR_CODE
 from request_cache import REQUEST_CACHE
 import shared_metric_counters
 
@@ -159,7 +160,7 @@ REPORT_AI_OBSERVED_CODES = frozenset({
     "REPORT_NOT_ALLOWED_FOR_REST", "CONSTRUCTOR_BUSY", "RUN_RATE_LIMITED",
     "FILE_BUILD_NOT_STARTED", "FILE_NOT_READY", "FILE_BUILD_FAILED",
     "NOT_FOUND", "INVALID_TRANSITION", "VALIDATION_ERROR", "FORBIDDEN",
-    "INTENT_REJECTED", "SANITIZER_REJECTED", "SAVE_FAILED", "unknown",
+    "INTENT_REJECTED", "SANITIZER_REJECTED", "SAVE_FAILED",
     "REPORT_AI_CREATE_TIMEOUT", "REPORT_AI_CREATE_HTTP_5XX",
     "REPORT_AI_CREATE_NETWORK_UNKNOWN", "REPORT_AI_CREATE_RESPONSE_UNKNOWN",
 })
@@ -679,17 +680,37 @@ def record_report_ai_export(*, operation: str, outcome: str) -> None:
 
 
 def record_report_ai_outcome_code(*, operation: str, code: str | None,
-                                  correlation_id: str | None = None) -> None:
+                                  correlation_id: str | None = None,
+                                  status_code: int | None = None,
+                                  account_id: int | None = None,
+                                  job_id: int | None = None,
+                                  upstream_code: bool = False) -> None:
     """Bound both labels; upstream codes and messages are untrusted input."""
     safe_operation = operation if isinstance(operation, str) and operation in REPORT_AI_OBSERVED_OPERATIONS else "job"
-    safe_code = code if isinstance(code, str) and code in REPORT_AI_OBSERVED_CODES else "unknown"
+    if isinstance(code, str) and code in REPORT_AI_OBSERVED_CODES:
+        safe_code = code
+    elif not upstream_code and code == SCOPE_DENIED_ERROR_CODE:
+        safe_code = "local_scope_denied"
+    elif upstream_code and isinstance(code, str) and bool(code):
+        safe_code = "unlisted_code_seen"
+    elif type(status_code) is int and 500 <= status_code <= 599:
+        safe_code = "no_code_http_5xx"
+    elif type(status_code) is int and 400 <= status_code <= 499:
+        safe_code = "no_code_http_4xx"
+    else:
+        safe_code = "no_code_no_status"
     with _LOCK:
         _REPORT_AI_OUTCOMES_BY_CODE_TOTAL[(safe_operation, safe_code)] += 1
     _record_shared_counter("report_ai_outcomes_by_code_total", f"{safe_operation}|{safe_code}")
+    extra = {"event_name": "report_ai_outcome_code", "operation": safe_operation,
+             "code": safe_code, "correlation_id": correlation_id}
+    if type(account_id) is int and account_id > 0:
+        extra["account_id"] = account_id
+    if type(job_id) is int and job_id > 0:
+        extra["job_id"] = job_id
     RUNTIME_LOGGER.info(
         "report_ai_outcome_code",
-        extra={"event_name": "report_ai_outcome_code", "operation": safe_operation,
-               "code": safe_code, "correlation_id": correlation_id},
+        extra=extra,
     )
 
 

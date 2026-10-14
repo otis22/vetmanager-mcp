@@ -839,7 +839,10 @@ class VetmanagerClient:
                     vm_message or "Report export refused", status_code=403,
                     error_code=vm_error_code, retry_after_seconds=retry_after_seconds,
                 )
-            raise AuthError("Access forbidden", status_code=403)
+            error = AuthError("Access forbidden", status_code=403)
+            if normalized_path.startswith("rest/api/report-ai-job"):
+                error.observed_error_code = vm_error_code
+            raise error
         if response.status_code == 404:
             vm_error_code = None
             try:

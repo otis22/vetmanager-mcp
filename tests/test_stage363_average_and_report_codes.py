@@ -145,5 +145,5 @@ async def test_failed_mutation_normalizes_unknown_code():
     with headers, runtime:
         await mcp.call_tool("reject_report_ai_job_candidate", {"job_id": 364})
     assert service_metrics.snapshot_service_metrics()["report_ai_outcomes_by_code_total"] == {
-        "status|unknown": 1,
+        "status|unlisted_code_seen": 1,
     }

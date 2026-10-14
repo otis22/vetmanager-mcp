@@ -64,11 +64,18 @@ async def test_postgres_write_barrier_counts_overlapping_workers(monkeypatch):
 def barrier_db(prepared_web_db):
     # prepared_web_db may dispose a previous async engine with asyncio.run(),
     # which clears pytest-asyncio's current loop before the first test here.
+    created_loop = None
     try:
         asyncio.get_event_loop()
     except RuntimeError:
-        asyncio.set_event_loop(asyncio.new_event_loop())
-    return prepared_web_db
+        created_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(created_loop)
+    try:
+        yield prepared_web_db
+    finally:
+        if created_loop is not None:
+            asyncio.set_event_loop(None)
+            created_loop.close()
 
 
 @pytest.mark.asyncio

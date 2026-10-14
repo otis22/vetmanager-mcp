@@ -144,16 +144,17 @@ def test_legacy_retry_delay_wrapper_and_not_found_code():
 
 
 def test_unknown_upstream_code_cannot_become_metric_label(caplog):
-    service_metrics.record_report_ai_outcome_code(operation="status", code="SQL SELECT secret")
+    service_metrics.record_report_ai_outcome_code(operation="status", code="SQL SELECT secret",
+                                                   upstream_code=True)
     snapshot = service_metrics.snapshot_service_metrics()["report_ai_outcomes_by_code_total"]
-    assert snapshot == {"status|unknown": 1}
+    assert snapshot == {"status|unlisted_code_seen": 1}
     assert "SELECT secret" not in caplog.text
 
 
 def test_malformed_upstream_code_cannot_break_status_observability():
     service_metrics.record_report_ai_outcome_code(operation="status", code=["bad"])
     assert service_metrics.snapshot_service_metrics()["report_ai_outcomes_by_code_total"] == {
-        "status|unknown": 1
+        "status|no_code_no_status": 1
     }
 
 

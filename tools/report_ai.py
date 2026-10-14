@@ -757,12 +757,18 @@ def _report_ai_stage_age_seconds(job: dict, *, now: float) -> int | None:
     return max(0, int(now - float(observation["stage_started"])))
 
 
-def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None:
+def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None,
+                                 observed_code=None, upstream_code: bool = False) -> None:
     """Observe one Report AI job; shared mode owns lifecycle metric transitions."""
     observation_key = _report_ai_queue_observation_key(job)
     if observation_key is None:
         return
     current_time = _monotonic_seconds() if now is None else now
+    credentials = get_current_runtime_credentials()
+    account_id = getattr(credentials, "account_id", None)
+    job_id = job.get("id")
+    if observed_code is None and not upstream_code:
+        observed_code = job.get("error_code")
     _cleanup_report_ai_queue_observations(current_time)
     stage = _REPORT_AI_STAGE_BY_STATUS.get(str(job.get("status") or ""), "unknown")
     guided = _find_guided_job(observation_key)
@@ -785,7 +791,8 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
                 if stage == "failed" and first_terminal:
                     _best_effort_observation(
                         "lifecycle_outcome_code", record_report_ai_outcome_code,
-                        operation="status", code=job.get("error_code"))
+                        operation="status", code=observed_code,
+                        upstream_code=upstream_code, account_id=account_id, job_id=job_id)
                 if certainty == "nonzero":
                     backend.resolve_report_ai_guidance(
                         digest, "preview_changed", current_time,
@@ -825,7 +832,8 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
         return
     if stage == "failed":
         _best_effort_observation("lifecycle_outcome_code", record_report_ai_outcome_code,
-                                 operation="status", code=job.get("error_code"))
+                                 operation="status", code=observed_code,
+                                 upstream_code=upstream_code, account_id=account_id, job_id=job_id)
     observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.get(observation_key)
     if observation is None:
         if stage in _REPORT_AI_TERMINAL_OUTCOMES:
@@ -1150,13 +1158,17 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
 
 async def _annotate_report_ai_job_payload(payload: dict) -> dict:
     observed_at = _monotonic_seconds()
+    raw_job = _extract_job(payload)
+    raw_code = raw_job.get("error_code")
     annotated = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
     # Stage 252.3: the lifecycle observation is updated first — the diagnostics
     # read the current stage's clock from it, and on the first poll of a new
     # stage a stale observation would still hold the previous stage's time.
     job = _extract_job(annotated)
     if job:
-        _best_effort_observation("status_lifecycle", _observe_report_ai_lifecycle, job, now=observed_at)
+        _best_effort_observation("status_lifecycle", _observe_report_ai_lifecycle, job,
+                                 now=observed_at, observed_code=raw_code,
+                                 upstream_code=isinstance(raw_code, str) and bool(raw_code))
     try:
         return await _annotate_report_ai_queue_diagnostics(annotated, now=observed_at)
     except Exception as exc:
@@ -1166,9 +1178,12 @@ async def _annotate_report_ai_job_payload(payload: dict) -> dict:
 
 async def _annotate_report_ai_wait_payload(payload: dict) -> dict:
     """Observe a wait poll without a second, unbounded clinic-timezone lookup."""
+    raw_code = _extract_job(payload).get("error_code")
     annotated = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
     job = _extract_job(annotated)
-    _best_effort_observation("status_lifecycle", _observe_report_ai_lifecycle, job)
+    _best_effort_observation("status_lifecycle", _observe_report_ai_lifecycle, job,
+                             observed_code=raw_code,
+                             upstream_code=isinstance(raw_code, str) and bool(raw_code))
     await asyncio.to_thread(_best_effort_observation, "status_queue", _observe_report_ai_queue, job)
     return annotated
 
@@ -1622,7 +1637,8 @@ def _uncertain_create_error(client: VetmanagerClient, *, code: str) -> Vetmanage
                "status_code": status, "correlation_id": correlation},
     )
     _best_effort_observation("create_outcome_code", record_report_ai_outcome_code,
-                             operation="job", code=code, correlation_id=correlation)
+                             operation="job", code=code, correlation_id=correlation,
+                             account_id=getattr(get_current_runtime_credentials(), "account_id", None))
     error = VetmanagerError(
         f"Report AI creation outcome is uncertain (class {failure_class}; code {code}; "
         f"HTTP {status if status is not None else 'unknown'}; "
@@ -1701,8 +1717,18 @@ async def _call_vm(
             if code:
                 raise _uncertain_create_error(client, code=code) from None
         operation = "reject" if path.endswith("/reject") else "job"
+        credentials = get_current_runtime_credentials()
+        job_match = re.match(r"^/rest/api/report-ai-job/([1-9][0-9]*)(?:/|$)", path)
         _best_effort_observation("upstream_error_code", record_report_ai_outcome_code,
-                                 operation=operation, code=exc.error_code,
+                                 operation=operation,
+                                 code=getattr(exc, "observed_error_code", exc.error_code),
+                                 upstream_code=(getattr(exc, "observed_error_code", None) is not None
+                                                or (exc.error_code is not None
+                                                    and not (isinstance(exc, AuthError)
+                                                             and exc.error_code == SCOPE_DENIED_ERROR_CODE))),
+                                 status_code=exc.status_code,
+                                 account_id=getattr(credentials, "account_id", None),
+                                 job_id=int(job_match.group(1)) if job_match else None,
                                  correlation_id=(client.prepared_correlation_id if is_create else None))
         raise _tool_error_from_vm(
             exc, create_not_sent=is_create and not client.last_outbound_correlation_id
@@ -1752,7 +1778,11 @@ async def _start_report_export(
         return payload
     except VetmanagerError as exc:
         _best_effort_observation("export_start_error_code", record_report_ai_outcome_code,
-                                 operation="start", code=exc.error_code)
+                                 operation="start", code=exc.error_code,
+                                 upstream_code=exc.error_code is not None and not (
+                                     isinstance(exc, AuthError) and exc.error_code == SCOPE_DENIED_ERROR_CODE),
+                                 status_code=exc.status_code,
+                                 account_id=getattr(get_current_runtime_credentials(), "account_id", None))
         _best_effort_observation("export_start_error", record_report_ai_export,
                                  operation="start", outcome="error")
         raise _safe_export_error(
@@ -1805,6 +1835,7 @@ def register(mcp: FastMCP) -> None:
             _best_effort_observation("job_created_error", record_report_ai_job_created, outcome="error")
             raise
         _best_effort_observation("job_created_success", record_report_ai_job_created, outcome="success")
+        raw_code = _extract_job(payload).get("error_code")
         payload = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
         job = _extract_job(payload)
         data = payload.get("data") if isinstance(payload, dict) else None
@@ -1812,7 +1843,9 @@ def register(mcp: FastMCP) -> None:
         await asyncio.to_thread(_best_effort_observation, "create_recreated_match",
                                 _match_recreated_report_ai_job, job,
                                 is_deduplicated=deduplicated)
-        _best_effort_observation("create_lifecycle", _observe_report_ai_lifecycle, job)
+        _best_effort_observation("create_lifecycle", _observe_report_ai_lifecycle, job,
+                                 observed_code=raw_code,
+                                 upstream_code=isinstance(raw_code, str) and bool(raw_code))
         await asyncio.to_thread(_best_effort_observation, "create_queue",
                                 _observe_report_ai_queue, job)
         if wait_seconds and _report_ai_wait_enabled():
@@ -1916,6 +1949,7 @@ def register(mcp: FastMCP) -> None:
             tool_name="confirm_report_ai_job_candidate",
             metric_endpoint="/rest/api/report-ai-job/{id}/confirm",
         )
+        raw_code = _extract_job(payload).get("error_code")
         payload = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
         data = payload.get("data") if isinstance(payload, dict) else None
         confirmed_id = data.get("report_id") if isinstance(data, dict) else None
@@ -1924,7 +1958,9 @@ def register(mcp: FastMCP) -> None:
             if isinstance(confirmed_id, int) and not isinstance(confirmed_id, bool) and confirmed_id > 0
             else _extract_job(payload)
         )
-        _best_effort_observation("confirm_lifecycle", _observe_report_ai_lifecycle, confirmed_job)
+        _best_effort_observation("confirm_lifecycle", _observe_report_ai_lifecycle, confirmed_job,
+                                 observed_code=raw_code,
+                                 upstream_code=isinstance(raw_code, str) and bool(raw_code))
         return payload
 
     @mcp.tool
@@ -1944,8 +1980,11 @@ def register(mcp: FastMCP) -> None:
         )
         if payload.get("success") is False:
             raise reportable_error("Rejecting Report AI candidate failed; read the job before retrying.")
+        raw_code = _extract_job(payload).get("error_code")
         payload = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
-        _best_effort_observation("reject_lifecycle", _observe_report_ai_lifecycle, _extract_job(payload))
+        _best_effort_observation("reject_lifecycle", _observe_report_ai_lifecycle,
+                                 _extract_job(payload), observed_code=raw_code,
+                                 upstream_code=isinstance(raw_code, str) and bool(raw_code))
         await asyncio.to_thread(_remember_reject_pending, {"id": job_id})
         job = _extract_job(payload)
         if job.get("status") == "needs_confirmation":
@@ -2051,6 +2090,7 @@ def register(mcp: FastMCP) -> None:
                     "Report AI save outcome is unknown. Read the same job with "
                     "get_report_ai_job; do not retry save automatically."
                 )
+            raw_code = _extract_job(payload).get("error_code")
             payload = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
             data = payload.get("data") if isinstance(payload, dict) else None
             report_id = data.get("report_id") if isinstance(data, dict) else None
@@ -2079,7 +2119,9 @@ def register(mcp: FastMCP) -> None:
                         }},
                         "guidance": "Read the same job; do not retry save automatically.",
                     }
-            _best_effort_observation("save_lifecycle", _observe_report_ai_lifecycle, observed_job)
+            _best_effort_observation("save_lifecycle", _observe_report_ai_lifecycle, observed_job,
+                                     observed_code=raw_code,
+                                     upstream_code=isinstance(raw_code, str) and bool(raw_code))
             return payload
         finally:
             _best_effort_observation("save_attempt", record_report_ai_save_attempt, outcome=outcome)
@@ -2125,7 +2167,11 @@ def register(mcp: FastMCP) -> None:
             payload = _ensure_report_file_payload(payload)
         except VetmanagerError as exc:
             _best_effort_observation("export_file_error_code", record_report_ai_outcome_code,
-                                     operation="file", code=exc.error_code)
+                                     operation="file", code=exc.error_code,
+                                     upstream_code=exc.error_code is not None and not (
+                                         isinstance(exc, AuthError) and exc.error_code == SCOPE_DENIED_ERROR_CODE),
+                                     status_code=exc.status_code,
+                                     account_id=getattr(get_current_runtime_credentials(), "account_id", None))
             if _is_retryable_export_file_error(exc):
                 observed_wait = _report_ai_export_observed_wait_seconds(file_id)
                 if (
