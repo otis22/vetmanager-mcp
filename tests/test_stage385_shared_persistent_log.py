@@ -1,12 +1,31 @@
 """Three containers may share a log volume and all have PID 1."""
 
 import logging
+import multiprocessing
 import os
 import threading
 from datetime import datetime, timezone
 
 import structured_logging
 from structured_logging import PersistentRotatingFileHandler
+
+
+def _paused_process_emit(directory, entered, release):
+    handler = PersistentRotatingFileHandler(directory)
+
+    def pause():
+        entered.set()
+        assert release.wait(10)
+
+    handler._prune = pause
+    handler.emit(logging.makeLogRecord({"msg": "first", "args": ()}))
+
+
+def _second_process_emit(directory, started, done):
+    handler = PersistentRotatingFileHandler(directory)
+    started.set()
+    handler.emit(logging.makeLogRecord({"msg": "second", "args": ()}))
+    done.set()
 
 
 def test_handlers_on_one_volume_use_distinct_files_and_ignore_stale_probe(tmp_path, monkeypatch):
@@ -71,3 +90,25 @@ def test_other_slot_cannot_write_while_shared_prune_is_active(tmp_path):
         first_thread.join(2)
         second_thread.join(2)
     assert second_done.is_set()
+
+
+def test_other_process_cannot_write_while_shared_prune_is_active(tmp_path):
+    ctx = multiprocessing.get_context("spawn")
+    entered, release, started, done = (ctx.Event() for _ in range(4))
+    first = ctx.Process(target=_paused_process_emit,
+                        args=(str(tmp_path), entered, release))
+    second = ctx.Process(target=_second_process_emit,
+                         args=(str(tmp_path), started, done))
+    first.start()
+    try:
+        assert entered.wait(10)
+        second.start()
+        assert started.wait(10)
+        assert not done.wait(.2)
+    finally:
+        release.set()
+        first.join(10)
+        if second.pid is not None:
+            second.join(10)
+    assert first.exitcode == second.exitcode == 0
+    assert done.is_set()

@@ -37,7 +37,10 @@ EXPECTED_METRIC_TYPES = {
         report_ai_job_duration_seconds report_ai_export_duration_seconds
     """.split(),
     "gauge": """
-        http_request_latency_seconds_max account_last_request_age_hours
+        http_request_latency_seconds_max upstream_request_latency_seconds_max
+        tool_call_latency_seconds_max report_ai_job_stage_duration_seconds_max
+        report_ai_job_duration_seconds_max report_ai_export_duration_seconds_max
+        account_last_request_age_hours
         activation_funnel_accounts activation_event_accounts
         first_session_eligible_accounts first_session_report_saved_7d_accounts
         first_session_tool_success_7d_accounts
@@ -116,7 +119,7 @@ def test_metrics_help_type_cover_samples_without_process_claims():
         elif line and not line.startswith("#"):
             name = line.split("{", 1)[0].split(" ", 1)[0]
             base = name.rsplit("_", 1)[0]
-            assert name in types or (name.endswith(("_count", "_sum", "_max"))
+            assert name in types or (name.endswith(("_count", "_sum"))
                                      and base in types)
             assert 'pid="' not in line and 'worker="' not in line
 

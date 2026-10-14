@@ -36,7 +36,7 @@
   проверен полный каталог shared counter/latency, живые bearer/Report AI
   и export серии; c2c — mock редких событий и полный каталог семейств;
   c3 — Redis outage 503→200 и равный count/sum/max/cache на трёх slot;
-  c4 — 49 HELP/TYPE и target `up=1`.
+  c4 — 54 HELP/TYPE (включая пять `_max` gauge) и target `up=1`.
   Остаток: c2a — живые guard/rate-limit события; c2b — безопасный export
   outcome, не только serve; d — общий activation scan/alerts;
   e — Report AI observation dedup/expiry (два slot пока дают двойной terminal);

@@ -976,6 +976,8 @@ def render_prometheus_metrics() -> str:
         [
             "# HELP vetmanager_upstream_request_latency_seconds Upstream request latency by target and status.",
             "# TYPE vetmanager_upstream_request_latency_seconds summary",
+            "# HELP vetmanager_upstream_request_latency_seconds_max Maximum observed upstream request latency by target and status.",
+            "# TYPE vetmanager_upstream_request_latency_seconds_max gauge",
         ]
     )
     for key, value in snapshot["upstream_request_latency_seconds"].items():
@@ -1008,6 +1010,8 @@ def render_prometheus_metrics() -> str:
         [
             "# HELP vetmanager_tool_call_latency_seconds MCP tool latency by endpoint and method.",
             "# TYPE vetmanager_tool_call_latency_seconds summary",
+            "# HELP vetmanager_tool_call_latency_seconds_max Maximum observed MCP tool latency by endpoint and method.",
+            "# TYPE vetmanager_tool_call_latency_seconds_max gauge",
         ]
     )
     for key, value in snapshot["tool_call_latency_seconds"].items():
@@ -1163,6 +1167,8 @@ def render_prometheus_metrics() -> str:
         lines.extend([
             f"# HELP {metric_name} {help_text}",
             f"# TYPE {metric_name} summary",
+            f"# HELP {metric_name}_max Maximum observed duration in seconds for this series.",
+            f"# TYPE {metric_name}_max gauge",
         ])
         for label, value in snapshot.get(snapshot_name, {}).items():
             labels = _labels_text(**{label_name: label})
