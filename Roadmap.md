@@ -28,7 +28,8 @@
   (14.10.2026; см. AssumptionLog, этап 385.1)
 - 385.2 Реализация по PRD: сторожа красными на единый /metrics при 3 воркерах
   и на отсутствие потери notice/claim; live-проверка на devtr6 с тремя
-  воркерами. — `in_progress` (14.10.2026: a1–a3, b и c1 закрыты ранее;
+  воркерами. — `done` (14.10.2026; кодовый SHA `ee7ded7`:
+  a1–a3, b и c1 закрыты ранее;
   a4 — изолированный cutover на три slot и откат точного pre-385 image
   проверены с health/metrics/tools/list/SSE/export; прежняя session после
   отката дала 404, re-initialize и GET SSE — 200. При испытании исправлено
@@ -58,7 +59,9 @@
   закрыта красным сторожем и переносом за event loop, разрешённый guidance
   удаляется из account index. Повтор 200 вызовов на исправленном image:
   200 HTTP 200, общая метрика +200, OOM=0, память ниже 70% 2 GiB.
-  Остаток до `done`: финальные suite и committed review этого хода;
+  Полный mock и real suite — exit 0; committed Spark, Astra и Sol xhigh
+  проверены, валидные сильные verdict `findings=[]`, critical/high нет.
+  Подробные коды, красные сторожа и evidence — в AssumptionLog;
   production не трогали.)
 - 385.3 Аудит, сильное ревью, полный прогон, AssumptionLog, выпуск с зелёным
   CI; после выпуска сверка утилизации ядер на проде. — `todo`
