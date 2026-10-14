@@ -10,6 +10,42 @@ from shared_metric_counters import (
 )
 
 
+# Independent public exposition contract: deleting HELP, TYPE and all samples
+# of one family together must still break the guard.
+EXPECTED_METRIC_TYPES = {
+    "counter": """
+        prompt_requests_total token_expiry_notice_issued_total
+        token_expiry_notice_skipped_total http_requests_total auth_failures_total
+        upstream_failures_total sentry_delivery_lost_total
+        sentry_delivery_accepted_total known_issue_lookups_total
+        upstream_requests_total tool_calls_total token_preset_issued_total
+        placeholder_argument_rejections_total rate_limit_backend_degraded_total
+        sanitizer_failures_total rest_unmapped_read_total
+        report_export_download_total report_export_serve_total
+        report_ai_long_queued_polls_total report_ai_stage_stall_polls_total
+        report_ai_jobs_total report_ai_save_attempts_total
+        report_ai_job_transitions_total report_ai_job_terminal_outcomes_total
+        report_ai_empty_preview_guidance_issued_total
+        report_ai_empty_preview_guidance_jobs_total
+        report_ai_empty_preview_guidance_outcomes_total report_ai_exports_total
+        report_ai_outcomes_by_code_total business_events_total cache_hits_total
+        cache_misses_total cache_invalidations_total cache_evictions_total
+    """.split(),
+    "summary": """
+        http_request_latency_seconds upstream_request_latency_seconds
+        tool_call_latency_seconds report_ai_job_stage_duration_seconds
+        report_ai_job_duration_seconds report_ai_export_duration_seconds
+    """.split(),
+    "gauge": """
+        http_request_latency_seconds_max account_last_request_age_hours
+        activation_funnel_accounts activation_event_accounts
+        first_session_eligible_accounts first_session_report_saved_7d_accounts
+        first_session_tool_success_7d_accounts
+        first_session_tool_time_median_seconds cache_entries
+    """.split(),
+}
+
+
 def test_all_recorders_reach_a_shared_family(monkeypatch):
     counters = []
     latencies = []
@@ -68,6 +104,11 @@ def test_metrics_help_type_cover_samples_without_process_claims():
     assert len(helps) == len(set(helps))
     assert len(types) == len(set(types))
     assert set(helps) == set(types)
+    actual_types = {line.split()[2]: line.split()[3]
+                    for line in lines if line.startswith("# TYPE ")}
+    expected_types = {f"vetmanager_{name}": kind
+                      for kind, names in EXPECTED_METRIC_TYPES.items() for name in names}
+    assert actual_types == expected_types
     for line in lines:
         if line.startswith("# HELP "):
             assert "process-local" not in line.lower()

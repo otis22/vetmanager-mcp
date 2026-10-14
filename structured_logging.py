@@ -200,17 +200,25 @@ class PersistentRotatingFileHandler(logging.Handler):
                 path.unlink(missing_ok=True)
         # Бюджет объёма — отдельно и явно: он защищает диск, а не сокращает срок
         # хранения втихую. Срезаются самые старые файлы, пока объём не уложится.
-        files = sorted(self.directory.glob("runtime-????-??-??-*.log"))
-        sizes = {path: path.stat().st_size for path in files if path.exists()}
-        total = sum(sizes.values())
+        file_stats = []
+        for path in self.directory.glob("runtime-????-??-??-*.log"):
+            try:
+                stat = path.stat()
+            except FileNotFoundError:  # Another slot may prune concurrently.
+                continue
+            file_stats.append((path, stat.st_size, stat.st_mtime_ns))
+        # Random slot tags are not chronological; keep the most recently
+        # active files within each UTC day when the shared byte budget fills.
+        file_stats.sort(key=lambda item: (item[0].name[8:18], item[2]))
+        total = sum(size for _path, size, _mtime in file_stats)
         # Читается из глобали модуля, а не из значения, захваченного при
         # импорте: бюджет должен быть управляемым снаружи — и в тесте, и если
         # его когда-нибудь вынесут в переменную окружения.
         budget = globals()["PERSISTENT_LOG_MAX_TOTAL_BYTES"]
-        for path in files:
+        for path, size, _mtime in file_stats:
             if total <= budget:
                 break
-            total -= sizes.get(path, 0)
+            total -= size
             path.unlink(missing_ok=True)
 
     def emit(self, record: logging.LogRecord) -> None:
