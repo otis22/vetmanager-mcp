@@ -96,7 +96,7 @@ asyncio без uvloop/httptools.
   памяти/CPU и латентности на проде. — `done` (14.10.2026; release
   `c776e6312a319a1fa5924360921d20c033a8e237`; см. AssumptionLog, этап 384.3)
 
-## Этап 383. Коды отказов Report AI: unknown должен распадаться на классы — `in_progress`
+## Этап 383. Коды отказов Report AI: unknown должен распадаться на классы — `done`
 
 Источник: разбор failed-заданий 12.10.2026 (381, супервизор). За 30д 9 отказов
 записаны как `unknown`: сверка с исходниками ВМ (vetmanager-extjs master,
@@ -127,7 +127,11 @@ ERROR_KIND_LLM_UNAVAILABLE) запрошены у ВМ отдельным пол
   факт); live-проверка на devtr6 не требует слома ВМ — достаточно
   контрактных тестов, живую строку лога с account_id/job_id приложить. — `done`
 - 383.3 Аудит diff, сильное ревью, полный прогон, AssumptionLog, выпуск с
-  зелёным CI. — `in_progress`
+  зелёным CI. — `done` (14.10.2026; CI-добивка `1b3f49a`: тест 383 требовал
+  WEB_SESSION_SECRET, который локальный Compose передавал, а CI нет;
+  fast/default зелёные, postgres job зелёный после rerun (ECR 429 — внешний
+  лимит); Deploy Prod success, 3 слота healthy, healthz/external 200,
+  OOMKilled=false; пост-деплой проверку прода выполнил супервизор)
 
 ## Этап 382. Контрольная точка метрик 15–17.10: вердикт по пассивным выпускам 373–379 — `todo`
 
