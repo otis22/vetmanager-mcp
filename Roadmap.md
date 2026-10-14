@@ -34,7 +34,14 @@
   385.2b с изолированным PostgreSQL live; 385.2c — общий Redis core,
   counters, latency и cache metrics с живыми тремя slot, но без полного
   каталога/Report AI dedup; a4 — подготовка release/rollback manifest без
-  cutover и испытания старого image. Остаются завершение a4, c–g и гейты.
+  cutover и испытания старого image. Остаток: a3 — полный interleaved
+  SSE/SIGTERM сценарий на каждом slot; a4 — первый cutover и rollback старого
+  image в изолированном контуре; c2–c4 — живые редкие серии, Redis outage,
+  полный HELP/TYPE и Prometheus target; d — общий activation scan/alerts;
+  e — атомарные Report AI observations, dedup и expiry; f — claims, locks,
+  rate limiter, PG cache/write barrier и export storage; g — ресурсный gate
+  на 200 вызовах. Полный mock suite по коду 6907143 зелёный; Spark/Astra/Sol
+  committed review проведён, post-budget правки проверены Spark scout.
   Production не трогали.)
 - 385.3 Аудит, сильное ревью, полный прогон, AssumptionLog, выпуск с зелёным
   CI; после выпуска сверка утилизации ядер на проде. — `todo`
