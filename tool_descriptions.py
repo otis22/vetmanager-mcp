@@ -770,9 +770,10 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "консультация, appointment."
     ),
     "get_medical_cards": (
-        "List or search medical cards / clinical records. Use for general "
-        "medical-card lookup and filters. Use get_medical_cards_by_date for "
-        "clinic-local date or daily clinical control, and "
+        "List or search medical cards / clinical records for one required pet_id "
+        "with optional filters. Use get_medical_cards_by_date for staff and "
+        "period searches across all patients, clinic-local date or daily "
+        "clinical control, and "
         "get_medical_cards_by_client_id for one owner's pets. Domain synonyms: "
         "медкарта, медицинская карта, история болезни, история лечения, "
         "клиническая запись, осмотр, medical card, medical record."
@@ -787,7 +788,10 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_medical_cards_by_date": (
         "List medical cards by clinic-local date or date range for daily clinical "
-        "control. By default searches all branches; pass clinic_id only when the "
+        "control across all patients. Filter by doctor_id for the attending "
+        "veterinarian and by creator_id for the record creator; these independent "
+        "filters can be combined with the period and clinic_id. By default "
+        "searches all branches; pass clinic_id only when the "
         "user explicitly asks for one branch because it can exclude medical cards "
         "or analyses from other branches. Returns pagination metadata including "
         "total/total_known/truncated and clinic_filter_applied; use "

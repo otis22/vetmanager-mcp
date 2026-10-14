@@ -31,6 +31,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import post_deploy_mcp_tool_smoke as smoke  # noqa: E402
 
+
+def test_stage380_smoke_requires_staff_filter_catalogue():
+    dated = {"name": "get_medical_cards_by_date", "description": (
+        "Search all patients by doctor_id attending veterinarian and "
+        "creator_id record creator with clinic_id"
+    ), "inputSchema": {"properties": {
+        "doctor_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+        "creator_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+    }}}
+    smoke._require_staff_filter_catalogue([dated], None)
+    for broken in (
+        [{**dated, "description": dated["description"].replace("creator_id", "author")}],
+        [{**dated, "inputSchema": {"properties": {"doctor_id": dated["inputSchema"]["properties"]["doctor_id"]}}}],
+        [],
+    ):
+        with pytest.raises(smoke.SmokeFailure):
+            smoke._require_staff_filter_catalogue(broken, None)
+
 TOKEN = "secret-smoke-token-value"
 REQUEST_ID = "abc123def456"
 
@@ -89,7 +107,15 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             self._send(200, {
                 "jsonrpc": "2.0", "id": request_id,
-                "result": {"tools": [{"name": "get_users"}]},
+                "result": {"tools": [{"name": "get_users"}, {
+                    "name": "get_medical_cards_by_date",
+                    "description": "all patients clinic_id doctor_id attending veterinarian "
+                                   "creator_id record creator",
+                    "inputSchema": {"properties": {
+                        "doctor_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                        "creator_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                    }},
+                }]},
             })
             return
         if method == "tools/call":

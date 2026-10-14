@@ -95,6 +95,31 @@ def _request(
     return payload["result"], response.headers
 
 
+def _require_staff_filter_catalogue(tools: list[dict], headers: httpx.Headers | None) -> None:
+    """Verify stage 380's public read-only input contract without printing tool data."""
+    dated = next((tool for tool in tools if isinstance(tool, dict)
+                  and tool.get("name") == "get_medical_cards_by_date"), None)
+    description = dated.get("description", "") if dated else ""
+    schema = dated.get("inputSchema", {}) if dated else {}
+    if not isinstance(description, str) or not isinstance(schema, dict):
+        raise SmokeFailure(STEP_TOOLS_LIST, "staff_filter_catalogue_missing",
+                           request_id=_correlation_id(headers))
+    properties = schema.get("properties") or {}
+    if not isinstance(properties, dict):
+        properties = {}
+    meanings = {"doctor_id": "attending veterinarian", "creator_id": "record creator"}
+    valid = bool(dated) and "all patients" in description and "clinic_id" in description
+    for key, meaning in meanings.items():
+        field = properties.get(key)
+        options = (field.get("anyOf") or []) if isinstance(field, dict) else []
+        types = {item.get("type") for item in options if isinstance(item, dict)}
+        valid = valid and key in description and meaning in description
+        valid = valid and "integer" in types and key not in schema.get("required", [])
+    if not valid:
+        raise SmokeFailure(STEP_TOOLS_LIST, "staff_filter_catalogue_missing",
+                           request_id=_correlation_id(headers))
+
+
 def main() -> int:
     token = os.environ.get("PROD_SMOKE_BEARER_TOKEN", "").strip()
     if not token:
@@ -126,6 +151,7 @@ def main() -> int:
                     raise SmokeFailure(
                         STEP_TOOLS_LIST, "tool_missing", request_id=_correlation_id(tools_headers)
                     )
+                _require_staff_filter_catalogue(tools, tools_headers)
                 call, call_headers = _request(client, "tools/call", {"name": "get_users", "arguments": {"limit": 1}}, 3, STEP_TOOLS_CALL)
                 if call.get("isError"):
                     # Текст ошибки инструмента не печатается: в нём могут быть
@@ -134,7 +160,7 @@ def main() -> int:
                     raise SmokeFailure(
                         STEP_TOOLS_CALL, "tool_error", request_id=_correlation_id(call_headers)
                     )
-            print("MCP read-only tool smoke passed.")
+            print("MCP read-only tool smoke passed; stage 380 staff catalogue verified.")
             return 0
         except SmokeFailure as exc:
             # Повторяем только то, что бывает временным сразу после выката.

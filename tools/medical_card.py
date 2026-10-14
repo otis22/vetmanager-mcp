@@ -194,6 +194,8 @@ def register(mcp: FastMCP) -> None:
         date_from: str = "",
         date_to: str = "",
         clinic_id: int | None = None,
+        doctor_id: int | None = None,
+        creator_id: int | None = None,
         limit: LimitParam = 20,
         offset: int = 0,
         sort: list[dict] | None = None,
@@ -210,6 +212,8 @@ def register(mcp: FastMCP) -> None:
             date_from: Start clinic-local day for range mode.
             date_to: End clinic-local day for range mode.
             clinic_id: Optional branch filter. Omit for all branches.
+            doctor_id: Optional attending veterinarian ID; omit for all doctors.
+            creator_id: Optional record creator ID; omit for all creators.
             limit: Max records to return (1-100, default 20).
             offset: Pagination offset (0-10000).
             sort: Optional Vetmanager sort list. Defaults to date_create ASC, id ASC.
@@ -239,6 +243,10 @@ def register(mcp: FastMCP) -> None:
         clinic_filter_applied = clinic_id is not None and clinic_id > 0
         if clinic_filter_applied:
             filters.append(_filter_eq("clinic_id", str(clinic_id)))
+        if doctor_id is not None and doctor_id > 0:
+            filters.append(_filter_eq("doctor_id", str(doctor_id)))
+        if creator_id is not None and creator_id > 0:
+            filters.append(_filter_eq("creator_id", str(creator_id)))
 
         params = build_list_query_params(
             limit=limit,

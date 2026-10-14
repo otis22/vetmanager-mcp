@@ -172,6 +172,23 @@ class TestToolsListSchema:
         assert "clinic_id" in tool["description"]
         assert "all branches" in tool["description"]
 
+    def test_stage380_staff_search_is_discoverable(self, all_tool_exports):
+        tools = _tools_by_name(all_tool_exports)
+        dated = tools["get_medical_cards_by_date"]
+        properties = dated["schema"].get("properties", {})
+        assert {"doctor_id", "creator_id"} <= properties.keys()
+        assert {"doctor_id", "creator_id"}.isdisjoint(dated["schema"].get("required", []))
+        for key in ("doctor_id", "creator_id"):
+            assert "integer" in str(properties[key])
+            assert key in dated["description"]
+        assert "attending veterinarian" in dated["description"]
+        assert "record creator" in dated["description"]
+        assert "all patients" in dated["description"]
+        assert "clinic_id" in dated["description"]
+        general = tools["get_medical_cards"]["description"]
+        assert "pet_id" in general
+        assert "get_medical_cards_by_date" in general
+
     def test_get_invoice_documents_keeps_public_invoice_id_contract(self, all_tool_exports):
         tool = next(t for t in all_tool_exports if t["name"] == "get_invoice_documents")
         properties = tool["schema"].get("properties", {})

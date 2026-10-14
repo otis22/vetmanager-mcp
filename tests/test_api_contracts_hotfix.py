@@ -547,6 +547,78 @@ async def test_get_medical_cards_by_client_id_no_pets_short_circuits():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("staff", "expected_ids"),
+    [
+        ({}, [1, 2, 3]),
+        ({"doctor_id": 7}, [1, 2]),
+        ({"creator_id": 8}, [1, 3]),
+        ({"doctor_id": 7, "creator_id": 8}, [1]),
+        ({"doctor_id": 7, "creator_id": 8, "clinic_id": 3}, [1]),
+        ({"doctor_id": 0, "creator_id": -1}, [1, 2, 3]),
+    ],
+)
+@respx.mock
+async def test_stage380_staff_filters_are_upstream_and_preserve_pagination(staff, expected_ids):
+    billing_mock()
+    cards = [
+        {"id": 1, "doctor_id": 7, "creator_id": 8, "clinic_id": 3},
+        {"id": 2, "doctor_id": 7, "creator_id": 9, "clinic_id": 4},
+        {"id": 3, "doctor_id": 6, "creator_id": 8, "clinic_id": 3},
+    ]
+    seen = []
+
+    def upstream(request):
+        filters = json.loads(request.url.params["filter"])
+        seen.append(filters)
+        assert {"property": "date_create", "value": "2026-07-01 00:00:00", "operator": ">="} in filters
+        assert {"property": "date_create", "value": "2026-07-04 00:00:00", "operator": "<"} in filters
+        selected = cards
+        for key in ("doctor_id", "creator_id", "clinic_id"):
+            clauses = [f for f in filters if f["property"] == key]
+            if clauses:
+                selected = [card for card in selected if card[key] == int(clauses[0]["value"])]
+        return httpx.Response(200, json={"success": True, "data": {
+            "totalCount": len(selected), "medicalCards": selected[:1],
+        }})
+
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(side_effect=upstream)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_medical_cards_by_date", {
+            "date_from": "2026-07-01", "date_to": "2026-07-03", "limit": 1, **staff,
+        })
+    body = result.structured_content or {}
+    assert len(seen) == 1
+    for key in ("doctor_id", "creator_id", "clinic_id"):
+        clauses = [f for f in seen[0] if f["property"] == key]
+        assert clauses == ([{"property": key, "value": str(staff[key]), "operator": "="}]
+                           if staff.get(key, 0) > 0 else [])
+    assert body["total"] == len(expected_ids)
+    assert body["total_known"] is True
+    assert body["truncated"] is (len(expected_ids) > 1)
+    assert body["medical_cards_count"] == 1
+    assert [card["id"] for card in body["medical_cards"]] == expected_ids[:1]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_stage380_noninteger_staff_id_rejected_before_http():
+    billing_mock()
+    route = respx.get(f"{BASE}/rest/api/MedicalCards").mock(
+        return_value=httpx.Response(200, json={"data": {"medicalCards": []}})
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    with headers_patch, runtime_patch:
+        for key in ("doctor_id", "creator_id"):
+            with pytest.raises((ToolError, ValidationError)):
+                await mcp.call_tool("get_medical_cards_by_date", {
+                    "date": "2026-07-01", key: "not-an-integer",
+                })
+    assert route.call_count == 0
+
+
+@pytest.mark.asyncio
 @respx.mock
 async def test_get_medical_cards_by_date_uses_half_open_date_filter_without_clinic_by_default():
     billing_mock()
