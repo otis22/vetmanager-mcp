@@ -1,8 +1,11 @@
 """A Report AI terminal event belongs to one logical job across slots."""
 
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import time
 
 import fakeredis
+import pytest
 
 import shared_metric_counters
 import tools.report_ai as report_ai
@@ -66,3 +69,70 @@ def test_same_clinic_job_on_different_connections_has_one_terminal(monkeypatch):
     with use_runtime_credentials(other_clinic):
         report_ai._observe_report_ai_lifecycle(job, now=13.0)
     assert backend.snapshot()["report_ai_job_terminal_outcomes_total"] == {"saved": 2}
+
+
+@pytest.mark.asyncio
+async def test_slow_terminal_claim_does_not_block_event_loop(monkeypatch):
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    real_claim = backend.claim_report_ai_terminal
+
+    def slow_claim(*args):
+        time.sleep(.2)
+        return real_claim(*args)
+
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(backend, "claim_report_ai_terminal", slow_claim)
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    ticks = []
+    loop.call_later(.01, lambda: ticks.append(loop.time() - started))
+    report_ai._observe_report_ai_lifecycle({"id": 385003, "status": "saved"}, now=10.0)
+    await asyncio.sleep(.03)
+    assert ticks and ticks[0] < .1
+    assert await shared_metric_counters.wait_pending()
+
+
+def test_late_terminal_poll_keeps_prior_stage_observation(monkeypatch):
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    job_id = 385004
+    report_ai._observe_report_ai_lifecycle({"id": job_id, "status": "queued"}, now=1.0)
+    slot_a = report_ai._REPORT_AI_LIFECYCLE_OBSERVATIONS.copy()
+    report_ai._reset_report_ai_queue_observations()
+    report_ai._observe_report_ai_lifecycle({"id": job_id, "status": "saved"}, now=2.0)
+    report_ai._reset_report_ai_queue_observations()
+    report_ai._REPORT_AI_LIFECYCLE_OBSERVATIONS.update(slot_a)
+    report_ai._observe_report_ai_lifecycle({"id": job_id, "status": "saved"}, now=3.0)
+    snapshot = backend.snapshot()
+    assert snapshot["report_ai_job_terminal_outcomes_total"] == {"saved": 1}
+    assert snapshot["report_ai_job_stage_duration_seconds"]["queued"]["count"] == 1
+    assert snapshot["report_ai_job_transitions_total"] == {"queued|saved": 1}
+
+
+def test_duplicate_terminal_poll_refreshes_shared_tombstone():
+    client = fakeredis.FakeRedis(decode_responses=True)
+    backend = RedisMetricCounters(client)
+    digest = "b" * 64
+    assert backend.claim_report_ai_terminal(digest, "saved", 1.0, 3600)
+    tombstone = shared_metric_counters.REPORT_AI_TERMINAL_KEY_PREFIX + digest
+    assert client.pexpire(tombstone, 100)
+    assert not backend.claim_report_ai_terminal(digest, "saved", 1.0, 3600)
+    assert client.ttl(tombstone) >= 3590
+    assert backend.snapshot()["report_ai_job_terminal_outcomes_total"] == {"saved": 1}
+
+
+def test_same_slot_finalized_poll_refreshes_shared_tombstone(monkeypatch):
+    client = fakeredis.FakeRedis(decode_responses=True)
+    backend = RedisMetricCounters(client)
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    job = {"id": 385005, "status": "saved"}
+    report_ai._observe_report_ai_lifecycle(job, now=10.0)
+    tombstone = next(key for key in client.scan_iter()
+                     if key.startswith(shared_metric_counters.REPORT_AI_TERMINAL_KEY_PREFIX))
+    client.pexpire(tombstone, 100)
+    report_ai._observe_report_ai_lifecycle(job, now=11.0)
+    assert client.ttl(tombstone) >= 3590
+    assert backend.snapshot()["report_ai_job_terminal_outcomes_total"] == {"saved": 1}

@@ -438,27 +438,56 @@ def _report_ai_queue_observation_key(job: dict) -> _ReportAiQueueObservationKey 
     )
 
 
-def _record_report_ai_terminal_once(key: _ReportAiQueueObservationKey, *,
-                                    outcome: str, duration_seconds: float) -> bool:
-    """Deduplicate the shared terminal counter even after a slot changes."""
-    backend = shared_metric_counters.get_backend()
-    if backend is None:
-        record_report_ai_job_terminal_outcome(outcome=outcome,
-                                              duration_seconds=duration_seconds)
-        return True
+def _report_ai_terminal_digest(key: _ReportAiQueueObservationKey) -> str:
     secret = hmac.new(get_web_session_secret().encode(),
                       b"report-ai-observation-v1", hashlib.sha256).digest()
     credentials = get_current_runtime_credentials()
     tenant = credentials.domain if credentials is not None else [key[0], key[1]]
     identity = json.dumps([tenant, key[2]], separators=(",", ":")).encode()
-    digest = hmac.new(secret, identity, hashlib.sha256).hexdigest()
-    claimed = backend.claim_report_ai_terminal(digest, outcome, duration_seconds,
-                                               REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
-    if claimed:
+    return hmac.new(secret, identity, hashlib.sha256).hexdigest()
+
+
+def _record_report_ai_terminal_once(key: _ReportAiQueueObservationKey, *,
+                                    outcome: str, duration_seconds: float,
+                                    on_claim: Callable[[], None] | None = None) -> None:
+    """Deduplicate the shared terminal counter even after a slot changes."""
+    backend = shared_metric_counters.get_backend()
+    if backend is None:
         record_report_ai_job_terminal_outcome(outcome=outcome,
-                                              duration_seconds=duration_seconds,
-                                              shared_recorded=True)
-    return claimed
+                                              duration_seconds=duration_seconds)
+        if on_claim is not None:
+            on_claim()
+        return
+    digest = _report_ai_terminal_digest(key)
+    def deliver() -> None:
+        try:
+            claimed = backend.claim_report_ai_terminal(
+                digest, outcome, duration_seconds, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+            if claimed:
+                record_report_ai_job_terminal_outcome(outcome=outcome,
+                                                      duration_seconds=duration_seconds,
+                                                      shared_recorded=True)
+                if on_claim is not None:
+                    on_claim()
+        except Exception as exc:
+            _report_ai_observation_failed(exc, operation="lifecycle_terminal")
+
+    shared_metric_counters.dispatch(deliver)
+
+
+def _refresh_report_ai_terminal(key: _ReportAiQueueObservationKey) -> None:
+    backend = shared_metric_counters.get_backend()
+    if backend is None:
+        return
+    digest = _report_ai_terminal_digest(key)
+
+    def deliver() -> None:
+        try:
+            backend.refresh_report_ai_terminal(digest, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+        except Exception as exc:
+            _report_ai_observation_failed(exc, operation="lifecycle_terminal_refresh")
+
+    shared_metric_counters.dispatch(deliver)
 
 
 def _remember_report_ai_export(report_file_id: object) -> None:
@@ -602,6 +631,8 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
         elif job.get("status") == "saved" and guided.get("preview_certainty") == "zero":
             _resolve_guidance_outcome(guided, "saved_empty")
     if observation_key in _REPORT_AI_FINALIZED_OBSERVATIONS:
+        _best_effort_observation("lifecycle_terminal_refresh", _refresh_report_ai_terminal,
+                                 observation_key)
         _remember_finalized_report_ai_job(observation_key, now=current_time)
         return
     stage = _REPORT_AI_STAGE_BY_STATUS.get(str(job.get("status") or ""), "unknown")
@@ -611,11 +642,11 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
     observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.get(observation_key)
     if observation is None:
         if stage in _REPORT_AI_TERMINAL_OUTCOMES:
-            claimed = _best_effort_observation("lifecycle_terminal", _record_report_ai_terminal_once,
-                                               observation_key, outcome=stage, duration_seconds=0.0)
-            if claimed:
-                _best_effort_observation("lifecycle_stage_duration", record_report_ai_job_stage_duration,
-                                         stage=stage, duration_seconds=0.0)
+            _best_effort_observation("lifecycle_terminal", _record_report_ai_terminal_once,
+                observation_key, outcome=stage, duration_seconds=0.0,
+                on_claim=lambda: _best_effort_observation(
+                    "lifecycle_stage_duration", record_report_ai_job_stage_duration,
+                    stage=stage, duration_seconds=0.0))
             _remember_finalized_report_ai_job(observation_key, now=current_time)
             return
         _REPORT_AI_LIFECYCLE_OBSERVATIONS[observation_key] = {
@@ -632,15 +663,6 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
     if stage == previous_stage:
         return
 
-    if stage in _REPORT_AI_TERMINAL_OUTCOMES:
-        claimed = _best_effort_observation("lifecycle_terminal", _record_report_ai_terminal_once,
-            observation_key, outcome=stage,
-            duration_seconds=current_time - float(observation["first_seen"]))
-        if not claimed:
-            _REPORT_AI_LIFECYCLE_OBSERVATIONS.pop(observation_key, None)
-            _remember_finalized_report_ai_job(observation_key, now=current_time, observation=observation)
-            return
-
     _best_effort_observation("lifecycle_stage_duration", record_report_ai_job_stage_duration,
         stage=previous_stage,
         duration_seconds=current_time - float(observation["stage_started"]),
@@ -648,8 +670,12 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
     _best_effort_observation("lifecycle_transition", record_report_ai_job_transition,
                              from_stage=previous_stage, to_stage=stage)
     if stage in _REPORT_AI_TERMINAL_OUTCOMES:
-        _best_effort_observation("lifecycle_stage_duration", record_report_ai_job_stage_duration,
-                                 stage=stage, duration_seconds=0.0)
+        _best_effort_observation("lifecycle_terminal", _record_report_ai_terminal_once,
+            observation_key, outcome=stage,
+            duration_seconds=current_time - float(observation["first_seen"]),
+            on_claim=lambda: _best_effort_observation(
+                "lifecycle_stage_duration", record_report_ai_job_stage_duration,
+                stage=stage, duration_seconds=0.0))
         _REPORT_AI_LIFECYCLE_OBSERVATIONS.pop(observation_key, None)
         _remember_finalized_report_ai_job(observation_key, now=current_time, observation=observation)
         return

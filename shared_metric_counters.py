@@ -126,6 +126,9 @@ class RedisMetricCounters:
                 with self._redis.pipeline() as pipe:
                     pipe.watch(tombstone, latency_key)
                     if pipe.exists(tombstone):
+                        pipe.multi()
+                        pipe.expire(tombstone, ttl_seconds)
+                        pipe.execute()
                         return False
                     previous = pipe.hgetall(latency_key)
                     pipe.multi()
@@ -142,6 +145,14 @@ class RedisMetricCounters:
             except WatchError:
                 continue
         raise SharedMetricsUnavailable("Report AI terminal claim contention")
+
+    def refresh_report_ai_terminal(self, identity_digest: str, ttl_seconds: int) -> None:
+        """Extend dedup while this slot still remembers a finalized job."""
+        if len(identity_digest) != 64 or not all(c in "0123456789abcdef" for c in identity_digest):
+            raise ValueError("Invalid Report AI observation identity")
+        if ttl_seconds <= 0:
+            raise ValueError("Invalid Report AI terminal TTL")
+        self._redis.setex(REPORT_AI_TERMINAL_KEY_PREFIX + identity_digest, ttl_seconds, "1")
 
     @staticmethod
     def _cache_slot_key(slot_identity: str) -> str:
