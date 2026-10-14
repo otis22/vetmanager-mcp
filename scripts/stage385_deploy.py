@@ -226,8 +226,24 @@ def _save_pre385_source(live: Path, bundle: Path) -> None:
     os.chmod(output, 0o400)
 
 
-def _stop_old(project: str, slots: tuple[str, ...]) -> None:
-    if len(slots) == 3:
+def _running_new_slots(project: str, image: str) -> tuple[str, ...]:
+    """Find only new containers; an exited new slot leaves its writes unresolved."""
+    running = []
+    for service in SLOTS:
+        ids = _run("docker", "ps", "-aq", "--filter", f"label=com.docker.compose.project={project}",
+                   "--filter", f"label=com.docker.compose.service={service}").splitlines()
+        matched = [cid for cid in ids if _run("docker", "inspect", "-f", "{{.Image}}", cid) == image]
+        if len(matched) > 1:
+            raise RuntimeError(f"Multiple new {service} containers; reconcile writes")
+        if matched:
+            if _run("docker", "inspect", "-f", "{{.State.Running}}", matched[0]) != "true":
+                raise RuntimeError(f"New {service} exited without proven drain; reconcile writes")
+            running.append(service)
+    return tuple(running)
+
+
+def _stop_old(project: str, slots: tuple[str, ...], *, fence: bool = False) -> None:
+    if len(slots) == 3 or fence:
         for service in slots:
             _run("docker", "kill", "--signal=USR1", _container(project, service))
         for service in slots:
@@ -362,7 +378,9 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
                 # same fleet fence and proven graceful drain as forward cutover.
                 # A partial or unknown new fleet keeps maintenance in place.
                 if new_launch_attempted:
-                    _stop_old(project, tuple(SLOTS))
+                    new_slots = _running_new_slots(project, new_image)
+                    if new_slots:
+                        _stop_old(project, new_slots, fence=True)
                 _compose(rollback_file, project, old_image, "up", "-d", "--no-build",
                          "--force-recreate", *slots, timeout=300)
                 for service in slots:

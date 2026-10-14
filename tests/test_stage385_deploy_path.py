@@ -72,7 +72,8 @@ def test_nginx_candidate_preserves_tls_and_gates_all_routes():
         render_nginx_site("server { location / { return 200; } }", "active")
 
 
-def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, repeat=False):
+def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, repeat=False,
+                      partial_new=False):
     live = tmp_path / "live"
     release = live / "releases" / ("a" * 40)
     release.mkdir(parents=True)
@@ -118,7 +119,13 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, repeat=False):
         events.append(("nginx", "maintenance" if "return 503" in candidate else
                        "active" if "mcp_session_backend" in candidate else "old")) or
         path.write_text(candidate)))
-    monkeypatch.setattr(stage385_deploy, "_stop_old", lambda *args: events.append(("stop_old",)))
+    def stop_old(project, slots, **kwargs):
+        events.append(("stop_old",))
+        events.append(("stop_slots", slots, kwargs.get("fence", False)))
+
+    monkeypatch.setattr(stage385_deploy, "_stop_old", stop_old)
+    monkeypatch.setattr(stage385_deploy, "_running_new_slots", lambda project, image: (
+        ("mcp",) if partial_new else tuple(stage385_deploy.SLOTS)))
 
     def ready(port):
         events.append(("ready", port))
@@ -169,3 +176,44 @@ def test_repeat_release_keeps_three_slot_rollback(monkeypatch, tmp_path):
     events, site, old_image = _simulate_cutover(monkeypatch, tmp_path, repeat=True)
     assert "mcp_session_backend" in site.read_text()
     assert any(e == ("compose", "rollback.yml", old_image, ("config", "--quiet")) for e in events)
+
+
+def test_partial_start_rolls_back_after_fencing_running_new_slot(monkeypatch, tmp_path):
+    events, site, old_image = _simulate_cutover(monkeypatch, tmp_path, fail_ready=True,
+                                                partial_new=True)
+    fence = events.index(("stop_slots", ("mcp",), True))
+    restore = next(i for i, e in enumerate(events)
+                   if e[:3] == ("compose", "rollback.yml", old_image) and "up" in e[3])
+    assert fence < restore
+    assert site.read_text() == PROD_SITE
+
+
+def test_partial_new_fleet_only_drains_started_slots(monkeypatch):
+    image = "sha256:" + "c" * 64
+    old = "sha256:" + "b" * 64
+    calls = []
+
+    def run(*args, **kwargs):
+        calls.append(args)
+        if args[:3] == ("docker", "ps", "-aq"):
+            return {"mcp": "new-mcp", "mcp2": "old-mcp2", "mcp3": ""}[args[-1].split("=")[-1]]
+        if args[:3] == ("docker", "inspect", "-f"):
+            if args[3] == "{{.State.Running}}":
+                return "true"
+            return {"new-mcp": image, "old-mcp2": old}[args[-1]]
+        return ""
+
+    monkeypatch.setattr(stage385_deploy, "_run", run)
+    assert stage385_deploy._running_new_slots("probe", image) == ("mcp",)
+    assert not any(call[:3] == ("docker", "kill", "--signal=USR1") for call in calls)
+
+    def exited(*args, **kwargs):
+        if args[:3] == ("docker", "ps", "-aq"):
+            return "new-mcp" if args[-1].endswith("=mcp") else ""
+        if args[3] == "{{.State.Running}}":
+            return "false"
+        return image
+
+    monkeypatch.setattr(stage385_deploy, "_run", exited)
+    with pytest.raises(RuntimeError, match="without proven drain"):
+        stage385_deploy._running_new_slots("probe", image)
