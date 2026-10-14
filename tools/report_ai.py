@@ -448,7 +448,9 @@ def _record_report_ai_terminal_once(key: _ReportAiQueueObservationKey, *,
         return True
     secret = hmac.new(get_web_session_secret().encode(),
                       b"report-ai-observation-v1", hashlib.sha256).digest()
-    identity = json.dumps([key[0], key[1], key[2]], separators=(",", ":")).encode()
+    credentials = get_current_runtime_credentials()
+    tenant = credentials.domain if credentials is not None else [key[0], key[1]]
+    identity = json.dumps([tenant, key[2]], separators=(",", ":")).encode()
     digest = hmac.new(secret, identity, hashlib.sha256).hexdigest()
     claimed = backend.claim_report_ai_terminal(digest, outcome, duration_seconds,
                                                REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)

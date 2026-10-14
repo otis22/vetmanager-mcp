@@ -6,7 +6,9 @@ import fakeredis
 
 import shared_metric_counters
 import tools.report_ai as report_ai
+from runtime_auth import use_runtime_credentials
 from shared_metric_counters import RedisMetricCounters
+from tests.runtime_factories import make_runtime_credentials
 
 
 def test_terminal_outcome_is_atomic_across_two_slot_observers(monkeypatch):
@@ -44,3 +46,23 @@ def test_concurrent_terminal_claim_is_one_counter_and_one_duration():
     assert workers[1].snapshot()["report_ai_job_duration_seconds"]["failed"] == {
         "count": 1, "sum_seconds": 7.0, "max_seconds": 7.0,
     }
+
+
+def test_same_clinic_job_on_different_connections_has_one_terminal(monkeypatch):
+    server = fakeredis.FakeServer()
+    backend = RedisMetricCounters(fakeredis.FakeRedis(server=server, decode_responses=True))
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    job = {"id": 385002, "status": "saved"}
+    for connection_id in (1, 2):
+        credentials = make_runtime_credentials("clinic-one", "test-key",
+                                               account_id=1, connection_id=connection_id)
+        with use_runtime_credentials(credentials):
+            report_ai._observe_report_ai_lifecycle(job, now=10.0 + connection_id)
+        report_ai._reset_report_ai_queue_observations()
+    assert backend.snapshot()["report_ai_job_terminal_outcomes_total"] == {"saved": 1}
+    other_clinic = make_runtime_credentials("clinic-two", "test-key",
+                                            account_id=1, connection_id=3)
+    with use_runtime_credentials(other_clinic):
+        report_ai._observe_report_ai_lifecycle(job, now=13.0)
+    assert backend.snapshot()["report_ai_job_terminal_outcomes_total"] == {"saved": 2}
