@@ -180,21 +180,31 @@ def _is_reject_pending(job: dict) -> bool:
     key = _report_ai_queue_observation_key(job)
     if key is None:
         return False
+    started = _REPORT_AI_REJECT_PENDING.get(key)
+    remaining = (REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS
+                 - (_monotonic_seconds() - started)) if started is not None else 0
+    if started is not None and remaining <= 0:
+        _REPORT_AI_REJECT_PENDING.pop(key, None)
+        started = None
     backend = shared_metric_counters.get_backend()
     if backend is not None:
         try:
-            return backend.report_ai_reject_pending(
-                _report_ai_terminal_digest(key),
-                terminal=job.get("status") in _REPORT_AI_WAIT_DONE_STATUSES - {"needs_confirmation"},
-            )
+            digest = _report_ai_terminal_digest(key)
+            terminal = job.get("status") in _REPORT_AI_WAIT_DONE_STATUSES - {"needs_confirmation"}
+            shared = backend.report_ai_reject_pending(digest, terminal=terminal)
+            if terminal:
+                _REPORT_AI_REJECT_PENDING.pop(key, None)
+                return False
+            if shared:
+                return True
+            if started is not None:
+                backend.mark_report_ai_reject_pending(digest, max(1, int(remaining)))
+                return True
+            return False
         except Exception as exc:
             _report_ai_observation_failed(exc, operation="reject_pending_read")
             return True  # A stale candidate must not be recommended after Redis fails.
-    started = _REPORT_AI_REJECT_PENDING.get(key)
     if started is None:
-        return False
-    if _monotonic_seconds() - started > REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS:
-        _REPORT_AI_REJECT_PENDING.pop(key, None)
         return False
     if job.get("status") in _REPORT_AI_WAIT_DONE_STATUSES - {"needs_confirmation"}:
         _REPORT_AI_REJECT_PENDING.pop(key, None)

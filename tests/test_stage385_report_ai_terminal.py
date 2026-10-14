@@ -472,6 +472,26 @@ def test_reject_pending_survives_slot_switch(monkeypatch):
     assert not report_ai._is_reject_pending(job)
 
 
+def test_reject_pending_recovers_shared_marker_after_redis_returns(monkeypatch):
+    server = fakeredis.FakeServer()
+    workers = [RedisMetricCounters(fakeredis.FakeRedis(server=server, decode_responses=True))
+               for _ in range(2)]
+    selected = [workers[0]]
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: selected[0])
+    job = {"id": 385017, "status": "needs_confirmation"}
+
+    def unavailable(*_args, **_kwargs):
+        raise OSError("Redis unavailable during reject")
+
+    monkeypatch.setattr(workers[0], "mark_report_ai_reject_pending", unavailable)
+    report_ai._remember_reject_pending(job)
+    selected[0] = workers[1]
+    assert report_ai._is_reject_pending(job)
+    report_ai._reset_report_ai_queue_observations()
+    assert report_ai._is_reject_pending(job)
+
+
 def test_export_wait_age_survives_slot_switch(monkeypatch):
     backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
     monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
