@@ -156,6 +156,10 @@ def test_cutover_waits_for_three_slots_before_nginx(monkeypatch, tmp_path):
 
 def test_failed_cutover_rolls_back_pinned_image(monkeypatch, tmp_path):
     events, site, old_image = _simulate_cutover(monkeypatch, tmp_path, fail_ready=True)
+    assert events.count(("stop_old",)) == 2
+    rollback_index = next(i for i, e in enumerate(events)
+                          if e[:3] == ("compose", "rollback.yml", old_image) and "up" in e[3])
+    assert [i for i, e in enumerate(events) if e == ("stop_old",)][1] < rollback_index
     assert any(e[:3] == ("compose", "rollback.yml", old_image) and "up" in e[3] for e in events)
     assert events[-1] == ("nginx", "old")
     assert site.read_text() == PROD_SITE

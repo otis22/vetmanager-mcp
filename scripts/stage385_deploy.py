@@ -327,6 +327,7 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
         raise RuntimeError("MCP metrics token did not reach the new Compose service")
     maintenance_entered = False
     old_stopped = False
+    new_launch_attempted = False
     try:
         _write_site(maintenance, site)
         maintenance_entered = True
@@ -335,6 +336,7 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
         _compose(release / "docker-compose.yml", project, new_image, "up", "-d", "redis")
         _compose(release / "docker-compose.yml", project, new_image, "run", "-T", "--rm", "mcp",
                  "alembic", "upgrade", "head", timeout=300)
+        new_launch_attempted = True
         _compose(release / "docker-compose.yml", project, new_image, "up", "-d", "--no-build",
                  "--force-recreate", *SLOTS, timeout=300)
         for port in SLOTS.values():
@@ -356,7 +358,11 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
         if maintenance_entered and old_stopped:
             try:
                 _write_site(maintenance, site)
-                _compose(release / "docker-compose.yml", project, new_image, "stop", *SLOTS)
+                # Once a slot could have served a write, rollback needs the
+                # same fleet fence and proven graceful drain as forward cutover.
+                # A partial or unknown new fleet keeps maintenance in place.
+                if new_launch_attempted:
+                    _stop_old(project, tuple(SLOTS))
                 _compose(rollback_file, project, old_image, "up", "-d", "--no-build",
                          "--force-recreate", *slots, timeout=300)
                 for service in slots:
