@@ -55,7 +55,8 @@
   подходящем job, f конкурентное изменение test connection, first-session и
   stale GET после изменения сущности через другой slot, восстановление после
   потери PG после upstream write, суммарная нагрузка локальных breaker
-  half-open проб; финальный suite и committed review этого
+  half-open проб, event loop задержка синхронных Redis observations и
+  очистка resolved guidance из account index; финальный suite и committed review этого
   хода фиксируются в AssumptionLog. Production не трогали.)
 - 385.3 Аудит, сильное ревью, полный прогон, AssumptionLog, выпуск с зелёным
   CI; после выпуска сверка утилизации ядер на проде. — `todo`

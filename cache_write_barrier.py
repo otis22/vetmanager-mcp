@@ -13,10 +13,12 @@ from storage_models import VetmanagerCacheBarrier
 from web_auth import get_web_session_secret
 
 
-def tag_hash(*, domain: str, account_id: int | None, entity: str) -> str:
+def tag_hash(*, domain: str, entity: str) -> str:
     key = hmac.new(get_web_session_secret().encode(), b"vm-cache-tag-v1",
                    hashlib.sha256).digest()
-    identity = json.dumps([domain, account_id, entity], separators=(",", ":")).encode()
+    # Vetmanager records are shared by all service accounts of one clinic.
+    # Account isolation belongs in the cache key, not the invalidation tag.
+    identity = json.dumps([domain, entity], separators=(",", ":")).encode()
     return hmac.new(key, identity, hashlib.sha256).hexdigest()
 
 

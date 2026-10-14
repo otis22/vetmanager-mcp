@@ -399,8 +399,7 @@ class VetmanagerClient:
         await self._ensure_runtime_credentials()
         self._require_scope(method, path)
         tag = cache_write_barrier.tag_hash(
-            domain=self._domain or "", account_id=self._account_id,
-            entity=self._entity_from_path(path))
+            domain=self._domain or "", entity=self._entity_from_path(path))
         try:
             await cache_write_barrier.begin_write(tag)
         except Exception as exc:
@@ -470,8 +469,7 @@ class VetmanagerClient:
                 try:
                     cache_generation = await cache_write_barrier.read_generation(
                         cache_write_barrier.tag_hash(
-                            domain=self._domain or "", account_id=self._account_id,
-                            entity=self._entity_from_path(path)))
+                            domain=self._domain or "", entity=self._entity_from_path(path)))
                 except Exception as exc:
                     RUNTIME_LOGGER.warning("Cache version unavailable", extra={
                         "event_name": "cache_version_unavailable",
@@ -666,8 +664,7 @@ class VetmanagerClient:
                             try:
                                 final_generation = await cache_write_barrier.read_generation(
                                     cache_write_barrier.tag_hash(
-                                        domain=self._domain or "", account_id=self._account_id,
-                                        entity=self._entity_from_path(path)))
+                                        domain=self._domain or "", entity=self._entity_from_path(path)))
                                 can_store = (cache_generation is not None
                                              and final_generation == cache_generation)
                             except Exception as exc:

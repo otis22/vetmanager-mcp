@@ -73,7 +73,9 @@ def barrier_db(prepared_web_db):
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_write_on_slot_b_prevents_old_get_on_slot_a(monkeypatch, barrier_db):
+@pytest.mark.parametrize("reader_account_id", [1, 2])
+async def test_write_on_slot_b_prevents_old_get_on_slot_a(
+        monkeypatch, barrier_db, reader_account_id):
     monkeypatch.setenv("MCP_WORKER_SLOTS", "3")
     monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-cache-barrier-secret")
     value = {"version": 1}
@@ -92,6 +94,7 @@ async def test_write_on_slot_b_prevents_old_get_on_slot_a(monkeypatch, barrier_d
     slot_a = InMemoryTaggedCache()
     slot_b = InMemoryTaggedCache()
     reader = make_client_with_resolved_runtime("clinic-a", "test-key")
+    reader._account_id = reader_account_id
     writer = make_client_with_resolved_runtime("clinic-a", "test-key")
     monkeypatch.setattr(vetmanager_client, "REQUEST_CACHE", slot_a)
     assert (await reader.get("/rest/api/client"))["data"]["version"] == 1
@@ -131,8 +134,7 @@ async def test_unknown_upstream_write_outcome_keeps_pg_fence(monkeypatch, barrie
     monkeypatch.setattr(client, "_request_core", uncertain)
     with pytest.raises(VetmanagerTimeoutError):
         await client.post("/rest/api/client", json={"name": "safe-test"})
-    tag = cache_write_barrier.tag_hash(domain="clinic-a", account_id=1,
-                                       entity="client")
+    tag = cache_write_barrier.tag_hash(domain="clinic-a", entity="client")
     assert await cache_write_barrier.read_generation(tag) is None
 
 
@@ -148,8 +150,7 @@ async def test_known_pre_dispatch_failure_releases_pg_fence(monkeypatch, barrier
     monkeypatch.setattr(client, "_request_core", no_host)
     with pytest.raises(HostResolutionError):
         await client.post("/rest/api/client", json={"name": "safe-test"})
-    tag = cache_write_barrier.tag_hash(domain="clinic-a", account_id=1,
-                                       entity="client")
+    tag = cache_write_barrier.tag_hash(domain="clinic-a", entity="client")
     assert await cache_write_barrier.read_generation(tag) == 1
 
 
@@ -181,16 +182,14 @@ async def test_failed_finish_keeps_durable_fence_and_bypasses_old_cache(
     await writer.post("/rest/api/client", json={"name": "safe-test"})
     assert (await reader.get("/rest/api/client"))["data"]["version"] == 2
     assert route.call_count == 3
-    tag = cache_write_barrier.tag_hash(domain="clinic-a", account_id=1,
-                                       entity="client")
+    tag = cache_write_barrier.tag_hash(domain="clinic-a", entity="client")
     assert await cache_write_barrier.read_generation(tag) is None
 
 
 @pytest.mark.asyncio
 async def test_overlapping_writes_hold_barrier_until_both_finish(monkeypatch, barrier_db):
     monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-cache-barrier-secret")
-    tag = cache_write_barrier.tag_hash(domain="clinic-a", account_id=None,
-                                       entity="client")
+    tag = cache_write_barrier.tag_hash(domain="clinic-a", entity="client")
     await cache_write_barrier.begin_write(tag)
     await cache_write_barrier.begin_write(tag)
     await cache_write_barrier.finish_write(tag)
