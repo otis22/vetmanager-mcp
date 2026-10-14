@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import ssl
 import subprocess
 import sys
 import tarfile
@@ -175,6 +176,30 @@ def _ready(port: int, seconds: int = 90) -> None:
     raise TimeoutError(f"slot {port} did not become ready")
 
 
+def _nginx_local_smoke(hostname: str, *, port: int = 443, seconds: int = 10) -> None:
+    """Check the selected TLS site through loopback, without external DNS."""
+    if not re.fullmatch(r"[a-z0-9.-]+", hostname):
+        raise ValueError("Invalid nginx hostname")
+    # The certificate name cannot match a loopback URL; this checks local
+    # proxy routing only. The separate public smoke checks TLS identity.
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
+    )
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            request = urllib.request.Request(f"https://127.0.0.1:{port}/healthz",
+                                             headers={"Host": hostname})
+            with opener.open(request, timeout=2) as response:
+                if response.status == 200 and json.loads(response.read(1024)).get("status") == "ok":
+                    return
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, AttributeError):
+            pass
+        time.sleep(0.2)
+    raise TimeoutError("local nginx healthz did not become ready")
+
+
 def _backup_pg(project: str, bundle: Path) -> Path:
     cid = _container(project, "postgres")
     dest = bundle / "pre-deploy.dump"
@@ -298,6 +323,10 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
         slots = ("mcp",)
     maintenance = render_nginx_site(base, "maintenance")
     active = render_nginx_site(base, "active")
+    host_match = re.search(r"(?m)^\s*server_name\s+([a-z0-9.-]+);", base)
+    if host_match is None:
+        raise RuntimeError("Base nginx hostname is missing")
+    hostname = host_match.group(1)
     # Persist the exact active nginx file and immutable rollback before any stop.
     bundle = state_dir / "rollback" / sha
     bundle.parent.mkdir(mode=0o700, exist_ok=True)
@@ -354,6 +383,7 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
         for port in SLOTS.values():
             _ready(port)
         _write_site(active, site)
+        _nginx_local_smoke(hostname)
         _run("bash", "scripts/post_deploy_smoke_checks.sh", "http://127.0.0.1:8000",
              cwd=release, env=dict(os.environ, METRICS_AUTH_TOKEN=metrics_token),
              timeout=180)

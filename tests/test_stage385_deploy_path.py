@@ -80,7 +80,7 @@ def test_nginx_candidate_preserves_tls_and_gates_all_routes():
 
 
 def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=False,
-                      repeat=False, partial_new=False):
+                      fail_nginx=False, repeat=False, partial_new=False):
     live = tmp_path / "live"
     release = live / "releases" / ("a" * 40)
     release.mkdir(parents=True)
@@ -153,9 +153,15 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=Fal
             raise TimeoutError("slot failed")
 
     monkeypatch.setattr(stage385_deploy, "_ready", ready)
-    if fail_ready or fail_smoke:
+    def nginx_smoke(hostname):
+        events.append(("nginx_smoke", hostname))
+        if fail_nginx:
+            raise TimeoutError("local nginx route failed")
+
+    monkeypatch.setattr(stage385_deploy, "_nginx_local_smoke", nginx_smoke)
+    if fail_ready or fail_smoke or fail_nginx:
         with pytest.raises((TimeoutError, RuntimeError),
-                           match="slot failed|injected internal smoke failure"):
+                           match="slot failed|injected internal smoke failure|local nginx route failed"):
             stage385_deploy.deploy(release, live, release.name, site=site, pepper="new")
     else:
         stage385_deploy.deploy(release, live, release.name, site=site, pepper="new")
@@ -178,6 +184,7 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=Fal
 def test_cutover_waits_for_three_slots_before_nginx(monkeypatch, tmp_path):
     events, site, _ = _simulate_cutover(monkeypatch, tmp_path)
     assert events.index(("ready", 8002)) < events.index(("nginx", "active"))
+    assert events.index(("nginx", "active")) < events.index(("nginx_smoke", "old.example"))
     assert ("smoke_token", True) in events
     assert "mcp_session_backend" in site.read_text()
 
@@ -199,6 +206,14 @@ def test_failed_smoke_automatically_restores_manifest_and_nginx(monkeypatch, tmp
     assert any(e[:3] == ("compose", "rollback.yml", old_image) and "up" in e[3]
                for e in events)
     assert events[-1] == ("nginx", "old")
+    assert site.read_text() == PROD_SITE
+
+
+def test_failed_local_nginx_route_automatically_rolls_back(monkeypatch, tmp_path):
+    events, site, old_image = _simulate_cutover(monkeypatch, tmp_path, fail_nginx=True)
+    assert ("nginx_smoke", "old.example") in events
+    assert any(e[:3] == ("compose", "rollback.yml", old_image) and "up" in e[3]
+               for e in events)
     assert site.read_text() == PROD_SITE
 
 
