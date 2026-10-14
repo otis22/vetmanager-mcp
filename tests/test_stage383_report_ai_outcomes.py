@@ -86,16 +86,13 @@ async def test_failed_job_malformed_code_is_no_status_after_public_annotation():
 async def test_failed_job_log_has_request_ids_before_redis_callback(caplog, monkeypatch):
     from tools import report_ai
 
-    class SharedLifecycle:
-        def observe_report_ai_lifecycle(self, *_args):
-            return True
-
-        def cleanup_report_ai_lifecycle(self, *_args, **_kwargs):
-            pass
-
+    monkeypatch.setenv("WEB_SESSION_SECRET", "stage383-report-ai-test-secret")
+    client = fakeredis.FakeRedis(decode_responses=True)
+    backend = RedisMetricCounters(client)
     queued = []
-    monkeypatch.setattr(report_ai.shared_metric_counters, "get_backend", lambda: SharedLifecycle())
-    monkeypatch.setattr(report_ai.shared_metric_counters, "dispatch", lambda fn: queued.append(fn))
+    monkeypatch.setattr(report_ai.shared_metric_counters, "get_backend", lambda: backend)
+    monkeypatch.setattr(report_ai.shared_metric_counters, "dispatch",
+                        lambda fn, *, on_full=None: queued.append(fn))
     billing_mock()
     respx.get(f"{BASE}/rest/api/report-ai-job/22").mock(return_value=httpx.Response(200, json={
         "data": {"job": {"id": 22, "status": "failed", "error_code": "FUTURE_CODE"}}}))
@@ -104,11 +101,18 @@ async def test_failed_job_log_has_request_ids_before_redis_callback(caplog, monk
         result = await mcp.call_tool("get_report_ai_job", {"job_id": 22})
     assert result.structured_content["data"]["job"]["error_code"] == "unknown"
     with caplog.at_level(logging.INFO):
-        for callback in list(queued):
-            callback()
+        while queued:
+            queued.pop(0)()
     event = next(r for r in caplog.records if r.msg == "report_ai_outcome_code")
     assert (event.code, event.account_id, event.job_id) == ("unlisted_code_seen", 1, 22)
+    assert backend.snapshot()["report_ai_outcomes_by_code_total"] == {
+        "status|unlisted_code_seen": 1,
+    }
+    assert not [r for r in caplog.records if r.msg in {
+        "report_ai_observation_failed", "Shared metric event lost",
+    }]
     assert "FUTURE_CODE" not in caplog.text
+    client.close()
 
 
 @pytest.mark.asyncio
