@@ -34,11 +34,11 @@
   отката дала 404, re-initialize и GET SSE — 200. При испытании исправлено
   столкновение PID 1 в общем томе логов, сторож показан красным. Для c2
   проверен полный каталог shared counter/latency, живые bearer/Report AI
-  и export серии, mock редких событий; c3 — Redis outage 503→200 и равный
-  count/sum/max/cache на трёх slot; c4 — 49 HELP/TYPE и target `up=1`.
+  и export серии; c2c — mock редких событий и полный каталог семейств;
+  c3 — Redis outage 503→200 и равный count/sum/max/cache на трёх slot;
+  c4 — 49 HELP/TYPE и target `up=1`.
   Остаток: c2a — живые guard/rate-limit события; c2b — безопасный export
-  outcome, не только serve; c2c — недостижимые вручную события покрыты mock,
-  требуется финальная сверка полного каталога; d — общий activation scan/alerts;
+  outcome, не только serve; d — общий activation scan/alerts;
   e — Report AI observation dedup/expiry (два slot пока дают двойной terminal);
   f — claims, locks, limiter, PG cache/write barrier и export storage;
   g — ресурсный gate на 200 вызовах. Новый полный mock и committed review

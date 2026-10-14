@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
@@ -223,10 +224,17 @@ class PersistentRotatingFileHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            path = self._path_for_record(self.format(record))
-            with path.open("a", encoding="utf-8") as stream:
-                stream.write(self.format(record) + "\n")
-            self._prune()
+            # The lock covers selection, append, and pruning across containers.
+            # Otherwise one slot can unlink a file while another writes it.
+            with (self.directory / ".runtime-log.lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                try:
+                    path = self._path_for_record(self.format(record))
+                    with path.open("a", encoding="utf-8") as stream:
+                        stream.write(self.format(record) + "\n")
+                    self._prune()
+                finally:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
         except Exception:
             self.handleError(record)
 

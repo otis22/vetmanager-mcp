@@ -2,6 +2,7 @@
 
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 
 import structured_logging
@@ -42,3 +43,31 @@ def test_size_budget_prunes_oldest_same_day_file_across_slots(tmp_path, monkeypa
     monkeypatch.setattr(structured_logging, "PERSISTENT_LOG_MAX_TOTAL_BYTES", 4)
     handler._prune()
     assert not older.exists() and newer.exists()
+
+
+def test_other_slot_cannot_write_while_shared_prune_is_active(tmp_path):
+    first = PersistentRotatingFileHandler(str(tmp_path))
+    second = PersistentRotatingFileHandler(str(tmp_path))
+    entered = threading.Event()
+    release = threading.Event()
+    second_done = threading.Event()
+
+    def paused_prune():
+        entered.set()
+        assert release.wait(2)
+
+    first._prune = paused_prune
+    record = lambda value: logging.makeLogRecord({"msg": value, "args": ()})
+    first_thread = threading.Thread(target=lambda: first.emit(record("first")))
+    second_thread = threading.Thread(
+        target=lambda: (second.emit(record("second")), second_done.set()))
+    first_thread.start()
+    try:
+        assert entered.wait(2)
+        second_thread.start()
+        assert not second_done.wait(.1)
+    finally:
+        release.set()
+        first_thread.join(2)
+        second_thread.join(2)
+    assert second_done.is_set()

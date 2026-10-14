@@ -121,6 +121,24 @@ def test_metrics_help_type_cover_samples_without_process_claims():
             assert 'pid="' not in line and 'worker="' not in line
 
 
+def test_every_latency_summary_emits_count_sum_and_max():
+    metrics.reset_service_metrics()
+    metrics.record_http_request(route="/readyz", method="GET", status_code=200,
+                                duration_seconds=.01)
+    metrics.record_upstream_request(target="client", status="200", duration_seconds=.01)
+    metrics.record_tool_call(endpoint="/rest/api/client#list", method="GET",
+                             outcome="success", duration_seconds=.01)
+    metrics.record_report_ai_job_stage_duration(stage="ready", duration_seconds=.01)
+    metrics.record_report_ai_job_terminal_outcome(outcome="saved", duration_seconds=.01)
+    metrics.record_report_ai_export_duration(outcome="success", duration_seconds=.01)
+    samples = {line.split("{", 1)[0].split(" ", 1)[0]
+               for line in metrics.render_prometheus_metrics().splitlines()
+               if line and not line.startswith("#")}
+    for name in EXPECTED_METRIC_TYPES["summary"]:
+        for suffix in ("_count", "_sum", "_max"):
+            assert f"vetmanager_{name}{suffix}" in samples
+
+
 @pytest.mark.asyncio
 async def test_rare_counter_events_reach_the_same_redis_snapshot(monkeypatch):
     backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
