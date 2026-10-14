@@ -1,4 +1,5 @@
 import asyncio
+import os
 import time
 import uuid
 from typing import Any
@@ -13,6 +14,7 @@ from exceptions import (
     VetmanagerUpstreamUnavailable,
     VetmanagerTimeoutError,
 )
+import cache_write_barrier
 from host_resolver import resolve_vetmanager_host
 from observability_logging import RUNTIME_LOGGER
 from request_cache import REQUEST_CACHE
@@ -216,6 +218,7 @@ class VetmanagerClient:
         self.last_response_status_code: int | None = None
         self.generated_outbound_correlation = False
         self.prepared_correlation_id: str | None = None
+        self._write_dispatch_started = False
 
     def prepare_generated_correlation(self) -> None:
         """Reserve a safe id before host resolution; dispatch remains unstarted."""
@@ -389,6 +392,64 @@ class VetmanagerClient:
             )
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+        if os.environ.get("MCP_WORKER_SLOTS") != "3" or method.upper() not in {
+            "POST", "PUT", "DELETE", "PATCH",
+        }:
+            return await self._request_core(method, path, **kwargs)
+        await self._ensure_runtime_credentials()
+        self._require_scope(method, path)
+        tag = cache_write_barrier.tag_hash(
+            domain=self._domain or "", account_id=self._account_id,
+            entity=self._entity_from_path(path))
+        try:
+            await cache_write_barrier.begin_write(tag)
+        except Exception as exc:
+            RUNTIME_LOGGER.error("Cache write barrier unavailable", extra={
+                "event_name": "cache_write_barrier_unavailable",
+                "error_class": type(exc).__name__,
+            })
+            raise VetmanagerUpstreamUnavailable(
+                "Storage is unavailable; the write was not sent to Vetmanager.") from exc
+        self._write_dispatch_started = False
+        try:
+            result = await self._request_core(method, path, **kwargs)
+        except VetmanagerError as exc:
+            # A timeout or server error can occur after Vetmanager applied the
+            # write. Keep the durable fence until the outcome is checked.
+            if (not self._write_dispatch_started or
+                    exc.status_code is not None and 400 <= exc.status_code < 500):
+                await self._finish_cache_write_barrier(tag)
+            else:
+                RUNTIME_LOGGER.warning("Cache write outcome needs verification", extra={
+                    "event_name": "cache_write_outcome_unconfirmed",
+                    "error_class": type(exc).__name__,
+                })
+            raise
+        except BaseException as exc:
+            if not self._write_dispatch_started:
+                await self._finish_cache_write_barrier(tag)
+            else:
+                RUNTIME_LOGGER.warning("Cache write outcome needs verification", extra={
+                    "event_name": "cache_write_outcome_unconfirmed",
+                    "error_class": type(exc).__name__,
+                })
+            raise
+        await self._finish_cache_write_barrier(tag)
+        return result
+
+    @staticmethod
+    async def _finish_cache_write_barrier(tag: str) -> None:
+        try:
+            await asyncio.shield(cache_write_barrier.finish_write(tag))
+        except Exception as exc:
+            # The committed active_writes fence stays in PG; do not make a
+            # completed upstream write look safe to retry automatically.
+            RUNTIME_LOGGER.error("Cache write barrier remains active", extra={
+                "event_name": "cache_write_barrier_finish_failed",
+                "error_class": type(exc).__name__,
+            })
+
+    async def _request_core(self, method: str, path: str, **kwargs: Any) -> Any:
         await self._ensure_runtime_credentials()
         self._require_scope(method, path)
         base = await self._resolve_host()
@@ -400,11 +461,24 @@ class VetmanagerClient:
         entity_tag = self._entity_tag(path)
         upper_method = method.upper()
         should_cache_get = upper_method == "GET" and self._should_cache_get(path)
+        shared_cache = os.environ.get("MCP_WORKER_SLOTS") == "3"
+        cache_generation = None
         if should_cache_get:
             full_url = self._canonical_url(url, params if isinstance(params, dict) else None)
             cache_key = self._cache_key(method, full_url)
-            if not fresh:
-                cached = await REQUEST_CACHE.get(cache_key)
+            if shared_cache:
+                try:
+                    cache_generation = await cache_write_barrier.read_generation(
+                        cache_write_barrier.tag_hash(
+                            domain=self._domain or "", account_id=self._account_id,
+                            entity=self._entity_from_path(path)))
+                except Exception as exc:
+                    RUNTIME_LOGGER.warning("Cache version unavailable", extra={
+                        "event_name": "cache_version_unavailable",
+                        "error_class": type(exc).__name__,
+                    })
+            if not fresh and (not shared_cache or cache_generation is not None):
+                cached = await REQUEST_CACHE.get(cache_key, generation=cache_generation)
                 if cached is not None:
                     return cached
 
@@ -508,7 +582,10 @@ class VetmanagerClient:
                     timeout = bounded_request_timeout(remaining)
                     if timeout is not None:
                         request_kwargs["timeout"] = timeout
-                    response = await client.request(method, url, headers=self._headers(), **request_kwargs)
+                    headers = self._headers()
+                    if upper_method in {"POST", "PUT", "DELETE", "PATCH"}:
+                        self._write_dispatch_started = True
+                    response = await client.request(method, url, headers=headers, **request_kwargs)
                     self.last_response_status_code = response.status_code
                     elapsed = time.monotonic() - started
                     record_upstream_request(
@@ -584,12 +661,25 @@ class VetmanagerClient:
                             if entity_name in _SHORT_TTL_ENTITIES
                             else CACHE_TTL_SECONDS
                         )
-                        await REQUEST_CACHE.set(
-                            key=cache_key,
-                            value=payload,
-                            ttl_seconds=ttl,
-                            tags=(entity_tag,),
-                        )
+                        can_store = True
+                        if shared_cache:
+                            try:
+                                final_generation = await cache_write_barrier.read_generation(
+                                    cache_write_barrier.tag_hash(
+                                        domain=self._domain or "", account_id=self._account_id,
+                                        entity=self._entity_from_path(path)))
+                                can_store = (cache_generation is not None
+                                             and final_generation == cache_generation)
+                            except Exception as exc:
+                                can_store = False
+                                RUNTIME_LOGGER.warning("Cache version unavailable", extra={
+                                    "event_name": "cache_version_unavailable",
+                                    "error_class": type(exc).__name__,
+                                })
+                        if can_store:
+                            await REQUEST_CACHE.set(
+                                key=cache_key, value=payload, ttl_seconds=ttl,
+                                tags=(entity_tag,), generation=cache_generation)
                     elif upper_method in {"POST", "PUT", "DELETE"}:
                         await REQUEST_CACHE.invalidate_tag(entity_tag)
                     return payload

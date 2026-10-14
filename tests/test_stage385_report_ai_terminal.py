@@ -457,3 +457,72 @@ async def test_queue_diagnostics_read_shared_age_after_slot_switch(monkeypatch):
     payload = await report_ai._annotate_report_ai_queue_diagnostics(
         {"data": {"job": job}}, now=51.0)
     assert payload["data"]["job"]["mcp_queue_diagnostics"]["observed_queued_age_seconds"] == 50
+
+
+def test_reject_pending_survives_slot_switch(monkeypatch):
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    job = {"id": 385012, "status": "needs_confirmation"}
+    report_ai._remember_reject_pending(job)
+    report_ai._reset_report_ai_queue_observations()
+    assert report_ai._is_reject_pending(job)
+    assert not report_ai._is_reject_pending({**job, "status": "saved"})
+    report_ai._reset_report_ai_queue_observations()
+    assert not report_ai._is_reject_pending(job)
+
+
+def test_export_wait_age_survives_slot_switch(monkeypatch):
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: 10.0)
+    report_ai._remember_report_ai_export(385013)
+    report_ai._reset_report_ai_queue_observations()
+    monkeypatch.setattr(report_ai, "_monotonic_seconds", lambda: 50.0)
+    assert report_ai._report_ai_export_observed_wait_seconds(385013) == 40
+
+
+def test_queue_observation_starts_on_create_before_diagnostic_poll(monkeypatch):
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    job = {"id": 385014, "status": "queued"}
+    report_ai._observe_report_ai_queue(job, now=1.0)
+    report_ai._reset_report_ai_queue_observations()
+    key = report_ai._report_ai_queue_observation_key(job)
+    assert backend.observe_report_ai_queue(report_ai._report_ai_terminal_digest(key),
+                                           True, 51.0, 3600) == 50
+
+
+def test_guidance_recreated_after_slot_switch(monkeypatch):
+    server = fakeredis.FakeServer()
+    workers = [RedisMetricCounters(fakeredis.FakeRedis(server=server, decode_responses=True))
+               for _ in range(2)]
+    selected = [workers[0]]
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: selected[0])
+    credentials = make_runtime_credentials("clinic-one", "test-key", account_id=7,
+                                           connection_id=1)
+    with use_runtime_credentials(credentials):
+        old = {"id": 385015, "status": "ready_to_save",
+               "mcp_empty_preview_guidance": {"code": "report_ai_empty_preview"}}
+        report_ai._issued_empty_preview_guidance({"data": {"job": old}})
+        report_ai._reset_report_ai_queue_observations()
+        selected[0] = workers[1]
+        report_ai._match_recreated_report_ai_job({"id": 385016}, is_deduplicated=False)
+    assert workers[0].snapshot()["report_ai_empty_preview_guidance_outcomes_total"] == {
+        "recreated": 1}
+    assert all(b"385015" not in key for key in server.dbs[0])
+
+
+def test_guidance_account_index_is_bounded():
+    server = fakeredis.FakeServer()
+    backend = RedisMetricCounters(fakeredis.FakeRedis(server=server, decode_responses=True))
+    for number in range(3):
+        backend.issue_report_ai_guidance(
+            f"{number:064x}", float(number), 3600,
+            account_digest="a" * 64, max_account_entries=2)
+    key = shared_metric_counters.REPORT_AI_GUIDANCE_ACCOUNT_PREFIX + "a" * 64
+    assert backend._redis.zcard(key) == 2
+    assert backend._redis.zrange(key, 0, -1) == [f"{number:064x}" for number in (1, 2)]

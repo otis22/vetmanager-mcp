@@ -1,0 +1,84 @@
+{
+  "calls": 200,
+  "per_slot": {
+    "18080": 67,
+    "18081": 67,
+    "18082": 66
+  },
+  "http_codes": {
+    "200": 200
+  },
+  "safe_bodies": {
+    "tool_error": false,
+    "rpc_error": false
+  },
+  "p95_ms": 60.74,
+  "median_ms": 26.3,
+  "metric_delta": 200,
+  "before": {
+    "head_series": 107.0,
+    "head_chunks": 107.0,
+    "redis_memory": 1680616,
+    "pg_sessions": 7,
+    "cgroup": [
+      {
+        "rss_peak_bytes": 136187904,
+        "cgroup_peak_bytes": 133447680,
+        "cgroup_current_bytes": 126623744,
+        "oom": 0,
+        "cap_bytes": 671088640,
+        "cpu_limit": 1.0
+      },
+      {
+        "rss_peak_bytes": 136089600,
+        "cgroup_peak_bytes": 127311872,
+        "cgroup_current_bytes": 120668160,
+        "oom": 0,
+        "cap_bytes": 671088640,
+        "cpu_limit": 1.0
+      },
+      {
+        "rss_peak_bytes": 135983104,
+        "cgroup_peak_bytes": 129359872,
+        "cgroup_current_bytes": 122376192,
+        "oom": 0,
+        "cap_bytes": 671088640,
+        "cpu_limit": 1.0
+      }
+    ]
+  },
+  "after": {
+    "head_series": 107.0,
+    "head_chunks": 107.0,
+    "redis_memory": 1667976,
+    "pg_sessions": 8,
+    "cgroup": [
+      {
+        "rss_peak_bytes": 136536064,
+        "cgroup_peak_bytes": 133447680,
+        "cgroup_current_bytes": 123166720,
+        "oom": 0,
+        "cap_bytes": 671088640,
+        "cpu_limit": 1.0
+      },
+      {
+        "rss_peak_bytes": 136220672,
+        "cgroup_peak_bytes": 127311872,
+        "cgroup_current_bytes": 116817920,
+        "oom": 0,
+        "cap_bytes": 671088640,
+        "cpu_limit": 1.0
+      },
+      {
+        "rss_peak_bytes": 136183808,
+        "cgroup_peak_bytes": 129359872,
+        "cgroup_current_bytes": 122753024,
+        "oom": 0,
+        "cap_bytes": 671088640,
+        "cpu_limit": 1.0
+      }
+    ]
+  },
+  "rss_formula_bytes": 945811456,
+  "threshold_bytes": 1503238553
+}

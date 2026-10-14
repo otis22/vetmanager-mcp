@@ -38,9 +38,7 @@ def _tool_counter(body: str) -> int:
              and 'method="GET"' in line
              and 'outcome="success"' in line]
     if not lines:
-        assert not any(line.startswith("vetmanager_tool_calls_total{") for line in body.splitlines()), [
-            line for line in body.splitlines() if line.startswith("vetmanager_tool_calls_total{")][:8]
-        return 0
+        return 0  # Other tools may have populated this shared Redis first.
     assert len(lines) == 1
     return int(lines[0].rsplit(" ", 1)[1])
 

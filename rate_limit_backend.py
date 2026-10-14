@@ -429,7 +429,12 @@ async def get_rate_limit_backend() -> RateLimitBackend:
             return _BACKEND
 
         redis_url = os.environ.get("REDIS_URL", "").strip()
-        require_redis = _is_truthy_env("RATE_LIMIT_REQUIRE_REDIS")
+        require_redis = (_is_truthy_env("RATE_LIMIT_REQUIRE_REDIS")
+                         or os.environ.get("MCP_WORKER_SLOTS") == "3")
+        if require_redis and not redis_url:
+            raise RuntimeError(
+                "Redis is unavailable: RATE_LIMIT_REQUIRE_REDIS=1 or MCP_WORKER_SLOTS=3 "
+                "requires REDIS_URL.")
         if redis_url:
             client = None
             try:
@@ -465,7 +470,8 @@ async def get_rate_limit_backend() -> RateLimitBackend:
                 if require_redis:
                     record_rate_limit_backend_degraded("strict_failure")
                     raise RuntimeError(
-                        f"RATE_LIMIT_REQUIRE_REDIS=1 but Redis is unavailable: {exc}"
+                        f"Redis is unavailable while RATE_LIMIT_REQUIRE_REDIS=1 or "
+                        f"MCP_WORKER_SLOTS=3 requires it: {exc}"
                     ) from exc
                 record_rate_limit_backend_degraded("init_fallback")
                 RUNTIME_LOGGER.warning(

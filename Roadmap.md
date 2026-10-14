@@ -43,12 +43,19 @@
   одно предупреждение; account-age заменён на avg/p95 без account_id.
   Для e общие lifecycle transitions/terminal, guidance issue/outcome,
   export poll outcome и expiry/eviction финализация проверены сторожами;
-  terminal `saved` на devtr6 дал +1 на трёх slot. Остаток e: локальные
-  reject pending, часть queue observation вне диагностического poll,
-  guidance `recreated` и ожидание export при смене slot;
-  f — claims, account locks, limiter outage, PG cache/write barrier;
-  g — ресурсный gate на 200 вызовах и head_series. Новый полный mock и committed review
-  фиксируются в AssumptionLog. Production не трогали.)
+  terminal `saved` на devtr6 дал +1 на трёх slot. В ходе 6 добавлены общие
+  reject pending, queue observation вне poll, guidance `recreated` и возраст
+  ожидания export при смене slot; красные сторожа и фокусный набор зелёные.
+  Для f PG claim notice и first-session, account lock, Redis limiter outage
+  и PG cache/write barrier проверены конкурентными сторожами; живой devtr6
+  create Report AI на одном slot и read на другом дали 200/200 и закрытый
+  барьер, Redis outage отказал на всех трёх slot. Для g изолированные 200
+  вызовов дали 200 успешных ответов, OOM=0, общий счётчик +200 и ресурсный
+  gate ниже 70% 2 GiB. Остаток до `done`: живые e reject/guidance на реальном
+  подходящем job, f конкурентное изменение test connection, first-session и
+  stale GET после изменения сущности через другой slot, восстановление после
+  потери PG после upstream write; финальный suite и committed review этого
+  хода фиксируются в AssumptionLog. Production не трогали.)
 - 385.3 Аудит, сильное ревью, полный прогон, AssumptionLog, выпуск с зелёным
   CI; после выпуска сверка утилизации ядер на проде. — `todo`
 

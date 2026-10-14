@@ -23,10 +23,12 @@ REPORT_AI_LIFECYCLE_KEY_PREFIX = "vetmanager:report-ai:v1:lifecycle:"
 REPORT_AI_EXPIRY_INDEX = "vetmanager:report-ai:v1:expiry"
 REPORT_AI_GUIDANCE_KEY_PREFIX = "vetmanager:report-ai:v1:guidance:"
 REPORT_AI_GUIDANCE_EXPIRY_INDEX = "vetmanager:report-ai:v1:guidance-expiry"
+REPORT_AI_GUIDANCE_ACCOUNT_PREFIX = "vetmanager:report-ai:v1:guidance-account:"
 REPORT_AI_EXPORT_KEY_PREFIX = "vetmanager:report-ai:v1:export:"
 REPORT_AI_EXPORT_DONE_PREFIX = "vetmanager:report-ai:v1:export-done:"
 REPORT_AI_EXPORT_EXPIRY_INDEX = "vetmanager:report-ai:v1:export-expiry"
 REPORT_AI_QUEUE_KEY_PREFIX = "vetmanager:report-ai:v1:queue:"
+REPORT_AI_REJECT_PENDING_PREFIX = "vetmanager:report-ai:v1:reject-pending:"
 ACTIVATION_SCAN_LEASE_KEY = "vetmanager:activation:v1:scan-lease"
 ACTIVATION_SNAPSHOT_KEY = "vetmanager:activation:v1:snapshot"
 ACTIVATION_ALERTS_KEY = "vetmanager:activation:v1:alerts"
@@ -224,6 +226,26 @@ class RedisMetricCounters:
                 continue
         raise SharedMetricsUnavailable("Report AI queue observation contention")
 
+    def mark_report_ai_reject_pending(self, identity_digest: str, ttl_seconds: int) -> None:
+        if len(identity_digest) != 64 or ttl_seconds <= 0:
+            raise ValueError("Invalid Report AI reject observation")
+        self._redis.setex(REPORT_AI_REJECT_PENDING_PREFIX + identity_digest, ttl_seconds, "1")
+
+    def report_ai_reject_pending(self, identity_digest: str, *, terminal: bool = False) -> bool:
+        if len(identity_digest) != 64:
+            raise ValueError("Invalid Report AI reject observation")
+        key = REPORT_AI_REJECT_PENDING_PREFIX + identity_digest
+        if terminal:
+            self._redis.delete(key)
+            return False
+        return bool(self._redis.exists(key))
+
+    def report_ai_export_wait_age(self, identity_digest: str, now: float) -> int | None:
+        if len(identity_digest) != 64 or not math.isfinite(now):
+            raise ValueError("Invalid Report AI export observation")
+        started = self._redis.hget(REPORT_AI_EXPORT_KEY_PREFIX + identity_digest, "started_at")
+        return max(0, int(now - float(started))) if started is not None else None
+
     def report_ai_stage_age(self, identity_digest: str, stage: str,
                             now: float) -> int | None:
         state = self._redis.hgetall(REPORT_AI_LIFECYCLE_KEY_PREFIX + identity_digest)
@@ -362,10 +384,14 @@ class RedisMetricCounters:
         self._redis.expire(REPORT_AI_TERMINAL_KEY_PREFIX + identity_digest, ttl_seconds)
 
     def issue_report_ai_guidance(self, identity_digest: str, now: float,
-                                 ttl_seconds: int) -> bool:
+                                 ttl_seconds: int, *, account_digest: str | None = None,
+                                 max_account_entries: int = 4096) -> bool:
         """Count every issued response, but one first issue per logical job."""
         if len(identity_digest) != 64 or not math.isfinite(now) or ttl_seconds <= 0:
             raise ValueError("Invalid Report AI guidance observation")
+        if ((account_digest is not None and len(account_digest) != 64)
+                or max_account_entries <= 0):
+            raise ValueError("Invalid Report AI guidance account")
         key = REPORT_AI_GUIDANCE_KEY_PREFIX + identity_digest
         for _ in range(20):
             try:
@@ -400,11 +426,30 @@ class RedisMetricCounters:
                     else:
                         pipe.zadd(REPORT_AI_GUIDANCE_EXPIRY_INDEX,
                                   {identity_digest: latest_seen + ttl_seconds})
+                    if account_digest is not None:
+                        account_key = REPORT_AI_GUIDANCE_ACCOUNT_PREFIX + account_digest
+                        pipe.zadd(account_key, {identity_digest: latest_seen})
+                        pipe.zremrangebyscore(account_key, "-inf", now - ttl_seconds)
+                        pipe.zremrangebyrank(account_key, 0, -max_account_entries - 1)
+                        pipe.expire(account_key, ttl_seconds)
                     pipe.execute()
                     return first
             except WatchError:
                 continue
         raise SharedMetricsUnavailable("Report AI guidance issue contention")
+
+    def resolve_recreated_report_ai_guidance(self, account_digest: str,
+                                             new_job_digest: str, now: float,
+                                             ttl_seconds: int) -> int:
+        if len(account_digest) != 64 or len(new_job_digest) != 64:
+            raise ValueError("Invalid Report AI recreated observation")
+        account_key = REPORT_AI_GUIDANCE_ACCOUNT_PREFIX + account_digest
+        digests = self._redis.zrangebyscore(account_key, now - ttl_seconds, now)
+        resolved = sum(bool(self.resolve_report_ai_guidance(
+            digest, "recreated", now, ttl_seconds))
+            for digest in digests if digest != new_job_digest)
+        self._redis.zremrangebyscore(account_key, "-inf", now - ttl_seconds)
+        return resolved
 
     def resolve_report_ai_guidance(self, identity_digest: str, outcome: str,
                                    now: float, ttl_seconds: int,

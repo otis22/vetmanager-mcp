@@ -74,6 +74,7 @@ class CacheEntry:
     value: Any
     expires_at: float
     tags: tuple[str, ...]
+    generation: int | None = None
     last_accessed: float = field(default_factory=time.monotonic)
 
 
@@ -99,11 +100,11 @@ class InMemoryTaggedCache:
         self._max_entries = max_entries
         self.metrics = CacheMetrics()
 
-    async def get(self, key: str) -> Any | None:
+    async def get(self, key: str, *, generation: int | None = None) -> Any | None:
         async with self._lock:
             self._cleanup_expired_unlocked()
             entry = self._entries.get(key)
-            if entry is None:
+            if entry is None or (generation is not None and entry.generation != generation):
                 self.metrics.misses += 1
                 _shared_cache_event("cache_misses_total")
                 return None
@@ -112,7 +113,8 @@ class InMemoryTaggedCache:
             _shared_cache_event("cache_hits_total")
             return copy.deepcopy(entry.value)
 
-    async def set(self, key: str, value: Any, ttl_seconds: float, tags: tuple[str, ...]) -> None:
+    async def set(self, key: str, value: Any, ttl_seconds: float, tags: tuple[str, ...],
+                  *, generation: int | None = None) -> None:
         async with self._lock:
             self._cleanup_expired_unlocked()
 
@@ -135,6 +137,7 @@ class InMemoryTaggedCache:
                 value=copy.deepcopy(value),
                 expires_at=expires_at,
                 tags=tags,
+                generation=generation,
                 last_accessed=time.monotonic(),
             )
             for tag in tags:

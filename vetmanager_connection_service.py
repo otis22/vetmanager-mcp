@@ -23,7 +23,7 @@ from observability_logging import RUNTIME_LOGGER
 from service_metrics import record_upstream_failure, record_upstream_request
 from upstream_transport import classify_transport_error
 from domain_validation import validate_domain as _validate_domain
-from storage_models import CONNECTION_STATUS_ACTIVE, CONNECTION_STATUS_DISABLED, VetmanagerConnection
+from storage_models import Account, CONNECTION_STATUS_ACTIVE, CONNECTION_STATUS_DISABLED, VetmanagerConnection
 from vetmanager_auth import (
     VETMANAGER_AUTH_MODE_DOMAIN_API_KEY,
     VETMANAGER_AUTH_MODE_USER_TOKEN,
@@ -626,6 +626,11 @@ async def _save_connection(
     lock = await _get_account_save_lock(account_id)
     async with lock:
         async with session.begin():
+            # Lock the parent row even when this account has no connection yet.
+            # Connection row locks alone cannot serialize two worker processes
+            # creating the first active connection concurrently.
+            await session.execute(
+                select(Account.id).where(Account.id == account_id).with_for_update())
             existing = None
             if reuse_existing:
                 existing = await _find_matching_active_connection(

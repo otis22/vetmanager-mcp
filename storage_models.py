@@ -246,6 +246,20 @@ class ActivationEvent(Base):
     account: Mapped[Account] = relationship(back_populates="activation_events")
 
 
+class VetmanagerCacheBarrier(Base):
+    """Durable generation and active write count for one opaque cache tag."""
+
+    __tablename__ = "vetmanager_cache_barriers"
+    __table_args__ = (
+        CheckConstraint("generation >= 0", name="ck_vm_cache_generation"),
+        CheckConstraint("active_writes >= 0", name="ck_vm_cache_active_writes"),
+    )
+
+    tag_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active_writes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 class VetmanagerConnection(Base):
     """Stored Vetmanager auth configuration for one service account."""
 

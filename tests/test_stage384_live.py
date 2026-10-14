@@ -14,7 +14,9 @@ from sqlalchemy.orm import Session
 
 from bearer_token_manager import generate_bearer_token
 from rate_limit_backend import reset_rate_limit_backend
+import service_metrics
 from service_metrics import snapshot_service_metrics
+from shared_metric_counters import SharedMetricsUnavailable
 from storage import normalize_database_url_for_migrations
 from storage_models import Account, ServiceBearerToken, VetmanagerConnection
 from tool_access_registry import PRESET_FULL_ACCESS, get_token_preset_scopes
@@ -127,14 +129,16 @@ def test_devtr6_fixture_fails_closed_when_redis_is_unavailable(live_server_url, 
     monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:1/0")
     monkeypatch.setenv("RATE_LIMIT_REQUIRE_REDIS", "1")
     reset_rate_limit_backend()
-    before = snapshot_service_metrics()["rate_limit_backend_degraded_total"].get("strict_failure", 0)
+    before = service_metrics._RATE_LIMIT_BACKEND_DEGRADED_TOTAL.get("strict_failure", 0)
     try:
         with httpx.Client(base_url=live_server_url, follow_redirects=True, timeout=10) as client:
             response = _post_with_csrf_sync(client, "/register", data={
                 "email": "stage384-redis-failure@example.test", "password": "Stage384-local-pass-123",
             })
         assert response.status_code == 500
-        after = snapshot_service_metrics()["rate_limit_backend_degraded_total"].get("strict_failure", 0)
+        with pytest.raises(SharedMetricsUnavailable):
+            snapshot_service_metrics()
+        after = service_metrics._RATE_LIMIT_BACKEND_DEGRADED_TOTAL.get("strict_failure", 0)
         assert after > before
         print("STAGE384_REDIS_FAIL_CLOSED", response.status_code, "strict_failure_delta", after - before)
     finally:

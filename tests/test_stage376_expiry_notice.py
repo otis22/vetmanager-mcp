@@ -1,7 +1,9 @@
 """Stage 376: expiry notice contract and atomic claim guards."""
 
 import asyncio
+import os
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 import pytest
 from fastmcp.tools.tool import ToolResult
@@ -19,7 +21,7 @@ def test_expiry_notice_migration_upgrade_downgrade(tmp_path):
     config = Config("alembic.ini")
     config.set_main_option("script_location", "alembic")
     config.set_main_option("sqlalchemy.url", f"sqlite:///{tmp_path / 'migrate.db'}")
-    command.upgrade(config, "head")
+    command.upgrade(config, "20261010_000028")
     engine = create_engine(config.get_main_option("sqlalchemy.url"))
     assert "expiry_notice_at" in {item["name"] for item in inspect(engine).get_columns("token_usage_stats")}
     engine.dispose()
@@ -166,6 +168,44 @@ async def test_claim_concurrent_sessions_one_winner(tmp_path, sqlite_session_fac
     # A new engine models a worker restart: the claim lives in the database.
     second_factory = await sqlite_session_factory_builder(tmp_path / "expiry-race.db")
     assert await claim_expiry_notice(account_id, token_id, now=now, session_factory=second_factory) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
+async def test_claim_concurrent_postgres_sessions_one_winner():
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from storage import Base, create_database_engine
+    from token_expiry_notice import claim_expiry_notice
+
+    url = os.environ.get("POSTGRES_TEST_DATABASE_URL", "")
+    assert url.startswith("postgresql") and url.endswith("/vetmanager_test")
+    engine = create_database_engine(url)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        async with factory() as session:
+            account = Account(email=f"stage385-notice-{uuid4().hex}@example.test", status="active")
+            session.add(account)
+            await session.flush()
+            token = ServiceBearerToken(account_id=account.id, name="stage385-notice")
+            token.set_raw_token(f"vm_st_test_{uuid4().hex}")
+            token.expires_at = now + timedelta(days=1)
+            session.add(token)
+            await session.commit()
+            account_id, token_id = account.id, token.id
+        results = await asyncio.gather(*(
+            claim_expiry_notice(account_id, token_id, now=now, session_factory=factory)
+            for _ in range(3)
+        ))
+        assert sum(result is not None for result in results) == 1
+        async with factory() as session:
+            stat = await session.scalar(select(TokenUsageStat).where(
+                TokenUsageStat.bearer_token_id == token_id))
+            assert stat.expiry_notice_at is not None
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio

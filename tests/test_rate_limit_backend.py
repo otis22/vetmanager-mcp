@@ -180,6 +180,17 @@ async def test_factory_fail_fast_when_require_redis_set(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_three_slots_never_fall_back_to_local_limiter(monkeypatch):
+    monkeypatch.setenv("MCP_WORKER_SLOTS", "3")
+    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:1/0")
+    monkeypatch.delenv("RATE_LIMIT_REQUIRE_REDIS", raising=False)
+    reset_rate_limit_backend()
+    with pytest.raises(RuntimeError, match="Redis is unavailable"):
+        await get_rate_limit_backend()
+    reset_rate_limit_backend()
+
+
+@pytest.mark.asyncio
 async def test_factory_closes_redis_client_when_ping_fails(monkeypatch):
     calls: list[tuple[str, object]] = []
 

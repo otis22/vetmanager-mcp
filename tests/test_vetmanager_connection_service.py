@@ -1,15 +1,18 @@
 """Unit tests for stage 23.2 Vetmanager connection save/validation service."""
 
 import asyncio
+import os
 from pathlib import Path
 import ssl
 from types import SimpleNamespace
+from uuid import uuid4
 
 import httpx
 import pytest
 import pytest_asyncio
 import respx
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from exceptions import (
     AuthError,
@@ -18,7 +21,9 @@ from exceptions import (
     VetmanagerTimeoutError,
     VetmanagerTlsError,
 )
-from storage_models import VetmanagerConnection
+from storage import Base, create_database_engine
+from storage_models import Account, VetmanagerConnection
+import vetmanager_connection_service as connection_service
 from vetmanager_connection_service import (
     _login_prepare_fingerprint,
     exchange_user_token,
@@ -32,6 +37,82 @@ from service_metrics import reset_service_metrics, snapshot_service_metrics
 
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
+
+
+@pytest.mark.asyncio
+async def test_save_locks_account_row_before_connection_changes(session_factory):
+    """A row lock serializes different MCP processes even with no prior connection."""
+    async with session_factory() as session:
+        original_execute = session.execute
+        locks = []
+
+        async def inspect_execute(statement, *args, **kwargs):
+            if getattr(statement, "_for_update_arg", None) is not None:
+                locks.append({column.table.name for column in statement.selected_columns
+                              if getattr(column, "table", None) is not None})
+            return await original_execute(statement, *args, **kwargs)
+
+        session.execute = inspect_execute
+        await connection_service._save_connection(
+            session, account_id=1, auth_mode="domain_api_key", domain="clinic-a",
+            credentials={"domain": "clinic-a", "api_key": "test-key"},
+            encryption_key=TEST_ENCRYPTION_KEY)
+        assert {Account.__tablename__} in locks
+
+
+@pytest.mark.asyncio
+@pytest.mark.postgres
+async def test_two_process_equivalent_saves_serialize_on_account_row(monkeypatch):
+    url = os.environ.get("POSTGRES_TEST_DATABASE_URL", "")
+    assert url.startswith("postgresql") and url.endswith("/vetmanager_test")
+    engine = create_database_engine(url)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    original = connection_service._disable_existing_active_connections
+    first_inside = asyncio.Event()
+    release_first = asyncio.Event()
+    entered = []
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        async with factory() as session:
+            account = Account(email=f"stage385-lock-{uuid4().hex}@example.test", status="active")
+            session.add(account)
+            await session.commit()
+            account_id = account.id
+
+        async def held_disable(session, *, account_id):
+            entered.append(1)
+            if len(entered) == 1:
+                first_inside.set()
+                await release_first.wait()
+            return await original(session, account_id=account_id)
+
+        monkeypatch.setattr(connection_service, "_disable_existing_active_connections",
+                            held_disable)
+
+        async def save(domain):
+            async with factory() as session:
+                return await connection_service._save_connection(
+                    session, account_id=account_id, auth_mode="domain_api_key",
+                    domain=domain, credentials={"domain": domain, "api_key": "test-key"},
+                    encryption_key=TEST_ENCRYPTION_KEY)
+
+        first = asyncio.create_task(save("clinic-a"))
+        await asyncio.wait_for(first_inside.wait(), 5)
+        connection_service._ACCOUNT_SAVE_LOCKS.clear()  # independent slot memory
+        second = asyncio.create_task(save("clinic-b"))
+        await asyncio.sleep(.15)
+        assert len(entered) == 1, "second slot crossed the PG account lock"
+        release_first.set()
+        await asyncio.gather(first, second)
+        async with factory() as session:
+            rows = (await session.execute(select(VetmanagerConnection).where(
+                VetmanagerConnection.account_id == account_id))).scalars().all()
+            assert len(rows) == 2
+            assert sum(row.status == "active" for row in rows) == 1
+    finally:
+        release_first.set()
+        await engine.dispose()
 
 
 def test_login_prepare_fingerprint_does_not_expose_raw_password():

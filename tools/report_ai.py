@@ -163,6 +163,13 @@ def _report_ai_wait_diagnostics(payload: dict, *, code: str, job_id: int) -> dic
 def _remember_reject_pending(job: dict) -> None:
     key = _report_ai_queue_observation_key(job)
     if key is not None:
+        backend = shared_metric_counters.get_backend()
+        if backend is not None:
+            try:
+                backend.mark_report_ai_reject_pending(
+                    _report_ai_terminal_digest(key), REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+            except Exception as exc:
+                _report_ai_observation_failed(exc, operation="reject_pending_mark")
         _REPORT_AI_REJECT_PENDING[key] = _monotonic_seconds()
         _REPORT_AI_REJECT_PENDING.move_to_end(key)
         while len(_REPORT_AI_REJECT_PENDING) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
@@ -173,6 +180,16 @@ def _is_reject_pending(job: dict) -> bool:
     key = _report_ai_queue_observation_key(job)
     if key is None:
         return False
+    backend = shared_metric_counters.get_backend()
+    if backend is not None:
+        try:
+            return backend.report_ai_reject_pending(
+                _report_ai_terminal_digest(key),
+                terminal=job.get("status") in _REPORT_AI_WAIT_DONE_STATUSES - {"needs_confirmation"},
+            )
+        except Exception as exc:
+            _report_ai_observation_failed(exc, operation="reject_pending_read")
+            return True  # A stale candidate must not be recommended after Redis fails.
     started = _REPORT_AI_REJECT_PENDING.get(key)
     if started is None:
         return False
@@ -290,6 +307,17 @@ def _find_guided_job(key: _ReportAiQueueObservationKey):
     return None
 
 
+def _report_ai_guidance_account_digest(key: _ReportAiQueueObservationKey) -> str | None:
+    if key[0] is None:
+        return None
+    secret = hmac.new(get_web_session_secret().encode(),
+                      b"report-ai-guidance-account-v1", hashlib.sha256).digest()
+    credentials = get_current_runtime_credentials()
+    tenant = credentials.domain if credentials is not None else None
+    identity = json.dumps([tenant, key[0]], separators=(",", ":")).encode()
+    return hmac.new(secret, identity, hashlib.sha256).hexdigest()
+
+
 def _resolve_guidance_outcome(observation: dict, outcome: str) -> None:
     if "guidance_issued_at" not in observation or observation.get("guidance_outcome"):
         return
@@ -344,17 +372,22 @@ def _issued_empty_preview_guidance(payload: dict) -> dict:
     backend = shared_metric_counters.get_backend()
     if backend is not None:
         digest = _report_ai_terminal_digest(key)
+        account_digest = _report_ai_guidance_account_digest(key)
         observation["guidance_digest"] = digest
-        def deliver() -> None:
+        try:
+            backend.issue_report_ai_guidance(
+                digest, now, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS,
+                account_digest=account_digest)
+        except Exception as exc:
+            _report_ai_observation_failed(exc, operation="empty_preview_issued")
+        def cleanup() -> None:
             try:
-                backend.issue_report_ai_guidance(
-                    digest, now, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
                 backend.cleanup_report_ai_guidance(
                     now, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS,
                     max_entries=REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES)
             except Exception as exc:
-                _report_ai_observation_failed(exc, operation="empty_preview_issued")
-        shared_metric_counters.dispatch(deliver)
+                _report_ai_observation_failed(exc, operation="empty_preview_cleanup")
+        shared_metric_counters.dispatch(cleanup)
     else:
         _best_effort_observation("empty_preview_issued", record_report_ai_empty_preview_guidance,
                                  first=first)
@@ -367,6 +400,17 @@ def _match_recreated_report_ai_job(job: dict, *, is_deduplicated: bool = False) 
         return
     now = _monotonic_seconds()
     _cleanup_report_ai_queue_observations(now)
+    backend = shared_metric_counters.get_backend()
+    if backend is not None:
+        account_digest = _report_ai_guidance_account_digest(key)
+        if account_digest is not None:
+            try:
+                backend.resolve_recreated_report_ai_guidance(
+                    account_digest, _report_ai_terminal_digest(key), now,
+                    REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+            except Exception as exc:
+                _report_ai_observation_failed(exc, operation="guidance_recreated")
+        return
     seen: set[int] = set()
     for registry in (_REPORT_AI_LIFECYCLE_OBSERVATIONS, _REPORT_AI_FINALIZED_OBSERVATIONS):
         for previous_key, observation in registry.items():
@@ -587,6 +631,14 @@ def _report_ai_export_observed_wait_seconds(report_file_id: object) -> int | Non
     key = _report_ai_queue_observation_key({"id": report_file_id})
     if key is None:
         return None
+    backend = shared_metric_counters.get_backend()
+    if backend is not None:
+        try:
+            return backend.report_ai_export_wait_age(
+                _report_ai_terminal_digest(key), _monotonic_seconds())
+        except Exception as exc:
+            _report_ai_observation_failed(exc, operation="export_wait_age")
+            return None
     observation = _REPORT_AI_EXPORT_OBSERVATIONS.get(key)
     if observation is None:
         return None
@@ -646,6 +698,16 @@ def _observe_report_ai_queue(job: dict, *, now: float | None = None) -> int | No
     current_time = _monotonic_seconds() if now is None else now
     _cleanup_report_ai_queue_observations(current_time)
 
+    backend = shared_metric_counters.get_backend()
+    shared_age = None
+    if backend is not None and observation_key is not None:
+        try:
+            shared_age = backend.observe_report_ai_queue(
+                _report_ai_terminal_digest(observation_key), job.get("status") == "queued",
+                current_time, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+        except Exception as exc:
+            _report_ai_observation_failed(exc, operation="shared_queue_observe")
+
     if job.get("status") != "queued":
         if observation_key is not None:
             _REPORT_AI_QUEUE_OBSERVATIONS.pop(observation_key, None)
@@ -663,7 +725,7 @@ def _observe_report_ai_queue(job: dict, *, now: float | None = None) -> int | No
         _REPORT_AI_QUEUE_OBSERVATIONS.move_to_end(observation_key)
 
     _cleanup_report_ai_queue_observations(current_time)
-    return max(0, int(current_time - observation["first_seen"]))
+    return shared_age if shared_age is not None else max(0, int(current_time - observation["first_seen"]))
 
 
 def _report_ai_stage_age_seconds(job: dict, *, now: float) -> int | None:
@@ -970,17 +1032,7 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
     # that merely queued for an hour an instant wait-limit on its first second
     # of recognising.
     if status == "queued":
-        observed_age_seconds = _observe_report_ai_queue(job, now=now)
-        backend = shared_metric_counters.get_backend()
-        key = _report_ai_queue_observation_key(job)
-        if backend is not None and key is not None:
-            try:
-                observed_age_seconds = await asyncio.to_thread(
-                    backend.observe_report_ai_queue, _report_ai_terminal_digest(key),
-                    True, _monotonic_seconds() if now is None else now,
-                    REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
-            except Exception as exc:
-                _report_ai_observation_failed(exc, operation="shared_queue")
+        observed_age_seconds = await asyncio.to_thread(_observe_report_ai_queue, job, now=now)
         upstream_age_seconds = await _upstream_job_age_seconds(job)
         diagnostic_age_seconds = (
             upstream_age_seconds if upstream_age_seconds is not None else observed_age_seconds
@@ -988,16 +1040,13 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
         age_scope = "job"
         age_source = "upstream_created_at" if upstream_age_seconds is not None else "mcp_observed"
     elif status in _REPORT_AI_ACTIVE_STAGE_STATUSES:
-        _observe_report_ai_queue(job, now=now)  # clears any stale queue observation
+        await asyncio.to_thread(_observe_report_ai_queue, job, now=now)
         diagnostic_age_seconds = _report_ai_stage_age_seconds(job, now=now or _monotonic_seconds())
         backend = shared_metric_counters.get_backend()
         key = _report_ai_queue_observation_key(job)
         if backend is not None and key is not None:
             try:
                 current_time = _monotonic_seconds() if now is None else now
-                await asyncio.to_thread(
-                    backend.observe_report_ai_queue, _report_ai_terminal_digest(key),
-                    False, current_time, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
                 shared_age = await asyncio.to_thread(
                     backend.report_ai_stage_age, _report_ai_terminal_digest(key),
                     _REPORT_AI_STAGE_BY_STATUS.get(status, "unknown"), current_time)
@@ -1008,17 +1057,7 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
         age_scope = "stage"
         age_source = "mcp_observed"
     else:
-        _observe_report_ai_queue(job, now=now)
-        backend = shared_metric_counters.get_backend()
-        key = _report_ai_queue_observation_key(job)
-        if backend is not None and key is not None:
-            try:
-                await asyncio.to_thread(
-                    backend.observe_report_ai_queue, _report_ai_terminal_digest(key),
-                    False, _monotonic_seconds() if now is None else now,
-                    REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
-            except Exception as exc:
-                _report_ai_observation_failed(exc, operation="shared_queue_clear")
+        await asyncio.to_thread(_observe_report_ai_queue, job, now=now)
         return payload
 
     if (
@@ -1115,12 +1154,12 @@ async def _annotate_report_ai_job_payload(payload: dict) -> dict:
         return annotated
 
 
-def _annotate_report_ai_wait_payload(payload: dict) -> dict:
+async def _annotate_report_ai_wait_payload(payload: dict) -> dict:
     """Observe a wait poll without a second, unbounded clinic-timezone lookup."""
     annotated = _annotate_report_ai_workarounds(payload)
     job = _extract_job(annotated)
     _best_effort_observation("status_lifecycle", _observe_report_ai_lifecycle, job)
-    _best_effort_observation("status_queue", _observe_report_ai_queue, job)
+    await asyncio.to_thread(_best_effort_observation, "status_queue", _observe_report_ai_queue, job)
     return annotated
 
 
@@ -1128,7 +1167,7 @@ async def _wait_for_report_ai_job(
     payload: dict, *, job_id: int, deadline: float, max_gets: int = REPORT_AI_TOOL_WAIT_MAX_GETS,
 ) -> dict:
     """Poll only the known job with a single bounded deadline and no read retry."""
-    latest = _annotate_report_ai_wait_payload(payload)
+    latest = await _annotate_report_ai_wait_payload(payload)
     for _ in range(max_gets):
         job = _extract_job(latest)
         status = job.get("status")
@@ -1167,7 +1206,7 @@ async def _wait_for_report_ai_job(
         poll_id = poll_job.get("id")
         if isinstance(poll_id, bool) or str(poll_id) != str(job_id):
             return _report_ai_wait_diagnostics(latest, code="poll_failed", job_id=job_id)
-        latest = _annotate_report_ai_wait_payload(next_payload)
+        latest = await _annotate_report_ai_wait_payload(next_payload)
     return _report_ai_wait_diagnostics(latest, code="wait_timeout", job_id=job_id)
 
 
@@ -1759,16 +1798,22 @@ def register(mcp: FastMCP) -> None:
         job = _extract_job(payload)
         data = payload.get("data") if isinstance(payload, dict) else None
         deduplicated = isinstance(data, dict) and data.get("is_deduplicated") is True
-        _best_effort_observation("create_recreated_match", _match_recreated_report_ai_job,
-                                 job, is_deduplicated=deduplicated)
+        await asyncio.to_thread(_best_effort_observation, "create_recreated_match",
+                                _match_recreated_report_ai_job, job,
+                                is_deduplicated=deduplicated)
         _best_effort_observation("create_lifecycle", _observe_report_ai_lifecycle, job)
-        _best_effort_observation("create_queue", _observe_report_ai_queue, job)
+        await asyncio.to_thread(_best_effort_observation, "create_queue",
+                                _observe_report_ai_queue, job)
         if wait_seconds and _report_ai_wait_enabled():
             response = await _wait_for_report_ai_job(
                 payload, job_id=int(job["id"]), deadline=_monotonic_seconds() + wait_seconds,
             )
-            return _best_effort_observation("create_guidance_issued", _issued_empty_preview_guidance, response) or response
-        return _best_effort_observation("create_guidance_issued", _issued_empty_preview_guidance, payload) or payload
+            return await asyncio.to_thread(
+                _best_effort_observation, "create_guidance_issued",
+                _issued_empty_preview_guidance, response) or response
+        return await asyncio.to_thread(
+            _best_effort_observation, "create_guidance_issued",
+            _issued_empty_preview_guidance, payload) or payload
 
     @mcp.tool
     async def get_report_ai_job(job_id: int, wait_seconds: int = 0) -> dict:
@@ -1839,7 +1884,9 @@ def register(mcp: FastMCP) -> None:
             )
         else:
             response = await _annotate_report_ai_job_payload(payload)
-        return _best_effort_observation("get_guidance_issued", _issued_empty_preview_guidance, response) or response
+        return await asyncio.to_thread(
+            _best_effort_observation, "get_guidance_issued",
+            _issued_empty_preview_guidance, response) or response
 
     @mcp.tool
     async def confirm_report_ai_job_candidate(job_id: int, report_id: int) -> dict:
