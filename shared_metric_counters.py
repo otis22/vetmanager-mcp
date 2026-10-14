@@ -152,7 +152,7 @@ class RedisMetricCounters:
             raise ValueError("Invalid Report AI observation identity")
         if ttl_seconds <= 0:
             raise ValueError("Invalid Report AI terminal TTL")
-        self._redis.setex(REPORT_AI_TERMINAL_KEY_PREFIX + identity_digest, ttl_seconds, "1")
+        self._redis.expire(REPORT_AI_TERMINAL_KEY_PREFIX + identity_digest, ttl_seconds)
 
     @staticmethod
     def _cache_slot_key(slot_identity: str) -> str:

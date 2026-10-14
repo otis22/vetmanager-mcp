@@ -136,3 +136,26 @@ def test_same_slot_finalized_poll_refreshes_shared_tombstone(monkeypatch):
     report_ai._observe_report_ai_lifecycle(job, now=11.0)
     assert client.ttl(tombstone) >= 3590
     assert backend.snapshot()["report_ai_job_terminal_outcomes_total"] == {"saved": 1}
+
+
+def test_failed_claim_cannot_create_uncounted_tombstone_on_later_poll(monkeypatch):
+    client = fakeredis.FakeRedis(decode_responses=True)
+    backend = RedisMetricCounters(client)
+    real_claim = backend.claim_report_ai_terminal
+    calls = [0]
+
+    def fail_once(*args):
+        calls[0] += 1
+        if calls[0] == 1:
+            raise ConnectionError("Redis unavailable")
+        return real_claim(*args)
+
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    monkeypatch.setattr(backend, "claim_report_ai_terminal", fail_once)
+    job = {"id": 385006, "status": "saved"}
+    report_ai._observe_report_ai_lifecycle(job, now=10.0)
+    report_ai._observe_report_ai_lifecycle(job, now=11.0)  # local finalized refresh
+    report_ai._reset_report_ai_queue_observations()  # another slot after Redis recovers
+    report_ai._observe_report_ai_lifecycle(job, now=12.0)
+    assert backend.snapshot()["report_ai_job_terminal_outcomes_total"] == {"saved": 1}
