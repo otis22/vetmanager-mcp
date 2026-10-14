@@ -18,6 +18,7 @@ from observability_logging import RUNTIME_LOGGER
 
 COUNTERS_KEY = "vetmanager:metrics:v1:counters"
 LATENCY_KEY_PREFIX = "vetmanager:metrics:v1:latency:"
+REPORT_AI_TERMINAL_KEY_PREFIX = "vetmanager:report-ai:v1:terminal:"
 CACHE_ENTRIES_KEY_PREFIX = "vetmanager:metrics:v1:cache-entries:"
 CACHE_STOPPED_KEY_PREFIX = "vetmanager:metrics:v1:cache-stopped:"
 SHARED_LATENCY_FAMILIES = frozenset({
@@ -104,6 +105,43 @@ class RedisMetricCounters:
             except WatchError:
                 continue
         raise SharedMetricsUnavailable("Shared metric write contention")
+
+    def claim_report_ai_terminal(self, identity_digest: str, outcome: str,
+                                 duration_seconds: float, ttl_seconds: int) -> bool:
+        """Commit one terminal tombstone, counter and duration in one transaction."""
+        if len(identity_digest) != 64 or not all(c in "0123456789abcdef" for c in identity_digest):
+            raise ValueError("Invalid Report AI observation identity")
+        if outcome not in {"saved", "existing_report_matched", "failed", "rejected", "abandoned_wait"}:
+            raise ValueError("Invalid Report AI terminal outcome")
+        if not math.isfinite(duration_seconds) or ttl_seconds <= 0:
+            raise ValueError("Invalid Report AI terminal observation")
+        duration = max(0.0, duration_seconds)
+        tombstone = REPORT_AI_TERMINAL_KEY_PREFIX + identity_digest
+        family = "report_ai_job_duration_seconds"
+        latency_key = LATENCY_KEY_PREFIX + hashlib.sha256(f"{family}\0{outcome}".encode()).hexdigest()
+        counter_field = json.dumps(["report_ai_job_terminal_outcomes_total", outcome],
+                                   separators=(",", ":"), ensure_ascii=True)
+        for _ in range(20):
+            try:
+                with self._redis.pipeline() as pipe:
+                    pipe.watch(tombstone, latency_key)
+                    if pipe.exists(tombstone):
+                        return False
+                    previous = pipe.hgetall(latency_key)
+                    pipe.multi()
+                    pipe.setex(tombstone, ttl_seconds, "1")
+                    pipe.hincrby(COUNTERS_KEY, counter_field, 1)
+                    pipe.hset(latency_key, mapping={
+                        "family": family, "label_key": outcome,
+                        "count": int(previous.get("count", 0)) + 1,
+                        "sum_seconds": float(previous.get("sum_seconds", 0)) + duration,
+                        "max_seconds": max(float(previous.get("max_seconds", 0)), duration),
+                    })
+                    pipe.execute()
+                    return True
+            except WatchError:
+                continue
+        raise SharedMetricsUnavailable("Report AI terminal claim contention")
 
     @staticmethod
     def _cache_slot_key(slot_identity: str) -> str:

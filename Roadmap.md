@@ -39,7 +39,9 @@
   c4 — 54 HELP/TYPE (включая пять `_max` gauge) и target `up=1`.
   Остаток: c2a — живые guard/rate-limit события; c2b — безопасный export
   outcome, не только serve; d — общий activation scan/alerts;
-  e — Report AI observation dedup/expiry (два slot пока дают двойной terminal);
+  e — terminal Report AI dedup проверен на трёх slot (один saved outcome
+  вместо двух); остаются общие queue/reject/export/guidance observations,
+  переходы и expiry/eviction cleanup;
   f — claims, locks, limiter, PG cache/write barrier и export storage;
   g — ресурсный gate на 200 вызовах. Новый полный mock и committed review
   фиксируются в AssumptionLog. Production не трогали.)

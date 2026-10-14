@@ -631,14 +631,16 @@ def record_report_ai_job_transition(*, from_stage: str, to_stage: str) -> None:
     _record_shared_counter("report_ai_job_transitions_total", f"{from_stage}|{to_stage}")
 
 
-def record_report_ai_job_terminal_outcome(*, outcome: str, duration_seconds: float) -> None:
+def record_report_ai_job_terminal_outcome(*, outcome: str, duration_seconds: float,
+                                          shared_recorded: bool = False) -> None:
     """Record one terminal locally observed Report AI lifecycle outcome."""
     with _LOCK:
         _REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL[outcome] += 1
         _REPORT_AI_JOB_DURATION_SECONDS[outcome].observe(max(0.0, duration_seconds))
-    _record_shared_counter("report_ai_job_terminal_outcomes_total", outcome)
-    _record_shared_latency("report_ai_job_duration_seconds", outcome,
-                           max(0.0, duration_seconds))
+    if not shared_recorded:
+        _record_shared_counter("report_ai_job_terminal_outcomes_total", outcome)
+        _record_shared_latency("report_ai_job_duration_seconds", outcome,
+                               max(0.0, duration_seconds))
 
 
 def record_report_ai_empty_preview_guidance(*, first: bool) -> None:
