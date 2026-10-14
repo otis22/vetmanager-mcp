@@ -28,6 +28,7 @@ from placeholder_resolution_guidance import AGENT_RESOLUTION_GUIDANCE
 from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
 from request_context import RequestContextHeaderMiddleware
+from mcp_transport_observation import MCPTransportObservationMiddleware
 from request_cache import REQUEST_CACHE, _slot_identity
 import shared_metric_counters
 from write_admission import ExecutionAdmissionMiddleware, WriteAdmissionMiddleware
@@ -252,7 +253,8 @@ def _run_http_server(*, transport: str, host: str, port: int, path: str) -> None
     app = mcp.http_app(path=path, transport=transport)
     # Этап 289.4: ответы /mcp должны нести идентификатор запроса — иначе
     # клиенту (и нашему смоуку) нечем связать свой отказ с нашим журналом.
-    served_app = RequestContextHeaderMiddleware(WriteAdmissionMiddleware(app))
+    served_app = RequestContextHeaderMiddleware(
+        MCPTransportObservationMiddleware(WriteAdmissionMiddleware(app), path=path))
     if hasattr(signal, "SIGUSR1"):
         signal.signal(signal.SIGUSR1, lambda _sig, _frame: request_drain_from_signal())
     if transport == "streamable-http" and hasattr(signal, "SIGUSR2"):

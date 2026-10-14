@@ -34,6 +34,23 @@ docker compose up -d          # запустить MCP-сервер
 - публичный лендинг доступен на `http://localhost:8000/`
 - MCP endpoint остаётся на `http://localhost:8000/mcp`
 
+### Восстановление MCP-сессии
+
+Если `/mcp` ответил HTTP 404 с JSON-RPC ошибкой `Session not found`, клиенту
+нужно отбросить прежний `Mcp-Session-Id` и выполнить новый `initialize` без
+этого заголовка. Затем использовать ID из нового ответа. Перед повтором
+пишущего вызова проверьте его результат: потеря сессии не доказывает, что
+предыдущая операция не выполнилась. Для `initialize` указывайте
+`Accept: application/json, text/event-stream`.
+
+Сервер считает такие ответы в
+`vetmanager_mcp_transport_rejections_total{status_code="404",reason="session_not_found"}`.
+Эта метка включает также отказ при несовпадении владельца сессии и не
+различает причину потери; session ID и IP в метрике отсутствуют.
+Долю за выбранное окно считайте как прирост этого счётчика, делённый на
+прирост `vetmanager_http_requests_total{route="/mcp"}` по всем методам и
+кодам ответа (или по настроенному `MCP_PATH`).
+
 Полезные runtime-переменные:
 
 - `DATABASE_URL` — строка подключения к БД. По умолчанию используется локальный `sqlite+aiosqlite:///./data/vetmanager.db`.

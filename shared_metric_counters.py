@@ -17,6 +17,7 @@ from observability_logging import RUNTIME_LOGGER
 
 
 COUNTERS_KEY = "vetmanager:metrics:v1:counters"
+MCP_TRANSPORT_COUNTERS_KEY = "vetmanager:metrics:v1:mcp-transport-rejections"
 LATENCY_KEY_PREFIX = "vetmanager:metrics:v1:latency:"
 REPORT_AI_TERMINAL_KEY_PREFIX = "vetmanager:report-ai:v1:terminal:"
 REPORT_AI_LIFECYCLE_KEY_PREFIX = "vetmanager:report-ai:v1:lifecycle:"
@@ -40,7 +41,7 @@ SHARED_LATENCY_FAMILIES = frozenset({
     "report_ai_job_duration_seconds", "report_ai_export_duration_seconds",
 })
 SHARED_COUNTER_FAMILIES = frozenset({
-    "http_requests_total", "auth_failures_total", "upstream_failures_total",
+    "http_requests_total", "mcp_transport_rejections_total", "auth_failures_total", "upstream_failures_total",
     "upstream_requests_total", "tool_calls_total", "sentry_delivery_lost_total",
     "sentry_delivery_accepted_total", "known_issue_lookups_total",
     "prompt_requests_total", "token_expiry_notice_issued_total",
@@ -128,6 +129,11 @@ class RedisMetricCounters:
     def increment(self, family: str, label_key: str, count: int = 1) -> None:
         if family not in SHARED_COUNTER_FAMILIES or count <= 0:
             raise ValueError("Unsupported metric counter")
+        if family == "mcp_transport_rejections_total":
+            # Old slots do not know this family and reject unknown fields in
+            # COUNTERS_KEY. A separate key keeps mixed-version rollout safe.
+            self._redis.hincrby(MCP_TRANSPORT_COUNTERS_KEY, label_key, count)
+            return
         field = json.dumps([family, label_key], separators=(",", ":"), ensure_ascii=True)
         self._redis.hincrby(COUNTERS_KEY, field, count)
 
@@ -703,6 +709,10 @@ class RedisMetricCounters:
                     result[family] = int(value)
                 else:
                     result[family][label_key] = int(value)
+            result["mcp_transport_rejections_total"] = {
+                label_key: int(value)
+                for label_key, value in self._redis.hgetall(MCP_TRANSPORT_COUNTERS_KEY).items()
+            }
             result.update({family: {} for family in SHARED_LATENCY_FAMILIES})
             for key in self._redis.scan_iter(match=LATENCY_KEY_PREFIX + "*"):
                 row = self._redis.hgetall(key)

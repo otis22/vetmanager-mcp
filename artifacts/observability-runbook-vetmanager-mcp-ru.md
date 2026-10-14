@@ -8,6 +8,7 @@
 > - **Stage 134**: token audit committed logs пишутся только после successful DB commit и включают `request_id`/`correlation_id`; `/metrics` auth failures пишут security log + `vetmanager_auth_failures_total{source="metrics",reason="invalid_token"}`; custom web route 500/413 paths сохраняют correlation headers; billing host resolver coalesces concurrent cold-cache requests per domain.
 > - **Stage 156**: `/metrics` после успешной `METRICS_AUTH_TOKEN` bearer-auth обновляет activation gauge `vetmanager_account_last_request_age_hours{account_id}` и пишет `account_traffic_silent` warning на порогах 24h/72h для active accounts с active connection и live token.
 > - **Stage 193**: account UI checklist считает usable token подключенным после любого успешного historical request; Grafana `with_recent_usage_7d` остается отдельным freshness-сигналом и поэтому может быть строже UI.
+> - **Stage 386**: `vetmanager_mcp_transport_rejections_total{status_code,reason}` считает FastMCP 400/404/406 через shared Redis; `session_not_found` включает потерянную сессию и несовпадение её владельца. Причину восстановления проверять по 404 `Session not found` и новому `initialize`, без session ID/IP в метриках.
 >
 > Полная ревизия runbook — отдельным этапом.
 

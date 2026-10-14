@@ -15,7 +15,7 @@ from shared_metric_counters import (
 EXPECTED_METRIC_TYPES = {
     "counter": """
         prompt_requests_total token_expiry_notice_issued_total
-        token_expiry_notice_skipped_total http_requests_total auth_failures_total
+        token_expiry_notice_skipped_total http_requests_total mcp_transport_rejections_total auth_failures_total
         upstream_failures_total sentry_delivery_lost_total
         sentry_delivery_accepted_total known_issue_lookups_total
         upstream_requests_total tool_calls_total token_preset_issued_total
@@ -59,6 +59,7 @@ def test_all_recorders_reach_a_shared_family(monkeypatch):
 
     metrics.record_http_request(route="/readyz", method="GET", status_code=200,
                                 duration_seconds=.01)
+    metrics.record_mcp_transport_rejection(status_code=404, reason="session_not_found")
     metrics.record_auth_failure(source="bearer", reason="missing_authorization")
     metrics.record_upstream_failure(target="client", reason="timeout")
     metrics.record_upstream_request(target="client", status="200", duration_seconds=.01)

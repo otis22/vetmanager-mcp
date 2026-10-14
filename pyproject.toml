@@ -74,6 +74,7 @@ only-include = [
     "russian_given_names.py",
     "secret_manager.py",
     "server.py",
+    "mcp_transport_observation.py",
     "shutdown_state.py",
     "write_admission.py",
     "service_metrics.py",

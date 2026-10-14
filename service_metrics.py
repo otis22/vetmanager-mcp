@@ -305,6 +305,31 @@ def record_http_request(*, route: str, method: str, status_code: int, duration_s
                            duration_seconds)
 
 
+def record_mcp_transport_rejection(*, status_code: int, reason: str) -> None:
+    """Count a FastMCP transport rejection in Redis, using closed labels only."""
+    allowed = {
+        400: {"missing_auth", "missing_session", "other"},
+        404: {"session_not_found", "other"},
+        406: {"invalid_accept", "other"},
+    }
+    if status_code not in allowed:
+        return
+    bounded_reason = reason if reason in allowed[status_code] else "other"
+    _record_shared_counter("mcp_transport_rejections_total",
+                           f"{status_code}|{bounded_reason}")
+
+
+def record_mcp_transport_response(*, route: str, method: str, status_code: int) -> None:
+    """Shared-only MCP response-start count, the rejection-rate denominator."""
+    if not isinstance(status_code, int) or not 100 <= status_code <= 599:
+        return
+    normalized_method = method.upper()
+    bounded_method = normalized_method if normalized_method in {"GET", "POST", "DELETE"} else "OTHER"
+    # The route comes from the validated MCP_PATH config, never from a request.
+    bounded_route = route.replace("|", "%7C") if route.startswith("/") and len(route) <= 128 else "/mcp"
+    _record_shared_counter("http_requests_total", f"{bounded_route}|{bounded_method}|{status_code}")
+
+
 def record_auth_failure(*, source: str, reason: str) -> None:
     """Record an auth failure grouped by source and machine-readable reason."""
     with _LOCK:
@@ -791,6 +816,7 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 f"{route}|{method}|{status_code}": count
                 for (route, method, status_code), count in sorted(_HTTP_REQUESTS_TOTAL.items())
             },
+            "mcp_transport_rejections_total": {},
             "http_request_latency_seconds": {
                 f"{route}|{method}": asdict(aggregate)
                 for (route, method), aggregate in sorted(_HTTP_REQUEST_LATENCY_SECONDS.items())
@@ -928,6 +954,8 @@ def render_prometheus_metrics() -> str:
         "# TYPE vetmanager_token_expiry_notice_skipped_total counter",
         "# HELP vetmanager_http_requests_total Total observed HTTP requests by route, method, and status code.",
         "# TYPE vetmanager_http_requests_total counter",
+        "# HELP vetmanager_mcp_transport_rejections_total Completed MCP transport rejections by HTTP status and bounded reason; session_not_found may also hide a credential mismatch.",
+        "# TYPE vetmanager_mcp_transport_rejections_total counter",
     ]
     for key, count in snapshot["prompt_requests_total"].items():
         method, prompt = key.split("|", 1)
@@ -941,6 +969,12 @@ def render_prometheus_metrics() -> str:
         lines.append(
             f"vetmanager_http_requests_total"
             f"{_labels_text(route=route, method=method, status_code=status_code)} {value}"
+        )
+    for key, value in snapshot["mcp_transport_rejections_total"].items():
+        status_code, reason = key.split("|", 1)
+        lines.append(
+            f"vetmanager_mcp_transport_rejections_total"
+            f"{_labels_text(status_code=status_code, reason=reason)} {value}"
         )
 
     lines.extend(
