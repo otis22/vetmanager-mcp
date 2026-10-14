@@ -711,6 +711,30 @@ def set_account_last_request_age_hours(values: dict[int, float]) -> None:
         })
 
 
+def activation_metric_snapshot() -> dict:
+    """Return only bounded, account-free activation values for sharing."""
+    with _LOCK:
+        ages = sorted(_ACCOUNT_LAST_REQUEST_AGE_HOURS.values())
+        if ages:
+            position = (len(ages) - 1) * .95
+            lower = int(position)
+            upper = min(lower + 1, len(ages) - 1)
+            p95 = ages[lower] + (ages[upper] - ages[lower]) * (position - lower)
+            avg = sum(ages) / len(ages)
+        else:
+            avg = p95 = None
+        return {
+            "account_last_request_age_avg_hours": avg,
+            "account_last_request_age_p95_hours": p95,
+            "activation_funnel_accounts": dict(_ACTIVATION_FUNNEL_ACCOUNTS),
+            "activation_event_accounts": {
+                f"{event}|{device}|{auth_mode}|{reason}": count
+                for (event, device, auth_mode, reason), count in _ACTIVATION_EVENT_ACCOUNTS.items()
+            },
+            "first_session_gauges": dict(_FIRST_SESSION_GAUGES),
+        }
+
+
 def set_activation_funnel_accounts(values: dict[str, int]) -> None:
     """Replace aggregate activation funnel gauges with the latest DB snapshot."""
     with _LOCK:
@@ -849,6 +873,9 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
         backend = shared_metric_counters.get_backend()
         if backend is not None:
             snapshot.update(backend.snapshot())
+            snapshot.update(backend.activation_snapshot())
+        else:
+            snapshot.update(activation_metric_snapshot())
     except Exception as exc:
         raise shared_metric_counters.SharedMetricsUnavailable(
             "Shared metrics are unavailable"
@@ -1218,15 +1245,16 @@ def render_prometheus_metrics() -> str:
 
     lines.extend(
         [
-            "# HELP vetmanager_account_last_request_age_hours Hours since last successful bearer runtime request for active accounts.",
-            "# TYPE vetmanager_account_last_request_age_hours gauge",
+            "# HELP vetmanager_account_last_request_age_avg_hours Mean hours since last request for active accounts.",
+            "# TYPE vetmanager_account_last_request_age_avg_hours gauge",
+            "# HELP vetmanager_account_last_request_age_p95_hours 95th percentile hours since last request for active accounts.",
+            "# TYPE vetmanager_account_last_request_age_p95_hours gauge",
         ]
     )
-    for account_id, age_hours in snapshot.get("account_last_request_age_hours", {}).items():
-        lines.append(
-            f"vetmanager_account_last_request_age_hours"
-            f"{_labels_text(account_id=account_id)} {age_hours}"
-        )
+    for suffix in ("avg", "p95"):
+        value = snapshot.get(f"account_last_request_age_{suffix}_hours")
+        if value is not None:
+            lines.append(f"vetmanager_account_last_request_age_{suffix}_hours {value}")
 
     lines.extend(
         [

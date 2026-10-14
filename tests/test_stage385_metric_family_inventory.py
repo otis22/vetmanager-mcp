@@ -40,7 +40,7 @@ EXPECTED_METRIC_TYPES = {
         http_request_latency_seconds_max upstream_request_latency_seconds_max
         tool_call_latency_seconds_max report_ai_job_stage_duration_seconds_max
         report_ai_job_duration_seconds_max report_ai_export_duration_seconds_max
-        account_last_request_age_hours
+        account_last_request_age_avg_hours account_last_request_age_p95_hours
         activation_funnel_accounts activation_event_accounts
         first_session_eligible_accounts first_session_report_saved_7d_accounts
         first_session_tool_success_7d_accounts

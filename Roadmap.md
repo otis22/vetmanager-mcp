@@ -36,14 +36,18 @@
   проверен полный каталог shared counter/latency, живые bearer/Report AI
   и export серии; c2c — mock редких событий и полный каталог семейств;
   c3 — Redis outage 503→200 и равный count/sum/max/cache на трёх slot;
-  c4 — 54 HELP/TYPE (включая пять `_max` gauge) и target `up=1`.
-  Остаток: c2a — живые guard/rate-limit события; c2b — безопасный export
-  outcome, не только serve; d — общий activation scan/alerts;
-  e — terminal Report AI dedup проверен на трёх slot (один saved outcome
-  вместо двух); остаются общие queue/reject/export/guidance observations,
-  переходы и expiry/eviction cleanup;
-  f — claims, locks, limiter, PG cache/write barrier и export storage;
-  g — ресурсный gate на 200 вызовах. Новый полный mock и committed review
+  c4 — полный HELP/TYPE каталог и target `up=1`. В ходе 5 живые c2a
+  guard/rate-limit дали общие +2/+1 на трёх slot, c2b безопасный export
+  outcome дал один `poll|success` после двух вызовов. Для d общий Redis lease,
+  snapshot и alert claim проверены на трёх slot, включая смену владельца и
+  одно предупреждение; account-age заменён на avg/p95 без account_id.
+  Для e общие lifecycle transitions/terminal, guidance issue/outcome,
+  export poll outcome и expiry/eviction финализация проверены сторожами;
+  terminal `saved` на devtr6 дал +1 на трёх slot. Остаток e: локальные
+  reject pending, часть queue observation вне диагностического poll,
+  guidance `recreated` и ожидание export при смене slot;
+  f — claims, account locks, limiter outage, PG cache/write barrier;
+  g — ресурсный gate на 200 вызовах и head_series. Новый полный mock и committed review
   фиксируются в AssumptionLog. Production не трогали.)
 - 385.3 Аудит, сильное ревью, полный прогон, AssumptionLog, выпуск с зелёным
   CI; после выпуска сверка утилизации ядер на проде. — `todo`

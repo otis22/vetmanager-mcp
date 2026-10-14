@@ -19,6 +19,17 @@ from observability_logging import RUNTIME_LOGGER
 COUNTERS_KEY = "vetmanager:metrics:v1:counters"
 LATENCY_KEY_PREFIX = "vetmanager:metrics:v1:latency:"
 REPORT_AI_TERMINAL_KEY_PREFIX = "vetmanager:report-ai:v1:terminal:"
+REPORT_AI_LIFECYCLE_KEY_PREFIX = "vetmanager:report-ai:v1:lifecycle:"
+REPORT_AI_EXPIRY_INDEX = "vetmanager:report-ai:v1:expiry"
+REPORT_AI_GUIDANCE_KEY_PREFIX = "vetmanager:report-ai:v1:guidance:"
+REPORT_AI_GUIDANCE_EXPIRY_INDEX = "vetmanager:report-ai:v1:guidance-expiry"
+REPORT_AI_EXPORT_KEY_PREFIX = "vetmanager:report-ai:v1:export:"
+REPORT_AI_EXPORT_DONE_PREFIX = "vetmanager:report-ai:v1:export-done:"
+REPORT_AI_EXPORT_EXPIRY_INDEX = "vetmanager:report-ai:v1:export-expiry"
+REPORT_AI_QUEUE_KEY_PREFIX = "vetmanager:report-ai:v1:queue:"
+ACTIVATION_SCAN_LEASE_KEY = "vetmanager:activation:v1:scan-lease"
+ACTIVATION_SNAPSHOT_KEY = "vetmanager:activation:v1:snapshot"
+ACTIVATION_ALERTS_KEY = "vetmanager:activation:v1:alerts"
 CACHE_ENTRIES_KEY_PREFIX = "vetmanager:metrics:v1:cache-entries:"
 CACHE_STOPPED_KEY_PREFIX = "vetmanager:metrics:v1:cache-stopped:"
 SHARED_LATENCY_FAMILIES = frozenset({
@@ -67,6 +78,50 @@ class RedisMetricCounters:
     def ping(self) -> None:
         if not self._redis.ping():
             raise SharedMetricsUnavailable("Shared metrics Redis did not answer PING")
+
+    def claim_activation_scan(self, owner: str) -> bool:
+        return bool(self._redis.set(ACTIVATION_SCAN_LEASE_KEY, owner, nx=True, ex=60))
+
+    def release_activation_scan(self, owner: str) -> bool:
+        for _ in range(20):
+            try:
+                with self._redis.pipeline() as pipe:
+                    pipe.watch(ACTIVATION_SCAN_LEASE_KEY)
+                    if pipe.get(ACTIVATION_SCAN_LEASE_KEY) != owner:
+                        return False
+                    pipe.multi()
+                    pipe.delete(ACTIVATION_SCAN_LEASE_KEY)
+                    pipe.execute()
+                    return True
+            except WatchError:
+                continue
+        raise SharedMetricsUnavailable("Activation scan lease contention")
+
+    def publish_activation_snapshot(self, values: dict) -> None:
+        self._redis.set(ACTIVATION_SNAPSHOT_KEY,
+                        json.dumps(values, separators=(",", ":")), ex=180)
+
+    def activation_snapshot(self) -> dict:
+        raw = self._redis.get(ACTIVATION_SNAPSHOT_KEY)
+        return json.loads(raw) if raw else {}
+
+    def claim_activation_alert(self, identity_digest: str, threshold: int) -> bool:
+        if len(identity_digest) != 64 or threshold not in (24, 72):
+            raise ValueError("Invalid activation alert identity")
+        return bool(self._redis.hsetnx(ACTIVATION_ALERTS_KEY,
+                                        f"{identity_digest}:{threshold}", "1"))
+
+    def clear_activation_alerts(self, identity_digest: str) -> None:
+        if len(identity_digest) != 64:
+            raise ValueError("Invalid activation alert identity")
+        self._redis.hdel(ACTIVATION_ALERTS_KEY,
+                         f"{identity_digest}:24", f"{identity_digest}:72")
+
+    def reconcile_activation_alerts(self, live_digests: set[str]) -> None:
+        stale = [field for field in self._redis.hscan_iter(ACTIVATION_ALERTS_KEY)
+                 if field[0].split(":", 1)[0] not in live_digests]
+        if stale:
+            self._redis.hdel(ACTIVATION_ALERTS_KEY, *(field for field, _ in stale))
 
     def increment(self, family: str, label_key: str, count: int = 1) -> None:
         if family not in SHARED_COUNTER_FAMILIES or count <= 0:
@@ -146,6 +201,156 @@ class RedisMetricCounters:
                 continue
         raise SharedMetricsUnavailable("Report AI terminal claim contention")
 
+    def observe_report_ai_queue(self, identity_digest: str, queued: bool,
+                                now: float, ttl_seconds: int) -> int | None:
+        if len(identity_digest) != 64 or not math.isfinite(now) or ttl_seconds <= 0:
+            raise ValueError("Invalid Report AI queue observation")
+        key = REPORT_AI_QUEUE_KEY_PREFIX + identity_digest
+        if not queued:
+            self._redis.delete(key)
+            return None
+        for _ in range(20):
+            try:
+                with self._redis.pipeline() as pipe:
+                    pipe.watch(key)
+                    first = pipe.hget(key, "first_seen")
+                    first_seen = float(first) if first is not None else now
+                    pipe.multi()
+                    pipe.hset(key, mapping={"first_seen": first_seen, "last_seen": now})
+                    pipe.expire(key, ttl_seconds)
+                    pipe.execute()
+                    return max(0, int(now - first_seen))
+            except WatchError:
+                continue
+        raise SharedMetricsUnavailable("Report AI queue observation contention")
+
+    def report_ai_stage_age(self, identity_digest: str, stage: str,
+                            now: float) -> int | None:
+        state = self._redis.hgetall(REPORT_AI_LIFECYCLE_KEY_PREFIX + identity_digest)
+        if not state or state.get("stage") != stage:
+            return None
+        return max(0, int(now - float(state["stage_started"])))
+
+    def observe_report_ai_lifecycle(self, identity_digest: str, stage: str,
+                                    now: float, ttl_seconds: int,
+                                    *, expiry_only: bool = False,
+                                    force: bool = False,
+                                    expected_expiry_at: float | None = None) -> bool:
+        """Move one job stage and its metric deltas in a Redis transaction."""
+        if len(identity_digest) != 64 or not all(c in "0123456789abcdef" for c in identity_digest):
+            raise ValueError("Invalid Report AI observation identity")
+        if stage not in {"queued", "recognized", "preview", "ready_to_save",
+                         "needs_confirmation", "saved", "existing_report_matched",
+                         "failed", "rejected", "unknown", "abandoned_wait"}:
+            raise ValueError("Invalid Report AI stage")
+        if not math.isfinite(now) or ttl_seconds <= 0:
+            raise ValueError("Invalid Report AI observation time")
+        state_key = REPORT_AI_LIFECYCLE_KEY_PREFIX + identity_digest
+        tombstone = REPORT_AI_TERMINAL_KEY_PREFIX + identity_digest
+        terminal = stage in {"saved", "existing_report_matched", "failed", "rejected", "abandoned_wait"}
+        for _ in range(20):
+            try:
+                with self._redis.pipeline() as pipe:
+                    pipe.watch(state_key, tombstone)
+                    state = pipe.hgetall(state_key)
+                    if pipe.exists(tombstone):
+                        pipe.multi()
+                        pipe.expire(tombstone, ttl_seconds)
+                        pipe.delete(state_key)
+                        pipe.zrem(REPORT_AI_EXPIRY_INDEX, identity_digest)
+                        pipe.execute()
+                        return False
+                    if (force and state and expected_expiry_at is not None
+                            and abs(float(state["last_seen"]) + ttl_seconds
+                                    - expected_expiry_at) > 1e-6):
+                        return False
+                    if (expiry_only and not force and state
+                            and now - float(state["last_seen"]) < ttl_seconds):
+                        return False
+                    if not state and expiry_only:
+                        pipe.multi()
+                        pipe.zrem(REPORT_AI_EXPIRY_INDEX, identity_digest)
+                        pipe.execute()
+                        return False
+                    if not state and not terminal:
+                        pipe.multi()
+                        pipe.hset(state_key, mapping={
+                            "first_seen": now, "last_seen": now,
+                            "stage": stage, "stage_started": now,
+                        })
+                        pipe.zadd(REPORT_AI_EXPIRY_INDEX, {identity_digest: now + ttl_seconds})
+                        pipe.execute()
+                        return False
+                    previous = state.get("stage")
+                    if previous == stage and not expiry_only:
+                        pipe.multi()
+                        pipe.hset(state_key, "last_seen", now)
+                        pipe.zadd(REPORT_AI_EXPIRY_INDEX, {identity_digest: now + ttl_seconds})
+                        pipe.execute()
+                        return False
+                    durations = []
+                    if state:
+                        durations.append(("report_ai_job_stage_duration_seconds", previous,
+                                          max(0.0, now - float(state["stage_started"]))))
+                    if terminal:
+                        if stage != "abandoned_wait":
+                            durations.append(("report_ai_job_stage_duration_seconds", stage, 0.0))
+                        durations.append((
+                            "report_ai_job_duration_seconds", stage,
+                            max(0.0, now - float(state["first_seen"])) if state else 0.0,
+                        ))
+                    latency_values = []
+                    for family, label, duration in durations:
+                        key = LATENCY_KEY_PREFIX + hashlib.sha256(f"{family}\0{label}".encode()).hexdigest()
+                        pipe.watch(key)
+                        latency_values.append((key, family, label, duration, pipe.hgetall(key)))
+                    pipe.multi()
+                    if previous:
+                        field = json.dumps(["report_ai_job_transitions_total", f"{previous}|{stage}"],
+                                           separators=(",", ":"), ensure_ascii=True)
+                        pipe.hincrby(COUNTERS_KEY, field, 1)
+                    if terminal:
+                        field = json.dumps(["report_ai_job_terminal_outcomes_total", stage],
+                                           separators=(",", ":"), ensure_ascii=True)
+                        pipe.setex(tombstone, ttl_seconds, "1")
+                        pipe.hincrby(COUNTERS_KEY, field, 1)
+                        pipe.delete(state_key)
+                        pipe.zrem(REPORT_AI_EXPIRY_INDEX, identity_digest)
+                    else:
+                        pipe.hset(state_key, mapping={"stage": stage, "stage_started": now,
+                                                      "last_seen": now})
+                        pipe.zadd(REPORT_AI_EXPIRY_INDEX, {identity_digest: now + ttl_seconds})
+                    for key, family, label, duration, previous_latency in latency_values:
+                        pipe.hset(key, mapping={
+                            "family": family, "label_key": label,
+                            "count": int(previous_latency.get("count", 0)) + 1,
+                            "sum_seconds": float(previous_latency.get("sum_seconds", 0)) + duration,
+                            "max_seconds": max(float(previous_latency.get("max_seconds", 0)), duration),
+                        })
+                    pipe.execute()
+                    return terminal
+            except WatchError:
+                continue
+        raise SharedMetricsUnavailable("Report AI lifecycle contention")
+
+    def cleanup_report_ai_lifecycle(self, now: float, ttl_seconds: int,
+                                    limit: int = 100,
+                                    max_entries: int = 4096) -> int:
+        """Finalize a bounded set of expired observations, including idle jobs."""
+        digests = self._redis.zrangebyscore(REPORT_AI_EXPIRY_INDEX, "-inf", now,
+                                             start=0, num=limit)
+        for digest in digests:
+            self.observe_report_ai_lifecycle(digest, "abandoned_wait", now, ttl_seconds,
+                                             expiry_only=True)
+        overflow = max(0, self._redis.zcard(REPORT_AI_EXPIRY_INDEX) - max_entries)
+        for digest, score in self._redis.zrange(
+                REPORT_AI_EXPIRY_INDEX, 0, min(overflow, limit) - 1,
+                withscores=True) if overflow else ():
+            self.observe_report_ai_lifecycle(digest, "abandoned_wait", now, ttl_seconds,
+                                             expiry_only=True, force=True,
+                                             expected_expiry_at=score)
+        return len(digests) + min(overflow, limit)
+
     def refresh_report_ai_terminal(self, identity_digest: str, ttl_seconds: int) -> None:
         """Extend dedup while this slot still remembers a finalized job."""
         if len(identity_digest) != 64 or not all(c in "0123456789abcdef" for c in identity_digest):
@@ -153,6 +358,227 @@ class RedisMetricCounters:
         if ttl_seconds <= 0:
             raise ValueError("Invalid Report AI terminal TTL")
         self._redis.expire(REPORT_AI_TERMINAL_KEY_PREFIX + identity_digest, ttl_seconds)
+
+    def issue_report_ai_guidance(self, identity_digest: str, now: float,
+                                 ttl_seconds: int) -> bool:
+        """Count every issued response, but one first issue per logical job."""
+        if len(identity_digest) != 64 or not math.isfinite(now) or ttl_seconds <= 0:
+            raise ValueError("Invalid Report AI guidance observation")
+        key = REPORT_AI_GUIDANCE_KEY_PREFIX + identity_digest
+        for _ in range(20):
+            try:
+                with self._redis.pipeline() as pipe:
+                    pipe.watch(key)
+                    state = pipe.hgetall(key)
+                    first = not state
+                    pipe.multi()
+                    pipe.hincrby(COUNTERS_KEY, json.dumps([
+                        "report_ai_empty_preview_guidance_issued_total", ""],
+                        separators=(",", ":")), 1)
+                    if first:
+                        pipe.hincrby(COUNTERS_KEY, json.dumps([
+                            "report_ai_empty_preview_guidance_jobs_total", ""],
+                            separators=(",", ":")), 1)
+                        pipe.hset(key, mapping={"issued_at": now, "last_seen": now,
+                                                "outcome": ""})
+                    else:
+                        pipe.hset(key, "last_seen", now)
+                    if state.get("outcome"):
+                        pipe.expire(key, ttl_seconds)
+                    else:
+                        pipe.zadd(REPORT_AI_GUIDANCE_EXPIRY_INDEX,
+                                  {identity_digest: now + ttl_seconds})
+                    pipe.execute()
+                    return first
+            except WatchError:
+                continue
+        raise SharedMetricsUnavailable("Report AI guidance issue contention")
+
+    def resolve_report_ai_guidance(self, identity_digest: str, outcome: str,
+                                   now: float, ttl_seconds: int,
+                                   *, expiry_only: bool = False,
+                                   force: bool = False,
+                                   expected_expiry_at: float | None = None) -> bool:
+        if len(identity_digest) != 64 or outcome not in {
+            "recreated", "saved_empty", "abandoned_wait", "preview_changed",
+        } or not math.isfinite(now) or ttl_seconds <= 0:
+            raise ValueError("Invalid Report AI guidance outcome")
+        key = REPORT_AI_GUIDANCE_KEY_PREFIX + identity_digest
+        for _ in range(20):
+            try:
+                with self._redis.pipeline() as pipe:
+                    pipe.watch(key)
+                    state = pipe.hgetall(key)
+                    if not state or state.get("outcome"):
+                        return False
+                    if (force and expected_expiry_at is not None
+                            and abs(float(state["last_seen"]) + ttl_seconds
+                                    - expected_expiry_at) > 1e-6):
+                        return False
+                    if (expiry_only and not force
+                            and now - float(state["last_seen"]) < ttl_seconds):
+                        return False
+                    field = json.dumps(["report_ai_empty_preview_guidance_outcomes_total",
+                                        outcome], separators=(",", ":"))
+                    pipe.multi()
+                    pipe.hset(key, "outcome", outcome)
+                    pipe.expire(key, ttl_seconds)
+                    pipe.zrem(REPORT_AI_GUIDANCE_EXPIRY_INDEX, identity_digest)
+                    pipe.hincrby(COUNTERS_KEY, field, 1)
+                    pipe.execute()
+                    return True
+            except WatchError:
+                continue
+        raise SharedMetricsUnavailable("Report AI guidance outcome contention")
+
+    def cleanup_report_ai_guidance(self, now: float, ttl_seconds: int,
+                                   limit: int = 100,
+                                   max_entries: int = 4096) -> int:
+        digests = self._redis.zrangebyscore(REPORT_AI_GUIDANCE_EXPIRY_INDEX,
+                                            "-inf", now, start=0, num=limit)
+        for digest in digests:
+            if not self.resolve_report_ai_guidance(digest, "abandoned_wait", now,
+                                                   ttl_seconds, expiry_only=True):
+                # A resolved or missing record must leave the index too.
+                key = REPORT_AI_GUIDANCE_KEY_PREFIX + digest
+                if not self._redis.exists(key) or self._redis.hget(key, "outcome"):
+                    self._redis.zrem(REPORT_AI_GUIDANCE_EXPIRY_INDEX, digest)
+        overflow = max(0, self._redis.zcard(REPORT_AI_GUIDANCE_EXPIRY_INDEX) - max_entries)
+        for digest, score in self._redis.zrange(
+                REPORT_AI_GUIDANCE_EXPIRY_INDEX, 0, min(overflow, limit) - 1,
+                withscores=True) if overflow else ():
+            self.resolve_report_ai_guidance(
+                digest, "abandoned_wait", now, ttl_seconds,
+                expiry_only=True, force=True, expected_expiry_at=score)
+        return len(digests) + min(overflow, limit)
+
+    def remember_report_ai_export(self, identity_digest: str, now: float,
+                                  ttl_seconds: int) -> None:
+        if len(identity_digest) != 64 or not math.isfinite(now) or ttl_seconds <= 0:
+            raise ValueError("Invalid Report AI export observation")
+        key = REPORT_AI_EXPORT_KEY_PREFIX + identity_digest
+        done = REPORT_AI_EXPORT_DONE_PREFIX + identity_digest
+        for _ in range(20):
+            try:
+                with self._redis.pipeline() as pipe:
+                    pipe.watch(key, done)
+                    if pipe.exists(done):
+                        return
+                    state = pipe.hgetall(key)
+                    pipe.multi()
+                    if not state:
+                        pipe.hset(key, mapping={"started_at": now, "last_seen": now,
+                                                "has_polled": 0})
+                    else:
+                        pipe.hset(key, "last_seen", now)
+                    pipe.zadd(REPORT_AI_EXPORT_EXPIRY_INDEX,
+                              {identity_digest: now + ttl_seconds})
+                    pipe.execute()
+                    return
+            except WatchError:
+                continue
+        raise SharedMetricsUnavailable("Report AI export start contention")
+
+    def mark_report_ai_export_poll(self, identity_digest: str, now: float,
+                                   ttl_seconds: int) -> None:
+        key = REPORT_AI_EXPORT_KEY_PREFIX + identity_digest
+        done = REPORT_AI_EXPORT_DONE_PREFIX + identity_digest
+        for _ in range(20):
+            try:
+                with self._redis.pipeline() as pipe:
+                    pipe.watch(key, done)
+                    if pipe.exists(done):
+                        return
+                    exists = pipe.exists(key)
+                    pipe.multi()
+                    values = {"last_seen": now, "has_polled": 1}
+                    if not exists:
+                        values["started_at"] = now
+                    pipe.hset(key, mapping=values)
+                    pipe.zadd(REPORT_AI_EXPORT_EXPIRY_INDEX,
+                              {identity_digest: now + ttl_seconds})
+                    pipe.execute()
+                    return
+            except WatchError:
+                continue
+        raise SharedMetricsUnavailable("Report AI export poll contention")
+
+    def complete_report_ai_export(self, identity_digest: str, outcome: str,
+                                  now: float, ttl_seconds: int,
+                                  *, expiry_only: bool = False,
+                                  force: bool = False,
+                                  expected_expiry_at: float | None = None) -> bool:
+        if len(identity_digest) != 64 or outcome not in {
+            "success", "error", "abandoned_wait",
+        } or not math.isfinite(now) or ttl_seconds <= 0:
+            raise ValueError("Invalid Report AI export outcome")
+        key = REPORT_AI_EXPORT_KEY_PREFIX + identity_digest
+        done = REPORT_AI_EXPORT_DONE_PREFIX + identity_digest
+        latency_key = LATENCY_KEY_PREFIX + hashlib.sha256(
+            f"report_ai_export_duration_seconds\0{outcome}".encode()).hexdigest()
+        for _ in range(20):
+            try:
+                with self._redis.pipeline() as pipe:
+                    pipe.watch(key, done, latency_key)
+                    if pipe.exists(done):
+                        pipe.multi()
+                        pipe.zrem(REPORT_AI_EXPORT_EXPIRY_INDEX, identity_digest)
+                        pipe.execute()
+                        return False
+                    state = pipe.hgetall(key)
+                    if (force and state and expected_expiry_at is not None
+                            and abs(float(state["last_seen"]) + ttl_seconds
+                                    - expected_expiry_at) > 1e-6):
+                        return False
+                    if expiry_only and (not state or
+                            not force and now - float(state["last_seen"]) < ttl_seconds):
+                        if not state:
+                            pipe.multi()
+                            pipe.zrem(REPORT_AI_EXPORT_EXPIRY_INDEX, identity_digest)
+                            pipe.execute()
+                        return False
+                    operation = ("poll" if state.get("has_polled") == "1" else "start")
+                    if outcome != "abandoned_wait":
+                        operation = "poll"
+                    previous_latency = pipe.hgetall(latency_key) if state else {}
+                    field = json.dumps(["report_ai_exports_total", f"{operation}|{outcome}"],
+                                       separators=(",", ":"))
+                    pipe.multi()
+                    pipe.setex(done, ttl_seconds, "1")
+                    pipe.hincrby(COUNTERS_KEY, field, 1)
+                    if state:
+                        duration = max(0.0, now - float(state["started_at"]))
+                        pipe.hset(latency_key, mapping={
+                            "family": "report_ai_export_duration_seconds",
+                            "label_key": outcome,
+                            "count": int(previous_latency.get("count", 0)) + 1,
+                            "sum_seconds": float(previous_latency.get("sum_seconds", 0)) + duration,
+                            "max_seconds": max(float(previous_latency.get("max_seconds", 0)), duration),
+                        })
+                    pipe.delete(key)
+                    pipe.zrem(REPORT_AI_EXPORT_EXPIRY_INDEX, identity_digest)
+                    pipe.execute()
+                    return True
+            except WatchError:
+                continue
+        raise SharedMetricsUnavailable("Report AI export outcome contention")
+
+    def cleanup_report_ai_exports(self, now: float, ttl_seconds: int,
+                                  limit: int = 100,
+                                  max_entries: int = 4096) -> int:
+        digests = self._redis.zrangebyscore(REPORT_AI_EXPORT_EXPIRY_INDEX,
+                                            "-inf", now, start=0, num=limit)
+        for digest in digests:
+            self.complete_report_ai_export(digest, "abandoned_wait", now,
+                                           ttl_seconds, expiry_only=True)
+        overflow = max(0, self._redis.zcard(REPORT_AI_EXPORT_EXPIRY_INDEX) - max_entries)
+        for digest, score in self._redis.zrange(
+                REPORT_AI_EXPORT_EXPIRY_INDEX, 0, min(overflow, limit) - 1,
+                withscores=True) if overflow else ():
+            self.complete_report_ai_export(
+                digest, "abandoned_wait", now, ttl_seconds,
+                expiry_only=True, force=True, expected_expiry_at=score)
+        return len(digests) + min(overflow, limit)
 
     @staticmethod
     def _cache_slot_key(slot_identity: str) -> str:

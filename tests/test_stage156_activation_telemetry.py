@@ -132,8 +132,9 @@ def test_account_last_request_age_metric_renders_prometheus_series() -> None:
         "with_active_tokens": 0,
         "with_recent_usage_7d": 0,
     }
-    assert "# TYPE vetmanager_account_last_request_age_hours gauge" in metrics_text
-    assert 'vetmanager_account_last_request_age_hours{account_id="42"} 25.5' in metrics_text
+    assert "# TYPE vetmanager_account_last_request_age_avg_hours gauge" in metrics_text
+    assert "vetmanager_account_last_request_age_avg_hours 25.5" in metrics_text
+    assert "vetmanager_account_last_request_age_p95_hours 25.5" in metrics_text
     assert "# TYPE vetmanager_activation_funnel_accounts gauge" in metrics_text
     assert 'vetmanager_activation_funnel_accounts{stage="connected"} 0' in metrics_text
     assert 'vetmanager_activation_funnel_accounts{stage="registered"} 3' in metrics_text
@@ -328,7 +329,7 @@ async def test_metrics_endpoint_runs_activation_scan_after_auth(tmp_path: Path, 
 
     assert forbidden.status_code == 403
     assert response.status_code == 200
-    assert f'vetmanager_account_last_request_age_hours{{account_id="{account.id}"}} 25.0' in response.text
+    assert "vetmanager_account_last_request_age_avg_hours 25.0" in response.text
     assert 'vetmanager_activation_funnel_accounts{stage="connected"} 0' in response.text
     assert 'vetmanager_activation_funnel_accounts{stage="registered"} 1' in response.text
     assert 'vetmanager_activation_funnel_accounts{stage="ready_for_mcp"} 1' in response.text

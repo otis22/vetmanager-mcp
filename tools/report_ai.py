@@ -294,8 +294,20 @@ def _resolve_guidance_outcome(observation: dict, outcome: str) -> None:
     if "guidance_issued_at" not in observation or observation.get("guidance_outcome"):
         return
     observation["guidance_outcome"] = outcome
-    _best_effort_observation("empty_preview_outcome", record_report_ai_empty_preview_outcome,
-                             outcome=outcome)
+    backend = shared_metric_counters.get_backend()
+    digest = observation.get("guidance_digest")
+    if backend is not None and isinstance(digest, str):
+        def deliver() -> None:
+            try:
+                backend.resolve_report_ai_guidance(
+                    digest, outcome, _monotonic_seconds(),
+                    REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+            except Exception as exc:
+                _report_ai_observation_failed(exc, operation="empty_preview_outcome")
+        shared_metric_counters.dispatch(deliver)
+    else:
+        _best_effort_observation("empty_preview_outcome", record_report_ai_empty_preview_outcome,
+                                 outcome=outcome)
 
 
 def _preview_certainty(job: dict) -> str | None:
@@ -329,8 +341,23 @@ def _issued_empty_preview_guidance(payload: dict) -> dict:
             return payload
         observation["guidance_issued_at"] = now
         observation["preview_certainty"] = "zero"
-    _best_effort_observation("empty_preview_issued", record_report_ai_empty_preview_guidance,
-                             first=first)
+    backend = shared_metric_counters.get_backend()
+    if backend is not None:
+        digest = _report_ai_terminal_digest(key)
+        observation["guidance_digest"] = digest
+        def deliver() -> None:
+            try:
+                backend.issue_report_ai_guidance(
+                    digest, now, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+                backend.cleanup_report_ai_guidance(
+                    now, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS,
+                    max_entries=REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES)
+            except Exception as exc:
+                _report_ai_observation_failed(exc, operation="empty_preview_issued")
+        shared_metric_counters.dispatch(deliver)
+    else:
+        _best_effort_observation("empty_preview_issued", record_report_ai_empty_preview_guidance,
+                                 first=first)
     return payload
 
 
@@ -377,27 +404,15 @@ def _cleanup_report_ai_queue_observations(now: float) -> None:
         observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.pop(key)
         if "guidance_issued_at" in observation:
             _resolve_guidance_outcome(observation, "abandoned_wait")
-        stage = str(observation["stage"])
-        stage_duration = now - float(observation["stage_started"])
-        _best_effort_observation("lifecycle_stage_duration", record_report_ai_job_stage_duration,
-                                 stage=stage, duration_seconds=stage_duration)
-        _best_effort_observation("lifecycle_terminal", record_report_ai_job_terminal_outcome,
-            outcome="abandoned_wait",
-            duration_seconds=now - float(observation["first_seen"]),
-        )
+        if shared_metric_counters.get_backend() is None:
+            _finalize_abandoned_lifecycle(key, observation, now=now)
 
     while len(_REPORT_AI_LIFECYCLE_OBSERVATIONS) > REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES:
         key, observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.popitem(last=False)
         if "guidance_issued_at" in observation:
             _resolve_guidance_outcome(observation, "abandoned_wait")
-        _best_effort_observation("lifecycle_stage_duration", record_report_ai_job_stage_duration,
-            stage=str(observation["stage"]),
-            duration_seconds=now - float(observation["stage_started"]),
-        )
-        _best_effort_observation("lifecycle_terminal", record_report_ai_job_terminal_outcome,
-            outcome="abandoned_wait",
-            duration_seconds=now - float(observation["first_seen"]),
-        )
+        if shared_metric_counters.get_backend() is None:
+            _finalize_abandoned_lifecycle(key, observation, now=now)
 
     expired_finalized_keys = [
         key
@@ -475,6 +490,20 @@ def _record_report_ai_terminal_once(key: _ReportAiQueueObservationKey, *,
     shared_metric_counters.dispatch(deliver)
 
 
+def _finalize_abandoned_lifecycle(key: _ReportAiQueueObservationKey,
+                                  observation: dict, *, now: float) -> None:
+    """Only the slot winning the shared terminal claim records expiry duration."""
+    stage = str(observation["stage"])
+    duration = now - float(observation["stage_started"])
+    _best_effort_observation("lifecycle_terminal", _record_report_ai_terminal_once,
+        key, outcome="abandoned_wait",
+        duration_seconds=now - float(observation["first_seen"]),
+        on_claim=lambda: _best_effort_observation(
+            "lifecycle_stage_duration", record_report_ai_job_stage_duration,
+            stage=stage, duration_seconds=duration),
+    )
+
+
 def _refresh_report_ai_terminal(key: _ReportAiQueueObservationKey) -> None:
     backend = shared_metric_counters.get_backend()
     if backend is None:
@@ -496,6 +525,19 @@ def _remember_report_ai_export(report_file_id: object) -> None:
         return
     now = _monotonic_seconds()
     _cleanup_report_ai_queue_observations(now)
+    backend = shared_metric_counters.get_backend()
+    if backend is not None:
+        digest = _report_ai_terminal_digest(key)
+        def deliver() -> None:
+            try:
+                backend.remember_report_ai_export(
+                    digest, now, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+                backend.cleanup_report_ai_exports(
+                    now, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS,
+                    max_entries=REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES)
+            except Exception as exc:
+                _report_ai_observation_failed(exc, operation="export_start")
+        shared_metric_counters.dispatch(deliver)
     _REPORT_AI_EXPORT_OBSERVATIONS[key] = {
         "started_at": now,
         "last_seen": now,
@@ -507,6 +549,8 @@ def _remember_report_ai_export(report_file_id: object) -> None:
 def _record_abandoned_report_ai_export(
     observation: dict[str, float | bool], *, now: float
 ) -> None:
+    if shared_metric_counters.get_backend() is not None:
+        return
     operation = "poll" if observation["has_polled"] else "start"
     _best_effort_observation("export_abandoned", record_report_ai_export,
                              operation=operation, outcome="abandoned_wait")
@@ -519,6 +563,17 @@ def _mark_report_ai_export_poll(report_file_id: object) -> None:
     key = _report_ai_queue_observation_key({"id": report_file_id})
     if key is None:
         return
+    backend = shared_metric_counters.get_backend()
+    if backend is not None:
+        digest = _report_ai_terminal_digest(key)
+        now = _monotonic_seconds()
+        def deliver() -> None:
+            try:
+                backend.mark_report_ai_export_poll(
+                    digest, now, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+            except Exception as exc:
+                _report_ai_observation_failed(exc, operation="export_poll_mark")
+        shared_metric_counters.dispatch(deliver)
     observation = _REPORT_AI_EXPORT_OBSERVATIONS.get(key)
     if observation is not None:
         observation["has_polled"] = True
@@ -538,6 +593,19 @@ def _report_ai_export_observed_wait_seconds(report_file_id: object) -> int | Non
 
 def _complete_report_ai_export(report_file_id: object, *, outcome: str) -> None:
     key = _report_ai_queue_observation_key({"id": report_file_id})
+    backend = shared_metric_counters.get_backend()
+    if backend is not None and key is not None:
+        digest = _report_ai_terminal_digest(key)
+        now = _monotonic_seconds()
+        def deliver() -> None:
+            try:
+                backend.complete_report_ai_export(
+                    digest, outcome, now, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+            except Exception as exc:
+                _report_ai_observation_failed(exc, operation="export_complete")
+        shared_metric_counters.dispatch(deliver)
+        _REPORT_AI_EXPORT_OBSERVATIONS.pop(key, None)
+        return
     _best_effort_observation("export_poll", record_report_ai_export,
                              operation="poll", outcome=outcome)
     if key is None:
@@ -615,12 +683,13 @@ def _report_ai_stage_age_seconds(job: dict, *, now: float) -> int | None:
 
 
 def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None:
-    """Record safe, process-local lifecycle observations for one Report AI job."""
+    """Observe one Report AI job; shared mode owns lifecycle metric transitions."""
     observation_key = _report_ai_queue_observation_key(job)
     if observation_key is None:
         return
     current_time = _monotonic_seconds() if now is None else now
     _cleanup_report_ai_queue_observations(current_time)
+    stage = _REPORT_AI_STAGE_BY_STATUS.get(str(job.get("status") or ""), "unknown")
     guided = _find_guided_job(observation_key)
     if guided is not None:
         certainty = _preview_certainty(job)
@@ -630,12 +699,55 @@ def _observe_report_ai_lifecycle(job: dict, *, now: float | None = None) -> None
             _resolve_guidance_outcome(guided, "preview_changed")
         elif job.get("status") == "saved" and guided.get("preview_certainty") == "zero":
             _resolve_guidance_outcome(guided, "saved_empty")
+    backend = shared_metric_counters.get_backend()
+    if backend is not None:
+        digest = _report_ai_terminal_digest(observation_key)
+        certainty = _preview_certainty(job)
+        def deliver() -> None:
+            try:
+                first_terminal = backend.observe_report_ai_lifecycle(
+                    digest, stage, current_time, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+                if stage == "failed" and first_terminal:
+                    _best_effort_observation(
+                        "lifecycle_outcome_code", record_report_ai_outcome_code,
+                        operation="status", code=job.get("error_code"))
+                if certainty == "nonzero":
+                    backend.resolve_report_ai_guidance(
+                        digest, "preview_changed", current_time,
+                        REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+                elif stage == "saved":
+                    backend.resolve_report_ai_guidance(
+                        digest, "saved_empty", current_time,
+                        REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+                backend.cleanup_report_ai_lifecycle(
+                    current_time, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS,
+                    max_entries=REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES)
+            except Exception as exc:
+                _report_ai_observation_failed(exc, operation="shared_lifecycle")
+        shared_metric_counters.dispatch(deliver)
+        observation = _REPORT_AI_LIFECYCLE_OBSERVATIONS.get(observation_key)
+        if stage in _REPORT_AI_TERMINAL_OUTCOMES:
+            if observation is not None:
+                _REPORT_AI_LIFECYCLE_OBSERVATIONS.pop(observation_key, None)
+            _remember_finalized_report_ai_job(observation_key, now=current_time,
+                                              observation=observation)
+        elif observation is None:
+            _REPORT_AI_LIFECYCLE_OBSERVATIONS[observation_key] = {
+                "first_seen": current_time, "last_seen": current_time,
+                "stage": stage, "stage_started": current_time,
+            }
+        else:
+            if observation["stage"] != stage:
+                observation["stage"] = stage
+                observation["stage_started"] = current_time
+            observation["last_seen"] = current_time
+            _REPORT_AI_LIFECYCLE_OBSERVATIONS.move_to_end(observation_key)
+        return
     if observation_key in _REPORT_AI_FINALIZED_OBSERVATIONS:
         _best_effort_observation("lifecycle_terminal_refresh", _refresh_report_ai_terminal,
                                  observation_key)
         _remember_finalized_report_ai_job(observation_key, now=current_time)
         return
-    stage = _REPORT_AI_STAGE_BY_STATUS.get(str(job.get("status") or ""), "unknown")
     if stage == "failed":
         _best_effort_observation("lifecycle_outcome_code", record_report_ai_outcome_code,
                                  operation="status", code=job.get("error_code"))
@@ -856,6 +968,16 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
     # of recognising.
     if status == "queued":
         observed_age_seconds = _observe_report_ai_queue(job, now=now)
+        backend = shared_metric_counters.get_backend()
+        key = _report_ai_queue_observation_key(job)
+        if backend is not None and key is not None:
+            try:
+                observed_age_seconds = await asyncio.to_thread(
+                    backend.observe_report_ai_queue, _report_ai_terminal_digest(key),
+                    True, _monotonic_seconds() if now is None else now,
+                    REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+            except Exception as exc:
+                _report_ai_observation_failed(exc, operation="shared_queue")
         upstream_age_seconds = await _upstream_job_age_seconds(job)
         diagnostic_age_seconds = (
             upstream_age_seconds if upstream_age_seconds is not None else observed_age_seconds
@@ -865,10 +987,35 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
     elif status in _REPORT_AI_ACTIVE_STAGE_STATUSES:
         _observe_report_ai_queue(job, now=now)  # clears any stale queue observation
         diagnostic_age_seconds = _report_ai_stage_age_seconds(job, now=now or _monotonic_seconds())
+        backend = shared_metric_counters.get_backend()
+        key = _report_ai_queue_observation_key(job)
+        if backend is not None and key is not None:
+            try:
+                current_time = _monotonic_seconds() if now is None else now
+                await asyncio.to_thread(
+                    backend.observe_report_ai_queue, _report_ai_terminal_digest(key),
+                    False, current_time, REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+                shared_age = await asyncio.to_thread(
+                    backend.report_ai_stage_age, _report_ai_terminal_digest(key),
+                    _REPORT_AI_STAGE_BY_STATUS.get(status, "unknown"), current_time)
+                if shared_age is not None:
+                    diagnostic_age_seconds = shared_age
+            except Exception as exc:
+                _report_ai_observation_failed(exc, operation="shared_stage_age")
         age_scope = "stage"
         age_source = "mcp_observed"
     else:
         _observe_report_ai_queue(job, now=now)
+        backend = shared_metric_counters.get_backend()
+        key = _report_ai_queue_observation_key(job)
+        if backend is not None and key is not None:
+            try:
+                await asyncio.to_thread(
+                    backend.observe_report_ai_queue, _report_ai_terminal_digest(key),
+                    False, _monotonic_seconds() if now is None else now,
+                    REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS)
+            except Exception as exc:
+                _report_ai_observation_failed(exc, operation="shared_queue_clear")
         return payload
 
     if (
@@ -885,7 +1032,7 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
         "threshold_seconds": REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS,
         "status": status,
         "operator_hint": (
-            "Age comes from Vetmanager created_at when available, otherwise MCP local observation; "
+            "Age comes from Vetmanager created_at when available, otherwise MCP observation; "
             "it is not a Vetmanager worker SLA. "
             "Inspect Report AI worker/stale in-progress diagnostics using the MCP operator runbook."
         ),
@@ -1629,7 +1776,7 @@ def register(mcp: FastMCP) -> None:
                 working stages alike: age_scope says whether the age measures
                 the whole job (queued) or the current stage (recognizing,
                 building_preview), and a stage change restarts that clock.
-                The age is process-local, not a Vetmanager SLA. Use bounded
+                The age is MCP-observed, not a Vetmanager SLA. Use bounded
                 wait_seconds instead of a manual poll series; on timeout
                 return the job_id to resume later. At 15 minutes on a working
                 stage stop automatic polling.

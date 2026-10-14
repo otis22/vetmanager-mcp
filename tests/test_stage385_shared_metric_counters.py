@@ -311,9 +311,25 @@ def test_stopped_slot_cannot_resurrect_cache_gauge():
     assert backend.snapshot()["cache_entries"] == 0
 
 
+class _NoopObservationHooks:
+    """Keep the scrape test doubles aligned with the shared backend interface."""
+
+    def cleanup_report_ai_lifecycle(self, *_args):
+        return 0
+
+    def cleanup_report_ai_guidance(self, *_args):
+        return 0
+
+    def cleanup_report_ai_exports(self, *_args):
+        return 0
+
+    def activation_snapshot(self):
+        return {}
+
+
 @pytest.mark.asyncio
 async def test_metrics_returns_503_when_shared_store_fails_after_a_tool_event(monkeypatch):
-    class BrokenBackend:
+    class BrokenBackend(_NoopObservationHooks):
         def increment(self, *_args):
             raise ConnectionError("redis down")
 
@@ -333,7 +349,7 @@ async def test_metrics_returns_503_when_shared_store_fails_after_a_tool_event(mo
 
 @pytest.mark.asyncio
 async def test_slow_metric_scrape_does_not_block_event_loop(monkeypatch):
-    class SlowBackend:
+    class SlowBackend(_NoopObservationHooks):
         def snapshot(self):
             time.sleep(.2)
             return {}

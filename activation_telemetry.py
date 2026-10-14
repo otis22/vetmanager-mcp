@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
+import hashlib
+import hmac
 from statistics import median
 
 from sqlalchemy import distinct, exists, func, or_, select
@@ -14,6 +17,8 @@ from activation_events import (
     mark_activation_event_cleanup_succeeded,
 )
 from observability_logging import RUNTIME_LOGGER
+import shared_metric_counters
+from web_auth import get_web_session_secret
 from first_session import release_cutoff
 from service_metrics import (
     set_account_last_request_age_hours,
@@ -109,6 +114,12 @@ def _clear_account_dedup(account_id: int) -> None:
     _ALERTED_THRESHOLDS.difference_update({
         key for key in _ALERTED_THRESHOLDS if key[0] == account_id
     })
+
+
+def _activation_alert_digest(account_id: int) -> str:
+    purpose_key = hmac.new(get_web_session_secret().encode(), b"activation-alert-v1",
+                           hashlib.sha256).digest()
+    return hmac.new(purpose_key, str(account_id).encode(), hashlib.sha256).hexdigest()
 
 
 def _apply_activation_scan_cache(current: datetime) -> bool:
@@ -480,6 +491,7 @@ async def scan_activation_telemetry(
 
     gauges: dict[int, float] = {}
     live_account_ids: set[int] = set()
+    shared_backend = shared_metric_counters.get_backend()
     emitted = 0
     # The fallback anchor keeps its own name per channel: existing alerting
     # reads `age_anchor`, and "token_created_at" must keep meaning a token.
@@ -519,7 +531,11 @@ async def scan_activation_telemetry(
         gauges[account_id] = age_hours
 
         if age_hours < SILENCE_THRESHOLDS_HOURS[0]:
-            _clear_account_dedup(account_id)
+            if shared_backend is None:
+                _clear_account_dedup(account_id)
+            else:
+                await asyncio.to_thread(shared_backend.clear_activation_alerts,
+                                        _activation_alert_digest(account_id))
             continue
 
         ever_used = last_request_at is not None
@@ -528,9 +544,14 @@ async def scan_activation_telemetry(
             if age_hours < threshold_hours:
                 continue
             dedup_key = (account_id, threshold_hours)
-            if dedup_key in _ALERTED_THRESHOLDS:
+            if shared_backend is None:
+                if dedup_key in _ALERTED_THRESHOLDS:
+                    continue
+                _ALERTED_THRESHOLDS.add(dedup_key)
+            elif not await asyncio.to_thread(shared_backend.claim_activation_alert,
+                                             _activation_alert_digest(account_id),
+                                             threshold_hours):
                 continue
-            _ALERTED_THRESHOLDS.add(dedup_key)
             emitted += 1
             RUNTIME_LOGGER.warning(
                 "Account traffic is silent.",
@@ -546,8 +567,13 @@ async def scan_activation_telemetry(
                 },
             )
 
-    for account_id, _threshold in list(_ALERTED_THRESHOLDS):
-        if account_id not in live_account_ids:
-            _clear_account_dedup(account_id)
+    if shared_backend is None:
+        for account_id, _threshold in list(_ALERTED_THRESHOLDS):
+            if account_id not in live_account_ids:
+                _clear_account_dedup(account_id)
+    else:
+        await asyncio.to_thread(shared_backend.reconcile_activation_alerts,
+                                {_activation_alert_digest(account_id)
+                                 for account_id in live_account_ids})
     set_account_last_request_age_hours(gauges)
     return emitted

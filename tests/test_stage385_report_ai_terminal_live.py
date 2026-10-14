@@ -1,6 +1,9 @@
 """Opt-in devtr6 Report AI terminal accounting through three MCP slots."""
 
 import os
+import hashlib
+import hmac
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -8,7 +11,9 @@ import time
 
 import httpx
 import pytest
+import redis
 
+from shared_metric_counters import REPORT_AI_TERMINAL_KEY_PREFIX
 from tests.test_stage384_live import seed_devtr6_bearer
 from tests.test_stage385_metrics_live import _free_port, _jsonrpc
 
@@ -76,6 +81,12 @@ def test_saved_job_terminal_count_once_across_slots(prepared_web_db):
             }).status_code in (200, 202)
             client.headers.update(session_headers)
         baseline = _saved_terminal_count(clients[0].get("/metrics").text)
+        purpose_key = hmac.new(env["WEB_SESSION_SECRET"].encode(),
+                               b"report-ai-observation-v1", hashlib.sha256).digest()
+        identity = json.dumps([env["TEST_DOMAIN"], 2], separators=(",", ":")).encode()
+        digest = hmac.new(purpose_key, identity, hashlib.sha256).hexdigest()
+        prior_claim = bool(redis.Redis.from_url(env["STAGE385_REDIS_URL"]).exists(
+            REPORT_AI_TERMINAL_KEY_PREFIX + digest))
         codes = []
         safe_bodies = []
         for client in clients:
@@ -90,9 +101,12 @@ def test_saved_job_terminal_count_once_across_slots(prepared_web_db):
             assert response.status_code == 200 and not safe_bodies[-1]["rpc_error"]
             assert not safe_bodies[-1]["tool_error"]
         after = [_saved_terminal_count(client.get("/metrics").text) for client in clients]
-        assert after == [baseline + 1] * 3
+        expected_delta = 0 if prior_claim else 1
+        assert after == [baseline + expected_delta] * 3
         print("STAGE385_REPORT_AI_TERMINAL", {"slots": 3, "http_codes": codes,
-                                             "safe_bodies": safe_bodies, "metric_delta": 1})
+                                             "safe_bodies": safe_bodies,
+                                             "prior_claim": prior_claim,
+                                             "metric_delta": expected_delta})
     finally:
         for client in clients:
             client.close()

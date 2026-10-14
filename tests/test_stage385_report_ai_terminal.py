@@ -138,24 +138,227 @@ def test_same_slot_finalized_poll_refreshes_shared_tombstone(monkeypatch):
     assert backend.snapshot()["report_ai_job_terminal_outcomes_total"] == {"saved": 1}
 
 
-def test_failed_claim_cannot_create_uncounted_tombstone_on_later_poll(monkeypatch):
+def test_failed_lifecycle_write_cannot_create_uncounted_tombstone(monkeypatch):
     client = fakeredis.FakeRedis(decode_responses=True)
     backend = RedisMetricCounters(client)
-    real_claim = backend.claim_report_ai_terminal
+    real_observe = backend.observe_report_ai_lifecycle
     calls = [0]
 
-    def fail_once(*args):
+    def fail_once(*args, **kwargs):
         calls[0] += 1
         if calls[0] == 1:
             raise ConnectionError("Redis unavailable")
-        return real_claim(*args)
+        return real_observe(*args, **kwargs)
 
     monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
     monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
-    monkeypatch.setattr(backend, "claim_report_ai_terminal", fail_once)
+    monkeypatch.setattr(backend, "observe_report_ai_lifecycle", fail_once)
     job = {"id": 385006, "status": "saved"}
     report_ai._observe_report_ai_lifecycle(job, now=10.0)
     report_ai._observe_report_ai_lifecycle(job, now=11.0)  # local finalized refresh
     report_ai._reset_report_ai_queue_observations()  # another slot after Redis recovers
     report_ai._observe_report_ai_lifecycle(job, now=12.0)
+    assert calls[0] == 3
     assert backend.snapshot()["report_ai_job_terminal_outcomes_total"] == {"saved": 1}
+
+
+def test_expired_job_on_two_slots_has_one_abandoned_outcome(monkeypatch):
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    job = {"id": 385007, "status": "queued"}
+    report_ai._observe_report_ai_lifecycle(job, now=1.0)
+    first_slot = report_ai._REPORT_AI_LIFECYCLE_OBSERVATIONS.copy()
+    report_ai._reset_report_ai_queue_observations()
+    report_ai._REPORT_AI_LIFECYCLE_OBSERVATIONS.update(first_slot)
+    report_ai._cleanup_report_ai_queue_observations(3602.0)
+    assert backend.cleanup_report_ai_lifecycle(3602.0, 3600) == 1
+    report_ai._REPORT_AI_LIFECYCLE_OBSERVATIONS.update(first_slot)
+    report_ai._cleanup_report_ai_queue_observations(3602.0)
+    assert backend.cleanup_report_ai_lifecycle(3602.0, 3600) == 0
+    assert backend.snapshot()["report_ai_job_terminal_outcomes_total"] == {"abandoned_wait": 1}
+    assert backend.snapshot()["report_ai_job_stage_duration_seconds"]["queued"]["count"] == 1
+
+
+def test_shared_lifecycle_transition_survives_slot_switch(monkeypatch):
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    job_id = 385008
+    report_ai._observe_report_ai_lifecycle({"id": job_id, "status": "queued"}, now=1.0)
+    report_ai._reset_report_ai_queue_observations()
+    report_ai._observe_report_ai_lifecycle({"id": job_id, "status": "saved"}, now=6.0)
+    snapshot = backend.snapshot()
+    assert snapshot["report_ai_job_transitions_total"] == {"queued|saved": 1}
+    assert snapshot["report_ai_job_stage_duration_seconds"]["queued"]["sum_seconds"] == 5.0
+    assert snapshot["report_ai_job_duration_seconds"]["saved"]["sum_seconds"] == 5.0
+
+
+def test_shared_lifecycle_evicts_oldest_before_dropping_it():
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    for number in range(3):
+        backend.observe_report_ai_lifecycle(f"{number:064x}", "queued", float(number), 3600)
+    backend.cleanup_report_ai_lifecycle(3.0, 3600, max_entries=2)
+    snapshot = backend.snapshot()
+    assert snapshot["report_ai_job_terminal_outcomes_total"] == {"abandoned_wait": 1}
+    assert snapshot["report_ai_job_stage_duration_seconds"]["queued"]["count"] == 1
+    assert backend._redis.zcard(shared_metric_counters.REPORT_AI_EXPIRY_INDEX) == 2
+
+
+def test_eviction_skips_job_refreshed_after_selection():
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    digest = "9" * 64
+    backend.observe_report_ai_lifecycle(digest, "queued", 1.0, 3600)
+    backend.observe_report_ai_lifecycle(digest, "queued", 2.0, 3600)
+    backend.observe_report_ai_lifecycle(
+        digest, "abandoned_wait", 3.0, 3600, expiry_only=True,
+        force=True, expected_expiry_at=3601.0)
+    assert backend.snapshot()["report_ai_job_terminal_outcomes_total"] == {}
+
+
+def test_shared_failed_job_keeps_bounded_outcome_code(monkeypatch):
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    report_ai._observe_report_ai_lifecycle(
+        {"id": 385012, "status": "failed", "error_code": "PREVIEW_FAILED"}, now=1.0)
+    assert backend.snapshot()["report_ai_outcomes_by_code_total"] == {
+        "status|PREVIEW_FAILED": 1}
+
+
+def test_concurrent_shared_expiry_has_one_terminal_and_stage_duration():
+    server = fakeredis.FakeServer()
+    workers = [RedisMetricCounters(fakeredis.FakeRedis(server=server, decode_responses=True))
+               for _ in range(3)]
+    digest = "c" * 64
+    workers[0].observe_report_ai_lifecycle(digest, "queued", 1.0, 3600)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        list(pool.map(lambda worker: worker.cleanup_report_ai_lifecycle(3602.0, 3600), workers))
+    snapshot = workers[0].snapshot()
+    assert snapshot["report_ai_job_terminal_outcomes_total"] == {"abandoned_wait": 1}
+    assert snapshot["report_ai_job_stage_duration_seconds"]["queued"]["count"] == 1
+    assert "abandoned_wait" not in snapshot["report_ai_job_stage_duration_seconds"]
+
+
+def test_guidance_first_job_and_outcome_are_shared_across_slots():
+    server = fakeredis.FakeServer()
+    workers = [RedisMetricCounters(fakeredis.FakeRedis(server=server, decode_responses=True))
+               for _ in range(2)]
+    digest = "d" * 64
+    workers[0].issue_report_ai_guidance(digest, 1.0, 3600)
+    workers[1].issue_report_ai_guidance(digest, 2.0, 3600)
+    workers[1].resolve_report_ai_guidance(digest, "saved_empty", 3.0, 3600)
+    workers[0].resolve_report_ai_guidance(digest, "saved_empty", 4.0, 3600)
+    snapshot = workers[0].snapshot()
+    assert snapshot["report_ai_empty_preview_guidance_issued_total"] == 2
+    assert snapshot["report_ai_empty_preview_guidance_jobs_total"] == 1
+    assert snapshot["report_ai_empty_preview_guidance_outcomes_total"] == {"saved_empty": 1}
+
+
+def test_guidance_issued_on_two_slots_resolves_after_handoff(monkeypatch):
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    ready = {"id": 385009, "status": "ready_to_save",
+             "preview_summary": "Превью: 0 строк",
+             "mcp_empty_preview_guidance": {"code": "report_ai_empty_preview"}}
+    report_ai._issued_empty_preview_guidance({"data": {"job": ready}})
+    report_ai._reset_report_ai_queue_observations()
+    report_ai._issued_empty_preview_guidance({"data": {"job": ready}})
+    report_ai._reset_report_ai_queue_observations()
+    report_ai._observe_report_ai_lifecycle({"id": 385009, "status": "saved"}, now=20.0)
+    snapshot = backend.snapshot()
+    assert snapshot["report_ai_empty_preview_guidance_jobs_total"] == 1
+    assert snapshot["report_ai_empty_preview_guidance_issued_total"] == 2
+    assert snapshot["report_ai_empty_preview_guidance_outcomes_total"] == {"saved_empty": 1}
+
+
+def test_guidance_idle_expiry_is_finalized_once():
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    digest = "e" * 64
+    backend.issue_report_ai_guidance(digest, 1.0, 3600)
+    assert backend.cleanup_report_ai_guidance(3602.0, 3600) == 1
+    assert backend.cleanup_report_ai_guidance(3602.0, 3600) == 0
+    assert backend.snapshot()["report_ai_empty_preview_guidance_outcomes_total"] == {
+        "abandoned_wait": 1}
+
+
+def test_guidance_overflow_finalizes_oldest():
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    for number in range(3):
+        backend.issue_report_ai_guidance(f"{number:064x}", float(number), 3600)
+    backend.cleanup_report_ai_guidance(3.0, 3600, max_entries=2)
+    assert backend.snapshot()["report_ai_empty_preview_guidance_outcomes_total"] == {
+        "abandoned_wait": 1}
+
+
+def test_export_terminal_and_expiry_outcomes_are_shared():
+    server = fakeredis.FakeServer()
+    workers = [RedisMetricCounters(fakeredis.FakeRedis(server=server, decode_responses=True))
+               for _ in range(2)]
+    digest = "f" * 64
+    workers[0].remember_report_ai_export(digest, 1.0, 3600)
+    assert workers[1].complete_report_ai_export(digest, "success", 6.0, 3600)
+    assert not workers[0].complete_report_ai_export(digest, "success", 7.0, 3600)
+    snapshot = workers[0].snapshot()
+    assert snapshot["report_ai_exports_total"]["poll|success"] == 1
+    assert snapshot["report_ai_export_duration_seconds"]["success"]["sum_seconds"] == 5.0
+    other = "a" * 64
+    workers[0].remember_report_ai_export(other, 10.0, 3600)
+    assert workers[1].cleanup_report_ai_exports(3611.0, 3600) == 1
+    assert workers[0].cleanup_report_ai_exports(3611.0, 3600) == 0
+    assert workers[0].snapshot()["report_ai_exports_total"]["start|abandoned_wait"] == 1
+
+
+def test_export_overflow_finalizes_oldest():
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    for number in range(3):
+        backend.remember_report_ai_export(f"{number:064x}", float(number), 3600)
+    backend.cleanup_report_ai_exports(3.0, 3600, max_entries=2)
+    assert backend.snapshot()["report_ai_exports_total"]["start|abandoned_wait"] == 1
+
+
+def test_export_completion_from_another_slot_is_one_outcome(monkeypatch):
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    report_ai._remember_report_ai_export(385010)
+    report_ai._reset_report_ai_queue_observations()
+    report_ai._complete_report_ai_export(385010, outcome="success")
+    report_ai._complete_report_ai_export(385010, outcome="success")
+    assert backend.snapshot()["report_ai_exports_total"]["poll|success"] == 1
+    assert backend.snapshot()["report_ai_export_duration_seconds"]["success"]["count"] == 1
+
+
+def test_queue_age_survives_slot_switch_without_upstream_timestamp():
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    digest = "1" * 64
+    assert backend.observe_report_ai_queue(digest, True, 1.0, 3600) == 0
+    assert backend.observe_report_ai_queue(digest, True, 51.0, 3600) == 50
+    backend.observe_report_ai_queue(digest, False, 52.0, 3600)
+    assert backend.observe_report_ai_queue(digest, True, 53.0, 3600) == 0
+
+
+def test_export_poll_before_async_start_preserves_poll_state():
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    digest = "2" * 64
+    backend.mark_report_ai_export_poll(digest, 2.0, 3600)
+    backend.remember_report_ai_export(digest, 3.0, 3600)
+    backend.cleanup_report_ai_exports(3604.0, 3600)
+    assert backend.snapshot()["report_ai_exports_total"]["poll|abandoned_wait"] == 1
+
+
+@pytest.mark.asyncio
+async def test_queue_diagnostics_read_shared_age_after_slot_switch(monkeypatch):
+    backend = RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    monkeypatch.setenv("WEB_SESSION_SECRET", "test-only-report-ai-secret")
+    monkeypatch.setattr(shared_metric_counters, "get_backend", lambda: backend)
+    async def no_upstream_age(_job):
+        return None
+    monkeypatch.setattr(report_ai, "_upstream_job_age_seconds", no_upstream_age)
+    job = {"id": 385011, "status": "queued"}
+    await report_ai._annotate_report_ai_queue_diagnostics({"data": {"job": job}}, now=1.0)
+    report_ai._reset_report_ai_queue_observations()
+    payload = await report_ai._annotate_report_ai_queue_diagnostics(
+        {"data": {"job": job}}, now=51.0)
+    assert payload["data"]["job"]["mcp_queue_diagnostics"]["observed_queued_age_seconds"] == 50

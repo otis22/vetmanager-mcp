@@ -303,8 +303,8 @@
       "id": 21,
       "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {"expr": "avg(vetmanager_account_last_request_age_hours)", "legendFormat": "avg", "refId": "A"},
-        {"expr": "quantile(0.95, vetmanager_account_last_request_age_hours)", "legendFormat": "p95", "refId": "B"}
+        {"expr": "vetmanager_account_last_request_age_avg_hours", "legendFormat": "avg", "refId": "A"},
+        {"expr": "vetmanager_account_last_request_age_p95_hours", "legendFormat": "p95", "refId": "B"}
       ],
       "title": "Account last request age",
       "type": "timeseries"

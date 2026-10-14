@@ -145,8 +145,8 @@ def test_stage190_grafana_provisioning_and_dashboard_queries_are_safe() -> None:
     activation_telemetry_exprs = {
         target["expr"] for target in activation_telemetry_panel["targets"]
     }
-    assert "avg(vetmanager_account_last_request_age_hours)" in activation_telemetry_exprs
-    assert "quantile(0.95, vetmanager_account_last_request_age_hours)" in activation_telemetry_exprs
+    assert "vetmanager_account_last_request_age_avg_hours" in activation_telemetry_exprs
+    assert "vetmanager_account_last_request_age_p95_hours" in activation_telemetry_exprs
     assert not any("or vector(0)" in expr for expr in activation_telemetry_exprs)
     total_calls = next(panel for panel in dashboard["panels"] if panel["title"] == "Total tool calls in range")
     by_tool = next(panel for panel in dashboard["panels"] if panel["title"] == "Tool calls by tool")
