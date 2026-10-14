@@ -34,9 +34,9 @@
   385.2b с изолированным PostgreSQL live; 385.2c — общий Redis core,
   counters, latency и cache metrics с живыми тремя slot, но без полного
   каталога/Report AI dedup; a4 — подготовка release/rollback manifest без
-  cutover и испытания старого image. Остаток: a3 — полный interleaved
-  SSE/SIGTERM сценарий на каждом slot; a4 — первый cutover и rollback старого
-  image в изолированном контуре; c2–c4 — живые редкие серии, Redis outage,
+  cutover и испытания старого image. a3 завершён сверкой неизвестного исхода
+  записи на devtr6. Остаток: a4 — первый cutover и rollback старого image
+  в изолированном контуре; c2–c4 — живые редкие серии, Redis outage,
   полный HELP/TYPE и Prometheus target; d — общий activation scan/alerts;
   e — атомарные Report AI observations, dedup и expiry; f — claims, locks,
   rate limiter, PG cache/write barrier и export storage; g — ресурсный gate
