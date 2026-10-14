@@ -69,6 +69,11 @@
   staging/cutover/rollback этапа 385; см. AssumptionLog, 385.3. Выпуск не начат.)
   (385.3a: deploy-путь исправлен в ветке; ожидает повторного выпуска и сверки
   production после cutover. Статус stop сохраняется до безопасного выпуска.)
+  (Повтор 14.10.2026: SHA `69383ac` в main, Tests зелёный, но Deploy Prod
+  завершился ошибкой public smoke и автоматический rollback не поднял старый
+  image из-за отсутствующего mount `.env`. Старый pinned image восстановлен
+  штатным Compose с временным mount `.env`; production снова healthy.
+  Требуется отдельное исправление deploy-пути и новый выпуск; см. AssumptionLog.)
 
 ## Этап 384. Ретюнинг прода под 4 CPU / 8 ГБ: лимиты контейнеров, Postgres, uvloop — `done`
 
