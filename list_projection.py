@@ -48,6 +48,8 @@ LIST_ENTITY = {
     "get_clients": "client",
 }
 
+SAFE_DATA_METADATA = frozenset({"totalCount", "truncated", "has_more", "limit", "offset"})
+
 
 def selected_fields(tool_name: str, fields: list[str] | None, compact: bool) -> tuple[str, ...] | None:
     """Validate before I/O; None means the legacy full response."""
@@ -82,6 +84,11 @@ def project_list_result(result: object, tool_name: str, selection: tuple[str, ..
     elif isinstance(data, dict) and isinstance(data.get(entity), list):
         rows = data[entity]
         container = data
+        if set(container) - {entity} - SAFE_DATA_METADATA:
+            raise reportable_error("Projection found unknown list metadata.")
+        if any(isinstance(container[key], (dict, list, tuple))
+               for key in set(container) - {entity}):
+            raise reportable_error("Projection expected scalar list metadata.")
     else:
         raise reportable_error("Projection expected a supported list response shape.")
 

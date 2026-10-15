@@ -140,6 +140,18 @@ async def test_projection_rejects_unexpected_success_envelope(monkeypatch, bad_d
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("extra", [
+    {"contacts": [{"cell_phone": "+7 999 123 45 67"}]},
+    {"unexpected_scalar": "hidden"},
+])
+async def test_projection_rejects_unknown_data_siblings(monkeypatch, extra):
+    mocked = _patch_list(monkeypatch, "get_clients")
+    mocked.return_value["data"].update(extra)
+    with pytest.raises(Exception, match="Projection"):
+        await _call("get_clients", {"compact": True})
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("args", [
     {"fields": []}, {"fields": ["client"]}, {"fields": ["owner_id"]},
     {"fields": ["id"], "compact": True},
