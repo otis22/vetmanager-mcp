@@ -117,6 +117,37 @@ async def test_dated_cards_latency_includes_relative_date_resolution(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_dated_cards_invalid_range_records_error_before_upstream(monkeypatch):
+    async def get(_self, _path, **_kwargs):
+        raise AssertionError("upstream must not be called")
+
+    monkeypatch.setattr(VetmanagerClient, "get", get)
+    headers, runtime = _runtime()
+    with headers, runtime, pytest.raises(ToolError):
+        await mcp.call_tool("get_medical_cards_by_date", {
+            "date_from": "2026-07-03", "date_to": "2026-07-01",
+        })
+    assert snapshot_service_metrics()["tool_calls_total"][f"{LABEL}|error"] == 1
+
+
+@pytest.mark.asyncio
+async def test_single_day_timeout_requires_complete_restart(monkeypatch):
+    async def get(_self, _path, **_kwargs):
+        raise VetmanagerTimeoutError("Vetmanager request time budget was exhausted.")
+
+    monkeypatch.setattr(VetmanagerClient, "get", get)
+    headers, runtime = _runtime()
+    with headers, runtime, pytest.raises(ToolError) as failure:
+        await mcp.call_tool("get_medical_cards_by_date", {
+            "date": "2026-07-01", "offset": 20,
+        })
+    message = str(failure.value)
+    assert "For any retry" in message
+    assert "offset=0" in message and "all pages" in message
+    assert "incomplete coverage" in message
+
+
+@pytest.mark.asyncio
 async def test_published_description_preserves_full_scope_on_timeout():
     tools = {tool.name: tool.to_mcp_tool().description for tool in await mcp.list_tools()}
     description = tools["get_medical_cards_by_date"]

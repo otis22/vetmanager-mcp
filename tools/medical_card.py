@@ -220,43 +220,51 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset (0-10000).
             sort: Optional Vetmanager sort list. Defaults to date_create ASC, id ASC.
         """
-        validate_sort_properties(sort, FILTER_FIELDS_BY_ENTITY["medicalCards"])
-        if date and (date_from or date_to):
-            raise ToolInputError("use either `date` or `date_from`/`date_to`, not both")
-        if bool(date_from) != bool(date_to):
-            raise ToolInputError("date_from and date_to must be provided together")
-        if not date and not (date_from and date_to):
-            raise ToolInputError("date or date_from/date_to is required")
-
         started = time.monotonic()
-        clinic_today = await clinic_local_today(
-            clinic_id,
-            relative=is_relative_date_param(date or date_from)
-            or is_relative_date_param(date_to),
-        )
-        resolved_from = parse_date_param(date or date_from, today=clinic_today)
-        resolved_to = parse_date_param(date or date_to, today=clinic_today)
-        if resolved_from > resolved_to:
-            raise ToolInputError("date_from must be on or before date_to")
+        try:
+            validate_sort_properties(sort, FILTER_FIELDS_BY_ENTITY["medicalCards"])
+            if date and (date_from or date_to):
+                raise ToolInputError("use either `date` or `date_from`/`date_to`, not both")
+            if bool(date_from) != bool(date_to):
+                raise ToolInputError("date_from and date_to must be provided together")
+            if not date and not (date_from and date_to):
+                raise ToolInputError("date or date_from/date_to is required")
 
-        filters = [
-            _filter_gte("date_create", _day_start(resolved_from)),
-            _filter_lt("date_create", _next_day_start(resolved_to)),
-        ]
-        clinic_filter_applied = clinic_id is not None and clinic_id > 0
-        if clinic_filter_applied:
-            filters.append(_filter_eq("clinic_id", str(clinic_id)))
-        if doctor_id is not None and doctor_id > 0:
-            filters.append(_filter_eq("doctor_id", str(doctor_id)))
-        if creator_id is not None and creator_id > 0:
-            filters.append(_filter_eq("creator_id", str(creator_id)))
+            clinic_today = await clinic_local_today(
+                clinic_id,
+                relative=is_relative_date_param(date or date_from)
+                or is_relative_date_param(date_to),
+            )
+            resolved_from = parse_date_param(date or date_from, today=clinic_today)
+            resolved_to = parse_date_param(date or date_to, today=clinic_today)
+            if resolved_from > resolved_to:
+                raise ToolInputError("date_from must be on or before date_to")
 
-        params = build_list_query_params(
-            limit=limit,
-            offset=offset,
-            sort=sort or _DEFAULT_DATE_SORT,
-            filters=filters,
-        )
+            filters = [
+                _filter_gte("date_create", _day_start(resolved_from)),
+                _filter_lt("date_create", _next_day_start(resolved_to)),
+            ]
+            clinic_filter_applied = clinic_id is not None and clinic_id > 0
+            if clinic_filter_applied:
+                filters.append(_filter_eq("clinic_id", str(clinic_id)))
+            if doctor_id is not None and doctor_id > 0:
+                filters.append(_filter_eq("doctor_id", str(doctor_id)))
+            if creator_id is not None and creator_id > 0:
+                filters.append(_filter_eq("creator_id", str(creator_id)))
+
+            params = build_list_query_params(
+                limit=limit,
+                offset=offset,
+                sort=sort or _DEFAULT_DATE_SORT,
+                filters=filters,
+            )
+        except BaseException:
+            record_tool_call(
+                endpoint=f"{_MC_ENDPOINT}#list", method="GET", outcome="error",
+                duration_seconds=time.monotonic() - started,
+                tool_name="get_medical_cards_by_date",
+            )
+            raise
         outcome = "success"
         try:
             result = await VetmanagerClient().get(_MC_ENDPOINT, params=params)
@@ -289,8 +297,8 @@ def register(mcp: FastMCP) -> None:
             outcome = "timeout"
             raise VetmanagerTimeoutError(
                 "Vetmanager medical-card read timed out. Retry a smaller limit. "
-                "For a date range, retry each day, starting with offset=0 for "
-                "each day and reading all pages. Deduplicate previously "
+                "For any retry, start with offset=0 and read all pages. For a "
+                "date range, retry each day. Deduplicate previously "
                 "collected results by medical-card ID. If a day or page still "
                 "fails, report incomplete coverage. Only add doctor_id if the "
                 "original request was limited to the attending veterinarian, "

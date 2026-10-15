@@ -388,7 +388,7 @@ custom web routes, а не ответы FastMCP `/mcp`; доля `session-not-fo
   access_summary; красные сторожа. — `done`
 - 397.2 Реализация, живой вызов под разными токенами, выпуск. — `done`
 
-## Этап 398. Расследование read-timeout апстрима ВМ (Sentry PYTHON-1N) — `in_progress`
+## Этап 398. Расследование read-timeout апстрима ВМ (Sentry PYTHON-1N) — `done`
 
 Источник: Sentry PYTHON-1N (15.10.2026): 10 ReadTimeout за 3 дня → ToolError
 «Vetmanager request time budget was exhausted» на тяжёлых чтениях
@@ -399,7 +399,7 @@ custom web routes, а не ответы FastMCP `/mcp`; доля `session-not-fo
   или наш бюджет; варианты: per-tool бюджеты, дефолтное сужение выборок,
   пагинация, гайд агенту при таймауте (как сузить запрос), метрика исходов
   по инструментам. Решение по фактам, не по догадке. — `done`
-- 398.2 Реализация по результату 398.1, выпуск. — `in_progress`
+- 398.2 Реализация по результату 398.1, выпуск. — `done`
 
 ## Этап 399. Проекции полей, compact и маскирование контактов (F10/F11 + KI 80) — `todo`
 
