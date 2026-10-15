@@ -105,8 +105,8 @@ async def test_update_medical_card_changes_admission_type_without_resetting_fiel
 async def test_schemas_require_confirmed_ids_and_describe_catalogue_code():
     tools = {tool.name: tool.to_mcp_tool() for tool in await mcp.list_tools()}
     pet, card = tools["create_pet"], tools["create_medical_card"]
-    assert {"alias", "owner_id", "type_id", "breed_id"} <= set(pet.inputSchema["required"])
-    assert {"patient_id", "doctor_id", "date_create", "clinic_id"} <= set(card.inputSchema["required"])
+    assert {"alias", "client_id", "type_id", "breed_id"} <= set(pet.inputSchema["required"])
+    assert {"pet_id", "doctor_id", "date_create", "clinic_id"} <= set(card.inputSchema["required"])
     descriptions = f"{pet.description}\n{card.description}".lower()
     assert "0 if unknown" not in descriptions
     assert "0 = default" not in descriptions

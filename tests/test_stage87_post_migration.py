@@ -161,14 +161,14 @@ class TestStage87PromptSweep:
     not via substring-match on module source."""
 
     @pytest.mark.asyncio
-    async def test_book_appointment_uses_owner_id(self):
+    async def test_book_appointment_uses_client_id(self):
         body = await _render_prompt_body(
             "book_appointment",
             client_name="X", pet_name="Y", doctor_id=1, clinic_id=2,
             date="2026-01-01",
         )
-        assert "get_pets(owner_id=client_id" in body
-        assert "get_pets(client_id=client_id" not in body
+        assert "get_pets(client_id=client_id" in body
+        assert "get_pets(owner_id=client_id" not in body
 
     @pytest.mark.asyncio
     async def test_unconfirmed_appointments_uses_status_filter(self):

@@ -32,7 +32,8 @@ async def test_all_advertised_raw_clauses_name_fields_and_format():
             assert match, (name, clause)
             advertised = set(match.group(1).split(", "))
             expected = fields - RAW_FILTER_FIELD_EXCLUSIONS.get(name, frozenset()) if clause == "filter" else fields
-            assert expected == advertised, (name, clause, sorted(expected ^ advertised))
+            from identifier_aliases import canonical_name
+            assert {canonical_name(field) for field in expected} == advertised, (name, clause)
             if name == "get_invoice_documents" and clause == "filter":
                 assert "document_id" not in advertised
 

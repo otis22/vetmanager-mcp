@@ -80,7 +80,7 @@ async def test_profile_deduplicates_card_patient_without_losing_clinical_fields(
 
     card = payload["last_medical_cards"][0]
     assert "patient" not in card
-    assert card["patient_id"] == 740
+    assert card["pet_id"] == 740
     assert card["admission_id"] == 55
     assert card["weight"] == "3.9"
     assert card["temperature"] == "38.4"
@@ -178,7 +178,7 @@ async def test_find_pets_by_alias_uses_embedded_context_without_owner_n_plus_one
     assert payload["data"]["totalCount"] == 2
     assert payload["has_more"] is True
     assert payload["data"]["pets"] == [{
-        "id": 740, "alias": "Муся", "owner_id": 662, "type_id": 1,
+        "id": 740, "alias": "Муся", "client_id": 662, "type_id": 1,
         "breed_id": 1, "birthday": "2012-06-15", "status": "alive",
         "type": "Кошки", "breed": "Беспородная",
         "owner": {"name": "Иванова Анна Сергеевна", "phone": "+79990000000"},
@@ -235,7 +235,7 @@ async def test_find_pets_by_alias_uses_global_depersonalization_wrapper(monkeypa
         payload = (await mcp.call_tool("find_pets_by_alias", {"alias": "Муся"})).structured_content
 
     candidate = payload["data"]["pets"][0]
-    assert candidate["owner_id"] == 662
+    assert candidate["client_id"] == 662
     assert candidate["type"] == "Кошки"
     assert candidate["breed"] == "Беспородная"
     # Этап 308: у владельца, вложенного в питомца, своего `id` нет — адрес

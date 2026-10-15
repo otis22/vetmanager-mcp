@@ -62,7 +62,7 @@ async def test_get_pets_alias_requires_owner_id():
         with pytest.raises(Exception) as exc_info:
             await mcp.call_tool("get_pets", {"alias": "Барсик"})
     # FastMCP may wrap ValueError in ToolError; either way the message surfaces.
-    assert "owner_id" in str(exc_info.value)
+    assert "client_id" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

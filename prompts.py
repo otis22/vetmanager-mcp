@@ -177,7 +177,7 @@ def register_prompts(mcp: FastMCP) -> None:
             + f"Book an appointment for client '{client_name}', pet '{pet_name}', "
             + f"doctor ID {doctor_id}, clinic ID {clinic_id}, date {date}. "
             + "1. Call get_clients(name=client_name, limit=20). "
-            + "2. From the chosen client, call get_pets(owner_id=client_id, limit=100) and find the pet by alias/name. "
+            + "2. From the chosen client, call get_pets(client_id=client_id, limit=100) and find the pet by alias/name. "
             + "3. Call create_admission(pet_id=pet_id, client_id=client_id, doctor_id=doctor_id, clinic_id=clinic_id, date=date). "
             + "Confirm the created admission ID."
         )]
@@ -273,7 +273,7 @@ def register_prompts(mcp: FastMCP) -> None:
             _bearer_runtime_prefix()
             + f"Add a medical note for pet ID {pet_id} by doctor ID {doctor_id}. "
             + f"Description: '{note}'. Diagnosis: '{diagnosis}'. "
-            + "Call create_medical_card(patient_id=pet_id, doctor_id=doctor_id, "
+            + "Call create_medical_card(pet_id=pet_id, doctor_id=doctor_id, "
             + "date_create=today, description=note, diagnosis=diagnosis). "
             + "Confirm the created medical card ID."
         )]

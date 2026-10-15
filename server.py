@@ -24,6 +24,7 @@ from tool_scope_security import ToolVisibilityMiddleware
 from tool_error_tracking import ToolErrorTrackingMiddleware
 from prompt_metrics import PromptMetricsMiddleware
 from tool_descriptions import enhance_tool_descriptions, enhance_raw_clause_descriptions
+from identifier_aliases import IdentifierAliasMiddleware, public_text
 from placeholder_resolution_guidance import AGENT_RESOLUTION_GUIDANCE
 from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
@@ -328,6 +329,7 @@ mcp.add_middleware(ToolErrorTrackingMiddleware())
 # `on_list_tools`, so the call chain above is untouched.
 mcp.add_middleware(ToolVisibilityMiddleware())
 mcp.add_middleware(ExecutionAdmissionMiddleware())
+mcp.add_middleware(IdentifierAliasMiddleware())
 _prompt_metrics = PromptMetricsMiddleware()
 mcp.add_middleware(_prompt_metrics)
 
@@ -343,6 +345,12 @@ _prompt_metrics.allowed_names = frozenset(
 register_web_routes(mcp)
 enhance_tool_descriptions(mcp)
 enhance_raw_clause_descriptions(mcp)
+for component in mcp._local_provider._components.values():
+    if hasattr(component, "parameters") and hasattr(component, "description"):
+        component.description = public_text(component.description or "")
+        for field in component.parameters.get("properties", {}).values():
+            if isinstance(field, dict) and "description" in field:
+                field["description"] = public_text(field["description"])
 apply_tool_oauth_security_metadata(mcp)
 
 if __name__ == "__main__":

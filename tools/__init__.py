@@ -2,6 +2,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 import inspect
 from functools import wraps
+from identifier_aliases import canonical_tool
 
 import depersonalization
 from depersonalization import contains_addressed_placeholder
@@ -62,6 +63,11 @@ REPORT_TOOLS = frozenset({
     "save_report_ai_job_as_report",
     "start_report_export",
 })
+# Rejection also returns a job with generated preview column names, but its
+# existing depersonalization policy is separate from report-row sanitization.
+REPORT_COLUMN_TOOLS = REPORT_TOOLS | {
+    "reject_report_ai_job_candidate", "get_report_export_download",
+}
 from vetmanager_client import resolve_runtime_credentials
 
 
@@ -213,13 +219,13 @@ class _ToolRegistrationProxy:
             def _decorator(actual_func):
                 tool_name = kwargs.get("name") or actual_func.__name__
                 return self._mcp.tool(
-                    _wrap_tool_with_depersonalization(actual_func, tool_name=tool_name),
+                    canonical_tool(_wrap_tool_with_depersonalization(actual_func, tool_name=tool_name), tool_name=tool_name, report_mode=tool_name in REPORT_COLUMN_TOOLS),
                     **kwargs,
                 )
 
             return _decorator
         tool_name = kwargs.get("name") or func.__name__
-        return self._mcp.tool(_wrap_tool_with_depersonalization(func, tool_name=tool_name), **kwargs)
+        return self._mcp.tool(canonical_tool(_wrap_tool_with_depersonalization(func, tool_name=tool_name), tool_name=tool_name, report_mode=tool_name in REPORT_COLUMN_TOOLS), **kwargs)
 
     def __getattr__(self, name: str):
         return getattr(self._mcp, name)

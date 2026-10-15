@@ -89,8 +89,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
             owner_id: Filter pets by owner's client ID (0 = no filter).
-                Note: Vetmanager pet table uses `owner_id` as the foreign key
-                to client.id (not client_id).
+                MCP maps this to the pet owner's foreign key in Vetmanager.
             alias: Filter pets by nickname (partial LIKE match). MUST be
                 combined with owner_id — standalone alias search is rejected
                 to prevent wrong-patient results.
@@ -213,9 +212,8 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             alias: Pet's name/alias.
-            owner_id: ID of the owning client. The Vetmanager Pet table uses
-                `owner_id` as the FK to client.id (not `client_id`); this name
-                is consistent with get_pets/update_pet.
+            owner_id: ID of the owning client. MCP maps this to the pet owner's
+                foreign key in Vetmanager.
             type_id: Animal type (species) ID.
             breed_id: Breed ID for that animal type.
             birthday: Date of birth in YYYY-MM-DD format (optional).

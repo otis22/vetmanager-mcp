@@ -158,7 +158,7 @@ class TestToolsListSchema:
     def test_daily_schedule_documents_resolvable_doctor_placeholder(self, all_tool_exports):
         tool = next(t for t in all_tool_exports if t["name"] == "get_daily_schedule")
         assert "doctor_name" in tool["description"]
-        assert "[user:<user_id>:first_name]" in tool["description"]
+        assert "[user:<doctor_id>:first_name]" in tool["description"]
 
     def test_get_medical_cards_by_date_exports_daily_control_contract(self, all_tool_exports):
         tool = next(t for t in all_tool_exports if t["name"] == "get_medical_cards_by_date")
@@ -265,7 +265,7 @@ class TestToolsListSchema:
         tools = _tools_by_name(all_tool_exports)
         expected_properties = {
             "create_client": {"first_name", "last_name", "phone", "email"},
-            "create_pet": {"alias", "owner_id", "type_id", "breed_id", "birthday", "note"},
+            "create_pet": {"alias", "client_id", "type_id", "breed_id", "birthday", "note"},
             "create_admission": {"pet_id", "client_id", "doctor_id", "clinic_id", "date", "reason"},
             "update_admission": {
                 "admission_id",
@@ -279,7 +279,7 @@ class TestToolsListSchema:
                 "admission_type",
             },
             "create_medical_card": {
-                "patient_id",
+                "pet_id",
                 "doctor_id",
                 "date_create",
                 "description",
@@ -298,10 +298,10 @@ class TestToolsListSchema:
         }
         expected_fragments = {
             "create_client": ("checking whether the owner already exists", "Confirm the exact owner"),
-            "create_pet": ("resolving owner_id", "confirming the exact owner"),
+            "create_pet": ("resolving client_id", "confirming the exact owner"),
             "create_admission": ("resolving pet_id, client_id, doctor_id, and clinic_id", "Confirm the exact pet"),
             "update_admission": ("confirming the exact admission_id", "leave optional fields empty or 0"),
-            "create_medical_card": ("resolving patient_id", "Confirm the exact pet, doctor"),
+            "create_medical_card": ("resolving pet_id", "Confirm the exact pet, doctor"),
         }
         for tool_name, properties in expected_properties.items():
             assert set(tools[tool_name]["schema"].get("properties", {})) == properties

@@ -97,7 +97,7 @@ async def test_get_inactive_pets_returns_pets_at_last_visit_via_invoice():
     pet = data["inactive_pets"][0]
     assert pet["id"] == 10
     assert pet["alias"] == "Rex"
-    assert pet["owner_id"] == 1
+    assert pet["client_id"] == 1
     assert pet["visit_source"] == "invoice"
     assert pet["last_visit_date"] == "2024-12-15 14:30:00"
 

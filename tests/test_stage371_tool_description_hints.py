@@ -5,6 +5,7 @@ import re
 import pytest
 
 from filters import FILTER_FIELDS_BY_ENTITY
+from identifier_aliases import canonical_name
 from server import mcp
 from tool_descriptions import RAW_CLAUSE_ENTITIES, RAW_FILTER_FIELD_EXCLUSIONS
 
@@ -34,7 +35,7 @@ def _assert_raw_hint(text, clause):
 def _assert_allowed(description, expected):
     match = re.search(r"Allowed properties: ([^.]+)\.", description)
     assert match
-    assert set(match.group(1).split(", ")) == expected
+    assert set(match.group(1).split(", ")) == {canonical_name(field) for field in expected}
 
 
 def _assert_combination(text):

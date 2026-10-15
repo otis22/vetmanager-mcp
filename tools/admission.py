@@ -85,9 +85,8 @@ def register(mcp: FastMCP) -> None:
                 accepted formats as `date`.
             date_to: End of admission_date range (inclusive). Same
                 accepted formats as `date`.
-            doctor_id: Filter by doctor ID (internally mapped to `user_id`
-                on the admission entity).
-            pet_id: Filter by pet ID (internally mapped to `patient_id`).
+            doctor_id: Filter by the responsible doctor's ID.
+            pet_id: Filter by the pet's ID.
             client_id: Filter by owner/client ID.
             status: Filter by admission status. Known enum values:
                 save, directed, accepted, deleted, delayed, not_approved,

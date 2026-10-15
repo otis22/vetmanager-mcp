@@ -56,12 +56,14 @@ def test_helper_has_current_observation_and_export_route():
     assert "download_url" in helper
 
 
-def test_create_medical_card_docstring_does_not_promise_pet_id_alias():
+def test_create_medical_card_uses_canonical_pet_id_at_mcp_boundary():
     tree = ast.parse((ROOT / "tools" / "medical_card.py").read_text(encoding="utf-8"))
     create = next(
         node for node in ast.walk(tree)
         if isinstance(node, ast.AsyncFunctionDef) and node.name == "create_medical_card"
     )
     assert "patient_id" in [arg.arg for arg in create.args.args]
-    assert "pet_id" not in [arg.arg for arg in create.args.args]
-    assert "Also accepted as pet_id" not in (ast.get_docstring(create) or "")
+    from server import mcp
+    exposed = next(t.to_mcp_tool() for t in __import__("asyncio").run(mcp.list_tools()) if t.name == "create_medical_card")
+    assert "pet_id" in exposed.inputSchema["properties"]
+    assert "patient_id" not in exposed.description
