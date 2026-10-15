@@ -2192,7 +2192,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def start_report_export(report_id: int, filter_json: str | None = None) -> dict:
-        """Start Vetmanager Report Constructor CSV/XLSX export for a known report ID.
+        """Start Vetmanager Report Constructor CSV export for a known report ID.
 
         Args:
             report_id: Existing Report Constructor report ID with REST export enabled.
@@ -2335,7 +2335,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_report_ai_job_export(job_id: int, filter_json: str | None = None) -> dict:
-        """Start CSV/XLSX export for a saved or existing-matched Report AI job.
+        """Start CSV export for a saved or existing-matched Report AI job.
 
         Args:
             job_id: Report AI job ID. The job must be saved or

@@ -49,6 +49,7 @@ def test_stage387_live_texts(live_server_url, prepared_web_db, upstream_mock_rou
         assert "get_medical_cards_by_client_id" in tools["get_medical_cards_by_date"]
         assert "paid_by_executed_invoices" in tools["get_debtors"]
         assert "get_report_export_download" in tools["get_report_ai_job_data"]
+        assert "XLSX" not in tools["get_report_ai_job_data"]
         helper_response = client.post("/mcp", json={
             "jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
                 "name": "get_report_ai_prompt_helper", "arguments": {},

@@ -39,6 +39,8 @@ async def test_public_tool_descriptions_route_to_working_tools():
     assert "start_report_export" in data
     assert "get_report_export_download" in data
     assert "download_url" in data
+    for name in ("get_report_ai_job_data", "start_report_export", "get_report_ai_job_export"):
+        assert "CSV/XLSX" not in tools[name]
 
 
 def test_helper_has_current_observation_and_export_route():

@@ -1072,7 +1072,7 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "with limited=false is not evidence of truncation. If limited=true, narrow "
         "the request or use a supported export for bulk review when available. "
         "Responses may include csv_export_url, a relative upstream path rather "
-        "than a directly usable download link. For a supported CSV/XLSX export, "
+        "than a directly usable download link. For a supported CSV export, "
         "use get_report_ai_job_export for a saved or matched job, or "
         "start_report_export with a known report_id; then call "
         "get_report_export_download with the returned report_file_id to get an "
@@ -1085,9 +1085,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "конструктор отчётов, аналитика, report ai."
     ),
     "start_report_export": (
-        "Start a Vetmanager Report Constructor CSV/XLSX export for a known report_id. "
-        "This starts the supported CSV/XLSX export path. Use it "
-        "when the user provided a known report_id, explicitly asks for CSV/XLSX, or "
+        "Start a Vetmanager Report Constructor CSV export for a known report_id. "
+        "This starts the supported CSV export path. Use it "
+        "when the user provided a known report_id, explicitly asks for CSV, or "
         "get_report_ai_job_data returned limited=true and a "
         "report_id is available. "
         "For Report AI jobs, prefer get_report_ai_job_export when you have a job_id "
@@ -1100,7 +1100,7 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "wait that delay before one new attempt. Legacy text-only guards use "
         "30 minutes. Do not retry automatically, immediately, or in parallel. "
         "Do not log or paste export file "
-        "locators outside the tool response. Domain synonyms: отчёт, отчет, CSV отчёт, XLSX отчёт, "
+        "locators outside the tool response. Domain synonyms: отчёт, отчет, CSV отчёт, "
         "конструктор отчётов, аналитика."
     ),
     "get_report_export_download": (
@@ -1119,16 +1119,16 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "выгрузка отчёта, скачать отчёт, конструктор отчётов."
     ),
     "get_report_ai_job_export": (
-        "Start CSV/XLSX export for a Report AI job only when it is saved or "
+        "Start CSV export for a Report AI job only when it is saved or "
         "existing_report_matched and includes job.report_id. This is the supported "
-        "bulk export path for explicit CSV/XLSX requests or when "
+        "bulk export path for explicit CSV requests or when "
         "get_report_ai_job_data returns limited=true; "
         "it is not the default way to read small Report AI row sets. Check "
         "get_report_ai_job first to verify saved/existing_report_matched status; "
         "this tool delegates export start to start_report_export and returns "
         "report_file_id for get_report_export_download. This does not auto-save "
         "ready_to_save jobs. Domain synonyms: ИИ отчёт, AI "
-        "report, CSV отчёт, XLSX отчёт, конструктор отчётов."
+        "report, CSV отчёт, конструктор отчётов."
     ),
     "save_report_ai_job_as_report": (
         "Explicit write action: persist a ready_to_save Report AI job as a visible "
