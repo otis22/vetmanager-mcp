@@ -29,6 +29,7 @@ def test_service_phrases_remain_whole(value):
     ("ИВАНОВ ПЁТР СЕРГЕЕВИЧ", REDACTED_NAME),
     ("ООО Иванов Пётр", "ООО " + REDACTED_NAME),
     ("Без ФИО, подписал Иванов И. И.", "Без ФИО, подписал " + REDACTED_NAME),
+    ("Без ФИО Иванов Пётр Сергеевич", "Без ФИО " + REDACTED_NAME),
 ])
 def test_real_names_still_redacted_as_whole_words(value, expected):
     assert sanitize_report_value(value) == expected

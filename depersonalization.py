@@ -186,7 +186,7 @@ _NAME_WORD = rf"(?:[А-ЯЁA-Z]'{_NAME_PART}|{_NAME_PART}(?:['\-]{_NAME_TAIL})*)
 _NAME_LEFT_EDGE = r"(?<![\w'\-])"
 _NAME_RIGHT_EDGE = r"(?![\w'\-])"
 _FULL_NAME_RE = re.compile(
-    rf"(?u){_NAME_LEFT_EDGE}{_NAME_WORD}\s+{_NAME_WORD}\s+{_NAME_WORD}{_NAME_RIGHT_EDGE}"
+    rf"(?u)(?=({_NAME_LEFT_EDGE}{_NAME_WORD}\s+{_NAME_WORD}\s+{_NAME_WORD}{_NAME_RIGHT_EDGE}))"
 )
 _INITIALS_RE = re.compile(
     rf"(?u){_NAME_LEFT_EDGE}{_NAME_WORD}\s+[A-ZА-ЯЁ]\.?\s?[A-ZА-ЯЁ]\.?{_NAME_RIGHT_EDGE}"
@@ -282,12 +282,21 @@ def _blocks_pair(word: str, *, is_second: bool) -> bool:
     return is_second and folded in _TAIL_WORDS
 
 
-def _redact_full_name(match: re.Match[str]) -> str:
-    # A legal form or instruction is not part of a person's name. Leave the
-    # text intact here; the pair scanner can still catch a real name after it.
-    if any(_fold(word) in _MARKER_WORDS for word in match.group(0).split()):
-        return match.group(0)
-    return REDACTED_NAME
+def _redact_full_names(text: str) -> str:
+    # Lookahead lets a valid triple start immediately after a skipped marker
+    # triple: "Без ФИО Иванов Пётр Сергеевич" must still hide all of the name.
+    parts: list[str] = []
+    position = 0
+    for match in _FULL_NAME_RE.finditer(text):
+        start, end = match.span(1)
+        if start < position:
+            continue
+        if any(_fold(word) in _MARKER_WORDS for word in match.group(1).split()):
+            continue
+        parts.extend((text[position:start], REDACTED_NAME))
+        position = end
+    parts.append(text[position:])
+    return "".join(parts)
 
 
 def _redact_initials(match: re.Match[str]) -> str:
@@ -561,7 +570,7 @@ def sanitize_report_value(text: str) -> str:
     # leftover street marker then means a street name, not an address.
     cleaned = _ADDRESS_RE.sub(REDACTED_ADDRESS, cleaned)
     if not _STREET_MARKER_RE.search(cleaned):
-        cleaned = _FULL_NAME_RE.sub(_redact_full_name, cleaned)
+        cleaned = _redact_full_names(cleaned)
         cleaned = _PATRONYMIC_RE.sub(REDACTED_NAME, cleaned)
         cleaned = _INITIALS_RE.sub(_redact_initials, cleaned)
 
