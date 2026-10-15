@@ -72,6 +72,7 @@ REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS = CLINIC_TIMEZONE_TTL_SECONDS
 REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES = CLINIC_TIMEZONE_MAX_ENTRIES
 REPORT_AI_GOODS_GOOD_ID_WORKAROUND_CODE = "report_ai_goods_good_id_preview_failed"
 REPORT_AI_PROVIDER_UNREACHABLE_WORKAROUND_CODE = "report_ai_provider_unreachable"
+REPORT_AI_COMBINATION_SQL_WORKAROUND_CODE = "report_ai_combination_sql_preview_failed"
 _REPORT_AI_TITLE_TEMPLATE = "<цель и период отчёта>"
 _GENERIC_REPORT_TITLES = {
     "report",
@@ -931,6 +932,33 @@ def _report_ai_provider_unreachable_workaround() -> dict:
     }
 
 
+def _report_ai_combination_sql_workaround() -> dict:
+    return {
+        "code": REPORT_AI_COMBINATION_SQL_WORKAROUND_CODE,
+        "summary": "Vetmanager has a known SQL defect when previewing combination composition reports.",
+        "steps": [
+            "Do not retry the same Report AI request: the known defect is not transient.",
+            "For one combination, use get_good_combination for positions and calculate_good_combination_price for its price.",
+            "For a broader composition report, explain that the report is unavailable until Vetmanager fixes the defect.",
+        ],
+        "do_not_do": ["Do not quote raw SQL or infer report rows from the failed preview."],
+        "safe_to_retry": False,
+    }
+
+
+def _looks_like_combination_sql_preview_failure(job: dict) -> bool:
+    if job.get("status") != "failed" or job.get("error_code") != "PREVIEW_FAILED":
+        return False
+    message = job.get("error_message_safe")
+    if not isinstance(message, str):
+        return False
+    return bool(
+        re.search(r"(?<![\w])good_tag(?![\w])", message, re.IGNORECASE)
+        and re.search(r"sqlstate", message, re.IGNORECASE)
+        and re.search(r"syntax error|sql syntax|синтаксическ\w* ошибк", message, re.IGNORECASE)
+    )
+
+
 def _looks_like_report_ai_provider_failure(job: dict) -> bool:
     if job.get("status") != "failed" or job.get("error_code") != "PREVIEW_FAILED":
         return False
@@ -983,6 +1011,8 @@ def _annotate_report_ai_workarounds(payload: dict) -> dict:
             "steps": ["Wait at least five minutes, then try once with the same intent.",
                       "If it fails again, use direct tools or tell the person."],
         })
+    elif _looks_like_combination_sql_preview_failure(job):
+        job.setdefault("mcp_workaround", _report_ai_combination_sql_workaround())
     elif _looks_like_report_ai_provider_failure(job):
         job.setdefault("mcp_workaround", _report_ai_provider_unreachable_workaround())
     elif _looks_like_goods_good_id_preview_failure(job):
@@ -1326,6 +1356,21 @@ def _validate_report_title(title: str) -> str:
     return value
 
 
+def _classify_report_ai_data_failure(exc: VetmanagerError) -> None:
+    if exc.status_code != 500 or exc.error_code != "INTERNAL_ERROR":
+        return
+    # The original safe render error remains the KI 60 matching/fingerprint
+    # input; only the text shown to the MCP caller gains an actionable hint.
+    exc.feedback_safe_excerpt = getattr(exc, "feedback_safe_excerpt", None) or str(exc)
+    exc.args = (
+        "Report AI data read failed (INTERNAL_ERROR, HTTP 500). "
+        "mcp_workaround: safe_to_retry=true; the successful save is not undone "
+        "and the saved report data is not known to be lost. "
+        "Read the same job with get_report_ai_job and try get_report_ai_job_data "
+        "again later, or inspect its preview; do not repeat save automatically.",
+    )
+
+
 def _tool_error_from_vm(exc: VetmanagerError, *, create_not_sent: bool = False) -> ToolError:
     """Keep machine codes, but never pass arbitrary upstream messages or SQL."""
     if isinstance(exc, AuthError) and exc.error_code == SCOPE_DENIED_ERROR_CODE:
@@ -1666,6 +1711,7 @@ async def _call_vm(
     metric_endpoint: str,
     retry: bool = True,
     on_vm_error: Callable[[VetmanagerError], None] | None = None,
+    preserve_data_internal_error: bool = False,
 ) -> dict:
     client = VetmanagerClient()
     is_create = method == "POST" and path == "/rest/api/report-ai-job"
@@ -1730,6 +1776,10 @@ async def _call_vm(
                                  account_id=getattr(credentials, "account_id", None),
                                  job_id=int(job_match.group(1)) if job_match else None,
                                  correlation_id=(client.prepared_correlation_id if is_create else None))
+        if (preserve_data_internal_error and method == "GET"
+                and re.fullmatch(r"/rest/api/report-ai-job/[1-9][0-9]*/data", path)
+                and exc.status_code == 500 and exc.error_code == "INTERNAL_ERROR"):
+            raise
         raise _tool_error_from_vm(
             exc, create_not_sent=is_create and not client.last_outbound_correlation_id
         ) from None
@@ -2003,10 +2053,15 @@ def register(mcp: FastMCP) -> None:
                 means the response was truncated. Narrow the report or use
                 CSV export for large results.
         """
-        payload = await _call_vm(
-            "GET", f"/rest/api/report-ai-job/{job_id}/data", tool_name="get_report_ai_job_data",
-            metric_endpoint="/rest/api/report-ai-job/{id}/data",
-        )
+        try:
+            payload = await _call_vm(
+                "GET", f"/rest/api/report-ai-job/{job_id}/data", tool_name="get_report_ai_job_data",
+                metric_endpoint="/rest/api/report-ai-job/{id}/data",
+                preserve_data_internal_error=True,
+            )
+        except VetmanagerError as exc:
+            _classify_report_ai_data_failure(exc)
+            raise
         return _annotate_report_ai_data_payload(payload)
 
     @mcp.tool
