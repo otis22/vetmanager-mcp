@@ -81,7 +81,7 @@ def test_stage389_two_live_pages(live_server_url):
         pet_probe = client.post("/mcp", json={
             "jsonrpc": "2.0", "id": 4, "method": "tools/call",
             "params": {"name": "get_pets", "arguments": {
-                "owner_id": first["inactive_pets"][0]["owner_id"], "limit": 10,
+                "client_id": first["inactive_pets"][0]["client_id"], "limit": 10,
                 "filter": [{"property": "id", "operator": ">",
                             "value": first["inactive_pets"][0]["id"]}],
             }},
@@ -100,6 +100,6 @@ def test_stage389_two_live_pages(live_server_url):
             "overlap_count": len(first_ids & second_ids),
             "has_more": [first["has_more"], second["has_more"]],
             "second_cursor_present": bool(second["next_cursor"]),
-            "same_owner": first["inactive_pets"][0]["owner_id"] == second["inactive_pets"][0]["owner_id"],
+            "same_owner": first["inactive_pets"][0]["client_id"] == second["inactive_pets"][0]["client_id"],
             "id_filter_code": pet_probe.status_code, "id_filter_count": len(probe_rows),
         }))
