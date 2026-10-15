@@ -1219,6 +1219,17 @@ BULK_DESCRIPTION_SUFFIXES: dict[str, str] = {
 }
 
 
+LIST_PROJECTION_SUFFIXES: dict[str, str] = {
+    name: (
+        "Use compact=true for a short local list response without nested records "
+        "or contacts. Use fields for canonical top-level scalar fields only. "
+        "Projection is local after privacy cleaning; it reduces context size, "
+        "not Vetmanager traffic. Without either parameter the full response is unchanged."
+    )
+    for name in ("get_admissions", "get_invoices", "get_clients")
+}
+
+
 SEARCH_GUIDANCE_SUFFIXES: dict[str, str] = {
     "get_users": (
         "If a name search is empty, follow mcp_hint and retry with a surname stem."
@@ -1260,6 +1271,7 @@ def compose_tool_description(tool_name: str) -> str | None:
         return None
     for extra in (
         BULK_DESCRIPTION_SUFFIXES.get(tool_name),
+        LIST_PROJECTION_SUFFIXES.get(tool_name),
         SEARCH_GUIDANCE_SUFFIXES.get(tool_name),
         INVOICE_MONEY_SUFFIXES.get(tool_name),
         PRIVACY_DESCRIPTION_SUFFIXES.get(tool_name),
@@ -1334,6 +1346,21 @@ def enhance_tool_descriptions(mcp: FastMCP) -> None:
             continue
 
         component.description = description
+        if component.name in LIST_PROJECTION_SUFFIXES:
+            from list_projection import LIST_FIELDS
+
+            properties = component.parameters.get("properties", {})
+            if "fields" in properties:
+                properties["fields"]["description"] = (
+                    "Local projection of canonical top-level scalar row fields. "
+                    "Cannot combine with compact. Allowed: "
+                    + ", ".join(sorted(LIST_FIELDS[component.name])) + "."
+                )
+            if "compact" in properties:
+                properties["compact"]["description"] = (
+                    "Return a fixed short list row without nested records or contacts. "
+                    "Default false preserves the full response."
+                )
         fn = getattr(component, "fn", None)
         if fn is not None:
             fn.__doc__ = description

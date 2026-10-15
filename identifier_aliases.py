@@ -9,6 +9,7 @@ from functools import wraps
 from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware
 from filters import FILTER_FIELDS_BY_ENTITY
+from list_projection import LIST_FIELDS, project_list_result, selected_fields
 from tool_descriptions import RAW_CLAUSE_ENTITIES
 
 
@@ -105,10 +106,20 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
     original_names = tuple(original.parameters)
     renamed = [parameter.replace(name=canonical_name(parameter.name))
                for parameter in original.parameters.values()]
+    if tool_name in LIST_FIELDS:
+        renamed.extend((
+            inspect.Parameter("fields", inspect.Parameter.KEYWORD_ONLY,
+                              default=None, annotation=list[str] | None),
+            inspect.Parameter("compact", inspect.Parameter.KEYWORD_ONLY,
+                              default=False, annotation=bool),
+        ))
     public_signature = original.replace(parameters=renamed)
 
     @wraps(func)
     async def _canonical(*args, **kwargs):
+        projection_options = None
+        if tool_name in LIST_FIELDS:
+            projection_options = (kwargs.pop("fields", None), kwargs.pop("compact", False))
         original_kwargs = {}
         for old in original_names:
             public = canonical_name(old)
@@ -117,9 +128,17 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
             elif old in kwargs:
                 original_kwargs[old] = kwargs.pop(old)
         original_kwargs.update(kwargs)
+        if projection_options is not None:
+            original_kwargs["_mcp_projection_options"] = projection_options
         try:
             result = await func(*args, **original_kwargs)
-            return normalize_result(result, report_mode=report_mode)
+            normalized = normalize_result(result, report_mode=report_mode)
+            if projection_options is not None:
+                return project_list_result(
+                    normalized, tool_name,
+                    selected_fields(tool_name, *projection_options),
+                )
+            return normalized
         except Exception as exc:
             if isinstance(exc, ToolError) or exc.__class__.__name__ in {
                 "FilterPropertyValidationError", "SortPropertyValidationError"
@@ -132,6 +151,8 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
         canonical_name(name) if name != "return" else name: annotation
         for name, annotation in getattr(func, "__annotations__", {}).items()
     }
+    if tool_name in LIST_FIELDS:
+        _canonical.__annotations__.update({"fields": list[str] | None, "compact": bool})
     _canonical.__doc__ = public_text(func.__doc__ or "")
     return _canonical
 
