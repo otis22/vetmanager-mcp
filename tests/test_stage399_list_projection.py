@@ -128,6 +128,18 @@ async def test_projection_rejects_upstream_shape_drift(monkeypatch, bad_row):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("bad_data", [
+    {"unexpected": [{"cell_phone": "+7 999 123 45 67"}]},
+    None,
+])
+async def test_projection_rejects_unexpected_success_envelope(monkeypatch, bad_data):
+    mocked = _patch_list(monkeypatch, "get_clients")
+    mocked.return_value["data"] = bad_data
+    with pytest.raises(Exception, match="Projection"):
+        await _call("get_clients", {"compact": True})
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("args", [
     {"fields": []}, {"fields": ["client"]}, {"fields": ["owner_id"]},
     {"fields": ["id"], "compact": True},

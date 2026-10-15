@@ -68,7 +68,11 @@ def selected_fields(tool_name: str, fields: list[str] | None, compact: bool) -> 
 
 def project_list_result(result: object, tool_name: str, selection: tuple[str, ...] | None):
     """Keep the envelope and row-level identifier-conflict warning intact."""
-    if selection is None or not isinstance(result, dict) or result.get("success") is False:
+    if selection is None:
+        return result
+    if not isinstance(result, dict):
+        raise reportable_error("Projection expected a list response envelope.")
+    if result.get("success") is False:
         return result
     data = result.get("data")
     entity = LIST_ENTITY[tool_name]
@@ -79,7 +83,7 @@ def project_list_result(result: object, tool_name: str, selection: tuple[str, ..
         rows = data[entity]
         container = data
     else:
-        return result
+        raise reportable_error("Projection expected a supported list response shape.")
 
     projected = []
     for row in rows:
