@@ -228,6 +228,7 @@ def register(mcp: FastMCP) -> None:
         if not date and not (date_from and date_to):
             raise ToolInputError("date or date_from/date_to is required")
 
+        started = time.monotonic()
         clinic_today = await clinic_local_today(
             clinic_id,
             relative=is_relative_date_param(date or date_from)
@@ -256,10 +257,11 @@ def register(mcp: FastMCP) -> None:
             sort=sort or _DEFAULT_DATE_SORT,
             filters=filters,
         )
-        started = time.monotonic()
         outcome = "success"
         try:
             result = await VetmanagerClient().get(_MC_ENDPOINT, params=params)
+            if result.get("success") is False:
+                outcome = "error"
             data = result.get("data", {})
             cards = _extract_medical_cards(data) if isinstance(data, dict) else []
             raw_total = data.get("totalCount") if isinstance(data, dict) else None

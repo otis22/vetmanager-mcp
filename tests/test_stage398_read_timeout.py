@@ -1,6 +1,7 @@
 """Stage 398: dated medical-card read timeout guidance and bounded metrics."""
 
 import asyncio
+from datetime import date
 from threading import Event
 
 import pytest
@@ -10,6 +11,7 @@ from exceptions import VetmanagerError, VetmanagerTimeoutError
 from server import mcp
 from service_metrics import snapshot_service_metrics
 import shared_metric_counters
+import tools.medical_card as medical_card_module
 from tests.runtime_factories import patch_runtime_credentials
 from vetmanager_client import VetmanagerClient
 
@@ -80,6 +82,38 @@ async def test_dated_cards_invalid_response_counts_as_error(monkeypatch):
     with headers, runtime, pytest.raises(ToolError):
         await mcp.call_tool("get_medical_cards_by_date", ARGS)
     assert snapshot_service_metrics()["tool_calls_total"][f"{LABEL}|error"] == 1
+
+
+@pytest.mark.asyncio
+async def test_dated_cards_false_success_payload_counts_as_error(monkeypatch):
+    async def get(_self, _path, **_kwargs):
+        return {"success": False, "data": {"medicalCards": [], "totalCount": 0}}
+
+    monkeypatch.setattr(VetmanagerClient, "get", get)
+    headers, runtime = _runtime()
+    with headers, runtime:
+        result = await mcp.call_tool("get_medical_cards_by_date", ARGS)
+    assert result.structured_content["success"] is False
+    assert snapshot_service_metrics()["tool_calls_total"][f"{LABEL}|error"] == 1
+
+
+@pytest.mark.asyncio
+async def test_dated_cards_latency_includes_relative_date_resolution(monkeypatch):
+    async def slow_clinic_today(_clinic_id, *, relative):
+        assert relative is True
+        await asyncio.sleep(0.1)
+        return date(2026, 7, 1)
+
+    async def get(_self, _path, **_kwargs):
+        return {"success": True, "data": {"medicalCards": [], "totalCount": 0}}
+
+    monkeypatch.setattr(medical_card_module, "clinic_local_today", slow_clinic_today)
+    monkeypatch.setattr(VetmanagerClient, "get", get)
+    headers, runtime = _runtime()
+    with headers, runtime:
+        await mcp.call_tool("get_medical_cards_by_date", {"date": "today", "clinic_id": 1})
+    latency = snapshot_service_metrics()["tool_call_latency_seconds"][LABEL]
+    assert latency["sum_seconds"] >= 0.09
 
 
 @pytest.mark.asyncio
