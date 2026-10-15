@@ -37,8 +37,17 @@ def _mock_data(clients, pet_ids_by_client, *, total=None):
             for cid, ids in pet_ids_by_client.items() for pid in ids]
     invoices = [{"id": 1000 + p["id"], "pet_id": p["id"],
                  "invoice_date": "2024-12-15 15:00:00"} for p in pets]
-    respx.get(f"{BASE}/rest/api/pet").mock(return_value=httpx.Response(
-        200, json={"data": {"pet": pets, "totalCount": len(pets)}}))
+    def pet_page(request):
+        query = parse_qs(request.url.query.decode())
+        clauses = json.loads(query["filter"][0])
+        min_id = next((int(c["value"]) for c in clauses
+                       if c["property"] == "id" and c["operator"] == ">"), 0)
+        selected = [pet for pet in pets if pet["id"] > min_id]
+        return httpx.Response(200, json={"data": {
+            "pet": selected, "totalCount": len(selected),
+        }})
+
+    respx.get(f"{BASE}/rest/api/pet").mock(side_effect=pet_page)
     respx.get(f"{BASE}/rest/api/invoice").mock(return_value=httpx.Response(
         200, json={"data": {"invoice": invoices, "totalCount": len(invoices)}}))
     respx.get(f"{BASE}/rest/api/MedicalCards").mock(return_value=httpx.Response(
@@ -71,6 +80,12 @@ async def test_pages_resume_inside_owner_and_cross_to_next_owner():
     assert all(k in first for k in ("limit_applied", "clients_scanned", "cutoff_window",
                                       "months_min", "months_max", "safety_cap_reached"))
     assert route.call_count <= 2, "resume must not scan the first client again"
+    pet_requests = [call.request for call in respx.calls
+                    if call.request.url.path == "/rest/api/pet"]
+    assert any(any(clause["property"] == "id" and clause["operator"] == ">"
+                   and clause["value"] == 11
+                   for clause in json.loads(parse_qs(request.url.query.decode())["filter"][0]))
+               for request in pet_requests), "resume must skip previously resolved pet IDs upstream"
     for path in ("/rest/api/pet", "/rest/api/invoice"):
         requests = [call.request for call in respx.calls if call.request.url.path == path]
         assert requests
@@ -145,8 +160,9 @@ async def test_distinct_days_stop_after_probe(monkeypatch):
     _mock_data(clients, {}, total=100)
     calls = []
 
-    async def resolve(_vc, *, clients, limit):
+    async def resolve(_vc, *, clients, limit, min_pet_id):
         calls.append(len(clients))
+        assert min_pet_id == 0
         cid = clients[0]["id"]
         return [(clients[0], [{"id": cid, "owner_id": cid, "visit_source": "invoice"}])]
 

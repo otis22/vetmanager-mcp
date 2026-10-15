@@ -362,7 +362,7 @@ def register(mcp: FastMCP) -> None:
         """
         today = date.today()
         client_offset = 0
-        pet_index = 0
+        after_pet_id = 0
         if cursor:
             try:
                 if len(cursor) > 512 or re.fullmatch(r"[A-Za-z0-9_-]+", cursor) is None:
@@ -371,16 +371,16 @@ def register(mcp: FastMCP) -> None:
                 if base64.urlsafe_b64encode(raw).decode().rstrip("=") != cursor:
                     raise ValueError("non-canonical cursor encoding")
                 state = json.loads(raw)
-                if not isinstance(state, dict) or set(state) != {"v", "min", "max", "day", "client", "pet"}:
+                if not isinstance(state, dict) or set(state) != {"v", "min", "max", "day", "client", "after_pet"}:
                     raise ValueError("invalid cursor structure")
-                if type(state["v"]) is not int or state["v"] != 1 or type(state["min"]) is not int or type(state["max"]) is not int:
+                if type(state["v"]) is not int or state["v"] != 2 or type(state["min"]) is not int or type(state["max"]) is not int:
                     raise ValueError("invalid cursor version or window")
                 if (state["min"], state["max"]) != (months_min, months_max):
                     raise ValueError("cursor window differs from months_min/months_max")
-                if type(state["client"]) is not int or type(state["pet"]) is not int:
+                if type(state["client"]) is not int or type(state["after_pet"]) is not int:
                     raise ValueError("invalid cursor position")
-                client_offset, pet_index = state["client"], state["pet"]
-                if client_offset < 0 or client_offset > 1_000_000 or pet_index < 0:
+                client_offset, after_pet_id = state["client"], state["after_pet"]
+                if client_offset < 0 or client_offset > 1_000_000 or after_pet_id < 0:
                     raise ValueError("cursor position out of range")
                 today = date.fromisoformat(state["day"])
                 if today > date.today():
@@ -388,11 +388,11 @@ def register(mcp: FastMCP) -> None:
             except (ValueError, TypeError, KeyError, UnicodeError, binascii.Error) as exc:
                 raise ToolInputError(f"invalid cursor: {exc}") from exc
 
-        def encode_position(offset: int, index: int) -> str:
+        def encode_position(offset: int, last_pet_id: int) -> str:
             if offset > 1_000_000:
                 raise ToolInputError("inactive client offset exceeds 1000000; narrow the date window")
-            state = {"v": 1, "min": months_min, "max": months_max,
-                     "day": today.isoformat(), "client": offset, "pet": index}
+            state = {"v": 2, "min": months_min, "max": months_max,
+                     "day": today.isoformat(), "client": offset, "after_pet": last_pet_id}
             return base64.urlsafe_b64encode(json.dumps(state, separators=(",", ":")).encode()).decode().rstrip("=")
 
         vc = VetmanagerClient()
@@ -405,6 +405,8 @@ def register(mcp: FastMCP) -> None:
         safety_cap_reached = False
         short_page_with_remaining = False
         offset = client_offset
+        last_returned_client: int | None = None
+        last_returned_pet_id = 0
 
         for page_num in range(MAX_CLIENT_PAGES):
             clients, cutoff_oldest, cutoff_newest, page_total = await fetch_inactive_clients_page(
@@ -425,11 +427,14 @@ def register(mcp: FastMCP) -> None:
             while group_start < len(clients):
                 group_day = str(clients[group_start].get("last_visit_date") or "").split(" ")[0]
                 group_end = group_start + 1
-                while (group_end < len(clients)
-                       and str(clients[group_end].get("last_visit_date") or "").split(" ")[0] == group_day):
-                    group_end += 1
+                continuing_owner = offset + group_start == client_offset and after_pet_id > 0
+                if not continuing_owner:
+                    while (group_end < len(clients)
+                           and str(clients[group_end].get("last_visit_date") or "").split(" ")[0] == group_day):
+                        group_end += 1
                 pairs = await find_pets_for_clients_last_visit(
                     vc, clients=clients[group_start:group_end], limit=None,
+                    min_pet_id=after_pet_id if continuing_owner else 0,
                 )
                 for local_index, (client, visited_pets) in enumerate(pairs, start=group_start):
                     clients_scanned += 1
@@ -441,12 +446,13 @@ def register(mcp: FastMCP) -> None:
                     client_name = " ".join(
                         str(client.get(k) or "") for k in ("last_name", "first_name", "middle_name")
                     ).strip()
-                    for index, pet in enumerate(sorted(visited_pets, key=lambda p: int(p["id"]))):
-                        if absolute_client == client_offset and index < pet_index:
-                            continue
+                    for pet in sorted(visited_pets, key=lambda p: int(p["id"])):
                         if len(result_pets) == limit:
                             has_more = True
-                            next_cursor = encode_position(absolute_client, index)
+                            next_cursor = encode_position(
+                                absolute_client,
+                                last_returned_pet_id if last_returned_client == absolute_client else 0,
+                            )
                             break
                         result_pets.append({
                             "id": pet.get("id"), "alias": pet.get("alias", ""),
@@ -459,6 +465,8 @@ def register(mcp: FastMCP) -> None:
                                 "not_specified" if not pet.get("visit_doctor_id") else "unresolved"
                             ),
                         })
+                        last_returned_client = absolute_client
+                        last_returned_pet_id = int(pet["id"])
                     if next_cursor:
                         break
                 if next_cursor:

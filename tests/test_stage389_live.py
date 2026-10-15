@@ -76,10 +76,30 @@ def test_stage389_two_live_pages(live_server_url):
         first_ids = {p["id"] for p in first["inactive_pets"]}
         second_ids = {p["id"] for p in second["inactive_pets"]}
         assert second_ids and first_ids.isdisjoint(second_ids)
+        # The test contour's next qualifying pet may belong to another owner.
+        # Probe the upstream ID filter independently without exposing records.
+        pet_probe = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+            "params": {"name": "get_pets", "arguments": {
+                "owner_id": first["inactive_pets"][0]["owner_id"], "limit": 10,
+                "filter": [{"property": "id", "operator": ">",
+                            "value": first["inactive_pets"][0]["id"]}],
+            }},
+        })
+        assert pet_probe.status_code == 200
+        probe_result = _rpc(pet_probe)["result"]
+        assert probe_result.get("isError") is False
+        probe_payload = probe_result.get("structuredContent")
+        if probe_payload is None:
+            probe_payload = json.loads(probe_result["content"][0]["text"])
+        probe_rows = probe_payload.get("data", {}).get("pet", [])
+        assert all(int(pet["id"]) > first["inactive_pets"][0]["id"] for pet in probe_rows)
         print("GET_INACTIVE_PETS_PAGES", json.dumps({
             "codes": [first_code, second_code],
             "counts": [len(first_ids), len(second_ids)],
             "overlap_count": len(first_ids & second_ids),
             "has_more": [first["has_more"], second["has_more"]],
             "second_cursor_present": bool(second["next_cursor"]),
+            "same_owner": first["inactive_pets"][0]["owner_id"] == second["inactive_pets"][0]["owner_id"],
+            "id_filter_code": pet_probe.status_code, "id_filter_count": len(probe_rows),
         }))

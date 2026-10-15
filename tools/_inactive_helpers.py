@@ -18,6 +18,7 @@ from filters import (
     build_list_query_params,
     eq as _filter_eq,
     gte as _filter_gte,
+    gt as _filter_gt,
     in_ as _filter_in,
     lt as _filter_lt,
 )
@@ -399,8 +400,11 @@ async def find_pets_for_clients_last_visit(
     *,
     clients: list[dict],
     limit: int | None = None,
+    min_pet_id: int = 0,
 ) -> list[tuple[dict, list[dict]]]:
     """Resolve pets for a client page with owner/date batching and stable order."""
+    if min_pet_id and len(clients) != 1:
+        raise ToolInputError("min_pet_id requires one client")
     clients_with_visit = [
         client
         for client in clients
@@ -442,7 +446,7 @@ async def find_pets_for_clients_last_visit(
                 filters=[
                     _filter_in("owner_id", owner_ids),
                     _filter_eq("status", "alive"),
-                ],
+                ] + ([_filter_gt("id", min_pet_id)] if min_pet_id else []),
             )
             pet_resp = await vc.get("/rest/api/pet", params=pet_params)
             pet_data = pet_resp.get("data", {}) if isinstance(pet_resp, dict) else {}
