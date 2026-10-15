@@ -49,6 +49,7 @@ LIST_ENTITY = {
 }
 
 SAFE_DATA_METADATA = frozenset({"totalCount", "truncated", "has_more", "limit", "offset"})
+SAFE_RESPONSE_KEYS = frozenset({"success", "data", "message", "limit", "offset", "has_more"})
 
 
 def selected_fields(tool_name: str, fields: list[str] | None, compact: bool) -> tuple[str, ...] | None:
@@ -76,6 +77,11 @@ def project_list_result(result: object, tool_name: str, selection: tuple[str, ..
         raise reportable_error("Projection expected a list response envelope.")
     if result.get("success") is False:
         return result
+    if set(result) - SAFE_RESPONSE_KEYS:
+        raise reportable_error("Projection found unknown response metadata.")
+    if any(isinstance(result[key], (dict, list, tuple))
+           for key in set(result) - {"data"}):
+        raise reportable_error("Projection expected scalar response metadata.")
     data = result.get("data")
     entity = LIST_ENTITY[tool_name]
     if isinstance(data, list):

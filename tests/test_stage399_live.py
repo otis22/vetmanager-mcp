@@ -68,6 +68,8 @@ def test_stage399_projection_live(live_server_url):
                 assert not result.get("isError"), f"{tool}/{mode} returned an error"
                 payload = result.get("structuredContent") or json.loads(result["content"][0]["text"])
                 assert payload.get("success") is True
+                if mode == "full":
+                    print("STAGE399_RESPONSE_KEYS", tool, sorted(payload))
                 data = payload["data"]
                 rows = data if isinstance(data, list) else data[entity]
                 assert rows and isinstance(rows[0], dict), f"{tool}/{mode} needs a nonempty list"

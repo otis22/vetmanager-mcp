@@ -36,7 +36,7 @@ def _patch_list(monkeypatch, tool, *, flat=False):
     module_name, entity, row = ROWS[tool]
     module = __import__(module_name, fromlist=["crud_list"])
     body = [row] if flat else {entity: [row], "totalCount": 1, "truncated": True}
-    mocked = AsyncMock(return_value={"success": True, "data": body, "limit": 1})
+    mocked = AsyncMock(return_value={"success": True, "message": "", "data": body, "limit": 1})
     monkeypatch.setattr(module, "crud_list", mocked)
     if tool == "get_admissions":
         monkeypatch.setattr(module, "clinic_local_today", AsyncMock(return_value=None))
@@ -149,6 +149,14 @@ async def test_projection_rejects_unknown_data_siblings(monkeypatch, extra):
     mocked.return_value["data"].update(extra)
     with pytest.raises(Exception, match="Projection"):
         await _call("get_clients", {"compact": True})
+
+
+@pytest.mark.asyncio
+async def test_projection_rejects_unknown_top_level_sibling(monkeypatch):
+    mocked = _patch_list(monkeypatch, "get_clients")
+    mocked.return_value["contacts"] = [{"cell_phone": "+7 999 123 45 67"}]
+    with pytest.raises(Exception, match="Projection"):
+        await _call("get_clients", {"fields": ["id"]})
 
 
 @pytest.mark.asyncio
