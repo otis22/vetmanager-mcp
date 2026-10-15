@@ -457,11 +457,14 @@ def register(mcp: FastMCP) -> None:
         last_visit_date_from: str = "",
         last_visit_date_to: str = "",
     ) -> dict:
-        """List ACTIVE clients who have a negative balance (debtors).
+        """List ACTIVE clients whose debt means a negative client balance.
 
         Uses server-side balance filtering and returns one stable page.  The
         result includes client name, phone, balance amount, and metadata for
-        fetching the next page via offset.
+        fetching the next page via offset. This differs from unpaid executed
+        invoices: use Report AI, or subtract get_revenue_summary mode
+        paid_by_executed_invoices from mode invoiced for the same period and
+        client_id after checking both result sets are complete.
 
         Args:
             limit: Max debtors to return (1–100, default 100).

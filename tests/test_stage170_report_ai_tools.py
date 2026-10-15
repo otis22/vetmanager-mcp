@@ -75,7 +75,7 @@ async def test_report_ai_prompt_helper_registered_and_mentions_data_boundary():
     assert "код/артикул/наименование товара" in body
     assert "Пустой результат — это результат" in body
     assert "Один вопрос — один отчёт" in body
-    assert "от одной до трёх минут" in body
+    assert "6–10 секунд" in body
     assert "намеренно" in body
     assert "выдуманные правдоподобные значения" in body
     assert "Никогда не пересказывайте значения preview пользователю" in body
@@ -108,7 +108,7 @@ async def test_get_report_ai_prompt_helper_tool_matches_prompt_body():
     # Прежняя строка закрепляла обратное и вернула бы то самое расхождение,
     # ради устранения которого этап и делался.
     assert "Источник — выставленные счета со статусом «исполнен»" in helper_text
-    assert "30 секунд" in helper_text
+    assert "6–10 секунд" in helper_text
     assert "а не данные клиники" in helper_text
     assert "проверить структуру" in helper_text
     assert "таблицы:" in helper_text

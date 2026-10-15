@@ -1,4 +1,4 @@
-# Report AI prompt helper for MCP agents — 2026-06-15
+# Report AI prompt helper for MCP agents — 2026-10-15
 
 Use this helper before creating a Vetmanager Report AI job.
 
@@ -39,14 +39,14 @@ Your task is to convert the user's business question into a clear Russian `inten
   returned status.
 - Report AI jobs are async. Use the bounded wait of create/get above; if the job
   is still pending after a bounded call, keep its `job_id` and check later.
-- Наблюдаемый порядок ожидания до `ready_to_save` на одном контуре — от одной до трёх минут, не гарантия. Диагностика queued появляется через 30 секунд,
-  но сама по себе не означает поломку: повторите bounded get того же `job_id` позже.
+- В замере аудита 14.10.2026 задания доходили до готовности за 6–10 секунд.
+  Это наблюдение, не гарантия для каждого задания или контура. Если bounded
+  ожидание вернуло queued, сохраните `job_id` и перечитайте тот же job позже.
 - Один вопрос — один отчёт. Создавайте jobs последовательно.
 - Дождитесь завершения предыдущего job, прежде чем создавать следующий. Не запускайте несколько отчётов одновременно.
-- Если нужны несколько разрезов, сначала попробуйте один отчёт с нужной группировкой; если нужны отдельные отчёты, создавайте их по очереди. Наблюдение одного
-  контура: одиночный job доходил до `ready_to_save` за 60–90 секунд, три jobs,
-  созданные подряд, — примерно за 3–3,5 минуты каждый, а при плотной работе —
-  до 4 минут 43 секунд. Это порядок величины, а не гарантия API.
+- Если нужны несколько разрезов, сначала попробуйте один отчёт с нужной
+  группировкой; если нужны отдельные отчёты, создавайте их по очереди. Не
+  переносите замер одного задания на очередь из нескольких jobs.
 - `ready_to_save` does not expose report rows. It exposes safe recognized structure and preview summary only.
 - Rows are available only after `saved` or `existing_report_matched`.
 - If rows are needed from `ready_to_save`, use an explicit save step with a meaningful report title.
@@ -153,7 +153,11 @@ For goods sold through invoices, describe the business relation as "позици
 
 - `get_report_ai_job_data` returns JSON rows for `saved` or `existing_report_matched` jobs. Vetmanager caps this response at 10000 rows; `limited=true` means truncation.
 - If `limited=true` or the total is close to 10000, avoid pasting the full table into chat. Narrow the report with period, filters, or aggregation when possible.
-- For bulk review, use the supported CSV/XLSX export path through `csv_export_url`, `get_report_ai_job_export`, or `start_report_export` when a `report_id` is available.
+- `csv_export_url` — относительный путь апстрима, не готовая ссылка. Для
+  выгрузки вызовите `get_report_ai_job_export` для сохранённого или совпавшего
+  job либо `start_report_export` с известным `report_id`. Затем вызовите
+  `get_report_export_download` с полученным `report_file_id` и используйте
+  абсолютный `download_url`, который вернул MCP.
 
 ## Output expected from the helper
 

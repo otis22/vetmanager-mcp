@@ -435,7 +435,7 @@ def register(mcp: FastMCP) -> None:
         clinic actually has them — an unknown id is stored as written.
 
         Args:
-            patient_id: ID of the pet (patient).  Also accepted as pet_id.
+            patient_id: ID of the pet (patient).
             doctor_id: ID of the veterinarian creating the record.
             date_create: Record date in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format.
             description: Clinical description / anamnesis (optional).

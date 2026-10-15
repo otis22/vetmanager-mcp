@@ -2048,6 +2048,12 @@ def register(mcp: FastMCP) -> None:
     async def get_report_ai_job_data(job_id: int) -> dict:
         """Get rows for a saved or existing-matched Report AI job.
 
+        If csv_export_url is present, it is a relative upstream path, not a
+        directly usable link. For an export use get_report_ai_job_export for a
+        saved or matched job, or start_report_export with a known report_id;
+        then call get_report_export_download with report_file_id for an absolute
+        download_url.
+
         Args:
             job_id: Report AI job ID. Data is available only for saved or
                 existing_report_matched jobs. ready_to_save has preview summary
