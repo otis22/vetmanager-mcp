@@ -433,17 +433,27 @@ custom web routes, а не ответы FastMCP `/mcp`; доля `session-not-fo
   на сырой текст отказа. — `todo`
 - 393.2 Реализация, выпуск. — `todo`
 
-## Этап 394. Report AI: чтение строк задания до сохранения — `todo`
+## Этап 394. Report AI: чтение строк задания до сохранения — `done`
 
-Источник: аудит R1 + код vetmanager-extjs: REST `GET /report-ai-job/{id}/data`
-не требует save (JobService::create строит превью, data — отдельный роут;
-несохранённые job чистит AiReportJobsCleanupTask), а наш docstring
-(report_ai.py:1996-2004) утверждает «data доступна только после save».
-Если ВМ отдаёт строки для `ready_to_save` — снимается главная боль «разовый
-вопрос оставляет постоянный видимый отчёт» (R1) без delete-эндпоинта (R2,
-которого в REST нет).
+Источник: аудит R1. Вопрос этапа: отдаёт ли REST ВМ
+`GET /report-ai-job/{id}/data` для несохранённого job — тогда боль «разовый
+вопрос оставляет постоянный видимый отчёт» (R1) снималась бы на нашем слое.
 
-- 394.1 Живое расследование на devtr6: create → get_report_ai_job_data без
-  save; зафиксировать код и тело ответа ВМ. По результату — решение: правка
-  документируемого контракта и guidance или фиксация ограничения API. PRD. — `todo`
-- 394.2 Реализация по результату 394.1, выпуск. — `todo`
+- 394.1 Расследование. — `done` (15.10.2026, супервизор, чтение кода
+  vetmanager-extjs master 6fbabdc452 вместо живого прогона: ответ в коде
+  однозначный). **Ответ: НЕТ, data до save невозможна.** `JobService::getData`
+  жёстко проверяет статус — только `saved`/`existing_report_matched`
+  (JobService.php:485-491, `INVALID_TRANSITION` иначе). Реальный SQL к данным
+  клиники выполняется дважды: пробный прогон 5 строк при building_preview
+  (TRIAL_RUN_LIMIT=5, строки НЕ экспонируются — наружу только счётчик
+  preview_summary и LLM-выдуманная preview_example_row, PromptTemplates.php:204)
+  и полный прогон в getData (DATA_ROW_LIMIT=10000, JobService.php:29, признак
+  `limited`, полный датасет — StartReport CSV по csv_export_url). Наш docstring
+  (report_ai.py:1996-2004) контракту соответствует. Попутные факты: TTL
+  несохранённых job 7 дней (UNSAVED_RETENTION_DAYS), дедуп по intent-хэшу 24 ч
+  (DEDUPE_TTL_HOURS, JobService.php:25 — смена политики подтверждена), save
+  идемпотентен, auto-match в existing_report_matched даёт data без save.
+- 394.2 Реализация не требуется: ограничение на стороне ВМ. R1/R2 переведены
+  в список для Ветменеджера: выполнение без сохранения (временные отчёты),
+  delete-эндпоинт, экспонирование 5 реальных пробных строк превью вместо
+  LLM-выдуманной preview_example_row (то же, что ждёт этап 358). — `done`
