@@ -265,7 +265,7 @@ custom web routes, а не ответы FastMCP `/mcp`; доля `session-not-fo
   красный сторож. — `done`
 - 389.2 Реализация, живой вызов, выпуск. — `done`
 
-## Этап 390. get_doctor_free_slots: информативный отказ и запасной режим — `in_progress`
+## Этап 390. get_doctor_free_slots: информативный отказ и запасной режим — `done` (15.10.2026; код `c238ab6`)
 
 Источник: аудит F2 + факт из vetmanager-extjs (master 6fbabdc452):
 дискриминатор рабочего времени — `timesheet_types.is_working_hours`
@@ -278,7 +278,7 @@ custom web routes, а не ответы FastMCP `/mcp`; доля `session-not-fo
   запасной режим с явным правилом (параметр вида `work_title` или
   treat-all-as-working с предупреждением о завышении слотов); красные
   сторожа на обе ветки. — `done`
-- 390.2 Реализация, живой вызов на стенде, выпуск. — `in_progress`
+- 390.2 Реализация, живой вызов на стенде, выпуск. — `done`
 
 ## Этап 391. get_pet_profile: разбор JSON поля diagnos — `done` (15.10.2026; код `f2771d1`)
 
