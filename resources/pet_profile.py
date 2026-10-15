@@ -12,6 +12,7 @@ derivation from the latest vaccination record.
 from __future__ import annotations
 
 import asyncio
+import json
 
 from filters import build_list_query_params, eq as _filter_eq
 from resources._aggregation import gather_sections
@@ -74,29 +75,92 @@ def _diagnosis_identifier(identifier: object) -> str | None:
     return normalized if normalized not in ("", "0") else None
 
 
-def _diagnosis_titles(card: dict, titles_by_id: dict[str, str]) -> tuple[list[str], list[str]]:
+def _diagnosis_references(raw: object) -> tuple[list[dict], list[object], bool]:
+    """Decode the serialized diagnosis references while preserving legacy scalars."""
+    if not isinstance(raw, str) or not raw.lstrip().startswith("["):
+        return [], [raw], False
+    try:
+        items = json.loads(raw)
+    except (TypeError, ValueError):
+        return [], [raw], False
+    if not isinstance(items, list):
+        return [], [raw], False
+    references: list[dict] = []
+    seen: set[tuple[str, int]] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        identifier, kind = item.get("id"), item.get("type")
+        if (isinstance(identifier, bool) or not isinstance(identifier, int)
+                or identifier <= 0 or isinstance(kind, bool) or not isinstance(kind, int)):
+            continue
+        pair = (str(identifier), kind)
+        if pair not in seen:
+            seen.add(pair)
+            references.append({"id": pair[0], "type": kind})
+    if items and not references:
+        # Upstream also stores legacy arrays like [32] and [{"id": 32}].
+        # Keep their previous unresolved signal until their shape is known.
+        return [], [raw], False
+    return references, [ref["id"] for ref in references], True
+
+
+def _typed_diagnosis_titles(card: dict) -> list[str]:
+    """Use displayed titles only when the paired typed field corroborates them."""
+    raw_titles = card.get("diagnos_text")
+    raw_typed = card.get("diagnos_type_text")
+    if not isinstance(raw_titles, str) or not isinstance(raw_typed, str):
+        return []
+    titles = [part.strip() for part in raw_titles.split(";\n") if part.strip()]
+    typed = [part.strip() for part in raw_typed.split(";\n") if part.strip()]
+    if not titles or len(titles) != len(typed):
+        return []
+    if not all(item.startswith(f"{title} (") and item.endswith(")")
+               for title, item in zip(titles, typed)):
+        return []
+    return list(dict.fromkeys(titles))
+
+
+def _diagnosis_titles(card: dict, titles_by_id: dict[str, str]) -> tuple[list[str], list[str], list[dict]]:
     """Resolve known diagnosis IDs while keeping absent diagnoses distinct from gaps."""
-    identifiers: list[object] = [card.get("diagnos")]
+    references, identifiers, is_json_array = _diagnosis_references(card.get("diagnos"))
     diagnoses = card.get("diagnoses")
+    extra_identifiers: list[object] = []
     if isinstance(diagnoses, list):
-        identifiers.extend(
+        extra_identifiers = [
             item.get("id") for item in diagnoses if isinstance(item, dict)
-        )
+        ]
+        identifiers.extend(extra_identifiers)
     diagnosis_ids = [
         diagnosis_id
         for identifier in identifiers
         if (diagnosis_id := _diagnosis_identifier(identifier)) is not None
     ]
-    titles: list[str] = []
-    for diagnosis_id in diagnosis_ids:
-        title = titles_by_id.get(diagnosis_id)
-        if title and title not in titles:
-            titles.append(title)
+    typed_titles = _typed_diagnosis_titles(card) if is_json_array and references else []
+    known_reference_titles = {
+        titles_by_id[ref["id"]]
+        for ref in references if ref["id"] in titles_by_id
+    }
+    if not known_reference_titles.issubset(typed_titles):
+        typed_titles = []
+    if typed_titles:
+        titles = typed_titles
+        for identifier in extra_identifiers:
+            extra_id = _diagnosis_identifier(identifier)
+            title = titles_by_id.get(extra_id) if extra_id else None
+            if title and title not in titles:
+                titles.append(title)
+    else:
+        titles = []
+        for diagnosis_id in diagnosis_ids:
+            title = titles_by_id.get(diagnosis_id)
+            if title and title not in titles:
+                titles.append(title)
     unresolved = [
         diagnosis_id for diagnosis_id in diagnosis_ids
         if diagnosis_id not in titles_by_id
     ]
-    return titles, list(dict.fromkeys(unresolved))
+    return titles, list(dict.fromkeys(unresolved)), references
 
 
 def _deduplicate_medical_card_patient(card: dict) -> None:
@@ -289,7 +353,9 @@ async def fetch(pet_id: int) -> dict:
         if not isinstance(card, dict):
             continue
         _deduplicate_medical_card_patient(card)
-        titles, unresolved = _diagnosis_titles(card, titles_by_id)
+        titles, unresolved, references = _diagnosis_titles(card, titles_by_id)
+        if references:
+            card["diagnosis_references"] = references
         card["diagnosis_titles"] = titles
         card["unresolved_diagnosis_ids"] = unresolved
         for title in titles:

@@ -742,6 +742,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "Build a full pet / patient profile in one call: pet data, owner context "
         "when permitted, recent medical cards, vaccination context, and recent "
         "invoices with goods/services line items when finance access is permitted. "
+        "Medical cards include diagnosis_references with separate id and type "
+        "for serialized diagnoses, diagnosis_titles, and unresolved_diagnosis_ids. "
         "Use when the user asks for a full patient card, medical profile, or "
         "consolidated pet history. Domain synonyms: питомец, пациент, животное, "
         "кот, собака, пациент клиники, медицинский профиль, pet, animal."
