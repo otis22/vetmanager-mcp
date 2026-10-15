@@ -26,7 +26,7 @@ async def test_job_data_keeps_quantity_and_hides_marked_contact() -> None:
     with headers, runtime:
         result = await mcp.call_tool("get_report_ai_job_data", {"job_id": 368})
     row = result.structured_content["data"]["rows"][0]
-    assert row == {"Количество": "1234567890", "Примечание": f"тел. {REDACTED_PHONE}"}
+    assert row == {"Количество": 1234567890, "Примечание": f"тел. {REDACTED_PHONE}"}
 
 
 @pytest.mark.parametrize("column", ["Количество", " количество ", "COUNT", "qty"])

@@ -3,6 +3,7 @@ from fastmcp.exceptions import ToolError
 import inspect
 from functools import wraps
 from identifier_aliases import canonical_tool
+from report_row_types import normalize_report_rows
 
 import depersonalization
 from depersonalization import contains_addressed_placeholder
@@ -195,13 +196,15 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
                 ) from exc
             result = redact_sensitive_output_fields(result)
             if not credentials.is_depersonalized:
-                return result
+                return normalize_report_rows(result) if resolved_tool_name == "get_report_ai_job_data" else result
             try:
-                return depersonalization.sanitize_tool_result(
+                sanitized = depersonalization.sanitize_tool_result(
                     result,
                     report_mode=resolved_tool_name in REPORT_TOOLS,
                     tool_name=resolved_tool_name,
                 )
+                return (normalize_report_rows(sanitized)
+                        if resolved_tool_name == "get_report_ai_job_data" else sanitized)
             except Exception:
                 record_sanitizer_failure()
                 raise reportable_error("Depersonalization failed.") from None

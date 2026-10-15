@@ -1066,6 +1066,10 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_report_ai_job_data": (
         "Get table rows for a saved or existing_report_matched Report AI job. "
+        "In rows, empty strings become null; unambiguous numeric columns return "
+        "JSON numbers when decimal precision can be retained. IDs, codes, "
+        "article numbers and unknown columns remain text; privacy redaction "
+        "takes priority. Preview and metadata keep their original types. "
         "Rows are unavailable from ready_to_save; save explicitly or confirm an "
         "existing report first when rows are needed. Vetmanager returns up to "
         "10000 rows; limited=true means the response was truncated. Exactly 1000 rows "

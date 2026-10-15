@@ -927,7 +927,7 @@ async def test_get_report_ai_job_data_returns_limited_rows_metadata():
 
     assert route.call_count == 1
     payload = _structured(result)
-    assert payload["data"]["rows"] == rows
+    assert payload["data"]["rows"] == [{"ID Клиента": 1, "Баланс": -1}]
     assert payload["data"]["total"] == 10001
     assert payload["data"]["limited"] is True
     assert payload["data"]["csv_export_url"] == "/rest/api/report/startReport?report_id=84"
