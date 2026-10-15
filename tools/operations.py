@@ -155,6 +155,8 @@ def register(mcp: FastMCP) -> None:
         date: str = "",
         sort: list[dict] | None = None,
         filter: list[dict] | None = None,
+        date_from: str = "",
+        date_to: str = "",
     ) -> dict:
         """List staff work schedule entries (timesheets).
 
@@ -164,9 +166,13 @@ def register(mcp: FastMCP) -> None:
             doctor_id: Filter by staff doctor ID (0 = no filter). Vetmanager
                 timesheet entity uses `doctor_id` as FK to user.id.
             date: Filter by date in YYYY-MM-DD format (optional).
+            date_from/date_to: Inclusive calendar-day bounds for shifts that
+                overlap the period; each boundary may be used alone.
+                Format: YYYY-MM-DD. Combined with date and raw filter.
             filter/sort: Optional raw clauses. Allowed properties for both: action_id, all_day,
                 begin_datetime, clinic_id, doctor_id, end_datetime, id, night,
-                shedule_id, shift, title, type.
+                shedule_id, shift, title, type. Without sort, newest starts
+                come first (begin_datetime DESC, id DESC).
         """
         combined_filters: list = list(filter or [])
         if doctor_id:
@@ -185,9 +191,40 @@ def register(mcp: FastMCP) -> None:
             combined_filters.append(
                 _filter_gt("end_datetime", f"{day.isoformat()} 00:00:00")
             )
+        bounds = {}
+        for name, value in (("date_from", date_from), ("date_to", date_to)):
+            if value:
+                try:
+                    parsed = datetime.strptime(value, "%Y-%m-%d").date()
+                except ValueError:
+                    raise ToolInputError(
+                        f"invalid {name} {value!r}. Expected YYYY-MM-DD."
+                    ) from None
+                if parsed.isoformat() != value:
+                    raise ToolInputError(
+                        f"invalid {name} {value!r}. Expected YYYY-MM-DD."
+                    )
+                bounds[name] = parsed
+        if date_from and date_to and bounds["date_from"] > bounds["date_to"]:
+            raise ToolInputError("date_from must be on or before date_to.")
+        if date_from:
+            combined_filters.append(
+                _filter_gt("end_datetime", f"{bounds['date_from'].isoformat()} 00:00:00")
+            )
+        if date_to:
+            try:
+                next_day = bounds["date_to"] + timedelta(days=1)
+            except OverflowError:
+                raise ToolInputError("invalid date_to: no following calendar day.") from None
+            combined_filters.append(
+                _filter_lt("begin_datetime", f"{next_day.isoformat()} 00:00:00")
+            )
         return await crud_list(
             "/rest/api/timesheet", limit=limit, offset=offset,
-            sort=sort,
+            sort=sort if sort is not None else [
+                {"property": "begin_datetime", "direction": "DESC"},
+                {"property": "id", "direction": "DESC"},
+            ],
             filters=combined_filters if combined_filters else None,
             allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["timesheet"],
         )
