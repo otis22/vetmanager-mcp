@@ -938,7 +938,7 @@ def _report_ai_combination_sql_workaround() -> dict:
         "summary": "Vetmanager has a known SQL defect when previewing combination composition reports.",
         "steps": [
             "Do not retry the same Report AI request: the known defect is not transient.",
-            "For one combination, use get_good_combination for positions and calculate_good_combination_price for its price.",
+            "For one combination, use get_good_combination for positions and calculate_good_combination_price for its price; pass the intended clinic_id explicitly to both tools.",
             "For a broader composition report, explain that the report is unavailable until Vetmanager fixes the defect.",
         ],
         "do_not_do": ["Do not quote raw SQL or infer report rows from the failed preview."],
@@ -1359,9 +1359,12 @@ def _validate_report_title(title: str) -> str:
 def _classify_report_ai_data_failure(exc: VetmanagerError) -> None:
     if exc.status_code != 500 or exc.error_code != "INTERNAL_ERROR":
         return
-    # The original safe render error remains the KI 60 matching/fingerprint
-    # input; only the text shown to the MCP caller gains an actionable hint.
-    exc.feedback_safe_excerpt = getattr(exc, "feedback_safe_excerpt", None) or str(exc)
+    # The upstream normally says only "Внутренняя ошибка", but its message is
+    # untrusted. Keep HTTP/code and a fixed excerpt for KI 60; never pass raw
+    # upstream text to feedback matching or no-match traces.
+    exc.feedback_safe_excerpt = (
+        "Report AI data read failed (INTERNAL_ERROR, HTTP 500): Внутренняя ошибка"
+    )
     exc.args = (
         "Report AI data read failed (INTERNAL_ERROR, HTTP 500). "
         "mcp_workaround: safe_to_retry=true; the successful save is not undone "

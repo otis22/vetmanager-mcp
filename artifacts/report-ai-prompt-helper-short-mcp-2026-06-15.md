@@ -146,7 +146,7 @@ If the user already gave a precise criterion, do not ask again. Example: "client
 For goods/product reports, ask for business columns such as product code, SKU/article, barcode when relevant, product title/name, group, quantity, revenue, cost, margin, and period grouping.
 Do not ask Report AI to output a standalone `good.id` column. If an older Vetmanager contour or unresolved edge case still fails with an explicit `good.id` preview error, retry with "код/артикул/наименование товара" in Russian rather than `good.id`.
 For goods sold through invoices, describe the business relation as "позиции счёта и связанные товары" without writing SQL.
-Отчёт о составе комбинаций может завершиться известным дефектом ВМ с SQL-ошибкой. Не повторяйте тот же запрос; для одной комбинации используйте `get_good_combination` (позиции) и `calculate_good_combination_price` (цена).
+Отчёт о составе комбинаций может завершиться известным дефектом ВМ с SQL-ошибкой. Не повторяйте тот же запрос; для одной комбинации используйте `get_good_combination` (позиции) и `calculate_good_combination_price` (цена), явно передавая `clinic_id` нужной клиники обоим инструментам.
 Колонка Report AI «Текущий остаток на складе» суммирует остаток по всем складам базы и игнорирует фильтр клиники. Для остатка конкретной клиники используйте `get_good_stock_balance` и явно передайте `clinic_id` нужной клиники; значение по умолчанию 1 может относиться к другой клинике.
 
 ## Data and export

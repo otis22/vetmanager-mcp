@@ -1,13 +1,18 @@
 """Regression guards for KI 58/59/60 at the public Report AI boundary."""
 
 import httpx
+import json
 import pytest
 import respx
 from fastmcp.exceptions import ToolError
 
-from agent_feedback_service import build_error_fingerprint_hash, build_incident_from_exception
+import agent_feedback_service as feedback
+from agent_feedback_service import (
+    build_error_fingerprint_hash, build_incident_from_exception, match_rules,
+)
 from exceptions import VetmanagerError
 from server import mcp
+from storage_models import KnownIssue
 from tests.test_stage170_report_ai_tools import BASE, bearer_runtime_patch, billing_mock
 from token_scopes import SCOPE_ANALYTICS_READ
 from tool_descriptions import SPECIAL_TOOL_DESCRIPTIONS
@@ -33,6 +38,7 @@ def test_combination_sql_failure_gets_non_retry_workaround_without_sql():
     assert workaround["safe_to_retry"] is False
     assert "get_good_combination" in str(workaround)
     assert "calculate_good_combination_price" in str(workaround)
+    assert "clinic_id" in str(workaround)
     assert "SELECT secret" not in str(job)
     assert "SQLSTATE" not in str(job)
 
@@ -57,14 +63,25 @@ def test_combination_failure_wins_over_legacy_good_id():
     assert job["mcp_workaround"]["safe_to_retry"] is False
 
 
-def test_read_500_classifier_preserves_ki_incident_and_fingerprint(monkeypatch):
+def test_read_500_classifier_uses_safe_ki_incident(monkeypatch):
     monkeypatch.setenv("FEEDBACK_FINGERPRINT_PEPPER", "stage393-test-pepper")
-    original = VetmanagerError("Внутренняя ошибка", status_code=500, error_code="INTERNAL_ERROR")
+    original = VetmanagerError(
+        "Внутренняя ошибка; SQLSTATE SELECT secret FROM clients",
+        status_code=500, error_code="INTERNAL_ERROR",
+    )
     before = build_incident_from_exception("get_report_ai_job_data", original)
     report_ai._classify_report_ai_data_failure(original)
     after = build_incident_from_exception("get_report_ai_job_data", original)
-    assert after == before
-    assert build_error_fingerprint_hash(after) == build_error_fingerprint_hash(before)
+    assert after.http_status == 500 and after.error_code == "INTERNAL_ERROR"
+    assert "SQLSTATE" not in after.error_excerpt
+    assert "SELECT secret" not in after.error_excerpt
+    assert build_error_fingerprint_hash(after) != build_error_fingerprint_hash(before)
+    rules = {"version": 1, "all": [
+        {"field": "related_tool", "op": "eq", "value": "get_report_ai_job_data"},
+        {"field": "normalized_error_text", "op": "contains_any",
+         "value": ["unknown", "internal", "500"]},
+    ]}
+    assert match_rules(json.dumps(rules), after)
     assert "safe_to_retry=true" in str(original)
     assert "get_report_ai_job" in str(original)
 
@@ -91,7 +108,7 @@ async def test_read_500_registered_tool_gives_safe_retry_advice(monkeypatch):
     monkeypatch.setattr(tools, "_with_known_issue_hint", capture_source)
     route = respx.get(f"{BASE}/rest/api/report-ai-job/22/data").mock(
         return_value=httpx.Response(500, json={
-            "success": False, "message": "Внутренняя ошибка",
+            "success": False, "message": "Внутренняя ошибка; SQLSTATE SELECT secret",
             "data": {"error_code": "INTERNAL_ERROR"},
         })
     )
@@ -103,11 +120,59 @@ async def test_read_500_registered_tool_gives_safe_retry_advice(monkeypatch):
     assert "safe_to_retry=true" in str(caught.value)
     assert "save" in str(caught.value).lower()
     assert "INTERNAL_ERROR" in str(caught.value)
+    assert "SQLSTATE" not in str(caught.value)
+    assert "SELECT secret" not in str(caught.value)
     assert len(source_seen) == 1
     assert source_seen[0].http_status == 500
     assert source_seen[0].error_code == "INTERNAL_ERROR"
     assert "Внутренняя ошибка" in source_seen[0].error_excerpt
+    assert "SQLSTATE" not in source_seen[0].error_excerpt
     assert "safe_to_retry" not in source_seen[0].error_excerpt
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_read_500_matches_ki60_rule_through_registered_tool(
+    sqlite_session_factory_builder, tmp_path, monkeypatch,
+):
+    monkeypatch.setenv("FEEDBACK_FINGERPRINT_PEPPER", "stage393-test-pepper")
+    session_factory = await sqlite_session_factory_builder(tmp_path / "stage393-ki60.db")
+    monkeypatch.setattr(feedback, "get_session_factory", lambda: session_factory)
+    rules = {"version": 1, "all": [
+        {"field": "related_tool", "op": "eq", "value": "get_report_ai_job_data"},
+        {"field": "normalized_error_text", "op": "contains_any",
+         "value": ["unknown", "internal", "500"]},
+    ]}
+    playbook = {
+        "version": 1,
+        "summary": "Saved job rows can be read later.",
+        "steps": ["Retry reading the same job later."],
+        "do_not_do": ["Do not repeat save automatically."],
+        "recommended_tool_sequence": ["get_report_ai_job_data"],
+        "safe_to_retry": True,
+    }
+    async with session_factory() as session:
+        session.add(KnownIssue(
+            status="acknowledged", category="bug", severity="medium",
+            title="KI 60 local rule shape", related_tool="get_report_ai_job_data",
+            match_rules_json=json.dumps(rules), agent_playbook_json=json.dumps(playbook),
+        ))
+        await session.commit()
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/report-ai-job/22/data").mock(
+        return_value=httpx.Response(500, json={
+            "success": False, "message": "Внутренняя ошибка; SQLSTATE SELECT secret",
+            "data": {"error_code": "INTERNAL_ERROR"},
+        })
+    )
+    headers_patch, runtime_patch = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
+    with headers_patch, runtime_patch:
+        with pytest.raises(ToolError) as caught:
+            await mcp.call_tool("get_report_ai_job_data", {"job_id": 22})
+    assert "Known issue playbook" in str(caught.value)
+    assert "Saved job rows can be read later" in str(caught.value)
+    assert "safe_to_retry=true" in str(caught.value)
+    assert "SQLSTATE" not in str(caught.value)
 
 
 def test_stock_warning_reaches_description_and_prompt_helper():
