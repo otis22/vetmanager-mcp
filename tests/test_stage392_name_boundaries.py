@@ -2,7 +2,7 @@
 
 import pytest
 
-from depersonalization import REDACTED_NAME, sanitize_report_value, sanitize_tool_result
+from depersonalization import REDACTED_NAME, sanitize_report_value, sanitize_text, sanitize_tool_result
 
 
 @pytest.mark.parametrize("value", [
@@ -30,9 +30,18 @@ def test_service_phrases_remain_whole(value):
     ("ООО Иванов Пётр", "ООО " + REDACTED_NAME),
     ("Без ФИО, подписал Иванов И. И.", "Без ФИО, подписал " + REDACTED_NAME),
     ("Без ФИО Иванов Пётр Сергеевич", "Без ФИО " + REDACTED_NAME),
+    ("'Иванов И. И.'", "'" + REDACTED_NAME + "'"),
+    ("‘Иванов И. И.’", "'" + REDACTED_NAME + "'"),
+    ("-Иванов И.И.", "-" + REDACTED_NAME),
+    ("'Smith John David'", "'" + REDACTED_NAME + "'"),
+    ("O'Connor Anna Sergeevna", REDACTED_NAME),
 ])
 def test_real_names_still_redacted_as_whole_words(value, expected):
     assert sanitize_report_value(value) == expected
+
+
+def test_initials_inside_external_quotes_are_scrubbed_in_free_text():
+    assert sanitize_text("'Иванов И. И.'") == "'" + REDACTED_NAME + "'"
 
 
 def test_report_job_echo_preserves_nonpersonal_intent():

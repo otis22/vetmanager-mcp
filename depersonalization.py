@@ -183,8 +183,11 @@ _NAME_TAIL = r"(?:[А-ЯЁ][А-ЯЁа-яё]{0,30}|[A-Z][A-Za-z]{0,30}|[а-яё]{
 # which the general form cannot allow — a lone capital would turn `А Б В` into
 # a name.
 _NAME_WORD = rf"(?:[А-ЯЁA-Z]'{_NAME_PART}|{_NAME_PART}(?:['\-]{_NAME_TAIL})*)"
-_NAME_LEFT_EDGE = r"(?<![\w'\-])"
-_NAME_RIGHT_EDGE = r"(?![\w'\-])"
+# A quote or list dash touching a name is punctuation when it is not joined
+# to the preceding/following word. An inner apostrophe/hyphen remains part of
+# the same token, so matching must not restart after it or stop before it.
+_NAME_LEFT_EDGE = r"(?<!\w)(?<!\w['\-])"
+_NAME_RIGHT_EDGE = r"(?!\w)(?!['\-]\w)"
 _FULL_NAME_RE = re.compile(
     rf"(?u)(?=({_NAME_LEFT_EDGE}{_NAME_WORD}\s+{_NAME_WORD}\s+{_NAME_WORD}{_NAME_RIGHT_EDGE}))"
 )
