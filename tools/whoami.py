@@ -35,6 +35,8 @@ def register(mcp: FastMCP) -> None:
 
         The summary always names reading, changing and deletion, including
         «Удаление: нет» when this token cannot delete. No Vetmanager request is made.
+        Domain synonyms: кто я, мои права, мой доступ, возможности токена,
+        whoami, capabilities, current clinic, access group.
         """
         credentials = get_current_runtime_credentials()
         if credentials is None:

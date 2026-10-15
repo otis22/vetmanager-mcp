@@ -633,7 +633,7 @@ COMMIT;
 - После успешного `POST`/`PUT`/`DELETE` кеш для соответствующего тега `domain:entity` инвалидируется.
 - Ограничение подхода: кеш живёт только в памяти процесса и полностью сбрасывается при рестарте сервера.
 
-**126 инструментов** по 15 группам сущностей:
+**127 инструментов** по 16 группам:
 
 | Группа | Инструменты | Кол-во |
 |--------|-------------|--------|
@@ -652,6 +652,7 @@ COMMIT;
 | Schedule | `get_doctor_free_slots` | 1 |
 | Report AI | `get_report_ai_prompt_helper`, `create_report_ai_job`, `get_report_ai_job`, `confirm_report_ai_job_candidate`, `reject_report_ai_job_candidate`, `get_report_ai_job_data`, `start_report_export`, `get_report_export_download`, `get_report_ai_job_export`, `save_report_ai_job_as_report` | 10 |
 | Feedback | `report_problem` | 1 |
+| Доступ | `whoami` | 1 |
 
 Payment REST API доступен только на чтение: Vetmanager Payment entity разрешает `restList`/`restView`, поэтому MCP не публикует `create_payment`. В реальном Payment REST нет прямых `client_id`/`pet_id`; для клиентского или pet-scoped контекста оплат используйте `get_client_payment_applications`, который читает применения оплат через `closingOfInvoices`.
 
