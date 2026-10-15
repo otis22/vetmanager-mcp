@@ -366,25 +366,25 @@ def register(mcp: FastMCP) -> None:
         if cursor:
             try:
                 if len(cursor) > 512 or re.fullmatch(r"[A-Za-z0-9_-]+", cursor) is None:
-                    raise ValueError("invalid cursor encoding")
+                    raise ToolInputError("invalid cursor encoding")
                 raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
                 if base64.urlsafe_b64encode(raw).decode().rstrip("=") != cursor:
-                    raise ValueError("non-canonical cursor encoding")
+                    raise ToolInputError("non-canonical cursor encoding")
                 state = json.loads(raw)
                 if not isinstance(state, dict) or set(state) != {"v", "min", "max", "day", "client", "after_pet"}:
-                    raise ValueError("invalid cursor structure")
+                    raise ToolInputError("invalid cursor structure")
                 if type(state["v"]) is not int or state["v"] != 2 or type(state["min"]) is not int or type(state["max"]) is not int:
-                    raise ValueError("invalid cursor version or window")
+                    raise ToolInputError("invalid cursor version or window")
                 if (state["min"], state["max"]) != (months_min, months_max):
-                    raise ValueError("cursor window differs from months_min/months_max")
+                    raise ToolInputError("cursor window differs from months_min/months_max")
                 if type(state["client"]) is not int or type(state["after_pet"]) is not int:
-                    raise ValueError("invalid cursor position")
+                    raise ToolInputError("invalid cursor position")
                 client_offset, after_pet_id = state["client"], state["after_pet"]
                 if client_offset < 0 or client_offset > 1_000_000 or after_pet_id < 0:
-                    raise ValueError("cursor position out of range")
+                    raise ToolInputError("cursor position out of range")
                 today = date.fromisoformat(state["day"])
                 if today > date.today():
-                    raise ValueError("cursor day is in the future")
+                    raise ToolInputError("cursor day is in the future")
             except (ValueError, TypeError, KeyError, UnicodeError, binascii.Error) as exc:
                 raise ToolInputError(f"invalid cursor: {exc}") from exc
 
