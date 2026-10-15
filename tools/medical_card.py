@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import date, timedelta
 
 from fastmcp import FastMCP
@@ -14,7 +15,8 @@ from filters import (
     validate_filter_properties,
     validate_sort_properties,
 )
-from exceptions import ToolInputError, reportable_error
+from exceptions import ToolInputError, VetmanagerTimeoutError, reportable_error
+from service_metrics import record_tool_call
 from tools.crud_helpers import crud_get_by_id, crud_create, crud_update, unwrap_single_record
 from validators import (
     DiagnosisIdParam,
@@ -254,30 +256,54 @@ def register(mcp: FastMCP) -> None:
             sort=sort or _DEFAULT_DATE_SORT,
             filters=filters,
         )
-        result = await VetmanagerClient().get(_MC_ENDPOINT, params=params)
-        data = result.get("data", {})
-        cards = _extract_medical_cards(data) if isinstance(data, dict) else []
-        raw_total = data.get("totalCount") if isinstance(data, dict) else None
-        total_known = raw_total is not None
-        total = int(raw_total) if total_known else None
-        count = len(cards)
-        truncated = (offset + count) < total if total_known else None
+        started = time.monotonic()
+        outcome = "success"
+        try:
+            result = await VetmanagerClient().get(_MC_ENDPOINT, params=params)
+            data = result.get("data", {})
+            cards = _extract_medical_cards(data) if isinstance(data, dict) else []
+            raw_total = data.get("totalCount") if isinstance(data, dict) else None
+            total_known = raw_total is not None
+            total = int(raw_total) if total_known else None
+            count = len(cards)
+            truncated = (offset + count) < total if total_known else None
 
-        return {
-            "success": result.get("success", True),
-            "date_from": resolved_from,
-            "date_to": resolved_to,
-            "clinic_filter_applied": clinic_filter_applied,
-            "clinic_id": clinic_id if clinic_filter_applied else None,
-            "limit": limit,
-            "offset": offset,
-            "total": total,
-            "total_known": total_known,
-            "medical_cards_count": count,
-            "truncated": truncated,
-            "owner_context_available": False,
-            "medical_cards": cards,
-        }
+            return {
+                "success": result.get("success", True),
+                "date_from": resolved_from,
+                "date_to": resolved_to,
+                "clinic_filter_applied": clinic_filter_applied,
+                "clinic_id": clinic_id if clinic_filter_applied else None,
+                "limit": limit,
+                "offset": offset,
+                "total": total,
+                "total_known": total_known,
+                "medical_cards_count": count,
+                "truncated": truncated,
+                "owner_context_available": False,
+                "medical_cards": cards,
+            }
+        except VetmanagerTimeoutError as exc:
+            outcome = "timeout"
+            raise VetmanagerTimeoutError(
+                "Vetmanager medical-card read timed out. Retry a smaller limit. "
+                "For a date range, retry each day, starting with offset=0 for "
+                "each day and reading all pages. Deduplicate previously "
+                "collected results by medical-card ID. If a day or page still "
+                "fails, report incomplete coverage. Only add doctor_id if the "
+                "original request was limited to the attending veterinarian, "
+                "creator_id only if it requested the record author, and "
+                "clinic_id only if it requested one branch."
+            ) from exc
+        except BaseException:
+            outcome = "error"
+            raise
+        finally:
+            record_tool_call(
+                endpoint=f"{_MC_ENDPOINT}#list", method="GET", outcome=outcome,
+                duration_seconds=time.monotonic() - started,
+                tool_name="get_medical_cards_by_date",
+            )
 
     @mcp.tool
     async def get_medical_cards_by_client_id(
