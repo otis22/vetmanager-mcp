@@ -6,6 +6,7 @@ a doctor by subtracting active admissions from timesheet work intervals.
 
 import asyncio
 import json
+from collections import Counter
 from datetime import date, datetime, timedelta
 
 from fastmcp import FastMCP
@@ -34,6 +35,36 @@ _ADMISSION_BACK_SLACK = timedelta(hours=24)
 # 31 days × ~20 slots/day = ~620 admissions expected; cap at 5× headroom.
 _MAX_ROWS_PER_ENTITY = 3000
 
+# Only these generic upstream titles are safe to repeat in a reportable error.
+# Other titles may contain staff or patient names; operators can inspect them
+# through the normal, permission-controlled get_timesheets tool.
+_SAFE_TIMESHEET_TITLES = frozenset({
+    "Рабочее время", "Выходной", "Нерабочее время", "Дежурство",
+    "Отпуск", "Больничный",
+})
+
+
+def _unknown_timesheet_summary(rows: list[dict]) -> str:
+    groups: Counter[tuple[str, str]] = Counter()
+    for row in rows:
+        raw_type = row.get("type")
+        row_type = str(raw_type) if (
+            isinstance(raw_type, int) and not isinstance(raw_type, bool)
+        ) or (isinstance(raw_type, str) and raw_type.isascii() and raw_type.isdigit() and len(raw_type) <= 9) else "неизвестен"
+        title = row.get("title")
+        safe_title = (
+            title if isinstance(title, str) and title in _SAFE_TIMESHEET_TITLES
+            else "[скрытое название]"
+        )
+        groups[(row_type, safe_title)] += 1
+    details = "; ".join(
+        f"type={row_type}, title={json.dumps(title, ensure_ascii=False)} ({count})"
+        for (row_type, title), count in sorted(groups.items())[:8]
+    )
+    if len(groups) > 8:
+        details += f"; ещё {len(groups) - 8} групп"
+    return details
+
 
 def register(mcp: FastMCP) -> None:
 
@@ -45,6 +76,7 @@ def register(mcp: FastMCP) -> None:
         slot_minutes: int = 30,
         min_slot_minutes: int = 15,
         clinic_id: int = 0,
+        work_title: str | None = None,
     ) -> dict:
         """Return free appointment windows for a doctor over a date range.
 
@@ -73,10 +105,15 @@ def register(mcp: FastMCP) -> None:
                 default 15).
             clinic_id: Optional clinic filter. 0 = all clinics where the
                 doctor works.
+            work_title: Explicit fallback for rows whose attached timesheet
+                type has no valid is_working_hours value. Only an exact,
+                case-sensitive title match counts as work; other unknown rows
+                block overlapping slots. Inspect titles via get_timesheets.
 
         Returns:
             {success, doctor_id, date_from, date_to, slot_minutes,
              total_slots, slots: [{start, end, duration_min, clinic_id}, ...]}
+            When fallback is used, warning explains possible overestimation.
         """
         if doctor_id <= 0:
             raise ToolInputError(
@@ -89,6 +126,8 @@ def register(mcp: FastMCP) -> None:
             raise ToolInputError(
                 "min_slot_minutes must be between 5 and slot_minutes"
             )
+        if work_title is not None and (not work_title or not work_title.strip()):
+            raise ToolInputError("work_title must be a nonempty exact title")
 
         clinic_today = await clinic_local_today(
             clinic_id,
@@ -165,16 +204,22 @@ def register(mcp: FastMCP) -> None:
 
         # --- Build work intervals from timesheet, grouped by clinic_id ---
         clinics_seen: dict[int, list[tuple[datetime, datetime]]] = {}
-        rows_with_type_discriminator = 0
+        unknown_rows: list[dict] = []
+        unknown_busy_by_clinic: dict[int, list[tuple[datetime, datetime]]] = {}
+        unknown_shared_busy: list[tuple[datetime, datetime]] = []
+        fallback_used = False
         for row in timesheet_rows:
             timesheet_type = row.get("ttype")
-            if not isinstance(timesheet_type, dict):
-                continue
-            is_working_hours = timesheet_type.get("is_working_hours")
-            if is_working_hours not in (0, 1, "0", "1", False, True):
-                continue
-            rows_with_type_discriminator += 1
-            if str(int(is_working_hours)) != "1":
+            is_working_hours = (
+                timesheet_type.get("is_working_hours")
+                if isinstance(timesheet_type, dict) else None
+            )
+            unknown = is_working_hours not in (0, 1, "0", "1", False, True)
+            if unknown:
+                unknown_rows.append(row)
+                selected_work = work_title is not None and row.get("title") == work_title
+                fallback_used = fallback_used or selected_work
+            elif str(int(is_working_hours)) != "1":
                 continue
             try:
                 begin = parse_vm_datetime(row["begin_datetime"])
@@ -184,12 +229,23 @@ def register(mcp: FastMCP) -> None:
             if end <= begin:
                 continue
             cid = int(row.get("clinic_id") or 0)
-            clinics_seen.setdefault(cid, []).append((begin, end))
+            if unknown and not selected_work:
+                if cid:
+                    unknown_busy_by_clinic.setdefault(cid, []).append((begin, end))
+                else:
+                    unknown_shared_busy.append((begin, end))
+            else:
+                clinics_seen.setdefault(cid, []).append((begin, end))
 
-        if timesheet_rows and rows_with_type_discriminator == 0:
+        if unknown_rows and not fallback_used:
             raise reportable_error(
-                "Vetmanager timesheet rows have no working-hours discriminator; "
-                "free slots cannot be calculated safely."
+                f"У {len(unknown_rows)} из {len(timesheet_rows)} строк расписания нет "
+                "достоверного working-hours discriminator: "
+                f"{_unknown_timesheet_summary(unknown_rows)}. "
+                "Соответствующий type отсутствует в присоединённом справочнике "
+                "timesheet_types либо is_working_hours невалиден. Проверьте "
+                "timesheet_types и полные названия через get_timesheets; если "
+                "подтверждено рабочее название, повторите запрос с work_title."
             )
 
         # --- Build busy intervals partitioned by clinic_id ---
@@ -224,7 +280,8 @@ def register(mcp: FastMCP) -> None:
         for cid, work in sorted(clinics_seen.items()):
             free = compute_free_slots(
                 work,
-                busy_by_clinic.get(cid, []) + shared_busy,
+                busy_by_clinic.get(cid, []) + shared_busy
+                + unknown_busy_by_clinic.get(cid, []) + unknown_shared_busy,
                 slot_minutes=slot_minutes,
                 min_slot_minutes=min_slot_minutes,
             )
@@ -248,7 +305,7 @@ def register(mcp: FastMCP) -> None:
 
         all_slots.sort(key=lambda s: s["start"])
 
-        return {
+        result = {
             "success": True,
             "doctor_id": doctor_id,
             "date_from": resolved_from,
@@ -257,3 +314,10 @@ def register(mcp: FastMCP) -> None:
             "total_slots": len(all_slots),
             "slots": all_slots,
         }
+        if fallback_used:
+            result["warning"] = (
+                "Запасной режим work_title: выбранные строки считаются рабочими "
+                "без подтверждения timesheet_types. Число слотов может быть "
+                "завышено; остальные неизвестные строки перекрывают доступность."
+            )
+        return result
