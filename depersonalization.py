@@ -158,9 +158,6 @@ _OWNER_PHRASE_RE = re.compile(
 )
 # `Иванов И. И.`, `Иванов И.И.` and the dotless `Иванов И И` that a report
 # column produces just as often.
-_INITIALS_RE = re.compile(
-    r"(?u)\b[A-ZА-ЯЁ][a-zа-яё]{1,30}\s+[A-ZА-ЯЁ]\.?\s?[A-ZА-ЯЁ]\.?(?![a-zа-яё])"
-)
 # Stage 275: three words in a row that look like a name. Two would catch a
 # clinic or a street just as often as a person, so the two-word form is left
 # to the other layers on purpose.
@@ -186,15 +183,20 @@ _NAME_TAIL = r"(?:[А-ЯЁ][А-ЯЁа-яё]{0,30}|[A-Z][A-Za-z]{0,30}|[а-яё]{
 # which the general form cannot allow — a lone capital would turn `А Б В` into
 # a name.
 _NAME_WORD = rf"(?:[А-ЯЁA-Z]'{_NAME_PART}|{_NAME_PART}(?:['\-]{_NAME_TAIL})*)"
+_NAME_LEFT_EDGE = r"(?<![\w'\-])"
+_NAME_RIGHT_EDGE = r"(?![\w'\-])"
 _FULL_NAME_RE = re.compile(
-    rf"(?u)\b{_NAME_WORD}\s+{_NAME_WORD}\s+{_NAME_WORD}\b"
+    rf"(?u){_NAME_LEFT_EDGE}{_NAME_WORD}\s+{_NAME_WORD}\s+{_NAME_WORD}{_NAME_RIGHT_EDGE}"
+)
+_INITIALS_RE = re.compile(
+    rf"(?u){_NAME_LEFT_EDGE}{_NAME_WORD}\s+[A-ZА-ЯЁ]\.?\s?[A-ZА-ЯЁ]\.?{_NAME_RIGHT_EDGE}"
 )
 # A patronymic gives a person away on its own: `-ович`, `-евна` and their kin
 # are almost never part of a product or a clinic name, so a two-word "Пётр
 # Сергеевич" is caught here even though a bare two-word name is not.
 _PATRONYMIC_RE = re.compile(
-    r"(?u)\b[А-ЯЁ][а-яёА-ЯЁ]{1,30}\s+[А-ЯЁ][а-яёА-ЯЁ]*?"
-    r"(?i:ович|евич|ич|овна|евна|ична|инична)\b"
+    rf"(?u){_NAME_LEFT_EDGE}{_NAME_WORD}\s+[А-ЯЁ][а-яёА-ЯЁ]*?"
+    rf"(?i:ович|евич|ич|овна|евна|ична|инична){_NAME_RIGHT_EDGE}"
 )
 # A value that names a street is an ordinary analytical dimension. Checked
 # after the address rule has had its turn, so a real address is already gone by
@@ -216,6 +218,8 @@ _ADDRESS_RE = re.compile(
 # Checked on the pair itself, not on the whole value: a marker at the start of a
 # comment must not switch the protection off for the name at its end.
 _MARKER_WORDS = frozenset({
+    # instructions and field labels, not people
+    "без", "фио",
     # legal forms
     "ооо", "зао", "пао", "ао", "нко", "ано", "ип", "пк", "фгбу", "гбу", "муп",
     "llc", "ltd", "inc",
@@ -276,6 +280,20 @@ def _blocks_pair(word: str, *, is_second: bool) -> bool:
     if folded in _MARKER_WORDS or folded in _PLACE_WORDS:
         return True
     return is_second and folded in _TAIL_WORDS
+
+
+def _redact_full_name(match: re.Match[str]) -> str:
+    # A legal form or instruction is not part of a person's name. Leave the
+    # text intact here; the pair scanner can still catch a real name after it.
+    if any(_fold(word) in _MARKER_WORDS for word in match.group(0).split()):
+        return match.group(0)
+    return REDACTED_NAME
+
+
+def _redact_initials(match: re.Match[str]) -> str:
+    if _fold(match.group(0).split()[0]) in _MARKER_WORDS:
+        return match.group(0)
+    return REDACTED_NAME
 
 
 def _normalize_soft_punctuation(text: str) -> str:
@@ -522,7 +540,7 @@ def sanitize_text(text: str) -> str:
     sanitized_parts.append(text[position:])
     sanitized = "".join(sanitized_parts)
     sanitized = _OWNER_PHRASE_RE.sub(lambda _m: f"owner {REDACTED_NAME}", sanitized)
-    sanitized = _INITIALS_RE.sub(REDACTED_NAME, sanitized)
+    sanitized = _INITIALS_RE.sub(_redact_initials, sanitized)
     return sanitized
 
 
@@ -543,9 +561,9 @@ def sanitize_report_value(text: str) -> str:
     # leftover street marker then means a street name, not an address.
     cleaned = _ADDRESS_RE.sub(REDACTED_ADDRESS, cleaned)
     if not _STREET_MARKER_RE.search(cleaned):
-        cleaned = _FULL_NAME_RE.sub(REDACTED_NAME, cleaned)
+        cleaned = _FULL_NAME_RE.sub(_redact_full_name, cleaned)
         cleaned = _PATRONYMIC_RE.sub(REDACTED_NAME, cleaned)
-        cleaned = _INITIALS_RE.sub(REDACTED_NAME, cleaned)
+        cleaned = _INITIALS_RE.sub(_redact_initials, cleaned)
 
     # Stage 277 stands outside the street guard on purpose: it carries its own,
     # which looks at the pair rather than at the whole value.
