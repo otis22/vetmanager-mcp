@@ -151,6 +151,7 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
     "delete_timesheet": (SCOPE_SCHEDULE_WRITE,),
     "delete_pet": (SCOPE_RECORDS_DELETE,),
     "report_problem": (),
+    "whoami": (),
     "get_admission_by_id": (SCOPE_ADMISSIONS_READ,),
     "get_admissions": (SCOPE_ADMISSIONS_READ,),
     "get_anonymous_clients": (SCOPE_USERS_READ,),
@@ -282,7 +283,7 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
 # at all. Named here rather than derived from an empty scope list: an empty
 # list is also what a tool looks like when someone forgot to give it rights,
 # and those two must never be confused.
-BASELINE_ALLOWED_TOOLS = frozenset({"get_report_ai_prompt_helper", "report_problem"})
+BASELINE_ALLOWED_TOOLS = frozenset({"get_report_ai_prompt_helper", "report_problem", "whoami"})
 
 
 def normalize_token_preset(preset: str | None) -> str:
