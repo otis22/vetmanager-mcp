@@ -1,5 +1,6 @@
 from fastmcp import FastMCP
 from filters import FILTER_FIELDS_BY_ENTITY
+from list_projection import LIST_FIELDS
 
 
 # Each entry is a REST list entity whose accepted field names were checked
@@ -1347,8 +1348,6 @@ def enhance_tool_descriptions(mcp: FastMCP) -> None:
 
         component.description = description
         if component.name in LIST_PROJECTION_SUFFIXES:
-            from list_projection import LIST_FIELDS
-
             properties = component.parameters.get("properties", {})
             if "fields" in properties:
                 properties["fields"]["description"] = (
