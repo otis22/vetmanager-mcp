@@ -1,4 +1,9 @@
 import asyncio
+import base64
+import binascii
+import json
+import re
+from datetime import date
 
 from fastmcp import FastMCP
 
@@ -330,139 +335,161 @@ def register(mcp: FastMCP) -> None:
         months_min: int = 13,
         months_max: int = 24,
         limit: LimitParam = 50,
+        cursor: str = "",
     ) -> dict:
         """Find pets whose owners have not visited the clinic recently.
 
-        Identifies "lapsed" pets via the owner's `client.last_visit_date`.
-        Default window is 13–24 months ago. For each lapsed client, checks
-        invoices first and medical cards as fallback to identify which specific
-        pets were at the last visit (a client may have multiple pets, but only
-        some were brought).
+        Uses client.last_visit_date for the 13–24 month default window, then
+        confirms each pet at that visit through an invoice or medical card.
+        An owner with several pets may have brought only some of them.
 
-        Returns the top N pets sorted by their owner's last_visit_date DESC
-        (most recently lapsed first). Default limit is 50 to prevent
-        accidentally fetching the whole base.
-
-        `truncated` says whether the list is all there was. A truncated list is
-        a page, not an answer — do not report it as "all lapsed pets".
-        `truncation_reason` says why it stopped: `limit_reached` (raise `limit`
-        or narrow the window) or `client_scan_cap` (the scan ran out of budget
-        before the window ran out of clients — narrow the window).
-        `clients_total_in_window` counts lapsed clients, not pets: the number of
-        pets is not knowable without visiting every client, which is the walk
-        this tool exists to avoid. It is null when upstream reports no count —
-        "unknown", not "none".
+        The result is ordered by client last visit DESC, client ID DESC, then
+        pet ID ASC. Pass `next_cursor` as `cursor` to continue. A cursor fixes
+        the window's reference day; keep months_min/months_max unchanged.
+        `has_more=true` means another pet was found, `false` proves the end,
+        and null means unscanned clients remain after a scan cap or an
+        unexpectedly short upstream page. With null, next_cursor continues
+        searching. A truncated page is not the full lapsed-pet list.
+        `clients_total_in_window` counts clients, not pets, and can be null
+        when upstream does not report it. Pagination is not a snapshot:
+        changes to clients or pets between calls can shift positions.
 
         Args:
-            months_min: Minimum age of owner's last visit in months (default 13).
-            months_max: Maximum age of owner's last visit in months (default 24).
+            months_min: Minimum age of owner's last visit in months.
+            months_max: Maximum age of owner's last visit in months.
             limit: Max pets to return (1–100, default 50).
+            cursor: Opaque next_cursor from the previous page, if any.
         """
-        # Pagination loop: scan inactive clients page-by-page until we either
-        # accumulate `limit` pets or exhaust the inactive-client window.
-        # This avoids the heuristic underfill where many clients have no
-        # confirmed pets.
-        #
-        # Stage 223: the loop collects one pet MORE than asked. That extra pet
-        # is never returned — it exists only to tell a list that happens to fill
-        # the limit from a list that was cut by it. Without it both look the
-        # same from outside, and the answer quietly under-reports.
-        probe_limit = limit + 1
-        safety_cap_reached = False
+        today = date.today()
+        client_offset = 0
+        pet_index = 0
+        if cursor:
+            try:
+                if len(cursor) > 512 or re.fullmatch(r"[A-Za-z0-9_-]+", cursor) is None:
+                    raise ValueError("invalid cursor encoding")
+                raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
+                if base64.urlsafe_b64encode(raw).decode().rstrip("=") != cursor:
+                    raise ValueError("non-canonical cursor encoding")
+                state = json.loads(raw)
+                if not isinstance(state, dict) or set(state) != {"v", "min", "max", "day", "client", "pet"}:
+                    raise ValueError("invalid cursor structure")
+                if type(state["v"]) is not int or state["v"] != 1 or type(state["min"]) is not int or type(state["max"]) is not int:
+                    raise ValueError("invalid cursor version or window")
+                if (state["min"], state["max"]) != (months_min, months_max):
+                    raise ValueError("cursor window differs from months_min/months_max")
+                if type(state["client"]) is not int or type(state["pet"]) is not int:
+                    raise ValueError("invalid cursor position")
+                client_offset, pet_index = state["client"], state["pet"]
+                if client_offset < 0 or client_offset > 1_000_000 or pet_index < 0:
+                    raise ValueError("cursor position out of range")
+                today = date.fromisoformat(state["day"])
+                if today > date.today():
+                    raise ValueError("cursor day is in the future")
+            except (ValueError, TypeError, KeyError, UnicodeError, binascii.Error) as exc:
+                raise ToolInputError(f"invalid cursor: {exc}") from exc
+
+        def encode_position(offset: int, index: int) -> str:
+            if offset > 1_000_000:
+                raise ToolInputError("inactive client offset exceeds 1000000; narrow the date window")
+            state = {"v": 1, "min": months_min, "max": months_max,
+                     "day": today.isoformat(), "client": offset, "pet": index}
+            return base64.urlsafe_b64encode(json.dumps(state, separators=(",", ":")).encode()).decode().rstrip("=")
 
         vc = VetmanagerClient()
         result_pets: list[dict] = []
         clients_scanned = 0
-        cutoff_oldest = ""
-        cutoff_newest = ""
+        cutoff_oldest = cutoff_newest = ""
         clients_total_in_window: int | None = None
-        offset = 0
+        next_cursor: str | None = None
+        has_more: bool | None = False
+        safety_cap_reached = False
+        short_page_with_remaining = False
+        offset = client_offset
 
         for page_num in range(MAX_CLIENT_PAGES):
-            (
-                clients,
-                cutoff_oldest,
-                cutoff_newest,
-                page_total,
-            ) = await fetch_inactive_clients_page(
-                months_min=months_min,
-                months_max=months_max,
-                limit=CLIENT_PAGE_SIZE,
-                offset=offset,
+            clients, cutoff_oldest, cutoff_newest, page_total = await fetch_inactive_clients_page(
+                months_min=months_min, months_max=months_max,
+                limit=CLIENT_PAGE_SIZE, offset=offset, today=today,
             )
             if clients_total_in_window is None:
                 clients_total_in_window = page_total
             if not clients:
+                if page_total is not None and page_total > offset:
+                    raise ToolInputError("inactive client page is empty before reported totalCount")
                 break
 
-            client_pet_pairs = await find_pets_for_clients_last_visit(
-                vc,
-                clients=clients,
-                limit=probe_limit - len(result_pets),
-            )
-
-            for client, visited_pets in client_pet_pairs:
-                clients_scanned += 1
-                client_id = client.get("id")
-                last_visit = client.get("last_visit_date", "")
-                if client_id is None or not last_visit:
-                    continue
-
-                client_name_parts = [
-                    client.get("last_name", ""),
-                    client.get("first_name", ""),
-                    client.get("middle_name", ""),
-                ]
-                client_name = " ".join(p for p in client_name_parts if p).strip()
-
-                for pet in visited_pets:
-                    result_pets.append({
-                        "id": pet.get("id"),
-                        "alias": pet.get("alias", ""),
-                        "type_id": pet.get("type_id"),
-                        "owner_id": pet.get("owner_id", client_id),
-                        "owner_name": client_name,
-                        "owner_phone": client.get("cell_phone", ""),
-                        "last_visit_date": last_visit,
-                        "visit_source": pet.get("visit_source"),
-                        "doctor_id": pet.get("visit_doctor_id"),
-                        "doctor_name": pet.get("visit_doctor_name"),
-                        "doctor_resolution": "resolved" if pet.get("visit_doctor_name") else (
-                            "not_specified" if not pet.get("visit_doctor_id") else "unresolved"
-                        ),
-                    })
-                    if len(result_pets) >= probe_limit:
-                        break
-
-                if len(result_pets) >= probe_limit:
-                    break
-
-            if len(result_pets) >= probe_limit:
-                break
-
-            if len(clients) < CLIENT_PAGE_SIZE:
-                # Last page reached; no more clients to scan
-                break
-
-            offset += CLIENT_PAGE_SIZE
-            if page_num + 1 == MAX_CLIENT_PAGES:
-                # The budget running out is only a truncation if the window
-                # still holds clients we never looked at. When it ends on the
-                # very last allowed page, the walk was complete and saying
-                # otherwise would send the caller narrowing a window that has
-                # nothing left in it. An unknown total stays "maybe more".
-                safety_cap_reached = (
-                    clients_total_in_window is None or clients_total_in_window > offset
+            # Process only the next same-day group. The helper fully
+            # resolves that group so a cursor can resume inside one owner;
+            # other days are not fetched after the one-pet probe succeeds.
+            group_start = 0
+            while group_start < len(clients):
+                group_day = str(clients[group_start].get("last_visit_date") or "").split(" ")[0]
+                group_end = group_start + 1
+                while (group_end < len(clients)
+                       and str(clients[group_end].get("last_visit_date") or "").split(" ")[0] == group_day):
+                    group_end += 1
+                pairs = await find_pets_for_clients_last_visit(
+                    vc, clients=clients[group_start:group_end], limit=None,
                 )
+                for local_index, (client, visited_pets) in enumerate(pairs, start=group_start):
+                    clients_scanned += 1
+                    absolute_client = offset + local_index
+                    client_id = client.get("id")
+                    last_visit = client.get("last_visit_date", "")
+                    if client_id is None or not last_visit:
+                        continue
+                    client_name = " ".join(
+                        str(client.get(k) or "") for k in ("last_name", "first_name", "middle_name")
+                    ).strip()
+                    for index, pet in enumerate(sorted(visited_pets, key=lambda p: int(p["id"]))):
+                        if absolute_client == client_offset and index < pet_index:
+                            continue
+                        if len(result_pets) == limit:
+                            has_more = True
+                            next_cursor = encode_position(absolute_client, index)
+                            break
+                        result_pets.append({
+                            "id": pet.get("id"), "alias": pet.get("alias", ""),
+                            "type_id": pet.get("type_id"), "owner_id": pet.get("owner_id", client_id),
+                            "owner_name": client_name, "owner_phone": client.get("cell_phone", ""),
+                            "last_visit_date": last_visit, "visit_source": pet.get("visit_source"),
+                            "doctor_id": pet.get("visit_doctor_id"),
+                            "doctor_name": pet.get("visit_doctor_name"),
+                            "doctor_resolution": "resolved" if pet.get("visit_doctor_name") else (
+                                "not_specified" if not pet.get("visit_doctor_id") else "unresolved"
+                            ),
+                        })
+                    if next_cursor:
+                        break
+                if next_cursor:
+                    break
+                group_start = group_end
+            if next_cursor:
+                break
 
-        cut_by_limit = len(result_pets) > limit
-        del result_pets[limit:]
+            following_offset = offset + len(clients)
+            if clients_total_in_window is not None:
+                if following_offset >= clients_total_in_window:
+                    break
+            if len(clients) < CLIENT_PAGE_SIZE:
+                if clients_total_in_window is not None:
+                    short_page_with_remaining = True
+                    has_more = None
+                    next_cursor = encode_position(following_offset, 0)
+                break
+            offset = following_offset
+            if page_num + 1 == MAX_CLIENT_PAGES:
+                safety_cap_reached = True
+                has_more = None
+                next_cursor = encode_position(offset, 0)
 
         reasons = []
-        if cut_by_limit:
+        if has_more is True:
             reasons.append("limit_reached")
         if safety_cap_reached:
             reasons.append("client_scan_cap")
+        if short_page_with_remaining:
+            reasons.append("upstream_short_page")
         truncation_reason = "+".join(reasons) if reasons else None
 
         unresolved_doctor_ids = list({
@@ -496,15 +523,13 @@ def register(mcp: FastMCP) -> None:
             "limit_applied": limit,
             "truncated": bool(reasons),
             "truncation_reason": truncation_reason,
+            "has_more": has_more,
+            "next_cursor": next_cursor,
             "clients_total_in_window": clients_total_in_window,
             "clients_scanned": clients_scanned,
             "cutoff_window": {"from": cutoff_oldest, "to": cutoff_newest},
             "months_min": months_min,
             "months_max": months_max,
             "safety_cap_reached": safety_cap_reached,
-            "note": (
-                "Returned top N pets confirmed at last client visit via invoice "
-                "(or medcard fallback). Pass higher limit or different "
-                "months_min/months_max to customize."
-            ),
+            "note": "Continue with next_cursor while present; has_more=null means unscanned clients remain but pet count is unknown.",
         }

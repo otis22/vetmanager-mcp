@@ -62,7 +62,7 @@ async def test_real_lapsed_pets_say_whether_the_list_is_cut() -> None:
 
     assert isinstance(data["truncated"], bool)
     assert data["truncation_reason"] in (None, "limit_reached", "client_scan_cap",
-                                         "limit_reached+client_scan_cap")
+                                         "limit_reached+client_scan_cap", "upstream_short_page")
     assert len(data["inactive_pets"]) <= 1
     if data["truncated"]:
         assert data["truncation_reason"] is not None

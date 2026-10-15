@@ -468,8 +468,8 @@ async def test_get_inactive_pets_paginates_clients_until_limit_reached():
     # respx returns sequence: page1 then page2 then empty
     respx.get(f"{BASE}/rest/api/client").mock(
         side_effect=[
-            _client_response(page1_clients),
-            _client_response(page2_clients),
+            httpx.Response(200, json={"data": {"totalCount": 105, "client": page1_clients}}),
+            httpx.Response(200, json={"data": {"totalCount": 105, "client": page2_clients}}),
         ]
     )
 

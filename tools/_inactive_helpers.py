@@ -70,6 +70,7 @@ async def _fetch_all_entity_pages(
         params = build_list_query_params(
             limit=_BATCH_SIZE,
             offset=offset,
+            sort=[{"property": "id", "direction": "ASC"}],
             filters=filters,
         )
         response = await vc.get(endpoint, params=params)
@@ -82,6 +83,8 @@ async def _fetch_all_entity_pages(
                     page_records = candidate
                     break
         if not page_records:
+            if isinstance(data, dict) and int(data.get("totalCount", 0) or 0) > offset:
+                raise ToolInputError(f"{endpoint} page is empty before reported totalCount")
             break
         records.extend(page_records)
         page_total = int(data.get("totalCount", 0)) if isinstance(data, dict) else 0
@@ -89,6 +92,8 @@ async def _fetch_all_entity_pages(
         if page_total and offset >= page_total:
             break
         if len(page_records) < _BATCH_SIZE:
+            if page_total > offset:
+                raise ToolInputError(f"{endpoint} page ended before reported totalCount")
             break
     return records
 
@@ -208,13 +213,17 @@ async def fetch_inactive_clients_page(
         _filter_gte("last_visit_date", day_start(cutoff_oldest)),
         _filter_lt("last_visit_date", next_day_start(cutoff_newest)),
     ]
-    sort = [{"property": "last_visit_date", "direction": "DESC"}]
+    sort = [
+        {"property": "last_visit_date", "direction": "DESC"},
+        {"property": "id", "direction": "DESC"},
+    ]
 
     params = build_list_query_params(
         limit=limit,
         offset=offset,
         sort=sort,
         filters=filters,
+        max_offset=1_000_000,
     )
     resp = await VetmanagerClient().get("/rest/api/client", params=params)
     data = resp.get("data", {}) if isinstance(resp, dict) else {}
@@ -293,15 +302,21 @@ async def find_pets_at_client_last_visit(
         pet_params = build_list_query_params(
             limit=_BATCH_SIZE,
             offset=offset,
+            sort=[{"property": "id", "direction": "ASC"}],
             filters=pet_filters,
         )
         pet_resp = await vc.get("/rest/api/pet", params=pet_params)
         pet_data = pet_resp.get("data", {}) if isinstance(pet_resp, dict) else {}
         page_pets = pet_data.get("pet", []) if isinstance(pet_data, dict) else []
         if not page_pets:
+            if isinstance(pet_data, dict) and int(pet_data.get("totalCount", 0) or 0) > offset:
+                raise ToolInputError("pet page is empty before reported totalCount")
             break
         pets.extend(page_pets)
+        page_total = int(pet_data.get("totalCount", 0)) if isinstance(pet_data, dict) else 0
         if len(page_pets) < _BATCH_SIZE:
+            if page_total > offset + len(page_pets):
+                raise ToolInputError("pet page ended before reported totalCount")
             break
         offset += len(page_pets)
 
@@ -423,6 +438,7 @@ async def find_pets_for_clients_last_visit(
             pet_params = build_list_query_params(
                 limit=_BATCH_SIZE,
                 offset=offset,
+                sort=[{"property": "id", "direction": "ASC"}],
                 filters=[
                     _filter_in("owner_id", owner_ids),
                     _filter_eq("status", "alive"),
@@ -432,12 +448,16 @@ async def find_pets_for_clients_last_visit(
             pet_data = pet_resp.get("data", {}) if isinstance(pet_resp, dict) else {}
             page_pets = pet_data.get("pet", []) if isinstance(pet_data, dict) else []
             if not page_pets:
+                if isinstance(pet_data, dict) and int(pet_data.get("totalCount", 0) or 0) > offset:
+                    raise ToolInputError("pet page is empty before reported totalCount")
                 break
             pets.extend(page_pets)
             page_total = int(pet_data.get("totalCount", 0)) if isinstance(pet_data, dict) else 0
             if len(owner_ids) > 1 and page_total and offset + len(page_pets) >= page_total:
                 break
             if len(page_pets) < _BATCH_SIZE:
+                if page_total > offset + len(page_pets):
+                    raise ToolInputError("pet page ended before reported totalCount")
                 break
             offset += len(page_pets)
         return pets

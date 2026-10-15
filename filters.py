@@ -331,6 +331,7 @@ def build_list_query_params(
     sort: list[dict[str, Any]] | None = None,
     filters: list[dict[str, Any]] | list[Any] | None = None,
     extra: dict[str, Any] | None = None,
+    max_offset: int = 10000,
 ) -> dict[str, Any]:
     """Build common list-query params with optional sort/filter blocks.
 
@@ -344,7 +345,7 @@ def build_list_query_params(
     # Lazy import avoids pulling pydantic at filter-module import time.
     from validators import validate_list_params
 
-    validate_list_params(limit, offset)
+    validate_list_params(limit, offset, max_offset=max_offset)
     params: dict[str, Any] = {"limit": limit, "offset": offset}
 
     if sort:

@@ -42,7 +42,7 @@ PositiveReferenceIdParam = Annotated[
 ]
 
 
-def validate_list_params(limit: int, offset: int) -> None:
+def validate_list_params(limit: int, offset: int, *, max_offset: int = _OFFSET_MAX) -> None:
     """Validate pagination parameters for list endpoints.
 
     Raises:
@@ -53,9 +53,9 @@ def validate_list_params(limit: int, offset: int) -> None:
             f"'limit' must be between 1 and {_LIMIT_MAX}, got {limit}. "
             "Use pagination (offset) to retrieve more records."
         )
-    if offset < 0 or offset > _OFFSET_MAX:
+    if offset < 0 or offset > max_offset:
         raise ToolInputError(
-            f"'offset' must be between 0 and {_OFFSET_MAX}, got {offset}. "
+            f"'offset' must be between 0 and {max_offset}, got {offset}. "
             "If you need records beyond this range, refine your search criteria."
         )
 
