@@ -14,6 +14,8 @@ from depersonalization import REDACTED_NAME, sanitize_report_value, sanitize_tex
     "Без ИП и ООО",
     "Анализ крови общий",
     "О ФИО говорить не нужно",
+    "ФИО Клиника Вера",
+    "ФИО ООО Ромашка",
 ])
 def test_service_phrases_remain_whole(value):
     assert sanitize_report_value(value) == value
@@ -35,6 +37,8 @@ def test_service_phrases_remain_whole(value):
     ("-Иванов И.И.", "-" + REDACTED_NAME),
     ("'Smith John David'", "'" + REDACTED_NAME + "'"),
     ("O'Connor Anna Sergeevna", REDACTED_NAME),
+    ("ФИО John Smith", "ФИО " + REDACTED_NAME),
+    ("ФИО Иванов Пётр", "ФИО " + REDACTED_NAME),
 ])
 def test_real_names_still_redacted_as_whole_words(value, expected):
     assert sanitize_report_value(value) == expected
@@ -42,6 +46,10 @@ def test_real_names_still_redacted_as_whole_words(value, expected):
 
 def test_initials_inside_external_quotes_are_scrubbed_in_free_text():
     assert sanitize_text("'Иванов И. И.'") == "'" + REDACTED_NAME + "'"
+
+
+def test_typographic_inner_dash_does_not_leave_half_surname_in_free_text():
+    assert sanitize_text("Петров–Водкин И. И.") == REDACTED_NAME
 
 
 def test_report_job_echo_preserves_nonpersonal_intent():

@@ -182,12 +182,17 @@ _NAME_TAIL = r"(?:[А-ЯЁ][А-ЯЁа-яё]{0,30}|[A-Z][A-Za-z]{0,30}|[а-яё]{
 # `O'Connor` and `Д'Артаньян` start with a single letter before the apostrophe,
 # which the general form cannot allow — a lone capital would turn `А Б В` into
 # a name.
-_NAME_WORD = rf"(?:[А-ЯЁA-Z]'{_NAME_PART}|{_NAME_PART}(?:['\-]{_NAME_TAIL})*)"
+_SOFT_PUNCTUATION = {
+    "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-", "\u2014": "-",
+    "\u2018": "'", "\u2019": "'", "\u02bc": "'",
+}
+_NAME_JOINERS = "['" + re.escape("-" + "".join(_SOFT_PUNCTUATION)) + "]"
+_NAME_WORD = rf"(?:[А-ЯЁA-Z]{_NAME_JOINERS}{_NAME_PART}|{_NAME_PART}(?:{_NAME_JOINERS}{_NAME_TAIL})*)"
 # A quote or list dash touching a name is punctuation when it is not joined
 # to the preceding/following word. An inner apostrophe/hyphen remains part of
 # the same token, so matching must not restart after it or stop before it.
-_NAME_LEFT_EDGE = r"(?<!\w)(?<!\w['\-])"
-_NAME_RIGHT_EDGE = r"(?!\w)(?!['\-]\w)"
+_NAME_LEFT_EDGE = rf"(?<!\w)(?<!\w{_NAME_JOINERS})"
+_NAME_RIGHT_EDGE = rf"(?!\w)(?!{_NAME_JOINERS}\w)"
 _FULL_NAME_RE = re.compile(
     rf"(?u)(?=({_NAME_LEFT_EDGE}{_NAME_WORD}\s+{_NAME_WORD}\s+{_NAME_WORD}{_NAME_RIGHT_EDGE}))"
 )
@@ -256,10 +261,6 @@ _PAIR_WORD_RE = re.compile(r"(?u)[^\W\d_]+(?:['\-][^\W\d_]+)*")
 _LOWER_PATRONYMIC_RE = re.compile(
     r"(?ui)\b([^\W\d_]{2,31})\s+([^\W\d_]*?(?:ович|евич|овна|евна|ична|инична))\b"
 )
-_SOFT_PUNCTUATION = {
-    "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-", "\u2014": "-",
-    "\u2018": "'", "\u2019": "'", "\u02bc": "'",
-}
 
 
 def _fold(word: str) -> str:
@@ -294,7 +295,19 @@ def _redact_full_names(text: str) -> str:
         start, end = match.span(1)
         if start < position:
             continue
-        if any(_fold(word) in _MARKER_WORDS for word in match.group(1).split()):
+        words = match.group(1).split()
+        if _fold(words[0]) == "фио" and not any(
+            _fold(word) in _MARKER_WORDS for word in words[1:]
+        ):
+            # The field label makes the next two title-case words a name even
+            # when neither is in the given-name dictionary (John Smith).
+            name_start = start + match.group(1).index(words[1], len(words[0]))
+            if _FULL_NAME_RE.match(text, name_start):
+                continue  # A following third name word is handled as a triple.
+            parts.extend((text[position:name_start], REDACTED_NAME))
+            position = end
+            continue
+        if any(_fold(word) in _MARKER_WORDS for word in words):
             continue
         parts.extend((text[position:start], REDACTED_NAME))
         position = end
