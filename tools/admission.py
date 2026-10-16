@@ -173,7 +173,7 @@ def register(mcp: FastMCP) -> None:
         counts: dict[str, int] = {}
         seen_ids: set[int] = set()
         known_total: int | None = None
-        page_shape: tuple[type, bool] | None = None
+        page_shape: tuple[type, str] | None = None
         processed = 0
         complete = False
         for page in range(5):
@@ -193,7 +193,11 @@ def register(mcp: FastMCP) -> None:
                 rows, total = data["admission"], data.get("totalCount")
             else:
                 raise reportable_error("Daily summary received an invalid list shape.")
-            shape = (type(data), isinstance(data, dict) and "totalCount" in data)
+            total_state = (
+                "absent" if not isinstance(data, dict) or "totalCount" not in data
+                else "null" if total is None else "value"
+            )
+            shape = (type(data), total_state)
             if page_shape is not None and shape != page_shape:
                 raise reportable_error("Daily summary page shape changed during pagination.")
             page_shape = shape

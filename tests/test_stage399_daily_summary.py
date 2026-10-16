@@ -138,14 +138,16 @@ async def test_daily_summary_rejects_contradictory_more_flag(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_daily_summary_rejects_total_metadata_drift(monkeypatch):
+@pytest.mark.parametrize("later_total", ["missing", None])
+async def test_daily_summary_rejects_total_metadata_drift(monkeypatch, later_total):
     import tools.admission as admission
 
     async def page(_path, *, offset, **_kwargs):
         return {"success": True, "data": {
             "admission": [{"id": offset + i + 1, "status": "save"}
                           for i in range(100 if offset == 0 else 1)],
-            **({"totalCount": 101} if offset == 0 else {}),
+            **({"totalCount": 101} if offset == 0 else
+               {} if later_total == "missing" else {"totalCount": None}),
         }}
 
     monkeypatch.setattr(admission, "crud_list", AsyncMock(side_effect=page))

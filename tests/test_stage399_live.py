@@ -74,6 +74,7 @@ def test_stage399_projection_live(live_server_url):
             sizes = {}
             full_nested = None
             full_owner = None
+            full_pet = None
             full_row_id = None
             for mode, arguments in (("full", {"limit": 1}),
                                     ("fields", {"limit": 1, "fields": ["id", "status"]}),
@@ -100,21 +101,28 @@ def test_stage399_projection_live(live_server_url):
                 if mode == "full" and tool in {"get_admissions", "get_invoices"}:
                     full_nested = rows[0].get("client")
                     pet = rows[0].get("pet")
+                    full_pet = pet
                     full_owner = pet.get("owner") if isinstance(pet, dict) else None
                 if mode == "masked" and isinstance(full_nested, dict):
                     assert rows[0]["id"] == full_row_id
                     masked_nested = rows[0].get("client")
-                    if isinstance(masked_nested, dict):
-                        for contact_key in ("cell_phone", "home_phone", "work_phone", "email", "address"):
-                            original = full_nested.get(contact_key)
-                            if isinstance(original, str) and original:
-                                assert masked_nested.get(contact_key) != original
-                                nested_contact_verified = True
+                    assert isinstance(masked_nested, dict)
+                    assert full_nested.get("id") is not None
+                    assert masked_nested.get("id") == full_nested["id"]
+                    for contact_key in ("cell_phone", "home_phone", "work_phone", "email", "address"):
+                        original = full_nested.get(contact_key)
+                        if isinstance(original, str) and original:
+                            assert masked_nested.get(contact_key) != original
+                            nested_contact_verified = True
                 if mode == "masked" and isinstance(full_owner, dict):
                     assert rows[0]["id"] == full_row_id
                     pet = rows[0].get("pet")
+                    assert isinstance(pet, dict) and isinstance(full_pet, dict)
+                    assert full_pet.get("id") is not None and pet.get("id") == full_pet["id"]
                     masked_owner = pet.get("owner") if isinstance(pet, dict) else None
                     assert isinstance(masked_owner, dict)
+                    assert full_owner.get("id") is not None
+                    assert masked_owner.get("id") == full_owner["id"]
                     for contact_key in ("cell_phone", "home_phone", "work_phone", "email", "address"):
                         original = full_owner.get(contact_key)
                         if isinstance(original, str) and original:
