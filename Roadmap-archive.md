@@ -8574,3 +8574,66 @@ ERROR_KIND_LLM_UNAVAILABLE) запрошены у ВМ отдельным пол
   выпуск с зелёным CI; после выпуска отметить репорт #134 как fixed с
   привязкой к этапу. — `done`
 
+## Этап 385. Утилизация 4 ядер: multi-worker MCP (3 воркера) и судьба in-process метрик — `done`
+
+Источник: апгрейд прода 13.10.2026 (2→4 ядра, ~4→8 ГБ) и аудит супервизора.
+**Решение владельца 13.10.2026: multi-worker делаем, 3 воркера** — вариант
+«осознанный отказ» закрыт. Сервис — один uvicorn-процесс (`server.py`:205,
+`uvicorn.Config` без workers): сколько бы ядер ни было, задействуется одно.
+Главный блокер — in-process витрина `service_metrics.py`: при 3 воркерах
+счётчики распадаются (каждый воркер отдаёт свой /metrics), плюс процессные
+кэши lifecycle-наблюдений report_ai (`_REPORT_AI_LIFECYCLE_OBSERVATIONS`,
+`..._FINALIZED_OBSERVATIONS`) и lock'и теряют смысл. Возможные пути общей
+метрики: prometheus multiprocess mode, перенос счётчиков в Redis (уже в
+контуре) или в Postgres.
+
+- 385.1 Исследование и PRD: инвентарь всего процессного состояния (метрики,
+  кэши, claims, pending-наблюдения, breaker-состояние), какие из них обязаны
+  быть общими при 3 воркерах; выбор способа общей метрики; схема запуска
+  (workers=3 в uvicorn или 3 реплики за балансировщиком — учесть drain и
+  zero-downtime деплой, `_DrainingUvicornServer`); лимиты памяти на воркер
+  сверить с этапом 384. PRD с ревью по схеме моделей. — `done`
+  (14.10.2026; см. AssumptionLog, этап 385.1)
+- 385.2 Реализация по PRD: сторожа красными на единый /metrics при 3 воркерах
+  и на отсутствие потери notice/claim; live-проверка на devtr6 с тремя
+  воркерами. — `done` (14.10.2026; кодовый SHA `ee7ded7`:
+  a1–a3, b и c1 закрыты ранее;
+  a4 — изолированный cutover на три slot и откат точного pre-385 image
+  проверены с health/metrics/tools/list/SSE/export; прежняя session после
+  отката дала 404, re-initialize и GET SSE — 200. При испытании исправлено
+  столкновение PID 1 в общем томе логов, сторож показан красным. Для c2
+  проверен полный каталог shared counter/latency, живые bearer/Report AI
+  и export серии; c2c — mock редких событий и полный каталог семейств;
+  c3 — Redis outage 503→200 и равный count/sum/max/cache на трёх slot;
+  c4 — полный HELP/TYPE каталог и target `up=1`. В ходе 5 живые c2a
+  guard/rate-limit дали общие +2/+1 на трёх slot, c2b безопасный export
+  outcome дал один `poll|success` после двух вызовов. Для d общий Redis lease,
+  snapshot и alert claim проверены на трёх slot, включая смену владельца и
+  одно предупреждение; account-age заменён на avg/p95 без account_id.
+  Для e общие lifecycle transitions/terminal, guidance issue/outcome,
+  export poll outcome и expiry/eviction финализация проверены сторожами;
+  terminal `saved` на devtr6 дал +1 на трёх slot. В ходе 6 добавлены общие
+  reject pending, queue observation вне poll, guidance `recreated` и возраст
+  ожидания export при смене slot; красные сторожа и фокусный набор зелёные.
+  Для f PG claim notice и first-session, account lock, Redis limiter outage
+  и PG cache/write barrier проверены конкурентными сторожами; живой devtr6
+  create Report AI на одном slot и read на другом дали 200/200 и закрытый
+  барьер, Redis outage отказал на всех трёх slot. Для g изолированные 200
+  вызовов дали 200 успешных ответов, OOM=0, общий счётчик +200 и ресурсный
+  gate ниже 70% 2 GiB. В ходе 7 живые devtr6 reject/guidance, конкурентный
+  save соединения, first-session, stale GET через другой slot и рестарт
+  изолированной PG после upstream write подтверждены. Три slot при half-open
+  дали суммарно три upstream-пробы и 12 отказов; задержка Redis observation
+  закрыта красным сторожем и переносом за event loop, разрешённый guidance
+  удаляется из account index. Повтор 200 вызовов на исправленном image:
+  200 HTTP 200, общая метрика +200, OOM=0, память ниже 70% 2 GiB.
+  Полный mock и real suite — exit 0; committed Spark, Astra и Sol xhigh
+  проверены, валидные сильные verdict `findings=[]`, critical/high нет.
+  Подробные коды, красные сторожа и evidence — в AssumptionLog;
+  production не трогали.)
+- 385.3 Аудит, сильное ревью, полный прогон, AssumptionLog, выпуск с зелёным
+  CI; после выпуска сверка утилизации ядер на проде. — `done`
+  (14.10.2026: после исправления deploy-пути SHA `dca5a8f` выпущен на три
+  healthy slot; Tests и Deploy Prod зелёные, сверка production и история
+  предыдущего отката в AssumptionLog.)
+
