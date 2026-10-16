@@ -8637,3 +8637,16 @@ ERROR_KIND_LLM_UNAVAILABLE) запрошены у ВМ отдельным пол
   healthy slot; Tests и Deploy Prod зелёные, сверка production и история
   предыдущего отката в AssumptionLog.)
 
+## Этап 386. Наблюдаемость потерянной MCP-сессии и восстановление клиента — `done`
+
+Источник: наблюдение супервизора 14.10.2026 — один клиент повторяет `POST /mcp`
+с ответом 404 без повторного initialize. Текущий `record_http_request` охватывает
+custom web routes, а не ответы FastMCP `/mcp`; доля `session-not-found` 404
+в `/metrics` не видна. Серия 400 и `missing_authorization` от другого IP
+не похожа на health-check: Docker проверяет `GET /healthz`.
+
+- 386.1 Различить причины 404/400 на `/mcp` безопасными bounded метками,
+  проверить поведение клиента после потери сессии и добавить восстановление
+  через re-initialize или явную подсказку без session ID/IP в метриках. PRD,
+  красные сторожа и живой изолированный тест перед реализацией. — `done`
+
