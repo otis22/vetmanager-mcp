@@ -180,6 +180,7 @@ _KNOWN_PUBLIC = (
     "vromanichev.ru",
     "example.com",
     "github.com",
+    "ghcr.io",
     "img.shields.io",
     "modelcontextprotocol.io",
     "opensource.org",
