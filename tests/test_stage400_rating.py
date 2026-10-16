@@ -29,19 +29,43 @@ from tool_access_registry import SCOPE_REPORT_AI_WRITE, TOOL_REQUIRED_SCOPES
 
 @pytest.mark.asyncio
 async def test_rating_is_visible_before_a_report_succeeds():
-    descriptions = {tool.name: tool.to_mcp_tool().description for tool in await mcp.list_tools()}
+    advertised = {tool.name: tool.to_mcp_tool() for tool in await mcp.list_tools()}
+    descriptions = {name: tool.description for name, tool in advertised.items()}
     rating = descriptions["rate_report_ai_job"]
+    rating_schema = advertised["rate_report_ai_job"].inputSchema
+    assert "comment" in rating_schema["properties"]
+    assert "comment" not in rating_schema.get("required", [])
     for fragment in (
         "1 = отчёт даже не построился",
         "2 и выше — отчёт построился",
         "2 = построился, но задачу почти не решил",
         "5–6 = решил частично",
         "10 = задача решена полностью, ничего не пришлось добывать другими путями",
+        "что именно не устроило в отчёте",
     ):
         assert fragment in rating
     assert "rate_report_ai_job" in descriptions["create_report_ai_job"]
     assert "rate_report_ai_job" in get_report_ai_prompt_helper_text()
     assert TOOL_REQUIRED_SCOPES["rate_report_ai_job"] == (SCOPE_REPORT_AI_WRITE,)
+
+
+def test_any_agent_allowed_to_create_report_ai_job_can_rate_it():
+    create_scopes = set(TOOL_REQUIRED_SCOPES["create_report_ai_job"])
+    rating_scopes = set(TOOL_REQUIRED_SCOPES["rate_report_ai_job"])
+    assert create_scopes
+    assert rating_scopes
+    assert rating_scopes <= create_scopes
+
+
+@pytest.mark.parametrize("status, action", [
+    ("ready_to_save", "save_report_ai_job_as_report"),
+    ("needs_confirmation", "reject_report_ai_job_candidate"),
+])
+def test_numeric_string_job_id_keeps_next_action(status, action):
+    job = {"id": "400", "status": status}
+    report_ai._annotate_report_ai_next_action(job)
+    calls = [job["next_action"]["call"]] if "call" in job["next_action"] else job["next_action"]["calls"]
+    assert any(item["tool"] == action and item["arguments"]["job_id"] == 400 for item in calls)
 
 
 @pytest.mark.asyncio

@@ -223,8 +223,8 @@ def _is_reject_pending(job: dict) -> bool:
 
 
 def _annotate_report_ai_next_action(job: dict) -> None:
-    job_id = job.get("id")
-    if isinstance(job_id, bool) or not isinstance(job_id, int) or job_id <= 0:
+    job_id = _rating_job_id(job.get("id"))
+    if job_id is None:
         return
     status = job.get("status")
     if status == "needs_confirmation":
