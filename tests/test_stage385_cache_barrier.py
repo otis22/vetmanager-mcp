@@ -25,7 +25,7 @@ def test_cache_barrier_migration_upgrade_downgrade(tmp_path):
     config = Config("alembic.ini")
     config.set_main_option("script_location", "alembic")
     config.set_main_option("sqlalchemy.url", f"sqlite:///{tmp_path / 'barrier-migrate.db'}")
-    command.upgrade(config, "head")
+    command.upgrade(config, "20261014_000029")
     engine = create_engine(config.get_main_option("sqlalchemy.url"))
     assert "vetmanager_cache_barriers" in inspect(engine).get_table_names()
     assert {"tag_hash", "generation", "active_writes"} == {

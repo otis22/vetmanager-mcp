@@ -84,7 +84,7 @@ def test_every_report_ai_result_uses_column_preserving_path():
                   if isinstance(node, ast.AsyncFunctionDef)
                   and any(isinstance(decorator, ast.Attribute) and decorator.attr == "tool"
                           for decorator in node.decorator_list)}
-    assert registered - {"get_report_ai_prompt_helper"} == REPORT_COLUMN_TOOLS
+    assert registered - {"get_report_ai_prompt_helper", "rate_report_ai_job"} == REPORT_COLUMN_TOOLS
 
 
 @pytest.mark.asyncio

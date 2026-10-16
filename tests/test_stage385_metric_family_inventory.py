@@ -28,7 +28,8 @@ EXPECTED_METRIC_TYPES = {
         report_ai_empty_preview_guidance_issued_total
         report_ai_empty_preview_guidance_jobs_total
         report_ai_empty_preview_guidance_outcomes_total report_ai_exports_total
-        report_ai_outcomes_by_code_total business_events_total cache_hits_total
+        report_ai_outcomes_by_code_total report_ai_ratings_total
+        report_ai_rating_purges_total business_events_total cache_hits_total
         cache_misses_total cache_invalidations_total cache_evictions_total
     """.split(),
     "summary": """
@@ -91,6 +92,8 @@ def test_all_recorders_reach_a_shared_family(monkeypatch):
     metrics.record_report_ai_export(operation="start", outcome="success")
     metrics.record_report_ai_outcome_code(operation="job", code="unknown")
     metrics.record_report_ai_export_duration(outcome="success", duration_seconds=.01)
+    metrics.record_report_ai_rating(score=7)
+    metrics.record_report_ai_rating_purge(outcome="success")
     metrics.record_business_event("bearer_token_issued")
 
     # Cache events originate in request_cache and are exercised separately by
