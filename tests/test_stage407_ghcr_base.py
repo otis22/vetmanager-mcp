@@ -35,4 +35,6 @@ def test_deploy_checks_remote_docker_architecture_before_build():
     deploy = (ROOT / ".github/workflows/deploy-prod.yml").read_text()
     assert "docker info --format" in deploy
     assert "x86_64" in deploy
+    preflight = deploy.split("- name: Verify production Docker architecture", 1)[1].split("- name: Stage immutable release", 1)[0]
+    assert "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new" in preflight
     assert deploy.index("docker info --format") < deploy.index("Stage immutable release")

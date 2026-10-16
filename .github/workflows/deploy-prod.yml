@@ -125,7 +125,7 @@ jobs:
         env:
           PROD_SSH_TARGET: ${{ secrets.PROD_SSH_TARGET }}
         run: |
-          architecture="$(ssh -o BatchMode=yes "${PROD_SSH_TARGET}" "docker info --format '{{.Architecture}}'")"
+          architecture="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "${PROD_SSH_TARGET}" "docker info --format '{{.Architecture}}'")"
           echo "Production Docker architecture: ${architecture}"
           if [ "${architecture}" != "x86_64" ] && [ "${architecture}" != "amd64" ]; then
             echo 'Pinned GHCR base supports amd64 only; stop before staging.' >&2
