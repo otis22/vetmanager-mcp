@@ -37,6 +37,15 @@ def _http_count(client, status):
     return int(lines[0].rsplit(" ", 1)[1]) if lines else 0
 
 
+def _retry_count(client):
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    lines = [line for line in response.text.splitlines()
+             if line.startswith("vetmanager_mcp_session_retries_total ")]
+    assert len(lines) == 1
+    return int(lines[0].rsplit(" ", 1)[1])
+
+
 @pytest.mark.skipif(not os.environ.get("STAGE385_REDIS_URL") or
                     not os.environ.get("TEST_API_KEY"), reason="isolated test contour absent")
 def test_expired_session_and_reinitialize_on_three_slots(prepared_web_db):
@@ -72,6 +81,7 @@ def test_expired_session_and_reinitialize_on_three_slots(prepared_web_db):
                 raise AssertionError("isolated MCP slot not ready")
         before = [_rejection_count(client, 404, "session_not_found") for client in clients]
         before_http = _http_count(clients[0], 404)
+        before_retries = _retry_count(clients[0])
         assert len(set(before)) == 1
         headers = {"Authorization": f"Bearer {token}",
                    "Accept": "application/json, text/event-stream",
@@ -79,7 +89,9 @@ def test_expired_session_and_reinitialize_on_three_slots(prepared_web_db):
         stale = clients[0].post("/mcp", headers={**headers, "Mcp-Session-Id": str(uuid4())},
                                 json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         assert stale.status_code == 404
-        assert stale.json()["error"]["message"] == "Session not found"
+        assert stale.json()["error"]["message"].startswith("Session not found.")
+        assert "initialize" in stale.json()["error"]["message"]
+        assert "Mcp-Session-Id" in stale.json()["error"]["message"]
         deadline = time.monotonic() + 5
         while True:
             after = [_rejection_count(client, 404, "session_not_found") for client in clients]
@@ -90,6 +102,15 @@ def test_expired_session_and_reinitialize_on_three_slots(prepared_web_db):
             time.sleep(.05)
         assert after == [before[0] + 1] * 3
         assert after_http == [before_http + 1] * 3
+        repeated = clients[1].post("/mcp", headers={**headers, "Mcp-Session-Id": str(uuid4())},
+                                   json={"jsonrpc": "2.0", "id": 8, "method": "tools/list"})
+        assert repeated.status_code == 404
+        assert repeated.json()["error"]["code"] == stale.json()["error"]["code"]
+        assert repeated.json()["error"]["message"] == stale.json()["error"]["message"]
+        deadline = time.monotonic() + 5
+        while _retry_count(clients[2]) != before_retries + 1 and time.monotonic() < deadline:
+            time.sleep(.05)
+        assert [_retry_count(client) for client in clients] == [before_retries + 1] * 3
         fresh = clients[0].post("/mcp", headers=headers, json={
             "jsonrpc": "2.0", "id": 2, "method": "initialize",
             "params": {"protocolVersion": "2025-03-26", "capabilities": {},
@@ -141,6 +162,8 @@ def test_expired_session_and_reinitialize_on_three_slots(prepared_web_db):
         print("STAGE386_LIVE", {"stale_http": stale.status_code,
               "stale_error": stale.json()["error"]["message"],
               "counter_before": before, "counter_after": after,
+              "repeated_http": repeated.status_code,
+              "retries_before": before_retries, "retries_after": before_retries + 1,
               "reinitialize_http": fresh.status_code,
               "bad_accept_http": bad_accept.status_code, "invalid_accept": accept_counts,
               "missing_session_http": missing_session.status_code,

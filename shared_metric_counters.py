@@ -18,6 +18,9 @@ from observability_logging import RUNTIME_LOGGER
 
 COUNTERS_KEY = "vetmanager:metrics:v1:counters"
 MCP_TRANSPORT_COUNTERS_KEY = "vetmanager:metrics:v1:mcp-transport-rejections"
+MCP_SESSION_RETRIES_KEY = "vetmanager:metrics:v1:mcp-session-retries"
+MCP_SESSION_RETRY_PREFIX = "vetmanager:metrics:v1:session-retry:"
+MCP_SESSION_RETRY_SLOTS = 4096
 LATENCY_KEY_PREFIX = "vetmanager:metrics:v1:latency:"
 REPORT_AI_TERMINAL_KEY_PREFIX = "vetmanager:report-ai:v1:terminal:"
 REPORT_AI_LIFECYCLE_KEY_PREFIX = "vetmanager:report-ai:v1:lifecycle:"
@@ -41,7 +44,7 @@ SHARED_LATENCY_FAMILIES = frozenset({
     "report_ai_job_duration_seconds", "report_ai_export_duration_seconds",
 })
 SHARED_COUNTER_FAMILIES = frozenset({
-    "http_requests_total", "mcp_transport_rejections_total", "auth_failures_total", "upstream_failures_total",
+    "http_requests_total", "mcp_transport_rejections_total", "mcp_session_retries_total", "auth_failures_total", "upstream_failures_total",
     "upstream_requests_total", "tool_calls_total", "sentry_delivery_lost_total",
     "sentry_delivery_accepted_total", "known_issue_lookups_total",
     "prompt_requests_total", "token_expiry_notice_issued_total",
@@ -61,6 +64,7 @@ SHARED_COUNTER_FAMILIES = frozenset({
     "cache_evictions_total",
 })
 SCALAR_COUNTER_FAMILIES = frozenset({
+    "mcp_session_retries_total",
     "sentry_delivery_accepted_total", "sanitizer_failures_total",
     "rest_unmapped_read_total", "report_ai_long_queued_polls_total",
     "report_ai_stage_stall_polls_total",
@@ -137,6 +141,19 @@ class RedisMetricCounters:
             return
         field = json.dumps([family, label_key], separators=(",", ":"), ensure_ascii=True)
         self._redis.hincrby(COUNTERS_KEY, field, count)
+
+    def record_session_retry(self, identity_digest: str) -> None:
+        """Count another rejection for a presented bearer without retaining it."""
+        if len(identity_digest) != 64 or any(c not in "0123456789abcdef" for c in identity_digest):
+            raise ValueError("Invalid session retry digest")
+        slot = int(identity_digest[:8], 16) % MCP_SESSION_RETRY_SLOTS
+        key = MCP_SESSION_RETRY_PREFIX + str(slot)
+        if self._redis.set(key, identity_digest, nx=True, ex=86400):
+            return
+        if self._redis.get(key) != identity_digest:
+            return
+        self._redis.expire(key, 86400)
+        self._redis.incr(MCP_SESSION_RETRIES_KEY)
 
     def observe(self, family: str, label_key: str, duration_seconds: float) -> None:
         """Update count, sum, and max in one optimistic Redis transaction."""
@@ -714,6 +731,7 @@ class RedisMetricCounters:
                 label_key: int(value)
                 for label_key, value in self._redis.hgetall(MCP_TRANSPORT_COUNTERS_KEY).items()
             }
+            result["mcp_session_retries_total"] = int(self._redis.get(MCP_SESSION_RETRIES_KEY) or 0)
             result.update({family: {} for family in SHARED_LATENCY_FAMILIES})
             for key in self._redis.scan_iter(match=LATENCY_KEY_PREFIX + "*"):
                 row = self._redis.hgetall(key)

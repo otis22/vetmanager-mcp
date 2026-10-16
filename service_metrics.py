@@ -323,6 +323,31 @@ def record_mcp_transport_rejection(*, status_code: int, reason: str) -> None:
                            f"{status_code}|{bounded_reason}")
 
 
+def record_mcp_session_retry(identity_digest: str) -> None:
+    """Best-effort shared repeat count, without a client label or raw identity."""
+    try:
+        backend = shared_metric_counters.get_backend()
+        if backend is not None:
+            def deliver() -> None:
+                try:
+                    backend.record_session_retry(identity_digest)
+                except Exception as exc:
+                    RUNTIME_LOGGER.warning(
+                        "Shared metric event lost",
+                        extra={"event_name": "shared_metric_event_lost",
+                               "metric_family": "mcp_session_retries_total",
+                               "error_class": type(exc).__name__},
+                    )
+            shared_metric_counters.dispatch(deliver)
+    except Exception as exc:
+        RUNTIME_LOGGER.warning(
+            "Shared metric event lost",
+            extra={"event_name": "shared_metric_event_lost",
+                   "metric_family": "mcp_session_retries_total",
+                   "error_class": type(exc).__name__},
+        )
+
+
 def record_mcp_transport_response(*, route: str, method: str, status_code: int) -> None:
     """Shared-only MCP response-start count, the rejection-rate denominator."""
     if not isinstance(status_code, int) or not 100 <= status_code <= 599:
@@ -837,6 +862,7 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 for (route, method, status_code), count in sorted(_HTTP_REQUESTS_TOTAL.items())
             },
             "mcp_transport_rejections_total": {},
+            "mcp_session_retries_total": 0,
             "http_request_latency_seconds": {
                 f"{route}|{method}": asdict(aggregate)
                 for (route, method), aggregate in sorted(_HTTP_REQUEST_LATENCY_SECONDS.items())
@@ -978,6 +1004,8 @@ def render_prometheus_metrics() -> str:
         "# TYPE vetmanager_http_requests_total counter",
         "# HELP vetmanager_mcp_transport_rejections_total Completed MCP transport rejections by HTTP status and bounded reason; session_not_found may also hide a credential mismatch.",
         "# TYPE vetmanager_mcp_transport_rejections_total counter",
+        "# HELP vetmanager_mcp_session_retries_total Repeated session_not_found rejections for the same presented bearer within 24 hours; aggregate only.",
+        "# TYPE vetmanager_mcp_session_retries_total counter",
     ]
     for key, count in snapshot["prompt_requests_total"].items():
         method, prompt = key.split("|", 1)
@@ -998,6 +1026,7 @@ def render_prometheus_metrics() -> str:
             f"vetmanager_mcp_transport_rejections_total"
             f"{_labels_text(status_code=status_code, reason=reason)} {value}"
         )
+    lines.append(f"vetmanager_mcp_session_retries_total {snapshot['mcp_session_retries_total']}")
 
     lines.extend(
         [

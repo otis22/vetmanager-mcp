@@ -1,6 +1,7 @@
 """Stage 386: transport failures are counted without exposing request data."""
 
 import asyncio
+import json
 
 import fakeredis
 import pytest
@@ -10,7 +11,8 @@ from shared_metric_counters import COUNTERS_KEY, RedisMetricCounters, wait_pendi
 import service_metrics
 
 
-async def _request(app, *, status, body, headers=(), path="/mcp", observed_path="/mcp"):
+async def _request(app, *, status, body, headers=(), path="/mcp", observed_path="/mcp",
+                   guided=False):
     async def inner(_scope, _receive, send):
         await send({"type": "http.response.start", "status": status, "headers": []})
         await send({"type": "http.response.body", "body": body})
@@ -23,7 +25,12 @@ async def _request(app, *, status, body, headers=(), path="/mcp", observed_path=
     await app(inner, path=observed_path)({"type": "http", "path": path, "method": "POST",
                       "headers": headers}, receive, send)
     assert sent[0]["status"] == status
-    assert sent[1]["body"] == body
+    if guided:
+        payload = json.loads(sent[1]["body"])
+        assert payload["error"]["code"] == -32600
+        assert "initialize" in payload["error"]["message"]
+    else:
+        assert sent[1]["body"] == body
 
 
 @pytest.mark.asyncio
@@ -33,7 +40,7 @@ async def test_transport_reasons_are_bounded_and_shared(monkeypatch):
     monkeypatch.setattr(service_metrics.shared_metric_counters, "get_backend", lambda: backend)
     session = b'{"jsonrpc":"2.0","id":"server-error","error":{"code":-32600,"message":"Session not found"}}'
     await _request(MCPTransportObservationMiddleware, status=404, body=session,
-                   headers=[(b"mcp-session-id", b"secret-session-id")])
+                   headers=[(b"mcp-session-id", b"secret-session-id")], guided=True)
     await _request(MCPTransportObservationMiddleware, status=400,
                    body=b'{"error":"missing_authorization"}')
     await _request(MCPTransportObservationMiddleware, status=400,

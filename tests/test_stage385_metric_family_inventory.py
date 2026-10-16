@@ -15,7 +15,8 @@ from shared_metric_counters import (
 EXPECTED_METRIC_TYPES = {
     "counter": """
         prompt_requests_total token_expiry_notice_issued_total
-        token_expiry_notice_skipped_total http_requests_total mcp_transport_rejections_total auth_failures_total
+        token_expiry_notice_skipped_total http_requests_total mcp_transport_rejections_total
+        mcp_session_retries_total auth_failures_total
         upstream_failures_total sentry_delivery_lost_total
         sentry_delivery_accepted_total known_issue_lookups_total
         upstream_requests_total tool_calls_total token_preset_issued_total
@@ -100,7 +101,7 @@ def test_all_recorders_reach_a_shared_family(monkeypatch):
     # test_stage385_shared_metric_counters.py.
     cache_families = {"cache_hits_total", "cache_misses_total",
                       "cache_invalidations_total", "cache_evictions_total"}
-    assert set(counters) == SHARED_COUNTER_FAMILIES - cache_families
+    assert set(counters) == SHARED_COUNTER_FAMILIES - cache_families - {"mcp_session_retries_total"}
     assert set(latencies) == SHARED_LATENCY_FAMILIES
 
 
