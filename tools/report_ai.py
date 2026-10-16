@@ -14,8 +14,10 @@ from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from pydantic import StrictInt
 
 import report_export
+from report_ai_rating_service import record_created_job, rate_job
 import shared_metric_counters
 from error_tracking import capture_report_ai_observation_failure
 from report_export_transport import PinnedExportTransport, resolve_export_target
@@ -68,6 +70,12 @@ REPORT_AI_TOOL_WAIT_MAX_SECONDS = 30
 REPORT_AI_TOOL_WAIT_INTERVAL_SECONDS = 2
 REPORT_AI_TOOL_WAIT_MAX_GETS = 16
 REPORT_AI_EXPORT_WAIT_LIMIT_SECONDS = 30 * 60
+REPORT_AI_RATING_REGISTRATION_TIMEOUT_SECONDS = 2
+REPORT_AI_RATING_GUIDANCE = (
+    "After the report attempt, call rate_report_ai_job with this job_id and score 1–10 "
+    "if this job was registered by the current MCP clinic connection. "
+    "Score 1 also applies when the report failed to build. The rating is voluntary."
+)
 REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS = CLINIC_TIMEZONE_TTL_SECONDS
 REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES = CLINIC_TIMEZONE_MAX_ENTRIES
 REPORT_AI_GOODS_GOOD_ID_WORKAROUND_CODE = "report_ai_goods_good_id_preview_failed"
@@ -1877,8 +1885,8 @@ def register(mcp: FastMCP) -> None:
         try:
             # The requirement is part of what upstream must fit, so its length
             # is reserved before the user's own text is measured.
-            intent = _validate_intent_text(intent_text, reserve=_privacy_requirement_reserve())
-            intent = _intent_with_privacy_requirement(intent)
+            original_intent = _validate_intent_text(intent_text, reserve=_privacy_requirement_reserve())
+            intent = _intent_with_privacy_requirement(original_intent)
             payload = await _call_vm(
                 "POST", "/rest/api/report-ai-job", json={"intent_text": intent},
                 tool_name="create_report_ai_job",
@@ -1888,11 +1896,39 @@ def register(mcp: FastMCP) -> None:
             _best_effort_observation("job_created_error", record_report_ai_job_created, outcome="error")
             raise
         _best_effort_observation("job_created_success", record_report_ai_job_created, outcome="success")
-        raw_code = _extract_job(payload).get("error_code")
-        payload = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
         job = _extract_job(payload)
         data = payload.get("data") if isinstance(payload, dict) else None
         deduplicated = isinstance(data, dict) and data.get("is_deduplicated") is True
+        rating_unavailable = False
+        credentials = get_current_runtime_credentials()
+        if isinstance(job.get("id"), int) and not isinstance(job["id"], bool) and job["id"] > 0:
+            try:
+                if credentials is None:
+                    rating_unavailable = True
+                else:
+                    registered = await asyncio.wait_for(record_created_job(
+                        account_id=credentials.account_id,
+                        connection_id=credentials.connection_id,
+                        domain=credentials.domain,
+                        job_id=job["id"], intent_text=original_intent,
+                        allow_new=not deduplicated,
+                    ), timeout=REPORT_AI_RATING_REGISTRATION_TIMEOUT_SECONDS)
+                    rating_unavailable = not registered
+            except Exception as exc:
+                rating_unavailable = True
+                RUNTIME_LOGGER.warning("report_ai_rating_registration_failed", extra={
+                    "event_name": "report_ai_rating_registration_failed",
+                    "error_class": type(exc).__name__,
+                })
+        raw_code = _extract_job(payload).get("error_code")
+        payload = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
+        job = _extract_job(payload)
+        job["mcp_rating_guidance"] = REPORT_AI_RATING_GUIDANCE
+        if rating_unavailable:
+            job["mcp_rating_unavailable"] = (
+                "This job has no local rating record. Keep this job_id and poll it; "
+                "do not repeat create_report_ai_job automatically."
+            )
         await asyncio.to_thread(_best_effort_observation, "create_recreated_match",
                                 _match_recreated_report_ai_job, job,
                                 is_deduplicated=deduplicated)
@@ -1905,12 +1941,36 @@ def register(mcp: FastMCP) -> None:
             response = await _wait_for_report_ai_job(
                 payload, job_id=int(job["id"]), deadline=_monotonic_seconds() + wait_seconds,
             )
+            _extract_job(response)["mcp_rating_guidance"] = REPORT_AI_RATING_GUIDANCE
+            if rating_unavailable:
+                _extract_job(response)["mcp_rating_unavailable"] = job["mcp_rating_unavailable"]
             return await asyncio.to_thread(
                 _best_effort_observation, "create_guidance_issued",
                 _issued_empty_preview_guidance, response) or response
         return await asyncio.to_thread(
             _best_effort_observation, "create_guidance_issued",
             _issued_empty_preview_guidance, payload) or payload
+
+    @mcp.tool
+    async def rate_report_ai_job(job_id: StrictInt, score: StrictInt, comment: str | None = None) -> dict:
+        """Record the agent's voluntary assessment of one Report AI job.
+
+        1 = отчёт даже не построился; 2 и выше — отчёт построился;
+        2 = построился, но задачу почти не решил; 5–6 = решил частично;
+        10 = задача решена полностью, ничего не пришлось добывать другими путями.
+        Call after reading real rows or a failed job status. A failed create POST
+        without a job_id cannot be rated. Only this clinic connection's jobs
+        created through MCP can be rated. Repeating replaces the prior score.
+        """
+        credentials = get_current_runtime_credentials()
+        if credentials is None:
+            raise ToolInputError("A registered clinic connection is required for rating.")
+        return await rate_job(
+            account_id=credentials.account_id,
+            connection_id=credentials.connection_id,
+            domain=credentials.domain,
+            job_id=job_id, score=score, comment=comment,
+        )
 
     @mcp.tool
     async def get_report_ai_job(job_id: int, wait_seconds: int = 0) -> dict:
@@ -1981,6 +2041,7 @@ def register(mcp: FastMCP) -> None:
             )
         else:
             response = await _annotate_report_ai_job_payload(payload)
+        _extract_job(response)["mcp_rating_guidance"] = REPORT_AI_RATING_GUIDANCE
         return await asyncio.to_thread(
             _best_effort_observation, "get_guidance_issued",
             _issued_empty_preview_guidance, response) or response

@@ -340,7 +340,11 @@ async def test_report_ai_lifecycle_observation_does_not_change_mutation_response
     with headers_patch, runtime_patch:
         result = await mcp.call_tool(tool_name, arguments)
 
-    assert _structured(result) == deepcopy(payload)
+    actual = deepcopy(_structured(result))
+    if tool_name == "create_report_ai_job":
+        assert "rate_report_ai_job" in actual["data"]["job"].pop("mcp_rating_guidance")
+        actual["data"]["job"].pop("mcp_rating_unavailable", None)
+    assert actual == deepcopy(payload)
 
 
 @pytest.mark.asyncio

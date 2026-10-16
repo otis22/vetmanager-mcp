@@ -756,6 +756,32 @@ class AgentFeedbackReport(Base):
     )
 
 
+class ReportAiJobRating(Base):
+    """Original sanitized Report AI intent and optional agent rating."""
+
+    __tablename__ = "report_ai_job_ratings"
+    __table_args__ = (
+        UniqueConstraint("account_id", "connection_id", "domain", "job_id",
+                         name="uq_report_ai_job_ratings_owner_job"),
+        CheckConstraint("score IS NULL OR score BETWEEN 1 AND 10",
+                        name="ck_report_ai_job_ratings_score"),
+        Index("ix_report_ai_job_ratings_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
+    connection_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    domain: Mapped[str] = mapped_column(String(128), nullable=False)
+    job_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    intent_text: Mapped[str] = mapped_column(Text, nullable=False)
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now())
+    rated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class KnownIssue(Base):
     """Operator-verified issue that may expose a deterministic agent playbook."""
 

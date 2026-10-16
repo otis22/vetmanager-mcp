@@ -65,6 +65,7 @@ only-include = [
     "prompts.py",
     "rate_limit_backend.py",
     "report_export.py",
+    "report_ai_rating_service.py",
     "report_export_origin.py",
     "report_export_transport.py",
     "request_auth.py",

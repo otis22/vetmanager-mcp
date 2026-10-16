@@ -615,6 +615,7 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "get_inactive_clients": "client",
     "get_report_ai_prompt_helper": "report_ai",
     "create_report_ai_job": "report_ai",
+    "rate_report_ai_job": "report_ai",
     "confirm_report_ai_job_candidate": "report_ai",
     "reject_report_ai_job_candidate": "report_ai",
     "get_report_ai_job": "report_ai",
@@ -970,11 +971,21 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "сообщение в программу, уведомление пользователям, push в программу, "
         "messages."
     ),
+    "rate_report_ai_job": (
+        "Оцените, насколько Report AI решил задачу пользователя, после попытки построить отчёт. "
+        "Шкала: 1 = отчёт даже не построился; 2 и выше — отчёт построился; "
+        "2 = построился, но задачу почти не решил; 5–6 = решил частично; "
+        "10 = задача решена полностью, ничего не пришлось добывать другими путями. "
+        "Передайте job_id и целый score 1–10; comment необязателен. "
+        "Оценка записывается только в нашу БД и заменяет прежнюю оценку того же job. "
+        "Вызов добровольный; без job_id после неудачного POST оценка невозможна."
+    ),
     "create_report_ai_job": (
         "Create an async Vetmanager Report AI job from a Russian report intent. "
         "Canonical order: get_report_ai_prompt_helper -> create_report_ai_job -> "
         "get_report_ai_job, then confirm/save/read/export according to the returned "
-        "status. "
+        "status. After the attempt, call rate_report_ai_job with score 1–10, including "
+        "failed jobs with an ID. This is voluntary; no job ID means no rating. "
         "Use after reading get_report_ai_prompt_helper or the MCP prompt "
         "report_ai_prompt_helper unless the user already supplied a final Russian "
         "intent_text. Use when the user asks for an analytic report, grouped/list "
@@ -1012,6 +1023,7 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_report_ai_prompt_helper": (
         "Return static guidance for writing safe Russian Report AI intent_text "
         "and following the bounded create/get, confirm/reject, save, data journey. "
+        "It also explains voluntary rate_report_ai_job for built and failed jobs. "
         "preview_summary and preview_example_row are decision samples, not live "
         "clinic data; do not answer the user from preview. "
         "Use before create_report_ai_job when MCP prompts are not visible in the "

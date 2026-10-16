@@ -7,6 +7,7 @@
 # Keeps last 30 daily backups.
 
 set -euo pipefail
+umask 077
 
 REMOTE_DIR="${1:-/opt/vetmanager-mcp}"
 BACKUP_DIR="/var/backups/vetmanager-postgres"
@@ -32,6 +33,8 @@ if [ -f .env ]; then
 fi
 
 mkdir -p "${BACKUP_DIR}"
+chmod 700 "${BACKUP_DIR}"
+find "${BACKUP_DIR}" -maxdepth 1 -type f -name '*.sql.gz' -exec chmod 600 {} +
 
 # Find running postgres container
 PG_CONTAINER="$(docker compose --profile production ps -q postgres 2>/dev/null || true)"

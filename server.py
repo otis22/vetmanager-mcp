@@ -14,6 +14,7 @@ from oauth_metadata import get_mcp_path
 from host_resolver import reset_billing_resolver
 from observability_logging import RUNTIME_LOGGER
 from rate_limit_backend import shutdown_rate_limit_backend
+from report_ai_rating_service import purge_expired_jobs
 from report_export_origin import validate_allowed_origins_config
 from storage import bootstrap_storage_schema, get_database_url, initialize_storage, shutdown_storage
 from shutdown_state import begin_draining, in_flight_writes, is_draining, request_drain_from_signal, reset_draining, wait_for_writes
@@ -32,6 +33,7 @@ from request_context import RequestContextHeaderMiddleware
 from mcp_transport_observation import MCPTransportObservationMiddleware
 from request_cache import REQUEST_CACHE, _slot_identity
 import shared_metric_counters
+from service_metrics import record_report_ai_rating_purge
 from write_admission import ExecutionAdmissionMiddleware, WriteAdmissionMiddleware
 
 SHUTDOWN_STEP_TIMEOUT_SECONDS = 3
@@ -88,17 +90,23 @@ async def _runtime_lifespan(_server):
         extra={"event_name": "http_event_loop_selected", "loop_module": loop_type.__module__, "loop_class": loop_type.__name__},
     )
     cache_gauge_task = None
+    rating_cleanup_task = None
     try:
         validate_allowed_origins_config()
         await shared_metric_counters.verify_shared_metrics_startup()
         await initialize_storage()
         if get_database_url().startswith("sqlite"):
             await bootstrap_storage_schema()
+        rating_cleanup_task = asyncio.create_task(_report_ai_rating_cleanup_loop())
         if os.environ.get("REDIS_URL", "").strip():
             await REQUEST_CACHE.refresh_shared_gauge()
             cache_gauge_task = asyncio.create_task(_cache_gauge_heartbeat())
         yield
     finally:
+        if rating_cleanup_task is not None:
+            rating_cleanup_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await rating_cleanup_task
         if cache_gauge_task is not None:
             cache_gauge_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -124,6 +132,24 @@ async def _cache_gauge_heartbeat() -> None:
     while True:
         await asyncio.sleep(10)
         await REQUEST_CACHE.refresh_shared_gauge()
+
+
+async def _report_ai_rating_cleanup_loop() -> None:
+    """Purge old local prompts daily, including those of idle accounts."""
+    while True:
+        try:
+            deleted = await purge_expired_jobs()
+            record_report_ai_rating_purge(outcome="success")
+            RUNTIME_LOGGER.info("report_ai_rating_purge", extra={
+                "event_name": "report_ai_rating_purge", "deleted": deleted,
+            })
+        except Exception as exc:
+            record_report_ai_rating_purge(outcome="error")
+            RUNTIME_LOGGER.warning("report_ai_rating_purge_failed", extra={
+                "event_name": "report_ai_rating_purge_failed",
+                "error_class": type(exc).__name__,
+            })
+        await asyncio.sleep(24 * 60 * 60)
 
 
 def _streamable_http_drain_enabled() -> bool:

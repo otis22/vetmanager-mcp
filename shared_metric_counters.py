@@ -51,6 +51,7 @@ SHARED_COUNTER_FAMILIES = frozenset({
     "report_export_download_total", "report_export_serve_total",
     "report_ai_long_queued_polls_total", "report_ai_stage_stall_polls_total",
     "report_ai_jobs_total", "report_ai_save_attempts_total",
+    "report_ai_ratings_total", "report_ai_rating_purges_total",
     "report_ai_job_transitions_total", "report_ai_job_terminal_outcomes_total",
     "report_ai_empty_preview_guidance_issued_total",
     "report_ai_empty_preview_guidance_jobs_total",

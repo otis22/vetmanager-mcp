@@ -8,6 +8,7 @@
 #   0 3,15 * * * /opt/vetmanager-mcp/scripts/backup_postgres.sh >> /var/log/vetmanager-backup.log 2>&1
 
 set -euo pipefail
+umask 077
 
 REMOTE_DIR="${REMOTE_DIR:-/opt/vetmanager-mcp}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/vetmanager-postgres}"
@@ -18,6 +19,8 @@ TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_FILE="${BACKUP_DIR}/vetmanager-${TIMESTAMP}.sql.gz"
 
 mkdir -p "${BACKUP_DIR}"
+chmod 700 "${BACKUP_DIR}"
+find "${BACKUP_DIR}" -maxdepth 1 -type f -name '*.sql.gz' -exec chmod 600 {} +
 
 # Resolve postgres container ID via docker compose
 PG_CONTAINER="$(docker compose --profile production -f "${REMOTE_DIR}/docker-compose.yml" ps -q postgres 2>/dev/null || true)"
