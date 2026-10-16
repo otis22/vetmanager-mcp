@@ -40,6 +40,7 @@ def test_one_image_build_feeds_three_test_jobs():
         assert job["needs"] == "build-image"
         assert "actions/download-artifact@v4" in str(job)
         assert "docker load" in steps(job)
+        assert "rm vetmanager-mcp-test.tar" in steps(job)
         assert "docker build" not in steps(job)
 
 

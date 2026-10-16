@@ -59,7 +59,9 @@ jobs:
           name: vetmanager-mcp-test-image
 
       - name: Load test image
-        run: docker load -i vetmanager-mcp-test.tar
+        run: |
+          docker load -i vetmanager-mcp-test.tar
+          rm vetmanager-mcp-test.tar
 
       - name: Run fast contour
         run: |
@@ -92,7 +94,9 @@ jobs:
           name: vetmanager-mcp-test-image
 
       - name: Load test image
-        run: docker load -i vetmanager-mcp-test.tar
+        run: |
+          docker load -i vetmanager-mcp-test.tar
+          rm vetmanager-mcp-test.tar
 
       - name: Run default contour
         run: |
@@ -151,7 +155,9 @@ jobs:
           name: vetmanager-mcp-test-image
 
       - name: Load test image
-        run: docker load -i vetmanager-mcp-test.tar
+        run: |
+          docker load -i vetmanager-mcp-test.tar
+          rm vetmanager-mcp-test.tar
 
       - name: Run mandatory PostgreSQL activation telemetry regression
         run: |
