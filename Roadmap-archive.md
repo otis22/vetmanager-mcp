@@ -8650,3 +8650,21 @@ custom web routes, а не ответы FastMCP `/mcp`; доля `session-not-fo
   через re-initialize или явную подсказку без session ID/IP в метриках. PRD,
   красные сторожа и живой изолированный тест перед реализацией. — `done`
 
+## Этап 387. Описания и тексты инструментов: пакет правок по аудиту 14.10 — `done`
+
+Источник: внешний аудит MCP от 14.10.2026 (`vetmanager_mcp_full_report.md`,
+находки F4/F20/R8/R9/R10) и сверка супервизора 15.10.2026.
+
+- 387.1 PRD пакета: `get_medical_cards_by_client_id` и `get_medical_cards_by_date`
+  перестают отсылать к `get_medical_cards` «для общего поиска» (pet_id там
+  обязателен, tool_descriptions.py:784-799); `get_debtors` явно разводит два
+  определения долга — отрицательный баланс клиента против неоплаченных
+  исполненных счетов (client.py:460, второе — через Report AI); справка
+  Report AI — сроки по замеру 6–10 с вместо «1–3 мин / 60–90 с / 4 мин 43 с»
+  и свежая дата (artifacts/report-ai-prompt-helper-short-mcp-2026-06-15.md);
+  docstring `create_medical_card` не обещает pet_id, которого нет в сигнатуре
+  (medical_card.py:438); guidance про относительный `csv_export_url` и рабочий
+  путь выгрузки через `get_report_export_download` (report_ai.py:2259-2269).
+  Сторож-текстов красным до правок. — `done`
+- 387.2 Реализация пакета, фокусные тесты, выпуск с зелёным CI. — `done`
+
