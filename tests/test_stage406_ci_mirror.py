@@ -39,8 +39,12 @@ def test_one_image_build_feeds_three_test_jobs():
         job = jobs[name]
         assert job["needs"] == "build-image"
         assert "actions/download-artifact@v4" in str(job)
-        assert "docker load" in steps(job)
-        assert "rm vetmanager-mcp-test.tar" in steps(job)
+        load_index = next(i for i, step in enumerate(job["steps"]) if step.get("name") == "Load test image")
+        load_run = job["steps"][load_index]["run"]
+        assert load_run.index("docker load -i vetmanager-mcp-test.tar") < load_run.index(
+            "rm vetmanager-mcp-test.tar"
+        )
+        assert all("docker run" not in step.get("run", "") for step in job["steps"][:load_index + 1])
         assert "docker build" not in steps(job)
 
 
