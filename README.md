@@ -34,6 +34,27 @@ docker compose up -d          # запустить MCP-сервер
 - публичный лендинг доступен на `http://localhost:8000/`
 - MCP endpoint остаётся на `http://localhost:8000/mcp`
 
+### Обновление публичного зеркала Python для Docker-сборок
+
+Базовый образ закреплён по digest в `Dockerfile` и доступен локально без `docker login`.
+Раз в 1–2 месяца оператор обновляет зеркало с тем же тегом. Для публикации
+нужен `gh` token с `write:packages`; токен не сохраняется в репозитории:
+
+```bash
+gh auth token | docker login ghcr.io -u otis22 --password-stdin
+docker pull public.ecr.aws/docker/library/python:3.12-slim
+docker tag public.ecr.aws/docker/library/python:3.12-slim ghcr.io/otis22/python:3.12-slim
+docker push ghcr.io/otis22/python:3.12-slim
+```
+
+Обычный `docker push` публикует платформу машины оператора. Сейчас зеркало
+содержит amd64; перед добавлением arm64 нужен multi-platform index. После
+обновления проверить `docker buildx imagetools inspect ghcr.io/otis22/python:3.12-slim`
+и анонимный pull, затем отдельным коммитом обновить digest в Dockerfile и
+прогнать тесты и CI. Пока digest не обновлён, сборки используют прежний образ.
+`scripts/retry_ecr_build.sh` оставлен только для ручной ECR-сборки при откате: штатные CI
+сборки не должны обращаться к ECR.
+
 ### Восстановление MCP-сессии
 
 Если `/mcp` ответил HTTP 404 с JSON-RPC ошибкой `Session not found`, клиенту

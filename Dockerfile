@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=public.ecr.aws/docker/library/python:3.12-slim
+ARG BASE_IMAGE=ghcr.io/otis22/python:3.12-slim@sha256:139b146ecf6cadf1960a88887c83846bd030bf1bc0a478fae48215c49917c075
 FROM ${BASE_IMAGE} AS base
 
 # Build args so files created in the container are owned by the host user,
