@@ -150,6 +150,9 @@ def register(mcp: FastMCP) -> None:
         the selected clinic's timezone when clinic_id is positive, otherwise
         the process-local date. No client, pet, or free-text data is returned.
 
+        Domain synonyms: сводка приёмов за день, сколько приёмов сегодня,
+        приёмы по статусам, daily brief, daily admissions summary.
+
         Args:
             date: YYYY-MM-DD or relative day such as today or yesterday.
             clinic_id: Optional clinic branch; also selects its timezone.
