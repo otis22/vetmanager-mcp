@@ -159,6 +159,11 @@ def project_list_result(
         if not isinstance(row, dict):
             raise reportable_error("Projection expected a record object.")
         row = _mask_contacts(row, client_record=tool_name == "get_clients") if mask_contacts else row
+        if include is not None or selection is None:
+            if any(key not in relations and key != "_mcp_identifier_conflicts"
+                   and isinstance(value, (dict, list, tuple))
+                   for key, value in row.items()):
+                raise reportable_error("Projection found an unrecognized nested field.")
         scalar_fields = {}
         scalar_names = (key for key in row if key not in relations) if selection is None else selection
         for key in scalar_names:
@@ -167,8 +172,6 @@ def project_list_result(
             value = row[key]
             if selection is not None and isinstance(value, (dict, list, tuple)):
                 raise reportable_error("Projection expected a scalar field.")
-            if selection is None and key != "_mcp_identifier_conflicts" and isinstance(value, (dict, list, tuple)):
-                raise reportable_error("Projection found an unrecognized nested field.")
             scalar_fields[key] = value
         for key in allowed_relations:
             if key in row:

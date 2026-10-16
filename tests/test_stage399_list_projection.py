@@ -277,6 +277,16 @@ async def test_include_only_rejects_unknown_nested_upstream_field(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_include_with_fields_rejects_unknown_nested_upstream_field(monkeypatch):
+    mocked = _patch_list(monkeypatch, "get_admissions")
+    mocked.return_value["data"]["admission"][0]["new_relation"] = {
+        "cell_phone": "+7 999 123 45 67",
+    }
+    with pytest.raises(Exception, match="Projection"):
+        await _call("get_admissions", {"fields": ["id"], "include": ["client"]})
+
+
+@pytest.mark.asyncio
 async def test_mask_rejects_malformed_nested_client(monkeypatch):
     mocked = _patch_list(monkeypatch, "get_admissions")
     mocked.return_value["data"]["admission"][0]["client"] = "person@example.test"

@@ -74,6 +74,7 @@ def test_stage399_projection_live(live_server_url):
             sizes = {}
             full_nested = None
             full_owner = None
+            full_row_id = None
             for mode, arguments in (("full", {"limit": 1}),
                                     ("fields", {"limit": 1, "fields": ["id", "status"]}),
                                     ("compact", {"limit": 1, "compact": True}),
@@ -90,6 +91,7 @@ def test_stage399_projection_live(live_server_url):
                 rows = data if isinstance(data, list) else data[entity]
                 assert rows and isinstance(rows[0], dict), f"{tool}/{mode} needs a nonempty list"
                 if mode == "full":
+                    full_row_id = rows[0]["id"]
                     print("STAGE399_NESTED_KEYS", tool, sorted(
                         key for key, value in rows[0].items() if isinstance(value, (dict, list))
                     ))
@@ -100,6 +102,7 @@ def test_stage399_projection_live(live_server_url):
                     pet = rows[0].get("pet")
                     full_owner = pet.get("owner") if isinstance(pet, dict) else None
                 if mode == "masked" and isinstance(full_nested, dict):
+                    assert rows[0]["id"] == full_row_id
                     masked_nested = rows[0].get("client")
                     if isinstance(masked_nested, dict):
                         for contact_key in ("cell_phone", "home_phone", "work_phone", "email", "address"):
@@ -108,6 +111,7 @@ def test_stage399_projection_live(live_server_url):
                                 assert masked_nested.get(contact_key) != original
                                 nested_contact_verified = True
                 if mode == "masked" and isinstance(full_owner, dict):
+                    assert rows[0]["id"] == full_row_id
                     pet = rows[0].get("pet")
                     masked_owner = pet.get("owner") if isinstance(pet, dict) else None
                     assert isinstance(masked_owner, dict)
@@ -151,6 +155,7 @@ def test_stage399_projection_live(live_server_url):
                                             "filter": [{"property": "id", "operator": "=",
                                                         "value": chosen["id"]}]})
         masked_row = masked["data"]["client"][0]
+        assert masked_row["id"] == chosen["id"]
         for key in contact_keys:
             if chosen.get(key):
                 assert masked_row[key] != chosen[key]
