@@ -3,7 +3,7 @@ from fastmcp.exceptions import ToolError
 import inspect
 from functools import wraps
 from identifier_aliases import canonical_tool
-from list_projection import selected_fields
+from list_projection import selected_fields, selected_include
 from report_row_types import normalize_report_rows
 
 import depersonalization
@@ -152,7 +152,8 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
                 _reject_placeholder_arguments(resolved_tool_name, args, kwargs)
                 projection_options = kwargs.pop("_mcp_projection_options", None)
                 if projection_options is not None:
-                    selected_fields(resolved_tool_name, *projection_options)
+                    selected_fields(resolved_tool_name, *projection_options[:2])
+                    selected_include(resolved_tool_name, projection_options[2])
                 result = await tool_func(*args, **kwargs)
             except ToolError as exc:
                 if resolved_tool_name in BASELINE_ALLOWED_TOOLS:

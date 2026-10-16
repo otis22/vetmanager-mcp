@@ -9,7 +9,7 @@ from functools import wraps
 from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware
 from filters import FILTER_FIELDS_BY_ENTITY
-from list_projection import LIST_FIELDS, project_list_result, selected_fields
+from list_projection import LIST_FIELDS, project_list_result, selected_fields, selected_include
 from tool_descriptions import RAW_CLAUSE_ENTITIES
 
 
@@ -112,6 +112,10 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
                               default=None, annotation=list[str] | None),
             inspect.Parameter("compact", inspect.Parameter.KEYWORD_ONLY,
                               default=False, annotation=bool),
+            inspect.Parameter("include", inspect.Parameter.KEYWORD_ONLY,
+                              default=None, annotation=list[str] | None),
+            inspect.Parameter("mask_contacts", inspect.Parameter.KEYWORD_ONLY,
+                              default=False, annotation=bool),
         ))
     public_signature = original.replace(parameters=renamed)
 
@@ -119,7 +123,10 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
     async def _canonical(*args, **kwargs):
         projection_options = None
         if tool_name in LIST_FIELDS:
-            projection_options = (kwargs.pop("fields", None), kwargs.pop("compact", False))
+            projection_options = (
+                kwargs.pop("fields", None), kwargs.pop("compact", False),
+                kwargs.pop("include", None), kwargs.pop("mask_contacts", False),
+            )
         original_kwargs = {}
         for old in original_names:
             public = canonical_name(old)
@@ -136,7 +143,9 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
             if projection_options is not None:
                 return project_list_result(
                     normalized, tool_name,
-                    selected_fields(tool_name, *projection_options),
+                    selected_fields(tool_name, *projection_options[:2]),
+                    include=selected_include(tool_name, projection_options[2]),
+                    mask_contacts=projection_options[3],
                 )
             return normalized
         except Exception as exc:
@@ -152,7 +161,10 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
         for name, annotation in getattr(func, "__annotations__", {}).items()
     }
     if tool_name in LIST_FIELDS:
-        _canonical.__annotations__.update({"fields": list[str] | None, "compact": bool})
+        _canonical.__annotations__.update({
+            "fields": list[str] | None, "compact": bool,
+            "include": list[str] | None, "mask_contacts": bool,
+        })
     _canonical.__doc__ = public_text(func.__doc__ or "")
     return _canonical
 

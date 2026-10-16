@@ -189,5 +189,96 @@ async def test_catalogue_exposes_projection():
     tools = {tool.name: tool.to_mcp_tool() for tool in await mcp.list_tools()}
     for name in ROWS:
         props = tools[name].inputSchema["properties"]
-        assert {"fields", "compact"} <= props.keys()
+        assert {"fields", "compact", "include", "mask_contacts"} <= props.keys()
         assert "local" in tools[name].description.lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool", ROWS)
+async def test_include_contract_and_response_size(monkeypatch, tool):
+    mocked = _patch_list(monkeypatch, tool)
+    entity = ROWS[tool][1]
+    relation = {"get_admissions": "client", "get_invoices": "client",
+                "get_clients": "pets"}[tool]
+    full = await _call(tool, {"limit": 1})
+    excluded = await _call(tool, {"limit": 1, "include": []})
+    selected = await _call(tool, {"limit": 1, "fields": ["id"], "include": [relation]})
+    assert relation in _row(full, entity)
+    assert relation not in _row(excluded, entity)
+    assert relation in _row(selected, entity)
+    assert len(json.dumps(excluded).encode()) < len(json.dumps(full).encode())
+    assert all("include" not in call.kwargs for call in mocked.call_args_list)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", [["unknown"], ["client.address"], ["client", "client"]])
+async def test_bad_include_rejected_before_io(monkeypatch, bad):
+    mocked = _patch_list(monkeypatch, "get_admissions")
+    with pytest.raises(Exception):
+        await _call("get_admissions", {"include": bad})
+    mocked.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("depersonalized", [False, True])
+@pytest.mark.parametrize("mode", ["full", "fields", "compact"])
+async def test_contact_mask_matrix_after_privacy(monkeypatch, depersonalized, mode):
+    mocked = _patch_list(monkeypatch, "get_clients")
+    row = mocked.return_value["data"]["client"][0]
+    row.update({
+        "home_phone": "+7 999 123 45 67", "work_phone": "+7 999 123 45 67",
+        "zip": "123456", "apartment": "12", "phone_prefix": "+7",
+        "city_data": {"name": "Москва"}, "street_data": {"name": "Ленина"},
+        "note": "Позвонить +7 999 123 45 67, mail person@example.test; "
+                "ул. Ленина д. 10; Анализ крови общий",
+    })
+    args = {"limit": 1, "mask_contacts": True}
+    if mode == "fields":
+        args["fields"] = ["id", "cell_phone", "email", "address", "note", "status"]
+    elif mode == "compact":
+        args["compact"] = True
+    result = await _call("get_clients", args, depersonalized=depersonalized)
+    masked = _row(result, "client")
+    assert masked["status"] == "ACTIVE"
+    assert "123 45 67" not in json.dumps(masked, ensure_ascii=False)
+    assert "person@example.test" not in json.dumps(masked, ensure_ascii=False)
+    assert "Ленина д. 10" not in json.dumps(masked, ensure_ascii=False)
+    if mode != "compact":
+        assert masked["note"] == "[redacted-contact-note]"
+    if depersonalized and mode == "full":
+        assert masked["cell_phone"] == "[redacted-phone]"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("depersonalized", [False, True])
+async def test_nested_client_and_owner_contacts_masked(monkeypatch, depersonalized):
+    mocked = _patch_list(monkeypatch, "get_admissions")
+    row = mocked.return_value["data"]["admission"][0]
+    row["pet"]["owner"] = {"cell_phone": "+7 999 123 45 67"}
+    row["pet"]["note"] = "Анализ крови общий"
+    row["client"]["note"] = "Анализ крови общий"
+    result = await _call("get_admissions", {"include": ["client", "pet"],
+                                            "mask_contacts": True},
+                         depersonalized=depersonalized)
+    projected = _row(result, "admission")
+    assert "+7 999" not in json.dumps(projected)
+    assert projected["pet"]["note"] == "Анализ крови общий"
+    assert projected["client"]["note"] == "[redacted-contact-note]"
+
+
+@pytest.mark.asyncio
+async def test_include_only_rejects_unknown_nested_upstream_field(monkeypatch):
+    mocked = _patch_list(monkeypatch, "get_admissions")
+    mocked.return_value["data"]["admission"][0]["new_relation"] = {
+        "cell_phone": "+7 999 123 45 67",
+    }
+    with pytest.raises(Exception, match="Projection"):
+        await _call("get_admissions", {"include": []})
+
+
+@pytest.mark.asyncio
+async def test_mask_rejects_malformed_nested_client(monkeypatch):
+    mocked = _patch_list(monkeypatch, "get_admissions")
+    mocked.return_value["data"]["admission"][0]["client"] = "person@example.test"
+    with pytest.raises(Exception, match="Contact masking"):
+        await _call("get_admissions", {"mask_contacts": True, "fields": ["id"]})

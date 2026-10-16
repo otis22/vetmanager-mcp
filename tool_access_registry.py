@@ -154,6 +154,7 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
     "whoami": (),
     "get_admission_by_id": (SCOPE_ADMISSIONS_READ,),
     "get_admissions": (SCOPE_ADMISSIONS_READ,),
+    "get_admissions_daily_summary": (SCOPE_ADMISSIONS_READ,),
     "get_anonymous_clients": (SCOPE_USERS_READ,),
     "get_average_invoice": (SCOPE_FINANCE_READ,),
     "get_breed_by_id": (SCOPE_REFERENCE_READ,),

@@ -1,6 +1,6 @@
 from fastmcp import FastMCP
 from filters import FILTER_FIELDS_BY_ENTITY
-from list_projection import LIST_FIELDS
+from list_projection import LIST_FIELDS, LIST_RELATIONS
 
 
 # Each entry is a REST list entity whose accepted field names were checked
@@ -1357,8 +1357,20 @@ def enhance_tool_descriptions(mcp: FastMCP) -> None:
                 )
             if "compact" in properties:
                 properties["compact"]["description"] = (
-                    "Return a fixed short list row without nested records or contacts. "
+                    "Return a fixed short list row. Nested records appear only when "
+                    "listed in include; contact scalars are omitted. "
                     "Default false preserves the full response."
+                )
+            if "include" in properties:
+                properties["include"]["description"] = (
+                    "Local relation selection. Omit for the legacy full response; [] removes "
+                    "all named relations; fields/compact include none unless listed. Allowed: "
+                    + ", ".join(sorted(LIST_RELATIONS[component.name])) + "."
+                )
+            if "mask_contacts" in properties:
+                properties["mask_contacts"]["description"] = (
+                    "Optionally mask client phone, email and address fields after required "
+                    "privacy cleaning, including nested client/owner records. Default false."
                 )
         fn = getattr(component, "fn", None)
         if fn is not None:

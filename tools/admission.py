@@ -139,6 +139,114 @@ def register(mcp: FastMCP) -> None:
             allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["admission"],
         )
 
+    @mcp.tool
+    async def get_admissions_daily_summary(
+        date: str = "today", clinic_id: int = 0,
+    ) -> dict:
+        """Count admissions and statuses for one day without returning records.
+
+        Reads at most 500 admissions. If `complete` is false, the counts cover
+        only `processed_count` records; `truncated` is true. Relative dates use
+        the selected clinic's timezone when clinic_id is positive, otherwise
+        the process-local date. No client, pet, or free-text data is returned.
+
+        Args:
+            date: YYYY-MM-DD or relative day such as today or yesterday.
+            clinic_id: Optional clinic branch; also selects its timezone.
+        """
+        if clinic_id < 0:
+            raise ToolInputError("clinic_id must be non-negative")
+        resolved = parse_date_param(
+            date, today=await clinic_local_today(
+                clinic_id, relative=is_relative_date_param(date)
+            ),
+        )
+        if not resolved:
+            raise ToolInputError("date is required")
+        next_day = (_date.fromisoformat(resolved) + _td(days=1)).isoformat()
+        filters = [
+            _filter_gte("admission_date", f"{resolved} 00:00:00"),
+            _filter_lt("admission_date", f"{next_day} 00:00:00"),
+        ]
+        if clinic_id:
+            filters.append(_filter_eq("clinic_id", clinic_id))
+        counts: dict[str, int] = {}
+        seen_ids: set[int] = set()
+        known_total: int | None = None
+        page_shape: tuple[type, bool] | None = None
+        processed = 0
+        complete = False
+        for page in range(5):
+            response = await crud_list(
+                "/rest/api/admission", limit=100, offset=page * 100,
+                sort=[{"property": "admission_date", "direction": "ASC"},
+                      {"property": "id", "direction": "ASC"}],
+                filters=filters,
+                allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["admission"],
+            )
+            if not isinstance(response, dict) or response.get("success") is not True:
+                raise reportable_error("Daily summary received an invalid response.")
+            data = response.get("data")
+            if isinstance(data, list):
+                rows, total = data, None
+            elif isinstance(data, dict) and isinstance(data.get("admission"), list):
+                rows, total = data["admission"], data.get("totalCount")
+            else:
+                raise reportable_error("Daily summary received an invalid list shape.")
+            shape = (type(data), isinstance(data, dict) and "totalCount" in data)
+            if page_shape is not None and shape != page_shape:
+                raise reportable_error("Daily summary page shape changed during pagination.")
+            page_shape = shape
+            if len(rows) > 100:
+                raise reportable_error("Daily summary received an oversized page.")
+            more_flag = response.get("has_more") is True or response.get("truncated") is True
+            if isinstance(data, dict):
+                more_flag = more_flag or data.get("has_more") is True or data.get("truncated") is True
+            if total is not None:
+                if isinstance(total, bool) or not (
+                    isinstance(total, int) or isinstance(total, str) and total.isdecimal()
+                ) or int(total) < 0:
+                    raise reportable_error("Daily summary received an invalid total.")
+                total = int(total)
+                if known_total is not None and known_total != total:
+                    raise reportable_error("Daily summary total changed during pagination.")
+                known_total = total
+            if not rows and known_total is not None and processed < known_total:
+                raise reportable_error("Daily summary pagination stalled.")
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise reportable_error("Daily summary received an invalid record.")
+                record_id = row.get("id")
+                if isinstance(record_id, bool) or not (
+                    isinstance(record_id, int) and record_id > 0
+                    or isinstance(record_id, str) and record_id.isdecimal() and int(record_id) > 0
+                ):
+                    raise reportable_error("Daily summary received an invalid record id.")
+                record_id = int(record_id)
+                if record_id in seen_ids:
+                    raise reportable_error("Daily summary repeated a record.")
+                seen_ids.add(record_id)
+                status = row.get("status")
+                bucket = status if isinstance(status, str) and status in _VALID_ADMISSION_STATUSES else "other"
+                counts[bucket] = counts.get(bucket, 0) + 1
+            processed += len(rows)
+            if known_total is not None and processed > known_total:
+                raise reportable_error("Daily summary total is inconsistent.")
+            if len(rows) < 100 and known_total is not None and processed != known_total:
+                raise reportable_error("Daily summary ended before its total.")
+            if more_flag and (len(rows) < 100 or known_total == processed):
+                raise reportable_error("Daily summary completeness flags conflict.")
+            if known_total == processed or len(rows) < 100:
+                # REST offset pages are not an atomic snapshot. A concurrent
+                # insertion/deletion can shift records without changing total.
+                complete = page == 0
+                break
+        return {
+            "success": True, "date": resolved, "processed_count": processed,
+            "total_count": known_total, "status_counts": counts,
+            "truncated": not complete, "complete": complete,
+        }
+
     def _validate_admission_status(status: str) -> None:
         if status and status not in _VALID_ADMISSION_STATUSES:
             allowed = ", ".join(sorted(_VALID_ADMISSION_STATUSES))

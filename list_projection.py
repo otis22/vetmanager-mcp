@@ -7,6 +7,7 @@ reduces the already sanitized and canonicalized result sent to the caller.
 from __future__ import annotations
 
 from exceptions import ToolInputError, reportable_error
+from depersonalization import REDACTED_ADDRESS, REDACTED_EMAIL, REDACTED_PHONE
 
 
 LIST_FIELDS: dict[str, frozenset[str]] = {
@@ -48,6 +49,22 @@ LIST_ENTITY = {
     "get_clients": "client",
 }
 
+LIST_RELATIONS = {
+    "get_admissions": frozenset({"client", "pet", "invoices"}),
+    "get_invoices": frozenset({"client", "pet", "d", "doctor", "invoiceDocuments"}),
+    "get_clients": frozenset({"city_data", "street_data", "pets"}),
+}
+
+_CLIENT_CONTACTS = {
+    "home_phone": REDACTED_PHONE, "work_phone": REDACTED_PHONE,
+    "cell_phone": REDACTED_PHONE, "phone_prefix": REDACTED_PHONE,
+    "email": REDACTED_EMAIL, "address": REDACTED_ADDRESS,
+    "zip": REDACTED_ADDRESS, "apartment": REDACTED_ADDRESS,
+    "city_id": REDACTED_ADDRESS, "street_id": REDACTED_ADDRESS,
+    "city_data": REDACTED_ADDRESS, "street_data": REDACTED_ADDRESS,
+}
+_REDACTED_CONTACT_NOTE = "[redacted-contact-note]"
+
 SAFE_DATA_METADATA = frozenset({"totalCount", "truncated", "has_more", "limit", "offset"})
 SAFE_RESPONSE_KEYS = frozenset({"success", "data", "message", "limit", "offset", "has_more"})
 
@@ -69,9 +86,46 @@ def selected_fields(tool_name: str, fields: list[str] | None, compact: bool) -> 
     return COMPACT_FIELDS[tool_name] if compact else None
 
 
-def project_list_result(result: object, tool_name: str, selection: tuple[str, ...] | None):
+def selected_include(tool_name: str, include: list[str] | None) -> frozenset[str] | None:
+    if include is None:
+        return None
+    if not isinstance(include, list) or any(not isinstance(item, str) for item in include):
+        raise ToolInputError("include must be a list of relation names")
+    if len(set(include)) != len(include):
+        raise ToolInputError("include contains duplicate relation names")
+    unknown = set(include) - LIST_RELATIONS[tool_name]
+    if unknown:
+        raise ToolInputError("Unknown include relations: " + ", ".join(sorted(unknown)))
+    return frozenset(include)
+
+
+def _mask_contacts(value: object, *, client_record: bool = False) -> object:
+    """Mask client/owner records in the already sanitized MCP result."""
+    if isinstance(value, list):
+        return [_mask_contacts(item, client_record=client_record) for item in value]
+    if not isinstance(value, dict):
+        return value
+    result = {}
+    for key, item in value.items():
+        if key in {"client", "owner"} and item is not None and not isinstance(item, dict):
+            raise reportable_error("Contact masking expected a client object.")
+        if client_record and key in _CLIENT_CONTACTS and item is not None:
+            result[key] = _CLIENT_CONTACTS[key]
+        elif client_record and key == "note" and item is not None:
+            if not isinstance(item, str):
+                raise reportable_error("Contact masking expected a text note.")
+            result[key] = _REDACTED_CONTACT_NOTE
+        else:
+            result[key] = _mask_contacts(item, client_record=key in {"client", "owner"})
+    return result
+
+
+def project_list_result(
+    result: object, tool_name: str, selection: tuple[str, ...] | None,
+    *, include: frozenset[str] | None = None, mask_contacts: bool = False,
+):
     """Keep the envelope and row-level identifier-conflict warning intact."""
-    if selection is None:
+    if selection is None and include is None and not mask_contacts:
         return result
     if not isinstance(result, dict):
         raise reportable_error("Projection expected a list response envelope.")
@@ -99,17 +153,32 @@ def project_list_result(result: object, tool_name: str, selection: tuple[str, ..
         raise reportable_error("Projection expected a supported list response shape.")
 
     projected = []
+    relations = LIST_RELATIONS[tool_name]
+    allowed_relations = (relations if selection is None else frozenset()) if include is None else include
     for row in rows:
         if not isinstance(row, dict):
             raise reportable_error("Projection expected a record object.")
+        row = _mask_contacts(row, client_record=tool_name == "get_clients") if mask_contacts else row
         scalar_fields = {}
-        for key in selection:
+        scalar_names = (key for key in row if key not in relations) if selection is None else selection
+        for key in scalar_names:
             if key not in row:
                 continue
             value = row[key]
-            if isinstance(value, (dict, list, tuple)):
+            if selection is not None and isinstance(value, (dict, list, tuple)):
                 raise reportable_error("Projection expected a scalar field.")
+            if selection is None and key != "_mcp_identifier_conflicts" and isinstance(value, (dict, list, tuple)):
+                raise reportable_error("Projection found an unrecognized nested field.")
             scalar_fields[key] = value
+        for key in allowed_relations:
+            if key in row:
+                value = row[key]
+                if value is not None and not isinstance(value, (dict, list)) and not (
+                    mask_contacts and key in {"city_data", "street_data"}
+                    and value == REDACTED_ADDRESS
+                ):
+                    raise reportable_error("Projection expected a relation object or list.")
+                scalar_fields[key] = value
         if "_mcp_identifier_conflicts" in row:
             scalar_fields["_mcp_identifier_conflicts"] = row["_mcp_identifier_conflicts"]
         projected.append(scalar_fields)
