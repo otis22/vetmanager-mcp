@@ -8,7 +8,6 @@ Each new filter param must:
 
 import asyncio
 import json
-import time
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -792,15 +791,21 @@ async def test_get_users_position_id_filter():
 async def test_get_users_name_search_runs_last_and_first_name_in_parallel(monkeypatch):
     import tools.user as user_module
 
+    started: set[str] = set()
+
     async def fake_paginate_all(
         endpoint, *, page_size, entity_key, sort=None, filters=None, extra=None,
         allowed_filter_properties=None, **kwargs,
     ):
-        await asyncio.sleep(0.05)
         props = {
             f["property"] if isinstance(f, dict) else getattr(f, "property", None)
             for f in (filters or [])
         }
+        branch = "last_name" if "last_name" in props else "first_name"
+        started.add(branch)
+        # Yield once: both searches must have started before either can finish.
+        await asyncio.sleep(0)
+        assert started == {"last_name", "first_name"}
         if "last_name" in props:
             return ([{"id": 7, "last_name": "Иванова"}], 1)
         return ([{"id": 8, "first_name": "Иванова"}], 1)
@@ -808,14 +813,12 @@ async def test_get_users_name_search_runs_last_and_first_name_in_parallel(monkey
     monkeypatch.setattr(user_module, "paginate_all", fake_paginate_all)
 
     headers_patch, runtime_patch = bearer_runtime_patch()
-    started = time.perf_counter()
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("get_users", {"name": "Иванова"})
-    elapsed = time.perf_counter() - started
 
     data = result.structured_content["data"]["user"]
     assert {user["id"] for user in data} == {7, 8}
-    assert elapsed < 0.09, f"expected parallel lookups, got serial latency {elapsed:.3f}s"
+    assert started == {"last_name", "first_name"}
 
 
 # ── get_admissions date_from/to, doctor_id, pet_id, client_id ────────────────
