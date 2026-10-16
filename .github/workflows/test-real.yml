@@ -19,8 +19,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: docker/setup-buildx-action@v3
+
       - name: Build Docker image
-        run: bash scripts/retry_ecr_build.sh docker build --build-arg BASE_IMAGE=public.ecr.aws/docker/library/python:3.12-slim --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: vetmanager-mcp:latest
+          build-args: |
+            UID=1001
+            GID=1001
+          cache-from: |
+            type=gha,scope=vetmanager-mcp-test
+            type=gha,scope=vetmanager-mcp-real
+          cache-to: type=gha,mode=max,scope=vetmanager-mcp-real
 
       - name: Run opt-in real contour
         env:

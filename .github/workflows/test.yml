@@ -3,18 +3,63 @@ name: Tests
 on:
   push:
     branches: [main]
+    paths-ignore: ['**.md', 'PRD/**', 'docs/**']
   pull_request:
     branches: [main]
+    paths-ignore: ['**.md', 'PRD/**', 'docs/**']
+  workflow_dispatch:
 
 jobs:
-  fast:
+  build-image:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v7
 
-      - name: Build Docker image
-        run: bash scripts/retry_ecr_build.sh docker build --target test --build-arg BASE_IMAGE=public.ecr.aws/docker/library/python:3.12-slim --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp-test .
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image once
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: test
+          load: true
+          tags: vetmanager-mcp-test:latest
+          build-args: |
+            UID=1001
+            GID=1001
+          cache-from: type=gha,scope=vetmanager-mcp-test
+          cache-to: type=gha,mode=max,scope=vetmanager-mcp-test
+
+      - name: Save image and check runner capacity
+        run: |
+          docker save -o vetmanager-mcp-test.tar vetmanager-mcp-test
+          bytes="$(stat -c %s vetmanager-mcp-test.tar)"
+          available="$(df -B1 --output=avail . | tail -1)"
+          echo "Image archive: ${bytes} bytes; free disk: ${available} bytes"
+          test "${bytes}" -le 4294967296
+          test "${available}" -ge 8589934592
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vetmanager-mcp-test-image
+          path: vetmanager-mcp-test.tar
+          retention-days: 1
+          compression-level: 0
+
+  fast:
+    needs: build-image
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: vetmanager-mcp-test-image
+
+      - name: Load test image
+        run: docker load -i vetmanager-mcp-test.tar
 
       - name: Run fast contour
         run: |
@@ -33,6 +78,7 @@ jobs:
             pytest -q tests/test_review_result_gate.py
 
   default:
+    needs: build-image
     runs-on: ubuntu-latest
 
     steps:
@@ -41,8 +87,12 @@ jobs:
       - name: Validate production Compose resources
         run: python3 scripts/check_stage384_compose_config.py
 
-      - name: Build Docker image
-        run: bash scripts/retry_ecr_build.sh docker build --target test --build-arg BASE_IMAGE=public.ecr.aws/docker/library/python:3.12-slim --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp-test .
+      - uses: actions/download-artifact@v4
+        with:
+          name: vetmanager-mcp-test-image
+
+      - name: Load test image
+        run: docker load -i vetmanager-mcp-test.tar
 
       - name: Run default contour
         run: |
@@ -76,6 +126,7 @@ jobs:
           if-no-files-found: warn
 
   postgres-activation-telemetry:
+    needs: build-image
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -95,8 +146,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Build Docker image
-        run: bash scripts/retry_ecr_build.sh docker build --target test --build-arg BASE_IMAGE=public.ecr.aws/docker/library/python:3.12-slim --build-arg UID=1001 --build-arg GID=1001 -t vetmanager-mcp-test .
+      - uses: actions/download-artifact@v4
+        with:
+          name: vetmanager-mcp-test-image
+
+      - name: Load test image
+        run: docker load -i vetmanager-mcp-test.tar
 
       - name: Run mandatory PostgreSQL activation telemetry regression
         run: |

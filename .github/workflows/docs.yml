@@ -1,0 +1,17 @@
+name: Docs Check
+
+on:
+  push:
+    branches: [main]
+    paths: ['**.md', 'PRD/**', 'docs/**']
+  pull_request:
+    branches: [main]
+    paths: ['**.md', 'PRD/**', 'docs/**']
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check Roadmap structure
+        run: python3 scripts/check_roadmap_structure.py

@@ -93,17 +93,9 @@ def test_ecr_429_stops_after_three_attempts(tmp_path):
     assert sleeps == ["5", "15"]
 
 
-def test_all_build_steps_use_retry_without_wrapping_tests():
-    expected = {"fast", "default", "postgres-activation-telemetry"}
-    for file, jobs in [
-        ("test.yml", expected),
-        ("test-real.yml", {"test-real"}),
-    ]:
+def test_retry_remains_manual_fallback_and_never_wraps_tests():
+    for file in ("test.yml", "test-real.yml"):
         workflow = yaml.safe_load((ROOT / ".github/workflows" / file).read_text())
-        for job_name in jobs:
-            steps = workflow["jobs"][job_name]["steps"]
-            build = next(step for step in steps if step.get("name") == "Build Docker image")
-            assert build["run"].startswith("bash scripts/retry_ecr_build.sh docker build ")
-            for step in steps:
-                if step is not build:
-                    assert "retry_ecr_build.sh" not in step.get("run", "")
+        for job in workflow["jobs"].values():
+            for step in job["steps"]:
+                assert "retry_ecr_build.sh" not in step.get("run", "")

@@ -1,39 +1,40 @@
-# Этап 406. Устранение ECR 429 в CI
+# Этап 406. Снижение ECR 429 в CI: план Б
 
-## Цель и факты
+## Цель и проверенные факты
 
-Шесть падений Tests 16.10.2026 вызваны общим лимитом ECR на скачивание `public.ecr.aws/docker/library/python:3.12-slim`. `test.yml` трижды строит одинаковый test-образ. Ручной `test-real.yml` строит production-образ. Dockerfile задаёт ECR как базу по умолчанию, а production deploy строит образ на сервере через Compose. `Deploy Prod` получает `workflow_run` только после завершения Tests на main, затем проверяет изменения от последнего удачного деплоя через `deploy_scope_check.sh`; документация там уже исключена. GitHub branch protection через API отсутствует; отдельного обязательного check на docs-коммит сейчас нет. Общий PRD и технические требования изучены; контракт Vetmanager API не затрагивается.
+16.10.2026 шесть CI-сборок упали на общем лимите передачи данных ECR при получении `public.ecr.aws/docker/library/python:3.12-slim`. `Tests` строил один test-образ в трёх job. Dockerfile по умолчанию использует ECR; production Compose строит образ на сервере. `Deploy Prod` слушает `workflow_run` Tests и исключает документацию через `deploy_scope_check.sh`. Токен машины не имеет `read:packages` и `write:packages`; по корректировке владельца GHCR-зеркало отложено. Общий PRD и технические требования прочитаны; Vetmanager API не меняется.
 
 ## Требования и приёмка
 
-- Опубликовать побайтовое зеркало официального `python:3.12-slim` из ECR в `ghcr.io/otis22/python:3.12-slim`; записать digest источника и опубликованного manifest. Проверить доступность пакета анонимным pull после удаления Docker-учётных данных из временного контекста.
-- Dockerfile по умолчанию и CI-сборки используют публичный GHCR. Локальный Compose и production deploy используют ту же базу без GHCR login. Ручной Real API workflow также использует GHCR.
-- В Tests для push и pull_request на main добавить `paths-ignore` для `**.md`, `PRD/**`, `docs/**`. Проверить фактом: до изменения push docs-only запускает Tests; после изменения — docs-only push не создаёт Tests run. Для docs-only push отсутствие `workflow_run` ожидаемо: Deploy Prod не запускается, что соответствует нынешнему `deploy` skipped; следующий code push вычисляет разницу от последнего успешного deploy и захватывает кодовые изменения.
-- Test-образ собирается один раз на Tests run; три job используют его как готовый артефакт. Изоляция между job сохраняется, registry write permissions для тестового workflow не требуется. PostgreSQL service image из ECR — отдельный источник риска, не относящийся к Python base; оценить его по фактическим логам и зафиксировать предел решения.
-- Сторож CI-конфигурации: на старом workflow красный; на новом зелёный. Проверяет три consumer job, один build job, GHCR base и docs-filter. Дополнительно проверить `Deploy Prod` связь и scope.
-- После committed diff review — аудит, один полный mock+real suite по финальному SHA, push main, зелёный Tests и Deploy Prod. В логах Tests/Deploy подтвердить `ghcr.io/otis22/python`.
+- `Tests` на push/PR в `main` игнорирует `**.md`, `PRD/**`, `docs/**`. Ручной `workflow_dispatch` сохраняет запуск при ограничении GitHub path filter (первые 300 файлов). До правки docs-only push запускал Tests; после правки показать docs-only SHA без Tests run через `gh run list`. Отдельный Docs Check проверяет структуру Roadmap.
+- Одна job `build-image` строит test-образ, сохраняет его artifact на сутки; `fast`, `default`, `postgres-activation-telemetry` загружают один и тот же образ. Перед upload проверяются размер архива (≤4 GiB) и свободное место (≥8 GiB). Снять фактические времена передачи в CI.
+- Сборка `build-image` и ручного `Real API Tests` использует Buildx `type=gha` `cache-from/cache-to`. У ручного workflow дополнительно читается cache test-образа для общих базовых слоёв. Даже тёплый cache не исключает ECR manifest/metadata resolve по mutable `FROM`; отсутствие blob-трафика снижает вероятность Data limit 429, но не доказывает независимость от ECR. На cache miss риск ещё выше. `retry_ecr_build.sh` оставить в репозитории как ручную страховку/для отката; текущий action его не вызывает. Сборка production на сервере не получает GHA cache и остаётся за пределами решения. Обновить устаревший сторож этапа 402, требующий вызова retry из каждой job, сохранив поведенческие тесты самого скрипта.
+- Сторож YAML сначала красный на старом workflow, затем зелёный: фильтр, одна сборка и три consumer job, GHA cache в обеих CI-сборках, неизменный ECR base. Проверить Deploy Prod связь и trusted upstream event, чтобы PR из fork не открыл production secrets.
+- После review и аудита выполнить ровно один полный mock и real suite по финальному кодовому SHA, push в main, проверить Tests и Deploy Prod. В логе CI зафиксировать `cache-from/cache-to type=gha`, источник base и исход job. Cache hit допустим только после появления предыдущей записи; первый miss может ещё получить 429.
 
 ## Архитектурное решение
 
-**Проблема.** Внешний ECR 429 блокирует тесты и production build; три одинаковые сборки утраивают шанс отказа. Документальные коммиты зря расходуют quota.
+**Проблема.** Три независимые сборки утраивали запросы к базовому образу и могли каждая попасть на ECR 429. Docs-only коммит расходовал ту же квоту.
 
-**Варианты.** Buildx cache оставляет три запуска build и сложнее доказывает одну сборку; SHA-tagged GHCR test image добавляет registry write permissions и публикацию каждого тестового образа. Выбран один build job с `docker save` и `actions/upload-artifact`, а три job делают download + `docker load`: образ передаётся только в пределах run без внешнего registry. Для base используется публичное GHCR-зеркало. Существующий `retry_ecr_build.sh` остаётся в репозитории как страховка для исторических вызовов/отката, но не применяется к GHCR: его классификатор строго привязан к ECR и иначе не повторит сборку.
+**Контекст и варианты.** GHCR-зеркало убрало бы зависимость от ECR, но без package scopes его нельзя безопасно опубликовать и проверить публичность. Три параллельных `buildx build` с общим cache по читаемости и расходу хуже одной сборки. SHA-образ в registry требует write permission на каждом PR. Выбран один Buildx job с GHA cache и artifact внутри run. Artifact передаёт уже готовый образ, GHA cache сохраняет базовые слои между run. `docker/build-push-action` использует runtime cache credentials без собственных токенов в workflow.
 
-**Инварианты.** Все три test job запускают один и тот же test image из текущего commit; test failure остаётся красным. Pull request не получает права записи пакета. Ручной real contour остаётся ручным. Deploy Prod запускается на успешный code Tests и не деплоит документацию. Изменение Dockerfile применяется также на production сервере; анонимный GHCR pull обязателен до выпуска. Откат — вернуть предыдущий Dockerfile/workflow отдельным коммитом; зеркало можно оставить.
+**Инварианты.** Три тестовые job выполняют один образ текущего SHA; ошибку теста нельзя скрыть cache hit. PR не получает registry write. Real API workflow остаётся ручным. Deploy Prod получает только успешные Tests от доверенных push/dispatch на main; docs-only push не даёт `workflow_run`, а следующий кодовый push сравнивается с последним успешным deploy. Dockerfile и локальные сборки остаются на прежней базе. PostgreSQL service image из ECR — отдельный риск.
 
-**Architecture Critique.** Требуется, потому что меняется CI orchestration, production base и поведение цепочки релиза. Сильный PRD review проверяет архитектуру, scope, альтернативы, безопасность, совместимость, тесты и rollback.
+**Rollback/fallback.** Если artifact или GHA cache не работает, вернуть workflow отдельным коммитом и использовать старую тройную сборку с `retry_ecr_build.sh`; production образ не затрагивается. Cache miss может всё ещё упасть на ECR 429; тогда адресный rerun после восстановления лимита. Следующий этап GHCR устраняет этот остаточный риск.
+
+**Architecture Critique.** Требуется: меняется orchestration CI и цепочка выпуска. PRD review покрывает архитектуру, альтернативы, безопасность, rollback, приёмку и тесты.
 
 ## Декомпозиция
 
-1. Проверить исходный CI и trigger, создать PRD и пройти Spark + Astra/Sol review — до 2 ч.
-2. Опубликовать зеркало, проверить digest и анонимный доступ — до 2 ч.
-3. Написать красный сторож workflow и реализовать GHCR base, docs filter, одну сборку — до 150 строк кода.
-4. Аудит, committed diff review, один полный suite, выпуск и живое наблюдение CI — до 2 ч.
+1. Сверить старый CI и trigger, PRD, Spark → Astra/Sol PRD review — до 2 ч.
+2. Показать красный сторож и реализовать docs-filter, один build job, GHA cache — до 150 строк кода.
+3. Провести аудит и Spark → Astra/Sol committed diff review — до 2 ч.
+4. Один полный mock+real suite, push, проверить docs-only отсутствие run, Tests и Deploy Prod — до 2 ч.
 
-## Обновление зеркала
+## Отложенное GHCR-зеркало
 
-Раз в 1–2 месяца выполнить `docker pull public.ecr.aws/docker/library/python:3.12-slim`, затем `docker tag public.ecr.aws/docker/library/python:3.12-slim ghcr.io/otis22/python:3.12-slim`, затем `docker push ghcr.io/otis22/python:3.12-slim`. Перед push необходим `gh auth token | docker login ghcr.io -u otis22 --password-stdin`. Сверить digest и проверить публичный pull; обновление mutable tag требует отдельного CI прогона.
+После выдачи владельцем токена с `write:packages,read:packages` либо `gh auth refresh -s write:packages,read:packages` выполнить обновление раз в 1–2 месяца: `docker pull public.ecr.aws/docker/library/python:3.12-slim`, `docker tag public.ecr.aws/docker/library/python:3.12-slim ghcr.io/otis22/python:3.12-slim`, `docker push ghcr.io/otis22/python:3.12-slim`. До push: `gh auth token | docker login ghcr.io -u otis22 --password-stdin`. Обычный `docker push` с текущей машины публикует лишь её платформу; для сохранения multi-platform index отдельно выполнить `docker buildx imagetools create -t ghcr.io/otis22/python:3.12-slim public.ecr.aws/docker/library/python:3.12-slim`. Сверить платформы/digest и анонимный pull amd64/arm64, сделать пакет public, затем отдельным этапом закрепить index digest в Dockerfile и прогнать CI/Deploy. До этой проверки CI и Dockerfile на GHCR не переключать.
 
 ## Оценка простоты
 
-Один build job, штатный artifact для передачи образа и узкий сторож YAML; новых runtime-зависимостей нет.
+Один build job, штатные artifact и Buildx cache; новых runtime-зависимостей и registry permissions нет.
