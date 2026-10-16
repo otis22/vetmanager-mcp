@@ -157,6 +157,7 @@ HTTP probes и scrape endpoints:
   - `vetmanager_tool_calls_total{endpoint,method,outcome}` + `vetmanager_tool_call_latency_seconds_{count,sum,max}` — per-tool (endpoint+method) latency and success/error rate via crud_helpers instrumentation (stage 88);
   - `vetmanager_report_ai_jobs_total{outcome}`, `vetmanager_report_ai_job_transitions_total{from_stage,to_stage}`, `vetmanager_report_ai_job_terminal_outcomes_total{outcome}` и `vetmanager_report_ai_job_{stage_,}duration_seconds_{count,sum,max}` — process-local наблюдение создания и lifecycle Report AI. Эти series считают локальные наблюдения, а не уникальные задания: `abandoned_wait` означает отсутствие следующего MCP poll до local TTL, не состояние очереди Ветменеджера; если polling возобновится после TTL, то же задание начнёт новое observation и может дать второй sample;
   - `vetmanager_report_ai_exports_total{operation,outcome}` + `vetmanager_report_ai_export_duration_seconds_{count,sum,max}` — отдельно наблюдаемые start/poll export attempts; duration начинается только после успешного `StartReport` и не содержит URLs, IDs или clinic data;
+  - `vetmanager_report_ai_ratings_total{score}` — успешные добровольные оценки 1–10, включая повторные оценки одного job; `vetmanager_report_ai_rating_purges_total{outcome}` — ежедневная очистка локального журнала;
   - `vetmanager_cache_{hits,misses,invalidations,evictions}_total` + `vetmanager_cache_entries`;
   - `vetmanager_business_events_total{event=...}` — fixed allowlist business events from `service_metrics._ALLOWED_BUSINESS_EVENTS`, including account/token/OAuth lifecycle events and token-expiry warning events;
   - `vetmanager_token_preset_issued_total{preset}` — issuance counter by access preset;
@@ -633,7 +634,7 @@ COMMIT;
 - После успешного `POST`/`PUT`/`DELETE` кеш для соответствующего тега `domain:entity` инвалидируется.
 - Ограничение подхода: кеш живёт только в памяти процесса и полностью сбрасывается при рестарте сервера.
 
-**128 инструментов** по 16 группам:
+**129 инструментов** по 16 группам:
 
 | Группа | Инструменты | Кол-во |
 |--------|-------------|--------|
@@ -650,7 +651,7 @@ COMMIT;
 | Reference | `get_breeds`, `get_breed_by_id`, `get_pet_types`, `get_pet_type_by_id`, `get_cities`, `get_city_by_id`, `get_city_types`, `get_streets`, `get_street_by_id`, `get_units`, `get_unit_by_id`, `get_roles`, `get_role_by_id`, `get_user_positions`, `get_user_position_by_id`, `get_combo_manual_names`, `get_combo_manual_name_by_id`, `get_combo_manual_items`, `get_combo_manual_item_by_id` | 19 |
 | Operations | `get_clinics`, `get_clinic_by_id`, `get_timesheets`, `get_timesheet_by_id`, `get_timesheet_types`, `create_timesheet`, `update_timesheet`, `delete_timesheet`, `get_properties`, `get_anonymous_clients`, `send_message_to_all`, `send_message_to_users`, `send_message_to_roles`, `get_message_reports` | 14 |
 | Schedule | `get_doctor_free_slots` | 1 |
-| Report AI | `get_report_ai_prompt_helper`, `create_report_ai_job`, `get_report_ai_job`, `confirm_report_ai_job_candidate`, `reject_report_ai_job_candidate`, `get_report_ai_job_data`, `start_report_export`, `get_report_export_download`, `get_report_ai_job_export`, `save_report_ai_job_as_report` | 10 |
+| Report AI | `get_report_ai_prompt_helper`, `create_report_ai_job`, `get_report_ai_job`, `confirm_report_ai_job_candidate`, `reject_report_ai_job_candidate`, `get_report_ai_job_data`, `start_report_export`, `get_report_export_download`, `get_report_ai_job_export`, `save_report_ai_job_as_report`, `rate_report_ai_job` | 11 |
 | Feedback | `report_problem` | 1 |
 | Доступ | `whoami` | 1 |
 
@@ -701,6 +702,7 @@ Prompts работают по тому же bearer-only контракту, чт
 5. Если статус `existing_report_matched`, сразу вызвать `get_report_ai_job_data`.
 6. Если статус `ready_to_save` и нужны строки, явно вызвать `save_report_ai_job_as_report` с вменяемым названием отчёта; это write-tool, отчёт станет видимым в Vetmanager. Не обещать срок на save: API не возвращает expiry или retry metadata.
 7. `get_report_ai_job_data(job_id)` — получить `columns`, `rows`, `total`, `limited` и, когда upstream отдаёт, `csv_export_url`.
+8. После попытки построения отчёта добровольно вызвать `rate_report_ai_job(job_id, score)`: 1 — отчёт не построился; 2–10 — построился, от почти бесполезного до полного решения задачи. Оценка и очищенный исходный промпт хранятся только в нашей БД; отсутствие оценки не означает успех.
 
 `intent_text` для `create_report_ai_job` ограничен Vetmanager лимитом 20000 символов. Для сложных отчётов лучше не просто писать длинный текст, а явно указать период, фильтры, метрики, группировки и сортировку. `recognized.preview_example_row` в статусе job — это LLM-generated пример ожидаемой строки, а не подтверждённая строка из данных клиники.
 

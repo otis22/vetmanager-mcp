@@ -978,7 +978,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "10 = задача решена полностью, ничего не пришлось добывать другими путями. "
         "Передайте job_id и целый score 1–10; comment необязателен. "
         "Оценка записывается только в нашу БД и заменяет прежнюю оценку того же job. "
-        "Вызов добровольный; без job_id после неудачного POST оценка невозможна."
+        "Вызов добровольный; без job_id после неудачного POST оценка невозможна. "
+        "Domain synonyms: оценка отчёта, пригодность отчёта, Report AI rating, score."
     ),
     "create_report_ai_job": (
         "Create an async Vetmanager Report AI job from a Russian report intent. "

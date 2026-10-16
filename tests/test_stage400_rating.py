@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import stat
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 import httpx
@@ -145,19 +146,21 @@ def test_rating_metric_has_bounded_score_distribution():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_create_records_original_intent_before_wait_and_failed_job_has_guidance(monkeypatch):
+@pytest.mark.parametrize("raw_job_id", [400, "400"])
+async def test_create_records_original_intent_before_wait_and_failed_job_has_guidance(monkeypatch, raw_job_id):
     billing_mock()
     register = AsyncMock(return_value=True)
     monkeypatch.setattr(report_ai, "record_created_job", register, raising=False)
     post = respx.post(f"{BASE}/rest/api/report-ai-job").mock(
         return_value=httpx.Response(201, json={"success": True, "data": {
-            "job": {"id": 400, "status": "failed"}}}))
+            "job": {"id": raw_job_id, "status": "failed"}}}))
     headers, runtime = bearer_runtime_patch()
     with headers, runtime:
         result = await mcp.call_tool("create_report_ai_job", {"intent_text": "Отчёт по месяцам"})
     assert post.call_count == 1
     assert register.await_count == 1
     assert register.await_args.kwargs["intent_text"] == "Отчёт по месяцам"
+    assert register.await_args.kwargs["job_id"] == 400
     assert "rate_report_ai_job" in str(result.structured_content)
 
 
@@ -239,3 +242,19 @@ def test_rating_migration_has_retention_index_and_rollback(tmp_path, monkeypatch
     engine = create_engine(config.get_main_option("sqlalchemy.url"))
     assert "report_ai_job_ratings" not in inspect(engine).get_table_names()
     engine.dispose()
+
+
+def test_predeploy_rollback_dump_omits_rating_rows(tmp_path, monkeypatch):
+    from scripts import stage385_deploy
+
+    calls = []
+    monkeypatch.setattr(stage385_deploy, "_container", lambda *_args: "synthetic-pg")
+
+    def fake_run(args, *, stdout, stderr, timeout):
+        calls.append(args)
+        stdout.write(b"PGDMP" + b"x" * 100)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(stage385_deploy.subprocess, "run", fake_run)
+    stage385_deploy._backup_pg("synthetic-project", tmp_path)
+    assert "--exclude-table-data=public.report_ai_job_ratings" in calls[0][-1]

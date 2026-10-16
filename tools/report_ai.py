@@ -74,6 +74,7 @@ REPORT_AI_RATING_REGISTRATION_TIMEOUT_SECONDS = 2
 REPORT_AI_RATING_GUIDANCE = (
     "After the report attempt, call rate_report_ai_job with this job_id and score 1–10 "
     "if this job was registered by the current MCP clinic connection. "
+    "Convert a numeric-string job ID to an integer argument. "
     "Score 1 also applies when the report failed to build. The rating is voluntary."
 )
 REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS = CLINIC_TIMEZONE_TTL_SECONDS
@@ -1473,6 +1474,20 @@ def _extract_job(payload: dict) -> dict:
     return {}
 
 
+def _rating_job_id(value: object) -> int | None:
+    """Accept the upstream's positive integer or decimal-string job ID."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str) and re.fullmatch(r"[1-9][0-9]*", value):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
 def _extract_report(payload: dict) -> dict:
     data = payload.get("data")
     if isinstance(data, dict) and isinstance(data.get("report"), dict):
@@ -1901,7 +1916,8 @@ def register(mcp: FastMCP) -> None:
         deduplicated = isinstance(data, dict) and data.get("is_deduplicated") is True
         rating_unavailable = False
         credentials = get_current_runtime_credentials()
-        if isinstance(job.get("id"), int) and not isinstance(job["id"], bool) and job["id"] > 0:
+        job_id = _rating_job_id(job.get("id"))
+        if job_id is not None:
             try:
                 if credentials is None:
                     rating_unavailable = True
@@ -1910,7 +1926,7 @@ def register(mcp: FastMCP) -> None:
                         account_id=credentials.account_id,
                         connection_id=credentials.connection_id,
                         domain=credentials.domain,
-                        job_id=job["id"], intent_text=original_intent,
+                        job_id=job_id, intent_text=original_intent,
                         allow_new=not deduplicated,
                     ), timeout=REPORT_AI_RATING_REGISTRATION_TIMEOUT_SECONDS)
                     rating_unavailable = not registered
@@ -1920,6 +1936,8 @@ def register(mcp: FastMCP) -> None:
                     "event_name": "report_ai_rating_registration_failed",
                     "error_class": type(exc).__name__,
                 })
+        else:
+            rating_unavailable = True
         raw_code = _extract_job(payload).get("error_code")
         payload = await asyncio.to_thread(_annotate_report_ai_workarounds, payload)
         job = _extract_job(payload)

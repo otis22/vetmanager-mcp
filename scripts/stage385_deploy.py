@@ -222,7 +222,8 @@ def _backup_pg(project: str, bundle: Path) -> Path:
     try:
         with os.fdopen(fd, "wb") as handle:
             result = subprocess.run(["docker", "exec", cid, "sh", "-c",
-                                     'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"'],
+                                     'pg_dump -Fc --exclude-table-data=public.report_ai_job_ratings '
+                                     '-U "$POSTGRES_USER" -d "$POSTGRES_DB"'],
                                     stdout=handle, stderr=subprocess.PIPE, timeout=300)
         if result.returncode != 0 or dest.stat().st_size < 100:
             raise RuntimeError(f"PostgreSQL backup failed (exit {result.returncode})")
