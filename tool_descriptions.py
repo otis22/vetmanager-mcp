@@ -628,6 +628,17 @@ TOOL_ENTITY_MAP: dict[str, str] = {
 }
 
 
+REPORT_AI_PRIVACY_GUIDANCE = (
+    "Report AI prefers depersonalized output even with a personal-data token: "
+    "names and phone numbers may intentionally become placeholders by design; "
+    "this does not guarantee redaction of every report. "
+    "Judge whether the task is solved using available data; do not lower the "
+    "score solely because personal data is absent when the task is solved. "
+    "If needed criteria, aggregates, or names or phones for a contact task "
+    "are missing, score the actual usefulness and explain the limitation. "
+)
+
+
 SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     "set_good_sale_param_status": (
         "Disable or restore exactly one good sale option for one clinic and sale unit. "
@@ -995,6 +1006,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "Шкала: 1 = отчёт даже не построился; 2 и выше — отчёт построился; "
         "2 = построился, но задачу почти не решил; 5–6 = решил частично; "
         "10 = задача решена полностью, ничего не пришлось добывать другими путями. "
+        "Report AI может намеренно заменить ФИО и телефоны плейсхолдерами даже при токене с ПД; это ожидаемое поведение, а не гарантия очистки каждого отчёта. "
+        "Оценивайте решение задачи по данным: не снижайте оценку только из-за отсутствия ПД, если задача решена. "
+        "Если нужные критерии или агрегаты, либо ФИО или телефон для контактной задачи отсутствуют, оцените фактическую пригодность и объясните ограничение. "
         "Передайте job_id, целый score 1–10 и intent_text — тот же промпт, из которого "
         "строился отчёт. intent_text и score обязательны; comment необязателен — при низкой оценке "
         "кратко укажите, что именно не устроило в отчёте и чего не хватило для решения задачи. "
@@ -1004,6 +1018,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "create_report_ai_job": (
         "Create an async Vetmanager Report AI job from a Russian report intent. "
+        + REPORT_AI_PRIVACY_GUIDANCE
+        +
         "Canonical order: get_report_ai_prompt_helper -> create_report_ai_job -> "
         "get_report_ai_job, then confirm/save/read/export according to the returned "
         "status. After the attempt, call rate_report_ai_job with job_id, score 1–10, "
@@ -1059,6 +1075,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_report_ai_job": (
         "Read safe status and recognized structure for a Vetmanager Report AI job. "
+        + REPORT_AI_PRIVACY_GUIDANCE
+        +
         "After saved or existing_report_matched, read get_report_ai_job_data, then make the final "
         "rate_report_ai_job(job_id, score, intent_text) call; comment is optional. "
         "Use for polling queued/recognizing/building_preview jobs and for checking "
@@ -1111,6 +1129,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_report_ai_job_data": (
         "Get table rows for a saved or existing_report_matched Report AI job. "
+        + REPORT_AI_PRIVACY_GUIDANCE
+        +
         "After reviewing real rows, finish the create → poll → data → rate path with "
         "rate_report_ai_job(job_id, score, intent_text); comment is optional. "
         "In rows, empty strings become null; unambiguous numeric columns return "
