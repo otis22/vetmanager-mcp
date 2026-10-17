@@ -74,17 +74,19 @@ async def test_missing_clinic_does_not_reach_upstream(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_batch_rejects_malformed_quantity_and_uses_fresh_reads(monkeypatch):
+@pytest.mark.parametrize("stock_value", ["invalid", None])
+async def test_batch_rejects_malformed_quantity_and_uses_fresh_reads(monkeypatch, stock_value):
     calls = []
 
     async def stock(self, path, **kwargs):
         calls.append(kwargs)
-        return {"success": True, "data": {"rest_good_in_warehouse": {"quantity": "invalid"}}}
+        stock = {} if stock_value is None else {"quantity": stock_value}
+        return {"success": True, "data": {"rest_good_in_warehouse": stock}}
 
     monkeypatch.setattr("vetmanager_client.VetmanagerClient.get", stock)
     hp, rp = patch_runtime_credentials("testclinic", "mock-key", bearer_token="mock-token")
     with hp, rp:
-        with pytest.raises(Exception):
+        with pytest.raises(Exception, match="no valid stock quantity"):
             await mcp.call_tool("get_goods_stock_balances", {"good_ids": [7], "clinic_id": 2})
     assert len(calls) == 1
     assert calls[0]["fresh"] is True
@@ -133,6 +135,7 @@ async def test_low_stock_prompt_requires_clinic_and_batches():
     assert "get_goods_stock_balances" in body
     assert "clinic_id=2" in body
     assert "is_warehouse_account" in body
+    assert "offset" in body and "totalCount" in body
     assert "clinic_id=1" not in body
     async with Client(mcp) as client:
         catalogue = {p.name: p for p in await client.list_prompts()}
