@@ -4,6 +4,34 @@ Use this helper before creating a Vetmanager Report AI job.
 
 Your task is to convert the user's business question into a clear Russian `intent_text` for the Vetmanager report constructor. Do not write SQL. Do not invent database fields, custom directory values, statuses, tags, product groups, diagnoses, visit types, acquisition channels, or loyalty-card types.
 
+## Короткий маршрут
+
+1. Уточните вопрос только там, где выбор меняет результат. До вызова составьте
+   русский `intent_text`: предмет отчёта, метрика или список, период и основание
+   даты, фильтры, группировка и сортировка. Не пишите SQL и не выдумывайте поля.
+2. Вызовите `create_report_ai_job(intent_text=..., wait_seconds=30)` один раз.
+   Сохраните `job_id`; при ожидании вызовите `get_report_ai_job(wait_seconds=30)`
+   для того же job. Не создавайте дубль из-за долгого ожидания.
+3. При `needs_confirmation` проверьте кандидата и подтвердите подходящий либо
+   один раз отклоните неподходящий. При `ready_to_save` сохраните отчёт под
+   осмысленным названием; при `existing_report_matched` не сохраняйте повторно.
+   Превью помогает принять решение о структуре, но не даёт живых данных.
+4. После save/confirm прочитайте реальные строки через `get_report_ai_job_data`.
+   Затем оцените пригодность для исходного вопроса:
+   `rate_report_ai_job(job_id, score, intent_text)`; `score` и `intent_text`
+   обязательны, `comment` необязателен. Для `failed` с `job_id` финальный шаг —
+   оценка `score=1`; без job_id оценить вызов нельзя.
+
+## Как сформулировать `intent_text`
+
+- Write in Russian.
+- State the main Vetmanager concept: invoices, payments, clients, pets, admissions, medical cards, goods, warehouse movements, users.
+- State the metric or list fields.
+- State filters, period, date basis, grouping, and sorting when relevant.
+- Prefer non-personal output by default: internal IDs and aggregates instead of names, phones, email, chip numbers, card numbers, or employee logins.
+- For contact lists, include names/phones only when the user explicitly needs contact action such as calling, messaging, reminders, or mailing.
+- If the user asks for a list, request only the columns needed to answer the question.
+
 ## Report AI journey
 
 1. После подготовки интента вызовите `create_report_ai_job(wait_seconds=30)` один
@@ -31,18 +59,18 @@ Your task is to convert the user's business question into a clear Russian `inten
    вывод «данных нет».
    Для ответа используйте только реальные строки из `get_report_ai_job_data`
    после save или confirm.
-5. После попытки отчёта добровольно вызовите `rate_report_ai_job(job_id, score, intent_text)`,
+5. После реальных строк вызовите `rate_report_ai_job(job_id, score, intent_text)`,
    передав тот же промпт, из которого строился отчёт. `intent_text` и `score`
    обязательны; `comment` необязателен:
    1 = отчёт даже не построился; 2 и выше — отчёт построился;
    2 = построился, но задачу почти не решил; 5–6 = решил частично;
    10 = задача решена полностью, ничего не пришлось добывать другими путями.
+   Для failed job с `job_id` используйте 1; без `job_id` оценка невозможна.
    Оцените пригодность для исходного вопроса, включая необходимость добывать
    данные другими путями. При низкой оценке можно добавить короткий комментарий
-   без ПД о том, что не хватило. Если
-   POST завершился без job_id, оценить этот вызов нельзя. Оценка сохраняется
-   только в MCP и не влияет на отчёт в Ветменеджере. Вызов добровольный:
-   отсутствие оценки не означает, что отчёт подошёл.
+   без ПД о том, что не хватило. Оценка сохраняется
+   только в MCP и не влияет на отчёт в Ветменеджере.
+   Отсутствие оценки не означает, что отчёт подошёл.
 
 ## Agent flow constraints
 
@@ -76,16 +104,6 @@ Your task is to convert the user's business question into a clear Russian `inten
   таблицы совпала.
 - `intent_text` can be up to 20000 characters. Longer is not better by itself: keep the request structured around period, filters, metrics, grouping, and sorting.
 - A saved report is visible in Vetmanager. Use concise titles that explain the question, period, and MCP origin, for example: `MCP debtors by negative balance 2026-06-15`.
-
-## How to formulate `intent_text`
-
-- Write in Russian.
-- State the main Vetmanager concept: invoices, payments, clients, pets, admissions, medical cards, goods, warehouse movements, users.
-- State the metric or list fields.
-- State filters, period, date basis, grouping, and sorting when relevant.
-- Prefer non-personal output by default: internal IDs and aggregates instead of names, phones, email, chip numbers, card numbers, or employee logins.
-- For contact lists, include names/phones only when the user explicitly needs contact action such as calling, messaging, reminders, or mailing.
-- If the user asks for a list, request only the columns needed to answer the question.
 
 ## Clarifications
 
@@ -153,13 +171,21 @@ If the user already gave a precise criterion, do not ask again. Example: "client
 быть отрицательной при преобладании наценки. Для отчёта по скидкам явно
 опишите эту метрику в `intent_text`, а результат проверьте с учётом округления.
 
+## Вакцинации
+
+Для одного пациента используйте прямые данные: `get_medical_cards(pet_id=...)`
+для medicalCards и `get_vaccinations(pet_id=...)` для vaccinations. Для списка
+по всей клинике сформулируйте `intent_text` для Report AI по таблице
+`vaccine_pets`, указав период, клинику и нужные поля/группировку. Не собирайте
+клиническую выборку многими per-pet вызовами без известного списка пациентов.
+
 ## Goods report workaround
 
 For goods/product reports, ask for business columns such as product code, SKU/article, barcode when relevant, product title/name, group, quantity, revenue, cost, margin, and period grouping.
 Do not ask Report AI to output a standalone `good.id` column. If an older Vetmanager contour or unresolved edge case still fails with an explicit `good.id` preview error, retry with "код/артикул/наименование товара" in Russian rather than `good.id`.
 For goods sold through invoices, describe the business relation as "позиции счёта и связанные товары" without writing SQL.
 Отчёт о составе комбинаций может завершиться известным дефектом ВМ с SQL-ошибкой. Не повторяйте тот же запрос; для одной комбинации используйте `get_good_combination` (позиции) и `calculate_good_combination_price` (цена), явно передавая `clinic_id` нужной клиники обоим инструментам.
-Колонка Report AI «Текущий остаток на складе» суммирует остаток по всем складам базы и игнорирует фильтр клиники. Для остатка конкретной клиники используйте `get_good_stock_balance` и явно передайте `clinic_id` нужной клиники; значение по умолчанию 1 может относиться к другой клинике.
+Колонка Report AI «Текущий остаток на складе» суммирует остаток по всем складам базы и игнорирует фильтр клиники. Для остатка конкретной клиники используйте `get_good_stock_balance` и явно передайте обязательный `clinic_id` нужной клиники.
 
 ## Data and export
 
@@ -171,12 +197,10 @@ For goods sold through invoices, describe the business relation as "позици
   `get_report_export_download` с полученным `report_file_id` и используйте
   абсолютный `download_url`, который вернул MCP.
 
-## Output expected from the helper
+## Что делать после чтения справки
 
-Return one of:
-
-1. A short clarification question.
-2. One or more Russian `intent_text` values ready for `create_report_ai_job`.
-3. If multiple jobs are needed, include brief merge instructions for the agent.
-
-Do not claim rows are available until the job is `saved` or `existing_report_matched`.
+Если существенный критерий неясен, задайте короткий уточняющий вопрос. Иначе
+сформулируйте `intent_text` и пройдите короткий маршрут выше до реальных строк
+и оценки. Если отчёт не построился, следуйте ветке failed; не выдавайте
+preview за результат. Для нескольких отдельных jobs выполняйте маршрут
+последовательно и объединяйте только проверенные реальные результаты.

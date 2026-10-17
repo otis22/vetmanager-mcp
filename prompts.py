@@ -32,9 +32,8 @@ def _report_ai_prompt_helper_path() -> Path:
 
 def get_report_ai_prompt_helper_text() -> str:
     """Return the rendered Report AI helper shared by prompt and tool."""
-    return _bearer_runtime_prefix() + _report_ai_prompt_helper_path().read_text(
-        encoding="utf-8"
-    )
+    guide = _report_ai_prompt_helper_path().read_text(encoding="utf-8")
+    return guide + "\n\n## Приложение: доступ и плейсхолдеры\n\n" + _bearer_runtime_prefix()
 
 
 def register_prompts(mcp: FastMCP) -> None:

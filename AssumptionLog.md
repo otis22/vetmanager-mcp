@@ -2,6 +2,20 @@
 
 Журнал допущений, неясностей и архитектурных решений по проекту vetmanager-mcp.
 
+## 2026-10-17 — Этап 413.1: PRD реструктуризации справки Report AI
+
+Рабочая ветка `dev/roadmap-408-413`. PRD: `PRD/этап-413-структура-справки-report-ai.md`. Меняются только справка и порядок её сборки; права, API и инструменты Report AI сохраняются. Architecture Critique не нужен: нет изменения контракта вызова, прав, хранилища или нагрузки. По решению владельца Claude Opus не запускался; сильная пара — Astra и Sol xhigh. Evidence: `/home/otis/.local/share/vetmanager-mcp-review-evidence/stage413/`.
+
+Spark PRD, candidate-only: exit 0, `files_read` — PRD, Roadmap, `prompts.py`, MD и PRD этапов 183/387/400/408/409; 3 medium. Принято уточнение знаменателя покрываемости оценками: счётчик rating включает повторные вызовы. Предложение обязательного согласия перед каждым create отклонено: рецензент приписал standalone helper требование другого first-session prompt. Предложение вернуть «добровольность» отклонено: этап 409 и текущий `REPORT_AI_RATING_GUIDANCE` называют оценку финальным шагом, а владелец прямо требует соответствия этой схеме. Evidence `prd-spark.{prompt.txt,out.txt,stderr.txt,metadata.json}`.
+
+Сильный PRD gate: Astra 1/2 valid, 1 medium; Sol xhigh 1/2 valid, 4 medium; оба CLI 0.162.1, command exit 0, `scripts/validate_review_result.py --plain` exit 0. Совпавшее замечание: популяция недельной метрики не должна считать rating-only строку созданным job. Принято: `intent_from_create=true`, составной ключ, отдельное наблюдение rating-only строк и сопоставление со счётчиком create outcomes. Остальные принятые: failed job с ID ведёт к оценке 1; конечный раздел справки не должен останавливать агента на выдаче одного интента; непустой `intent_text` по схеме БД почти гарантирован и не является показателем изменения поведения. Все уточнения внесены в PRD без смены решения; повторный сильный запуск не нужен. Неустранённых critical/high нет. Evidence `astra-prd-attempt-1.*`, `sol-prd-attempt-1.*`, `findings.schema.json`, prompt и validator рядом. Пост-релизная неделя измерения production отложена до merge/deploy супервизором.
+
+## 2026-10-17 — Этап 413.2: реализация до committed diff review
+
+Сторожа `tests/test_stage413_report_ai_helper.py` приняты на исходном тексте красными: `4 failed, 4 passed` (нет короткого ядра до prefix, failed-job ветки, актуального текста оценки, рецепта вакцинаций). После перестройки — фокусный набор с совместимыми проверками этапов 170/387/400/409: `15 passed`. Дополнительно намеренно удаляли по одному защищаемому фрагменту из MD и восстанавливали файл после каждого прогона: шкала, KI, preview, 6–10 секунд, экспорт, вакцинации — шесть отдельных `1 failed`, evidence `guard-mutations.json`; этим показана краснота всех обязательных текстовых блоков. Общий prefix используется без копии, только у Report AI поставлен в приложение. Устаревшее «добровольно» удалено, сохранён final rating step и failed job с ID. Текст остатков согласован с этапом 412: `clinic_id` теперь обязателен.
+
+Живая проверка после финальной правки текста: выбран `.env` `TEST_DOMAIN`/`TEST_API_KEY` devtr6, не bearer production-стенд; локальная БД — временная SQLite pytest. `docker compose --env-file .env --profile test run --rm test pytest -q -s tests/test_stage413_live.py`: exit 0, `1 passed`. Зарегистрированный MCP `prompts/get report_ai_prompt_helper`: HTTP 200, начало тела `# Report AI prompt helper ... Use this helper ... Your task is to convert ... intent_text ... ## Короткий маршрут`; приложение в том же ответе: `## Приложение: доступ и плейсхолдеры ... Credentials are already available from the MCP Bearer token ...`. Тест подтвердил плейсхолдер `[client:123:last_name]` в приложении. Job на стенде не создавался, поскольку менялся только prompt. Ключи, ПД и полные ответы клиники не выводились.
+
 ## 2026-10-12 — Этап 380.1: Kimi-review PRD — approved
 
 Второй сильный PRD-гейт (Kimi вместо Claude Opus, решение владельца). Особость
