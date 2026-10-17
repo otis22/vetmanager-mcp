@@ -109,11 +109,12 @@ def test_stage400_live_create_rate_and_sql_shape(live_server_url):
     with httpx.Client(base_url=live_server_url, follow_redirects=True, timeout=60) as web:
         owner_token, owner_id = _issue_bearer(web, "owner")
     with _mcp_client(live_server_url, owner_token) as owner:
+        original_intent = (
+            "Количество приёмов по месяцам за последние три месяца, без персональных данных. "
+            f"Метка проверки {uuid4().hex[:8]} не является фильтром данных."
+        )
         code, created = _call(owner, "create_report_ai_job", {
-            "intent_text": (
-                "Количество приёмов по месяцам за последние три месяца, без персональных данных. "
-                f"Метка проверки {uuid4().hex[:8]} не является фильтром данных."
-            ),
+            "intent_text": original_intent,
             "wait_seconds": 30,
         }, 2)
         assert created.get("isError") is not True
@@ -138,6 +139,7 @@ def test_stage400_live_create_rate_and_sql_shape(live_server_url):
         score = 1 if status in {"failed", "rejected"} else 2
         rate_code, rated = _call(owner, "rate_report_ai_job", {
             "job_id": job_id, "score": score,
+            "intent_text": original_intent,
             "comment": "Проверка журнала; итоговые строки не использованы",
         }, request_id)
         assert rated.get("isError") is not True
@@ -162,11 +164,21 @@ def test_stage400_live_create_rate_and_sql_shape(live_server_url):
     engine.dispose()
 
     with httpx.Client(base_url=live_server_url, follow_redirects=True, timeout=60) as web:
-        other_token, _ = _issue_bearer(web, "other")
+        other_token, other_id = _issue_bearer(web, "other")
     with _mcp_client(live_server_url, other_token) as other:
-        denied_code, denied = _call(other, "rate_report_ai_job", {
-            "job_id": job_id, "score": 10}, 2)
-        assert denied.get("isError") is True
+        other_code, other_rated = _call(other, "rate_report_ai_job", {
+            "job_id": job_id, "score": 10,
+            "intent_text": "Независимый промпт другого подключения"}, 2)
+        assert other_rated.get("isError") is not True
+    engine = create_engine(storage.normalize_database_url_for_migrations(os.environ["DATABASE_URL"]))
+    with Session(engine) as session:
+        assert session.scalar(select(ReportAiJobRating).where(
+            ReportAiJobRating.account_id == other_id,
+            ReportAiJobRating.job_id == job_id)) is not None
+        assert session.scalar(select(ReportAiJobRating).where(
+            ReportAiJobRating.account_id == owner_id,
+            ReportAiJobRating.job_id == job_id)).score == score
+    engine.dispose()
     print("STAGE400_LIVE", {"create_http": code, "rate_http": rate_code,
-                            "other_http": denied_code, "other_denied": True,
+                            "other_http": other_code, "other_separate_row": True,
                             "record": safe_shape})

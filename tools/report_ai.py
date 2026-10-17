@@ -72,8 +72,9 @@ REPORT_AI_TOOL_WAIT_MAX_GETS = 16
 REPORT_AI_EXPORT_WAIT_LIMIT_SECONDS = 30 * 60
 REPORT_AI_RATING_REGISTRATION_TIMEOUT_SECONDS = 2
 REPORT_AI_RATING_GUIDANCE = (
-    "After the report attempt, call rate_report_ai_job with this job_id and score 1–10 "
-    "if this job was registered by the current MCP clinic connection. "
+    "After the report attempt, call rate_report_ai_job with this job_id, score 1–10, "
+    "and intent_text: the same prompt used to build the report. "
+    "intent_text and score are required; comment is optional. "
     "Convert a numeric-string job ID to an integer argument. "
     "Score 1 also applies when the report failed to build. The rating is voluntary."
 )
@@ -1944,8 +1945,9 @@ def register(mcp: FastMCP) -> None:
         job["mcp_rating_guidance"] = REPORT_AI_RATING_GUIDANCE
         if rating_unavailable:
             job["mcp_rating_unavailable"] = (
-                "This job has no local rating record. Keep this job_id and poll it; "
-                "do not repeat create_report_ai_job automatically."
+                "This job has no local rating record yet. Keep this job_id and poll it; "
+                "do not repeat create_report_ai_job automatically. You can still rate it "
+                "with this job_id, score, and the original intent_text."
             )
         await asyncio.to_thread(_best_effort_observation, "create_recreated_match",
                                 _match_recreated_report_ai_job, job,
@@ -1970,15 +1972,17 @@ def register(mcp: FastMCP) -> None:
             _issued_empty_preview_guidance, payload) or payload
 
     @mcp.tool
-    async def rate_report_ai_job(job_id: StrictInt, score: StrictInt, comment: str | None = None) -> dict:
+    async def rate_report_ai_job(job_id: StrictInt, score: StrictInt, intent_text: str,
+                                 comment: str | None = None) -> dict:
         """Record the agent's voluntary assessment of one Report AI job.
 
         1 = отчёт даже не построился; 2 и выше — отчёт построился;
         2 = построился, но задачу почти не решил; 5–6 = решил частично;
         10 = задача решена полностью, ничего не пришлось добывать другими путями.
         Call after reading real rows or a failed job status. A failed create POST
-        without a job_id cannot be rated. Only this clinic connection's jobs
-        created through MCP can be rated. Repeating replaces the prior score.
+        without a job_id cannot be rated. intent_text is the same prompt used to
+        build the report. intent_text and score are required; comment is optional.
+        Repeating replaces the prior score, keeping a recorded original intent.
         """
         credentials = get_current_runtime_credentials()
         if credentials is None:
@@ -1987,7 +1991,7 @@ def register(mcp: FastMCP) -> None:
             account_id=credentials.account_id,
             connection_id=credentials.connection_id,
             domain=credentials.domain,
-            job_id=job_id, score=score, comment=comment,
+            job_id=job_id, score=score, intent_text=intent_text, comment=comment,
         )
 
     @mcp.tool
