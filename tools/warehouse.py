@@ -1,6 +1,7 @@
 """Warehouse/inventory entity tools: GoodGroup, GoodSaleParam, PartyAccount,
 PartyAccountDoc, StoreDocument, Suppliers."""
 
+import asyncio
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 import hmac
@@ -31,6 +32,40 @@ _STATUS_SNAPSHOT_FIELDS = (
     "coefficient", "min_price", "max_price", "markup", "price_formation",
     "is_partial_sale", "is_skip_marking", "barcode",
 )
+_STOCK_BATCH_LIMIT = 20
+_STOCK_BATCH_TIMEOUT_SECONDS = 60
+_STOCK_PATH = "/rest/api/stores/RestOfGoodInWarehouse/"
+
+
+async def _get_stock_balance(good_id: int, clinic_id: int) -> dict:
+    result = await VetmanagerClient().get(
+        _STOCK_PATH,
+        params={"good_id": good_id, "clinic_id": clinic_id},
+        fresh=True,
+    )
+    data = result.get("data") if isinstance(result, dict) else None
+    stock = data.get("rest_good_in_warehouse") if isinstance(data, dict) else None
+    quantity_str = stock.get("quantity") if isinstance(stock, dict) else None
+    if not isinstance(result, dict) or result.get("success") is False or not isinstance(quantity_str, (str, int, float)):
+        raise reportable_error("Vetmanager returned no valid stock quantity.")
+    try:
+        quantity = Decimal(str(quantity_str))
+    except InvalidOperation as exc:
+        raise reportable_error("Vetmanager returned no valid stock quantity.") from exc
+    if not quantity.is_finite():
+        raise reportable_error("Vetmanager returned no valid stock quantity.")
+    return {
+        "good_id": good_id,
+        "clinic_id": clinic_id,
+        "quantity": float(quantity),
+        "quantity_str": str(quantity_str),
+        "raw": result,
+    }
+
+
+def _positive_id(value: int, name: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ToolInputError(f"{name} must be a positive integer.")
 
 
 def _status_snapshot(row: dict) -> dict:
@@ -1007,7 +1042,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool
     async def get_good_stock_balance(
         good_id: int,
-        clinic_id: int = 1,
+        clinic_id: int,
     ) -> dict:
         """Get the current stock balance (remaining quantity) for a specific good in the warehouse.
 
@@ -1017,21 +1052,38 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             good_id: ID of the good/product to check stock for.
-            clinic_id: Clinic/branch ID (default 1 — main clinic).
+            clinic_id: Required clinic/branch ID; choose the intended clinic explicitly.
         """
-        result = await VetmanagerClient().get(
-            "/rest/api/stores/RestOfGoodInWarehouse/",
-            params={"good_id": good_id, "clinic_id": clinic_id},
-        )
-        quantity_str = (
-            result.get("data", {})
-            .get("rest_good_in_warehouse", {})
-            .get("quantity", "0")
-        )
-        return {
-            "good_id": good_id,
-            "clinic_id": clinic_id,
-            "quantity": float(quantity_str),
-            "quantity_str": quantity_str,
-            "raw": result,
-        }
+        _positive_id(good_id, "good_id")
+        _positive_id(clinic_id, "clinic_id")
+        return await _get_stock_balance(good_id, clinic_id)
+
+    @mcp.tool
+    async def get_goods_stock_balances(good_ids: list[int], clinic_id: int) -> dict:
+        """Get fresh stock balances for 1–20 goods in one explicit clinic.
+
+        Makes one warehouse REST request per good, in input order. An upstream
+        error or invalid quantity fails the whole batch; no partial list is returned.
+        Services without warehouse accounting can return zero: use catalog
+        is_warehouse_account to distinguish them from out-of-stock goods.
+
+        Args:
+            good_ids: Unique positive good IDs (1–20).
+            clinic_id: Required clinic/branch ID; never inferred from a default.
+        """
+        _positive_id(clinic_id, "clinic_id")
+        if not 1 <= len(good_ids) <= _STOCK_BATCH_LIMIT:
+            raise ToolInputError("good_ids must contain 1 to 20 IDs.")
+        if len(good_ids) != len(set(good_ids)):
+            raise ToolInputError("good_ids must be unique.")
+        for good_id in good_ids:
+            _positive_id(good_id, "good_id")
+        balances = []
+        try:
+            async with asyncio.timeout(_STOCK_BATCH_TIMEOUT_SECONDS):
+                for good_id in good_ids:
+                    item = await _get_stock_balance(good_id, clinic_id)
+                    balances.append({key: item[key] for key in ("good_id", "quantity", "quantity_str")})
+        except TimeoutError as exc:
+            raise reportable_error("Stock balance batch timed out; no partial results returned.") from exc
+        return {"clinic_id": clinic_id, "balances": balances}

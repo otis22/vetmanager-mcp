@@ -581,6 +581,7 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "get_suppliers": "supplier",
     "get_supplier_by_id": "supplier",
     "get_good_stock_balance": "stock_balance",
+    "get_goods_stock_balances": "stock_balance",
     "send_message_to_all": "messages",
     "send_message_to_users": "messages",
     "get_message_reports": "messages",
@@ -908,10 +909,18 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "владелец, хозяин, контакт, клиентская база, client."
     ),
     "get_good_stock_balance": (
-        "Check current stock balance for goods in warehouse context. Use when the "
+        "Check fresh stock balance for one good in an explicitly selected clinic. "
+        "clinic_id is required. Use when the "
         "user asks how much is left in stock, current inventory, or remaining "
         "quantity. Domain synonyms: остаток, остаток на складе, количество на "
         "складе, наличие товара, сколько осталось, запас, stock, inventory."
+    ),
+    "get_goods_stock_balances": (
+        "Check fresh stock balances for up to 20 goods in one explicitly selected "
+        "clinic. Pass unique good_ids and required clinic_id. Each good is read "
+        "from the warehouse endpoint; services may report zero. Use when the user "
+        "asks for several stock quantities or inventory balances at once. "
+        "Domain synonyms: остатки, наличие товаров, складские запасы, stock balances."
     ),
     "get_goods": (
         "List or search goods / services in the product directory. Use for catalog "
