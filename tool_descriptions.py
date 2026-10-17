@@ -780,7 +780,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_medical_cards": (
         "List or search medical cards / clinical records for one required pet_id "
-        "with optional filters. Use get_medical_cards_by_date for staff and "
+        "with optional filters. For a general search without a known pet, use "
+        "get_medical_cards_by_date for staff and "
         "period searches across all patients, clinic-local date or daily "
         "clinical control, and "
         "get_medical_cards_by_client_id for one owner's pets. Domain synonyms: "
@@ -856,8 +857,7 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_payments": (
         "List direct Vetmanager Payment records. Use for raw payment/date/status "
         "lookup on /rest/api/payment. Payment records do not have client_id or "
-        "pet_id in Vetmanager REST; client_id is a deprecated unsupported "
-        "argument and is rejected before HTTP. Use get_client_payment_applications "
+        "pet_id in Vetmanager REST. Use get_client_payment_applications "
         "for client- or pet-scoped payment applications through closingOfInvoices. "
         "Domain synonyms: платёж, оплата, поступление, касса, payment."
     ),
@@ -915,11 +915,19 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_goods": (
         "List or search goods / services in the product directory. Use for catalog "
-        "lookup, product metadata, groups, or stock-related discovery. Use "
+        "lookup, product metadata, groups, or stock-related discovery. Search "
+        "names with title; use % wildcards for a partial title. Use "
         "search_invoice_goods instead when the user needs invoice-ready goods, "
         "services, goodTag combinations, or IDs for adding positions to an "
         "invoice. Domain synonyms: товар, услуга, номенклатура, препарат, "
         "материал, good, service."
+    ),
+    "get_timesheet_types": (
+        "List shift types / schedule entry types used by timesheet records. "
+        "The type ID is clinic-specific; is_working_hours marks types counted "
+        "as work. Read this catalogue to understand the working shifts used "
+        "by get_doctor_free_slots when calculating availability. Domain synonyms: "
+        "тип расписания, тип смены, рабочие часы, timesheet type."
     ),
     "search_invoice_goods": (
         "Search invoice-ready goods, services, and goodTag combinations for adding "
@@ -1268,7 +1276,12 @@ INVOICE_MONEY_SUFFIXES: dict[str, str] = {
         "when discount is nonzero, otherwise 0), and amount is the rouble total "
         "after discount and markup. Rouble discount per invoice_document line: "
         "default_price - price*((100-discount)/100)*((100+increase)/100). "
-        "price and default_price are line totals, not unit prices."
+        "price and default_price are line totals, not unit prices. "
+        "Vetmanager payment_status can be stale / out of sync when some payment "
+        "flows update paid_amount without recalculating the status column. "
+        "For reliable payment reconciliation, compare paid_amount with amount "
+        "across all pages (pagination); paid_amount_max and amount_min help "
+        "find candidates, but payment_status alone can miss unpaid invoices."
     ),
     "update_invoice": (
         "Money fields: discount is a discount percentage, increase is a markup "
@@ -1355,6 +1368,9 @@ def _build_generic_description(tool_name: str) -> str | None:
     return None
 
 
+DEPRECATED_PUBLISHED_ARGUMENTS = {"get_goods": "name", "get_payments": "client_id"}
+
+
 def enhance_tool_descriptions(mcp: FastMCP) -> None:
     """Apply domain-synonym-aware descriptions to all registered MCP tools."""
     provider = getattr(mcp, "_local_provider", None)
@@ -1371,6 +1387,9 @@ def enhance_tool_descriptions(mcp: FastMCP) -> None:
             continue
 
         component.description = description
+        hidden = DEPRECATED_PUBLISHED_ARGUMENTS.get(component.name)
+        if hidden:
+            component.parameters.get("properties", {}).pop(hidden, None)
         if component.name in LIST_PROJECTION_SUFFIXES:
             properties = component.parameters.get("properties", {})
             if "fields" in properties:
