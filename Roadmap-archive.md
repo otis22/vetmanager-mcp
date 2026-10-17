@@ -8743,3 +8743,28 @@ custom web routes, а не ответы FastMCP `/mcp`; доля `session-not-fo
   на сырой текст отказа. — `done` (15.10.2026)
 - 393.2 Реализация, выпуск. — `done` (15.10.2026; код `9b37ca6`)
 
+
+## Этап 394. Report AI: чтение строк задания до сохранения — `done`
+
+Источник: аудит R1. Вопрос этапа: отдаёт ли REST ВМ
+`GET /report-ai-job/{id}/data` для несохранённого job — тогда боль «разовый
+вопрос оставляет постоянный видимый отчёт» (R1) снималась бы на нашем слое.
+
+- 394.1 Расследование. — `done` (15.10.2026, супервизор, чтение кода
+  vetmanager-extjs master 6fbabdc452 вместо живого прогона: ответ в коде
+  однозначный). **Ответ: НЕТ, data до save невозможна.** `JobService::getData`
+  жёстко проверяет статус — только `saved`/`existing_report_matched`
+  (JobService.php:485-491, `INVALID_TRANSITION` иначе). Реальный SQL к данным
+  клиники выполняется дважды: пробный прогон 5 строк при building_preview
+  (TRIAL_RUN_LIMIT=5, строки НЕ экспонируются — наружу только счётчик
+  preview_summary и LLM-выдуманная preview_example_row, PromptTemplates.php:204)
+  и полный прогон в getData (DATA_ROW_LIMIT=10000, JobService.php:29, признак
+  `limited`, полный датасет — StartReport CSV по csv_export_url). Наш docstring
+  (report_ai.py:1996-2004) контракту соответствует. Попутные факты: TTL
+  несохранённых job 7 дней (UNSAVED_RETENTION_DAYS), дедуп по intent-хэшу 24 ч
+  (DEDUPE_TTL_HOURS, JobService.php:25 — смена политики подтверждена), save
+  идемпотентен, auto-match в existing_report_matched даёт data без save.
+- 394.2 Реализация не требуется: ограничение на стороне ВМ. R1/R2 переведены
+  в список для Ветменеджера: выполнение без сохранения (временные отчёты),
+  delete-эндпоинт, экспонирование 5 реальных пробных строк превью вместо
+  LLM-выдуманной preview_example_row (то же, что ждёт этап 358). — `done`
