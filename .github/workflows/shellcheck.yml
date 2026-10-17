@@ -2,7 +2,7 @@ name: ShellCheck
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'dev/**']
     paths: ['scripts/**/*.sh']
   pull_request:
     branches: [main]

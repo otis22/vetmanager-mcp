@@ -8,7 +8,7 @@
 
 | Правило | Назначение |
 |--------|------------|
-| [.cursor/rules/agent-workflow.mdc](.cursor/rules/agent-workflow.mdc) | Workplan в Roadmap, выбор задачи, PRD gates (artifacts → PRD-review → ревью сторонней моделью → simplicity), Core Loop (тесты → Red/Green → проверки → аудит → commit → ревью сторонней моделью → push → self-attestation), AssumptionLog, справочные артефакты |
+| [.cursor/rules/agent-workflow.mdc](.cursor/rules/agent-workflow.mdc) | Workplan в Roadmap, выбор задачи, PRD gates (artifacts → PRD-review → ревью сторонней моделью → simplicity), Core Loop (тесты → Red/Green → проверки → аудит → commit → ревью сторонней моделью → push → self-attestation), раздел «Релизный поезд», AssumptionLog, справочные артефакты |
 
 ## Обязательные артефакты
 
