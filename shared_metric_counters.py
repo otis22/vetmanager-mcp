@@ -18,6 +18,7 @@ from observability_logging import RUNTIME_LOGGER
 
 COUNTERS_KEY = "vetmanager:metrics:v1:counters"
 MCP_TRANSPORT_COUNTERS_KEY = "vetmanager:metrics:v1:mcp-transport-rejections"
+REPORT_AI_RATING_REMINDERS_KEY = "vetmanager:metrics:v1:report-ai-rating-reminders"
 MCP_SESSION_RETRIES_KEY = "vetmanager:metrics:v1:mcp-session-retries"
 MCP_SESSION_RETRY_PREFIX = "vetmanager:metrics:v1:session-retry:"
 MCP_SESSION_RETRY_SLOTS = 4096
@@ -55,6 +56,7 @@ SHARED_COUNTER_FAMILIES = frozenset({
     "report_ai_long_queued_polls_total", "report_ai_stage_stall_polls_total",
     "report_ai_jobs_total", "report_ai_save_attempts_total",
     "report_ai_ratings_total", "report_ai_rating_purges_total",
+    "report_ai_rating_reminders_total",
     "report_ai_job_transitions_total", "report_ai_job_terminal_outcomes_total",
     "report_ai_empty_preview_guidance_issued_total",
     "report_ai_empty_preview_guidance_jobs_total",
@@ -68,6 +70,7 @@ SCALAR_COUNTER_FAMILIES = frozenset({
     "sentry_delivery_accepted_total", "sanitizer_failures_total",
     "rest_unmapped_read_total", "report_ai_long_queued_polls_total",
     "report_ai_stage_stall_polls_total",
+    "report_ai_rating_reminders_total",
     "report_ai_empty_preview_guidance_issued_total",
     "report_ai_empty_preview_guidance_jobs_total",
     "cache_hits_total", "cache_misses_total", "cache_invalidations_total",
@@ -138,6 +141,11 @@ class RedisMetricCounters:
             # Old slots do not know this family and reject unknown fields in
             # COUNTERS_KEY. A separate key keeps mixed-version rollout safe.
             self._redis.hincrby(MCP_TRANSPORT_COUNTERS_KEY, label_key, count)
+            return
+        if family == "report_ai_rating_reminders_total":
+            if label_key:
+                raise ValueError("Rating reminder counter has no labels")
+            self._redis.incrby(REPORT_AI_RATING_REMINDERS_KEY, count)
             return
         field = json.dumps([family, label_key], separators=(",", ":"), ensure_ascii=True)
         self._redis.hincrby(COUNTERS_KEY, field, count)
@@ -732,6 +740,8 @@ class RedisMetricCounters:
                 for label_key, value in self._redis.hgetall(MCP_TRANSPORT_COUNTERS_KEY).items()
             }
             result["mcp_session_retries_total"] = int(self._redis.get(MCP_SESSION_RETRIES_KEY) or 0)
+            result["report_ai_rating_reminders_total"] = int(
+                self._redis.get(REPORT_AI_RATING_REMINDERS_KEY) or 0)
             result.update({family: {} for family in SHARED_LATENCY_FAMILIES})
             for key in self._redis.scan_iter(match=LATENCY_KEY_PREFIX + "*"):
                 row = self._redis.hgetall(key)

@@ -17,7 +17,7 @@ from fastmcp.exceptions import ToolError
 from pydantic import StrictInt
 
 import report_export
-from report_ai_rating_service import record_created_job, rate_job
+from report_ai_rating_service import has_unrated_job, record_created_job, rate_job
 import shared_metric_counters
 from error_tracking import capture_report_ai_observation_failure
 from report_export_transport import PinnedExportTransport, resolve_export_target
@@ -41,6 +41,7 @@ from service_metrics import (
     record_report_ai_save_attempt,
     record_report_ai_job_stage_duration,
     record_report_ai_job_terminal_outcome,
+    record_report_ai_rating_reminder,
     record_report_ai_empty_preview_guidance,
     record_report_ai_empty_preview_outcome,
     record_report_ai_job_transition,
@@ -71,13 +72,21 @@ REPORT_AI_TOOL_WAIT_INTERVAL_SECONDS = 2
 REPORT_AI_TOOL_WAIT_MAX_GETS = 16
 REPORT_AI_EXPORT_WAIT_LIMIT_SECONDS = 30 * 60
 REPORT_AI_RATING_REGISTRATION_TIMEOUT_SECONDS = 2
+REPORT_AI_RATING_REMINDER_TIMEOUT_SECONDS = 0.5
 REPORT_AI_RATING_GUIDANCE = (
-    "After the report attempt, call rate_report_ai_job with this job_id, score 1–10, "
+    "Rating is the final step of the canonical create → poll → data → rate path. "
+    "After reading real rows, call rate_report_ai_job with this job_id, score 1–10, "
     "and intent_text: the same prompt used to build the report. "
     "intent_text and score are required; comment is optional. "
     "Convert a numeric-string job ID to an integer argument. "
-    "Score 1 also applies when the report failed to build. The rating is voluntary."
+    "Score 1 also applies when the report failed to build."
 )
+REPORT_AI_RATING_REMINDER = (
+    "Read real rows with get_report_ai_job_data when available before scoring usefulness, then call "
+    "rate_report_ai_job(job_id, score, intent_text); comment is optional. "
+    "Rating requires report_ai.write access."
+)
+REPORT_AI_RATING_TERMINAL_STATUSES = frozenset({"built", "saved", "existing_report_matched"})
 REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS = CLINIC_TIMEZONE_TTL_SECONDS
 REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES = CLINIC_TIMEZONE_MAX_ENTRIES
 REPORT_AI_GOODS_GOOD_ID_WORKAROUND_CODE = "report_ai_goods_good_id_preview_failed"
@@ -1489,6 +1498,33 @@ def _rating_job_id(value: object) -> int | None:
     return None
 
 
+async def _attach_rating_reminder(*, job_id: int, target: dict,
+                                  deadline: float | None = None) -> None:
+    credentials = get_current_runtime_credentials()
+    if credentials is None or credentials.account_id is None or credentials.connection_id is None:
+        return
+    timeout = REPORT_AI_RATING_REMINDER_TIMEOUT_SECONDS
+    if deadline is not None:
+        timeout = min(timeout, deadline - _monotonic_seconds())
+    if timeout <= 0:
+        return
+    try:
+        pending = await asyncio.wait_for(has_unrated_job(
+            account_id=credentials.account_id,
+            connection_id=credentials.connection_id,
+            domain=credentials.domain, job_id=job_id,
+        ), timeout=timeout)
+    except Exception as exc:
+        RUNTIME_LOGGER.warning("report_ai_rating_reminder_lookup_failed", extra={
+            "event_name": "report_ai_rating_reminder_lookup_failed",
+            "error_class": type(exc).__name__,
+        })
+        return
+    if pending:
+        target["mcp_rating_reminder"] = REPORT_AI_RATING_REMINDER
+        _best_effort_observation("rating_reminder_issued", record_report_ai_rating_reminder)
+
+
 def _extract_report(payload: dict) -> dict:
     data = payload.get("data")
     if isinstance(data, dict) and isinstance(data.get("report"), dict):
@@ -1974,7 +2010,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool
     async def rate_report_ai_job(job_id: StrictInt, score: StrictInt, intent_text: str,
                                  comment: str | None = None) -> dict:
-        """Record the agent's voluntary assessment of one Report AI job.
+        """Record the agent's assessment as the final create → poll → data → rate step.
 
         1 = отчёт даже не построился; 2 и выше — отчёт построился;
         2 = построился, но задачу почти не решил; 5–6 = решил частично;
@@ -1997,6 +2033,9 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool
     async def get_report_ai_job(job_id: int, wait_seconds: int = 0) -> dict:
         """Get safe Report AI job status and recognized structure without raw SQL.
+
+        After saved or existing_report_matched, read get_report_ai_job_data, then call
+        rate_report_ai_job(job_id, score, intent_text); comment is optional.
 
         Args:
             job_id: Report AI job ID. Poll queued/recognizing/building_preview
@@ -2064,6 +2103,10 @@ def register(mcp: FastMCP) -> None:
         else:
             response = await _annotate_report_ai_job_payload(payload)
         _extract_job(response)["mcp_rating_guidance"] = REPORT_AI_RATING_GUIDANCE
+        job = _extract_job(response)
+        if response.get("success") is True and job.get("status") in REPORT_AI_RATING_TERMINAL_STATUSES:
+            await _attach_rating_reminder(job_id=job_id, target=job,
+                                          deadline=deadline if waiting else None)
         return await asyncio.to_thread(
             _best_effort_observation, "get_guidance_issued",
             _issued_empty_preview_guidance, response) or response
@@ -2131,6 +2174,9 @@ def register(mcp: FastMCP) -> None:
     async def get_report_ai_job_data(job_id: int) -> dict:
         """Get rows for a saved or existing-matched Report AI job.
 
+        Review real rows, then finish with rate_report_ai_job(job_id, score,
+        intent_text); comment is optional.
+
         If csv_export_url is present, it is a relative upstream path, not a
         directly usable link. For an export use get_report_ai_job_export for a
         saved or matched job, or start_report_export with a known report_id;
@@ -2154,7 +2200,10 @@ def register(mcp: FastMCP) -> None:
         except VetmanagerError as exc:
             _classify_report_ai_data_failure(exc)
             raise
-        return _annotate_report_ai_data_payload(payload)
+        payload = _annotate_report_ai_data_payload(payload)
+        if payload.get("success") is True and isinstance(payload.get("data"), dict):
+            await _attach_rating_reminder(job_id=job_id, target=payload["data"])
+        return payload
 
     @mcp.tool
     async def save_report_ai_job_as_report(job_id: int, title: str) -> dict:

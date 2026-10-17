@@ -972,7 +972,7 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "messages."
     ),
     "rate_report_ai_job": (
-        "Оцените, насколько Report AI решил задачу пользователя, после попытки построить отчёт. "
+        "Финальный шаг пути create → poll → data → rate: вызовите rate_report_ai_job, чтобы оценить, насколько Report AI решил задачу пользователя, после чтения реальных строк или неудачной попытки построить отчёт. "
         "Шкала: 1 = отчёт даже не построился; 2 и выше — отчёт построился; "
         "2 = построился, но задачу почти не решил; 5–6 = решил частично; "
         "10 = задача решена полностью, ничего не пришлось добывать другими путями. "
@@ -980,7 +980,7 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "строился отчёт. intent_text и score обязательны; comment необязателен — при низкой оценке "
         "кратко укажите, что именно не устроило в отчёте и чего не хватило для решения задачи. "
         "Оценка записывается только в нашу БД и заменяет прежнюю оценку того же job. "
-        "Вызов добровольный; без job_id после неудачного POST оценка невозможна. "
+        "Без job_id после неудачного POST оценка невозможна. "
         "Domain synonyms: оценка отчёта, пригодность отчёта, Report AI rating, score."
     ),
     "create_report_ai_job": (
@@ -989,7 +989,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "get_report_ai_job, then confirm/save/read/export according to the returned "
         "status. After the attempt, call rate_report_ai_job with job_id, score 1–10, "
         "and the same intent_text used to build the report, including "
-        "failed jobs with an ID. This is voluntary; no job ID means no rating. "
+        "failed jobs with an ID. Rating is the final step of create → poll → data → rate; "
+        "comment is optional. No job ID means no rating. "
         "Use after reading get_report_ai_prompt_helper or the MCP prompt "
         "report_ai_prompt_helper unless the user already supplied a final Russian "
         "intent_text. Use when the user asks for an analytic report, grouped/list "
@@ -1027,7 +1028,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_report_ai_prompt_helper": (
         "Return static guidance for writing safe Russian Report AI intent_text "
         "and following the bounded create/get, confirm/reject, save, data journey. "
-        "It also explains voluntary rate_report_ai_job for built and failed jobs. "
+        "It also explains the final rate_report_ai_job(job_id, score, intent_text) step "
+        "for built and failed jobs; comment is optional. "
         "preview_summary and preview_example_row are decision samples, not live "
         "clinic data; do not answer the user from preview. "
         "Use before create_report_ai_job when MCP prompts are not visible in the "
@@ -1038,6 +1040,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_report_ai_job": (
         "Read safe status and recognized structure for a Vetmanager Report AI job. "
+        "After saved or existing_report_matched, read get_report_ai_job_data, then make the final "
+        "rate_report_ai_job(job_id, score, intent_text) call; comment is optional. "
         "Use for polling queued/recognizing/building_preview jobs and for checking "
         "ready_to_save, existing_report_matched, needs_confirmation, saved, failed, "
         "or rejected states. If a job stops moving for 30+ seconds — waiting in the "
@@ -1088,6 +1092,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_report_ai_job_data": (
         "Get table rows for a saved or existing_report_matched Report AI job. "
+        "After reviewing real rows, finish the create → poll → data → rate path with "
+        "rate_report_ai_job(job_id, score, intent_text); comment is optional. "
         "In rows, empty strings become null; unambiguous numeric columns return "
         "JSON numbers when decimal precision can be retained. IDs, codes, "
         "article numbers and unknown columns remain text; privacy redaction "
