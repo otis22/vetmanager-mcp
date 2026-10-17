@@ -9,7 +9,10 @@ from functools import wraps
 from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware
 from filters import FILTER_FIELDS_BY_ENTITY
-from list_projection import LIST_FIELDS, project_list_result, selected_fields, selected_include
+from list_projection import (
+    LIST_FIELDS, PET_CONTACT_TOOLS, mask_pet_list_result,
+    project_list_result, selected_fields, selected_include,
+)
 from tool_descriptions import RAW_CLAUSE_ENTITIES
 
 
@@ -117,6 +120,11 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
             inspect.Parameter("mask_contacts", inspect.Parameter.KEYWORD_ONLY,
                               default=False, annotation=bool),
         ))
+    elif tool_name in PET_CONTACT_TOOLS:
+        renamed.append(inspect.Parameter(
+            "mask_contacts", inspect.Parameter.KEYWORD_ONLY,
+            default=False, annotation=bool,
+        ))
     public_signature = original.replace(parameters=renamed)
 
     @wraps(func)
@@ -127,6 +135,7 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
                 kwargs.pop("fields", None), kwargs.pop("compact", False),
                 kwargs.pop("include", None), kwargs.pop("mask_contacts", False),
             )
+        pet_mask_contacts = kwargs.pop("mask_contacts", False) if tool_name in PET_CONTACT_TOOLS else False
         original_kwargs = {}
         for old in original_names:
             public = canonical_name(old)
@@ -147,6 +156,8 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
                     include=selected_include(tool_name, projection_options[2]),
                     mask_contacts=projection_options[3],
                 )
+            if pet_mask_contacts:
+                return mask_pet_list_result(normalized, tool_name)
             return normalized
         except Exception as exc:
             if isinstance(exc, ToolError) or exc.__class__.__name__ in {
@@ -165,6 +176,8 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
             "fields": list[str] | None, "compact": bool,
             "include": list[str] | None, "mask_contacts": bool,
         })
+    elif tool_name in PET_CONTACT_TOOLS:
+        _canonical.__annotations__["mask_contacts"] = bool
     _canonical.__doc__ = public_text(func.__doc__ or "")
     return _canonical
 

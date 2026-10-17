@@ -170,10 +170,10 @@ async def test_inactive_pets_doctor_sources_are_projected_without_page_cutoff():
     with headers_patch, runtime_patch:
         result = await mcp.call_tool("get_inactive_pets", {})
     pets = {pet["id"]: pet for pet in json.loads(result.content[0].text)["inactive_pets"]}
-    assert pets[10]["doctor_name"] == "Иванов Иван" and pets[10]["doctor_resolution"] == "resolved"
-    assert pets[11]["doctor_name"] == "Петров Пётр" and pets[11]["doctor_resolution"] == "resolved"
-    assert pets[12]["doctor_resolution"] == "not_specified"
-    assert pets[13]["doctor_resolution"] == "not_found"
+    assert pets[10]["doctor_name"] == "[user:7:first_name]" and pets[10]["doctor_resolution"] == "resolved"
+    assert pets[11]["doctor_name"] == "[user:105:first_name]" and pets[11]["doctor_resolution"] == "resolved"
+    assert pets[12]["doctor_name"] is None and pets[12]["doctor_resolution"] == "not_specified"
+    assert pets[13]["doctor_name"] == "[user:999:first_name]" and pets[13]["doctor_resolution"] == "not_found"
     assert "login" not in pets[10] and "user_inn" not in pets[11]
     assert "passwd" not in pets[10] and "user_inn" not in pets[10]
     user_query = parse_qs(urlparse(str(users_route.calls[0].request.url)).query)

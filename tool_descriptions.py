@@ -889,7 +889,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "months_min, months_max, and limit to customize. The answer carries "
         "truncated, truncation_reason and clients_total_in_window: a truncated "
         "list is a page, not the whole window, and must not be reported as all "
-        "lapsed pets. Use for reactivation "
+        "lapsed pets. doctor_name is the final [user:<doctor_id>:first_name] "
+        "placeholder in every access mode; copy it verbatim. "
+        "Use for reactivation "
         "campaigns targeting specific patients. Domain synonyms: питомец, "
         "пациент, животное, кот, собака, pet, animal."
     ),
