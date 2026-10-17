@@ -146,7 +146,7 @@ _REPORT_AI_TERMINAL_OUTCOMES = frozenset({
 # `ready_to_save` waits for the caller, so neither belongs.
 _REPORT_AI_ACTIVE_STAGE_STATUSES = ("recognizing", "building_preview")
 _REPORT_AI_WAIT_DONE_STATUSES = frozenset({
-    "needs_confirmation", "ready_to_save", "saved", "existing_report_matched",
+    "needs_confirmation", "ready_to_save", "built", "saved", "existing_report_matched",
     "failed", "rejected",
 })
 _REPORT_AI_WAIT_ACTIVE_STATUSES = frozenset({"queued", "recognizing", "building_preview"})

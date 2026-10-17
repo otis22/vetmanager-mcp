@@ -84,6 +84,12 @@ async def test_reminder_requires_terminal_owned_unrated_job(rating_db):
     with headers, runtime:
         built = _payload(await mcp.call_tool("get_report_ai_job", {"job_id": 409}))
     assert "mcp_rating_reminder" in built["data"]["job"]
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        waited_built = _payload(await mcp.call_tool("get_report_ai_job", {
+            "job_id": 409, "wait_seconds": 30}))
+    assert "mcp_wait_diagnostics" not in waited_built["data"]["job"]
+    assert "mcp_rating_reminder" in waited_built["data"]["job"]
     assert await has_unrated_job(account_id=1, connection_id=2, domain="testclinic", job_id=409) is False
     assert await has_unrated_job(account_id=1, connection_id=1, domain="otherclinic", job_id=409) is False
 
