@@ -137,6 +137,8 @@ async def test_low_stock_prompt_requires_clinic_and_batches():
     assert "is_warehouse_account" in body
     assert "offset" in body and "totalCount" in body
     assert "advance offset by the number of returned rows" in body
+    assert "cached for up to 15 minutes" in body
+    assert "not a guaranteed complete list" in body
     assert "clinic_id=1" not in body
     async with Client(mcp) as client:
         catalogue = {p.name: p for p in await client.list_prompts()}

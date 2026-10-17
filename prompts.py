@@ -413,7 +413,10 @@ def register_prompts(mcp: FastMCP) -> None:
             + "where is_warehouse_account is 0 or false. Then call "
             + f"get_goods_stock_balances(good_ids=[...], clinic_id={clinic_id}) "
             + "in batches of at most 20 IDs. "
-            + "Return only goods whose quantity is below the threshold."
+            + "Catalog rows may be cached for up to 15 minutes; describe this "
+            + "as a scan of the checked catalog snapshot, not a guaranteed "
+            + "complete list of all current goods. Return only checked goods "
+            + "whose quantity is below the threshold."
         )]
 
     @mcp.prompt
