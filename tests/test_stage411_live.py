@@ -52,14 +52,30 @@ def test_stage411_bearer_tools_list_and_goods_title(live_server_url, prepared_we
               "timesheet_hint": "is_working_hours / get_doctor_free_slots",
               "cards_hint": "by_client_id / by_date", "invoice_hint": "payment_status can be stale"})
 
-        goods = client.post("/mcp", json={"jsonrpc": "2.0", "id": 3,
-            "method": "tools/call", "params": {"name": "get_goods", "arguments": {
-                "title": "%", "limit": 1,
-            }}})
-        assert goods.status_code == 200, goods.text[:200]
-        result = _rpc(goods)["result"]
-        assert not result.get("isError"), str(result.get("content"))[:200]
-        body = result.get("structuredContent") or {}
-        assert isinstance(body, dict)
-        print("STAGE411_GET_GOODS", {"http_code": goods.status_code,
-              "body_keys": sorted(body)[:8], "isError": False})
+        def get_goods(request_id, arguments):
+            response = client.post("/mcp", json={"jsonrpc": "2.0", "id": request_id,
+                "method": "tools/call", "params": {"name": "get_goods", "arguments": arguments}})
+            assert response.status_code == 200, response.text[:200]
+            result = _rpc(response)["result"]
+            assert not result.get("isError"), str(result.get("content"))[:200]
+            body = result.get("structuredContent") or {}
+            assert body.get("success") is True, str(body.get("message"))[:200]
+            data = body.get("data")
+            rows = data if isinstance(data, list) else next(
+                (value for value in data.values() if isinstance(value, list)), []
+            ) if isinstance(data, dict) else []
+            return response.status_code, body, rows
+
+        _, _, baseline = get_goods(3, {"limit": 20})
+        title = next((row.get("title") for row in baseline
+                      if isinstance(row, dict) and isinstance(row.get("title"), str)
+                      and len(row["title"].strip()) >= 3), None)
+        assert title, "Live catalog has no searchable title"
+        fragment = title.strip()[:3]
+        code, body, matches = get_goods(4, {"title": f"%{fragment}%", "limit": 20})
+        assert matches, "Live title search returned no rows"
+        assert all(fragment.casefold() in row.get("title", "").casefold()
+                   for row in matches if isinstance(row, dict))
+        print("STAGE411_GET_GOODS", {"http_code": code,
+              "body_keys": sorted(body)[:8], "isError": False,
+              "title_fragment_matched": True})
