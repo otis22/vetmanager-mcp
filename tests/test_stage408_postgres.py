@@ -1,11 +1,12 @@
 """Opt-in PostgreSQL proof for the production rating upsert dialect."""
 
 import os
+from uuid import uuid4
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 import storage
 from report_ai_rating_service import rate_job, record_created_job
@@ -22,13 +23,14 @@ async def test_postgres_rating_upsert_and_late_original(monkeypatch):
     config.set_main_option("script_location", "alembic")
     config.set_main_option("sqlalchemy.url", url)
     command.upgrade(config, "head")
-    async with storage.get_session_factory()() as session:
-        account = Account(email="stage408-postgres@example.test")
-        session.add(account)
-        await session.commit()
-        await session.refresh(account)
-        account_id = account.id
+    account_id = None
     try:
+        async with storage.get_session_factory()() as session:
+            account = Account(email=f"stage408-{uuid4().hex}@example.test")
+            session.add(account)
+            await session.commit()
+            await session.refresh(account)
+            account_id = account.id
         await rate_job(account_id=account_id, connection_id=408, domain="clinic-a",
                        job_id=408, score=3, intent_text="Промпт из оценки")
         await record_created_job(account_id=account_id, connection_id=408,
@@ -43,4 +45,8 @@ async def test_postgres_rating_upsert_and_late_original(monkeypatch):
             assert rows[0].intent_text == "Исходный промпт"
             assert rows[0].intent_from_create is True and rows[0].score == 7
     finally:
+        if account_id is not None:
+            async with storage.get_session_factory()() as session:
+                await session.execute(delete(Account).where(Account.id == account_id))
+                await session.commit()
         storage.reset_storage_state()
