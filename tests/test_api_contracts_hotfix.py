@@ -602,6 +602,50 @@ async def test_stage380_staff_filters_are_upstream_and_preserve_pagination(staff
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("doctor_id", "expected_ids"),
+    [(None, [1, 2, 3]), (7, [1, 2]), (999, [])],
+)
+@respx.mock
+async def test_stage416_doctor_period_filter_including_empty_match(doctor_id, expected_ids):
+    billing_mock()
+    cards = [{"id": 1, "doctor_id": 7}, {"id": 2, "doctor_id": 7},
+             {"id": 3, "doctor_id": 6}]
+    seen = []
+
+    def upstream(request):
+        filters = json.loads(request.url.params["filter"])
+        clauses = [f for f in filters if f["property"] == "doctor_id"]
+        seen.append(clauses)
+        selected = cards if not clauses else [
+            card for card in cards if card["doctor_id"] == int(clauses[0]["value"])
+        ]
+        return httpx.Response(200, json={"success": True, "data": {
+            "totalCount": len(selected), "medicalCards": selected,
+        }})
+
+    respx.get(f"{BASE}/rest/api/MedicalCards").mock(side_effect=upstream)
+    headers_patch, runtime_patch = bearer_runtime_patch()
+    arguments = {"date_from": "2026-07-01", "date_to": "2026-07-03", "limit": 10}
+    if doctor_id is not None:
+        arguments["doctor_id"] = doctor_id
+    with headers_patch, runtime_patch:
+        result = await mcp.call_tool("get_medical_cards_by_date", arguments)
+
+    assert result.is_error is False
+    assert seen == [[{"property": "doctor_id", "value": str(doctor_id), "operator": "="}]
+                    if doctor_id is not None else []]
+    body = result.structured_content
+    assert body["success"] is True
+    assert body["total"] == len(expected_ids)
+    assert body["medical_cards_count"] == len(expected_ids)
+    assert body["truncated"] is False
+    assert [card["id"] for card in body["medical_cards"]] == expected_ids
+    if doctor_id is not None:
+        assert all(card["doctor_id"] == doctor_id for card in body["medical_cards"])
+
+
+@pytest.mark.asyncio
 @respx.mock
 async def test_stage380_noninteger_staff_id_rejected_before_http():
     billing_mock()
