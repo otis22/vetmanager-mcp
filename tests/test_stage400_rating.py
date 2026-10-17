@@ -35,6 +35,7 @@ async def test_rating_is_visible_before_a_report_succeeds():
     rating_schema = advertised["rate_report_ai_job"].inputSchema
     assert "comment" in rating_schema["properties"]
     assert "comment" not in rating_schema.get("required", [])
+    assert set(rating_schema["required"]) == {"job_id", "score", "intent_text"}
     for fragment in (
         "1 = отчёт даже не построился",
         "2 и выше — отчёт построился",
@@ -86,16 +87,16 @@ async def test_rating_persists_sanitized_prompt_and_replaces_score(tmp_path, mon
     prompt = "Клиент: Иванов Иван, +7 999 123-45-67, ivan@example.test — приёмы"
     await record_created_job(account_id=1, connection_id=10, domain="clinic-a", job_id=400, intent_text=prompt)
     with pytest.raises(Exception):
-        await rate_job(account_id=2, connection_id=10, domain="clinic-a", job_id=400, score=1)
+        await rate_job(account_id=0, connection_id=10, domain="clinic-a", job_id=400, score=1,
+                       intent_text=prompt)
     with pytest.raises(Exception):
-        await rate_job(account_id=1, connection_id=10, domain="clinic-b", job_id=400, score=1)
+        await rate_job(account_id=1, connection_id=10, domain="clinic-a", job_id=400, score=True,
+                       intent_text=prompt)
     with pytest.raises(Exception):
-        await rate_job(account_id=1, connection_id=11, domain="clinic-a", job_id=400, score=1)
-    with pytest.raises(Exception):
-        await rate_job(account_id=1, connection_id=10, domain="clinic-a", job_id=400, score=True)
-    with pytest.raises(Exception):
-        await rate_job(account_id=1, connection_id=10, domain="clinic-a", job_id=400, score=11)
+        await rate_job(account_id=1, connection_id=10, domain="clinic-a", job_id=400, score=11,
+                       intent_text=prompt)
     result = await rate_job(account_id=1, connection_id=10, domain="clinic-a", job_id=400, score=1,
+                            intent_text=prompt,
                             comment="Клиент: Петров Пётр; pet@example.test")
     assert result["score"] == 1
     await record_created_job(account_id=1, connection_id=10, domain="clinic-a", job_id=400,
@@ -116,7 +117,8 @@ async def test_rating_persists_sanitized_prompt_and_replaces_score(tmp_path, mon
         record_created_job(account_id=1, connection_id=10, domain="clinic-a",
                            job_id=403, intent_text="Второй конкурентный вызов"),
     )
-    result = await rate_job(account_id=1, connection_id=10, domain="clinic-a", job_id=400, score=7)
+    result = await rate_job(account_id=1, connection_id=10, domain="clinic-a", job_id=400, score=7,
+                            intent_text="Агентский дубль")
     assert result["score"] == 7
     async with storage.get_session_factory()() as session:
         rows = (await session.execute(select(ReportAiJobRating))).scalars().all()
@@ -152,7 +154,8 @@ async def test_old_prompt_is_purged_after_rerating_even_without_account_activity
     async with storage.get_session_factory()() as session:
         await session.execute(update(ReportAiJobRating).values(created_at=old))
         await session.commit()
-    await rate_job(account_id=1, connection_id=10, domain="clinic-a", job_id=401, score=5)
+    await rate_job(account_id=1, connection_id=10, domain="clinic-a", job_id=401, score=5,
+                   intent_text="Сколько приёмов")
     assert await purge_expired_jobs(now=datetime.now(timezone.utc)) == 1
     async with storage.get_session_factory()() as session:
         assert (await session.execute(select(ReportAiJobRating))).scalars().all() == []
@@ -208,6 +211,7 @@ async def test_create_keeps_job_id_when_rating_db_stalls(monkeypatch):
     assert post.call_count == 1
     assert result.structured_content["data"]["job"]["id"] == 401
     assert "mcp_rating_unavailable" in str(result.structured_content)
+    assert "You can still rate it" in str(result.structured_content)
 
 
 @pytest.mark.asyncio
@@ -216,6 +220,7 @@ async def test_create_keeps_job_id_when_rating_db_stalls(monkeypatch):
     {"job_id": True, "score": 5},
 ])
 async def test_rating_rejects_boolean_input_at_mcp_boundary(monkeypatch, arguments):
+    arguments["intent_text"] = "Сколько приёмов"
     writer = AsyncMock(return_value={"ok": True, "job_id": 400, "score": 1})
     monkeypatch.setattr(report_ai, "rate_job", writer)
     headers, runtime = bearer_runtime_patch()
@@ -257,12 +262,12 @@ def test_rating_migration_has_retention_index_and_rollback(tmp_path, monkeypatch
     inspector = inspect(engine)
     assert "report_ai_job_ratings" in inspector.get_table_names()
     columns = {column["name"] for column in inspector.get_columns("report_ai_job_ratings")}
-    assert {"account_id", "connection_id", "domain", "job_id", "intent_text",
+    assert {"account_id", "connection_id", "domain", "job_id", "intent_text", "intent_from_create",
             "score", "comment", "created_at", "rated_at"} <= columns
     indexes = {index["name"] for index in inspector.get_indexes("report_ai_job_ratings")}
     assert "ix_report_ai_job_ratings_created_at" in indexes
     engine.dispose()
-    command.downgrade(config, "-1")
+    command.downgrade(config, "-2")
     engine = create_engine(config.get_main_option("sqlalchemy.url"))
     assert "report_ai_job_ratings" not in inspect(engine).get_table_names()
     engine.dispose()

@@ -39,7 +39,7 @@ def test_prompt_helper_carries_bounded_journey_and_preview_boundary():
     journey = helper.split("## Report AI journey", 1)[1].split("\n## ", 1)[0]
     steps = (
         "create_report_ai_job(wait_seconds=30)",
-        "get_report_ai_job(wait_seconds=30)",
+        "get_report_ai_job(job_id=job_id, wait_seconds=30)",
         "needs_confirmation",
         "confirm_report_ai_job_candidate",
         "reject_report_ai_job_candidate",

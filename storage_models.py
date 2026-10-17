@@ -775,6 +775,8 @@ class ReportAiJobRating(Base):
     domain: Mapped[str] = mapped_column(String(128), nullable=False)
     job_id: Mapped[int] = mapped_column(Integer, nullable=False)
     intent_text: Mapped[str] = mapped_column(Text, nullable=False)
+    intent_from_create: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true"))
     score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

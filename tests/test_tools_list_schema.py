@@ -133,7 +133,7 @@ class TestToolsListSchema:
         properties = tool["schema"].get("properties", {})
         assert "date_from" in properties
         assert "date_to" in properties
-        assert "client_id" in properties
+        assert "client_id" not in properties
         assert "get_client_payment_applications" in tool["description"]
 
     def test_get_client_payment_applications_exports_contract(self, all_tool_exports):

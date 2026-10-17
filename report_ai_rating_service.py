@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -43,7 +43,7 @@ async def record_created_job(*, account_id: int, connection_id: int, domain: str
                 select(ReportAiJobRating.id).filter_by(**key))
             return existing is not None
         safe_intent = _safe_free_text(intent_text, limit=20000)
-        values = {**key, "intent_text": safe_intent}
+        values = {**key, "intent_text": safe_intent, "intent_from_create": True}
         dialect = session.get_bind().dialect.name
         if dialect == "postgresql":
             statement = pg_insert(ReportAiJobRating).values(**values)
@@ -51,32 +51,56 @@ async def record_created_job(*, account_id: int, connection_id: int, domain: str
             statement = sqlite_insert(ReportAiJobRating).values(**values)
         else:
             raise RuntimeError("Report AI rating storage requires PostgreSQL or SQLite.")
-        await session.execute(statement.on_conflict_do_nothing(
-            index_elements=["account_id", "connection_id", "domain", "job_id"]))
+        await session.execute(statement.on_conflict_do_update(
+            index_elements=["account_id", "connection_id", "domain", "job_id"],
+            set_={"intent_text": safe_intent, "intent_from_create": True},
+            where=ReportAiJobRating.intent_from_create.is_(False)))
         await session.commit()
     return True
 
 
 async def rate_job(*, account_id: int, connection_id: int, domain: str,
-                   job_id: int, score: int, comment: str | None = None) -> dict:
+                   job_id: int, score: int, intent_text: str,
+                   comment: str | None = None) -> dict:
     """Replace this connection's rating for a job; keep its original intent."""
     key = _identity(account_id, connection_id, domain, job_id)
     if isinstance(score, bool) or not isinstance(score, int) or not 1 <= score <= 10:
         raise ToolInputError("score must be an integer from 1 to 10.")
+    if not isinstance(intent_text, str) or not intent_text.strip():
+        raise ToolInputError("intent_text must be non-empty.")
+    if len(intent_text.strip()) > 20000:
+        raise ToolInputError("intent_text must be no longer than 20000 characters.")
     if comment is not None and not isinstance(comment, str):
         raise ToolInputError("comment must be text.")
     safe_comment = _safe_free_text(comment, limit=1000) if comment and comment.strip() else None
+    safe_intent = _safe_free_text(intent_text.strip(), limit=20000)
     rated_at = datetime.now(timezone.utc)
     async with get_session_factory()() as session:
-        result = await session.execute(
-            update(ReportAiJobRating).filter_by(**key).values(
-                score=score, comment=safe_comment, rated_at=rated_at))
-        if result.rowcount != 1:
-            raise ToolInputError("This Report AI job was not registered for the current clinic connection.")
+        values = {**key, "intent_text": safe_intent, "intent_from_create": False,
+                  "score": score, "comment": safe_comment, "rated_at": rated_at}
+        dialect = session.get_bind().dialect.name
+        if dialect == "postgresql":
+            statement = pg_insert(ReportAiJobRating).values(**values)
+        elif dialect == "sqlite":
+            statement = sqlite_insert(ReportAiJobRating).values(**values)
+        else:
+            raise RuntimeError("Report AI rating storage requires PostgreSQL or SQLite.")
+        await session.execute(statement.on_conflict_do_update(
+            index_elements=["account_id", "connection_id", "domain", "job_id"],
+            set_={"score": score, "comment": safe_comment, "rated_at": rated_at}))
         await session.commit()
     record_report_ai_rating(score=score)
     return {"ok": True, "job_id": job_id, "score": score,
             "rated_at": rated_at.isoformat()}
+
+
+async def has_unrated_job(*, account_id: int, connection_id: int,
+                          domain: str, job_id: int) -> bool:
+    """Read the current rating state for this exact clinic connection."""
+    key = _identity(account_id, connection_id, domain, job_id)
+    async with get_session_factory()() as session:
+        return await session.scalar(select(ReportAiJobRating.id).filter_by(
+            **key, score=None)) is not None
 
 
 async def purge_expired_jobs(*, now: datetime | None = None) -> int:

@@ -56,6 +56,7 @@ LIST_RELATIONS = {
 }
 
 _CLIENT_CONTACTS = {
+    "phone": REDACTED_PHONE,
     "home_phone": REDACTED_PHONE, "work_phone": REDACTED_PHONE,
     "cell_phone": REDACTED_PHONE, "phone_prefix": REDACTED_PHONE,
     "email": REDACTED_EMAIL, "address": REDACTED_ADDRESS,
@@ -118,6 +119,44 @@ def _mask_contacts(value: object, *, client_record: bool = False) -> object:
         else:
             result[key] = _mask_contacts(item, client_record=key in {"client", "owner"})
     return result
+
+
+PET_CONTACT_TOOLS = frozenset({"get_pets", "get_inactive_pets", "find_pets_by_alias"})
+
+
+def mask_pet_list_result(result: object, tool_name: str) -> object:
+    """Apply the stage-399 client mask to pet lists after required cleaning."""
+    if not isinstance(result, dict):
+        raise reportable_error("Contact masking expected a list response.")
+    if result.get("success") is False:
+        return result
+    container_key = "inactive_pets" if tool_name == "get_inactive_pets" else "data"
+    container = result.get(container_key)
+    if tool_name == "get_inactive_pets":
+        rows = container
+        entity = None
+    else:
+        entity = "pets" if tool_name == "find_pets_by_alias" else "pet"
+        if isinstance(container, list) and tool_name == "get_pets":
+            rows = container
+            entity = None
+        elif isinstance(container, dict):
+            rows = container.get(entity)
+        else:
+            rows = None
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise reportable_error("Contact masking expected pet records.")
+    masked = []
+    for row in rows:
+        projected = _mask_contacts(row)
+        if tool_name == "get_inactive_pets" and projected.get("owner_phone") is not None:
+            projected["owner_phone"] = REDACTED_PHONE
+        masked.append(projected)
+    if tool_name == "get_inactive_pets":
+        return {**result, container_key: masked}
+    if entity is None:
+        return {**result, "data": masked}
+    return {**result, "data": {**container, entity: masked}}
 
 
 def project_list_result(

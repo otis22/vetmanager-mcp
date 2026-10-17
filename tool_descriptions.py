@@ -581,6 +581,7 @@ TOOL_ENTITY_MAP: dict[str, str] = {
     "get_suppliers": "supplier",
     "get_supplier_by_id": "supplier",
     "get_good_stock_balance": "stock_balance",
+    "get_goods_stock_balances": "stock_balance",
     "send_message_to_all": "messages",
     "send_message_to_users": "messages",
     "get_message_reports": "messages",
@@ -780,7 +781,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_medical_cards": (
         "List or search medical cards / clinical records for one required pet_id "
-        "with optional filters. Use get_medical_cards_by_date for staff and "
+        "with optional filters. For a general search without a known pet, use "
+        "get_medical_cards_by_date for staff and "
         "period searches across all patients, clinic-local date or daily "
         "clinical control, and "
         "get_medical_cards_by_client_id for one owner's pets. Domain synonyms: "
@@ -856,8 +858,7 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_payments": (
         "List direct Vetmanager Payment records. Use for raw payment/date/status "
         "lookup on /rest/api/payment. Payment records do not have client_id or "
-        "pet_id in Vetmanager REST; client_id is a deprecated unsupported "
-        "argument and is rejected before HTTP. Use get_client_payment_applications "
+        "pet_id in Vetmanager REST. Use get_client_payment_applications "
         "for client- or pet-scoped payment applications through closingOfInvoices. "
         "Domain synonyms: платёж, оплата, поступление, касса, payment."
     ),
@@ -889,7 +890,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "months_min, months_max, and limit to customize. The answer carries "
         "truncated, truncation_reason and clients_total_in_window: a truncated "
         "list is a page, not the whole window, and must not be reported as all "
-        "lapsed pets. Use for reactivation "
+        "lapsed pets. doctor_name is the final [user:<doctor_id>:first_name] "
+        "placeholder in every access mode; copy it verbatim. "
+        "Use for reactivation "
         "campaigns targeting specific patients. Domain synonyms: питомец, "
         "пациент, животное, кот, собака, pet, animal."
     ),
@@ -906,18 +909,34 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "владелец, хозяин, контакт, клиентская база, client."
     ),
     "get_good_stock_balance": (
-        "Check current stock balance for goods in warehouse context. Use when the "
+        "Check fresh stock balance for one good in an explicitly selected clinic. "
+        "clinic_id is required. Use when the "
         "user asks how much is left in stock, current inventory, or remaining "
         "quantity. Domain synonyms: остаток, остаток на складе, количество на "
         "складе, наличие товара, сколько осталось, запас, stock, inventory."
     ),
+    "get_goods_stock_balances": (
+        "Check fresh stock balances for up to 20 goods in one explicitly selected "
+        "clinic. Pass unique good_ids and required clinic_id. Each good is read "
+        "from the warehouse endpoint; services may report zero. Use when the user "
+        "asks for several stock quantities or inventory balances at once. "
+        "Domain synonyms: остатки, наличие товаров, складские запасы, stock balances."
+    ),
     "get_goods": (
         "List or search goods / services in the product directory. Use for catalog "
-        "lookup, product metadata, groups, or stock-related discovery. Use "
+        "lookup, product metadata, groups, or stock-related discovery. Search "
+        "names with title; use % wildcards for a partial title. Use "
         "search_invoice_goods instead when the user needs invoice-ready goods, "
         "services, goodTag combinations, or IDs for adding positions to an "
         "invoice. Domain synonyms: товар, услуга, номенклатура, препарат, "
         "материал, good, service."
+    ),
+    "get_timesheet_types": (
+        "List shift types / schedule entry types used by timesheet records. "
+        "The type ID is clinic-specific; is_working_hours marks types counted "
+        "as work. Read this catalogue to understand the working shifts used "
+        "by get_doctor_free_slots when calculating availability. Domain synonyms: "
+        "тип расписания, тип смены, рабочие часы, timesheet type."
     ),
     "search_invoice_goods": (
         "Search invoice-ready goods, services, and goodTag combinations for adding "
@@ -972,22 +991,25 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "messages."
     ),
     "rate_report_ai_job": (
-        "Оцените, насколько Report AI решил задачу пользователя, после попытки построить отчёт. "
+        "Финальный шаг пути create → poll → data → rate: вызовите rate_report_ai_job, чтобы оценить, насколько Report AI решил задачу пользователя, после чтения реальных строк или неудачной попытки построить отчёт. "
         "Шкала: 1 = отчёт даже не построился; 2 и выше — отчёт построился; "
         "2 = построился, но задачу почти не решил; 5–6 = решил частично; "
         "10 = задача решена полностью, ничего не пришлось добывать другими путями. "
-        "Передайте job_id и целый score 1–10; comment необязателен — при низкой оценке "
+        "Передайте job_id, целый score 1–10 и intent_text — тот же промпт, из которого "
+        "строился отчёт. intent_text и score обязательны; comment необязателен — при низкой оценке "
         "кратко укажите, что именно не устроило в отчёте и чего не хватило для решения задачи. "
         "Оценка записывается только в нашу БД и заменяет прежнюю оценку того же job. "
-        "Вызов добровольный; без job_id после неудачного POST оценка невозможна. "
+        "Без job_id после неудачного POST оценка невозможна. "
         "Domain synonyms: оценка отчёта, пригодность отчёта, Report AI rating, score."
     ),
     "create_report_ai_job": (
         "Create an async Vetmanager Report AI job from a Russian report intent. "
         "Canonical order: get_report_ai_prompt_helper -> create_report_ai_job -> "
         "get_report_ai_job, then confirm/save/read/export according to the returned "
-        "status. After the attempt, call rate_report_ai_job with score 1–10, including "
-        "failed jobs with an ID. This is voluntary; no job ID means no rating. "
+        "status. After the attempt, call rate_report_ai_job with job_id, score 1–10, "
+        "and the same intent_text used to build the report, including "
+        "failed jobs with an ID. Rating is the final step of create → poll → data → rate; "
+        "comment is optional. No job ID means no rating. "
         "Use after reading get_report_ai_prompt_helper or the MCP prompt "
         "report_ai_prompt_helper unless the user already supplied a final Russian "
         "intent_text. Use when the user asks for an analytic report, grouped/list "
@@ -1025,7 +1047,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_report_ai_prompt_helper": (
         "Return static guidance for writing safe Russian Report AI intent_text "
         "and following the bounded create/get, confirm/reject, save, data journey. "
-        "It also explains voluntary rate_report_ai_job for built and failed jobs. "
+        "It also explains the final rate_report_ai_job(job_id, score, intent_text) step "
+        "for built and failed jobs; comment is optional. "
         "preview_summary and preview_example_row are decision samples, not live "
         "clinic data; do not answer the user from preview. "
         "Use before create_report_ai_job when MCP prompts are not visible in the "
@@ -1036,6 +1059,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_report_ai_job": (
         "Read safe status and recognized structure for a Vetmanager Report AI job. "
+        "After saved or existing_report_matched, read get_report_ai_job_data, then make the final "
+        "rate_report_ai_job(job_id, score, intent_text) call; comment is optional. "
         "Use for polling queued/recognizing/building_preview jobs and for checking "
         "ready_to_save, existing_report_matched, needs_confirmation, saved, failed, "
         "or rejected states. If a job stops moving for 30+ seconds — waiting in the "
@@ -1086,6 +1111,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_report_ai_job_data": (
         "Get table rows for a saved or existing_report_matched Report AI job. "
+        "After reviewing real rows, finish the create → poll → data → rate path with "
+        "rate_report_ai_job(job_id, score, intent_text); comment is optional. "
         "In rows, empty strings become null; unambiguous numeric columns return "
         "JSON numbers when decimal precision can be retained. IDs, codes, "
         "article numbers and unknown columns remain text; privacy redaction "
@@ -1258,7 +1285,12 @@ INVOICE_MONEY_SUFFIXES: dict[str, str] = {
         "when discount is nonzero, otherwise 0), and amount is the rouble total "
         "after discount and markup. Rouble discount per invoice_document line: "
         "default_price - price*((100-discount)/100)*((100+increase)/100). "
-        "price and default_price are line totals, not unit prices."
+        "price and default_price are line totals, not unit prices. "
+        "Vetmanager payment_status can be stale / out of sync when some payment "
+        "flows update paid_amount without recalculating the status column. "
+        "For reliable payment reconciliation, compare paid_amount with amount "
+        "across all pages (pagination); paid_amount_max and amount_min help "
+        "find candidates, but payment_status alone can miss unpaid invoices."
     ),
     "update_invoice": (
         "Money fields: discount is a discount percentage, increase is a markup "
@@ -1345,6 +1377,9 @@ def _build_generic_description(tool_name: str) -> str | None:
     return None
 
 
+DEPRECATED_PUBLISHED_ARGUMENTS = {"get_goods": "name", "get_payments": "client_id"}
+
+
 def enhance_tool_descriptions(mcp: FastMCP) -> None:
     """Apply domain-synonym-aware descriptions to all registered MCP tools."""
     provider = getattr(mcp, "_local_provider", None)
@@ -1361,6 +1396,9 @@ def enhance_tool_descriptions(mcp: FastMCP) -> None:
             continue
 
         component.description = description
+        hidden = DEPRECATED_PUBLISHED_ARGUMENTS.get(component.name)
+        if hidden:
+            component.parameters.get("properties", {}).pop(hidden, None)
         if component.name in LIST_PROJECTION_SUFFIXES:
             properties = component.parameters.get("properties", {})
             if "fields" in properties:

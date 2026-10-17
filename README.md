@@ -655,7 +655,7 @@ COMMIT;
 - После успешного `POST`/`PUT`/`DELETE` кеш для соответствующего тега `domain:entity` инвалидируется.
 - Ограничение подхода: кеш живёт только в памяти процесса и полностью сбрасывается при рестарте сервера.
 
-**129 инструментов** по 16 группам:
+**130 инструментов** по 16 группам:
 
 | Группа | Инструменты | Кол-во |
 |--------|-------------|--------|
@@ -667,7 +667,7 @@ COMMIT;
 | Finance | `get_payments`, `get_payment_by_id`, `get_client_payment_applications`, `get_revenue_summary`, `get_invoice_documents`, `get_invoice_documents_by_period`, `get_invoice_document_by_id`, `get_closing_of_invoices`, `get_closing_of_invoice_by_id`, `get_cassas`, `get_cassa_by_id`, `get_cassa_closes`, `get_cassa_close_by_id` | 13 |
 | Good | `get_goods`, `get_good_by_id`, `search_invoice_goods`, `get_good_combination`, `calculate_good_combination_price`, `create_good`, `update_good` | 7 |
 | User | `get_users`, `get_user_by_id`, `update_user` | 3 |
-| Warehouse | `get_good_groups`, `get_good_group_by_id`, `get_good_sale_params`, `get_good_sale_param_by_id`, `get_party_accounts`, `get_party_account_by_id`, `get_party_account_docs`, `get_party_account_doc_by_id`, `get_store_documents`, `get_store_document_by_id`, `get_suppliers`, `get_supplier_by_id`, `create_supplier`, `update_supplier`, `get_good_stock_balance`, `update_good_sale_price`, `set_good_sale_param_status` | 17 |
+| Warehouse | `get_good_groups`, `get_good_group_by_id`, `get_good_sale_params`, `get_good_sale_param_by_id`, `get_party_accounts`, `get_party_account_by_id`, `get_party_account_docs`, `get_party_account_doc_by_id`, `get_store_documents`, `get_store_document_by_id`, `get_suppliers`, `get_supplier_by_id`, `create_supplier`, `update_supplier`, `get_good_stock_balance`, `get_goods_stock_balances`, `update_good_sale_price`, `set_good_sale_param_status` | 18 |
 | Clinical | `get_hospitalizations`, `get_hospitalization_by_id`, `create_hospitalization`, `update_hospitalization`, `get_hospital_blocks`, `get_hospital_block_by_id`, `get_diagnoses` | 7 |
 | Reference | `get_breeds`, `get_breed_by_id`, `get_pet_types`, `get_pet_type_by_id`, `get_cities`, `get_city_by_id`, `get_city_types`, `get_streets`, `get_street_by_id`, `get_units`, `get_unit_by_id`, `get_roles`, `get_role_by_id`, `get_user_positions`, `get_user_position_by_id`, `get_combo_manual_names`, `get_combo_manual_name_by_id`, `get_combo_manual_items`, `get_combo_manual_item_by_id` | 19 |
 | Operations | `get_clinics`, `get_clinic_by_id`, `get_timesheets`, `get_timesheet_by_id`, `get_timesheet_types`, `create_timesheet`, `update_timesheet`, `delete_timesheet`, `get_properties`, `get_anonymous_clients`, `send_message_to_all`, `send_message_to_users`, `send_message_to_roles`, `get_message_reports` | 14 |
@@ -723,7 +723,7 @@ Prompts работают по тому же bearer-only контракту, чт
 5. Если статус `existing_report_matched`, сразу вызвать `get_report_ai_job_data`.
 6. Если статус `ready_to_save` и нужны строки, явно вызвать `save_report_ai_job_as_report` с вменяемым названием отчёта; это write-tool, отчёт станет видимым в Vetmanager. Не обещать срок на save: API не возвращает expiry или retry metadata.
 7. `get_report_ai_job_data(job_id)` — получить `columns`, `rows`, `total`, `limited` и, когда upstream отдаёт, `csv_export_url`.
-8. После попытки построения отчёта добровольно вызвать `rate_report_ai_job(job_id, score)`: 1 — отчёт не построился; 2–10 — построился, от почти бесполезного до полного решения задачи. Необязательный `comment` при низкой оценке коротко объясняет, что не хватило для ответа. Оценка и очищенный исходный промпт хранятся только в нашей БД; отсутствие оценки не означает успех.
+8. После попытки построения отчёта добровольно вызвать `rate_report_ai_job(job_id, score, intent_text)`, передав тот же промпт, из которого строился отчёт: 1 — отчёт не построился; 2–10 — построился, от почти бесполезного до полного решения задачи. `intent_text` и `score` обязательны; `comment` необязателен и при низкой оценке коротко объясняет, что не хватило для ответа. Оценка и очищенный промпт хранятся только в нашей БД; отсутствие оценки не означает успех.
 
 `intent_text` для `create_report_ai_job` ограничен Vetmanager лимитом 20000 символов. Для сложных отчётов лучше не просто писать длинный текст, а явно указать период, фильтры, метрики, группировки и сортировку. `recognized.preview_example_row` в статусе job — это LLM-generated пример ожидаемой строки, а не подтверждённая строка из данных клиники.
 

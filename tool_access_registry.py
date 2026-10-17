@@ -194,6 +194,7 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
     "get_good_sale_param_by_id": (SCOPE_INVENTORY_READ,),
     "get_good_sale_params": (SCOPE_INVENTORY_READ,),
     "get_good_stock_balance": (SCOPE_INVENTORY_READ,),
+    "get_goods_stock_balances": (SCOPE_INVENTORY_READ,),
     "get_goods": (SCOPE_INVENTORY_READ,),
     "get_hospital_block_by_id": (SCOPE_MEDICAL_CARDS_READ,),
     "get_hospital_blocks": (SCOPE_MEDICAL_CARDS_READ,),

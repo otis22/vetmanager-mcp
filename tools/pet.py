@@ -7,6 +7,7 @@ from datetime import date
 
 from fastmcp import FastMCP
 
+from depersonalization import build_addressed_placeholder
 from exceptions import ToolInputError
 from filters import FILTER_FIELDS_BY_ENTITY, build_list_query_params, eq as _filter_eq, in_ as _filter_in, like as _filter_like
 from resources.pet_profile import fetch as _fetch_pet_profile
@@ -523,6 +524,15 @@ def register(mcp: FastMCP) -> None:
                     pet["doctor_resolution"] = "resolved" if pet["doctor_name"] else "not_found"
                 else:
                     pet["doctor_resolution"] = "not_found"
+
+        # The schedule returns the final display value for a doctor in every
+        # access mode. Keep this list consistent even for personal-data tokens.
+        for pet in result_pets:
+            doctor_id = _positive_owner_id(pet.get("doctor_id"))
+            pet["doctor_name"] = (
+                build_addressed_placeholder("user", doctor_id, "first_name")
+                if doctor_id else None
+            )
 
         return {
             "inactive_pets": result_pets,

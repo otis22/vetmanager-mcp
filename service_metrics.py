@@ -140,6 +140,7 @@ _REPORT_AI_STAGE_STALL_POLLS_TOTAL = 0
 _REPORT_AI_JOBS_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _REPORT_AI_SAVE_ATTEMPTS_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _REPORT_AI_RATINGS_TOTAL: DefaultDict[int, int] = defaultdict(int)
+_REPORT_AI_RATING_REMINDERS_TOTAL = 0
 _REPORT_AI_RATING_PURGES_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _REPORT_AI_JOB_TRANSITIONS_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
 _REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL: DefaultDict[str, int] = defaultdict(int)
@@ -204,6 +205,7 @@ def reset_service_metrics() -> None:
     """Clear all in-memory metrics. Tests should call this to isolate assertions."""
     with _LOCK:
         global _REPORT_AI_LONG_QUEUED_POLLS_TOTAL, _REPORT_AI_STAGE_STALL_POLLS_TOTAL
+        global _REPORT_AI_RATING_REMINDERS_TOTAL
         global _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_ISSUED_TOTAL, _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_JOBS_TOTAL
         global _SANITIZER_FAILURES_TOTAL, _REST_UNMAPPED_READ_TOTAL, _SENTRY_DELIVERY_ACCEPTED_TOTAL
         _HTTP_REQUESTS_TOTAL.clear()
@@ -232,6 +234,7 @@ def reset_service_metrics() -> None:
         _REPORT_AI_JOBS_TOTAL.clear()
         _REPORT_AI_SAVE_ATTEMPTS_TOTAL.clear()
         _REPORT_AI_RATINGS_TOTAL.clear()
+        _REPORT_AI_RATING_REMINDERS_TOTAL = 0
         _REPORT_AI_RATING_PURGES_TOTAL.clear()
         _REPORT_AI_JOB_TRANSITIONS_TOTAL.clear()
         _REPORT_AI_JOB_TERMINAL_OUTCOMES_TOTAL.clear()
@@ -676,6 +679,14 @@ def record_report_ai_rating(*, score: int) -> None:
     _record_shared_counter("report_ai_ratings_total", str(score))
 
 
+def record_report_ai_rating_reminder() -> None:
+    """Count an actual reminder added to a prepared tool response."""
+    with _LOCK:
+        global _REPORT_AI_RATING_REMINDERS_TOTAL
+        _REPORT_AI_RATING_REMINDERS_TOTAL += 1
+    _record_shared_counter("report_ai_rating_reminders_total", "")
+
+
 def record_report_ai_rating_purge(*, outcome: str) -> None:
     safe_outcome = outcome if outcome in {"success", "error"} else "error"
     with _LOCK:
@@ -918,6 +929,7 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
             "report_ai_stage_stall_polls_total": _REPORT_AI_STAGE_STALL_POLLS_TOTAL,
             "report_ai_jobs_total": dict(sorted(_REPORT_AI_JOBS_TOTAL.items())),
             "report_ai_ratings_total": dict(sorted(_REPORT_AI_RATINGS_TOTAL.items())),
+            "report_ai_rating_reminders_total": _REPORT_AI_RATING_REMINDERS_TOTAL,
             "report_ai_rating_purges_total": dict(sorted(_REPORT_AI_RATING_PURGES_TOTAL.items())),
             "report_ai_save_attempts_total": dict(sorted(_REPORT_AI_SAVE_ATTEMPTS_TOTAL.items())),
             "report_ai_job_transitions_total": {
@@ -1244,6 +1256,12 @@ def render_prometheus_metrics() -> str:
     ])
     for score, count in snapshot.get("report_ai_ratings_total", {}).items():
         lines.append(f"vetmanager_report_ai_ratings_total{_labels_text(score=score)} {count}")
+
+    lines.extend([
+        "# HELP vetmanager_report_ai_rating_reminders_total Rating reminders added to Report AI read responses.",
+        "# TYPE vetmanager_report_ai_rating_reminders_total counter",
+        f"vetmanager_report_ai_rating_reminders_total {snapshot.get('report_ai_rating_reminders_total', 0)}",
+    ])
 
     lines.extend([
         "# HELP vetmanager_report_ai_rating_purges_total Daily Report AI prompt cleanup runs by outcome.",
