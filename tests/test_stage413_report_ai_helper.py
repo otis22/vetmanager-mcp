@@ -28,6 +28,8 @@ def test_canonical_route_and_failed_job_branch(helper_text):
         "create_report_ai_job", "get_report_ai_job", "get_report_ai_job_data", "rate_report_ai_job"
     ))
     assert core.index("create_report_ai_job") < core.index("get_report_ai_job") < core.index("get_report_ai_job_data") < core.index("rate_report_ai_job")
+    assert "get_report_ai_job(job_id=job_id, wait_seconds=30)" in core
+    assert "get_report_ai_job(wait_seconds=30)" not in helper_text
     assert "failed" in core and "score=1" in core and "job_id" in core
     assert "без job_id" in core
     assert "добровольн" not in helper_text.lower()
@@ -71,7 +73,7 @@ def test_preview_is_only_a_decision_sample(helper_text):
 def test_wait_observation_is_not_guarantee(helper_text):
     assert "6–10 секунд" in helper_text
     assert "не гарантия" in helper_text
-    assert "get_report_ai_job(wait_seconds=30)" in helper_text
+    assert "get_report_ai_job(job_id=job_id, wait_seconds=30)" in helper_text
 
 
 def test_csv_export_route_survives(helper_text):

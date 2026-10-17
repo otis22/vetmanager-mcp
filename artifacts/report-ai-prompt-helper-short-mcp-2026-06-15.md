@@ -10,7 +10,7 @@ Your task is to convert the user's business question into a clear Russian `inten
    русский `intent_text`: предмет отчёта, метрика или список, период и основание
    даты, фильтры, группировка и сортировка. Не пишите SQL и не выдумывайте поля.
 2. Вызовите `create_report_ai_job(intent_text=..., wait_seconds=30)` один раз.
-   Сохраните `job_id`; при ожидании вызовите `get_report_ai_job(wait_seconds=30)`
+   Сохраните `job_id`; при ожидании вызовите `get_report_ai_job(job_id=job_id, wait_seconds=30)`
    для того же job. Не создавайте дубль из-за долгого ожидания.
 3. При `needs_confirmation` проверьте кандидата и подтвердите подходящий либо
    один раз отклоните неподходящий. При `ready_to_save` сохраните отчёт под
@@ -37,14 +37,14 @@ Your task is to convert the user's business question into a clear Russian `inten
 1. После подготовки интента вызовите `create_report_ai_job(wait_seconds=30)` один
    раз. Вызов делает один POST и ограниченное ожидание статуса на сервере MCP.
    Если вернулось ещё обрабатываемое задание или timeout, сохраните `job_id` и
-   вызовите `get_report_ai_job(wait_seconds=30)` для того же задания: это тоже
+   вызовите `get_report_ai_job(job_id=job_id, wait_seconds=30)` для того же задания: это тоже
    один ограниченный вызов. При необходимости повторите его позже; не создавайте
    job заново и не запускайте ручную серию быстрых GET.
 2. При `needs_confirmation` сравните кандидатов с фильтрами, периодом и
    группировкой. Выберите **одно** действие: `confirm_report_ai_job_candidate`
    для подходящего кандидата или `reject_report_ai_job_candidate` один раз,
    если подходящего нет. После reject читайте тот же job через
-   `get_report_ai_job(wait_seconds=30)`; первый ответ ещё может содержать
+   `get_report_ai_job(job_id=job_id, wait_seconds=30)`; первый ответ ещё может содержать
    устаревший `needs_confirmation`, повторять reject автоматически нельзя.
 3. При `ready_to_save` вызовите `save_report_ai_job_as_report` с осмысленным
    названием. Поле `title` в `next_action.call` — шаблон; замените его целью и
@@ -90,7 +90,7 @@ Your task is to convert the user's business question into a clear Russian `inten
 - `ready_to_save` does not expose report rows. It exposes safe recognized structure and preview summary only.
 - Rows are available only after `saved` or `existing_report_matched`.
 - If rows are needed from `ready_to_save`, use an explicit save step with a meaningful report title.
-- If status is `needs_confirmation`, confirm only a candidate with the same filters, period and grouping. If none fits, call `reject_report_ai_job_candidate` once and use bounded `get_report_ai_job(wait_seconds=30)` on the same job until `ready_to_save` or `failed`; the first status can still be `needs_confirmation`. Never repeat reject automatically after timeout or 409. After confirmation, rows are available through `get_report_ai_job_data` without saving a new report.
+- If status is `needs_confirmation`, confirm only a candidate with the same filters, period and grouping. If none fits, call `reject_report_ai_job_candidate` once and use bounded `get_report_ai_job(job_id=job_id, wait_seconds=30)` on the same job until `ready_to_save` or `failed`; the first status can still be `needs_confirmation`. Never repeat reject automatically after timeout or 409. After confirmation, rows are available through `get_report_ai_job_data` without saving a new report.
 - `QUEUE_TIMEOUT` means the job failed after an hour in queue: stop checking it. `LLM_UNAVAILABLE` means provider timeout: wait at least five minutes, then retry the same intent only once. A `PREVIEW_FAILED` may contain SQL in the upstream diagnostic; use the MCP workaround and never quote raw SQL.
 - `recognized.preview_example_row`, если присутствует, содержит намеренно
   выдуманные правдоподобные значения, а не данные клиники и не реальную строку.

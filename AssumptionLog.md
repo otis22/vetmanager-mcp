@@ -16,6 +16,8 @@ Spark PRD, candidate-only: exit 0, `files_read` — PRD, Roadmap, `prompts.py`, 
 
 Живая проверка после финальной правки текста: выбран `.env` `TEST_DOMAIN`/`TEST_API_KEY` devtr6, не bearer production-стенд; локальная БД — временная SQLite pytest. `docker compose --env-file .env --profile test run --rm test pytest -q -s tests/test_stage413_live.py`: exit 0, `1 passed`. Зарегистрированный MCP `prompts/get report_ai_prompt_helper`: HTTP 200, начало тела `# Report AI prompt helper ... Use this helper ... Your task is to convert ... intent_text ... ## Короткий маршрут`; приложение в том же ответе: `## Приложение: доступ и плейсхолдеры ... Credentials are already available from the MCP Bearer token ...`. Тест подтвердил плейсхолдер `[client:123:last_name]` в приложении. Job на стенде не создавался, поскольку менялся только prompt. Ключи, ПД и полные ответы клиники не выводились.
 
+Первый committed diff Spark по `ebcab10`: валидный candidate-only (exit 0, `files_read` содержит MD, `prompts.py`, `tools/report_ai.py`, тест и PRD), 1 medium: примеры `get_report_ai_job(wait_seconds=30)` опускали обязательный `job_id`. Принято. Новый адресный сторож до правки дал `1 failed`; четыре примера изменены на `get_report_ai_job(job_id=job_id, wait_seconds=30)`. После исправления фокус `15 passed`, живой MCP `prompts/get` HTTP 200, `1 passed`. Evidence `diff-spark.*`; повторный committed diff gate проверит новое содержимое.
+
 ## 2026-10-12 — Этап 380.1: Kimi-review PRD — approved
 
 Второй сильный PRD-гейт (Kimi вместо Claude Opus, решение владельца). Особость
