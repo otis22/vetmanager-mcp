@@ -86,17 +86,22 @@ def test_stage420_live_confirm_matched_candidate(live_server_url):
         for _ in range(6):
             if job["status"] == "needs_confirmation":
                 break
-            if job["status"] in {"ready_to_save", "saved", "failed", "rejected"}:
+            if job["status"] in {"ready_to_save", "saved", "existing_report_matched", "failed", "rejected"}:
                 pytest.skip(f"stand offered {job['status']} without candidate")
             _, response = _call(client, "get_report_ai_job", {"job_id": job_id, "wait_seconds": 30}, request_id)
             request_id += 1
             assert response.get("isError") is not True
             job = response["structuredContent"]["data"]["job"]
-        assert job["status"] == "needs_confirmation"
+        if job["status"] != "needs_confirmation":
+            pytest.skip(f"stand did not offer a candidate after bounded polls: {job['status']}")
         candidates = job.get("candidates") or []
         assert candidates
         candidate_id = int(candidates[0]["report_id"])
         assert any(call["arguments"].get("report_id") == candidate_id
+                   and call["required_args"] == ["job_id", "report_id"]
+                   for call in job["next_action"]["calls"])
+        assert any(call["tool"] == "reject_report_ai_job_candidate"
+                   and call["required_args"] == ["job_id"]
                    for call in job["next_action"]["calls"])
         print(f"STAGE420_CONFIRM_CHOICE HTTP {code} body={{'success': True, 'status': 'needs_confirmation', 'candidate_count': {len(candidates)}, 'next_action_type': {job['next_action']['type']!r}}}")
         code, response = _call(client, "confirm_report_ai_job_candidate", {

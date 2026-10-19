@@ -58,6 +58,9 @@ def test_choice_save_and_terminal_keep_contract():
     choose = _action({"id": "420", "status": "needs_confirmation", "candidates": [{"report_id": 17}]})
     assert {call["tool"] for call in choose["calls"]} == {
         "confirm_report_ai_job_candidate", "reject_report_ai_job_candidate"}
+    assert {call["tool"]: call["required_args"] for call in choose["calls"]} == {
+        "confirm_report_ai_job_candidate": ["job_id", "report_id"],
+        "reject_report_ai_job_candidate": ["job_id"]}
     assert choose["required_args"] == ["job_id"]
     assert "approval" in choose["guidance"].lower()
     save = _action({"id": 420, "status": "ready_to_save"})
@@ -230,3 +233,66 @@ def test_failed_payload_never_advertises_next_action():
     payload = {"success": False, "data": {"job": {"id": 420, "status": "saved"}}}
     annotated = report_ai._annotate_report_ai_workarounds(payload)
     assert "next_action" not in annotated["data"]["job"]
+
+
+def test_reject_pending_respects_wait_diagnostics(monkeypatch):
+    monkeypatch.setattr(report_ai, "_is_reject_pending", lambda _job: True)
+    paused = _action({"id": 420, "status": "needs_confirmation",
+                      "mcp_wait_diagnostics": {"code": "wait_timeout"}})
+    assert paused["type"] == "poll_paused" and "call" not in paused
+    denied = _action({"id": 420, "status": "needs_confirmation",
+                      "mcp_wait_diagnostics": {"code": "missing_analytics_scope"}})
+    assert denied["required_scope"] == "analytics.read" and "call" not in denied
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_failed_job_does_not_offer_second_rating(rating_db):
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/report-ai-job/420").mock(
+        return_value=httpx.Response(200, json=_job("failed")))
+    await record_created_job(account_id=1, connection_id=1, domain="testclinic", job_id=420,
+                             intent_text="Счёт приёмов")
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        before = (await mcp.call_tool("get_report_ai_job", {"job_id": 420})).structured_content
+        await rate_job(account_id=1, connection_id=1, domain="testclinic", job_id=420,
+                       score=1, intent_text="Счёт приёмов")
+        after = (await mcp.call_tool("get_report_ai_job", {"job_id": 420})).structured_content
+    assert before["data"]["job"]["next_action"]["call"]["tool"] == "rate_report_ai_job"
+    assert after["data"]["job"]["next_action"]["type"] == "complete"
+    assert "call" not in after["data"]["job"]["next_action"]
+
+
+@pytest.mark.asyncio
+async def test_shared_stage_age_stops_bounded_poll(monkeypatch):
+    class Backend:
+        def report_ai_stage_age(self, *_args):
+            return 901
+    monkeypatch.setattr(report_ai.shared_metric_counters, "get_backend", lambda: Backend())
+    monkeypatch.setattr(report_ai, "_report_ai_terminal_digest", lambda _key: "test-digest")
+    monkeypatch.setattr(report_ai, "_observe_report_ai_queue", lambda *_args, **_kwargs: 1)
+    monkeypatch.setattr(report_ai, "_observe_report_ai_lifecycle", lambda *_args, **_kwargs: None)
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        payload = await report_ai._annotate_report_ai_wait_payload(_job("recognizing"))
+    assert payload["data"]["job"]["mcp_queue_diagnostics"]["stop_automatic_polling"] is True
+
+
+@pytest.mark.asyncio
+async def test_waiter_stops_without_another_get(monkeypatch):
+    from unittest.mock import AsyncMock
+    payload = _job("queued")
+    payload["data"]["job"]["mcp_queue_diagnostics"] = {"stop_automatic_polling": True}
+    async def annotated(value):
+        return value
+    async def no_sleep(_seconds):
+        return None
+    monkeypatch.setattr(report_ai, "_annotate_report_ai_wait_payload", annotated)
+    monkeypatch.setattr(report_ai, "_report_ai_wait_sleep", no_sleep)
+    upstream = AsyncMock()
+    monkeypatch.setattr(report_ai, "_call_vm", upstream)
+    result = await report_ai._wait_for_report_ai_job(
+        payload, job_id=420, deadline=report_ai._monotonic_seconds() + 30)
+    assert result is payload
+    upstream.assert_not_awaited()
