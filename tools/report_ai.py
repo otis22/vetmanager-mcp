@@ -2329,31 +2329,41 @@ def register(mcp: FastMCP) -> None:
         payload = _annotate_report_ai_data_payload(payload)
         if payload.get("success") is True and isinstance(payload.get("data"), dict):
             data = payload["data"]
+            rows = data.get("rows")
+            if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+                return payload
             pending = await _attach_rating_reminder(job_id=job_id, target=data)
+            rated = False
+            if pending is False:
+                credentials = get_current_runtime_credentials()
+                try:
+                    rated = await asyncio.wait_for(has_rated_job(
+                        account_id=credentials.account_id,
+                        connection_id=credentials.connection_id,
+                        domain=credentials.domain, job_id=job_id,
+                    ), timeout=REPORT_AI_RATING_REMINDER_TIMEOUT_SECONDS)
+                except Exception as exc:
+                    RUNTIME_LOGGER.warning("report_ai_rating_state_lookup_failed", extra={
+                        "event_name": "report_ai_rating_state_lookup_failed",
+                        "error_class": type(exc).__name__,
+                    })
+                    pending = None
             if data.get("limited") is True:
                 data["next_action"] = (
                     {"type": "export_data", "call": {"tool": "get_report_ai_job_export",
                      "arguments": {"job_id": job_id}}, "required_args": ["job_id"],
+                     "after_export": {"tool": "get_report_export_download",
+                                      "required_args": ["report_file_id"],
+                                      "argument_source": "data.report.report_file_id"},
                      "guidance": "Rows are truncated; review the full export before rating usefulness."}
                     if _has_report_ai_scope(SCOPE_REPORT_AI_WRITE)
                     else _report_ai_access_action(SCOPE_REPORT_AI_WRITE))
+                if _has_report_ai_scope(SCOPE_REPORT_AI_WRITE) and pending is not None:
+                    data["next_action"]["after_download"] = (
+                        {"type": "complete"} if rated else
+                        {"tool": "rate_report_ai_job", "arguments": {"job_id": job_id},
+                         "required_args": ["job_id", "score", "intent_text"]})
             elif pending is not None:
-                if pending:
-                    rated = False
-                else:
-                    credentials = get_current_runtime_credentials()
-                    try:
-                        rated = await asyncio.wait_for(has_rated_job(
-                            account_id=credentials.account_id,
-                            connection_id=credentials.connection_id,
-                            domain=credentials.domain, job_id=job_id,
-                        ), timeout=REPORT_AI_RATING_REMINDER_TIMEOUT_SECONDS)
-                    except Exception as exc:
-                        RUNTIME_LOGGER.warning("report_ai_rating_state_lookup_failed", extra={
-                            "event_name": "report_ai_rating_state_lookup_failed",
-                            "error_class": type(exc).__name__,
-                        })
-                        return payload
                 if rated:
                     data["next_action"] = {"type": "complete", "guidance":
                         "This job was already rated; do not replace its score automatically."}

@@ -178,7 +178,19 @@ async def test_truncated_and_read_only_data_prioritize_export(rating_db):
     headers, runtime = bearer_runtime_patch()
     with headers, runtime:
         writable = (await mcp.call_tool("get_report_ai_job_data", {"job_id": 420})).structured_content
-    assert writable["data"]["next_action"]["call"]["tool"] == "get_report_ai_job_export"
+    action = writable["data"]["next_action"]
+    assert action["call"]["tool"] == "get_report_ai_job_export"
+    assert action["after_export"]["tool"] == "get_report_export_download"
+    assert action["after_export"]["required_args"] == ["report_file_id"]
+    assert action["after_export"]["argument_source"] == "data.report.report_file_id"
+    assert action["after_download"]["tool"] == "rate_report_ai_job"
+    assert action["after_download"]["required_args"] == ["job_id", "score", "intent_text"]
+    await rate_job(account_id=1, connection_id=1, domain="testclinic", job_id=420,
+                   score=7, intent_text="Счёт приёмов")
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        rated = (await mcp.call_tool("get_report_ai_job_data", {"job_id": 420})).structured_content
+    assert rated["data"]["next_action"]["after_download"] == {"type": "complete"}
     headers, runtime = bearer_runtime_patch(scopes=(SCOPE_ANALYTICS_READ,))
     with headers, runtime:
         readonly = (await mcp.call_tool("get_report_ai_job_data", {"job_id": 420})).structured_content
@@ -296,3 +308,22 @@ async def test_waiter_stops_without_another_get(monkeypatch):
         payload, job_id=420, deadline=report_ai._monotonic_seconds() + 30)
     assert result is payload
     upstream.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("data", [
+    {"total": 1}, {"rows": None}, {"rows": {}}, {"rows": "oops"},
+    {"rows": [None]}, {"rows": ["oops"]}, {"rows": [[1]]},
+])
+async def test_incomplete_success_data_has_no_rating_action(rating_db, data):
+    billing_mock()
+    await record_created_job(account_id=1, connection_id=1, domain="testclinic", job_id=420,
+                             intent_text="Счёт приёмов")
+    respx.get(f"{BASE}/rest/api/report-ai-job/420/data").mock(
+        return_value=httpx.Response(200, json={"success": True, "data": data}))
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        response = (await mcp.call_tool("get_report_ai_job_data", {"job_id": 420})).structured_content
+    assert "next_action" not in response["data"]
+    assert "mcp_rating_reminder" not in response["data"]
