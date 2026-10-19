@@ -328,7 +328,7 @@ async def test_create_report_ai_job_posts_strict_intent_body():
         ),
     ],
 )
-async def test_report_ai_lifecycle_observation_does_not_change_mutation_response(
+async def test_report_ai_lifecycle_observation_preserves_mutation_response_fields(
     tool_name, arguments, method, path, payload
 ):
     billing_mock()
@@ -341,6 +341,12 @@ async def test_report_ai_lifecycle_observation_does_not_change_mutation_response
         result = await mcp.call_tool(tool_name, arguments)
 
     actual = deepcopy(_structured(result))
+    action = actual["data"]["job"].pop("next_action")
+    assert action["call"]["tool"] == {
+        "create_report_ai_job": "get_report_ai_job",
+        "confirm_report_ai_job_candidate": "get_report_ai_job_data",
+        "save_report_ai_job_as_report": "get_report_ai_job_data",
+    }[tool_name]
     if tool_name == "create_report_ai_job":
         assert "rate_report_ai_job" in actual["data"]["job"].pop("mcp_rating_guidance")
         actual["data"]["job"].pop("mcp_rating_unavailable", None)
