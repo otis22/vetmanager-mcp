@@ -103,6 +103,15 @@ async def has_unrated_job(*, account_id: int, connection_id: int,
             **key, score=None)) is not None
 
 
+async def has_rated_job(*, account_id: int, connection_id: int,
+                        domain: str, job_id: int) -> bool:
+    """Distinguish a completed rating from an absent record after reading rows."""
+    key = _identity(account_id, connection_id, domain, job_id)
+    async with get_session_factory()() as session:
+        return await session.scalar(select(ReportAiJobRating.id).filter_by(
+            **key).where(ReportAiJobRating.score.is_not(None))) is not None
+
+
 async def purge_expired_jobs(*, now: datetime | None = None) -> int:
     """Delete prompts by immutable creation time, including idle accounts."""
     cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=RETENTION_DAYS)
