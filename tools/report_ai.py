@@ -17,7 +17,7 @@ from fastmcp.exceptions import ToolError
 from pydantic import StrictInt
 
 import report_export
-from report_ai_rating_service import has_unrated_job, record_created_job, rate_job
+from report_ai_rating_service import has_rated_job, has_unrated_job, record_created_job, rate_job
 import shared_metric_counters
 from error_tracking import capture_report_ai_observation_failure
 from report_export_transport import PinnedExportTransport, resolve_export_target
@@ -28,6 +28,8 @@ from exceptions import (
 from observability_logging import RUNTIME_LOGGER
 from prompts import get_report_ai_prompt_helper_text
 from tool_access_registry import SCOPE_DENIED_ERROR_CODE
+from token_scopes import SCOPE_ANALYTICS_READ, SCOPE_REPORT_AI_WRITE
+from tool_descriptions import REPORT_AI_PRIVACY_GUIDANCE
 from runtime_auth import get_current_runtime_credentials
 from first_session import observe_first_action
 from oauth_metadata import get_site_base_url
@@ -147,7 +149,7 @@ _REPORT_AI_TERMINAL_OUTCOMES = frozenset({
 _REPORT_AI_ACTIVE_STAGE_STATUSES = ("recognizing", "building_preview")
 _REPORT_AI_WAIT_DONE_STATUSES = frozenset({
     "needs_confirmation", "ready_to_save", "built", "saved", "existing_report_matched",
-    "failed", "rejected",
+    "failed", "rejected", "cancelled",
 })
 _REPORT_AI_WAIT_ACTIVE_STATUSES = frozenset({"queued", "recognizing", "building_preview"})
 
@@ -237,13 +239,39 @@ def _annotate_report_ai_next_action(job: dict) -> None:
     if job_id is None:
         return
     status = job.get("status")
+    if status in _REPORT_AI_WAIT_ACTIVE_STATUSES:
+        queue = job.get("mcp_queue_diagnostics") or {}
+        wait = job.get("mcp_wait_diagnostics") or {}
+        if queue.get("stop_automatic_polling") or wait.get("code") in {"wait_timeout", "poll_failed"}:
+            job["next_action"] = {"type": "poll_paused", "guidance":
+                "Keep this job_id and re-check later; do not start another automatic poll or duplicate job."}
+        elif wait.get("code") == "missing_analytics_scope" or not _has_report_ai_scope(SCOPE_ANALYTICS_READ):
+            job["next_action"] = _report_ai_access_action(SCOPE_ANALYTICS_READ)
+        else:
+            job["next_action"] = {"type": "poll", "call": {"tool": "get_report_ai_job",
+                "arguments": {"job_id": job_id, "wait_seconds": 30}}, "required_args": ["job_id"],
+                "guidance": "Poll this same job with bounded waits; stop when diagnostics say to pause."}
+        return
     if status == "needs_confirmation":
         if _is_reject_pending(job):
+            queue = job.get("mcp_queue_diagnostics") or {}
+            wait = job.get("mcp_wait_diagnostics") or {}
+            if queue.get("stop_automatic_polling") or wait.get("code") in {"wait_timeout", "poll_failed"}:
+                job["next_action"] = {"type": "poll_paused", "guidance":
+                    "Keep this job_id and re-check later; do not repeat reject or confirm."}
+                return
+            if wait.get("code") == "missing_analytics_scope" or not _has_report_ai_scope(SCOPE_ANALYTICS_READ):
+                job["next_action"] = _report_ai_access_action(SCOPE_ANALYTICS_READ)
+                return
             job["next_action"] = {
                 "type": "wait_after_reject",
                 "call": {"tool": "get_report_ai_job", "arguments": {"job_id": job_id, "wait_seconds": 30}},
                 "guidance": "Do not repeat reject or confirm on a stale needs_confirmation status.",
+                "required_args": ["job_id"],
             }
+            return
+        if not _has_report_ai_scope(SCOPE_REPORT_AI_WRITE):
+            job["next_action"] = _report_ai_access_action(SCOPE_REPORT_AI_WRITE)
             return
         calls = []
         candidates = job.get("candidates")
@@ -252,20 +280,92 @@ def _annotate_report_ai_next_action(job: dict) -> None:
                 report_id = candidate.get("report_id") if isinstance(candidate, dict) else None
                 if isinstance(report_id, int) and not isinstance(report_id, bool) and report_id > 0:
                     calls.append({"tool": "confirm_report_ai_job_candidate",
-                                  "arguments": {"job_id": job_id, "report_id": report_id}})
-        calls.append({"tool": "reject_report_ai_job_candidate", "arguments": {"job_id": job_id}})
+                                  "arguments": {"job_id": job_id, "report_id": report_id},
+                                  "required_args": ["job_id", "report_id"]})
+        calls.append({"tool": "reject_report_ai_job_candidate", "arguments": {"job_id": job_id},
+                      "required_args": ["job_id"]})
         job["next_action"] = {
             "type": "choose_candidate", "calls": calls,
-            "guidance": "Compare candidates, then confirm one report_id or reject candidates once.",
+            "required_args": ["job_id"],
+            "guidance": "Compare candidates with the person. Get approval before confirming one report_id; otherwise reject once.",
         }
     elif status == "ready_to_save":
+        if not _has_report_ai_scope(SCOPE_REPORT_AI_WRITE):
+            job["next_action"] = _report_ai_access_action(SCOPE_REPORT_AI_WRITE)
+            return
         job["next_action"] = {
             "type": "save_report",
             "call": {"tool": "save_report_ai_job_as_report",
                      "arguments": {"job_id": job_id, "title": _REPORT_AI_TITLE_TEMPLATE}},
             "title_requires_choice": True,
-            "guidance": "Replace the title template with the report purpose and period before calling save; then read real rows with get_report_ai_job_data.",
+            "required_args": ["job_id", "title"],
+            "guidance": "Ask explicit consent to save this specific report. Replace the title template with purpose and period; then read real rows.",
         }
+    elif status in {"saved", "existing_report_matched"}:
+        job["next_action"] = _report_ai_data_action(job_id)
+    elif status == "failed":
+        job["next_action"] = ({"type": "rate_failed_job", "call": {"tool": "rate_report_ai_job",
+            "arguments": {"job_id": job_id, "score": 1}},
+            "required_args": ["job_id", "score", "intent_text"],
+            "guidance": REPORT_AI_RATING_GUIDANCE}
+            if _has_report_ai_scope(SCOPE_REPORT_AI_WRITE) else _report_ai_access_action(SCOPE_REPORT_AI_WRITE))
+    elif status in {"rejected", "cancelled"}:
+        job["next_action"] = {"type": "terminal", "guidance":
+            "This job cannot continue. Explain the outcome to the person before choosing another route."}
+    elif status == "built":
+        job["next_action"] = {"type": "unknown_transition", "guidance":
+            "Rows are not confirmed available for built. Show this status to the person; do not claim report data."}
+
+
+def _finish_report_ai_job_action(payload: dict) -> dict:
+    if payload.get("success") is True:
+        job = _extract_job(payload)
+        if job:
+            _annotate_report_ai_next_action(job)
+    return payload
+
+
+async def _finish_failed_report_ai_rating_action(payload: dict) -> None:
+    job = _extract_job(payload)
+    if payload.get("success") is not True or job.get("status") != "failed":
+        return
+    credentials = get_current_runtime_credentials()
+    if credentials is None or credentials.account_id is None or credentials.connection_id is None:
+        job.pop("next_action", None)
+        return
+    try:
+        rated = await asyncio.wait_for(has_rated_job(
+            account_id=credentials.account_id, connection_id=credentials.connection_id,
+            domain=credentials.domain, job_id=_rating_job_id(job.get("id")),
+        ), timeout=REPORT_AI_RATING_REMINDER_TIMEOUT_SECONDS)
+    except Exception as exc:
+        RUNTIME_LOGGER.warning("report_ai_failed_rating_state_lookup_failed", extra={
+            "event_name": "report_ai_failed_rating_state_lookup_failed",
+            "error_class": type(exc).__name__,
+        })
+        job.pop("next_action", None)
+        return
+    if rated:
+        job["next_action"] = {"type": "complete", "guidance":
+            "This failed job was already rated; do not replace its score automatically."}
+
+
+def _has_report_ai_scope(scope: str) -> bool:
+    credentials = get_current_runtime_credentials()
+    return credentials is None or scope in (credentials.scopes or ())
+
+
+def _report_ai_access_action(scope: str) -> dict:
+    return {"type": "access_required", "required_scope": scope,
+            "guidance": f"Request {scope} access before continuing this job."}
+
+
+def _report_ai_data_action(job_id: int) -> dict:
+    if not _has_report_ai_scope(SCOPE_ANALYTICS_READ):
+        return _report_ai_access_action(SCOPE_ANALYTICS_READ)
+    return {"type": "read_data", "call": {"tool": "get_report_ai_job_data",
+            "arguments": {"job_id": job_id}}, "required_args": ["job_id"],
+            "guidance": "Read real rows before rating usefulness."}
 
 
 def _monotonic_seconds() -> float:
@@ -1048,7 +1148,8 @@ def _annotate_report_ai_workarounds(payload: dict) -> dict:
     ):
         job["error_code"] = "unknown"
     _annotate_report_ai_preview_guidance(job)
-    _annotate_report_ai_next_action(job)
+    if payload.get("success") is True:
+        _annotate_report_ai_next_action(job)
     return payload
 
 
@@ -1087,6 +1188,23 @@ def _annotate_report_ai_preview_guidance(job: dict) -> None:
         })
 
 
+async def _report_ai_shared_stage_age(job: dict, *, now: float | None = None) -> int | None:
+    age = _report_ai_stage_age_seconds(job, now=now or _monotonic_seconds())
+    backend = shared_metric_counters.get_backend()
+    key = _report_ai_queue_observation_key(job)
+    if backend is not None and key is not None:
+        try:
+            shared_age = await asyncio.to_thread(
+                backend.report_ai_stage_age, _report_ai_terminal_digest(key),
+                _REPORT_AI_STAGE_BY_STATUS.get(job.get("status"), "unknown"),
+                _monotonic_seconds() if now is None else now)
+            if shared_age is not None:
+                age = shared_age
+        except Exception as exc:
+            _report_ai_observation_failed(exc, operation="shared_stage_age")
+    return age
+
+
 async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | None = None) -> dict:
     data = payload.get("data")
     job = data.get("job") if isinstance(data, dict) else payload.get("job")
@@ -1108,19 +1226,7 @@ async def _annotate_report_ai_queue_diagnostics(payload: dict, *, now: float | N
         age_source = "upstream_created_at" if upstream_age_seconds is not None else "mcp_observed"
     elif status in _REPORT_AI_ACTIVE_STAGE_STATUSES:
         await asyncio.to_thread(_observe_report_ai_queue, job, now=now)
-        diagnostic_age_seconds = _report_ai_stage_age_seconds(job, now=now or _monotonic_seconds())
-        backend = shared_metric_counters.get_backend()
-        key = _report_ai_queue_observation_key(job)
-        if backend is not None and key is not None:
-            try:
-                current_time = _monotonic_seconds() if now is None else now
-                shared_age = await asyncio.to_thread(
-                    backend.report_ai_stage_age, _report_ai_terminal_digest(key),
-                    _REPORT_AI_STAGE_BY_STATUS.get(status, "unknown"), current_time)
-                if shared_age is not None:
-                    diagnostic_age_seconds = shared_age
-            except Exception as exc:
-                _report_ai_observation_failed(exc, operation="shared_stage_age")
+        diagnostic_age_seconds = await _report_ai_shared_stage_age(job, now=now)
         age_scope = "stage"
         age_source = "mcp_observed"
     else:
@@ -1233,7 +1339,16 @@ async def _annotate_report_ai_wait_payload(payload: dict) -> dict:
     _best_effort_observation("status_lifecycle", _observe_report_ai_lifecycle, job,
                              observed_code=raw_code,
                              upstream_code=isinstance(raw_code, str) and bool(raw_code))
-    await asyncio.to_thread(_best_effort_observation, "status_queue", _observe_report_ai_queue, job)
+    queued_age = await asyncio.to_thread(_best_effort_observation, "status_queue", _observe_report_ai_queue, job)
+    status = job.get("status")
+    observed_age = (queued_age if status == "queued" else
+                    await _report_ai_shared_stage_age(job)
+                    if status in _REPORT_AI_ACTIVE_STAGE_STATUSES else None)
+    if observed_age is not None and observed_age >= REPORT_AI_QUEUE_WAIT_LIMIT_SECONDS:
+        job["mcp_queue_diagnostics"] = {"code": "report_ai_job_wait_limit_reached",
+            "observed_age_seconds": observed_age, "age_source": "mcp_observed",
+            "stop_automatic_polling": True,
+            "next_step": "Keep this job_id and re-check later; do not poll automatically."}
     return annotated
 
 
@@ -1245,6 +1360,8 @@ async def _wait_for_report_ai_job(
     for _ in range(max_gets):
         job = _extract_job(latest)
         status = job.get("status")
+        if (job.get("mcp_queue_diagnostics") or {}).get("stop_automatic_polling"):
+            return latest
         pending_reject = (status == "needs_confirmation"
                           and await asyncio.to_thread(_is_reject_pending, job))
         if status in _REPORT_AI_WAIT_DONE_STATUSES and not pending_reject:
@@ -1499,15 +1616,15 @@ def _rating_job_id(value: object) -> int | None:
 
 
 async def _attach_rating_reminder(*, job_id: int, target: dict,
-                                  deadline: float | None = None) -> None:
+                                  deadline: float | None = None) -> bool | None:
     credentials = get_current_runtime_credentials()
     if credentials is None or credentials.account_id is None or credentials.connection_id is None:
-        return
+        return None
     timeout = REPORT_AI_RATING_REMINDER_TIMEOUT_SECONDS
     if deadline is not None:
         timeout = min(timeout, deadline - _monotonic_seconds())
     if timeout <= 0:
-        return
+        return None
     try:
         pending = await asyncio.wait_for(has_unrated_job(
             account_id=credentials.account_id,
@@ -1519,10 +1636,11 @@ async def _attach_rating_reminder(*, job_id: int, target: dict,
             "event_name": "report_ai_rating_reminder_lookup_failed",
             "error_class": type(exc).__name__,
         })
-        return
+        return None
     if pending:
         target["mcp_rating_reminder"] = REPORT_AI_RATING_REMINDER
         _best_effort_observation("rating_reminder_issued", record_report_ai_rating_reminder)
+    return pending
 
 
 def _extract_report(payload: dict) -> dict:
@@ -2000,9 +2118,13 @@ def register(mcp: FastMCP) -> None:
             _extract_job(response)["mcp_rating_guidance"] = REPORT_AI_RATING_GUIDANCE
             if rating_unavailable:
                 _extract_job(response)["mcp_rating_unavailable"] = job["mcp_rating_unavailable"]
+            _finish_report_ai_job_action(response)
+            await _finish_failed_report_ai_rating_action(response)
             return await asyncio.to_thread(
                 _best_effort_observation, "create_guidance_issued",
                 _issued_empty_preview_guidance, response) or response
+        _finish_report_ai_job_action(payload)
+        await _finish_failed_report_ai_rating_action(payload)
         return await asyncio.to_thread(
             _best_effort_observation, "create_guidance_issued",
             _issued_empty_preview_guidance, payload) or payload
@@ -2107,6 +2229,8 @@ def register(mcp: FastMCP) -> None:
         if response.get("success") is True and job.get("status") in REPORT_AI_RATING_TERMINAL_STATUSES:
             await _attach_rating_reminder(job_id=job_id, target=job,
                                           deadline=deadline if waiting else None)
+        _finish_report_ai_job_action(response)
+        await _finish_failed_report_ai_rating_action(response)
         return await asyncio.to_thread(
             _best_effort_observation, "get_guidance_issued",
             _issued_empty_preview_guidance, response) or response
@@ -2140,6 +2264,8 @@ def register(mcp: FastMCP) -> None:
         _best_effort_observation("confirm_lifecycle", _observe_report_ai_lifecycle, confirmed_job,
                                  observed_code=raw_code,
                                  upstream_code=isinstance(raw_code, str) and bool(raw_code))
+        if payload.get("success") is True and isinstance(confirmed_id, int) and confirmed_id > 0:
+            data["next_action"] = _report_ai_data_action(job_id)
         return payload
 
     @mcp.tool
@@ -2202,7 +2328,53 @@ def register(mcp: FastMCP) -> None:
             raise
         payload = _annotate_report_ai_data_payload(payload)
         if payload.get("success") is True and isinstance(payload.get("data"), dict):
-            await _attach_rating_reminder(job_id=job_id, target=payload["data"])
+            data = payload["data"]
+            rows = data.get("rows")
+            if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+                return payload
+            pending = await _attach_rating_reminder(job_id=job_id, target=data)
+            rated = False
+            if pending is False:
+                credentials = get_current_runtime_credentials()
+                try:
+                    rated = await asyncio.wait_for(has_rated_job(
+                        account_id=credentials.account_id,
+                        connection_id=credentials.connection_id,
+                        domain=credentials.domain, job_id=job_id,
+                    ), timeout=REPORT_AI_RATING_REMINDER_TIMEOUT_SECONDS)
+                except Exception as exc:
+                    RUNTIME_LOGGER.warning("report_ai_rating_state_lookup_failed", extra={
+                        "event_name": "report_ai_rating_state_lookup_failed",
+                        "error_class": type(exc).__name__,
+                    })
+                    pending = None
+            if data.get("limited") is True:
+                data["next_action"] = (
+                    {"type": "export_data", "call": {"tool": "get_report_ai_job_export",
+                     "arguments": {"job_id": job_id}}, "required_args": ["job_id"],
+                     "after_export": {"tool": "get_report_export_download",
+                                      "required_args": ["report_file_id"],
+                                      "argument_source": "data.report.report_file_id"},
+                     "guidance": "Rows are truncated; review the full export before rating usefulness."}
+                    if _has_report_ai_scope(SCOPE_REPORT_AI_WRITE)
+                    else _report_ai_access_action(SCOPE_REPORT_AI_WRITE))
+                if _has_report_ai_scope(SCOPE_REPORT_AI_WRITE) and pending is not None:
+                    data["next_action"]["after_download"] = (
+                        {"type": "complete"} if rated else
+                        {"tool": "rate_report_ai_job", "arguments": {"job_id": job_id},
+                         "required_args": ["job_id", "score", "intent_text"]})
+            elif pending is not None:
+                if rated:
+                    data["next_action"] = {"type": "complete", "guidance":
+                        "This job was already rated; do not replace its score automatically."}
+                elif _has_report_ai_scope(SCOPE_REPORT_AI_WRITE):
+                    data["next_action"] = {"type": "rate_report", "call": {
+                        "tool": "rate_report_ai_job", "arguments": {"job_id": job_id}},
+                        "required_args": ["job_id", "score", "intent_text"],
+                        "guidance": REPORT_AI_RATING_GUIDANCE + " " + REPORT_AI_PRIVACY_GUIDANCE
+                        + "For contact tasks with a known client_id, use get_client_by_id(client_id) with clients.read and personal-data access; if no ID or access, explain the limit to the person. Never recover names or phones from placeholders."}
+                else:
+                    data["next_action"] = _report_ai_access_action(SCOPE_REPORT_AI_WRITE)
         return payload
 
     @mcp.tool
@@ -2296,6 +2468,7 @@ def register(mcp: FastMCP) -> None:
             if isinstance(report_id, int) and not isinstance(report_id, bool) and report_id > 0:
                 outcome = "success"
                 observed_job = {"id": job_id, "status": "saved"}
+                data["next_action"] = _report_ai_data_action(job_id)
                 credentials = get_current_runtime_credentials()
                 await observe_first_action(getattr(credentials, "account_id", None), "first_report_saved_at")
             else:
