@@ -28,6 +28,7 @@ from secret_manager import get_storage_encryption_key
 from service_metrics import record_http_request
 from storage import get_session_factory
 from storage_models import (
+    ACCOUNT_STATUS_ACTIVE,
     CONNECTION_STATUS_ACTIVE,
     Account,
     ServiceBearerToken,
@@ -212,6 +213,30 @@ def _plain_text_response(
 
 MAX_FORM_PAYLOAD_BYTES = 100 * 1024  # 100 KB
 
+_OAUTH_BROWSER_ROUTES = frozenset({"/oauth/authorize", "/oauth/authorize/consent"})
+
+
+def _is_protected_browser_route(path: str) -> bool:
+    return path == "/account" or path.startswith("/account/") or path in _OAUTH_BROWSER_ROUTES
+
+
+def _inactive_account_response(request: Request, *, path: str):
+    message = "Аккаунт отключён. Обратитесь к администратору."
+    if path.startswith("/account/telemetry/") or path == "/account/activation-status":
+        response = _json_response(
+            request, {"error": "account_inactive", "message": message}, status_code=403
+        )
+    else:
+        response = _html_response(
+            request,
+            f"<!doctype html><html lang='ru'><meta charset='utf-8'><title>Доступ закрыт</title>"
+            f"<main><h1>Доступ закрыт</h1><p>{message}</p></main></html>",
+            status_code=403,
+            no_store=True,
+        )
+    clear_account_session_cookie(response)
+    return response
+
 
 class FormPayloadTooLarge(Exception):
     """Raised when form body exceeds MAX_FORM_PAYLOAD_BYTES."""
@@ -240,6 +265,16 @@ def _observed_custom_route(
             started_at = time.perf_counter()
             status_code = 500
             try:
+                if _is_protected_browser_route(path):
+                    account_id = read_account_session_token(request.cookies.get(SESSION_COOKIE_NAME))
+                    if account_id is not None:
+                        async with get_session_factory()() as session:
+                            account = await session.get(Account, account_id)
+                        if account is None or account.status != ACCOUNT_STATUS_ACTIVE:
+                            response = _inactive_account_response(request, path=path)
+                            status_code = response.status_code
+                            return response
+                        request.state.active_account_id = account_id
                 response = await func(request, *args, **kwargs)
                 status_code = getattr(response, "status_code", 500)
                 return response
@@ -297,6 +332,9 @@ async def _check_storage_readiness() -> tuple[bool, str]:
 
 
 def _get_account_id_from_request(request: Request) -> int | None:
+    verified_id = getattr(request.state, "active_account_id", None)
+    if verified_id is not None:
+        return verified_id
     return read_account_session_token(request.cookies.get(SESSION_COOKIE_NAME))
 
 

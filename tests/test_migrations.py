@@ -481,6 +481,41 @@ def test_postgres_url_is_normalized_for_migrations():
     )
 
 
+def test_inactive_account_status_migration_preserves_children_and_safe_downgrade(tmp_path: Path):
+    """Stage 425: widening account status must preserve its existing child rows."""
+    import pytest
+    from sqlalchemy import text
+
+    config = _make_alembic_config(tmp_path)
+    command.upgrade(config, "20261017_000031")
+    engine = create_engine(config.get_main_option("sqlalchemy.url"))
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO accounts (id, email, status) VALUES (1, 'owner@example.com', 'active')"))
+        conn.execute(text(
+            "INSERT INTO vetmanager_connections (id, account_id, auth_mode, status) "
+            "VALUES (1, 1, 'domain_api_key', 'active')"
+        ))
+        conn.execute(text(
+            "INSERT INTO service_bearer_tokens "
+            "(id, account_id, name, token_prefix, token_hash, status, allowed_ip_mask) "
+            "VALUES (1, 1, 'token', 'sbt_test', 'hash', 'active', '*.*.*.*')"
+        ))
+
+    command.upgrade(config, "head")
+    with engine.begin() as conn:
+        assert conn.scalar(text("SELECT count(*) FROM vetmanager_connections WHERE account_id = 1")) == 1
+        assert conn.scalar(text("SELECT count(*) FROM service_bearer_tokens WHERE account_id = 1")) == 1
+        conn.execute(text("UPDATE accounts SET status = 'inactive' WHERE id = 1"))
+    with pytest.raises(RuntimeError, match="inactive accounts"):
+        command.downgrade(config, "20261017_000031")
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE accounts SET status = 'active' WHERE id = 1"))
+    command.downgrade(config, "20261017_000031")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT count(*) FROM vetmanager_connections WHERE account_id = 1")) == 1
+        assert conn.scalar(text("SELECT count(*) FROM service_bearer_tokens WHERE account_id = 1")) == 1
+
+
 def test_token_usage_log_subject_migration_backfills_account_and_guards_subject(tmp_path: Path):
     """Stage 260: historical bearer rows get their account, and the subject stays single."""
     import pytest
