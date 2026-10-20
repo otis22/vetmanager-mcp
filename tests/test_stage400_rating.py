@@ -257,7 +257,7 @@ def test_rating_migration_has_retention_index_and_rollback(tmp_path, monkeypatch
     config = Config("alembic.ini")
     config.set_main_option("script_location", "alembic")
     config.set_main_option("sqlalchemy.url", f"sqlite:///{tmp_path / 'migrate.db'}")
-    command.upgrade(config, "head")
+    command.upgrade(config, "20261017_000031")
     engine = create_engine(config.get_main_option("sqlalchemy.url"))
     inspector = inspect(engine)
     assert "report_ai_job_ratings" in inspector.get_table_names()
@@ -267,7 +267,7 @@ def test_rating_migration_has_retention_index_and_rollback(tmp_path, monkeypatch
     indexes = {index["name"] for index in inspector.get_indexes("report_ai_job_ratings")}
     assert "ix_report_ai_job_ratings_created_at" in indexes
     engine.dispose()
-    command.downgrade(config, "-2")
+    command.downgrade(config, "20261014_000029")
     engine = create_engine(config.get_main_option("sqlalchemy.url"))
     assert "report_ai_job_ratings" not in inspect(engine).get_table_names()
     engine.dispose()

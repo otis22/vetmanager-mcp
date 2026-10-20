@@ -98,7 +98,9 @@ async def gather_sections(
     # fragment (e.g. `"Invalid or missing API key (ab***yz)"`). Logging
     # that fragment to section_errors[name].message ships it to the log
     # aggregator. Scrub AuthError to exception-class-name only; other
-    # exception types log their full message (useful operational context).
+    # exception types remain in the response for tokens with personal-data
+    # access. The log below records only classification: upstream prose may
+    # contain clinic personal data regardless of the caller's token policy.
     section_errors: dict[str, dict] = {}
     payloads: list[dict] = []
     for (name, _, fallback), result in zip(sections, results):
@@ -129,7 +131,10 @@ async def gather_sections(
             extra={
                 "event_name": "aggregator_partial",
                 "tool": tool_name,
-                "section_errors": section_errors,
+                "section_errors": {
+                    name: {"error_type": error["error_type"], "retryable": error["retryable"]}
+                    for name, error in section_errors.items()
+                },
                 **_ctx,
                 **context,
             },

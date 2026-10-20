@@ -2279,6 +2279,14 @@ def render_account_page(
                   const response = await fetch('/account/activation-status', {{
                     headers: {{ 'Accept': 'application/json' }},
                   }});
+                  if (response.status === 403) {{
+                    const payload = await response.json();
+                    if (payload.error === 'account_inactive') {{
+                      clearInterval(timer);
+                      document.querySelector('main').textContent = payload.message;
+                      return;
+                    }}
+                  }}
                   if (!response.ok) return;
                   const payload = await response.json();
                   if (payload.state && payload.state !== initialState) {{

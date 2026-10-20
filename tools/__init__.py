@@ -2,6 +2,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 import inspect
 from functools import wraps
+import re
 from identifier_aliases import canonical_tool
 from list_projection import selected_fields, selected_include
 from report_row_types import normalize_report_rows
@@ -16,6 +17,7 @@ from exceptions import (
     RateLimitError,
     ToolInputError,
     VetmanagerError,
+    invariant_error,
     reportable_error,
 )
 from filters import FilterPropertyValidationError, SortPropertyValidationError
@@ -64,13 +66,71 @@ REPORT_TOOLS = frozenset({
     "get_report_ai_job_export",
     "save_report_ai_job_as_report",
     "start_report_export",
+    "reject_report_ai_job_candidate",
 })
-# Rejection also returns a job with generated preview column names, but its
-# existing depersonalization policy is separate from report-row sanitization.
 REPORT_COLUMN_TOOLS = REPORT_TOOLS | {
-    "reject_report_ai_job_candidate", "get_report_export_download",
+    "get_report_export_download",
 }
 from vetmanager_client import resolve_runtime_credentials
+
+
+_PROFILE_TOOLS = frozenset({"get_client_profile", "get_pet_profile"})
+_SAFE_SECTION_MESSAGE = "Section request failed; see error_type and retryable."
+_SAFE_ERROR_CODE = re.compile(r"[A-Za-z][A-Za-z0-9_-]*\Z")
+
+
+def _safe_profile_section_errors(result: dict) -> dict:
+    """Remove exception prose at the depersonalized MCP boundary.
+
+    Pet invoice-document errors occur in both the nested section map and
+    last_invoices. Build known fields afresh so extra upstream text cannot pass.
+    """
+    def safe_error(value: dict) -> dict:
+        if not isinstance(value, dict) or not isinstance(value.get("error_type"), str) or not isinstance(value.get("retryable"), bool):
+            raise invariant_error("Invalid section error")
+        if not _SAFE_ERROR_CODE.fullmatch(value["error_type"]):
+            raise invariant_error("Invalid section error type")
+        clean = {"error_type": value["error_type"], "retryable": value["retryable"],
+                 "message": _SAFE_SECTION_MESSAGE}
+        if "error_code" in value:
+            if not isinstance(value["error_code"], str) or not _SAFE_ERROR_CODE.fullmatch(value["error_code"]):
+                raise invariant_error("Invalid section error code")
+            clean["error_code"] = value["error_code"]
+        return clean
+
+    if not isinstance(result, dict):
+        raise invariant_error("Invalid profile result")
+    cleaned = dict(result)
+    if "section_errors" in cleaned:
+        errors = cleaned["section_errors"]
+        if not isinstance(errors, dict):
+            raise invariant_error("Invalid section errors")
+        clean_errors = {}
+        for section, error in errors.items():
+            if not isinstance(section, str) or not _SAFE_ERROR_CODE.fullmatch(section):
+                raise invariant_error("Invalid section name")
+            if section == "invoice_documents":
+                if not isinstance(error, dict):
+                    raise invariant_error("Invalid invoice document errors")
+                clean_errors[section] = {
+                    invoice_id: safe_error(item) for invoice_id, item in error.items()
+                    if isinstance(invoice_id, str) and invoice_id.isdecimal()
+                }
+                if len(clean_errors[section]) != len(error):
+                    raise invariant_error("Invalid invoice id")
+            else:
+                clean_errors[section] = safe_error(error)
+        cleaned["section_errors"] = clean_errors
+    if "last_invoices" in cleaned:
+        invoices = cleaned["last_invoices"]
+        if not isinstance(invoices, list) or any(not isinstance(invoice, dict) for invoice in invoices):
+            raise invariant_error("Invalid invoices")
+        cleaned["last_invoices"] = [
+            {**invoice, "invoice_documents_error": safe_error(invoice["invoice_documents_error"])}
+            if isinstance(invoice, dict) and "invoice_documents_error" in invoice else invoice
+            for invoice in invoices
+        ]
+    return cleaned
 
 
 async def _with_known_issue_hint(
@@ -208,6 +268,8 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
                     report_mode=resolved_tool_name in REPORT_TOOLS,
                     tool_name=resolved_tool_name,
                 )
+                if resolved_tool_name in _PROFILE_TOOLS:
+                    sanitized = _safe_profile_section_errors(sanitized)
                 return (normalize_report_rows(sanitized)
                         if resolved_tool_name == "get_report_ai_job_data" else sanitized)
             except Exception:
