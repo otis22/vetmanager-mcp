@@ -159,11 +159,11 @@ jobs:
           docker load -i vetmanager-mcp-test.tar
           rm vetmanager-mcp-test.tar
 
-      - name: Run mandatory PostgreSQL activation telemetry regression
+      - name: Run mandatory PostgreSQL regression contour
         run: |
           docker run --rm --network host \
             -e POSTGRES_TEST_DATABASE_URL=postgresql+asyncpg://vetmanager:vetmanager@127.0.0.1:5432/vetmanager_test \
             -v "${{ github.workspace }}:/app" \
             -u 1001:1001 \
             vetmanager-mcp-test \
-            pytest -q tests/test_stage227_postgres_activation_telemetry.py tests/test_stage359_postgres_activation_journal.py tests/test_stage374_first_session.py
+            sh -c 'pytest -q -m postgres --junitxml=/tmp/stage424-postgres.xml && python scripts/check_stage424_postgres_results.py /tmp/stage424-postgres.xml'

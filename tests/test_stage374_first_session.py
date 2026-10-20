@@ -38,7 +38,8 @@ from tests.test_stage170_report_ai_tools import BASE, bearer_runtime_patch, bill
 def test_postgres_race_guard_runs_in_ci():
     workflow = Path(".github/workflows/test.yml").read_text()
     postgres_job = workflow.split("  postgres-activation-telemetry:", 1)[1]
-    assert "tests/test_stage374_first_session.py" in postgres_job
+    assert "pytest -q -m postgres --junitxml=/tmp/stage424-postgres.xml" in postgres_job
+    assert "python scripts/check_stage424_postgres_results.py" in postgres_job
 
 
 @pytest.mark.asyncio
