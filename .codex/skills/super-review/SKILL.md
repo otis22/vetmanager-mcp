@@ -10,9 +10,16 @@ Use this skill when the user asks for super-review, deep review, Spark scout rev
 ## Scope and output
 
 - Scopes: `changed` (default), `related`, `full`, `stage:N`.
+- Exploratory report flags `--no-spark` and `--no-arbitration` may be used only when the user explicitly requests a reduced report. They never satisfy a mandatory PRD, visual or committed diff gate; a gate always requires Spark or its documented exhausted-budget rationale and both strong verdicts.
 - Report: `artifacts/review/{YYYY-MM-DD}-{scope_slug}-stage-{N}.md`, unless the user requests a different destination.
 - Candidate findings: YAML with `severity`, `reviewer`, `category`, `file`, `lines`, `problem`, `why_it_matters`, `suggested_fix`, `confidence`. Record dismissed recurring findings in `artifacts/review/inadequate-findings-index.md` when writing a super-review report.
 - If this skill is used as a workflow gate, its final gate verdict is the schema-valid `findings` JSON from both strong reviewers. A Markdown report or YAML candidate list alone is not a gate verdict.
+
+## Multi-role report coverage
+
+For a full super-review report, cover these briefs with bounded passes or explicit sections in the strong prompts: `code` (semantic and local defects), `architecture` (boundaries), `simplicity` (unneeded complexity), `docs` (verified drift), `security` (access and secrets), `performance-and-reliability` (timeouts and load), `observability` (safe logs and diagnostics), `tests` (missing failure paths), `product` (PRD and user-visible behavior), and `codex-blindspot` (edge cases). Assign current models by the contract below; do not infer model names from a historical role matrix.
+
+Aggregate candidates across roles: deduplicate, verify line references, reject speculative, low-impact, duplicate and pre-existing findings; drop non-meta findings with confidence below 0.4. Preserve all critical/high. If more than 120 remain, retain the highest severity × confidence medium/low up to 120. Record inadequacy reasons in the report or inadequate-findings memory. The strong Astra and Opus verdicts arbitrate disputed material findings; neither a role pass nor Spark alone approves release.
 
 ## Model and runtime contract
 

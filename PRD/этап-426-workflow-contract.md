@@ -15,7 +15,7 @@
 1. `docs/stage-workflow-template.md`: заменить single-review шаги на PRD и committed diff Spark → Astra+Opus, Architecture Critique и визуальный гейт, бюджеты и правило infrastructure failure; указать точные исполнимые команды, branch push, CI и передать merge супервизору.
 2. `.codex/skills/super-review/SKILL.md`: убрать retired model/sandbox/fallback инструкции и привести runtime section к текущим `AGENTS.md` и `.cursor/rules/agent-workflow.mdc`, не менять исторические отчёты.
 3. `README.md`: ограничить формулировку sort/filter реальным набором list инструментов; добавить `find_pets_by_alias` в Pet inventory и скорректировать итог.
-4. `tests/test_stage426_workflow_docs.py`: текстовый guard на двух активных документах. Красный: исходные `/codex rescue`, `git push origin main` и `gpt-5.6-*` вызывают отказ в любом контексте. Зелёный: обязательные названия Astra+Opus, runner, validator, dev-ветка. Доказательство: исходный текст красный, новый зелёный; повторная вставка запрещённой команды в активный документ снова красная.
+4. `tests/test_stage426_workflow_docs.py`: текстовый guard на двух активных документах. Красный: исходные `/codex rescue`, push-команды с target main и `gpt-5.6-*` вызывают отказ в любом контексте. Зелёный: обязательные названия Astra+Opus, runner, validator, dev-ветка. Доказательство: исходный текст красный, новый зелёный; варианты `git push origin HEAD:main` и `git push main` также распознаются.
 5. `Roadmap.md`, `AssumptionLog.md`: статусы и evidence; self-attestation показывается пользователю после push. Лог работы отдельно в `LiveHelperAgent/logs/mcp`.
 
 Вне scope: бизнес-код, этапы 428/429, merge в main, deploy, production checks.
