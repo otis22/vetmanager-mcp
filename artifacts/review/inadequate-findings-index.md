@@ -399,3 +399,19 @@ Source: `artifacts/review/2026-10-03-full-stage-360.md`
 
 - reviewer: workflow-check, confidence: 0.65
 - **Причина dismiss**: разделы «Проблема и результат» и «Проблема и факты» содержат цель и ожидаемый результат. Буквальная проверка заголовка даёт формальное срабатывание без потери требования.
+
+---
+
+## 2026-10-20 super-review full, stage 420
+
+Source: `artifacts/review/2026-10-20-full-stage-420.md`
+
+### 1. `request_cache.py:103-145,176-203` — O(n) cleanup и deepcopy под lock
+
+- reviewer: performance, confidence: 0.84
+- **Причина dismiss**: исходниковая сложность подтверждена, но нет замера latency или contention; это optimisation hypothesis, а не доказанный пользовательский дефект.
+
+### 2. `resources/_aggregation.py:66-91` — HTTP-200 `success:false` как успешная секция
+
+- reviewer: blindspot, confidence: 0.84
+- **Причина dismiss**: требуемая семантика response envelope не подтверждена authoritative API source или живым безопасным воспроизведением; не подменять факт предположением.

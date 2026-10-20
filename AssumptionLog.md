@@ -20711,3 +20711,59 @@ Feedback/KI read-only: #134 `linked`→KI 79 `fixed`; #136 `triaged`→KI 81 `ac
 **Self-attestation этапа 420.** Красный до кода: 9 guard failures; дополнительные управляемые мутации `poll_call`, `stop_poll`, `save_confirm`, `rate_after_rows`, `after_rated`, `approval`, `reject_wait`, `failed_rated`, `shared_wait`, `waiter_stop`, `choice_args` — каждый exit 1; красный malformed rows/reminder и старого equality guard подтверждены отдельными логами выше. После исправлений stage-420 guards 27 passed, фокусный набор 93 passed, полный mock и real зелёные. Живые вызовы на `.env` контуре: create, get/poll, save, confirm, data, rate — MCP HTTP 200 и очищенные тела выше; ни ПД, ни секреты не сохранены в repo. PRD/Architecture Critique: Spark 2/3, Astra/Sol xhigh 2/2 с валидными verdict; committed diff: Spark 2/3, Astra/Sol xhigh 2/2 с валидными verdict, незакрытых critical/high нет. После сильного бюджета исправления проверены отдельными Spark scouts и красными/зелёными сторожами. Opus не запускался по указанию владельца. `scripts/check_roadmap_structure.py` и архиватор проверяются перед финальным push. Этапы 418/419/421 не менялись; main, deploy и production не трогались.
 
 **Релизный поезд.** `420.1/420.2` и 420 отмечены `done`; выпуск считается состоявшимся только после push в `dev/roadmap-418-420` и зелёного Tests на этой ветке. Пост-релизные проверки — после merge супервизором. Ссылка на [Tests ветки](https://github.com/otis22/vetmanager-mcp/actions/workflows/test.yml?query=branch%3Adev%2Froadmap-418-420); результат последнего SHA проверяется командой `gh run list --branch dev/roadmap-418-420` после push. Изменение после кодового SHA касается только Roadmap/AssumptionLog и архивного окна; полный suite по итоговому SHA запускается до push.
+
+## 2026-10-20 — Отбор полного super-review в Roadmap
+
+**Контур и фактчек.** Продолжен read-only разбор
+`artifacts/review/2026-10-20-full-stage-420.md` по checkout
+`b071c99453aeba5ee7d07693725ea1e8c41bdad5` (`main`). Отчёт и изменённый
+`artifacts/review/inadequate-findings-index.md` уже были незакоммиченными до
+этого шага; их содержание не изменялось. Перепроверены исходниковые трассы
+R1–R10: report-mode reject в `tools/__init__.py`, partial `section_errors` в
+`resources/_aggregation.py`, fail-closed mapping в `token_scopes.py` и
+`vetmanager_client.py`, CI PostgreSQL contour, web active-account path,
+prompt-маршруты, client profile, card pagination и read deadline. Это
+подтверждает постановку задач, но не является исправлением или выпуском.
+
+**Решение очереди.** Roadmap не менялся после подготовки отчёта: последний
+коммит с ним — `0b19b7a`, отчёт оставался untracked. Добавлены этапы
+422 (R1+R2 privacy), 423 (R3 fail-closed), 424 (R4 PostgreSQL CI), 425 (R5
+inactive browser session), 426 (R7 workflow docs), 428 (R8 next admission) и
+429 (R9 card completeness). R6 оформлен как этап 427 `supervisor_pending`:
+это draft до решения владельца о пользовательском тексте/flow. R10 добавлен
+как acceptance в существующий 403, без дублирующего этапа. Из-за окна 20
+закрытые 402, 404 и 406–409 перенесены append-only в Roadmap-archive.
+
+**Проверки.** `scripts/check_roadmap_structure.py` → exit 0. Фокусный
+контрактный набор `docker compose --profile test run --rm test pytest -q
+tests/test_stage275_report_depersonalization.py tests/test_stage274_rest_layer_fail_closed.py
+tests/test_stage102_aggregator_structured_errors.py tests/test_stage420_report_ai_next_action.py`
+→ exit 0, `101 passed in 10.92s`. `./scripts/review_workflow_check.sh 420`
+→ exit 0 с известными historical findings по старым AssumptionLog/PRD и
+формальным размером незакоммиченного документального diff; новый кодовый
+дефект этим выводом не доказан.
+
+**Внешний арбитраж.** Обязательный для strong gate Claude сейчас штатно
+недоступен: `claude --version` → `2.1.289`, `claude auth status` →
+`loggedIn: false`, `authMethod: none`; Codex CLI `0.162.1` доступен. Поэтому
+арбитраж не запускался и результат не является release approval; после
+`/login` нужно повторить только R1–R10 arbitration. Production, deploy,
+внешние данные и push не выполнялись.
+
+**Продолжение внешнего арбитража, 20.10.2026.** На `otis-home` после ответа
+владельца проверен Claude Code `2.1.304`: `claude auth status` показал
+`loggedIn: true`, `authMethod: claude.ai`. Выполнен ровно один требуемый
+Opus-вызов через `scripts/run_claude_review.sh --file
+/tmp/stage420-arbitration-context.md --attempt 1/3 --model opus --timeout
+1200 --repo "$PWD"` (13:18:44–13:19:01 UTC). Evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-10-20T131844Z-file-_tmp_stage420-arbitration-context_md-attempt-1-of-3.5FxuNx/claude-review-attempt-1-of-3.{envelope,metadata,verdict}.json`.
+Runner exit 0, `is_error=false`, `subtype=success`, `stop_reason=tool_use`,
+`output_tokens=1323`, `thinking_tokens=764`, `len(result)=1244`; validator
+`scripts/validate_review_result.py` exit 0. Sonnet не запускался: Opus дал
+валидный verdict, поэтому fallback не разрешён. Opus подтвердил R3/high,
+R8/medium и частично R6/medium (phone→name и лимит 100); R6 flow не менялся
+и остаётся `supervisor_pending`. Остальные R1/R2/R4/R5/R9/R10 не вошли в
+сжатый inline verdict из-за неполного контекста, что не опровергает их
+исходниковые доказательства и не меняет этапы 422–426, 429 или acceptance
+403. `git diff --check` и `scripts/check_roadmap_structure.py` завершились
+exit 0. Push, deploy, production и внешние данные не затрагивались.
