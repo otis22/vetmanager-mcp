@@ -98,7 +98,7 @@ N5 (публичные ссылки выгрузок — дизайн с мит�
 - 424.2 Изменить CI, проверить точную команду и успешный run dev-ветки; без
   deploy. Выпуск = зелёный CI ветки. — `done`
 
-## Этап 425. Кабинет: active-account gate для живой сессии (R5) — `in_progress`
+## Этап 425. Кабинет: active-account gate для живой сессии (R5) — `done`
 
 Источник: super-review 20.10.2026, R5 —
 `artifacts/review/2026-10-20-full-stage-420.md`. `web.py:299-300,368-370`
@@ -109,7 +109,7 @@ N5 (публичные ссылки выгрузок — дизайн с мит�
   active-account gate для browser protected routes и OAuth consent, без
   ослабления bearer auth. Красный integration guard: существующая сессия
   inactive account не читает кабинет и не меняет integration. — `done`
-- 425.2 Реализация, фокусные browser tests и релизный поезд. — `in_progress`
+- 425.2 Реализация, фокусные browser tests и релизный поезд; выпуск = зелёный CI ветки, пост-релизные проверки после мержа. — `done`
 
 ## Этап 426. Актуализация исполнимой workflow-документации (R7) — `todo`
 
