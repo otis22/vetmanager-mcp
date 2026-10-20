@@ -12,7 +12,8 @@ and the caller sees `partial: True` plus `section_errors`.
 
 from __future__ import annotations
 
-from filters import build_list_query_params, eq as _filter_eq, in_ as _filter_in
+from clinic_timezone import clinic_local_today
+from filters import build_list_query_params, eq as _filter_eq, gte as _filter_gte, in_ as _filter_in
 from resources._aggregation import gather_sections
 from resources.admission_status import ACTIVE_ADMISSION_STATUSES
 from vetmanager_client import VetmanagerClient
@@ -25,8 +26,8 @@ async def fetch(client_id: int) -> dict:
     - Full client record (`/rest/api/client/{id}`).
     - Last 5 invoices (filter=client_id, sort id DESC).
     - Last 5 admissions (filter=client_id, sort admission_date DESC).
-    - Next scheduled admission (filter=client_id + status IN active tuple,
-      sort admission_date ASC, limit 1).
+    - Next scheduled admission from today (filter=client_id + active status +
+      admission_date lower bound, sort admission_date ASC, limit 1).
     """
     vc = VetmanagerClient()
 
@@ -47,12 +48,14 @@ async def fetch(client_id: int) -> dict:
     # Stage 96.2: `status="active"` was a phantom enum value — admission.status
     # has no such literal. Use IN-filter with the canonical active-status
     # tuple so next_admission returns real upcoming visits instead of None.
+    today = await clinic_local_today(None, relative=True)
     next_admission_params = build_list_query_params(
         limit=1,
         offset=0,
         sort=[{"property": "admission_date", "direction": "ASC"}],
         filters=[
             _filter_eq("client_id", client_id_str),
+            _filter_gte("admission_date", f"{today.isoformat()} 00:00:00"),
             _filter_in("status", list(ACTIVE_ADMISSION_STATUSES)),
         ],
     )
