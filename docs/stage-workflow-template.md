@@ -24,13 +24,14 @@
 - [ ] Написать guard/test и показать красным, чем сломана защищаемая гарантия; затем внести минимальное исправление и показать зелёным.
 - [ ] Для API-правок сверить каждое payload-поле и literal enum с источником истины; покрыть sibling `update`/`delete`, если исправлен `create`, и проверить unhappy/boundary cases.
 - [ ] Если изменён MCP-инструмент, вызвать его на выбранном заранее стенде и записать HTTP-код и тело в `AssumptionLog.md`. `TEST_DOMAIN`/`TEST_API_KEY` и bearer-контур различны.
+- [ ] При изменении Dockerfile или зависимостей сначала пересобрать test image; запускать mock и, при наличии тестового контура, real suite командами из раздела «Тесты и проверки» в `AGENTS.md`, чтобы исключить устаревший образ. Явное исключение владельца для документного этапа зафиксировать отдельно.
 - [ ] Выполнить фокусные проверки; полный mock+real suite по финальному SHA до push обязателен для обычного этапа релизного поезда. Явное исключение владельца для документного этапа зафиксировать в `AssumptionLog.md`. При изменении `scripts/*.sh` обязательны ShellCheck и Bash syntax по командам из `AGENTS.md`.
 - [ ] Перед commit выполнить каждую новую исполнимую команду из процессной документации точно в записанном виде и зафиксировать её реальный exit code.
 - [ ] Аудировать diff, legacy-предписания, дублирование и секреты. После рефакторинга повторить предусмотренные проверки.
 
 ## 4. Статусы, commit и committed diff-гейт
 
-- [ ] Заполнить `AssumptionLog.md`, в том числе red/green, команды и exit codes, решения, review evidence, влияние на права доступа/credentials и необходимость живого вызова.
+- [ ] Добавить раздел `## Этап N. <title>` в `AssumptionLog.md`, в том числе red/green, команды и exit codes, решения, review evidence, влияние на права доступа/credentials и необходимость живого вызова.
 - [ ] Сохранить статус `in_progress` до зелёного Tests CI ветки; выполнить `python3 scripts/archive_roadmap.py`, затем `python3 scripts/check_roadmap_structure.py`, оба с exit 0.
 - [ ] Закрывая finding из `artifacts/review/`, оставить resolution note в исходном отчёте; сделать commit с префиксом `Stage N:` в рабочей dev-ветке после аудита.
 - [ ] Spark-review committed diff → Astra + Claude Opus параллельно. Opus получает `--range`, Astra — committed diff и reviewed SHA. Оба валидных verdict обязательны до push; critical/high закрыть.

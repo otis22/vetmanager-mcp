@@ -38,10 +38,11 @@ Aggregate candidates across roles: deduplicate, verify line references, reject s
 ## Workflow
 
 1. Read Roadmap, PRD, canonical rules and relevant source files. Choose scope and capture changed/related file list.
+   For VM API findings, use verified inline API facts and source documents; do not substitute model memory for the contract.
 2. Run Spark, check `files_read`, reject speculative or low-impact candidates. Run Astra and Opus in parallel; await and validate both.
 3. Dedupe findings, verify line references and severity against evidence. Do not turn infrastructure failure into `[]` or substitute a lower model for a required strong verdict.
 4. Write the requested report and inadequate-findings memory. If this is a PRD or committed diff gate, record verdicts and evidence in `AssumptionLog.md`.
-5. For code release, commit and push only in the assigned `dev/roadmap-<этапы>` branch after checks. The supervisor merges to main after green branch CI and full mock+real suite on its final SHA.
+5. Before returning, check that no reviewer process from this run remains. Review only: do not auto-fix findings, commit reports or push unless the user explicitly requests those actions. If a later implementation task uses this review, its release train remains the assigned `dev/roadmap-<этапы>` branch; the supervisor merges after green branch CI and full mock+real suite on the final SHA.
 
 ## Commands for runtime inspection
 
