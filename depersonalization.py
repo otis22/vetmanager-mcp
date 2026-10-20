@@ -601,6 +601,13 @@ def sanitize_report_value(text: str) -> str:
     return redact_phone_numbers(cleaned, REDACTED_PHONE)
 
 
+def sanitize_report_column_name(text: str) -> str:
+    """Generated labels are arbitrary text, so street-marker exemptions cannot hide a name."""
+    cleaned = _redact_full_names(sanitize_report_value(text))
+    cleaned = _PATRONYMIC_RE.sub(REDACTED_NAME, cleaned)
+    return _INITIALS_RE.sub(_redact_initials, cleaned)
+
+
 def sanitize_report_cell(column: str, value: str) -> str:
     """Clean one report cell the way a report row is cleaned.
 
@@ -660,8 +667,13 @@ def _sanitize_value(
     """
     if isinstance(value, Mapping):
         child_address = _record_address(value, key=key, inherited=address, parent=record)
-        return {
-            child_key: _sanitize_value(
+        cleaned = {}
+        generated_columns = report_mode and key in {"rows", "preview_example_row"}
+        for child_key, child_value in value.items():
+            public_key = sanitize_report_column_name(child_key) if generated_columns and isinstance(child_key, str) else child_key
+            if public_key in cleaned:
+                raise ValueError("Report column names collide after depersonalization")
+            cleaned[public_key] = _sanitize_value(
                 child_value,
                 key=str(child_key),
                 report_mode=report_mode,
@@ -674,10 +686,9 @@ def _sanitize_value(
                 ),
                 quantity_cell=quantity_cell and key == "rows",
             )
-            for child_key, child_value in value.items()
-        }
+        return cleaned
     if isinstance(value, (list, tuple)):
-        return [
+        cleaned = [
             _sanitize_value(
                 item, key=key, report_mode=report_mode, address=address, record=record,
                 quantity_path=quantity_path,
@@ -685,6 +696,21 @@ def _sanitize_value(
             )
             for item in value
         ]
+        if report_mode and key == "columns":
+            names = set()
+            for index, original in enumerate(value):
+                name = original if isinstance(original, str) else original.get("name") if isinstance(original, Mapping) else None
+                if not isinstance(name, str):
+                    continue
+                public_name = sanitize_report_column_name(name)
+                if public_name in names:
+                    raise ValueError("Report column names collide after depersonalization")
+                names.add(public_name)
+                if isinstance(original, str):
+                    cleaned[index] = public_name
+                else:
+                    cleaned[index]["name"] = public_name
+        return cleaned
     if not isinstance(value, str):
         return value
 
@@ -711,7 +737,7 @@ def _sanitize_value(
         # неё защита отчёта зависела от того, как клиника назвала колонку:
         # `c1` чистилась строже, чем `description`. Дефект старше этапа 308.
         return sanitize_report_value(cleaned) if report_mode else cleaned
-    if entity is _NOT_A_PERSON:
+    if entity is _NOT_A_PERSON and not report_mode:
         # Название вакцины, роли, породы, контакты филиала — не персональные
         # данные, и маскировать их значит терять данные без выигрыша.
         return value
