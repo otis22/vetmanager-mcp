@@ -342,7 +342,9 @@ def required_scope_for_request(method: str, path: str) -> str | None:
             # the job, confirm a candidate, save the report. Reading a job that
             # already exists is the GET above.
             return SCOPE_REPORT_AI_WRITE
-        return None
+        # Report AI has no contracted PUT/DELETE operation. `None` means an
+        # unmapped read to the client and would let either write reach upstream.
+        return REQUEST_NOT_MAPPED
     if entity == "report" and normalized_method == "GET":
         # Stage 269: `StartReport` is a GET that starts an export, so it needs
         # the same right as creating a job; `reportFile` only hands back a file
