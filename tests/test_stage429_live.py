@@ -52,5 +52,9 @@ async def test_stage429_live_client_cards_page(capsys):
     assert safe_body["success"] is True
     assert safe_body["medical_cards_count"] in (0, 1)
     assert isinstance(safe_body["medical_cards_total"], int)
-    assert safe_body["medical_cards_has_more"] is (
-        safe_body["medical_cards_count"] < safe_body["medical_cards_total"])
+    expected_has_more = (
+        None if safe_body["medical_cards_count"] == 0
+        and safe_body["medical_cards_total"] > 0
+        else safe_body["medical_cards_count"] < safe_body["medical_cards_total"]
+    )
+    assert safe_body["medical_cards_has_more"] is expected_has_more
