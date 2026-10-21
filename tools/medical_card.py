@@ -330,7 +330,9 @@ def register(mcp: FastMCP) -> None:
         single aggregated response. ``medical_cards_total`` counts matching
         records before limit/offset, or is None when the upstream total is
         unavailable. ``medical_cards_has_more`` is true when records follow
-        this page, false when none follow, or None when the total is unknown.
+        this page, false when none follow, or None when the total is unknown
+        or an empty page contradicts a larger total. The public offset limit
+        remains 10000 even if further records exist upstream.
         If ``pets_truncated`` is true, these fields cover only fetched pets.
 
         Args:
@@ -428,10 +430,12 @@ def register(mcp: FastMCP) -> None:
         else:
             parsed_total = int(raw_total)
             medical_cards_total = parsed_total if parsed_total >= 0 else None
-        medical_cards_has_more = (
-            offset + len(all_cards) < medical_cards_total
-            if medical_cards_total is not None else None
-        )
+        if medical_cards_total is None or (
+            not all_cards and offset < medical_cards_total
+        ):
+            medical_cards_has_more = None
+        else:
+            medical_cards_has_more = offset + len(all_cards) < medical_cards_total
         for card in all_cards:
             pid = card.get("patient_id")
             # VM API can return patient_id as int or as digit-string

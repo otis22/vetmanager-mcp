@@ -17,7 +17,7 @@ BASE = "https://testclinic.vetmanager.cloud"
     [
         (0, 3, [{"id": 10, "patient_id": 7}], 3, True),
         (2, "3", [{"id": 12, "patient_id": 7}], 3, False),
-        (1, 3, [], 3, True),
+        (1, 3, [], 3, None),
         (0, None, [{"id": 10, "patient_id": 7}], None, None),
         (0, -1, [{"id": 10, "patient_id": 7}], None, None),
         (0, True, [{"id": 10, "patient_id": 7}], None, None),
