@@ -41,7 +41,7 @@ def _parse_json_list(value: Any) -> Any:
     except json.JSONDecodeError:
         parsed = None
     if not isinstance(parsed, list):
-        raise ValueError('Expected a JSON array, for example [{"property":"id","value":1,"operator":"="}].')
+        raise ValueError('Expected a JSON array, for example []. Use elements required by this parameter.')
     return parsed
 
 
