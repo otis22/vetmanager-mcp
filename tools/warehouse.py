@@ -10,6 +10,7 @@ import time
 
 from fastmcp import FastMCP
 from exceptions import ToolInputError, reportable_error
+from filters import JsonList, OptionalFilterList
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, in_ as _filter_in
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam
@@ -92,14 +93,15 @@ def register(mcp: FastMCP) -> None:
     async def get_good_groups(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List product/service groups in the clinic catalog.
 
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/GoodGroup", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -120,8 +122,8 @@ def register(mcp: FastMCP) -> None:
         good_id: int,
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List sale parameters (pricing, units) for a specific good/service.
 
@@ -133,6 +135,7 @@ def register(mcp: FastMCP) -> None:
                 coefficient, good_id, id, is_partial_sale, is_skip_marking,
                 markup, max_price, min_price, price, price_formation, status,
                 unit_sale_id.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         combined_filters: list = list(filter or [])
         if good_id:
@@ -156,14 +159,15 @@ def register(mcp: FastMCP) -> None:
     async def get_party_accounts(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List inventory batch (party) accounts.
 
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/PartyAccount", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -183,14 +187,15 @@ def register(mcp: FastMCP) -> None:
     async def get_party_account_docs(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List documents associated with inventory batch accounts.
 
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/PartyAccountDoc", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -210,14 +215,15 @@ def register(mcp: FastMCP) -> None:
     async def get_store_documents(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List warehouse/store documents (receipts, write-offs, transfers).
 
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/StoreDocument", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -237,14 +243,15 @@ def register(mcp: FastMCP) -> None:
     async def get_suppliers(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List suppliers/counterparties in the clinic system.
 
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/Suppliers", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -1059,7 +1066,7 @@ def register(mcp: FastMCP) -> None:
         return await _get_stock_balance(good_id, clinic_id)
 
     @mcp.tool
-    async def get_goods_stock_balances(good_ids: list[int], clinic_id: int) -> dict:
+    async def get_goods_stock_balances(good_ids: JsonList[int], clinic_id: int) -> dict:
         """Get fresh stock balances for 1–20 goods in one explicit clinic.
 
         Makes one warehouse REST request per good, in input order. An upstream

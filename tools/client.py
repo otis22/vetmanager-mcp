@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation
 from fastmcp import FastMCP
 
 from exceptions import NotFoundError, ToolInputError, VetmanagerError, reportable_error
+from filters import OptionalFilterList
 from filters import (
     FILTER_FIELDS_BY_ENTITY,
     eq as _filter_eq,
@@ -281,8 +282,8 @@ def register(mcp: FastMCP) -> None:
         phone: str = "",
         email: str = "",
         status: str = "ACTIVE",
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List clients of the clinic.
 
@@ -315,6 +316,7 @@ def register(mcp: FastMCP) -> None:
                 middle_name, note, number_of_journal, phone_prefix,
                 registration_index, status, street_id, type_id,
                 unsubscribe, vip, work_phone, zip.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         _validate_client_status(status, for_write=False)
         for clause in filter or ():

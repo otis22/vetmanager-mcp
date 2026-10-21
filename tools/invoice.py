@@ -5,6 +5,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 from exceptions import ToolInputError, reportable_error
+from filters import OptionalFilterList
 from filters import FILTER_FIELDS_BY_ENTITY, build_list_query_params, eq as _filter_eq, gte as _filter_gte, lt as _filter_lt, lte as _filter_lte
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_update, paginate_all
 from validators import LimitParam, is_relative_date_param, parse_date_param
@@ -88,8 +89,8 @@ def register(mcp: FastMCP) -> None:
         paid_amount_max: str = "",
         amount_min: str = "",
         amount_max: str = "",
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List invoices in the clinic.
 
@@ -129,6 +130,7 @@ def register(mcp: FastMCP) -> None:
                 discount, doctor_id, fiscal_section_id, id, increase,
                 invoice_date, night, old_id, paid_amount, payment_status,
                 percent, pet_id, status.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         if payment_status and payment_status not in _INVOICE_PAYMENT_STATUSES:
             raise ToolInputError(

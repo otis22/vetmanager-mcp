@@ -1,6 +1,7 @@
 """Clinical entity tools: Hospital, HospitalBlock, Diagnoses."""
 
 from fastmcp import FastMCP
+from filters import OptionalFilterList
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam
@@ -14,8 +15,8 @@ def register(mcp: FastMCP) -> None:
         limit: LimitParam = 20,
         offset: int = 0,
         pet_id: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List hospitalizations (inpatient stays) in the clinic.
 
@@ -26,6 +27,7 @@ def register(mcp: FastMCP) -> None:
             filter/sort: Optional raw clauses. Allowed properties for both: admission_id,
                 client_id, clinic_id, description, end_date, hospital_block_id,
                 id, invoice_id, pet_id, place, start_date, status, user_id.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         combined_filters: list = list(filter or [])
         if pet_id:
@@ -105,8 +107,8 @@ def register(mcp: FastMCP) -> None:
     async def get_hospital_blocks(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List hospital blocks/wards available in the clinic.
 
@@ -116,6 +118,7 @@ def register(mcp: FastMCP) -> None:
             filter/sort: Optional raw clauses. Allowed properties for both: clinic_id, id,
                 is_daily_payment, is_hourly_payment, places_count,
                 reserved_places_count, status, title.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/HospitalBlock", limit=limit, offset=offset, sort=sort, filters=filter,

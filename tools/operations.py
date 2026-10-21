@@ -7,6 +7,7 @@ from fastmcp import FastMCP
 from pydantic import Field
 
 from exceptions import ToolInputError
+from filters import JsonList, OptionalFilterList
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, gt as _filter_gt, lt as _filter_lt
 from property_privacy import sanitize_properties_response
 from service_metrics import instrument_call
@@ -16,12 +17,12 @@ from vetmanager_client import VetmanagerClient
 from vm_datetime import normalize_vm_datetime
 
 UserIdsParam = Annotated[
-    list[int],
+    JsonList[int],
     Field(min_length=1, description="Target user IDs (at least one user ID)."),
 ]
 
 RolesParam = Annotated[
-    list[str],
+    JsonList[str],
     Field(min_length=1, description="Target role names (at least one role)."),
 ]
 
@@ -120,8 +121,8 @@ def register(mcp: FastMCP) -> None:
     async def get_clinics(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List clinic branches in the system.
 
@@ -132,6 +133,7 @@ def register(mcp: FastMCP) -> None:
                 email, end_time, guest_client_id, id, internet_address,
                 logo_url, phone, start_time, status, telegram, time_zone,
                 title, whatsapp.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/clinics", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -153,8 +155,8 @@ def register(mcp: FastMCP) -> None:
         offset: int = 0,
         doctor_id: int = 0,
         date: str = "",
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
         date_from: str = "",
         date_to: str = "",
     ) -> dict:
@@ -173,6 +175,7 @@ def register(mcp: FastMCP) -> None:
                 begin_datetime, clinic_id, doctor_id, end_datetime, id, night,
                 shedule_id, shift, title, type. Without sort, newest starts
                 come first (begin_datetime DESC, id DESC).
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         combined_filters: list = list(filter or [])
         if doctor_id:
@@ -393,8 +396,8 @@ def register(mcp: FastMCP) -> None:
     async def get_properties(
         limit: LimitParam = 50,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List system configuration properties of the clinic.
 
@@ -406,6 +409,7 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             filter/sort: Optional raw clauses. Allowed properties for both: clinic_id, id,
                 property_name, property_title. Values cannot be filtered or sorted.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         response = await crud_list(
             "/rest/api/properties", limit=limit, offset=offset, sort=sort, filters=filter,
