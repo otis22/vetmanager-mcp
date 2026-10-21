@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from urllib.parse import urlencode
 
 from fastmcp import FastMCP
+from filters import OptionalFilterList
 from filters import (
     FILTER_FIELDS_BY_ENTITY,
     eq as _filter_eq,
@@ -258,8 +259,8 @@ def register(mcp: FastMCP) -> None:
         status: str = "",
         date_from: str = "",
         date_to: str = "",
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List client payments in the clinic.
 
@@ -281,6 +282,7 @@ def register(mcp: FastMCP) -> None:
                 cassaclose_id, create_date, description, id, invoice_id,
                 parent_id, payed_user, payment_type, status. `client_id` is
                 deliberately unsupported; use get_client_payment_applications.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         if status and status not in _PAYMENT_STATUSES:
             raise ToolInputError(
@@ -322,7 +324,7 @@ def register(mcp: FastMCP) -> None:
         pet_id: int = 0,
         date_from: str = "",
         date_to: str = "",
-        sort: list[dict] | None = None,
+        sort: OptionalFilterList = None,
     ) -> dict:
         """List payment applications for a client via closingOfInvoices.
 
@@ -430,8 +432,8 @@ def register(mcp: FastMCP) -> None:
         limit: LimitParam = 20,
         offset: int = 0,
         invoice_id: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List invoice closing records (payments applied to invoices).
 
@@ -448,6 +450,7 @@ def register(mcp: FastMCP) -> None:
                 create_date, id, minus_amount, minus_document_id,
                 minus_type_document, plus_amount, plus_document_id,
                 plus_type_document.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         if not invoice_id:
             return await crud_list(
@@ -506,8 +509,8 @@ def register(mcp: FastMCP) -> None:
         invoice_id: int,
         limit: LimitParam = 50,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List line items (goods/services) within a specific invoice.
 
@@ -520,6 +523,7 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             filter: Extra filters; do not pass invoice_id/invoiceId/documentId/document_id.
                 Use the invoice_id argument for parent invoice filtering.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         _reject_invoice_document_parent_filters(filter)
         combined_filters: list = list(filter or [])
@@ -682,8 +686,8 @@ def register(mcp: FastMCP) -> None:
     async def get_cassas(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List cash registers (cassas) in the clinic.
 
@@ -695,6 +699,7 @@ def register(mcp: FastMCP) -> None:
                 has_unfinished_docs, id, inventarization_date, is_blocked,
                 is_system, main_cassa, operating_cassa_id, show_in_cashflow,
                 status, summa_cash, summa_cashless, title, type.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/cassa", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -714,8 +719,8 @@ def register(mcp: FastMCP) -> None:
     async def get_cassa_closes(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List cash register closing records.
 
@@ -724,6 +729,7 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             filter/sort: Optional raw clauses. Allowed properties for both: amount,
                 amount_cashless, closed_user_id, date, id, id_cassa, status.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/cassaclose", limit=limit, offset=offset, sort=sort, filters=filter,

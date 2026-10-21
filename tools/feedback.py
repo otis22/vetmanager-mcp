@@ -1,5 +1,6 @@
 """Agent feedback tools."""
 
+from filters import OptionalJsonList
 from fastmcp import FastMCP
 
 from agent_feedback_service import create_feedback_report
@@ -19,7 +20,7 @@ def register(mcp: FastMCP) -> None:
         http_status: int | None = None,
         error_code: str = "",
         error_excerpt: str = "",
-        params_shape: list[str] | None = None,
+        params_shape: OptionalJsonList[str] = None,
         suggested_fix: str = "",
         reproduce: str = "",
         source: str = "model",

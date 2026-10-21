@@ -4,6 +4,7 @@ from typing import Any
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
+from filters import OptionalFilterList
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, like as _filter_like
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update
 from validators import LimitParam, validate_list_params
@@ -346,8 +347,8 @@ def register(mcp: FastMCP) -> None:
         title: str = "",
         group_id: int = 0,
         is_active: bool | None = None,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List goods (products/services) in the clinic catalog.
 
@@ -367,6 +368,7 @@ def register(mcp: FastMCP) -> None:
                 group_id, id, is_active, is_call, is_for_sale, is_marking,
                 is_recipe, is_warehouse_account, prime_cost, title,
                 unit_storage_id. The legacy `name` query parameter is separate.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         combined_filters: list = list(filter or [])
         if title:

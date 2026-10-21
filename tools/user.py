@@ -2,6 +2,7 @@ import asyncio
 
 from fastmcp import FastMCP
 
+from filters import OptionalFilterList
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, like as _filter_like
 from observability_logging import RUNTIME_LOGGER
 from tools.crud_helpers import (
@@ -125,8 +126,8 @@ def register(mcp: FastMCP) -> None:
         name: str = "",
         position_id: int = 0,
         is_active: bool | None = True,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List users (staff/doctors) of the clinic.
 
@@ -159,6 +160,7 @@ def register(mcp: FastMCP) -> None:
                 Allowed properties: address, cell_phone, email, first_name, id,
                 is_active, is_limited, last_name, middle_name, nickname, phone,
                 position_id, role_id, sip_number.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         base_filters: list = list(filter or [])
         if position_id:

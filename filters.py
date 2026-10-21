@@ -24,7 +24,37 @@ import re
 from difflib import get_close_matches
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Iterable
+from typing import Annotated, Any, Iterable, TypeVar
+
+from pydantic import BeforeValidator
+
+
+_T = TypeVar("_T")
+
+
+def _parse_json_list(value: Any) -> Any:
+    """Accept one extra JSON encoding at the MCP argument boundary."""
+    if not isinstance(value, str):
+        return value
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        parsed = None
+    if not isinstance(parsed, list):
+        raise ValueError('Expected a JSON array, for example []. Use elements required by this parameter.')
+    return parsed
+
+
+def _parse_optional_json_list(value: Any) -> Any:
+    if value == "null":
+        return None
+    return _parse_json_list(value)
+
+
+JsonList = Annotated[list[_T], BeforeValidator(_parse_json_list)]
+FilterList = JsonList[dict]
+OptionalJsonList = Annotated[list[_T] | None, BeforeValidator(_parse_optional_json_list)]
+OptionalFilterList = OptionalJsonList[dict]
 
 from observability_logging import RUNTIME_LOGGER
 from service_metrics import record_business_event

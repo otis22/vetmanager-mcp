@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import re
 from functools import wraps
+from filters import OptionalJsonList
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware
@@ -112,11 +113,11 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
     if tool_name in LIST_FIELDS:
         renamed.extend((
             inspect.Parameter("fields", inspect.Parameter.KEYWORD_ONLY,
-                              default=None, annotation=list[str] | None),
+                              default=None, annotation=OptionalJsonList[str]),
             inspect.Parameter("compact", inspect.Parameter.KEYWORD_ONLY,
                               default=False, annotation=bool),
             inspect.Parameter("include", inspect.Parameter.KEYWORD_ONLY,
-                              default=None, annotation=list[str] | None),
+                              default=None, annotation=OptionalJsonList[str]),
             inspect.Parameter("mask_contacts", inspect.Parameter.KEYWORD_ONLY,
                               default=False, annotation=bool),
         ))
@@ -173,8 +174,8 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
     }
     if tool_name in LIST_FIELDS:
         _canonical.__annotations__.update({
-            "fields": list[str] | None, "compact": bool,
-            "include": list[str] | None, "mask_contacts": bool,
+            "fields": OptionalJsonList[str], "compact": bool,
+            "include": OptionalJsonList[str], "mask_contacts": bool,
         })
     elif tool_name in PET_CONTACT_TOOLS:
         _canonical.__annotations__["mask_contacts"] = bool

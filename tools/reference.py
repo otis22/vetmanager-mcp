@@ -2,6 +2,7 @@
 Role, UserPosition, ComboManualName, ComboManualItem."""
 
 from fastmcp import FastMCP
+from filters import OptionalFilterList
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, like as _filter_like
 from tools.crud_helpers import crud_list, crud_get_by_id
 from validators import LimitParam
@@ -14,8 +15,8 @@ def register(mcp: FastMCP) -> None:
         limit: LimitParam = 20,
         offset: int = 0,
         pet_type_id: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List animal breeds in the clinic catalog.
 
@@ -25,6 +26,7 @@ def register(mcp: FastMCP) -> None:
             pet_type_id: Filter by animal type ID (0 = no filter).
             filter/sort: Optional raw clauses. Allowed properties for both: id, pet_type_id,
                 title.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         combined_filters: list = list(filter or [])
         if pet_type_id:
@@ -48,8 +50,8 @@ def register(mcp: FastMCP) -> None:
     async def get_pet_types(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List animal types (species) available in the clinic.
 
@@ -58,6 +60,7 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             filter/sort: Optional raw clauses. Allowed properties for both: id, picture,
                 title, type.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/petType", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -78,8 +81,8 @@ def register(mcp: FastMCP) -> None:
         limit: LimitParam = 20,
         offset: int = 0,
         title: str = "",
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List cities in the system.
 
@@ -88,6 +91,7 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             title: Filter by city name (partial match, optional).
             filter/sort: Optional raw clauses. Allowed properties for both: id, title, type_id.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         combined_filters: list = list(filter or [])
         if title:
@@ -111,8 +115,8 @@ def register(mcp: FastMCP) -> None:
     async def get_city_types(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List city/settlement types (e.g. город, посёлок).
 
@@ -120,6 +124,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
             filter/sort: Optional raw clauses. Allowed properties for both: id, title.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/cityType", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -131,8 +136,8 @@ def register(mcp: FastMCP) -> None:
         limit: LimitParam = 20,
         offset: int = 0,
         city_id: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List streets, optionally filtered by city.
 
@@ -142,6 +147,7 @@ def register(mcp: FastMCP) -> None:
             city_id: Filter by city ID (0 = no filter).
             filter/sort: Optional raw clauses. Allowed properties for both: city_id, id,
                 title, type.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         combined_filters: list = list(filter or [])
         if city_id:
@@ -165,8 +171,8 @@ def register(mcp: FastMCP) -> None:
     async def get_units(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List units of measurement used in the clinic.
 
@@ -174,6 +180,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
             filter/sort: Optional raw clauses. Allowed properties for both: id, status, title.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/unit", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -193,8 +200,8 @@ def register(mcp: FastMCP) -> None:
     async def get_roles(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List user roles defined in the clinic system.
 
@@ -202,6 +209,7 @@ def register(mcp: FastMCP) -> None:
             limit: Max records to return.
             offset: Pagination offset.
             filter/sort: Optional raw clauses. Allowed properties for both: id, name, super.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/role", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -221,8 +229,8 @@ def register(mcp: FastMCP) -> None:
     async def get_user_positions(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List staff positions (job titles) in the clinic.
 
@@ -231,6 +239,7 @@ def register(mcp: FastMCP) -> None:
             offset: Pagination offset.
             filter/sort: Optional raw clauses. Allowed properties for both: admission_length,
                 id, title.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/userPosition", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -250,14 +259,15 @@ def register(mcp: FastMCP) -> None:
     async def get_combo_manual_names(
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List custom dropdown (combo) catalog names defined in the clinic.
 
         Args:
             limit: Max records to return.
             offset: Pagination offset.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         return await crud_list(
             "/rest/api/ComboManualName", limit=limit, offset=offset, sort=sort, filters=filter,
@@ -278,8 +288,8 @@ def register(mcp: FastMCP) -> None:
         combo_manual_name_id: int,
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List items of a specific custom dropdown catalog.
 
@@ -287,6 +297,7 @@ def register(mcp: FastMCP) -> None:
             combo_manual_name_id: ID of the parent catalog (ComboManualName).
             limit: Max records to return.
             offset: Pagination offset.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         combined_filters: list = list(filter or [])
         if combo_manual_name_id:

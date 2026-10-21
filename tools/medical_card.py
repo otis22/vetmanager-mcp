@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
+from filters import OptionalFilterList, OptionalJsonList
 from filters import (
     FILTER_FIELDS_BY_ENTITY,
     build_list_query_params,
@@ -160,8 +161,8 @@ def register(mcp: FastMCP) -> None:
         pet_id: int,
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List medical card records for a specific pet.
 
@@ -169,6 +170,7 @@ def register(mcp: FastMCP) -> None:
             pet_id: ID of the pet whose records to retrieve.
             limit: Max records to return (1–100, default 20).
             offset: Pagination offset (0–10000).
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         validate_sort_properties(sort, FILTER_FIELDS_BY_ENTITY["medicalCards"])
         validate_filter_properties(filter, FILTER_FIELDS_BY_ENTITY["medicalCards"])
@@ -200,7 +202,7 @@ def register(mcp: FastMCP) -> None:
         creator_id: int | None = None,
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
+        sort: OptionalFilterList = None,
     ) -> dict:
         """List medical card records by clinic-local date range.
 
@@ -320,7 +322,7 @@ def register(mcp: FastMCP) -> None:
         client_id: int,
         limit: LimitParam = 20,
         offset: int = 0,
-        sort: list[dict] | None = None,
+        sort: OptionalFilterList = None,
     ) -> dict:
         """List all medical card records for all pets belonging to a client.
 
@@ -477,7 +479,7 @@ def register(mcp: FastMCP) -> None:
         clinic_id: PositiveReferenceIdParam,
         description: str = "",
         diagnosis: str = "",
-        diagnosis_ids: list[DiagnosisIdParam] | None = None,
+        diagnosis_ids: OptionalJsonList[DiagnosisIdParam] = None,
         diagnosis_type: DiagnosisTypeParam = _DEFAULT_DIAGNOSIS_TYPE,
         diagnosis_text: str = "",
         treatment: str = "",
@@ -555,7 +557,7 @@ def register(mcp: FastMCP) -> None:
         card_id: int,
         description: str = "",
         diagnosis: str = "",
-        diagnosis_ids: list[DiagnosisIdParam] | None = None,
+        diagnosis_ids: OptionalJsonList[DiagnosisIdParam] = None,
         diagnosis_type: DiagnosisTypeParam = _DEFAULT_DIAGNOSIS_TYPE,
         diagnosis_text: str = "",
         treatment: str = "",

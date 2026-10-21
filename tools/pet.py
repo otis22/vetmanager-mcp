@@ -9,6 +9,7 @@ from fastmcp import FastMCP
 
 from depersonalization import build_addressed_placeholder
 from exceptions import ToolInputError
+from filters import OptionalFilterList
 from filters import FILTER_FIELDS_BY_ENTITY, build_list_query_params, eq as _filter_eq, in_ as _filter_in, like as _filter_like
 from resources.pet_profile import fetch as _fetch_pet_profile
 from service_metrics import instrument_call as _instrument_call
@@ -75,8 +76,8 @@ def register(mcp: FastMCP) -> None:
         offset: int = 0,
         owner_id: int = 0,
         alias: str = "",
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List pets in the clinic, optionally filtered by owner and/or nickname.
 
@@ -99,6 +100,7 @@ def register(mcp: FastMCP) -> None:
                 breed_id, chip_number, color_id, date_register, deathdate,
                 deathnote, edit_date, id, lab_number, note, old_id, owner_id,
                 picture, sex, status, type_id, weight.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         if alias and not owner_id:
             raise ToolInputError(

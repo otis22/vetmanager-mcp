@@ -4,6 +4,7 @@ from fastmcp import FastMCP
 
 from exceptions import ToolInputError, reportable_error
 from depersonalization import build_addressed_placeholder
+from filters import OptionalFilterList
 from filters import FILTER_FIELDS_BY_ENTITY, eq as _filter_eq, gte as _filter_gte, in_ as _filter_in, lt as _filter_lt
 from resources.admission_status import ACTIVE_ADMISSION_STATUSES  # noqa: F401 — BC re-export
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, unwrap_single_record
@@ -66,8 +67,8 @@ def register(mcp: FastMCP) -> None:
         pet_id: int = 0,
         client_id: int = 0,
         status: str = "",
-        sort: list[dict] | None = None,
-        filter: list[dict] | None = None,
+        sort: OptionalFilterList = None,
+        filter: OptionalFilterList = None,
     ) -> dict:
         """List clinic admissions (appointments/visits).
 
@@ -98,6 +99,7 @@ def register(mcp: FastMCP) -> None:
                 clinic_id, confirmation, create_date, creator_id, description,
                 direct_direction, escorter_id, id, invoices_sum, is_auto_create,
                 patient_id, reception_write_channel, status, type_id, user_id.
+            filter — массив объектов, не строка; JSON-строка принимается для совместимости.
         """
         if date and (date_from or date_to):
             raise ToolInputError(
