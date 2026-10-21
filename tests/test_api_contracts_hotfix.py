@@ -1611,6 +1611,8 @@ async def test_get_medical_cards_by_client_id_marks_truncated_on_empty_pet_page_
     assert result.structured_content["pets_count"] == 1
     assert result.structured_content["pets_total"] == 300
     assert result.structured_content["pets_truncated"] is True
+    assert result.structured_content["medical_cards_total"] == 0
+    assert result.structured_content["medical_cards_has_more"] is False
 
 
 @pytest.mark.asyncio

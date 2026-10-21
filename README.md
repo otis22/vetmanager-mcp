@@ -605,9 +605,12 @@ COMMIT;
 не реже одного раза в месяц после triage; активные `new/grouped` reports
 сохраняются до ручного разбора.
 
-### Универсальные sort/filter для list GET
+### Sort/filter для поддерживающих их list GET
 
-Во всех list `get_*` инструментах поддерживаются дополнительные параметры:
+Многие list `get_*` инструменты поддерживают дополнительные параметры `sort` и
+`filter`, но набор параметров зависит от инструмента. Например,
+`get_debtors`, `get_inactive_clients` и `get_inactive_pets` не принимают эту
+пару; перед вызовом сверяйте сигнатуру конкретного инструмента.
 
 - `sort`: массив объектов `{"property":"<field>","direction":"ASC|DESC"}`
 - `filter`: массив объектов `{"property":"<field>","value":<value>,"operator":"<op>"}`
@@ -660,7 +663,7 @@ COMMIT;
 | Группа | Инструменты | Кол-во |
 |--------|-------------|--------|
 | Client | `get_clients`, `get_debtors`, `get_client_by_id`, `get_personal_account_link_by_phone`, `create_client`, `update_client`, `delete_client`, `get_client_profile`, `get_inactive_clients` | 9 |
-| Pet | `get_pets`, `get_pet_by_id`, `create_pet`, `update_pet`, `delete_pet`, `get_pet_profile`, `get_inactive_pets` | 7 |
+| Pet | `get_pets`, `find_pets_by_alias`, `get_pet_by_id`, `create_pet`, `update_pet`, `delete_pet`, `get_pet_profile`, `get_inactive_pets` | 8 |
 | Admission | `get_admissions`, `get_admissions_daily_summary`, `get_admission_by_id`, `create_admission`, `update_admission`, `get_client_upcoming_visits`, `get_daily_schedule` | 7 |
 | MedicalCard | `get_medical_cards`, `get_medical_cards_by_date`, `get_medical_cards_by_client_id`, `get_medical_card_by_id`, `create_medical_card`, `update_medical_card`, `get_vaccinations` | 7 |
 | Invoice | `get_invoices`, `get_average_invoice`, `get_invoice_by_id`, `update_invoice` | 4 |

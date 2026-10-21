@@ -327,11 +327,17 @@ def register(mcp: FastMCP) -> None:
         Use this tool when the user asks to see medical cards / history for a
         client identified by their client ID (not a pet ID).  The tool fetches
         all pets of the client first, then returns their medical cards in a
-        single aggregated response.
+        single aggregated response. ``medical_cards_total`` counts matching
+        records before limit/offset, or is None when the upstream total is
+        unavailable. ``medical_cards_has_more`` is true when records follow
+        this page, false when none follow, or None when the total is unknown
+        or an empty page contradicts a larger total. The public offset limit
+        remains 10000 even if further records exist upstream.
+        If ``pets_truncated`` is true, these fields cover only fetched pets.
 
         Args:
             client_id: Unique numeric ID of the client (owner).
-            limit: Max records per pet to return (1–100, default 20).
+            limit: Max medical cards across fetched pets (1–100, default 20).
             offset: Pagination offset (0–10000).
         """
         validate_sort_properties(sort, FILTER_FIELDS_BY_ENTITY["medicalCards"])
@@ -375,6 +381,8 @@ def register(mcp: FastMCP) -> None:
                 "pets_count": 0,
                 "pets_total": pets_total,
                 "pets_truncated": pets_truncated,
+                "medical_cards_total": 0,
+                "medical_cards_has_more": False,
                 "medical_cards": [],
                 "message": "No pets found for this client.",
             }
@@ -392,6 +400,8 @@ def register(mcp: FastMCP) -> None:
                 "pets_total": pets_total,
                 "pets_truncated": pets_truncated,
                 "medical_cards_count": 0,
+                "medical_cards_total": 0,
+                "medical_cards_has_more": False,
                 "medical_cards": [],
             }
 
@@ -411,6 +421,21 @@ def register(mcp: FastMCP) -> None:
             )
         else:
             all_cards = []
+        raw_total = cards_data.get("totalCount") if isinstance(cards_data, dict) else None
+        if isinstance(raw_total, bool) or not (
+            isinstance(raw_total, int)
+            or (isinstance(raw_total, str) and raw_total.isascii() and raw_total.isdigit())
+        ):
+            medical_cards_total = None
+        else:
+            parsed_total = int(raw_total)
+            medical_cards_total = parsed_total if parsed_total >= 0 else None
+        if medical_cards_total is None or (
+            not all_cards and offset < medical_cards_total
+        ):
+            medical_cards_has_more = None
+        else:
+            medical_cards_has_more = offset + len(all_cards) < medical_cards_total
         for card in all_cards:
             pid = card.get("patient_id")
             # VM API can return patient_id as int or as digit-string
@@ -428,6 +453,8 @@ def register(mcp: FastMCP) -> None:
             "pets_total": pets_total,
             "pets_truncated": pets_truncated,
             "medical_cards_count": len(all_cards),
+            "medical_cards_total": medical_cards_total,
+            "medical_cards_has_more": medical_cards_has_more,
             "medical_cards": all_cards,
         }
 
