@@ -132,10 +132,17 @@ def register_prompts(mcp: FastMCP) -> None:
         Args:
             query: Search query for the client.
         """
+        search = (
+            "If query has fewer than 4 digits, ask for at least 4 digits before calling the tool. "
+            "Call get_clients(phone=query, limit=20). "
+            if query.isascii() and query.isdigit()
+            else "Call get_clients(name=query, limit=20). "
+        )
         return [Message(
             _bearer_runtime_prefix()
             + f"Find the clinic client matching '{query}'. "
-            + "Call get_clients(name=query, limit=20). "
+            + "For a query made only of digits use phone search; otherwise use name search. "
+            + search
             + "Display full name, phone, email and client ID."
         )]
 
@@ -149,9 +156,13 @@ def register_prompts(mcp: FastMCP) -> None:
         return [Message(
             _bearer_runtime_prefix()
             + f"Show the financial summary for client ID {client_id}. "
-            + "1. Call get_invoices(client_id=client_id, limit=100, sort=[{'property':'create_date','direction':'DESC'}]). "
-            + "2. Call get_client_payment_applications(client_id=client_id, limit=100, sort=[{'property':'create_date','direction':'DESC'}]). "
-            + "Summarise total debt, recent invoices, and the latest payment amount/date."
+            + "1. Call get_clients(status='', filter=[{'property':'id','operator':'=','value':client_id}]). "
+            + "Use the returned client's balance field as the server balance. "
+            + "If no client is returned, report that the balance is unavailable; do not invent it. "
+            + "2. Call get_invoices(client_id=client_id, limit=100, sort=[{'property':'create_date','direction':'DESC'}]). "
+            + "3. Call get_client_payment_applications(client_id=client_id, limit=100, sort=[{'property':'create_date','direction':'DESC'}]). "
+            + "Show the server balance and label invoices and payment applications as the last 100 at most in each list. "
+            + "These are details only; do not derive a total debt from them or claim the lists are complete."
         )]
 
     @mcp.prompt
@@ -257,6 +268,7 @@ def register_prompts(mcp: FastMCP) -> None:
     def add_medical_note(
         pet_id: int,
         doctor_id: int,
+        clinic_id: int,
         note: str,
         diagnosis: str = "",
     ) -> list[Message]:
@@ -265,16 +277,24 @@ def register_prompts(mcp: FastMCP) -> None:
         Args:
             pet_id: ID of the pet.
             doctor_id: ID of the veterinarian writing the note.
+            clinic_id: Required ID of the clinic branch; choose it before rendering this prompt.
             note: Clinical description or observation text.
-            diagnosis: Diagnosis text.
+            diagnosis: Optional free-text diagnosis note.
         """
         return [Message(
             _bearer_runtime_prefix()
-            + f"Add a medical note for pet ID {pet_id} by doctor ID {doctor_id}. "
+            + f"Add a medical note for pet ID {pet_id} by doctor ID {doctor_id} at clinic ID {clinic_id}. "
             + f"Description: '{note}'. Diagnosis: '{diagnosis}'. "
-            + "Call create_medical_card(pet_id=pet_id, doctor_id=doctor_id, "
-            + "date_create=today, description=note, diagnosis=diagnosis). "
-            + "Confirm the created medical card ID."
+            + "Set today to the clinic-local date in YYYY-MM-DD format; if that date is unknown, ask before creating the card. "
+            + "Call create_medical_card(patient_id=pet_id, doctor_id=doctor_id, clinic_id=clinic_id, "
+            + "date_create=today, description=note). "
+            + "Read the created card ID from the actual successful response; do not assume a response key. "
+            + "If the create result is uncertain or has no card ID, stop and report that uncertainty; never repeat create automatically. "
+            + "If diagnosis is nonempty, only after successful creation call "
+            + "update_medical_card(card_id=created_card_id, diagnosis_text=diagnosis). "
+            + "If that update fails or is uncertain, report the created card ID and partial result. "
+            + "Read get_medical_card_by_id(created_card_id) to check the stored diagnos_text field before retrying only update; never repeat create. "
+            + "Confirm the card ID and diagnosis text only after the relevant writes succeed."
         )]
 
     @mcp.prompt
