@@ -177,31 +177,39 @@ def _ready(port: int, seconds: int = 90) -> None:
 
 
 def _stateless_protocol_ready(port: int) -> None:
-    """Prove each new slot accepts MCP initialize without a live session ID."""
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+    """Prove each new slot accepts discovery with and without an old session ID."""
+    initialize = {
         "protocolVersion": "2025-03-26", "capabilities": {},
         "clientInfo": {"name": "deploy-preflight", "version": "1"},
-    }}).encode()
+    }
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    for headers in ({}, {"Mcp-Session-Id": "previous-worker-session"}):
-        request = urllib.request.Request(
-            f"http://127.0.0.1:{port}/mcp", data=body, method="POST",
-            headers={"Content-Type": "application/json",
-                     "Accept": "application/json, text/event-stream", **headers},
-        )
-        try:
-            with opener.open(request, timeout=10) as response:
-                raw = response.read(16384).decode()
-                session_id = response.headers.get("mcp-session-id")
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
-            raise RuntimeError(f"slot {port} failed stateless MCP preflight") from exc
-        data = next((line[6:] for line in raw.splitlines() if line.startswith("data: ")), raw)
-        try:
-            payload = json.loads(data)
-        except ValueError as exc:
-            raise RuntimeError(f"slot {port} returned invalid MCP preflight body") from exc
-        if session_id or payload.get("result", {}).get("protocolVersion") != "2025-03-26":
-            raise RuntimeError(f"slot {port} is not stateless MCP")
+    for method, params in (("initialize", initialize), ("tools/list", {})):
+        body = json.dumps({"jsonrpc": "2.0", "id": 1,
+                           "method": method, "params": params}).encode()
+        for headers in ({}, {"Mcp-Session-Id": "previous-worker-session"}):
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{port}/mcp", data=body, method="POST",
+                headers={"Content-Type": "application/json",
+                         "Accept": "application/json, text/event-stream", **headers},
+            )
+            try:
+                with opener.open(request, timeout=10) as response:
+                    raw = response.read(2_097_153).decode()
+                    session_id = response.headers.get("mcp-session-id")
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+                raise RuntimeError(f"slot {port} failed stateless MCP preflight") from exc
+            if len(raw) > 2_097_152:
+                raise RuntimeError(f"slot {port} MCP preflight body is too large")
+            data = next((line[6:] for line in raw.splitlines() if line.startswith("data: ")), raw)
+            try:
+                payload = json.loads(data)
+            except ValueError as exc:
+                raise RuntimeError(f"slot {port} returned invalid MCP preflight body") from exc
+            result = payload.get("result", {}) if isinstance(payload, dict) else {}
+            valid = (result.get("protocolVersion") == "2025-03-26" if method == "initialize"
+                     else isinstance(result.get("tools"), list))
+            if session_id or not valid:
+                raise RuntimeError(f"slot {port} is not stateless MCP")
 
 
 def _nginx_local_smoke(hostname: str, *, port: int = 443, seconds: int = 10) -> None:

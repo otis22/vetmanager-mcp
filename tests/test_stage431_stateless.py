@@ -164,3 +164,61 @@ def test_deploy_preflight_rejects_stateful_session_header(monkeypatch):
     monkeypatch.setattr(stage385_deploy.urllib.request, "build_opener", lambda *_args: Opener())
     with pytest.raises(RuntimeError, match="not stateless MCP"):
         stage385_deploy._stateless_protocol_ready(8000)
+
+
+def test_deploy_preflight_checks_catalogue_with_stale_and_missing_id(monkeypatch):
+    from scripts import stage385_deploy
+
+    methods = []
+    headers = []
+
+    class Response:
+        headers = {}
+        def __init__(self, method):
+            self.method = method
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return None
+        def read(self, _limit):
+            result = ({"protocolVersion": "2025-03-26"} if self.method == "initialize"
+                      else {"tools": [{"name": "ping"}]})
+            return json.dumps({"jsonrpc": "2.0", "id": 1, "result": result}).encode()
+
+    class Opener:
+        def open(self, request, *, timeout):
+            method = json.loads(request.data)["method"]
+            methods.append(method)
+            headers.append(request.get_header("Mcp-session-id"))
+            return Response(method)
+
+    monkeypatch.setattr(stage385_deploy.urllib.request, "build_opener", lambda *_args: Opener())
+    stage385_deploy._stateless_protocol_ready(8000)
+    assert methods == ["initialize", "initialize", "tools/list", "tools/list"]
+    assert headers == [None, "previous-worker-session", None, "previous-worker-session"]
+
+
+def test_deploy_preflight_rejects_catalogue_error(monkeypatch):
+    from scripts import stage385_deploy
+
+    class Response:
+        headers = {}
+        def __init__(self, method):
+            self.method = method
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return None
+        def read(self, _limit):
+            payload = ({"result": {"protocolVersion": "2025-03-26"}}
+                       if self.method == "initialize"
+                       else {"error": {"code": -32600, "message": "catalogue failed"}})
+            return json.dumps({"jsonrpc": "2.0", "id": 1, **payload}).encode()
+
+    class Opener:
+        def open(self, request, *, timeout):
+            return Response(json.loads(request.data)["method"])
+
+    monkeypatch.setattr(stage385_deploy.urllib.request, "build_opener", lambda *_args: Opener())
+    with pytest.raises(RuntimeError, match="not stateless MCP"):
+        stage385_deploy._stateless_protocol_ready(8000)
