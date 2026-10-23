@@ -71,8 +71,13 @@ vetmanager-extjs 23.10.2026: таблица `client_files` существует 
   `get_pet_files` (client_id/pet_id → url, имя, тип, размер, дата,
   file_category, uploaded_by). Контент агент читает по публичной ссылке сам;
   отдельный fetch/конвертация PDF→текст — отдельным решением позже. — `todo`
-- 432.2 До появления API: строка в known issues / описании get_pet_profile,
-  чтобы агент сразу понимал, что файлы недоступны, и не ретраил. — `todo`
+- 432.2 До появления API — описания инструментов медкарт и профиля пациента
+  (get_medical_cards, get_medical_cards_by_date, get_medical_cards_by_client_id,
+  get_medical_card_by_id, get_pet_profile): файлы могут быть встроены прямо в
+  текст карты (description) как HTML-ссылки `<a href>` на хранилище — такие
+  ссылки открывать и использовать; отдельного списка файлов API не даёт,
+  не ретраить поиск несуществующего инструмента (решение владельца
+  23.10.2026; факт: MCP отдаёт description без обрезки HTML). — `todo`
 
 ## Этап 433. Экономика: покрытие store documents и оплат накладных — `todo`
 
