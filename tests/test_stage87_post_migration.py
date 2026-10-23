@@ -181,10 +181,11 @@ class TestStage87PromptSweep:
         assert "date+2d" not in body
 
     @pytest.mark.asyncio
-    async def test_unpaid_invoices_uses_payment_status_param(self):
+    async def test_unpaid_invoices_uses_amount_comparison(self):
         body = await _render_prompt_body("unpaid_invoices")
-        assert "payment_status='none'" in body
-        assert "payment_status='partial'" in body
+        assert "payment_status='none'" not in body
+        assert "payment_status='partial'" not in body
+        assert "paid_amount < amount" in body
 
     @pytest.mark.asyncio
     async def test_client_no_visit_uses_get_inactive_clients(self):

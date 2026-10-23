@@ -392,6 +392,24 @@ class VetmanagerClient:
             )
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+        # Stage 403: the retry budget must include host resolution and a
+        # continuously progressing transfer, which httpx phase timeouts do
+        # not bound. Keep the deadline for one logical, retry-enabled GET.
+        if method.upper() == "GET" and kwargs.get("retry", True):
+            read_deadline = time.monotonic() + READ_REQUEST_BUDGET_SECONDS
+            budget = asyncio.timeout_at(read_deadline)
+            try:
+                async with budget:
+                    return await self._request_core(
+                        method, path, _read_deadline=read_deadline,
+                        _read_budget=budget, **kwargs
+                    )
+            except TimeoutError as exc:
+                if not budget.expired():
+                    raise
+                raise VetmanagerTimeoutError(
+                    "Vetmanager request time budget was exhausted. Please retry shortly."
+                ) from exc
         if os.environ.get("MCP_WORKER_SLOTS") != "3" or method.upper() not in {
             "POST", "PUT", "DELETE", "PATCH",
         }:
@@ -448,7 +466,11 @@ class VetmanagerClient:
                 "error_class": type(exc).__name__,
             })
 
-    async def _request_core(self, method: str, path: str, **kwargs: Any) -> Any:
+    async def _request_core(
+        self, method: str, path: str, *, _read_deadline: float | None = None,
+        _read_budget: asyncio.Timeout | None = None,
+        **kwargs: Any,
+    ) -> Any:
         await self._ensure_runtime_credentials()
         self._require_scope(method, path)
         base = await self._resolve_host()
@@ -499,7 +521,8 @@ class VetmanagerClient:
         else:
             max_retries = MAX_RETRIES_READ if upper_method == "GET" else MAX_RETRIES_WRITE
         read_deadline = (
-            time.monotonic() + READ_REQUEST_BUDGET_SECONDS
+            (_read_deadline if _read_deadline is not None
+             else time.monotonic() + READ_REQUEST_BUDGET_SECONDS)
             if upper_method == "GET" and retry_enabled
             else None
         )
@@ -793,7 +816,11 @@ class VetmanagerClient:
             # Normal branches set `_breaker_resolved = True` after running
             # their record_success/record_failure hook.
             #
-            if not _breaker_resolved:
+            # Local budget cancellation is not an upstream transport failure
+            # in CLOSED state. A HALF_OPEN probe still must release its slot.
+            if not _breaker_resolved and (
+                _holding_the_probe or _read_budget is None or not _read_budget.expired()
+            ):
                 await _breaker_record_failure(domain_key)
 
     def _raise_for_status(self, response: httpx.Response, *, path: str = "") -> None:
