@@ -21,7 +21,9 @@ async def test_unpaid_prompt_uses_invoice_sums_and_discloses_incomplete_scan():
     assert "paid_amount < amount" in body
     assert "amount - paid_amount" in body
     assert "totalCount" in body and "offset" in body
-    assert "missing" in body.lower() and "partial" in body.lower()
+    assert "exceeds the number of rows fetched" in body
+    assert "clearly label the result partial" in body
+    assert "missing, null, invalid or non-finite" in body
 
 
 @pytest.mark.asyncio

@@ -346,7 +346,7 @@ def register_prompts(mcp: FastMCP) -> None:
         """Inspect recent invoices for unpaid or partially paid amounts.
 
         Args:
-            limit: Max number of invoices to inspect.
+            limit: Max number of recent invoices to inspect; older debts may be omitted.
         """
         return [Message(
             _bearer_runtime_prefix()
@@ -359,7 +359,7 @@ def register_prompts(mcp: FastMCP) -> None:
             + "The limit is the number of invoices inspected, not the number of debtors. "
             + "Use data.totalCount to check completeness. If totalCount is missing or invalid, "
             + "exceeds the number of rows fetched, or any row could not be checked, clearly label the result partial. "
-            + "Offer to inspect more pages with offset and the same sort; do not claim a complete list from a truncated page. "
+            + "Offer to inspect more pages with offset and the same sort, or ask the user to narrow the date range; do not claim a complete list from a truncated page. "
             + "Pagination can repeat or miss rows when new invoices arrive or create_date ties, so do not promise a stable snapshot. "
             + "Show client name, pet name, invoice date, total amount, paid amount, and amount due for each debtor."
         )]
