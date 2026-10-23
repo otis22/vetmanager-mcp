@@ -20,7 +20,8 @@ def _result(response):
 
 
 @pytest.mark.asyncio
-async def test_old_worker_session_and_missing_id_work_on_new_worker(monkeypatch):
+@pytest.mark.parametrize("transport", ["streamable-http", "http"])
+async def test_old_worker_session_and_missing_id_work_on_new_worker(monkeypatch, transport):
     test_mcp = FastMCP("stage431")
 
     @test_mcp.tool()
@@ -39,7 +40,7 @@ async def test_old_worker_session_and_missing_id_work_on_new_worker(monkeypatch)
             old_id = first.headers["mcp-session-id"]
 
     monkeypatch.setattr(server, "mcp", test_mcp)
-    new_app = server._create_http_app(transport="streamable-http", path="/mcp")
+    new_app = server._create_http_app(transport=transport, path="/mcp")
     async with new_app.router.lifespan_context(new_app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=new_app),
                                      base_url="http://test", headers=HEADERS) as client:
@@ -59,7 +60,8 @@ async def test_old_worker_session_and_missing_id_work_on_new_worker(monkeypatch)
             assert (await client.get("/mcp")).status_code == 405
 
 
-def test_served_http_app_uses_the_stateless_default(monkeypatch):
+@pytest.mark.parametrize("transport", ["streamable-http", "http"])
+def test_served_http_app_uses_the_stateless_default(monkeypatch, transport):
     captured = {}
 
     class Config:
@@ -68,7 +70,7 @@ def test_served_http_app_uses_the_stateless_default(monkeypatch):
 
     class Runner:
         def __init__(self, *args, **kwargs):
-            pass
+            captured["runner_kwargs"] = kwargs
 
         def run(self):
             pass
@@ -76,13 +78,23 @@ def test_served_http_app_uses_the_stateless_default(monkeypatch):
     monkeypatch.setattr(server.uvicorn, "Config", Config)
     monkeypatch.setattr(server, "_DrainingUvicornServer", Runner)
     original = server._create_http_app
+    original_http_app = server.mcp.http_app
+    def http_app(**kwargs):
+        captured["http_app_kwargs"] = kwargs
+        return original_http_app(**kwargs)
+    monkeypatch.setattr(server.mcp, "http_app", http_app)
     def create(*, transport, path, stateless_http):
         captured["transport"] = transport
+        captured["stateless_http"] = stateless_http
         return original(transport=transport, path=path, stateless_http=stateless_http)
     monkeypatch.setattr(server, "_create_http_app", create)
-    server._run_http_server(transport="streamable-http", host="127.0.0.1", port=8000, path="/mcp")
-    assert captured["transport"] == "streamable-http"
+    server._run_http_server(transport=transport, host="127.0.0.1", port=8000, path="/mcp")
+    assert captured["transport"] == transport
+    assert captured["stateless_http"] is None
+    assert captured["http_app_kwargs"]["stateless_http"] is True
     assert captured["served_app"]
+    assert captured["runner_kwargs"]["streamable_http_app"] is not None
+    assert captured["runner_kwargs"]["path"] == "/mcp"
 
 @pytest.mark.asyncio
 async def test_stateless_requests_do_not_restart_application_lifespan(monkeypatch):

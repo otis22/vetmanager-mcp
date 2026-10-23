@@ -279,13 +279,14 @@ def _run_http_server(*, transport: str, host: str, port: int, path: str,
                      stateless_http: bool | None = None) -> None:
     """Run the FastMCP HTTP app while preserving FastMCP's Uvicorn defaults."""
     app = _create_http_app(transport=transport, path=path, stateless_http=stateless_http)
+    streamable = transport in {"http", "streamable-http"}
     # Этап 289.4: ответы /mcp должны нести идентификатор запроса — иначе
     # клиенту (и нашему смоуку) нечем связать свой отказ с нашим журналом.
     served_app = RequestContextHeaderMiddleware(
         MCPTransportObservationMiddleware(WriteAdmissionMiddleware(app), path=path))
     if hasattr(signal, "SIGUSR1"):
         signal.signal(signal.SIGUSR1, lambda _sig, _frame: request_drain_from_signal())
-    if transport == "streamable-http" and hasattr(signal, "SIGUSR2"):
+    if streamable and hasattr(signal, "SIGUSR2"):
         def _close_sse_signal(_sig, _frame) -> None:
             manager = _get_streamable_session_manager(app, path=path, report_missing=True)
             if not _close_sse_for_rollout(manager):
@@ -309,15 +310,15 @@ def _run_http_server(*, transport: str, host: str, port: int, path: str,
     )
     _DrainingUvicornServer(
         config,
-        streamable_http_app=app if transport == "streamable-http" else None,
-        path=path if transport == "streamable-http" else None,
+        streamable_http_app=app if streamable else None,
+        path=path if streamable else None,
     ).run()
 
 
 def _create_http_app(*, transport: str, path: str, stateless_http: bool | None = None):
     # Each POST must work on any worker and after the previous worker exits.
     if stateless_http is None:
-        stateless_http = transport == "streamable-http"
+        stateless_http = transport in {"http", "streamable-http"}
     return mcp.http_app(path=path, transport=transport,
                         stateless_http=stateless_http)
 
