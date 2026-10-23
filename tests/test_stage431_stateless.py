@@ -130,8 +130,10 @@ async def test_stateless_requests_do_not_restart_application_lifespan(monkeypatc
 
 def test_stateless_drain_emits_existing_rollout_marker(caplog):
     from types import SimpleNamespace
+    import logging
     import shutdown_state
 
+    caplog.set_level(logging.INFO, logger="vetmanager.runtime")
     try:
         shutdown_state.reset_draining()
         shutdown_state.begin_draining()
