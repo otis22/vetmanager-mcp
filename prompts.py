@@ -343,17 +343,25 @@ def register_prompts(mcp: FastMCP) -> None:
 
     @mcp.prompt
     def unpaid_invoices(limit: int = 50) -> list[Message]:
-        """List all unpaid or partially paid invoices.
+        """Inspect recent invoices for unpaid or partially paid amounts.
 
         Args:
             limit: Max number of invoices to inspect.
         """
         return [Message(
             _bearer_runtime_prefix()
-            + "List unpaid or partially paid invoices. "
-            + f"1. Call get_invoices(payment_status='none', limit={limit}, sort=[{{'property':'create_date','direction':'DESC'}}]). "
-            + f"2. Call get_invoices(payment_status='partial', limit={limit}, sort=[{{'property':'create_date','direction':'DESC'}}]). "
-            + "Merge both lists. Show client name, pet name, invoice date, total amount, and amount due."
+            + "Inspect invoices for unpaid or partially paid amounts. "
+            + f"Call get_invoices(limit={limit}, sort=[{{'property':'create_date','direction':'DESC'}}]) without a payment_status filter. "
+            + "For each returned invoice, parse amount and paid_amount as decimal numbers. "
+            + "Include it only when paid_amount < amount; amount due = amount - paid_amount. "
+            + "This includes completely unpaid and partially paid invoices, but excludes zero-amount invoices with no debt. "
+            + "If either amount is missing, null, invalid or non-finite, skip that row and report how many rows could not be checked; never assume zero. "
+            + "The limit is the number of invoices inspected, not the number of debtors. "
+            + "Use data.totalCount to check completeness. If totalCount is missing or invalid, "
+            + "exceeds the number of rows fetched, or any row could not be checked, clearly label the result partial. "
+            + "Offer to inspect more pages with offset and the same sort; do not claim a complete list from a truncated page. "
+            + "Pagination can repeat or miss rows when new invoices arrive or create_date ties, so do not promise a stable snapshot. "
+            + "Show client name, pet name, invoice date, total amount, paid amount, and amount due for each debtor."
         )]
 
     @mcp.prompt

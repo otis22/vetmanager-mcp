@@ -110,6 +110,11 @@ def register(mcp: FastMCP) -> None:
                 (unpaid), 'partial' (partially paid), 'full' (fully paid).
                 This is the payment state of the invoice, distinct from the
                 workflow `status` field (exec/save/deleted).
+                Vetmanager payment_status can be stale and disagree with actual
+                payment. For debt queries, compare each invoice's paid_amount
+                with amount; a debt exists when paid_amount < amount. The
+                paid_amount_max and amount_min filters cannot compare the two
+                fields within each invoice. Paginate when inspecting all rows.
             status: Filter by invoice workflow status. Valid values: 'exec',
                 'save', 'deleted', 'closed', 'archived'.
             date_from: Filter invoices created on or after this date.
