@@ -1,11 +1,15 @@
 """Guard agent navigation between stock documents and supplier payments."""
 
-from tool_descriptions import compose_tool_description
+import pytest
+
+from server import mcp
 
 
-def test_store_document_descriptions_distinguish_stock_and_money():
-    listing = compose_tool_description("get_store_documents")
-    detail = compose_tool_description("get_store_document_by_id")
+@pytest.mark.asyncio
+async def test_store_document_descriptions_distinguish_stock_and_money():
+    catalog = {tool.name: tool.to_mcp_tool() for tool in await mcp.list_tools()}
+    listing = catalog["get_store_documents"].description
+    detail = catalog["get_store_document_by_id"].description
 
     assert "prihod" in listing and "rashod" in listing
     assert "supplier_id" in listing and "document_type" in listing
@@ -13,3 +17,4 @@ def test_store_document_descriptions_distinguish_stock_and_money():
     assert "not payment" in listing.lower()
     assert "not payment" in detail.lower()
     assert "history" in detail.lower()
+    assert "supplier bill to pay" in listing
