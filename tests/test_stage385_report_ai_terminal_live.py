@@ -44,7 +44,7 @@ def test_saved_job_terminal_count_once_across_slots(prepared_web_db):
             env["PORT"] = str(port)
             processes.append(subprocess.Popen(
                 [sys.executable, "-c", "from server import _run_http_server; import os; "
-                 "_run_http_server(transport='streamable-http',host='127.0.0.1',"
+                 "_run_http_server(stateless_http=False, transport='streamable-http',host='127.0.0.1',"
                  "port=int(os.environ['PORT']),path='/mcp')"],
                 cwd=Path(__file__).resolve().parents[1], env=env.copy(),
                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,

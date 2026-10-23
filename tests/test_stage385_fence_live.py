@@ -27,7 +27,7 @@ def test_devtr6_bearer_write_is_refused_after_quiesce(prepared_web_db, free_tcp_
     env.update(PORT=str(free_tcp_port), LOG_FORMAT="text")
     server = subprocess.Popen(
         [sys.executable, "-c", "from server import _run_http_server; import os; "
-         "_run_http_server(transport='streamable-http',host='127.0.0.1',"
+         "_run_http_server(stateless_http=False, transport='streamable-http',host='127.0.0.1',"
          "port=int(os.environ['PORT']),path='/mcp')"],
         cwd=Path(__file__).resolve().parents[1], env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,

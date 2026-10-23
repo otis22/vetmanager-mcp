@@ -25,5 +25,5 @@ async def pause_before_finish(tag: str) -> None:
 
 
 cache_write_barrier.finish_write = pause_before_finish
-_run_http_server(transport="streamable-http", host="127.0.0.1",
+_run_http_server(stateless_http=False, transport="streamable-http", host="127.0.0.1",
                  port=int(os.environ["PORT"]), path="/mcp")
