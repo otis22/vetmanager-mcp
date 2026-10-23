@@ -658,7 +658,8 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "The status field describes posting, not payment. Nested "
         "storeDocumentOperations may contain history revisions and cannot be summed "
         "as current lines without a verified revision rule. Use this for stock "
-        "details, not a paid/unpaid or cash-flow answer."
+        "details, not a paid/unpaid or cash-flow answer. Domain synonyms: "
+        "приходная накладная, складской документ, supplier receipt."
     ),
     "set_good_sale_param_status": (
         "Disable or restore exactly one good sale option for one clinic and sale unit. "

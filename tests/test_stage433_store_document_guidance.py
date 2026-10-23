@@ -18,6 +18,7 @@ async def test_store_document_descriptions_distinguish_stock_and_money():
     assert "not payment" in detail.lower()
     assert "history" in detail.lower()
     assert "supplier bill to pay" in listing
+    assert "Domain synonyms:" in detail
     filter_schema = catalog["get_store_documents"].inputSchema["properties"]["filter"]
     assert "supplier_id" in filter_schema["description"]
     assert "add_dt" in filter_schema["description"]
