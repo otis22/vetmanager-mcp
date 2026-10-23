@@ -640,6 +640,27 @@ REPORT_AI_PRIVACY_GUIDANCE = (
 
 
 SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "get_store_documents": (
+        "List warehouse documents, including supplier receipts (document_type='prihod') "
+        "and stock issues (document_type='rashod'). For supplier invoices, filter "
+        "document_type='prihod' and optionally supplier_id and add_dt. "
+        "For 'расходная накладная' meaning a supplier bill to pay, use prihod; "
+        "rashod means a stock issue. "
+        "The status field describes posting, not payment; total is a stock document "
+        "amount, not cash flow. This tool cannot identify paid or unpaid supplier "
+        "invoices. Nested storeDocumentOperations may contain history revisions; "
+        "do not sum them as current lines. Domain synonyms: supplier invoice, "
+        "приходная накладная, складской документ."
+    ),
+    "get_store_document_by_id": (
+        "Fetch one warehouse document by ID. A supplier receipt has "
+        "document_type='prihod'; document_type='rashod' is a stock issue. "
+        "The status field describes posting, not payment. Nested "
+        "storeDocumentOperations may contain history revisions and cannot be summed "
+        "as current lines without a verified revision rule. Use this for stock "
+        "details, not a paid/unpaid or cash-flow answer. Domain synonyms: "
+        "приходная накладная, складской документ, supplier receipt."
+    ),
     "set_good_sale_param_status": (
         "Disable or restore exactly one good sale option for one clinic and sale unit. "
         "Two steps: first call with confirm=false to preview the good, clinic, "
