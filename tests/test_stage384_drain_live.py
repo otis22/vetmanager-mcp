@@ -28,7 +28,7 @@ def test_devtr6_held_get_sse_drains_on_sigterm(prepared_web_db, free_tcp_port):
                STREAMABLE_HTTP_DRAIN_ENABLED="true")
     server = subprocess.Popen(
         [sys.executable, "-c", "from server import _run_http_server; "
-         "import os; _run_http_server(transport='streamable-http',host='127.0.0.1',"
+         "import os; _run_http_server(stateless_http=False, transport='streamable-http',host='127.0.0.1',"
          "port=int(os.environ['PORT']),path='/mcp')"],
         cwd=Path(__file__).resolve().parents[1], env=env,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,

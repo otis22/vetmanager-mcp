@@ -126,7 +126,7 @@ def test_local_nginx_smoke_rejects_missing_mcp_and_redirect(monkeypatch):
 
 
 def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=False,
-                      fail_nginx=False, repeat=False, partial_new=False):
+                      fail_nginx=False, repeat=False, partial_new=False, fail_preflight=False):
     live = tmp_path / "live"
     release = live / "releases" / ("a" * 40)
     release.mkdir(parents=True)
@@ -199,15 +199,21 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=Fal
             raise TimeoutError("slot failed")
 
     monkeypatch.setattr(stage385_deploy, "_ready", ready)
+    def preflight(port):
+        events.append(("protocol", port))
+        if fail_preflight and port == 8001:
+            raise RuntimeError("slot is not stateless")
+
+    monkeypatch.setattr(stage385_deploy, "_stateless_protocol_ready", preflight)
     def nginx_smoke(hostname):
         events.append(("nginx_smoke", hostname))
         if fail_nginx:
             raise TimeoutError("local nginx route failed")
 
     monkeypatch.setattr(stage385_deploy, "_nginx_local_smoke", nginx_smoke)
-    if fail_ready or fail_smoke or fail_nginx:
+    if fail_ready or fail_smoke or fail_nginx or fail_preflight:
         with pytest.raises((TimeoutError, RuntimeError),
-                           match="slot failed|injected internal smoke failure|local nginx route failed"):
+                           match="slot failed|slot is not stateless|injected internal smoke failure|local nginx route failed"):
             stage385_deploy.deploy(release, live, release.name, site=site, pepper="new")
     else:
         stage385_deploy.deploy(release, live, release.name, site=site, pepper="new")
@@ -229,7 +235,8 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=Fal
 
 def test_cutover_waits_for_three_slots_before_nginx(monkeypatch, tmp_path):
     events, site, _ = _simulate_cutover(monkeypatch, tmp_path)
-    assert events.index(("ready", 8002)) < events.index(("nginx", "active"))
+    assert events.index(("ready", 8002)) < events.index(("protocol", 8002))
+    assert events.index(("protocol", 8002)) < events.index(("nginx", "active"))
     assert events.index(("nginx", "active")) < events.index(("nginx_smoke", "old.example"))
     assert ("smoke_token", True) in events
     assert "mcp_session_backend" in site.read_text()
@@ -308,3 +315,15 @@ def test_partial_new_fleet_only_drains_started_slots(monkeypatch):
     monkeypatch.setattr(stage385_deploy, "_run", exited)
     with pytest.raises(RuntimeError, match="without proven drain"):
         stage385_deploy._running_new_slots("probe", image)
+
+
+def test_failed_stateless_preflight_keeps_maintenance_until_rollback(monkeypatch, tmp_path):
+    events, site, _ = _simulate_cutover(monkeypatch, tmp_path, repeat=True,
+                                        fail_preflight=True)
+    assert ("protocol", 8000) in events and ("protocol", 8001) in events
+    rollback = next(index for index, event in enumerate(events)
+                    if event[0] == "compose" and event[1] == "rollback.yml"
+                    and "up" in event[3])
+    assert events.index(("protocol", 8001)) < rollback < events.index(("nginx", "active"))
+    assert events.count(("stop_old",)) == 2
+    assert "mcp_session_backend" in site.read_text()

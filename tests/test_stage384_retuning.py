@@ -53,7 +53,7 @@ def test_uvicorn_boot_uses_standard_extras_and_loop_factory(monkeypatch):
 
     monkeypatch.setattr(server.uvicorn, "Config", Config)
     monkeypatch.setattr(server, "_DrainingUvicornServer", UvicornServer)
-    server._run_http_server(transport="streamable-http", host="127.0.0.1", port=8000, path="/mcp")
+    server._run_http_server(stateless_http=False, transport="streamable-http", host="127.0.0.1", port=8000, path="/mcp")
     assert observed["ran"]
     assert observed["config"]["ws"] == "websockets-sansio"
     assert observed["server"]["path"] == "/mcp"

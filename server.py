@@ -275,9 +275,10 @@ class _DrainingUvicornServer(uvicorn.Server):
         await super().shutdown(sockets=sockets)
 
 
-def _run_http_server(*, transport: str, host: str, port: int, path: str) -> None:
+def _run_http_server(*, transport: str, host: str, port: int, path: str,
+                     stateless_http: bool | None = None) -> None:
     """Run the FastMCP HTTP app while preserving FastMCP's Uvicorn defaults."""
-    app = mcp.http_app(path=path, transport=transport)
+    app = _create_http_app(transport=transport, path=path, stateless_http=stateless_http)
     # Этап 289.4: ответы /mcp должны нести идентификатор запроса — иначе
     # клиенту (и нашему смоуку) нечем связать свой отказ с нашим журналом.
     served_app = RequestContextHeaderMiddleware(
@@ -311,6 +312,14 @@ def _run_http_server(*, transport: str, host: str, port: int, path: str) -> None
         streamable_http_app=app if transport == "streamable-http" else None,
         path=path if transport == "streamable-http" else None,
     ).run()
+
+
+def _create_http_app(*, transport: str, path: str, stateless_http: bool | None = None):
+    # Each POST must work on any worker and after the previous worker exits.
+    if stateless_http is None:
+        stateless_http = transport == "streamable-http"
+    return mcp.http_app(path=path, transport=transport,
+                        stateless_http=stateless_http)
 
 
 configure_logging()
