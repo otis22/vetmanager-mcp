@@ -33,7 +33,7 @@ from exceptions import HostResolutionError, VetmanagerError, VetmanagerTimeoutEr
 from host_validation import validate_resolved_vetmanager_origin
 from observability_logging import RUNTIME_LOGGER
 from request_context import get_current_request_context
-from service_metrics import record_upstream_failure, record_upstream_request
+from service_metrics import record_host_resolution, record_upstream_failure, record_upstream_request
 from upstream_transport import classify_http_status, classify_transport_error
 
 
@@ -206,6 +206,28 @@ def _clear_inflight_resolution(
 
 
 async def _resolve_vetmanager_host_uncached(
+    domain: str,
+    *,
+    max_retries: int,
+    correlation_id: str | None = None,
+) -> str:
+    """Observe one shared uncached resolution, including retries."""
+    started = time.monotonic()
+    outcome = "success"
+    try:
+        return await _resolve_vetmanager_host_uncached_impl(
+            domain, max_retries=max_retries, correlation_id=correlation_id)
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+        raise
+    except BaseException:
+        outcome = "error"
+        raise
+    finally:
+        record_host_resolution(duration_seconds=time.monotonic() - started, outcome=outcome)
+
+
+async def _resolve_vetmanager_host_uncached_impl(
     domain: str,
     *,
     max_retries: int,

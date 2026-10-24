@@ -13,6 +13,10 @@ from shared_metric_counters import (
 # Independent public exposition contract: deleting HELP, TYPE and all samples
 # of one family together must still break the guard.
 EXPECTED_METRIC_TYPES = {
+    "histogram": """
+        tool_call_duration_seconds billing_api_duration_seconds
+        host_resolution_duration_seconds
+    """.split(),
     "counter": """
         prompt_requests_total token_expiry_notice_issued_total
         token_expiry_notice_skipped_total http_requests_total mcp_transport_rejections_total
@@ -126,7 +130,7 @@ def test_metrics_help_type_cover_samples_without_process_claims():
         elif line and not line.startswith("#"):
             name = line.split("{", 1)[0].split(" ", 1)[0]
             base = name.rsplit("_", 1)[0]
-            assert name in types or (name.endswith(("_count", "_sum"))
+            assert name in types or (name.endswith(("_count", "_sum", "_bucket"))
                                      and base in types)
             assert 'pid="' not in line and 'worker="' not in line
 
