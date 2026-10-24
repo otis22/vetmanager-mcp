@@ -40,23 +40,81 @@ async def test_cross_slot_buckets_and_legacy_reader(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_concurrent_histogram_updates_and_disappearing_key(monkeypatch):
+    redis_client = fakeredis.FakeRedis(decode_responses=True)
+    backend = shared.RedisMetricCounters(redis_client)
+    await asyncio.gather(*(asyncio.to_thread(
+        backend.observe_histogram, "tool_call_duration_seconds", "invoice.list|GET", .2)
+        for _ in range(30)))
+    histogram = backend.snapshot()["tool_call_duration_seconds"]["invoice.list|GET"]
+    assert histogram["count"] == histogram["buckets"]["0.25"] == 30
+    original = redis_client.hgetall
+
+    def disappearing(key):
+        if key.startswith(shared.HISTOGRAM_KEY_PREFIX):
+            return {}
+        return original(key)
+
+    monkeypatch.setattr(redis_client, "hgetall", disappearing)
+    assert backend.snapshot()["tool_call_duration_seconds"] == {}
+
+
+@pytest.mark.asyncio
 async def test_overflow_keeps_histogram_distribution(monkeypatch):
     class FullCapacity:
         def acquire(self, **_kwargs):
             return False
 
     backend = shared.RedisMetricCounters(fakeredis.FakeRedis(decode_responses=True))
+    metrics.reset_service_metrics()
     monkeypatch.setattr(shared, "get_backend", lambda: backend)
     monkeypatch.setattr(shared, "_DELIVERY_CAPACITY", FullCapacity())
+    original = backend.observe_histogram_aggregate
+    attempts = 0
+
+    def fail_once(*args):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise ConnectionError("transient Redis failure")
+        return original(*args)
+
+    monkeypatch.setattr(backend, "observe_histogram_aggregate", fail_once)
     for duration in (.2, 7., 35.):
         metrics.record_tool_call(endpoint="/rest/api/invoice#list", method="GET",
                                  outcome="success", duration_seconds=duration)
     assert await shared.wait_pending()
+    assert attempts >= 2
     histogram = backend.snapshot()["tool_call_duration_seconds"]["invoice.list|GET"]
     assert histogram["count"] == 3
     assert histogram["buckets"]["0.25"] == 1
     assert histogram["buckets"]["10"] == 2
     assert histogram["buckets"]["60"] == 3
+
+
+@pytest.mark.asyncio
+async def test_cancelled_waiter_does_not_count_shared_task_as_cancelled(monkeypatch):
+    monkeypatch.setattr(shared, "get_backend", lambda: None)
+    metrics.reset_service_metrics()
+    gate = asyncio.Event()
+
+    async def shared_lookup(*_args, **_kwargs):
+        await gate.wait()
+        return "https://stage435-shared.vetmanager.cloud"
+
+    monkeypatch.setattr(host_resolver, "_resolve_vetmanager_host_uncached_impl", shared_lookup)
+    first = asyncio.create_task(host_resolver.resolve_vetmanager_host("stage435-shared"))
+    second = asyncio.create_task(host_resolver.resolve_vetmanager_host("stage435-shared"))
+    await asyncio.sleep(0)
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    gate.set()
+    assert await second == "https://stage435-shared.vetmanager.cloud"
+    await asyncio.sleep(0)
+    histogram = metrics.snapshot_service_metrics()["host_resolution_duration_seconds"]
+    assert histogram["success"]["count"] == 1
+    assert "cancelled" not in histogram
 
 
 def test_only_fixed_tool_and_status_labels_reach_storage(monkeypatch):

@@ -192,23 +192,14 @@ class RedisMetricCounters:
             raise ValueError("Unsupported histogram aggregate")
         digest = hashlib.sha256(f"{family}\0{label_key}".encode()).hexdigest()
         key = HISTOGRAM_KEY_PREFIX + digest
-        for _ in range(20):
-            try:
-                with self._redis.pipeline() as pipe:
-                    pipe.watch(key)
-                    current = pipe.hgetall(key)
-                    mapping = {"family": family, "label_key": label_key,
-                               "count": int(current.get("count", 0)) + count,
-                               "sum_seconds": float(current.get("sum_seconds", 0)) + total_seconds}
-                    mapping.update({f"bucket_{name}": int(current.get(f"bucket_{name}", 0)) + value
-                                    for (name, _), value in zip(HISTOGRAM_BUCKETS, buckets)})
-                    pipe.multi()
-                    pipe.hset(key, mapping=mapping)
-                    pipe.execute()
-                    return
-            except WatchError:
-                continue
-        raise SharedMetricsUnavailable("Shared histogram write contention")
+        with self._redis.pipeline(transaction=True) as pipe:
+            pipe.hset(key, mapping={"family": family, "label_key": label_key})
+            pipe.hincrby(key, "count", count)
+            pipe.hincrbyfloat(key, "sum_seconds", total_seconds)
+            for (name, _), value in zip(HISTOGRAM_BUCKETS, buckets):
+                if value:
+                    pipe.hincrby(key, f"bucket_{name}", value)
+            pipe.execute()
 
     def observe_aggregate(self, family: str, label_key: str, count: int,
                           total_seconds: float, max_seconds: float) -> None:
@@ -796,6 +787,8 @@ class RedisMetricCounters:
             result.update({family: {} for family in HISTOGRAM_FAMILIES})
             for key in self._redis.scan_iter(match=HISTOGRAM_KEY_PREFIX + "*"):
                 row = self._redis.hgetall(key)
+                if not row:  # SCAN can race with rollback cleanup.
+                    continue
                 family = row["family"]
                 if family not in HISTOGRAM_FAMILIES:
                     raise ValueError("Unknown shared histogram family")
