@@ -30,7 +30,7 @@ import clinic_timezone
 from server import _graceful_shutdown, mcp
 from tests.conftest import TEST_ENCRYPTION_KEY
 from vetmanager_client import VetmanagerClient
-from exceptions import AuthError, VetmanagerError
+from exceptions import VetmanagerError
 from property_privacy import (
     REDACTED_SECRET,
     is_secret_property_name_or_title,
@@ -100,7 +100,7 @@ def _tool_payload(result) -> dict:
 async def resolve_real_user_token() -> str:
     """Exchange one user token from login/password for smoke tests."""
     if not TEST_USER_TOKEN_BASE_URL or not TEST_USER_LOGIN or not TEST_USER_PASSWORD:
-        pytest.skip("Login/password real smoke requires TEST_USER_TOKEN_BASE_URL, TEST_USER_LOGIN and TEST_USER_PASSWORD.")
+        pytest.fail("Login/password real smoke was requested without complete credentials.")
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as http:
         response = await http.post(
@@ -184,13 +184,8 @@ def _post_with_csrf_sync(
 
 
 async def call(coro):
-    """Run coro; skip on AuthError (key may be revoked or access restricted)."""
-    try:
-        return await coro
-    except AuthError as e:
-        pytest.skip(f"API returned auth error: {e}")
-    except VetmanagerError as e:
-        pytest.skip(f"API/network error: {e}")
+    """Run a real API call without hiding upstream failures."""
+    return await coro
 
 
 # ── Host resolution ───────────────────────────────────────────────────────────
@@ -807,15 +802,16 @@ async def test_real_get_clients_with_sort_filter():
 @skip_if_no_creds
 @pytest.mark.asyncio
 async def test_real_nonexistent_client_raises():
-    """Requesting a non-existent client must raise NotFoundError."""
+    """A non-existent client must not be returned, whether API uses 404 or an empty list."""
     from exceptions import NotFoundError
     try:
-        await vc().get("/rest/api/client/999999999")
-        pytest.skip("Expected 404 but got success — resource may exist")
+        result = await vc().get("/rest/api/client/999999999")
     except NotFoundError:
-        pass  # expected
-    except AuthError as e:
-        pytest.skip(f"Auth error: {e}")
+        return
+    assert result.get("success") is True
+    data = result.get("data", {})
+    assert data.get("totalCount") == 0
+    assert data.get("client") == []
 
 
 # ── Reference entities ────────────────────────────────────────────────────────
@@ -1228,8 +1224,8 @@ async def test_real_get_pet_profile_66():
 
     mc_filter = _json.dumps([{"property": "patient_id", "value": "66"}], separators=(",", ":"))
     mc_sort = _json.dumps([{"property": "id", "direction": "DESC"}], separators=(",", ":"))
-    mc_resp = await call(c.get("/rest/api/medicalcard", params={"filter": mc_filter, "sort": mc_sort, "limit": 5}))
-    medical_cards = mc_resp.get("data", {}).get("medicalcard", []) if mc_resp else []
+    mc_resp = await call(c.get("/rest/api/MedicalCards", params={"filter": mc_filter, "sort": mc_sort, "limit": 5}))
+    medical_cards = mc_resp.get("data", {}).get("medicalCards", [])
     assert isinstance(medical_cards, list)
 
     vacc_resp = await call(c.get("/rest/api/MedicalCards/Vaccinations", params={"pet_id": 66, "limit": 100}))
@@ -1284,5 +1280,5 @@ async def test_real_get_message_reports():
         )
     )
     if not result.get("success", True):
-        pytest.skip(f"messages/reports returned API validation error: {result}")
+        pytest.fail("messages/reports returned API validation error")
     assert "data" in result

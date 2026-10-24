@@ -10,7 +10,7 @@ on:
       test_user_token_base_url:
         description: 'Optional base URL for login/password -> token smoke (e.g. https://devtr6.vetmanager2.ru)'
         required: false
-        default: 'https://devtr6.vetmanager2.ru'
+        default: ''
 
 jobs:
   test-real:
@@ -40,7 +40,7 @@ jobs:
           TEST_DOMAIN: ${{ inputs.test_domain }}
           TEST_API_KEY: ${{ secrets.VETMANAGER_TEST_API_KEY }}
           TEST_USER_TOKEN: ${{ secrets.VETMANAGER_TEST_USER_TOKEN }}
-          TEST_USER_TOKEN_BASE_URL: ${{ inputs.test_user_token_base_url }}
+          TEST_USER_TOKEN_BASE_URL: ${{ inputs.test_user_token_base_url || (secrets.VETMANAGER_TEST_USER_LOGIN != '' && secrets.VETMANAGER_TEST_USER_PASSWORD != '' && 'https://devtr6.vetmanager2.ru') || '' }}
           TEST_USER_LOGIN: ${{ secrets.VETMANAGER_TEST_USER_LOGIN }}
           TEST_USER_PASSWORD: ${{ secrets.VETMANAGER_TEST_USER_PASSWORD }}
         run: |
