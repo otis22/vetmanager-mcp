@@ -1,11 +1,88 @@
 """Agent feedback tools."""
 
+import logging
+
 from filters import OptionalJsonList
 from fastmcp import FastMCP
+from fastmcp.exceptions import ValidationError as FastMCPValidationError
+from fastmcp.server.middleware import Middleware
+from pydantic import ValidationError as PydanticValidationError
 
 from agent_feedback_service import create_feedback_report
+from exceptions import ToolInputError
 from request_context import get_current_request_context
 from runtime_auth import get_current_runtime_credentials
+
+
+_FIELD_EXAMPLES = {
+    "category": 'category="bug"',
+    "severity": 'severity="medium"',
+    "summary": 'summary="Short safe summary"',
+    "details": 'details="Safe description without personal data"',
+    "http_status": "http_status=422 or omit it",
+    "params_shape": 'params_shape=["date_from"] or omit it',
+}
+_FALLBACK = "Check report_problem inputSchema in tools/list and retry."
+
+
+class _FeedbackValidationLogFilter(logging.Filter):
+    """Remove argument values from FastMCP's report_problem validation warning."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if (record.name == "fastmcp.server.server"
+                and record.msg == "Invalid arguments for tool %r: %s"
+                and isinstance(record.args, tuple) and record.args
+                and record.args[0] == "report_problem"):
+            record.msg = "Invalid arguments for tool %r (input omitted)"
+            record.args = ("report_problem",)
+            record.exc_info = None
+            record.exc_text = None
+        return True
+
+
+_VALIDATION_LOG_FILTER = _FeedbackValidationLogFilter()
+
+
+def _install_validation_log_filter() -> None:
+    logger = logging.getLogger("fastmcp.server.server")
+    if _VALIDATION_LOG_FILTER not in logger.filters:
+        logger.addFilter(_VALIDATION_LOG_FILTER)
+
+
+def _validation_guidance(exc: FastMCPValidationError) -> str:
+    cause = exc.__cause__
+    if not isinstance(cause, PydanticValidationError):
+        return _FALLBACK
+    try:
+        errors = cause.errors(include_url=False)
+    except Exception:
+        return _FALLBACK
+    if not errors:
+        return _FALLBACK
+    error = errors[0]
+    if not isinstance(error, dict):
+        return _FALLBACK
+    loc = error.get("loc")
+    field = loc[0] if isinstance(loc, (tuple, list)) and loc else None
+    kind = error.get("type")
+    if not isinstance(field, str) or field not in _FIELD_EXAMPLES or not isinstance(kind, str):
+        return _FALLBACK
+    if kind == "missing_argument" and field not in {"category", "severity", "summary", "details"}:
+        return _FALLBACK
+    return f"Invalid report_problem argument '{field}'. Retry with {_FIELD_EXAMPLES[field]}."
+
+
+class FeedbackValidationMiddleware(Middleware):
+    def __init__(self) -> None:
+        _install_validation_log_filter()
+
+    async def on_call_tool(self, context, call_next):
+        if context.message.name != "report_problem":
+            return await call_next(context)
+        try:
+            return await call_next(context)
+        except FastMCPValidationError as exc:
+            raise ToolInputError(_validation_guidance(exc)) from None
 
 
 def register(mcp: FastMCP) -> None:
