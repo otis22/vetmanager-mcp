@@ -88,6 +88,15 @@ REPORT_AI_RATING_REMINDER = (
     "rate_report_ai_job(job_id, score, intent_text); comment is optional. "
     "Rating requires report_ai.write access."
 )
+REPORT_AI_SAVE_RATING_PROMPT = (
+    "Сейчас откройте реальные строки через get_report_ai_job_data и выполните "
+    "его дальнейшие указания: при limited=true просмотрите полный экспорт до оценки. "
+    "Если задание уже оценено, не заменяйте оценку автоматически. Иначе после "
+    "просмотра оцените результат одним вызовом rate_report_ai_job(job_id, score, "
+    "intent_text): шкала 1-10; 1 - отчёт не построился, 2 и выше - построился, "
+    "10 - задача решена полностью. Передайте исходный intent_text; если он "
+    "недоступен, не выдумывайте его. Комментарий необязателен."
+)
 REPORT_AI_RATING_TERMINAL_STATUSES = frozenset({"built", "saved", "existing_report_matched"})
 REPORT_AI_QUEUE_OBSERVATION_TTL_SECONDS = CLINIC_TIMEZONE_TTL_SECONDS
 REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES = CLINIC_TIMEZONE_MAX_ENTRIES
@@ -2471,6 +2480,7 @@ def register(mcp: FastMCP) -> None:
                 data["next_action"] = _report_ai_data_action(job_id)
                 credentials = get_current_runtime_credentials()
                 await observe_first_action(getattr(credentials, "account_id", None), "first_report_saved_at")
+                data["mcp_rating_prompt"] = REPORT_AI_SAVE_RATING_PROMPT
             else:
                 observed_job = _extract_job(payload)
                 if not observed_job:

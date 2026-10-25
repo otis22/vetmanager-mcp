@@ -23,6 +23,7 @@ from structured_logging import configure_logging
 from tool_oauth_security import OAuthChallengeMiddleware, apply_tool_oauth_security_metadata
 from tool_scope_security import ToolVisibilityMiddleware
 from tool_error_tracking import ToolErrorTrackingMiddleware
+from tools.feedback import FeedbackValidationMiddleware
 from prompt_metrics import PromptMetricsMiddleware
 from tool_descriptions import enhance_tool_descriptions, enhance_raw_clause_descriptions
 from identifier_aliases import IdentifierAliasMiddleware, public_text
@@ -361,6 +362,7 @@ mcp.add_middleware(OAuthChallengeMiddleware())
 # Must remain after OAuth middleware: its call_next executes inside the
 # request-local RuntimeCredentials context, which supplies account_id safely.
 mcp.add_middleware(ToolErrorTrackingMiddleware())
+mcp.add_middleware(FeedbackValidationMiddleware())
 # Stage 271: catalogue only. Registered last and implementing just
 # `on_list_tools`, so the call chain above is untouched.
 mcp.add_middleware(ToolVisibilityMiddleware())

@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 import re
 from threading import Lock
 from typing import DefaultDict
+import math
 
 from observability_logging import RUNTIME_LOGGER
 from tool_access_registry import SCOPE_DENIED_ERROR_CODE
@@ -30,6 +31,25 @@ class LatencyAggregate:
         self.count += 1
         self.sum_seconds += duration_seconds
         self.max_seconds = max(self.max_seconds, duration_seconds)
+
+
+@dataclass(slots=True)
+class HistogramAggregate:
+    count: int = 0
+    sum_seconds: float = 0.0
+    buckets: dict[str, int] | None = None
+
+    def observe(self, duration_seconds: float) -> None:
+        if not math.isfinite(duration_seconds):
+            return
+        duration = max(0.0, duration_seconds)
+        if self.buckets is None:
+            self.buckets = {name: 0 for name, _ in shared_metric_counters.HISTOGRAM_BUCKETS}
+        self.count += 1
+        self.sum_seconds += duration
+        for name, boundary in shared_metric_counters.HISTOGRAM_BUCKETS:
+            if duration <= boundary:
+                self.buckets[name] += 1
 
 
 _LOCK = Lock()
@@ -94,6 +114,34 @@ def _record_shared_latency(family: str, label_key: str, duration_seconds: float)
         )
 
 
+def _record_histogram(family: str, label_key: str, duration_seconds: float) -> None:
+    if not math.isfinite(duration_seconds):
+        return
+    with _LOCK:
+        _HISTOGRAMS[family][label_key].observe(duration_seconds)
+    try:
+        backend = shared_metric_counters.get_backend()
+        if backend is not None:
+            def deliver() -> None:
+                try:
+                    backend.observe_histogram(family, label_key, duration_seconds)
+                except Exception as exc:
+                    RUNTIME_LOGGER.warning(
+                        "Shared histogram event lost",
+                        extra={"event_name": "shared_metric_event_lost",
+                               "metric_family": family, "error_class": type(exc).__name__},
+                    )
+            shared_metric_counters.dispatch(
+                deliver, on_full=lambda: shared_metric_counters.coalesce_histogram(
+                    backend, family, label_key, duration_seconds))
+    except Exception as exc:
+        RUNTIME_LOGGER.warning(
+            "Shared histogram event lost",
+            extra={"event_name": "shared_metric_event_lost",
+                   "metric_family": family, "error_class": type(exc).__name__},
+        )
+
+
 def record_sentry_delivery_lost(reason: str, count: int = 1) -> None:
     """Count failed error-item deliveries using a bounded transport reason."""
     if reason not in {"dns", "route", "timeout", "tls", "network_other", "sdk_error", "http_error", "rate_limited", "queue_overflow", "backoff"}:
@@ -125,6 +173,16 @@ NOTICE_SKIP_OUTCOMES = frozenset({"claim_recent", "deadline", "no_subject", "ine
 _TOOL_CALL_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = defaultdict(
     LatencyAggregate
 )
+_HISTOGRAMS: dict[str, DefaultDict[str, HistogramAggregate]] = {
+    family: defaultdict(HistogramAggregate)
+    for family in shared_metric_counters.HISTOGRAM_FAMILIES
+}
+_TRACKED_TOOL_LABELS = frozenset({"get_medical_cards_by_date", "invoice.list",
+                                  "invoiceDocument.list", "MedicalCards.get_by_id"})
+_BILLING_STATUSES = frozenset({"http_200", "http_4xx", "http_5xx",
+                               "malformed_response", "invalid_origin", "connect_timeout",
+                               "read_timeout", "timeout", "tls_verification_failed",
+                               "connect_error", "network_error"})
 _TOKEN_PRESET_ISSUED_TOTAL: DefaultDict[str, int] = defaultdict(int)
 # Этап 309. Сколько раз отказ спас запись от плейсхолдера. Метка — только имя
 # инструмента: в аргументе может лежать что угодно, включая персональные
@@ -222,6 +280,8 @@ def reset_service_metrics() -> None:
         _TOKEN_EXPIRY_NOTICE_ISSUED_TOTAL.clear()
         _TOKEN_EXPIRY_NOTICE_SKIPPED_TOTAL.clear()
         _TOOL_CALL_LATENCY_SECONDS.clear()
+        for histogram in _HISTOGRAMS.values():
+            histogram.clear()
         _TOKEN_PRESET_ISSUED_TOTAL.clear()
         _PLACEHOLDER_ARGUMENT_REJECTIONS_TOTAL.clear()
         _RATE_LIMIT_BACKEND_DEGRADED_TOTAL.clear()
@@ -425,6 +485,14 @@ def record_upstream_request(
     _record_shared_counter("upstream_requests_total", f"{target}|{status}")
     _record_shared_latency("upstream_request_latency_seconds", f"{target}|{status}",
                            duration_seconds)
+    if target == "billing_api":
+        safe_status = status if status in _BILLING_STATUSES else "other"
+        _record_histogram("billing_api_duration_seconds", safe_status, duration_seconds)
+
+
+def record_host_resolution(*, duration_seconds: float, outcome: str) -> None:
+    safe_outcome = outcome if outcome in {"success", "error", "cancelled"} else "error"
+    _record_histogram("host_resolution_duration_seconds", safe_outcome, duration_seconds)
 
 
 async def instrument_call(
@@ -551,6 +619,11 @@ def record_tool_call(
         _TOOL_CALL_LATENCY_SECONDS[(labeled_endpoint, normalized_method)].observe(
             duration_seconds
         )
+    tool = _tool_family_label(labeled_endpoint)
+    safe_tool = tool if tool in _TRACKED_TOOL_LABELS else "other"
+    safe_method = normalized_method if normalized_method in {"GET", "POST", "PUT", "PATCH", "DELETE"} else "other"
+    _record_histogram("tool_call_duration_seconds", f"{safe_tool}|{safe_method}",
+                      duration_seconds)
     if shared:
         counter = _record_shared_counter("tool_calls_total",
                                          f"{labeled_endpoint}|{normalized_method}|{outcome}")
@@ -868,6 +941,13 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
     """Return a stable JSON-serializable snapshot of current service metrics."""
     with _LOCK:
         snapshot = {
+            **{
+                family: {label: {"count": value.count,
+                                 "sum_seconds": value.sum_seconds,
+                                 "buckets": dict(value.buckets or {})}
+                         for label, value in sorted(series.items())}
+                for family, series in _HISTOGRAMS.items()
+            },
             "http_requests_total": {
                 f"{route}|{method}|{status_code}": count
                 for (route, method, status_code), count in sorted(_HTTP_REQUESTS_TOTAL.items())
@@ -1456,5 +1536,25 @@ def render_prometheus_metrics() -> str:
         "# TYPE vetmanager_cache_entries gauge",
         f"vetmanager_cache_entries {cache_entries}",
     ])
+
+    histogram_labels = {
+        "tool_call_duration_seconds": ("tool", "method"),
+        "billing_api_duration_seconds": ("status",),
+        "host_resolution_duration_seconds": ("outcome",),
+    }
+    for family, label_names in histogram_labels.items():
+        name = f"vetmanager_{family}"
+        lines.extend((f"# HELP {name} Observed duration in seconds.",
+                      f"# TYPE {name} histogram"))
+        for label_key, aggregate in snapshot[family].items():
+            values = label_key.split("|")
+            labels = dict(zip(label_names, values))
+            for bound, _ in shared_metric_counters.HISTOGRAM_BUCKETS:
+                lines.append(f"{name}_bucket{_labels_text(**labels, le=bound)} "
+                             f"{aggregate['buckets'][bound]}")
+            lines.append(f"{name}_bucket{_labels_text(**labels, le='+Inf')} "
+                         f"{aggregate['count']}")
+            lines.append(f"{name}_count{_labels_text(**labels)} {aggregate['count']}")
+            lines.append(f"{name}_sum{_labels_text(**labels)} {aggregate['sum_seconds']}")
 
     return "\n".join(lines) + "\n"

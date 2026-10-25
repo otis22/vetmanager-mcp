@@ -23,6 +23,13 @@ MCP_SESSION_RETRIES_KEY = "vetmanager:metrics:v1:mcp-session-retries"
 MCP_SESSION_RETRY_PREFIX = "vetmanager:metrics:v1:session-retry:"
 MCP_SESSION_RETRY_SLOTS = 4096
 LATENCY_KEY_PREFIX = "vetmanager:metrics:v1:latency:"
+HISTOGRAM_KEY_PREFIX = "vetmanager:metrics:v1:histogram:"
+HISTOGRAM_BUCKETS = (("0.1", .1), ("0.25", .25), ("0.5", .5),
+                     ("1", 1.), ("2.5", 2.5), ("5", 5.), ("10", 10.),
+                     ("20", 20.), ("30", 30.), ("60", 60.))
+HISTOGRAM_FAMILIES = frozenset({"tool_call_duration_seconds",
+                                "billing_api_duration_seconds",
+                                "host_resolution_duration_seconds"})
 REPORT_AI_TERMINAL_KEY_PREFIX = "vetmanager:report-ai:v1:terminal:"
 REPORT_AI_LIFECYCLE_KEY_PREFIX = "vetmanager:report-ai:v1:lifecycle:"
 REPORT_AI_EXPIRY_INDEX = "vetmanager:report-ai:v1:expiry"
@@ -169,6 +176,30 @@ class RedisMetricCounters:
             raise ValueError("Unsupported metric latency")
         duration = max(0.0, duration_seconds)
         self.observe_aggregate(family, label_key, 1, duration, duration)
+
+    def observe_histogram(self, family: str, label_key: str, duration_seconds: float) -> None:
+        if family not in HISTOGRAM_FAMILIES or not math.isfinite(duration_seconds):
+            raise ValueError("Unsupported histogram observation")
+        duration = max(0.0, duration_seconds)
+        buckets = tuple(int(duration <= boundary) for _, boundary in HISTOGRAM_BUCKETS)
+        self.observe_histogram_aggregate(family, label_key, 1, duration, buckets)
+
+    def observe_histogram_aggregate(self, family: str, label_key: str, count: int,
+                                    total_seconds: float, buckets: tuple[int, ...]) -> None:
+        if (family not in HISTOGRAM_FAMILIES or count <= 0
+                or len(buckets) != len(HISTOGRAM_BUCKETS)
+                or any(value < 0 or value > count for value in buckets)):
+            raise ValueError("Unsupported histogram aggregate")
+        digest = hashlib.sha256(f"{family}\0{label_key}".encode()).hexdigest()
+        key = HISTOGRAM_KEY_PREFIX + digest
+        with self._redis.pipeline(transaction=True) as pipe:
+            pipe.hset(key, mapping={"family": family, "label_key": label_key})
+            pipe.hincrby(key, "count", count)
+            pipe.hincrbyfloat(key, "sum_seconds", total_seconds)
+            for (name, _), value in zip(HISTOGRAM_BUCKETS, buckets):
+                if value:
+                    pipe.hincrby(key, f"bucket_{name}", value)
+            pipe.execute()
 
     def observe_aggregate(self, family: str, label_key: str, count: int,
                           total_seconds: float, max_seconds: float) -> None:
@@ -753,6 +784,20 @@ class RedisMetricCounters:
                     "sum_seconds": float(row["sum_seconds"]),
                     "max_seconds": float(row["max_seconds"]),
                 }
+            result.update({family: {} for family in HISTOGRAM_FAMILIES})
+            for key in self._redis.scan_iter(match=HISTOGRAM_KEY_PREFIX + "*"):
+                row = self._redis.hgetall(key)
+                if not row:  # SCAN can race with rollback cleanup.
+                    continue
+                family = row["family"]
+                if family not in HISTOGRAM_FAMILIES:
+                    raise ValueError("Unknown shared histogram family")
+                result[family][row["label_key"]] = {
+                    "count": int(row["count"]),
+                    "sum_seconds": float(row["sum_seconds"]),
+                    "buckets": {name: int(row.get(f"bucket_{name}", 0))
+                                for name, _ in HISTOGRAM_BUCKETS},
+                }
             result["cache_entries"] = sum(
                 int(value) for key in self._redis.scan_iter(match=CACHE_ENTRIES_KEY_PREFIX + "*")
                 if (value := self._redis.get(key)) is not None
@@ -772,6 +817,7 @@ _PENDING: set[Future] = set()
 _OVERFLOW_LOCK = Lock()
 _OVERFLOW_COUNTERS: dict[tuple, int] = {}
 _OVERFLOW_LATENCIES: dict[tuple, tuple[int, float, float]] = {}
+_OVERFLOW_HISTOGRAMS: dict[tuple, tuple[int, float, tuple[int, ...]]] = {}
 _OVERFLOW_GAUGES: dict[tuple, int] = {}
 _OVERFLOW_FUTURE: Future | None = None
 _OVERFLOW_STOP = Event()
@@ -802,6 +848,20 @@ def coalesce_latency(backend: RedisMetricCounters, family: str,
         return _schedule_overflow()
 
 
+def coalesce_histogram(backend: RedisMetricCounters, family: str,
+                       label_key: str, duration: float) -> Future:
+    duration = max(0.0, duration)
+    counts = tuple(int(duration <= bound) for _, bound in HISTOGRAM_BUCKETS)
+    with _OVERFLOW_LOCK:
+        key = (backend, family, label_key)
+        previous = _OVERFLOW_HISTOGRAMS.get(key, (0, 0.0, (0,) * len(counts)))
+        _OVERFLOW_HISTOGRAMS[key] = (
+            previous[0] + 1, previous[1] + duration,
+            tuple(a + b for a, b in zip(previous[2], counts)),
+        )
+        return _schedule_overflow()
+
+
 def coalesce_cache_gauge(backend: RedisMetricCounters, slot: str,
                          count: int) -> Future:
     with _OVERFLOW_LOCK:
@@ -819,6 +879,9 @@ def _drain_overflow() -> None:
             elif _OVERFLOW_LATENCIES:
                 kind = "latency"
                 key, value = _OVERFLOW_LATENCIES.popitem()
+            elif _OVERFLOW_HISTOGRAMS:
+                kind = "histogram"
+                key, value = _OVERFLOW_HISTOGRAMS.popitem()
             elif _OVERFLOW_GAUGES:
                 kind = "gauge"
                 key, value = _OVERFLOW_GAUGES.popitem()
@@ -831,6 +894,8 @@ def _drain_overflow() -> None:
                 backend.increment(key[1], key[2], value)
             elif kind == "latency":
                 backend.observe_aggregate(key[1], key[2], *value)
+            elif kind == "histogram":
+                backend.observe_histogram_aggregate(key[1], key[2], *value)
             else:
                 backend.publish_cache_entries(key[1], value)
         except Exception as exc:
@@ -842,6 +907,12 @@ def _drain_overflow() -> None:
                     _OVERFLOW_LATENCIES[key] = (current[0] + value[0],
                                                  current[1] + value[1],
                                                  max(current[2], value[2]))
+                elif kind == "histogram":
+                    current = _OVERFLOW_HISTOGRAMS.get(key, (0, 0.0, (0,) * len(value[2])))
+                    _OVERFLOW_HISTOGRAMS[key] = (
+                        current[0] + value[0], current[1] + value[1],
+                        tuple(a + b for a, b in zip(current[2], value[2])),
+                    )
                 else:
                     _OVERFLOW_GAUGES.setdefault(key, value)
             RUNTIME_LOGGER.warning("Shared metric overflow retry", extra={
