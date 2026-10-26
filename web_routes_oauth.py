@@ -52,6 +52,7 @@ def register_oauth_routes(
     json_response,
     redirect_response,
     read_form,
+    form_payload_too_large: type[Exception],
     get_account_id_from_request,
     resolve_csrf_token,
     extract_redirect_origin,
@@ -377,8 +378,6 @@ def register_oauth_routes(
         include_in_schema=False,
     )
     async def oauth_token(request: Request) -> JSONResponse:
-        from web import FormPayloadTooLarge
-
         content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         if content_type != "application/x-www-form-urlencoded":
             record_token_rejection("invalid_request", noisy="invalid_content_type")
@@ -393,7 +392,7 @@ def register_oauth_routes(
 
         try:
             form = await read_form(request)
-        except (FormPayloadTooLarge, UnicodeDecodeError):
+        except (form_payload_too_large, UnicodeDecodeError):
             record_token_rejection("invalid_request", noisy="invalid_form")
             raise
         limit, window_seconds = get_rate_limit_config(

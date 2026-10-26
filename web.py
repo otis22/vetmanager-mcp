@@ -668,6 +668,7 @@ def register_web_routes(mcp: FastMCP) -> None:
         json_response=_json_response,
         redirect_response=_redirect_response,
         read_form=_read_form,
+        form_payload_too_large=FormPayloadTooLarge,
         get_account_id_from_request=_get_account_id_from_request,
         resolve_csrf_token=_resolve_csrf_token,
         extract_redirect_origin=_extract_oauth_redirect_origin,
