@@ -11,7 +11,7 @@ import json
 from secrets import token_urlsafe
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bearer_token_manager import build_token_prefix, hash_bearer_token
@@ -21,6 +21,7 @@ from observability_logging import RUNTIME_LOGGER
 from storage_models import (
     OAUTH_STATUS_ACTIVE,
     OAUTH_STATUS_REVOKED,
+    Account,
     OAuthAccessToken,
     OAuthAuthorizationCode,
     OAuthClient,
@@ -95,11 +96,14 @@ class OAuthRevokeFamilyResult:
 class OAuthRequestError(Exception):
     """OAuth/DCR request error safe to expose as JSON."""
 
-    def __init__(self, error: str, description: str, *, status_code: int = 400):
+    def __init__(self, error: str, description: str, *, status_code: int = 400,
+                 grant_id: int | None = None, stale_account_id: int | None = None):
         super().__init__(description)
         self.error = error
         self.description = description
         self.status_code = status_code
+        self.grant_id = grant_id
+        self.stale_account_id = stale_account_id
 
 
 def _stable_json(values: list[str]) -> str:
@@ -775,13 +779,16 @@ async def exchange_oauth_refresh_token(session: AsyncSession, form: dict[str, st
         raise OAuthRequestError("invalid_grant", "Refresh token binding mismatch.")
     await _require_active_oauth_client(session, grant.client_id)
     if grant.status != OAUTH_STATUS_ACTIVE:
-        raise OAuthRequestError("invalid_grant", "Grant is not active.")
+        raise OAuthRequestError("invalid_grant", "Grant is not active.",
+                                grant_id=grant.id,
+                                stale_account_id=grant.account_id if grant.status == OAUTH_STATUS_REVOKED else None)
     if grant.access_preset is None and _is_full_access_scope(refresh_token.scope):
         await _revoke_grant_family(session, grant.id, reason="legacy_full_access_relink_required")
         await session.commit()
         raise OAuthRequestError(
             "invalid_grant",
             "This ChatGPT connection used legacy full access. Reconnect ChatGPT and choose an access level.",
+            grant_id=grant.id,
         )
     expires_at = refresh_token.expires_at
     if expires_at.tzinfo is None:
@@ -789,11 +796,11 @@ async def exchange_oauth_refresh_token(session: AsyncSession, form: dict[str, st
     if expires_at <= now:
         await _revoke_grant_family(session, grant.id, reason="refresh_expired")
         await session.commit()
-        raise OAuthRequestError("invalid_grant", "Refresh token is expired.")
+        raise OAuthRequestError("invalid_grant", "Refresh token is expired.", grant_id=grant.id)
     if refresh_token.status != OAUTH_STATUS_ACTIVE or refresh_token.used_at is not None:
         await _revoke_grant_family(session, grant.id, reason="refresh_reuse")
         await session.commit()
-        raise OAuthRequestError("invalid_grant", "Refresh token reuse detected.")
+        raise OAuthRequestError("invalid_grant", "Refresh token reuse detected.", grant_id=grant.id)
 
     result = await session.execute(
         update(OAuthRefreshToken)
@@ -807,7 +814,7 @@ async def exchange_oauth_refresh_token(session: AsyncSession, form: dict[str, st
     if result.rowcount != 1:
         await _revoke_grant_family(session, grant.id, reason="refresh_race")
         await session.commit()
-        raise OAuthRequestError("invalid_grant", "Refresh token reuse detected.")
+        raise OAuthRequestError("invalid_grant", "Refresh token reuse detected.", grant_id=grant.id)
 
     effective_scope = get_effective_oauth_scope_for_preset(
         grant.access_preset,
@@ -841,6 +848,26 @@ async def exchange_oauth_token(session: AsyncSession, form: dict[str, str]) -> d
     if grant_type == "refresh_token":
         return await exchange_oauth_refresh_token(session, form)
     raise OAuthRequestError("unsupported_grant_type", "Unsupported grant_type.")
+
+
+async def claim_stale_oauth_refresh(session: AsyncSession, *, account_id: int,
+                                    client_id: str, old_grant_id: int) -> bool:
+    """Claim one daily signal after confirming an active sibling grant."""
+    active_heir = select(OAuthGrant.id).where(
+        OAuthGrant.account_id == account_id,
+        OAuthGrant.client_id == client_id,
+        OAuthGrant.id != old_grant_id,
+        OAuthGrant.status == OAUTH_STATUS_ACTIVE,
+    ).exists()
+    now = datetime.now(timezone.utc)
+    result = await session.execute(update(Account).where(
+        Account.id == account_id,
+        active_heir,
+        or_(Account.oauth_stale_refresh_marked_at.is_(None),
+            Account.oauth_stale_refresh_marked_at <= now - timedelta(days=1)),
+    ).values(oauth_stale_refresh_marked_at=now))
+    await session.commit()
+    return result.rowcount == 1
 
 
 async def accounts_with_live_oauth_access(session: AsyncSession, *, now: datetime) -> set[int]:

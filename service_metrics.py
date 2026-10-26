@@ -58,6 +58,8 @@ _HTTP_REQUEST_LATENCY_SECONDS: DefaultDict[tuple[str, str], LatencyAggregate] = 
     LatencyAggregate
 )
 _AUTH_FAILURES_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
+_OAUTH_TOKEN_ERRORS_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
+_OAUTH_STALE_GRANT_REFRESH_TOTAL = 0
 _UPSTREAM_FAILURES_TOTAL: DefaultDict[tuple[str, str], int] = defaultdict(int)
 _SENTRY_DELIVERY_LOST_TOTAL: DefaultDict[str, int] = defaultdict(int)
 _SENTRY_DELIVERY_ACCEPTED_TOTAL = 0
@@ -266,9 +268,12 @@ def reset_service_metrics() -> None:
         global _REPORT_AI_RATING_REMINDERS_TOTAL
         global _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_ISSUED_TOTAL, _REPORT_AI_EMPTY_PREVIEW_GUIDANCE_JOBS_TOTAL
         global _SANITIZER_FAILURES_TOTAL, _REST_UNMAPPED_READ_TOTAL, _SENTRY_DELIVERY_ACCEPTED_TOTAL
+        global _OAUTH_STALE_GRANT_REFRESH_TOTAL
         _HTTP_REQUESTS_TOTAL.clear()
         _HTTP_REQUEST_LATENCY_SECONDS.clear()
         _AUTH_FAILURES_TOTAL.clear()
+        _OAUTH_TOKEN_ERRORS_TOTAL.clear()
+        _OAUTH_STALE_GRANT_REFRESH_TOTAL = 0
         _UPSTREAM_FAILURES_TOTAL.clear()
         _SENTRY_DELIVERY_LOST_TOTAL.clear()
         _SENTRY_DELIVERY_ACCEPTED_TOTAL = 0
@@ -427,6 +432,30 @@ def record_auth_failure(*, source: str, reason: str) -> None:
     with _LOCK:
         _AUTH_FAILURES_TOTAL[(source, reason)] += 1
     _record_shared_counter("auth_failures_total", f"{source}|{reason}")
+
+
+OAUTH_TOKEN_ERROR_CODES = frozenset({
+    "invalid_request", "invalid_grant", "invalid_client",
+    "unsupported_grant_type", "temporarily_unavailable",
+})
+OAUTH_TOKEN_GRANT_TYPES = frozenset({"refresh_token", "authorization_code"})
+
+
+def record_oauth_token_error(*, error: str, grant_type: str) -> tuple[str, str]:
+    """Record a refusal with fixed-cardinality labels and return those labels."""
+    bounded_error = error if error in OAUTH_TOKEN_ERROR_CODES else "other"
+    bounded_type = grant_type if grant_type in OAUTH_TOKEN_GRANT_TYPES else "other"
+    with _LOCK:
+        _OAUTH_TOKEN_ERRORS_TOTAL[(bounded_error, bounded_type)] += 1
+    _record_shared_counter("oauth_token_errors_total", f"{bounded_error}|{bounded_type}")
+    return bounded_error, bounded_type
+
+
+def record_oauth_stale_grant_refresh() -> None:
+    global _OAUTH_STALE_GRANT_REFRESH_TOTAL
+    with _LOCK:
+        _OAUTH_STALE_GRANT_REFRESH_TOTAL += 1
+    _record_shared_counter("oauth_stale_grant_refresh_total", "")
 
 
 def record_upstream_failure(*, target: str, reason: str) -> None:
@@ -962,6 +991,11 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 f"{source}|{reason}": count
                 for (source, reason), count in sorted(_AUTH_FAILURES_TOTAL.items())
             },
+            "oauth_token_errors_total": {
+                f"{error}|{grant_type}": count
+                for (error, grant_type), count in sorted(_OAUTH_TOKEN_ERRORS_TOTAL.items())
+            },
+            "oauth_stale_grant_refresh_total": _OAUTH_STALE_GRANT_REFRESH_TOTAL,
             "upstream_failures_total": {
                 f"{target}|{reason}": count
                 for (target, reason), count in sorted(_UPSTREAM_FAILURES_TOTAL.items())
@@ -1147,6 +1181,17 @@ def render_prometheus_metrics() -> str:
             f"vetmanager_auth_failures_total"
             f"{_labels_text(source=source, reason=reason)} {value}"
         )
+
+    lines.extend([
+        "# HELP vetmanager_oauth_token_errors_total OAuth token refusals by bounded error and grant type.",
+        "# TYPE vetmanager_oauth_token_errors_total counter",
+        "# HELP vetmanager_oauth_stale_grant_refresh_total Daily account signals for revoked grant refresh with active sibling.",
+        "# TYPE vetmanager_oauth_stale_grant_refresh_total counter",
+    ])
+    for key, value in snapshot["oauth_token_errors_total"].items():
+        error, grant_type = key.split("|", 1)
+        lines.append(f"vetmanager_oauth_token_errors_total{_labels_text(error=error, grant_type=grant_type)} {value}")
+    lines.append(f"vetmanager_oauth_stale_grant_refresh_total {snapshot['oauth_stale_grant_refresh_total']}")
 
     lines.extend(
         [

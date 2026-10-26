@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+import time
+
 from fastmcp import FastMCP
 from sqlalchemy import select
 from starlette.requests import Request
@@ -16,6 +19,7 @@ from oauth_metadata import (
 from oauth_service import (
     OAUTH_DCR_MAX_BODY_BYTES,
     OAuthRequestError,
+    claim_stale_oauth_refresh,
     build_authorization_redirect_uri,
     create_oauth_authorization_code,
     exchange_oauth_token,
@@ -28,6 +32,8 @@ from oauth_service import (
 )
 from storage import get_session_factory
 from storage_models import CONNECTION_STATUS_ACTIVE, VetmanagerConnection
+from observability_logging import RUNTIME_LOGGER
+from service_metrics import record_oauth_stale_grant_refresh, record_oauth_token_error
 from web_html import render_oauth_consent_page
 from web_security import (
     CSRF_FIELD_NAME,
@@ -52,6 +58,26 @@ def register_oauth_routes(
     generate_csp_nonce,
 ) -> None:
     """Register public OAuth discovery routes."""
+
+    noisy_log_at = {"invalid_content_type": 0.0, "rate_limited": 0.0,
+                    "invalid_form": 0.0}
+
+    def record_token_rejection(error: str, grant_type: str = "", client_id: str = "",
+                               grant_id: int | None = None, *, noisy: str | None = None) -> None:
+        bounded_error, bounded_type = record_oauth_token_error(
+            error=error, grant_type=grant_type)
+        if noisy is not None:
+            now = time.monotonic()
+            if now - noisy_log_at[noisy] < 60:
+                return
+            noisy_log_at[noisy] = now
+        safe_client_id = (client_id if re.fullmatch(r"vm_oc_[A-Za-z0-9_-]{1,64}", client_id)
+                          else None)
+        RUNTIME_LOGGER.info("OAuth token rejected", extra={
+            "event_name": "oauth_token_rejected", "error": bounded_error,
+            "grant_type": bounded_type, "client_id": safe_client_id,
+            "grant_id": grant_id,
+        })
 
     @observed_route(
         mcp,
@@ -351,8 +377,11 @@ def register_oauth_routes(
         include_in_schema=False,
     )
     async def oauth_token(request: Request) -> JSONResponse:
+        from web import FormPayloadTooLarge
+
         content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         if content_type != "application/x-www-form-urlencoded":
+            record_token_rejection("invalid_request", noisy="invalid_content_type")
             return json_response(
                 request,
                 {
@@ -362,7 +391,11 @@ def register_oauth_routes(
                 status_code=415,
             )
 
-        form = await read_form(request)
+        try:
+            form = await read_form(request)
+        except (FormPayloadTooLarge, UnicodeDecodeError):
+            record_token_rejection("invalid_request", noisy="invalid_form")
+            raise
         limit, window_seconds = get_rate_limit_config(
             "OAUTH_TOKEN_RATE_LIMIT",
             default_attempts=60,
@@ -376,6 +409,8 @@ def register_oauth_routes(
                 window_seconds=window_seconds,
             )
         except RateLimitError:
+            record_token_rejection("temporarily_unavailable", form.get("grant_type", ""),
+                                   form.get("client_id", ""), noisy="rate_limited")
             return json_response(
                 request,
                 {
@@ -389,6 +424,26 @@ def register_oauth_routes(
             async with get_session_factory()() as session:
                 payload = await exchange_oauth_token(session, form)
         except OAuthRequestError as exc:
+            record_token_rejection(exc.error, form.get("grant_type", ""),
+                                   form.get("client_id", ""), exc.grant_id)
+            if exc.stale_account_id is not None and exc.grant_id is not None:
+                try:
+                    async with get_session_factory()() as signal_session:
+                        claimed = await claim_stale_oauth_refresh(
+                            signal_session, account_id=exc.stale_account_id,
+                            client_id=form["client_id"], old_grant_id=exc.grant_id)
+                    if claimed:
+                        RUNTIME_LOGGER.info("Stale OAuth refresh grant", extra={
+                            "event_name": "oauth_stale_grant_refresh",
+                            "account_id": exc.stale_account_id,
+                            "client_id": form["client_id"], "grant_id": exc.grant_id,
+                        })
+                        record_oauth_stale_grant_refresh()
+                except Exception as signal_exc:
+                    RUNTIME_LOGGER.warning("Stale OAuth refresh signal failed", extra={
+                        "event_name": "oauth_stale_grant_refresh_failed",
+                        "error_class": type(signal_exc).__name__,
+                    })
             return json_response(
                 request,
                 {

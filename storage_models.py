@@ -160,6 +160,8 @@ class Account(Base):
         server_default=func.now(),
     )
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    oauth_stale_refresh_marked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
 
     vetmanager_connections: Mapped[list["VetmanagerConnection"]] = relationship(
         back_populates="account",
