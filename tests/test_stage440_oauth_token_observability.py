@@ -1,5 +1,6 @@
 """Stage 440 red guards: token refusals and stale revoked-grant refreshes."""
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 import json
 
@@ -10,11 +11,14 @@ from sqlalchemy import select
 
 import storage
 import web_routes_oauth
+from oauth_service import claim_stale_oauth_refresh
 from bearer_token_manager import build_token_prefix, hash_bearer_token
 from server import mcp
-from service_metrics import render_prometheus_metrics, reset_service_metrics, snapshot_service_metrics
+from service_metrics import (record_oauth_stale_grant_refresh, record_oauth_token_error,
+                             render_prometheus_metrics, reset_service_metrics,
+                             snapshot_service_metrics)
 from shared_metric_counters import COUNTERS_KEY, RedisMetricCounters
-from storage_models import OAuthClient, OAuthGrant, OAuthRefreshToken, VetmanagerConnection
+from storage_models import Account, OAuthClient, OAuthGrant, OAuthRefreshToken, VetmanagerConnection
 from tests.test_stage173_oauth_metadata import _prepare_oauth_db, _register_account_with_connection
 
 
@@ -98,6 +102,22 @@ def test_oauth_counters_do_not_poison_old_shared_reader():
     snapshot = backend.snapshot()
     assert snapshot["oauth_token_errors_total"]["invalid_grant|refresh_token"] == 1
     assert snapshot["oauth_stale_grant_refresh_total"] == 1
+
+
+def test_oauth_prometheus_families_are_contiguous():
+    reset_service_metrics()
+    record_oauth_token_error(error="invalid_grant", grant_type="refresh_token")
+    record_oauth_stale_grant_refresh()
+    lines = render_prometheus_metrics().splitlines()
+    positions = [next(i for i, line in enumerate(lines) if line.startswith(prefix)) for prefix in (
+        "# HELP vetmanager_oauth_token_errors_total ",
+        "# TYPE vetmanager_oauth_token_errors_total ",
+        "vetmanager_oauth_token_errors_total{",
+        "# HELP vetmanager_oauth_stale_grant_refresh_total ",
+        "# TYPE vetmanager_oauth_stale_grant_refresh_total ",
+        "vetmanager_oauth_stale_grant_refresh_total ",
+    )]
+    assert positions == sorted(positions)
 
 
 async def _seed_revoked_grant(account_id: int, *, client_id: str, token: str,
@@ -194,5 +214,38 @@ async def test_stale_signal_failure_preserves_original_denial(tmp_path, monkeypa
     assert _metric("vetmanager_oauth_token_errors_total", 'error="invalid_grant",grant_type="refresh_token"') == 1
     assert any(getattr(r, "event_name", None) == "oauth_stale_grant_refresh_failed"
                for r in caplog.records)
+    await engine.dispose()
+    storage.reset_storage_state()
+
+
+@pytest.mark.asyncio
+async def test_stale_claim_is_atomic_per_account_and_expires_after_day(tmp_path, monkeypatch):
+    engine = await _prepare_oauth_db(tmp_path, monkeypatch)
+    first_account = await _register_account_with_connection("stage440-first@example.com")
+    second_account = await _register_account_with_connection("stage440-second@example.com")
+    first_grant = await _seed_revoked_grant(
+        first_account, client_id="vm_oc_stage440_first", token="vm_ort_stage440_first", with_heir=True)
+    sibling_grant = await _seed_revoked_grant(
+        first_account, client_id="vm_oc_stage440_sibling", token="vm_ort_stage440_sibling", with_heir=True)
+    second_grant = await _seed_revoked_grant(
+        second_account, client_id="vm_oc_stage440_second", token="vm_ort_stage440_second", with_heir=True)
+
+    async def claim(account_id: int, client_id: str, grant_id: int) -> bool:
+        async with storage.get_session_factory()() as session:
+            return await claim_stale_oauth_refresh(
+                session, account_id=account_id, client_id=client_id, old_grant_id=grant_id)
+
+    competing = await asyncio.gather(
+        claim(first_account, "vm_oc_stage440_first", first_grant),
+        claim(first_account, "vm_oc_stage440_first", first_grant),
+    )
+    assert sorted(competing) == [False, True]
+    assert not await claim(first_account, "vm_oc_stage440_sibling", sibling_grant)
+    assert await claim(second_account, "vm_oc_stage440_second", second_grant)
+    async with storage.get_session_factory()() as session:
+        first = await session.get(Account, first_account)
+        first.oauth_stale_refresh_marked_at = datetime.now(timezone.utc) - timedelta(hours=25)
+        await session.commit()
+    assert await claim(first_account, "vm_oc_stage440_sibling", sibling_grant)
     await engine.dispose()
     storage.reset_storage_state()

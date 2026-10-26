@@ -1185,12 +1185,14 @@ def render_prometheus_metrics() -> str:
     lines.extend([
         "# HELP vetmanager_oauth_token_errors_total OAuth token refusals by bounded error and grant type.",
         "# TYPE vetmanager_oauth_token_errors_total counter",
-        "# HELP vetmanager_oauth_stale_grant_refresh_total Daily account signals for revoked grant refresh with active sibling.",
-        "# TYPE vetmanager_oauth_stale_grant_refresh_total counter",
     ])
     for key, value in snapshot["oauth_token_errors_total"].items():
         error, grant_type = key.split("|", 1)
         lines.append(f"vetmanager_oauth_token_errors_total{_labels_text(error=error, grant_type=grant_type)} {value}")
+    lines.extend([
+        "# HELP vetmanager_oauth_stale_grant_refresh_total Daily account signals for revoked grant refresh with active sibling.",
+        "# TYPE vetmanager_oauth_stale_grant_refresh_total counter",
+    ])
     lines.append(f"vetmanager_oauth_stale_grant_refresh_total {snapshot['oauth_stale_grant_refresh_total']}")
 
     lines.extend(

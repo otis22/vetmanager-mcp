@@ -22,10 +22,11 @@ def _counter(body: str, prefix: str) -> int:
     return values[0] if values else 0
 
 
-@pytest.mark.skipif(not os.environ.get("TEST_API_KEY"), reason="devtr6 contour absent")
+@pytest.mark.skipif(not os.environ.get("TEST_API_KEY") or
+                    os.environ.get("TEST_DOMAIN") != "devtr6",
+                    reason="devtr6 contour absent")
 def test_http_token_denial_and_stale_marker_on_isolated_stand(
         prepared_web_db, live_server_url, caplog):
-    assert os.environ["TEST_DOMAIN"] == "devtr6"
     assert "pytest" in str(prepared_web_db)
     engine = create_engine(f"sqlite:///{prepared_web_db}")
     old_token = "vm_ort_stage440_live_revoked"
