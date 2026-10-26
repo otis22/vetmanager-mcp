@@ -9,11 +9,12 @@ from typing import Any
 
 
 _NUMBER_RE = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\Z")
-_NUMERIC_NAMES = frozenset({
-    "сумма", "баланс", "количество", "цена", "стоимость", "итого",
-    "выручка", "долг", "остаток", "средний чек", "count", "qty",
-    "amount", "balance", "price", "total", "sum", "revenue",
+MONEY_COLUMN_NAMES = frozenset({
+    "сумма", "баланс", "цена", "стоимость", "итого", "выручка",
+    "долг", "остаток", "средний чек", "amount", "balance", "price",
+    "total", "sum", "revenue",
 })
+_NUMERIC_NAMES = MONEY_COLUMN_NAMES | {"количество", "count", "qty"}
 _NUMERIC_WORDS = frozenset({
     "сумма", "баланс", "количество", "цена", "стоимость", "итого",
     "выручка", "долг", "остаток", "count", "qty", "amount", "balance",
@@ -66,6 +67,17 @@ def _numeric_columns(columns: Any) -> set[str]:
         )
         decisions.setdefault(name, []).append(eligible)
     return {name for name, flags in decisions.items() if all(flags)}
+
+
+def report_money_columns(columns: Any) -> set[str]:
+    """Money labels eligible for Report AI numeric rows, respecting types and protected names."""
+    numeric = _numeric_columns(columns)
+    money_words = MONEY_COLUMN_NAMES - {"средний чек"}
+    return {
+        name for name in numeric
+        if name.strip().casefold() in MONEY_COLUMN_NAMES
+        or bool(set(re.findall(r"[^\W_]+", name.casefold())) & money_words)
+    }
 
 
 def _number(value: str) -> int | float | str:
