@@ -8,6 +8,7 @@ from typing import Any
 
 from exceptions import ToolInputError
 from phone_redaction import iter_phone_matches, redact_phone_numbers
+from report_row_types import report_money_columns
 from russian_given_names import GIVEN_NAMES
 
 
@@ -70,6 +71,9 @@ _PHONE_KEYS = frozenset({
 # extra punctuation or a mixed value still goes through normal PII matching.
 _REPORT_QUANTITY_KEYS = frozenset({"количество", "count", "qty"})
 _BARE_PHONE_LENGTH_COUNT_RE = re.compile(r"[0-9]{10,11}\Z")
+_REPORT_MONEY_DECIMAL_RE = re.compile(
+    r"[+-]?(?:\d{1,9}|\d{1,3}(?:[ \u00a0\u202f]\d{3}){1,2})[.,]\d{2}0{8}\Z"
+)
 _EMAIL_KEYS = frozenset({"email", "mail", "почта", "электроннаяпочта", "емейл", "имейл"})
 _ADDRESS_KEYS = frozenset({"address", "адрес", "адресклиента", "адресдоставки"})
 # Этап 308. Кто такой владелец записи — по ключу, под которым она пришла.
@@ -658,6 +662,7 @@ def _sanitize_value(
     record: Mapping | None = None,
     quantity_path: str | None = None,
     quantity_cell: bool = False,
+    money_columns: set[str] | None = None,
 ) -> Any:
     """`address` — чья запись сейчас разбирается, `record` — сама запись.
 
@@ -667,6 +672,10 @@ def _sanitize_value(
     """
     if isinstance(value, Mapping):
         child_address = _record_address(value, key=key, inherited=address, parent=record)
+        child_money_columns = (
+            report_money_columns(value.get("columns"))
+            if quantity_path == "data" else money_columns
+        )
         cleaned = {}
         generated_columns = report_mode and key in {"rows", "preview_example_row"}
         for child_key, child_value in value.items():
@@ -682,9 +691,11 @@ def _sanitize_value(
                 quantity_path=(
                     "data" if quantity_path == "root" and child_key == "data"
                     else "rows" if quantity_path == "data" and child_key == "rows"
+                    else "row_cell" if quantity_path == "rows" and key == "rows"
                     else None
                 ),
                 quantity_cell=quantity_cell and key == "rows",
+                money_columns=child_money_columns,
             )
         return cleaned
     if isinstance(value, (list, tuple)):
@@ -693,6 +704,7 @@ def _sanitize_value(
                 item, key=key, report_mode=report_mode, address=address, record=record,
                 quantity_path=quantity_path,
                 quantity_cell=quantity_cell or quantity_path == "rows",
+                money_columns=money_columns,
             )
             for item in value
         ]
@@ -746,6 +758,20 @@ def _sanitize_value(
         if replacement is not None:
             return _addressed_placeholder(key, record=record, address=address) or replacement
     if report_mode:
+        # Report AI's generated row may carry a fixed-scale monetary decimal.
+        # Only a complete cell in a vetted money column can bypass a phone
+        # match confined to its fractional digits. Never alter the shared
+        # matcher, free text, previews or CSV cells.
+        if (
+            quantity_path == "row_cell"
+            and key is not None
+            and money_columns is not None
+            and key in money_columns
+            and _REPORT_MONEY_DECIMAL_RE.fullmatch(value)
+            and all(match.start() > max(value.find("."), value.find(","))
+                    for match in iter_phone_matches(value))
+        ):
+            return value
         if (
             quantity_cell
             and report_mode

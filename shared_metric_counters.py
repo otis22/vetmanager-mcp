@@ -18,6 +18,8 @@ from observability_logging import RUNTIME_LOGGER
 
 COUNTERS_KEY = "vetmanager:metrics:v1:counters"
 MCP_TRANSPORT_COUNTERS_KEY = "vetmanager:metrics:v1:mcp-transport-rejections"
+OAUTH_TOKEN_ERRORS_KEY = "vetmanager:metrics:v1:oauth-token-errors"
+OAUTH_STALE_REFRESH_KEY = "vetmanager:metrics:v1:oauth-stale-refresh"
 REPORT_AI_RATING_REMINDERS_KEY = "vetmanager:metrics:v1:report-ai-rating-reminders"
 MCP_SESSION_RETRIES_KEY = "vetmanager:metrics:v1:mcp-session-retries"
 MCP_SESSION_RETRY_PREFIX = "vetmanager:metrics:v1:session-retry:"
@@ -69,11 +71,13 @@ SHARED_COUNTER_FAMILIES = frozenset({
     "report_ai_empty_preview_guidance_jobs_total",
     "report_ai_empty_preview_guidance_outcomes_total", "report_ai_exports_total",
     "report_ai_outcomes_by_code_total", "business_events_total",
+    "oauth_token_errors_total", "oauth_stale_grant_refresh_total",
     "cache_hits_total", "cache_misses_total", "cache_invalidations_total",
     "cache_evictions_total",
 })
 SCALAR_COUNTER_FAMILIES = frozenset({
     "mcp_session_retries_total",
+    "oauth_stale_grant_refresh_total",
     "sentry_delivery_accepted_total", "sanitizer_failures_total",
     "rest_unmapped_read_total", "report_ai_long_queued_polls_total",
     "report_ai_stage_stall_polls_total",
@@ -148,6 +152,14 @@ class RedisMetricCounters:
             # Old slots do not know this family and reject unknown fields in
             # COUNTERS_KEY. A separate key keeps mixed-version rollout safe.
             self._redis.hincrby(MCP_TRANSPORT_COUNTERS_KEY, label_key, count)
+            return
+        if family == "oauth_token_errors_total":
+            self._redis.hincrby(OAUTH_TOKEN_ERRORS_KEY, label_key, count)
+            return
+        if family == "oauth_stale_grant_refresh_total":
+            if label_key:
+                raise ValueError("Stale OAuth refresh counter has no labels")
+            self._redis.incrby(OAUTH_STALE_REFRESH_KEY, count)
             return
         if family == "report_ai_rating_reminders_total":
             if label_key:
@@ -770,6 +782,12 @@ class RedisMetricCounters:
                 label_key: int(value)
                 for label_key, value in self._redis.hgetall(MCP_TRANSPORT_COUNTERS_KEY).items()
             }
+            result["oauth_token_errors_total"] = {
+                label_key: int(value)
+                for label_key, value in self._redis.hgetall(OAUTH_TOKEN_ERRORS_KEY).items()
+            }
+            result["oauth_stale_grant_refresh_total"] = int(
+                self._redis.get(OAUTH_STALE_REFRESH_KEY) or 0)
             result["mcp_session_retries_total"] = int(self._redis.get(MCP_SESSION_RETRIES_KEY) or 0)
             result["report_ai_rating_reminders_total"] = int(
                 self._redis.get(REPORT_AI_RATING_REMINDERS_KEY) or 0)

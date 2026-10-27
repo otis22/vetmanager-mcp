@@ -38,7 +38,7 @@ async def test_registered_report_rows_have_safe_types_after_privacy(monkeypatch,
     data = result.structured_content["data"]
     row = data["rows"][0]
     if depersonalized:
-        assert REDACTED_PHONE in row["Сумма"]
+        assert row["Сумма"] == 246800
     else:
         assert row["Сумма"] == 246800 and isinstance(row["Сумма"], int)
     assert row["Баланс"] == 1.25 and isinstance(row["Баланс"], float)
