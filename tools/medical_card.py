@@ -1,9 +1,11 @@
 import json
 import time
 from datetime import date, timedelta
+from typing import Annotated
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from pydantic import BeforeValidator
 
 from filters import OptionalFilterList, OptionalJsonList
 from filters import (
@@ -41,6 +43,15 @@ _DEFAULT_DATE_SORT = [
     {"property": "date_create", "direction": "ASC"},
     {"property": "id", "direction": "ASC"},
 ]
+
+
+def _card_id_input(value: object) -> object:
+    if isinstance(value, (bool, float)):
+        raise ToolInputError("medical card ID must be an integer")
+    return value
+
+
+_CardIdInput = Annotated[int, BeforeValidator(_card_id_input)]
 
 _DIAGNOSES_TYPE_ERROR = "Cannot assign int to property Entity\\MedicalCard\\Diagnoses::$diagnoses of type array"
 
@@ -462,13 +473,20 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool
     async def get_medical_card_by_id(
-        card_id: int,
+        card_id: _CardIdInput | None = None,
+        id: _CardIdInput | None = None,
     ) -> dict:
         """Get a medical card record by its unique ID.
 
         Args:
-            card_id: Unique numeric ID of the medical card record.
+            card_id: Canonical positive numeric ID of the medical card record.
+            id: Deprecated alias for card_id. Supply exactly one of id/card_id.
         """
+        if (card_id is None) == (id is None):
+            raise ToolInputError("Pass ровно один из id/card_id; card_id is canonical")
+        card_id = card_id if card_id is not None else id
+        if type(card_id) is not int or card_id <= 0:
+            raise ToolInputError("card_id (or deprecated id) must be a positive integer")
         return await crud_get_by_id(_MC_ENDPOINT, card_id)
 
     @mcp.tool
