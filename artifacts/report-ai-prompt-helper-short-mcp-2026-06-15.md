@@ -32,6 +32,15 @@ Report AI предпочитает деперсонализированный в
 
 ## Как сформулировать `intent_text`
 
+Назовите зерно результата: счёт или позиция счёта, платёж, приём,
+лабораторная заявка или анализ. Для каждой метрики назовите роль колонки и
+единицу: «сумма оплат, ₽», «число приёмов, шт.». Укажите основание периода,
+фильтры и группировку. При уточнении существующего вопроса сохраняйте уже
+согласованные метрику, фильтры, период и группировку; меняйте только то,
+что назвал пользователь. После save/confirm сверяйте реальные строки с
+вопросом: колонки, период, клинику, зерно и единицы. Статус `saved` сам по себе
+не подтверждает правильность отчёта.
+
 - Write in Russian.
 - State the main Vetmanager concept: invoices, payments, clients, pets, admissions, medical cards, goods, warehouse movements, users.
 - State the metric or list fields.
@@ -119,7 +128,10 @@ Ask a short clarification only when choosing silently would likely change the re
 
 Clarify these cases before creating the job:
 
-- Revenue, turnover, sales: by issued invoices/accrual or by received payments?
+- Revenue, turnover, sales: если контекст требует фактических поступлений,
+  уточните платежную базу даты и учёт возвратов/аванса. Для простой «выручки»
+  действует дефолт исполненных счетов (начисление); вопрос «счета или деньги?»
+  нужен лишь когда слова пользователя делают выбор существенным и дефолт не подходит.
 - New clients: by client registration date or by first completed visit/purchase?
 - Client balance/debt/advance: which balance sign means debt in this clinic, unless the user already specified negative or positive balance.
 - Repeat visit: repeat within how many days, and for which domain: outpatient visit, hospitalization, revaccination.
@@ -155,8 +167,10 @@ If the user already gave a precise criterion, do not ask again. Example: "client
 
 ## Common anchors
 
-- Revenue/sales/turnover: invoices or payments; clarify accrual vs received money.
-  Plain "выручка" without qualifiers defaults to executed invoices, not payments.
+- Revenue/sales/turnover: plain "выручка" defaults to executed invoices
+  (accrual). Clarify invoices versus received payments only when context makes
+  that choice material and the default does not fit; for actual cash receipts
+  specify payment-date basis and treatment of refunds and advances.
 - Payments/cash receipts: payments.
 - Debtors/debt: clients by balance, or unpaid invoices if the user says invoice debt.
 - Advances/overpayments: clients by balance.
@@ -167,6 +181,35 @@ If the user already gave a precise criterion, do not ask again. Example: "client
 - Clients/segments: clients.
 - Pets/patients: pets.
 - Doctors/employees: active users.
+
+## Лабораторные отчёты
+
+- Дата создания заявки или зарегистрированного результата не доказывает время
+  взятия пробы, загрузки или SLA: для этих выводов нужна отдельная временная
+  отметка и проверка её смысла.
+- Текущее значение показателя не является историей исправлений; для истории
+  нужна подтверждённая последовательность версий.
+- Отметка лабораторного экрана «оплачено» не доказывает получение денег.
+  Для денежного факта сверяйте статус счёта и отдельные платежи.
+
+## Статусы, деньги и время
+
+- `accepted` — текущий обратимый статус записи на приём, не доказательство
+  посещения и не оплата. Посещение подтверждайте отдельным фактом.
+- Отрицательная исполненная запись платежа может быть возвратом; не называйте
+  любую отрицательную строку возвратом без проверки назначения и связи.
+  Применение ранее внесённого аванса к счёту не является новым приходом денег.
+  Различайте дату платежа и дату счёта при выборе периода. Агрегат
+  `get_revenue_summary(mode=received)` без отдельной сверки не доказывает
+  исключение повторного учёта аванса.
+- Складской остаток — количество, балансовый остаток — деньги. Одно название
+  «остаток» не доказывает единицу; сверяйте источник, колонку и единицу до ответа.
+- Экран уведомлений о сроке годности не равен списку партий; дата партии не
+  даёт исторический остаток. Для исторического вывода нужна проверенная
+  запись движения или снимок на дату.
+- Плановая дата следующей вакцинации не дата проведённой вакцинации; текущий
+  владелец питомца не доказывает, кто был владелец на дату события. Проверяйте
+  запись события и историческую связь, если они доступны.
 
 ### Скидка и итог счёта
 

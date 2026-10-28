@@ -871,7 +871,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "medical record."
     ),
     "get_medical_card_by_id": (
-        "Fetch one medical card / clinical record by ID. Use when the user already "
+        "Fetch one medical card / clinical record by ID. Pass canonical card_id; "
+        "deprecated id is accepted for compatibility, but pass ровно один из id/card_id. "
+        "Use when the user already "
         "knows the exact record identifier. Files, including lab attachments, may "
         "be embedded in a medical card's description as HTML `<a href>` links to "
         "Vetmanager file storage. If your client can open links, open and use "
@@ -922,6 +924,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "lookup on /rest/api/payment. Payment records do not have client_id or "
         "pet_id in Vetmanager REST. Use get_client_payment_applications "
         "for client- or pet-scoped payment applications through closingOfInvoices. "
+        "Исполненный отрицательный платёж может быть возвратом: проверьте его "
+        "назначение; применение ранее внесённого аванса не новый приход денег. "
+        "Для периода различайте дату платежа и дату счёта. "
         "Domain synonyms: платёж, оплата, поступление, касса, payment."
     ),
     "get_client_payment_applications": (
@@ -974,7 +979,9 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
         "Check fresh stock balance for one good in an explicitly selected clinic. "
         "clinic_id is required. Use when the "
         "user asks how much is left in stock, current inventory, or remaining "
-        "quantity. Domain synonyms: остаток, остаток на складе, количество на "
+        "quantity. Зерно результата — товар × клиника; это текущий снимок, "
+        "не партия и не остаток на дату. "
+        "Domain synonyms: остаток, остаток на складе, количество на "
         "складе, наличие товара, сколько осталось, запас, stock, inventory."
     ),
     "get_goods_stock_balances": (
@@ -1344,6 +1351,10 @@ LIST_PROJECTION_SUFFIXES: dict[str, str] = {
 
 
 SEARCH_GUIDANCE_SUFFIXES: dict[str, str] = {
+    "get_admissions": (
+        "The accepted status is current and reversible; it does not by itself prove "
+        "посещение or оплата. Verify those facts separately."
+    ),
     "get_users": (
         "If a name search is empty, follow mcp_hint and retry with a surname stem."
     ),
