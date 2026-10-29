@@ -6,11 +6,12 @@ import httpx
 import pytest
 import respx
 
-from exceptions import AuthError, ToolInputError, VetmanagerError
+from exceptions import AuthError, ToolInputError
 from server import mcp
 from tests.runtime_factories import patch_runtime_credentials
 from tools.report_ai import _tool_error_from_vm
 from tests.test_stage170_report_ai_tools import BASE, bearer_runtime_patch, billing_mock
+from tests.test_stage384_live import seed_devtr6_bearer
 
 
 @pytest.mark.asyncio
@@ -105,3 +106,52 @@ def test_explicit_unknown_upstream_403_remains_unknown():
 def test_bare_401_keeps_current_auth_semantics():
     error = AuthError("Invalid or missing API key", status_code=401)
     assert "FORBIDDEN" not in str(_tool_error_from_vm(error))
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_vm_http_403_with_explicit_unknown_code_stays_unknown():
+    billing_mock()
+    respx.get(f"{BASE}/rest/api/report-ai-job/22").mock(return_value=httpx.Response(
+        403, json={"data": {"error_code": "FUTURE_PRIVATE_CODE"}}))
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime, pytest.raises(Exception) as raised:
+        await mcp.call_tool("get_report_ai_job", {"job_id": 22})
+    assert "(unknown)" in str(raised.value)
+    assert "FORBIDDEN" not in str(raised.value)
+    assert "FUTURE_PRIVATE_CODE" not in str(raised.value)
+
+
+def test_live_http_mcp_csv_fields_response(live_server_url, prepared_web_db, monkeypatch):
+    """A local real HTTP MCP session proves the agent sees the example."""
+    monkeypatch.setenv("TEST_DOMAIN", "stage442")
+    monkeypatch.setenv("TEST_API_KEY", "stage442-test-key")
+    token = seed_devtr6_bearer()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+        "MCP-Protocol-Version": "2025-03-26",
+    }
+    with httpx.Client(base_url=live_server_url, headers=headers, timeout=30) as client:
+        initialized = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                "protocolVersion": "2025-03-26", "capabilities": {},
+                "clientInfo": {"name": "stage442-live", "version": "1"},
+            },
+        })
+        assert initialized.status_code == 200
+        client.headers["Mcp-Session-Id"] = initialized.headers["mcp-session-id"]
+        assert client.post("/mcp", json={
+            "jsonrpc": "2.0", "method": "notifications/initialized",
+        }).status_code in (200, 202)
+        response = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                "name": "get_admissions", "arguments": {"fields": "id,client_id"},
+            },
+        })
+        assert response.status_code == 200
+        body = response.text
+        assert "JSON array" in body
+        assert '[\\"id\\", \\"client_id\\", \\"pet_id\\"]' in body
+        print("STAGE442 tools/call HTTP", response.status_code, body)
