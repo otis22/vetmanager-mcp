@@ -9255,3 +9255,88 @@ diagnos_type_text напрямую.
   инструментов на разрешённом стенде с приложенным кодом и телом ответа;
   выпуск по релизному поезду. Выпуск = зелёный CI ветки,
   пост-релизные проверки после мержа. — `done`
+## Этап 423. Fail-closed для write/delete Report AI REST (R3) — `done`
+
+Источник: super-review 20.10.2026, R3 —
+`artifacts/review/2026-10-20-full-stage-420.md`. `token_scopes.py:337-345`
+возвращает `None` для PUT/DELETE `/rest/api/report-ai-job/*`, а
+`vetmanager_client.py:361-374` читает `None` как разрешённое unmapped-read;
+это нарушает правило модели доступа в `AGENTS.md`.
+
+- 423.1 PRD: PUT и DELETE пути Report AI должны возвращать
+  `REQUEST_NOT_MAPPED` и быть отклонены до апстрима; сверить все пути с
+  OpenAPI/контрактом, не домысливая поддержку методов. Красная мутация обязана
+  пропустить `None` и уронить guard. — `done`
+- 423.2 Реализация, фокусные тесты через `VetmanagerClient`; live API не
+  требуется, поскольку отказ обязан случаться до запроса.
+  Выпуск = зелёный CI ветки, пост-релизные проверки после мержа. — `done`
+
+## Этап 424. CI: обязательный PostgreSQL-контур (R4) — `done`
+
+Источник: super-review 20.10.2026, R4 —
+`artifacts/review/2026-10-20-full-stage-420.md`. `.github/workflows/test.yml:162-169`
+запускает только три PostgreSQL-файла, а default contour исключает marker;
+`test_stage385_cache_barrier.py`, `test_stage376_expiry_notice.py` и
+`test_vetmanager_connection_service.py` не попадают в обязательный CI.
+
+- 424.1 PRD: измерить время полного postgres-marked набора и выбрать полный
+  контур либо явный список; все три пропущенных файла обязаны войти. Красный
+  guard: намеренное исключение обязательного файла ломает проверку workflow.
+  — `done`
+- 424.2 Изменить CI, проверить точную команду и успешный run dev-ветки; без
+  deploy. Выпуск = зелёный CI ветки. — `done`
+
+## Этап 425. Кабинет: active-account gate для живой сессии (R5) — `done`
+
+Источник: super-review 20.10.2026, R5 —
+`artifacts/review/2026-10-20-full-stage-420.md`. `web.py:299-300,368-370`
+доверяет account id cookie и не проверяет inactive Account, хотя runtime auth
+проверяет active status; живая сессия может менять integration до expiry.
+
+- 425.1 PRD: владелец подтверждает UX блокировки inactive account; единый
+  active-account gate для browser protected routes и OAuth consent, без
+  ослабления bearer auth. Красный integration guard: существующая сессия
+  inactive account не читает кабинет и не меняет integration. — `done`
+- 425.2 Реализация, фокусные browser tests и релизный поезд; выпуск = зелёный CI ветки, пост-релизные проверки после мержа. — `done`
+
+## Этап 426. Актуализация исполнимой workflow-документации (R7) — `done`
+
+Источник: super-review 20.10.2026, R7 —
+`artifacts/review/2026-10-20-full-stage-420.md`. `docs/stage-workflow-template.md:57-101`
+предписывает retired single Codex review и push в main; `.codex/skills/super-review/SKILL.md:22-52`
+содержит retired model/sandbox contract. Это расходится с `AGENTS.md` и
+`.cursor/rules/agent-workflow.mdc` (Spark → Astra+Opus, release train).
+
+- 426.1 PRD: привести оба документа к действующему контракту, включая
+  auth-failure внешнего арбитра и запрет считать его вердиктом; включить
+  подтверждённые README inventory/sort-filter чистки из отчёта. Не менять
+  бизнес-код. — `done`
+- 426.2 Выполнить команды из документации в точной записи, проверить exit
+  code и добавить красный текстовый guard от возврата single-review/push-main.
+  Выпуск = зелёный CI ветки; пост-релизные проверки после merge супервизором. — `done`
+
+## Этап 427. Prompt-маршруты Report AI: рассинхрон промптов с контрактом (R6) — `done`
+
+Источник: super-review 20.10.2026, R6 —
+`artifacts/review/2026-10-20-full-stage-420.md`. Факты: `prompts.py:129-139`
+обещает поиск по телефону через вызов `get_clients(name=query)`; `143-154`
+называет первые 100 документов total debt; `257-277` передаёт retired
+`diagnosis` и не передаёт обязательный `clinic_id`. Это изменяет видимый
+агенту текст и flow.
+
+Решения владельца 23.10.2026 (утверждены, дальше не обсуждаются):
+
+1. `find_client`: query из цифр → `get_clients(phone=query)` (готовый
+   двухпроходный маршрут по `clean_phone`, `tools/client.py:282-305`),
+   иначе `name=query`.
+2. `client_balance`: баланс берётся из поля `balance` ответа
+   `get_clients(id=...)` (серверный источник истины); счета и платежи —
+   детализация с честной пометкой «последние 100», а не total debt.
+3. `add_medical_note`: в сигнатуру промпта добавляется обязательный
+   `clinic_id` (контракт `create_medical_card`, `tools/medical_card.py:479`),
+   текст диагноза маппится на `diagnosis_text`, retired `diagnosis` из
+   промпта убирается.
+
+- 427.1 Решение владельца по трём маршрутам — `done` (23.10.2026, выше).
+- 427.2 PRD с тремя отдельными acceptance и red/green rendered-prompt
+  тестами; затем реализация и выпуск. — `done`
