@@ -70,7 +70,9 @@ async def test_valid_fields_array_and_json_array_string_still_work(monkeypatch):
     _patch_list(monkeypatch, "get_admissions")
     for fields in (["id", "client_id"], '["id", "client_id"]'):
         result = await _call("get_admissions", {"fields": fields})
-        assert result["data"]["admission"][0] == {"id": 1, "client_id": 2}
+        row = result["data"]["admission"][0]
+        assert {key: row[key] for key in ("id", "client_id")} == {"id": 1, "client_id": 2}
+        assert set(row) <= {"id", "client_id", "_mcp_identifier_conflicts"}
 
 
 def test_bare_report_ai_403_explains_access_without_upstream_text():
