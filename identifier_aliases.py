@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import re
 from functools import wraps
-from filters import OptionalJsonList
+from filters import OptionalJsonList, optional_fields_list
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware
@@ -110,10 +110,17 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
     original_names = tuple(original.parameters)
     renamed = [parameter.replace(name=canonical_name(parameter.name))
                for parameter in original.parameters.values()]
+    fields_annotation = None
     if tool_name in LIST_FIELDS:
+        fields_example = {
+            "get_admissions": '["id", "client_id", "pet_id"]',
+            "get_invoices": '["id", "client_id", "amount"]',
+            "get_clients": '["id", "first_name", "last_name"]',
+        }[tool_name]
+        fields_annotation = optional_fields_list(fields_example)
         renamed.extend((
             inspect.Parameter("fields", inspect.Parameter.KEYWORD_ONLY,
-                              default=None, annotation=OptionalJsonList[str]),
+                              default=None, annotation=fields_annotation),
             inspect.Parameter("compact", inspect.Parameter.KEYWORD_ONLY,
                               default=False, annotation=bool),
             inspect.Parameter("include", inspect.Parameter.KEYWORD_ONLY,
@@ -174,7 +181,7 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
     }
     if tool_name in LIST_FIELDS:
         _canonical.__annotations__.update({
-            "fields": OptionalJsonList[str], "compact": bool,
+            "fields": fields_annotation, "compact": bool,
             "include": OptionalJsonList[str], "mask_contacts": bool,
         })
     elif tool_name in PET_CONTACT_TOOLS:

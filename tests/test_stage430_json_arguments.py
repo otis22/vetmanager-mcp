@@ -7,7 +7,7 @@ from typing import Annotated, get_args, get_origin
 
 import pytest
 from fastmcp import FastMCP
-from fastmcp.exceptions import ValidationError
+from exceptions import ToolInputError
 from pydantic import BeforeValidator
 
 from tools import client, reference
@@ -50,7 +50,7 @@ async def test_json_filter_edges(monkeypatch):
         await mcp.call_tool("get_breeds", {"filter": value})
         assert seen[-1]["filters"] == expected
     for value in ("", "{broken", '{}', '"text"'):
-        with pytest.raises(ValidationError, match="Expected a JSON array"):
+        with pytest.raises(ToolInputError, match="expected a JSON array"):
             await mcp.call_tool("get_breeds", {"filter": value})
 
 

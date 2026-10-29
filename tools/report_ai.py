@@ -1530,6 +1530,13 @@ def _tool_error_from_vm(exc: VetmanagerError, *, create_not_sent: bool = False) 
             "Report AI creation was not sent to Vetmanager. "
             "Check access or connectivity before starting a new job."
         )
+    if (isinstance(exc, AuthError) and exc.status_code == 403
+            and exc.error_code is None
+            and getattr(exc, "observed_error_code", None) is None):
+        return reportable_error(
+            "Report AI request failed (FORBIDDEN). "
+            "Check access to Report AI with the clinic administrator."
+        )
     code = exc.error_code if exc.error_code in REPORT_AI_OBSERVED_CODES else "unknown"
     message = f"Report AI request failed ({code})."
     if code == "INVALID_TRANSITION":
