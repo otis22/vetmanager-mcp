@@ -26,13 +26,14 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Annotated, Any, Iterable, TypeVar
 
-from pydantic import BeforeValidator
+from pydantic import BeforeValidator, ValidationInfo
+from exceptions import ToolInputError
 
 
 _T = TypeVar("_T")
 
 
-def _parse_json_list(value: Any) -> Any:
+def _parse_json_list(value: Any, *, example: str = "[]") -> Any:
     """Accept one extra JSON encoding at the MCP argument boundary."""
     if not isinstance(value, str):
         return value
@@ -41,7 +42,9 @@ def _parse_json_list(value: Any) -> Any:
     except json.JSONDecodeError:
         parsed = None
     if not isinstance(parsed, list):
-        raise ValueError('Expected a JSON array, for example []. Use elements required by this parameter.')
+        raise ToolInputError(
+            f"Received a CSV string or other non-array text; expected a JSON array, for example {example}."
+        )
     return parsed
 
 
@@ -51,10 +54,28 @@ def _parse_optional_json_list(value: Any) -> Any:
     return _parse_json_list(value)
 
 
+def _parse_optional_filter_list(value: Any, info: ValidationInfo) -> Any:
+    if value == "null":
+        return None
+    example = ('[{"property": "id", "direction": "ASC"}]' if info.field_name == "sort"
+               else '[{"property": "id", "value": 1, "operator": "="}]')
+    return _parse_json_list(value, example=example)
+
+
+def optional_fields_list(example: str) -> Any:
+    """The same array contract with a useful per-tool projection example."""
+    def parse(value: Any) -> Any:
+        if value == "null":
+            return None
+        return _parse_json_list(value, example=example)
+
+    return Annotated[list[str] | None, BeforeValidator(parse)]
+
+
 JsonList = Annotated[list[_T], BeforeValidator(_parse_json_list)]
 FilterList = JsonList[dict]
 OptionalJsonList = Annotated[list[_T] | None, BeforeValidator(_parse_optional_json_list)]
-OptionalFilterList = OptionalJsonList[dict]
+OptionalFilterList = Annotated[list[dict] | None, BeforeValidator(_parse_optional_filter_list)]
 
 from observability_logging import RUNTIME_LOGGER
 from service_metrics import record_business_event
