@@ -12,6 +12,8 @@ async def test_store_documents_do_not_promise_category_totals():
     detail = catalog["get_store_document_by_id"]
 
     assert "monthly purchase totals by goods category" in listing
+    assert "do not provide verified monthly purchase totals by goods category" in listing
+    assert "report this limit instead of computing a total" in listing
     assert "do not allocate storedocument.total to categories" in listing.lower()
     assert "document_type='prihod'" in listing and "one month of add_dt" in listing
     assert "add_dt is only a list filter, not a verified purchase accounting date" in listing

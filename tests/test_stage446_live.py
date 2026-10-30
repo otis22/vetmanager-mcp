@@ -47,7 +47,8 @@ async def test_stage446_live_narrow_store_documents(capsys):
 
     assert not filtered.is_error and not detail.is_error
     month_docs = filtered.structured_content.get("data", {}).get("storeDocument") or []
-    assert any(int(row["id"]) == int(doc["id"]) for row in month_docs)
+    assert month_docs
+    assert all(str(row["add_dt"])[:7] == month for row in month_docs)
     assert observed and all(method == "GET" and status == 200 for method, status in observed)
     with capsys.disabled():
         print("STAGE446_LIVE http_statuses=" + str([status for _, status in observed])
@@ -57,7 +58,7 @@ async def test_stage446_live_narrow_store_documents(capsys):
                             "page_count": len(docs)},
                   "month_page": {"success": filtered.structured_content.get("success"),
                                  "totalCount": filtered.structured_content.get("data", {}).get("totalCount"),
-                                 "page_count": len(month_docs), "sample_id_present": True},
+                                 "page_count": len(month_docs), "rows_in_requested_month": True},
                   "detail_success": not detail.is_error,
                   "accounting_date_unverified": True,
                   "category_totals_unverified": True,
