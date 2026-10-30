@@ -57,8 +57,8 @@ async def test_stage445_live_both_role_filters(capsys):
     assert "Prefer server-side doctor_id and creator_id filters" in catalogue["get_medical_cards_by_date"]
     assert observed and all(method == "GET" and status == 200 for method, status in observed)
     with capsys.disabled():
-        print("STAGE445_LIVE upstream=GET/200 body=" + str({
+        print("STAGE445_LIVE upstream_requests_all_GET_200=true body=" + str({
             "unfiltered": len(rows[0]), "doctor_only": len(rows[1]),
             "creator_only": len(rows[2]), "both": len(rows[3]),
-            "both_rows_match_roles": True,
+            "both_rows_match_roles": True, "filter_effect_unproven": True,
         }))
