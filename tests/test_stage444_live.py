@@ -41,9 +41,8 @@ async def test_stage444_live_projected_lists(capsys):
             "pet_id": pet_id, "limit": 1, "fields": ["id", "pet_id", "date_create"]})
         by_date = await mcp.call_tool("get_medical_cards_by_date", {
             "date": day, "limit": 1, "fields": ["id", "pet_id", "date_create"]})
-        pets = await VetmanagerClient().get("/rest/api/pet", params={"limit": 100})
-        owner = next((row.get("owner_id") for row in pets.get("data", {}).get("pet", [])
-                      if str(row.get("id")) == str(pet_id)), None)
+        pet = await VetmanagerClient().get(f"/rest/api/pet/{pet_id}")
+        owner = pet.get("data", {}).get("pet", {}).get("owner_id")
         assert owner is not None, "test contour needs owner for sampled pet"
         by_client = await mcp.call_tool("get_medical_cards_by_client_id", {
             "client_id": int(owner), "limit": 1,
