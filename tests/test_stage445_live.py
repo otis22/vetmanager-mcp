@@ -50,6 +50,8 @@ async def test_stage445_live_both_role_filters(capsys):
     assert all(not result.is_error for result in results)
     rows = [result.structured_content["medical_cards"] for result in results]
     assert rows[3], "combined role filters must return a sampled card"
+    assert all(int(row["doctor_id"]) == doctor for row in rows[1])
+    assert all(int(row["creator_id"]) == creator for row in rows[2])
     assert all(int(row["doctor_id"]) == doctor and int(row["creator_id"]) == creator
                for row in rows[3])
     assert "Prefer server-side doctor_id and creator_id filters" in catalogue["get_medical_cards_by_date"]
