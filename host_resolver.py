@@ -31,7 +31,7 @@ import httpx
 
 from env_utils import env_float
 from domain_validation import validate_domain
-from exceptions import HostResolutionError, VetmanagerError, VetmanagerTimeoutError
+from exceptions import HostResolutionError, HostResolutionTimeoutError, VetmanagerError
 from host_validation import validate_resolved_vetmanager_origin
 from observability_logging import RUNTIME_LOGGER
 from request_context import get_current_request_context
@@ -321,13 +321,21 @@ async def _resolve_vetmanager_host_uncached_impl(
                 break
 
     if transport_failures == 2:
-        guessed, method = await _probe_clinic_origin(client, domain)
+        try:
+            guessed, method = await _probe_clinic_origin(client, domain)
+        except HostResolutionError as exc:
+            if (isinstance(last_error, httpx.TimeoutException)
+                    and isinstance(exc.__cause__, httpx.TimeoutException)):
+                raise HostResolutionTimeoutError(
+                    "Timeout resolving Vetmanager host. Please retry shortly."
+                ) from exc
+            raise
         _resolved_host_cache[domain] = (
             guessed, time.monotonic() + GUESSED_HOST_CACHE_TTL_SECONDS, method
         )
         return guessed
     if isinstance(last_error, httpx.TimeoutException):
-        raise VetmanagerTimeoutError(
+        raise HostResolutionTimeoutError(
             "Timeout resolving Vetmanager host. Please retry shortly."
         ) from last_error
     if isinstance(last_error, httpx.RequestError):
