@@ -3,6 +3,8 @@
 import pytest
 
 from server import mcp
+from tests.runtime_factories import patch_runtime_credentials
+from vetmanager_client import VetmanagerClient
 
 
 @pytest.mark.asyncio
@@ -34,3 +36,21 @@ async def test_medical_card_and_pet_profile_descriptions_explain_file_links():
     assert "Fetch one medical card / clinical record by ID" in by_id
     assert "exact record identifier" in by_id
     assert "Domain synonyms: медкарта" in by_id
+
+
+@pytest.mark.asyncio
+async def test_html_file_link_survives_full_and_description_fields(monkeypatch):
+    link = '<a href="https://files.example.test/public">lab file</a>'
+
+    async def get(_self, _path, **_kwargs):
+        return {"success": True, "data": {"medicalCards": [
+            {"id": 7, "patient_id": 2, "description": link}], "totalCount": 1}}
+
+    monkeypatch.setattr(VetmanagerClient, "get", get)
+    headers, runtime = patch_runtime_credentials("testclinic", "mock-key")
+    with headers, runtime:
+        full = await mcp.call_tool("get_medical_cards", {"pet_id": 2})
+        projected = await mcp.call_tool("get_medical_cards", {
+            "pet_id": 2, "fields": ["description"]})
+    assert link in full.structured_content["data"]["medicalCards"][0]["description"]
+    assert projected.structured_content["data"]["medicalCards"] == [{"description": link}]
