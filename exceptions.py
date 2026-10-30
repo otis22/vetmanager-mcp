@@ -46,6 +46,10 @@ class VetmanagerTimeoutError(VetmanagerError):
     """Request to Vetmanager API timed out."""
 
 
+class HostResolutionTimeoutError(VetmanagerTimeoutError):
+    """Host resolution failed because its bounded attempts timed out."""
+
+
 class HostResolutionError(VetmanagerError):
     """Failed to resolve Vetmanager host for the given domain."""
 

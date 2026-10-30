@@ -18,7 +18,7 @@ from filters import (
     validate_filter_properties,
     validate_sort_properties,
 )
-from exceptions import ToolInputError, VetmanagerTimeoutError, reportable_error
+from exceptions import HostResolutionTimeoutError, ToolInputError, VetmanagerTimeoutError, reportable_error
 from service_metrics import record_tool_call
 from tools.crud_helpers import crud_get_by_id, crud_create, crud_update, unwrap_single_record
 from validators import (
@@ -314,7 +314,7 @@ def register(mcp: FastMCP) -> None:
                 "date_create filter for the same period. This does not prove "
                 "complete coverage of all pets; report incomplete coverage "
                 "unless you have an independent complete pet list."
-                if "resolving Vetmanager host" not in str(exc) else ""
+                if not isinstance(exc, HostResolutionTimeoutError) else ""
             )
             raise VetmanagerTimeoutError(
                 "Vetmanager medical-card read timed out. Retry a smaller limit. "

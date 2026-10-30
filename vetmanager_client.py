@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 import httpx
 
 from exceptions import (
+    HostResolutionTimeoutError,
     AuthError,
     NotFoundError,
     VetmanagerError,
@@ -483,6 +484,9 @@ class VetmanagerClient:
             # resolving. A voluntary client cancellation is not a timeout.
             if _read_budget is not None and _read_budget.expired():
                 record_upstream_failure(target="host_resolution", reason="timeout")
+                raise HostResolutionTimeoutError(
+                    "Timeout resolving Vetmanager host. Please retry shortly."
+                )
             raise
         url = f"{base}{path}"
         retry_enabled = bool(kwargs.pop("retry", True))
