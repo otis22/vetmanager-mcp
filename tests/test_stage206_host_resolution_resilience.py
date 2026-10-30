@@ -36,8 +36,11 @@ def test_http_status_reasons_are_bounded_by_class():
 @respx.mock
 async def test_billing_read_timeout_has_safe_message_metric_and_correlation(caplog):
     respx.get(BILLING_URL).mock(side_effect=httpx.ReadTimeout("secret upstream detail"))
+    respx.get(f"https://billing-api.vetmanager.ru/host/{DOMAIN}").mock(
+        return_value=httpx.Response(404)
+    )
 
-    with pytest.raises(Exception, match="Timeout resolving Vetmanager host"):
+    with pytest.raises(Exception, match="Billing API returned HTTP 404"):
         await resolve_vetmanager_host(DOMAIN, max_retries=0, correlation_id="corr-206")
 
     metrics = snapshot_service_metrics()

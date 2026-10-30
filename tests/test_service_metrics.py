@@ -10,7 +10,7 @@ import respx
 import request_auth
 import auth.request as auth_request
 import storage
-from exceptions import AuthError, VetmanagerTimeoutError
+from exceptions import AuthError, HostResolutionError
 from server import mcp
 from service_metrics import reset_service_metrics, snapshot_service_metrics
 from storage import Base, create_database_engine
@@ -75,9 +75,12 @@ async def test_billing_timeout_updates_upstream_failure_metrics():
     reset_service_metrics()
     route = respx.get("https://billing-api.vetmanager.cloud/host/metrics-clinic")
     route.mock(side_effect=httpx.TimeoutException("timeout"))
+    respx.get("https://billing-api.vetmanager.ru/host/metrics-clinic").mock(
+        return_value=httpx.Response(404)
+    )
     client = make_client_with_resolved_runtime("metrics-clinic", "metrics-key")
 
-    with pytest.raises(VetmanagerTimeoutError):
+    with pytest.raises(HostResolutionError):
         await client.get("/rest/api/client")
 
     snapshot = snapshot_service_metrics()

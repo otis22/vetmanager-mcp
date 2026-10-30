@@ -4,11 +4,12 @@ import pytest
 import respx
 import httpx
 
-from exceptions import HostResolutionError, VetmanagerError, VetmanagerTimeoutError
+from exceptions import HostResolutionError
 from host_resolver import resolve_vetmanager_host
 
 DOMAIN = "testclinic"
 BILLING_URL = f"https://billing-api.vetmanager.cloud/host/{DOMAIN}"
+ALIAS_URL = f"https://billing-api.vetmanager.ru/host/{DOMAIN}"
 RESOLVED_HOST = "https://testclinic.vetmanager.cloud"
 
 
@@ -68,7 +69,8 @@ async def test_each_retryable_billing_failure_records_one_metric_attempt():
     respx.get(BILLING_URL).mock(
         side_effect=[httpx.ConnectError("unreachable"), httpx.ConnectError("unreachable")]
     )
-    with pytest.raises(VetmanagerError):
+    respx.get(ALIAS_URL).mock(return_value=httpx.Response(404))
+    with pytest.raises(HostResolutionError):
         await resolve_vetmanager_host(DOMAIN, max_retries=1)
 
     metrics = snapshot_service_metrics()
@@ -80,16 +82,18 @@ async def test_each_retryable_billing_failure_records_one_metric_attempt():
 @respx.mock
 async def test_all_retries_exhausted_raises_timeout():
     respx.get(BILLING_URL).mock(side_effect=httpx.ReadTimeout("timeout"))
-    with pytest.raises(VetmanagerTimeoutError, match="Timeout"):
-        await resolve_vetmanager_host(DOMAIN, max_retries=1)
+    respx.get(ALIAS_URL).mock(side_effect=httpx.ReadTimeout("timeout"))
+    respx.get(f"https://{DOMAIN}.vetmanager2.ru/rest/api/user/1").mock(return_value=httpx.Response(401))
+    assert await resolve_vetmanager_host(DOMAIN, max_retries=1) == "https://testclinic.vetmanager2.ru"
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_no_retry_when_max_retries_zero():
     respx.get(BILLING_URL).mock(side_effect=httpx.ReadTimeout("timeout"))
-    with pytest.raises(VetmanagerTimeoutError):
-        await resolve_vetmanager_host(DOMAIN, max_retries=0)
+    alias = respx.get(ALIAS_URL).mock(return_value=httpx.Response(200, json={"url": RESOLVED_HOST}))
+    assert await resolve_vetmanager_host(DOMAIN, max_retries=0) == RESOLVED_HOST
+    assert alias.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -106,6 +110,7 @@ async def test_billing_api_500_raises_host_resolution_error():
     """Stage 94 regression: billing-API 500 must surface as HostResolutionError
     so callers see a consistent error shape instead of a raw httpx exception."""
     respx.get(BILLING_URL).mock(return_value=httpx.Response(500))
+    respx.get(ALIAS_URL).mock(return_value=httpx.Response(500))
     with pytest.raises(HostResolutionError, match="500"):
         await resolve_vetmanager_host(DOMAIN)
 
@@ -115,6 +120,7 @@ async def test_billing_api_500_raises_host_resolution_error():
 async def test_billing_api_503_raises_host_resolution_error():
     """503 from billing-API (maintenance / overload) also funneled to HostResolutionError."""
     respx.get(BILLING_URL).mock(return_value=httpx.Response(503))
+    respx.get(ALIAS_URL).mock(return_value=httpx.Response(503))
     with pytest.raises(HostResolutionError, match="503"):
         await resolve_vetmanager_host(DOMAIN)
 
@@ -150,5 +156,6 @@ async def test_network_error_with_retry():
 @respx.mock
 async def test_network_error_all_retries_exhausted():
     respx.get(BILLING_URL).mock(side_effect=httpx.ConnectError("connection refused"))
-    with pytest.raises(VetmanagerError, match="Network error"):
-        await resolve_vetmanager_host(DOMAIN, max_retries=1)
+    respx.get(ALIAS_URL).mock(side_effect=httpx.ConnectError("connection refused"))
+    respx.get(f"https://{DOMAIN}.vetmanager2.ru/rest/api/user/1").mock(return_value=httpx.Response(401))
+    assert await resolve_vetmanager_host(DOMAIN, max_retries=1) == "https://testclinic.vetmanager2.ru"

@@ -395,6 +395,9 @@ async def test_resolve_host_coalesces_concurrent_cold_cache_calls():
 async def test_resolve_host_coalesced_exception_propagates_and_clears_inflight():
     await reset_billing_resolver()
     route = respx.get(BILLING_URL).mock(return_value=httpx.Response(500))
+    respx.get(f"https://billing-api.vetmanager.ru/host/{DOMAIN}").mock(
+        return_value=httpx.Response(500)
+    )
 
     results = await asyncio.gather(
         *(resolve_vetmanager_host(DOMAIN, max_retries=0) for _ in range(3)),

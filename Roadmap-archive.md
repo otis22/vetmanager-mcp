@@ -9340,3 +9340,17 @@ diagnos_type_text напрямую.
 - 427.1 Решение владельца по трём маршрутам — `done` (23.10.2026, выше).
 - 427.2 PRD с тремя отдельными acceptance и red/green rendered-prompt
   тестами; затем реализация и выпуск. — `done`
+## Этап 428. Профиль клиента: следующая запись приёма (R8) — `done`
+
+Источник: super-review 20.10.2026, R8 —
+`artifacts/review/2026-10-20-full-stage-420.md`. `resources/client_profile.py:50-57,80-87`
+выбирает earliest active admission без нижней границы даты: overdue active
+приём может скрыть будущий и быть выдан как `next_admission`.
+
+- 428.1 PRD: подтвердить семантику `admission_date` по OpenAPI/API facts;
+  применить clinic-local lower bound по образцу upcoming visits. Красный
+  сторож: overdue+future возвращает будущую запись, а отсутствие будущей —
+  честный пустой результат. — `done`
+- 428.2 Реализация, фокусные тесты и живой read-only вызов на стенде; выпуск
+  по релизному поезду. Выпуск = зелёный CI ветки, пост-релизные проверки
+  после мержа. — `done`

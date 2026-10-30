@@ -37,6 +37,9 @@ def validate_resolved_vetmanager_origin(host: str, *, domain: str) -> str:
         hostname == suffix or hostname.endswith(f".{suffix}")
         for suffix in ALLOWED_HOST_SUFFIXES
     )
+    # The legacy .ru zone is allowed only for this exact clinic subdomain.
+    # Billing and unauthenticated host probes may legitimately return it.
+    in_public_zone = in_public_zone or hostname == f"{domain}.vetmanager.ru"
     # Этап 292. Проверка добавляется к зонам, а не заменяет их: опечатка в
     # карте не должна отбирать доступ у клиники, которая работает сегодня.
     # При этом сама она строже — адрес привязан к конкретному ключу аккаунта,
