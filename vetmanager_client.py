@@ -473,7 +473,17 @@ class VetmanagerClient:
     ) -> Any:
         await self._ensure_runtime_credentials()
         self._require_scope(method, path)
-        base = await self._resolve_host()
+        try:
+            base = await self._resolve_host()
+        except VetmanagerTimeoutError:
+            record_upstream_failure(target="host_resolution", reason="timeout")
+            raise
+        except asyncio.CancelledError:
+            # The caller's GET deadline can expire while billing is still
+            # resolving. A voluntary client cancellation is not a timeout.
+            if _read_budget is not None and _read_budget.expired():
+                record_upstream_failure(target="host_resolution", reason="timeout")
+            raise
         url = f"{base}{path}"
         retry_enabled = bool(kwargs.pop("retry", True))
         fresh = bool(kwargs.pop("fresh", False))

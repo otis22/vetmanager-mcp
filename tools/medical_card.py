@@ -308,6 +308,14 @@ def register(mcp: FastMCP) -> None:
             }
         except VetmanagerTimeoutError as exc:
             outcome = "timeout"
+            pet_fallback = (
+                " If you have a small set of known pet_id values, you may "
+                "sequentially try get_medical_cards for each pet with a "
+                "date_create filter for the same period. This does not prove "
+                "complete coverage of all pets; report incomplete coverage "
+                "unless you have an independent complete pet list."
+                if "resolving Vetmanager host" not in str(exc) else ""
+            )
             raise VetmanagerTimeoutError(
                 "Vetmanager medical-card read timed out. Retry a smaller limit. "
                 "For any retry, start with offset=0 and read all pages. For a "
@@ -316,7 +324,7 @@ def register(mcp: FastMCP) -> None:
                 "fails, report incomplete coverage. Only add doctor_id if the "
                 "original request was limited to the attending veterinarian, "
                 "creator_id only if it requested the record author, and "
-                "clinic_id only if it requested one branch."
+                "clinic_id only if it requested one branch." + pet_fallback
             ) from exc
         except BaseException:
             outcome = "error"

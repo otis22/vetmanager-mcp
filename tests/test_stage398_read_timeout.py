@@ -55,6 +55,8 @@ async def test_dated_cards_timeout_names_complete_safe_recovery(monkeypatch):
     assert "creator_id" in message and "author" in message
     assert "clinic_id" in message and "branch" in message
     assert "only if" in message
+    assert "get_medical_cards" in message and "date_create" in message
+    assert "known pet_id" in message and "incomplete" in message
     assert "testclinic" not in message and "test-key-mock" not in message
     assert snapshot_service_metrics()["tool_calls_total"][f"{LABEL}|timeout"] == 1
 
@@ -154,6 +156,7 @@ async def test_published_description_preserves_full_scope_on_timeout():
     assert "offset=0" in description
     assert "each day" in description
     assert "creator_id" in description and "author" in description
+    assert "get_medical_cards" in description and "date_create" in description
 
 
 @pytest.mark.asyncio
