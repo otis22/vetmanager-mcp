@@ -847,7 +847,10 @@ SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "get_medical_cards_by_date": (
         "List medical cards by clinic-local date or date range for daily clinical "
-        "control across all patients. Filter by doctor_id for the attending "
+        "control across all patients. Prefer server-side doctor_id and creator_id "
+        "filters over downloading all cards and filtering locally for an audit. "
+        "If both roles are requested, pass both IDs in the same paginated "
+        "date-range call. Filter by doctor_id for the attending "
         "veterinarian and by creator_id for the record creator; these independent "
         "filters can be combined with the period and clinic_id. By default "
         "searches all branches; pass clinic_id only when the "
