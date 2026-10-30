@@ -11,6 +11,31 @@ from depersonalization import REDACTED_ADDRESS, REDACTED_EMAIL, REDACTED_PHONE
 
 
 LIST_FIELDS: dict[str, frozenset[str]] = {
+    "get_invoice_documents_by_period": frozenset("""
+        id document_id invoice_id invoice_date doctor_id good_id quantity price
+        responsible_user_id is_default_responsible sale_param_id tag_id
+        discount_type discount_document_id discount_percent default_price
+        create_date discount_cause fixed_discount_id fixed_discount_percent
+        fixed_increase_id fixed_increase_percent prime_cost
+    """.split()),
+    "get_medical_cards": frozenset("""
+        id pet_id date_create date_edit doctor_id clinic_id description
+        recommendation invoice_id admission_type weight temperature
+        meet_result_id admission_id diagnos diagnos_type_text status
+        healing_process next_meet_id
+    """.split()),
+    "get_medical_cards_by_date": frozenset("""
+        id pet_id date_create date_edit doctor_id clinic_id description
+        recommendation invoice_id admission_type weight temperature
+        meet_result_id admission_id diagnos diagnos_type_text status
+        healing_process next_meet_id
+    """.split()),
+    "get_medical_cards_by_client_id": frozenset("""
+        id pet_id date_create date_edit doctor_id clinic_id description
+        recommendation invoice_id admission_type weight temperature
+        meet_result_id admission_id diagnos diagnos_type_text status
+        healing_process next_meet_id _pet_alias _pet_id
+    """.split()),
     "get_admissions": frozenset("""
         id admission_date description client_id pet_id doctor_id type_id
         admission_length status clinic_id direct_direction creator_id create_date
@@ -29,6 +54,29 @@ LIST_FIELDS: dict[str, frozenset[str]] = {
         apartment unsubscribed in_blacklist last_visit_date number_of_journal
         phone_prefix
     """.split()),
+}
+
+FIELDS_ONLY_TOOLS = frozenset({
+    "get_invoice_documents_by_period", "get_medical_cards",
+    "get_medical_cards_by_date", "get_medical_cards_by_client_id",
+})
+
+_FIELDS_ONLY_SHAPES = {
+    "get_invoice_documents_by_period": ("data", "invoiceDocument", frozenset({
+        "totalCount", "limited", "limited_reason", "upstream_calls", "next_offset", "advice",
+    })),
+    "get_medical_cards": ("data", "medicalCards", frozenset({
+        "totalCount", "truncated", "has_more", "limit", "offset",
+    })),
+    "get_medical_cards_by_date": ("top", "medical_cards", frozenset({
+        "success", "date_from", "date_to", "clinic_filter_applied", "clinic_id",
+        "limit", "offset", "total", "total_known", "medical_cards_count",
+        "truncated", "owner_context_available",
+    })),
+    "get_medical_cards_by_client_id": ("top", "medical_cards", frozenset({
+        "success", "client_id", "pets_count", "pets_total", "pets_truncated",
+        "medical_cards_count", "medical_cards_total", "medical_cards_has_more", "message",
+    })),
 }
 
 COMPACT_FIELDS: dict[str, tuple[str, ...]] = {
@@ -166,6 +214,8 @@ def project_list_result(
     """Keep the envelope and row-level identifier-conflict warning intact."""
     if selection is None and include is None and not mask_contacts:
         return result
+    if tool_name in FIELDS_ONLY_TOOLS:
+        return _project_fields_only(result, tool_name, selection)
     if not isinstance(result, dict):
         raise reportable_error("Projection expected a list response envelope.")
     if result.get("success") is False:
@@ -226,3 +276,45 @@ def project_list_result(
         projected.append(scalar_fields)
     new_data = projected if container is None else {**container, entity: projected}
     return {**result, "data": new_data}
+
+
+def _project_fields_only(result: object, tool_name: str, selection: tuple[str, ...] | None):
+    """Project known list shapes after sanitizer and identifier normalization."""
+    if not isinstance(result, dict):
+        raise reportable_error("Projection expected a list response envelope.")
+    if result.get("success") is False or "error" in result:
+        return result
+    location, row_key, allowed_metadata = _FIELDS_ONLY_SHAPES[tool_name]
+    if location == "top":
+        container = result
+    else:
+        if set(result) - SAFE_RESPONSE_KEYS:
+            raise reportable_error("Projection found unknown response metadata.")
+        container = result.get("data")
+        if not isinstance(container, dict):
+            raise reportable_error("Projection expected a list response envelope.")
+    if set(container) - {row_key} - allowed_metadata:
+        raise reportable_error("Projection found unknown list metadata.")
+    if any(isinstance(value, (dict, list, tuple)) for key, value in container.items()
+           if key != row_key):
+        raise reportable_error("Projection expected scalar list metadata.")
+    rows = container.get(row_key)
+    if not isinstance(rows, list):
+        raise reportable_error("Projection expected a supported list response shape.")
+    projected = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise reportable_error("Projection expected a record object.")
+        selected = {}
+        for field in selection or ():
+            if field not in row:
+                continue
+            value = row[field]
+            if isinstance(value, (dict, list, tuple)):
+                raise reportable_error("Projection expected a scalar field.")
+            selected[field] = value
+        if "_mcp_identifier_conflicts" in row:
+            selected["_mcp_identifier_conflicts"] = row["_mcp_identifier_conflicts"]
+        projected.append(selected)
+    updated = {**container, row_key: projected}
+    return updated if location == "top" else {**result, "data": updated}

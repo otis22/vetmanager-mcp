@@ -11,7 +11,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware
 from filters import FILTER_FIELDS_BY_ENTITY
 from list_projection import (
-    LIST_FIELDS, PET_CONTACT_TOOLS, mask_pet_list_result,
+    FIELDS_ONLY_TOOLS, LIST_FIELDS, PET_CONTACT_TOOLS, mask_pet_list_result,
     project_list_result, selected_fields, selected_include,
 )
 from tool_descriptions import RAW_CLAUSE_ENTITIES
@@ -116,18 +116,23 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
             "get_admissions": '["id", "client_id", "pet_id"]',
             "get_invoices": '["id", "client_id", "amount"]',
             "get_clients": '["id", "first_name", "last_name"]',
+            "get_invoice_documents_by_period": '["id", "invoice_id", "price"]',
+            "get_medical_cards": '["id", "pet_id", "date_create"]',
+            "get_medical_cards_by_date": '["id", "pet_id", "date_create"]',
+            "get_medical_cards_by_client_id": '["id", "pet_id", "date_create"]',
         }[tool_name]
         fields_annotation = optional_fields_list(fields_example)
-        renamed.extend((
-            inspect.Parameter("fields", inspect.Parameter.KEYWORD_ONLY,
-                              default=None, annotation=fields_annotation),
-            inspect.Parameter("compact", inspect.Parameter.KEYWORD_ONLY,
-                              default=False, annotation=bool),
-            inspect.Parameter("include", inspect.Parameter.KEYWORD_ONLY,
-                              default=None, annotation=OptionalJsonList[str]),
-            inspect.Parameter("mask_contacts", inspect.Parameter.KEYWORD_ONLY,
-                              default=False, annotation=bool),
-        ))
+        renamed.append(inspect.Parameter("fields", inspect.Parameter.KEYWORD_ONLY,
+                                         default=None, annotation=fields_annotation))
+        if tool_name not in FIELDS_ONLY_TOOLS:
+            renamed.extend((
+                inspect.Parameter("compact", inspect.Parameter.KEYWORD_ONLY,
+                                  default=False, annotation=bool),
+                inspect.Parameter("include", inspect.Parameter.KEYWORD_ONLY,
+                                  default=None, annotation=OptionalJsonList[str]),
+                inspect.Parameter("mask_contacts", inspect.Parameter.KEYWORD_ONLY,
+                                  default=False, annotation=bool),
+            ))
     elif tool_name in PET_CONTACT_TOOLS:
         renamed.append(inspect.Parameter(
             "mask_contacts", inspect.Parameter.KEYWORD_ONLY,
@@ -180,10 +185,12 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
         for name, annotation in getattr(func, "__annotations__", {}).items()
     }
     if tool_name in LIST_FIELDS:
-        _canonical.__annotations__.update({
-            "fields": fields_annotation, "compact": bool,
-            "include": OptionalJsonList[str], "mask_contacts": bool,
-        })
+        _canonical.__annotations__["fields"] = fields_annotation
+        if tool_name not in FIELDS_ONLY_TOOLS:
+            _canonical.__annotations__.update({
+                "compact": bool, "include": OptionalJsonList[str],
+                "mask_contacts": bool,
+            })
     elif tool_name in PET_CONTACT_TOOLS:
         _canonical.__annotations__["mask_contacts"] = bool
     _canonical.__doc__ = public_text(func.__doc__ or "")

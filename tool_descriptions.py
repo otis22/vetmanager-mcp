@@ -1,6 +1,6 @@
 from fastmcp import FastMCP
 from filters import FILTER_FIELDS_BY_ENTITY
-from list_projection import LIST_FIELDS, LIST_RELATIONS
+from list_projection import FIELDS_ONLY_TOOLS, LIST_FIELDS, LIST_RELATIONS
 
 
 # Each entry is a REST list entity whose accepted field names were checked
@@ -1352,7 +1352,13 @@ LIST_PROJECTION_SUFFIXES: dict[str, str] = {
     )
     for name in ("get_admissions", "get_invoices", "get_clients")
 }
-
+LIST_PROJECTION_SUFFIXES.update({
+    name: (
+        "Use fields for canonical top-level scalar row fields only. Projection "
+        "is local after privacy cleaning; it reduces context size, not "
+        "Vetmanager traffic. Without fields the full response is unchanged."
+    ) for name in FIELDS_ONLY_TOOLS
+})
 
 SEARCH_GUIDANCE_SUFFIXES: dict[str, str] = {
     "get_admissions": (
@@ -1490,7 +1496,8 @@ def enhance_tool_descriptions(mcp: FastMCP) -> None:
             if "fields" in properties:
                 properties["fields"]["description"] = (
                     "Local projection of canonical top-level scalar row fields. "
-                    "Cannot combine with compact. Allowed: "
+                    + ("Cannot combine with compact. " if component.name not in FIELDS_ONLY_TOOLS else "")
+                    + "Allowed: "
                     + ", ".join(sorted(LIST_FIELDS[component.name])) + "."
                 )
             if "compact" in properties:
