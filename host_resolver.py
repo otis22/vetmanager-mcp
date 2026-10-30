@@ -23,7 +23,6 @@ Non-scope (deferred to stage 113b/c):
 from __future__ import annotations
 
 import asyncio
-import ssl
 import time
 from urllib.parse import urljoin, urlparse
 from weakref import WeakKeyDictionary
@@ -104,7 +103,8 @@ async def _get_shared_client() -> httpx.AsyncClient:
         client = _shared_clients_by_loop.get(key)
         if client is not None and not client.is_closed:
             return client
-        tls = ssl.create_default_context()
+        # Match httpx's default trust roots and environment overrides.
+        tls = httpx.create_ssl_context(verify=True, trust_env=True)
         # OpenSSL 3.5 otherwise offers a large post-quantum ClientHello. The
         # classic P-256 share works through the container network path.
         tls.set_ecdh_curve("prime256v1")

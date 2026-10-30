@@ -1,6 +1,8 @@
 """Hotfix: billing alias and bounded emergency origin fallback."""
 
 import httpx
+import certifi
+import ssl
 import pytest
 import respx
 
@@ -153,13 +155,19 @@ async def test_cloud_5xx_and_alias_transport_does_not_guess():
 @pytest.mark.asyncio
 async def test_billing_client_uses_classic_key_share(monkeypatch):
     captured = {}
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
 
     class TLS:
         def set_ecdh_curve(self, curve):
             captured["curve"] = curve
 
     tls = TLS()
-    monkeypatch.setattr(host_resolver.ssl, "create_default_context", lambda: tls)
+    def fake_context(**kwargs):
+        captured.update(kwargs)
+        return tls
+
+    monkeypatch.setattr(ssl, "create_default_context", fake_context)
 
     class Client:
         is_closed = False
@@ -171,4 +179,5 @@ async def test_billing_client_uses_classic_key_share(monkeypatch):
     await host_resolver._get_shared_client()
     assert captured["verify"] is tls
     assert captured["curve"] == "prime256v1"
+    assert captured["cafile"] == certifi.where()
     assert captured["timeout"].connect <= 3

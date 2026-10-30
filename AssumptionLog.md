@@ -40,6 +40,28 @@ connect 1.5 с, read/write 2 с, pool 1 с; не более двух попыт�
 После аудита тестовая проверка отсутствия догадки исправлена под новые
 метки `guessed_*`; фокусный набор этапа и структуры Roadmap — 39 passed.
 
+**Committed diff `9dfcc1f`, первый сильный гейт (30.10.2026, 13:26 UTC).**
+Spark evidence `/home/otis/.local/share/vetmanager-mcp-review-evidence/stage448/spark.stdout.txt`:
+`files_read` перечислены, medium о переходе к `.ru` после иных ответов
+probe отклонён: это разрешённый владельцем дополнительный фолбэк, а `.ru`
+принимается только после отдельного подтверждения. Astra evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage448/astra-diff-attempt-1-of-3.result.json`,
+validator `--plain` exit 0, `[]`. Opus envelope
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage448/2026-10-30T132602Z-git_range-HEAD__HEAD-attempt-1-of-3.KZHUkT/claude-review-attempt-1-of-3.envelope.json`:
+`subtype=success`, `stop_reason=tool_use`, `output_tokens=3978`,
+`thinking_tokens=3075`, `len(result)=1950`, validator exit 0. Opus: три medium,
+общих с Astra нет. Редирект на точный поддомен после проверки `.ru` и прямой
+2xx без ключа отклонены как явный контракт владельца; факт неизвестного
+поддомена — 302 на `/404`, не 2xx. Замечание о смене CA-бандла принято:
+httpx использует certifi или `SSL_CERT_FILE`/`SSL_CERT_DIR`. Красный тест
+показал `KeyError: 'cafile'` (exit 1); контекст теперь сохраняет прежние
+trust roots и ограничивает key share P-256. Фокусный набор — 33 passed.
+Прямое чтение CA env в первом варианте правки поймал
+`test_stage285_runtime_env_reaches_container`; итог использует штатный
+`httpx.create_ssl_context(verify=True, trust_env=True)` и затем P-256.
+Фокусный env/CA/linter набор — 3 passed. Финальный полный mock suite после
+этой правки: exit 0, 4499 passed, 3 skipped, 135 deselected (30.10.2026).
+
 ## Этап 429. Полнота страницы медкарт клиента — 2026-10-21
 
 Ветка `dev/roadmap-426-429`; PRD `PRD/этап-429-client-medical-card-pagination.md`; источник R9. `GET /rest/api/MedicalCards` получает серверный `patient_id IN` по найденным питомцам; после ответа строки не отбрасываются. OpenAPI v6 задаёт `limit`/`offset`, но оставляет `data` без схемы total; фактический `totalCount` подтверждён живым ответом. Решение локальное: `medical_cards_total` — число совпадающих медкарт до `limit`/`offset` для **полученных питомцев**, `null` при отсутствии или негодном total; `medical_cards_has_more` — `offset + medical_cards_count < medical_cards_total`, либо `null` при неизвестном total или пустой странице до заявленного total. `pets_truncated` независимо указывает на неполноту списка питомцев. Старые поля не менялись; общий pagination envelope не вводился.
