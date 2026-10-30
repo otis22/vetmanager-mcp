@@ -23,6 +23,10 @@ async def test_medical_card_and_pet_profile_descriptions_explain_file_links():
         for fragment in (
             "description", "HTML", "<a href>", "file storage",
             "open and use", "no separate file-list tool", "do not retry",
+            "publicly accessible S3 link", "relevant to the user's request",
+            "keep the file URL private", "closed or expired link",
+            "only over HTTPS", "trusted by the client", "IP literal",
+            "no trusted host configured, do not open",
         ):
             assert fragment in description, f"{name}: missing {fragment!r}"
 
