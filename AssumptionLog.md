@@ -48,6 +48,16 @@ validator `--plain` exit 0, `[]`. Opus envelope
 Повторный полный mock suite точной командой `docker compose --profile test run --rm test`:
 exit 0, 4503 passed, 3 skipped, 135 deselected за 772.41 с.
 
+**Повторный committed diff gate, SHA `192c7b7` (14:46 UTC).** Spark
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage448/fallback-logs/spark-round2.stdout.txt`
+прочёл три файла, `findings=[]`. Astra
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage448/fallback-logs/astra-diff-attempt-2-of-3.result.json`:
+validator `--plain` exit 0, `[]`. Opus envelope
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage448/fallback-logs/2026-10-30T144615Z-git_range-123f6d4__192c7b7-attempt-2-of-3.2zCq7F/claude-review-attempt-2-of-3.envelope.json`:
+`subtype=success`, `stop_reason=tool_use`, `output_tokens=810`,
+`thinking_tokens=338`, `len(result)=15`, validator exit 0, `[]`.
+Общих findings нет; открытых critical/high нет. После этого ревью код не менялся.
+
 Источник: read-only снимок супервизора 30.10.2026. Из контейнеров TLS к
 `billing-api.vetmanager.cloud` висел, а с хоста отвечал. Причина — большой
 постквантовый ClientHello OpenSSL 3.5 на сетевом пути к Cloudflare; классический
