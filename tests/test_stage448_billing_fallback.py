@@ -57,7 +57,9 @@ async def test_cloud_failure_uses_alias(failure):
 async def test_cloud_5xx_logs_source_and_reason(caplog):
     respx.get(CLOUD).mock(return_value=httpx.Response(503))
     respx.get(ALIAS).mock(return_value=httpx.Response(200, json={"url": ORIGIN}))
-    assert await host_resolver.resolve_vetmanager_host(DOMAIN, max_retries=0) == ORIGIN
+    assert await host_resolver.resolve_vetmanager_host(
+        DOMAIN, max_retries=0, correlation_id="corr-448"
+    ) == ORIGIN
     assert any(
         getattr(record, "event_name", None) == "billing_api_http_failure"
         and record.levelno == logging.WARNING
@@ -65,6 +67,7 @@ async def test_cloud_5xx_logs_source_and_reason(caplog):
         and record.domain == DOMAIN
         and record.reason == "http_5xx"
         and record.status_code == 503
+        and record.correlation_id == "corr-448"
         for record in caplog.records
     )
 

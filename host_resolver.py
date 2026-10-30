@@ -275,7 +275,9 @@ async def _resolve_vetmanager_host_uncached_impl(
         url = template.format(domain=domain)
         for attempt in range(min(max_retries, 1) + 1):
             try:
-                resolved = await _lookup_billing_host(client, url, domain, source)
+                resolved = await _lookup_billing_host(
+                    client, url, domain, source, correlation_id=correlation_id
+                )
                 if source == "alias":
                     RUNTIME_LOGGER.warning(
                         "Billing host resolved via fallback.",
@@ -338,7 +340,8 @@ async def _resolve_vetmanager_host_uncached_impl(
 
 
 async def _lookup_billing_host(
-    client: httpx.AsyncClient, url: str, domain: str, source: str
+    client: httpx.AsyncClient, url: str, domain: str, source: str,
+    *, correlation_id: str | None = None,
 ) -> str:
     """Make one authoritative billing lookup; preserve response validation."""
     started = time.monotonic()
@@ -360,7 +363,8 @@ async def _lookup_billing_host(
                 "Billing API HTTP failure",
                 extra={"event_name": "billing_api_http_failure", "domain": domain,
                        "target": "billing_api", "source": source, "reason": reason,
-                       "status_code": response.status_code},
+                       "status_code": response.status_code,
+                       "correlation_id": correlation_id},
             )
         error = HostResolutionError(
             f"Billing API returned HTTP {response.status_code}. Please retry shortly."

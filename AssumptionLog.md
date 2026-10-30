@@ -30,6 +30,24 @@ exit 0, 4503 passed, 3 skipped, 135 deselected за 657.76 с. Аудит diff:
 (0 переносов), `python3 scripts/check_roadmap_structure.py` exit 0;
 `scripts/*.sh` не менялись.
 
+**Committed diff `123f6d4`, первый сильный гейт (30.10.2026, 14:30 UTC).**
+Spark `/home/otis/.local/share/vetmanager-mcp-review-evidence/stage448/fallback-logs/spark.stdout.txt`
+прочёл шесть файлов, `findings=[]`. Astra
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage448/fallback-logs/astra-diff-attempt-1-of-3.result.json`:
+validator `--plain` exit 0, `[]`. Opus envelope
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage448/fallback-logs/2026-10-30T143001Z-git_range-123f6d4__123f6d4-attempt-1-of-3.Ysgorl/claude-review-attempt-1-of-3.envelope.json`:
+`subtype=success`, `stop_reason=tool_use`, `output_tokens=1184`,
+`thinking_tokens=722`, `len(result)=1000`, validator exit 0. Общих findings
+нет. Opus указал два medium. Отсутствие `correlation_id` у нового 5xx WARNING
+принято: красный тест упал на `AttributeError: LogRecord ... correlation_id`
+(exit 1); параметр передан в `_lookup_billing_host`, фокусный набор после
+исправления — 33 passed. Предположение о других вызовах `_lookup_billing_host`
+отклонено: `rg` нашёл единственный call-site в изменённом caller; событие DEBUG
+не теряется. Повторный полный mock suite и второй сильный гейт обязательны
+перед выпуском.
+Повторный полный mock suite точной командой `docker compose --profile test run --rm test`:
+exit 0, 4503 passed, 3 skipped, 135 deselected за 772.41 с.
+
 Источник: read-only снимок супервизора 30.10.2026. Из контейнеров TLS к
 `billing-api.vetmanager.cloud` висел, а с хоста отвечал. Причина — большой
 постквантовый ClientHello OpenSSL 3.5 на сетевом пути к Cloudflare; классический
