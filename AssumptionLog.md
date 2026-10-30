@@ -62,6 +62,18 @@ trust roots и ограничивает key share P-256. Фокусный наб
 Фокусный env/CA/linter набор — 3 passed. Финальный полный mock suite после
 этой правки: exit 0, 4499 passed, 3 skipped, 135 deselected (30.10.2026).
 
+**Повторный committed diff gate, SHA `5a47e1b` (13:54 UTC).** Spark
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage448/spark-round2.stdout.txt`
+прочёл восемь файлов; повторил только ранее отклонённый medium о дополнительном
+переходе к `.ru`. Astra
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage448/astra-diff-attempt-2-of-3.result.json`:
+validator `--plain` exit 0, `[]`. Opus envelope
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/stage448/2026-10-30T135423Z-git_range-HEAD2__HEAD-attempt-2-of-3.T7TVtl/claude-review-attempt-2-of-3.envelope.json`:
+`subtype=success`, `stop_reason=tool_use`, `output_tokens=3456`,
+`thinking_tokens=2559`, `len(result)=15`, validator exit 0, `[]`.
+Общих findings нет; открытых critical/high нет. После сильного ревью код не
+менялся.
+
 ## Этап 429. Полнота страницы медкарт клиента — 2026-10-21
 
 Ветка `dev/roadmap-426-429`; PRD `PRD/этап-429-client-medical-card-pagination.md`; источник R9. `GET /rest/api/MedicalCards` получает серверный `patient_id IN` по найденным питомцам; после ответа строки не отбрасываются. OpenAPI v6 задаёт `limit`/`offset`, но оставляет `data` без схемы total; фактический `totalCount` подтверждён живым ответом. Решение локальное: `medical_cards_total` — число совпадающих медкарт до `limit`/`offset` для **полученных питомцев**, `null` при отсутствии или негодном total; `medical_cards_has_more` — `offset + medical_cards_count < medical_cards_total`, либо `null` при неизвестном total или пустой странице до заявленного total. `pets_truncated` независимо указывает на неполноту списка питомцев. Старые поля не менялись; общий pagination envelope не вводился.
