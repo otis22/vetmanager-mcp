@@ -1,5 +1,7 @@
 """Hotfix: billing alias and bounded emergency origin fallback."""
 
+import logging
+
 import httpx
 import certifi
 import ssl
@@ -26,12 +28,17 @@ def _billing_transport_down():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_primary_cloud_success_skips_alias():
+async def test_primary_cloud_success_skips_alias(caplog):
+    caplog.set_level(logging.DEBUG, logger=host_resolver.RUNTIME_LOGGER.name)
     cloud = respx.get(CLOUD).mock(return_value=httpx.Response(200, json={"url": ORIGIN}))
     alias = respx.get(ALIAS).mock(return_value=httpx.Response(200, json={"url": ORIGIN}))
     assert await host_resolver.resolve_vetmanager_host(DOMAIN, max_retries=0) == ORIGIN
     assert cloud.call_count == 1
     assert alias.call_count == 0
+    assert any(record.event_name == "billing_host_resolved" and record.levelno == logging.DEBUG
+               for record in caplog.records if hasattr(record, "event_name"))
+    assert not any(getattr(record, "event_name", None) == "billing_host_resolved_via_fallback"
+                   for record in caplog.records)
 
 
 @pytest.mark.asyncio
@@ -43,6 +50,46 @@ async def test_cloud_failure_uses_alias(failure):
     alias = respx.get(ALIAS).mock(return_value=httpx.Response(200, json={"url": ORIGIN}))
     assert await host_resolver.resolve_vetmanager_host(DOMAIN, max_retries=0) == ORIGIN
     assert alias.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_cloud_5xx_logs_source_and_reason(caplog):
+    respx.get(CLOUD).mock(return_value=httpx.Response(503))
+    respx.get(ALIAS).mock(return_value=httpx.Response(200, json={"url": ORIGIN}))
+    assert await host_resolver.resolve_vetmanager_host(DOMAIN, max_retries=0) == ORIGIN
+    assert any(
+        getattr(record, "event_name", None) == "billing_api_http_failure"
+        and record.levelno == logging.WARNING
+        and record.source == "cloud"
+        and record.domain == DOMAIN
+        and record.reason == "http_5xx"
+        and record.status_code == 503
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(("failure", "expected_reason"), [
+    (httpx.ConnectTimeout("cloud"), "connect_timeout"),
+    (httpx.ReadTimeout("cloud"), "read_timeout"),
+    (httpx.Response(503), "http_5xx"),
+])
+async def test_alias_success_logs_fallback_and_primary_reason(caplog, failure, expected_reason):
+    respx.get(CLOUD).mock(side_effect=failure if isinstance(failure, Exception) else None,
+                          return_value=failure if isinstance(failure, httpx.Response) else None)
+    respx.get(ALIAS).mock(return_value=httpx.Response(200, json={"url": ORIGIN}))
+    assert await host_resolver.resolve_vetmanager_host(DOMAIN, max_retries=0) == ORIGIN
+    assert any(
+        getattr(record, "event_name", None) == "billing_host_resolved_via_fallback"
+        and record.levelno == logging.WARNING
+        and record.source == "alias"
+        and record.domain == DOMAIN
+        and record.primary_failure_reason == expected_reason
+        and record.resolved_host == ORIGIN
+        for record in caplog.records
+    )
 
 
 @pytest.mark.asyncio
@@ -62,6 +109,9 @@ async def test_both_transport_failures_use_short_cached_guess(caplog, monkeypatc
     assert probe.call_count == 2
     assert host_resolver.GUESSED_HOST_CACHE_TTL_SECONDS < host_resolver.BILLING_RESOLVER_CACHE_TTL_SECONDS
     assert any(getattr(record, "event_name", None) == "billing_host_guessed" for record in caplog.records)
+    assert any(getattr(record, "event_name", None) == "billing_api_transport_failure"
+               and record.reason == "connect_timeout" and record.levelno == logging.WARNING
+               for record in caplog.records)
     assert snapshot_service_metrics()["upstream_requests_total"]["billing_api|guessed_vm2_direct"] == 3
 
 

@@ -270,21 +270,42 @@ async def _resolve_vetmanager_host_uncached_impl(
     correlation_id = correlation_id or get_current_request_context().get("correlation_id")
     transport_failures = 0
     last_error: Exception | None = None
+    primary_failure_reason: str | None = None
     for source, template in (("cloud", BILLING_API), ("alias", BILLING_API_ALIAS)):
         url = template.format(domain=domain)
         for attempt in range(min(max_retries, 1) + 1):
             try:
-                return await _lookup_billing_host(client, url, domain, source)
+                resolved = await _lookup_billing_host(client, url, domain, source)
+                if source == "alias":
+                    RUNTIME_LOGGER.warning(
+                        "Billing host resolved via fallback.",
+                        extra={"event_name": "billing_host_resolved_via_fallback",
+                               "domain": domain, "source": source,
+                               "primary_source": "cloud",
+                               "primary_failure_reason": primary_failure_reason,
+                               "resolved_host": resolved,
+                               "correlation_id": correlation_id},
+                    )
+                else:
+                    RUNTIME_LOGGER.debug(
+                        "Resolved billing host.",
+                        extra={"event_name": "billing_host_resolved", "domain": domain,
+                               "source": source, "resolved_host": resolved},
+                    )
+                return resolved
             except HostResolutionError as exc:
                 # 5xx may be transient; an authoritative 4xx or invalid body
                 # must never turn into a guessed clinic address.
                 if getattr(exc, "billing_5xx", False) and source == "cloud":
                     last_error = exc
+                    primary_failure_reason = "http_5xx"
                     break
                 raise
             except httpx.RequestError as exc:
                 reason = classify_transport_error(exc)
                 last_error = exc
+                if source == "cloud":
+                    primary_failure_reason = reason
                 RUNTIME_LOGGER.warning(
                     "Billing API transport failure",
                     extra={"event_name": "billing_api_transport_failure", "domain": domain,
@@ -334,6 +355,13 @@ async def _lookup_billing_host(
         reason = classify_http_status(response.status_code)
         record_upstream_failure(target="billing_api", reason=reason)
         record_upstream_request(target="billing_api", status=reason, duration_seconds=elapsed)
+        if response.status_code >= 500:
+            RUNTIME_LOGGER.warning(
+                "Billing API HTTP failure",
+                extra={"event_name": "billing_api_http_failure", "domain": domain,
+                       "target": "billing_api", "source": source, "reason": reason,
+                       "status_code": response.status_code},
+            )
         error = HostResolutionError(
             f"Billing API returned HTTP {response.status_code}. Please retry shortly."
         )
@@ -369,11 +397,6 @@ async def _lookup_billing_host(
             "Billing API returned an invalid host response. Please retry shortly."
         ) from exc
     record_upstream_request(target="billing_api", status="http_200", duration_seconds=elapsed)
-    RUNTIME_LOGGER.debug(
-        "Resolved billing host.",
-        extra={"event_name": "billing_host_resolved", "domain": domain,
-               "source": source, "resolved_host": validated},
-    )
     _resolved_host_cache[domain] = (
         validated, time.monotonic() + BILLING_RESOLVER_CACHE_TTL_SECONDS, None
     )

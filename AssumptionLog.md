@@ -4,6 +4,32 @@
 
 ## Этап 448. Аварийный billing fallback — 2026-10-30
 
+**Проверка владельца после Deploy Prod `2f63184`.** Из `mcp`, `mcp2`, `mcp3`
+основной `billing-api.vetmanager.cloud` вернул 200 за 0.21–0.22 с;
+`vckotipes14`, `taslitskiy`, `obereg`, `alternativa`, `devtr6` разрешились
+в `https://{domain}.vetmanager2.ru` за 0.06–0.11 с. Новых строк
+billing-отказов в runtime-логе после деплоя нет, read-only MCP `get_users`
+вернул данные. Статус #147 владелец меняет самостоятельно.
+
+**Дополнение 448.2: наблюдаемость резерва.** При 5xx любого billing
+источника пишется WARNING `billing_api_http_failure` с `source`, `domain`,
+`reason=http_5xx`, `status_code`; метрика остаётся. При успехе через
+`billing-api.vetmanager.ru` пишется WARNING
+`billing_host_resolved_via_fallback` с `source=alias`, `primary_source=cloud`,
+`domain`, `primary_failure_reason` (`connect_timeout`, `read_timeout` или
+`http_5xx`), `resolved_host`. Основной успех остаётся DEBUG. Существующие
+WARNING транспортного отказа и догадки не менялись; `reason` для таймаутов
+уже классифицируется как `connect_timeout` / `read_timeout`. Это позволяет
+видеть как отказ основного, так и восстановление через резерв в runtime-логе.
+Красный фокусный тест: 4 failed, 2 passed (5xx и три причины fallback);
+после правки: 22 passed. Живую проверку после следующего деплоя проведёт
+владелец.
+Полный mock suite точной командой `docker compose --profile test run --rm test`:
+exit 0, 4503 passed, 3 skipped, 135 deselected за 657.76 с. Аудит diff:
+`git diff --check` exit 0; `python3 scripts/archive_roadmap.py` exit 0
+(0 переносов), `python3 scripts/check_roadmap_structure.py` exit 0;
+`scripts/*.sh` не менялись.
+
 Источник: read-only снимок супервизора 30.10.2026. Из контейнеров TLS к
 `billing-api.vetmanager.cloud` висел, а с хоста отвечал. Причина — большой
 постквантовый ClientHello OpenSSL 3.5 на сетевом пути к Cloudflare; классический
