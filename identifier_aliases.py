@@ -47,7 +47,9 @@ def normalize_arguments(arguments: dict, *, tool_name: str) -> dict:
     primary_id = BY_ID_PRIMARY_ARGUMENTS.get(tool_name)
     if primary_id and "id" in result:
         value = result.pop("id")
-        if primary_id in result and result[primary_id] != value:
+        if primary_id in result and (
+            type(result[primary_id]) is not type(value) or result[primary_id] != value
+        ):
             raise ToolError(f"Conflicting values for {primary_id}.")
         result[primary_id] = value
     entity = RAW_CLAUSE_ENTITIES.get(tool_name)

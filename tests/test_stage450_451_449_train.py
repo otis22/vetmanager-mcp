@@ -110,6 +110,8 @@ async def test_every_by_id_accepts_id_without_changing_published_schema():
             normalize_arguments({"id": 7, primary: 8}, tool_name=tool.name)
         with pytest.raises(ToolError, match=primary):
             normalize_arguments({"id": "7", primary: 7}, tool_name=tool.name)
+        with pytest.raises(ToolError, match=primary):
+            normalize_arguments({"id": True, primary: 1}, tool_name=tool.name)
 
 
 @pytest.mark.asyncio
