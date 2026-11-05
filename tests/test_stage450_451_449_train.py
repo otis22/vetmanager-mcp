@@ -3,6 +3,7 @@
 import httpx
 import pytest
 import respx
+import re
 
 from depersonalization import REDACTED_PHONE, sanitize_report_cell, sanitize_tool_result
 from exceptions import AuthError
@@ -128,3 +129,26 @@ async def test_admission_by_id_alias_reaches_rest_and_conflict_does_not():
         with pytest.raises(ToolError, match="admission_id"):
             await mcp.call_tool("get_admission_by_id", {"id": 7, "admission_id": 8})
     assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_every_new_by_id_alias_crosses_mcp_validation():
+    billing_mock()
+    route = respx.get(re.compile(r"https://testclinic\.vetmanager\.cloud/rest/api/.*")).mock(
+        return_value=httpx.Response(404, json={"message": "not found"}),
+    )
+    headers, runtime = patch_runtime_credentials(
+        "testclinic", "test-key-mock", bearer_token="mock", bearer_token_id=1,
+        connection_id=1,
+    )
+    with headers, runtime:
+        for tool in await mcp.list_tools():
+            if not tool.name.endswith("_by_id") or tool.name == "get_medical_card_by_id":
+                continue
+            before = route.call_count
+            try:
+                await mcp.call_tool(tool.name, {"id": 999999999})
+            except Exception:
+                pass  # The mocked REST response is 404; validation must have passed.
+            assert route.call_count == before + 1, tool.name

@@ -27,7 +27,10 @@ async def test_admission_id_alias_reaches_test_rest():
         admission_id = admissions[0]["id"]
         result = await mcp.call_tool("get_admission_by_id", {"id": admission_id})
     assert result.structured_content["data"]["admission"]["id"] == admission_id
-    print(f"stage449_live code=200 body={{'id': {admission_id}}}")
+    assert result.is_error is False
+    print("stage449_live code=success body=" + str({
+        "id": result.structured_content["data"]["admission"]["id"],
+    }))
 
 
 @pytest.mark.asyncio
@@ -39,4 +42,6 @@ async def test_report_ai_read_error_is_safe_on_test_rest():
         await mcp.call_tool("get_report_ai_job", {"job_id": 999999999})
     message = str(raised.value)
     assert "NOT_FOUND" in message or "not found" in message.lower()
-    print("stage451_live code=404 body={'error': 'Report AI job not found'}")
+    safe_message = message.split("\n", 1)[0]
+    assert "Report AI request failed (NOT_FOUND)" in safe_message
+    print("stage451_live code=NOT_FOUND body=" + str({"error": safe_message}))

@@ -90,7 +90,8 @@ async def test_real_export_is_downloaded_cleaned_and_served_by_us(live_export_ro
     assert payload["download_url"].startswith("https://mcp.example/report-export/")
     assert "selcdn" not in str(payload)
     assert payload["depersonalized"] is True
-    print("stage450_live code=200 body=" + str({
+    assert result.is_error is False
+    print("stage450_live code=success body=" + str({
         "download_url": "https://mcp.example/report-export/<redacted>",
         "rows": payload["rows"], "columns": payload["columns"],
         "depersonalized": payload["depersonalized"],
