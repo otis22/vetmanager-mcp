@@ -154,3 +154,4 @@ async def test_every_new_by_id_alias_crosses_mcp_validation():
             except Exception:
                 pass  # The mocked REST response is 404; validation must have passed.
             assert route.call_count == before + 1, tool.name
+            assert "999999999" in str(route.calls.last.request.url), tool.name
