@@ -83,7 +83,8 @@ def test_conflicting_money_column_types_do_not_bypass_phone_mask():
 
 def test_other_consumers_keep_shared_phone_matcher():
     amount = "246800.0000000000"
-    assert REDACTED_PHONE in sanitize_report_cell("Сумма", amount)
+    # Stage 450 shares the safe money exception with the CSV boundary.
+    assert sanitize_report_cell("Сумма", amount) == amount
     assert REDACTED_PHONE in sanitize_tool_result({"description": amount})["description"]
     assert "[Filtered]" in __import__("error_tracking")._redact_exception_value(amount)
     assert "[REDACTED]" in (__import__("agent_feedback_service").sanitize_text(amount, limit=500) or "")

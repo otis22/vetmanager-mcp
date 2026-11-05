@@ -1531,8 +1531,8 @@ def _tool_error_from_vm(exc: VetmanagerError, *, create_not_sent: bool = False) 
             "Check access or connectivity before starting a new job."
         )
     if (isinstance(exc, AuthError) and exc.status_code == 403
-            and exc.error_code is None
-            and getattr(exc, "observed_error_code", None) is None):
+            and exc.error_code in (None, "FORBIDDEN")
+            and getattr(exc, "observed_error_code", None) in (None, "FORBIDDEN")):
         return reportable_error(
             "Report AI request failed (FORBIDDEN). "
             "Check access to Report AI with the clinic administrator."
