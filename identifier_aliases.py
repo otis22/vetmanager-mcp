@@ -22,6 +22,7 @@ ALIAS_TO_CANONICAL = {
     "owner_id": "client_id",
     "user_id": "doctor_id",
 }
+BY_ID_PRIMARY_ARGUMENTS: dict[str, str] = {}
 _OLD_NAMES = re.compile(r"\b(?:" + "|".join(map(re.escape, ALIAS_TO_CANONICAL)) + r")\b")
 
 
@@ -43,6 +44,12 @@ def normalize_arguments(arguments: dict, *, tool_name: str) -> dict:
         if canonical in result and result[canonical] != value:
             raise ToolError(f"Conflicting values for {canonical}.")
         result[canonical] = value
+    primary_id = BY_ID_PRIMARY_ARGUMENTS.get(tool_name)
+    if primary_id and "id" in result:
+        value = result.pop("id")
+        if primary_id in result and result[primary_id] != value:
+            raise ToolError(f"Conflicting values for {primary_id}.")
+        result[primary_id] = value
     entity = RAW_CLAUSE_ENTITIES.get(tool_name)
     allowed = FILTER_FIELDS_BY_ENTITY.get(entity, frozenset())
     for clause in ("filter", "sort"):
@@ -139,6 +146,14 @@ def canonical_tool(func, *, tool_name: str, report_mode: bool = False):
             default=False, annotation=bool,
         ))
     public_signature = original.replace(parameters=renamed)
+    if tool_name.endswith("_by_id") and "id" not in public_signature.parameters:
+        # Medical cards already publish and validate their own id alias.
+        primary_ids = [parameter.name for parameter in public_signature.parameters.values()
+                       if parameter.name.endswith("_id")
+                       and parameter.default is inspect.Parameter.empty]
+        if len(primary_ids) != 1:
+            raise ValueError(f"{tool_name} must have exactly one required ID parameter")
+        BY_ID_PRIMARY_ARGUMENTS[tool_name] = primary_ids[0]
 
     @wraps(func)
     async def _canonical(*args, **kwargs):

@@ -69,6 +69,11 @@ def _numeric_columns(columns: Any) -> set[str]:
     return {name for name, flags in decisions.items() if all(flags)}
 
 
+def report_numeric_columns(columns: Any) -> set[str]:
+    """Numeric report headings eligible for conservative cell preservation."""
+    return _numeric_columns(columns)
+
+
 def report_money_columns(columns: Any) -> set[str]:
     """Money labels eligible for Report AI numeric rows, respecting types and protected names."""
     numeric = _numeric_columns(columns)

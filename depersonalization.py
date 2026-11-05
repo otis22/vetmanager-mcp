@@ -8,7 +8,7 @@ from typing import Any
 
 from exceptions import ToolInputError
 from phone_redaction import iter_phone_matches, redact_phone_numbers
-from report_row_types import report_money_columns
+from report_row_types import report_money_columns, report_numeric_columns
 from russian_given_names import GIVEN_NAMES
 
 
@@ -618,9 +618,28 @@ def sanitize_report_cell(column: str, value: str) -> str:
     Stage 276: a CSV export is a report with its column names in the header
     row. Same two layers, same order — the name decides first, then the value.
     """
+    if column in _report_decimal_columns([column]) and _safe_report_money_decimal(value):
+        return value
     return _sanitize_value(
         value, key=column or None, report_mode=True, quantity_cell=True,
     )
+
+
+def _safe_report_money_decimal(value: str) -> bool:
+    """Only fixed-scale amounts whose phone matches lie within the fraction."""
+    return bool(
+        _REPORT_MONEY_DECIMAL_RE.fullmatch(value)
+        and all(match.start() > max(value.find("."), value.find(","))
+                for match in iter_phone_matches(value))
+    )
+
+
+def _report_decimal_columns(columns: Any) -> set[str]:
+    """Vetted money labels and exact quantity headings only."""
+    return report_money_columns(columns) | {
+        name for name in report_numeric_columns(columns)
+        if name.strip().casefold() in _REPORT_QUANTITY_KEYS
+    }
 
 
 # Ответ на «дай одну запись» приходит без ключа-контейнера: `get_client_by_id`
@@ -662,7 +681,7 @@ def _sanitize_value(
     record: Mapping | None = None,
     quantity_path: str | None = None,
     quantity_cell: bool = False,
-    money_columns: set[str] | None = None,
+    numeric_columns: set[str] | None = None,
 ) -> Any:
     """`address` — чья запись сейчас разбирается, `record` — сама запись.
 
@@ -672,9 +691,9 @@ def _sanitize_value(
     """
     if isinstance(value, Mapping):
         child_address = _record_address(value, key=key, inherited=address, parent=record)
-        child_money_columns = (
-            report_money_columns(value.get("columns"))
-            if quantity_path == "data" else money_columns
+        child_numeric_columns = (
+            _report_decimal_columns(value.get("columns"))
+            if quantity_path == "data" else numeric_columns
         )
         cleaned = {}
         generated_columns = report_mode and key in {"rows", "preview_example_row"}
@@ -695,7 +714,7 @@ def _sanitize_value(
                     else None
                 ),
                 quantity_cell=quantity_cell and key == "rows",
-                money_columns=child_money_columns,
+                numeric_columns=child_numeric_columns,
             )
         return cleaned
     if isinstance(value, (list, tuple)):
@@ -704,7 +723,7 @@ def _sanitize_value(
                 item, key=key, report_mode=report_mode, address=address, record=record,
                 quantity_path=quantity_path,
                 quantity_cell=quantity_cell or quantity_path == "rows",
-                money_columns=money_columns,
+                numeric_columns=numeric_columns,
             )
             for item in value
         ]
@@ -758,18 +777,16 @@ def _sanitize_value(
         if replacement is not None:
             return _addressed_placeholder(key, record=record, address=address) or replacement
     if report_mode:
-        # Report AI's generated row may carry a fixed-scale monetary decimal.
-        # Only a complete cell in a vetted money column can bypass a phone
+        # Report AI's generated row may carry a fixed-scale numeric decimal.
+        # Only a complete cell in a vetted numeric column can bypass a phone
         # match confined to its fractional digits. Never alter the shared
         # matcher, free text, previews or CSV cells.
         if (
             quantity_path == "row_cell"
             and key is not None
-            and money_columns is not None
-            and key in money_columns
-            and _REPORT_MONEY_DECIMAL_RE.fullmatch(value)
-            and all(match.start() > max(value.find("."), value.find(","))
-                    for match in iter_phone_matches(value))
+            and numeric_columns is not None
+            and key in numeric_columns
+            and _safe_report_money_decimal(value)
         ):
             return value
         if (
