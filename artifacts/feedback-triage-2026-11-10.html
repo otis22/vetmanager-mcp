@@ -34,28 +34,28 @@
       </ul>
     </section>
     <h2 id="decisions">Решение по каждому ID</h2>
-    <div class="table"><table>
-      <thead><tr><th>ID</th><th>Текущее состояние</th><th>Категория</th><th>Черновик ответа — не отправлен</th></tr></thead>
-      <tbody>
-        <tr><td>47</td><td>triaged · high · KI-34=wontfix: task entity в API нет</td><td class="tag stop">Не делаем</td><td>Задачи через интеграцию не поддерживаются; используйте приём, медкарту или внешний трекер.</td></tr>
-        <tr><td>92</td><td>triaged · high · скидочная агрегация расходится с построчной проверкой</td><td class="tag plan">В план: 457</td><td>Не считать агрегат финансовым эталоном; сверять строки счетов с полной пагинацией.</td></tr>
-        <tr><td>93</td><td>triaged · high · встроенная скидка умножила расширенную сумму на количество</td><td class="tag plan">В план: 457</td><td>До уточнения формулы проверять строки счетов.</td></tr>
-        <tr><td>94</td><td>triaged · medium · preview ждёт API конструктора; 358=todo</td><td class="tag plan">В план: 358</td><td>Удаление не возвращаем; нужен preview до сохранения.</td></tr>
-        <tr><td>102</td><td>triaged · medium · отказ без кода и воспроизведения</td><td class="tag debate">Спорное</td><td>Нужен безопасный повтор с кодом; сначала узкий маршрут store-documents.</td></tr>
-        <tr><td>135</td><td>triaged · medium · KI-80=fixed, но live-повтор не приложен</td><td class="tag debate">Спорное</td><td>Используйте daily summary либо compact/fields.</td></tr>
-        <tr><td>136</td><td>triaged · medium · KI-81=acknowledged; JSON-разбор есть, живой формы нет</td><td class="tag debate">Спорное</td><td>Перед внешним закрытием проверим безопасную запись.</td></tr>
-        <tr><td>137</td><td>triaged · low · служебная фраза сохранена без маски</td><td class="tag close">Решено — закрыть</td><td>Ложное срабатывание устранено.</td></tr>
-        <tr><td>150</td><td>new · medium · scalar projection ломается, compact проходит</td><td class="tag plan">В план: 458</td><td>Временно <code>compact=true</code>; проверим shape drift без снятия защиты.</td></tr>
-        <tr><td>151</td><td>new · medium · понятный payment intent отклонён без уточнения</td><td class="tag plan">В план: 457</td><td>Не повторять создание автоматически; сохранить job ID и проверить результат прямым чтением.</td></tr>
-        <tr><td>152</td><td>new · medium · распознавание добавило незаданные условия; уточнение помогло</td><td class="tag plan">В план: 457</td><td>Проверять ограничения до сохранения; явно задать смысл филиала, города и авансов.</td></tr>
-        <tr><td>153</td><td>new · medium · близкие отчёты расходятся на одну карточку</td><td class="tag plan">В план: 457</td><td>Сверить границы дня, статусы и DISTINCT до вывода о потере данных.</td></tr>
-        <tr><td>154</td><td>new · high · auto-match вернул ранее неверный отчёт без выбора</td><td class="tag plan">В план: 457</td><td>Не принимать auto-match за новый запрос; запрашивать точные календарные агрегаты.</td></tr>
-        <tr><td>155</td><td>new · low · гипотеза о потере оплат снята автором</td><td class="tag answer">Только ответ</td><td>Открыто лишь объяснение лишней карточки старого 90-дневного отчёта.</td></tr>
-        <tr><td>156</td><td>new · medium · маскировка количеств и номенклатуры; 455 это не проверял</td><td class="tag plan">В план: 456</td><td>Не восстанавливать обходом; локализовать слой, сохранив маски ПД.</td></tr>
-        <tr><td>157</td><td>new · high · safety-block без correlation ID; попадание в MCP не доказано</td><td class="tag answer">Только ответ</td><td>Не воспроизводить принудительно; сохранить время и безопасный контекст.</td></tr>
-        <tr><td>158</td><td>new · medium · sale-parameter tools существуют</td><td class="tag answer">Только ответ</td><td><code>get_good_sale_params</code> → <code>update_good_sale_price</code>; проверить scope.</td></tr>
-        <tr><td>159</td><td>new · medium · file API нет; 432.1=todo</td><td class="tag plan">В план: 432.1</td><td>Использовать ссылку из описания карты; проверенную выписку записывать в медкарту.</td></tr>
-        <tr><td>160</td><td>new · medium · маска названий комбинаций, слой неизвестен</td><td class="tag plan">В план: 456</td><td>Сравнить безопасный пример в строках задания и CSV; не склеивать с #156 заранее.</td></tr>
+    <div class="table"><table role="table">
+      <thead role="rowgroup"><tr role="row"><th role="columnheader">ID</th><th role="columnheader">Текущее состояние</th><th role="columnheader">Категория</th><th role="columnheader">Черновик ответа — не отправлен</th></tr></thead>
+      <tbody role="rowgroup">
+        <tr role="row"><td role="cell">47</td><td role="cell">triaged · high · KI-34=wontfix: task entity в API нет</td><td role="cell" class="tag stop">Не делаем</td><td role="cell">Задачи через интеграцию не поддерживаются; используйте приём, медкарту или внешний трекер.</td></tr>
+        <tr role="row"><td role="cell">92</td><td role="cell">triaged · high · скидочная агрегация расходится с построчной проверкой</td><td role="cell" class="tag plan">В план: 457</td><td role="cell">Не считать агрегат финансовым эталоном; сверять строки счетов с полной пагинацией.</td></tr>
+        <tr role="row"><td role="cell">93</td><td role="cell">triaged · high · встроенная скидка умножила расширенную сумму на количество</td><td role="cell" class="tag plan">В план: 457</td><td role="cell">До уточнения формулы проверять строки счетов.</td></tr>
+        <tr role="row"><td role="cell">94</td><td role="cell">triaged · medium · preview ждёт API конструктора; 358=todo</td><td role="cell" class="tag plan">В план: 358</td><td role="cell">Удаление не возвращаем; нужен preview до сохранения.</td></tr>
+        <tr role="row"><td role="cell">102</td><td role="cell">triaged · medium · отказ без кода и воспроизведения</td><td role="cell" class="tag debate">Спорное</td><td role="cell">Нужен безопасный повтор с кодом; сначала узкий маршрут store-documents.</td></tr>
+        <tr role="row"><td role="cell">135</td><td role="cell">triaged · medium · KI-80=fixed, но live-повтор не приложен</td><td role="cell" class="tag debate">Спорное</td><td role="cell">Используйте daily summary либо compact/fields.</td></tr>
+        <tr role="row"><td role="cell">136</td><td role="cell">triaged · medium · KI-81=acknowledged; JSON-разбор есть, живой формы нет</td><td role="cell" class="tag debate">Спорное</td><td role="cell">Перед внешним закрытием проверим безопасную запись.</td></tr>
+        <tr role="row"><td role="cell">137</td><td role="cell">triaged · low · служебная фраза сохранена без маски</td><td role="cell" class="tag close">Решено — закрыть</td><td role="cell">Ложное срабатывание устранено.</td></tr>
+        <tr role="row"><td role="cell">150</td><td role="cell">new · medium · scalar projection ломается, compact проходит</td><td role="cell" class="tag plan">В план: 458</td><td role="cell">Временно <code>compact=true</code>; проверим shape drift без снятия защиты.</td></tr>
+        <tr role="row"><td role="cell">151</td><td role="cell">new · medium · понятный payment intent отклонён без уточнения</td><td role="cell" class="tag plan">В план: 457</td><td role="cell">Не повторять создание автоматически; сохранить job ID и проверить результат прямым чтением.</td></tr>
+        <tr role="row"><td role="cell">152</td><td role="cell">new · medium · распознавание добавило незаданные условия; уточнение помогло</td><td role="cell" class="tag plan">В план: 457</td><td role="cell">Проверять ограничения до сохранения; явно задать смысл филиала, города и авансов.</td></tr>
+        <tr role="row"><td role="cell">153</td><td role="cell">new · medium · близкие отчёты расходятся на одну карточку</td><td role="cell" class="tag plan">В план: 457</td><td role="cell">Сверить границы дня, статусы и DISTINCT до вывода о потере данных.</td></tr>
+        <tr role="row"><td role="cell">154</td><td role="cell">new · high · auto-match вернул ранее неверный отчёт без выбора</td><td role="cell" class="tag plan">В план: 457</td><td role="cell">Не принимать auto-match за новый запрос; запрашивать точные календарные агрегаты.</td></tr>
+        <tr role="row"><td role="cell">155</td><td role="cell">new · low · гипотеза о потере оплат снята автором</td><td role="cell" class="tag answer">Только ответ</td><td role="cell">Открыто лишь объяснение лишней карточки старого 90-дневного отчёта.</td></tr>
+        <tr role="row"><td role="cell">156</td><td role="cell">new · medium · маскировка количеств и номенклатуры; 455 это не проверял</td><td role="cell" class="tag plan">В план: 456</td><td role="cell">Не восстанавливать обходом; локализовать слой, сохранив маски ПД.</td></tr>
+        <tr role="row"><td role="cell">157</td><td role="cell">new · high · safety-block без correlation ID; попадание в MCP не доказано</td><td role="cell" class="tag answer">Только ответ</td><td role="cell">Не воспроизводить принудительно; сохранить время и безопасный контекст.</td></tr>
+        <tr role="row"><td role="cell">158</td><td role="cell">new · medium · sale-parameter tools существуют</td><td role="cell" class="tag answer">Только ответ</td><td role="cell"><code>get_good_sale_params</code> → <code>update_good_sale_price</code>; проверить scope.</td></tr>
+        <tr role="row"><td role="cell">159</td><td role="cell">new · medium · file API нет; 432.1=todo</td><td role="cell" class="tag plan">В план: 432.1</td><td role="cell">Использовать ссылку из описания карты; проверенную выписку записывать в медкарту.</td></tr>
+        <tr role="row"><td role="cell">160</td><td role="cell">new · medium · маска названий комбинаций, слой неизвестен</td><td role="cell" class="tag plan">В план: 456</td><td role="cell">Сравнить безопасный пример в строках задания и CSV; не склеивать с #156 заранее.</td></tr>
       </tbody>
     </table></div>
     <h2 id="roadmap">Что взято в план</h2>

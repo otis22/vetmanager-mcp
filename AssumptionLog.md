@@ -22138,3 +22138,17 @@ committed CSS-diff `4a0b430` прочёл HTML и парный Markdown, дал 
 `/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev3/spark-mobile.{prompt,stdout,stderr}.txt`.
 После правки CSS полный suite не повторяется: runtime и тесты не менялись;
 финальная страница будет заново проверена фокусно и в браузере.
+
+**Второй committed diff gate для мобильной раскладки, SHA `4ce188d`.**
+Spark после двух принятых medium прочёл HTML, Markdown и этот журнал,
+`findings=[]`; evidence `feedback-triage-rev3/spark-mobile-final.*` в том же
+внешнем evidence-каталоге. Astra 21:22:31–21:22:58Z дала валидные
+`findings=[]`, validator exit 0; evidence `astra-mobile.{result.json,metadata.txt}`.
+Opus 21:22:31–21:22:42Z дала один medium о потере связей ячеек с заголовками
+из-за `display:grid/block`; он принят, HTML дополнен явными ARIA-ролями
+таблицы, групп, строк, заголовков и всех 76 ячеек. Общих findings нет,
+critical/high нет. Opus: `subtype=success`, `stop_reason=tool_use`,
+`output_tokens=842`, `thinking_tokens=490`, `len(result)=841`; envelope
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev3/opus-mobile/2026-11-10T212231Z-git_range-7d1398a__HEAD-attempt-1-of-3.U8BCfP/claude-review-attempt-1-of-3.envelope.json`.
+Валидный бюджет сильного diff-review исчерпан 2/2 у каждого; последняя
+HTML-правка пройдёт отдельный Spark-scout и фокусные проверки перед push.
