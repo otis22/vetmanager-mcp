@@ -22108,3 +22108,19 @@ KI-81/KI-82=`acknowledged`.
 Внешние статусы и ответы остаются без изменений по ограничению поручения;
 публикация отдельной страницы и длинные проверки выполняются после этого
 промежуточного коммита.
+
+**Ревью committed HTML-diff `d2e9a61` до промежуточного push.** Spark
+`gpt-6-luna` прочёл HTML, парный Markdown, Roadmap и AssumptionLog,
+`findings=[]`; evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev3/spark.{prompt,stdout,stderr}.txt`.
+Astra `gpt-6-astra` и Opus дали валидные `findings=[]`; общих, принятых,
+отклонённых и открытых замечаний нет. Оба запущены в 21:07:21Z; Astra
+завершилась в 21:07:57Z, Opus — в 21:07:33Z. Astra validator exit 0, metadata и
+result:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev3/astra.{metadata.txt,result.json}`.
+Opus: `subtype=success`, `stop_reason=tool_use`, `output_tokens=389`,
+`thinking_tokens=335`, `len(result)=15`; envelope:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev3/opus/2026-11-10T210721Z-git_range-HEAD__HEAD-attempt-1-of-3.m3JTlY/claude-review-attempt-1-of-3.envelope.json`.
+Обе сильные проверки прошли с первой попытки; последующая правка — только
+запись об их результате в этом журнале. Полный suite запускается после
+промежуточного push по прямому поручению владельца.
