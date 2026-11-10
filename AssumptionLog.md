@@ -22124,3 +22124,17 @@ Opus: `subtype=success`, `stop_reason=tool_use`, `output_tokens=389`,
 Обе сильные проверки прошли с первой попытки; последующая правка — только
 запись об их результате в этом журнале. Полный suite запускается после
 промежуточного push по прямому поручению владельца.
+
+**Полный mock и мобильный follow-up.** По `7d1398a` точная команда
+`docker compose --profile test run --rm test` завершилась exit 0:
+`4558 passed, 3 skipped, 142 deselected in 556.26s`, coverage 89%; лог
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev3/full-mock-7d1398a.log`.
+Первый браузерный просмотр отдельной опубликованной страницы обнаружил
+горизонтальную прокрутку таблицы на телефоне: решение и черновик ответа не
+видны вместе с ID. HTML переведён в мобильные карточки. Spark-review
+committed CSS-diff `4a0b430` прочёл HTML и парный Markdown, дал два medium;
+оба приняты: подпись должна явно говорить «не отправлен», а заголовки таблицы
+остаются доступными при визуальном скрытии. Evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev3/spark-mobile.{prompt,stdout,stderr}.txt`.
+После правки CSS полный suite не повторяется: runtime и тесты не менялись;
+финальная страница будет заново проверена фокусно и в браузере.
