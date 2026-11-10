@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
@@ -31,18 +31,16 @@ from service_metrics import record_auth_failure, record_business_event, record_t
 from service_token_service import issue_service_bearer_token, revoke_service_bearer_token
 from oauth_service import revoke_oauth_grant_family
 from tool_access_registry import PRESET_FULL_ACCESS, PRESET_REPORT_AI
-from web_html import display_access_label
+from web_html import compute_activation_state, display_access_label
 from storage import get_session_factory
 from datetime import datetime, timezone
 
-from auth_audit import TOKEN_EVENT_AUTH_SUCCEEDED
-from oauth_service import accounts_with_live_oauth_access
+from oauth_service import live_oauth_grant_ids_for_account
 from storage_models import (
     CONNECTION_STATUS_ACTIVE,
-    TOKEN_STATUS_ACTIVE,
     Account,
     ServiceBearerToken,
-    TokenUsageLog,
+    OAuthGrant,
     TokenUsageStat,
     VetmanagerConnection,
 )
@@ -198,75 +196,53 @@ async def _active_connection_auth_mode(account_id: int) -> str:
 
 
 async def _load_activation_state_for_polling(account_id: int) -> str | None:
-    """Return activation state for polling without probing Vetmanager upstream.
+    """Состояние как на странице, без записей в БД и upstream-пробы.
 
-    The account page already evaluated connection health before rendering the
-    waiting state. Polling only needs to detect whether a token has received its
-    first MCP request, so this must stay DB-only and cheap.
+    Опрос включён только после успешной проверки подключения на странице.
+    Здесь его наличие означает ранее проверенное здоровье подключения.
     """
+    now = datetime.now(timezone.utc)
     async with get_session_factory()() as session:
         account = await session.get(Account, account_id)
         if account is None or account.archived_at is not None or account.status != "active":
             return None
         active_connection = await session.scalar(
-            select(VetmanagerConnection.id)
+            select(VetmanagerConnection)
             .where(VetmanagerConnection.account_id == account_id)
             .where(VetmanagerConnection.status == CONNECTION_STATUS_ACTIVE)
+            .order_by(VetmanagerConnection.id.desc())
             .limit(1)
         )
-        if active_connection is None:
-            return "needs_connection"
-
-        usable_token_ids = [
-            int(token_id)
-            for token_id in (
-                await session.execute(
-                    select(ServiceBearerToken.id)
-                    .where(ServiceBearerToken.account_id == account_id)
-                    .where(ServiceBearerToken.status == TOKEN_STATUS_ACTIVE)
-                    .where(
-                        (ServiceBearerToken.expires_at.is_(None))
-                        | (ServiceBearerToken.expires_at > func.now())
-                    )
-                )
-            ).scalars().all()
+        tokens = (await session.execute(
+            select(ServiceBearerToken, TokenUsageStat)
+            .outerjoin(TokenUsageStat, TokenUsageStat.bearer_token_id == ServiceBearerToken.id)
+            .where(ServiceBearerToken.account_id == account_id)
+        )).all()
+        token_views = [
+            {
+                "status": token.status,
+                "expires_at_raw": token.expires_at,
+                "last_used_at_raw": token.last_used_at or (usage.last_used_at if usage else None),
+                "request_count": usage.request_count if usage else 0,
+            }
+            for token, usage in tokens
         ]
-        # Stage 260: a connected agent is access as much as an issued token is.
-        # Judging by tokens alone told a user whose OAuth requests were already
-        # arriving to go and issue their first token.
-        live_oauth_accounts = await accounts_with_live_oauth_access(
-            session, now=datetime.now(timezone.utc)
+        live_grants = await live_oauth_grant_ids_for_account(session, account_id=account_id, now=now)
+        grants = (await session.scalars(
+            select(OAuthGrant).where(OAuthGrant.account_id == account_id)
+        )).all()
+        grant_views = [
+            {"status": grant.status, "has_live_access": grant.id in live_grants,
+             "last_used_at_raw": grant.last_used_at}
+            for grant in grants
+        ]
+        return compute_activation_state(
+            active_connection=active_connection,
+            integration_health_status=INTEGRATION_HEALTH_ACTIVE,
+            bearer_tokens=token_views,
+            oauth_grants=grant_views,
+            now=now,
         )
-        has_oauth_access = account_id in live_oauth_accounts
-        if not usable_token_ids and not has_oauth_access:
-            return "needs_token"
-
-        used_token = None
-        if usable_token_ids:
-            used_token = await session.scalar(
-                select(ServiceBearerToken.id)
-                .outerjoin(
-                    TokenUsageStat,
-                    TokenUsageStat.bearer_token_id == ServiceBearerToken.id,
-                )
-                .where(ServiceBearerToken.id.in_(usable_token_ids))
-                .where(
-                    (ServiceBearerToken.last_used_at.is_not(None))
-                    | (TokenUsageStat.last_used_at.is_not(None))
-                    | (TokenUsageStat.request_count > 0)
-                )
-                .limit(1)
-            )
-        if used_token is None:
-            journalled_request = await session.scalar(
-                select(TokenUsageLog.id)
-                .where(TokenUsageLog.account_id == account_id)
-                .where(TokenUsageLog.event_type == TOKEN_EVENT_AUTH_SUCCEEDED)
-                .limit(1)
-            )
-            if journalled_request is None:
-                return "needs_client_use"
-        return "ready"
 
 
 def register_account_routes(

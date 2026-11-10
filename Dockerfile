@@ -67,7 +67,11 @@ RUN pip install --timeout 120 --no-cache-dir \
     "fakeredis>=2.20.0,<3" \
     "ruff>=0.6.0,<1"
 
-RUN python -m playwright install --with-deps chromium && \
+# Node из Playwright требует libatomic ещё до установки зависимостей браузера.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libatomic1 && \
+    rm -rf /var/lib/apt/lists/* && \
+    python -m playwright install --with-deps chromium && \
     chmod -R a+rX "${PLAYWRIGHT_BROWSERS_PATH}"
 
 COPY . .

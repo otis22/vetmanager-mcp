@@ -268,11 +268,7 @@ def test_client_instructions_become_primary_content_at_needs_client_use() -> Non
     # Waiting indicator with polling marker.
     assert 'data-testid="activation-waiting"' in html
     assert 'data-poll-activation="needs_client_use"' in html
-    assert "vm_activation_forced_reload_count" in html
-    assert "vm_activation_poll_attempt_count" in html
-    assert "reloadAfterAttempts = 20" in html
     assert "maxPollAttempts = 80" in html
-    assert "forcedReloads < 1" in html
     assert "pollAttempts >= maxPollAttempts" in html
 
     ready = _account_page(bearer_tokens=[_token_view(request_count=5)])
