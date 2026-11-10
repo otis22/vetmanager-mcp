@@ -22295,3 +22295,8 @@ Report AI 52 `saved`, 9 `abandoned_wait`, 6 `failed` за 7 дней. Эти р�
 составляют одну когорту и conversion rate не заявляется. P1/P2 —
 предложенные приоритеты, требующие отдельного решения владельца. Внешние
 статусы, продуктовый флоу, Битрикс24 и сообщения не менялись.
+Spark-review committed diff `5c88158..30231e0` прочёл HTML, оба Markdown,
+AssumptionLog и triage runbook. Один medium принят: в реестре Markdown три
+строки ещё называли #155/#157/#158 `new` вопреки подтверждённому `ignored`.
+Строки и категории синхронизированы; других findings нет. Evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev5/spark.{prompt,stdout,stderr}.txt`.
