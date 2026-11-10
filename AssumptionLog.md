@@ -21944,8 +21944,8 @@ Stage 446 committed live-evidence correction `bc59537`: повторный `.env
 
 ## Этап 455. Периодные позиции и длительное ожидание Report AI — 2026-11-10
 
-**Status:** in_progress — реализация проверена, hotfix ожидает committed review,
-полного combined-контура, CI main и штатного деплоя.
+**Status:** done — локальные и committed гейты пройдены, hotfix выпущен
+штатным CI main/DeployProd, исходный production-запрос проверен.
 
 **Поручение и границы.** Владелец запросил снять внутренний предел20 GET,
 дать аналитике минимум30мин и увеличить внешний бюджет MCP одного запроса.
@@ -22062,3 +22062,23 @@ output2539/thinking1435/len(result)15, envelope/metadata/verdict вopus-code2/.
 Передpush fetch подтвердилorigin/main=d75fdee, branchahead2, чужих коммитов
 после интеграции нет. Этот bookkeepingcommit меняет толькоAssumptionLog,
 повторное code-review N/A; runtimeсовпадает с проверенной версией.
+
+
+**Релиз и production после него.** ReleaseSHA9ed2ce968e108a29e4feab0204c322314d264fc4.
+Tests main [42866429970](https://github.com/otis22/vetmanager-mcp/actions/runs/42866429970)
+success:default4558passed/3skip/142deselected, fast4539passed/3skip,
+PostgreSQL6passed/0skip. Штатный [DeployProd42868806439](https://github.com/otis22/vetmanager-mcp/actions/runs/42868806439)
+success, cutover17:52:26Z,3слота, публичныйread-onlysmoke17:52:31Zpassed.
+Runtime/code после reviewed101af4a не менялись;9ed2ce9 иэтот закрывающий
+commit — только документация, review N/A (§5.5), новогоappdeployне требуют.
+
+Супервизор/root подтвердил read-only production после релиза:
+get_invoice_documents_by_period(2026-11-08..2026-11-08,limit1,offset0)
+→HTTP200,rows1,totalCount2757,limitedfalse,upstream_calls31,elapsed6.56с.
+Прежний budget20 действительно превышен, ложного limited больше нет.
+get_report_ai_job(job52,wait_seconds1800) →HTTP200,ready_to_save,errornull;
+новыхjobs/записей0. Обаtools/list описывают1800/default0. Через оба изолированных
+pilotproxy get_clinics прошёл; внешнийbudget30000/request,timeout1900,
+Telegram0. Значения токенов и клинические строки не сохранялись.
+Evidence супервизора: release/mcp-api-verification.json наVDS;
+локальныеCI/deployлоги: /tmp/mcp-452-evidence/ci-main.log,deploy-prod.log.
