@@ -22152,3 +22152,33 @@ critical/high нет. Opus: `subtype=success`, `stop_reason=tool_use`,
 `/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev3/opus-mobile/2026-11-10T212231Z-git_range-7d1398a__HEAD-attempt-1-of-3.U8BCfP/claude-review-attempt-1-of-3.envelope.json`.
 Валидный бюджет сильного diff-review исчерпан 2/2 у каждого; последняя
 HTML-правка пройдёт отдельный Spark-scout и фокусные проверки перед push.
+
+**Финальная публикация и проверки, 11.11.2026 00:25 МСК.** Post-budget
+Spark-scout по `4fe9528` прочёл HTML, Markdown и AssumptionLog,
+`findings=[]`; evidence
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev3/spark-aria-scout.{prompt,stdout,stderr}.txt`.
+Фокус: 19 отдельных ID, полный набор ARIA-ролей (1 table, 2 rowgroup,
+20 row, 4 columnheader, 76 cell), видимый текст не изменён, privacy patterns
+не найдены, `git diff --check`, `archive_roadmap.py` и
+`check_roadmap_structure.py` — exit 0. Изменения после полного mock касались
+только HTML/CSS и журнала; runtime и тесты не менялись.
+
+Отдельная страница опубликована по runbook:
+`http://94.183.151.165/feedback-triage-20261110-f85b4671/`.
+HTTP 200, SHA-256 источника и скачанного HTML одинаков:
+`361e4493479ce81f11ac0904d020a7d9b8074d6546b817dddf77c63aff66e084`.
+`publication_check` относительно ранее опубликованной детализации
+`feedback-report-ai-c4f42df5`: previous/current — canvas 0/0, tabs 0/0,
+modes 0/0, images 0/0; потерь нет, `override_reason` не нужен. Отдельно
+навигационных ссылок стало 2→3; строгий счётчик tabs учитывает только
+`role=tab`. Evidence: `feedback-triage-rev3/publication_check.json`.
+
+Один финальный браузерный прогон скачанного URL в Chromium: desktop 1366 px,
+phone 390 px, все 19 ID, три работающих якоря, мобильная таблица без
+горизонтального переполнения, текст «Черновик ответа (не отправлен)»,
+AX-дерево с 1 table/4 columnheader/76 cell, JS exceptions 0.
+Evidence: `feedback-triage-rev3/browser-check.json`, `desktop-full.png`,
+`phone-first.png`, `phone-full.png` вне working copy. Общий дашборд не
+обновлялся. Opt-in real suite не запускался: он содержит POST/PUT к внешнему
+стенду, а поручение запрещает изменение внешних данных; MCP-инструменты в
+этой задаче не менялись. Feedback-статусы и черновики ответов не отправлялись.
