@@ -161,6 +161,7 @@ async def crud_list(
     filters: list[dict] | None = None,
     extra: dict[str, Any] | None = None,
     allowed_filter_properties: frozenset[str] | None = None,
+    max_offset: int = 10_000,
 ) -> dict:
     """Build query params and GET a list endpoint."""
     if allowed_filter_properties is not None:
@@ -172,6 +173,7 @@ async def crud_list(
         sort=sort,
         filters=filters,
         extra=extra,
+        max_offset=max_offset,
     )
     return await _instrumented_call(
         endpoint,

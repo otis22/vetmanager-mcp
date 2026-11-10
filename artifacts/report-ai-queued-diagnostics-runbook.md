@@ -35,4 +35,4 @@ It must not include `intent_text`, raw SQL, recognized structure, candidates, cl
 3. If the signal persists, inspect upstream Report AI worker/queue health and stale in-progress cleanup outside MCP.
 4. Use upstream job timestamps only as context. Do not calculate a 30-second threshold from naive Vetmanager timestamps unless the server timezone is explicitly known.
 5. If the job eventually moves out of `queued`, MCP clears the local queue observation for that job; the stage clock restarts on every stage change.
-6. At the wait limit (15 minutes) the diagnostics tell the caller to stop automatic polling and not to create a duplicate job. On a working stage the wording is stronger — the job already started, so a duplicate only doubles the queue.
+6. At the wait limit (30 minutes) the diagnostics tell the caller to stop automatic polling and not to create a duplicate job. On a working stage the wording is stronger — the job already started, so a duplicate only doubles the queue.

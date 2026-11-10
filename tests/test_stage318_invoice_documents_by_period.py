@@ -8,6 +8,7 @@ import pytest
 import respx
 from fastmcp.exceptions import ToolError
 
+import tools.finance as finance
 from server import mcp
 from tests.runtime_factories import patch_runtime_credentials
 
@@ -78,7 +79,7 @@ async def test_period_tool_reads_whole_batches_before_global_page_and_never_send
     assert all(size <= 500 for size in document_batch_sizes)
     assert max(document_batch_sizes) == 500
     assert len(invoice_route.calls) == 6
-    assert len(document_route.calls) == 7
+    assert len(document_route.calls) == 6
     assert all(
         json.loads(_query(call.request)["sort"][0]) == [
             {"property": "document_id", "direction": "ASC"},
@@ -90,7 +91,8 @@ async def test_period_tool_reads_whole_batches_before_global_page_and_never_send
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_period_tool_marks_scan_limited_when_invoice_pages_consume_budget():
+async def test_period_tool_marks_scan_limited_when_invoice_pages_consume_budget(monkeypatch):
+    monkeypatch.setattr(finance, "_INVOICE_DOCUMENT_PERIOD_CALL_BUDGET", 20)
     _billing_mock()
     invoices = [{"id": item, "invoice_date": "2026-09-12 10:00:00"} for item in range(1, 2002)]
 

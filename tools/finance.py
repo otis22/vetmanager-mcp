@@ -3,6 +3,7 @@
 import asyncio
 from exceptions import ToolInputError, reportable_error
 from datetime import date, timedelta
+from time import monotonic
 from urllib.parse import urlencode
 
 from fastmcp import FastMCP
@@ -27,6 +28,9 @@ from validators import LimitParam, is_relative_date_param, parse_date_param
 from clinic_timezone import clinic_local_today
 
 
+_INVOICE_DOCUMENT_PERIOD_CALL_BUDGET = 1000
+
+
 def register(mcp: FastMCP) -> None:
 
     _PAYMENT_STATUSES = {"exec", "save", "deleted"}
@@ -34,7 +38,7 @@ def register(mcp: FastMCP) -> None:
     _CLIENT_PAYMENT_INVOICE_ID_CAP = 100
     _INVOICE_DOCUMENT_PERIOD_BATCH_SIZE = 500
     _INVOICE_DOCUMENT_PERIOD_QUERY_BYTES = 7000
-    _INVOICE_DOCUMENT_PERIOD_CALL_BUDGET = 20
+    _INVOICE_DOCUMENT_PERIOD_TIME_BUDGET_SECONDS = 1800
     _INVOICE_DOCUMENT_PERIOD_PAGE_SIZE = 100
     _INVOICE_STATUSES = {"exec", "save", "deleted", "closed", "archived"}
 
@@ -551,7 +555,7 @@ def register(mcp: FastMCP) -> None:
 
         This bounded alternative to per-invoice calls reads invoices first and
         then fetches their positions in safe document_id IN batches. It makes
-        at most 20 upstream calls; if that is insufficient, it returns
+        at most 1000 upstream GETs over up to 1800 seconds; if insufficient, it returns
         limited=true and asks to narrow the period rather than pretending an
         incomplete scan is pageable.
         """
@@ -579,6 +583,22 @@ def register(mcp: FastMCP) -> None:
             invoice_filters.append(_filter_eq("doctor_id", doctor_id))
 
         calls = 0
+        deadline = monotonic() + _INVOICE_DOCUMENT_PERIOD_TIME_BUDGET_SECONDS
+
+        async def period_page(path: str, **kwargs) -> dict | None:
+            nonlocal calls
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                return None
+            calls += 1
+            try:
+                return await asyncio.wait_for(crud_list(
+                    path, max_offset=_INVOICE_DOCUMENT_PERIOD_CALL_BUDGET * _INVOICE_DOCUMENT_PERIOD_PAGE_SIZE,
+                    **kwargs,
+                ), timeout=remaining)
+            except asyncio.TimeoutError:
+                return None
+
         invoice_offset = 0
         invoices: list[dict] = []
         seen_invoice_pages: set[tuple[int, ...]] = set()
@@ -589,12 +609,13 @@ def register(mcp: FastMCP) -> None:
         while True:
             if calls >= _INVOICE_DOCUMENT_PERIOD_CALL_BUDGET:
                 return _period_limited_result(calls=calls, reason="upstream_call_budget")
-            response = await crud_list(
+            response = await period_page(
                 "/rest/api/invoice", limit=_INVOICE_DOCUMENT_PERIOD_PAGE_SIZE,
                 offset=invoice_offset, sort=invoice_sort, filters=invoice_filters,
                 allowed_filter_properties=FILTER_FIELDS_BY_ENTITY["invoice"],
             )
-            calls += 1
+            if response is None:
+                return _period_limited_result(calls=calls, reason="time_budget")
             rows, total = _extract_period_rows(response, "invoice", "/rest/api/invoice")
             _reject_repeated_full_period_page(rows, seen_invoice_pages, "invoice")
             invoices.extend(rows)
@@ -603,8 +624,8 @@ def register(mcp: FastMCP) -> None:
                     raise reportable_error("invoice pagination ended before totalCount")
                 break
             invoice_offset += len(rows)
-            if len(rows) < _INVOICE_DOCUMENT_PERIOD_PAGE_SIZE and (
-                total is None or invoice_offset >= total
+            if (total is not None and invoice_offset >= total) or (
+                total is None and len(rows) < _INVOICE_DOCUMENT_PERIOD_PAGE_SIZE
             ):
                 break
 
@@ -624,12 +645,13 @@ def register(mcp: FastMCP) -> None:
             while True:
                 if calls >= _INVOICE_DOCUMENT_PERIOD_CALL_BUDGET:
                     return _period_limited_result(calls=calls, reason="upstream_call_budget")
-                response = await crud_list(
+                response = await period_page(
                     "/rest/api/invoiceDocument", limit=_INVOICE_DOCUMENT_PERIOD_PAGE_SIZE,
                     offset=document_offset, sort=document_sort,
                     filters=[_filter_in("document_id", batch)],
                 )
-                calls += 1
+                if response is None:
+                    return _period_limited_result(calls=calls, reason="time_budget")
                 rows, total = _extract_period_rows(
                     response, "invoiceDocument", "/rest/api/invoiceDocument",
                 )
@@ -651,8 +673,8 @@ def register(mcp: FastMCP) -> None:
                         )
                     break
                 document_offset += len(rows)
-                if len(rows) < _INVOICE_DOCUMENT_PERIOD_PAGE_SIZE and (
-                    total is None or document_offset >= total
+                if (total is not None and document_offset >= total) or (
+                    total is None and len(rows) < _INVOICE_DOCUMENT_PERIOD_PAGE_SIZE
                 ):
                     break
 

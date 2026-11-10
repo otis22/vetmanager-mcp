@@ -43,7 +43,7 @@ def _action(job):
 @pytest.mark.parametrize("status", ["queued", "recognizing", "building_preview"])
 def test_active_status_has_bounded_poll(status):
     action = _action({"id": 420, "status": status})
-    assert action["call"] == {"tool": "get_report_ai_job", "arguments": {"job_id": 420, "wait_seconds": 30}}
+    assert action["call"] == {"tool": "get_report_ai_job", "arguments": {"job_id": 420, "wait_seconds": 1800}}
     assert action["required_args"] == ["job_id"]
 
 
@@ -81,7 +81,7 @@ def test_poll_diagnostics_override_active_call():
     stalled = _action({"id": 420, "status": "queued", "mcp_queue_diagnostics": {"stop_automatic_polling": True}})
     assert stalled["type"] == "poll_paused" and "call" not in stalled
     timeout = _action({"id": 420, "status": "queued", "mcp_wait_diagnostics": {"code": "wait_timeout"}})
-    assert timeout["type"] == "poll_paused" and "call" not in timeout
+    assert timeout["type"] == "poll" and timeout["call"]["arguments"]["job_id"] == 420
     denied = _action({"id": 420, "status": "queued", "mcp_wait_diagnostics": {"code": "missing_analytics_scope"}})
     assert denied["type"] == "access_required" and "call" not in denied
 
@@ -218,7 +218,7 @@ async def test_unregistered_data_can_rate_but_read_only_cannot(rating_db):
 
 @pytest.mark.asyncio
 async def test_bounded_wait_observed_age_stops_machine_poll(monkeypatch):
-    monkeypatch.setattr(report_ai, "_observe_report_ai_queue", lambda *_args, **_kwargs: 901)
+    monkeypatch.setattr(report_ai, "_observe_report_ai_queue", lambda *_args, **_kwargs: 1801)
     payload = await report_ai._annotate_report_ai_wait_payload(_job("queued"))
     report_ai._finish_report_ai_job_action(payload)
     job = payload["data"]["job"]
@@ -251,7 +251,7 @@ def test_reject_pending_respects_wait_diagnostics(monkeypatch):
     monkeypatch.setattr(report_ai, "_is_reject_pending", lambda _job: True)
     paused = _action({"id": 420, "status": "needs_confirmation",
                       "mcp_wait_diagnostics": {"code": "wait_timeout"}})
-    assert paused["type"] == "poll_paused" and "call" not in paused
+    assert paused["type"] == "wait_after_reject" and paused["call"]["arguments"]["job_id"] == 420
     denied = _action({"id": 420, "status": "needs_confirmation",
                       "mcp_wait_diagnostics": {"code": "missing_analytics_scope"}})
     assert denied["required_scope"] == "analytics.read" and "call" not in denied
@@ -280,7 +280,7 @@ async def test_failed_job_does_not_offer_second_rating(rating_db):
 async def test_shared_stage_age_stops_bounded_poll(monkeypatch):
     class Backend:
         def report_ai_stage_age(self, *_args):
-            return 901
+            return 1801
     monkeypatch.setattr(report_ai.shared_metric_counters, "get_backend", lambda: Backend())
     monkeypatch.setattr(report_ai, "_report_ai_terminal_digest", lambda _key: "test-digest")
     monkeypatch.setattr(report_ai, "_observe_report_ai_queue", lambda *_args, **_kwargs: 1)

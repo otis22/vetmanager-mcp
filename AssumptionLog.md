@@ -21940,3 +21940,84 @@ Stage 446 committed live-evidence correction `bc59537`: повторный `.env
 **Повторный committed diff gate `d90a6ad..b0915c8`.** Spark 3/3 прочёл изменённые алиасы, очиститель, server и живые тесты, `findings=[]`; evidence `/home/otis/.local/share/vetmanager-mcp-review-evidence/train-449-451/committed-diff/spark-attempt-3.txt`. Astra 2/2: валидный `findings=[]`, validator exit 0, result `/home/otis/.local/share/vetmanager-mcp-review-evidence/train-449-451/committed-diff/astra-attempt-2.result.json`, metadata рядом; Opus 2/2: два medium. Первое принято: сквозной сторож теперь утверждает, что ID 999999999 содержится в фактическом REST URL каждого `*_by_id`, фокус 18 passed. Второе отклонено как уже покрытое `tests/test_stage442_list_errors_report_ai_403.py`: `test_vm_http_403_with_explicit_unknown_code_stays_unknown` проходит полный MCP путь, `test_bare_401_keeps_current_auth_semantics` проверяет 401; текущий фокус включает оба. Opus envelope `/home/otis/.local/share/vetmanager-mcp-review-evidence/2026-11-05T101556Z-git_range-d90a6adcf517dfa5e0af99cdf95b10fd22ef28bc__b0915c86af2e0f565086e0e70976-attempt-2-of-3.lOG6rv/claude-review-attempt-2-of-3.envelope.json`: subtype=success, stop_reason=tool_use, output_tokens=2378, thinking_tokens=1758, len(result)=1084. Общих и неустранённых critical/high нет. После исчерпания сильного бюджета отдельный Spark scout прочёл тестовый diff, `findings=[]`, evidence `/home/otis/.local/share/vetmanager-mcp-review-evidence/train-449-451/committed-diff/post-budget-scout.txt`. Правка затронула только тест; фокус 18 passed. Дополнительный сильный запуск не выполнялся по бюджету.
 
 **Финальный гейт поезда на SHA `e85e852` не пройден — 05.11.2026.** Полный mock `docker compose --profile test run --rm test`: exit 0, 4532 passed, 3 skipped, 142 deselected. Полный opt-in real `docker compose --env-file .env --profile test run --rm test python scripts/run_opt_in_real_test_suite.py`: exit 1, 115 passed, 2 failed, 19 skipped-not-configured, 0 skipped-error. Живые проверки этапов 450 (экспорт), 449 (`id`) и 451 (безопасный NOT_FOUND) в этом прогоне прошли. Сбой `test_stage396_live_report_rows`: Report AI на тестовом контуре остался `recognizing` после восьми опросов, поэтому строки не читались и изменение очистки не участвовало. Сбой `test_stage410_pet_list_privacy_live` не повторился отдельно: 1 passed, все комбинации контактов и маски проверены. Отдельный повтор 396 завершился таймаутом POST создания задания с `REPORT_AI_CREATE_TIMEOUT` и неопределённым исходом; по контракту инструмента этот POST автоматически не повторяется. Следующий полный real suite нельзя запускать до проверки исхода задания оператором тестового стенда. Evidence `/home/otis/.local/share/vetmanager-mcp-review-evidence/train-449-451/final-real-gate-2026-11-05.txt`. Push и CI ветки не выполнялись; статусы 449–451 возвращены в `in_progress`. Production не затронут.
+
+
+## Этап 455. Периодные позиции и длительное ожидание Report AI — 2026-11-10
+
+**Status:** in_progress — реализация проверена, hotfix ожидает committed review,
+полного combined-контура, CI main и штатного деплоя.
+
+**Поручение и границы.** Владелец запросил снять внутренний предел20 GET,
+дать аналитике минимум30мин и увеличить внешний бюджет MCP одного запроса.
+Окончательная договорённость: bot-panel допускает30000 tools/call на один
+пользовательский запрос; наш периодный инструмент — до1000 внутренних RESTGET
+с общим deadline1800с. Это разные счётчики. Временное поднятие внутреннего
+предела до30000 отменено до коммита: оно потребовало бы хранить до3млнстрок
+в640МБworker; большого streaming-рефакторинга в этом hotfix нет.
+
+**Что сделано.** Снята прежняя граница20; оба цикла периодной выборки имеют
+1000GET/1800с, честные limited/upstream_call_budget либо time_budget без
+ложного count/next_offset. Известный totalCount завершает и полную последнюю
+страницу. Internal-only max_offset helper(default10000) поднят для этого
+ограниченного сканирования до100000, публичные схемы прочихtools прежние.
+ReportAI принимает wait_seconds0..1800/default0, советует1800; queue/stage
+pause после1800с, короткий wait_timeout разрешает boundedwait того жеjob.
+Pollfailed/нетправ/stale по-прежнему останавливают продолжение. Последний
+разрешённый poll возвращает terminal/human-action без ложного timeout.
+Save/confirmation consent, no-duplicate, права, IP, токены и деперсонализация
+не меняются. Сетевые phase-timeout каждогоGET остаются конечными; proxy MCP
+из server runbook допускает3600с, transport пилотов настраивается отдельно.
+
+**Актуальность main и номер.** Работа начата отd6f8899 как452. За время
+явной пользовательской паузы независимо вышел чужой452 (кабинет/activationpoll).
+После fetch main=d75fdee чужие452–454 сохранены, наша задача механически
+перенумерована455. SHA256 finance/report_ai/crud_helpers/tool_descriptions
+до/после интеграции совпали. В testimage уже естьlibatomic1; наш commit
+не меняетDockerfile, зависимости илиCI. Это hotfix для разблокирования
+живого аналитического запроса; после локальныхгейтов идёт прямоmain по
+разрешённому workflow пути, затем обязательныеCI main/DeployProd.
+
+**PRD и архитектура.** Технический контракт иPRD созданы до кода. Reviewevidence
+в `/tmp/mcp-452-evidence/` (старое имя каталога сохраняет исходную историю).
+Luna/scout PRD3 запуска; Astra2/2 иOpus2/2 валидны, вторые оба findings[].
+Приняты3medium: завершение полной страницы на1000GET, terminal последнего
+poll без timeout, общийperioddeadline1800. Простота: существующие константы,
+цикл и локальныйhelper для двух call-site; новых классов/хранилищ/флагов нет.
+OpusPRD metadata:1й success/tool_use/output2025/thinking1424/len(result)763;
+2й success/tool_use/output1191/thinking796/len(result)15. Полные envelope,
+metadata и validator сохранены в opus-prd1/ и opus-prd2/.
+
+**Красные сторожа и тесты.** Первые10 новых сценариев были красными; у пяти
+finance-фикстур уточнён success:true. После исправления специально возвращены
+budget20 иdeadline900: оба сторожа упали assertion-ошибкой и затем восстановлены
+(evidence red-mutation-budget20.txt, red-mutation-deadline900.txt).
+Фокус122passed, ruffclean. Первый serial full был остановлен по пользовательской
+паузе на55%, pass ему не приписывается. Полный default на4workers завершился:
+4542passed/3skipped/1failed за688с. Один существующий multiprocessinglog-тест
+не дождался старта второгоspawn за10с под coverageнагрузкой; отдельныйserial
+файл прошёл5/5 за4.24с. Поэтому combinedfull включает его отдельной обязательной
+serialчастью, без исключения из общего охвата. CI остаётся штатнымserial.
+Полный real-контур:116passed/1readiness-timeout/19notconfigured. Единственный
+fence-тест повторён безCPUнагрузки:1passed за4.09с, initialize200, послеquiesce
+ready503/tool503, SSEзакрыт. Активные117real-сценариев тем самым проверены;
+несуществующие контуры не выдаются за pass, skipped-error0.
+
+**Живой вызов изменённых tools.** На `.env` тестовом контуре отдельно5GET/200,
+0write:period body{rows:1,totalCount:2,limited:false,keys:[id,invoice_id,price]};
+get_report_ai_job(id2,wait_seconds1800) body{id:2,status:saved,has_next_action:true,
+wait_timeout:null}. Полные безопасныеsummary вlive-readonly.txt; клинические
+строки/ключи не сохранялись. Fakeclock проверяет1200/1800с без реального
+получасового ожидания и без создания повторныхReportAI-заданий.
+
+**Code scout.** Luna3/3; финальный repo-aware scout перечислил прочитанные
+файлы. Один medium про bookkeeping после waitdeadline отклонён как
+pre-existing вне данного лимита ожидания: GET/sleep ограничены оставшимся
+временем, sharedmetric backend имеет конечный socket_timeout1с, transport
+допускает1900с для возврата результата и bookkeeping. Этот hotfix не вводит
+неограниченный networkcall или новый polling loop. Полный codegate Astra/Opus
+ещё выполняется; до его успеха push запрещён.
+
+**Риск и данные.** Большая периодная выборка остаётся последовательной и может
+потребовать больше памяти, но ограничена1000GET/1800с. Уже выданные данные,
+маски, scopes и auth не переинтерпретируются: миграция учётных данных не нужна.
+Производственные клинические данные и записи не менялись.

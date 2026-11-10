@@ -7,6 +7,7 @@ import hmac
 import httpx
 import io
 import json
+import math
 import os
 import re
 import time
@@ -68,10 +69,10 @@ INTENT_MAX_LENGTH = 20000
 REPORT_AI_DATA_ROW_LIMIT = 10000
 REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD = 9000
 REPORT_AI_LONG_QUEUED_THRESHOLD_SECONDS = 30
-REPORT_AI_QUEUE_WAIT_LIMIT_SECONDS = 15 * 60
-REPORT_AI_TOOL_WAIT_MAX_SECONDS = 30
+REPORT_AI_QUEUE_WAIT_LIMIT_SECONDS = 30 * 60
+REPORT_AI_TOOL_WAIT_MAX_SECONDS = 30 * 60
 REPORT_AI_TOOL_WAIT_INTERVAL_SECONDS = 2
-REPORT_AI_TOOL_WAIT_MAX_GETS = 16
+REPORT_AI_TOOL_WAIT_MAX_GETS = 1000
 REPORT_AI_EXPORT_WAIT_LIMIT_SECONDS = 30 * 60
 REPORT_AI_RATING_REGISTRATION_TIMEOUT_SECONDS = 2
 REPORT_AI_RATING_REMINDER_TIMEOUT_SECONDS = 0.5
@@ -169,7 +170,7 @@ async def _report_ai_wait_sleep(seconds: float) -> None:
 
 def _validate_report_ai_wait_seconds(value: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= REPORT_AI_TOOL_WAIT_MAX_SECONDS:
-        raise ToolInputError("wait_seconds must be an integer from 0 to 30.")
+        raise ToolInputError("wait_seconds must be an integer from 0 to 1800.")
     return value
 
 
@@ -185,6 +186,8 @@ def _report_ai_wait_diagnostics(payload: dict, *, code: str, job_id: int) -> dic
             "next_step": (
                 "Reading this job needs analytics.read. Keep this job_id; ask for that access, then call get_report_ai_job. Do not create a duplicate."
                 if code == "missing_analytics_scope" else
+                "Continue a bounded get_report_ai_job wait of up to 1800 seconds for this same job; do not create or save a duplicate automatically."
+                if code == "wait_timeout" else
                 "Read the same job later with get_report_ai_job; do not create or save a duplicate automatically."
             ),
         }
@@ -251,21 +254,21 @@ def _annotate_report_ai_next_action(job: dict) -> None:
     if status in _REPORT_AI_WAIT_ACTIVE_STATUSES:
         queue = job.get("mcp_queue_diagnostics") or {}
         wait = job.get("mcp_wait_diagnostics") or {}
-        if queue.get("stop_automatic_polling") or wait.get("code") in {"wait_timeout", "poll_failed"}:
+        if queue.get("stop_automatic_polling") or wait.get("code") == "poll_failed":
             job["next_action"] = {"type": "poll_paused", "guidance":
                 "Keep this job_id and re-check later; do not start another automatic poll or duplicate job."}
         elif wait.get("code") == "missing_analytics_scope" or not _has_report_ai_scope(SCOPE_ANALYTICS_READ):
             job["next_action"] = _report_ai_access_action(SCOPE_ANALYTICS_READ)
         else:
             job["next_action"] = {"type": "poll", "call": {"tool": "get_report_ai_job",
-                "arguments": {"job_id": job_id, "wait_seconds": 30}}, "required_args": ["job_id"],
-                "guidance": "Poll this same job with bounded waits; stop when diagnostics say to pause."}
+                "arguments": {"job_id": job_id, "wait_seconds": REPORT_AI_TOOL_WAIT_MAX_SECONDS}}, "required_args": ["job_id"],
+                "guidance": "Wait for this same job with bounded waits up to 1800 seconds; an early wait timeout allows another bounded wait. Stop when diagnostics say to pause; never create a duplicate."}
         return
     if status == "needs_confirmation":
         if _is_reject_pending(job):
             queue = job.get("mcp_queue_diagnostics") or {}
             wait = job.get("mcp_wait_diagnostics") or {}
-            if queue.get("stop_automatic_polling") or wait.get("code") in {"wait_timeout", "poll_failed"}:
+            if queue.get("stop_automatic_polling") or wait.get("code") == "poll_failed":
                 job["next_action"] = {"type": "poll_paused", "guidance":
                     "Keep this job_id and re-check later; do not repeat reject or confirm."}
                 return
@@ -274,7 +277,7 @@ def _annotate_report_ai_next_action(job: dict) -> None:
                 return
             job["next_action"] = {
                 "type": "wait_after_reject",
-                "call": {"tool": "get_report_ai_job", "arguments": {"job_id": job_id, "wait_seconds": 30}},
+                "call": {"tool": "get_report_ai_job", "arguments": {"job_id": job_id, "wait_seconds": REPORT_AI_TOOL_WAIT_MAX_SECONDS}},
                 "guidance": "Do not repeat reject or confirm on a stale needs_confirmation status.",
                 "required_args": ["job_id"],
             }
@@ -1366,6 +1369,8 @@ async def _wait_for_report_ai_job(
 ) -> dict:
     """Poll only the known job with a single bounded deadline and no read retry."""
     latest = await _annotate_report_ai_wait_payload(payload)
+    max_gets = min(max_gets, max(0, math.ceil(
+        (deadline - _monotonic_seconds()) / REPORT_AI_TOOL_WAIT_INTERVAL_SECONDS)))
     for _ in range(max_gets):
         job = _extract_job(latest)
         status = job.get("status")
@@ -1408,6 +1413,14 @@ async def _wait_for_report_ai_job(
         if isinstance(poll_id, bool) or str(poll_id) != str(job_id):
             return _report_ai_wait_diagnostics(latest, code="poll_failed", job_id=job_id)
         latest = await _annotate_report_ai_wait_payload(next_payload)
+    job = _extract_job(latest)
+    if (job.get("mcp_queue_diagnostics") or {}).get("stop_automatic_polling"):
+        return latest
+    if job.get("status") in _REPORT_AI_WAIT_DONE_STATUSES and not (
+        job.get("status") == "needs_confirmation"
+        and await asyncio.to_thread(_is_reject_pending, job)
+    ):
+        return latest
     return _report_ai_wait_diagnostics(latest, code="wait_timeout", job_id=job_id)
 
 
@@ -2064,7 +2077,7 @@ def register(mcp: FastMCP) -> None:
                 For complex or multi-condition reports, prefer narrower
                 periods and simpler grouped requests; do not create duplicate
                 queued jobs without user consent.
-            wait_seconds: Optional bounded server-side wait, 0 to 30 seconds.
+            wait_seconds: Optional bounded server-side wait, 0 to 1800 seconds.
                 One POST is followed only by GET polls of the same job.
         """
         wait_seconds = _validate_report_ai_wait_seconds(wait_seconds)
@@ -2194,14 +2207,14 @@ def register(mcp: FastMCP) -> None:
                 building_preview), and a stage change restarts that clock.
                 The age is MCP-observed, not a Vetmanager SLA. Use bounded
                 wait_seconds instead of a manual poll series; on timeout
-                return the job_id to resume later. At 15 minutes on a working
+                return the job_id to resume later. At 30 minutes on a working
                 stage stop automatic polling.
                 Do not create a duplicate: the same
                 job may still finish, and on a working stage a duplicate only
                 doubles the queue. Re-check the same job later. Invoice KPI
                 fallback needs complete get_invoices pagination before summing amount
                 by doctor_id; it is not a direct aggregate.
-            wait_seconds: Optional bounded wait, 0 to 30 seconds. A timeout
+            wait_seconds: Optional bounded wait, 0 to 1800 seconds. A timeout
                 returns the same job_id and mcp_wait_diagnostics. Follow
                 job.next_action at needs_confirmation or ready_to_save.
                 preview_summary and preview_example_row are only samples for

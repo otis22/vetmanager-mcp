@@ -38,8 +38,8 @@ def test_prompt_helper_carries_bounded_journey_and_preview_boundary():
     helper = get_report_ai_prompt_helper_text()
     journey = helper.split("## Report AI journey", 1)[1].split("\n## ", 1)[0]
     steps = (
-        "create_report_ai_job(wait_seconds=30)",
-        "get_report_ai_job(job_id=job_id, wait_seconds=30)",
+        "create_report_ai_job(wait_seconds=1800)",
+        "get_report_ai_job(job_id=job_id, wait_seconds=1800)",
         "needs_confirmation",
         "confirm_report_ai_job_candidate",
         "reject_report_ai_job_candidate",
@@ -286,7 +286,7 @@ async def test_wait_validation_and_rollback_do_not_write(monkeypatch):
     with headers, runtime:
         with pytest.raises(ToolError):
             await mcp.call_tool("create_report_ai_job", {
-                "intent_text": "Количество счетов за май 1900 года", "wait_seconds": 31,
+                "intent_text": "Количество счетов за май 1900 года", "wait_seconds": 1801,
             })
         monkeypatch.setenv("REPORT_AI_WAIT_ENABLED", "0")
         result = await mcp.call_tool("create_report_ai_job", {
