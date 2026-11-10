@@ -1,27 +1,66 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow, noarchive"><title>vetmanager-mcp — triage 10.11.2026</title><style>
-:root{color-scheme:light dark;--bg:#f6f6f3;--card:#fff;--ink:#161614;--muted:#625f58;--line:#d9d6ce;--b:#1769d1;--g:#087c49;--o:#a75200;--r:#b42318}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}.w{max-width:1440px;margin:auto;padding:28px 18px 64px}h1{margin:0;font-size:29px}.muted{color:var(--muted)}.lead{max-width:1000px;color:var(--muted)}.tiles{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px;margin:20px 0}.tile,.card,.table{background:var(--card);border:1px solid var(--line);border-radius:12px}.tile,.card{padding:15px}.n{font-size:30px;font-weight:700}.label{font-size:13px;color:var(--muted)}h2{margin:34px 0 8px;font-size:21px}.table{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1120px;font-size:13px}th,td{padding:10px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}th{position:sticky;top:0;background:var(--card);color:var(--muted);font-weight:600}tr:last-child td{border:0}.p{font-weight:700;white-space:nowrap}.p0{color:var(--r)}.p1{color:var(--o)}.p2{color:var(--b)}.p3{color:var(--g)}.note{border-left:4px solid var(--b);padding:10px 14px;background:color-mix(in srgb,var(--b) 7%,var(--card));border-radius:4px}code{font-size:.94em}@media(prefers-color-scheme:dark){:root{--bg:#10100f;--card:#1b1b19;--ink:#efeee9;--muted:#bbb6ab;--line:#3a3935;--b:#6ea8ff;--g:#62d79a;--o:#ffac66;--r:#ff8f87}}@media(max-width:720px){.w{padding:20px 12px 44px}.tiles{grid-template-columns:repeat(2,1fr)}h1{font-size:24px}}
-</style></head><body><main class="w"><header><h1>vetmanager-mcp · разбор feedback-очереди</h1><p class="muted">Срез 10.11.2026, 23:20 МСК · read-only · внешние статусы и ответы не менялись</p></header><p class="lead">Полный список открытых на срезе отчётов: что закрывается кандидатом, что не делаем, где достаточно ответа и что предложено в roadmap. Свободные тексты, параметры и данные клиник не публикуются.</p>
-<section class="tiles"><div class="tile"><div class="label">Всего feedback</div><div class="n">159</div><small>все отчёты</small></div><div class="tile"><div class="label">Очередь triage</div><div class="n">19</div><small>11 new + 8 triaged</small></div><div class="tile"><div class="label">High в очереди</div><div class="n">5</div><small>приоритет разбора</small></div><div class="tile"><div class="label">Новые этапы</div><div class="n">3</div><small>все supervisor_pending</small></div></section>
-<section class="card"><h2>Что произошло</h2><ul><li>Подтверждены развёрнутые daily summary, sale parameters и исправление ложной маски «Без ФИО». JSON-разбор диагнозов есть в коде, но #136 ждёт безопасной пострелизной проверки формы.</li><li>Новые #156 и #160 не закрыты: текущих сторожей недостаточно, чтобы доказать сохранность номенклатуры и агрегатов.</li><li>Порядок 453 → 454 не меняется; 358 и 432.1 остаются зависимыми от API Ветменеджера.</li></ul></section>
-<h2>Решение по каждому ID</h2><div class="table"><table><thead><tr><th>ID</th><th>Проверенный факт</th><th>Исход</th><th>Приоритет</th><th>Черновик ответа</th></tr></thead><tbody>
-<tr><td>47</td><td>KI-34: в API Ветменеджера нет task entity.</td><td>Не делаем</td><td class="p p2">P2</td><td>Задачи через интеграцию не поддерживаются; используйте приём/медкарту и внешний трекер.</td></tr>
-<tr><td>92, 93</td><td>Report AI дал неверную скидочную агрегацию; формула upstream.</td><td>Ответ + upstream issue</td><td class="p p1">P1</td><td>Контроль — строки счетов с полной пагинацией; Report AI не считать финансовым эталоном.</td></tr>
-<tr><td>94</td><td>Preview строк до сохранения ждёт API конструктора.</td><td>Roadmap 358</td><td class="p p2">P2</td><td>Удаление не возвращаем; нужен preview до сохранения.</td></tr>
-<tr><td>102</td><td>Старый неизвестный отказ без кода/воспроизведения.</td><td>Пока неясно</td><td class="p p2">P2</td><td>Нужен безопасный повтор с кодом; сначала узкий store-documents маршрут.</td></tr>
-<tr><td>135</td><td>KI-80 fixed; daily summary и projections в production.</td><td>Кандидат закрытия</td><td class="p p3">P3</td><td>Используйте daily summary или compact/fields.</td></tr>
-<tr><td>136</td><td>JSON-разбор diagnos развёрнут, форма не перепроверена в triage.</td><td>Кандидат после проверки</td><td class="p p2">P2</td><td>Проверим безопасную запись до внешнего закрытия.</td></tr>
-<tr><td>137</td><td>Production-проверка сохраняет «Без ФИО…».</td><td>Кандидат закрытия</td><td class="p p3">P3</td><td>Ложное срабатывание устранено.</td></tr>
-<tr><td>150</td><td>Минимальный get_clients projection ломается, compact проходит.</td><td>Roadmap 457</td><td class="p p1">P1</td><td>Временно <code>compact=true</code>; проверим shape drift без снятия privacy-защиты.</td></tr>
-<tr><td>151</td><td>Понятный payment intent отклонён без уточнения.</td><td>Roadmap 456</td><td class="p p1">P1</td><td>Не повторять create автоматически; сохранить job ID и использовать прямой read для контроля.</td></tr>
-<tr><td>152</td><td>Распознавание добавляло незаданные условия; уточнение помогло.</td><td>Ответ + 456</td><td class="p p1">P1</td><td>Проверять признанные ограничения до сохранения и явно задавать смысл филиала/города.</td></tr>
-<tr><td>153</td><td>Близкие отчёты расходятся на одну карточку.</td><td>Roadmap 456</td><td class="p p1">P1</td><td>До сравнения границ дня, статусов и <code>DISTINCT</code> не заявлять потерю данных.</td></tr>
-<tr><td>154</td><td>Auto-match вернул ранее неверный отчёт без выбора.</td><td>Roadmap 456</td><td class="p p0">P0</td><td>Не принимать auto-match как эквивалент нового intent; запрашивать точные календарные агрегаты.</td></tr>
-<tr><td>155</td><td>Автор снял гипотезу о потере оплат в день среза.</td><td>Достаточно ответа</td><td class="p p2">P2</td><td>Открытым остаётся лишь объяснение лишней карточки прежнего 90-дневного отчёта.</td></tr>
-<tr><td>156</td><td>Post-release маскировка количества и номенклатуры.</td><td>Roadmap 455</td><td class="p p0">P0</td><td>Не восстанавливать обходом; локализовать слой, сохранив защиту ПД.</td></tr>
-<tr><td>157</td><td>Safety-block без correlation ID; приход в MCP не доказан.</td><td>Достаточно ответа</td><td class="p p0">P0</td><td>Не воспроизводить принудительно; сохранить время и безопасный контекст.</td></tr>
-<tr><td>158</td><td>Инструменты sale parameters уже есть.</td><td>Достаточно ответа</td><td class="p p2">P2</td><td><code>get_good_sale_params</code> → <code>update_good_sale_price</code>; проверить scope.</td></tr>
-<tr><td>159</td><td>Список файлов ждёт API ВМ; запись в медкарту есть.</td><td>432.1 + ответ</td><td class="p p2">P2</td><td>Использовать ссылку из описания карты; выписку после проверки врача записывать в медкарту.</td></tr>
-<tr><td>160</td><td>Human report: маска названий комбинаций, слой неизвестен.</td><td>Roadmap 455</td><td class="p p0">P0</td><td>Сравнить безопасный пример в строках задания и CSV.</td></tr>
-</tbody></table></div>
-<h2>Что взято в план</h2><ol><li><strong>455 (P0):</strong> маскировка номенклатуры и числовых агрегатов (#156, #160).</li><li><strong>456 (P0/P1):</strong> семантика скидок, периодов и auto-match Report AI (#92, #93, #151–154).</li><li><strong>457 (P1):</strong> минимальная scalar-проекция клиентов (#150).</li></ol><p class="note">Все три — <code>supervisor_pending</code>: следующий выбор владельца после 453–454. Проверяемый источник и расширенные черновики ответов: <code>artifacts/feedback-triage-2026-11-10.md</code>.</p><footer class="muted"><small>Источники: production DB и контейнер сервиса (read-only), Roadmap, product metrics. Определения и ограничения — в парном Markdown.</small></footer></main></body></html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <title>vetmanager-mcp — разбор feedback 10.11.2026</title>
+  <style>
+    :root{color-scheme:light dark;--bg:#f6f6f3;--card:#fff;--ink:#161614;--muted:#625f58;--line:#d9d6ce;--blue:#1769d1;--green:#087c49;--orange:#a75200;--red:#b42318}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}.page{max-width:1440px;margin:auto;padding:28px 18px 64px}h1{margin:0;font-size:29px}h2{margin:32px 0 8px;font-size:21px}.muted,.lead{color:var(--muted)}.lead{max-width:1000px}.tiles{display:grid;grid-template-columns:repeat(4,minmax(145px,1fr));gap:12px;margin:20px 0}.tile,.card,.table{background:var(--card);border:1px solid var(--line);border-radius:12px}.tile,.card{padding:15px}.n{font-size:30px;font-weight:700}.label{font-size:13px;color:var(--muted)}.table{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1120px;font-size:13px}th,td{padding:10px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}th{position:sticky;top:0;background:var(--card);color:var(--muted)}tr:last-child td{border:0}.tag{font-weight:700;white-space:nowrap}.plan{color:var(--blue)}.answer{color:var(--green)}.debate{color:var(--orange)}.close{color:var(--green)}.stop{color:var(--red)}.note{border-left:4px solid var(--blue);padding:10px 14px;background:color-mix(in srgb,var(--blue) 7%,var(--card));border-radius:4px}@media(prefers-color-scheme:dark){:root{--bg:#10100f;--card:#1b1b19;--ink:#efeee9;--muted:#bbb6ab;--line:#3a3935;--blue:#6ea8ff;--green:#62d79a;--orange:#ffac66;--red:#ff8f87}}@media(max-width:720px){.page{padding:20px 12px 44px}.tiles{grid-template-columns:repeat(2,1fr)}h1{font-size:24px}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <h1>vetmanager-mcp · разбор feedback-очереди</h1>
+      <p class="muted">Повторный срез: 10.11.2026, 23:41 МСК · read-only · внешние статусы и ответы не менялись</p>
+    </header>
+    <p class="lead">Рабочая витрина из Markdown-источника: технические ID, доказательства и предложенный исход. Свободные тексты, параметры и данные клиник не включены.</p>
+    <section class="tiles">
+      <div class="tile"><div class="label">Всего feedback</div><div class="n">159</div><small>все отчёты</small></div>
+      <div class="tile"><div class="label">Очередь triage</div><div class="n">19</div><small>11 new + 8 triaged</small></div>
+      <div class="tile"><div class="label">High в очереди</div><div class="n">5</div><small>приоритет разбора</small></div>
+      <div class="tile"><div class="label">Новые этапы</div><div class="n">3</div><small>все supervisor_pending</small></div>
+    </section>
+    <section class="card">
+      <h2>Что произошло при разборе</h2>
+      <ul>
+        <li>19 открытых технических ID не изменились между 23:20 и 23:41 МСК; KI-34 — <code>wontfix</code>, KI-80 — <code>fixed</code>, KI-81 и KI-82 — <code>acknowledged</code>.</li>
+        <li>Этап 455 выпущен, но исправляет лимит периодного чтения и ожидание Report AI, а не маскировку #156/#160.</li>
+        <li>Закрытие предложено только для #137. #135 и #136 остались спорными: без адресной живой проверки они не закрываются.</li>
+      </ul>
+    </section>
+    <h2>Решение по каждому ID</h2>
+    <div class="table"><table>
+      <thead><tr><th>ID</th><th>Текущее состояние</th><th>Категория</th><th>Черновик ответа — не отправлен</th></tr></thead>
+      <tbody>
+        <tr><td>47</td><td>triaged · high · KI-34=wontfix: task entity в API нет</td><td class="tag stop">Не делаем</td><td>Задачи через интеграцию не поддерживаются; используйте приём, медкарту или внешний трекер.</td></tr>
+        <tr><td>92</td><td>triaged · high · скидочная агрегация расходится с построчной проверкой</td><td class="tag plan">В план: 457</td><td>Не считать агрегат финансовым эталоном; сверять строки счетов с полной пагинацией.</td></tr>
+        <tr><td>93</td><td>triaged · high · встроенная скидка умножила расширенную сумму на количество</td><td class="tag plan">В план: 457</td><td>До уточнения формулы проверять строки счетов.</td></tr>
+        <tr><td>94</td><td>triaged · medium · preview ждёт API конструктора; 358=todo</td><td class="tag plan">В план: 358</td><td>Удаление не возвращаем; нужен preview до сохранения.</td></tr>
+        <tr><td>102</td><td>triaged · medium · отказ без кода и воспроизведения</td><td class="tag debate">Спорное</td><td>Нужен безопасный повтор с кодом; сначала узкий маршрут store-documents.</td></tr>
+        <tr><td>135</td><td>triaged · medium · KI-80=fixed, но live-повтор не приложен</td><td class="tag debate">Спорное</td><td>Используйте daily summary либо compact/fields.</td></tr>
+        <tr><td>136</td><td>triaged · medium · KI-81=acknowledged; JSON-разбор есть, живой формы нет</td><td class="tag debate">Спорное</td><td>Перед внешним закрытием проверим безопасную запись.</td></tr>
+        <tr><td>137</td><td>triaged · low · служебная фраза сохранена без маски</td><td class="tag close">Решено — закрыть</td><td>Ложное срабатывание устранено.</td></tr>
+        <tr><td>150</td><td>new · medium · scalar projection ломается, compact проходит</td><td class="tag plan">В план: 458</td><td>Временно <code>compact=true</code>; проверим shape drift без снятия защиты.</td></tr>
+        <tr><td>151–154</td><td>new · payment intent, лишние условия, границы периода, auto-match</td><td class="tag plan">В план: 457</td><td>Сохранить job ID; не принимать auto-match как новый intent; фиксировать границы сравнения.</td></tr>
+        <tr><td>155</td><td>new · low · гипотеза о потере оплат снята автором</td><td class="tag answer">Только ответ</td><td>Открыто лишь объяснение лишней карточки старого 90-дневного отчёта.</td></tr>
+        <tr><td>156</td><td>new · medium · маскировка количеств и номенклатуры; 455 это не проверял</td><td class="tag plan">В план: 456</td><td>Не восстанавливать обходом; локализовать слой, сохранив маски ПД.</td></tr>
+        <tr><td>157</td><td>new · high · safety-block без correlation ID; попадание в MCP не доказано</td><td class="tag answer">Только ответ</td><td>Не воспроизводить принудительно; сохранить время и безопасный контекст.</td></tr>
+        <tr><td>158</td><td>new · medium · sale-parameter tools существуют</td><td class="tag answer">Только ответ</td><td><code>get_good_sale_params</code> → <code>update_good_sale_price</code>; проверить scope.</td></tr>
+        <tr><td>159</td><td>new · medium · file API нет; 432.1=todo</td><td class="tag plan">В план: 432.1</td><td>Использовать ссылку из описания карты; проверенную выписку записывать в медкарту.</td></tr>
+        <tr><td>160</td><td>new · medium · маска названий комбинаций, слой неизвестен</td><td class="tag plan">В план: 456</td><td>Сравнить безопасный пример в строках задания и CSV; не склеивать с #156 заранее.</td></tr>
+      </tbody>
+    </table></div>
+    <h2>Что взято в план</h2>
+    <ol>
+      <li><strong>456 (P0):</strong> локализация маски номенклатуры и числовых агрегатов (#156, #160).</li>
+      <li><strong>457 (P0/P1):</strong> проверка скидок, периодов и auto-match Report AI (#92, #93, #151–154).</li>
+      <li><strong>458 (P1):</strong> воспроизведение scalar-проекции <code>get_clients</code> (#150).</li>
+    </ol>
+    <p class="note">Все три этапа — <code>supervisor_pending</code>; действующий порядок владельца остаётся 453 → 454. Исходник этой витрины: <code>artifacts/feedback-triage-2026-11-10.md</code>.</p>
+    <footer class="muted"><small>Источники: production DB и контейнер сервиса (read-only), Roadmap, product metrics. Определения и ограничения — в парном Markdown.</small></footer>
+  </main>
+</body>
+</html>

@@ -22082,3 +22082,21 @@ pilotproxy get_clinics прошёл; внешнийbudget30000/request,timeout19
 Telegram0. Значения токенов и клинические строки не сохранялись.
 Evidence супервизора: release/mcp-api-verification.json наVDS;
 локальныеCI/deployлоги: /tmp/mcp-452-evidence/ci-main.log,deploy-prod.log.
+
+## Feedback triage и очередь — 10.11.2026
+
+Read-only срез production в `2026-11-10T20:41:54Z` подтвердил 159
+`agent_feedback_reports`: 11 `new`, 8 `triaged`, 137 `linked`, 3 `ignored`.
+В очереди 19 ID, их технические статусы не изменились относительно среза
+`20:20:56Z`. Проверены только безопасные технические поля; статусы feedback,
+known issues и внешние ответы не менялись. KI-34=`wontfix`, KI-80=`fixed`,
+KI-81/KI-82=`acknowledged`.
+
+В `Roadmap.md` добавлены 456–458 как `supervisor_pending`; они не меняют
+утверждённый порядок 453 → 454. Номер 455 занят независимым выпущенным hotfix
+периодного чтения/ожидания Report AI и не доказывает устранение #156/#160.
+К закрытию предложен только #137 по безопасной production-проверке первого
+среза; #135/#136 оставлены спорными без адресного живого подтверждения.
+Полный обезличенный реестр и неотправленные проекты ответов:
+`artifacts/feedback-triage-2026-11-10.md`; HTML — только непубликованная
+витрина из этого Markdown-источника.
