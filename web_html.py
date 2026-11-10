@@ -199,6 +199,11 @@ def _resolve_mcp_path() -> str:
 def _activation_datetime(value: object, fallback: object = None) -> datetime | None:
     if isinstance(value, datetime):
         parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return _activation_datetime(None, fallback)
     elif isinstance(fallback, str):
         text = fallback.strip()
         if not text or text in {"Never", "No expiry"}:
@@ -601,7 +606,7 @@ def render_shell(title: str, body: str, *, main_class: str = "card") -> str:
       margin: 6px 0 0;
       font-size: 0.95rem;
     }}
-    .field-panel[hidden] {{
+    .field-panel[hidden], .waiting-indicator[hidden] {{
       display: none;
     }}
     .token-flash {{
@@ -1501,10 +1506,18 @@ def render_account_page(
     waiting_html = ""
     if activation_state == "needs_client_use":
         help_url = f"mailto:{escape(_resolve_support_email())}" if _resolve_support_email() else _SUPPORT_ISSUES_URL
+        update_message = (
+            "Состояние подключения изменилось. Сохраните выданный ключ перед обновлением страницы."
+            if issued_raw_token else
+            "Состояние подключения изменилось. Обновите страницу, когда закончите работу с формой."
+        )
         waiting_html = (
             '<p class="waiting-indicator" data-testid="activation-waiting" '
             f'data-poll-activation="{activation_state}" data-motivator="waiting">'
-            "Осталось немного: ждём первый запрос. Страница обновится сама после ответа.</p>"
+            "Осталось немного: ждём первый запрос. После ответа обновим статус, сохранив вашу работу с формами.</p>"
+            '<p data-testid="activation-update-notice" role="status" hidden>'
+            f"{update_message} "
+            '<a class="support-link" href="/account">Обновить страницу</a></p>'
             f'<p>Не получается подключить? <a class="support-link" href="{help_url}">Напишите нам</a>.</p>'
         )
 
@@ -2261,21 +2274,21 @@ def render_account_page(
               scrollTarget.scrollIntoView({{ behavior: 'auto', block: 'start' }});
             }}
 
-            // Stage 197.4: poll activation status while waiting for the first
-            // MCP request; reload once the state advances.
+            // Опрос не должен стирать форму или повторно отправлять POST.
             const pollEl = document.querySelector('[data-poll-activation]');
             if (pollEl) {{
               const initialState = pollEl.getAttribute('data-poll-activation');
-              const forcedReloadKey = 'vm_activation_forced_reload_count';
-              const pollAttemptKey = 'vm_activation_poll_attempt_count';
-              let forcedReloads = Number(sessionStorage.getItem(forcedReloadKey) || '0');
-              let pollAttempts = Number(sessionStorage.getItem(pollAttemptKey) || '0');
-              const reloadAfterAttempts = 20;
+              let formEdited = false;
+              const markEdited = (event) => {{
+                if (event.target.closest('form')) formEdited = true;
+              }};
+              document.addEventListener('input', markEdited);
+              document.addEventListener('change', markEdited);
+              let pollAttempts = 0;
               const maxPollAttempts = 80;
               const timer = setInterval(async () => {{
                 try {{
                   pollAttempts += 1;
-                  sessionStorage.setItem(pollAttemptKey, String(pollAttempts));
                   const response = await fetch('/account/activation-status', {{
                     headers: {{ 'Accept': 'application/json' }},
                   }});
@@ -2290,23 +2303,24 @@ def render_account_page(
                   if (!response.ok) return;
                   const payload = await response.json();
                   if (payload.state && payload.state !== initialState) {{
-                    sessionStorage.removeItem(forcedReloadKey);
-                    sessionStorage.removeItem(pollAttemptKey);
                     clearInterval(timer);
-                    location.reload();
-                  }}
-                  if (pollAttempts >= reloadAfterAttempts) {{
-                    if (forcedReloads < 1) {{
-                      forcedReloads += 1;
-                      sessionStorage.setItem(forcedReloadKey, String(forcedReloads));
-                      clearInterval(timer);
-                      location.reload();
+                    const formFocused = document.activeElement?.closest('form');
+                    if (formEdited || formFocused || issuedPanel) {{
+                      const notice = document.querySelector('[data-testid="activation-update-notice"]');
+                      pollEl.hidden = true;
+                      (issuedPanel || pollEl.closest('[data-testid="activation-status"]')).before(notice);
+                      notice.hidden = false;
+                    }} else {{
+                      location.replace('/account');
                     }}
                   }}
+                }} catch (_error) {{
+                  // Следующий опрос может восстановиться после сетевого сбоя.
+                }} finally {{
                   if (pollAttempts >= maxPollAttempts) {{
                     clearInterval(timer);
                   }}
-                }} catch (_error) {{}}
+                }}
               }}, 15000);
             }}
           }})();

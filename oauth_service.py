@@ -870,21 +870,10 @@ async def claim_stale_oauth_refresh(session: AsyncSession, *, account_id: int,
     return result.rowcount == 1
 
 
-async def accounts_with_live_oauth_access(session: AsyncSession, *, now: datetime) -> set[int]:
-    """Accounts that can still make an OAuth request right now (stage 260).
-
-    A grant on its own is not access: its access token expires, and the client
-    keeps working only while it can refresh. Checking the grant alone would
-    keep an account in the silence gauge long after its access died; checking
-    the access token alone would drop a client that is between refreshes.
-
-    The refresh branch mirrors what `exchange_refresh_token` actually accepts —
-    an unused token belonging to an active client. A rotated refresh token is
-    already spent, and a disabled client cannot exchange anything, so counting
-    either as access would show a working state to somebody who has none.
-    """
+def _live_oauth_grants_statement(*, now: datetime):
+    """Единые условия живого доступа: активный клиент и access либо refresh."""
     live_access = (
-        select(OAuthGrant.account_id)
+        select(OAuthGrant.id.label("grant_id"), OAuthGrant.account_id)
         .join(OAuthAccessToken, OAuthAccessToken.grant_id == OAuthGrant.id)
         .join(OAuthClient, OAuthClient.client_id == OAuthGrant.client_id)
         .where(OAuthGrant.status == OAUTH_STATUS_ACTIVE)
@@ -893,7 +882,7 @@ async def accounts_with_live_oauth_access(session: AsyncSession, *, now: datetim
         .where(OAuthAccessToken.expires_at > now)
     )
     live_refresh = (
-        select(OAuthGrant.account_id)
+        select(OAuthGrant.id.label("grant_id"), OAuthGrant.account_id)
         .join(OAuthRefreshToken, OAuthRefreshToken.grant_id == OAuthGrant.id)
         .join(OAuthClient, OAuthClient.client_id == OAuthGrant.client_id)
         .where(OAuthGrant.status == OAUTH_STATUS_ACTIVE)
@@ -902,9 +891,20 @@ async def accounts_with_live_oauth_access(session: AsyncSession, *, now: datetim
         .where(OAuthRefreshToken.used_at.is_(None))
         .where(OAuthRefreshToken.expires_at > now)
     )
-    accounts: set[int] = set()
-    for stmt in (live_access, live_refresh):
-        accounts |= {
-            int(account_id) for account_id in (await session.execute(stmt)).scalars().all()
-        }
-    return accounts
+    return live_access.union(live_refresh)
+
+
+async def live_oauth_grant_ids_for_account(
+    session: AsyncSession, *, account_id: int, now: datetime,
+) -> set[int]:
+    """Живые гранты конкретного аккаунта без примеси соседнего доступа."""
+    live = _live_oauth_grants_statement(now=now).subquery()
+    return set((await session.scalars(
+        select(live.c.grant_id).where(live.c.account_id == account_id)
+    )).all())
+
+
+async def accounts_with_live_oauth_access(session: AsyncSession, *, now: datetime) -> set[int]:
+    """Аккаунты с живым access или ещё не использованным живым refresh."""
+    live = _live_oauth_grants_statement(now=now).subquery()
+    return set((await session.scalars(select(live.c.account_id).distinct())).all())
