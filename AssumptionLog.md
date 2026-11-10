@@ -22051,3 +22051,14 @@ finance.py/report_ai.py/crud_helpers.py послеfull не менялись.
 createсовета дополнительно проверен красным: helper временно рекомендовал
 create(wait1800), test_stage369 упалassertion, затем helper восстановлен;
 evidence red-create-advice.txt. API-поведение и runtimeкод не менялись.
+
+**Committed review, раунд2.** Оба валидны, findings[] на101af4a:
+Astra2/2 metadata astra-code2.metadata.json,CLI0.167.0,
+17:33:38Z–17:33:53Z,validator0. Opus2/2 success/tool_use,
+output2539/thinking1435/len(result)15, envelope/metadata/verdict вopus-code2/.
+Оба получили конкретный полный committed diff, не только summary. Бюджеты
+2валидных/гейт соблюдены, infrastructurefailure вcodegate не было.
+После красной мутацииhelper восстановлен итот жеguardпрошёл1/1.
+Передpush fetch подтвердилorigin/main=d75fdee, branchahead2, чужих коммитов
+после интеграции нет. Этот bookkeepingcommit меняет толькоAssumptionLog,
+повторное code-review N/A; runtimeсовпадает с проверенной версией.
