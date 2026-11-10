@@ -22268,3 +22268,19 @@ tabs 0/0, modes 0/0, images 0/0; 4/4 навигационных ссылок,
 `4558 passed, 3 skipped, 142 deselected` за 555,31 с. `git status`
 после прогона чистый. Opt-in real suite не запускался: его запись во внешний
 стенд выходит за пределы разрешённых четырёх feedback-действий.
+
+**Операционный triage revision 5, 11.11.2026 01:14 МСК.** Штатный
+production CLI повторно прочитал #155/#157/#158: все `source=model`, `new`,
+без known issue. Адресный reply-path и receipt отсутствуют по ранее
+подтверждённому контракту, поэтому delivery не заявляется и не
+расследуется повторно. По runbook все три переведены командой `mark-report` в
+`ignored`: #155 — автор снял исходную гипотезу; #157 — safety-block без
+correlation ID не доказывает сбой MCP; #158 — функция уже представлена
+отдельными инструментами. Повторное чтение подтвердило три `ignored`.
+`unreachable-issues` показал отдельный существующий backlog из трёх active
+issues без playbook (87–89), не менялся. Для следующего developer-поручения
+добавлен обезличенный источник будущего HTML-раздела
+`artifacts/feedback-triage-product-improvements-2026-11-11.md`: snapshot
+product metrics `2026-11-10T22:15:51Z`, Prometheus около 22:16Z; факт,
+гипотеза, действие, знаменатель и ограничения отделены. HTML, UI-текст,
+публикация и production-код не менялись.
