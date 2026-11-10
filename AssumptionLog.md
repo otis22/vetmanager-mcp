@@ -22246,3 +22246,19 @@ exit 0 и ответом `report #137 linked known_issue #82 status=fixed`.
 `git diff --check` — exit 0. Публичный repo не содержит персональных данных
 или секретов из этих обращений. Публикация и browser/evidence — следующим
 шагом.
+**Публикация revision 3 после закрытия #137, 11.11.2026 00:50 МСК.**
+Страница разбора переопубликована по прежнему URL
+`http://94.183.151.165/feedback-triage-20261110-f85b4671/`.
+HTTP 200, скачанный HTML побайтно совпал с источником, SHA-256
+`d1ac4c9c6edd051700ab2a6ada778fa9f7a01a9cf6989fc6969dfdb6d726009e`.
+`publication_check` previous/current для страницы разбора: canvas 0/0,
+tabs 0/0, modes 0/0, images 0/0; 4/4 навигационных ссылок,
+20/20 ARIA-строк. Для основного дашборда те же четыре счётчика 0/0,
+навигация 3/3, графики 8/8. Evidence вне working copy:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev3/closure-20261111/publication_check.json`.
+Один итоговый Chromium-прогон прямых URL на 1366 и 390 px подтвердил 19
+строк реестра, закрытый #137, пометку о недоставленных ответах, 8/8 графиков
+основного дашборда, переходы туда и обратно, отсутствие горизонтального
+переполнения и JS exceptions. Evidence: в том же каталоге
+`browser-check.json` и full-page PNG обоих размеров плюс первый экран
+телефона для обеих страниц. Ответы по #155/#157/#158 по-прежнему не отправлены.
