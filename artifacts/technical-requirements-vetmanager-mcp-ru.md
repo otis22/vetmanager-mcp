@@ -774,7 +774,8 @@ totalCount=null и next_offset=null. Обращение, начатое до dea
 
 ### Report AI: ожидание до 30 минут (этап 455)
 `create_report_ai_job` и `get_report_ai_job` принимают wait_seconds0..1800,
-default0. Рекомендация next_action.poll и справочник используют1800с. Внутренний
+default0. Создание рекомендуется с wait_seconds=0 для немедленного получения ID;
+next_action.poll и справочник затем используют get_report_ai_job(wait_seconds=1800). Внутренний
 poll остаётся последовательным, интервал2с, максимум1000GET и не больше числа,
 вытекающего из запрошенного окна. Возраст очереди/неподвижной стадии>=1800с
 останавливает automaticpoll. Короткий wait_timeout ранее этого порога допускает

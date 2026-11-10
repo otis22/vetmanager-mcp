@@ -38,7 +38,7 @@ def test_prompt_helper_carries_bounded_journey_and_preview_boundary():
     helper = get_report_ai_prompt_helper_text()
     journey = helper.split("## Report AI journey", 1)[1].split("\n## ", 1)[0]
     steps = (
-        "create_report_ai_job(wait_seconds=1800)",
+        "create_report_ai_job(wait_seconds=0)",
         "get_report_ai_job(job_id=job_id, wait_seconds=1800)",
         "needs_confirmation",
         "confirm_report_ai_job_candidate",
@@ -56,6 +56,8 @@ def test_prompt_helper_carries_bounded_journey_and_preview_boundary():
     ))
     assert "preview_summary" in descriptions and "preview_example_row" in descriptions
     assert "Do not answer the user from either preview field" in descriptions
+    assert "For a new job use wait_seconds=0" in descriptions
+    assert "create_report_ai_job(wait_seconds=1800)" not in helper
 
 
 @pytest.mark.asyncio
