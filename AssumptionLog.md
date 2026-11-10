@@ -22300,3 +22300,13 @@ AssumptionLog и triage runbook. Один medium принят: в реестре
 строки ещё называли #155/#157/#158 `new` вопреки подтверждённому `ignored`.
 Строки и категории синхронизированы; других findings нет. Evidence:
 `/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev5/spark.{prompt,stdout,stderr}.txt`.
+Сильное committed diff-ревью `5c88158..f7f8b76`: Astra
+22:27:16–22:28:26Z, валидный verdict, validator exit 0; один medium о
+404 у новых Markdown-ссылок до публикации принят. Оба Markdown будут
+размещены рядом с HTML и ссылки проверены по HTTP. Opus дала валидные
+`findings=[]`; общих findings нет, открытых critical/high нет.
+Astra evidence: `/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev5/astra.{prompt.txt,result.json,stderr.txt,metadata.json}`.
+Opus evidence: `/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev5/opus/2026-11-10T222716Z-git_range-5c881586acc9a1aae194ee2c7eec129ca761728d__f7f8b766665ab6059b66aae5e854-attempt-1-of-3.8vWil0/claude-review-attempt-1-of-3.envelope.json`;
+`subtype=success`, `stop_reason=tool_use`, `output_tokens=1914`,
+`thinking_tokens=1151`, `len(result)=15`. Оба ревьюера: 1/2 валидных
+запусков, infrastructure failures 0/3.
