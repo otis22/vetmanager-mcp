@@ -228,6 +228,28 @@ exit 1, 115 passed, 2 failed, 19 skipped-not-configured, 0 skipped-error
 повторным real — аудит, Spark committed diff и оставшийся второй слот
 сильной пары. Код кабинета, OAuth и Dockerfile идентичен проверенному.
 
+**Повторный committed diff gate `9c67399..5a4d11d`.** Spark 2/3
+прочёл актуальный diff и профильный код/PRD, `[]`
+(`spark-diff-2.stdout.txt`). Astra 2/2 и Opus 2/2 одновременно,
+15:55:04–15:55:35 UTC: оба валидные `findings=[]`, validator exit 0.
+Opus envelope `diff/2026-11-10T155504Z-git_range-9c67399__5a4d11d-attempt-2-of-3.qPzBGC/claude-review-attempt-2-of-3.envelope.json`;
+subtype=success, stop_reason=tool_use, output_tokens=2407,
+thinking_tokens=1757, len(result)=15. Общих и открытых critical/high
+нет. Исправления после PRD-бюджета проверены scout и тестами; визуальный
+medium по форме закрыт отдельным evidence/scout, старый повтор вопросов
+в инструкции остаётся явно отложенным вне 452.
+
+После повторного гейта код и тесты не меняются. Следующий коммит
+содержит только эту запись evidence (исключение документов §5.5);
+полный real повторяется по его финальному SHA до push. Полный mock
+4547 passed/3 skipped на `6081692` остаётся применимым к неизменённому
+продуктовому коду; единственная последующая правка — окружение живого
+теста SSE — проверена каноническим фокусом 1 passed. Новая полная
+перепроверка mock для этой тестовой правки не требуется по AGENTS.md.
+Повторный real пока не объявлен пройденным. Аудит: между `693e4bf` и
+`5a4d11d` код кабинета/OAuth/Dockerfile и сторожа 452 побайтно совпадают;
+после второго гейта изменён только AssumptionLog.
+
 ## Этап 448. Аварийный billing fallback — 2026-10-30
 
 **Проверка владельца после Deploy Prod `2f63184`.** Из `mcp`, `mcp2`, `mcp3`
