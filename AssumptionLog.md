@@ -22310,3 +22310,38 @@ Opus evidence: `/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-
 `subtype=success`, `stop_reason=tool_use`, `output_tokens=1914`,
 `thinking_tokens=1151`, `len(result)=15`. Оба ревьюера: 1/2 валидных
 запусков, infrastructure failures 0/3.
+
+**Публикация и проверки revision 5, 11.11.2026 01:39 МСК.** Промежуточный
+push ветки `analysis/feedback-triage-dashboard-2026-11-10` — SHA
+`74205edefdb2e2e49a574807c5daee1cbf655075` (исходники в
+`30231e02402deafb459b49aad9a1f61c2b2bb7b8`, синхронизация Markdown в
+`f7f8b766665ab6059b66aae5e854a5bb758eb908`). Затем точная команда
+`docker compose --profile test run --rm test` завершилась exit 0:
+`4558 passed, 3 skipped, 142 deselected` за 560,04 с, coverage 89%.
+Opt-in real suite не выполнялся: он пишет во внешний стенд, а инструменты
+MCP и внешний продукт в этой задаче не менялись.
+
+По HTTP-runbook переопубликован только разбор
+`http://94.183.151.165/feedback-triage-20261110-f85b4671/` и два
+Markdown-источника рядом с ним. Все три ответа HTTP 200 и побайтно
+совпадают с файлами; SHA-256 HTML
+`d5d3c619851b5338cbdf30ead9dfcf4dbcaa1a4eca4ce64b9297619fb465eba1`.
+Основной дашборд `http://94.183.151.165/mcp-dashboard-6bc06296/`
+остался HTTP 200 и без изменения SHA-256
+`076e9caa9906508b07e524e0bc25d53fc7093a56cc9dc4a7fe87f8414a97d857`.
+Оба HTML содержат `meta robots=noindex, nofollow, noarchive`; проверка
+публикуемых исходников не нашла шаблонов ПДн или секретов.
+
+`publication_check` previous/current: основной — canvas 0→0, tabs 0→0,
+modes 0→0, images 0→0, ссылки 3→3, графики 8→8; разбор — canvas 0→0,
+tabs 0→0, modes 0→0, images 0→0, ссылки 4→5, строки 20→20 включая
+заголовок. Снижений нет, `override_reason=null`. Evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev5/publication_check.json`.
+Один полный Chromium-прогон прямых опубликованных URL: desktop 1366 px и
+phone 390 px, раздел и цифры видимы, оба Markdown-источника доступны по
+HTTP 200, переходы туда/обратно работают, 19 отчётов и 8/8 SVG-графиков,
+горизонтального переполнения и JS exceptions нет. Evidence: там же
+`browser-check.json`, `triage-{desktop,phone}-full.png`,
+`main-{desktop,phone}-full.png`, первые экраны телефона обеих страниц.
+Рекомендации остаются гипотезами; изменения текста/флоу будущего продукта
+требуют решения владельца через куратора.
