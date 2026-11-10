@@ -200,6 +200,34 @@ readyz=200/storage ok, /account без сессии=303, activation-status бе�
 сессии=401 (`production-before.json`). Это исходное состояние, не
 пост-релизная приёмка. Сессия аккаунта 53 не извлекалась.
 
+**Полный выпускной прогон на `6081692`, 10.11.2026.** Mock:
+`docker compose --profile test run --rm test` — exit 0, 4547 passed,
+3 skipped, 142 deselected, 550.74 с (`final-mock-6081692.log`).
+Real: `docker compose --env-file .env --profile test run --rm test python scripts/run_opt_in_real_test_suite.py` —
+exit 1, 115 passed, 2 failed, 19 skipped-not-configured, 0 skipped-error
+(`final-real-6081692.log`). Выпуск и push остаются запрещены.
+
+Причины real-падений установлены по трассам. SSE завершался успешно,
+но сторож INFO-события наследовал LOG_LEVEL=WARNING из test Compose и
+задавал только FASTMCP_LOG_LEVEL=INFO. Изолированно тот же тест тоже
+красный (`recheck-sse.log`); при явном локальном INFO зелёный. В окружение
+его subprocess добавлен LOG_LEVEL=INFO; канонический фокус — 1 passed
+за 2.56 с (`recheck-sse-fixed.log`). Runtime не менялся; это исправление
+контура, не ослабление утверждений о loop, drain или кодах ответа.
+
+396: POST вернул созданное задание, но после восьми опросов (24 с) оно
+оставалось recognizing. Неопределённого исхода POST нет. Точный
+изолированный повтор исходного теста без правок ожиданий — 1 passed
+за 1.57 с (`recheck-396.log`). Таймаут и бизнес-проверки не менялись.
+Следующий полный real suite обязателен перед push; успешный отдельный
+повтор не выдаётся за зелёный полный real.
+
+После полного mock изменилась только настройка окружения теста и
+документы. По правилу AGENTS.md для тестовых/текстовых ревью-правок
+полный mock не повторяется: выполнен фокус изменённого файла. Перед
+повторным real — аудит, Spark committed diff и оставшийся второй слот
+сильной пары. Код кабинета, OAuth и Dockerfile идентичен проверенному.
+
 ## Этап 448. Аварийный billing fallback — 2026-10-30
 
 **Проверка владельца после Deploy Prod `2f63184`.** Из `mcp`, `mcp2`, `mcp3`

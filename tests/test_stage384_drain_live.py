@@ -24,7 +24,7 @@ def test_devtr6_held_get_sse_drains_on_sigterm(prepared_web_db, free_tcp_port):
     assert "pytest" in str(prepared_web_db)
     token = seed_devtr6_bearer()
     env = os.environ.copy()
-    env.update(PORT=str(free_tcp_port), FASTMCP_LOG_LEVEL="INFO", LOG_FORMAT="text",
+    env.update(PORT=str(free_tcp_port), LOG_LEVEL="INFO", FASTMCP_LOG_LEVEL="INFO", LOG_FORMAT="text",
                STREAMABLE_HTTP_DRAIN_ENABLED="true")
     server = subprocess.Popen(
         [sys.executable, "-c", "from server import _run_http_server; "
