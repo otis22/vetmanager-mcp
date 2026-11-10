@@ -7,7 +7,7 @@
   <title>vetmanager-mcp — разбор feedback 10.11.2026</title>
   <style>
     :root{color-scheme:light dark;--bg:#f6f6f3;--card:#fff;--ink:#161614;--muted:#625f58;--line:#d9d6ce;--blue:#1769d1;--green:#087c49;--orange:#a75200;--red:#b42318}
-    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}.page{max-width:1440px;margin:auto;padding:28px 18px 64px}h1{margin:0;font-size:29px}h2{margin:32px 0 8px;font-size:21px}.muted,.lead{color:var(--muted)}.lead{max-width:1000px}.tiles{display:grid;grid-template-columns:repeat(4,minmax(145px,1fr));gap:12px;margin:20px 0}.tile,.card,.table{background:var(--card);border:1px solid var(--line);border-radius:12px}.tile,.card{padding:15px}.n{font-size:30px;font-weight:700}.label{font-size:13px;color:var(--muted)}.table{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1120px;font-size:13px}th,td{padding:10px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}th{position:sticky;top:0;background:var(--card);color:var(--muted)}tr:last-child td{border:0}.tag{font-weight:700;white-space:nowrap}.plan{color:var(--blue)}.answer{color:var(--green)}.debate{color:var(--orange)}.close{color:var(--green)}.stop{color:var(--red)}.note{border-left:4px solid var(--blue);padding:10px 14px;background:color-mix(in srgb,var(--blue) 7%,var(--card));border-radius:4px}@media(prefers-color-scheme:dark){:root{--bg:#10100f;--card:#1b1b19;--ink:#efeee9;--muted:#bbb6ab;--line:#3a3935;--blue:#6ea8ff;--green:#62d79a;--orange:#ffac66;--red:#ff8f87}}@media(max-width:720px){.page{padding:20px 12px 44px}.tiles{grid-template-columns:repeat(2,1fr)}h1{font-size:24px}}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}.page{max-width:1440px;margin:auto;padding:28px 18px 64px}h1{margin:0;font-size:29px}h2{margin:32px 0 8px;font-size:21px}.muted,.lead{color:var(--muted)}.lead{max-width:1000px}nav{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}nav a{color:var(--blue)}.tiles{display:grid;grid-template-columns:repeat(4,minmax(145px,1fr));gap:12px;margin:20px 0}.tile,.card,.table{background:var(--card);border:1px solid var(--line);border-radius:12px}.tile,.card{padding:15px}.n{font-size:30px;font-weight:700}.label{font-size:13px;color:var(--muted)}.table{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1120px;font-size:13px}th,td{padding:10px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}th{position:sticky;top:0;background:var(--card);color:var(--muted)}tr:last-child td{border:0}.tag{font-weight:700;white-space:nowrap}.plan{color:var(--blue)}.answer{color:var(--green)}.debate{color:var(--orange)}.close{color:var(--green)}.stop{color:var(--red)}.note{border-left:4px solid var(--blue);padding:10px 14px;background:color-mix(in srgb,var(--blue) 7%,var(--card));border-radius:4px}@media(prefers-color-scheme:dark){:root{--bg:#10100f;--card:#1b1b19;--ink:#efeee9;--muted:#bbb6ab;--line:#3a3935;--blue:#6ea8ff;--green:#62d79a;--orange:#ffac66;--red:#ff8f87}}@media(max-width:720px){.page{padding:20px 12px 44px}.tiles{grid-template-columns:repeat(2,1fr)}h1{font-size:24px}}
   </style>
 </head>
 <body>
@@ -17,13 +17,14 @@
       <p class="muted">Повторный срез: 10.11.2026, 23:41 МСК · read-only · внешние статусы и ответы не менялись</p>
     </header>
     <p class="lead">Рабочая витрина из Markdown-источника: технические ID, доказательства и предложенный исход. Свободные тексты, параметры и данные клиник не включены.</p>
-    <section class="tiles">
+    <nav aria-label="Разделы страницы"><a href="#summary">Итог разбора</a><a href="#decisions">Все обращения</a><a href="#roadmap">Что взято в план</a></nav>
+    <section class="tiles" aria-label="Сводные показатели">
       <div class="tile"><div class="label">Всего feedback</div><div class="n">159</div><small>все отчёты</small></div>
       <div class="tile"><div class="label">Очередь triage</div><div class="n">19</div><small>11 new + 8 triaged</small></div>
       <div class="tile"><div class="label">High в очереди</div><div class="n">5</div><small>приоритет разбора</small></div>
       <div class="tile"><div class="label">Новые этапы</div><div class="n">3</div><small>все supervisor_pending</small></div>
     </section>
-    <section class="card">
+    <section class="card" id="summary">
       <h2>Что произошло при разборе</h2>
       <ul>
         <li>19 открытых технических ID не изменились между 23:20 и 23:41 МСК; KI-34 — <code>wontfix</code>, KI-80 — <code>fixed</code>, KI-81 и KI-82 — <code>acknowledged</code>.</li>
@@ -31,7 +32,7 @@
         <li>Закрытие предложено только для #137. #135 и #136 остались спорными: без адресной живой проверки они не закрываются.</li>
       </ul>
     </section>
-    <h2>Решение по каждому ID</h2>
+    <h2 id="decisions">Решение по каждому ID</h2>
     <div class="table"><table>
       <thead><tr><th>ID</th><th>Текущее состояние</th><th>Категория</th><th>Черновик ответа — не отправлен</th></tr></thead>
       <tbody>
@@ -44,7 +45,10 @@
         <tr><td>136</td><td>triaged · medium · KI-81=acknowledged; JSON-разбор есть, живой формы нет</td><td class="tag debate">Спорное</td><td>Перед внешним закрытием проверим безопасную запись.</td></tr>
         <tr><td>137</td><td>triaged · low · служебная фраза сохранена без маски</td><td class="tag close">Решено — закрыть</td><td>Ложное срабатывание устранено.</td></tr>
         <tr><td>150</td><td>new · medium · scalar projection ломается, compact проходит</td><td class="tag plan">В план: 458</td><td>Временно <code>compact=true</code>; проверим shape drift без снятия защиты.</td></tr>
-        <tr><td>151–154</td><td>new · payment intent, лишние условия, границы периода, auto-match</td><td class="tag plan">В план: 457</td><td>Сохранить job ID; не принимать auto-match как новый intent; фиксировать границы сравнения.</td></tr>
+        <tr><td>151</td><td>new · medium · понятный payment intent отклонён без уточнения</td><td class="tag plan">В план: 457</td><td>Не повторять создание автоматически; сохранить job ID и проверить результат прямым чтением.</td></tr>
+        <tr><td>152</td><td>new · medium · распознавание добавило незаданные условия; уточнение помогло</td><td class="tag plan">В план: 457</td><td>Проверять ограничения до сохранения; явно задать смысл филиала, города и авансов.</td></tr>
+        <tr><td>153</td><td>new · medium · близкие отчёты расходятся на одну карточку</td><td class="tag plan">В план: 457</td><td>Сверить границы дня, статусы и DISTINCT до вывода о потере данных.</td></tr>
+        <tr><td>154</td><td>new · high · auto-match вернул ранее неверный отчёт без выбора</td><td class="tag plan">В план: 457</td><td>Не принимать auto-match за новый запрос; запрашивать точные календарные агрегаты.</td></tr>
         <tr><td>155</td><td>new · low · гипотеза о потере оплат снята автором</td><td class="tag answer">Только ответ</td><td>Открыто лишь объяснение лишней карточки старого 90-дневного отчёта.</td></tr>
         <tr><td>156</td><td>new · medium · маскировка количеств и номенклатуры; 455 это не проверял</td><td class="tag plan">В план: 456</td><td>Не восстанавливать обходом; локализовать слой, сохранив маски ПД.</td></tr>
         <tr><td>157</td><td>new · high · safety-block без correlation ID; попадание в MCP не доказано</td><td class="tag answer">Только ответ</td><td>Не воспроизводить принудительно; сохранить время и безопасный контекст.</td></tr>
@@ -53,7 +57,7 @@
         <tr><td>160</td><td>new · medium · маска названий комбинаций, слой неизвестен</td><td class="tag plan">В план: 456</td><td>Сравнить безопасный пример в строках задания и CSV; не склеивать с #156 заранее.</td></tr>
       </tbody>
     </table></div>
-    <h2>Что взято в план</h2>
+    <h2 id="roadmap">Что взято в план</h2>
     <ol>
       <li><strong>456 (P0):</strong> локализация маски номенклатуры и числовых агрегатов (#156, #160).</li>
       <li><strong>457 (P0/P1):</strong> проверка скидок, периодов и auto-match Report AI (#92, #93, #151–154).</li>
