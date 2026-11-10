@@ -15,23 +15,23 @@
   <main class="page">
     <header>
       <h1>vetmanager-mcp · разбор feedback-очереди</h1>
-      <p class="muted">Срез: 11.11.2026, 00:47 МСК · #137 закрыт; ответы #155, #157 и #158 не отправлены</p>
+      <p class="muted">Разбор: 11.11.2026, 01:14 МСК · продуктовые метрики: 01:15 МСК · #137 закрыт; #155, #157 и #158 — ignored, ответы не отправлены</p>
     </header>
     <p class="lead">Рабочая витрина из Markdown-источника: технические ID, доказательства и предложенный исход. Свободные тексты, параметры и данные клиник не включены.</p>
     <nav aria-label="Другие страницы"><a href="/mcp-dashboard-6bc06296/">← Основной дашборд</a></nav>
-    <nav aria-label="Разделы страницы"><a href="#summary">Итог разбора</a><a href="#decisions">Все обращения</a><a href="#roadmap">Что взято в план</a></nav>
+    <nav aria-label="Разделы страницы"><a href="#summary">Итог разбора</a><a href="#decisions">Все обращения</a><a href="#roadmap">Что взято в план</a><a href="#product-improvements">Продуктовые улучшения</a></nav>
     <section class="tiles" aria-label="Сводные показатели">
       <div class="tile"><div class="label">Всего feedback</div><div class="n">159</div><small>все отчёты</small></div>
-      <div class="tile"><div class="label">Очередь triage</div><div class="n">18</div><small>11 new + 7 triaged</small></div>
-      <div class="tile"><div class="label">High в очереди</div><div class="n">5</div><small>приоритет разбора</small></div>
+      <div class="tile"><div class="label">Очередь triage</div><div class="n">15</div><small>8 new + 7 triaged</small></div>
+      <div class="tile"><div class="label">High в очереди</div><div class="n">4</div><small>приоритет разбора</small></div>
       <div class="tile"><div class="label">Новые этапы</div><div class="n">3</div><small>все supervisor_pending</small></div>
     </section>
     <section class="card" id="summary">
       <h2>Что произошло при разборе</h2>
       <ul>
-        <li>До закрытия 19 ID не изменились между 23:20 и 23:41 МСК. После штатного закрытия #137 его статус — <code>linked</code>, KI-82 — <code>fixed</code>; в очереди осталось 18 ID.</li>
+        <li>До закрытия 19 ID не изменились между 23:20 и 23:41 МСК. После штатного закрытия #137 его статус — <code>linked</code>, KI-82 — <code>fixed</code>; тогда в очереди осталось 18 ID. После triage #155, #157 и #158 — 15 ID.</li>
         <li>Этап 455 выпущен, но исправляет лимит периодного чтения и ожидание Report AI, а не маскировку #156/#160.</li>
-        <li>#137 закрыт и подтверждён повторным чтением production. #135 и #136 остались спорными: без адресной живой проверки они не закрываются. Ответы по #155, #157 и #158 не доставлены: у штатного feedback-канала нет адресного ответа.</li>
+        <li>#137 закрыт и подтверждён повторным чтением production. #135 и #136 остались спорными: без адресной живой проверки они не закрываются. #155, #157 и #158 подтверждены в статусе <code>ignored</code>; адресные ответы не доставлены: у штатного feedback-канала нет адресного ответа.</li>
       </ul>
     </section>
     <h2 id="decisions">Решение по каждому ID</h2>
@@ -51,10 +51,10 @@
         <tr role="row"><td role="cell">152</td><td role="cell">new · medium · распознавание добавило незаданные условия; уточнение помогло</td><td role="cell" class="tag plan">В план: 457</td><td role="cell">Проверять ограничения до сохранения; явно задать смысл филиала, города и авансов.</td></tr>
         <tr role="row"><td role="cell">153</td><td role="cell">new · medium · близкие отчёты расходятся на одну карточку</td><td role="cell" class="tag plan">В план: 457</td><td role="cell">Сверить границы дня, статусы и DISTINCT до вывода о потере данных.</td></tr>
         <tr role="row"><td role="cell">154</td><td role="cell">new · high · auto-match вернул ранее неверный отчёт без выбора</td><td role="cell" class="tag plan">В план: 457</td><td role="cell">Не принимать auto-match за новый запрос; запрашивать точные календарные агрегаты.</td></tr>
-        <tr role="row"><td role="cell">155</td><td role="cell">new · low · гипотеза о потере оплат снята автором</td><td role="cell" class="tag answer">Только ответ</td><td role="cell">Открыто лишь объяснение лишней карточки старого 90-дневного отчёта.</td></tr>
+        <tr role="row"><td role="cell">155</td><td role="cell">ignored · low · гипотеза о потере оплат снята автором</td><td role="cell" class="tag answer">Разбор завершён</td><td role="cell">Открыто лишь объяснение лишней карточки старого 90-дневного отчёта.</td></tr>
         <tr role="row"><td role="cell">156</td><td role="cell">new · medium · маскировка количеств и номенклатуры; 455 это не проверял</td><td role="cell" class="tag plan">В план: 456</td><td role="cell">Не восстанавливать обходом; локализовать слой, сохранив маски ПД.</td></tr>
-        <tr role="row"><td role="cell">157</td><td role="cell">new · high · safety-block без correlation ID; попадание в MCP не доказано</td><td role="cell" class="tag answer">Только ответ</td><td role="cell">Не воспроизводить принудительно; сохранить время и безопасный контекст.</td></tr>
-        <tr role="row"><td role="cell">158</td><td role="cell">new · medium · sale-parameter tools существуют</td><td role="cell" class="tag answer">Только ответ</td><td role="cell"><code>get_good_sale_params</code> → <code>update_good_sale_price</code>; проверить scope.</td></tr>
+        <tr role="row"><td role="cell">157</td><td role="cell">ignored · high · safety-block без correlation ID; попадание в MCP не доказано</td><td role="cell" class="tag answer">Разбор завершён</td><td role="cell">Не воспроизводить принудительно; сохранить время и безопасный контекст.</td></tr>
+        <tr role="row"><td role="cell">158</td><td role="cell">ignored · medium · sale-parameter tools существуют</td><td role="cell" class="tag answer">Разбор завершён</td><td role="cell"><code>get_good_sale_params</code> → <code>update_good_sale_price</code>; проверить scope.</td></tr>
         <tr role="row"><td role="cell">159</td><td role="cell">new · medium · file API нет; 432.1=todo</td><td role="cell" class="tag plan">В план: 432.1</td><td role="cell">Использовать ссылку из описания карты; проверенную выписку записывать в медкарту.</td></tr>
         <tr role="row"><td role="cell">160</td><td role="cell">new · medium · маска названий комбинаций, слой неизвестен</td><td role="cell" class="tag plan">В план: 456</td><td role="cell">Сравнить безопасный пример в строках задания и CSV; не склеивать с #156 заранее.</td></tr>
       </tbody>
@@ -66,7 +66,26 @@
       <li><strong>458 (P1):</strong> воспроизведение scalar-проекции <code>get_clients</code> (#150).</li>
     </ol>
     <p class="note">Все три этапа — <code>supervisor_pending</code>; действующий порядок владельца остаётся 453 → 454. Исходник этой витрины: <code>artifacts/feedback-triage-2026-11-10.md</code>.</p>
-    <footer class="muted"><small>Источники: production DB и контейнер сервиса (read-only), Roadmap, product metrics. Определения и ограничения — в парном Markdown.</small></footer>
+    <section id="product-improvements" aria-labelledby="product-title">
+      <h2 id="product-title">Продуктовые улучшения</h2>
+      <p class="lead">Проверенные агрегаты и пять предложений для дальнейшего исследования. Приоритеты ниже — рекомендации к обсуждению, не утверждённый план реализации. Изменения интерфейса и пользовательского флоу требуют решения владельца.</p>
+      <div class="card">
+        <h3>Проверенные факты</h3>
+        <p>Срез product metrics от 11.11.2026, 01:15 МСК: <strong>45</strong> активных аккаунтов; <strong>37</strong> подключены к Vetmanager; <strong>26</strong> готовы к MCP; <strong>15</strong> из готовых имели успешный auth-запрос за 7 дней. Это снимок разных состояний существующих аккаунтов, а не последовательная когорта регистраций.</p>
+        <p>Report AI за 7 дней: <strong>52 saved</strong>, <strong>9 abandoned_wait</strong>, <strong>6 failed</strong> и <strong>1 existing_report_matched</strong> среди наблюдённых terminal-событий. Создание заданий (65 success, 1 error) и исходы идут из разных потоков; считать по ним conversion rate нельзя. Значения Prometheus <code>increase()</code> округлены до ближайшего события.</p>
+      </div>
+      <h3>Гипотезы и действия для проверки</h3>
+      <div class="tiles" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">
+        <article class="card"><h4>1 · Первый полезный вызов MCP</h4><p><strong>Приоритет: P1.</strong> Факт: 11 из 26 готовых аккаунтов не имели успешного auth-запроса за 7 дней.</p><p><strong>Гипотеза:</strong> ясный следующий шаг после выдачи доступа поможет начать работу.</p><p><strong>Действие:</strong> проверить сценарий до первого read-only запроса; возможный шаг в интерфейсе согласовать отдельно.</p><p><strong>Измерение:</strong> first_use_7d по когорте впервые готовых за неделю, затем сравнение с базовой когортой.</p></article>
+        <article class="card"><h4>2 · Ожидание Report AI</h4><p><strong>Приоритет: P1.</strong> Факт: 9 abandoned_wait и 6 failed среди terminal-событий за 7 дней; этап 455 уже увеличил ожидание до 1800 секунд.</p><p><strong>Гипотеза:</strong> конкретное безопасное продолжение уменьшит уход из ожидания.</p><p><strong>Действие:</strong> собрать event-level когорту created → terminal → save и проверить текущие next_action и polling-подсказки.</p><p><strong>Измерение:</strong> abandoned_wait / terminal outcomes и saved / created только в одной когорте и с явным окном.</p></article>
+        <article class="card"><h4>3 · Обнаружение инструментов и прав</h4><p><strong>Приоритет: P2.</strong> Факт: 9 из 27 feedback-отчётов за 30 дней помечены missing_tool; #158 не подтвердил отсутствие функции.</p><p><strong>Гипотеза:</strong> инструмент бывает скрыт правами или неочевиден по имени.</p><p><strong>Действие:</strong> изучить обезличенные отказы tools/list, различив права, описание и реальный пробел; тексты и scopes согласовать отдельно.</p><p><strong>Измерение:</strong> missing_tool feedback на 1 000 tools/list и обращения к соседнему инструменту; знаменателя пока нет.</p></article>
+        <article class="card"><h4>4 · Доставка known-issue playbook</h4><p><strong>Приоритет: P2.</strong> Факт: три активные issues без валидного playbook (87–89); за доступные 687 часов доставка для failure — 1 из 256 lookup, для caller_mistake — 0 из 13.</p><p><strong>Гипотеза:</strong> корректный playbook уменьшит повторные тупиковые вызовы.</p><p><strong>Действие:</strong> read-only проверить конфигурацию и отдельно решить, добавить проверенное правило или снять активный статус.</p><p><strong>Измерение:</strong> число unreachable active issues и matched deliveries / lookups по kind с указанной глубиной истории.</p></article>
+        <article class="card"><h4>5 · Жизненный цикл доступа</h4><p><strong>Приоритет: P2.</strong> Факт: 23 отказа token_auth_failed_expired за 30 дней; это 0,206 на 1 000 успешных auth-запросов.</p><p><strong>Гипотеза:</strong> понятное продление доступа может предотвратить часть отказов.</p><p><strong>Действие:</strong> разделить revoke, expiry и повторную авторизацию; исследовать существующий сценарий продления.</p><p><strong>Измерение:</strong> expired failures на 1 000 успешных auth-запросов по bearer и OAuth и доля продлений до истечения.</p></article>
+      </div>
+      <p class="note"><strong>Ограничения:</strong> activation — снимок, не когорта; create, terminal и save Report AI не связаны по заданиям; для known-issue delivery доступны 687 из 720 часов; 9/27 — структура feedback без знаменателя вызовов. Наблюдения не доказывают причинность или эффект предложений.</p>
+      <p>Источники и определения: <a href="feedback-triage-product-improvements-2026-11-11.md">Markdown продуктовых улучшений</a> · <a href="feedback-triage-2026-11-10.md">Markdown разбора feedback</a>.</p>
+    </section>
+    <footer class="muted"><small>Источники: production DB и контейнер сервиса (read-only), Roadmap, product metrics и Prometheus. Определения и ограничения — в парных Markdown-источниках.</small></footer>
   </main>
 </body>
 </html>
