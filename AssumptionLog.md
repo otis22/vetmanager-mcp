@@ -170,6 +170,36 @@ PNG в metadata совпадают с сохранёнными файлами vi
 (правило бюджета из AGENTS.md); пока выпускной гейт не заявляется
 пройденным. Структурные проверки Roadmap выполняются перед коммитом.
 
+**Закрытие визуального evidence и committed diff gate.** Дополнение
+`form-proof/manifest.json`: desktop/phone full_page, phone-first и
+видимая заполненная форма; настоящий JS сохранил token_name=452 после
+опроса. Отдельный post-budget Spark прочёл manifest, тексты и три PNG,
+`[]` (`spark-form-proof.stdout.txt`). Последний medium визуального
+ревью закрыт evidence без правок кода; третья сильная пара не запускалась.
+
+Коммит реализации `693e4bf`. Spark committed diff 1/3 прочёл восемь
+профильных файлов, `[]` (`spark-diff.stdout.txt`); этим же scout проверены
+правки после исчерпания PRD-бюджета. Сильный diff gate 1/2,
+15:35:13–15:35:49 UTC, диапазон `9c67399..693e4bf`: Astra `[]`,
+validator exit 0; Opus один medium о полном suite до code commit.
+Принят обязательный полный mock+real до push на окончательном SHA.
+Порядок отличается от старого общего Core Loop (suite до commit):
+применено более конкретное правило AGENTS.md о единственном полном
+прогоне после финальных ревью-правок. Это явно отмечается и в
+self-attestation. Кодовых findings нет; открытых critical/high нет.
+Opus envelope `diff/2026-11-10T153513Z-git_range-9c67399__693e4bf-attempt-1-of-3.awvm10/claude-review-attempt-1-of-3.envelope.json`;
+subtype=success, stop_reason=tool_use, output_tokens=2912,
+thinking_tokens=2389, len(result)=682. Astra result и metadata:
+`diff/astra-1.*`. Все сильные verdict валидны, infrastructure failures 0.
+После этого гейта меняется только эта запись evidence; для неё применяется
+исключение документов CLAUDE.md §5.5. Полный suite будет выполнен на
+следующем документальном SHA перед push, без последующих правок файлов.
+
+Read-only исходный контроль production до выпуска: healthz=200 ok,
+readyz=200/storage ok, /account без сессии=303, activation-status без
+сессии=401 (`production-before.json`). Это исходное состояние, не
+пост-релизная приёмка. Сессия аккаунта 53 не извлекалась.
+
 ## Этап 448. Аварийный billing fallback — 2026-10-30
 
 **Проверка владельца после Deploy Prod `2f63184`.** Из `mcp`, `mcp2`, `mcp3`
