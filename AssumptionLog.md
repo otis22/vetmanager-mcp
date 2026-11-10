@@ -22345,3 +22345,26 @@ HTTP 200, переходы туда/обратно работают, 19 отчё
 `main-{desktop,phone}-full.png`, первые экраны телефона обеих страниц.
 Рекомендации остаются гипотезами; изменения текста/флоу будущего продукта
 требуют решения владельца через куратора.
+
+**Финальное committed diff-ревью журнала `74205ed..cd199e9`.** Spark прочёл
+журнал, HTML, оба Markdown и внешние evidence-файлы, `findings=[]`;
+evidence: `/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev5/spark-final.{prompt,stdout,stderr}.txt`.
+Astra 22:41:55–22:42:39Z: валидные `findings=[]`, validator exit 0;
+evidence: `/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev5/astra-final.{prompt.txt,result.json,stderr.txt,metadata.json}`.
+Opus: валидный verdict с двумя findings, общих findings нет;
+`subtype=success`, `stop_reason=tool_use`, `output_tokens=1151`,
+`thinking_tokens=731`, `len(result)=1101`; envelope:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev5/opus-final/2026-11-10T224155Z-git_range-74205edefdb2e2e49a574807c5daee1cbf655075__cd199e9d2b7274ea5fc7a73224b4-attempt-1-of-3.7E1I5L/claude-review-attempt-1-of-3.envelope.json`.
+High о публикации URL отклонён: это намеренно публичные HTTP-страницы,
+адреса уже были в публичных артефактах и поручение требует сохранить точные
+URL; адрес не является внутренним endpoint или секретом доступа. Medium об
+отсутствии воспроизводимого evidence проверки приватности принят: сохранён
+список трёх проверенных файлов, их SHA-256, применённые regex и нулевые
+совпадения в `/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev5/privacy-check.json`.
+Визуальная проверка была прямым Chromium-прогоном опубликованных страниц;
+специальная матрица состояний кабинета не применяется к статической витрине.
+Сильный бюджет committed diff: Astra 2/2, Opus 2/2; блокирующих адекватных
+findings нет. После текстовой правки `python3 scripts/check_roadmap_structure.py`,
+`git diff --check` и проверка JSON evidence прошли (exit 0). Отдельный
+Spark-scout прочёл AssumptionLog и evidence, `findings=[]`; evidence:
+`/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev5/spark-scout.{prompt,stdout,stderr}.txt`.
