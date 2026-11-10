@@ -15,23 +15,23 @@
   <main class="page">
     <header>
       <h1>vetmanager-mcp · разбор feedback-очереди</h1>
-      <p class="muted">Повторный срез: 10.11.2026, 23:41 МСК · read-only · внешние статусы и ответы не менялись</p>
+      <p class="muted">Срез: 11.11.2026, 00:47 МСК · #137 закрыт; ответы #155, #157 и #158 не отправлены</p>
     </header>
     <p class="lead">Рабочая витрина из Markdown-источника: технические ID, доказательства и предложенный исход. Свободные тексты, параметры и данные клиник не включены.</p>
     <nav aria-label="Другие страницы"><a href="/mcp-dashboard-6bc06296/">← Основной дашборд</a></nav>
     <nav aria-label="Разделы страницы"><a href="#summary">Итог разбора</a><a href="#decisions">Все обращения</a><a href="#roadmap">Что взято в план</a></nav>
     <section class="tiles" aria-label="Сводные показатели">
       <div class="tile"><div class="label">Всего feedback</div><div class="n">159</div><small>все отчёты</small></div>
-      <div class="tile"><div class="label">Очередь triage</div><div class="n">19</div><small>11 new + 8 triaged</small></div>
+      <div class="tile"><div class="label">Очередь triage</div><div class="n">18</div><small>11 new + 7 triaged</small></div>
       <div class="tile"><div class="label">High в очереди</div><div class="n">5</div><small>приоритет разбора</small></div>
       <div class="tile"><div class="label">Новые этапы</div><div class="n">3</div><small>все supervisor_pending</small></div>
     </section>
     <section class="card" id="summary">
       <h2>Что произошло при разборе</h2>
       <ul>
-        <li>19 открытых технических ID не изменились между 23:20 и 23:41 МСК; KI-34 — <code>wontfix</code>, KI-80 — <code>fixed</code>, KI-81 и KI-82 — <code>acknowledged</code>.</li>
+        <li>До закрытия 19 ID не изменились между 23:20 и 23:41 МСК. После штатного закрытия #137 его статус — <code>linked</code>, KI-82 — <code>fixed</code>; в очереди осталось 18 ID.</li>
         <li>Этап 455 выпущен, но исправляет лимит периодного чтения и ожидание Report AI, а не маскировку #156/#160.</li>
-        <li>Закрытие предложено только для #137. #135 и #136 остались спорными: без адресной живой проверки они не закрываются.</li>
+        <li>#137 закрыт и подтверждён повторным чтением production. #135 и #136 остались спорными: без адресной живой проверки они не закрываются. Ответы по #155, #157 и #158 не доставлены: у штатного feedback-канала нет адресного ответа.</li>
       </ul>
     </section>
     <h2 id="decisions">Решение по каждому ID</h2>
@@ -45,7 +45,7 @@
         <tr role="row"><td role="cell">102</td><td role="cell">triaged · medium · отказ без кода и воспроизведения</td><td role="cell" class="tag debate">Спорное</td><td role="cell">Нужен безопасный повтор с кодом; сначала узкий маршрут store-documents.</td></tr>
         <tr role="row"><td role="cell">135</td><td role="cell">triaged · medium · KI-80=fixed, но live-повтор не приложен</td><td role="cell" class="tag debate">Спорное</td><td role="cell">Используйте daily summary либо compact/fields.</td></tr>
         <tr role="row"><td role="cell">136</td><td role="cell">triaged · medium · KI-81=acknowledged; JSON-разбор есть, живой формы нет</td><td role="cell" class="tag debate">Спорное</td><td role="cell">Перед внешним закрытием проверим безопасную запись.</td></tr>
-        <tr role="row"><td role="cell">137</td><td role="cell">triaged · low · служебная фраза сохранена без маски</td><td role="cell" class="tag close">Решено — закрыть</td><td role="cell">Ложное срабатывание устранено.</td></tr>
+        <tr role="row"><td role="cell">137</td><td role="cell">linked · low · KI-82=fixed; служебная фраза сохранена без маски</td><td role="cell" class="tag close">Закрыто</td><td role="cell">Ложное срабатывание устранено.</td></tr>
         <tr role="row"><td role="cell">150</td><td role="cell">new · medium · scalar projection ломается, compact проходит</td><td role="cell" class="tag plan">В план: 458</td><td role="cell">Временно <code>compact=true</code>; проверим shape drift без снятия защиты.</td></tr>
         <tr role="row"><td role="cell">151</td><td role="cell">new · medium · понятный payment intent отклонён без уточнения</td><td role="cell" class="tag plan">В план: 457</td><td role="cell">Не повторять создание автоматически; сохранить job ID и проверить результат прямым чтением.</td></tr>
         <tr role="row"><td role="cell">152</td><td role="cell">new · medium · распознавание добавило незаданные условия; уточнение помогло</td><td role="cell" class="tag plan">В план: 457</td><td role="cell">Проверять ограничения до сохранения; явно задать смысл филиала, города и авансов.</td></tr>
