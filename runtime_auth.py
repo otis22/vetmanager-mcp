@@ -13,8 +13,8 @@ from bearer_auth import resolve_bearer_auth_context
 from bearer_token_manager import hash_bearer_token
 from domain_validation import ip_matches_mask, validate_domain as _validate_domain
 from exceptions import AuthError, RateLimitError
-from oauth_metadata import get_mcp_resource_url
 from oauth_challenge import oauth_challenge_details
+from mcp_bearer_transport import oauth_access_invalid, oauth_grant_client_invalid, service_token_invalid
 from oauth_service import OAUTH_ACCESS_TOKEN_PREFIX, get_effective_oauth_tool_scopes_for_preset
 from request_auth import get_bearer_token
 from secret_manager import get_storage_encryption_key
@@ -28,8 +28,6 @@ from storage import get_session_factory
 from storage_models import (
     ACCOUNT_STATUS_ACTIVE,
     CONNECTION_STATUS_ACTIVE,
-    OAUTH_STATUS_ACTIVE,
-    TOKEN_STATUS_DISABLED,
     Account,
     OAuthAccessToken,
     OAuthClient,
@@ -189,18 +187,13 @@ async def peek_runtime_scopes() -> tuple[str, ...] | None:
                     OAuthAccessToken.token_hash == hash_bearer_token(raw_token)
                 )
             )
-            if access_token is None or access_token.status != OAUTH_STATUS_ACTIVE:
-                return None
-            expires_at = access_token.expires_at
-            if expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=timezone.utc)
-            if expires_at <= now or access_token.resource != get_mcp_resource_url():
+            if oauth_access_invalid(access_token, now):
                 return None
             grant = await session.get(OAuthGrant, access_token.grant_id)
-            if grant is None or grant.status != OAUTH_STATUS_ACTIVE:
+            if grant is None:
                 return None
             client = await session.scalar(select(OAuthClient).where(OAuthClient.client_id == grant.client_id))
-            if client is None or client.status != OAUTH_STATUS_ACTIVE:
+            if oauth_grant_client_invalid(grant, client):
                 return None
             account = await session.get(Account, grant.account_id)
             if account is None or account.status != ACCOUNT_STATUS_ACTIVE:
@@ -224,9 +217,7 @@ async def peek_runtime_scopes() -> tuple[str, ...] | None:
                 ServiceBearerToken.token_hash == hash_bearer_token(raw_token)
             )
         )
-        if token is None or token.is_revoked() or token.is_expired(now=now):
-            return None
-        if token.status == TOKEN_STATUS_DISABLED:
+        if service_token_invalid(token, now):
             return None
         account = await session.get(Account, token.account_id)
         if account is None or account.status != ACCOUNT_STATUS_ACTIVE:
@@ -259,21 +250,14 @@ async def _resolve_oauth_runtime_credentials(raw_token: str) -> RuntimeCredentia
         )
         if access_token is None:
             raise _invalid_oauth_token_error()
-        expires_at = access_token.expires_at
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if (
-            access_token.status != OAUTH_STATUS_ACTIVE
-            or expires_at <= now
-            or access_token.resource != get_mcp_resource_url()
-        ):
+        if oauth_access_invalid(access_token, now):
             raise _invalid_oauth_token_error()
 
         grant = await session.get(OAuthGrant, access_token.grant_id)
-        if grant is None or grant.status != OAUTH_STATUS_ACTIVE:
+        if grant is None:
             raise _invalid_oauth_token_error()
         client = await session.scalar(select(OAuthClient).where(OAuthClient.client_id == grant.client_id))
-        if client is None or client.status != OAUTH_STATUS_ACTIVE:
+        if oauth_grant_client_invalid(grant, client):
             raise _invalid_oauth_token_error()
         account = await session.get(Account, grant.account_id)
         if account is None or account.status != ACCOUNT_STATUS_ACTIVE:

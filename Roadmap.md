@@ -47,7 +47,7 @@
 - 453.2 Проверить приёмку: по account_id и окну времени за минуту видно,
   были ли handshake и чем они закончились. — `done`
 
-## Этап 454. HTTP 401 + WWW-Authenticate на невалидный или истёкший bearer — `todo`
+## Этап 454. HTTP 401 + WWW-Authenticate на невалидный или истёкший bearer — `done`
 
 Источник: воспроизведение 09.11.2026 с несуществующим bearer: initialize и
 tools/list отвечают 200, whoami — 200 с result.isError=true; challenge
@@ -55,10 +55,10 @@ tools/list отвечают 200, whoami — 200 с result.isError=true; challeng
 Перед реализацией сверить транспортный контракт с MCP Authorization 2025-11-25.
 
 - 454.1 PRD и исправление транспортного отказа: HTTP 401 с
-  WWW-Authenticate при невалидном или истёкшем bearer. — `todo`
+  WWW-Authenticate при невалидном или истёкшем bearer. — `done`
 - 454.2 Проверить автоматическое обновление истёкшего OAuth access при
   живом refresh и повтор read-запроса; совместимость постоянных ключей,
-  текущих клиентов и публичного discovery. — `todo`
+  текущих клиентов и публичного discovery. — `done`
 
 ## Этап 451. Report AI: 403 с кодом FORBIDDEN уходит агенту как unknown (PYTHON-1C) — `done`
 

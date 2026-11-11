@@ -11,10 +11,7 @@ def build_oauth_bearer_challenge(
     error: str | None = None,
     error_description: str | None = None,
 ) -> str:
-    parts = [
-        "Bearer",
-        f'resource_metadata="{get_protected_resource_metadata_url()}"',
-    ]
+    parts = [f'resource_metadata="{get_protected_resource_metadata_url()}"']
     if scope:
         parts.append(f'scope="{scope}"')
     if error:
@@ -22,7 +19,7 @@ def build_oauth_bearer_challenge(
     if error_description:
         safe_description = error_description.replace('"', "'")
         parts.append(f'error_description="{safe_description}"')
-    return " ".join(parts)
+    return "Bearer " + ", ".join(parts)
 
 
 def oauth_challenge_details(

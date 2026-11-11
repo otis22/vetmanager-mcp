@@ -32,6 +32,7 @@ from vetmanager_client import reset_breakers, reset_shared_http_client
 from web import register_web_routes
 from request_context import RequestContextHeaderMiddleware
 from mcp_transport_observation import MCPTransportObservationMiddleware
+from mcp_bearer_transport import MCPBearerTransportMiddleware
 from request_cache import REQUEST_CACHE, _slot_identity
 import shared_metric_counters
 from service_metrics import record_report_ai_rating_purge
@@ -284,7 +285,9 @@ def _run_http_server(*, transport: str, host: str, port: int, path: str,
     # Этап 289.4: ответы /mcp должны нести идентификатор запроса — иначе
     # клиенту (и нашему смоуку) нечем связать свой отказ с нашим журналом.
     served_app = RequestContextHeaderMiddleware(
-        MCPTransportObservationMiddleware(WriteAdmissionMiddleware(app), path=path))
+        MCPTransportObservationMiddleware(
+            MCPBearerTransportMiddleware(WriteAdmissionMiddleware(app), path=path),
+            path=path))
     if hasattr(signal, "SIGUSR1"):
         signal.signal(signal.SIGUSR1, lambda _sig, _frame: request_drain_from_signal())
     if streamable and hasattr(signal, "SIGUSR2"):
