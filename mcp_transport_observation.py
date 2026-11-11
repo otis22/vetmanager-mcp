@@ -266,6 +266,7 @@ class MCPTransportObservationMiddleware:
             return await receive()
 
         status = None
+        response_complete = False
         body = bytearray()
         rpc_body = bytearray()
         pending_start = None
@@ -278,7 +279,7 @@ class MCPTransportObservationMiddleware:
                                           status_code=message["status"])
 
         async def observed_send(message) -> None:
-            nonlocal status, pending_start, pending_bytes
+            nonlocal status, response_complete, pending_start, pending_bytes
             if message["type"] == "http.response.start":
                 status = message["status"]
                 if status == 404:
@@ -331,9 +332,11 @@ class MCPTransportObservationMiddleware:
                     digest = _bearer_digest(scope)
                     if digest:
                         record_mcp_session_retry(digest)
+            if not message.get("more_body", False):
+                response_complete = True
 
         await self.app(scope, replay_receive, observed_send)
-        if handshake is not None and status is not None:
+        if handshake is not None and status is not None and response_complete:
             rpc_method, protocol_version, request_reason = handshake
             outcome, reason = _handshake_outcome(status, bytes(rpc_body))
             auth_source, token = _handshake_auth(scope.get("headers", ()))

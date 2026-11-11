@@ -219,3 +219,25 @@ async def test_slow_lookup_does_not_hold_response_and_times_out(monkeypatch, cap
         assert _events(caplog) == []
         await observation.wait_handshake_observations()
     assert (_events(caplog)[0].auth_outcome, _events(caplog)[0].account_id) == ("lookup_failed", None)
+
+
+@pytest.mark.asyncio
+async def test_incomplete_response_is_not_logged_as_completed_handshake(caplog):
+    sent = []
+
+    async def receive():
+        return {"type": "http.request", "body": INIT, "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    async def app(_scope, _receive, send_response):
+        await send_response({"type": "http.response.start", "status": 200, "headers": []})
+        await send_response({"type": "http.response.body", "body": b"partial", "more_body": True})
+
+    scope = {"type": "http", "path": "/mcp", "method": "POST", "headers": []}
+    with caplog.at_level(logging.INFO):
+        await RequestContextHeaderMiddleware(observation.MCPTransportObservationMiddleware(app))(
+            scope, receive, send)
+    assert sent[0]["status"] == 200
+    assert _events(caplog) == []
