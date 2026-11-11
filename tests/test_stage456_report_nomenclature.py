@@ -114,6 +114,19 @@ def test_value_level_privacy_in_neutral_and_nomenclature_columns():
         "ПЕТРОВ АС",
         "Ivanov Petr Sergeevich",
         "Петров-Водкин Пётр Сергеевич",
+        "Шапочка И. И.",
+        "Рентген В. К.",
+        "Шапочка Иван",
+        "Шапочка Иван Сергеевич",
+        "Анестезия И. И.",
+        "Шапочка Джон Смит",
+        "Рентген Джон Смит",
+        "РЕНТГЕН Джон Смит",
+        "Шапочка ДЖОН СМИТ",
+        "Обработка И. И.",
+        "Петрова НА",
+        "Иванов РМ",
+        "Сидоров ОТ",
     )
     for value in synthetic_names + (PHONE,):
         for column in ("Значение", "Наименование"):
@@ -133,6 +146,8 @@ def test_streaming_csv_masks_value_level_pii_under_neutral_headers(tmp_path, mon
     writer.writerow([FIO, PHONE])
     writer.writerow(["Иванов ИИ", "Ivanov IV"])
     writer.writerow([f"Рентген {FIO}, тел. {PHONE}", "Шапочка Иванов Пётр Сергеевич"])
+    writer.writerow(["Шапочка И. И.", "Рентген В. К."])
+    writer.writerow(["Шапочка Иван", "Шапочка Иван Сергеевич"])
     monkeypatch.setenv("REPORT_EXPORT_DIR", str(tmp_path))
     monkeypatch.setenv("WEB_SESSION_SECRET", "stage-456-synthetic-test-secret")
     report_export.reset_link_key_cache()
@@ -149,6 +164,8 @@ def test_streaming_csv_masks_value_level_pii_under_neutral_headers(tmp_path, mon
         [REDACTED_NAME, REDACTED_PHONE],
         [REDACTED_NAME, REDACTED_NAME],
         [f"Рентген {REDACTED_NAME}, тел. {REDACTED_PHONE}", f"Шапочка {REDACTED_NAME}"],
+        [REDACTED_NAME, REDACTED_NAME],
+        [REDACTED_NAME, REDACTED_NAME],
     ]
 
 
@@ -173,6 +190,8 @@ def test_plain_nonreport_text_still_masks_personal_values():
     assert sanitize_tool_result({"description": f"Владелец {FIO}, тел. {PHONE}"}) == {
         "description": f"owner {REDACTED_NAME}, тел. {REDACTED_PHONE}"
     }
+    for value in ("Шапочка И. И.", "Рентген В. К.", "Анестезия И. И."):
+        assert sanitize_tool_result({"description": value}) == {"description": REDACTED_NAME}
 
 
 def test_numeric_matrix_preserves_decimal_value_and_phone_boundary():

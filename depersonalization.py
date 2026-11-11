@@ -232,13 +232,6 @@ _ADDRESS_RE = re.compile(
 _MARKER_WORDS = frozenset({
     # instructions and field labels, not people
     "без", "фио",
-    # Report AI stage 456: standalone service/product words and technical codes
-    # can look like name triples or surname+initials. Only the matched span is
-    # skipped; a following personal name is still considered by overlapping
-    # triples and the given-name pair pass.
-    "на", "от", "использование", "рентген", "анестезия", "шапочка",
-    "стационарные", "мелоксиветом", "обработка", "тест-экспресс",
-    "панлейкопению", "овг", "цвк", "рм", "dhppi",
     # legal forms
     "ооо", "зао", "пао", "ао", "нко", "ано", "ип", "пк", "фгбу", "гбу", "муп",
     "llc", "ltd", "inc",
@@ -248,6 +241,23 @@ _MARKER_WORDS = frozenset({
     # saints and holidays
     "святой", "святая", "преподобный", "блаженный", "день",
 })
+# Report-only technical words can occur in a product triple. They must not
+# suppress the general surname+initials and known given-name rules.
+_REPORT_TECHNICAL_WORDS = frozenset({
+    "на", "от", "использование", "рентген", "анестезия", "шапочка",
+    "стационарные", "мелоксиветом", "обработка", "тест-экспресс",
+    "панлейкопению", "овг", "цвк", "рм", "dhppi",
+})
+_REPORT_TECHNICAL_INITIALS = {
+    "dhppi": frozenset({"LR"}),
+    "рм": frozenset({"НА"}),
+    "мелоксиветом": frozenset({"OR"}),
+    "обработка": frozenset({"ОТ"}),
+    "стационарные": frozenset({"РМ"}),
+    "тест-экспресс": frozenset({"НА"}),
+    "панлейкопению": frozenset({"AГ"}),
+    "анестезия": frozenset({"II", "IV"}),
+}
 # Place words also block the pair that follows them: a street really is named
 # by what comes after the word `улица`, so one step back is honest here. No
 # such step for organisations — after `Ветклиника` there can be a name or a
@@ -320,6 +330,25 @@ def _redact_full_names(text: str) -> str:
             continue
         if any(_fold(word) in _MARKER_WORDS for word in words):
             continue
+        tail = text[end:]
+        next_word = tail.split(maxsplit=1)[0] if tail and tail[0].isspace() and tail.split() else ""
+        technical_prefix_before_name = (
+            any(_fold(word) in _REPORT_TECHNICAL_WORDS for word in words[:2])
+            and not _is_given_name(words[1])
+            and (_is_given_name(words[2]) or _is_given_name(next_word))
+        )
+        technical_nomenclature = (
+            not any(_is_given_name(word) for word in words)
+            and any(_fold(word) in _REPORT_TECHNICAL_WORDS for word in words)
+            and (
+                all(word.isupper() for word in words)
+                or (_fold(words[1]) in _REPORT_TECHNICAL_WORDS
+                    and (words[2].isupper()
+                         or (words[0].isupper() and len(words[0]) <= 3)))
+            )
+        )
+        if technical_prefix_before_name or technical_nomenclature:
+            continue
         parts.extend((text[position:start], REDACTED_NAME))
         position = end
     parts.append(text[position:])
@@ -330,6 +359,13 @@ def _redact_initials(match: re.Match[str]) -> str:
     if _fold(match.group(0).split()[0]) in _MARKER_WORDS:
         return match.group(0)
     return REDACTED_NAME
+
+
+def _redact_report_initials(match: re.Match[str]) -> str:
+    first, code = match.group(0).split(maxsplit=1)
+    if "." not in code and code in _REPORT_TECHNICAL_INITIALS.get(_fold(first), ()):
+        return match.group(0)
+    return _redact_initials(match)
 
 
 def _normalize_soft_punctuation(text: str) -> str:
@@ -599,7 +635,7 @@ def sanitize_report_value(text: str) -> str:
     if not _STREET_MARKER_RE.search(cleaned):
         cleaned = _redact_full_names(cleaned)
         cleaned = _PATRONYMIC_RE.sub(REDACTED_NAME, cleaned)
-        cleaned = _INITIALS_RE.sub(_redact_initials, cleaned)
+        cleaned = _INITIALS_RE.sub(_redact_report_initials, cleaned)
 
     # Stage 277 stands outside the street guard on purpose: it carries its own,
     # which looks at the pair rather than at the whole value.
@@ -616,7 +652,7 @@ def sanitize_report_column_name(text: str) -> str:
     """Generated labels are arbitrary text, so street-marker exemptions cannot hide a name."""
     cleaned = _redact_full_names(sanitize_report_value(text))
     cleaned = _PATRONYMIC_RE.sub(REDACTED_NAME, cleaned)
-    return _INITIALS_RE.sub(_redact_initials, cleaned)
+    return _INITIALS_RE.sub(_redact_report_initials, cleaned)
 
 
 def sanitize_report_cell(column: str, value: str) -> str:
