@@ -18,6 +18,7 @@ from observability_logging import RUNTIME_LOGGER
 
 COUNTERS_KEY = "vetmanager:metrics:v1:counters"
 MCP_TRANSPORT_COUNTERS_KEY = "vetmanager:metrics:v1:mcp-transport-rejections"
+MCP_HANDSHAKE_COUNTERS_KEY = "vetmanager:metrics:v1:mcp-handshake"
 OAUTH_TOKEN_ERRORS_KEY = "vetmanager:metrics:v1:oauth-token-errors"
 OAUTH_STALE_REFRESH_KEY = "vetmanager:metrics:v1:oauth-stale-refresh"
 REPORT_AI_RATING_REMINDERS_KEY = "vetmanager:metrics:v1:report-ai-rating-reminders"
@@ -54,7 +55,7 @@ SHARED_LATENCY_FAMILIES = frozenset({
     "report_ai_job_duration_seconds", "report_ai_export_duration_seconds",
 })
 SHARED_COUNTER_FAMILIES = frozenset({
-    "http_requests_total", "mcp_transport_rejections_total", "mcp_session_retries_total", "auth_failures_total", "upstream_failures_total",
+    "http_requests_total", "mcp_transport_rejections_total", "mcp_handshake_total", "mcp_session_retries_total", "auth_failures_total", "upstream_failures_total",
     "upstream_requests_total", "tool_calls_total", "sentry_delivery_lost_total",
     "sentry_delivery_accepted_total", "known_issue_lookups_total",
     "prompt_requests_total", "token_expiry_notice_issued_total",
@@ -152,6 +153,9 @@ class RedisMetricCounters:
             # Old slots do not know this family and reject unknown fields in
             # COUNTERS_KEY. A separate key keeps mixed-version rollout safe.
             self._redis.hincrby(MCP_TRANSPORT_COUNTERS_KEY, label_key, count)
+            return
+        if family == "mcp_handshake_total":
+            self._redis.hincrby(MCP_HANDSHAKE_COUNTERS_KEY, label_key, count)
             return
         if family == "oauth_token_errors_total":
             self._redis.hincrby(OAUTH_TOKEN_ERRORS_KEY, label_key, count)
@@ -781,6 +785,10 @@ class RedisMetricCounters:
             result["mcp_transport_rejections_total"] = {
                 label_key: int(value)
                 for label_key, value in self._redis.hgetall(MCP_TRANSPORT_COUNTERS_KEY).items()
+            }
+            result["mcp_handshake_total"] = {
+                label_key: int(value)
+                for label_key, value in self._redis.hgetall(MCP_HANDSHAKE_COUNTERS_KEY).items()
             }
             result["oauth_token_errors_total"] = {
                 label_key: int(value)

@@ -391,6 +391,21 @@ def record_mcp_transport_rejection(*, status_code: int, reason: str) -> None:
                            f"{status_code}|{bounded_reason}")
 
 
+def record_mcp_handshake(*, method: str, auth_source: str,
+                         auth_outcome: str, outcome: str) -> None:
+    """Count a handshake with closed, account-free labels."""
+    if method not in {"initialize", "tools/list", "unknown"}:
+        method = "unknown"
+    if auth_source not in {"service_bearer", "oauth_access", "none", "other"}:
+        auth_source = "other"
+    if auth_outcome not in {"matched", "unmatched", "absent", "lookup_failed"}:
+        auth_outcome = "lookup_failed"
+    if outcome not in {"success", "rpc_error", "http_4xx", "http_5xx", "other"}:
+        outcome = "other"
+    _record_shared_counter("mcp_handshake_total",
+                           f"{method}|{auth_source}|{auth_outcome}|{outcome}")
+
+
 def record_mcp_session_retry(identity_digest: str) -> None:
     """Best-effort shared repeat count, without a client label or raw identity."""
     try:
@@ -982,6 +997,7 @@ def snapshot_service_metrics() -> dict[str, dict[str, int | float | dict[str, in
                 for (route, method, status_code), count in sorted(_HTTP_REQUESTS_TOTAL.items())
             },
             "mcp_transport_rejections_total": {},
+            "mcp_handshake_total": {},
             "mcp_session_retries_total": 0,
             "http_request_latency_seconds": {
                 f"{route}|{method}": asdict(aggregate)
@@ -1130,6 +1146,8 @@ def render_prometheus_metrics() -> str:
         "# TYPE vetmanager_http_requests_total counter",
         "# HELP vetmanager_mcp_transport_rejections_total Completed MCP transport rejections by HTTP status and bounded reason; session_not_found may also hide a credential mismatch.",
         "# TYPE vetmanager_mcp_transport_rejections_total counter",
+        "# HELP vetmanager_mcp_handshake_total MCP handshake attempts by bounded method, auth source, attribution and outcome; no account label.",
+        "# TYPE vetmanager_mcp_handshake_total counter",
         "# HELP vetmanager_mcp_session_retries_total Repeated session_not_found rejections for the same presented bearer within 24 hours; aggregate only.",
         "# TYPE vetmanager_mcp_session_retries_total counter",
     ]
@@ -1151,6 +1169,12 @@ def render_prometheus_metrics() -> str:
         lines.append(
             f"vetmanager_mcp_transport_rejections_total"
             f"{_labels_text(status_code=status_code, reason=reason)} {value}"
+        )
+    for key, value in snapshot["mcp_handshake_total"].items():
+        method, source, attribution, outcome = key.split("|", 3)
+        lines.append(
+            "vetmanager_mcp_handshake_total"
+            f"{_labels_text(method=method, auth_source=source, auth_outcome=attribution, outcome=outcome)} {value}"
         )
     lines.append(f"vetmanager_mcp_session_retries_total {snapshot['mcp_session_retries_total']}")
 
