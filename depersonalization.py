@@ -232,6 +232,13 @@ _ADDRESS_RE = re.compile(
 _MARKER_WORDS = frozenset({
     # instructions and field labels, not people
     "без", "фио",
+    # Report AI stage 456: standalone service/product words and technical codes
+    # can look like name triples or surname+initials. Only the matched span is
+    # skipped; a following personal name is still considered by overlapping
+    # triples and the given-name pair pass.
+    "на", "от", "использование", "рентген", "анестезия", "шапочка",
+    "стационарные", "мелоксиветом", "обработка", "тест-экспресс",
+    "панлейкопению", "овг", "цвк", "рм", "dhppi",
     # legal forms
     "ооо", "зао", "пао", "ао", "нко", "ано", "ип", "пк", "фгбу", "гбу", "муп",
     "llc", "ltd", "inc",
