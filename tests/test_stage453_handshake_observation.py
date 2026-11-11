@@ -241,3 +241,14 @@ async def test_incomplete_response_is_not_logged_as_completed_handshake(caplog):
             scope, receive, send)
     assert sent[0]["status"] == 200
     assert _events(caplog) == []
+
+
+@pytest.mark.asyncio
+async def test_single_oversized_chunk_is_observed_without_request_values(caplog):
+    payload = b"P" * 65537
+    with caplog.at_level(logging.INFO):
+        sent, _ = await _exchange(payload, status=400)
+    assert sent[0]["status"] == 400
+    event = _events(caplog)[0]
+    assert (event.rpc_method, event.reason) == ("unknown", "body_too_large")
+    assert "P" * 100 not in str(event.__dict__)

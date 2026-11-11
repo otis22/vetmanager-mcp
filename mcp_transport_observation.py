@@ -93,10 +93,10 @@ def _bearer_digest(scope) -> str | None:
 
 
 def _handshake_request(body: bytes, headers, *, complete: bool, oversized: bool):
-    if complete and not body:
-        return None
     if oversized:
         return "unknown", "unknown", "body_too_large"
+    if complete and not body:
+        return None
     if not complete:
         return "unknown", "unknown", "body_not_read"
     try:
