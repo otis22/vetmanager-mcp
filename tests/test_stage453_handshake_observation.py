@@ -25,7 +25,8 @@ def _enable_runtime_log_after_migration_tests(monkeypatch):
     monkeypatch.setattr(observation.RUNTIME_LOGGER.logger, "disabled", False)
 
 
-async def _exchange(body, *, status=200, headers=(), chunks=None, response=None, read=False):
+async def _exchange(body, *, status=200, headers=(), chunks=None, response=None, read=False,
+                    wait=True):
     seen = []
     request_parts = chunks or [body]
     queue = [{"type": "http.request", "body": part, "more_body": i < len(request_parts)-1}
@@ -53,7 +54,8 @@ async def _exchange(body, *, status=200, headers=(), chunks=None, response=None,
     scope = {"type": "http", "path": "/mcp", "method": "POST", "headers": headers}
     await RequestContextHeaderMiddleware(observation.MCPTransportObservationMiddleware(app))(
         scope, receive, send)
-    await observation.wait_handshake_observations()
+    if wait:
+        await observation.wait_handshake_observations()
     return sent, seen
 
 
@@ -181,3 +183,39 @@ async def test_empty_post_is_not_claimed_as_a_handshake(monkeypatch, caplog):
         await _exchange(b"", status=400,
                         headers=[(b"authorization", b"Bearer " + TOKEN.encode())])
     assert _events(caplog) == []
+
+
+@pytest.mark.asyncio
+async def test_deep_json_keeps_transport_response_and_bounded_event(caplog):
+    nested = b"[" * 10000 + b"0" + b"]" * 10000
+    with caplog.at_level(logging.INFO):
+        sent, _ = await _exchange(nested, status=400)
+    assert sent[0]["status"] == 400
+    assert (_events(caplog)[0].rpc_method, _events(caplog)[0].reason) == ("unknown", "invalid_request")
+
+
+@pytest.mark.asyncio
+async def test_runtime_accepted_bearer_whitespace_is_attributed(monkeypatch, caplog):
+    async def lookup(token, source):
+        assert token == TOKEN and source == "service_bearer"
+        return 73
+    monkeypatch.setattr(observation, "_lookup_handshake_account", lookup)
+    with caplog.at_level(logging.INFO):
+        await _exchange(INIT, headers=[(b"authorization", b"Bearer  " + TOKEN.encode())])
+    event = _events(caplog)[0]
+    assert (event.auth_source, event.auth_outcome, event.account_id) == ("service_bearer", "matched", 73)
+
+
+@pytest.mark.asyncio
+async def test_slow_lookup_does_not_hold_response_and_times_out(monkeypatch, caplog):
+    async def slow_lookup(*_args):
+        await asyncio.sleep(.5)
+        return 73
+    monkeypatch.setattr(observation, "_lookup_handshake_account", slow_lookup)
+    with caplog.at_level(logging.INFO):
+        sent, _ = await _exchange(INIT, headers=[(b"authorization", b"Bearer " + TOKEN.encode())],
+                                  wait=False)
+        assert sent[0]["status"] == 200
+        assert _events(caplog) == []
+        await observation.wait_handshake_observations()
+    assert (_events(caplog)[0].auth_outcome, _events(caplog)[0].account_id) == ("lookup_failed", None)

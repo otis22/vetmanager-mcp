@@ -101,7 +101,7 @@ def _handshake_request(body: bytes, headers, *, complete: bool, oversized: bool)
         return "unknown", "unknown", "body_not_read"
     try:
         payload = json.loads(body)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, RecursionError):
         return "unknown", "unknown", "invalid_request"
     if not isinstance(payload, dict):
         return "unknown", "unknown", "invalid_request"
@@ -124,8 +124,8 @@ def _handshake_auth(headers):
         return "none", None
     if len(values) != 1 or not values[0].lower().startswith(b"bearer "):
         return "other", None
-    token = values[0][7:]
-    if not 7 < len(token) <= 512 or any(c < 33 or c > 126 for c in token):
+    token = values[0][7:].strip()
+    if not token or len(token) > 512 or any(c < 33 or c > 126 for c in token):
         return "other", None
     value = token.decode("ascii")
     return ("oauth_access" if value.startswith(OAUTH_ACCESS_TOKEN_PREFIX)
