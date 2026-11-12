@@ -244,7 +244,7 @@ _MARKER_WORDS = frozenset({
 # Report-only technical words can occur in a product triple. They must not
 # suppress the general surname+initials and known given-name rules.
 _REPORT_TECHNICAL_WORDS = frozenset({
-    "на", "от", "использование", "рентген", "анестезия", "шапочка",
+    "на", "от", "использование", "рентген", "серия", "анестезия", "шапочка",
     "стационарные", "мелоксиветом", "обработка", "тест-экспресс",
     "панлейкопению", "овг", "цвк", "рм", "dhppi",
 })
@@ -340,12 +340,9 @@ def _redact_full_names(text: str) -> str:
         technical_nomenclature = (
             not any(_is_given_name(word) for word in words)
             and any(_fold(word) in _REPORT_TECHNICAL_WORDS for word in words)
-            and (
-                all(word.isupper() for word in words)
-                or (_fold(words[1]) in _REPORT_TECHNICAL_WORDS
-                    and (words[2].isupper()
-                         or (words[0].isupper() and len(words[0]) <= 3)))
-            )
+            and _fold(words[1]) in _REPORT_TECHNICAL_WORDS
+            and (words[2].isupper()
+                 or (words[0].isupper() and len(words[0]) <= 3))
         )
         if technical_prefix_before_name or technical_nomenclature:
             continue

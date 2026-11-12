@@ -123,6 +123,8 @@ def test_value_level_privacy_in_neutral_and_nomenclature_columns():
         "Рентген Джон Смит",
         "РЕНТГЕН Джон Смит",
         "Шапочка ДЖОН СМИТ",
+        "РЕНТГЕН ДЖОН СМИТ",
+        "ШАПОЧКА ДЖОН СМИТ",
         "Обработка И. И.",
         "Петрова НА",
         "Иванов РМ",
@@ -148,6 +150,7 @@ def test_streaming_csv_masks_value_level_pii_under_neutral_headers(tmp_path, mon
     writer.writerow([f"Рентген {FIO}, тел. {PHONE}", "Шапочка Иванов Пётр Сергеевич"])
     writer.writerow(["Шапочка И. И.", "Рентген В. К."])
     writer.writerow(["Шапочка Иван", "Шапочка Иван Сергеевич"])
+    writer.writerow(["РЕНТГЕН ДЖОН СМИТ", "ШАПОЧКА ДЖОН СМИТ"])
     monkeypatch.setenv("REPORT_EXPORT_DIR", str(tmp_path))
     monkeypatch.setenv("WEB_SESSION_SECRET", "stage-456-synthetic-test-secret")
     report_export.reset_link_key_cache()
@@ -164,6 +167,7 @@ def test_streaming_csv_masks_value_level_pii_under_neutral_headers(tmp_path, mon
         [REDACTED_NAME, REDACTED_PHONE],
         [REDACTED_NAME, REDACTED_NAME],
         [f"Рентген {REDACTED_NAME}, тел. {REDACTED_PHONE}", f"Шапочка {REDACTED_NAME}"],
+        [REDACTED_NAME, REDACTED_NAME],
         [REDACTED_NAME, REDACTED_NAME],
         [REDACTED_NAME, REDACTED_NAME],
     ]
