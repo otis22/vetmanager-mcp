@@ -8,7 +8,7 @@ import pytest
 import scripts.test_recovery_supervisor as supervisor
 
 
-@pytest.mark.parametrize("failure", [None, "stop", "writer-timeout"])
+@pytest.mark.parametrize("failure", [None, "stop", "writer-timeout", "restore"])
 def test_recovery_restore_and_child_cleanup(tmp_path, monkeypatch, failure):
     hook = tmp_path / "hook"
     hook.mkdir()
@@ -41,6 +41,8 @@ def test_recovery_restore_and_child_cleanup(tmp_path, monkeypatch, failure):
                 (hook / "write_done").touch()
         else:
             calls.append("restore-pg")
+            if failure == "restore":
+                raise subprocess.CalledProcessError(1, command)
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(supervisor, "owned_container", lambda candidate, project: "exact-pg")
@@ -56,4 +58,8 @@ def test_recovery_restore_and_child_cleanup(tmp_path, monkeypatch, failure):
     else:
         assert supervisor.supervise(["pytest"], ["compose"], "ours", hook, tmp_path / "run.log") == 0
     assert calls[:2] == ["stop-pg", "restore-pg"]
-    assert (hook / "restored").exists()
+    if failure == "restore":
+        assert "terminate-child" in calls
+        assert not (hook / "restored").exists()
+    else:
+        assert (hook / "restored").exists()

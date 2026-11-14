@@ -51,15 +51,17 @@ def supervise(command, compose, project, hook, log_path):
                 time.sleep(.1)
             return process.returncode
         finally:
-            if stopped:
-                owned_container(pg_id, project)
-                subprocess.run([*compose, "up", "-d", "--wait", "pg"], check=True,
-                               stdout=log, stderr=log)
-                (hook / "restored").touch()
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
+            try:
+                if stopped:
+                    owned_container(pg_id, project)
+                    subprocess.run([*compose, "up", "-d", "--wait", "pg"], check=True,
+                                   stdout=log, stderr=log)
+                    (hook / "restored").touch()
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)

@@ -22507,3 +22507,11 @@ roadmap structure, normalized Compose gate и git diff --check — exit 0.
 направление прямого REST cleanup только на созданный тестом ID, ownership
 labels, отдельные volumes, secret handling и неприкосновенность кабинета.
 Рефакторинг ограничен test-only helpers; полный прогон будет после code review.
+
+Committed diff Spark pass 1 прочёл 22 изменённых code/config файла; единственный
+medium принят: исключение при восстановлении PostgreSQL пропускало reap
+дочернего pytest. Добавлен guard restore-failure: RED (1 failed / exit 1),
+затем вложенный finally для безусловного завершения дочернего процесса;
+GREEN 4 supervisor cases / exit 0. Аудит правки: чужая БД по-прежнему не
+трогается, ошибка восстановления сохраняется, child не остаётся работать.
+Полный прогон после этой правки ещё не выполнялся, будет по финальному code SHA.
