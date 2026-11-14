@@ -22570,3 +22570,16 @@ findings=[]; evidence stage459-review/post-budget-database.*. Аудит: изм
 тест не перенаправляется в чужую БД. Финальный полный набор будет заново
 выполнен после фикса по новому SHA. Code review-бюджет не переоткрывался,
 Opus после запрета не вызывался.
+
+Финальный завершённый полный прогон SHA 42f7e9dcf574cba69755a6766b7906db5434fa64:
+default 4599 passed / 1 intentional skipped / exit 0, coverage 89%;
+mandatory PostgreSQL 6 passed и result gate exit 0; real 135 passed, 0 failed,
+0 skipped-not-configured, 1 skipped-error, exit 1. Cleanup exit 0.
+Один real skip — stage385 export outcome: отдельный HTTP/MCP probe подтвердил
+RUN_RATE_LIMITED с ожиданием 450 секунд перед одной попыткой. Guard стенда
+не отключался, автоматические параллельные повторы после диагностики не
+запускались. Полный real не считается зелёным. Push ожидает решения владельца
+по явному исключению либо разрешённого повтора после ожидания. Отчёт:
+artifacts/test-report-2026-11-14-stage459.md. Контейнеры раннего отдельного
+тестового проекта также удалены после ownership проверки. Секреты и
+production-данные не публикуются.
