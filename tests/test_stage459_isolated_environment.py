@@ -2,11 +2,20 @@
 
 import json
 import subprocess
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
+import yaml
 
 from scripts.test_recovery_supervisor import owned_container
+
+
+def test_default_container_does_not_delay_every_http_fixture_reset():
+    base = yaml.safe_load(Path("docker-compose.yml").read_text())["services"]["test"]
+    isolated = yaml.safe_load(Path("docker-compose.test.yml").read_text())["services"]["test"]
+    environment = {**base["environment"], **isolated["environment"]}
+    assert environment.get("VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS") in (None, "0", 0)
 
 
 @pytest.mark.parametrize("labels", [

@@ -93,8 +93,9 @@ def main():
         print(f"{name}: exit {code}", flush=True)
         return code
 
-    def test_command(*command):
-        return [*compose, "run", "--rm", "-T", "test", *command]
+    def test_command(*command, real=False):
+        grace = ["-e", "VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS=0.5"] if real else []
+        return [*compose, "run", "--rm", "-T", *grace, "test", *command]
 
     def terminate(_sig, _frame):
         raise KeyboardInterrupt
@@ -119,13 +120,13 @@ def main():
             run("postgres", test_command("sh", "-c", "python -W error -m pytest -q -m postgres "
                 "--junitxml=/evidence/postgres.xml && python scripts/check_stage424_postgres_results.py /evidence/postgres.xml"))
         if args.suite in ("real", "all"):
-            run("real", test_command("python", "scripts/run_opt_in_real_test_suite.py"), recovery=True)
+            run("real", test_command("python", "scripts/run_opt_in_real_test_suite.py", real=True), recovery=True)
         if args.suite in ("focus", "recovery"):
             nodes = args.tests or (["tests/test_stage385_pg_recovery_live.py"] if args.suite == "recovery" else [])
             if not nodes:
                 parser.error("focus requires explicit pytest node IDs")
             run("focus", test_command("python", "-W", "error", "-m", "pytest", "-v", "-rs",
-                "--junitxml=/evidence/focus.xml", *nodes), recovery=True)
+                "--junitxml=/evidence/focus.xml", *nodes, real=True), recovery=True)
             if args.suite == "recovery":
                 try:
                     validate_recovery_result(evidence / "focus.xml")

@@ -22531,3 +22531,26 @@ failure/missing: 4 failed, 2 passed; после возврата проверк�
 Аудит review-правок: credentials проверяются до теста, формат ответа XML
 не содержит секретов, отсутствие/порча XML не даёт зелёный gate. Opus не
 вызывался после запрета владельца. Полный прогон будет после финального ревью.
+
+Финальное сильное Astra code review 2/2: findings=[], validator exit 0,
+reviewed SHA b6ae89e54a91a0f191dd3466034448ed2ac91869,
+16:13:05–16:13:57Z. Spark pass 3 прочёл пять файлов последнего fix, findings=[].
+Валидные code-бюджеты Astra 2/2, Opus отменён владельцем; infrastructure
+failures 0/3. Адекватных открытых critical/high нет.
+
+Post-budget environment fix (отдельный scout по постоянному контракту).
+Предварительный full-запуск остановлен во время default: глобальный
+VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS=0.5 добавлял задержку ко всем fixtures
+тысяч unit-тестов. SIGTERM завершил runner с exit 130, cleanup exit 0;
+этот запуск не считается завершённым тестовым прогоном. Compose больше
+не задаёт задержку всем контурам; runner передаёт 0.5 только real/focus/
+recovery-командам, default и postgres используют исходное поведение.
+Guard на отсутствие глобальной задержки показан RED (1 failed) до fix.
+После fix: 38 passed / exit 0 (1.70 с в unit-контуре без задержки), Ruff exit 0.
+Отдельный gpt-6-luna scout прочёл три изменённых файла, findings=[];
+evidence stage459-review/post-budget-grace.{prompt,stdout,stderr}.txt.
+Это отдельный post-budget scout, не четвёртый предгейтовый Spark и не замена
+неуспешному сильному гейту: оба валидных Astra verdict уже получены, findings
+закрыты. Аудит env-правки: TLS grace сохранён для real, Docker ownership,
+credentials validation и warnings-as-errors не ослаблены. После неё будет
+новый полный прогон по новому code SHA, до push.

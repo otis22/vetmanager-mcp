@@ -38,7 +38,6 @@ services:
       STAGE408_PG_URL: postgresql+asyncpg://vetmanager:${TEST_POSTGRES_PASSWORD}@pg:5432/stage408
       RUN_REAL_WEB_TESTS: "1"
       RUN_REAL_BROWSER_TESTS: "1"
-      VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS: "0.5"
     depends_on:
       pg:
         condition: service_healthy
