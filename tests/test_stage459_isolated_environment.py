@@ -18,6 +18,11 @@ def test_default_container_does_not_delay_every_http_fixture_reset():
     assert environment.get("VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS") in (None, "0", 0)
 
 
+def test_default_database_url_does_not_override_migration_tmp_paths():
+    isolated = yaml.safe_load(Path("docker-compose.test.yml").read_text())["services"]["test"]
+    assert isolated["environment"]["DATABASE_URL"] == ""
+
+
 @pytest.mark.parametrize("labels", [
     {},
     {"com.docker.compose.project": "other", "com.docker.compose.service": "pg"},

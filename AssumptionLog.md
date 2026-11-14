@@ -22554,3 +22554,19 @@ evidence stage459-review/post-budget-grace.{prompt,stdout,stderr}.txt.
 закрыты. Аудит env-правки: TLS grace сохранён для real, Docker ownership,
 credentials validation и warnings-as-errors не ослаблены. После неё будет
 новый полный прогон по новому code SHA, до push.
+
+Post-budget environment fix 2: следующий предварительный default выявил
+три падения migration-тестов. Причина подтверждена alembic/env.py: заданный
+глобальный DATABASE_URL имеет приоритет над временным URL из Alembic Config.
+Новый harness ошибочно задавал непустой SQLite URL. Возвращён пустой override,
+совпадающий с исходным контуром/CI и одновременно исключающий наследование
+production URL из .env. Собственные live/PG fixtures по-прежнему задают
+временные базы явно. Предварительный запуск остановлен (exit 130, cleanup 0),
+не считается завершённым full. Новый guard на пустой default URL показан RED
+(1 failed / exit 1). После fix 40 migration/IP-mask/environment cases passed,
+exit 0, cleanup 0. Отдельный gpt-6-luna post-budget scout прочёл 10 файлов,
+findings=[]; evidence stage459-review/post-budget-database.*. Аудит: изменение
+только тестовой конфигурации, production migration/runtime не затронуты;
+тест не перенаправляется в чужую БД. Финальный полный набор будет заново
+выполнен после фикса по новому SHA. Code review-бюджет не переоткрывался,
+Opus после запрета не вызывался.
