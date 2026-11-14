@@ -22515,3 +22515,19 @@ medium принят: исключение при восстановлении Po
 GREEN 4 supervisor cases / exit 0. Аудит правки: чужая БД по-прежнему не
 трогается, ошибка восстановления сохраняется, child не остаётся работать.
 Полный прогон после этой правки ещё не выполнялся, будет по финальному code SHA.
+
+Spark committed diff pass 2 прочёл исправленный supervisor и его тесты,
+findings=[]. Сильное Astra code review 1/2 (16:04:49–16:06:04Z,
+reviewed SHA e9defa0f6d9f8d9ba35e9d0650246c6353b2ae0d) дало один medium:
+standalone recovery обходил auth validation и мог принять skipped за успех.
+Finding принят: --suite recovery требует API-key settings, JUnit gate требует
+ровно один реально выполненный успешный recovery. Полный real по-прежнему
+требует все login/password settings. Воспроизведение до fix: пустое env,
+1 skipped и exit 0; после fix auth exit 1, общий exit 1, cleanup exit 0.
+С настроенным API-key отдельный recovery: 1 passed, exit 0, result gate 0,
+cleanup 0. Сторож JUnit показан RED отключением проверки skipped/error/
+failure/missing: 4 failed, 2 passed; после возврата проверки GREEN 6 passed.
+Полный новый unit-набор: 37 passed / exit 0; Ruff F/E9 exit 0.
+Аудит review-правок: credentials проверяются до теста, формат ответа XML
+не содержит секретов, отсутствие/порча XML не даёт зелёный gate. Opus не
+вызывался после запрета владельца. Полный прогон будет после финального ревью.

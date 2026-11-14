@@ -15,7 +15,7 @@ import tempfile
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.test_recovery_supervisor import owned_container, supervise
+from scripts.test_recovery_supervisor import owned_container, supervise, validate_recovery_result
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -108,8 +108,9 @@ def main():
         for database in ("stage385", "stage400", "stage408"):
             if run("create-" + database, [*compose, "exec", "-T", "pg", "createdb", "-U", "vetmanager", database]):
                 return 1
-        if args.suite in ("real", "all", "focus"):
-            required_auth = ["--require-all"] if args.suite in ("real", "all") else []
+        if args.suite in ("real", "all", "focus", "recovery"):
+            required_auth = (["--require-all"] if args.suite in ("real", "all") else
+                             ["--require-api"] if args.suite == "recovery" else [])
             if run("auth", test_command("python", "scripts/prepare_real_test_auth.py", "/evidence/auth.env", *required_auth)):
                 return 1
         if args.suite in ("default", "all"):
@@ -125,6 +126,14 @@ def main():
                 parser.error("focus requires explicit pytest node IDs")
             run("focus", test_command("python", "-W", "error", "-m", "pytest", "-v", "-rs",
                 "--junitxml=/evidence/focus.xml", *nodes), recovery=True)
+            if args.suite == "recovery":
+                try:
+                    validate_recovery_result(evidence / "focus.xml")
+                    code = 0
+                except (OSError, ValueError):
+                    code = 1
+                summary["results"]["recovery-result"] = code
+                (evidence / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
         return int(any(summary["results"].values()))
     finally:
         signal.signal(signal.SIGTERM, prior)

@@ -43,13 +43,14 @@ def test_uses_inspected_exact_id(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_complete_real_contour_is_required_before_token_exchange(tmp_path, monkeypatch):
+@pytest.mark.parametrize("requirement", ["require_all", "require_api"])
+async def test_complete_real_contour_is_required_before_token_exchange(tmp_path, monkeypatch, requirement):
     import scripts.prepare_real_test_auth as auth
     for key in ("TEST_DOMAIN", "TEST_API_KEY", "TEST_USER_LOGIN", "TEST_USER_PASSWORD"):
         monkeypatch.delenv(key, raising=False)
     exchange = Mock()
     monkeypatch.setattr(auth, "exchange_user_token", exchange)
     with pytest.raises(ValueError, match="Incomplete real test contour"):
-        await auth.prepare(tmp_path / "auth.env", require_all=True)
+        await auth.prepare(tmp_path / "auth.env", **{requirement: True})
     exchange.assert_not_called()
     assert not (tmp_path / "auth.env").exists()

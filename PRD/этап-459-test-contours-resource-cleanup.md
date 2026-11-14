@@ -140,3 +140,8 @@ Volume удаляется down -v в finally. Это сохраняет инва
 добавляется уникальная метка без изменения фильтров и явная проверка нового
 job ID / отсутствия is_deduplicated перед ожиданием счётчика recreated.
 Это исправление тестовых preconditions, production метрики не меняются.
+
+Committed diff Astra pass 1: medium о standalone recovery с отсутствующим
+API-ключом принят. Recovery теперь требует API-key контур до pytest, а
+результат дополнительно проверяется по JUnit: ровно один выполненный успешный
+recovery, skips/failure/error/отсутствие case или invalid XML отклоняются.

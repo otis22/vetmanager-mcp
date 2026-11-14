@@ -2,6 +2,7 @@
 
 import subprocess
 from types import SimpleNamespace
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -63,3 +64,22 @@ def test_recovery_restore_and_child_cleanup(tmp_path, monkeypatch, failure):
         assert not (hook / "restored").exists()
     else:
         assert (hook / "restored").exists()
+
+
+@pytest.mark.parametrize("outcome", ["passed", "skipped", "failure", "error", "missing", "invalid"])
+def test_recovery_result_rejects_unexecuted_or_failed_case(tmp_path, outcome):
+    root = ET.Element("testsuite")
+    if outcome != "missing":
+        case = ET.SubElement(root, "testcase", classname="tests.test_stage385_pg_recovery_live",
+            name="test_pg_restart_after_successful_upstream_write_never_serves_stale_get")
+        if outcome in {"skipped", "failure", "error"}:
+            ET.SubElement(case, outcome)
+    path = tmp_path / "result.xml"
+    ET.ElementTree(root).write(path)
+    if outcome == "invalid":
+        path.write_text("<invalid")
+    if outcome == "passed":
+        supervisor.validate_recovery_result(path)
+    else:
+        with pytest.raises(ValueError):
+            supervisor.validate_recovery_result(path)

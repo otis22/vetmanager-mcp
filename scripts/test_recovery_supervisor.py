@@ -4,6 +4,20 @@ import json
 import subprocess
 import time
 from pathlib import Path
+import xml.etree.ElementTree as ET
+
+
+def validate_recovery_result(path):
+    """A green pytest process is insufficient if the recovery case was skipped."""
+    try:
+        root = ET.parse(path)
+    except ET.ParseError as exc:
+        raise ValueError("Invalid recovery test result") from exc
+    cases = [case for case in root.iter("testcase")
+             if case.get("classname") == "tests.test_stage385_pg_recovery_live"
+             and case.get("name") == "test_pg_restart_after_successful_upstream_write_never_serves_stale_get"]
+    if len(cases) != 1 or any(cases[0].find(tag) is not None for tag in ("skipped", "failure", "error")):
+        raise ValueError("Recovery must contain exactly one executed, successful case")
 
 
 def owned_container(container_id, project, service="pg"):

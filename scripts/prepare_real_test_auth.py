@@ -12,12 +12,14 @@ from tests.live_test_lifecycle import close_loop_http_clients
 from vetmanager_connection_service import exchange_user_token
 
 
-async def prepare(path, require_all=False):
+async def prepare(path, require_all=False, require_api=False):
     values = {}
     try:
         required = ("TEST_DOMAIN", "TEST_API_KEY", "TEST_USER_LOGIN", "TEST_USER_PASSWORD")
         missing = [key for key in required if not os.environ.get(key)]
-        if require_all and missing:
+        if require_api and not require_all:
+            missing = [key for key in required[:2] if not os.environ.get(key)]
+        if (require_all or require_api) and missing:
             print("Required real test settings missing: " + ", ".join(missing), file=sys.stderr)
             raise ValueError("Incomplete real test contour")
         if os.environ.get("TEST_USER_LOGIN") and os.environ.get("TEST_USER_PASSWORD"):
@@ -42,7 +44,8 @@ async def prepare(path, require_all=False):
 if __name__ == "__main__":
     logging.disable(logging.CRITICAL)
     try:
-        asyncio.run(prepare(sys.argv[1], require_all="--require-all" in sys.argv[2:]))
+        asyncio.run(prepare(sys.argv[1], require_all="--require-all" in sys.argv[2:],
+                            require_api="--require-api" in sys.argv[2:]))
     except Exception as exc:
         print(f"Test auth preparation failed: {type(exc).__name__}", file=sys.stderr)
         raise SystemExit(1)
