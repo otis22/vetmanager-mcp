@@ -240,16 +240,19 @@ CSV). Выпущенный этап 455 снял предел чтения пе�
 
 Исходная задача 12.11.2026 — устранить нестабильность devtr6/billing из
 Docker и восстановить зелёный штатный real suite без маскировки падений.
-Comparative gate прежнего поезда не закрывает техническую задолженность.
-14.11.2026 этап поднят перед 460: новый полный real дал 114 passed, 4 failed,
-19 skipped-not-configured. Текущие отказы: `test_real_nonexistent_client_raises`,
-stage276 export, stage389 pages и stage396 Report AI; прежние 245, 361, 422
-и 449/451 остаются в диагностическом контексте, а не списке доказанных причин.
+14.11.2026 этап поднят перед 460 по условию блокировки приёмки. Первый
+проход исправил ложный success `get_client_by_id` на точной пустой форме,
+включил существующий bounded retry в web billing callsite и обновил два
+real-теста. Полный mock: 4594 passed, 3 skipped, exit 0. Полный real остался
+красным: 111 passed, 7 failed, 19 skipped-not-configured. Сбои transport
+повторились; stage420 dedup и stage445 401→200 требуют отдельной проверки.
+WIP сохранён в `vetmanager-mcp-459`, commit/review/push не выполнялись.
 
-- 459.1 По сохранённым traceback воспроизвести сетевые/контрактные причины,
-  подготовить PRD и Architecture Critique, стабилизировать контур/тесты без
-  ослабления assertions и получить полный зелёный real suite штатной командой.
-  Не трогать WIP 460 и не использовать skip для маскировки сбоев. — `in_progress`
+- 459.1 Новый исполнитель продолжает системную диагностику Docker/billing и
+  отдельных contract failures по сохранённому WIP. Не добавлять retry/timeout
+  вслепую, не ослаблять assertions/privacy/SSRF, не маскировать ошибки skip.
+  Получить полный зелёный real штатной командой, затем committed-diff Spark →
+  Astra + Opus и push только рабочей ветки. — `in_progress`
 
 ## Этап 464. Наблюдение всех workers и измеримый простой — `todo`
 
