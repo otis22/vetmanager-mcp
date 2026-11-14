@@ -67,3 +67,14 @@ Spark: candidate-проходы с проверкой адекватности. 
 - `42f7e9d` — временные URL migration-тестов; это code SHA полного прогона.
 
 Подробный журнал решений и evidence — AssumptionLog.md. Raw evidence сохранён вне публичного репозитория. Значения учётных данных и локаторы upstream в отчёт не включены.
+
+## Публикация и CI
+
+Ветка опубликована в origin: `dev/test-contours-resource-cleanup`.
+Первый push с закрытым повтором: `b6bf688bfe39ed07f4dc32d6c04b7cd855b63f34`.
+[GitHub Actions Tests](https://github.com/otis22/vetmanager-mcp/actions/runs/43619279938)
+запущен для этого SHA; на момент сдачи статус **in_progress**, итог ещё не получен.
+Это отдельный CI-запуск; локальные результаты выше уже подтверждены.
+После полного code SHA 42f7e9d изменялись только Markdown-файлы.
+
+Срез статуса CI: 2026-11-14T17:07:52.350520+00:00.

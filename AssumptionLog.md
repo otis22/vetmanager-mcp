@@ -22597,3 +22597,11 @@ production-данные не публикуются.
 правилу text-only изменений. Публикация отдельной dev-ветки разрешена после
 закрытия проверки. Кабинет владельца/старые токены не затронуты. Все выделенные
 Docker-ресурсы собственного прогона удалены; состояние repo проверено перед push.
+
+Ветка dev/test-contours-resource-cleanup опубликована в origin, push exit 0,
+upstream установлен. SHA первого push с закрытым повтором:
+b6bf688bfe39ed07f4dc32d6c04b7cd855b63f34. GitHub Actions Tests запущен:
+https://github.com/otis22/vetmanager-mcp/actions/runs/43619279938,
+status=in_progress на момент сдачи; зелёный CI не заявляется до результата.
+После полного code SHA 42f7e9d отличаются только четыре Markdown-файла;
+проверки структуры и diff text-only выполняются перед финальным commit/push.
