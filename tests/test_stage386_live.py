@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from tests.live_test_lifecycle import stop_processes
 
 from tests.test_stage384_live import seed_devtr6_bearer
 from tests.test_stage385_metrics_live import _free_port
@@ -173,10 +174,4 @@ def test_expired_session_and_reinitialize_on_three_slots(prepared_web_db):
     finally:
         for client in clients:
             client.close()
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
+        stop_processes(processes, timeout=10)

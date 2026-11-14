@@ -11,6 +11,7 @@ import time
 
 import httpx
 import pytest
+from tests.live_test_lifecycle import stop_processes
 import redis
 
 from shared_metric_counters import REPORT_AI_TERMINAL_KEY_PREFIX
@@ -110,7 +111,4 @@ def test_saved_job_terminal_count_once_across_slots(prepared_web_db):
     finally:
         for client in clients:
             client.close()
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            process.wait(timeout=30)
+        stop_processes(processes)

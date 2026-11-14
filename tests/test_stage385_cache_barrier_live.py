@@ -9,6 +9,7 @@ import uuid
 
 import httpx
 import pytest
+from tests.live_test_lifecycle import stop_processes
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -142,7 +143,4 @@ def test_report_ai_write_commits_pg_barrier_before_cross_slot_read(prepared_web_
     finally:
         for client in clients:
             client.close()
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            process.wait(timeout=30)
+        stop_processes(processes)

@@ -5,9 +5,11 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+from uuid import uuid4
 
 import httpx
 import pytest
+from tests.live_test_lifecycle import stop_processes
 
 from tests.test_stage384_live import seed_devtr6_bearer
 from tests.test_stage385_metrics_live import _free_port, _jsonrpc
@@ -84,7 +86,8 @@ def test_empty_preview_guidance_and_recreated_outcome_cross_slots(prepared_web_d
         before_recreated = _metric(clients[0].get("/metrics").text,
             'vetmanager_report_ai_empty_preview_guidance_outcomes_total{outcome="recreated"} ')
         intent = ("Покажи список медицинских карт за 1 января 1900 года: "
-                  "ID карты, дату и ID клиники. Дата строго 01.01.1900.")
+                  "ID карты, дату и ID клиники. Дата строго 01.01.1900. "
+                  f"Метка проверки {uuid4().hex} не является фильтром данных.")
         created = call(0, 10, "create_report_ai_job", {"intent_text": intent})
         job = created["data"]["job"]
         for attempt in range(42):
@@ -100,8 +103,11 @@ def test_empty_preview_guidance_and_recreated_outcome_cross_slots(prepared_web_d
                          "vetmanager_report_ai_empty_preview_guidance_jobs_total ")
                  for client in clients]
         assert after == [before + 1] * 3
-        call(2, 60, "create_report_ai_job", {"intent_text":
-             "Количество медицинских карт за 2 января 1900 года по клиникам"})
+        recreated = call(2, 60, "create_report_ai_job", {"intent_text":
+             "Количество медицинских карт за 2 января 1900 года по клиникам. "
+             f"Метка проверки {uuid4().hex} не является фильтром данных."})
+        assert recreated["data"].get("is_deduplicated") is not True
+        assert recreated["data"]["job"]["id"] != job["id"]
         outcomes = [_metric(client.get("/metrics").text,
             'vetmanager_report_ai_empty_preview_guidance_outcomes_total{outcome="recreated"} ')
             for client in clients]
@@ -113,7 +119,4 @@ def test_empty_preview_guidance_and_recreated_outcome_cross_slots(prepared_web_d
     finally:
         for client in clients:
             client.close()
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            process.wait(timeout=30)
+        stop_processes(processes)

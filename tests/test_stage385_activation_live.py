@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
+from tests.live_test_lifecycle import stop_processes
 import redis
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -98,12 +99,8 @@ def test_activation_snapshot_is_identical_on_three_slots(prepared_web_db):
     finally:
         for client in clients:
             client.close()
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            process.wait(timeout=30)
+        logs = stop_processes(processes)
         if completed:
-            warnings = sum(process.stderr.read().count("account_traffic_silent")
-                           for process in processes)
+            warnings = sum(log.count("account_traffic_silent") for log in logs)
             assert warnings == 1
             print("STAGE385_ACTIVATION_ALERT", {"warning_count": warnings})

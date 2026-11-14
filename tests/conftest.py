@@ -391,8 +391,19 @@ async def sqlite_session_factory_builder():
 
 @pytest.fixture
 def run_async():
-    """Run async project calls safely from sync browser/live tests."""
-    return _run_coro_in_thread
+    """Close HTTP transports in the temporary loop that created them."""
+    from tests.live_test_lifecycle import close_loop_http_clients
+
+    def run(coro):
+        async def invoke():
+            try:
+                return await coro
+            finally:
+                await close_loop_http_clients()
+
+        return _run_coro_in_thread(invoke())
+
+    return run
 
 
 @pytest.fixture

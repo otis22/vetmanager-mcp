@@ -12,6 +12,9 @@ import uuid
 
 import httpx
 import pytest
+from tests.live_test_lifecycle import assert_client_deleted, close_loop_http_clients, stop_processes
+from tests.runtime_factories import make_client_with_resolved_runtime
+from exceptions import NotFoundError
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -22,6 +25,23 @@ from tests.test_stage385_metrics_live import _free_port, _jsonrpc
 
 
 pytestmark = pytest.mark.real_api
+
+
+
+async def _delete_created_client(client_id):
+    # Direct test credentials keep cleanup independent of the deliberately stopped DB.
+    client = make_client_with_resolved_runtime(os.environ["TEST_DOMAIN"], os.environ["TEST_API_KEY"])
+    path = f"/rest/api/client/{client_id}"
+    try:
+        result = await client.delete(path)
+        assert result.get("success") is True
+        try:
+            remaining = await client.get(path, fresh=True)
+        except NotFoundError:
+            return
+        assert_client_deleted(remaining, client_id)
+    finally:
+        await close_loop_http_clients()
 
 
 def _wait_file(path: Path, seconds: float = 45) -> None:
@@ -163,15 +183,10 @@ def test_pg_restart_after_successful_upstream_write_never_serves_stale_get(monke
             "upstream_write_completed_before_pg_stop": True,
             "durable_active_writes": 1, "stale_get": False})
     finally:
-        if client_id is not None and (hook / "restored").exists():
-            (hook / "armed").unlink(missing_ok=True)
-            try:
-                call(0, 14, "delete_client", {"client_id": client_id})
-            except Exception:
-                pass
-        for client in clients:
-            client.close()
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            process.wait(timeout=30)
+        try:
+            if client_id is not None:
+                asyncio.run(_delete_created_client(client_id))
+        finally:
+            for client in clients:
+                client.close()
+            stop_processes(processes)

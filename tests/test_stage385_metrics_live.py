@@ -10,6 +10,7 @@ import time
 
 import httpx
 import pytest
+from tests.live_test_lifecycle import stop_processes
 
 from tests.test_stage384_live import seed_devtr6_bearer
 
@@ -147,7 +148,4 @@ def test_three_slots_export_one_devtr6_tool_count(prepared_web_db):
     finally:
         for client in clients:
             client.close()
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            process.wait(timeout=30)
+        stop_processes(processes)

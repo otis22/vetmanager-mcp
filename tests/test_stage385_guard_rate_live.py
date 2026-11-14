@@ -8,6 +8,7 @@ import time
 
 import httpx
 import pytest
+from tests.live_test_lifecycle import stop_processes
 
 from tests.test_stage384_live import seed_devtr6_bearer
 from tests.test_stage385_metrics_live import _free_port, _jsonrpc
@@ -113,7 +114,4 @@ def test_guard_and_rate_limit_events_are_shared(prepared_web_db):
     finally:
         for client in clients:
             client.close()
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            process.wait(timeout=30)
+        stop_processes(processes)

@@ -22368,3 +22368,142 @@ findings нет. После текстовой правки `python3 scripts/che
 `git diff --check` и проверка JSON evidence прошли (exit 0). Отдельный
 Spark-scout прочёл AssumptionLog и evidence, `findings=[]`; evidence:
 `/home/otis/.local/share/vetmanager-mcp-review-evidence/feedback-triage-rev5/spark-scout.{prompt,stdout,stderr}.txt`.
+
+
+## 14.11.2026 — git pull и проверка текущей ветки по запросу владельца
+
+Проверен коммит `b9c397def6086b6a5eff8aa42a87cb62c346537e`, ветка
+`analysis/feedback-triage-dashboard-2026-11-10`. `git pull --ff-only`: exit 0,
+Already up to date; исходная рабочая копия чистая. Структура Roadmap и
+пересборка тестового Docker-образа: exit 0. Полный default suite: exit 0,
+4558 passed, 3 skipped, 142 deselected, 562.69 с, coverage 89%.
+Opt-in real suite на контуре TEST_DOMAIN/TEST_API_KEY: exit 1,
+116 passed, 1 failed, 19 skipped-not-configured, 0 skipped-error.
+Падение `test_real_nonexistent_client_raises` (tests/test_e2e_real.py:814):
+для отсутствующего клиента totalCount=0, но client имеет форму
+`{"merge_history": []}`, тест ожидает `[]`. Причина расхождения не установлена;
+исправления инструментов и тестов не выполнялись. Контур user-token,
+opt-in web/browser, изолированные PostgreSQL/Redis не настроены.
+Шесть отдельных postgres-тестов исключены штатным маркером default suite
+и не запускались. Общий статус проверки FAIL. Инструменты не изменялись;
+живые проверки выполнены штатным real suite. Проверка не меняет трактовку
+выданных учётных данных и не требует миграции. Ревью реализации неприменимо:
+реализация не менялась. Полный перечень skipped и excluded передан владельцу
+во внешнем отчёте текущего BB-треда; секреты в репозиторий не добавлялись.
+
+
+### 14.11.2026 — настройка изолированных Docker-контуров и повтор skipped
+
+По дополнительному запросу владельца подняты отдельные PostgreSQL 16 / Redis 7
+без публикации портов и без изменения существующих контейнеров. Настроены
+раздельные базы для mandatory PostgreSQL, stage385, stage400, stage408;
+включены opt-in web/browser-проверки. Конфигурация и evidence сохранены вне
+репозитория в BB thread storage. Коммит проверок остаётся
+`b9c397def6086b6a5eff8aa42a87cb62c346537e`. API-ключ тестового стенда имеется;
+отдельный пользовательский токен и login/password не найдены в доступных
+тестовых настройках. Mandatory PostgreSQL: 6 passed, result gate exit 0.
+Повтор 21 прежнего skipped (кроме recovery), warnings-as-errors:
+8 passed, 5 failed, 7 skipped, 1 error, exit 1. В падениях обнаружены
+ResourceWarning/PytestUnraisableExceptionWarning о незакрытых потоках
+subprocess и сетевых ресурсах. Метрики отдельно: сценарий выполнен, но
+1 failed / exit 1 из-за незакрытых stderr. Recovery с управляемой остановкой
+и восстановлением только изолированной БД: сценарий 1 passed, JUnit без
+failures, но process exit 1 из-за трёх незакрытых stderr при завершении.
+Семь оставшихся skips: шесть user-token/login-password проверок и явный
+stage153 placeholder с NotImplementedError. Общий статус FAIL; прежнее
+падение формы ответа отсутствующего клиента не исправлялось. Инструменты
+и тесты не изменялись, сильное ревью реализации неприменимо. Трактовка
+выданных учётных данных не меняется, миграция production не требуется.
+Сервисы оставлены работающими для повторных проверок; секреты не включены
+в репозиторий. Подробный внешний отчёт передан владельцу.
+
+
+### 14.11.2026 — дополнительная проверка user-token контура
+
+Владелец предоставил учётные данные тестового Ветменеджера; секреты получены
+через защищённую форму BB и сохранены только вне репозитория. Учётные данные
+существующего кабинета MCP не использовались, его старые токены и интеграция
+не затрагивались. Тесты создавали отдельные аккаунты MCP в изолированных
+временных базах. Тестируемый SHA:
+`b9c397def6086b6a5eff8aa42a87cb62c346537e`. Обмен login/password на
+пользовательский токен: exit 0. Все шесть прежних user-token skips выполнены:
+6 passed, 0 skipped, 29.14 с. Process exit 1 из-за незакрытых socket и asyncio
+transport при завершении (ResourceWarning/PytestUnraisableExceptionWarning);
+JUnit содержит 6 passed без failures/errors, но не заменяет реальный exit.
+Общий статус остаётся FAIL, требуется исправление очистки ресурсов.
+Из ранее пропущенных тестов не выполнена только явная stage153-заготовка;
+ошибки остальных настроенных контуров описаны выше. Код и тесты не менялись,
+коммит и push не выполнялись. Полный отчёт дополнен во внешнем BB thread storage.
+
+
+## Этап 459 — исправления тестов и изолированное Docker-окружение
+
+Поручение владельца 14.11.2026: исправить тесты, окружение, commit/push и
+Markdown-отчёт. Ветка dev/test-contours-resource-cleanup, база b9c397d.
+Изменения ограничены тестами/инфраструктурой/документами; инструменты MCP,
+права, production storage/auth и ранее выданные токены не меняются.
+Учётные данные кабинета владельца не использовались; тестовые аккаунты MCP
+живут в временных локальных БД. Секреты находятся вне рабочей копии.
+
+PRD: PRD/этап-459-test-contours-resource-cleanup.md. Spark pass 1 прочёл PRD,
+conftest, e2e_real, activation/recovery, warning_policy; finding об отсутствии
+run_async в шести user-token тестах отклонён: один из них browser и вызывает
+run_async. Cleanup upstream-записи при ошибке recovery принят. Spark pass 2
+прочёл PRD; требование автоматически удалять чужие прошлые проекты после
+SIGKILL отклонено: риск удалить параллельный запуск; для своего проекта
+finally/SIGINT/SIGTERM выполняют down -v, остатки SIGKILL чистятся оператором.
+
+Сильное PRD-ревью: Astra 1/2 и 2/2 — findings=[], validator exit 0
+(15:39:26–15:39:42Z и 15:42:09–15:42:24Z, Codex CLI 0.167.2).
+Opus первый PRD-pass завершился до запрета владельца использовать Opus далее
+в этой сессии; последующих вызовов Opus нет. Его два high и четыре medium
+приняты: независимый от БД cleanup, label ownership, точный absence whitelist,
+обязательные контуры, cleanup volumes и декомпозиция. Высказанное требование
+физического отсутствия после DELETE уточнено живым probe: success=true,
+последующий GET totalCount=1, тот же ID, status=DELETED; проверяется этот
+наблюдаемый soft-delete контракт либо отсутствие записи. Не изменён runtime API.
+Opus envelope: внешняя папка BB stage459-review/opus-prd-evidence,
+2026-11-14T153924Z-file-PRD_-459-test-contours-resource-cleanup_md-attempt-1-of-3.fGc6h4/claude-review-attempt-1-of-3.envelope.json;
+subtype=success, stop_reason=tool_use, output_tokens=2172, thinking_tokens=935,
+len(result)=3263. Оба счётчика infrastructure failures: 0/3.
+
+Изменено: run_async закрывает только HTTP-клиенты своего loop до его
+остановки; subprocess communicate собирает stderr и закрывает pipe, при
+таймауте kill+reap; activation diagnostics сохранены. Absence допускает
+только [] и {"merge_history": []} при success=true/totalCount=0. Recovery
+удаляет только созданного им клиента прямым тестовым REST-доступом, не
+зависит от остановленной MCP-БД и проверяет DELETED/отсутствие. Guidance
+использует уникальный intent fixture и явно требует недедуплицированное
+новое задание перед проверкой recreated-счётчика.
+
+Docker: отдельный Compose-проект с уникальным именем, закрытой сетью,
+проектным volume PostgreSQL и удалением down -v в finally. Tmpfs отклонён:
+данные должны пережить stop/start внутри recovery. Перед операциями над
+контейнером проверяется ownership label; чужой контейнер отклоняется.
+Секреты генерируются вне repo с mode 0600. Полный real-контур требует
+API-key/login/password и готовит user-token; missing contour не даёт тихий
+зелёный результат. SIGTERM smoke: процесс прерван, cleanup exit 0, после
+него 0 контейнеров, 0 volumes, 0 networks собственного проекта.
+
+RED показан намеренными мутациями: расширен whitelist client; сняты
+проверки success и totalCount; сняты проверки ID/DELETED при cleanup;
+communicate заменён на wait без закрытия pipe; отключён close_loop_http_clients;
+удалена проверка project/service label. Каждый сторож упал (exit 1), мутации
+отменены. Отдельно RED: ошибочный docker stop не восстанавливал БД; guard
+упал, stopped-флаг перенесён до вызова stop, все 3 supervisor cases зелёные.
+Фокус: первый набор выявил два неверных precondition (дедуп и soft-delete),
+после исправлений 29 passed / exit 0, cleanup exit 0. Unit + browser mock:
+32 passed / exit 0. Полный прогон запланирован после committed diff-ревью.
+Evidence этих проверок: вне repo в BB thread storage, stage459-focus1,
+stage459-focus2, stage459-review; значения credentials в git не включаются.
+Живые API-проверки выполнены на согласованном тестовом контуре; production
+учётные данные и миграции не затрагиваются. Shell scripts не менялись.
+
+Дополнительные guards: RED показан заменой scoped HTTP cleanup на закрытие
+всех loop-клиентов и отключением require_all проверки credentials; оба exit 1.
+Мутации отменены, GREEN 2 passed / exit 0. Ruff F/E9 новых Python-файлов,
+roadmap structure, normalized Compose gate и git diff --check — exit 0.
+Предкоммитный аудит: проверены owning-loop cleanup, process reap/diagnostics,
+направление прямого REST cleanup только на созданный тестом ID, ownership
+labels, отдельные volumes, secret handling и неприкосновенность кабинета.
+Рефакторинг ограничен test-only helpers; полный прогон будет после code review.

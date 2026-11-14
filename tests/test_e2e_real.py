@@ -801,17 +801,15 @@ async def test_real_get_clients_with_sort_filter():
 
 @skip_if_no_creds
 @pytest.mark.asyncio
-async def test_real_nonexistent_client_raises():
+async def test_real_nonexistent_client_is_not_returned():
     """A non-existent client must not be returned, whether API uses 404 or an empty list."""
     from exceptions import NotFoundError
     try:
         result = await vc().get("/rest/api/client/999999999")
     except NotFoundError:
         return
-    assert result.get("success") is True
-    data = result.get("data", {})
-    assert data.get("totalCount") == 0
-    assert data.get("client") == []
+    from tests.live_test_lifecycle import assert_client_absent
+    assert_client_absent(result)
 
 
 # ── Reference entities ────────────────────────────────────────────────────────
