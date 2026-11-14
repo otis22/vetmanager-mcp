@@ -145,3 +145,11 @@ Committed diff Astra pass 1: medium о standalone recovery с отсутству
 API-ключом принят. Recovery теперь требует API-key контур до pytest, а
 результат дополнительно проверяется по JUnit: ровно один выполненный успешный
 recovery, skips/failure/error/отсутствие case или invalid XML отклоняются.
+
+Финальная проверка: 4599 default passed / один заранее оговорённый skip,
+6 обязательных PostgreSQL passed, real full 135 passed и один rate-limit skip.
+Владелец отдельно выбрал дождаться 450 секунд и повторить только export:
+1 passed / 0 skipped / exit 0. Все 136 real-сценариев подтверждены совместно
+полным прогоном и этим разрешённым повтором; исторический full real exit 1
+сохранён в отчёте, не представлен как batch exit 0. Исполняемый код после
+полного прогона не менялся. Результаты и условия передачи — в Markdown-отчёте.
