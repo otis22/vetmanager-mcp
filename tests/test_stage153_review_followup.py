@@ -13,17 +13,21 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import secrets
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import agent_feedback_service as feedback
 from fastmcp.exceptions import ToolError
 from server import mcp
 from storage_models import AgentFeedbackReport, KnownIssue
+from storage import Base, create_database_engine
 from tests.runtime_factories import make_runtime_credentials
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -180,13 +184,75 @@ async def test_f5_write_auto_feedback_event_increments_known_issue_via_sql_updat
     assert issue.report_count == 2, "F5: write_auto_feedback_event must use atomic UPDATE codepath"
 
 
-@pytest.mark.skip(reason="F4/F5: true-concurrency test requires PostgreSQL fixture (not in default test suite)")
 @pytest.mark.asyncio
-async def test_f4_concurrent_create_feedback_report_no_lost_update_postgres_only() -> None:
-    """Placeholder: when a Postgres test fixture is added, run two parallel create_feedback_report
-    calls via asyncio.gather with separate sessions and assert report_count == 2 (not == 1).
-    """
-    raise NotImplementedError("Postgres fixture pending")
+@pytest.mark.postgres
+async def test_f4_concurrent_create_feedback_report_no_lost_update_postgres_only(
+    monkeypatch, feedback_pepper,
+) -> None:
+    """Two readers at the same barrier must increment one PostgreSQL row twice."""
+    url = os.environ.get("POSTGRES_TEST_DATABASE_URL", "")
+    assert url.startswith("postgresql") and url.endswith("/vetmanager_test")
+    engine = create_database_engine(url)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    marker = uuid4().hex
+    incident = feedback.FeedbackIncident(
+        related_tool="get_payments", http_status=422,
+        error_code="ToolError", error_excerpt=f"stage153-{marker}",
+    )
+    fingerprint = feedback.build_error_fingerprint_hash(incident)
+    playbook = json.dumps({
+        "version": 1, "summary": "Check date filters.",
+        "steps": ["Use an explicit date range."], "do_not_do": [],
+        "recommended_tool_sequence": ["get_payments"], "safe_to_retry": True,
+    })
+    issue_id = None
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        async with factory() as session:
+            issue = KnownIssue(
+                status="workaround_available", category="bug", severity="medium",
+                title="Stage 153 concurrent update", related_tool="get_payments",
+                error_fingerprint_hash=fingerprint, agent_playbook_json=playbook,
+            )
+            session.add(issue)
+            await session.commit()
+            issue_id = issue.id
+
+        monkeypatch.setattr(feedback, "get_session_factory", lambda: factory)
+        original_match = feedback.find_known_issue_match
+        barrier = asyncio.Barrier(2)
+
+        async def synchronized_match(session, event):
+            match = await original_match(session, event)
+            assert match is not None
+            await asyncio.wait_for(barrier.wait(), timeout=10)
+            return match
+
+        monkeypatch.setattr(feedback, "find_known_issue_match", synchronized_match)
+        credentials = make_runtime_credentials(
+            "clinic", "secret", account_id=None, bearer_token_id=None,
+        )
+        kwargs = dict(
+            credentials=credentials, category="bug", severity="medium",
+            summary="Synthetic concurrent feedback", details="Synthetic date filter issue",
+            related_tool="get_payments", http_status=422, error_code="ToolError",
+            error_excerpt=incident.error_excerpt,
+        )
+        await asyncio.gather(
+            feedback.create_feedback_report(**kwargs),
+            feedback.create_feedback_report(**kwargs),
+        )
+        async with factory() as session:
+            count = (await session.execute(select(KnownIssue.report_count).where(KnownIssue.id == issue_id))).scalar_one()
+        assert count == 2
+    finally:
+        if issue_id is not None:
+            async with factory() as session:
+                await session.execute(delete(AgentFeedbackReport).where(AgentFeedbackReport.known_issue_id == issue_id))
+                await session.execute(delete(KnownIssue).where(KnownIssue.id == issue_id))
+                await session.commit()
+        await engine.dispose()
 
 
 # ─── F13: collection-aware contains_any / contains_all ───────────────────────

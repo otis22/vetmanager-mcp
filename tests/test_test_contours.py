@@ -12,9 +12,10 @@ def test_test_contour_names_are_stable():
     assert tuple(TEST_CONTOURS) == ("fast", "default", "opt_in_real")
 
 
-def test_fast_contour_excludes_browser_real_and_postgres_markers():
+def test_fast_contour_excludes_expensive_and_external_markers():
     assert FAST_TEST_CONTOUR.marker_expression == (
-        "not browser and not real_api and not real_browser and not postgres"
+        "not browser and not real_api and not real_browser and not postgres "
+        "and not offline_integration"
     )
 
 

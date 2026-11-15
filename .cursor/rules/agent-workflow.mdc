@@ -5,6 +5,18 @@ alwaysApply: true
 
 # Agent Project Workflow Rules
 
+Тот же workflow, что в `CLAUDE.md`; история решений — в `AssumptionLog.md`.
+
+## 0. Исполнитель и куратор
+
+- Исполнитель автономен внутри Roadmap/PRD и действующих гейтов: сам запускает команды, read-only снимки и diagnostics, промежуточных разрешений не просит.
+- Куратор назначает задачу, принимает финальные evidence, делает merge, deploy и monitoring. Команды не согласует, диагностику не дублирует, upstream jobs не создаёт.
+- Attestation — один раз на сессию: базовый SHA и версия правил. Resume без их изменения attestation не повторяет. Новая сессия после attestation продолжает с текущего шага по PRD, `AssumptionLog.md` и evidence без перепланирования.
+- Upstream report jobs: после успешного StartReport retry повторяет только failed poll/download по существующему `file_id`; новый StartReport на retry запрещён. При rate limit — ждать окно, серию jobs не создавать.
+- Эскалация — только при противоречии задачи правилам, изменении границ риска или продуктовом решении.
+
+---
+
 ## 1. Workplan
 
 - Workplan-очередь хранится в `Roadmap.md`; закрытая история вне окна 20
@@ -47,11 +59,8 @@ alwaysApply: true
   - инварианты, которые должны остаться истинными после реализации;
   - rollback/fallback, если решение окажется неверным или upstream поведение изменится.
 - Для задач, которые затрагивают auth, storage, public/API/MCP contract, production behavior, performance/load limits или cross-module ownership boundary, выполнить отдельный `Architecture Critique` gate через стороннюю сильную модель до обычного PRD-review.
-- Перед PRD-review выполнить Spark-review pass, устранить только адекватные и важные findings
-- Провести PRD-review, устранить адекватные findings и повторить review после правок
-- Перед PRD-review сторонней моделью выполнить Spark-review pass, устранить только адекватные и важные findings
-- Провести PRD-review сторонней моделью, устранить адекватные findings и повторить review после существенных правок в пределах бюджета
-- Провести оценку PRD на простоту; если PRD изменился после упрощения, повторить PRD-review
+- PRD-review → детерминированная проверка → Spark → PRD-review сторонней моделью; устранять адекватные findings, повтор после существенных правок в пределах бюджета
+- Оценка PRD на простоту; после правок PRD повторить PRD-review gates
 
 Ограничения:
 
@@ -86,28 +95,18 @@ Architecture Critique gate:
 
 ## 3.1. Ревью сторонней моделью и бюджет
 
-`Ревью сторонней моделью` следует постоянной схеме ниже: сильный гейт проводит пара Astra и Opus одновременно, включая задачи Codex и Claude.
+`Ревью сторонней моделью` — одновременное ревью Astra и Opus по постоянной схеме ниже; бюджеты PRD, code/diff и визуального гейтов раздельные. Architecture Critique делит PRD-бюджет и не добавляет третьего strong-запуска.
 
-Бюджеты:
+- Spark (`gpt-6-luna`) — candidate-only scout; вспомогательные запуски без лимита, перед конкретным гейтом — до 3. Prompt узкий: объект (PRD, uncommitted или committed diff), severity, формат, запрет правок.
+- Перед Spark — детерминированная проверка inventory/count/fingerprints (`scripts/offline_gate_manifest.py`, `scripts/check_roadmap_structure.py`, валидатор review). Finding Spark, опровергнутый такой проверкой, отклоняется одной строкой rationale в `AssumptionLog.md` и гейт не блокирует. Принимаются только адекватные, важные и проверяемые findings.
 
-- Spark-review: максимум 3 запуска перед каждым видом review gate; Spark-бюджет отдельный от бюджета сильной модели
-- `gpt-6-luna` как обычный scout/subagent для вспомогательных задач можно запускать без лимита; лимит 3 относится только к Spark-review перед конкретным review gate
-- PRD-review сторонней моделью: у Astra и Opus отдельно максимум 2 валидных запуска на PRD-гейт; Architecture Critique делит этот бюджет, валиден только разбираемый verdict (findings или явный пустой список)
-- Architecture Critique, засчитанный как strong PRD-review, расходует тот же бюджет PRD-review сторонней моделью; не добавлять отдельный третий запуск strong-модели только из-за нового gate.
-- code/diff и визуальное review: у Astra и Opus отдельно максимум 2 валидных запуска на каждый из этих гейтов; валиден только разбираемый verdict (findings или явный пустой список)
-- бюджеты раздельные и не расходуют друг друга
-- «Spark» — историческое имя scout-роли, модель — `gpt-6-luna`; актуальные слаги перечислены в постоянной схеме ниже
-- Spark не принимает финальных решений: его вывод является candidate-only и обязан пройти проверку на адекватность
-- принимать после Spark можно только адекватные, важные и проверяемые findings; speculative/low-impact/неподтверждённые замечания отклоняются
-- Spark-review должен иметь узкий prompt: что ревьювить (PRD, staged/uncommitted diff, committed diff), какие severity принимать, какой формат ответа нужен; Spark не должен сам менять файлы
-
-Правильный shell-вызов Spark-review из Codex runtime:
+Вызов Spark-review из Codex runtime (`read-only` sandbox не читает репозиторий):
 
 ```bash
 timeout 1200 codex exec -m gpt-6-luna -s danger-full-access -C "$PWD" -
 ```
 
-Здесь `read-only` sandbox не читает репозиторий из-за bwrap failure; начинать сразу с `danger-full-access` и prompt: `Review only. Do not edit files. Do not run write commands.` Fallback на другую модель разрешён только при явной model/provider failure. Prompt требует `files_read`; `[]` без прочитанных файлов невалиден. Результат Spark-review фиксируется в AssumptionLog вместе с принятыми/отклонёнными findings или `[]`.
+Prompt: `Review only. Do not edit files. Do not run write commands.` и обязательный `files_read`; `[]` без прочитанных файлов невалиден. Fallback на другую модель — только при явной model/provider failure. Итог Spark — в AssumptionLog.
 
 <!-- stage-343-model-contract:start -->
 Постоянная схема моделей (решение владельца 24.09.2026): исполнитель этапа Codex `gpt-6-sol`; Spark/scout `gpt-6-luna` (candidate-only); сильное ревью — `gpt-6-astra` и Claude Opus. Требуется Codex CLI ≥ 0.155. Слаги семейства 5.6 устарели; Terra в GPT-6 нет.
@@ -128,75 +127,56 @@ timeout 1200 codex exec -m gpt-6-luna -s danger-full-access -C "$PWD" -
 
 Claude Opus review из Codex runtime:
 
-- Когда текущий агент работает в Codex и `ревью сторонней моделью` должен делать Claude Opus, shell timeout должен быть минимум в 2 раза больше лимита, который сообщается Claude в prompt.
-- Default: real shell timeout `1200s`, prompt deadline `600 seconds`.
-- В prompt всегда явно писать, что Claude должен закончить review в указанный срок; реальный shell timeout Claude не сообщать.
-- Для inline diff/context review отключать tools/MCP, если они не нужны reviewer'у.
-- Prompt должен запрещать правки и shell-команды: `Review only. Do not edit files. Do not run commands.` При `--json-schema` structured output Claude доставляет штатным tool call, поэтому запрещать или считать ошибкой tool call нельзя.
-- Предпочтительный output для review gate — structured JSON findings. Для Claude CLI использовать `--output-format json` и JSON schema, когда доступно.
-- Успех strong review: stdout разбирается как JSON-конверт Claude, `is_error` равно `false`, поле `.result` непусто и после JSON parsing соответствует требуемой schema findings. `stop_reason` в этой оценке не участвует: при `--json-schema` structured result доставляется через tool call, и это штатный исход.
-- Сбой Claude review: stdout не разбирается как JSON-конверт; либо `is_error` равно `true`; либо `.result` пусто; либо `.result` не разбирается или не соответствует требуемой schema; либо provider/model error. Такой infrastructure failure не расходует валидный слот Opus и фиксируется отдельной строкой в `AssumptionLog.md` как неуспешная попытка `N/3`. У Opus максимум три такие попытки на strong review gate, у Astra — отдельные три; смена prompt/schema счётчик не сбрасывает. После третьей неуспешной попытки любого ревьюера gate blocked и push запрещён; Spark имеет отдельный лимит.
-- Каждая попытка внешнего Claude review запускается через
-  `scripts/run_claude_review.sh (--range <range> | --file <review-file>) --attempt <N/3>`:
-  `--range` для diff, `--file` для PRD/Architecture Critique. Runner всегда
-  сохраняет вне working copy raw envelope, stderr, prompt, schema и metadata
-  (attempt, type/target review, repo, evidence dir, stdin bytes/lines, CLI version, start, duration). В AssumptionLog
-  обязательны ссылка на `*.envelope.json` и поля `subtype`, `stop_reason`,
-  `output_tokens`, `thinking_tokens`, `len(result)`, включая пустой stdout.
-
-- Пример вызова для inline diff/context review:
+- Shell timeout ≥ 2× prompt deadline: default `1200s` и `Finish this review within 600 seconds`; реальный timeout Claude не сообщать.
+- Для inline context отключать tools/MCP; prompt: `Review only. Do not edit files. Do not run commands.`; output — `--output-format json` + schema. Tool call при `--json-schema` — штатная доставка result, не ошибка.
+- Успех: JSON-конверт разобран, `is_error=false`, непустое `.result` соответствует findings schema; `stop_reason` не участвует. Иначе — infrastructure failure `N/3` в `AssumptionLog.md`; смена prompt/schema счётчик не сбрасывает.
+- Каждая попытка — `scripts/run_claude_review.sh (--range <range> | --file <review-file>) --attempt <N/3>` (`--range` — diff, `--file` — PRD/Architecture Critique). Runner сохраняет вне working copy envelope, stderr, prompt, schema и metadata. В AssumptionLog — ссылка на `*.envelope.json` и `subtype`, `stop_reason`, `output_tokens`, `thinking_tokens`, `len(result)`, включая пустой stdout.
 
 ```bash
 scripts/run_claude_review.sh --range HEAD^..HEAD --attempt 1/3
 # Runner валидирует сохранённый envelope и возвращает non-zero при invalid verdict.
 ```
 
-`scripts/validate_review_result.py` печатает уже извлечённый verdict, а non-zero exit означает infrastructure failure. Скрипт покрыт CI fixtures; не оценивать сырой stdout или `stop_reason` вместо `.result`.
+`scripts/validate_review_result.py` вызывать напрямую как исполняемый файл; non-zero exit — infrastructure failure. Сырой stdout или `stop_reason` вместо `.result` не оценивать.
 
 ## 4. Core Loop агента
 
-Агент работает только через цикл:
+Агент работает только через цикл; проверки — по «Слоям проверок» ниже:
 
 1. Выбрать задачу
-2. Создать/обновить PRD задачи
-3. Изучить связанные `/artifacts` и обновить PRD проверенными фактами
-4. Добавить/обновить секцию `Архитектурное решение`; для старых PRD — только если PRD существенно обновляется перед новой реализацией
-5. Если задача затрагивает auth/storage/public/API/MCP contract/production behavior/performance/cross-module boundary: Architecture Critique сторонней сильной моделью → устранить адекватные findings либо зафиксировать rejected rationale
-6. Spark-review PRD → проверить адекватность findings → устранить только адекватные и важные findings
-7. PRD-review → устранение адекватных findings → повтор PRD-review после правок
-8. Spark-review перед PRD-review сторонней моделью → проверить адекватность findings → устранить только адекватные и важные findings
-9. PRD-review сторонней моделью → устранение адекватных findings → повтор после существенных правок в пределах бюджета
-10. Оценка PRD на простоту → при изменении PRD повторить PRD-review gates
-11. Написать тесты и получить focused red — только на новых или непосредственно затронутых тестах; полный suite ради red не запускается
-12. Red → Green и итерации: лестница и debug-переход из «Слоёв проверок» ниже
-13. Итерационные проверки: focused + fast зелёные; при изменении `scripts/*.sh` выполнить `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`
-   - Команда может попасть в процессную документацию только после запуска ровно в записанном виде: перед commit агент копирует её из документации, выполняет и проверяет реальный exit code. Эквивалентная команда не считается проверкой.
-14. Обновить `Roadmap.md` и `AssumptionLog.md`, затем выполнить строго по порядку `python3 scripts/archive_roadmap.py` и `python3 scripts/check_roadmap_structure.py`; оба exit code должны быть 0 до commit
-15. Провести аудит изменений:
-   - проверить, не появились ли legacy-паттерны, дублирование, рассинхрон со свежим контрактом
-   - при необходимости выполнить рефакторинг под новые изменения
-16. Финальные проверки этапа после последней кодовой правки и аудита — по «Слоям проверок» ниже; результаты дописать в `AssumptionLog.md` и повторить archive/structure из шага 14
-17. Commit — только при зелёных финальных проверках этапа; красный WIP не коммитится
-18. Spark-review committed diff → проверить адекватность findings → устранить только адекватные и важные findings
-19. Ревью сторонней моделью на committed diff до push → устранение адекватных findings → повтор tests/audit/commit/review в пределах бюджета
-20. Push
-21. Заполнить self-attestation checklist и показать пользователю: focused red/green, fast, финальный default, адресные и release gates по применимости (формат — `CLAUDE.md` 4.2)
+2. Создать/обновить PRD; изучить `/artifacts` и внести проверенные факты
+3. Секция `Архитектурное решение`; для старых PRD — только при существенном обновлении
+4. Architecture Critique, если задача затрагивает auth/storage/public/API/MCP contract/production behavior/performance/cross-module boundary
+5. PRD-review → детерминированная проверка → Spark → PRD-review сторонней моделью; повтор после существенных правок в пределах бюджета
+6. Оценка PRD на простоту → при изменении PRD повторить PRD-review gates
+7. Тесты (test-first) → focused red только на новых/затронутых тестах
+8. Red → Green: каждый ранее красный node отдельно до зелёного → owning file/suite → fast
+9. При изменении `scripts/*.sh`: `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`
+   - Команда попадает в процессную документацию только после запуска ровно в записанном виде с проверкой реального exit code; эквивалентная команда не считается проверкой.
+10. Аудит изменений: legacy-паттерны, дублирование, рассинхрон с контрактом; если аудит изменил runtime/tests — повторить шаг 8
+11. Финальные проверки этапа: один полный default; по применимости PostgreSQL, browser, живой вызов изменённого инструмента; real aggregate — на финише поезда
+12. Обновить `Roadmap.md` и `AssumptionLog.md` с evidence
+13. Строго по порядку `python3 scripts/archive_roadmap.py`, затем `python3 scripts/check_roadmap_structure.py`; оба exit code 0
+14. Commit — только при зелёных шагах 8–13; красный WIP не коммитится
+15. Детерминированная проверка → Spark → ревью сторонней моделью на committed diff; после правок — повтор лестницы, commit и review в пределах бюджета
+16. Push
+17. Self-attestation (формат — `CLAUDE.md` 4.2) — evidence куратору, не вопрос пользователю
 
 ### Слои проверок
 
-Этап 467. Причина: по измерениям 15.11.2026 полный default шёл около 26 минут, последовательный real — около 30 минут плюс setup. Это замер, а не норма. Слои меняют, когда запускается проверка, а не что обязательно: красная обязательная проверка по-прежнему запрещает commit и push.
+Слои меняют, когда запускается проверка, а не что обязательно: красная обязательная проверка запрещает commit и push. Core Loop выше следует этой лестнице.
 
-- Обычный цикл: focused red на новых/затронутых тестах (сторож — только с доказанным red/mutation) → реализация → каждый ранее красный node отдельно до зелёного → весь изменённый файл/сюит → fast `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py` → аудит и полные обязательные gates → commit → committed-diff review. Полный suite/real/browser/PostgreSQL ради первого red не запускать. Fast исключает `browser`, `real_api`, `real_browser`, `postgres` и coverage.
-- После failure/error полного или широкого набора сохранить failing nodes/evidence и классифицировать product/harness/flaky по фактам; новые широкие прогоны остановить. Debug: один causal class на изменение, каждый ранее красный node отдельно до зелёного, затем owning file/suite полностью, fast и только инвалидированные полные слои. Real — затронутая группа и финальный aggregate по существующим fingerprints. `--maxfail=1` — только для широкого debug-прогона; финальный полный — без maxfail.
-- После последней кодовой правки и аудита — один полный default; если аудит менял runtime/tests, сначала повторить лестницу. На финише этапа адресно: живой вызов изменённого MCP-инструмента с кодом и телом ответа (не откладывать до конца поезда и не заменять mock), browser для UI, PostgreSQL для storage. Финиш поезда / перед push-merge — полный real aggregate и остальные release gates ниже. Быстрый pre-review до полного набора допустим; обязательное committed-diff review — после зелёных финальных gates. После review-правок повторить соответствующую лестницу.
-- Docs-only не повторяет suites; runtime/test/dependency changes повторяют затронутые проверки по доказанной карте. Fingerprints сейчас есть только у real (устаревший shard не засчитывается); default/PostgreSQL fingerprints и карта зависимостей — работа 465, до неё действующие обязательные проверки не ослаблять.
-- tracemalloc/fd/connection hooks/подробные logs включать адресно на failing node, не в штатном gate; scoped diagnostic mode и offline integration слой появятся в 465, сейчас их нет. Никаких skip/xfail, suppression warnings, скрытых timeout и повторов ради зелёного. `-W error`, ownership, security/privacy и live gates сохраняются. Stop-loss: две причинные real-попытки на класс, затем offline-воспроизведение либо эскалация; новых diagnostic guards в тот же WIP не добавлять. Счётчик 7/10 непреднамеренных failures после review не сбрасывать; содержательный нестабильный тест не удалять. Параллелить лишь независимые изолированные контуры; real на общем devtr6 и группы с общими upstream resources — последовательно.
+- Обычный цикл: focused red на новых/затронутых тестах (сторож — только с доказанным red/mutation) → реализация → каждый ранее красный node отдельно до зелёного → owning file/suite → fast `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py` → аудит → финальные gates → commit → committed-diff review. Полный suite/real/browser/PostgreSQL ради первого red не запускать. Fast исключает `browser`, `real_api`, `real_browser`, `postgres`, `offline_integration` и coverage.
+- Debug после failure/error широкого набора: сохранить failing nodes/evidence, классифицировать product/harness/flaky по фактам, широкие прогоны остановить. Один causal class на изменение/коммит; ранее красные nodes по одному до зелёного → owning file/suite → fast → только инвалидированные полные слои. Real — затронутая группа и финальный aggregate по существующим fingerprints. `--maxfail=1` — только в широком debug-прогоне; финальный полный — без maxfail.
+- Финальные gates: после последней кодовой правки и аудита — один полный default `docker compose --profile test run --rm test`; по применимости PostgreSQL (storage), browser (UI), живой вызов изменённого MCP-инструмента с кодом и телом ответа (mock не заменяет). Финиш поезда / перед push-merge — полный real aggregate и остальные release gates. Быстрый pre-review до полного набора допустим; обязательное committed-diff review — после зелёных финальных gates. После review-правок повторить соответствующую лестницу.
+- Инвалидация: docs-only не повторяет suites; runtime/test/dependency changes повторяют затронутые проверки по доказанной карте. Real и default/PostgreSQL проверяют versioned node inventory, JUnit и fingerprint исходников/конфигурации/зависимостей через `scripts/offline_gate_manifest.py`; устаревший gate не засчитывается.
+- Диагностика и stop-loss: diagnostics и read-only снимки делает исполнитель. tracemalloc/fd/connection hooks/подробные logs — адресно на failing node, не глобально; `scripts/run_scoped_diagnostic.py` допускает только offline node или owning file, дорогие offline integration файлы остаются в обязательном default. Один инструментированный JUnit-профиль допустим, если даёт новую информацию; повтор без новой информации запрещён; профиль не заменяет release gate. Никаких skip/xfail, suppression warnings, скрытых timeout и повторов ради зелёного; `-W error`, ownership, security/privacy и live gates сохраняются. На causal class — максимум две причинные real-попытки, затем offline-воспроизведение либо эскалация; новых diagnostic guards в тот же WIP не добавлять. Счётчик 7/10 непреднамеренных failures после review не сбрасывать; содержательный нестабильный тест не удалять. Параллелить только независимые изолированные контуры; real на общем devtr6 и группы с общими upstream resources — последовательно.
 
 ### Релизный поезд
 
 - Рабочая ветка называется `dev/roadmap-<этапы>`; пуши, статусы Roadmap и записи AssumptionLog ведутся на этой ветке.
-- После зелёного CI ветки и полного mock+real suite по её финальному SHA супервизор делает merge в main. Merge запускает релиз: `deploy-prod.yml:19` уже допускает только main.
-- Деплой и проверки метрик после деплоя относятся к пост-релизной работе и выполняются после мержа.
+- После зелёного CI ветки и полного mock+real suite по её финальному SHA куратор делает merge в main; релиз идёт только из main (`deploy-prod.yml`).
+- Deploy и monitoring метрик — работа куратора после merge.
 - Хотфиксы идут напрямую в main; затем рабочая ветка перебазируется на обновлённый main.
 
 Запрещено:
@@ -205,10 +185,9 @@ scripts/run_claude_review.sh --range HEAD^..HEAD --attempt 1/3
 - пушить без прохождения проверок
 - пушить без Spark-review committed diff либо без явного исчерпания Spark-бюджета с rationale
 - пушить без валидных verdict Astra и Opus на committed diff; исчерпание infrastructure attempts не разрешает push
-- пропускать focused + fast и финальный полный default после аудита/рефакторинга, изменившего runtime/tests
+- пропускать focused + fast и финальный полный default после правки runtime/tests
 - получать первый red полным suite, real, browser или PostgreSQL и использовать их как цикл разработки
-- превышать stop-loss в две причинные real-попытки на один класс сбоя
-- смешивать в одном изменении/коммите независимые causal classes
+- превышать stop-loss; смешивать в одном изменении независимые causal classes
 
 ---
 
@@ -246,44 +225,7 @@ scripts/run_claude_review.sh --range HEAD^..HEAD --attempt 1/3
 
 ## 6.1. Feedback triage и `known_issues`
 
-Production feedback triage — операционная работа, а не repository work.
-
-Агент не изменяет и не коммитит файлы репозитория, если единственное действие:
-
-- читать `agent_feedback_reports`;
-- обновлять production `known_issues`;
-- link/resolve feedback reports;
-- править `agent_playbook_json` или `match_rules_json`;
-- исследовать конкретный feedback report без кода, тестов или PRD.
-
-Source of truth для такого triage:
-
-- production DB (`agent_feedback_reports`, `known_issues`);
-- внешний work log в `/home/otis/myprojects/LiveHelperAgent/logs/mcp/`.
-
-Запрещено по умолчанию добавлять в repo только из-за feedback triage:
-
-- `AssumptionLog.md`;
-- `README.md`;
-- `artifacts/report-ai-*`;
-- любые ad-hoc research artifacts.
-
-Repo changes допустимы только если feedback породил явное product/code intent:
-
-- code fix;
-- regression test;
-- Roadmap/PRD задачу на будущий fix;
-- документацию, которую пользователь явно попросил добавить в репозиторий.
-
-Перед любым commit после feedback triage агент обязан выполнить:
-
-```bash
-git status --short
-git diff --stat
-```
-
-Если diff содержит только разбор feedback или результаты правок `known_issues`,
-commit запрещён.
+Triage (`agent_feedback_reports`, `known_issues`, link/resolve, `agent_playbook_json`/`match_rules_json`) — операционная работа: факты — из production DB, ход — во внешнем work log, который служит только triage и не является источником правил. Файлы репозитория, включая `AssumptionLog.md`, `README.md`, `artifacts/report-ai-*` и ad-hoc research, меняются только при явном product/code intent: code fix, regression test, Roadmap/PRD-задача или документация по прямой просьбе пользователя. Перед commit — `git status --short` и `git diff --stat`; diff только из разбора feedback или правок `known_issues` не коммитится.
 
 ---
 

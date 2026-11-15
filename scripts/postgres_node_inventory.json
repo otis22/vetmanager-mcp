@@ -1,0 +1,34 @@
+{
+  "tests/test_stage153_review_followup.py": {
+    "count": 1,
+    "sha256": "7966e047e5902e93dec6a00b794e47b3bdb8be8eb11f3ec90f3b564df8cb5ada"
+  },
+  "tests/test_stage227_postgres_activation_telemetry.py": {
+    "count": 1,
+    "sha256": "505c75bbb3a1ecab8b6161478cab67d5101914745523c82a653aaede907fb5a5"
+  },
+  "tests/test_stage359_postgres_activation_journal.py": {
+    "count": 1,
+    "sha256": "a136093273180b3c863988630d527c0999d6f32e28e0af0f67a3b37c973ff975"
+  },
+  "tests/test_stage374_first_session.py": {
+    "count": 1,
+    "sha256": "5244151de332e57464b19beaa47a459494dd1847cd9cc7241eeaae7bfb571e51"
+  },
+  "tests/test_stage376_expiry_notice.py": {
+    "count": 1,
+    "sha256": "9a5d81903a62246af7a331cdaa4f13a2768f30dbd313cc695e1899c77f7f447c"
+  },
+  "tests/test_stage385_cache_barrier.py": {
+    "count": 1,
+    "sha256": "22fdcd942ee1a6f85e2cde250bfd10549892d22c0ff01aac92fed9dd4b4053a3"
+  },
+  "tests/test_stage408_postgres.py": {
+    "count": 1,
+    "sha256": "b7c74a270ff05aa46f3096b306c2003fb1e6e44c06f91c1a4dcada830aa26bad"
+  },
+  "tests/test_vetmanager_connection_service.py": {
+    "count": 1,
+    "sha256": "63054bc5eb0430e2973f99f8cddfb2e579c3d43510b8862a57e28109fc0bd9a6"
+  }
+}

@@ -106,7 +106,7 @@ Operational helpers:
 # Chromium уже предустановлен в test image, доп. setup не нужен
 docker compose --profile test run --rm test
 
-# fast contour: без browser и real contour tests
+# fast contour: без browser, real, PostgreSQL и offline integration tests
 docker compose --profile test run --rm test sh -c "python scripts/run_fast_test_suite.py"
 
 # security contour: только security regressions этапа 44
@@ -135,12 +135,16 @@ docker compose run --rm \
 
 Тестовые контуры:
 - `fast`:
-  быстрый inner-loop без Playwright/browser и без real API/browser tests.
+  быстрый inner-loop без Playwright/browser, real API/browser, PostgreSQL и
+  измеренных дорогих offline integration файлов. Последние остаются в default.
 - `default`:
-  unit + mock/e2e + live localhost browser tests, без реального Vetmanager API.
+  unit + mock/e2e + live localhost browser tests, без реального Vetmanager API;
+  проверяет полный JUnit и versioned node inventory.
 - `opt_in_real`:
   real API e2e + real browser tests; real browser flow дополнительно требует
-  `RUN_REAL_BROWSER_TESTS=1`.
+  `RUN_REAL_BROWSER_TESTS=1`. Для выпуска используется последовательный
+  aggregate из восьми групп штатного isolated runner; приведённый выше
+  монолитный вызов остаётся адресной локальной проверкой и не заменяет aggregate.
 
 Safe workflow для real/browser verification:
 - использовать только env-driven `TEST_*` и `RUN_REAL_BROWSER_TESTS=1`, не

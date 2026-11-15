@@ -7,11 +7,13 @@ from pathlib import Path
 
 
 REQUIRED_FILES = frozenset({
+    "test_stage153_review_followup",
     "test_stage227_postgres_activation_telemetry",
     "test_stage359_postgres_activation_journal",
     "test_stage374_first_session",
     "test_stage376_expiry_notice",
     "test_stage385_cache_barrier",
+    "test_stage408_postgres",
     "test_vetmanager_connection_service",
 })
 

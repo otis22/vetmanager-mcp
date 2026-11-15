@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from test_contours import DEFAULT_TEST_CONTOUR
 from warning_policy import DEFAULT_SUITE_WARNING_POLICY, build_warning_error_flags
+from scripts.offline_gate_manifest import check_gate, source_fingerprint
 
 
 def main() -> int:
@@ -39,12 +40,25 @@ def main() -> int:
         "--cov-config=.coveragerc",
         "--cov-report=term-missing:skip-covered",
         "--cov-report=xml:coverage.xml",
+        "--junitxml=/tmp/stage465-default.xml",
         "-m",
         DEFAULT_TEST_CONTOUR.marker_expression,
     ]
     env = dict(os.environ)
+    starting_fingerprint = source_fingerprint()
     completed = subprocess.run(command, env=env, check=False)
-    return completed.returncode
+    if completed.returncode:
+        return completed.returncode
+    try:
+        check_gate(
+            "default", Path("/tmp/stage465-default.xml"),
+            PROJECT_ROOT / ".stage465-default-gate.json",
+            starting_fingerprint,
+        )
+    except ValueError as exc:
+        print(f"Default manifest gate rejected: {exc}", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

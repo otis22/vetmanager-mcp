@@ -22679,3 +22679,280 @@ Astra `gpt-6-astra`: валидный JSON, validator exit 0, **2 medium**, crit
 Claude Opus: валидный envelope `is_error=false`, subtype `success`, stop_reason `tool_use`, output_tokens 4133, thinking_tokens 2816, len(result) 1969, **3 medium**, critical/high 0. Приватные поля AnyIO/httpcore при TLS abort — **принято как риск совместимости** будущих версий/proxy-обёрток; проверенный текущий контейнер и TLS red→green не показывают текущего отказа. Отмена task чужого loop через прямой `cancel()` — **принято как непокрытый край**; текущий guard проверяет удержание pending, но не thread-safe foreign-loop cancel. Предложенная правка меняет runtime и инвалидирует финальные gates, поэтому отнесена к отдельному проектированию после выпуска. Aggregate сравнивает dependency fingerprint между свежими shards, но не вычисляет его заново в aggregate — **принято как ограничение будущего drift-check**, при этом восемь групп были собраны и выполнены последовательно на одном образе. Evidence `stage459-final-review/2026-11-15T105833Z-git_range-fbbf4ee3c7cbc94e840c743635c92105bd39bb37-attempt-1-of-3.ZpSGJN/`.
 
 Общих findings Astra/Opus нет; unresolved critical/high нет. После этого вывода сделана только docs-only запись; она не инвалидирует runtime/test fingerprints. Финальный SHA проходит повторный review с отдельным evidence. Эти medium-риски не закрыты тестами данного этапа и передаются куратору для планирования, без расширения текущего WIP.
+
+## Этап 465 — baseline и процессное отклонение, 15.11.2026
+
+Базовый SHA `e5210b887176edd83d5acb5279241498474572bd`, ветка
+`dev/roadmap-465-fast-suite`. Первый полный fast baseline: 4772 passed,
+3 skipped, 162 deselected, exit 0, 698,76 с. Top timings: 42,94 с
+`stage459_oracle_six_scenarios`, 14,90 с `stage459_oracle_pytest_integration`,
+9,87 с `stage424_postgres_ci`, 7,40 с `stage450_451_449_train`. Узкий
+`-rs` на трёх candidate-файлах: 5 passed, 3 skipped, exit 0. Причины:
+явный skip заглушки F4/F5 с `NotImplementedError`; Docker CLI отсутствует
+для observability-теста; нет изолированного `STAGE408_PG_URL`. `stage408`
+не маркирован `postgres` и не входит в шесть обязательных PG nodes, значит
+этот oracle отсутствует в текущем PG gate. Для остальных двух замена не
+доказана. Второй полный `-rs`/JUnit
+остановлен куратором, результата нет; не засчитывается и не повторяется.
+
+Процессное отклонение: статус `Roadmap.md` и черновой PRD изменены до
+onboarding attestation. Исходное ограничение запрещало запись в run-dir;
+attestation теперь сохранён в разрешённом evidence каталоге
+`stage465-train-20261115/onboarding-attestation.md`. Новое сообщение
+пользователя объявило run-dir доступным, но вышестоящее ограничение на запись
+по-прежнему разрешает только репозиторий и evidence. Исходный порядок не
+соблюдён; старое attestation другого SHA не использовалось. Позже
+`CLAUDE.md` (599 строк) и `Roadmap.md` (992 строки) прочитаны полностью,
+attestation дополнен. Реализация не начата,
+PRD/Architecture Critique и committed-diff review не пройдены, release
+gates этапа не выполнялись, commit/push запрещены.
+
+Предварительный Spark-review PRD/архитектуры (candidate-only, валидный
+`files_read` из восьми файлов) нашёл два high и четыре medium; evidence:
+`stage465-train-20261115/spark-prd-architecture.prompt.txt` и
+`spark-prd-architecture.stdout.txt`. Оба high приняты: карта стоимости
+неполная, а замена трём skip не доказана. Medium по независимому источнику
+ожидаемых nodes, полноте fingerprint inputs, протоколу измерения 180 с и
+rollback тоже приняты к доработке PRD. Сильный Architecture Critique не
+запускался: PRD пока содержит открытые high и не утверждён.
+
+Продолжение inventory: collect-only в штатном образе — fast 4775 nodes/
+368 файлов, default 4794/375, browser 19/7, PostgreSQL 6/6, real 137/65;
+полные node lists в `stage465-train-20261115/*-collected.txt`. Адресные
+замеры: три лёгких owning файла 284 passed/6,02 с; `web_auth` 37/38,30 с;
+шесть owning файлов OAuth/Report AI/average/revenue/cleanup 221/58,43 с;
+четыре дорогих файла nested pytest/PG-CI/train 18/70,60 с. Всего адресно
+измерены 560 уникальных nodes, остальным 4215 точный per-file timing не
+приписывается. Эти замеры не складываются в общий baseline из-за порядка
+и нагрузки. Повторное Spark-review PRD (`spark-prd-architecture-round2.stdout.txt`)
+валидно, `files_read` из семи файлов, осталось одно high по неполной карте
+и medium по ownership versioned inventory. High принят; без закрытия
+PRD/Architecture gate реализация запрещена. Сильная пара не запускалась,
+валидные слоты не расходованы.
+
+Статус 465/465.1 переведён в `supervisor_pending`: обязательная измеренная
+карта per-file/node не может быть честно завершена из доступного top-100
+baseline и 560 адресно измеренных nodes. Для оставшихся 4215 nodes нет
+timing evidence; один полный JUnit/fast профиль явно запрещён текущей
+постановкой, серия десятков прогонов тоже. Нужен выбор куратора/владельца:
+разрешить один отдельный инструментированный cost-profile без объявления
+его fast gate либо принять ограниченную карту с явными границами точности
+как достаточную для PRD-гейта. До решения не выбирать файлы для массового
+исключения из fast и не заявлять достижимость 180 секунд. PRD high открыт;
+код, commit и push не выполнялись.
+
+Куратор разрешил ровно один отдельный полный cost-profile. На неизменном
+WIP диагностический pytest/JUnit `-rs`: 4772 passed, 3 skipped,
+162 deselected, exit 0, pytest 778,27 с / wall 784,72 с; прежний
+остановленный JUnit не учитывался. Evidence `stage465-train-20261115/profile.xml`,
+`profile.stdout.txt`, `profile.stderr.txt`, `profile.time`, `profile.sha`,
+`profile-wip-diff.sha256`. XML перенесён из repo, временного файла нет.
+Сверка с collect-only: 4775/4775 уникальных nodes, 0 missing/extra/duplicate.
+Карты `profile-nodes.csv` и `profile-files.csv`: 368 файлов, сумма testcase
+766,98 с. 87 файлов с ≥2 с каждый составляют 1414 nodes/658,44 с; остаток
+3361 nodes/108,54 с, оценочный fast с прежними накладными расходами
+126,28 с. `offline-candidates.csv` содержит их список; это кандидат, не
+результат финального fast. Ранее принятый Spark high по неполной карте
+закрыт фактическим JUnit. Этап возвращён в `in_progress`; PRD/Architecture
+Critique ещё требуется до реализации.
+
+PRD/Architecture Critique после полного профиля: Spark round 3 valid
+`files_read` семь файлов, high о неполной карте **отклонён** сверкой
+4775/4775 JUnit и полных `profile-nodes.csv`/`profile-files.csv` (368/368
+файлов, 87 кандидатов — точное подмножество). Приняты medium по нагрузке,
+владельцу inventory, real invalidation и skip policy, PRD дополнен.
+Предгейтовый Spark-бюджет 3/3 исчерпан. Первая сильная пара:
+Astra `astra-prd-attempt-1-of-3.result.json` valid `[]`; Opus envelope
+`2026-11-15T141439Z-file-PRD_-465---_md-attempt-1-of-3.ebZZnf/`,
+is_error=false, subtype=success, stop_reason=tool_use, output_tokens=3058,
+thinking_tokens=1411, len(result)=3729, valid 1 high/7 medium. High по
+stage190 default skip принят, PRD добавил обязательный host oracle и снятие
+только старого skip node. Вторая пара после правки: Astra
+`astra-prd-attempt-2-of-3.result.json` valid `[]`; Opus envelope
+`2026-11-15T141742Z-file-PRD_-465---_md-attempt-2-of-3.wdVe26/`,
+is_error=false, subtype=success, stop_reason=tool_use, output_tokens=2857,
+thinking_tokens=1444, len(result)=3214, valid 0 high/6 medium. Приняты
+уточнения по PG inventory вместо числа в прозе, локальному host gate,
+центральному marker и раннему замеру; versioned per-file inventory оставлен
+осознанно ради fail-closed node loss/duplicate с review diff. Нерешённых
+critical/high нет. Сложность оценена в PRD: один центральный список вместо
+87 правок файлов и отдельные default/PG manifests без generic framework.
+
+Реализация WIP: marker guard 2 failed до изменения → 2×1 passed → owning
+2 passed. Временный CI/default контур после переноса 87 файлов:
+3366 passed/1 failed/0 skipped за 126,54 с wall; единственный старый
+`test_test_contours` требовал прежнее выражение. После адресной правки
+1 passed, owning 4 passed и fast **3367 passed/0 skipped**, exit 0,
+120,50 с wall. Это итерационный fast, не финальные три.
+
+Skip oracles: `stage408` marker и обязательный PG файл, focused guards
+2 failed → 2×1 passed; отдельный локальный PG node 1 passed.
+Stage190 host validator `python3 scripts/check_stage190_compose.py` exit 0,
+guard красный при удалении CI шага, затем 1 passed; оставшийся owning файл
+5 passed. F4/F5 заглушка заменена двумя PG сессиями с барьером: мутация
+`report_count=1` дала focused 1 failed (`1 != 2`), после восстановления
+focused 1 passed и owning файл 19 passed. CI URL guard красный при
+удалении `STAGE408_PG_URL`, затем owning 5 passed. Изолированный PG на
+Docker network без host port: восемь обязательных nodes passed, 0 skipped,
+result gate и новый manifest validator exit 0. Это итерационная проверка,
+финальные release gates ещё не выполнялись.
+
+Scoped diagnostic: тесты red на отсутствующем CLI, затем focused green;
+намеренная мутация возврата 0 вместо pytest exit дала 1 failed, broad-scope
+мутация дала 1 failed, обе восстановлены. Owning 3 passed; один адресный
+тест в отдельном контейнере прошёл с tracemalloc/resource evidence. Он
+не запускал real/PG и не засчитывался как release gate.
+
+Default/PG manifests в WIP: versioned inventory с 4810 default nodes
+и 8 PG nodes, синтетические guards на потерю/дубль/skip/stale/incomplete.
+Мутация verify на само-сравнение fingerprint дала focused 1 failed и
+восстановлена. Интеграция полного default и post-change freshness ещё не
+проверена; не выдавать WIP за завершённый гейт.
+
+Аудит manifest обнаружил отсутствие сверки стартового и конечного
+fingerprint во время default/PG gate. Первый начатый default и real `read`
+остановлены до результата; они не засчитываются. Добавлен стартовый digest,
+проверка в конце и обязательный аргумент CLI. Мутация отключения сравнения:
+`test_gate_rejects_stale_inventory_and_incomplete_junit` 1 failed, после
+восстановления 1 passed; owning manifest/CI/contours 15 passed. От прерванного
+default остался исполняющийся test-контейнер; он обнаружен и остановлен.
+Один fast, конкурировавший с ним, остановлен и не использован для порога.
+
+Диагностический CLI первоначально сохранял сырой verbose output, хотя PRD
+требовал фильтр. Новый guard с синтетическим canary и URL дал 1 failed на
+отсутствующих файлах evidence, затем 1 passed и owning 4 passed. CLI теперь
+пишет stdout/stderr в приватные файлы вне repo и удаляет известные значения
+секретных env-переменных, URL и формы credential assignments. Это защита
+известных форм, не универсальное распознавание любых ПДн; CLI допускает
+только offline тесты без test credentials.
+
+Первая попытка финального PG с восемью failed была ошибкой локального
+синтетического пароля (authentication failed до тестовой логики). Один node
+stage408 прошёл с фактической конфигурацией, затем семь остальных ранее
+красных nodes прошли по одному. Широкий PG повторяется только после этой
+классификации. Цикл уточнения CI добавил `-W error` для PG и измеряемый
+порог fast 180 с; guard fast CI red 1 failed до шага, затем focused 1 passed,
+owning 6 passed. Versioned default inventory после добавления guard
+пересобран collect-only; финальное число проверяется перед выпуском.
+
+Расширенный аудит fingerprint inputs выявил неучтённые `.coveragerc`,
+`docker-compose.test.yml` и `scripts/*.sh`. Они включены в default/PG
+source digest. Мутация удаления shell inputs дала focused
+`test_fingerprint_includes_shell_and_coverage_inputs` 1 failed; после
+восстановления focused 1 passed и owning manifest file 9 passed.
+Коллекция default теперь 4813 nodes/379 файлов, PG 8/8. Финальный PG после
+этой правки: 8 passed, 0 skipped, result gate и manifest gate exit 0,
+evidence `pg-after-fingerprint.*`. Предыдущий чистый fast на более раннем
+дереве: 3379 passed, 0 skipped, 1577 deselected, wall 161,40 с; он не
+засчитывается в финальную тройку. Один запущенный затем fast был остановлен
+после новой кодовой правки; его частичный результат тоже не засчитывается.
+
+Три последовательных fast на одном неизменном tracked/untracked tree hash,
+HEAD и image ID: **162,01 / 163,31 / 161,72 с wall**, все exit 0,
+**3381 passed / 0 skipped / 1577 deselected**. Evidence
+`stage465-train-20261115/fast-final-current-{1,2,3}.{json,stdout.txt,stderr.txt}`
+и `fast-final-current-aggregate.json`. Каждый вывод содержит один
+`PytestAssertRewriteWarning` о `tests.export_shared`, присутствовавший и в
+исходном cost-profile; suppression не добавлялся. Эта запись в AssumptionLog
+сделана **после** серии (docs-only), тестовые inputs/fingerprints не менялись.
+
+Оставшиеся обязательные gates этапа на границе 90-минутного бюджета:
+полный default на текущем дереве с новым manifest (исторически около
+26 минут), полный последовательный real aggregate восьми групп на актуальных
+fingerprints (около 30 минут плюс setup), итоговый аудит и committed-diff
+Spark → Astra+Opus. Прерванные при раннем аудите default и real `read`
+результата не имеют и не засчитываются. Статус Roadmap остаётся
+`in_progress`; commit/push запрещены до полного зелёного набора.
+
+## Этап 465 — второй ход release, 15.11.2026
+
+Перед полным default проверены три fast: их tracked/untracked tree hash
+внутри серии и image ID совпадали, wall 162,01/163,31/161,72 с; после
+серии полный tree hash изменился из-за docs-only записей в этом журнале
+и workflow-документе. Source fingerprint тестовых входов совпал с ранее зелёным
+PostgreSQL manifest. Полный default запущен точно документированной командой
+`docker compose --profile test run --rm test` один раз на текущем коде:
+**4813 passed, 0 skipped, 145 deselected**, exit 0, wall **1695,46 с**.
+JUnit и versioned inventory сверены встроенным gate: 4813 nodes,
+`complete=true`, fingerprint совпадает с PostgreSQL gate. Evidence
+`stage465-train-20261115/default-release.{stdout.txt,stderr.txt,time,exit}`
+и `default-release-gate.json`. Один `PytestAssertRewriteWarning` того же
+класса, что в исходном профиле, не подавлялся.
+
+Real группы запущены строго последовательно по одному разу через штатный
+isolated runner, evidence `stage465-train-20261115/real-release/`:
+`read` 76/76 passed (482,84 с), `auth-web` 20/20 (221,07 с),
+`write-restore` 6/6 (100,11 с), `report-ai` 15/15 (299,78 с),
+`report-ai-420` 2/2 (405,38 с), `report-ai-422` 1/1 (444,33 с).
+У каждой из шести групп test и cleanup exit 0, failures/skips 0.
+
+Седьмая группа `export` завершилась test exit 1, cleanup exit 0:
+1 passed, 2 failed, 0 skipped. Первый node получил безопасно
+классифицированный `Shared export start failed: OTHER_ERROR`; второй
+зависит от того же единственного StartReport и упал вслед за ним.
+JUnit/outcome сохранены в `real-release/export-1118406fdc67/`.
+После этого широкий поезд остановлен: `workers` не запускалась,
+aggregate отсутствует. Неполный набор не считается release gate.
+
+Одна адресная попытка в отдельном test-контуре для первого failing node
+сохранена как `stage465-train-20261115/export-focus/` и
+`export-focus.{stdout.txt,stderr.txt,time,exit}`. На этот раз StartReport
+прошёл, но получение файла упало с
+`The export storage address was rejected by MCP security policy`.
+Это **другой causal class**; нельзя объяснять оба отказа одной гипотезой.
+Код `report_export_origin.py` отвергает некорректный HTTPS origin, сбой DNS
+или непубличный адрес; из безопасного сообщения невозможно установить,
+какой именно случай пришёл от тестового upstream. Конфигурация явного
+allowlist в test `.env` отсутствует (значения и локатор не печатались).
+Сторож `test_download_security_failure_remains_its_own_failure` сохраняет
+этот отказ как содержательный. Ни retries, ни расширения разрешённых адресов,
+ни suppression не сделано.
+
+Для завершения нужен владелец test/upstream: в доверенном приватном контуре
+проверить, какой адрес выдаёт выгрузка и соответствует ли он требованию
+публичного HTTPS/DNS; отдельно установить причину первого `OTHER_ERROR`.
+Изменять security policy либо тестовый upstream без такого решения нельзя.
+Roadmap 465/465.2 переведён в `supervisor_pending`; 465.1 закрыт фактическими
+PRD gates. Текущий WIP не коммитить и не пушить: полного real aggregate,
+committed-diff review и разрешения на merge нет.
+
+Продолжение после приватной проверки куратора: код и конфигурация не
+менялись. Куратор read-only проверил старый reportFile: позднее он вернул
+HTTP 404 Record not found, что само по себе не объясняет прежний policy
+reject. Один новый прямой diagnostic StartReport для настроенного test report
+вернул HTTP 200/success=true. Для четырёх полученных locators (html/csv/
+csv_semicolon/xlsx) подтверждены HTTPS, стандартный порт, отсутствие
+userinfo, успешный DNS, один ответ и только глобальные адреса. Сырые
+locators, IP, credentials и содержимое отчёта не переносились в журнал.
+Текущий test upstream удовлетворяет действующему security contract; вывод
+о постоянном нарушении политики не подтверждён. Код и policy не менялись.
+
+По разрешённой debug-лестнице выполнена **одна** новая focused попытка
+`test_real_export_is_downloaded_cleaned_and_served_by_us` через существующий
+isolated runner на configured test contour. Evidence
+`stage465-train-20261115/export-focus-resume/` и
+`export-focus-resume.{stdout.txt,stderr.txt,time,exit}`. Startup/auth/cleanup
+exit 0, focused node exit 1: `Shared export start failed: RUN_RATE_LIMITED`.
+Это явный upstream rate-limit class, отличный от прежнего `OTHER_ERROR`
+и policy rejection. Связь с непосредственно предшествовавшим прямым
+diagnostic StartReport возможна, но **не доказана**; повтор ради проверки
+гипотезы запрещён. Owning export group, workers и aggregate после этого
+failure не запускались. Шесть прежних зелёных shards, fast×3, PG и полный
+default остаются evidence на неизменных test inputs; они не превращают
+неполный real aggregate в зелёный. Commit, review committed diff и push
+по-прежнему запрещены; Roadmap остаётся `supervisor_pending`.
+
+
+## Workflow: автономность Codex и краткие инструкции, 15.11.2026
+
+Claude Opus review-only (`stage465-autonomy-review`, attempt 1/3, valid verdict) подтвердил проблемы микроконтроля, повторной attestation, дублирования diagnostics и prose. По решению владельца Claude сократил `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/agent-workflow.mdc`; в `AGENT_ONBOARDING.md` добавлены пять правил куратора. Codex самостоятельно ведёт задачу/поезд; куратор вмешивается при нарушении правил, явном блокере, затяжном этапе или отклонении от цели. Retry export использует существующий `file_id`, без нового StartReport. Один новый JUnit-профиль разрешён; inventory проверяется детерминированно до Spark.
+
+Сохранены marker blocks, focused/full gates, strong reviews и security/privacy. Изменения docs-only; код/tests/production не менялись, новый этап не запускался. Envelope: `opus-edit.envelope.json`, `opus-edit-onboarding.envelope.json`. Focused docs guards: **114 passed**, Roadmap structure и `git diff --check` зелёные. Commit/push не выполнялись.
+
+## Этап 465 — завершение real release после cooldown, 15.11.2026
+
+Новая сессия перечитала `AGENTS.md`, `AGENT_ONBOARDING.md` v1.2, весь `CLAUDE.md` и `.cursor/rules/agent-workflow.mdc`; attestation для base `e5210b887176edd83d5acb5279241498474572bd` записан в `/home/otis/myprojects/LiveHelperAgent/scratchpad/run-465-20261115/onboarding-attestation.md`. Раннее процессное отклонение сохраняется: черновой PRD и Roadmap были созданы до первоначального attestation из-за прежнего запрета записи в run-dir; старый SHA не засчитывался. Эта поздняя запись не превращает исходный порядок в соблюдённый.
+
+После окончания upstream cooldown и без изменения кода, `.env` или security policy выполнена **одна** свежая owning `export` group через `scripts/run_isolated_test_suite.py --env-file .env --suite real --group export --evidence-dir /home/otis/.local/share/vetmanager-mcp-review-evidence/stage465-train-20261115/real-release`: `export-c1022903d706`, **3 passed / 0 failed / 0 skipped**, CLI/test/cleanup exit 0, wall 97,68 с. Отдельного focused StartReport и серии upstream jobs не было. Затем строго последовательно один `workers` shard `workers-1edf83aea0e4`: **14 passed / 0 failed / 0 skipped**, CLI/test/cleanup exit 0, wall 235,47 с. Aggregate `aggregate-collect-48c626c3c904` exit 0: все восемь групп с общим runtime fingerprint `3224ce5ceba3c99a248d8c376611efded610bad8ad5d9f6ecae6b2355aa37a7d` и dependency fingerprint `986a2d4a8fcaf434e69d4a44485da26d088bce70ced3aa0f6836415fc615b5ab`, **137/137 unique passed**, cleanup exit 0. Свежий export supersedes прежний failed shard, который сохранён; прежние шесть зелёных groups не повторялись. Evidence: `stage465-train-20261115/{export-release-owning,workers-release,real-release-aggregate}.{command.json,stdout.log,stderr.log}` и `real-release/`.
+
+Fast×3 (3381 passed, 0 skipped, 162,01/163,31/161,72 с), PostgreSQL (8 passed), полный default (4813 passed, 0 skipped, 145 deselected) остаются валидными на неизменных runtime/test inputs; docs-only правки не требуют повторного прогона. Старые `OTHER_ERROR`, policy rejection и `RUN_RATE_LIMITED` evidence сохранены как самостоятельные классы, текущий green не доказывает их постоянное исчезновение. Исходный security contract и проверка отказа остаются без ослабления. Выкат не меняет трактовку уже выданных ключей, токенов или прав.
