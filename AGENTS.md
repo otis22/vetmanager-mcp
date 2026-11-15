@@ -180,27 +180,35 @@ API требует и что отвечает: поля, коды, тексты 
 `.cursor/rules/agent-workflow.mdc` «Слои проверок». Ни один гейт не ослаблен:
 красная обязательная проверка запрещает commit и push.
 
-- **Red** — только focused на новых или непосредственно затронутых тестах;
-  полный suite/real/browser/PostgreSQL ради red не запускаются.
-- **После исправления** каждый ранее красный тест сначала запускается отдельно
-  до зелёного; focused/fast и полный suite — только после успешных одиночных запусков.
-- **Итерации** — focused green, затем `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py`.
-- **Финиш этапа** — после последней кодовой правки и аудита один полный
-  default (если аудит менял runtime/tests — перед ним снова focused + fast)
-  и адресные проверки зоны: живой вызов изменённого инструмента (не
-  откладывается до конца поезда), browser для UI, PostgreSQL для storage.
-- **Финиш поезда / перед push-merge** — полный real aggregate и остальные
-  release gates по существующим правилам.
-- После docs-only изменений полный слой не повторяется; после runtime/tests —
-  соответствующие focused + fast и финальные проверки. Fingerprints есть
-  только у real; default/PostgreSQL invalidation — план этапа 465.
-- real/browser/PostgreSQL — не цикл разработки. Stop-loss: максимум две
-  причинные real-попытки на класс сбоя, затем offline-воспроизведение или
-  эскалация/отдельный этап; новые diagnostic guards в тот же WIP не
-  добавляются, счётчик непреднамеренных failures после review не обнуляется.
-- Один causal class на изменение/коммит; диагностика (tracemalloc/fd/hooks/
-  phase wrappers) не расширяет штатный gate — отдельный режим появится в 465.
-  Нестабильный тест не удаляется ради зелёного.
+- **Обычный цикл:** focused red на новых/затронутых тестах → реализация →
+  каждый ранее красный node отдельно до зелёного → весь изменённый файл/сюит
+  → fast → аудит и полные обязательные gates → commit → обязательное
+  committed-diff review. Полный suite/real/browser/PostgreSQL ради red не запускать.
+- **После failure/error широкого набора — debug:** сохранить failing nodes и
+  evidence, классифицировать product/harness/flaky по фактам; новые широкие
+  прогоны остановить. Один causal class на изменение; каждый красный node
+  отдельно до зелёного, затем owning file/suite полностью, fast и только
+  инвалидированные полные слои. Real: затронутая группа и финальный aggregate
+  по существующим fingerprints. `--maxfail=1` допустим лишь в широком
+  debug-прогоне; финальный полный прогон — без него.
+- **Гейты:** живой вызов изменённого инструмента с кодом и телом ответа — на
+  финише этапа, browser для UI, PostgreSQL для storage; перед push-merge —
+  полный real aggregate и остальные release gates. Быстрый pre-review до
+  полного набора допустим; committed-diff review остаётся после зелёных
+  финальных gates. После review-правок повторить соответствующую лестницу.
+- **Инвалидация:** docs-only не повторяет suites; runtime/tests/dependencies
+  повторяют затронутые проверки по доказанной карте. Сейчас fingerprints
+  есть только у real; default/PostgreSQL fingerprints и карта зависимостей —
+  этап 465, до него действующие обязательные проверки сохраняются.
+- **Диагностика и стоп-правила:** tracemalloc/fd/connection hooks/подробные
+  logs включать адресно на failing node, не в штатном gate. Scoped diagnostic
+  mode появится в 465. Никаких skip/xfail, suppression warnings, скрытых
+  timeout или повторов ради зелёного; `-W error`, ownership, security/privacy
+  и live gates сохраняются. Real stop-loss — две причинные попытки на класс;
+  счётчик 7/10 непреднамеренных failures после review не сбрасывать.
+  Содержательный нестабильный тест не удалять. Параллелить лишь независимые
+  изолированные контуры; real на общем devtr6 и группы с общими upstream
+  resources запускать последовательно.
 - Этап с ожидаемыми двумя раундами сильного ревью планируется в два хода:
   реализация до коммита в первом, ревью + push + CI во втором.
 

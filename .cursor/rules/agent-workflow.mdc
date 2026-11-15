@@ -168,14 +168,14 @@ scripts/run_claude_review.sh --range HEAD^..HEAD --attempt 1/3
 9. PRD-review сторонней моделью → устранение адекватных findings → повтор после существенных правок в пределах бюджета
 10. Оценка PRD на простоту → при изменении PRD повторить PRD-review gates
 11. Написать тесты и получить focused red — только на новых или непосредственно затронутых тестах; полный suite ради red не запускается
-12. Red → Green: focused green, затем на итерациях `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py`
+12. Red → Green и итерации: лестница и debug-переход из «Слоёв проверок» ниже
 13. Итерационные проверки: focused + fast зелёные; при изменении `scripts/*.sh` выполнить `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`
    - Команда может попасть в процессную документацию только после запуска ровно в записанном виде: перед commit агент копирует её из документации, выполняет и проверяет реальный exit code. Эквивалентная команда не считается проверкой.
 14. Обновить `Roadmap.md` и `AssumptionLog.md`, затем выполнить строго по порядку `python3 scripts/archive_roadmap.py` и `python3 scripts/check_roadmap_structure.py`; оба exit code должны быть 0 до commit
 15. Провести аудит изменений:
    - проверить, не появились ли legacy-паттерны, дублирование, рассинхрон со свежим контрактом
    - при необходимости выполнить рефакторинг под новые изменения
-16. Финальные проверки этапа после последней кодовой правки и аудита: если аудит изменил runtime/tests — снова focused + fast; затем один полный default `docker compose --profile test run --rm test` и адресные проверки затронутой зоны (живой вызов изменённого инструмента, browser для UI, PostgreSQL для storage); результаты дописать в `AssumptionLog.md` и повторить archive/structure из шага 14
+16. Финальные проверки этапа после последней кодовой правки и аудита — по «Слоям проверок» ниже; результаты дописать в `AssumptionLog.md` и повторить archive/structure из шага 14
 17. Commit — только при зелёных финальных проверках этапа; красный WIP не коммитится
 18. Spark-review committed diff → проверить адекватность findings → устранить только адекватные и важные findings
 19. Ревью сторонней моделью на committed diff до push → устранение адекватных findings → повтор tests/audit/commit/review в пределах бюджета
@@ -186,17 +186,11 @@ scripts/run_claude_review.sh --range HEAD^..HEAD --attempt 1/3
 
 Этап 467. Причина: по измерениям 15.11.2026 полный default шёл около 26 минут, последовательный real — около 30 минут плюс setup. Это замер, а не норма. Слои меняют, когда запускается проверка, а не что обязательно: красная обязательная проверка по-прежнему запрещает commit и push.
 
-- Red — только focused на новых или непосредственно затронутых тестах; сторож принимается только доказанным red/mutation.
-- После исправления каждый ранее красный тест сначала запускается отдельно до зелёного; focused/fast и полный suite — только после успешных одиночных запусков.
-- Итерации — focused green, затем `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py`. Fast уже исключает `browser`, `real_api`, `real_browser`, `postgres` и не включает coverage; его целевое время ещё предстоит измерить.
-- Финиш этапа — после последней кодовой правки и аудита один полный default; если аудит изменил runtime/tests, перед ним снова focused + fast. Там же адресно: живой вызов изменённого MCP-инструмента с кодом и телом ответа (не откладывается до конца поезда и не заменяется mock), browser для изменённого UI, PostgreSQL при затрагивании storage.
-- Финиш релизного поезда / перед push-merge — полный real aggregate и остальные release gates по правилам ниже.
-- После docs-only изменений полный слой не повторяется; после изменения runtime/tests повторяются соответствующие focused + fast и финальные проверки. Для real уже есть runtime/test/dependency fingerprints (устаревший shard не засчитывается); fingerprint-invalidation для default/PostgreSQL только планируется этапом 465 и не реализована.
-- real/browser/PostgreSQL — финальные gates и адресные проверки затронутых контрактов, а не цикл разработки, не способ получить первый red и не способ многократно подтверждать одну гипотезу.
-- Stop-loss: на один класс сбоя максимум две причинные real-попытки; дальше детерминированное offline-воспроизведение либо эскалация куратору / отдельный этап Roadmap. Новые diagnostic guards в тот же WIP не добавляются; счётчик непреднамеренных failures после review не обнуляется.
-- Один causal class на изменение/коммит: независимые product fix, transport, runner и диагностика в одном этапе не смешиваются.
-- tracemalloc/fd/connection hooks/phase wrappers не расширяют штатный gate; отдельный diagnostic mode и offline integration слой — работа этапа 465, сейчас их нет. Warnings-as-errors, object ownership, security/privacy assertions и полезные regression guards сохраняются.
-- Нестабильный тест не удаляется ради зелёного; перенос в unit/mock — только с сохранением наблюдаемого контракта и подходящим offline/live oracle (этап 465).
+- Обычный цикл: focused red на новых/затронутых тестах (сторож — только с доказанным red/mutation) → реализация → каждый ранее красный node отдельно до зелёного → весь изменённый файл/сюит → fast `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py` → аудит и полные обязательные gates → commit → committed-diff review. Полный suite/real/browser/PostgreSQL ради первого red не запускать. Fast исключает `browser`, `real_api`, `real_browser`, `postgres` и coverage.
+- После failure/error полного или широкого набора сохранить failing nodes/evidence и классифицировать product/harness/flaky по фактам; новые широкие прогоны остановить. Debug: один causal class на изменение, каждый ранее красный node отдельно до зелёного, затем owning file/suite полностью, fast и только инвалидированные полные слои. Real — затронутая группа и финальный aggregate по существующим fingerprints. `--maxfail=1` — только для широкого debug-прогона; финальный полный — без maxfail.
+- После последней кодовой правки и аудита — один полный default; если аудит менял runtime/tests, сначала повторить лестницу. На финише этапа адресно: живой вызов изменённого MCP-инструмента с кодом и телом ответа (не откладывать до конца поезда и не заменять mock), browser для UI, PostgreSQL для storage. Финиш поезда / перед push-merge — полный real aggregate и остальные release gates ниже. Быстрый pre-review до полного набора допустим; обязательное committed-diff review — после зелёных финальных gates. После review-правок повторить соответствующую лестницу.
+- Docs-only не повторяет suites; runtime/test/dependency changes повторяют затронутые проверки по доказанной карте. Fingerprints сейчас есть только у real (устаревший shard не засчитывается); default/PostgreSQL fingerprints и карта зависимостей — работа 465, до неё действующие обязательные проверки не ослаблять.
+- tracemalloc/fd/connection hooks/подробные logs включать адресно на failing node, не в штатном gate; scoped diagnostic mode и offline integration слой появятся в 465, сейчас их нет. Никаких skip/xfail, suppression warnings, скрытых timeout и повторов ради зелёного. `-W error`, ownership, security/privacy и live gates сохраняются. Stop-loss: две причинные real-попытки на класс, затем offline-воспроизведение либо эскалация; новых diagnostic guards в тот же WIP не добавлять. Счётчик 7/10 непреднамеренных failures после review не сбрасывать; содержательный нестабильный тест не удалять. Параллелить лишь независимые изолированные контуры; real на общем devtr6 и группы с общими upstream resources — последовательно.
 
 ### Релизный поезд
 
