@@ -38,6 +38,7 @@ def source_fingerprint(root: Path = ROOT) -> str:
         part in {".git", ".venv", "__pycache__"} for part in p.relative_to(root).parts
     )]
     paths += list((root / "scripts").rglob("*.sh"))
+    paths += [p for p in (root / "ops").rglob("*") if p.is_file()]
     paths += [root / name for name in (
         "Dockerfile", "docker-compose.yml", "docker-compose.test.yml",
         "pyproject.toml", "pytest.ini", ".coveragerc", "alembic.ini",

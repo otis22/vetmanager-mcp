@@ -87,6 +87,9 @@ def test_fingerprint_includes_shell_and_coverage_inputs(monkeypatch, tmp_path) -
         "Dockerfile", "docker-compose.yml", "docker-compose.test.yml",
         "pyproject.toml", "pytest.ini", ".coveragerc",
         "alembic.ini", "tests/fixtures/stage385_resource_gate_sample.json",
+        "ops/prometheus/prometheus.yml", "ops/grafana/dashboards/vetmanager-overview.json",
+        "ops/grafana/provisioning/dashboards/dashboards.yml",
+        "ops/grafana/provisioning/datasources/prometheus.yml",
         ".github/workflows/test.yml", "scripts/default_node_inventory.json",
         "scripts/postgres_node_inventory.json", "scripts/offline_integration_files.json",
     ):
@@ -107,3 +110,6 @@ def test_fingerprint_includes_shell_and_coverage_inputs(monkeypatch, tmp_path) -
         path.write_text("changed")
         assert gate.source_fingerprint(tmp_path) != baseline, name
         path.write_text("original")
+    path = tmp_path / "ops/prometheus/prometheus.yml"
+    path.write_text("changed")
+    assert gate.source_fingerprint(tmp_path) != baseline
