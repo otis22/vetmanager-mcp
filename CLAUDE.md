@@ -111,16 +111,16 @@ output» запрещена. Runner валидирует сохранённый 
 6. **PRD-review сторонней моделью** — устранить адекватные findings; если PRD существенно изменился, повторить в пределах бюджета PRD-review
 7. **Оценка PRD на простоту** (см. раздел 4.1) — если найден проще вариант, переписать PRD; после любых правок повторить PRD-review, после существенных правок повторить ревью сторонней моделью в пределах бюджета
 8. **Зафиксировать финальную PRD-версию** — PRD согласован с artifacts, прошёл review gates и содержит rationale для выбранной сложности, если она нетривиальна
-9. **Написать тесты** (test-first)
-10. **Red → Green** — реализовать до прохождения тестов
-11. **Запустить все проверки** — при изменении `scripts/*.sh`: `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`; затем `docker compose --profile test run --rm test`
+9. **Написать тесты** (test-first) и получить **focused red** — только на новых или непосредственно затронутых тестах (см. 4.3); полный suite ради red не запускается
+10. **Red → Green** — реализовать до focused green, затем на итерациях `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py`
+11. **Итерационные проверки** — focused + fast зелёные; при изменении `scripts/*.sh`: `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`
 12. **Обновить `Roadmap.md` и `AssumptionLog.md`** — закрыть выполненные пункты и записать evidence
 13. **Архивировать и проверить структуру** — выполнить строго в таком порядке: `python3 scripts/archive_roadmap.py`, затем `python3 scripts/check_roadmap_structure.py`; оба exit code должны быть 0 до commit
 14. **Аудит изменений:**
    - legacy-паттерны, дублирование, рассинхрон с контрактом
    - при необходимости — рефакторинг
-15. **Повторный прогон** тестов после аудита/рефакторинга (если были изменения)
-16. **Commit** — только после зелёных проверок, архивного/структурного гейта и локального аудита
+15. **Финальные проверки этапа** — после последней кодовой правки и аудита: если аудит изменил runtime/tests, сначала снова focused + fast; затем **один** полный default `docker compose --profile test run --rm test` и адресные проверки затронутой зоны (живой вызов изменённого инструмента, browser для UI, PostgreSQL для storage — см. 4.3). Результаты дописать в `AssumptionLog.md` и повторить шаг 13
+16. **Commit** — только после зелёных финальных проверок этапа, архивного/структурного гейта и локального аудита; красный WIP не коммитится
 17. **Ревью сторонней моделью на committed diff до push** (см. раздел 5) — устранить адекватные findings; если были изменения, повторить tests/audit/commit/review в пределах бюджета code/diff review
 18. **Push** — только после валидного verdict обоих ревьюеров code/diff gate и устранения адекватных critical/high; средние замечания после исчерпания валидного бюджета допускаются только с rationale
 19. **Workflow self-attestation checklist** (см. раздел 4.2) — заполнить чеклист по всем предыдущим шагам и показать пользователю после push
@@ -130,7 +130,11 @@ output» запрещена. Runner валидирует сохранённый 
 - коммитить без прохождения тестов и аудита
 - пушить без прохождения проверок
 - пушить без валидных verdict Astra и Opus на committed diff; исчерпание infrastructure attempts не разрешает push
-- пропускать повторный прогон после рефакторинга
+- пропускать focused + fast и финальный default после рефакторинга runtime/tests
+- получать первый red полным suite, real, browser или PostgreSQL
+- использовать real/browser/PostgreSQL как цикл разработки или повторять их для подтверждения одной гипотезы
+- превышать stop-loss: больше двух причинных real-попыток на один класс сбоя (4.3)
+- смешивать в одном изменении/коммите независимые causal classes
 - пропускать PRD-review gates после правок PRD
 - пропускать оценку простоты PRD для задач с нетривиальным кодом
 - завершать задачу без заполненного self-attestation чеклиста
@@ -208,11 +212,11 @@ output» запрещена. Runner валидирует сохранённый 
 | 4 | PRD-review выполнен | ✓/✗ | {N findings; N адекватных; повтор после правок если был} |
 | 5 | PRD-review сторонней моделью выполнен | ✓/✗/N-A | {Astra и Opus: отдельные запуски 1/2 или 2/2, findings и сведение, rationale если budget exhausted/skipped} |
 | 6 | Оценка PRD на простоту | ✓/✗/N-A | {triggers проверены; результат; повторные PRD-review gates после правок} |
-| 7 | Тесты написаны (test-first) | ✓/✗ | {файлы tests/test_*.py, количество новых тестов} |
-| 8 | Red → Green реализация | ✓/✗ | {коротко что реализовано} |
-| 9 | Все проверки зелёные | ✓/✗ | {N passed / M failed, команда: `docker compose --profile test run --rm test`} |
-| 10 | Аудит изменений выполнен | ✓/✗ | {legacy patterns, duplication, field-name contract} |
-| 11 | Повторный прогон после аудита | ✓/✗/N-A | {N passed; или N-A если аудит не потребовал изменений} |
+| 7 | Тесты написаны (test-first), focused red | ✓/✗ | {файлы tests/test_*.py, количество новых тестов, focused red; для сторожей — чем сломали} |
+| 8 | Red → Green: focused green + fast | ✓/✗ | {что реализовано; focused N passed; `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py` N passed} |
+| 9 | Финальный полный default после последней правки и аудита | ✓/✗/N-A | {N passed / M failed, команда: `docker compose --profile test run --rm test`; N-A только для docs-only} |
+| 10 | Аудит изменений выполнен | ✓/✗ | {legacy patterns, duplication, field-name contract; если аудит менял runtime/tests — повторные focused + fast до финального default} |
+| 11 | Адресные и release gates по применимости | ✓/✗/N-A | {живой вызов изменённого инструмента: код + тело; browser для UI; PostgreSQL для storage; real aggregate — на финиш поезда; N-A с причиной} |
 | 12 | Commit выполнен | ✓/✗ | {commit SHA} |
 | 13 | Ревью сторонней моделью на committed diff выполнено | ✓/✗/N-A | {Astra и Opus: отдельные запуски 1/2 или 2/2, findings и сведение, rationale если budget exhausted/skipped} |
 | 14 | Адекватные findings устранены | ✓/✗/N-A | {commits/изменения; либо N-A если 0 адекватных} |
@@ -244,6 +248,60 @@ Workflow завершён?
 **Критерий пропуска:** чеклист обязателен для всех задач, которые делают push. Исключение: commits, которые меняют ТОЛЬКО текстовую документацию (*.md files, CLAUDE.md), могут использовать сокращённый чеклист — PRD/artifacts/review/test/code шаги отмечаются как N-A со ссылкой на §5.5 docs-only.
 
 **Rationale:** super-review 2026-04-18 показал, что некоторые этапы шли в prod без явного прохождения каждого шага (например, AssumptionLog секция отсутствовала для 103a/c/d, technical-requirements не обновлён). Self-attestation делает такие пропуски видимыми до коммита — пользователь замечает пустую ячейку и говорит «вернись и доделай», вместо того чтобы ловить это через super-review уже в prod.
+
+### 4.3 Слои проверок: итерация, финиш этапа, финиш поезда
+
+Этап 467. Причина: по измерениям 15.11.2026 полный default шёл около 26 минут,
+последовательный real — около 30 минут плюс setup. Это замер, а не норма, но
+строить на таких прогонах каждую итерацию нельзя. Слои меняют **когда**
+запускается проверка, а не **что** обязательно: ни один гейт не ослаблен,
+красная обязательная проверка по-прежнему запрещает commit и push.
+
+1. **Red — только focused; после исправления — одиночные зелёные запуски.**
+   Первый red — на новых или непосредственно затронутых тестах. Полный suite,
+   real, browser и PostgreSQL ради red не запускаются. Сторож по-прежнему
+   принимается только доказанным red/mutation (4.0). Каждый ранее красный тест
+   после исправления запускается отдельно; focused/fast и полный suite — только
+   после успешных одиночных запусков.
+2. **Итерации — focused green, затем `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py`.**
+   Fast-контур уже исключает `browser`, `real_api`, `real_browser`, `postgres`
+   и не включает coverage. Его целевое время — предмет последующего замера,
+   а не установленный факт.
+3. **Финиш этапа** — после последней кодовой правки и аудита: один полный
+   default `docker compose --profile test run --rm test`. До аудита полный
+   default автоматически не гоняется. Если аудит изменил runtime/tests —
+   сначала снова focused + fast, затем финальный default.
+4. **Адресные проверки затронутой зоны — тоже на финиш этапа.** Изменённый
+   MCP-инструмент — живой вызов на стенде с кодом и телом ответа (6.1); его
+   нельзя отложить до конца поезда или заменить mock. UI — адресная
+   browser-проверка изменённого сценария. Storage — PostgreSQL, если хранилище
+   затронуто.
+5. **Финиш релизного поезда / перед push-merge** — полный real aggregate и
+   остальные release gates по существующим правилам (раздел «Релизный поезд»
+   в `.cursor/rules/agent-workflow.mdc`, 5, 6.0–6.2).
+6. **Повторы.** После docs-only изменений полный слой не повторяется. После
+   изменения runtime/tests повторяются соответствующие focused + fast и
+   финальные проверки этапа. Для real уже есть runtime/test/dependency
+   fingerprints: shard с устаревшим fingerprint не засчитывается и группа
+   перезапускается. Fingerprint-invalidation для default/PostgreSQL только
+   планируется этапом 465 и **не реализована**.
+7. **Долгие слои — не цикл разработки.** real/browser/PostgreSQL — финальные
+   gates и адресные обязательные проверки затронутых контрактов, а не способ
+   получить первый red и не способ многократно подтверждать одну гипотезу.
+8. **Stop-loss.** На один класс сбоя — максимум две причинные real-попытки.
+   Дальше — детерминированное offline-воспроизведение либо эскалация куратору
+   / отдельный этап Roadmap. Новые diagnostic guards в тот же WIP не
+   добавляются; счётчик непреднамеренных failures после review не обнуляется.
+9. **Один causal class на изменение/коммит.** Независимые product fix,
+   transport, runner и диагностика в одном этапе не смешиваются.
+10. **Диагностика не расширяет штатный gate.** tracemalloc/fd/connection
+    hooks/phase wrappers в штатный gate не добавляются. Отдельный diagnostic
+    mode и offline integration слой — работа этапа 465; сейчас их нет.
+    Warnings-as-errors, object ownership, security/privacy assertions и
+    полезные regression guards сохраняются.
+11. **Нестабильный тест не удаляется ради зелёного.** Перенос в unit/mock —
+    только с сохранением наблюдаемого контракта и подходящим offline/live
+    oracle; это работа 465.
 
 ---
 
@@ -494,7 +552,8 @@ Workflow завершён?
 ## 9. Тесты и проверки
 
 - ShellCheck и синтаксис Bash (обязательны перед commit при изменении `scripts/*.sh`): `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`. Образ скачивается автоматически, если его нет локально, и фиксирован на версии CI.
-- Unit + mock e2e: `docker compose --profile test run --rm test`
+- Итерации (fast-контур без browser/real_api/real_browser/postgres и coverage): `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py`; порядок слоёв — 4.3
+- Unit + mock e2e (финиш этапа): `docker compose --profile test run --rm test`
 - Real API (только если в `.env` есть test `TEST_DOMAIN` и `TEST_API_KEY`; секреты не печатать): `docker compose --env-file .env --profile test run --rm test python scripts/run_opt_in_real_test_suite.py`
 - CI: `.github/workflows/test.yml` (unit + mock); `test-real.yml` — ручной запуск
 

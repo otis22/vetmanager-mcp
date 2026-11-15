@@ -12,6 +12,7 @@ import httpx
 import pytest
 
 from tests.test_stage384_live import seed_devtr6_bearer
+from tests.child_process_env import make_test_server_env
 
 
 pytestmark = pytest.mark.real_api
@@ -23,7 +24,7 @@ def test_devtr6_bearer_write_is_refused_after_quiesce(prepared_web_db, free_tcp_
     assert os.environ["TEST_DOMAIN"] == "devtr6"
     assert "pytest" in str(prepared_web_db)
     token = seed_devtr6_bearer()
-    env = os.environ.copy()
+    env = make_test_server_env()
     env.update(PORT=str(free_tcp_port), LOG_FORMAT="text")
     server = subprocess.Popen(
         [sys.executable, "-c", "from server import _run_http_server; import os; "

@@ -11,6 +11,8 @@ import time
 
 import httpx
 import pytest
+from tests.child_process_env import make_test_server_env
+from tests.live_test_lifecycle import stop_processes
 import redis
 
 from shared_metric_counters import REPORT_AI_TERMINAL_KEY_PREFIX
@@ -34,7 +36,7 @@ def test_saved_job_terminal_count_once_across_slots(prepared_web_db):
     assert os.environ["TEST_DOMAIN"] == "devtr6"
     assert "pytest" in str(prepared_web_db)
     token = seed_devtr6_bearer()
-    env = os.environ.copy()
+    env = make_test_server_env()
     env.update(REDIS_URL=env["STAGE385_REDIS_URL"], MCP_WORKER_SLOTS="3",
                DB_POOL_SIZE="8", DB_MAX_OVERFLOW="5", LOG_FORMAT="text")
     processes = []
@@ -110,7 +112,4 @@ def test_saved_job_terminal_count_once_across_slots(prepared_web_db):
     finally:
         for client in clients:
             client.close()
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            process.wait(timeout=30)
+        stop_processes(processes)

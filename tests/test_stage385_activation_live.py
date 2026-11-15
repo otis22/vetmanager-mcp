@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
+from tests.child_process_env import make_test_server_env
+from tests.live_test_lifecycle import stop_processes
 import redis
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -41,7 +43,7 @@ def test_activation_snapshot_is_identical_on_three_slots(prepared_web_db):
     redis_client = redis.Redis.from_url(os.environ["STAGE385_REDIS_URL"])
     redis_client.delete(ACTIVATION_SCAN_LEASE_KEY, ACTIVATION_SNAPSHOT_KEY,
                         ACTIVATION_ALERTS_KEY)
-    env = os.environ.copy()
+    env = make_test_server_env()
     env.update(REDIS_URL=env["STAGE385_REDIS_URL"], MCP_WORKER_SLOTS="3",
                DB_POOL_SIZE="8", DB_MAX_OVERFLOW="5", LOG_FORMAT="text",
                METRICS_AUTH_TOKEN="stage385-isolated-metrics")
@@ -98,12 +100,8 @@ def test_activation_snapshot_is_identical_on_three_slots(prepared_web_db):
     finally:
         for client in clients:
             client.close()
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            process.wait(timeout=30)
+        logs = stop_processes(processes)
         if completed:
-            warnings = sum(process.stderr.read().count("account_traffic_silent")
-                           for process in processes)
+            warnings = sum(log.count("account_traffic_silent") for log in logs)
             assert warnings == 1
             print("STAGE385_ACTIVATION_ALERT", {"warning_count": warnings})

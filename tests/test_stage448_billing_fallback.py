@@ -208,6 +208,7 @@ async def test_cloud_5xx_and_alias_transport_does_not_guess():
 @pytest.mark.asyncio
 async def test_billing_client_uses_classic_key_share(monkeypatch):
     captured = {}
+    installed = []
     monkeypatch.delenv("SSL_CERT_FILE", raising=False)
     monkeypatch.delenv("SSL_CERT_DIR", raising=False)
 
@@ -228,9 +229,14 @@ async def test_billing_client_uses_classic_key_share(monkeypatch):
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
+        def close(self):
+            self.is_closed = True
+
     monkeypatch.setattr(host_resolver.httpx, "AsyncClient", Client)
-    await host_resolver._get_shared_client()
+    monkeypatch.setattr(host_resolver, "install_resolver_backend", installed.append)
+    client = await host_resolver._get_shared_client()
+    assert installed == [client]
     assert captured["verify"] is tls
     assert captured["curve"] == "prime256v1"
     assert captured["cafile"] == certifi.where()
-    assert captured["timeout"].connect <= 3
+    assert captured["timeout"].connect == host_resolver._BILLING_LOOKUP_DEADLINE_SECONDS

@@ -1,6 +1,5 @@
 """Opt-in Report AI conversion witness; prints only HTTP codes and type counts."""
 
-import asyncio
 import os
 import re
 from collections import Counter
@@ -42,11 +41,10 @@ async def test_stage396_live_report_rows(capsys):
         created = await mcp.call_tool("create_report_ai_job", {"intent_text": INTENT})
         job = created.structured_content["data"]["job"]
         job_id, status = job["id"], job.get("status")
-        for _ in range(8):
-            if status not in {"queued", "recognizing", "building_preview"}:
-                break
-            await asyncio.sleep(3)
-            viewed = await mcp.call_tool("get_report_ai_job", {"job_id": job_id})
+        if status in {"queued", "recognizing", "building_preview"}:
+            viewed = await mcp.call_tool("get_report_ai_job", {
+                "job_id": job_id, "wait_seconds": 120,
+            })
             status = viewed.structured_content["data"]["job"].get("status")
         if status == "ready_to_save":
             saved = await mcp.call_tool("save_report_ai_job_as_report", {

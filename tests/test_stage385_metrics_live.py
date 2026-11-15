@@ -6,10 +6,13 @@ from pathlib import Path
 import socket
 import subprocess
 import sys
-import time
 
 import httpx
 import pytest
+
+from tests.child_process_env import make_test_server_env
+from tests.live_test_lifecycle import stop_processes
+from tests.stage385_readiness import Stage385ReadinessTrace
 
 from tests.test_stage384_live import seed_devtr6_bearer
 
@@ -64,38 +67,28 @@ def test_three_slots_export_one_devtr6_tool_count(prepared_web_db):
     token = seed_devtr6_bearer()
     processes = []
     ports = [_free_port() for _ in range(3)]
-    env = os.environ.copy()
+    env = make_test_server_env()
     env["REDIS_URL"] = env["STAGE385_REDIS_URL"]
     env["MCP_WORKER_SLOTS"] = "3"
     env["DB_POOL_SIZE"] = "8"
     env["DB_MAX_OVERFLOW"] = "5"
     env["LOG_FORMAT"] = "text"
     clients = []
+    trace = Stage385ReadinessTrace("stage385-metrics")
     try:
-        for port in ports:
+        for index, port in enumerate(ports):
             env["PORT"] = str(port)
+            env["STAGE385_PHASE_LABEL"] = "stage385-metrics"
+            env["STAGE385_SLOT_INDEX"] = str(index)
             processes.append(subprocess.Popen(
-                [sys.executable, "-c", "from server import _run_http_server; import os; "
-                 "_run_http_server(stateless_http=False, transport='streamable-http',host='127.0.0.1',"
-                 "port=int(os.environ['PORT']),path='/mcp')"],
+                [sys.executable, "-c", "from tests.stage385_child_phase import run; run()"],
                 cwd=Path(__file__).resolve().parents[1], env=env.copy(),
                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
             ))
-        for port, process in zip(ports, processes):
+        for index, (port, process) in enumerate(zip(ports, processes)):
             client = httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=30)
             clients.append(client)
-            for _ in range(100):
-                if process.poll() is not None:
-                    detail = process.stderr.read()[-1200:] if process.stderr else ""
-                    raise AssertionError(f"MCP slot exited before readiness: {detail}")
-                try:
-                    if client.get("/readyz").status_code == 200:
-                        break
-                except httpx.TransportError:
-                    pass
-                time.sleep(.1)
-            else:
-                raise AssertionError("MCP slot did not become ready")
+            trace.wait_for_slot(client, process, port, index)
         headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/json, text/event-stream",
@@ -147,7 +140,5 @@ def test_three_slots_export_one_devtr6_tool_count(prepared_web_db):
     finally:
         for client in clients:
             client.close()
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            process.wait(timeout=30)
+        trace.capture_unprobed(processes, ports)
+        trace.finish(stop_processes(processes))

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from storage import Base, create_database_engine, normalize_database_url_for_migrations
 from storage_models import Account, VetmanagerConnection
+from tests.child_process_env import start_test_db_worker
 
 
 pytestmark = pytest.mark.real_api
@@ -70,7 +71,7 @@ def test_two_slots_save_one_account_without_lost_connection(monkeypatch):
                      for signal in ready]
         try:
             for process in processes:
-                process.start()
+                start_test_db_worker(process)
             assert all(signal.wait(10) for signal in ready)
             release.set()
             results = [result_queue.get(timeout=70) for _ in processes]

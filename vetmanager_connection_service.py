@@ -396,7 +396,7 @@ async def _request_with_retry(
 async def resolve_vetmanager_host(domain: str) -> str:
     """Resolve normalized clinic domain into an allowlisted HTTPS host."""
     normalized_domain = _validate_domain(domain.strip())
-    return await _resolve_host_via_billing(normalized_domain, max_retries=0)
+    return await _resolve_host_via_billing(normalized_domain, max_retries=1)
 
 
 async def validate_domain_api_key_connection(

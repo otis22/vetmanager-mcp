@@ -42,6 +42,9 @@ FROM base AS production
 
 COPY . .
 
+# Keep the cancellation-safe network stack in the shipped image.
+RUN pip install --no-cache-dir "anyio>=4.16.0,<5"
+
 RUN mkdir -p /app/data /var/log/vetmanager-mcp && \
     chown app:app /app/data /var/log/vetmanager-mcp
 
@@ -73,6 +76,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     python -m playwright install --with-deps chromium && \
     chmod -R a+rX "${PLAYWRIGHT_BROWSERS_PATH}"
+
+RUN pip install --no-cache-dir "anyio>=4.16.0,<5"
 
 COPY . .
 
