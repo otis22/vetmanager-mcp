@@ -112,14 +112,14 @@ output» запрещена. Runner валидирует сохранённый 
 7. **Оценка PRD на простоту** (см. раздел 4.1) — если найден проще вариант, переписать PRD; после любых правок повторить PRD-review, после существенных правок повторить ревью сторонней моделью в пределах бюджета
 8. **Зафиксировать финальную PRD-версию** — PRD согласован с artifacts, прошёл review gates и содержит rationale для выбранной сложности, если она нетривиальна
 9. **Написать тесты** (test-first) и получить **focused red** — только на новых или непосредственно затронутых тестах (см. 4.3); полный suite ради red не запускается
-10. **Red → Green** — реализовать до focused green, затем на итерациях `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py`
-11. **Итерационные проверки** — focused + fast зелёные; при изменении `scripts/*.sh`: `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`
+10. **Red → Green и итерационные проверки** — соблюдать лестницу и debug-переход из 4.3
+11. **Проверки shell** — при изменении `scripts/*.sh`: `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`
 12. **Обновить `Roadmap.md` и `AssumptionLog.md`** — закрыть выполненные пункты и записать evidence
 13. **Архивировать и проверить структуру** — выполнить строго в таком порядке: `python3 scripts/archive_roadmap.py`, затем `python3 scripts/check_roadmap_structure.py`; оба exit code должны быть 0 до commit
 14. **Аудит изменений:**
    - legacy-паттерны, дублирование, рассинхрон с контрактом
    - при необходимости — рефакторинг
-15. **Финальные проверки этапа** — после последней кодовой правки и аудита: если аудит изменил runtime/tests, сначала снова focused + fast; затем **один** полный default `docker compose --profile test run --rm test` и адресные проверки затронутой зоны (живой вызов изменённого инструмента, browser для UI, PostgreSQL для storage — см. 4.3). Результаты дописать в `AssumptionLog.md` и повторить шаг 13
+15. **Финальные проверки этапа** — после последней кодовой правки и аудита по 4.3: если аудит изменил runtime/tests, повторить соответствующую лестницу; затем **один** полный default `docker compose --profile test run --rm test` и адресные проверки затронутой зоны. Результаты дописать в `AssumptionLog.md` и повторить шаг 13
 16. **Commit** — только после зелёных финальных проверок этапа, архивного/структурного гейта и локального аудита; красный WIP не коммитится
 17. **Ревью сторонней моделью на committed diff до push** (см. раздел 5) — устранить адекватные findings; если были изменения, повторить tests/audit/commit/review в пределах бюджета code/diff review
 18. **Push** — только после валидного verdict обоих ревьюеров code/diff gate и устранения адекватных critical/high; средние замечания после исчерпания валидного бюджета допускаются только с rationale
@@ -257,51 +257,45 @@ Workflow завершён?
 запускается проверка, а не **что** обязательно: ни один гейт не ослаблен,
 красная обязательная проверка по-прежнему запрещает commit и push.
 
-1. **Red — только focused; после исправления — одиночные зелёные запуски.**
-   Первый red — на новых или непосредственно затронутых тестах. Полный suite,
-   real, browser и PostgreSQL ради red не запускаются. Сторож по-прежнему
-   принимается только доказанным red/mutation (4.0). Каждый ранее красный тест
-   после исправления запускается отдельно; focused/fast и полный suite — только
-   после успешных одиночных запусков.
-2. **Итерации — focused green, затем `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py`.**
-   Fast-контур уже исключает `browser`, `real_api`, `real_browser`, `postgres`
-   и не включает coverage. Его целевое время — предмет последующего замера,
-   а не установленный факт.
-3. **Финиш этапа** — после последней кодовой правки и аудита: один полный
-   default `docker compose --profile test run --rm test`. До аудита полный
-   default автоматически не гоняется. Если аудит изменил runtime/tests —
-   сначала снова focused + fast, затем финальный default.
-4. **Адресные проверки затронутой зоны — тоже на финиш этапа.** Изменённый
-   MCP-инструмент — живой вызов на стенде с кодом и телом ответа (6.1); его
-   нельзя отложить до конца поезда или заменить mock. UI — адресная
-   browser-проверка изменённого сценария. Storage — PostgreSQL, если хранилище
-   затронуто.
-5. **Финиш релизного поезда / перед push-merge** — полный real aggregate и
-   остальные release gates по существующим правилам (раздел «Релизный поезд»
-   в `.cursor/rules/agent-workflow.mdc`, 5, 6.0–6.2).
-6. **Повторы.** После docs-only изменений полный слой не повторяется. После
-   изменения runtime/tests повторяются соответствующие focused + fast и
-   финальные проверки этапа. Для real уже есть runtime/test/dependency
-   fingerprints: shard с устаревшим fingerprint не засчитывается и группа
-   перезапускается. Fingerprint-invalidation для default/PostgreSQL только
-   планируется этапом 465 и **не реализована**.
-7. **Долгие слои — не цикл разработки.** real/browser/PostgreSQL — финальные
-   gates и адресные обязательные проверки затронутых контрактов, а не способ
-   получить первый red и не способ многократно подтверждать одну гипотезу.
-8. **Stop-loss.** На один класс сбоя — максимум две причинные real-попытки.
-   Дальше — детерминированное offline-воспроизведение либо эскалация куратору
-   / отдельный этап Roadmap. Новые diagnostic guards в тот же WIP не
-   добавляются; счётчик непреднамеренных failures после review не обнуляется.
-9. **Один causal class на изменение/коммит.** Независимые product fix,
-   transport, runner и диагностика в одном этапе не смешиваются.
-10. **Диагностика не расширяет штатный gate.** tracemalloc/fd/connection
-    hooks/phase wrappers в штатный gate не добавляются. Отдельный diagnostic
-    mode и offline integration слой — работа этапа 465; сейчас их нет.
-    Warnings-as-errors, object ownership, security/privacy assertions и
-    полезные regression guards сохраняются.
-11. **Нестабильный тест не удаляется ради зелёного.** Перенос в unit/mock —
-    только с сохранением наблюдаемого контракта и подходящим offline/live
-    oracle; это работа 465.
+1. **Обычный цикл.** Focused red на новых/непосредственно затронутых тестах
+   (сторож принимается только доказанным red/mutation, 4.0) → реализация →
+   каждый ранее красный node отдельно до зелёного → весь изменённый файл/сюит
+   → fast `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py`
+   → аудит и полные обязательные gates → commit → committed-diff review.
+   Полный suite/real/browser/PostgreSQL ради первого red не запускать. Fast
+   исключает `browser`, `real_api`, `real_browser`, `postgres` и coverage.
+2. **Debug-переход после failure/error полного или широкого набора.** Сохранить
+   failing nodes/evidence, классифицировать product/harness/flaky по фактам;
+   новые широкие прогоны прекратить. Один causal class на изменение/коммит.
+   Каждый ранее красный node отдельно до зелёного, затем owning file/suite
+   полностью, fast и только инвалидированные полные слои. Real — затронутая
+   группа и финальный aggregate по существующим fingerprints. `--maxfail=1`
+   разрешён только в широком debug-прогоне; финальный полный — без maxfail.
+3. **Финальные gates и review.** После последней кодовой правки и аудита —
+   один полный default `docker compose --profile test run --rm test`; если
+   аудит менял runtime/tests, сначала повторить лестницу. Изменённый
+   MCP-инструмент требует живого вызова на стенде с кодом и телом (6.1) на
+   финише этапа; UI — browser, storage — PostgreSQL. Финиш поезда / перед
+   push-merge — полный real aggregate и остальные release gates. Быстрый
+   pre-review до полного набора допустим; обязательное committed-diff review
+   остаётся после зелёных финальных gates. После review-правок повторить
+   соответствующую лестницу.
+4. **Инвалидация.** Docs-only не повторяет suites. Runtime/test/dependency
+   changes повторяют затронутые проверки по доказанной карте. Сейчас
+   fingerprints есть только у real: устаревший shard не засчитывается;
+   default/PostgreSQL fingerprints и карта зависимостей — работа этапа 465,
+   до неё действующие обязательные проверки не ослаблять.
+5. **Диагностика и stop-loss.** tracemalloc/fd/connection hooks/подробные logs
+   включать адресно на failing node, не глобально; scoped diagnostic mode и
+   offline integration слой появятся в 465, сейчас их нет. Никаких skip/xfail,
+   suppression warnings, скрытых timeout и повторов ради зелёного. `-W error`,
+   ownership, security/privacy и live gates сохраняются. На causal class —
+   максимум две причинные real-попытки, затем offline-воспроизведение либо
+   эскалация; новых diagnostic guards в тот же WIP не добавлять. Счётчик
+   7/10 непреднамеренных failures после review не сбрасывать. Содержательный
+   нестабильный тест не удалять. Параллелить только независимые изолированные
+   контуры; real на общем devtr6 и группы с общими upstream resources —
+   последовательно.
 
 ---
 
