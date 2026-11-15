@@ -1411,6 +1411,10 @@
     "count": 2,
     "sha256": "7b02aa9bad4e6e808e2e1fc9b24bccc4525506c88fb5250114c2b258a7b6e1df"
   },
+  "tests/test_stage460_medical_card_recommendation.py": {
+    "count": 10,
+    "sha256": "fe2fc4544638c27539f2c2634da1dcf3bfe4ad87aecc629e272848299b153f10"
+  },
   "tests/test_stage465_host_compose.py": {
     "count": 1,
     "sha256": "6b2e93ac746266f4de40cbe369185fcde46027001d197c641a6caa49b8fa15d6"
