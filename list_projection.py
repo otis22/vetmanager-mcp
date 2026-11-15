@@ -60,6 +60,9 @@ FIELDS_ONLY_TOOLS = frozenset({
     "get_invoice_documents_by_period", "get_medical_cards",
     "get_medical_cards_by_date", "get_medical_cards_by_client_id",
 })
+_MEDICAL_CARD_LIST_TOOLS = frozenset({
+    "get_medical_cards", "get_medical_cards_by_date", "get_medical_cards_by_client_id",
+})
 
 _FIELDS_ONLY_SHAPES = {
     "get_invoice_documents_by_period": ("data", "invoiceDocument", frozenset({
@@ -307,9 +310,14 @@ def _project_fields_only(result: object, tool_name: str, selection: tuple[str, .
             raise reportable_error("Projection expected a record object.")
         selected = {}
         for field in selection or ():
-            if field not in row:
+            source = (
+                "recomendation" if field == "recommendation"
+                and tool_name in _MEDICAL_CARD_LIST_TOOLS
+                and "recommendation" not in row else field
+            )
+            if source not in row:
                 continue
-            value = row[field]
+            value = row[source]
             if isinstance(value, (dict, list, tuple)):
                 raise reportable_error("Projection expected a scalar field.")
             selected[field] = value

@@ -78,7 +78,8 @@
       "tests/test_stage446_live.py::test_stage446_live_narrow_store_documents",
       "tests/test_stage447_live.py::test_stage447_tools_list_publishes_safe_s3_guidance",
       "tests/test_stage449_451_live.py::test_admission_id_alias_reaches_test_rest",
-      "tests/test_stage459_live.py::test_missing_client_marker_is_not_returned_as_client"
+      "tests/test_stage459_live.py::test_missing_client_marker_is_not_returned_as_client",
+      "tests/test_stage460_live.py::test_stage460_live_three_projected_lists"
     ],
     "auth-web": [
       "tests/test_browser_real_opt_in.py::test_real_browser_domain_api_key_flow_can_issue_bearer_and_call_mcp",
