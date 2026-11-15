@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import delete
 
 import storage
@@ -28,6 +29,11 @@ from oauth_service import (
     validate_oauth_authorize_request,
 )
 from storage_models import OAuthClient
+
+@pytest_asyncio.fixture(autouse=True)
+async def _isolated_db(sqlite_session_factory_builder, tmp_path, monkeypatch):
+    factory = await sqlite_session_factory_builder(tmp_path / "oauth.db")
+    monkeypatch.setattr(storage, "get_session_factory", lambda: factory)
 
 CLIENT_ID = "vm_oc_stage287_narrow"
 # Клиент заявил при регистрации только чтение клиентов — как те 13 на бою,
