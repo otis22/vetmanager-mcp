@@ -14,6 +14,7 @@ from storage_models import Account, ReportAiJobRating
 
 
 @pytest.mark.asyncio
+@pytest.mark.postgres
 @pytest.mark.skipif(not os.environ.get("STAGE408_PG_URL"), reason="isolated PostgreSQL URL required")
 async def test_postgres_rating_upsert_and_late_original(monkeypatch):
     url = os.environ["STAGE408_PG_URL"]

@@ -1,6 +1,7 @@
 """Shared pytest fixtures for browser-level tests."""
 
 import asyncio
+import json
 import gc
 import sys
 from collections.abc import Generator
@@ -29,6 +30,19 @@ from tests.transport_diagnostics import (ResourceOracle, ownership_errors, reset
                                          set_fixture_scope, start_session_diagnostics,
                                          transport_diagnostic, write_diagnostic)  # noqa: F401
 import os
+
+
+_ROOT = Path(__file__).resolve().parents[1]
+_OFFLINE_FILES = frozenset(json.loads(
+    (_ROOT / "scripts" / "offline_integration_files.json").read_text(encoding="utf-8")
+)["files"])
+
+
+def pytest_collection_modifyitems(items):
+    """Mark measured expensive files without changing default collection."""
+    for item in items:
+        if item.path.relative_to(_ROOT).as_posix() in _OFFLINE_FILES:
+            item.add_marker(pytest.mark.offline_integration)
 
 
 def pytest_sessionstart(session):

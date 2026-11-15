@@ -12,6 +12,7 @@ on:
 jobs:
   build-image:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v7
@@ -50,6 +51,7 @@ jobs:
   fast:
     needs: build-image
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v7
@@ -65,11 +67,18 @@ jobs:
 
       - name: Run fast contour
         run: |
+          started=$SECONDS
           docker run --rm \
             -v "${{ github.workspace }}:/app" \
             -u 1001:1001 \
             vetmanager-mcp-test \
             python scripts/run_fast_test_suite.py
+          elapsed=$(( SECONDS - started ))
+          echo "Fast contour wall seconds: $elapsed"
+          if (( elapsed > 180 )); then
+            echo "Fast contour exceeded 180 seconds" >&2
+            exit 1
+          fi
 
       - name: Validate executable structured review gate
         run: |
@@ -82,12 +91,16 @@ jobs:
   default:
     needs: build-image
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v7
 
       - name: Validate production Compose resources
         run: python3 scripts/check_stage384_compose_config.py
+
+      - name: Validate stage 190 Compose configuration
+        run: python3 scripts/check_stage190_compose.py
 
       - uses: actions/download-artifact@v4
         with:
@@ -132,6 +145,7 @@ jobs:
   postgres-activation-telemetry:
     needs: build-image
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16-alpine
@@ -159,11 +173,18 @@ jobs:
           docker load -i vetmanager-mcp-test.tar
           rm vetmanager-mcp-test.tar
 
+      - name: Create isolated stage 408 database
+        run: |
+          docker run --rm --network host -e PGPASSWORD=vetmanager postgres:16-alpine \
+            psql -h 127.0.0.1 -U vetmanager -d vetmanager_test \
+            -c 'CREATE DATABASE vetmanager_stage408'
+
       - name: Run mandatory PostgreSQL regression contour
         run: |
           docker run --rm --network host \
             -e POSTGRES_TEST_DATABASE_URL=postgresql+asyncpg://vetmanager:vetmanager@127.0.0.1:5432/vetmanager_test \
+            -e STAGE408_PG_URL=postgresql+asyncpg://vetmanager:vetmanager@127.0.0.1:5432/vetmanager_stage408 \
             -v "${{ github.workspace }}:/app" \
             -u 1001:1001 \
             vetmanager-mcp-test \
-            sh -c 'pytest -q -m postgres --junitxml=/tmp/stage424-postgres.xml && python scripts/check_stage424_postgres_results.py /tmp/stage424-postgres.xml'
+            sh -c 'python scripts/offline_gate_manifest.py postgres --write-fingerprint /tmp/stage465-pg.start && python -W error -m pytest -q -m postgres --junitxml=/tmp/stage424-postgres.xml && python scripts/check_stage424_postgres_results.py /tmp/stage424-postgres.xml && python scripts/offline_gate_manifest.py postgres --junit /tmp/stage424-postgres.xml --output /app/.stage465-postgres-gate.json --starting-fingerprint-file /tmp/stage465-pg.start'

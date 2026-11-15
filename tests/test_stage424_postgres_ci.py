@@ -22,8 +22,12 @@ def test_postgres_job_runs_unrestricted_marker_contour_and_result_gate():
     image_index = tokens.index("vetmanager-mcp-test")
     assert tokens[image_index + 1:] == [
         "sh", "-c",
-        "pytest -q -m postgres --junitxml=/tmp/stage424-postgres.xml && "
-        "python scripts/check_stage424_postgres_results.py /tmp/stage424-postgres.xml",
+        "python scripts/offline_gate_manifest.py postgres --write-fingerprint /tmp/stage465-pg.start && "
+        "python -W error -m pytest -q -m postgres --junitxml=/tmp/stage424-postgres.xml && "
+        "python scripts/check_stage424_postgres_results.py /tmp/stage424-postgres.xml && "
+        "python scripts/offline_gate_manifest.py postgres --junit /tmp/stage424-postgres.xml "
+        "--output /app/.stage465-postgres-gate.json "
+        "--starting-fingerprint-file /tmp/stage465-pg.start",
     ]
 
 

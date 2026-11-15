@@ -18,6 +18,7 @@ from __future__ import annotations
 import httpx
 import pytest
 import respx
+import agent_feedback_service
 from fastmcp.exceptions import ToolError
 
 from depersonalization import (
@@ -288,7 +289,7 @@ async def test_rejection_goes_through_the_stage_307_handling():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_report_problem_may_carry_a_placeholder():
+async def test_report_problem_may_carry_a_placeholder(sqlite_session_factory_builder, tmp_path, monkeypatch):
     """Отчёт о проблеме — единственное место, где плейсхолдер уместен.
 
     `report_problem` не ходит в Ветменеджер и ничего не записывает в базу
@@ -297,6 +298,8 @@ async def test_report_problem_may_carry_a_placeholder():
     Запретить его здесь значило бы сломать обратную связь ровно про тот
     инцидент, который чинит этот этап.
     """
+    session_factory = await sqlite_session_factory_builder(tmp_path / "feedback.db")
+    monkeypatch.setattr(agent_feedback_service, "get_session_factory", lambda: session_factory)
     billing_mock()
     headers_patch, runtime_patch = bearer_runtime_patch(is_depersonalized=True)
     with headers_patch, runtime_patch:

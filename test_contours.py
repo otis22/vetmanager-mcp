@@ -16,7 +16,7 @@ class TestContour:
 
 FAST_TEST_CONTOUR = TestContour(
     name="fast",
-    marker_expression="not browser and not real_api and not real_browser and not postgres",
+    marker_expression="not browser and not real_api and not real_browser and not postgres and not offline_integration",
     description="Fast inner-loop suite without browser or real contour tests.",
 )
 
