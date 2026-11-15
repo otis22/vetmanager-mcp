@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import argparse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -79,7 +80,10 @@ def read_outcome(path: Path) -> dict:
     return data
 
 
-def main() -> int:
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--group-nodes-file", type=Path)
+    args = parser.parse_args([] if argv is None else argv)
     warning_flags = [item for flag in build_warning_error_flags() for item in ("-W", flag)]
     base_command = [
         sys.executable,
@@ -93,6 +97,7 @@ def main() -> int:
         OPT_IN_REAL_TEST_CONTOUR.marker_expression,
     ]
     env = dict(os.environ)
+    env.setdefault("PYTHONTRACEMALLOC", "5")
     env.setdefault("VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS", "0.5")
     errors = configuration_errors(env)
     if errors:
@@ -113,13 +118,28 @@ def main() -> int:
             "tests/test_e2e_real.py::test_real_web_account_can_issue_bearer_and_call_tool",
         ],
     ]
+    if args.group_nodes_file is not None:
+        nodes = json.loads(args.group_nodes_file.read_text())
+        if not isinstance(nodes, list) or not nodes or any(not isinstance(n, str) or not n.startswith("tests/") for n in nodes):
+            print("invalid group node list", file=sys.stderr)
+            return 2
+        commands = [[*base_command, *nodes]]
+    junit_dir = Path(env["REAL_JUNIT_DIR"]) if env.get("REAL_JUNIT_DIR") else None
+    if junit_dir is not None:
+        if not junit_dir.is_absolute() or not junit_dir.is_dir():
+            print("real suite JUnit directory must exist and be absolute", file=sys.stderr)
+            return 2
     totals = {key: 0 for key in ("passed", "failed", "skipped-not-configured", "skipped-error")}
     failed = False
     with tempfile.TemporaryDirectory(prefix="real-suite-outcomes-") as temp_dir:
         for index, command in enumerate(commands, 1):
-            path = Path(temp_dir) / f"group-{index}.json"
+            label = f"real-group-{index}" if args.group_nodes_file is None else "group"
+            path = (junit_dir / f"{label}.outcome.json" if junit_dir is not None
+                    else Path(temp_dir) / f"group-{index}.json")
             path.unlink(missing_ok=True)
             env["PYTEST_REAL_OUTCOME_FILE"] = str(path)
+            if junit_dir is not None:
+                command = [*command, f"--junitxml={junit_dir / (label + '.xml')}"]
             completed = subprocess.run(command, env=env, check=False)
             if completed.returncode != 0:
                 failed = True
@@ -144,4 +164,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

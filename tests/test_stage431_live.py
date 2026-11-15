@@ -9,6 +9,7 @@ import time
 
 import httpx
 import pytest
+from tests.child_process_env import make_test_server_env
 
 from tests.test_stage384_live import seed_devtr6_bearer
 from scripts.stage385_deploy import _stateless_protocol_ready
@@ -23,24 +24,10 @@ def _payload(response):
     return response.json()
 
 
-@pytest.mark.skipif(not os.environ.get("TEST_DOMAIN") or not os.environ.get("TEST_API_KEY"),
-                    reason="devtr6 credentials absent")
-def test_devtr6_stateless_tool_survives_process_restart(prepared_web_db, free_tcp_port):
-    assert os.environ["TEST_DOMAIN"] == "devtr6"
-    token = seed_devtr6_bearer()
-    base = f"http://127.0.0.1:{free_tcp_port}"
-    headers = {"Authorization": f"Bearer {token}",
-               "Accept": "application/json, text/event-stream",
-               "Content-Type": "application/json",
-               "MCP-Protocol-Version": "2025-03-26"}
-    env = {**os.environ, "PORT": str(free_tcp_port)}
-    command = [sys.executable, "-c", "from server import _run_http_server; import os; "
-               "_run_http_server(transport='streamable-http',host='127.0.0.1',"
-               "port=int(os.environ['PORT']),path='/mcp')"]
-
-    def start():
-        process = subprocess.Popen(command, cwd=Path(__file__).resolve().parents[1],
-                                   env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def _start_worker(command, cwd, env, base):
+    process = subprocess.Popen(command, cwd=cwd, env=make_test_server_env(env),
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
         with httpx.Client(base_url=base, timeout=5) as client:
             for _ in range(100):
                 assert process.poll() is None, "MCP worker exited"
@@ -51,19 +38,41 @@ def test_devtr6_stateless_tool_survives_process_restart(prepared_web_db, free_tc
                     pass
                 time.sleep(.1)
         raise AssertionError("MCP worker did not start")
+    except BaseException:
+        _stop_worker(process)
+        raise
 
-    def stop(process):
+
+def _stop_worker(process):
+    if process.poll() is None:
         process.terminate()
-        try:
-            process.wait(timeout=12)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=5)
+    try:
+        process.wait(timeout=12)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
 
-    first_process = start()
-    _stateless_protocol_ready(free_tcp_port)
+
+@pytest.mark.skipif(not os.environ.get("TEST_DOMAIN") or not os.environ.get("TEST_API_KEY"),
+                    reason="devtr6 credentials absent")
+def test_devtr6_stateless_tool_survives_process_restart(prepared_web_db, free_tcp_port):
+    assert os.environ["TEST_DOMAIN"] == "devtr6"
+    token = seed_devtr6_bearer()
+    base = f"http://127.0.0.1:{free_tcp_port}"
+    headers = {"Authorization": f"Bearer {token}",
+               "Accept": "application/json, text/event-stream",
+               "Content-Type": "application/json",
+               "MCP-Protocol-Version": "2025-03-26"}
+    env = make_test_server_env()
+    env["PORT"] = str(free_tcp_port)
+    command = [sys.executable, "-c", "from server import _run_http_server; import os; "
+               "_run_http_server(transport='streamable-http',host='127.0.0.1',"
+               "port=int(os.environ['PORT']),path='/mcp')"]
+
+    first_process = _start_worker(command, Path(__file__).resolve().parents[1], env, base)
     second_process = None
     try:
+        _stateless_protocol_ready(free_tcp_port)
         with httpx.Client(base_url=base, timeout=30, headers=headers) as client:
             initialized = client.post("/mcp", json={
                 "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
@@ -79,9 +88,9 @@ def test_devtr6_stateless_tool_survives_process_restart(prepared_web_db, free_tc
             before = client.post("/mcp", json=call)
             assert before.status_code == 200
             assert not _payload(before)["result"].get("isError")
-        stop(first_process)
+        _stop_worker(first_process)
         first_process = None
-        second_process = start()
+        second_process = _start_worker(command, Path(__file__).resolve().parents[1], env, base)
         _stateless_protocol_ready(free_tcp_port)
         with httpx.Client(base_url=base, timeout=30, headers=headers) as client:
             after = client.post("/mcp", headers={"Mcp-Session-Id": "old-worker-session"}, json=call)
@@ -127,4 +136,4 @@ def test_devtr6_stateless_tool_survives_process_restart(prepared_web_db, free_tc
     finally:
         for process in (first_process, second_process):
             if process is not None and process.poll() is None:
-                stop(process)
+                _stop_worker(process)

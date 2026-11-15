@@ -7,11 +7,13 @@ import pytest
 
 from tests.test_stage380_live import _rpc
 from tests.test_stage384_live import seed_devtr6_bearer
+from tests.transport_diagnostics import transport_diagnostic
 
 pytestmark = pytest.mark.real_api
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_API_KEY"), reason="test credentials absent")
+@pytest.mark.usefixtures(transport_diagnostic.__name__)
 def test_stage412_live_stock_batch_and_missing_clinic(live_server_url, prepared_web_db):
     assert os.environ["TEST_DOMAIN"] == "devtr6"
     assert "pytest" in str(prepared_web_db)

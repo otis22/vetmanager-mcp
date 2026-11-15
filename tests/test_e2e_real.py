@@ -37,6 +37,7 @@ from property_privacy import (
     looks_like_secret_value,
 )
 from tests.runtime_factories import patch_runtime_credentials
+from tests.transport_diagnostics import transport_diagnostic
 from vetmanager_connection_service import (
     save_user_login_password_connection,
     validate_domain_api_key_connection,
@@ -563,6 +564,7 @@ def test_real_web_account_can_issue_bearer_and_call_tool(live_server_url: str, r
     with httpx.Client(
         base_url=live_server_url,
         follow_redirects=True,
+        timeout=60,  # Test resolver can take 27.6 seconds in the measured worst case.
     ) as client:
         register = _post_with_csrf_sync(
             client,
@@ -626,6 +628,7 @@ async def test_real_exchange_user_token_from_login_password():
 
 @skip_if_no_user_token
 @pytest.mark.asyncio
+@pytest.mark.usefixtures(transport_diagnostic.__name__)
 async def test_real_validate_user_token_connection_from_login_password_or_env_token():
     """Validation helper should accept an explicitly provided real user token."""
     resolved = await validate_user_token_connection(
@@ -810,8 +813,10 @@ async def test_real_nonexistent_client_raises():
         return
     assert result.get("success") is True
     data = result.get("data", {})
-    assert data.get("totalCount") == 0
-    assert data.get("client") == []
+    assert type(data.get("totalCount")) is int and data["totalCount"] == 0
+    # The test REST contour has returned both exact empty shapes. Neither
+    # contains a client record, and any additional field remains a failure.
+    assert data.get("client") in ([], {"merge_history": []})
 
 
 # ── Reference entities ────────────────────────────────────────────────────────

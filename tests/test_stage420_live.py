@@ -41,13 +41,14 @@ def _issue_live_token(web: httpx.Client, *, depersonalized: bool) -> str:
 
 def _seed_matched_report(client, *, year: int, request_id: int) -> tuple[int, str, int]:
     """Persist a report so the same data request can match it on a new job."""
+    marker = uuid4().hex
     candidate_years = list(range(1980, year)) + list(range(year, year + 20))
     for candidate_year in candidate_years:
         intent = (
             f"Посчитай приёмы с 1 января {candidate_year} года по 31 декабря {candidate_year} года включительно. "
             "Результат — только две колонки: месяц приёма и количество приёмов в этом месяце. "
             "Группировка только по месяцу приёма; других фильтров и группировок нет. "
-            "Без персональных данных."
+            f"Без персональных данных. Метка проверки {marker} не является фильтром данных."
         )
         _, response = _call(client, "create_report_ai_job", {
             "intent_text": intent, "wait_seconds": 30}, request_id)

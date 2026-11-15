@@ -9,6 +9,8 @@ import uuid
 
 import httpx
 import pytest
+from tests.child_process_env import make_test_server_env
+from tests.live_test_lifecycle import stop_processes
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -27,7 +29,7 @@ def test_report_ai_write_commits_pg_barrier_before_cross_slot_read(prepared_web_
     assert os.environ["TEST_DOMAIN"] == "devtr6"
     assert "pytest" in str(prepared_web_db)
     token = seed_devtr6_bearer()
-    env = os.environ.copy()
+    env = make_test_server_env()
     env.update(REDIS_URL=env["STAGE385_REDIS_URL"], MCP_WORKER_SLOTS="3",
                DB_POOL_SIZE="8", DB_MAX_OVERFLOW="5", LOG_FORMAT="text")
     processes = []
@@ -142,7 +144,4 @@ def test_report_ai_write_commits_pg_barrier_before_cross_slot_read(prepared_web_
     finally:
         for client in clients:
             client.close()
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            process.wait(timeout=30)
+        stop_processes(processes)

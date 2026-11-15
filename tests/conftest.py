@@ -1,6 +1,8 @@
 """Shared pytest fixtures for browser-level tests."""
 
 import asyncio
+import gc
+import sys
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,6 +12,7 @@ import time
 import httpx
 import pytest
 import pytest_asyncio
+from _pytest.unraisableexception import collect_unraisable
 from playwright.sync_api import Page, sync_playwright
 import respx
 import storage
@@ -21,6 +24,83 @@ from server import mcp
 from storage import Base, create_database_engine, get_session_factory
 from storage_models import Account, ServiceBearerToken, TokenUsageLog, TokenUsageStat, VetmanagerConnection
 from web_security import reset_web_security_state
+from tests.transport_diagnostics import (ResourceOracle, ownership_errors, reset_active_node,
+                                         reset_fixture_scope, set_active_node,
+                                         set_fixture_scope, start_session_diagnostics,
+                                         transport_diagnostic, write_diagnostic)  # noqa: F401
+import os
+
+
+def pytest_sessionstart(session):
+    """Enable allocation trace before any real test setup or call."""
+    start_session_diagnostics()
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_setup(item):
+    if os.environ.get('REAL_JUNIT_DIR'):
+        item._diagnostic_node_token = set_active_node(item.nodeid)
+    yield
+    if os.environ.get('REAL_JUNIT_DIR'):
+        item._resource_oracle = ResourceOracle(item.nodeid)
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_teardown(item, nextitem):
+    yield
+    oracle = getattr(item, '_resource_oracle', None)
+    if oracle is not None:
+        errors = []
+        try:
+            oracle.finish(getattr(item, '_transport_connections', []),
+                          getattr(item, '_transport_refs', []),
+                          Path(os.environ['REAL_JUNIT_DIR']) / oracle.evidence_filename)
+        except Exception as exc:
+            errors.append(exc)
+        try:
+            collect_unraisable(item.config)
+        except Exception as exc:
+            errors.append(exc)
+    token = getattr(item, '_diagnostic_node_token', None)
+    if token is not None:
+        reset_active_node(token)
+    if oracle is not None:
+        if len(errors) == 1:
+            raise errors[0]
+        if errors:
+            raise ExceptionGroup('Per-node resource cleanup failed', errors)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_fixture_setup(fixturedef, request):
+    token = set_fixture_scope(fixturedef.scope) if os.environ.get('REAL_JUNIT_DIR') else None
+    try:
+        yield
+    finally:
+        if token is not None:
+            reset_fixture_scope(token)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if not os.environ.get('REAL_JUNIT_DIR'):
+        return
+    gc.collect()
+    errors = ownership_errors(final=True)
+    try:
+        collect_unraisable(session.config)
+    except Exception:
+        errors.append('session unraisable warning')
+    write_diagnostic(Path(os.environ['REAL_JUNIT_DIR']) / 'resource-session.json',
+                     {'schema_version': 1, 'ownership_errors': errors})
+    if errors:
+        session.exitstatus = 1
+        print(f'stage459 session resource errors: {errors}', file=sys.stderr)
+
+
+def pytest_unconfigure(config):
+    if os.environ.get('REAL_JUNIT_DIR'):
+        gc.collect()
+        collect_unraisable(config)
 
 
 @pytest.fixture(autouse=True)
@@ -86,6 +166,7 @@ async def _reset_vm_client_state():
     await _reset()
     yield
     await _reset()
+
 
 TEST_ENCRYPTION_KEY = "2M4BZ-HQ_z5oz8OnVwvj4zNQoBL8e50cdjOMoGlWifA="
 
@@ -391,8 +472,19 @@ async def sqlite_session_factory_builder():
 
 @pytest.fixture
 def run_async():
-    """Run async project calls safely from sync browser/live tests."""
-    return _run_coro_in_thread
+    """Close loop-owned HTTP clients before the temporary loop exits."""
+    from tests.live_test_lifecycle import close_loop_http_clients
+
+    def run(coro):
+        async def invoke():
+            try:
+                return await coro
+            finally:
+                await close_loop_http_clients()
+
+        return _run_coro_in_thread(invoke())
+
+    return run
 
 
 @pytest.fixture

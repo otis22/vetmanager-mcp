@@ -11,6 +11,7 @@ import time
 
 import httpx
 import pytest
+from tests.child_process_env import make_test_server_env
 
 from tests.test_stage384_live import seed_devtr6_bearer
 
@@ -23,7 +24,7 @@ pytestmark = pytest.mark.real_api
 def test_devtr6_held_get_sse_drains_on_sigterm(prepared_web_db, free_tcp_port):
     assert "pytest" in str(prepared_web_db)
     token = seed_devtr6_bearer()
-    env = os.environ.copy()
+    env = make_test_server_env()
     env.update(PORT=str(free_tcp_port), LOG_LEVEL="INFO", FASTMCP_LOG_LEVEL="INFO", LOG_FORMAT="text",
                STREAMABLE_HTTP_DRAIN_ENABLED="true")
     server = subprocess.Popen(

@@ -35,16 +35,18 @@ from exceptions import HostResolutionError, HostResolutionTimeoutError, Vetmanag
 from host_validation import validate_resolved_vetmanager_origin
 from observability_logging import RUNTIME_LOGGER
 from request_context import get_current_request_context
+from resolver_network_backend import install_resolver_backend
 from service_metrics import record_host_resolution, record_upstream_failure, record_upstream_request
 from upstream_transport import classify_http_status, classify_transport_error
 
 
 BILLING_API = "https://billing-api.vetmanager.cloud/host/{domain}"
 BILLING_API_ALIAS = "https://billing-api.vetmanager.ru/host/{domain}"
-# Two sources with one retry each fit comfortably inside the 30-second GET budget.
-_REQUEST_TIMEOUT = httpx.Timeout(connect=1.5, read=2.0, write=2.0, pool=1.0)
+# Four billing attempts plus two shorter clinic probes fit the 30-second GET budget.
+_REQUEST_TIMEOUT = httpx.Timeout(connect=5.6, read=5.6, write=2.0, pool=1.0)
 _DEFAULT_MAX_RETRIES = 1
 GUESSED_HOST_CACHE_TTL_SECONDS = 15.0
+_BILLING_LOOKUP_DEADLINE_SECONDS = 5.6
 _LOOKUP_DEADLINE_SECONDS = 2.5
 _PROBE_PATH = "/rest/api/user/1"
 
@@ -109,6 +111,11 @@ async def _get_shared_client() -> httpx.AsyncClient:
         # classic P-256 share works through the container network path.
         tls.set_ecdh_curve("prime256v1")
         client = httpx.AsyncClient(timeout=_REQUEST_TIMEOUT, verify=tls)
+        try:
+            install_resolver_backend(client)
+        except Exception:
+            await client.aclose()
+            raise
         _shared_clients_by_loop[key] = client
         return client
 
@@ -120,16 +127,57 @@ async def reset_billing_resolver() -> None:
     Safe to call repeatedly.
     """
     _resolved_host_cache.clear()
-    _inflight_resolutions_by_loop.clear()
-    _inflight_resolutions_locks.clear()
-    clients = list(_shared_clients_by_loop.values())
-    _shared_clients_by_loop.clear()
-    _shared_clients_locks.clear()
-    for client in clients:
+    errors = []
+    current_loop = asyncio.get_running_loop()
+    # A shielded lookup can outlive its caller. Keep its client available until
+    # cancellation has actually completed; a resistant task remains retryable.
+    for loop, inflight in list(_inflight_resolutions_by_loop.items()):
+        owned = list(inflight.items())
+        tasks = {task for _, task in owned}
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks and loop is current_loop:
+            done, pending = await asyncio.wait(tasks, timeout=_LOOKUP_DEADLINE_SECONDS)
+        else:
+            done = {task for task in tasks if task.done()}
+            pending = tasks - done
+        if done:
+            outcomes = await asyncio.gather(*done, return_exceptions=True)
+            errors.extend(result for result in outcomes if isinstance(result, Exception))
+        for domain, task in owned:
+            if task in done and inflight.get(domain) is task:
+                inflight.pop(domain, None)
+        if pending:
+            errors.append(RuntimeError("Billing resolver inflight cleanup did not finish"))
+        if not inflight:
+            _inflight_resolutions_by_loop.pop(loop, None)
+            _inflight_resolutions_locks.pop(loop, None)
+    for loop in list(_inflight_resolutions_locks):
+        if loop not in _inflight_resolutions_by_loop:
+            _inflight_resolutions_locks.pop(loop, None)
+    for loop, client in list(_shared_clients_by_loop.items()):
+        inflight = _inflight_resolutions_by_loop.get(loop)
+        if inflight and any(not task.done() for task in inflight.values()):
+            continue
         try:
-            await client.aclose()
-        except Exception:
-            pass
+            aclose = getattr(client, "aclose", None)
+            if callable(aclose):
+                await aclose()
+            else:
+                close = getattr(client, "close", None)
+                if not callable(close):
+                    raise TypeError("Billing client has no close method")
+                close()
+        except Exception as exc:
+            errors.append(exc)
+        else:
+            if _shared_clients_by_loop.get(loop) is client:
+                _shared_clients_by_loop.pop(loop, None)
+                _shared_clients_locks.pop(loop, None)
+    for loop in list(_shared_clients_locks):
+        if loop not in _shared_clients_by_loop:
+            _shared_clients_locks.pop(loop, None)
     # Этап 285: ноль — законное значение, поэтому positive_only отключён.
     grace_seconds = env_float(
         "VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS", 0.0, positive_only=False
@@ -138,6 +186,8 @@ async def reset_billing_resolver() -> None:
         # Let asyncio SSL/socket transports finish close callbacks before pytest's
         # unraisable-warning collector runs under `-W error`.
         await asyncio.sleep(grace_seconds)
+    if errors:
+        raise ExceptionGroup("Billing resolver client cleanup failed", errors)
 
 
 async def resolve_vetmanager_host(
@@ -354,7 +404,7 @@ async def _lookup_billing_host(
     """Make one authoritative billing lookup; preserve response validation."""
     started = time.monotonic()
     try:
-        response = await _bounded_get(client, url)
+        response = await _bounded_get(client, url, deadline=_BILLING_LOOKUP_DEADLINE_SECONDS)
     except httpx.RequestError as exc:
         elapsed = time.monotonic() - started
         reason = classify_transport_error(exc)
@@ -415,11 +465,13 @@ async def _lookup_billing_host(
     return validated
 
 
-async def _bounded_get(client: httpx.AsyncClient, url: str) -> httpx.Response:
+async def _bounded_get(
+    client: httpx.AsyncClient, url: str, *, deadline: float
+) -> httpx.Response:
     """Cap each network step even when several HTTP timeout phases occur."""
     try:
         return await asyncio.wait_for(
-            client.get(url, follow_redirects=False), timeout=_LOOKUP_DEADLINE_SECONDS
+            client.get(url, follow_redirects=False), timeout=deadline
         )
     except asyncio.TimeoutError as exc:
         raise httpx.ReadTimeout("Host lookup deadline exceeded") from exc
@@ -432,14 +484,14 @@ async def _probe_clinic_origin(
     vm2 = f"https://{domain}.vetmanager2.ru"
     ru = f"https://{domain}.vetmanager.ru"
     try:
-        first = await _bounded_get(client, f"{vm2}{_PROBE_PATH}")
+        first = await _bounded_get(client, f"{vm2}{_PROBE_PATH}", deadline=_LOOKUP_DEADLINE_SECONDS)
     except httpx.RequestError:
         first = None
     if first is not None and (first.status_code == 401 or 200 <= first.status_code < 300):
         return validate_resolved_vetmanager_origin(vm2, domain=domain), "vm2_direct"
 
     try:
-        second = await _bounded_get(client, f"{ru}{_PROBE_PATH}")
+        second = await _bounded_get(client, f"{ru}{_PROBE_PATH}", deadline=_LOOKUP_DEADLINE_SECONDS)
     except httpx.RequestError as exc:
         raise HostResolutionError("Unable to verify Vetmanager clinic host.") from exc
     if second.status_code == 401 or 200 <= second.status_code < 300:

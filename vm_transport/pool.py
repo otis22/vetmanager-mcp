@@ -87,14 +87,23 @@ async def get_shared_http_client() -> httpx.AsyncClient:
 
 
 async def reset_shared_http_client() -> None:
-    """Close and drop ALL per-loop shared clients. For tests and shutdown."""
-    clients = list(_shared_http_clients.values())
-    _shared_http_clients.clear()
-    for c in clients:
+    """Close per-loop clients; keep failed closes reachable for a later retry."""
+    errors = []
+    for loop, client in list(_shared_http_clients.items()):
         try:
-            await c.aclose()
-        except Exception:
-            pass
+            aclose = getattr(client, "aclose", None)
+            if callable(aclose):
+                await aclose()
+            else:
+                close = getattr(client, "close", None)
+                if not callable(close):
+                    raise TypeError("VM HTTP client has no close method")
+                close()
+        except Exception as exc:
+            errors.append(exc)
+        else:
+            if _shared_http_clients.get(loop) is client:
+                _shared_http_clients.pop(loop, None)
     # Этап 285: ноль — законное значение, поэтому positive_only отключён.
     grace_seconds = env_float(
         "VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS", 0.0, positive_only=False
@@ -103,3 +112,5 @@ async def reset_shared_http_client() -> None:
         # Give asyncio SSL/socket transports time to run close callbacks before
         # pytest's unraisable-warning collector runs under `-W error`.
         await asyncio.sleep(grace_seconds)
+    if errors:
+        raise ExceptionGroup("VM HTTP client cleanup failed", errors)

@@ -625,7 +625,19 @@ def register(mcp: FastMCP) -> None:
         Args:
             client_id: Unique numeric ID of the client.
         """
-        return await crud_get_by_id("/rest/api/client", client_id)
+        result = await crud_get_by_id("/rest/api/client", client_id)
+        data = result.get("data") if isinstance(result, dict) else None
+        if isinstance(result, dict) and result.get("success") is True and isinstance(data, dict):
+            client = data.get("client")
+            empty_marker = client == [] or client == {"merge_history": []}
+            count = data.get("totalCount")
+            if type(count) is int and count == 0:
+                if empty_marker:
+                    raise NotFoundError("Client not found", status_code=404)
+                raise reportable_error("Invalid client response from Vetmanager.")
+            if empty_marker:
+                raise reportable_error("Invalid client response from Vetmanager.")
+        return result
 
     @mcp.tool
     async def get_personal_account_link_by_phone(phone: str) -> dict:

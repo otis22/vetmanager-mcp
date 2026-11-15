@@ -55,6 +55,7 @@ def pytest_sessionfinish(session, exitstatus):
         Path(path).write_text(json.dumps({
             "collected": _collected,
             "counts": counts,
+            "nodes": _results,
             "not_configured": [key for key, value in _results.items() if value == "skipped-not-configured"],
             "skip_errors": [key for key, value in _results.items() if value == "skipped-error"],
         }, sort_keys=True), encoding="utf-8")
