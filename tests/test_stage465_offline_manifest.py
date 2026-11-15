@@ -86,6 +86,7 @@ def test_fingerprint_includes_shell_and_coverage_inputs(monkeypatch, tmp_path) -
     for name in (
         "Dockerfile", "docker-compose.yml", "docker-compose.test.yml",
         "pyproject.toml", "pytest.ini", ".coveragerc",
+        "alembic.ini", "tests/fixtures/stage385_resource_gate_sample.json",
         ".github/workflows/test.yml", "scripts/default_node_inventory.json",
         "scripts/postgres_node_inventory.json", "scripts/offline_integration_files.json",
     ):
@@ -100,3 +101,9 @@ def test_fingerprint_includes_shell_and_coverage_inputs(monkeypatch, tmp_path) -
     script.write_text("original")
     (tmp_path / ".coveragerc").write_text("changed")
     assert gate.source_fingerprint(tmp_path) != baseline
+    (tmp_path / ".coveragerc").write_text("original")
+    for name in ("alembic.ini", "tests/fixtures/stage385_resource_gate_sample.json"):
+        path = tmp_path / name
+        path.write_text("changed")
+        assert gate.source_fingerprint(tmp_path) != baseline, name
+        path.write_text("original")

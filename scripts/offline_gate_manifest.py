@@ -40,7 +40,8 @@ def source_fingerprint(root: Path = ROOT) -> str:
     paths += list((root / "scripts").rglob("*.sh"))
     paths += [root / name for name in (
         "Dockerfile", "docker-compose.yml", "docker-compose.test.yml",
-        "pyproject.toml", "pytest.ini", ".coveragerc",
+        "pyproject.toml", "pytest.ini", ".coveragerc", "alembic.ini",
+        "tests/fixtures/stage385_resource_gate_sample.json",
         ".github/workflows/test.yml", "scripts/default_node_inventory.json",
         "scripts/postgres_node_inventory.json", "scripts/offline_integration_files.json",
     )]
