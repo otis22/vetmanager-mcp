@@ -107,13 +107,14 @@ working copy envelope, stderr, prompt, schema и metadata и возвращае�
 8. **Red → Green:** каждый ранее красный node отдельно до зелёного → owning file/suite → fast
 9. **Проверки shell** при изменении `scripts/*.sh`: `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`
 10. **Аудит изменений** — legacy-паттерны, дублирование, рассинхрон с контрактом; если аудит изменил runtime/tests — повторить шаг 8
-11. **Финальные проверки этапа** — один полный default `docker compose --profile test run --rm test`; по применимости PostgreSQL, browser, живой вызов (6.1); real aggregate — на финише поезда
-12. **Обновить `Roadmap.md` и `AssumptionLog.md`** с evidence
-13. **Архивировать и проверить структуру** строго по порядку: `python3 scripts/archive_roadmap.py`, затем `python3 scripts/check_roadmap_structure.py`; оба exit code 0
-14. **Commit** — только при зелёных шагах 8–13; красный WIP не коммитится
-15. **Детерминированная проверка → Spark → ревью сторонней моделью на committed diff** (раздел 5); после правок — повтор лестницы, commit и review в пределах бюджета
-16. **Push** — после валидных verdict обоих ревьюеров и закрытых адекватных critical/high; medium после исчерпания бюджета — только с rationale
-17. **Self-attestation** (4.2) — evidence куратору после push
+11. **Pre-review рабочего diff** — детерминированная проверка → Spark → Astra + Opus; замечания исправить и повторить шаги 8–10 до долгих gates
+12. **Финальные проверки этапа** — один полный default `docker compose --profile test run --rm test`; по применимости PostgreSQL, browser, живой вызов (6.1); real aggregate — на финише поезда
+13. **Обновить `Roadmap.md` и `AssumptionLog.md`** с evidence
+14. **Архивировать и проверить структуру** строго по порядку: `python3 scripts/archive_roadmap.py`, затем `python3 scripts/check_roadmap_structure.py`; оба exit code 0
+15. **Commit** — только при зелёных шагах 8–14; красный WIP не коммитится
+16. **Финальное committed-diff review** — детерминированная проверка → Spark → Astra + Opus; после правок — повтор лестницы, commit и review в пределах бюджета
+17. **Push** — после валидных verdict обоих ревьюеров и закрытых адекватных critical/high; medium после исчерпания бюджета — только с rationale
+18. **Self-attestation** (4.2) — evidence куратору после push
 
 ### Запрещено:
 - писать код без тестов; коммитить или пушить без зелёных проверок и аудита
@@ -223,9 +224,10 @@ self-attestation шаг 7 указывается, **чем именно его �
    с доказанным red/mutation, 4.0) → реализация → каждый ранее красный node
    отдельно до зелёного → owning file/suite → fast
    `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py`
-   → аудит → финальные gates → commit → committed-diff review. Полный
-   suite/real/browser/PostgreSQL ради первого red не запускать. Fast исключает
-   `browser`, `real_api`, `real_browser`, `postgres`, `offline_integration` и coverage.
+   → аудит → pre-review рабочего diff и исправления → финальные gates → commit →
+   финальное committed-diff review. Полный suite/real/browser/PostgreSQL ради
+   первого red не запускать. Fast исключает `browser`, `real_api`, `real_browser`,
+   `postgres`, `offline_integration` и coverage.
 2. **Debug после failure/error широкого набора.** Сохранить failing
    nodes/evidence, классифицировать product/harness/flaky по фактам, широкие
    прогоны остановить. Один causal class на изменение/коммит; ранее красные
@@ -233,13 +235,12 @@ self-attestation шаг 7 указывается, **чем именно его �
    инвалидированные полные слои. Real — затронутая группа и финальный aggregate
    по существующим fingerprints. `--maxfail=1` — только в широком
    debug-прогоне; финальный полный — без maxfail.
-3. **Финальные gates.** После последней кодовой правки и аудита — один полный
+3. **Финальные gates.** После pre-review и закрытия его замечаний — один полный
    default `docker compose --profile test run --rm test`; по применимости
    PostgreSQL (storage), browser (UI), живой вызов изменённого MCP-инструмента
    с кодом и телом (6.1). Финиш поезда / перед push-merge — полный real
-   aggregate и остальные release gates. Быстрый pre-review до полного набора
-   допустим; обязательное committed-diff review — после зелёных финальных
-   gates. После review-правок повторить соответствующую лестницу.
+   aggregate и остальные release gates. Финальное committed-diff review обязательно
+   после зелёных gates. После review-правок повторить соответствующую лестницу.
 4. **Инвалидация.** Docs-only не повторяет suites; runtime/test/dependency
    changes повторяют затронутые проверки по доказанной карте. Real и
    default/PostgreSQL проверяют versioned node inventory, JUnit и fingerprint

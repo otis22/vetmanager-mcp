@@ -35,7 +35,8 @@ def test_diagnostic_redacts_canary_and_url_from_evidence(monkeypatch, tmp_path: 
     monkeypatch.setenv("STAGE465_SYNTHETIC_TOKEN", "stage465-canary-secret")
     for name in diagnostic._CREDENTIAL_ENV:
         monkeypatch.delenv(name, raising=False)
-    leaked = "token=stage465-canary-secret https://example.invalid/path?q=private"
+    leaked = ("token=stage465-canary-secret https://example.invalid/path?q=private "
+              "Authorization: Bearer independently-generated-canary")
     monkeypatch.setattr(diagnostic.subprocess, "run", lambda *a, **k: SimpleNamespace(
         returncode=1, stdout=leaked, stderr=leaked,
     ))
@@ -43,3 +44,4 @@ def test_diagnostic_redacts_canary_and_url_from_evidence(monkeypatch, tmp_path: 
     output = (tmp_path / "stdout.txt").read_text() + (tmp_path / "stderr.txt").read_text()
     assert "stage465-canary-secret" not in output
     assert "example.invalid" not in output
+    assert "independently-generated-canary" not in output

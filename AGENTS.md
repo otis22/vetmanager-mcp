@@ -159,9 +159,11 @@ bearer-токеном. Нужный выбирается до запуска.
 красная обязательная проверка запрещает commit и push.
 
 - **Лестница:** focused red → каждый ранее красный node отдельно до зелёного →
-  owning file/suite → fast → аудит → один полный default; по применимости
-  PostgreSQL, browser, живой вызов; real aggregate — перед push-merge поезда →
-  commit → committed-diff review. Полный suite/real/browser/PostgreSQL ради red не запускать.
+  owning file/suite → fast → аудит → pre-review рабочего diff (Spark → Astra + Opus)
+  и исправления → один полный default; по применимости PostgreSQL, browser, живой
+  вызов; real aggregate — перед push-merge поезда → commit → финальное committed-diff
+  review. Долгие gates запускаются после закрытия замечаний pre-review; полный
+  suite/real/browser/PostgreSQL ради red не запускать.
 - **Debug после широкого failure:** сохранить failing nodes/evidence,
   классифицировать product/harness/flaky, широкие прогоны остановить; один
   causal class на изменение; `--maxfail=1` — только в широком debug-прогоне.

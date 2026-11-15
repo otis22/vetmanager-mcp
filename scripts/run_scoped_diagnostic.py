@@ -21,6 +21,7 @@ _FORBIDDEN_MARKERS = {"real_api", "real_browser", "postgres"}
 _CREDENTIAL_ENV = {"TEST_API_KEY", "TEST_USER_TOKEN", "TEST_USER_LOGIN", "TEST_USER_PASSWORD"}
 _SECRET_NAME = re.compile(r"(?:KEY|TOKEN|PASSWORD|SECRET|CREDENTIAL|AUTH)", re.I)
 _URL = re.compile(r"(?:https?|postgresql(?:\+asyncpg)?|redis)://[^\s\"'<>]+", re.I)
+_BEARER_HEADER = re.compile(r"\bauthorization\s*[:=]\s*Bearer\s+[^\s,;]+", re.I)
 _SECRET_ASSIGNMENT = re.compile(r"\b(?:authorization|api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+", re.I)
 
 
@@ -30,6 +31,7 @@ def redact_output(value: str) -> str:
         if _SECRET_NAME.search(name) and len(secret) >= 4:
             value = value.replace(secret, "[REDACTED]")
     value = _URL.sub("[REDACTED_URL]", value)
+    value = _BEARER_HEADER.sub("[REDACTED_CREDENTIAL]", value)
     return _SECRET_ASSIGNMENT.sub("[REDACTED_CREDENTIAL]", value)
 
 
