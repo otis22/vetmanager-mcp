@@ -58,34 +58,30 @@
 
 ## 3.1. Ревью сторонней моделью и бюджет
 
-`Ревью сторонней моделью` — одновременное ревью Astra и Opus по постоянной схеме ниже; бюджеты PRD, code/diff и визуального гейтов раздельные.
+`Ревью сторонней моделью` — одновременное ревью Astra и Kimi K3 по постоянной схеме ниже; бюджеты PRD, code/diff и визуального гейтов раздельные.
 
 - Spark (`gpt-6-luna`) — candidate-only scout; вспомогательные запуски без лимита, перед конкретным гейтом — до 3.
 - Перед Spark — детерминированная проверка inventory/count/fingerprints (`scripts/offline_gate_manifest.py`, `scripts/check_roadmap_structure.py`, валидатор review). Finding Spark, опровергнутый такой проверкой, отклоняется одной строкой rationale в `AssumptionLog.md` и гейт не блокирует.
-- Успех Claude review: JSON-конверт разобран, `is_error=false`, непустое `.result` соответствует findings schema; `stop_reason` не участвует (при `--json-schema` result приходит tool call). Валидатор `scripts/validate_review_result.py` вызывать напрямую как исполняемый файл. Infrastructure failure фиксируется в `AssumptionLog.md` как `N/3`; смена prompt/schema счётчик не сбрасывает.
+- Успех Kimi review: поток `stream-json` содержит один ответ assistant без tool calls, его непустой JSON соответствует findings schema и проходит `scripts/validate_review_result.py --plain`. Infrastructure failure фиксируется как `N/3`; смена prompt/schema счётчик не сбрасывает.
 
-Каждую попытку Claude strong review запускать через
-`scripts/run_claude_review.sh (--range <range> | --file <review-file>) --attempt <N/3>`
-(`--range` — diff, `--file` — PRD/Architecture Critique). Runner сохраняет вне
-working copy envelope, stderr, prompt, schema и metadata и возвращает non-zero
-при invalid verdict. В `AssumptionLog.md` — ссылка на `*.envelope.json` и
-`subtype`, `stop_reason`, `output_tokens`, `thinking_tokens`, `len(result)`
-даже при пустом stdout; запись только «без output» запрещена.
+Каждую попытку Kimi strong review запускать через
+`scripts/run_kimi_review.py (--range <range> | --working-diff | --file <review-file>) --attempt <N/3>`.
+Runner сохраняет вне checkout prompt, stream, stderr, verdict и metadata и возвращает non-zero при invalid verdict. `KIMI_CODE_HOME` изолирован в разрешённом каталоге.
 
 <!-- stage-343-model-contract:start -->
-Постоянная схема моделей (решение владельца 24.09.2026): исполнитель этапа Codex `gpt-6-sol`; Spark/scout `gpt-6-luna` (candidate-only); сильное ревью — `gpt-6-astra` и Claude Opus. Требуется Codex CLI ≥ 0.155. Слаги семейства 5.6 устарели; Terra в GPT-6 нет.
+Постоянная схема моделей (обновление владельца 16.11.2026): исполнитель этапа Codex `gpt-6-sol`; Spark/scout `gpt-6-luna` (candidate-only); сильное ревью — `gpt-6-astra` и Kimi K3. Требуется Codex CLI ≥ 0.155. Слаги семейства 5.6 устарели; Terra в GPT-6 нет.
 
-- Перед каждым сильным PRD, Architecture Critique, визуальным и committed diff гейтом выполнить Spark-review; затем запустить Astra и Opus одновременно и дождаться обоих. Spark-бюджет — не более 3 запусков перед конкретным гейтом; если он исчерпан, повтор сильной пары допускается с записанным rationale без четвёртого Spark. Scout для проверки правок после сильного бюджета не тратит предгейтовый Spark-бюджет.
-- У Astra и Opus отдельные бюджеты: 2 валидных запуска на каждый гейт у каждого и не более 3 infrastructure attempts у каждого. Architecture Critique делит PRD-бюджет, визуальный гейт имеет отдельный бюджет. Валидный запуск — разбираемый verdict `findings` (включая `[]`). Невалидный ответ не тратит валидный слот. Если любая сторона не дала валидного ответа после трёх неуспешных попыток, гейт blocked и push запрещён. Оба результата обязательны даже на визуальном гейте.
-- Astra: `timeout 1800 codex exec -m gpt-6-astra -s danger-full-access -C "$PWD" --output-schema <findings-schema> -o <evidence>/astra-<gate>-attempt-N-of-3.result.json -` с review-only prompt. Сохранять prompt, result, stderr и metadata: модель, объект и reviewed SHA для diff, версия CLI, время начала/конца, exit и validator exit. Проверять результат командой `scripts/validate_review_result.py --plain` с stdin из result; этот режим принимает severity `critical`/`high`/`medium`. Для Claude Opus использовать `scripts/run_claude_review.sh` и прежнюю проверку envelope через `scripts/validate_review_result.py` без изменения поведения runner.
-- На визуальном гейте Astra получает скриншоты флагом `-i` и даёт решающее визуальное ревью. Opus запускается с `--image` и получает пиксели скриншотов. Opus `[]` засчитывается только если metadata содержит изображения с совпадающими путями, размерами и SHA-256. Без валидного визуального вердикта Astra гейт blocked.
-- Свести findings в `AssumptionLog.md` по гейту: что нашла Astra, что Opus, что оба, что принято/отклонено и почему; приложить пути evidence и время. Неустранённые critical/high блокируют выпуск. Если после исчерпания бюджетов сильного ревью в код внесена любая правка, проверить её Spark (`gpt-6-luna` как отдельный scout) и тестами и отметить отдельной строкой в `AssumptionLog.md`; push разрешён при закрытых critical/high и валидных verdict обоих ревьюеров. Это не замена неуспешному сильному гейту без валидного verdict.
-- Если исполнитель — Claude-агент, внешнее сильное ревью делает Codex `gpt-6-astra`; Opus работает как дополнительный параллельный reviewer и его verdict также обязателен для гейта.
+- Перед каждым сильным PRD, Architecture Critique, визуальным и committed diff гейтом выполнить Spark-review; затем запустить Astra и Kimi одновременно и дождаться обоих. Spark-бюджет — не более 3 запусков перед конкретным гейтом; если он исчерпан, повтор сильной пары допускается с записанным rationale без четвёртого Spark. Scout для проверки правок после сильного бюджета не тратит предгейтовый Spark-бюджет.
+- У Astra и Kimi отдельные бюджеты: 2 валидных запуска на каждый гейт у каждого и не более 3 infrastructure attempts у каждого. Architecture Critique делит PRD-бюджет, визуальный гейт имеет отдельный бюджет. Валидный запуск — разбираемый verdict `findings` (включая `[]`). Невалидный ответ не тратит валидный слот. Если любая сторона не дала валидного ответа после трёх неуспешных попыток, гейт blocked и push запрещён. Оба результата обязательны даже на визуальном гейте.
+- Astra: `timeout 1800 codex exec -m gpt-6-astra -s danger-full-access -C "$PWD" --output-schema <findings-schema> -o <evidence>/astra-<gate>-attempt-N-of-3.result.json -` с review-only prompt. Сохранять prompt, result, stderr и metadata: модель, объект и reviewed SHA для diff, версия CLI, время начала/конца, exit и validator exit. Проверять результат командой `scripts/validate_review_result.py --plain` с stdin из result; этот режим принимает severity `critical`/`high`/`medium`. Для Kimi K3 использовать `scripts/run_kimi_review.py` с `kimi -m kimi-code/k3 -p ... --output-format stream-json`, профилем `tools: []` и `subagents: []`. Runner отклоняет любой tool call и пустой/неразбираемый поток, сохраняет prompt, stream, stderr, metadata и проверяет JSON через `scripts/validate_review_result.py --plain`. CLI запускается с изолированным `KIMI_CODE_HOME` в разрешённом каталоге.
+- На визуальном гейте Astra получает скриншоты флагом `-i` и даёт решающее визуальное ревью. Kimi получает пиксели скриншотов только через проверенный image-capable transport; текстовый `-p` не передаёт PNG. Kimi `[]` засчитывается только если metadata содержит подтверждённую передачу изображений с совпадающими путями, размерами и SHA-256. Без этого визуальный гейт blocked. Перед передачей PNG удалить PII, токены, идентификаторы сессий и данные клиник; подтверждение очистки включить в metadata. Без валидного визуального вердикта Astra гейт blocked.
+- Свести findings в `AssumptionLog.md` по гейту: что нашла Astra, что Kimi, что оба, что принято/отклонено и почему; приложить пути evidence и время. Неустранённые critical/high блокируют выпуск. Если после исчерпания бюджетов сильного ревью в код внесена любая правка, проверить её Spark (`gpt-6-luna` как отдельный scout) и тестами и отметить отдельной строкой в `AssumptionLog.md`; push разрешён при закрытых critical/high и валидных verdict обоих ревьюеров. Это не замена неуспешному сильному гейту без валидного verdict.
+- Если исполнитель — Claude-агент, внешнее сильное ревью делает Codex `gpt-6-astra`; Kimi работает как дополнительный параллельный reviewer и его verdict также обязателен для гейта.
 <!-- stage-343-model-contract:end -->
 
 <!-- stage-345-visual-contract:start -->
 Визуальный гейт: до ревью получить состояния кабинета из веток `compute_activation_state` в коде; отдельно снять bearer/OAuth до первого запроса и после него, разовую выдачу ключа и лендинг. Для каждого состояния делать desktop и phone снимки `full_page`, а первый экран телефона — отдельным PNG. Матрица тем строится по реализованному CSS: тема без реализации не включается. Перед ревью автоматический сторож проверяет полноту состояний, файлов и SHA-256; побайтные дубли и пропуски — ошибка подготовки evidence, гейт не запускать.
-Промпт Astra и Opus требует прочитать весь видимый текст на полных страницах и сообщить бессмысленные, склеенные, противоречивые фразы, повторы вопросов/ответов, пустые подписи и элементы вне палитры; оценить также композицию и первый экран телефона. Astra видит PNG через `-i`, Opus через `--image` с проверкой metadata.
+Промпт Astra и Kimi требует прочитать весь видимый текст на полных страницах и сообщить бессмысленные, склеенные, противоречивые фразы, повторы вопросов/ответов, пустые подписи и элементы вне палитры; оценить также композицию и первый экран телефона. Astra видит PNG через `-i`, Kimi только через подтверждённый image-capable transport с проверкой metadata; текстовый `-p` не засчитывается.
 <!-- stage-345-visual-contract:end -->
 
 
@@ -107,18 +103,18 @@ working copy envelope, stderr, prompt, schema и metadata и возвращае�
 8. **Red → Green:** каждый ранее красный node отдельно до зелёного → owning file/suite → fast
 9. **Проверки shell** при изменении `scripts/*.sh`: `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`
 10. **Аудит изменений** — legacy-паттерны, дублирование, рассинхрон с контрактом; если аудит изменил runtime/tests — повторить шаг 8
-11. **Полное pre-review рабочего diff** — детерминированная проверка → Spark → Astra + Opus; правки накопить пакетом и повторить шаги 8–10 один раз до долгих gates
+11. **Полное pre-review рабочего diff** — детерминированная проверка → Spark → Astra + Kimi; каждый pre-freeze strong review, включая повтор после исправлений, охватывает весь актуальный diff, closure-only не заменяет полный проход; правки накопить пакетом и повторить шаги 8–10 один раз до долгих gates
 12. **Заморозка кода → финальные проверки** — один полный default `docker compose --profile test run --rm test`; по применимости PostgreSQL, browser, живой вызов (6.1); real aggregate — на финише поезда
 13. **Обновить `Roadmap.md` и `AssumptionLog.md`** с evidence
 14. **Архивировать и проверить структуру** строго по порядку: `python3 scripts/archive_roadmap.py`, затем `python3 scripts/check_roadmap_structure.py`; оба exit code 0
 15. **Commit** — только при зелёных шагах 8–14; красный WIP не коммитится
-16. **Release-review committed diff** — детерминированная проверка → Spark → Astra + Opus; **только блокеры релиза** и соответствие reviewed/tested diff; non-blocking findings — в Roadmap без правок текущей ветки
+16. **Release-review committed diff** — детерминированная проверка → Spark → Astra + Kimi; **только блокеры релиза** и соответствие reviewed/tested diff; non-blocking findings — в Roadmap без правок текущей ветки
 17. **Push** — после валидных verdict обоих ревьюеров и закрытых блокеров; блокер повторяет focused/owning/fast и только инвалидированные полные контуры, затем commit и release-review в пределах бюджета
 18. **Self-attestation** (4.2) — evidence куратору после push
 
 ### Запрещено:
 - писать код без тестов; коммитить или пушить без зелёных проверок и аудита
-- пушить без валидных verdict Astra и Opus на committed diff; исчерпание infrastructure attempts не разрешает push
+- пушить без валидных verdict Astra и Kimi на committed diff; исчерпание infrastructure attempts не разрешает push
 - пропускать focused + fast и финальный default после правки runtime/tests
 - получать первый red полным suite, real, browser или PostgreSQL; использовать их как цикл разработки
 - превышать stop-loss (4.3); смешивать в одном изменении независимые causal classes
@@ -180,7 +176,7 @@ self-attestation шаг 7 указывается, **чем именно его �
 | 2 | PRD создан / обновлён | ✓/✗ | {путь к файлу `PRD/этап-N-*.md`} |
 | 3 | Связанные artifacts изучены | ✓/✗ | {api-research-notes §X, technical requirements §Y, OpenAPI/API reference, другие источники} |
 | 4 | PRD-review выполнен | ✓/✗ | {N findings; N адекватных; повтор после правок если был} |
-| 5 | PRD-review сторонней моделью выполнен | ✓/✗/N-A | {Astra и Opus: отдельные запуски 1/2 или 2/2, findings и сведение, rationale если budget exhausted/skipped} |
+| 5 | PRD-review сторонней моделью выполнен | ✓/✗/N-A | {Astra и Kimi: отдельные запуски 1/2 или 2/2, findings и сведение, rationale если budget exhausted/skipped} |
 | 6 | Оценка PRD на простоту | ✓/✗/N-A | {triggers проверены; результат; повторные PRD-review gates после правок} |
 | 7 | Тесты написаны (test-first), focused red | ✓/✗ | {файлы tests/test_*.py, количество новых тестов, focused red; для сторожей — чем сломали} |
 | 8 | Red → Green: focused green + fast | ✓/✗ | {что реализовано; focused N passed; `docker compose --profile test run --rm test python scripts/run_fast_test_suite.py` N passed} |
@@ -188,7 +184,7 @@ self-attestation шаг 7 указывается, **чем именно его �
 | 10 | Аудит изменений выполнен | ✓/✗ | {legacy patterns, duplication, field-name contract; если аудит менял runtime/tests — повторные focused + fast до финального default} |
 | 11 | Адресные и release gates по применимости | ✓/✗/N-A | {живой вызов изменённого инструмента: код + тело; browser для UI; PostgreSQL для storage; real aggregate — на финиш поезда; N-A с причиной} |
 | 12 | Commit выполнен | ✓/✗ | {commit SHA} |
-| 13 | Ревью сторонней моделью на committed diff выполнено | ✓/✗/N-A | {Astra и Opus: отдельные запуски 1/2 или 2/2, findings и сведение, rationale если budget exhausted/skipped} |
+| 13 | Ревью сторонней моделью на committed diff выполнено | ✓/✗/N-A | {Astra и Kimi: отдельные запуски 1/2 или 2/2, findings и сведение, rationale если budget exhausted/skipped} |
 | 14 | Адекватные findings устранены | ✓/✗/N-A | {commits/изменения; либо N-A если 0 адекватных} |
 | 15 | Push выполнен | ✓/✗ | {remote/branch, commit SHA} |
 | 16 | Этот чеклист заполнен | ✓ | передан куратору после push |
@@ -197,7 +193,7 @@ self-attestation шаг 7 указывается, **чем именно его �
 - **Файлов изменено**: X
 - **LOC diff**: +Y / -Z
 - **Тесты**: N passed
-- **Ревью сторонней моделью**: PRD Astra X/2, Opus Y/2; code Astra Z/2, Opus W/2; blocker=0, high=0 after fixes
+- **Ревью сторонней моделью**: PRD Astra X/2, Kimi Y/2; code Astra Z/2, Kimi W/2; blocker=0, high=0 after fixes
 - **PRD**: `PRD/этап-N-*.md`
 - **Commit message draft**: {одна-две строки}
 
@@ -270,7 +266,7 @@ self-attestation шаг 7 указывается, **чем именно его �
 
 ## 5. Ревью сторонней моделью
 
-Обязательный code/diff gate **после commit и перед push**: Astra и Opus одновременно, бюджет и blocked — по 3.1.
+Обязательный code/diff gate **после commit и перед push**: Astra и Kimi одновременно, бюджет и blocked — по 3.1.
 
 ### 5.1 Порядок вызова
 

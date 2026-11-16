@@ -195,6 +195,10 @@
     "count": 13,
     "sha256": "d68677c2f535a196fa1ecdfe949a8ab6c2aaa8b39d86bfd6ede00d447c68288e"
   },
+  "tests/test_run_kimi_review.py": {
+    "count": 10,
+    "sha256": "38952905b051c174c9035a07d8e0e492d276d580f70ce2904f4eb02ed9ea48a2"
+  },
   "tests/test_runtime_auth.py": {
     "count": 10,
     "sha256": "44eeb73bef038f2f7bbabad532936033b53f78da8958bc5067317f2f3e40f7ca"
@@ -824,8 +828,8 @@
     "sha256": "9ee1cca88fcee23d23e3e93737728a6c13cdc38b1f0261501d059ce6c153bcb8"
   },
   "tests/test_stage343_model_instructions.py": {
-    "count": 84,
-    "sha256": "dec5f04b933e8a791f35db3d52d4f8b66c45676e3bb6adfaef296f5e3a7f97b3"
+    "count": 90,
+    "sha256": "4e9aa34297dc5da639866fda53f532e09d91c11551d69364e6cddb313510f435"
   },
   "tests/test_stage345_account_copy.py": {
     "count": 10,
@@ -972,8 +976,8 @@
     "sha256": "4673f42ab88bb24bd8ed4ee925cd506ba009ed6d663aa161e1b5c7853f7b62f6"
   },
   "tests/test_stage385_deploy_path.py": {
-    "count": 13,
-    "sha256": "e5a12ac647c5b2c36c52e148def66f9a4c4815cde953e74fe32da33ddde3319e"
+    "count": 14,
+    "sha256": "5d82256bba704a67aeec2874325b177f068f0a239a4c61fa0488a774ddaacd43"
   },
   "tests/test_stage385_execution_admission.py": {
     "count": 1,
@@ -1422,6 +1426,10 @@
   "tests/test_stage462_client_scalar_projection.py": {
     "count": 13,
     "sha256": "b4419c88dae5b3c2c07e5e0e9e227a78360464774c483795f50f46ccad33d3fa"
+  },
+  "tests/test_stage464_worker_observability.py": {
+    "count": 14,
+    "sha256": "dab2f4da2ff058d7c848c84f2d0f819f173c5c290c681571ee367ca7558bc257"
   },
   "tests/test_stage465_host_compose.py": {
     "count": 1,

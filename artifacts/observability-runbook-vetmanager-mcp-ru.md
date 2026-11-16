@@ -9,10 +9,15 @@
 > - **Stage 156**: `/metrics` после успешной `METRICS_AUTH_TOKEN` bearer-auth обновляет activation gauge `vetmanager_account_last_request_age_hours{account_id}` и пишет `account_traffic_silent` warning на порогах 24h/72h для active accounts с active connection и live token.
 > - **Stage 193**: account UI checklist считает usable token подключенным после любого успешного historical request; Grafana `with_recent_usage_7d` остается отдельным freshness-сигналом и поэтому может быть строже UI.
 > - **Stage 386**: `vetmanager_mcp_transport_rejections_total{status_code,reason}` считает FastMCP 400/404/406 через shared Redis; `session_not_found` включает потерянную сессию и несовпадение её владельца. Причину восстановления проверять по 404 `Session not found` и новому `initialize`, без session ID/IP в метриках.
+> - **Stage 464**: `up{job="vetmanager-workers",slot=...}` отдельно показывает scrape трёх workers; `up{job="vetmanager-availability"}` показывает, состоялось ли измерение probe. При успешном probe `vetmanager_worker_ready{slot=...}` даёт результат `/readyz` каждого слота, `vetmanager_service_healthz` — результат `/healthz` через Nginx. Полный набор app metrics по-прежнему читается только с `mcp`, чтобы Redis-wide counters не суммировались втройне. Его отсутствие не доказывает простой сервиса.
 >
 > Полная ревизия runbook — отдельным этапом.
 
 ## 1. Быстрая проверка состояния
+
+Для incident timeline сначала проверьте покрытие `up` обоих новых jobs. Отсутствующий ряд или `up=0` у `vetmanager-availability` означает неизвестное состояние targets, а не нулевую длительность простоя. `vetmanager_probe_unknown{slot=...}=1` означает сбой сети/DNS/TLS/timeout между probe и целью; его не считать подтверждённым отказом цели. У worker начало отказа лежит между последним успешным и первым неуспешным `/readyz`; восстановление — между последним отказом и первым успехом. Сервисный health-check считается отказавшим при подтверждённом неуспехе Nginx `/healthz` либо при одновременном подтверждённом отказе готовности всех трёх workers. Успех `/healthz` не доказывает доступность MCP-инструментов. После первого подтверждённого отказа действовать сразу; цепочка неуспешных точечных проб дольше 30 минут — `observed_over_30m` для расследования, но краткое восстановление между пробами исключить нельзя. Ни Prometheus samples, ни периодические Docker health samples сами по себе не доказывают непрерывный `over_30m`; требуется независимое подтверждение. Пробелы и открытые края требуют указать неопределённость. Исторический период до Stage 464 нельзя восстановить из новых рядов: ретроспективный вывод только по обезличенному снимку с периодом и покрытием.
+
+Исторический факт 16.11.2026: старый `up` только для `slot1` имеет полный 30-дневный ряд с 15-секундным шагом, 26 серий `up=0`, внешняя граница каждой не более 60 секунд; `up=0` дольше 30 минут не наблюдался. Для `slot2`/`slot3` и пользовательского сервиса ретроспективный простой неизвестен: Docker events не покрывает 30 суток, 22 ответа Nginx HTTP 200 — лишь точечные наблюдения.
 
 Минимальный smoke-check:
 

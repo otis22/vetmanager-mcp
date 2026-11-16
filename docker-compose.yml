@@ -176,6 +176,34 @@ services:
     profiles:
       - production
 
+  availability-probe:
+    image: ${MCP_IMAGE:-vetmanager-mcp}
+    command: ["python", "scripts/availability_probe.py"]
+    environment:
+      - SITE_BASE_URL
+      - METRICS_AUTH_TOKEN
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request; r=urllib.request.Request('http://127.0.0.1:8003/probe-metrics',headers={'Authorization':'Bearer '+os.environ['METRICS_AUTH_TOKEN']}); assert urllib.request.urlopen(r,timeout=8).status==200"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      mcp:
+        condition: service_started
+      mcp2:
+        condition: service_started
+      mcp3:
+        condition: service_started
+    profiles:
+      - production
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+
   prometheus:
     image: prom/prometheus:v2.55.1
     restart: unless-stopped
@@ -204,6 +232,8 @@ services:
     depends_on:
       mcp:
         condition: service_started
+      availability-probe:
+        condition: service_healthy
     profiles:
       - production
     deploy:

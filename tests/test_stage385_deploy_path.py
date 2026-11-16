@@ -126,7 +126,8 @@ def test_local_nginx_smoke_rejects_missing_mcp_and_redirect(monkeypatch):
 
 
 def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=False,
-                      fail_nginx=False, repeat=False, partial_new=False, fail_preflight=False):
+                      fail_nginx=False, repeat=False, partial_new=False, fail_preflight=False,
+                      fail_probe=False):
     live = tmp_path / "live"
     release = live / "releases" / ("a" * 40)
     release.mkdir(parents=True)
@@ -135,7 +136,8 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=Fal
     (live / ".env").write_text(
         "FEEDBACK_FINGERPRINT_PEPPER=old\n"
         f"GRAFANA_ADMIN_PASSWORD={secrets.token_hex(24)}\n"
-        f"METRICS_AUTH_TOKEN={secrets.token_hex(24)}\n")
+        f"METRICS_AUTH_TOKEN={secrets.token_hex(24)}\n"
+        "SITE_BASE_URL=https://example.org\n")
     site = tmp_path / "site.conf"
     site.write_text(render_nginx_site(PROD_SITE, "active") if repeat else PROD_SITE)
     old_image = "sha256:" + "b" * 64
@@ -166,6 +168,9 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=Fal
     monkeypatch.setattr(stage385_deploy, "_container", lambda project, service: service)
     def compose(path, project, image, *args, **kw):
         events.append(("compose", path.name, image, args))
+        events.append(("compose_dir", path.parent, args))
+        if fail_probe and image == new_image and "availability-probe" in args and "up" in args:
+            raise RuntimeError("injected availability probe startup failure")
         if path.name == "rollback.yml" and "up" in args:
             manifest = yaml.safe_load(path.read_text())
             for service in (("mcp", "mcp2", "mcp3") if repeat else ("mcp",)):
@@ -174,8 +179,10 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=Fal
                            for volume in manifest["services"][service]["volumes"])
             assert (path.parent / ".env").resolve() == live / ".env"
         if args == ("config", "--format", "json"):
+            token = secrets.token_hex(24)
             return json.dumps({"services": {"mcp": {"environment": {
-                "METRICS_AUTH_TOKEN": secrets.token_hex(24)}}}})
+                "METRICS_AUTH_TOKEN": token}}, "availability-probe": {"environment": {
+                "METRICS_AUTH_TOKEN": token, "SITE_BASE_URL": "https://example.org"}}}})
         return ""
 
     monkeypatch.setattr(stage385_deploy, "_compose", compose)
@@ -211,9 +218,9 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=Fal
             raise TimeoutError("local nginx route failed")
 
     monkeypatch.setattr(stage385_deploy, "_nginx_local_smoke", nginx_smoke)
-    if fail_ready or fail_smoke or fail_nginx or fail_preflight:
+    if fail_ready or fail_smoke or fail_nginx or fail_preflight or fail_probe:
         with pytest.raises((TimeoutError, RuntimeError),
-                           match="slot failed|slot is not stateless|injected internal smoke failure|local nginx route failed"):
+                           match="slot failed|slot is not stateless|injected internal smoke failure|local nginx route failed|injected availability probe startup failure"):
             stage385_deploy.deploy(release, live, release.name, site=site, pepper="new")
     else:
         stage385_deploy.deploy(release, live, release.name, site=site, pepper="new")
@@ -260,6 +267,17 @@ def test_failed_smoke_automatically_restores_manifest_and_nginx(monkeypatch, tmp
                for e in events)
     assert events[-1] == ("nginx", "old")
     assert site.read_text() == PROD_SITE
+
+
+def test_failed_probe_start_restores_release_state_and_old_monitoring(monkeypatch, tmp_path):
+    events, site, old_image = _simulate_cutover(monkeypatch, tmp_path, repeat=True,
+                                                fail_probe=True)
+    state = json.loads((tmp_path / "live/release-state/current.json").read_text())
+    previous = tmp_path / "live/releases" / ("d" * 40)
+    assert state == {"release": str(previous), "image": old_image}
+    assert any(event[0] == "compose_dir" and event[1] == previous
+               and "prometheus" in event[2] for event in events)
+    assert site.read_text() == render_nginx_site(PROD_SITE, "active")
 
 
 def test_failed_local_nginx_route_automatically_rolls_back(monkeypatch, tmp_path):

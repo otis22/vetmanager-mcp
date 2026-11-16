@@ -23,7 +23,7 @@
       "id": 1,
       "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showPercentChange": false, "textMode": "auto", "wideLayout": true},
       "targets": [{"expr": "up{job=\"vetmanager-mcp\"}", "instant": true, "legendFormat": "up", "refId": "A"}],
-      "title": "MCP up",
+      "title": "Metrics source up (mcp)",
       "type": "stat"
     },
     {
@@ -344,7 +344,22 @@
       "targets": [{"expr": "sum by (tool) (increase(vetmanager_tool_calls_total[$__rate_interval]))", "legendFormat": "{{tool}}", "refId": "A"}],
       "title": "Tool calls by tool",
       "type": "timeseries"
-    }
+    },
+    {"collapsed":false,"gridPos":{"h":1,"w":24,"x":0,"y":67},"id":200,"panels":[],"title":"Availability","type":"row"},
+    {"datasource":{"type":"prometheus","uid":"Prometheus"},"fieldConfig":{"defaults":{"unit":"short"},"overrides":[]},"gridPos":{"h":8,"w":8,"x":0,"y":68},"id":201,"options":{"legend":{"displayMode":"table","placement":"right"},"tooltip":{"mode":"multi","sort":"desc"}},"targets":[{"expr":"up{job=\"vetmanager-workers\"}","legendFormat":"{{slot}}","refId":"A"}],"title":"Worker metrics scrape up","type":"timeseries"},
+    {"datasource":{"type":"prometheus","uid":"Prometheus"},"fieldConfig":{"defaults":{"unit":"short"},"overrides":[]},"gridPos":{"h":8,"w":8,"x":8,"y":68},"id":202,"options":{"legend":{"displayMode":"table","placement":"right"},"tooltip":{"mode":"multi","sort":"desc"}},"targets":[{"expr":"vetmanager_worker_ready{job=\"vetmanager-availability\"} and on() (up{job=\"vetmanager-availability\"} == 1)","legendFormat":"{{slot}}","refId":"A"}],"title":"Worker readiness","type":"timeseries"},
+    {"datasource":{"type":"prometheus","uid":"Prometheus"},"fieldConfig":{"defaults":{"unit":"short"},"overrides":[]},"gridPos":{"h":8,"w":8,"x":16,"y":68},"id":203,"options":{"legend":{"displayMode":"table","placement":"right"},"tooltip":{"mode":"multi","sort":"desc"}},"targets":[{"expr":"vetmanager_service_healthz{job=\"vetmanager-availability\"} and on() (up{job=\"vetmanager-availability\"} == 1)","legendFormat":"Nginx health route","refId":"A"}],"title":"Service health route","type":"timeseries"},
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 76},
+      "id": 204,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "((vetmanager_service_healthz{job=\"vetmanager-availability\"} * on() group_left() (sum(vetmanager_worker_ready{job=\"vetmanager-availability\"}) > bool 0)) or on() ((sum(vetmanager_worker_ready{job=\"vetmanager-availability\"}) > bool 0) == 0)) and on() (count(vetmanager_worker_ready{job=\"vetmanager-availability\"}) == 3) and on() (up{job=\"vetmanager-availability\"} == 1)", "legendFormat": "service readiness", "refId": "A"}],
+      "title": "Service readiness",
+      "type": "timeseries"
+    },
+    {"datasource":{"type":"prometheus","uid":"Prometheus"},"fieldConfig":{"defaults":{"unit":"short"},"overrides":[]},"gridPos":{"h":8,"w":8,"x":8,"y":76},"id":205,"options":{"legend":{"displayMode":"table","placement":"right"},"tooltip":{"mode":"multi","sort":"desc"}},"targets":[{"expr":"vetmanager_probe_unknown{job=\"vetmanager-availability\"} and on() (up{job=\"vetmanager-availability\"} == 1)","legendFormat":"{{slot}}","refId":"A"}],"title":"Probe unknown","type":"timeseries"}
   ],
   "refresh": "30s",
   "schemaVersion": 40,

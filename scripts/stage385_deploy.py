@@ -23,6 +23,7 @@ import yaml
 from scripts.stage385_release import IMAGE_ID, SHA, make_rollback_manifest, write_rollback_manifest
 from scripts.quiesce_mcp_slot import _drain_finished, _wait_write_fence
 from scripts.update_env_secret import update_env_secret
+from scripts.availability_probe import _service_health_url
 
 
 SITE = Path("/etc/nginx/sites-available/vetmanager-mcp.conf")
@@ -418,6 +419,10 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
     metrics_token = resolved["services"]["mcp"]["environment"].get("METRICS_AUTH_TOKEN")
     if not metrics_token:
         raise RuntimeError("MCP metrics token did not reach the new Compose service")
+    probe_env = resolved["services"]["availability-probe"]["environment"]
+    if probe_env.get("METRICS_AUTH_TOKEN") != metrics_token:
+        raise RuntimeError("Availability probe metrics token does not match MCP")
+    _service_health_url(probe_env.get("SITE_BASE_URL") or "")
     maintenance_entered = False
     old_stopped = False
     new_launch_attempted = False
@@ -442,12 +447,14 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
              timeout=180)
         if not state:
             (state_dir / "base-nginx.conf").write_text(base)
-        state_file.write_text(json.dumps({"release": str(release), "image": new_image}, indent=2))
+        _compose(release / "docker-compose.yml", project, new_image, "up", "-d",
+                 "--no-build", "availability-probe", timeout=180)
         try:
             _compose(release / "docker-compose.yml", project, new_image, "up", "-d",
                      "--no-build", "prometheus", "grafana", timeout=180)
         except Exception as exc:
             print(f"observability restart failed after app cutover: {exc}", file=sys.stderr)
+        state_file.write_text(json.dumps({"release": str(release), "image": new_image}, indent=2))
         print(f"cutover complete: {sha}; slots=3; rollback={rollback_file}")
     except Exception:
         if maintenance_entered and old_stopped:
@@ -462,6 +469,20 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
                         _stop_old(project, new_slots, fence=True)
                 _compose(rollback_file, project, old_image, "up", "-d", "--no-build",
                          "--force-recreate", *slots, timeout=300)
+                # Monitoring bind mounts are relative to the old release, not
+                # the immutable rollback bundle. Failure here must not hold the
+                # application in maintenance after its workers recover.
+                try:
+                    old_services = yaml.safe_load(old_compose.read_text())["services"]
+                    if "availability-probe" in old_services:
+                        _compose(old_compose, project, old_image, "up", "-d", "--no-build",
+                                 "availability-probe", "prometheus", "grafana", timeout=180)
+                    else:
+                        _compose(release / "docker-compose.yml", project, new_image,
+                                 "stop", "availability-probe", timeout=60)
+                except Exception as monitoring_error:
+                    print(f"observability rollback failed after workers restored: {monitoring_error}",
+                          file=sys.stderr)
                 for service in slots:
                     _ready(SLOTS[service])
                 _write_site((bundle / "nginx-before.conf").read_text(), site)
