@@ -1419,6 +1419,10 @@
     "count": 11,
     "sha256": "4515e5feae6400112ab7db28aa01cfa8d94f3897b92eaed79343e80926e2667a"
   },
+  "tests/test_stage462_client_scalar_projection.py": {
+    "count": 13,
+    "sha256": "b4419c88dae5b3c2c07e5e0e9e227a78360464774c483795f50f46ccad33d3fa"
+  },
   "tests/test_stage465_host_compose.py": {
     "count": 1,
     "sha256": "6b2e93ac746266f4de40cbe369185fcde46027001d197c641a6caa49b8fa15d6"

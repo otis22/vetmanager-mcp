@@ -246,18 +246,32 @@ def project_list_result(
 
     projected = []
     relations = LIST_RELATIONS[tool_name]
+    # OpenAPI documents this client object, but its nested fields are not an
+    # exposed include contract. Recognize and omit it only in explicit projections.
+    hidden_relations = (
+        frozenset({"client_type_data"})
+        if tool_name == "get_clients" and (selection is not None or include is not None)
+        else frozenset()
+    )
     allowed_relations = (relations if selection is None else frozenset()) if include is None else include
     for row in rows:
         if not isinstance(row, dict):
             raise reportable_error("Projection expected a record object.")
         row = _mask_contacts(row, client_record=tool_name == "get_clients") if mask_contacts else row
+        if "client_type_data" in hidden_relations and row.get("client_type_data") is not None \
+                and not isinstance(row["client_type_data"], dict):
+            raise reportable_error("Projection expected a relation object.")
         if include is not None or selection is None:
-            if any(key not in relations and key != "_mcp_identifier_conflicts"
+            if any(key not in relations and key not in hidden_relations
+                   and key != "_mcp_identifier_conflicts"
                    and isinstance(value, (dict, list, tuple))
                    for key, value in row.items()):
                 raise reportable_error("Projection found an unrecognized nested field.")
         scalar_fields = {}
-        scalar_names = (key for key in row if key not in relations) if selection is None else selection
+        scalar_names = (
+            (key for key in row if key not in relations and key not in hidden_relations)
+            if selection is None else selection
+        )
         for key in scalar_names:
             if key not in row:
                 continue
