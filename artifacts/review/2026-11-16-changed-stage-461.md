@@ -25,3 +25,5 @@ Pre-review рабочего diff: Spark 1 и 2 — `[]` с прочитанны�
 ## Закрытие default gate
 
 Первый полный default после добавления Roadmap 470 остановился на одном структурном тесте: закрытый 450 вышел из окна 20 номеров. Куратор штатно архивировал 450, проверил структуру и отдельно получил green ранее красного узла. Повторный полный default на неизменных runtime/tests: exit 0, **4835 passed**, 146 deselected, coverage 89 %; complete manifest содержит 4835 узлов и текущий fingerprint `3c482344c3ac0a4df078369d8be37d7b1037ec1bbe78c823cc000f7d8f76de36`, его verifier exit 0. Evidence `stage461-train-20261116/default-after-archive.{log,exit.txt}` и `default-after-archive-verify.{log,exit.txt}`. Открытых release blockers нет. Committed-diff review и push фиксируются после их фактического завершения.
+
+Первый committed-diff release-review SHA `f1ea5f1e7f20e97b2d86c1a41e788ac9ab4a3553`: Spark, Astra и Opus дали валидные `findings=[]`; release blockers 0. Пути evidence и metadata — в `AssumptionLog.md`. Запись этих итогов является docs-only follow-up; окончательный SHA проверяется отдельным вторым раундом перед push.
