@@ -2,7 +2,7 @@ name: Docs Check
 
 on:
   push:
-    branches: [main, 'dev/**']
+    branches: [main]
     paths: ['**.md', 'PRD/**', 'docs/**']
   pull_request:
     branches: [main]

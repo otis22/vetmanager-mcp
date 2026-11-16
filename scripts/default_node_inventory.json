@@ -1136,8 +1136,8 @@
     "sha256": "14fce81001d5dee26617470c16ac04ff253c4f2c685b6bfa8a234b3e555a7b71"
   },
   "tests/test_stage414_dev_push_ci.py": {
-    "count": 1,
-    "sha256": "d93582c3675947868f848d9e0ee3bbd4ac5bbc093dc41217e9ef89d821e60f74"
+    "count": 2,
+    "sha256": "a3d14b134f8c5d4c1d1f9bdf81034ebca1418adcddc817eb36517046e7a9a3ba"
   },
   "tests/test_stage415_diagnosis_contract.py": {
     "count": 6,
