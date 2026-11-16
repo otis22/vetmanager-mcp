@@ -176,7 +176,10 @@ scripts/run_claude_review.sh --range HEAD^..HEAD --attempt 1/3
 ### Релизный поезд
 
 - Рабочая ветка называется `dev/roadmap-<этапы>`; пуши, статусы Roadmap и записи AssumptionLog ведутся на этой ветке.
-- После зелёного CI ветки и полного mock+real suite по её финальному SHA куратор делает merge в main; релиз идёт только из main (`deploy-prod.yml`).
+- После push dev-ветки куратор открывает PR в main и проверяет зелёный PR CI;
+  без PR Tests и Docs Check на dev-push не запускаются. После обязательных
+  полного mock+real suite по финальному SHA ветки и зелёного PR CI куратор делает merge в main; релиз идёт
+  только из main (`deploy-prod.yml`).
 - Deploy и monitoring метрик — работа куратора после merge.
 - Хотфиксы идут напрямую в main; затем рабочая ветка перебазируется на обновлённый main.
 

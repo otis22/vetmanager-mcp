@@ -815,7 +815,8 @@ payload-derived labels.
 
 | Воркфлоу | Триггер | Что делает |
 |----------|---------|------------|
-| `test.yml` | push / pull request → main | два обязательных contour job: `fast` и `default` |
+| `test.yml` | push в main / pull request в main / вручную | `fast`, `default` и PostgreSQL contour; для dev-ветки проверка идёт через PR |
+| `docs.yml` | push в main / pull request в main | проверка структуры Roadmap для документационных изменений; для dev-ветки через PR |
 | `test-real.yml` | вручную (`workflow_dispatch`) | `opt_in_real` contour: real API e2e и opt-in real browser tests |
 | `deploy-prod.yml` | автоматически после успешного `test.yml` на main | rsync кода на сервер, docker build, restart, smoke checks |
 

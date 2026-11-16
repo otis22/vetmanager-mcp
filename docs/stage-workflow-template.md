@@ -32,16 +32,16 @@
 ## 4. Статусы, commit и committed diff-гейт
 
 - [ ] Добавить раздел `## Этап N. <title>` в `AssumptionLog.md`, в том числе red/green, команды и exit codes, решения, review evidence, влияние на права доступа/credentials и необходимость живого вызова.
-- [ ] Сохранить статус `in_progress` до зелёного Tests CI ветки; выполнить `python3 scripts/archive_roadmap.py`, затем `python3 scripts/check_roadmap_structure.py`, оба с exit 0.
+- [ ] Сохранить статус `in_progress` до зелёного применимого PR CI; выполнить `python3 scripts/archive_roadmap.py`, затем `python3 scripts/check_roadmap_structure.py`, оба с exit 0.
 - [ ] Закрывая finding из `artifacts/review/`, оставить resolution note в исходном отчёте; сделать commit с префиксом `Stage N:` в рабочей dev-ветке после аудита.
 - [ ] Spark-review committed diff → Astra + Claude Opus параллельно. Opus получает `--range`, Astra — committed diff и reviewed SHA. Оба валидных verdict обязательны до push; critical/high закрыть.
 - [ ] Для каждого гейта максимум 3 предгейтовых Spark-прохода. У Astra и Opus независимо по 2 валидных verdict и по 3 infrastructure attempts. Пустой или невалидный ответ, auth/provider/model failure не расходует валидный слот; каждую попытку записать как `N/3`. После третьего infrastructure failure любой стороны гейт `blocked`, push запрещён. Смена prompt/schema счётчик не сбрасывает.
 
 ## 5. Релизный поезд
 
-- [ ] Push только в назначенную `dev/roadmap-<этапы>`; проверить Tests CI ветки. Если paths-filter не запустил Tests, запустить его вручную на этой dev-ветке и дождаться success.
-- [ ] После зелёного CI перевести завершённые подзадачи и этап в `done`, записать CI-ссылку в `AssumptionLog.md`, проверить структуру Roadmap и отправить status commit в ту же dev-ветку. Запустить `scripts/check_stage_completion.sh` с номером этапа и оценить его findings, включая старые baseline findings.
-- [ ] Выпуск подзадачи в рабочей ветке = зелёный CI ветки. После зелёного CI и полного mock+real suite по финальному SHA супервизор делает merge в main. Деплой и production-проверки относятся к работе после merge.
+- [ ] Push только в назначенную `dev/roadmap-<этапы>`; передать ветку куратору для PR в main. Tests и Docs Check запускаются на PR, не на dev-push. До merge куратор проверяет зелёные применимые PR checks. Для docs-only PR Tests исключён path filter; ручной Tests на dev-ветке запускать только если это требуется отдельным решением.
+- [ ] После зелёного PR CI перевести завершённые подзадачи и этап в `done`, записать CI-ссылку в `AssumptionLog.md`, проверить структуру Roadmap и отправить status commit в ту же dev-ветку. Запустить `scripts/check_stage_completion.sh` с номером этапа и оценить его findings, включая старые baseline findings.
+- [ ] Выпуск подзадачи в рабочей ветке = зелёный применимый PR CI. После зелёного CI и полного mock+real suite по финальному SHA ветки супервизор делает merge в main. Деплой и production-проверки относятся к работе после merge.
 - [ ] Показать self-attestation пользователю после push; не заменять его строкой в commit message.
 
 ## Дополнительный визуальный гейт
