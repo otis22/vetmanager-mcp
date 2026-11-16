@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import json
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import yaml
 
 from scripts.stage464_downtime import Sample, classify_incidents, load_snapshot
@@ -40,6 +42,7 @@ def test_dashboard_distinguishes_health_from_readiness_and_missing_data() -> Non
     assert 'up{job="vetmanager-availability"} == 1' in ready
     assert "vetmanager_worker_ready" in service and "vetmanager_service_healthz" in service
     assert 'count(vetmanager_worker_ready{job="vetmanager-availability"}) == 3' in service
+    assert 'or on()' in service and 'sum(vetmanager_worker_ready{job="vetmanager-availability"}) > bool 0) == 0' in service
     assert "vetmanager_probe_unknown" in panels["Probe unknown"]["targets"][0]["expr"]
     assert "or vector(0)" not in ready + service
 
@@ -88,8 +91,59 @@ def test_probe_accepts_valid_health_json_larger_than_one_kib(monkeypatch) -> Non
         def __enter__(self): return self
         def __exit__(self, *args): return None
         def read(self, limit): return payload[:limit]
-    monkeypatch.setattr(probe, "urlopen", lambda request, timeout: Response())
+    monkeypatch.setattr(probe, "_open_no_redirect", lambda request, timeout: Response())
     assert probe._fetch_json("http://mcp:8000/readyz", 4) == (200, json.loads(payload))
+
+
+def test_probe_does_not_follow_cross_target_redirect() -> None:
+    from scripts import availability_probe as probe
+    hits = []
+    class Destination(BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok","probe":"readiness"}')
+        def log_message(self, *args): pass
+    destination = ThreadingHTTPServer(("127.0.0.1", 0), Destination)
+    class Redirect(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{destination.server_port}/other")
+            self.end_headers()
+        def log_message(self, *args): pass
+    redirect = ThreadingHTTPServer(("127.0.0.1", 0), Redirect)
+    threads = [threading.Thread(target=server.serve_forever, daemon=True)
+               for server in (destination, redirect)]
+    for thread in threads: thread.start()
+    try:
+        result = probe._fetch_json(f"http://127.0.0.1:{redirect.server_port}/readyz", 4)
+    finally:
+        redirect.shutdown(); destination.shutdown()
+        redirect.server_close(); destination.server_close()
+        for thread in threads: thread.join(timeout=2)
+    assert result == (302, {})
+    assert hits == []
+
+
+def test_probe_malformed_json_shape_does_not_drop_other_targets(monkeypatch) -> None:
+    from scripts import availability_probe as probe
+    class Response:
+        status = 200
+        def __init__(self, payload): self.payload = payload
+        def __enter__(self): return self
+        def __exit__(self, *args): return None
+        def read(self, limit): return self.payload[:limit]
+    def get(request, timeout):
+        if request.full_url.endswith("mcp:8000/readyz"):
+            return Response(b"[]")
+        kind = "liveness" if request.full_url.endswith("/healthz") else "readiness"
+        return Response(json.dumps({"status": "ok", "probe": kind}).encode())
+    monkeypatch.setattr(probe, "_open_no_redirect", get)
+    body = probe.collect("https://example.org", "secret", "Bearer secret")
+    assert 'vetmanager_worker_ready{slot="mcp"} 0' in body
+    assert 'vetmanager_worker_ready{slot="mcp2"} 1' in body
+    assert "vetmanager_service_healthz 1" in body
 
 
 def _samples(states: str, *, spacing: int = 15) -> list[Sample]:

@@ -9,11 +9,20 @@ import json
 import os
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 SLOTS = ("mcp", "mcp2", "mcp3")
 TIMEOUT_SECONDS = 4.0
 MAX_HEALTH_BYTES = 65536
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        return None
+
+
+def _open_no_redirect(request: Request, timeout: float):
+    return build_opener(_NoRedirect()).open(request, timeout=timeout)
 
 
 def _service_health_url(base: str) -> str:
@@ -28,11 +37,12 @@ def _service_health_url(base: str) -> str:
 def _fetch_json(url: str, timeout: float) -> tuple[int, dict] | None:
     request = Request(url, headers={"Accept": "application/json"})
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with _open_no_redirect(request, timeout=timeout) as response:
             payload = response.read(MAX_HEALTH_BYTES + 1)
             if len(payload) > MAX_HEALTH_BYTES:
                 return None  # An oversized response cannot establish target state.
-            return response.status, json.loads(payload)
+            body = json.loads(payload)
+            return response.status, body if isinstance(body, dict) else {}
     except HTTPError as exc:
         return exc.code, {}
     except (URLError, TimeoutError, OSError):

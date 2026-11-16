@@ -102,6 +102,16 @@ def test_working_diff_includes_non_ascii_untracked_name(monkeypatch, tmp_path: P
     assert "# review material" in material
 
 
+def test_working_diff_rejects_untracked_symlink(monkeypatch, tmp_path: Path) -> None:
+    from scripts import run_kimi_review as runner
+    outside = tmp_path.parent / "outside-review-material"
+    outside.write_text("outside checkout")
+    (tmp_path / "linked.md").symlink_to(outside)
+    monkeypatch.setattr(runner, "_git", lambda repo, *args: "linked.md\0" if "ls-files" in args else "diff")
+    with pytest.raises(ValueError, match="cannot be included"):
+        runner._object(Namespace(file=None, range=None), tmp_path)
+
+
 def test_review_rejects_kimi_home_inside_checkout(tmp_path: Path) -> None:
     source = tmp_path / "source.md"
     source.write_text("# review\n")

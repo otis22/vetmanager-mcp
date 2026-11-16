@@ -160,11 +160,13 @@ bearer-токеном. Нужный выбирается до запуска.
 
 - **Лестница:** focused red → каждый ранее красный node отдельно до зелёного →
   owning file/suite → fast → аудит → полное pre-review рабочего diff
-  (Spark → Astra + Kimi). Правки накапливаются пакетом, затем focused + fast
-  повторяются один раз. После заморозки кода — один полный default; по
-  применимости PostgreSQL, browser, живой вызов и real aggregate → commit →
-  committed-diff review **только блокеры релиза**. Полный
-  suite/real/browser/PostgreSQL ради red не запускать.
+  (Spark → Astra + Kimi). Каждый pre-freeze strong review, включая повтор после
+  исправлений, охватывает весь актуальный diff; closure-only не заменяет полный
+  проход. Правки накапливаются пакетом, затем focused + fast повторяются один
+  раз. После заморозки кода — один полный default; по применимости PostgreSQL,
+  browser, живой вызов и real aggregate → commit → committed-diff review
+  **только блокеры релиза**. Полный suite/real/browser/PostgreSQL ради red не
+  запускать.
 - **Debug после широкого failure:** сохранить failing nodes/evidence,
   классифицировать product/harness/flaky, широкие прогоны остановить; один
   causal class на изменение; красные nodes по одному → owning suite → только

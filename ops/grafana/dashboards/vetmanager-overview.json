@@ -355,7 +355,7 @@
       "gridPos": {"h": 8, "w": 8, "x": 0, "y": 76},
       "id": 204,
       "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
-      "targets": [{"expr": "(vetmanager_service_healthz{job=\"vetmanager-availability\"} * on() group_left() (sum(vetmanager_worker_ready{job=\"vetmanager-availability\"}) > bool 0)) and on() (count(vetmanager_worker_ready{job=\"vetmanager-availability\"}) == 3) and on() (up{job=\"vetmanager-availability\"} == 1)", "legendFormat": "service readiness", "refId": "A"}],
+      "targets": [{"expr": "((vetmanager_service_healthz{job=\"vetmanager-availability\"} * on() group_left() (sum(vetmanager_worker_ready{job=\"vetmanager-availability\"}) > bool 0)) or on() ((sum(vetmanager_worker_ready{job=\"vetmanager-availability\"}) > bool 0) == 0)) and on() (count(vetmanager_worker_ready{job=\"vetmanager-availability\"}) == 3) and on() (up{job=\"vetmanager-availability\"} == 1)", "legendFormat": "service readiness", "refId": "A"}],
       "title": "Service readiness",
       "type": "timeseries"
     },

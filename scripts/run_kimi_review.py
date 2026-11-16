@@ -38,7 +38,8 @@ def _object(args: argparse.Namespace, repo: Path) -> tuple[str, str, str]:
     diff = _git(repo, "diff", "--no-ext-diff", "HEAD")
     for name in filter(None, _git(repo, "ls-files", "-z", "--others", "--exclude-standard").split("\0")):
         path = repo / name
-        if not path.is_file() or path.stat().st_size > 100_000:
+        if (path.is_symlink() or not path.is_file() or
+                not path.resolve().is_relative_to(repo) or path.stat().st_size > 100_000):
             raise ValueError(f"untracked review file cannot be included: {name}")
         diff += f"\n=== UNTRACKED FILE: {name} ===\n" + path.read_text(encoding="utf-8")
     return "working_diff", _git(repo, "rev-parse", "HEAD").strip(), diff

@@ -196,8 +196,8 @@
     "sha256": "d68677c2f535a196fa1ecdfe949a8ab6c2aaa8b39d86bfd6ede00d447c68288e"
   },
   "tests/test_run_kimi_review.py": {
-    "count": 9,
-    "sha256": "f81eaa4bdb19831ad8c1c4cf49f6c504d5931835db88955290276c9e7edf0e4c"
+    "count": 10,
+    "sha256": "38952905b051c174c9035a07d8e0e492d276d580f70ce2904f4eb02ed9ea48a2"
   },
   "tests/test_runtime_auth.py": {
     "count": 10,
@@ -1428,8 +1428,8 @@
     "sha256": "b4419c88dae5b3c2c07e5e0e9e227a78360464774c483795f50f46ccad33d3fa"
   },
   "tests/test_stage464_worker_observability.py": {
-    "count": 12,
-    "sha256": "cf15035790f90094bbb37401ea074a0cfe8bf5246c4d4eb38a6cf53b6d6fd6a5"
+    "count": 14,
+    "sha256": "dab2f4da2ff058d7c848c84f2d0f819f173c5c290c681571ee367ca7558bc257"
   },
   "tests/test_stage465_host_compose.py": {
     "count": 1,

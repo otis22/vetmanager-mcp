@@ -103,7 +103,7 @@ Runner сохраняет вне checkout prompt, stream, stderr, verdict и met
 8. **Red → Green:** каждый ранее красный node отдельно до зелёного → owning file/suite → fast
 9. **Проверки shell** при изменении `scripts/*.sh`: `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`
 10. **Аудит изменений** — legacy-паттерны, дублирование, рассинхрон с контрактом; если аудит изменил runtime/tests — повторить шаг 8
-11. **Полное pre-review рабочего diff** — детерминированная проверка → Spark → Astra + Kimi; правки накопить пакетом и повторить шаги 8–10 один раз до долгих gates
+11. **Полное pre-review рабочего diff** — детерминированная проверка → Spark → Astra + Kimi; каждый pre-freeze strong review, включая повтор после исправлений, охватывает весь актуальный diff, closure-only не заменяет полный проход; правки накопить пакетом и повторить шаги 8–10 один раз до долгих gates
 12. **Заморозка кода → финальные проверки** — один полный default `docker compose --profile test run --rm test`; по применимости PostgreSQL, browser, живой вызов (6.1); real aggregate — на финише поезда
 13. **Обновить `Roadmap.md` и `AssumptionLog.md`** с evidence
 14. **Архивировать и проверить структуру** строго по порядку: `python3 scripts/archive_roadmap.py`, затем `python3 scripts/check_roadmap_structure.py`; оба exit code 0
