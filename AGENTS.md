@@ -159,16 +159,27 @@ bearer-токеном. Нужный выбирается до запуска.
 красная обязательная проверка запрещает commit и push.
 
 - **Лестница:** focused red → каждый ранее красный node отдельно до зелёного →
-  owning file/suite → fast → аудит → pre-review рабочего diff (Spark → Astra + Opus)
-  и исправления → один полный default; по применимости PostgreSQL, browser, живой
-  вызов; real aggregate — перед push-merge поезда → commit → финальное committed-diff
-  review. Долгие gates запускаются после закрытия замечаний pre-review; полный
+  owning file/suite → fast → аудит → полное pre-review рабочего diff
+  (Spark → Astra + Opus). Правки накапливаются пакетом, затем focused + fast
+  повторяются один раз. После заморозки кода — один полный default; по
+  применимости PostgreSQL, browser, живой вызов и real aggregate → commit →
+  committed-diff review **только блокеры релиза**. Полный
   suite/real/browser/PostgreSQL ради red не запускать.
 - **Debug после широкого failure:** сохранить failing nodes/evidence,
   классифицировать product/harness/flaky, широкие прогоны остановить; один
-  causal class на изменение; `--maxfail=1` — только в широком debug-прогоне.
-- **Инвалидация:** docs-only не повторяет suites; иначе — затронутые проверки
-  по fingerprints `scripts/offline_gate_manifest.py`.
+  causal class на изменение; красные nodes по одному → owning suite → только
+  инвалидированные fast и полные контуры; `--maxfail=1` — только в широком
+  debug-прогоне.
+- **Заморозка и release-review:** блокируют critical/high и findings любого
+  severity, нарушающие acceptance, корректность нового поведения,
+  security/privacy, права/fail-closed или обязательный regression guard.
+  non-blocking findings фиксируются в Roadmap без правок текущей ветки. Блокер
+  повторяет focused/owning/fast и только инвалидированные полные контуры.
+- **Инвалидация по контурам:** runtime/shared fixtures/dependencies повторяют
+  связанные контуры; real-only test — только real; default-only test —
+  fast/default; docs-only — suites не повторяет. Общий fingerprint
+  `scripts/offline_gate_manifest.py` остаётся более строгим обязательным gate
+  до отдельной доработки в этапе 469; его mismatch не игнорировать.
 - **Диагностика:** read-only снимки и diagnostics делает исполнитель, адресно на
   failing node; scoped mode — `scripts/run_scoped_diagnostic.py`. Один
   инструментированный JUnit-профиль допустим, если даёт новую информацию;

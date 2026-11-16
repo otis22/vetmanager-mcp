@@ -1415,6 +1415,10 @@
     "count": 10,
     "sha256": "fe2fc4544638c27539f2c2634da1dcf3bfe4ad87aecc629e272848299b153f10"
   },
+  "tests/test_stage461_preview_other.py": {
+    "count": 11,
+    "sha256": "4515e5feae6400112ab7db28aa01cfa8d94f3897b92eaed79343e80926e2667a"
+  },
   "tests/test_stage465_host_compose.py": {
     "count": 1,
     "sha256": "6b2e93ac746266f4de40cbe369185fcde46027001d197c641a6caa49b8fa15d6"

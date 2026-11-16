@@ -76,6 +76,13 @@ def test_stage399_projection_live(live_server_url):
             full_owner = None
             full_pet = None
             full_row_id = None
+            selected_filter = None
+            if tool == "get_clients":
+                _, sample = invoke("get_clients", {"limit": 100, "include": ["city_data"]})
+                sample_rows = sample["data"]["client"]
+                with_city = next((row for row in sample_rows if isinstance(row.get("city_data"), dict)), None)
+                assert with_city is not None, "test contour needs a client with city_data"
+                selected_filter = [{"property": "id", "operator": "=", "value": with_city["id"]}]
             for mode, arguments in (("full", {"limit": 1}),
                                     ("fields", {"limit": 1, "fields": ["id", "status"]}),
                                     ("compact", {"limit": 1, "compact": True}),
@@ -85,6 +92,8 @@ def test_stage399_projection_live(live_server_url):
                                                                   "get_invoices": "doctor",
                                                                   "get_clients": "city_data"}[tool]]}),
                                     ("masked", {"limit": 1, "mask_contacts": True})):
+                if selected_filter is not None:
+                    arguments = {**arguments, "filter": selected_filter}
                 status_code, payload = invoke(tool, arguments)
                 if mode == "full":
                     print("STAGE399_RESPONSE_KEYS", tool, sorted(payload))

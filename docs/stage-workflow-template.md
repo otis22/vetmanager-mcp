@@ -25,7 +25,8 @@
 - [ ] Для API-правок сверить каждое payload-поле и literal enum с источником истины; покрыть sibling `update`/`delete`, если исправлен `create`, и проверить unhappy/boundary cases.
 - [ ] Если изменён MCP-инструмент, вызвать его на выбранном заранее стенде и записать HTTP-код и тело в `AssumptionLog.md`. `TEST_DOMAIN`/`TEST_API_KEY` и bearer-контур различны.
 - [ ] При изменении Dockerfile или зависимостей сначала пересобрать test image; запускать mock и, при наличии тестового контура, real suite командами из раздела «Тесты и проверки» в `AGENTS.md`, чтобы исключить устаревший образ. Явное исключение владельца для документного этапа зафиксировать отдельно.
-- [ ] Выполнить фокусные проверки; полный mock+real suite по финальному SHA до push обязателен для обычного этапа релизного поезда. Явное исключение владельца для документного этапа зафиксировать в `AssumptionLog.md`. При изменении `scripts/*.sh` обязательны ShellCheck и Bash syntax по командам из `AGENTS.md`.
+- [ ] Выполнить focused + fast, затем полное pre-review рабочего diff Spark → Astra + Claude Opus. Правки накопить пакетом и повторить focused + fast один раз. После заморозки кода запустить полный default и применимые long gates; полный real suite по финальному SHA до push обязателен для обычного этапа релизного поезда. Явное исключение владельца для документного этапа зафиксировать в `AssumptionLog.md`. При изменении `scripts/*.sh` обязательны ShellCheck и Bash syntax по командам из `AGENTS.md`.
+- [ ] Повторять только инвалидированные контуры: runtime/shared fixtures/dependencies — связанные; real-only test — real; default-only test — fast/default; docs-only — ничего. До этапа 469 общий fingerprint `scripts/offline_gate_manifest.py` строже и обязателен; mismatch не игнорировать.
 - [ ] Перед commit выполнить каждую новую исполнимую команду из процессной документации точно в записанном виде и зафиксировать её реальный exit code.
 - [ ] Аудировать diff, legacy-предписания, дублирование и секреты. После рефакторинга повторить предусмотренные проверки.
 
@@ -34,7 +35,7 @@
 - [ ] Добавить раздел `## Этап N. <title>` в `AssumptionLog.md`, в том числе red/green, команды и exit codes, решения, review evidence, влияние на права доступа/credentials и необходимость живого вызова.
 - [ ] Сохранить статус `in_progress` до зелёного применимого PR CI; выполнить `python3 scripts/archive_roadmap.py`, затем `python3 scripts/check_roadmap_structure.py`, оба с exit 0.
 - [ ] Закрывая finding из `artifacts/review/`, оставить resolution note в исходном отчёте; сделать commit с префиксом `Stage N:` в рабочей dev-ветке после аудита.
-- [ ] Spark-review committed diff → Astra + Claude Opus параллельно. Opus получает `--range`, Astra — committed diff и reviewed SHA. Оба валидных verdict обязательны до push; critical/high закрыть.
+- [ ] Spark-review committed diff → Astra + Claude Opus параллельно. Opus получает `--range`, Astra — committed diff и reviewed SHA. Оба валидных verdict обязательны до push; пропускать **только блокеры релиза**. non-blocking findings — в Roadmap без правок текущей ветки; блокер повторяет focused/owning/fast и только инвалидированные полные контуры.
 - [ ] Для каждого гейта максимум 3 предгейтовых Spark-прохода. У Astra и Opus независимо по 2 валидных verdict и по 3 infrastructure attempts. Пустой или невалидный ответ, auth/provider/model failure не расходует валидный слот; каждую попытку записать как `N/3`. После третьего infrastructure failure любой стороны гейт `blocked`, push запрещён. Смена prompt/schema счётчик не сбрасывает.
 
 ## 5. Релизный поезд
