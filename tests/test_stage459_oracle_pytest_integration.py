@@ -36,7 +36,9 @@ def test_second_node():
     assert True
 ''')
     junit = tmp_path / 'out.xml'
-    env = os.environ.copy()
+    # The nested suite tests oracle attribution, not subprocess coverage.
+    # Inheriting pytest-cov's child tracing can outlive its 30s deadline.
+    env = {key: value for key, value in os.environ.items() if not key.startswith('COV_CORE_')}
     env['REAL_JUNIT_DIR'] = str(tmp_path)
     env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1])
     result = subprocess.run([sys.executable, '-m', 'pytest', '-q', '-W', 'error',
@@ -108,7 +110,7 @@ async def test_live_pooled_clients():
     pool._shared_http_clients[loop] = Client()
     host_resolver._shared_clients_by_loop[loop] = Client()
 ''')
-    env = os.environ.copy()
+    env = {key: value for key, value in os.environ.items() if not key.startswith('COV_CORE_')}
     env['REAL_JUNIT_DIR'] = str(tmp_path)
     env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1])
     result = subprocess.run([sys.executable, '-m', 'pytest', '-q', '-W', 'error',
