@@ -114,7 +114,7 @@ PR/merge/deploy/monitoring и исходную проверку #168 выпол�
   ревью и push рабочей ветки. Merge/deploy и исходная проверка #168 —
   куратору. — `in_progress`
 
-## Этап 461. Report AI: PREVIEW_FAILED / OTHER на выручке филиалов (#163–166) — `in_progress`
+## Этап 461. Report AI: PREVIEW_FAILED / OTHER на выручке филиалов (#163–166) — `done`
 
 Источник: четыре обращения одного аккаунта 12.11.2026 с общим fingerprint.
 Это один кластер, а не четыре независимых дефекта. Причина не установлена:
@@ -126,7 +126,7 @@ PR/merge/deploy/monitoring и исходную проверку #168 выпол�
   с полной пагинацией. — `done`
 - 461.2 По доказанной причине: точечный MCP fix и сторожа либо documented
   upstream escalation. Для PREVIEW_FAILED / OTHER агент получает безопасный
-  класс, признак допустимости retry и конкретный mcp_workaround. — `in_progress`
+  класс, признак допустимости retry и конкретный mcp_workaround. — `done`
 
 Проверки исполнителя на замороженном runtime пройдены: focused/fast, live,
 real runner exit 0 и полный default 4835 passed. Завершение 461.2 ждёт
