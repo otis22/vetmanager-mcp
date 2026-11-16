@@ -10,3 +10,29 @@ scrape_configs:
     static_configs:
       - targets:
           - mcp:8000
+
+  # The full application families include Redis-wide counters. Retain only
+  # Prometheus' own per-target up series here to avoid multiplying totals.
+  - job_name: vetmanager-workers
+    metrics_path: /metrics
+    scheme: http
+    bearer_token_file: /tmp/metrics_bearer_token
+    static_configs:
+      - targets: [mcp:8000]
+        labels: {slot: mcp}
+      - targets: [mcp2:8000]
+        labels: {slot: mcp2}
+      - targets: [mcp3:8000]
+        labels: {slot: mcp3}
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: .*
+        action: drop
+
+  - job_name: vetmanager-availability
+    metrics_path: /probe-metrics
+    scheme: http
+    bearer_token_file: /tmp/metrics_bearer_token
+    static_configs:
+      - targets:
+          - availability-probe:8003

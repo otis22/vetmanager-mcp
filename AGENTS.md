@@ -160,7 +160,7 @@ bearer-токеном. Нужный выбирается до запуска.
 
 - **Лестница:** focused red → каждый ранее красный node отдельно до зелёного →
   owning file/suite → fast → аудит → полное pre-review рабочего diff
-  (Spark → Astra + Opus). Правки накапливаются пакетом, затем focused + fast
+  (Spark → Astra + Kimi). Правки накапливаются пакетом, затем focused + fast
   повторяются один раз. После заморозки кода — один полный default; по
   применимости PostgreSQL, browser, живой вызов и real aggregate → commit →
   committed-diff review **только блокеры релиза**. Полный
@@ -209,35 +209,34 @@ Guard-скрипты и миграции production-данных:
 - Перед Spark — детерминированная проверка inventory/count/fingerprints (`scripts/offline_gate_manifest.py`, `scripts/check_roadmap_structure.py`, валидатор review). Spark candidate-only: finding, опровергнутый такой проверкой, отклоняется одной строкой rationale в AssumptionLog и не блокирует; принимаются только важные и проверяемые замечания.
 - Spark-review prompt узкий: объект (PRD, uncommitted или committed diff), severity, формат, запрет правок.
 - Вызов Spark-review из Codex runtime (`-s read-only` не читает репозиторий): `timeout 1200 codex exec -m gpt-6-luna -s danger-full-access -C "$PWD" -` с prompt `Review only. Do not edit files. Do not run write commands.` и обязательным `files_read`; `[]` без прочитанных файлов невалиден и слот не расходует. Fallback — только при явной model/provider failure. Итог Spark — в AssumptionLog.
-- Claude Opus review из Codex runtime: shell timeout ≥ 2× prompt deadline (default `timeout 1200` и `Finish this review within 600 seconds`; реальный timeout Claude не сообщать). Для inline context: `--strict-mcp-config --mcp-config '{"mcpServers":{}}' --tools ""`, запрет правок/commands, `--output-format json` + schema, `Think briefly, then return JSON matching the schema immediately`. Успех: JSON-конверт разобран, `is_error=false`, непустое `.result` соответствует schema; `stop_reason` не участвует (при `--json-schema` result приходит tool call). Валидатор `scripts/validate_review_result.py` вызывать напрямую как исполняемый файл; CI проверяет этот вызов. Иначе — infrastructure failure `N/3` в AssumptionLog; счётчики Opus и Astra независимы, после трёх — `blocked`, push запрещён.
-
+- Kimi K3 review из Codex runtime: `scripts/run_kimi_review.py` с `KIMI_CODE_HOME` в разрешённом каталоге, профилем без инструментов и `--output-format stream-json`. Любой tool call, пустой или schema-invalid ответ — infrastructure failure `N/3`; счётчики Kimi и Astra независимы, после трёх push запрещён. Claude больше не вызывается.
 <!-- stage-343-model-contract:start -->
-Постоянная схема моделей (решение владельца 24.09.2026): исполнитель этапа Codex `gpt-6-sol`; Spark/scout `gpt-6-luna` (candidate-only); сильное ревью — `gpt-6-astra` и Claude Opus. Требуется Codex CLI ≥ 0.155. Слаги семейства 5.6 устарели; Terra в GPT-6 нет.
+Постоянная схема моделей (обновление владельца 16.11.2026): исполнитель этапа Codex `gpt-6-sol`; Spark/scout `gpt-6-luna` (candidate-only); сильное ревью — `gpt-6-astra` и Kimi K3. Требуется Codex CLI ≥ 0.155. Слаги семейства 5.6 устарели; Terra в GPT-6 нет.
 
-- Перед каждым сильным PRD, Architecture Critique, визуальным и committed diff гейтом выполнить Spark-review; затем запустить Astra и Opus одновременно и дождаться обоих. Spark-бюджет — не более 3 запусков перед конкретным гейтом; если он исчерпан, повтор сильной пары допускается с записанным rationale без четвёртого Spark. Scout для проверки правок после сильного бюджета не тратит предгейтовый Spark-бюджет.
-- У Astra и Opus отдельные бюджеты: 2 валидных запуска на каждый гейт у каждого и не более 3 infrastructure attempts у каждого. Architecture Critique делит PRD-бюджет, визуальный гейт имеет отдельный бюджет. Валидный запуск — разбираемый verdict `findings` (включая `[]`). Невалидный ответ не тратит валидный слот. Если любая сторона не дала валидного ответа после трёх неуспешных попыток, гейт blocked и push запрещён. Оба результата обязательны даже на визуальном гейте.
-- Astra: `timeout 1800 codex exec -m gpt-6-astra -s danger-full-access -C "$PWD" --output-schema <findings-schema> -o <evidence>/astra-<gate>-attempt-N-of-3.result.json -` с review-only prompt. Сохранять prompt, result, stderr и metadata: модель, объект и reviewed SHA для diff, версия CLI, время начала/конца, exit и validator exit. Проверять результат командой `scripts/validate_review_result.py --plain` с stdin из result; этот режим принимает severity `critical`/`high`/`medium`. Для Claude Opus использовать `scripts/run_claude_review.sh` и прежнюю проверку envelope через `scripts/validate_review_result.py` без изменения поведения runner.
-- На визуальном гейте Astra получает скриншоты флагом `-i` и даёт решающее визуальное ревью. Opus запускается с `--image` и получает пиксели скриншотов. Opus `[]` засчитывается только если metadata содержит изображения с совпадающими путями, размерами и SHA-256. Без валидного визуального вердикта Astra гейт blocked.
-- Свести findings в `AssumptionLog.md` по гейту: что нашла Astra, что Opus, что оба, что принято/отклонено и почему; приложить пути evidence и время. Неустранённые critical/high блокируют выпуск. Если после исчерпания бюджетов сильного ревью в код внесена любая правка, проверить её Spark (`gpt-6-luna` как отдельный scout) и тестами и отметить отдельной строкой в `AssumptionLog.md`; push разрешён при закрытых critical/high и валидных verdict обоих ревьюеров. Это не замена неуспешному сильному гейту без валидного verdict.
-- Если исполнитель — Claude-агент, внешнее сильное ревью делает Codex `gpt-6-astra`; Opus работает как дополнительный параллельный reviewer и его verdict также обязателен для гейта.
+- Перед каждым сильным PRD, Architecture Critique, визуальным и committed diff гейтом выполнить Spark-review; затем запустить Astra и Kimi одновременно и дождаться обоих. Spark-бюджет — не более 3 запусков перед конкретным гейтом; если он исчерпан, повтор сильной пары допускается с записанным rationale без четвёртого Spark. Scout для проверки правок после сильного бюджета не тратит предгейтовый Spark-бюджет.
+- У Astra и Kimi отдельные бюджеты: 2 валидных запуска на каждый гейт у каждого и не более 3 infrastructure attempts у каждого. Architecture Critique делит PRD-бюджет, визуальный гейт имеет отдельный бюджет. Валидный запуск — разбираемый verdict `findings` (включая `[]`). Невалидный ответ не тратит валидный слот. Если любая сторона не дала валидного ответа после трёх неуспешных попыток, гейт blocked и push запрещён. Оба результата обязательны даже на визуальном гейте.
+- Astra: `timeout 1800 codex exec -m gpt-6-astra -s danger-full-access -C "$PWD" --output-schema <findings-schema> -o <evidence>/astra-<gate>-attempt-N-of-3.result.json -` с review-only prompt. Сохранять prompt, result, stderr и metadata: модель, объект и reviewed SHA для diff, версия CLI, время начала/конца, exit и validator exit. Проверять результат командой `scripts/validate_review_result.py --plain` с stdin из result; этот режим принимает severity `critical`/`high`/`medium`. Для Kimi K3 использовать `scripts/run_kimi_review.py` с `kimi -m kimi-code/k3 -p ... --output-format stream-json`, профилем `tools: []` и `subagents: []`. Runner отклоняет любой tool call и пустой/неразбираемый поток, сохраняет prompt, stream, stderr, metadata и проверяет JSON через `scripts/validate_review_result.py --plain`. CLI запускается с изолированным `KIMI_CODE_HOME` в разрешённом каталоге.
+- На визуальном гейте Astra получает скриншоты флагом `-i` и даёт решающее визуальное ревью. Kimi получает пиксели скриншотов только через проверенный image-capable transport; текстовый `-p` не передаёт PNG. Kimi `[]` засчитывается только если metadata содержит подтверждённую передачу изображений с совпадающими путями, размерами и SHA-256. Без этого визуальный гейт blocked. Перед передачей PNG удалить PII, токены, идентификаторы сессий и данные клиник; подтверждение очистки включить в metadata. Без валидного визуального вердикта Astra гейт blocked.
+- Свести findings в `AssumptionLog.md` по гейту: что нашла Astra, что Kimi, что оба, что принято/отклонено и почему; приложить пути evidence и время. Неустранённые critical/high блокируют выпуск. Если после исчерпания бюджетов сильного ревью в код внесена любая правка, проверить её Spark (`gpt-6-luna` как отдельный scout) и тестами и отметить отдельной строкой в `AssumptionLog.md`; push разрешён при закрытых critical/high и валидных verdict обоих ревьюеров. Это не замена неуспешному сильному гейту без валидного verdict.
+- Если исполнитель — Claude-агент, внешнее сильное ревью делает Codex `gpt-6-astra`; Kimi работает как дополнительный параллельный reviewer и его verdict также обязателен для гейта.
 <!-- stage-343-model-contract:end -->
 
 <!-- stage-345-visual-contract:start -->
 Визуальный гейт: до ревью получить состояния кабинета из веток `compute_activation_state` в коде; отдельно снять bearer/OAuth до первого запроса и после него, разовую выдачу ключа и лендинг. Для каждого состояния делать desktop и phone снимки `full_page`, а первый экран телефона — отдельным PNG. Матрица тем строится по реализованному CSS: тема без реализации не включается. Перед ревью автоматический сторож проверяет полноту состояний, файлов и SHA-256; побайтные дубли и пропуски — ошибка подготовки evidence, гейт не запускать.
-Промпт Astra и Opus требует прочитать весь видимый текст на полных страницах и сообщить бессмысленные, склеенные, противоречивые фразы, повторы вопросов/ответов, пустые подписи и элементы вне палитры; оценить также композицию и первый экран телефона. Astra видит PNG через `-i`, Opus через `--image` с проверкой metadata.
+Промпт Astra и Kimi требует прочитать весь видимый текст на полных страницах и сообщить бессмысленные, склеенные, противоречивые фразы, повторы вопросов/ответов, пустые подписи и элементы вне палитры; оценить также композицию и первый экран телефона. Astra видит PNG через `-i`, Kimi только через подтверждённый image-capable transport с проверкой metadata; текстовый `-p` не засчитывается.
 <!-- stage-345-visual-contract:end -->
 
 
-### Evidence Claude review
+### Evidence Kimi review
 
-Каждую попытку Claude strong review запускать через
-`scripts/run_claude_review.sh (--range <range> | --file <review-file>) --attempt <N/3>`
-(`--range` — diff, `--file` — PRD/Architecture Critique). Runner независимо от
-exit сохраняет envelope, stderr, prompt, schema и metadata в
+Каждую попытку Kimi strong review запускать через
+`scripts/run_kimi_review.py (--range <range> | --working-diff | --file <review-file>) --attempt <N/3>`.
+Runner независимо от exit сохраняет stream, stderr, prompt, verdict и metadata в
 `${XDG_DATA_HOME:-~/.local/share}/vetmanager-mcp-review-evidence` (или
-`--evidence-dir`) и возвращает non-zero при invalid verdict. В `AssumptionLog` —
-путь к `*.envelope.json` и `subtype`, `stop_reason`, `output_tokens`,
-`thinking_tokens`, `len(result)`; запись только «без output» запрещена.
+`--evidence-dir`) и возвращает non-zero при invalid verdict. Для безопасности
+требуется изолированный `KIMI_CODE_HOME`; профиль запрещает tools/subagents.
+В `AssumptionLog` — путь к `*.metadata.json`, модель, CLI/validator exit,
+`outcome`, `len(result)`, SHA объекта и verdict. Пустой stdout не считается `[]`.
 
 ## Feedback triage и `known_issues`
 

@@ -17,8 +17,8 @@ REQUIRED = (
     "gpt-6-sol",
     "gpt-6-luna",
     "gpt-6-astra",
-    "Claude Opus",
-    "scripts/run_claude_review.sh",
+    "Kimi K3",
+    "scripts/run_kimi_review.py",
     "scripts/validate_review_result.py",
     "dev/",
 )
@@ -38,7 +38,7 @@ def test_workflow_docs_require_current_review_and_release_contract(name):
 
 def test_release_template_places_both_strong_reviews_before_push():
     text = (ROOT / DOCUMENTS[0]).read_text(encoding="utf-8")
-    gate = text.index("Spark-review committed diff → Astra + Claude Opus")
+    gate = text.index("Spark-review committed diff → Astra + Kimi K3")
     push = text.index("Push только в назначенную")
     assert gate < push
 
