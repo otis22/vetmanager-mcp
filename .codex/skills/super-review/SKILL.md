@@ -33,7 +33,8 @@ Aggregate candidates across roles: deduplicate, verify line references, reject s
 
 - Astra and Opus each have 2 valid verdict slots per gate and 3 independent infrastructure attempts. A schema-valid `findings` array, including `[]`, spends a valid slot. Empty, malformed, auth/provider/model or runtime failure is infrastructure failure: record `N/3`, do not count it as a verdict or spend a valid slot. Changing prompt/schema does not reset the count. After 3 failures for either reviewer, the gate is `blocked` and push is forbidden.
 - Architecture Critique shares the PRD budget. Visual review has its own budget; Astra receives screenshots with `-i`, Opus with `--image`, and an Opus `[]` needs matching image paths, sizes and SHA-256 in metadata. Both strong verdicts are required for every applicable gate.
-- Merge Astra and Opus findings in `AssumptionLog.md`: separate and common findings, accepted/rejected with rationale, evidence paths and time. Unresolved critical/high block release. After valid budgets are spent, any further code fix gets a separate Spark scout and tests before push.
+- Merge Astra and Opus findings in `AssumptionLog.md`: separate and common findings, accepted/rejected with rationale, evidence paths and time. After valid budgets are spent, any further code fix gets a separate Spark scout and tests before push.
+- Full working-diff review happens before long gates. After code freeze, committed-diff review passes **только блокеры релиза**: critical/high and any finding that breaks acceptance, new behavior correctness, security/privacy, access/fail-closed rules or a required regression guard. non-blocking findings go to Roadmap without changing the current branch. A blocker repeats focused/owning/fast and only invalidated full contours.
 
 ## Workflow
 
@@ -41,7 +42,7 @@ Aggregate candidates across roles: deduplicate, verify line references, reject s
    For VM API findings, use verified inline API facts and source documents; do not substitute model memory for the contract.
 2. Run Spark, check `files_read`, reject speculative or low-impact candidates. Run Astra and Opus in parallel; await and validate both.
 3. Dedupe findings, verify line references and severity against evidence. Do not turn infrastructure failure into `[]` or substitute a lower model for a required strong verdict.
-4. Write the requested report and inadequate-findings memory. If this is a PRD or committed diff gate, record verdicts and evidence in `AssumptionLog.md`.
+4. Write the requested report and inadequate-findings memory. If this is a PRD, working-diff or committed diff gate, record verdicts and evidence in `AssumptionLog.md`; for committed diff, separate release blockers from Roadmap-only non-blocking findings.
 5. Before returning, check that no reviewer process from this run remains. Review only: do not auto-fix findings, commit reports or push unless the user explicitly requests those actions. If a later implementation task uses this review, its release train remains the assigned `dev/roadmap-<этапы>` branch; the supervisor merges after green branch CI and full mock+real suite on the final SHA.
 
 ## Commands for runtime inspection

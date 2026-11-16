@@ -42,6 +42,12 @@ def test_release_template_places_both_strong_reviews_before_push():
     push = text.index("Push только в назначенную")
     assert gate < push
 
+    for name in ("AGENTS.md", "CLAUDE.md", ".cursor/rules/agent-workflow.mdc", DOCUMENTS[0]):
+        workflow = (ROOT / name).read_text(encoding="utf-8")
+        assert "только блокеры релиза" in workflow, f"{name} allows non-blocking final-review fixes"
+        assert "non-blocking" in workflow and "Roadmap" in workflow
+        assert "real-only" in workflow and "default-only" in workflow
+
 
 @pytest.mark.parametrize("command", ("git push origin main", "git push origin HEAD:main", "git push main"))
 def test_main_push_guard_catches_command_variants(command):

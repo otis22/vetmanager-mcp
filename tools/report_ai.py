@@ -104,6 +104,7 @@ REPORT_AI_QUEUE_OBSERVATION_MAX_ENTRIES = CLINIC_TIMEZONE_MAX_ENTRIES
 REPORT_AI_GOODS_GOOD_ID_WORKAROUND_CODE = "report_ai_goods_good_id_preview_failed"
 REPORT_AI_PROVIDER_UNREACHABLE_WORKAROUND_CODE = "report_ai_provider_unreachable"
 REPORT_AI_COMBINATION_SQL_WORKAROUND_CODE = "report_ai_combination_sql_preview_failed"
+REPORT_AI_UPSTREAM_PREVIEW_OTHER_WORKAROUND_CODE = "report_ai_upstream_preview_other"
 _REPORT_AI_TITLE_TEMPLATE = "<цель и период отчёта>"
 _GENERIC_REPORT_TITLES = {
     "report",
@@ -1077,6 +1078,32 @@ def _report_ai_combination_sql_workaround() -> dict:
     }
 
 
+def _report_ai_upstream_preview_other_workaround() -> dict:
+    return {
+        "code": REPORT_AI_UPSTREAM_PREVIEW_OTHER_WORKAROUND_CODE,
+        "failure_class": "upstream_preview_other",
+        "summary": (
+            "Vetmanager Report AI preview failed with upstream subtype OTHER; "
+            "the specific upstream cause is not known."
+        ),
+        "steps": [
+            "Do not retry StartReport or create another identical Report AI job.",
+            "Only if the original request was branch revenue from executed invoices and finance.read is available, call get_invoices for the requested period: status=exec, invoice_date_from, invoice_date_to, limit=100, offset=0, sort=[{\"property\":\"id\",\"direction\":\"ASC\"}].",
+            "For each next page keep offset=0 and add filter=[{\"property\":\"id\",\"operator\":\">\",\"value\":last_id}]; stop only when all initial totalCount rows have been read.",
+            "Check ascending id, status=exec, invoice_date within the period, positive clinic_id and finite amount for every row; sum Decimal amounts by clinic_id, including zero and negative values.",
+            "On each page require totalCount = initial totalCount minus rows already read; if a page, row or count is invalid, stop and report the result as incomplete.",
+            "If finance.read is unavailable, explain that direct invoice reading is not permitted for this key and ask an authorized person to obtain the figures.",
+            "For any other report purpose or financial metric, do not substitute invoice totals; report the upstream failure and use only a separately verified direct workflow.",
+            "Report the failed Report AI job through report_problem using only PREVIEW_FAILED, OTHER and the job id as safe context.",
+        ],
+        "do_not_do": [
+            "Do not infer the internal upstream cause, quote raw error text or SQL, or answer from a partial sum.",
+            "Do not retry the same failed job or bypass finance.read.",
+        ],
+        "safe_to_retry": False,
+    }
+
+
 def _looks_like_combination_sql_preview_failure(job: dict) -> bool:
     if job.get("status") != "failed" or job.get("error_code") != "PREVIEW_FAILED":
         return False
@@ -1144,6 +1171,9 @@ def _annotate_report_ai_workarounds(payload: dict) -> dict:
         })
     elif _looks_like_combination_sql_preview_failure(job):
         job.setdefault("mcp_workaround", _report_ai_combination_sql_workaround())
+    elif (job.get("status") == "failed" and code == "PREVIEW_FAILED"
+          and job.get("error_subtype") == "OTHER"):
+        job.setdefault("mcp_workaround", _report_ai_upstream_preview_other_workaround())
     elif _looks_like_report_ai_provider_failure(job):
         job.setdefault("mcp_workaround", _report_ai_provider_unreachable_workaround())
     elif _looks_like_goods_good_id_preview_failure(job):
