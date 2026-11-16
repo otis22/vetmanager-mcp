@@ -127,7 +127,9 @@ def test_local_nginx_smoke_rejects_missing_mcp_and_redirect(monkeypatch):
 
 def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=False,
                       fail_nginx=False, repeat=False, partial_new=False, fail_preflight=False,
-                      fail_probe=False):
+                      fail_probe=False, site_base_url="https://example.org",
+                      site_env_style="equals"):
+    monkeypatch.delenv("SITE_BASE_URL", raising=False)
     live = tmp_path / "live"
     release = live / "releases" / ("a" * 40)
     release.mkdir(parents=True)
@@ -137,7 +139,8 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=Fal
         "FEEDBACK_FINGERPRINT_PEPPER=old\n"
         f"GRAFANA_ADMIN_PASSWORD={secrets.token_hex(24)}\n"
         f"METRICS_AUTH_TOKEN={secrets.token_hex(24)}\n"
-        "SITE_BASE_URL=https://example.org\n")
+        + (f"SITE_BASE_URL{'=' if site_env_style == 'equals' else ': '}{site_base_url}\n"
+           if site_base_url is not None else ""))
     site = tmp_path / "site.conf"
     site.write_text(render_nginx_site(PROD_SITE, "active") if repeat else PROD_SITE)
     old_image = "sha256:" + "b" * 64
@@ -169,6 +172,10 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=Fal
     def compose(path, project, image, *args, **kw):
         events.append(("compose", path.name, image, args))
         events.append(("compose_dir", path.parent, args))
+        if path == release / "docker-compose.yml":
+            events.append(("release_compose_origin", args, kw.get("site_base_url")))
+        elif "availability-probe" in args and "up" in args:
+            events.append(("rollback_probe_origin", kw.get("site_base_url")))
         if fail_probe and image == new_image and "availability-probe" in args and "up" in args:
             raise RuntimeError("injected availability probe startup failure")
         if path.name == "rollback.yml" and "up" in args:
@@ -182,7 +189,9 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=Fal
             token = secrets.token_hex(24)
             return json.dumps({"services": {"mcp": {"environment": {
                 "METRICS_AUTH_TOKEN": token}}, "availability-probe": {"environment": {
-                "METRICS_AUTH_TOKEN": token, "SITE_BASE_URL": "https://example.org"}}}})
+                "METRICS_AUTH_TOKEN": token, "SITE_BASE_URL":
+                kw.get("site_base_url") if kw.get("site_base_url") is not None else
+                (site_base_url if site_base_url is not None else "")}}}})
         return ""
 
     monkeypatch.setattr(stage385_deploy, "_compose", compose)
@@ -238,6 +247,65 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=Fal
     assert events.index(("nginx", "maintenance")) < events.index(("stop_old",))
     assert events.index(("stop_old",)) < events.index(("ready", 8000))
     return events, site, old_image
+
+
+def test_missing_site_origin_reaches_probe_compose_up(monkeypatch, tmp_path):
+    events, _, _ = _simulate_cutover(monkeypatch, tmp_path, site_base_url=None)
+    origin = "https://old.example"
+    assert ("release_compose_origin", ("config", "--format", "json"), origin) in events
+    assert ("release_compose_origin",
+            ("up", "-d", "--no-build", "availability-probe"), origin) in events
+
+
+def test_compose_up_passes_site_origin_to_subprocess_environment(monkeypatch, tmp_path):
+    release = tmp_path / "release"
+    release.mkdir()
+    (release / ".env").write_text("METRICS_AUTH_TOKEN=synthetic\n")
+    seen = {}
+
+    def run(*args, **kwargs):
+        seen["args"] = args
+        seen["environment"] = kwargs["env"]
+        return ""
+
+    monkeypatch.setattr(stage385_deploy, "_run", run)
+    stage385_deploy._compose(release / "docker-compose.yml", "test", "sha256:" + "a" * 64,
+                             "up", "-d", "--no-build", "availability-probe",
+                             site_base_url="https://old.example")
+    assert seen["args"][-4:] == ("up", "-d", "--no-build", "availability-probe")
+    assert seen["environment"]["SITE_BASE_URL"] == "https://old.example"
+
+
+def test_explicit_invalid_site_origin_still_fails_closed(monkeypatch, tmp_path):
+    with pytest.raises(ValueError, match="SITE_BASE_URL must be an HTTPS origin"):
+        _simulate_cutover(monkeypatch, tmp_path, site_base_url="http://old.example")
+
+
+def test_colon_assignment_invalid_site_origin_fails_closed(monkeypatch, tmp_path):
+    with pytest.raises(ValueError, match="SITE_BASE_URL must be an HTTPS origin"):
+        _simulate_cutover(monkeypatch, tmp_path, site_base_url="http://old.example",
+                          site_env_style="colon")
+
+
+def test_missing_site_origin_is_injected_for_rollback_probe(monkeypatch, tmp_path):
+    events, _, _ = _simulate_cutover(monkeypatch, tmp_path, site_base_url=None,
+                                     repeat=True, fail_probe=True)
+    assert ("rollback_probe_origin", "https://old.example") in events
+
+
+def test_fallback_decision_reads_release_env_file(monkeypatch, tmp_path):
+    original = stage385_deploy._site_base_url_override
+    checked = []
+
+    def capture(env_file, hostname):
+        checked.append(env_file)
+        return original(env_file, hostname)
+
+    monkeypatch.setattr(stage385_deploy, "_site_base_url_override", capture)
+    _simulate_cutover(monkeypatch, tmp_path, site_base_url=None)
+    release_env = tmp_path / "live/releases" / ("a" * 40) / ".env"
+    assert checked == [release_env]
+    assert release_env.resolve() == tmp_path / "live/.env"
 
 
 def test_cutover_waits_for_three_slots_before_nginx(monkeypatch, tmp_path):

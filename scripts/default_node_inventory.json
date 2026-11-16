@@ -976,8 +976,8 @@
     "sha256": "4673f42ab88bb24bd8ed4ee925cd506ba009ed6d663aa161e1b5c7853f7b62f6"
   },
   "tests/test_stage385_deploy_path.py": {
-    "count": 14,
-    "sha256": "5d82256bba704a67aeec2874325b177f068f0a239a4c61fa0488a774ddaacd43"
+    "count": 20,
+    "sha256": "9286b525bc87d607825948ebbaf886100b0c5b666235c91092bc9fe7795c1bc5"
   },
   "tests/test_stage385_execution_admission.py": {
     "count": 1,
