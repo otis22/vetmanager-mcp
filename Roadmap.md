@@ -806,6 +806,12 @@ workers, но Prometheus scrape охватывает один, поэтому и
 не доказаны передача PNG-пикселей и metadata по контракту stage345. Кабинет
 и лендинг в 464.1 не менялись.
 
+Deploy Prod run `43963782647` на merge `e4f88bb` остановился до maintenance:
+куратор сообщил об отсутствии `SITE_BASE_URL` в production `.env`; старый
+release healthy, post-deploy smoke passed, простоя нет. Узкий hotfix в ветке
+`dev/roadmap-464-deploy-hotfix` восстанавливает безопасный origin для probe
+без ручной правки `.env`; этап остаётся `in_progress` до повторного deploy куратора.
+
 ## Этап 465. Пересмотр состава и надёжности test suite — `done`
 
 Источник: решение владельца 14–15.11.2026 после стабилизации 459 и Claude

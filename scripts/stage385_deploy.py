@@ -153,14 +153,29 @@ def _project_and_image() -> tuple[str, str]:
     return project, image
 
 
-def _compose(path: Path, project: str, image: str, *args: str, timeout: int = 120) -> str:
+def _compose(path: Path, project: str, image: str, *args: str, timeout: int = 120,
+             site_base_url: str | None = None) -> str:
     env = dict(os.environ, MCP_IMAGE=image, GIT_SHA=path.parent.name,
                UID=str(os.getuid() or 1000), GID=str(os.getgid() or 1000),
                REDIS_URL="redis://redis:6379/0", RATE_LIMIT_REQUIRE_REDIS="1",
                STREAMABLE_HTTP_DRAIN_ENABLED="1")
+    if site_base_url is not None:
+        env["SITE_BASE_URL"] = site_base_url
     return _run("docker", "compose", "--env-file", str(path.parent / ".env"),
                 "-p", project, "-f", str(path), "--profile", "production", *args,
                 cwd=path.parent, env=env, timeout=timeout)
+
+
+def _site_base_url_override(env_file: Path, hostname: str) -> str | None:
+    """Supply the verified Nginx origin only when no explicit value exists."""
+    if "SITE_BASE_URL" in os.environ or any(
+        re.match(r"^\s*(?:export\s+)?SITE_BASE_URL(?:\s*[:=]|\s*$)", line)
+        for line in env_file.read_text().splitlines()
+    ):
+        return None
+    origin = f"https://{hostname}"
+    _service_health_url(origin)
+    return origin
 
 
 def _ready(port: int, seconds: int = 90) -> None:
@@ -397,6 +412,7 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
     if not state:
         _save_pre385_source(live, bundle)
     (release / ".env").symlink_to(live / ".env")
+    site_base_url = _site_base_url_override(release / ".env", hostname)
     with tempfile.NamedTemporaryFile("w", dir=state_dir, prefix=".pepper-", delete=False) as handle:
         secret = Path(handle.name)
         handle.write(pepper)
@@ -413,9 +429,12 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
     new_image = _run("docker", "image", "inspect", "-f", "{{.Id}}", f"vetmanager-mcp:{sha}")
     if not IMAGE_ID.fullmatch(new_image):
         raise RuntimeError("Built image is not pinned")
-    _compose(release / "docker-compose.yml", project, new_image, "config", "--quiet")
-    resolved = json.loads(_compose(release / "docker-compose.yml", project, new_image,
-                                   "config", "--format", "json"))
+    def release_compose(*args: str, timeout: int = 120) -> str:
+        return _compose(release / "docker-compose.yml", project, new_image, *args,
+                        timeout=timeout, site_base_url=site_base_url)
+
+    release_compose("config", "--quiet")
+    resolved = json.loads(release_compose("config", "--format", "json"))
     metrics_token = resolved["services"]["mcp"]["environment"].get("METRICS_AUTH_TOKEN")
     if not metrics_token:
         raise RuntimeError("MCP metrics token did not reach the new Compose service")
@@ -431,12 +450,11 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
         maintenance_entered = True
         _stop_old(project, slots)
         old_stopped = True
-        _compose(release / "docker-compose.yml", project, new_image, "up", "-d", "redis")
-        _compose(release / "docker-compose.yml", project, new_image, "run", "-T", "--rm", "mcp",
-                 "alembic", "upgrade", "head", timeout=300)
+        release_compose("up", "-d", "redis")
+        release_compose("run", "-T", "--rm", "mcp",
+                        "alembic", "upgrade", "head", timeout=300)
         new_launch_attempted = True
-        _compose(release / "docker-compose.yml", project, new_image, "up", "-d", "--no-build",
-                 "--force-recreate", *SLOTS, timeout=300)
+        release_compose("up", "-d", "--no-build", "--force-recreate", *SLOTS, timeout=300)
         for port in SLOTS.values():
             _ready(port)
             _stateless_protocol_ready(port)
@@ -447,11 +465,9 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
              timeout=180)
         if not state:
             (state_dir / "base-nginx.conf").write_text(base)
-        _compose(release / "docker-compose.yml", project, new_image, "up", "-d",
-                 "--no-build", "availability-probe", timeout=180)
+        release_compose("up", "-d", "--no-build", "availability-probe", timeout=180)
         try:
-            _compose(release / "docker-compose.yml", project, new_image, "up", "-d",
-                     "--no-build", "prometheus", "grafana", timeout=180)
+            release_compose("up", "-d", "--no-build", "prometheus", "grafana", timeout=180)
         except Exception as exc:
             print(f"observability restart failed after app cutover: {exc}", file=sys.stderr)
         state_file.write_text(json.dumps({"release": str(release), "image": new_image}, indent=2))
@@ -476,10 +492,10 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
                     old_services = yaml.safe_load(old_compose.read_text())["services"]
                     if "availability-probe" in old_services:
                         _compose(old_compose, project, old_image, "up", "-d", "--no-build",
-                                 "availability-probe", "prometheus", "grafana", timeout=180)
+                                 "availability-probe", "prometheus", "grafana", timeout=180,
+                                 site_base_url=site_base_url)
                     else:
-                        _compose(release / "docker-compose.yml", project, new_image,
-                                 "stop", "availability-probe", timeout=60)
+                        release_compose("stop", "availability-probe", timeout=60)
                 except Exception as monitoring_error:
                     print(f"observability rollback failed after workers restored: {monitoring_error}",
                           file=sys.stderr)
