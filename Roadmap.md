@@ -6,12 +6,14 @@
 Актуальная очередь 17.11.2026 (решение владельца):
 **478 → (471 + 472) → 473 → 474 → 475 → 476**. Все прежние очереди ниже —
 исторические. Сейчас активного поезда нет; после компакта новый процесс
-начинает с 478, не возобновляя старые рабочие деревья.
+начинает с **478B-1**, не возобновляя старые рабочие деревья. База для нового
+worktree: `origin/main` `c0cb9f9e1d4d5cbf9b3af60a0f75d3f7efd3512e`.
 
 Поезда:
 
-1. **478** — ускорение CI первым поездом, два отдельных PR: 478A и 478B.
-   Production deploy не требуется.
+1. **478** — ускорение CI первым поездом. 478A выпущен; 478B разделён на три
+   отдельных PR: preflight/deploy scope → адресные контуры → nightly/приёмка.
+   Production deploy для CI-only изменений не требуется.
 2. **471 + 472** — read-only проверки и диагностика без деплоя. Подтверждённый
    локальный дефект получает отдельный PRD и поезд исправления.
 3. **473** — внешний дашборд, отдельно от production MCP.
@@ -35,19 +37,28 @@
 - 478.1 PR 478A: жёсткий docs-only путь; долгие проверки один раз на один tree
   SHA; main не повторяет зелёный PR suite при совпадающем дереве; отмена
   устаревших PR runs; baseline времени и числа запусков. — `done`
-  Ветка `dev/roadmap-478-ci-fast-path`, base `d30445b242f3548065e993960eb1a22428f0cbff`.
-  Финальные контуры: default 4922 passed, PostgreSQL 8 passed; manifest и
-  coverage подтверждены. Выпуск: commit → committed review → push ветки;
-  затем куратор выполняет PR/merge. 478B начинается отдельным этапом.
-- 478.2 PR 478B: версионируемая `test_impact_map.json`; fast + owning +
+  PR #42 merged, merge SHA `c0cb9f9e1d4d5cbf9b3af60a0f75d3f7efd3512e`.
+  Локальный default 4922 passed, PostgreSQL 8 passed; PR и main Tests success.
+  Main получил обязательный `force_full`, поскольку изменилась CI decision
+  surface. Reuse без `force_full` проверяется в 478.5 на обычном изменении.
+- 478.2 PR 478B-1: ранний inventory preflight и CI-only deploy scope. Проверять
+  drift versioned inventory до pre-freeze review и долгого default, включая
+  новые nodes и переименования. Не запускать production deploy для строго
+  классифицированных CI-only workflows/scripts/tests; unknown путь — fail-closed
+  на deploy. Добавить guards для unknown путей и новых test nodes. — `todo`
+- 478.3 PR 478B-2: версионируемая `test_impact_map.json`; fast + owning +
   затронутые контуры; shared/unknown fail-closed на полный набор; исключение
-  повтора fast внутри default с полным aggregate/coverage; nightly полный
-  regression. В `super-review` добавить роль `test-contours` для проверки карты,
-  fail-closed выбора, отсутствия потери nodes/skip, инвалидации и границ
-  PR/main/nightly. — `todo`
-- 478.3 Приёмка на docs-only, isolated tool, shared runtime и unknown file;
-  ручной запуск nightly. Одинаковый долгий suite не выполняется дважды на одном
-  tree SHA; обязательные GitHub checks и полнота покрытия сохраняются. — `todo`
+  повтора fast внутри default с полным aggregate/coverage. В `super-review`
+  добавить роль `test-contours` для проверки карты, fail-closed выбора,
+  отсутствия потери nodes/skip, инвалидации и границ PR/main/nightly. — `todo`
+- 478.4 PR 478B-3: nightly полный regression, сохранение JUnit/outcome и
+  измерение фактического сокращения времени и числа запусков относительно
+  baseline. — `todo`
+- 478.5 Приёмка на docs-only, isolated tool, shared runtime и unknown file;
+  ручной запуск nightly. Проверить `PR validated-tree → main reuse` без
+  `force_full` на обычном изменении, которое не меняет CI decision surface.
+  Одинаковый долгий suite не выполняется дважды на одном tree SHA; обязательные
+  GitHub checks и полнота покрытия сохраняются. — `todo`
 
 Nightly запускается из main по расписанию `17 23 * * *` (около 02:17 МСК) и
 вручную через `workflow_dispatch`: один Docker image, полный
