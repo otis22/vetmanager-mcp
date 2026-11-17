@@ -1,0 +1,46 @@
+# Этап 478.2 / PR 478B-1 — ранний inventory и CI-only deploy scope
+
+## Цель
+
+Обнаруживать drift версионированных test nodes до pre-freeze review и долгого default; не запускать production deploy после изменений, которые целиком состоят из строго классифицированных CI-only и документационных файлов, включая отменённый deploy такого изменения перед следующим docs-only merge.
+
+## Проверенные факты и границы
+
+- `offline_gate_manifest.py` уже собирает default и PostgreSQL nodes и сравнивает с `*_node_inventory.json`, но `check_gate` вызывается только после долгого прогона. `inventory()` хранит число и SHA-256 отсортированного набора nodes для каждого файла, поэтому обнаруживает добавление и переименование.
+- `test.yml` строит один тестовый образ и запускает default отдельно; ранний preflight может использовать уже загруженный образ и стать обязательной зависимостью default. На локальной ветке тот же CLI вызывается до pre-freeze review.
+- `deploy-prod.yml` сравнивает `head_sha` с последним успешным `deploy` job. Текущий `deploy_scope_check.sh` пропускает лишь документационные пути и видит накопленные CI-only изменения после отменённого deploy.
+- Технические требования и главный PRD не задают нового API-контракта для CI/deploy; OpenAPI неприменим. Runtime, публичный MCP-контракт и production данные не меняются.
+
+## Архитектурное решение
+
+1. Добавить к `offline_gate_manifest.py` read-only `--check-inventory`: собрать nodes выбранного контура, сравнить точную карту `inventory(nodes)` с versioned JSON и вернуть non-zero при несовпадении. Никакой автоматической регенерации. Локально проверять default и postgres до code review; в `test.yml` добавить обязательный `inventory-preflight` после `build-image` и до `default`/PostgreSQL. `validated-tree` также явно зависит от preflight. Проверка запускается в том же test image, что suites, чтобы collection environment совпадала. Изменения test nodes требуют явного обновления versioned inventory и повторного preflight.
+2. `deploy_scope_check.sh` читает весь NUL-separated diff **от последнего успешного deploy**, проверяет каждый путь по узкому allowlist: `README.md`, `Roadmap.md`, `Roadmap-archive.md`, `AssumptionLog.md`, Markdown непосредственно внутри `PRD/` или `docs/` и в их вложенных каталогах; `tests/test_*.py`; `.github/workflows/{test,docs,shellcheck,test-real}.yml`; `scripts/{ci_scope,check_roadmap_structure,offline_gate_manifest,run_fast_test_suite,run_default_test_suite,run_isolated_test_suite,run_opt_in_real_test_suite}.py`; `scripts/{default_node_inventory,postgres_node_inventory,real_group_manifest,offline_integration_files}.json`. `deploy-prod.yml` и `deploy_scope_check.sh` намеренно не в allowlist: изменение самого deploy gate консервативно требует rollout. `git diff --no-renames --name-only -z` показывает старый и новый путь переименования, поэтому runtime→CI-only rename не скрывается. Все прочие пути, пустой/невалидный ввод (включая незавершённый NUL-терминатор даже после валидных путей) и неизвестный путь требуют deploy. CI-only список версионирован прямо в скрипте и проверяется guard; новые пути сначала добавляются явным решением. При накопленном diff после отменённого CI-only deploy всё множество остаётся классифицированным, поэтому следующий docs-only merge не запускает rollout. Runtime в накопленном diff требует deploy.
+3. До поиска baseline workflow независимо проверяет свежесть target: `HEAD_SHA` и checkout HEAD должны совпадать с `refs/remotes/origin/main`, полученным checkout с `fetch-depth: 0`; ошибка или несовпадение останавливает changes job до решения о deploy. Workflow-level concurrency сохраняет единственного исполнителя deploy на всё время checkout/решения/cutover, поэтому более новый deploy не может обогнать этот снимок. Это блокирует replay старого Tests даже при API failure или отсутствующем marker. Baseline — последний успешный deploy с доказанным фактически выкаченным SHA. SHA самого `workflow_run` может отличаться от `github.event.workflow_run.head_sha`, поэтому брать `run.head_sha` запрещено. После успешного cutover deploy job добавляет успешный шаг с именем `Record deployed commit <triggering SHA>` и проверяет локальный checkout на равенство этому SHA. Новый stdlib script `scripts/deploy_baseline.py` читает через GitHub API успешный job `deploy` и его успешный marker step; возвращает SHA marker, а не run. Отсутствующий, неоднозначный или невалидный marker у последнего успешного deploy требует консервативного rollout, переход к более старому успешному deploy в этом случае запрещён. Script не включается в CI-only allowlist. Поиск проходит страницы завершённых deploy runs и jobs до успешного `deploy`, а не ограничивается первыми 100 записями. Не заменять baseline последним успешным `Tests`: это скрыло бы невыкаченное runtime изменение. Ошибка API, поиска baseline или diff после freshness proof запускает deploy fail-closed: shell явно переводит ненулевой exit pipeline в `should_deploy=true`, а не завершает шаг до записи output. При наличии baseline перед diff отдельно проверяется ancestry: если оба commit существуют, но base не предок head, changes job завершается ошибкой до rollout. Rename/delete пути проверяются безопасно через diff, без ослабления unknown policy.
+
+## Acceptance и guards
+
+- Новый, удалённый и переименованный default/PostgreSQL node дают красный preflight до default; точный обновлённый inventory даёт зелёный. Guard показывает red на mutation к тесту/инвентарю.
+- CI preflight обязателен после image build и до default/PostgreSQL; его failure не даёт запускать долгие jobs и не создаёт validated-tree.
+- Строгий CI-only diff и его накопление через отменённый deploy плюс docs-only merge дают `should_deploy=false`, в том числе после более 100 пропущенных deploy runs; накопленный runtime, смешанный или unknown путь дают `true`. Пустой и невозможный baseline не разрешают skip.
+- Workflow по-прежнему сравнивает от последнего успешного deploy и сохраняет успешный main `Tests` gate. Existing regression guards остаются зелёными.
+- Guard различает SHA deploy run и фактически выкаченный SHA; отсутствие marker и API failure требуют deploy. Marker создаётся только после успешного cutover и соответствует SHA stage/cutover/checkout.
+- Guard повторного старого Tests run не допускает обратного deploy, включая сочетание replay + API failure/отсутствующий или невалидный marker; ошибка diff/classifier после freshness proof явно даёт `should_deploy=true`. Четыре корневых Markdown-имени сравниваются на полное равенство, `PRD/` и `docs/` проверяются от начала пути до `.md` суффикса. Политика классификации не заявляет защиту от произвольной злонамеренной переписи самого workflow: изменение CI decision surface остаётся предметом обязательного ревью.
+- CI-only deploy scope не меняет `ci_scope.py`: tests/inventory изменения требуют product jobs в PR и на main без доказанного exact-tree reuse. Это отдельно проверяется guard. `tests/test_*.py` означает только один сегмент после `tests/`, вложенные helper paths не входят в allowlist.
+- `test_impact_map` и nightly не реализуются; реальные production changes не выполняются.
+
+## Декомпозиция
+
+- 478B-1.1: PRD, проверка фактов, PRD/Architecture Critique и оценка простоты (≤2 ч).
+- 478B-1.2: новые guards для preflight и node drift, focused red/mutation; реализация CLI и CI wiring (≤150 строк за шаг).
+- 478B-1.3: guards накопленного deploy diff и unknown path, focused red/mutation; узкий classifier (≤150 строк за шаг).
+- 478B-1.4: owning/fast, аудит, полный pre-freeze review, применимые финальные контуры, evidence, commit и release review (≤2 ч на шаг).
+
+## Проверки, rollout и rollback
+
+Focused nodes по одному, owning suites, fast, ранний preflight, ShellCheck/bash -n, полный default; PostgreSQL применим, так как CI workflow и common fingerprint меняются. Real fingerprint также меняется через общие scripts/workflows: aggregate применим при наличии тестовых credentials; в текущем checkout `.env` отсутствует, поэтому real gate недоступен, credentials из других checkout не берутся. Browser и живой MCP-вызов не требуются, UI и инструменты не меняются. CI проверяет тот же preflight и product jobs на PR/main. Откат — вернуть предыдущие deploy classifier/baseline и убрать preflight job/CLI; при ошибке классификации неизвестное всегда приводит к deploy. Первый rollout после изменения deploy gate консервативно ожидается: прежние успешные jobs не содержат marker. Production действия остаются куратору.
+
+## Оценка простоты
+
+Намерение читается как две локальные проверки: точное сравнение инвентаря до suite и allowlist по всему deploy baseline diff. Отдельная конфигурационная платформа и новая карта test impact не нужны. Простой вариант «сравнивать только текущий commit» не проходит обязательный сценарий отменённого CI-only deploy; вариант «сравнивать с последним Tests» скрывает невыкаченный runtime.
+
+При переписывании истории main ancestry refusal намеренно блокирует автоматический rollout и остаётся видимым failed changes job. Восстановление — отдельное решение куратора о проверенном текущем main и новой достоверной deploy baseline; автоматического override, принимающего старый Tests, нет. Этот PR не выполняет такое восстановление и не меняет production.

@@ -10,8 +10,11 @@ def test_deploy_workflow_scopes_from_last_successful_deploy_before_deploy() -> N
     text = (REPO_ROOT / ".github/workflows/deploy-prod.yml").read_text(encoding="utf-8")
 
     assert "github.event.workflow_run.head_sha" in text
-    assert "actions/workflows/deploy-prod.yml/runs?branch=main&status=completed" in text
-    assert '.name == "deploy" and .conclusion == "success"' in text
+    assert "python3 scripts/deploy_baseline.py" in text
+    baseline = (REPO_ROOT / "scripts/deploy_baseline.py").read_text(encoding="utf-8")
+    assert "/actions/workflows/deploy-prod.yml/runs" in baseline
+    assert 'job.get("name") == "deploy"' in baseline
+    assert 'job.get("conclusion") == "success"' in baseline
     # Stage 254.3: these two lines used to pin the exact escaping-prone call
     # (`git diff --name-only` plus a regex over its output), so the test stayed
     # green while a Russian-named PRD walked straight through the filter. The

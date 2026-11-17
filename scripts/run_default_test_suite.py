@@ -14,12 +14,18 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from test_contours import DEFAULT_TEST_CONTOUR
 from warning_policy import DEFAULT_SUITE_WARNING_POLICY, build_warning_error_flags
-from scripts.offline_gate_manifest import check_gate, source_fingerprint
+from scripts.offline_gate_manifest import check_gate, check_inventory, source_fingerprint
 
 
 def main() -> int:
     if DEFAULT_SUITE_WARNING_POLICY.warnings_allowed != 0:
         raise SystemExit("Default suite warning policy must require zero warnings.")
+
+    try:
+        check_inventory("default")
+    except ValueError as exc:
+        print(f"Default inventory preflight rejected: {exc}", file=sys.stderr)
+        return 1
 
     gate = subprocess.run(
         [sys.executable, str(PROJECT_ROOT / "scripts" / "check_known_issue_tool_names.py")],
