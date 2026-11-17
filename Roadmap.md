@@ -34,8 +34,11 @@ PR/merge и последующие гейты main выполняет курат
 
 Решение владельца 16.11.2026: полное ревью рабочего diff завершается до long
 gates; committed-diff review пропускает только блокеры релиза, остальное идёт
-в Roadmap. После 464 выполнить 469 для contour-scoped fingerprints; текущий
-общий fingerprint до него остаётся обязательным. Очередь: **461 → 462 → 464 → 469**.
+в Roadmap. Каждый pre-freeze strong review проверяет весь актуальный diff.
+После завершённого 464 этапы **469 + 470 идут одним поездом и одним PR**;
+текущий общий fingerprint до 469 остаётся обязательным. После deploy — 60
+минут мониторинга каждые 10 минут, обновление дашбордов и разбор нового фидбека.
+Очередь: **461 → 462 → 464 → (469 + 470)**.
 
 ## Этап 468. Убрать дублирующийся CI на dev-ветках — `in_progress`
 
@@ -791,33 +794,32 @@ cleanup перенесены из пяти выбранных коммитов. 
 `TEST_USER_LOGIN` и `TEST_USER_PASSWORD` отсутствуют в доступной тестовой
 конфигурации, поэтому 459/459.1 ждут её дополнения куратором. Commit/push нет.
 
-## Этап 464. Наблюдение всех workers и измеримый простой — `in_progress`
+## Этап 464. Наблюдение всех workers и измеримый простой — `done`
 
 Источник: онбординг 1.2 и текущий дашборд. Docker health доступен для трёх
-workers, но Prometheus scrape охватывает один, поэтому история простоя всего
-сервиса и отдельных workers не измеряется.
+workers, но Prometheus scrape охватывал один, поэтому история простоя всего
+сервиса и отдельных workers не измерялась.
 
-- 464.1 Добавить наблюдение всех workers, определить начало и восстановление
-  недоступности и получить историческую проверку правила «более 30 минут —
-  ненормальный инцидент» без выдуманной точности при пробелах данных. — `in_progress`
+- 464.1 Добавлены наблюдение всех workers и Nginx health route, availability
+  probe и анализатор downtime с явной неопределённостью. В полном 30-дневном
+  ряду `slot1 up` нет интервалов дольше 30 минут; прошлые состояния slot2,
+  slot3 и пользовательского сервиса неизвестны, а не нулевые. — `done` 17.11.2026
 
 Неблокирующее замечание strong review 464.1 для будущего UI-этапа: Kimi K3
 пока получает только текст через `-p`; визуальный гейт останется blocked, пока
 не доказаны передача PNG-пикселей и metadata по контракту stage345. Кабинет
 и лендинг в 464.1 не менялись.
 
-Deploy Prod run `43963782647` на merge `e4f88bb` остановился до maintenance:
-куратор сообщил об отсутствии `SITE_BASE_URL` в production `.env`; старый
-release healthy, post-deploy smoke passed, простоя нет. Узкий hotfix в ветке
-`dev/roadmap-464-deploy-hotfix` восстанавливает безопасный origin для probe
-без ручной правки `.env`.
+Выпуск занял три PR: #35 merge `e4f88bb`, #36 merge `9ca8f32`, #37 merge
+`1eeae19`. Первый Deploy Prod `43963782647` остановился до maintenance из-за
+отсутствующего `SITE_BASE_URL`, простоя не было. Следующий deploy выявил TLS
+hostname mismatch fallback на Nginx `server_name`; канонический default
+приложения исправил его без ручной правки production `.env`.
 
-Повторный Deploy Prod `43980110733` успешен: по данным куратора все три workers
-healthy, `worker_up` и `worker_ready` равны 1, smoke passed. Service signal
-остаётся unknown (`probe_unknown{slot="service"}=1`): Nginx `server_name` как
-fallback не совпал с TLS hostname. Ветка `dev/roadmap-464-canonical-probe-origin`
-меняет fallback на общий канонический default приложения; этап остаётся
-`in_progress` до нового deploy и проверки service signal куратором.
+Финальные main Tests `43989339539` и Deploy Prod `43991957480` — success.
+Production smoke passed; все три workers `up=1` и `worker_ready=1`,
+`service_healthz=1`, прежний `probe_unknown` исчез после пятиминутного
+staleness. Этап закрыт; следующий поезд — объединённые 469 + 470.
 
 ## Этап 465. Пересмотр состава и надёжности test suite — `done`
 
