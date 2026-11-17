@@ -16,7 +16,7 @@
 2. `.codex/skills/super-review/SKILL.md`: убрать retired model/sandbox/fallback инструкции и привести runtime section к текущим `AGENTS.md` и `.cursor/rules/agent-workflow.mdc`, не менять исторические отчёты.
 3. `README.md`: ограничить формулировку sort/filter реальным набором list инструментов; добавить `find_pets_by_alias` в Pet inventory и скорректировать итог.
 4. `tests/test_stage426_workflow_docs.py`: текстовый guard на двух активных документах. Красный: исходные `/codex rescue`, push-команды с target main и `gpt-5.6-*` вызывают отказ в любом контексте. Зелёный: обязательные названия Astra+Opus, runner, validator, dev-ветка. Доказательство: исходный текст красный, новый зелёный; варианты `git push origin HEAD:main` и `git push main` также распознаются.
-5. `Roadmap.md`, `AssumptionLog.md`: статусы и evidence; self-attestation показывается пользователю после push. Лог работы отдельно в `LiveHelperAgent/logs/mcp`.
+5. `Roadmap.md`, `AssumptionLog.md`: статусы и evidence; self-attestation показывается пользователю после push. Лог работы отдельно в `private-agent-workspace/logs/mcp`.
 
 Вне scope: бизнес-код, этапы 428/429, merge в main, deploy, production checks.
 

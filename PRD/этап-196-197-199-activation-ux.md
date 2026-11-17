@@ -15,7 +15,7 @@ Vetmanager → 3 выпустили токен → 1 сделал MCP-запро
 затем успех с десктопа; после выпуска токена — 0 MCP-запросов.
 
 Design/вёрстка review (лог
-`LiveHelperAgent/logs/mcp/2026-07-10-activation-funnel-design-review.md`)
+`private-agent-workspace/logs/mcp/2026-07-10-activation-funnel-design-review.md`)
 выявил механизмы: (1) ошибка интеграции рендерится в середине длинной
 страницы и невидима после POST-перезагрузки на мобильном; (2) строгий
 lowercase-паттерн домена + автокапитализация мобильной клавиатуры дают 400;
