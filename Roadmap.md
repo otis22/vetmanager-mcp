@@ -7,7 +7,8 @@
 **478 → (471 + 472) → 473 → 474 → 475 → 476**. Все прежние очереди ниже —
 исторические. Сейчас активного поезда нет; после компакта новый процесс
 начинает с **478B-1**, не возобновляя старые рабочие деревья. База для нового
-worktree: `origin/main` `c0cb9f9e1d4d5cbf9b3af60a0f75d3f7efd3512e`.
+worktree: фактический `origin/main` (на момент фиксации —
+`46dfb0b15937d275b80ce29ef6eb2f9e79ae8578`).
 
 Поезда:
 
@@ -45,7 +46,11 @@ worktree: `origin/main` `c0cb9f9e1d4d5cbf9b3af60a0f75d3f7efd3512e`.
   drift versioned inventory до pre-freeze review и долгого default, включая
   новые nodes и переименования. Не запускать production deploy для строго
   классифицированных CI-only workflows/scripts/tests; unknown путь — fail-closed
-  на deploy. Добавить guards для unknown путей и новых test nodes. — `todo`
+  на deploy. Добавить guards для unknown путей и новых test nodes. Отдельный
+  обязательный сценарий: отменённый CI-only deploy, затем docs-only merge.
+  Сейчас diff от последнего успешного deploy накапливает отменённые CI-изменения
+  и запускает rollout на следующем docs-only PR; классификация обязана закрывать
+  этот baseline edge case, а не только текущий commit. — `todo`
 - 478.3 PR 478B-2: версионируемая `test_impact_map.json`; fast + owning +
   затронутые контуры; shared/unknown fail-closed на полный набор; исключение
   повтора fast внутри default с полным aggregate/coverage. В `super-review`
