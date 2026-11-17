@@ -5,10 +5,10 @@
 
 Актуальная очередь 17.11.2026 (решение владельца):
 **478 → (471 + 472) → 473 → 474 → 475 → 476**. Все прежние очереди ниже —
-исторические. Сейчас активного поезда нет; после компакта новый процесс
-начинает с **478B-1**, не возобновляя старые рабочие деревья. База для нового
-worktree: фактический `origin/main` (на момент фиксации —
-`46dfb0b15937d275b80ce29ef6eb2f9e79ae8578`).
+исторические. 478B-1 подготовлен на `dev/roadmap-478b-1` от base
+`89b67c70fce4bd7f5fc6599674599accc032ced3`: локальные gates зелёные,
+evidence и release-review — в AssumptionLog. PR, CI и merge — куратору.
+Следующий отдельный PR — 478B-2; старые рабочие деревья не возобновляются.
 
 Поезда:
 
@@ -48,9 +48,11 @@ worktree: фактический `origin/main` (на момент фиксаци
   классифицированных CI-only workflows/scripts/tests; unknown путь — fail-closed
   на deploy. Добавить guards для unknown путей и новых test nodes. Отдельный
   обязательный сценарий: отменённый CI-only deploy, затем docs-only merge.
-  Сейчас diff от последнего успешного deploy накапливает отменённые CI-изменения
-  и запускает rollout на следующем docs-only PR; классификация обязана закрывать
-  этот baseline edge case, а не только текущий commit. — `todo`
+  До исправления diff от последнего успешного deploy накапливал отменённые
+  CI-изменения и запускал rollout на следующем docs-only PR. Baseline edge case
+  закрыт классификацией всего накопленного diff и marker фактического SHA.
+  [PRD](PRD/этап-478-2-ранний-inventory-и-ci-only-deploy.md), evidence —
+  AssumptionLog. — `done` 18.11.2026
 - 478.3 PR 478B-2: версионируемая `test_impact_map.json`; fast + owning +
   затронутые контуры; shared/unknown fail-closed на полный набор; исключение
   повтора fast внутри default с полным aggregate/coverage. В `super-review`

@@ -136,8 +136,32 @@ jobs:
             vetmanager-mcp-test \
             pytest -q tests/test_review_result_gate.py
 
-  default:
+  inventory-preflight:
     needs: [scope-and-reuse, build-image]
+    if: ${{ needs.scope-and-reuse.outputs.run_product == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: vetmanager-mcp-test-image
+      - name: Load test image
+        run: |
+          docker load -i vetmanager-mcp-test.tar
+          rm vetmanager-mcp-test.tar
+      - name: Check versioned inventories before expensive suites
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/app" \
+            -u 1001:1001 \
+            vetmanager-mcp-test \
+            sh -c 'python scripts/offline_gate_manifest.py default --check-inventory && python scripts/offline_gate_manifest.py postgres --check-inventory'
+
+  default:
+    needs: [scope-and-reuse, build-image, inventory-preflight]
     if: ${{ needs.scope-and-reuse.outputs.run_product == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -194,7 +218,7 @@ jobs:
           if-no-files-found: warn
 
   postgres-activation-telemetry:
-    needs: [scope-and-reuse, build-image]
+    needs: [scope-and-reuse, build-image, inventory-preflight]
     if: ${{ needs.scope-and-reuse.outputs.run_product == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -244,7 +268,7 @@ jobs:
             sh -c 'python scripts/offline_gate_manifest.py postgres --write-fingerprint /tmp/stage465-pg.start && python -W error -m pytest -q -m postgres --junitxml=/tmp/stage424-postgres.xml && python scripts/check_stage424_postgres_results.py /tmp/stage424-postgres.xml && python scripts/offline_gate_manifest.py postgres --junit /tmp/stage424-postgres.xml --output /app/.stage465-postgres-gate.json --starting-fingerprint-file /tmp/stage465-pg.start'
 
   validated-tree:
-    needs: [scope-and-reuse, build-image, fast, default, postgres-activation-telemetry]
+    needs: [scope-and-reuse, build-image, inventory-preflight, fast, default, postgres-activation-telemetry]
     if: ${{ github.event_name == 'pull_request' && needs.scope-and-reuse.outputs.run_product == 'true' }}
     runs-on: ubuntu-latest
     steps:

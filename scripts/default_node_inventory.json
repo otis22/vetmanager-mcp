@@ -1467,6 +1467,18 @@
     "count": 7,
     "sha256": "709a679847f47143798f70ec7b4af3557afa56ec175a3c0b85bd5cc720495dab"
   },
+  "tests/test_stage478b_deploy_baseline.py": {
+    "count": 8,
+    "sha256": "cdb1a3c97c7db28302dceacddd2fc7e1c893ff65b10f972eedbfaa6707aa0c5b"
+  },
+  "tests/test_stage478b_deploy_scope.py": {
+    "count": 45,
+    "sha256": "392058c8c7387fbce13890e387ca94f1834f7e2eb2da77c30233a350d9217a40"
+  },
+  "tests/test_stage478b_inventory_preflight.py": {
+    "count": 15,
+    "sha256": "e734beb7ed54654d7ffe8c2da47e6ad9adb8d0a82456e669b0c2ed433f1b4cac"
+  },
   "tests/test_stage87_post_migration.py": {
     "count": 8,
     "sha256": "a57d9b48d50ed35aa08ce1052d8bc74eed75f38064f72945d09ccdb804e83967"

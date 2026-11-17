@@ -178,6 +178,22 @@ def inventory(nodes: list[str]) -> dict[str, dict[str, str | int]]:
     }
 
 
+def check_inventory(contour: str) -> list[str]:
+    """Reject collection drift before executing a suite; never rewrite inventory."""
+    if contour not in MARKERS:
+        raise ValueError("unknown offline contour")
+    path = ROOT / "scripts" / f"{contour}_node_inventory.json"
+    try:
+        expected = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("missing or invalid expected inventory") from exc
+    nodes = collected_nodes(contour)
+    if inventory(nodes) != expected:
+        raise ValueError("collected nodes differ from versioned inventory")
+    print(f"Inventory preflight {contour}: {len(nodes)} nodes match", file=sys.stderr)
+    return nodes
+
+
 def junit_nodes(path: Path, expected_files: set[str]) -> list[str]:
     """Decode pytest JUnit including class methods and reject non-passes."""
     try:
@@ -243,6 +259,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("contour", choices=tuple(MARKERS))
     parser.add_argument("--generate-inventory", action="store_true")
+    parser.add_argument("--check-inventory", action="store_true")
     parser.add_argument("--junit", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--verify-manifest", type=Path)
@@ -250,7 +267,9 @@ def main() -> int:
     parser.add_argument("--starting-fingerprint-file", type=Path)
     args = parser.parse_args()
     try:
-        if args.write_fingerprint:
+        if args.check_inventory:
+            check_inventory(args.contour)
+        elif args.write_fingerprint:
             args.write_fingerprint.write_text(source_fingerprint(contour=args.contour) + "\n", encoding="utf-8")
         elif args.verify_manifest:
             verify_record(args.contour, args.verify_manifest)
