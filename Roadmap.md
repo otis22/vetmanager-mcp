@@ -164,6 +164,12 @@ real runner exit 0 и полный default 4835 passed. Завершение 461
 real aggregate прошли с точными inventories и cleanup; evidence и история
 адресного исправления — в `AssumptionLog.md`.
 
+Выпуск 469+470: PR #39 merged, merge SHA
+`1c5f322f46778043c98c60ef541da32fad6efad1`. Main Tests `44061879355`
+и Deploy Prod `44065554057` — success. Независимый smoke трёх workers passed;
+мониторинг 10:37–11:37 UTC дал 7/7 ok. Production fixes не потребовались.
+Дашборды обновлены; факты и разбор фидбека — в `AssumptionLog.md`.
+
 ## Этап 470. Согласовать документацию контурной инвалидации и заголовки журнала — `done`
 
 Источник: non-blocking findings final pre-freeze review этапа 461 от
