@@ -1109,7 +1109,7 @@
   },
   "tests/test_stage406_ci_mirror.py": {
     "count": 5,
-    "sha256": "d18c35f7af5d88a9e3566c54fac267f476894ff70b6600f6f30423fc02c3f8d9"
+    "sha256": "feeca7ef90159d2bbcb7ac634bf72b262fe36ed8bfb40632dd73b558e88209a4"
   },
   "tests/test_stage407_ghcr_base.py": {
     "count": 3,
@@ -1462,6 +1462,10 @@
   "tests/test_stage470_workflow_docs.py": {
     "count": 5,
     "sha256": "582d486dd518412f43acd4884150e87b5244caf3104c966035f65a819adde28c"
+  },
+  "tests/test_stage478a_ci_scope.py": {
+    "count": 7,
+    "sha256": "709a679847f47143798f70ec7b4af3557afa56ec175a3c0b85bd5cc720495dab"
   },
   "tests/test_stage87_post_migration.py": {
     "count": 8,
