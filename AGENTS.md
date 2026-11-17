@@ -163,7 +163,7 @@ bearer-токеном. Нужный выбирается до запуска.
   (Spark → Astra + Kimi). Каждый pre-freeze strong review, включая повтор после
   исправлений, охватывает весь актуальный diff; closure-only не заменяет полный
   проход. Правки накапливаются пакетом, затем focused + fast повторяются один
-  раз. После заморозки кода — один полный default; по применимости PostgreSQL,
+  раз. После заморозки кода — полный default при изменении его входов; по применимости PostgreSQL,
   browser, живой вызов и real aggregate → commit → committed-diff review
   **только блокеры релиза**. Полный suite/real/browser/PostgreSQL ради red не
   запускать.
@@ -178,10 +178,12 @@ bearer-токеном. Нужный выбирается до запуска.
   non-blocking findings фиксируются в Roadmap без правок текущей ветки. Блокер
   повторяет focused/owning/fast и только инвалидированные полные контуры.
 - **Инвалидация по контурам:** runtime/shared fixtures/dependencies повторяют
-  связанные контуры; real-only test — только real; default-only test —
-  fast/default; docs-only — suites не повторяет. Общий fingerprint
-  `scripts/offline_gate_manifest.py` остаётся более строгим обязательным gate
-  до отдельной доработки в этапе 469; его mismatch не игнорировать.
+  focused + fast, полный default и связанные PostgreSQL/real; default-only test —
+  focused + fast/default; PostgreSQL-only test — focused + PostgreSQL;
+  real-only test — только real (focused + затронутая группа и финальный aggregate);
+  docs-only — suites не повторяет. Контурный fingerprint
+  `scripts/offline_gate_manifest.py` остаётся обязательным fail-closed gate;
+  его mismatch не игнорировать.
 - **Диагностика:** read-only снимки и diagnostics делает исполнитель, адресно на
   failing node; scoped mode — `scripts/run_scoped_diagnostic.py`. Один
   инструментированный JUnit-профиль допустим, если даёт новую информацию;

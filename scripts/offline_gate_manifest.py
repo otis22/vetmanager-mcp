@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 from importlib import metadata
 import json
@@ -18,6 +19,111 @@ MARKERS = {
     "postgres": "postgres",
 }
 
+CONTOURS = frozenset(("default", "postgres", "real"))
+SHARED_TEST_HELPERS = ("tests/conftest.py", "tests/real_suite_outcomes.py")
+COMMON_CONFIG = (
+    "Dockerfile", "docker-compose.yml", "docker-compose.test.yml",
+    "pyproject.toml", "pytest.ini", ".coveragerc", "alembic.ini",
+    "tests/fixtures/stage385_resource_gate_sample.json", ".github/workflows/test.yml",
+)
+CONTOUR_CONFIG = {
+    "default": ("scripts/default_node_inventory.json", "scripts/offline_integration_files.json"),
+    "postgres": ("scripts/postgres_node_inventory.json",),
+    "real": ("scripts/real_group_manifest.json",),
+}
+
+
+def _inventory_paths(root: Path) -> dict[str, set[Path]]:
+    """Read the three versioned inventories; an unknown path stays conservative."""
+    result = {}
+    for contour in CONTOURS:
+        name = CONTOUR_CONFIG[contour][0]
+        try:
+            data = json.loads((root / name).read_text(encoding="utf-8"))
+            names = (data.keys() if contour != "real" else
+                     (node.split("::", 1)[0] for nodes in data["groups"].values() for node in nodes))
+            paths = set()
+            for name in names:
+                if not isinstance(name, str) or not name.startswith("tests/") or not name.endswith(".py"):
+                    raise ValueError("invalid inventory path")
+                path = root / name
+                if not path.is_file():
+                    raise ValueError(f"missing inventory input: {name}")
+                paths.add(path)
+            if not paths:
+                raise ValueError("empty contour inventory")
+            result[contour] = paths
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
+            raise ValueError(f"missing or invalid contour inventory: {contour}") from exc
+    return result
+
+
+def test_imports(root: Path, path: Path) -> set[Path]:
+    """Resolve static imports between test modules, including relative imports."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError) as exc:
+        raise ValueError(f"invalid test input: {path.relative_to(root)}") from exc
+    dependencies = set()
+    for statement in ast.walk(tree):
+        if isinstance(statement, ast.Import):
+            modules = [alias.name for alias in statement.names]
+        elif isinstance(statement, ast.ImportFrom):
+            prefix = ".".join(path.relative_to(root).with_suffix("").parts[:-statement.level]) if statement.level else ""
+            base = ".".join(filter(None, (prefix, statement.module))) if statement.level else statement.module
+            modules = [base, *(f"{base}.{alias.name}" for alias in statement.names
+                               if base and alias.name != "*")]
+        else:
+            continue
+        for module in modules:
+            if module and module.startswith("tests."):
+                dependency = root / (module.replace(".", "/") + ".py")
+                if dependency.is_file():
+                    dependencies.add(dependency)
+    return dependencies
+
+
+def contour_input_paths(root: Path, contour: str, *, shared_only: bool = False) -> list[Path]:
+    """Select source inputs without trusting an incomplete test-file inventory."""
+    if contour not in CONTOURS:
+        raise ValueError("unknown contour")
+    inventories = _inventory_paths(root)
+    all_python = {p for p in root.rglob("*.py") if not any(
+        part in {".git", ".venv", "__pycache__"} for part in p.relative_to(root).parts)}
+    tests = {p for p in all_python if p.relative_to(root).parts[0] == "tests" and p.name.startswith("test_")}
+    listed = set().union(*inventories.values())
+    unknown = tests - listed
+    owners = {p: ({name for name, paths in inventories.items() if p in paths}
+                  if p in tests else set(CONTOURS)) for p in all_python}
+    for path in unknown:
+        owners[path] = set(CONTOURS)
+    imports = {p: test_imports(root, p) for p in all_python}
+    changed = True
+    while changed:
+        changed = False
+        for importer, dependencies in imports.items():
+            for dependency in dependencies & all_python:
+                before = len(owners[dependency])
+                owners[dependency].update(owners[importer])
+                changed |= len(owners[dependency]) != before
+    common = all_python - tests
+    common.update(unknown)
+    common.update(p for p in tests if owners[p] == set(CONTOURS))
+    common.update(root / name for name in SHARED_TEST_HELPERS)
+    common.update(root / name for name in COMMON_CONFIG)
+    common.update(p for p in (root / "scripts").rglob("*.sh"))
+    common.update(p for p in (root / "ops").rglob("*") if p.is_file())
+    common.update(p for p in (root / ".github/workflows").glob("*.y*ml") if p.is_file())
+    common.update(p for p in (root / ".env", root / "docker-compose.override.yml") if p.is_file())
+    if not shared_only:
+        common.update(p for p in tests if contour in owners[p])
+        common.update(root / name for name in CONTOUR_CONFIG[contour])
+    paths = sorted(common)
+    for path in paths:
+        if not path.is_file():
+            raise ValueError(f"missing fingerprint input: {path.relative_to(root)}")
+    return paths
+
 
 def validate_record(record: dict, *, expected_nodes: list[str], current_fingerprint: str) -> None:
     """Reject missing, duplicated, mixed-runtime or incomplete gate evidence."""
@@ -32,24 +138,10 @@ def validate_record(record: dict, *, expected_nodes: list[str], current_fingerpr
         raise ValueError("incomplete gate result")
 
 
-def source_fingerprint(root: Path = ROOT) -> str:
-    """Hash all Python sources, gate configuration and installed versions."""
-    paths = [p for p in root.rglob("*.py") if not any(
-        part in {".git", ".venv", "__pycache__"} for part in p.relative_to(root).parts
-    )]
-    paths += list((root / "scripts").rglob("*.sh"))
-    paths += [p for p in (root / "ops").rglob("*") if p.is_file()]
-    paths += [root / name for name in (
-        "Dockerfile", "docker-compose.yml", "docker-compose.test.yml",
-        "pyproject.toml", "pytest.ini", ".coveragerc", "alembic.ini",
-        "tests/fixtures/stage385_resource_gate_sample.json",
-        ".github/workflows/test.yml", "scripts/default_node_inventory.json",
-        "scripts/postgres_node_inventory.json", "scripts/offline_integration_files.json",
-    )]
+def source_fingerprint(root: Path = ROOT, *, contour: str = "default") -> str:
+    """Hash the selected contour's sources, config and installed versions."""
     digest = hashlib.sha256()
-    for path in sorted(set(paths)):
-        if not path.is_file():
-            raise ValueError(f"missing fingerprint input: {path.relative_to(root)}")
+    for path in contour_input_paths(root, contour):
         digest.update(str(path.relative_to(root)).encode() + b"\0")
         digest.update(path.read_bytes())
     versions = sorted((dist.metadata.get("Name", ""), dist.version) for dist in metadata.distributions())
@@ -121,7 +213,7 @@ def check_gate(contour: str, junit: Path, output: Path, starting_fingerprint: st
     actual = junit_nodes(junit, set(expected))
     if sorted(actual) != sorted(nodes):
         raise ValueError("JUnit does not cover collected nodes")
-    fingerprint = source_fingerprint()
+    fingerprint = source_fingerprint(contour=contour)
     if starting_fingerprint != fingerprint:
         raise ValueError("mixed runtime during gate")
     record = {"schema_version": 1, "contour": contour, "nodes": nodes,
@@ -143,7 +235,7 @@ def verify_record(contour: str, path: Path) -> None:
     nodes = collected_nodes(contour)
     if inventory(nodes) != expected:
         raise ValueError("stale node inventory")
-    validate_record(record, expected_nodes=nodes, current_fingerprint=source_fingerprint())
+    validate_record(record, expected_nodes=nodes, current_fingerprint=source_fingerprint(contour=contour))
 
 
 def main() -> int:
@@ -159,7 +251,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.write_fingerprint:
-            args.write_fingerprint.write_text(source_fingerprint() + "\n", encoding="utf-8")
+            args.write_fingerprint.write_text(source_fingerprint(contour=args.contour) + "\n", encoding="utf-8")
         elif args.verify_manifest:
             verify_record(args.contour, args.verify_manifest)
         elif args.generate_inventory:
