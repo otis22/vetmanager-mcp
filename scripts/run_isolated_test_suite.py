@@ -39,10 +39,10 @@ def contour_hmac(key, paths):
     return hmac.new(key, material, hashlib.sha256).hexdigest()
 
 
-def resolve_test_image_id(compose):
+def resolve_test_image_id(compose, env=None):
     """Inspect the image Compose actually configured for its test service."""
     configuration = json.loads(subprocess.check_output(
-        [*compose, "config", "--format", "json"], text=True))
+        [*compose, "config", "--format", "json"], text=True, env=env))
     image = configuration["services"]["test"]["image"]
     if not isinstance(image, str) or not image:
         raise ValueError("test image is not configured")
@@ -51,6 +51,35 @@ def resolve_test_image_id(compose):
     if not image_id.startswith("sha256:"):
         raise ValueError("test image ID is missing")
     return image_id
+
+
+def current_real_image_evidence(compose, env):
+    """Read current image and installed dependencies, never shard-supplied values."""
+    image_id = resolve_test_image_id(compose, env)
+    frozen = subprocess.check_output(
+        ["docker", "run", "--rm", "--entrypoint", "python", image_id,
+         "-m", "pip", "freeze"], text=True)
+    return {"image_id": image_id,
+            "dependency_fingerprint": hashlib.sha256(frozen.encode()).hexdigest()}
+
+
+def group_image_build_required(root, *, requested):
+    """Build once per real evidence root so every shard uses the same image."""
+    if (root / "test-image.id").is_file():
+        if requested:
+            raise ValueError("real group rebuild would invalidate previous shards")
+        return False
+    return True
+
+
+def pin_group_image(root, image_id):
+    """Reject an external image replacement before a later group starts."""
+    marker = root / "test-image.id"
+    if marker.is_file():
+        if marker.read_text().strip() != image_id:
+            raise ValueError("real group test image changed between shards")
+    else:
+        marker.write_text(image_id + "\n")
 
 
 def create_private_auth_file(path):
@@ -97,14 +126,19 @@ def main():
         if not key_path.is_file():
             raise ValueError("missing contour key")
         contour = contour_hmac(key_path.read_bytes(), env_paths)
-        dependencies = {history[-1]["dependency_fingerprint"] for history in attempts.values() if history}
-        if len(dependencies) != 1:
-            raise ValueError("mixed dependency environments")
+        environment = dict(os.environ)
+        environment.update(TEST_POSTGRES_PASSWORD="stage469-synthetic",
+                           TEST_STORAGE_ENCRYPTION_KEY="stage469-synthetic",
+                           TEST_WEB_SESSION_SECRET="stage469-synthetic")
+        image_compose = ["docker", "compose", "--profile", "test",
+                         *(item for path in env_paths for item in ("--env-file", str(Path(path).resolve()))),
+                         "-f", str(ROOT / "docker-compose.test.yml")]
+        current_image = current_real_image_evidence(image_compose, environment)
         expected = {name: {"manifest_hash": manifest_hash(manifest),
                            "runtime_fingerprint": digest_files(runtime_files()),
                            "test_fingerprint": digest_files(test_files(manifest, name)),
                            "contour_identity": contour,
-                           "dependency_fingerprint": next(iter(dependencies))}
+                           **current_image}
                     for name in manifest["groups"] if name in attempts}
         validate_aggregate(manifest, attempts, root, expected)
         print("aggregate: all groups passed")
@@ -128,6 +162,7 @@ def main():
         except BlockingIOError as exc:
             raise ValueError("another group is using this upstream guard") from exc
         index_path = evidence_root / "attempts.jsonl"
+        args.build = group_image_build_required(evidence_root, requested=args.build)
         if index_path.exists() and args.group != "write-restore":
             latest_write = None
             for line in index_path.read_text().splitlines():
@@ -223,10 +258,10 @@ def main():
 
     prior = signal.signal(signal.SIGTERM, terminate)
     try:
-        if args.group:
-            args.build = True
         if args.build and run("build", [*compose, "build", "test"]):
             return 1
+        if args.group:
+            pin_group_image(evidence_root, resolve_test_image_id(compose))
         if run("startup", [*compose, "up", "-d", "--wait", "pg", "redis"]):
             return 1
         for database in ("stage385", "stage400", "stage408"):

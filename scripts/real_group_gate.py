@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import ast
 import time
 from pathlib import Path
 import xml.etree.ElementTree as ET
+
+from scripts.offline_gate_manifest import contour_input_paths, test_imports
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "scripts/real_group_manifest.json"
@@ -24,10 +25,7 @@ def digest_files(paths):
 
 
 def runtime_files():
-    files = [p for p in ROOT.rglob("*.py") if not any(part in {"tests", "scripts", ".venv"} for part in p.relative_to(ROOT).parts)]
-    files += [ROOT / name for name in ("Dockerfile", "docker-compose.yml", "pyproject.toml")]
-    files += list((ROOT / "alembic").rglob("*.py")) if (ROOT / "alembic").exists() else []
-    return files
+    return contour_input_paths(ROOT, "real", shared_only=True)
 
 
 def test_files(manifest, group):
@@ -38,15 +36,10 @@ def test_files(manifest, group):
         path = pending.pop()
         if path.suffix != ".py" or not path.is_file():
             continue
-        for statement in ast.walk(ast.parse(path.read_text())):
-            modules = ([statement.module] if isinstance(statement, ast.ImportFrom) else
-                       [alias.name for alias in statement.names] if isinstance(statement, ast.Import) else [])
-            for module in modules:
-                if module and module.startswith("tests."):
-                    dependency = ROOT / (module.replace(".", "/") + ".py")
-                    if dependency.is_file() and dependency not in files:
-                        files.add(dependency)
-                        pending.append(dependency)
+        for dependency in test_imports(ROOT, path):
+            if dependency not in files:
+                files.add(dependency)
+                pending.append(dependency)
     return sorted(files)
 
 

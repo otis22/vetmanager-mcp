@@ -63,7 +63,7 @@ def test_gate_rejects_stale_inventory_and_incomplete_junit(monkeypatch, tmp_path
     ET.ElementTree(root).write(junit)
     monkeypatch.setattr(gate, "ROOT", tmp_path)
     monkeypatch.setattr(gate, "collected_nodes", lambda contour: expected)
-    monkeypatch.setattr(gate, "source_fingerprint", lambda: "current")
+    monkeypatch.setattr(gate, "source_fingerprint", lambda **_kwargs: "current")
     with pytest.raises(ValueError, match="cover"):
         gate.check_gate("default", junit, tmp_path / "out.json", "current")
     ET.SubElement(suite, "testcase", classname="tests.a", name="two")
@@ -73,7 +73,7 @@ def test_gate_rejects_stale_inventory_and_incomplete_junit(monkeypatch, tmp_path
     gate.verify_record("default", record_path)
     with pytest.raises(ValueError, match="mixed runtime"):
         gate.check_gate("default", junit, tmp_path / "mixed.json", "old")
-    monkeypatch.setattr(gate, "source_fingerprint", lambda: "changed")
+    monkeypatch.setattr(gate, "source_fingerprint", lambda **_kwargs: "changed")
     with pytest.raises(ValueError, match="stale"):
         gate.verify_record("default", record_path)
     (scripts / "default_node_inventory.json").write_text(json.dumps(gate.inventory(expected[:1])))
@@ -98,6 +98,17 @@ def test_fingerprint_includes_shell_and_coverage_inputs(monkeypatch, tmp_path) -
         path.write_text("original")
     script = tmp_path / "scripts" / "oracle.sh"
     script.write_text("original")
+    for name in ("tests/test_default.py", "tests/test_postgres.py", "tests/test_real.py",
+                 "tests/conftest.py", "tests/real_suite_outcomes.py"):
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("pass\n")
+    (tmp_path / "scripts/default_node_inventory.json").write_text(
+        json.dumps({"tests/test_default.py": {}}))
+    (tmp_path / "scripts/postgres_node_inventory.json").write_text(
+        json.dumps({"tests/test_postgres.py": {}}))
+    (tmp_path / "scripts/real_group_manifest.json").write_text(
+        json.dumps({"groups": {"read": ["tests/test_real.py::test_live"]}}))
     baseline = gate.source_fingerprint(tmp_path)
     script.write_text("changed")
     assert gate.source_fingerprint(tmp_path) != baseline

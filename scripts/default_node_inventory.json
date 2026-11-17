@@ -1455,6 +1455,14 @@
     "count": 24,
     "sha256": "b9772f3b31ca4422ecd921d1f52bf036b23a777b575037b7d643ef856b24a9b7"
   },
+  "tests/test_stage469_contour_fingerprints.py": {
+    "count": 24,
+    "sha256": "5c6be3cae9e57e204b3cfcdd774ecad42d4c2a8f7f384e9834aede9e9c6abe58"
+  },
+  "tests/test_stage470_workflow_docs.py": {
+    "count": 5,
+    "sha256": "582d486dd518412f43acd4884150e87b5244caf3104c966035f65a819adde28c"
+  },
   "tests/test_stage87_post_migration.py": {
     "count": 8,
     "sha256": "a57d9b48d50ed35aa08ce1052d8bc74eed75f38064f72945d09ccdb804e83967"

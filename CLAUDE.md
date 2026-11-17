@@ -104,7 +104,7 @@ Runner сохраняет вне checkout prompt, stream, stderr, verdict и met
 9. **Проверки shell** при изменении `scripts/*.sh`: `find scripts/ -name '*.sh' -type f -print0 | xargs -0 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 --severity=warning` и `find scripts/ -name '*.sh' -type f -print0 | while IFS= read -r -d '' f; do bash -n "$f"; done`
 10. **Аудит изменений** — legacy-паттерны, дублирование, рассинхрон с контрактом; если аудит изменил runtime/tests — повторить шаг 8
 11. **Полное pre-review рабочего diff** — детерминированная проверка → Spark → Astra + Kimi; каждый pre-freeze strong review, включая повтор после исправлений, охватывает весь актуальный diff, closure-only не заменяет полный проход; правки накопить пакетом и повторить шаги 8–10 один раз до долгих gates
-12. **Заморозка кода → финальные проверки** — один полный default `docker compose --profile test run --rm test`; по применимости PostgreSQL, browser, живой вызов (6.1); real aggregate — на финише поезда
+12. **Заморозка кода → финальные проверки** — полный default `docker compose --profile test run --rm test` при изменении его входов; по применимости PostgreSQL, browser, живой вызов (6.1); real aggregate — на финише поезда
 13. **Обновить `Roadmap.md` и `AssumptionLog.md`** с evidence
 14. **Архивировать и проверить структуру** строго по порядку: `python3 scripts/archive_roadmap.py`, затем `python3 scripts/check_roadmap_structure.py`; оба exit code 0
 15. **Commit** — только при зелёных шагах 8–14; красный WIP не коммитится
@@ -115,7 +115,7 @@ Runner сохраняет вне checkout prompt, stream, stderr, verdict и met
 ### Запрещено:
 - писать код без тестов; коммитить или пушить без зелёных проверок и аудита
 - пушить без валидных verdict Astra и Kimi на committed diff; исчерпание infrastructure attempts не разрешает push
-- пропускать focused + fast и финальный default после правки runtime/tests
+- пропускать focused + fast и финальный default после правки runtime/shared fixtures/dependencies или default-only tests; для PostgreSQL-only и real-only tests действуют соответствующие контуры из 4.3
 - получать первый red полным suite, real, browser или PostgreSQL; использовать их как цикл разработки
 - превышать stop-loss (4.3); смешивать в одном изменении независимые causal classes
 - пропускать PRD-review gates после правок PRD и оценку простоты для нетривиального кода
@@ -233,7 +233,7 @@ self-attestation шаг 7 указывается, **чем именно его �
    по существующим fingerprints. `--maxfail=1` — только в широком
    debug-прогоне; финальный полный — без maxfail.
 3. **Финальные gates и release-review.** После полного pre-review, пакета
-   исправлений и заморозки — один полный default
+   исправлений и заморозки — полный default при изменении его входов
    `docker compose --profile test run --rm test`; по применимости PostgreSQL
    (storage), browser (UI), живой вызов изменённого MCP-инструмента с кодом и
    телом (6.1). Финиш поезда / перед push-merge — полный real aggregate.
@@ -243,10 +243,12 @@ self-attestation шаг 7 указывается, **чем именно его �
    guard. non-blocking findings — в Roadmap без правок текущей ветки. Блокер
    повторяет focused/owning/fast и только инвалидированные полные контуры.
 4. **Инвалидация по контурам.** Runtime/shared fixtures/dependencies повторяют
-   связанные контуры; real-only test — только real; default-only test —
-   fast/default; docs-only — suites не повторяет. Общий fingerprint
-   `scripts/offline_gate_manifest.py` остаётся более строгим обязательным gate
-   до отдельной доработки в этапе 469; его mismatch не игнорировать.
+   focused + fast, полный default и связанные PostgreSQL/real; default-only test —
+   focused + fast/default; PostgreSQL-only test — focused + PostgreSQL;
+   real-only test — только real (focused + затронутая группа и финальный aggregate);
+   docs-only — suites не повторяет. Контурный fingerprint
+   `scripts/offline_gate_manifest.py` остаётся обязательным fail-closed gate;
+   его mismatch не игнорировать.
 5. **Диагностика и stop-loss.** Diagnostics и read-only снимки делает
    исполнитель. tracemalloc/fd/connection hooks/подробные logs — адресно на
    failing node, не глобально; scoped offline diagnostic —
