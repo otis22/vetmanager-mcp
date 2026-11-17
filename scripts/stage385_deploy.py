@@ -24,6 +24,7 @@ from scripts.stage385_release import IMAGE_ID, SHA, make_rollback_manifest, writ
 from scripts.quiesce_mcp_slot import _drain_finished, _wait_write_fence
 from scripts.update_env_secret import update_env_secret
 from scripts.availability_probe import _service_health_url
+from oauth_metadata import DEFAULT_SITE_BASE_URL
 
 
 SITE = Path("/etc/nginx/sites-available/vetmanager-mcp.conf")
@@ -166,16 +167,15 @@ def _compose(path: Path, project: str, image: str, *args: str, timeout: int = 12
                 cwd=path.parent, env=env, timeout=timeout)
 
 
-def _site_base_url_override(env_file: Path, hostname: str) -> str | None:
-    """Supply the verified Nginx origin only when no explicit value exists."""
+def _site_base_url_override(env_file: Path) -> str | None:
+    """Supply the application's canonical origin only when no explicit value exists."""
     if "SITE_BASE_URL" in os.environ or any(
         re.match(r"^\s*(?:export\s+)?SITE_BASE_URL(?:\s*[:=]|\s*$)", line)
         for line in env_file.read_text().splitlines()
     ):
         return None
-    origin = f"https://{hostname}"
-    _service_health_url(origin)
-    return origin
+    _service_health_url(DEFAULT_SITE_BASE_URL)
+    return DEFAULT_SITE_BASE_URL
 
 
 def _ready(port: int, seconds: int = 90) -> None:
@@ -412,7 +412,7 @@ def deploy(release: Path, live: Path, sha: str, *, site: Path = SITE, pepper: st
     if not state:
         _save_pre385_source(live, bundle)
     (release / ".env").symlink_to(live / ".env")
-    site_base_url = _site_base_url_override(release / ".env", hostname)
+    site_base_url = _site_base_url_override(release / ".env")
     with tempfile.NamedTemporaryFile("w", dir=state_dir, prefix=".pepper-", delete=False) as handle:
         secret = Path(handle.name)
         handle.write(pepper)

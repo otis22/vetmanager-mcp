@@ -13,6 +13,7 @@ import yaml
 from scripts.stage385_release import make_rollback_manifest
 from scripts import stage385_deploy
 from scripts.stage385_deploy import render_nginx_site
+from oauth_metadata import DEFAULT_SITE_BASE_URL
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -251,10 +252,20 @@ def _simulate_cutover(monkeypatch, tmp_path, *, fail_ready=False, fail_smoke=Fal
 
 def test_missing_site_origin_reaches_probe_compose_up(monkeypatch, tmp_path):
     events, _, _ = _simulate_cutover(monkeypatch, tmp_path, site_base_url=None)
-    origin = "https://old.example"
+    origin = DEFAULT_SITE_BASE_URL
     assert ("release_compose_origin", ("config", "--format", "json"), origin) in events
     assert ("release_compose_origin",
             ("up", "-d", "--no-build", "availability-probe"), origin) in events
+
+
+def test_missing_site_origin_uses_canonical_default_not_nginx_server_name(monkeypatch, tmp_path):
+    events, _, _ = _simulate_cutover(monkeypatch, tmp_path, site_base_url=None)
+    assert DEFAULT_SITE_BASE_URL != "https://old.example"
+    assert ("release_compose_origin", ("config", "--format", "json"),
+            DEFAULT_SITE_BASE_URL) in events
+    assert ("release_compose_origin",
+            ("up", "-d", "--no-build", "availability-probe"),
+            DEFAULT_SITE_BASE_URL) in events
 
 
 def test_compose_up_passes_site_origin_to_subprocess_environment(monkeypatch, tmp_path):
@@ -290,16 +301,16 @@ def test_colon_assignment_invalid_site_origin_fails_closed(monkeypatch, tmp_path
 def test_missing_site_origin_is_injected_for_rollback_probe(monkeypatch, tmp_path):
     events, _, _ = _simulate_cutover(monkeypatch, tmp_path, site_base_url=None,
                                      repeat=True, fail_probe=True)
-    assert ("rollback_probe_origin", "https://old.example") in events
+    assert ("rollback_probe_origin", DEFAULT_SITE_BASE_URL) in events
 
 
 def test_fallback_decision_reads_release_env_file(monkeypatch, tmp_path):
     original = stage385_deploy._site_base_url_override
     checked = []
 
-    def capture(env_file, hostname):
+    def capture(env_file):
         checked.append(env_file)
-        return original(env_file, hostname)
+        return original(env_file)
 
     monkeypatch.setattr(stage385_deploy, "_site_base_url_override", capture)
     _simulate_cutover(monkeypatch, tmp_path, site_base_url=None)
