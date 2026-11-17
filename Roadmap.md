@@ -810,7 +810,14 @@ Deploy Prod run `43963782647` на merge `e4f88bb` остановился до m
 куратор сообщил об отсутствии `SITE_BASE_URL` в production `.env`; старый
 release healthy, post-deploy smoke passed, простоя нет. Узкий hotfix в ветке
 `dev/roadmap-464-deploy-hotfix` восстанавливает безопасный origin для probe
-без ручной правки `.env`; этап остаётся `in_progress` до повторного deploy куратора.
+без ручной правки `.env`.
+
+Повторный Deploy Prod `43980110733` успешен: по данным куратора все три workers
+healthy, `worker_up` и `worker_ready` равны 1, smoke passed. Service signal
+остаётся unknown (`probe_unknown{slot="service"}=1`): Nginx `server_name` как
+fallback не совпал с TLS hostname. Ветка `dev/roadmap-464-canonical-probe-origin`
+меняет fallback на общий канонический default приложения; этап остаётся
+`in_progress` до нового deploy и проверки service signal куратором.
 
 ## Этап 465. Пересмотр состава и надёжности test suite — `done`
 
