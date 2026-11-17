@@ -15,7 +15,11 @@ def test_postgres_job_runs_unrestricted_marker_contour_and_result_gate():
     workflow = yaml.safe_load(Path(".github/workflows/test.yml").read_text())
     job = workflow["jobs"]["postgres-activation-telemetry"]
     step = next(step for step in job["steps"] if step.get("name", "").startswith("Run mandatory PostgreSQL"))
-    assert not job.get("if")
+    assert job["needs"] == ["scope-and-reuse", "build-image"]
+    assert job.get("if") == "${{ needs.scope-and-reuse.outputs.run_product == 'true' }}"
+    scope = workflow["jobs"]["scope-and-reuse"]
+    assert "check_roadmap_structure.py" in str(scope["steps"])
+    assert "force_full" in scope["outputs"]["run_product"]
     assert not step.get("if")
     assert not step.get("continue-on-error")
     tokens = shlex.split(step["run"].replace("\\\n", " "))

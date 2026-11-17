@@ -3,19 +3,64 @@ name: Tests
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md', 'PRD/**', 'docs/**']
   pull_request:
     branches: [main]
-    paths-ignore: ['**.md', 'PRD/**', 'docs/**']
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: tests-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  scope-and-reuse:
+    runs-on: ubuntu-latest
+    outputs:
+      run_product: ${{ steps.force.outputs.force_full == 'true' || steps.scope.outputs.run_product == 'true' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Validate documentation structure on the tested tree
+        run: python3 scripts/check_roadmap_structure.py
+
+      - name: Force product checks when the decision surface changes on main
+        id: force
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          force_full=false
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            if ! git diff --quiet "$BEFORE_SHA" HEAD -- \
+              .github/workflows scripts/ci_scope.py \
+              scripts/check_roadmap_structure.py scripts/run_fast_test_suite.py \
+              scripts/run_default_test_suite.py scripts/offline_gate_manifest.py; then
+              force_full=true
+            fi
+          fi
+          echo "force_full=$force_full" >> "$GITHUB_OUTPUT"
+
+      - name: Decide product scope and exact-tree reuse
+        id: scope
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci_scope.py
+
   build-image:
+    needs: scope-and-reuse
+    if: ${{ needs.scope-and-reuse.outputs.run_product == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -49,12 +94,15 @@ jobs:
           compression-level: 0
 
   fast:
-    needs: build-image
+    needs: [scope-and-reuse, build-image]
+    if: ${{ needs.scope-and-reuse.outputs.run_product == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -89,12 +137,15 @@ jobs:
             pytest -q tests/test_review_result_gate.py
 
   default:
-    needs: build-image
+    needs: [scope-and-reuse, build-image]
+    if: ${{ needs.scope-and-reuse.outputs.run_product == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
       - name: Validate production Compose resources
         run: python3 scripts/check_stage384_compose_config.py
@@ -143,7 +194,8 @@ jobs:
           if-no-files-found: warn
 
   postgres-activation-telemetry:
-    needs: build-image
+    needs: [scope-and-reuse, build-image]
+    if: ${{ needs.scope-and-reuse.outputs.run_product == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -163,6 +215,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -188,3 +242,22 @@ jobs:
             -u 1001:1001 \
             vetmanager-mcp-test \
             sh -c 'python scripts/offline_gate_manifest.py postgres --write-fingerprint /tmp/stage465-pg.start && python -W error -m pytest -q -m postgres --junitxml=/tmp/stage424-postgres.xml && python scripts/check_stage424_postgres_results.py /tmp/stage424-postgres.xml && python scripts/offline_gate_manifest.py postgres --junit /tmp/stage424-postgres.xml --output /app/.stage465-postgres-gate.json --starting-fingerprint-file /tmp/stage465-pg.start'
+
+  validated-tree:
+    needs: [scope-and-reuse, build-image, fast, default, postgres-activation-telemetry]
+    if: ${{ github.event_name == 'pull_request' && needs.scope-and-reuse.outputs.run_product == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Record tested merge tree
+        id: marker
+        run: |
+          git rev-parse HEAD > tested-commit.txt
+          echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: validated-tree-${{ steps.marker.outputs.tree }}
+          path: tested-commit.txt
+          retention-days: 30

@@ -17,11 +17,10 @@ def steps(job: dict) -> str:
     return "\n".join(step.get("run", "") for step in job.get("steps", []))
 
 
-def test_docs_push_skips_tests_but_has_lightweight_validation():
+def test_docs_push_keeps_checks_and_has_lightweight_validation():
     tests = workflow("test.yml")
     for event in ("push", "pull_request"):
-        ignored = set(tests["on"][event]["paths-ignore"])
-        assert {"**.md", "PRD/**", "docs/**"} <= ignored
+        assert "paths-ignore" not in tests["on"][event]
     assert "workflow_dispatch" in tests["on"]
     docs = workflow("docs.yml")
     assert "check_roadmap_structure.py" in steps(docs["jobs"]["validate"])
@@ -37,7 +36,7 @@ def test_one_image_build_feeds_three_test_jobs():
     assert "actions/upload-artifact@v4" in str(jobs["build-image"])
     for name in ("fast", "default", "postgres-activation-telemetry"):
         job = jobs[name]
-        assert job["needs"] == "build-image"
+        assert job["needs"] == ["scope-and-reuse", "build-image"]
         assert "actions/download-artifact@v4" in str(job)
         load_index = next(i for i, step in enumerate(job["steps"]) if step.get("name") == "Load test image")
         load_run = job["steps"][load_index]["run"]
