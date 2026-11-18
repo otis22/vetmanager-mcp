@@ -15,7 +15,8 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 import zipfile
 
 SHA = re.compile(r"[0-9a-f]{40}\Z")
-DOC_FILES = {"README.md", "Roadmap.md", "Roadmap-archive.md", "AssumptionLog.md"}
+DOC_FILES = {"README.md", "Roadmap.md", "Roadmap-archive.md", "AssumptionLog.md",
+             "AGENTS.md", "AGENT_ONBOARDING.md", "CLAUDE.md"}
 
 
 def docs_only(raw: bytes) -> bool:

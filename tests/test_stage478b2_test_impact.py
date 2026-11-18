@@ -45,6 +45,11 @@ def test_isolated_tool_with_existing_owning_test_stays_narrow(tmp_path):
     plan = impact.select_plan([("M", "tools/whoami.py"), ("M", "tests/test_fast.py")], tmp_path)
     assert plan["mode"] == "isolated"
     assert plan["owners"] == ["tests/test_fast.py"]
+    for path in ("AGENTS.md", "AGENT_ONBOARDING.md", "CLAUDE.md"):
+        assert impact.select_plan([("M", "tools/whoami.py"), ("M", path)], tmp_path)["mode"] == "isolated"
+        assert impact.select_plan([("M", "tools/whoami.py"), ("M", path),
+                                   ("M", "unknown.md")], tmp_path)["mode"] == "full"
+        assert impact.select_plan([("M", "tools/whoami.py"), ("D", path)], tmp_path)["mode"] == "full"
     assert impact.select_plan([("M", "tools/whoami.py"), ("A", "tests/test_fast.py")], tmp_path)["mode"] == "full"
     assert impact.select_plan([("M", "tools/whoami.py"), ("M", "tests/test_new.py")], tmp_path)["mode"] == "full"
 

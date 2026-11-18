@@ -6,10 +6,10 @@
 Актуальная очередь 18.11.2026 (решение владельца):
 **478 → (471 + 472) → 473 → 474 → 475 → 476**. Все прежние очереди ниже —
 исторические. Активный поезд: 478.5 follow-up, ветка
-`dev/roadmap-478-fast-balance`, base `d7cddb183d0799fda15dd327360509e1bdb97190`.
-Gate: устранить риск превышения fast(0) без изменения 180 с guard и test nodes.
-Next: локальные gates, pre-freeze и committed-diff review, push;
-GitHub-приёмка куратором. Stop: красный обязательный gate или невалидное review.
+`dev/roadmap-478-docs-only`, base `20feea83863aa9a4699a538db7ef5030214520ba`.
+Gate: добавить три корневые инструкции в docs-only классификацию.
+Next: committed-diff review, push; GitHub-приёмка куратором.
+Stop: красный обязательный gate или невалидное review.
 PR, CI, merge, deploy и monitoring принимает куратор.
 
 Поезда:
@@ -86,6 +86,13 @@ PR, CI, merge, deploy и monitoring принимает куратор.
   (stage159 9.54 с, stage389 7.32 с); follow-up переносит их в shards 4/7.
   Локальные wall после переноса 0/4/7 = 82/46/47 с, fast 3615 passed.
   Приёмку запаса по следующему GitHub PR run делает куратор до merge.
+  Follow-up после PR #50: три корневые инструкции (`AGENTS.md`,
+  `AGENT_ONBOARDING.md`, `CLAUDE.md`) добавлены в жёсткий docs-only путь двух
+  селекторов; unknown остаётся full. Локальные red/green и fast зелёные;
+  Kimi K3 дал инфраструктурные отказы; по решению владельца его заменяет
+  отдельный Astra review. PostgreSQL fingerprint инвалирован selector scripts;
+  новый контур прошёл 8/8. Real API локально не настроен. GitHub-приёмка
+  остаётся куратору до merge.
   — `in_progress`
 
 Nightly запускается из main по расписанию `17 23 * * *` (около 02:17 МСК) и
