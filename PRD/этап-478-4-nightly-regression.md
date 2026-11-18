@@ -55,7 +55,8 @@ env, key и raw evidence не входят в artifact. Retention — 7 дней
 Actions logs. Очищенный JUnit сохраняет node ID, status и категорию ошибки
 из закрытого словаря; triage находит failing node и назначает адресный повтор.
 Markdown summary показывает status/exit каждой группы, длительность и
-aggregate. Недостаток любого секрета — явный failed preflight, а не skip.
+aggregate. Обязательные DOMAIN/API_KEY и image проверяются fail-closed;
+optional user-auth coverage учитывается явно по контракту resume2 ниже.
 
 Оба workflow, `nightly.yml` и ручной `test-real.yml`, используют общий
 concurrency group для devtr6/общих upstream resources; даже ручной запуск
@@ -139,3 +140,68 @@ Workflow появляется в main после merge; первый manual nigh
 Один job и reuse существующего isolated runner минимизируют новую логику.
 Orchestration нужна для продолжения после отказа и единого nonzero результата;
 одних YAML `continue-on-error` и `always()` недостаточно для полного aggregate.
+
+## Resume2: контракт доступной auth-конфигурации после первого manual run
+
+Факт: PR #47 merged, base follow-up `d9fccf93277b7b255c96a837120d86b83e8129a2`.
+Manual nightly `44259134829` собрал image, но остановился на preflight: имеются
+только TEST_DOMAIN/API_KEY; optional token/login/password отсутствуют. Значения
+GitHub secrets не запрашивались. Текущий test-real и opt-in runner поддерживают
+API-key-only; требование login/password для всего nightly ошибочно.
+
+Исправление: preflight требует только DOMAIN/API_KEY и валидный image. Для
+isolated group auth preparation использует `--require-api`, сохраняет получение
+user token из login/password, если они заданы. Для шести existing user-auth
+nodes в auth-web план по фактическим credentials явно различает configured
+и not-configured: пять login/password nodes (включая browser) и один direct-token
+node. Login/password также могут дать token для direct-node через существующий
+prepare helper. Восемь групп и все API-key nodes, включая write-restore,
+остаются обязательными. Неизвестные auth requirements, пустая группа или
+исключение обязательного node — fail-closed.
+
+Полная collection всё ещё сверяется с оригинальным manifest. Исполняемый
+manifest содержит configured nodes; исходный набор равен их точному union
+с явными not-configured nodes. Plan сохраняется в очищенный artifact и summary;
+aggregate проверяет все группы выбранного manifest строго без пропусков,
+с JUnit/outcome/fingerprints/image/cleanup. Его успех обозначает успех всех
+configured tests, не полную проверку отсутствующего auth. Изменение credentials
+меняет plan hash и contour identity, поэтому старые shards не переиспользуются.
+Partial login/password — явная ошибка конфигурации, как в opt-in runner.
+Общий nongroup `--suite real/all` контракт не меняется.
+
+Guards: API-key-only/image проходит preflight; отсутствие DOMAIN/API_KEY/image
+отклоняется; optional пустые значения не блокируют API nodes; partial login
+отклоняется; шесть not-configured nodes перечислены, write-restore сохранён;
+полный auth возвращает весь исходный набор; malformed auth map и исключение
+required node отклоняются; aggregate не принимает skip в configured node или
+неполную группу. Rollout: новый CI-only PR, повторный manual nightly main
+куратором; rollback follow-up возвращает strict failure с понятным отчётом.
+
+Уточнение источника плана: isolated runner получает Compose-effective test
+service environment через captured `docker compose config --format json`, включая
+переданные env-files и host precedence; результат с credentials не печатается.
+До selection проверяется полный исходный manifest; shard записывает hash
+именно effective manifest с not-configured mapping. Aggregate заново получает
+конфигурацию, выводит тот же план и сверяет effective hash, exact nodes и
+contour identity. Исходный manifest и selector уже входят в fingerprint через
+shared helpers/контурные входы. Для preflight основной nightly поддерживает
+только фиксированные TEST_DOMAIN/API_KEY и optional TEST_USER_*; никакие иные
+имена credentials не вводятся. Следующие разделы resume2 заменяют прежнее
+требование всех optional secrets: обязательны только API settings/image;
+optional auth coverage отражается отдельно от успеха configured suites.
+Collection-only API-key-only проверяется локально без живых запросов.
+
+Интеграционные точки (обязательные acceptance): `configured_manifest` возвращает
+effective manifest и полный not-configured map. Его `groups` используется не
+только aggregate: group nodes JSON, shard nodes/hash, finally validate_shard,
+nightly group_evidence_complete и оба artifact sanitizer получают именно
+выбранные nodes. Оригинал остаётся только для полной collection/проверки карты.
+По Compose-effective environment selector считает user-token доступным при
+наличии token **или обеих LOGIN/PASSWORD**, поскольку существующий prepare
+обязательно получает token до исполнения; сбой exchange завершает группу,
+а не переводит node в not-configured. LOGIN/PASSWORD неполная пара вызывает
+ошибку selection до запуска suites. BASE_URL может быть получен prepare,
+поэтому отсутствие BASE_URL при полной паре не исключает login nodes.
+Карта проверяется AST guard по фактическим существующим декораторам skip,
+включая login-only `test_real_get_users_with_user_token_mode`, несмотря на имя.
+Новые skips внутри configured группы по-прежнему являются ошибкой.

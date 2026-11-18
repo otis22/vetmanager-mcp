@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -14,8 +15,19 @@ import time
 from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from scripts.real_group_gate import configured_manifest
+from scripts.run_isolated_test_suite import resolved_group_environment
+
 MANIFEST = ROOT / "scripts/real_group_manifest.json"
 COUNTS = ("passed", "failed", "skipped-not-configured", "skipped-error")
+
+
+def preflight_errors(env, image_id):
+    errors = [name for name in ("TEST_DOMAIN", "TEST_API_KEY") if not env.get(name)]
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
+        errors.append("test image")
+    return errors
 
 
 def blocks_upstream(group: str, exit_code: int, summary: dict | None,
@@ -204,10 +216,17 @@ def main() -> int:
         image_id = image.stdout.strip() if image.returncode == 0 else ""
     except OSError:
         image_id = ""
-    required = ("TEST_DOMAIN", "TEST_API_KEY", "TEST_USER_LOGIN", "TEST_USER_PASSWORD")
-    missing = [name for name in required if not os.environ.get(name)]
-    if missing or not image_id.startswith("sha256:"):
-        print("nightly preflight: missing required test settings or test image", file=sys.stderr)
+    not_configured = {}
+    try:
+        env = resolved_group_environment([])
+        missing = preflight_errors(env, image_id)
+        manifest, not_configured = configured_manifest(manifest, env)
+        groups = manifest["groups"]
+    except (OSError, ValueError):
+        missing = ["invalid test auth configuration"]
+    if missing:
+        print("nightly preflight: " + ", ".join(missing), file=sys.stderr)
+        results["preflight"] = {"exit": 1, "status": "failed"}
         codes["preflight"] = 1
     else:
         os.environ["UID"] = str(os.getuid())
@@ -283,10 +302,17 @@ def main() -> int:
                         codes["artifact"] = 1
     outcome = final_exit(codes, aggregate=aggregate,
                          required={"inventory", "default", "postgres", *groups})
-    summary = {"groups": results, "result": "failed" if outcome else "passed"}
+    summary = {"groups": results, "result": "failed" if outcome else "passed",
+               "configured_nodes": sum(map(len, groups.values())),
+               "not_configured": not_configured}
     lines = ["## Nightly regression", "", "| Contour | Exit | Seconds | Status |", "| --- | ---: | ---: | --- |"]
     for name, item in results.items():
         lines.append(f"| {name} | {item['exit']} | {item.get('seconds', '-')} | {item.get('status', 'completed')} |")
+    lines.append(f"\nConfigured real/browser nodes: {summary['configured_nodes']}; "
+                 f"not configured (optional auth): {len(not_configured)}. "
+                 "Result covers configured nodes; absent auth coverage is listed below.")
+    for node, reason in not_configured.items():
+        lines.append(f"- Not configured ({reason}): `{node}`")
     lines.append(f"\nResult: **{summary['result']}**")
     (private / "summary.md").write_text("\n".join(lines) + "\n")
     if codes.get("artifact") == 1:

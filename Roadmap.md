@@ -6,13 +6,17 @@
 Актуальная очередь 17.11.2026 (решение владельца):
 **478 → (471 + 472) → 473 → 474 → 475 → 476**. Все прежние очереди ниже —
 исторические. Активный поезд: 478B-3, ветка `dev/roadmap-478b-3`, base
-`6ea4fe30b7d1bcce0a4630a0d3dd61feecf548f1`. Gate: resume1 исправил high token precedence из release-review `e7952a0`;
-полный Spark scout без findings, новый default5035/PostgreSQL8 и cleanup зелёные.
-Next: новый commit и повторный committed release-review перед push; затем
-приёмка куратора 478.5.
+`d9fccf93277b7b255c96a837120d86b83e8129a2`. Gate: resume2 исправляет auth
+preflight после failed manual nightly `44259134829` (API-key-only). Next:
+auth fix проверен focused/owning/fast и полным pre-freeze review; код frozen.
+Next: новые default/PostgreSQL, commit/release-review/push; manual nightly куратором.
 Stop: красный обязательный gate, неполный aggregate, невалидное release-review
 или отсутствие credentials для локального real/browser. PR, CI, merge,
 deploy, monitoring и ручной nightly принимает куратор.
+
+Неблокирующее замечание resume2: AST guard auth map охватывает два текущих
+user-auth файла; расширить discovery при появлении новых auth guards. Любой
+unmapped skip остаётся ошибкой shard/aggregate.
 
 Поезда:
 

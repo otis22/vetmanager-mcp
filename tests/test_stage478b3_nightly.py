@@ -17,6 +17,44 @@ from scripts.run_isolated_test_suite import group_image_build_required
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.parametrize("missing", [None, "TEST_DOMAIN", "TEST_API_KEY", "image"])
+def test_api_key_only_nightly_preflight(missing):
+    env = {"TEST_DOMAIN": "synthetic", "TEST_API_KEY": "synthetic"}
+    image = "sha256:" + "a" * 64
+    if missing == "image":
+        image = ""
+    elif missing:
+        env.pop(missing)
+    assert bool(nightly.preflight_errors(env, image)) == (missing is not None)
+
+
+def test_auth_plan_accounts_for_optional_nodes_without_dropping_api_groups():
+    from scripts.real_group_gate import configured_manifest
+    manifest = json.loads((ROOT / "scripts/real_group_manifest.json").read_text())
+    selected, unavailable = configured_manifest(manifest, {})
+    assert set(selected["groups"]) == set(manifest["groups"])
+    assert selected["groups"]["write-restore"] == manifest["groups"]["write-restore"]
+    assert len(unavailable) == 6
+    configured = {node for nodes in selected["groups"].values() for node in nodes}
+    original = {node for nodes in manifest["groups"].values() for node in nodes}
+    assert configured.isdisjoint(unavailable)
+    assert configured | set(unavailable) == original
+    full, unavailable = configured_manifest(manifest, {"TEST_USER_LOGIN": "synthetic",
+                                                      "TEST_USER_PASSWORD": "synthetic"})
+    assert full["groups"] == manifest["groups"] and unavailable == {}
+
+
+def test_auth_plan_rejects_partial_login_and_untrusted_exclusions():
+    from scripts.real_group_gate import configured_manifest
+    manifest = json.loads((ROOT / "scripts/real_group_manifest.json").read_text())
+    with pytest.raises(ValueError):
+        configured_manifest(manifest, {"TEST_USER_LOGIN": "synthetic"})
+    node = manifest["required_nodes"][0]
+    manifest.setdefault("auth_requirements", {})[node] = "login-password"
+    with pytest.raises(ValueError):
+        configured_manifest(manifest, {})
+
+
 @pytest.mark.parametrize("token", ["", "synthetic-configured-token"])
 def test_workflow_empty_optional_token_does_not_override_generated_auth(tmp_path, token):
     workflow = yaml.safe_load((ROOT / ".github/workflows/nightly.yml").read_text())
@@ -168,3 +206,91 @@ def test_successful_group_requires_artifact_evidence_directory(tmp_path):
     assert nightly.group_artifact_source(tmp_path, "read", groups) == tmp_path / "read-abc"
     (tmp_path / "read-def").mkdir()
     assert not nightly.group_artifact_source(tmp_path, "read", groups)
+
+
+def test_auth_map_matches_existing_user_auth_guards():
+    """New user-auth skips must be explicitly accounted for, not silently lost."""
+    import ast
+    expected = {}
+    decorators = {"skip_if_no_user_login_flow": "login-password",
+                  "skip_if_no_real_user_token_flow": "login-password",
+                  "skip_if_no_user_token": "user-token"}
+    for file in ("tests/test_e2e_real.py", "tests/test_browser_real_opt_in.py"):
+        tree = ast.parse((ROOT / file).read_text())
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for decorator in node.decorator_list:
+                    if isinstance(decorator, ast.Name) and decorator.id in decorators:
+                        expected[f"{file}::{node.name}"] = decorators[decorator.id]
+    manifest = json.loads((ROOT / "scripts/real_group_manifest.json").read_text())
+    assert manifest.get("auth_requirements") == expected
+
+
+def test_group_auth_preparation_keeps_nongroup_contract():
+    from scripts.run_isolated_test_suite import required_auth_flags
+    assert required_auth_flags("real", "auth-web") == ["--require-api"]
+    assert required_auth_flags("real", None) == ["--require-all"]
+    assert required_auth_flags("all", None) == ["--require-all"]
+    assert required_auth_flags("recovery", None) == ["--require-api"]
+
+
+def test_group_auth_selection_uses_compose_effective_environment(monkeypatch, tmp_path, capsys):
+    from scripts.run_isolated_test_suite import resolved_group_environment
+    path = tmp_path / "synthetic.env"
+    path.write_text("TEST_USER_LOGIN=synthetic\nTEST_USER_PASSWORD=synthetic\n")
+    calls = []
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return CompletedProcess(command, 0, json.dumps({"services": {"test": {
+            "environment": {"TEST_DOMAIN": "synthetic", "TEST_API_KEY": "synthetic",
+                            "TEST_USER_LOGIN": "synthetic", "TEST_USER_PASSWORD": "synthetic"}}}}))
+    monkeypatch.setattr(subprocess, "run", run)
+    result = resolved_group_environment([str(path)])
+    assert result["TEST_USER_LOGIN"] == "synthetic"
+    command, kwargs = calls[0]
+    assert command[-3:] == ["config", "--format", "json"]
+    assert str(path.resolve()) in command
+    assert kwargs["capture_output"] and kwargs["text"]
+    assert not capsys.readouterr().out
+
+
+def test_nightly_api_only_reaches_inventory(monkeypatch, tmp_path):
+    env = {"TEST_DOMAIN": "synthetic", "TEST_API_KEY": "synthetic"}
+    monkeypatch.setattr(nightly, "resolved_group_environment", lambda paths: env)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: CompletedProcess(a, 0, "sha256:" + "a" * 64))
+    monkeypatch.setattr("sys.argv", ["nightly", "--evidence-dir", str(tmp_path / "evidence")])
+    calls = []
+    monkeypatch.setattr(nightly, "run_command", lambda name, *a: calls.append(name) or 1)
+    assert nightly.main() == 1  # intentional inventory failure, no real execution
+    assert calls == ["inventory"]
+    summary = json.loads((tmp_path / "evidence/artifact/summary.json").read_text())
+    assert len(summary["not_configured"]) == 6
+    assert summary["configured_nodes"] == 132
+
+
+def test_direct_token_enables_only_its_existing_optional_node():
+    from scripts.real_group_gate import configured_manifest, manifest_hash
+    manifest = json.loads((ROOT / "scripts/real_group_manifest.json").read_text())
+    api, _ = configured_manifest(manifest, {})
+    direct, unavailable = configured_manifest(manifest, {"TEST_USER_TOKEN": "synthetic"})
+    assert len(unavailable) == 5
+    assert manifest_hash(api) != manifest_hash(direct)
+    assert all(reason == "login-password" for reason in unavailable.values())
+
+
+@pytest.mark.asyncio
+async def test_prepare_derives_token_and_base_url_before_execution(tmp_path, monkeypatch, capsys):
+    from scripts import prepare_real_test_auth as auth
+    monkeypatch.setenv("TEST_DOMAIN", "synthetic")
+    monkeypatch.setenv("TEST_API_KEY", "synthetic")
+    monkeypatch.setenv("TEST_USER_LOGIN", "synthetic")
+    monkeypatch.setenv("TEST_USER_PASSWORD", "synthetic")
+    monkeypatch.delenv("TEST_USER_TOKEN", raising=False)
+    async def exchange(*args, **kwargs):
+        return "https://synthetic.invalid", "synthetic-derived-token"
+    monkeypatch.setattr(auth, "exchange_user_token", exchange)
+    path = tmp_path / "auth.env"
+    await auth.prepare(path, require_api=True)
+    assert path.read_text() == ("TEST_USER_TOKEN=synthetic-derived-token\n"
+                                "TEST_USER_TOKEN_BASE_URL=https://synthetic.invalid\n")
+    assert "synthetic-derived-token" not in capsys.readouterr().out

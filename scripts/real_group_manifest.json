@@ -175,5 +175,13 @@
     "test_contours.py",
     "docker-compose.test.yml",
     "scripts/prepare_real_test_auth.py"
-  ]
+  ],
+  "auth_requirements": {
+    "tests/test_e2e_real.py::test_real_get_users_with_user_token_mode": "login-password",
+    "tests/test_e2e_real.py::test_real_exchange_user_token_from_login_password": "login-password",
+    "tests/test_e2e_real.py::test_real_validate_user_token_connection_from_login_password_or_env_token": "user-token",
+    "tests/test_e2e_real.py::test_real_validate_user_token_connection_from_login_password_exchange": "login-password",
+    "tests/test_e2e_real.py::test_real_save_user_login_password_connection_uses_real_user_token_contract": "login-password",
+    "tests/test_browser_real_opt_in.py::test_real_browser_user_token_flow_can_issue_bearer_and_call_mcp": "login-password"
+  }
 }
