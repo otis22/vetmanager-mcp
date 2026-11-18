@@ -205,3 +205,30 @@ nightly group_evidence_complete и оба artifact sanitizer получают и
 Карта проверяется AST guard по фактическим существующим декораторам skip,
 включая login-only `test_real_get_users_with_user_token_mode`, несмотря на имя.
 Новые skips внутри configured группы по-прежнему являются ошибкой.
+
+## 478.5: isolated tool acceptance, 18.11.2026
+
+Куратор подтвердил nightly main `44274336409` (138/138) и main exact-tree
+reuse `44273986008`. Повторять nightly и менять CI decision surface для этой
+приёмки не требуется. Проверяем обычный isolated tool PR на ветке
+`dev/roadmap-478-acceptance` от `dc06f7cabd3d993c7f9e3d72e227157d39a72a51`.
+
+Полезное изменение ограничено описанием `whoami`: `limits.requests` и
+`limits.window_seconds` показывают настроенный лимит запросов текущего
+credential, а не остаток квоты. Ответ, поля, права, значения лимитов и другие
+инструменты остаются прежними. Существующий owning test проверяет
+экспортируемое описание после регистрации. Сначала он падает на старом тексте,
+затем проходит после уточнения. Новые test nodes не добавляются.
+
+Локальная приёмка: focused red/green, owning файлы, fast, inventory/count/
+fingerprint/diff-check и живой вызов `whoami` на тестовом стенде с безопасным
+кодом и телом ответа. Затем полный pre-freeze review актуального diff,
+archive/structure, commit, committed-diff release review и push. Монолитный
+default для этого isolated change не запускается по адресной матрице 478.5;
+GitHub jobs, coverage и PR/main reuse принимает куратор. Scope не включает
+auth-discovery B-3, scripts, workflow, impact map или inventory.
+
+Оценка простоты: одно уточнение описания и один усиленный существующий test node.
+Architecture Critique: not required — auth, storage, API response, production
+behavior и ownership boundaries не меняются. Куратор создаёт PR и выполняет
+merge, deploy и monitoring после локальной передачи evidence.

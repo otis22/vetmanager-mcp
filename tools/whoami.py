@@ -31,10 +31,12 @@ def build_whoami(credentials) -> dict:
 def register(mcp: FastMCP) -> None:
     @mcp.tool
     async def whoami() -> dict:
-        """Show this token's clinic domain, access group, effective rights and MCP request limit.
+        """Show this token's clinic domain, access group and effective rights.
 
         The summary always names reading, changing and deletion, including
         «Удаление: нет» when this token cannot delete. No Vetmanager request is made.
+        The limits show the configured request limit for this credential
+        (requests per window_seconds), not remaining quota.
         Domain synonyms: кто я, мои права, мой доступ, возможности токена,
         whoami, capabilities, current clinic, access group.
         """

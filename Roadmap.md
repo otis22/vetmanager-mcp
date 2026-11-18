@@ -3,20 +3,14 @@
 Статусы: `todo` | `in_progress` | `supervisor_pending` | `done` | `stop`.
 Структуру проверяет `scripts/check_roadmap_structure.py`.
 
-Актуальная очередь 17.11.2026 (решение владельца):
+Актуальная очередь 18.11.2026 (решение владельца):
 **478 → (471 + 472) → 473 → 474 → 475 → 476**. Все прежние очереди ниже —
-исторические. Активный поезд: 478B-3, ветка `dev/roadmap-478b-3`, base
-`d9fccf93277b7b255c96a837120d86b83e8129a2`. Gate: resume2 исправляет auth
-preflight после failed manual nightly `44259134829` (API-key-only). Next:
-auth fix проверен focused/owning/fast и полным pre-freeze review; код frozen.
-Next: новые default/PostgreSQL, commit/release-review/push; manual nightly куратором.
-Stop: красный обязательный gate, неполный aggregate, невалидное release-review
-или отсутствие credentials для локального real/browser. PR, CI, merge,
-deploy, monitoring и ручной nightly принимает куратор.
-
-Неблокирующее замечание resume2: AST guard auth map охватывает два текущих
-user-auth файла; расширить discovery при появлении новых auth guards. Любой
-unmapped skip остаётся ошибкой shard/aggregate.
+исторические. Активный поезд: 478.5, ветка `dev/roadmap-478-acceptance`, base
+`dc06f7cabd3d993c7f9e3d72e227157d39a72a51`. Gate: isolated tool PR
+без изменения CI decision surface. Next: локальные gates, pre-freeze и
+committed-diff review, push; GitHub-приёмка куратором. Stop: красный обязательный
+gate, отсутствие живого credential или невалидное review. PR, CI, merge,
+deploy и monitoring принимает куратор.
 
 Поезда:
 
@@ -75,15 +69,16 @@ unmapped skip остаётся ошибкой shard/aggregate.
   измерение фактического сокращения времени и числа запусков относительно
   baseline. [PRD](PRD/этап-478-4-nightly-regression.md). Локально: default
   5035 passed (resume1), PostgreSQL 8 passed, cleanup 0; фактический эффект измеряется
-  после merge, не выдуман заранее. Nightly на main и его сохранённые artifacts
-  принимает куратор после merge. — `in_progress`
+  после merge, не выдуман заранее. Nightly `44274336409` на main подтвердил
+  полный aggregate 138/138. — `done` 18.11.2026
 - 478.5 Приёмка на docs-only, isolated tool, shared runtime и unknown file;
   ручной запуск nightly. Проверить `PR validated-tree → main reuse` без
   `force_full` на обычном изменении, которое не меняет CI decision surface.
   Одинаковый долгий suite не выполняется дважды на одном tree SHA; обязательные
   GitHub checks и полнота покрытия сохраняются. Локальная матрица selector
-  совпала с PRD; GitHub/manual evidence после merge принимает куратор.
-  — `supervisor_pending`
+  совпала с PRD; main exact-tree reuse подтверждён run `44273986008`.
+  Isolated tool PR готовится для GitHub-приёмки куратором.
+  — `in_progress`
 
 Nightly запускается из main по расписанию `17 23 * * *` (около 02:17 МСК) и
 вручную через `workflow_dispatch`: один Docker image, полный
