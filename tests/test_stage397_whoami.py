@@ -63,6 +63,9 @@ async def test_whoami_is_explicitly_registered_and_visible_to_any_authorized_tok
     registered = {tool.name: tool for tool in await mcp.list_tools()}
     assert "whoami" in registered
     tool = registered["whoami"]
+    description = tool.to_mcp_tool().description.lower()
+    assert "configured request limit for this credential" in description
+    assert "not remaining quota" in description
     assert tool.to_mcp_tool().inputSchema["properties"] == {}
     for scopes in TOKEN_PRESET_SCOPES.values():
         assert visible_tools_for_scopes([tool], scopes) == [tool]
