@@ -25,6 +25,7 @@ COMMON_CONFIG = (
     "Dockerfile", "docker-compose.yml", "docker-compose.test.yml",
     "pyproject.toml", "pytest.ini", ".coveragerc", "alembic.ini",
     "tests/fixtures/stage385_resource_gate_sample.json", ".github/workflows/test.yml",
+    "scripts/test_impact_map.json",
 )
 CONTOUR_CONFIG = {
     "default": ("scripts/default_node_inventory.json", "scripts/offline_integration_files.json"),

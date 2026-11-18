@@ -5,10 +5,10 @@
 
 Актуальная очередь 17.11.2026 (решение владельца):
 **478 → (471 + 472) → 473 → 474 → 475 → 476**. Все прежние очереди ниже —
-исторические. 478B-1 подготовлен на `dev/roadmap-478b-1` от base
-`89b67c70fce4bd7f5fc6599674599accc032ced3`: локальные gates зелёные,
-evidence и release-review — в AssumptionLog. PR, CI и merge — куратору.
-Следующий отдельный PR — 478B-2; старые рабочие деревья не возобновляются.
+исторические. 478B-2 реализован; локальные gates и первый committed release
+review зелёные. Финальный amended SHA проходит повторный release gate перед
+push; PR/CI/merge/deploy/monitoring принимает куратор. 478B-3 остаётся отдельным
+следующим PR.
 
 Поезда:
 
@@ -57,7 +57,13 @@ evidence и release-review — в AssumptionLog. PR, CI и merge — курат�
   затронутые контуры; shared/unknown fail-closed на полный набор; исключение
   повтора fast внутри default с полным aggregate/coverage. В `super-review`
   добавить роль `test-contours` для проверки карты, fail-closed выбора,
-  отсутствия потери nodes/skip, инвалидации и границ PR/main/nightly. — `todo`
+  отсутствия потери nodes/skip, инвалидации и границ PR/main/nightly. — `done` 18.11.2026
+  [PRD](PRD/этап-478-3-адресные-ci-контуры.md); fast3588 + remainder1432 =
+  full5020 без потерь/дублей, штатный default5020, PostgreSQL8; все обязательные
+  локальные gates exit0. Review evidence и handoff — AssumptionLog.
+  Неблокирующий style finding B-2: лишняя пустая строка EOF в
+  `scripts/split_default_gate.py:95`; optional staged whitespace advisory exit2.
+  Сохранена по freeze; formatting cleanup — отдельное решение, не gate B-2.
 - 478.4 PR 478B-3: nightly полный regression, сохранение JUnit/outcome и
   измерение фактического сокращения времени и числа запусков относительно
   baseline. — `todo`

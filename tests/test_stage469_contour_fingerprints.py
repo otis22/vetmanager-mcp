@@ -17,6 +17,7 @@ def source_tree(tmp_path, monkeypatch):
         "pyproject.toml", "pytest.ini", ".coveragerc", "alembic.ini",
         "tests/fixtures/stage385_resource_gate_sample.json",
         ".github/workflows/test.yml", "scripts/offline_integration_files.json",
+        "scripts/test_impact_map.json",
         "tests/conftest.py", "tests/real_suite_outcomes.py",
         "scripts/run_opt_in_real_test_suite.py", "app.py",
         "tests/test_default.py", "tests/test_postgres.py", "tests/test_real.py",
@@ -50,6 +51,7 @@ def fingerprints(root):
     (".env", {"default", "postgres", "real"}),
     ("scripts/real_group_manifest.json", {"real"}),
     ("scripts/default_node_inventory.json", {"default"}),
+    ("scripts/test_impact_map.json", {"default", "postgres", "real"}),
     ("docs/process.md", set()),
 ])
 def test_input_change_invalidates_exact_contours(source_tree, path, changed):

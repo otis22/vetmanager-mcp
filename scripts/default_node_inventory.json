@@ -1456,8 +1456,8 @@
     "sha256": "b9772f3b31ca4422ecd921d1f52bf036b23a777b575037b7d643ef856b24a9b7"
   },
   "tests/test_stage469_contour_fingerprints.py": {
-    "count": 24,
-    "sha256": "5c6be3cae9e57e204b3cfcdd774ecad42d4c2a8f7f384e9834aede9e9c6abe58"
+    "count": 25,
+    "sha256": "a1f6b2f0a261bfedb162a349c379bd9a6842c12cdb9b3276d4bbcfb90877eeb2"
   },
   "tests/test_stage470_workflow_docs.py": {
     "count": 5,
@@ -1466,6 +1466,10 @@
   "tests/test_stage478a_ci_scope.py": {
     "count": 7,
     "sha256": "709a679847f47143798f70ec7b4af3557afa56ec175a3c0b85bd5cc720495dab"
+  },
+  "tests/test_stage478b2_test_impact.py": {
+    "count": 29,
+    "sha256": "f6f8511599e83c5f2b8d350481e1766a1558dfc82846133e7ebdc95a578231f5"
   },
   "tests/test_stage478b_deploy_baseline.py": {
     "count": 8,

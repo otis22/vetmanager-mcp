@@ -36,8 +36,10 @@ def test_one_image_build_feeds_three_test_jobs():
     assert "actions/upload-artifact@v4" in str(jobs["build-image"])
     for name in ("fast", "default", "postgres-activation-telemetry"):
         job = jobs[name]
-        assert job["needs"] == (["scope-and-reuse", "build-image"] if name == "fast" else
-                                ["scope-and-reuse", "build-image", "inventory-preflight"])
+        expected = ["scope-and-reuse", "build-image", "inventory-preflight"]
+        if name == "default":
+            expected.append("fast-aggregate")  # default never reruns fast nodes
+        assert job["needs"] == expected
         assert "actions/download-artifact@v4" in str(job)
         load_index = next(i for i, step in enumerate(job["steps"]) if step.get("name") == "Load test image")
         load_run = job["steps"][load_index]["run"]
