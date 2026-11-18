@@ -92,4 +92,3 @@ def validate_union(full: list[str], fast: list[str], remainder: list[str],
             raise ValueError("remainder JUnit differs from plan")
     elif remainder_junit is not None:
         raise ValueError("unexpected remainder JUnit")
-

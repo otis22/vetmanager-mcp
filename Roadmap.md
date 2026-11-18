@@ -61,9 +61,8 @@ push; PR/CI/merge/deploy/monitoring принимает куратор. 478B-3 о
   [PRD](PRD/этап-478-3-адресные-ci-контуры.md); fast3588 + remainder1432 =
   full5020 без потерь/дублей, штатный default5020, PostgreSQL8; все обязательные
   локальные gates exit0. Review evidence и handoff — AssumptionLog.
-  Неблокирующий style finding B-2: лишняя пустая строка EOF в
-  `scripts/split_default_gate.py:95`; optional staged whitespace advisory exit2.
-  Сохранена по freeze; formatting cleanup — отдельное решение, не gate B-2.
+  EOF whitespace blocker закрыт узким follow-up: AST/bytecode без изменений,
+  focused29 exit0; новый commit проходит собственный release-review перед push.
 - 478.4 PR 478B-3: nightly полный regression, сохранение JUnit/outcome и
   измерение фактического сокращения времени и числа запусков относительно
   baseline. — `todo`
