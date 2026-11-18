@@ -5,12 +5,12 @@
 
 Актуальная очередь 18.11.2026 (решение владельца):
 **478 → (471 + 472) → 473 → 474 → 475 → 476**. Все прежние очереди ниже —
-исторические. Активный поезд: 478.5, ветка `dev/roadmap-478-acceptance`, base
-`dc06f7cabd3d993c7f9e3d72e227157d39a72a51`. Gate: isolated tool PR
-без изменения CI decision surface. Next: локальные gates, pre-freeze и
-committed-diff review, push; GitHub-приёмка куратором. Stop: красный обязательный
-gate, отсутствие живого credential или невалидное review. PR, CI, merge,
-deploy и monitoring принимает куратор.
+исторические. Активный поезд: 478.5 follow-up, ветка
+`dev/roadmap-478-fast-balance`, base `d7cddb183d0799fda15dd327360509e1bdb97190`.
+Gate: устранить риск превышения fast(0) без изменения 180 с guard и test nodes.
+Next: локальные gates, pre-freeze и committed-diff review, push;
+GitHub-приёмка куратором. Stop: красный обязательный gate или невалидное review.
+PR, CI, merge, deploy и monitoring принимает куратор.
 
 Поезда:
 
@@ -77,7 +77,15 @@ deploy и monitoring принимает куратор.
   Одинаковый долгий suite не выполняется дважды на одном tree SHA; обязательные
   GitHub checks и полнота покрытия сохраняются. Локальная матрица selector
   совпала с PRD; main exact-tree reuse подтверждён run `44273986008`.
-  Isolated tool PR готовится для GitHub-приёмки куратором.
+  Isolated whoami PR #49 merged; main Tests `44311047772` дважды failed только
+  на wall guard fast(0), хотя 452 tests passed (210/222 с против 180 с).
+  Follow-up выделяет дорогой scanner-файл в fast shard 10 и TLS loopback в
+  shard 11, оставляя nodes, coverage и fail-closed aggregate. Локальный default
+  завершён: 5047 passed, coverage 88%. PR #51 зелёный, однако fast(0) wall 115 с
+  не достиг порога PRD ≤110 с. JUnit нового run дал два целых дорогих файла
+  (stage159 9.54 с, stage389 7.32 с); follow-up переносит их в shards 4/7.
+  Локальные wall после переноса 0/4/7 = 82/46/47 с, fast 3615 passed.
+  Приёмку запаса по следующему GitHub PR run делает куратор до merge.
   — `in_progress`
 
 Nightly запускается из main по расписанию `17 23 * * *` (около 02:17 МСК) и

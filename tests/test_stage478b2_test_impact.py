@@ -135,18 +135,41 @@ def test_measured_expensive_fast_files_get_clean_processes():
     regular = ["tests/test_other.py::test_one", "tests/test_other.py::test_two"]
     env = ["tests/test_stage285_runtime_env_reaches_container.py::test_one"]
     hint = ["tests/test_stage337_user_name_search_hint.py::test_two"]
-    shards = split.ci_fast_shards(regular + env + hint)
-    assert len(shards) == 10
-    assert sorted(node for shard in shards for node in shard) == sorted(regular + env + hint)
+    scanner = ["tests/test_stage459_server_child_inventory.py::test_one"]
+    tls = ["tests/test_stage459_resolver_tls_loopback.py::test_one"]
+    heavy = ["tests/test_stage384_retuning.py::test_one",
+             "tests/test_stage111_blocker_cleanup.py::test_one"]
+    balance = ["tests/test_stage159_feedback_product_metrics.py::test_one",
+               "tests/test_stage389_inactive_pets_cursor.py::test_one"]
+    nodes = regular + env + hint + scanner + tls + heavy + balance
+    shards = split.ci_fast_shards(nodes)
+    assert len(shards) == 12
+    assert sorted(node for shard in shards for node in shard) == sorted(nodes)
+    assert len({node for shard in shards for node in shard}) == len(nodes)
     assert shards[8] == env and shards[9] == hint
-    assert all(not (set(shard) & set(env + hint)) for shard in shards[:8])
+    assert shards[10] == scanner and shards[11] == tls
+    assert all(not (set(shard) & set(env + hint + scanner)) for shard in shards[:8])
+    assert set(heavy) <= set(shards[2])
+    assert balance[0] in shards[4]
+    assert balance[1] in shards[7]
+    with pytest.raises(ValueError, match="missing fast shard file"):
+        split.ci_fast_shards([node for node in nodes if node != balance[0]])
 
 
 def test_ci_wires_exact_aggregate_and_main_full_boundary():
     jobs = yaml.safe_load((ROOT / ".github/workflows/test.yml").read_text())["jobs"]
-    assert jobs["fast"]["strategy"]["matrix"]["shard"] == list(range(10))
+    from scripts import run_fast_test_suite as fast_runner
+    assert jobs["fast"]["strategy"]["matrix"]["shard"] == list(range(fast_runner.SHARD_COUNT))
+    assert fast_runner.SHARD_COUNT == 12
     assert "inventory-preflight" in jobs["fast"]["needs"]
     assert "--ci-shard-index" in str(jobs["fast"])
+    steps = jobs["fast"]["steps"]
+    run = next(step for step in steps if step.get("name") == "Run fast contour")
+    upload = next(step for step in steps if step.get("name") == "Upload fast evidence")
+    assert run["id"] == "fast" and 'tests_passed=true' in run["run"]
+    assert "steps.fast.outputs.tests_passed == 'true'" in upload["if"]
+    assert "always()" in upload["if"]
+    assert "elapsed > 180" in run["run"]
     assert jobs["fast-aggregate"]["needs"] == ["scope-and-reuse", "build-image",
                                                 "inventory-preflight", "fast"]
     assert "--ci-aggregate-parts" in str(jobs["fast-aggregate"])
@@ -237,6 +260,11 @@ def test_aggregate_rejects_corrupt_coverage_even_with_valid_peer(tmp_path, monke
         monkeypatch.setattr(fast_runner, "source_fingerprint", lambda: "same")
         monkeypatch.setattr(fast_runner, "collected_fast_nodes", lambda: FAST)
         monkeypatch.setattr(fast_runner, "ci_fast_shards", lambda _: [[n] for n in FAST])
+        monkeypatch.setattr(fast_runner, "SHARD_COUNT", len(FAST))
+        (parts / "ci-fast-shard-2").mkdir()
+        with pytest.raises(ValueError, match="unexpected fast shard"):
+            fast_runner.aggregate_ci_shards(parts, tmp_path / "out")
+        (parts / "ci-fast-shard-2").rmdir()
         with pytest.raises(ValueError, match="coverage"):
             fast_runner.aggregate_ci_shards(parts, tmp_path / "out")
     else:
