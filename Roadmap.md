@@ -78,6 +78,10 @@
   PR #50 merged (`4dd3104`): run `44371753784` successful, product jobs skipped.
   Production `20feea8` deployed, 30 минут healthy по переданному evidence.
   Измерения и границы проверки — AssumptionLog. — `done` 18.11.2026
+- 478.6 Follow-up: дополнить fail-closed deploy scope подтверждёнными CI-only
+  входами и агентскими документами после Deploy Prod `44375497970`.
+  [PRD](PRD/этап-478-6-deploy-scope-ci-inputs.md). Red/green, fast, полный
+  default, ShellCheck и pre-review завершены; evidence — AssumptionLog. — `done` 18.11.2026
 
 Nightly запускается из main по расписанию `17 23 * * *` (около 02:17 МСК) и
 вручную через `workflow_dispatch`: один Docker image, полный

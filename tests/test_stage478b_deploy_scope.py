@@ -20,6 +20,13 @@ CI_PATHS = [
     "scripts/postgres_node_inventory.json", "scripts/real_group_manifest.json",
     "scripts/offline_integration_files.json", "tests/test_new.py",
 ]
+STAGE_478_6_PATHS = [
+    "scripts/ci_test_impact.py", "scripts/test_impact_map.json",
+    "scripts/split_default_gate.py", "scripts/run_split_default_suite.py",
+    "scripts/nightly_regression.py", "scripts/real_group_gate.py",
+    "scripts/prepare_real_test_auth.py", ".github/workflows/nightly.yml",
+    "AGENTS.md", "AGENT_ONBOARDING.md", "CLAUDE.md",
+]
 
 
 def decide(raw):
@@ -30,6 +37,28 @@ def decide(raw):
 @pytest.mark.parametrize("path", CI_PATHS)
 def test_explicit_ci_only_paths_do_not_deploy(path):
     assert decide(path.encode() + b"\0") == b"false"
+
+
+@pytest.mark.parametrize("path", STAGE_478_6_PATHS)
+def test_stage478_6_exact_ci_inputs_do_not_deploy(path):
+    assert (ROOT / path).is_file()
+    assert decide(path.encode() + b"\0") == b"false"
+
+
+def test_stage478_6_cumulative_docs_ci_only_diff():
+    paths = ["README.md", "PRD/этап-478-6-deploy-scope-ci-inputs.md", *STAGE_478_6_PATHS]
+    raw = b"\0".join(path.encode() for path in paths) + b"\0"
+    assert decide(raw) == b"false"
+    for unsafe in ("server.py", "scripts/unknown.py", "docs/../server.md"):
+        assert decide(raw + unsafe.encode() + b"\0") == b"true"
+    assert decide(raw[:-1]) == b"true"
+
+
+def test_stage478_6_delete_and_runtime_rename_classify_both_paths():
+    # git diff --no-renames emits the deleted path, or both sides of a rename.
+    new_path = b"scripts/ci_test_impact.py\0"
+    assert decide(new_path) == b"false"
+    assert decide(b"server.py\0" + new_path) == b"true"
 
 
 @pytest.mark.parametrize("path", [

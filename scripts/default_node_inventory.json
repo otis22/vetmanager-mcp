@@ -1480,8 +1480,8 @@
     "sha256": "cdb1a3c97c7db28302dceacddd2fc7e1c893ff65b10f972eedbfaa6707aa0c5b"
   },
   "tests/test_stage478b_deploy_scope.py": {
-    "count": 45,
-    "sha256": "392058c8c7387fbce13890e387ca94f1834f7e2eb2da77c30233a350d9217a40"
+    "count": 58,
+    "sha256": "12f204e7f456d7cfe668fea7dab46bda8824ea731e5be91da7bc1c914899283c"
   },
   "tests/test_stage478b_inventory_preflight.py": {
     "count": 15,
