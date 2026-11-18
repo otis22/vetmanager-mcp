@@ -1471,6 +1471,10 @@
     "count": 29,
     "sha256": "f6f8511599e83c5f2b8d350481e1766a1558dfc82846133e7ebdc95a578231f5"
   },
+  "tests/test_stage478b3_nightly.py": {
+    "count": 13,
+    "sha256": "3ee14d66de594232acb36a49efe0c4fade2fe17a7d183c07712b74c09573c421"
+  },
   "tests/test_stage478b_deploy_baseline.py": {
     "count": 8,
     "sha256": "cdb1a3c97c7db28302dceacddd2fc7e1c893ff65b10f972eedbfaa6707aa0c5b"

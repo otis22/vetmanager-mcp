@@ -261,6 +261,7 @@ def main() -> int:
     parser.add_argument("contour", choices=tuple(MARKERS))
     parser.add_argument("--generate-inventory", action="store_true")
     parser.add_argument("--check-inventory", action="store_true")
+    parser.add_argument("--output-nodes", type=Path)
     parser.add_argument("--junit", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--verify-manifest", type=Path)
@@ -269,7 +270,9 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.check_inventory:
-            check_inventory(args.contour)
+            nodes = check_inventory(args.contour)
+            if args.output_nodes:
+                args.output_nodes.write_text(json.dumps(nodes) + "\n", encoding="utf-8")
         elif args.write_fingerprint:
             args.write_fingerprint.write_text(source_fingerprint(contour=args.contour) + "\n", encoding="utf-8")
         elif args.verify_manifest:

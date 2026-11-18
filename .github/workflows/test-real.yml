@@ -12,6 +12,10 @@ on:
         required: false
         default: ''
 
+concurrency:
+  group: devtr6-real
+  cancel-in-progress: false
+
 jobs:
   test-real:
     runs-on: ubuntu-latest

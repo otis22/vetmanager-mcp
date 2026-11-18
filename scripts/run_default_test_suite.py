@@ -35,6 +35,7 @@ def main() -> int:
     if gate.returncode != 0:
         return gate.returncode
 
+    junit = Path(os.environ.get("DEFAULT_JUNIT_XML", "/tmp/stage465-default.xml"))
     command = [
         sys.executable,
         *[item for flag in build_warning_error_flags() for item in ("-W", flag)],
@@ -46,7 +47,7 @@ def main() -> int:
         "--cov-config=.coveragerc",
         "--cov-report=term-missing:skip-covered",
         "--cov-report=xml:coverage.xml",
-        "--junitxml=/tmp/stage465-default.xml",
+        f"--junitxml={junit}",
         "-m",
         DEFAULT_TEST_CONTOUR.marker_expression,
     ]
@@ -57,7 +58,7 @@ def main() -> int:
         return completed.returncode
     try:
         check_gate(
-            "default", Path("/tmp/stage465-default.xml"),
+            "default", junit,
             PROJECT_ROOT / ".stage465-default-gate.json",
             starting_fingerprint,
         )
