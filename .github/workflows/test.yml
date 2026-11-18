@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       run_product: ${{ steps.force.outputs.force_full == 'true' || steps.scope.outputs.run_product == 'true' }}
+      run_postgres: ${{ steps.impact.outputs.postgres }}
+      full_plan: ${{ steps.impact.outputs.full }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -39,7 +41,9 @@ jobs:
             if ! git diff --quiet "$BEFORE_SHA" HEAD -- \
               .github/workflows scripts/ci_scope.py \
               scripts/check_roadmap_structure.py scripts/run_fast_test_suite.py \
-              scripts/run_default_test_suite.py scripts/offline_gate_manifest.py; then
+              scripts/run_default_test_suite.py scripts/offline_gate_manifest.py \
+              scripts/ci_test_impact.py scripts/test_impact_map.json \
+              scripts/split_default_gate.py scripts/run_split_default_suite.py; then
               force_full=true
             fi
           fi
@@ -50,6 +54,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/ci_scope.py
+
+      - name: Select fail-closed test impact
+        id: impact
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python3 scripts/ci_test_impact.py --event "$GITHUB_EVENT_NAME" --base "$BASE_SHA" --output impact-plan.json
+          python3 -c 'import json,os; p=json.load(open("impact-plan.json")); f=open(os.environ["GITHUB_OUTPUT"],"a"); f.write("postgres="+str(p["postgres"]).lower()+"\nfull="+str(p["mode"]=="full").lower()+"\n")'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: impact-plan
+          path: impact-plan.json
+          retention-days: 1
 
   build-image:
     needs: scope-and-reuse
@@ -94,10 +112,14 @@ jobs:
           compression-level: 0
 
   fast:
-    needs: [scope-and-reuse, build-image]
+    needs: [scope-and-reuse, build-image, inventory-preflight]
     if: ${{ needs.scope-and-reuse.outputs.run_product == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
     steps:
       - uses: actions/checkout@v7
@@ -120,7 +142,7 @@ jobs:
             -v "${{ github.workspace }}:/app" \
             -u 1001:1001 \
             vetmanager-mcp-test \
-            python scripts/run_fast_test_suite.py
+            python scripts/run_fast_test_suite.py --ci-evidence /app/ci-fast-shard-${{ matrix.shard }} --ci-shard-index ${{ matrix.shard }}
           elapsed=$(( SECONDS - started ))
           echo "Fast contour wall seconds: $elapsed"
           if (( elapsed > 180 )); then
@@ -128,6 +150,49 @@ jobs:
             exit 1
           fi
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-fast-shard-${{ matrix.shard }}
+          path: ci-fast-shard-${{ matrix.shard }}/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+
+  fast-aggregate:
+    needs: [scope-and-reuse, build-image, inventory-preflight, fast]
+    if: ${{ needs.scope-and-reuse.outputs.run_product == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: vetmanager-mcp-test-image
+      - name: Load test image
+        run: |
+          docker load -i vetmanager-mcp-test.tar
+          rm vetmanager-mcp-test.tar
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ci-fast-shard-*
+          path: ci-fast-parts
+      - name: Validate exact fast aggregate
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/app" \
+            -u 1001:1001 \
+            vetmanager-mcp-test \
+            python scripts/run_fast_test_suite.py --ci-evidence /app/ci-fast-evidence --ci-aggregate-parts /app/ci-fast-parts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-fast-evidence
+          path: ci-fast-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
       - name: Validate executable structured review gate
         run: |
           docker run --rm \
@@ -161,7 +226,7 @@ jobs:
             sh -c 'python scripts/offline_gate_manifest.py default --check-inventory && python scripts/offline_gate_manifest.py postgres --check-inventory'
 
   default:
-    needs: [scope-and-reuse, build-image, inventory-preflight]
+    needs: [scope-and-reuse, build-image, inventory-preflight, fast-aggregate]
     if: ${{ needs.scope-and-reuse.outputs.run_product == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -186,13 +251,22 @@ jobs:
           docker load -i vetmanager-mcp-test.tar
           rm vetmanager-mcp-test.tar
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: impact-plan
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-fast-evidence
+          path: ci-fast-evidence
+
       - name: Run default contour
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/app" \
             -u 1001:1001 \
             vetmanager-mcp-test \
-            python scripts/run_default_test_suite.py
+            python scripts/run_split_default_suite.py --plan /app/impact-plan.json --fast-evidence /app/ci-fast-evidence
 
       - name: Publish coverage summary
         if: always()
@@ -219,7 +293,7 @@ jobs:
 
   postgres-activation-telemetry:
     needs: [scope-and-reuse, build-image, inventory-preflight]
-    if: ${{ needs.scope-and-reuse.outputs.run_product == 'true' }}
+    if: ${{ needs.scope-and-reuse.outputs.run_product == 'true' && needs.scope-and-reuse.outputs.run_postgres == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -268,8 +342,8 @@ jobs:
             sh -c 'python scripts/offline_gate_manifest.py postgres --write-fingerprint /tmp/stage465-pg.start && python -W error -m pytest -q -m postgres --junitxml=/tmp/stage424-postgres.xml && python scripts/check_stage424_postgres_results.py /tmp/stage424-postgres.xml && python scripts/offline_gate_manifest.py postgres --junit /tmp/stage424-postgres.xml --output /app/.stage465-postgres-gate.json --starting-fingerprint-file /tmp/stage465-pg.start'
 
   validated-tree:
-    needs: [scope-and-reuse, build-image, inventory-preflight, fast, default, postgres-activation-telemetry]
-    if: ${{ github.event_name == 'pull_request' && needs.scope-and-reuse.outputs.run_product == 'true' }}
+    needs: [scope-and-reuse, build-image, inventory-preflight, fast, fast-aggregate, default, postgres-activation-telemetry]
+    if: ${{ github.event_name == 'pull_request' && needs.scope-and-reuse.outputs.run_product == 'true' && needs.scope-and-reuse.outputs.full_plan == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

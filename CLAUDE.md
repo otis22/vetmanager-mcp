@@ -328,7 +328,7 @@ self-attestation шаг 7 указывается, **чем именно его �
 Многоплановый ревью через skill `/super-review`. **Только по явному запросу пользователя**: не в Core Loop, не после merge, не «на всякий случай».
 
 **Что запускается (в параллель):**
-- 9 специализированных ревьюеров: `code`, `architecture`, `docs`, `security`, `performance-and-reliability`, `observability`, `tests`, `product`, `simplicity` + `codex-blindspot` (параллельный Codex pass) + `aggregator` = 11 subagent'ов в `.claude/agents/`
+- 10 специализированных ролей: `code`, `architecture`, `docs`, `security`, `performance-and-reliability`, `observability`, `tests`, `test-contours`, `product`, `simplicity` + `codex-blindspot` (параллельный Codex pass) + `aggregator` = 12 определений в `.claude/agents/`
 - `codex-blindspot`: один Codex-пробег с анти-корреляционным промптом (ищет то, что Claude-модели системно пропускают)
 - `scripts/review_workflow_check.sh` — по умолчанию read-only механические проверки (PRD файл, Roadmap статус, AssumptionLog, diff size); явный `--prepare-roadmap` добавляет архивирование перед structural gate для предкоммитной подготовки
 - Агрегатор (`reviewer-aggregator`) — дедупликация, ранжирование, итоговый verdict
@@ -349,7 +349,7 @@ self-attestation шаг 7 указывается, **чем именно его �
 **Отчёт:** `artifacts/review/{YYYY-MM-DD}-{scope}-stage-{N}.md`, коммитится с остальным кодом.
 
 **Файлы инфраструктуры:**
-- `.claude/agents/reviewer-*.md` — определения 10 агентов
+- `.claude/agents/reviewer-*.md` — определения 11 reviewer-ролей и агрегатора
 - `.claude/commands/super-review.md` — skill
 - `scripts/review_workflow_check.sh` — mechanical checks
 

@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Bash
 model: opus
 ---
 
-Ты reviewer-aggregator для vetmanager-mcp. Ревьюеры (code, architecture, simplicity, docs, security, performance-and-reliability, observability, tests, product, codex-blindspot), Spark scout layer и `scripts/review_workflow_check.sh` уже прогнали ревью. Ты получаешь все их findings в одном prompt'е.
+Ты reviewer-aggregator для vetmanager-mcp. Ревьюеры (code, architecture, simplicity, docs, security, performance-and-reliability, observability, tests, test-contours, product, codex-blindspot), Spark scout layer и `scripts/review_workflow_check.sh` уже прогнали ревью. Ты получаешь все их findings в одном prompt'е. При CI/test-contours в scope отсутствие `test-contours` — ошибка полноты ревью, не пустой verdict.
 
 ## Твоя роль
 
@@ -75,7 +75,7 @@ for finding in findings:
 # Deep Review: {scope_description}
 _Дата: {YYYY-MM-DD}_
 _Scope: {scope}_
-_Reviewers: spark-scout, code, architecture, simplicity, docs, security, performance-and-reliability, observability, tests, product, codex-blindspot, workflow-check_
+_Reviewers: spark-scout, code, architecture, simplicity, docs, security, performance-and-reliability, observability, tests, test-contours, product, codex-blindspot, workflow-check_
 _Aggregator: Opus 4.7_
 _Cross-CLI arbitration: pending (Claude runtime → Codex CLI gpt-5.6-sol/gpt-5.6-terra; Codex runtime → Claude CLI opus/sonnet)_
 

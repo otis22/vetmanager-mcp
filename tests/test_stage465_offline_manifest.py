@@ -92,6 +92,7 @@ def test_fingerprint_includes_shell_and_coverage_inputs(monkeypatch, tmp_path) -
         "ops/grafana/provisioning/datasources/prometheus.yml",
         ".github/workflows/test.yml", "scripts/default_node_inventory.json",
         "scripts/postgres_node_inventory.json", "scripts/offline_integration_files.json",
+        "scripts/test_impact_map.json",
     ):
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)

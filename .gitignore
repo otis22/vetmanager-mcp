@@ -10,6 +10,11 @@ dist/
 .coverage
 .coverage.*
 coverage.xml
+ci-fast-evidence/
+ci-fast-shard-*/
+ci-fast-parts/
+ci-default-evidence/
+impact-plan.json
 .stage465-default-gate.json
 .stage465-postgres-gate.json
 htmlcov/

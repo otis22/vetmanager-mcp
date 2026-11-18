@@ -1,5 +1,5 @@
 ---
-description: Полное ревью проекта в 10 разрезов + Spark/GPT scout layer + workflow check + aggregator + cross-CLI arbitration. Результат — md-отчёт в artifacts/review/.
+description: Полное ревью проекта в 11 разрезов + Spark/GPT scout layer + workflow check + aggregator + cross-CLI arbitration. Результат — md-отчёт в artifacts/review/.
 argument-hint: "[scope] — changed (default) | related | full | stage:N [--no-arbitration] [--no-spark]"
 ---
 
@@ -120,9 +120,9 @@ Return at most 12 findings for this scout task. Prefer high-confidence findings 
 
 Если Codex CLI недоступен или оба запуска падают — не блокируй review; добавь один low/meta finding `spark scout skipped`.
 
-## Шаг 4. Запуск 10 специализированных Claude-ревьюеров параллельно
+## Шаг 4. Запуск 11 специализированных ревьюеров параллельно
 
-**В ОДНОМ сообщении, 10 tool-calls Agent**, параллельно:
+**В ОДНОМ сообщении, 11 role passes**, параллельно:
 
 1. `reviewer-code` (sonnet) — user prompt: scope, file list, brief PRD summary
 2. `reviewer-architecture` (opus) — user prompt: scope (system/local mode), file list
@@ -132,10 +132,11 @@ Return at most 12 findings for this scout task. Prefer high-confidence findings 
 6. `reviewer-performance-and-reliability` (opus) — user prompt: scope, file list
 7. `reviewer-observability` (sonnet) — user prompt: scope, file list
 8. `reviewer-tests` (sonnet) — user prompt: scope
-9. `reviewer-product` (opus) — user prompt: scope, current stage number
-10. `reviewer-codex-blindspot` (sonnet wrapper) — user prompt: scope + file list + PRD + API facts + Spark candidates if any. Он формирует anti-correlation prompt и вызывает доступный Codex adapter; если adapter не позволяет выбрать модель, он обязан записать фактическую модель как `model_used: adapter_default`.
+9. `reviewer-test-contours` — user prompt: scope, impact map, selected plan, inventories, JUnit/coverage evidence and PR/main/nightly boundaries; обязателен при изменении CI/test-контуров
+10. `reviewer-product` (opus) — user prompt: scope, current stage number
+11. `reviewer-codex-blindspot` (sonnet wrapper) — user prompt: scope + file list + PRD + API facts + Spark candidates if any. Он формирует anti-correlation prompt и вызывает доступный Codex adapter; если adapter не позволяет выбрать модель, он обязан записать фактическую модель как `model_used: adapter_default`.
 
-**Шаблон user prompt для первых 9 (всех кроме codex-blindspot):**
+**Шаблон user prompt для первых 10 (всех кроме codex-blindspot):**
 ```
 Scope: {scope}
 Current stage: {stage_number} ({PRD file path if exists})
@@ -174,7 +175,7 @@ Respect each reviewer file's max-findings cap. If a reviewer file has no cap, re
 
 ## Шаг 6. Сбор findings
 
-После завершения Spark scout layer, 10 Claude-агентов и bash-скрипта:
+После завершения Spark scout layer, 11 role passes и bash-скрипта:
 - Собери findings из каждого response в единый список (text concat)
 - Spark findings пометь как `untrusted_lead: true`, если этого поля нет
 - До aggregator отбрось non-meta findings с `confidence < 0.4`; сохрани их количество в summary как pre-aggregator dismissed-low-confidence.
@@ -201,6 +202,9 @@ All findings below in YAML. Deduplicate, sort, produce markdown report per your 
 
 === reviewer-architecture ({count}) ===
 ...
+
+=== reviewer-test-contours ({count}) ===
+{raw yaml output from reviewer-test-contours; if CI/test-contours are in scope and this role is missing, mark review incomplete}
 
 === workflow-check ({count}) ===
 {stdout of ./scripts/review_workflow_check.sh}
