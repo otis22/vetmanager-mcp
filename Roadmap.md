@@ -3,26 +3,18 @@
 Статусы: `todo` | `in_progress` | `supervisor_pending` | `done` | `stop`.
 Структуру проверяет `scripts/check_roadmap_structure.py`.
 
-Актуальная очередь 18.11.2026 (решение владельца):
-**478 → (471 + 472) → 473 → 474 → 475 → 476**. Все прежние очереди ниже —
-исторические. Активный поезд: 478.5 follow-up, ветка
-`dev/roadmap-478-docs-only`, base `20feea83863aa9a4699a538db7ef5030214520ba`.
-Gate: добавить три корневые инструкции в docs-only классификацию.
-Next: committed-diff review, push; GitHub-приёмка куратором.
-Stop: красный обязательный gate или невалидное review.
-PR, CI, merge, deploy и monitoring принимает куратор.
+Актуальная очередь 18.11.2026 после закрытия 478:
+**(471 + 472) → 473 → 474 → 475 → 476**. Все прежние очереди ниже —
+исторические. Следующий поезд — 471 + 472; он ещё не начат.
 
 Поезда:
 
-1. **478** — ускорение CI первым поездом. 478A выпущен; 478B разделён на три
-   отдельных PR: preflight/deploy scope → адресные контуры → nightly/приёмка.
-   Production deploy для CI-only изменений не требуется.
-2. **471 + 472** — read-only проверки и диагностика без деплоя. Подтверждённый
+1. **471 + 472** — read-only проверки и диагностика без деплоя. Подтверждённый
    локальный дефект получает отдельный PRD и поезд исправления.
-3. **473** — внешний дашборд, отдельно от production MCP.
-4. **474** — черновик выписки, отдельный поезд.
-5. **475** — статус пациента, отдельный поезд чувствительной записи.
-6. **476** — только design, без последующей реализации в том же поезде.
+2. **473** — внешний дашборд, отдельно от production MCP.
+3. **474** — черновик выписки, отдельный поезд.
+4. **475** — статус пациента, отдельный поезд чувствительной записи.
+5. **476** — только design, без последующей реализации в том же поезде.
 
 В верхнем блоке активного поезда фиксировать: состав этапов, ветку, base SHA,
 текущий gate, следующее действие и стоп-условия. После завершения блок убрать;
@@ -30,7 +22,7 @@ PR, CI, merge, deploy и monitoring принимает куратор.
 штатно. Операционные журналы, внешние дашборды и их инструкции в этом
 репозитории не хранятся.
 
-## Этап 478. Адресные CI-контуры без повторов длинных suites — `in_progress`
+## Этап 478. Адресные CI-контуры без повторов длинных suites — `done`
 
 Источник: решение владельца 17.11.2026. До новых продуктовых правок устранить
 многочасовую стоимость малых и документных изменений. По разбору 30 последних
@@ -43,7 +35,7 @@ PR, CI, merge, deploy и monitoring принимает куратор.
   PR #42 merged, merge SHA `c0cb9f9e1d4d5cbf9b3af60a0f75d3f7efd3512e`.
   Локальный default 4922 passed, PostgreSQL 8 passed; PR и main Tests success.
   Main получил обязательный `force_full`, поскольку изменилась CI decision
-  surface. Reuse без `force_full` проверяется в 478.5 на обычном изменении.
+  surface. Позднее reuse без `force_full` подтверждён run `44273986008`.
 - 478.2 PR 478B-1: ранний inventory preflight и CI-only deploy scope. Проверять
   drift versioned inventory до pre-freeze review и долгого default, включая
   новые nodes и переименования. Не запускать production deploy для строго
@@ -64,36 +56,28 @@ PR, CI, merge, deploy и monitoring принимает куратор.
   full5020 без потерь/дублей, штатный default5020, PostgreSQL8; все обязательные
   локальные gates exit0. Review evidence и handoff — AssumptionLog.
   EOF whitespace blocker закрыт узким follow-up: AST/bytecode без изменений,
-  focused29 exit0; новый commit проходит собственный release-review перед push.
+  focused29 exit0; release-review follow-up сохранён в AssumptionLog.
 - 478.4 PR 478B-3: nightly полный regression, сохранение JUnit/outcome и
   измерение фактического сокращения времени и числа запусков относительно
   baseline. [PRD](PRD/этап-478-4-nightly-regression.md). Локально: default
-  5035 passed (resume1), PostgreSQL 8 passed, cleanup 0; фактический эффект измеряется
-  после merge, не выдуман заранее. Nightly `44274336409` на main подтвердил
-  полный aggregate 138/138. — `done` 18.11.2026
+  5035 passed (resume1), PostgreSQL 8 passed, cleanup 0. Nightly
+  `44274336409` на main подтвердил полный aggregate 138/138; измеренный эффект
+  отдельных CI runs записан в AssumptionLog. — `done` 18.11.2026
 - 478.5 Приёмка на docs-only, isolated tool, shared runtime и unknown file;
-  ручной запуск nightly. Проверить `PR validated-tree → main reuse` без
+  ручной запуск nightly. `PR validated-tree → main reuse` проверен без
   `force_full` на обычном изменении, которое не меняет CI decision surface.
   Одинаковый долгий suite не выполняется дважды на одном tree SHA; обязательные
   GitHub checks и полнота покрытия сохраняются. Локальная матрица selector
   совпала с PRD; main exact-tree reuse подтверждён run `44273986008`.
-  Isolated whoami PR #49 merged; main Tests `44311047772` дважды failed только
-  на wall guard fast(0), хотя 452 tests passed (210/222 с против 180 с).
-  Follow-up выделяет дорогой scanner-файл в fast shard 10 и TLS loopback в
-  shard 11, оставляя nodes, coverage и fail-closed aggregate. Локальный default
-  завершён: 5047 passed, coverage 88%. PR #51 зелёный, однако fast(0) wall 115 с
-  не достиг порога PRD ≤110 с. JUnit нового run дал два целых дорогих файла
-  (stage159 9.54 с, stage389 7.32 с); follow-up переносит их в shards 4/7.
-  Локальные wall после переноса 0/4/7 = 82/46/47 с, fast 3615 passed.
-  Приёмку запаса по следующему GitHub PR run делает куратор до merge.
-  Follow-up после PR #50: три корневые инструкции (`AGENTS.md`,
+  Isolated whoami PR #49 merged; PR run `44309201311` successful. После
+  исправления перегруженного fast(0) PR #51 merged (`20feea8`): run
+  `44354585778` successful, max fast wall 101 с при пороге 110 с.
+  Follow-up PR #52: три корневые инструкции (`AGENTS.md`,
   `AGENT_ONBOARDING.md`, `CLAUDE.md`) добавлены в жёсткий docs-only путь двух
-  селекторов; unknown остаётся full. Локальные red/green и fast зелёные;
-  Kimi K3 дал инфраструктурные отказы; по решению владельца его заменяет
-  отдельный Astra review. PostgreSQL fingerprint инвалирован selector scripts;
-  новый контур прошёл 8/8. Real API локально не настроен. GitHub-приёмка
-  остаётся куратору до merge.
-  — `in_progress`
+  селекторов; unknown остаётся full. PR #52 merged (`46e8e4f`), а docs-only
+  PR #50 merged (`4dd3104`): run `44371753784` successful, product jobs skipped.
+  Production `20feea8` deployed, 30 минут healthy по переданному evidence.
+  Измерения и границы проверки — AssumptionLog. — `done` 18.11.2026
 
 Nightly запускается из main по расписанию `17 23 * * *` (около 02:17 МСК) и
 вручную через `workflow_dispatch`: один Docker image, полный
