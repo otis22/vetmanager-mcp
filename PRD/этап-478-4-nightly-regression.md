@@ -332,3 +332,47 @@ Architecture Critique требуется: решение меняет CI perform
 decision surface. Проверить цену дополнительного runner, риск false confidence
 от JUnit testcase durations, стабильность clean-process ownership и rollback
 перед реализацией; затем PRD-review обоих сильных ревьюеров.
+
+## 478.5 PR #51 follow-up: запас по GitHub durations, 18.11.2026
+
+Run `44338410060` на SHA `866a05565ab4b95a8dffca6814019908c220c043`
+зелёный; все 3615 fast nodes прошли. Wall fast(0) = 115 с, поэтому
+приёмочный порог ≤110 с не достигнут. Остальные обычные shards 1–7 заняли
+71/53/57/43/62/51/34 с; scanner 10 = 38 с, TLS 11 = 34 с.
+Сохранённый лог: `run-4785-fast-balance-20261118/pr51-all.log` вне checkout.
+Загруженные JUnit того же run: `pr51-junit/ci-fast-shard-*/shard-*.xml`
+вне checkout; они содержат точные node IDs и testcase durations.
+Прежняя оценка 36.44 с исходила из другого PR JUnit; фактические 56.97 с
+на новом run показывают изменение нагрузки остальных тестов и/или условий
+запуска. Причина разницы не установлена. Поэтому оценка не используется как
+прогноз wall или гарантия для следующего run. В новом run разница wall и
+testcase time fast(0) = 58.03 с; для shards 4/7 = 32.89/24.85 с. Эта
+разница также не приписывается конкретной причине без измерения.
+
+В fast(0) JUnit 432 cases, 56.97 с testcase time. Два самых дорогих целых
+файла: `test_stage159_feedback_product_metrics.py` — 9.54 с (2 nodes),
+`test_stage389_inactive_pets_cursor.py` — 7.32 с (6 nodes). Перенести первый
+в обычный shard 4 (43 с wall, 10.11 с testcase time), второй — в обычный
+shard 7 (34 с wall, 9.15 с testcase time). Файлы не требуют отдельного
+процесса; существующие dedicated 8–11 остаются без изменений. Это адресное
+правило в `ci_fast_shards`, без нового scheduler, runners, timeout, assertions
+или test nodes. Оценка fast(0) по testcase time 40.11 с; переносимое время
+не равно сокращению wall, поэтому acceptance подтверждает только новый PR run.
+
+Guard проверяет ownership обоих файлов, точный union, 12 shards и неизменные
+dedicated индексы. Сначала показать red нового guard на старой раскладке,
+после правки — focused green, owning suite, fast и локальные wall замеры
+shards 0/4/7; затем полный diff review и
+инвалидированные default/PostgreSQL gates, commit, committed review и push.
+PR считается принятым только при max fast wall ≤110 с в новом GitHub run,
+проверенных JUnit: оба файла целиком в shards 4/7 и все 3615 fast nodes ровно
+один раз, а также сохранении всех mandatory checks. При неуспехе — анализ его durations;
+старый run не повторять. Если новый run снова не достигает ≤110 с, остановить
+merge и передать куратору JUnit и wall breakdown для решения о следующем
+отдельном этапе; эту раскладку не объявлять принятой и не ослаблять 180 с guard.
+Если новый CI нарушит union/coverage/guard, откатить адресный перенос.
+Main после merge проверяет куратор.
+
+Оценка простоты: две фиксированные пары file→shard в существующей функции;
+новых параметров и источников данных нет. Более узкий перенос одного файла
+даёт лишь ~4.5 с оценочного запаса до порога и потому недостаточен.

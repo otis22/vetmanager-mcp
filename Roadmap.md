@@ -81,9 +81,11 @@ PR, CI, merge, deploy и monitoring принимает куратор.
   на wall guard fast(0), хотя 452 tests passed (210/222 с против 180 с).
   Follow-up выделяет дорогой scanner-файл в fast shard 10 и TLS loopback в
   shard 11, оставляя nodes, coverage и fail-closed aggregate. Локальный default
-  дошёл до 100% test cases, но завис в sessionfinish/coverage и остановлен по
-  бюджету без exit0; commit/push blocked до адресной диагностики. Приёмку запаса
-  по новому PR делает куратор.
+  завершён: 5047 passed, coverage 88%. PR #51 зелёный, однако fast(0) wall 115 с
+  не достиг порога PRD ≤110 с. JUnit нового run дал два целых дорогих файла
+  (stage159 9.54 с, stage389 7.32 с); follow-up переносит их в shards 4/7.
+  Локальные wall после переноса 0/4/7 = 82/46/47 с, fast 3615 passed.
+  Приёмку запаса по следующему GitHub PR run делает куратор до merge.
   — `in_progress`
 
 Nightly запускается из main по расписанию `17 23 * * *` (около 02:17 МСК) и

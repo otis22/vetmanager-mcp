@@ -49,15 +49,22 @@ def ci_fast_shards(nodes: list[str]) -> list[list[str]]:
     shards = shard_fast_nodes(nodes, 8)
     for file in dedicated:
         own = [node for shard in shards for node in shard if node.split("::", 1)[0] == file]
+        if not own:
+            raise ValueError(f"missing fast shard file: {file}")
         for shard in shards:
             shard[:] = [node for node in shard if node.split("::", 1)[0] != file]
         shards.append(own)
-    # JUnit and local shard runs showed these two files dominate the remaining shard 0.
-    for file in ("tests/test_stage384_retuning.py", "tests/test_stage111_blocker_cleanup.py"):
+    # Whole-file moves are based on measured JUnit time in the slow regular shard.
+    for file, target in (("tests/test_stage384_retuning.py", 2),
+                         ("tests/test_stage111_blocker_cleanup.py", 2),
+                         ("tests/test_stage159_feedback_product_metrics.py", 4),
+                         ("tests/test_stage389_inactive_pets_cursor.py", 7)):
         own = [node for shard in shards[:8] for node in shard if node.split("::", 1)[0] == file]
+        if not own:
+            raise ValueError(f"missing fast shard file: {file}")
         for shard in shards[:8]:
             shard[:] = [node for node in shard if node.split("::", 1)[0] != file]
-        shards[2].extend(own)
+        shards[target].extend(own)
     if sorted(node for shard in shards for node in shard) != sorted(nodes):
         raise ValueError("dedicated fast shard lost node")
     return shards

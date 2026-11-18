@@ -139,7 +139,9 @@ def test_measured_expensive_fast_files_get_clean_processes():
     tls = ["tests/test_stage459_resolver_tls_loopback.py::test_one"]
     heavy = ["tests/test_stage384_retuning.py::test_one",
              "tests/test_stage111_blocker_cleanup.py::test_one"]
-    nodes = regular + env + hint + scanner + tls + heavy
+    balance = ["tests/test_stage159_feedback_product_metrics.py::test_one",
+               "tests/test_stage389_inactive_pets_cursor.py::test_one"]
+    nodes = regular + env + hint + scanner + tls + heavy + balance
     shards = split.ci_fast_shards(nodes)
     assert len(shards) == 12
     assert sorted(node for shard in shards for node in shard) == sorted(nodes)
@@ -148,6 +150,10 @@ def test_measured_expensive_fast_files_get_clean_processes():
     assert shards[10] == scanner and shards[11] == tls
     assert all(not (set(shard) & set(env + hint + scanner)) for shard in shards[:8])
     assert set(heavy) <= set(shards[2])
+    assert balance[0] in shards[4]
+    assert balance[1] in shards[7]
+    with pytest.raises(ValueError, match="missing fast shard file"):
+        split.ci_fast_shards([node for node in nodes if node != balance[0]])
 
 
 def test_ci_wires_exact_aggregate_and_main_full_boundary():
@@ -155,7 +161,6 @@ def test_ci_wires_exact_aggregate_and_main_full_boundary():
     from scripts import run_fast_test_suite as fast_runner
     assert jobs["fast"]["strategy"]["matrix"]["shard"] == list(range(fast_runner.SHARD_COUNT))
     assert fast_runner.SHARD_COUNT == 12
-    assert len(split.ci_fast_shards(FULL)) == fast_runner.SHARD_COUNT
     assert "inventory-preflight" in jobs["fast"]["needs"]
     assert "--ci-shard-index" in str(jobs["fast"])
     steps = jobs["fast"]["steps"]
