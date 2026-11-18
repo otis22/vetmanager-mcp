@@ -6,9 +6,10 @@
 Актуальная очередь 17.11.2026 (решение владельца):
 **478 → (471 + 472) → 473 → 474 → 475 → 476**. Все прежние очереди ниже —
 исторические. Активный поезд: 478B-3, ветка `dev/roadmap-478b-3`, base
-`6ea4fe30b7d1bcce0a4630a0d3dd61feecf548f1`. Gate: локальные final
-default/PostgreSQL зелёные, code review закрыт; next: committed release-review,
-push и приёмка куратором PR/CI, manual nightly и измерений 478.5.
+`6ea4fe30b7d1bcce0a4630a0d3dd61feecf548f1`. Gate: resume1 исправил high token precedence из release-review `e7952a0`;
+полный Spark scout без findings, новый default5035/PostgreSQL8 и cleanup зелёные.
+Next: новый commit и повторный committed release-review перед push; затем
+приёмка куратора 478.5.
 Stop: красный обязательный gate, неполный aggregate, невалидное release-review
 или отсутствие credentials для локального real/browser. PR, CI, merge,
 deploy, monitoring и ручной nightly принимает куратор.
@@ -69,7 +70,7 @@ deploy, monitoring и ручной nightly принимает куратор.
 - 478.4 PR 478B-3: nightly полный regression, сохранение JUnit/outcome и
   измерение фактического сокращения времени и числа запусков относительно
   baseline. [PRD](PRD/этап-478-4-nightly-regression.md). Локально: default
-  5033 passed, PostgreSQL 8 passed, cleanup 0; фактический эффект измеряется
+  5035 passed (resume1), PostgreSQL 8 passed, cleanup 0; фактический эффект измеряется
   после merge, не выдуман заранее. Nightly на main и его сохранённые artifacts
   принимает куратор после merge. — `in_progress`
 - 478.5 Приёмка на docs-only, isolated tool, shared runtime и unknown file;

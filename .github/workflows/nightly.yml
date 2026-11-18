@@ -40,7 +40,11 @@ jobs:
           TEST_USER_TOKEN: ${{ secrets.VETMANAGER_TEST_USER_TOKEN }}
           TEST_USER_LOGIN: ${{ secrets.VETMANAGER_TEST_USER_LOGIN }}
           TEST_USER_PASSWORD: ${{ secrets.VETMANAGER_TEST_USER_PASSWORD }}
-        run: python3 scripts/nightly_regression.py --evidence-dir "$RUNNER_TEMP/nightly-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+        run: |
+          if [ -z "${TEST_USER_TOKEN:-}" ]; then
+            unset TEST_USER_TOKEN
+          fi
+          python3 scripts/nightly_regression.py --evidence-dir "$RUNNER_TEMP/nightly-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
       - name: Publish triage summary
         if: ${{ always() }}
         run: |

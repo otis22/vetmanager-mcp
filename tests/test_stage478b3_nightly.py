@@ -1,7 +1,9 @@
 """Nightly CI must fail closed and publish only static, sanitized evidence."""
 
 import json
+import os
 from pathlib import Path
+import subprocess
 from subprocess import CompletedProcess
 from xml.etree import ElementTree as ET
 
@@ -13,6 +15,23 @@ from scripts.run_isolated_test_suite import group_image_build_required
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize("token", ["", "synthetic-configured-token"])
+def test_workflow_empty_optional_token_does_not_override_generated_auth(tmp_path, token):
+    workflow = yaml.safe_load((ROOT / ".github/workflows/nightly.yml").read_text())
+    step = next(step for step in workflow["jobs"]["nightly"]["steps"]
+                if step.get("name") == "Full regression")
+    probe = tmp_path / "python3"
+    probe.write_text('#!/bin/sh\nif [ "$EXPECT_TOKEN" = absent ]; then\n'
+                     '  test "${TEST_USER_TOKEN+x}" != x\nelse\n'
+                     '  test "$TEST_USER_TOKEN" = "$EXPECT_TOKEN"\nfi\n')
+    probe.chmod(0o700)
+    env = dict(os.environ, TEST_USER_TOKEN=token, EXPECT_TOKEN=token or "absent",
+               PATH=str(tmp_path) + os.pathsep + os.environ["PATH"],
+               RUNNER_TEMP=str(tmp_path), GITHUB_RUN_ID="1", GITHUB_RUN_ATTEMPT="1")
+    result = subprocess.run(["bash", "-e", "-c", step["run"]], env=env, capture_output=True)
+    assert result.returncode == 0
 
 
 def test_workflow_schedule_main_serialization_and_single_build():
