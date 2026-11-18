@@ -10,7 +10,8 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 PROTECTED = (".github/", "scripts/", "tests/")
-DOC_FILES = {"README.md", "Roadmap.md", "Roadmap-archive.md", "AssumptionLog.md"}
+DOC_FILES = {"README.md", "Roadmap.md", "Roadmap-archive.md", "AssumptionLog.md",
+             "AGENTS.md", "AGENT_ONBOARDING.md", "CLAUDE.md"}
 
 
 def _pairs(items):

@@ -14,6 +14,11 @@ def test_docs_allowlist_is_narrow_and_rename_delete_are_product():
     from scripts.ci_scope import docs_only
 
     assert docs_only(b"M\0README.md\0A\0PRD/new.md\0")
+    for path in ("AGENTS.md", "AGENT_ONBOARDING.md", "CLAUDE.md"):
+        assert docs_only(b"M\0" + path.encode() + b"\0")
+        assert docs_only(b"A\0" + path.encode() + b"\0")
+        assert not docs_only(b"M\0" + path.encode() + b"\0M\0unknown.md\0")
+        assert not docs_only(b"D\0" + path.encode() + b"\0")
     for changed in (b"", b"M\0README.md\0M\0server.py\0",
                     b"A\0unknown.md\0", b"M\0.github/workflows/docs.yml\0",
                     b"D\0README.md\0", b"R100\0README.md\0docs/new.md\0",
