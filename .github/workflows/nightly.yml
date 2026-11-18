@@ -1,0 +1,63 @@
+name: Nightly Full Regression
+
+on:
+  schedule:
+    - cron: '17 23 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devtr6-real
+  cancel-in-progress: false
+
+jobs:
+  ref-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require main for scheduled and manual runs
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo 'Nightly regression requires main.' >&2
+            exit 1
+          fi
+  nightly:
+    needs: ref-check
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - name: Build one test image
+        run: docker build --target test --build-arg UID="$(id -u)" --build-arg GID="$(id -g)" -t vetmanager-mcp-test .
+      - name: Full regression
+        env:
+          TEST_DOMAIN: devtr6
+          TEST_API_KEY: ${{ secrets.VETMANAGER_TEST_API_KEY }}
+          TEST_USER_TOKEN: ${{ secrets.VETMANAGER_TEST_USER_TOKEN }}
+          TEST_USER_LOGIN: ${{ secrets.VETMANAGER_TEST_USER_LOGIN }}
+          TEST_USER_PASSWORD: ${{ secrets.VETMANAGER_TEST_USER_PASSWORD }}
+        run: |
+          if [ -z "${TEST_USER_TOKEN:-}" ]; then
+            unset TEST_USER_TOKEN
+          fi
+          python3 scripts/nightly_regression.py --evidence-dir "$RUNNER_TEMP/nightly-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+      - name: Publish triage summary
+        if: ${{ always() }}
+        run: |
+          summary="$RUNNER_TEMP/nightly-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/summary.md"
+          if [ -f "$summary" ]; then
+            cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Nightly stopped before evidence generation.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: nightly-triage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/nightly-${{ github.run_id }}-${{ github.run_attempt }}/artifact/
+          if-no-files-found: error
+          retention-days: 7

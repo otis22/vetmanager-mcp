@@ -5,10 +5,14 @@
 
 Актуальная очередь 17.11.2026 (решение владельца):
 **478 → (471 + 472) → 473 → 474 → 475 → 476**. Все прежние очереди ниже —
-исторические. 478B-2 реализован; локальные gates и первый committed release
-review зелёные. Финальный amended SHA проходит повторный release gate перед
-push; PR/CI/merge/deploy/monitoring принимает куратор. 478B-3 остаётся отдельным
-следующим PR.
+исторические. Активный поезд: 478B-3, ветка `dev/roadmap-478b-3`, base
+`6ea4fe30b7d1bcce0a4630a0d3dd61feecf548f1`. Gate: resume1 исправил high token precedence из release-review `e7952a0`;
+полный Spark scout без findings, новый default5035/PostgreSQL8 и cleanup зелёные.
+Next: новый commit и повторный committed release-review перед push; затем
+приёмка куратора 478.5.
+Stop: красный обязательный gate, неполный aggregate, невалидное release-review
+или отсутствие credentials для локального real/browser. PR, CI, merge,
+deploy, monitoring и ручной nightly принимает куратор.
 
 Поезда:
 
@@ -65,12 +69,17 @@ push; PR/CI/merge/deploy/monitoring принимает куратор. 478B-3 о
   focused29 exit0; новый commit проходит собственный release-review перед push.
 - 478.4 PR 478B-3: nightly полный regression, сохранение JUnit/outcome и
   измерение фактического сокращения времени и числа запусков относительно
-  baseline. — `todo`
+  baseline. [PRD](PRD/этап-478-4-nightly-regression.md). Локально: default
+  5035 passed (resume1), PostgreSQL 8 passed, cleanup 0; фактический эффект измеряется
+  после merge, не выдуман заранее. Nightly на main и его сохранённые artifacts
+  принимает куратор после merge. — `in_progress`
 - 478.5 Приёмка на docs-only, isolated tool, shared runtime и unknown file;
   ручной запуск nightly. Проверить `PR validated-tree → main reuse` без
   `force_full` на обычном изменении, которое не меняет CI decision surface.
   Одинаковый долгий suite не выполняется дважды на одном tree SHA; обязательные
-  GitHub checks и полнота покрытия сохраняются. — `todo`
+  GitHub checks и полнота покрытия сохраняются. Локальная матрица selector
+  совпала с PRD; GitHub/manual evidence после merge принимает куратор.
+  — `supervisor_pending`
 
 Nightly запускается из main по расписанию `17 23 * * *` (около 02:17 МСК) и
 вручную через `workflow_dispatch`: один Docker image, полный

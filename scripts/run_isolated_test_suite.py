@@ -251,6 +251,8 @@ def main():
         grace = ["-e", "VM_HTTP_CLIENT_CLOSE_GRACE_SECONDS=0.5"] if real else []
         if real_junit:
             grace += ["-e", "REAL_JUNIT_DIR=/evidence"]
+        if args.suite == "default":
+            grace += ["-e", "DEFAULT_JUNIT_XML=/evidence/default.xml"]
         return [*compose, "run", "--rm", "-T", *grace, "test", *command]
 
     def terminate(_sig, _frame):
@@ -316,8 +318,11 @@ def main():
         if args.suite in ("default", "all"):
             run("default", test_command("python", "scripts/run_default_test_suite.py"))
         if args.suite in ("postgres", "all"):
-            run("postgres", test_command("sh", "-c", "python -W error -m pytest -q -m postgres "
-                "--junitxml=/evidence/postgres.xml && python scripts/check_stage424_postgres_results.py /evidence/postgres.xml"))
+            run("postgres", test_command("sh", "-c", "python scripts/offline_gate_manifest.py postgres --write-fingerprint /evidence/postgres.start && "
+                "python -W error -m pytest -q -m postgres --junitxml=/evidence/postgres.xml && "
+                "python scripts/check_stage424_postgres_results.py /evidence/postgres.xml && "
+                "python scripts/offline_gate_manifest.py postgres --junit /evidence/postgres.xml "
+                "--output /evidence/postgres-gate.json --starting-fingerprint-file /evidence/postgres.start"))
         if args.suite in ("real", "all"):
             run("real", test_command("python", "scripts/run_opt_in_real_test_suite.py",
                                      real=True, real_junit=True), recovery=True)
