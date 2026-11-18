@@ -20,7 +20,7 @@ from scripts.offline_gate_manifest import check_inventory, junit_nodes, source_f
 from scripts.split_default_gate import ci_fast_shards, collected_fast_nodes
 
 
-SHARD_COUNT = 10
+SHARD_COUNT = 12
 
 
 def run_ci_shard(directory: Path, index: int) -> int:
@@ -29,7 +29,10 @@ def run_ci_shard(directory: Path, index: int) -> int:
     check_inventory("default")
     fingerprint = source_fingerprint()
     nodes = collected_fast_nodes()
-    shard = ci_fast_shards(nodes)[index]
+    shards = ci_fast_shards(nodes)
+    if len(shards) != SHARD_COUNT:
+        raise ValueError("fast shard count mismatch")
+    shard = shards[index]
     if not shard:
         raise ValueError("empty fast shard")
     directory.mkdir(parents=True, exist_ok=True)
@@ -62,6 +65,12 @@ def aggregate_ci_shards(parts: Path, directory: Path) -> int:
     fingerprint = source_fingerprint()
     nodes = collected_fast_nodes()
     shards = ci_fast_shards(nodes)
+    if len(shards) != SHARD_COUNT:
+        raise ValueError("fast shard count mismatch")
+    expected_parts = {f"ci-fast-shard-{index}" for index in range(SHARD_COUNT)}
+    actual_parts = {part.name for part in parts.iterdir()}
+    if actual_parts != expected_parts:
+        raise ValueError("missing or unexpected fast shard part")
     all_cases = ET.Element("testsuites")
     coverage_paths = []
     for index, shard in enumerate(shards):

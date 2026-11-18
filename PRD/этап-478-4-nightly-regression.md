@@ -232,3 +232,103 @@ auth-discovery B-3, scripts, workflow, impact map или inventory.
 Architecture Critique: not required — auth, storage, API response, production
 behavior и ownership boundaries не меняются. Куратор создаёт PR и выполняет
 merge, deploy и monitoring после локальной передачи evidence.
+
+## 478.5 follow-up: запас fast(0), 18.11.2026
+
+После merge isolated `whoami` PR #49 fast(0) прошёл все 452 теста, но main
+`44311047772` дважды превысил неизменный wall guard 180 с: 210 и 222 с.
+Тот же shard в PR `44309201311` занял 160 с. Непосредственная причина отказа
+CI — превышение wall guard при успешных тестах. Подтверждённый фактор риска —
+дисбаланс shard: алгоритм раскладывает файлы по **числу** nodes,
+не по времени; fast(0) содержит `test_stage459_server_child_inventory.py`.
+JUnit успешного PR даёт этому файлу 66.69 с из 119.15 с testcase time shard 0;
+остальные shards имеют 0.78–26.02 с testcase time. Это измерение одного PR,
+не прогноз каждого будущего запуска. Main JUnit с durations отсутствует, поэтому
+источник разброса 160→222 с доказать нельзя.
+
+### Архитектурное решение и декомпозиция
+
+Вынести целый scanner-файл в отдельный fast shard 10, сохранив восемь обычных
+shards и два существующих clean-process shards. После отдельного TLS failure
+два дополнительных runners минимально изолируют оба файла от обычных shards.
+После первого локального прогона оставшийся shard 0 занял 128 с wall (100.35 с
+pytest): для запаса относительно наблюдаемого spread 62 с перенести два
+проверенно дорогих файла `test_stage384_retuning.py` и
+`test_stage111_blocker_cleanup.py` целиком в лёгкий shard 2. Они заняли
+23.38 с testcase time локального shard 0; в PR JUnit — 14.58 с. Shard 2
+до переноса имел 10.62 с testcase time в том же PR JUnit. Это фиксированный
+адресный перенос по измерению, без нового scheduler.
+Во втором локальном shard 0 после переноса 433 tests прошли и два TLS loopback
+nodes упали на `ConnectionResetError`/`ResourceWarning` при закрытии socket;
+оба node по отдельности и owning file (3 tests) прошли. Это указывает на
+зависимость от длинного процесса/порядка, но не доказывает конкретный upstream
+дефект. Чтобы сохранить строгий `-W error` и сами assertions, перенести весь
+TLS loopback файл из shard 0 в собственный shard 11: Kimi pre-freeze review
+справедливо указал, что scanner может сделать общий процесс длинным и одна
+локальная зелёная попытка этого не опровергает. После этого проверить оба
+затронутых shards адресно; красный повтор блокирует выпуск.
+Вариант переноса файла в менее загруженный shard отвергнут: при наблюдаемом
+разбросе 62 с его запас до guard нельзя уверенно обосновать. Вариант менять
+timeout, повторять job или перераспределять по числу тестов не устраняет
+измеренную проблему. Вариант нового duration scheduler требует новых входных
+данных и логики, которых пока нет.
+
+Инварианты: каждый fast node исполняется ровно один раз; inventory/fingerprint,
+JUnit union, coverage aggregate, warning policy и 180 с guard остаются
+fail-closed. Количество nodes и versioned inventory не меняются. Поскольку
+изменяются CI script/workflow, main после merge выполняет полный контур.
+При успешных tests и красном wall guard загрузить уже созданные JUnit,
+fingerprint и coverage как диагностический artifact, не меняя failed status;
+при failed tests artifact не публиковать. Aggregate отвергает лишние shard
+directories, даже если ожидаемый union совпадает.
+Rollback — revert этого CI-only изменения, если новая схема нарушит union или
+coverage. При повторном wall failure revert сам по себе не восстанавливает
+зелёный main: остановить приёмку и сделать адресный CI-only hotfix по durations
+нового run, сохраняя guard. Ручной rerun старого main и ослабление лимита не
+считаются fallback.
+
+1. Guard и mutation red для отдельного scanner shard, точного union и CI
+   matrix; owning suite, fast (≤150 строк).
+2. Обновить partition, count, workflow; focused green, audit и deterministic
+   checks (≤150 строк).
+3. Полный diff review, default/PostgreSQL, archive, commit, release review,
+   push; GitHub/deploy приёмка куратором (≤2 ч).
+
+### Acceptance, simplicity и Architecture Critique
+
+По PR JUnit после выделения scanner и переноса трёх файлов оценка прежнего
+shard 0: 119.15−66.69−14.58−1.44 = 36.44 с testcase time. Новый максимум
+shard 10 — 66.69 с testcase time, на 44.0% меньше
+старого максимума 119.15 с. Его фактический PR wall
+160 с не раскладывается точно по файлам: до GitHub run нельзя выдавать 36.44 с
+за wall. Необходимое
+подтверждение запаса — локальное исполнение новых shards и сохранённый guard;
+новый GitHub PR должен показать максимум новых fast shards ≤110 с wall (запас
+не менее 70 с до guard, больше наблюдаемого spread 62 с). Это эмпирическая
+граница по доступным трём wall observations, не верхняя оценка будущего jitter.
+Если PR не покажет этот запас, куратор не принимает
+балансировку и нужен отдельный анализ durations нового run. Повтор того же
+failed main run запрещён. Main после merge отдельно подтверждает полный
+контур на новом decision surface. Ни один локальный замер не объявляется
+гарантией времени GitHub runner.
+Локально до выделения TLS в отдельный процесс affected shards 0/2/10 дали
+wall 111/57/41 с; финальные measurements повторить для 10/11;
+максимум 111 с оставляет 69 с до guard, на 7 с больше наблюдаемого PR→main
+spread 62 с. Это сравнение фактических измерений, не гарантия будущего runner.
+
+Simplicity: один фиксированный scanner-файл в shard 10, TLS файл в shard 11,
+два целых файла в менее загруженный shard 2 и два новых индекса; без новых
+абстракций, конфигурации или
+второго алгоритма распределения. При добавлении
+новых tests поддерживается существующая fail-closed проверка exact union.
+Guard связывает число фактических shards, runner count и CI matrix, фиксирует
+индексы двух существующих clean-process файлов и scanner, отвергает потерю
+или дублирование node. Дополнительные runners — +2 к 10 параллельным fast jobs;
+цену в runner-minutes измерить по новому GitHub PR, не выводить из testcase
+time. В старой реализации `shard_fast_nodes(nodes, 8)` вызывается **до**
+удаления dedicated файлов, поэтому остальные файлы shard 0 остаются на месте;
+разности по файлам корректны лишь для testcase time старого PR.
+Architecture Critique требуется: решение меняет CI performance/load и
+decision surface. Проверить цену дополнительного runner, риск false confidence
+от JUnit testcase durations, стабильность clean-process ownership и rollback
+перед реализацией; затем PRD-review обоих сильных ревьюеров.

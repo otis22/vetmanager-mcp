@@ -41,15 +41,23 @@ def shard_fast_nodes(nodes: list[str], count: int) -> list[list[str]]:
 
 
 def ci_fast_shards(nodes: list[str]) -> list[list[str]]:
-    """Keep measured order-sensitive scanner tests in clean pytest processes."""
+    """Keep order-sensitive tests apart from regular shards; move measured slow files."""
     dedicated = ("tests/test_stage285_runtime_env_reaches_container.py",
-                 "tests/test_stage337_user_name_search_hint.py")
+                 "tests/test_stage337_user_name_search_hint.py",
+                 "tests/test_stage459_server_child_inventory.py",
+                 "tests/test_stage459_resolver_tls_loopback.py")
     shards = shard_fast_nodes(nodes, 8)
     for file in dedicated:
         own = [node for shard in shards for node in shard if node.split("::", 1)[0] == file]
         for shard in shards:
             shard[:] = [node for node in shard if node.split("::", 1)[0] != file]
         shards.append(own)
+    # JUnit and local shard runs showed these two files dominate the remaining shard 0.
+    for file in ("tests/test_stage384_retuning.py", "tests/test_stage111_blocker_cleanup.py"):
+        own = [node for shard in shards[:8] for node in shard if node.split("::", 1)[0] == file]
+        for shard in shards[:8]:
+            shard[:] = [node for node in shard if node.split("::", 1)[0] != file]
+        shards[2].extend(own)
     if sorted(node for shard in shards for node in shard) != sorted(nodes):
         raise ValueError("dedicated fast shard lost node")
     return shards
