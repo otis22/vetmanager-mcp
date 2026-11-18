@@ -21,7 +21,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.real_group_gate import (MANIFEST, digest_files, manifest_hash, runtime_files,
                                      test_files, validate_aggregate, validate_manifest, load_latest_attempts,
-                                     validate_shard)
+                                     validate_shard, configured_manifest)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.test_recovery_supervisor import (
@@ -30,6 +30,30 @@ from scripts.test_recovery_supervisor import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def resolved_group_environment(paths):
+    """Resolve Compose precedence without printing or persisting credentials."""
+    paths = paths or ([str(ROOT / ".env")] if (ROOT / ".env").exists() else [])
+    env = dict(os.environ, TEST_POSTGRES_PASSWORD="config-only-synthetic",
+               TEST_STORAGE_ENCRYPTION_KEY="config-only-synthetic",
+               TEST_WEB_SESSION_SECRET="config-only-synthetic")
+    command = ["docker", "compose", "--profile", "test",
+               *(item for path in paths for item in ("--env-file", str(Path(path).resolve()))),
+               "-f", str(ROOT / "docker-compose.test.yml"), "config", "--format", "json"]
+    result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True)
+    if result.returncode:
+        raise ValueError("cannot resolve test auth configuration")
+    try:
+        return json.loads(result.stdout)["services"]["test"]["environment"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ValueError("invalid test auth configuration") from exc
+
+
+def required_auth_flags(suite, group):
+    if group or suite == "recovery":
+        return ["--require-api"]
+    return ["--require-all"] if suite in ("real", "all") else []
 
 
 def contour_hmac(key, paths):
@@ -106,6 +130,10 @@ def main():
         for name, nodes in manifest["groups"].items():
             print(f"{name}: {len(nodes)} nodes")
         return 0
+    original_manifest = manifest
+    not_configured = {}
+    if args.group or args.aggregate:
+        manifest, not_configured = configured_manifest(manifest, resolved_group_environment(args.env_file))
     if args.aggregate:
         if args.evidence_dir is None:
             parser.error("aggregate requires --evidence-dir")
@@ -141,7 +169,9 @@ def main():
                            **current_image}
                     for name in manifest["groups"] if name in attempts}
         validate_aggregate(manifest, attempts, root, expected)
-        print("aggregate: all groups passed")
+        print(f"aggregate: all configured groups passed; not-configured auth nodes: {len(not_configured)}")
+        for node, reason in not_configured.items():
+            print(f"not-configured ({reason}): {node}")
         return 0
     if args.group and args.group not in manifest["groups"]:
         parser.error("unknown real group")
@@ -276,12 +306,11 @@ def main():
                 return 1
             collected = [line.strip() for line in (evidence / "collect.log").read_text().splitlines()
                          if line.startswith("tests/") and "::" in line]
-            validate_manifest(manifest, collected)
+            validate_manifest(original_manifest, collected)
             if args.validate_manifest and not args.group:
                 return 0
-        if args.suite in ("real", "all", "focus", "recovery"):
-            required_auth = (["--require-all"] if args.suite in ("real", "all") else
-                             ["--require-api"] if args.suite == "recovery" else [])
+        if args.group or args.suite in ("real", "all", "focus", "recovery"):
+            required_auth = required_auth_flags(args.suite, args.group)
             if run("auth", test_command("python", "scripts/prepare_real_test_auth.py", "/evidence/auth.env", *required_auth)):
                 return 1
         if args.group:

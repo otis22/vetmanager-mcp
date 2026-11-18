@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import time
@@ -61,6 +62,31 @@ def validate_manifest(manifest, collected):
     if not all(isinstance(n, str) and n.startswith("tests/") and "::" in n for n in nodes):
         raise ValueError("invalid node ID")
     return nodes
+
+
+def configured_manifest(manifest, env):
+    """Account for existing optional-auth guards; executed shards remain skip-free."""
+    nodes = [node for group in manifest["groups"].values() for node in group]
+    validate_manifest(manifest, nodes)
+    requirements = manifest.get("auth_requirements", {})
+    if (not isinstance(requirements, dict) or not set(requirements) <= set(nodes)
+            or set(requirements) & set(manifest.get("required_nodes", []))
+            or any(value not in ("login-password", "user-token") for value in requirements.values())):
+        raise ValueError("invalid optional auth requirements")
+    login = bool(env.get("TEST_USER_LOGIN"))
+    password = bool(env.get("TEST_USER_PASSWORD"))
+    if login != password or (env.get("TEST_USER_TOKEN_BASE_URL") and not (login and password)):
+        raise ValueError("incomplete optional login/password configuration")
+    available = {"login-password": login and password,
+                 "user-token": bool(env.get("TEST_USER_TOKEN")) or (login and password)}
+    unavailable = {node: kind for node, kind in requirements.items() if not available[kind]}
+    selected = copy.deepcopy(manifest)
+    selected["groups"] = {name: [node for node in group if node not in unavailable]
+                          for name, group in manifest["groups"].items()}
+    if any(not group for group in selected["groups"].values()):
+        raise ValueError("auth selection removed a required group")
+    selected["not_configured"] = unavailable
+    return selected, unavailable
 
 
 def junit_nodes(path):
