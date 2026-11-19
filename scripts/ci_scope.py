@@ -132,11 +132,20 @@ class GitHub:
 def previous_main_success(api: GitHub, before: str) -> bool:
     if not SHA.fullmatch(before):
         return False
-    query = urlencode({"event": "push", "head_sha": before, "status": "success", "per_page": 100})
-    runs = api.get(f"/actions/workflows/test.yml/runs?{query}").get("workflow_runs", [])
-    return any(r.get("head_sha") == before and r.get("event") == "push"
-               and r.get("conclusion") == "success" and r.get("head_branch") == "main"
-               for r in runs)
+    query = urlencode({"event": "push", "head_sha": before, "per_page": 100})
+    response = api.get(f"/actions/workflows/test.yml/runs?{query}")
+    if not isinstance(response, dict) or not isinstance(response.get("workflow_runs"), list):
+        return False
+    return any(
+        isinstance(run, dict)
+        and run.get("head_sha") == before
+        and run.get("event") == "push"
+        and run.get("head_branch") == "main"
+        and run.get("path") == ".github/workflows/test.yml"
+        and run.get("status") == "completed"
+        and run.get("conclusion") == "success"
+        for run in response["workflow_runs"]
+    )
 
 
 def reusable_tree(api: GitHub, tree: str, repo_id: int, workflow_id: int,

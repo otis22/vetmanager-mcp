@@ -3,31 +3,12 @@
 Статусы: `todo` | `in_progress` | `supervisor_pending` | `done` | `stop`.
 Структуру проверяет `scripts/check_roadmap_structure.py`.
 
-Актуальная очередь 19.11.2026 после 471 + 472 и разрешённого feedback triage:
-**479 → 484 → 482 → 473 → 474 → 475 → 476**. По решению владельца 479 выпускается
-отдельным поездом в ветке `dev/roadmap-479-480-report-ai` от
-`ce7631167c23a09c43cfd74009d4a81dd866c68a`. После исправления oracle
-старого канонического отчёта focused/fast и полный default (5098 passed,
-fingerprint `878f11b2…`) зелёные; изменённый инструмент вызван живьём.
-`report-ai-420` группа содержит один красный узел: повтор получил старый отчёт
-с иным фактическим результатом (0 строк против 12 строк seed с zero-fill).
-Владелец 19.11 разрешил выпуск 479 с документированным исключением только
-`test_stage420_live_dedup_repeated_intent`; raw failure остаётся в приватном
-evidence, остальные real группы и aggregate выполняются последовательно.
-Upstream semantic match эскалирован Сироте в Битриксе (сообщение 789063).
-483 остаётся `supervisor_pending` до ответа ВМ; 484 — отдельная очередь MCP.
-Real aggregate с явным исключением: 132 уникальных выполненных узла,
-131 passed, 1 failed (только названный stage 420), 0 skips; 6 optional-auth
-not configured, все 7 остальных групп зелёные, cleanup 0. Strict gate exit 1,
-owner-exception verifier exit 0; raw evidence и SHA — в `AssumptionLog.md`.
-Commit `6c1c6d5286cbba7d96f3b8182a92439acae0d215` создан. Текущий gate:
-committed-diff review blocked — Astra валидно `findings=[]`, Kimi K3 не дала
-валидный schema verdict за 3 infrastructure attempts. Push запрещён по
-`CLAUDE.md` 3.1; PR/merge остаются у куратора после разблокировки гейта.
-Этап 480 остаётся
-`supervisor_pending` вне поезда: очистка имени не меняется.
-Этап 481 (#170) — `supervisor_pending` вне очереди до разрешения владельца
-на проверку create→dedup; новых jobs до этого не создавать.
+Отдельный технический поезд 482 ведётся в ветке
+`dev/roadmap-482-ci-previous-success` от `fabfa8a6340c361f39081263baf0961668ba4c51`.
+Локальные default и PostgreSQL gates зелёные; следующий шаг — committed-diff
+review, push и проверка обязательных jobs на реальном PR. PRD и evidence — в
+`PRD/этап-482-предыдущий-success-tests.md` и `AssumptionLog.md`. Этап 484
+остаётся отдельным поездом MCP, 480/481/483 ждут решений владельца.
 
 Поезда:
 
@@ -195,7 +176,7 @@ upstream-кандидата остаётся вопросом ВМ.
   не создавать; исторические разные jobs не доказывают текущее поведение.
   MCP dedup менять только при доказанном локальном дефекте. — `supervisor_pending`
 
-## Этап 482. Docs-only main: проверка предыдущего успешного Tests run — `todo`
+## Этап 482. Docs-only main: проверка предыдущего успешного Tests run — `in_progress`
 
 После merge 471+472 `previous_main_success` с `status=success` вернул пустой
 список при существующем успешном run без этого фильтра. Fail-closed селектор
@@ -204,7 +185,7 @@ upstream-кандидата остаётся вопросом ВМ.
 - 482.1 Отдельным техническим поездом установить причину расхождения API,
   добавить красный guard на существующий success и на отсутствие/ошибку
   evidence; исправить селектор без fail-open. Проверить docs-only main и
-  обязательные CI-контуры по отдельному PRD. — `todo`
+  обязательные CI-контуры по отдельному PRD. — `in_progress`
 
 ## Этап 473. Блок «Фидбек → Roadmap» на внешнем дашборде — `todo`
 
