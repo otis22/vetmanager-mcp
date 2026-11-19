@@ -55,13 +55,28 @@ def test_real_junit_requires_two_clean_groups_and_mandatory_nodes(tmp_path, vari
 
 def test_seed_intents_use_unique_marker_and_preserve_it(monkeypatch):
     intents = []
+    data_calls = []
     next_id = iter(range(100, 104))
+    current_id = None
 
     def fake_call(_client, tool, args, _request_id):
+        nonlocal current_id
         if tool == "create_report_ai_job":
             intents.append(args["intent_text"])
+            if len(intents) % 2 == 0:
+                return 200, {"structuredContent": {"data": {
+                    "is_deduplicated": True, "job": {"id": current_id,
+                                                   "status": "recognizing"}}}}
+            current_id = next(next_id)
             return 200, {"structuredContent": {"data": {"job": {
-                "id": next(next_id), "status": "ready_to_save"}}}}
+                "id": current_id, "status": "recognizing"}}}}
+        if tool == "get_report_ai_job":
+            return 200, {"structuredContent": {"data": {"job": {
+                "id": current_id, "status": "ready_to_save"}}}}
+        if tool == "get_report_ai_job_data":
+            data_calls.append(args["job_id"])
+            return 200, {"structuredContent": {"data": {"rows": [],
+                "next_action": {"call": {"tool": "rate_report_ai_job"}}}}}
         assert tool == "save_report_ai_job_as_report"
         return 200, {"structuredContent": {"data": {
             "report_id": 5, "next_action": {"call": {"tool": "get_report_ai_job_data"}}}}}
@@ -69,12 +84,176 @@ def test_seed_intents_use_unique_marker_and_preserve_it(monkeypatch):
     monkeypatch.setattr(report_live, "_call", fake_call)
     first = report_live._seed_matched_report(None, year=2003, request_id=1)[1]
     second = report_live._seed_matched_report(None, year=2003, request_id=1)[1]
-    assert intents == [first, second]
+    assert intents == [first, first, second, second]
+    assert data_calls == [100, 101]
     markers = [re.search(r"Метка проверки ([0-9a-f]{32}) не является фильтром данных", text)
-               for text in intents]
+               for text in (first, second)]
     assert all(markers)
     assert markers[0].group(1) != markers[1].group(1)
     assert markers[0].group(1) in first[:-1] + "!"
+
+
+@pytest.mark.parametrize("bad_duplicate", ["flag", "job_id"])
+def test_stage420_exact_repeat_requires_same_job_and_dedup_flag(monkeypatch, bad_duplicate):
+    calls = 0
+
+    def fake_call(_client, tool, _args, _request_id):
+        nonlocal calls
+        assert tool == "create_report_ai_job"
+        calls += 1
+        data = {"job": {"id": 41 if calls == 1 or bad_duplicate == "flag" else 42,
+                        "status": "recognizing"}}
+        if calls == 2:
+            data["is_deduplicated"] = bad_duplicate != "flag"
+        return 200, {"structuredContent": {"data": data}}
+
+    monkeypatch.setattr(report_live, "_call", fake_call)
+    with pytest.raises(AssertionError, match="exact repeated intent"):
+        report_live._seed_matched_report(None, year=2003, request_id=1)
+    assert calls == 2
+
+
+def test_stage420_terminal_seed_is_not_used_for_active_job_dedup(monkeypatch):
+    intents = []
+
+    def fake_call(_client, tool, args, _request_id):
+        if tool == "create_report_ai_job":
+            intents.append(args["intent_text"])
+            if len(intents) == 1:
+                return 200, {"structuredContent": {"data": {"job": {
+                    "id": 40, "status": "existing_report_matched"}}}}
+            return 200, {"structuredContent": {"data": {
+                "is_deduplicated": len(intents) == 3,
+                "job": {"id": 41, "status": "recognizing"}}}}
+        if tool == "get_report_ai_job":
+            return 200, {"structuredContent": {"data": {"job": {
+                "id": 41, "status": "ready_to_save"}}}}
+        if tool == "get_report_ai_job_data":
+            return 200, {"structuredContent": {"data": {"rows": [],
+                "next_action": {"call": {"tool": "rate_report_ai_job"}}}}}
+        assert tool == "save_report_ai_job_as_report"
+        return 200, {"structuredContent": {"data": {
+            "report_id": 5, "next_action": {"call": {"tool": "get_report_ai_job_data"}}}}}
+
+    monkeypatch.setattr(report_live, "_call", fake_call)
+    report_live._seed_matched_report(None, year=2003, request_id=1)
+    assert len(intents) == 3
+    assert intents[0] != intents[1] == intents[2]
+
+
+def test_stage420_exact_repeat_is_checked_once_across_seed_years(monkeypatch):
+    intents = []
+    current_id = 0
+
+    def fake_call(_client, tool, args, _request_id):
+        nonlocal current_id
+        if tool == "create_report_ai_job":
+            intents.append(args["intent_text"])
+            if len(intents) == 1:
+                current_id = 41
+                return 200, {"structuredContent": {"data": {"job": {
+                    "id": current_id, "status": "recognizing"}}}}
+            if len(intents) == 2:
+                return 200, {"structuredContent": {"data": {
+                    "is_deduplicated": True, "job": {"id": current_id,
+                                                     "status": "recognizing"}}}}
+            current_id = 42
+            return 200, {"structuredContent": {"data": {"job": {
+                "id": current_id, "status": "recognizing"}}}}
+        if tool == "get_report_ai_job":
+            status = "existing_report_matched" if current_id == 41 else "ready_to_save"
+            return 200, {"structuredContent": {"data": {"job": {
+                "id": current_id, "status": status}}}}
+        if tool == "save_report_ai_job_as_report":
+            return 200, {"structuredContent": {"data": {
+                "report_id": 5, "next_action": {"call": {"tool": "get_report_ai_job_data"}}}}}
+        assert tool == "get_report_ai_job_data"
+        return 200, {"structuredContent": {"data": {"rows": [],
+            "next_action": {"call": {"tool": "rate_report_ai_job"}}}}}
+
+    monkeypatch.setattr(report_live, "_call", fake_call)
+    report_live._seed_matched_report(None, year=2003, request_id=1)
+    assert len(intents) == 3
+    assert intents[0] == intents[1] != intents[2]
+
+
+def test_stage420_distinct_recognition_from_saved_evidence_is_not_false_dedup_failure(monkeypatch):
+    """Sanitized 479 evidence: count versus count of admission ID."""
+    seed = {"tables": ["admission"], "fields": ["Количество"],
+            "filters": ["same date interval"], "group_by": ["month"], "order_by": []}
+    repeat = {**seed, "fields": ["Количество(ID записи)"]}
+    calls = []
+
+    def fake_call(_client, tool, _args, _request_id):
+        calls.append(tool)
+        return 200, {"structuredContent": {"data": {"job": {
+            "id": 2, "status": "ready_to_save", "recognized": repeat,
+            "next_action": {"call": {"tool": "save_report_ai_job_as_report"}},
+        }}}}
+
+    monkeypatch.setattr(report_live, "_call", fake_call)
+    report_live._check_repeated_intent_dedup(None, seed_report_id=1,
+        seed_intent="request.", request_id=1, label="EVIDENCE", seed_recognized=seed)
+    assert calls == ["create_report_ai_job"]
+
+
+@pytest.mark.parametrize("equivalent", [True, False])
+def test_stage420_existing_match_may_use_older_equivalent_report(monkeypatch, equivalent):
+    """Saved devtr6 evidence: an older canonical report can match this request."""
+    recognized = {"tables": ["admission"], "fields": ["count"],
+                  "filters": ["same interval"], "group_by": ["month"],
+                  "order_by": []}
+    calls = []
+
+    def fake_call(_client, tool, _args, _request_id):
+        calls.append(tool)
+        if tool == "create_report_ai_job":
+            return 200, {"structuredContent": {"data": {"job": {
+                "id": 2, "status": "existing_report_matched", "report_id": 99,
+                "recognized": recognized if equivalent else {**recognized, "fields": ["sum"]},
+                "next_action": {"call": {"tool": "get_report_ai_job_data",
+                                         "arguments": {"job_id": 2}},
+                                "required_args": ["job_id"]},
+            }}}}
+        assert tool == "get_report_ai_job_data"
+        return 200, {"structuredContent": {"data": {"rows": [], "total": 0,
+            "next_action": {"call": {"tool": "rate_report_ai_job"}}}}}
+
+    monkeypatch.setattr(report_live, "_call", fake_call)
+    if equivalent:
+        report_live._check_repeated_intent_dedup(None, seed_report_id=1,
+            seed_intent="request.", request_id=1, label="EVIDENCE", seed_recognized=recognized)
+        assert calls == ["create_report_ai_job", "get_report_ai_job_data"]
+    else:
+        with pytest.raises(AssertionError, match="different recognized structure"):
+            report_live._check_repeated_intent_dedup(None, seed_report_id=1,
+                seed_intent="request.", request_id=1, label="EVIDENCE", seed_recognized=recognized)
+
+
+@pytest.mark.parametrize("change", ["equal", "missing_seed", "missing_repeat",
+                                   "empty_fields", "null_field", "empty_tables",
+                                   "permuted_fields", "permuted_filters"])
+def test_stage420_new_report_requires_proven_structural_difference(change):
+    seed = {"tables": ["admission"], "fields": ["count", "month"],
+            "filters": ["date", "clinic"],
+            "group_by": ["month"], "order_by": []}
+    repeat = dict(seed)
+    if change == "missing_seed":
+        seed.pop("fields")
+    elif change == "missing_repeat":
+        repeat.pop("fields")
+    elif change == "empty_fields":
+        repeat["fields"] = []
+    elif change == "null_field":
+        repeat["fields"] = [None]
+    elif change == "empty_tables":
+        repeat["tables"] = []
+    elif change == "permuted_fields":
+        repeat["fields"] = list(reversed(seed["fields"]))
+    elif change == "permuted_filters":
+        repeat["filters"] = list(reversed(seed["filters"]))
+    with pytest.raises(AssertionError, match="dedup failed|incomplete"):
+        report_live._assert_distinct_recognized_report(seed, repeat)
 
 
 def test_web_happy_path_client_has_bounded_60_second_timeout():

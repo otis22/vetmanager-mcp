@@ -56,7 +56,8 @@ def test_stage422_live_dedup_and_partial_profile(live_server_url):
               f"{[e['error_type'] for e in body['section_errors'].values()]!r}}}")
 
     with _mcp_client(live_server_url, token.group(0)) as client:
-        seed_report_id, seed_intent, request_id = _seed_matched_report(client, year=2003, request_id=3)
+        seed_report_id, seed_intent, request_id, seed_recognized = _seed_matched_report(
+            client, year=2003, request_id=3)
         _check_repeated_intent_dedup(client, seed_report_id=seed_report_id,
                                      seed_intent=seed_intent, request_id=request_id,
-                                     label="STAGE422")
+                                     label="STAGE422", seed_recognized=seed_recognized)

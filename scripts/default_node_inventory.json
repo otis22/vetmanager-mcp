@@ -1328,8 +1328,8 @@
     "sha256": "21c1491ff08ceecea06686f5ced1444c0146d021f060f181b30c1aefdb32615a"
   },
   "tests/test_stage459_diagnose_guards.py": {
-    "count": 10,
-    "sha256": "16a99786819be1519832292ea5109efe9b15d32d2fd790c155e907f4ea437466"
+    "count": 25,
+    "sha256": "c88a9986bf5e58c759204dfb7fbc01f7f3774caa2d31c3993ab59813c8b7485e"
   },
   "tests/test_stage459_export_guard_classification.py": {
     "count": 11,
@@ -1486,6 +1486,10 @@
   "tests/test_stage478b_inventory_preflight.py": {
     "count": 15,
     "sha256": "e734beb7ed54654d7ffe8c2da47e6ad9adb8d0a82456e669b0c2ed433f1b4cac"
+  },
+  "tests/test_stage479_report_quantities.py": {
+    "count": 23,
+    "sha256": "a90b4f2548fed4dfb3bc97ed69ee6b4ad6d6da8e473085896642a64b9473a771"
   },
   "tests/test_stage87_post_migration.py": {
     "count": 8,

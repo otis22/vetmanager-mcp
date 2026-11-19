@@ -39,9 +39,34 @@ def _issue_live_token(web: httpx.Client, *, depersonalized: bool) -> str:
     return token_match.group(0)
 
 
-def _seed_matched_report(client, *, year: int, request_id: int) -> tuple[int, str, int]:
+_REPORT_SHAPE_KEYS = ("tables", "fields", "filters", "group_by", "order_by")
+
+
+def _recognized_report_shape(recognized: object) -> tuple | None:
+    """Compare data-defining parts only; missing parts cannot prove a difference."""
+    if not isinstance(recognized, dict) or any(
+            not isinstance(recognized.get(key), list)
+            or any(not isinstance(item, str) or not item.strip()
+                   for item in recognized[key]) for key in _REPORT_SHAPE_KEYS):
+        return None
+    if not recognized["tables"] or not recognized["fields"]:
+        return None
+    return tuple(tuple(sorted(recognized[key])) for key in _REPORT_SHAPE_KEYS)
+
+
+def _assert_distinct_recognized_report(seed: object, repeated: object) -> None:
+    seed_shape = _recognized_report_shape(seed)
+    repeated_shape = _recognized_report_shape(repeated)
+    assert seed_shape is not None and repeated_shape is not None, (
+        "recognized structure incomplete; cannot excuse missing dedup")
+    assert seed_shape != repeated_shape, (
+        "dedup failed: equal recognized structures produced a new report")
+
+
+def _seed_matched_report(client, *, year: int, request_id: int) -> tuple[int, str, int, dict]:
     """Persist a report so the same data request can match it on a new job."""
     marker = uuid4().hex
+    exact_dedup_checked = False
     candidate_years = list(range(1980, year)) + list(range(year, year + 20))
     for candidate_year in candidate_years:
         intent = (
@@ -51,11 +76,27 @@ def _seed_matched_report(client, *, year: int, request_id: int) -> tuple[int, st
             f"Без персональных данных. Метка проверки {marker} не является фильтром данных."
         )
         _, response = _call(client, "create_report_ai_job", {
-            "intent_text": intent, "wait_seconds": 30}, request_id)
+            "intent_text": intent, "wait_seconds": 0}, request_id)
         assert response.get("isError") is not True
         job = response["structuredContent"]["data"]["job"]
         seed_job_id = int(job["id"])
         request_id += 1
+        if job["status"] not in {"queued", "recognizing", "building_preview"}:
+            continue  # The exact-intent contract covers an active job only.
+        if not exact_dedup_checked:
+            duplicate_code, duplicate = _call(client, "create_report_ai_job", {
+                "intent_text": intent, "wait_seconds": 0}, request_id)
+            assert duplicate.get("isError") is not True
+            duplicate_data = duplicate["structuredContent"]["data"]
+            assert duplicate_data.get("is_deduplicated") is True, (
+                "exact repeated intent was not deduplicated")
+            assert int(duplicate_data["job"]["id"]) == seed_job_id, (
+                "exact repeated intent created a different job")
+            print(f"EXACT_INTENT_DEDUP HTTP {duplicate_code} body={{"
+                  f"'is_deduplicated': {duplicate_data.get('is_deduplicated')!r}, "
+                  f"'same_job_id': {int(duplicate_data['job']['id']) == seed_job_id!r}}}")
+            exact_dedup_checked = True
+            request_id += 1
         for _ in range(12):
             if job["status"] in {"ready_to_save", "saved", "existing_report_matched", "failed", "rejected"}:
                 break
@@ -77,6 +118,8 @@ def _seed_matched_report(client, *, year: int, request_id: int) -> tuple[int, st
     else:
         pytest.fail(f"candidate seed exhausted years {candidate_years[0]}..{candidate_years[-1]}; "
                     f"last status={job['status']} job_id={seed_job_id}")
+    assert exact_dedup_checked, "no active seed for exact repeated intent dedup"
+    seed_recognized = job.get("recognized")
     _, saved = _call(client, "save_report_ai_job_as_report", {
         "job_id": seed_job_id, "title": f"MCP candidate fixture {seed_job_id}"}, request_id)
     assert saved.get("isError") is not True
@@ -84,12 +127,19 @@ def _seed_matched_report(client, *, year: int, request_id: int) -> tuple[int, st
     report_id = int(saved_data["report_id"])
     assert report_id > 0
     assert saved_data["next_action"]["call"]["tool"] == "get_report_ai_job_data"
+    _, rows_response = _call(client, "get_report_ai_job_data", {
+        "job_id": seed_job_id}, request_id + 1)
+    assert rows_response.get("isError") is not True
+    rows_data = rows_response["structuredContent"]["data"]
+    assert isinstance(rows_data.get("rows"), list)
+    assert rows_data["next_action"]["call"]["tool"] == "rate_report_ai_job"
     print(f"CANDIDATE_SEED job_id={seed_job_id} report_id={report_id} year={candidate_year}")
-    return report_id, intent, request_id + 1
+    return report_id, intent, request_id + 2, seed_recognized
 
 
 def _check_repeated_intent_dedup(client, *, seed_report_id: int, seed_intent: str,
-                                 request_id: int, label: str) -> None:
+                                 request_id: int, label: str,
+                                 seed_recognized: dict | None = None) -> None:
     """A repeated data request must lead to a readable match or live confirmation."""
     intent = seed_intent[:-1] + "!"
     code, response = _call(client, "create_report_ai_job", {
@@ -109,14 +159,21 @@ def _check_repeated_intent_dedup(client, *, seed_report_id: int, seed_intent: st
         assert response.get("isError") is not True, (job_id, statuses, response)
         job = response["structuredContent"]["data"]["job"]
         statuses.append(job.get("status"))
-    assert job.get("status") in {"existing_report_matched", "needs_confirmation"}, (
+    assert job.get("status") in {"existing_report_matched", "needs_confirmation", "ready_to_save"}, (
         f"dedup failed: job_id={job_id} seed_report_id={seed_report_id} statuses={statuses}")
     outcome = job["status"]
+    if outcome == "ready_to_save":
+        _assert_distinct_recognized_report(seed_recognized, job.get("recognized"))
+        assert not job.get("candidates") and not job.get("report_id"), (job_id, statuses)
+        assert job["next_action"]["call"]["tool"] == "save_report_ai_job_as_report"
+        print(f"{label}_DISTINCT HTTP {code} body={{'status': {outcome!r}, "
+              "'recognized_structure_differs': True, 'new_report_action': True}}")
+        return
     if outcome == "needs_confirmation":
         candidates = job.get("candidates") or []
         assert candidates, f"missing candidates: job_id={job_id} statuses={statuses}"
         candidate_id = int(candidates[0]["report_id"])
-        assert candidate_id > 0
+        assert candidate_id > 0, (job_id, statuses)
         calls = job["next_action"]["calls"]
         assert any(call["tool"] == "confirm_report_ai_job_candidate"
                    and call["arguments"] == {"job_id": job_id, "report_id": candidate_id}
@@ -134,7 +191,13 @@ def _check_repeated_intent_dedup(client, *, seed_report_id: int, seed_intent: st
         assert int(result["report_id"]) > 0, (job_id, statuses, result)
         action = result["next_action"]
     else:
-        assert int(job["report_id"]) > 0, (job_id, statuses)
+        matched_report_id = int(job["report_id"])
+        assert matched_report_id > 0, (job_id, statuses)
+        if matched_report_id != seed_report_id:
+            seed_shape = _recognized_report_shape(seed_recognized)
+            matched_shape = _recognized_report_shape(job.get("recognized"))
+            assert seed_shape is not None and seed_shape == matched_shape, (
+                "matched older report has different recognized structure")
         action = job["next_action"]
     assert action["call"] == {
         "tool": "get_report_ai_job_data", "arguments": {"job_id": job_id}}, (
@@ -218,7 +281,8 @@ def test_stage420_live_dedup_repeated_intent(live_server_url):
         _register_live_account(web)
         token = _issue_live_token(web, depersonalized=True)
     with _mcp_client(live_server_url, token) as client:
-        seed_report_id, seed_intent, request_id = _seed_matched_report(client, year=2003, request_id=2)
+        seed_report_id, seed_intent, request_id, seed_recognized = _seed_matched_report(
+            client, year=2003, request_id=2)
         _check_repeated_intent_dedup(client, seed_report_id=seed_report_id,
                                      seed_intent=seed_intent, request_id=request_id,
-                                     label="STAGE420")
+                                     label="STAGE420", seed_recognized=seed_recognized)
