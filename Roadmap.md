@@ -20,7 +20,10 @@ Real aggregate с явным исключением: 132 уникальных в
 131 passed, 1 failed (только названный stage 420), 0 skips; 6 optional-auth
 not configured, все 7 остальных групп зелёные, cleanup 0. Strict gate exit 1,
 owner-exception verifier exit 0; raw evidence и SHA — в `AssumptionLog.md`.
-Текущий gate: аудит, commit, committed-diff review и push; PR/merge — куратор.
+Commit `6c1c6d5286cbba7d96f3b8182a92439acae0d215` создан. Текущий gate:
+committed-diff review blocked — Astra валидно `findings=[]`, Kimi K3 не дала
+валидный schema verdict за 3 infrastructure attempts. Push запрещён по
+`CLAUDE.md` 3.1; PR/merge остаются у куратора после разблокировки гейта.
 Этап 480 остаётся
 `supervisor_pending` вне поезда: очистка имени не меняется.
 Этап 481 (#170) — `supervisor_pending` вне очереди до разрешения владельца

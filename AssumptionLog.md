@@ -23910,3 +23910,33 @@ Raw log красного shard SHA-256
 `0ab5a07645be660ddaffba2fb2c97bf340d6e457d0ab2f434cd22bfe5a522f69`.
 В публичные файлы данные клиники, токены и job ID не перенесены. Исключение
 не меняет постоянный fail-closed агрегатор и не закрывает этап 483.
+
+**Commit и committed-diff release review.** После аудита `git diff --check`,
+структуры Roadmap, default inventory (5098 nodes) и verify-manifest полного
+default (exit 0) создан commit
+`6c1c6d5286cbba7d96f3b8182a92439acae0d215` от базы
+`ce7631167c23a09c43cfd74009d4a81dd866c68a`. Spark candidate на полном
+committed diff прочёл 15 файлов, `findings=[]`, exit 0; evidence
+`/home/otis/myprojects/LiveHelperAgent/scratchpad/run-479-release-review-20261119/spark-committed.{prompt,stdout,stderr}.txt`.
+Astra `gpt-6-astra` committed pass 1: `findings=[]`, CLI/validator exit 0/0,
+`len(result)=16`, reviewed SHA совпал; metadata
+`/home/otis/myprojects/LiveHelperAgent/scratchpad/run-479-release-review-20261119/astra-committed-attempt-1-of-3.metadata.json`.
+Kimi K3 **не дала валидного verdict**: attempt 1/3 `cli_exit=127`, OSError
+errno 7 из-за размера аргумента полного diff; attempt 2/3 `cli_exit=1`,
+неверно выбранный прежний изолированный профиль без `kimi-code/k3`; attempt
+3/3 использовал существующий настроенный изолированный профиль и полный diff
+в zero-context формате со всеми изменёнными строками, `cli_exit=0`, но
+`validator_exit=2`, `outcome=invalid_verdict`, `len(result)=3221`: ответ
+содержал `findings=[]`, но также лишние поля `verdict`, `object`, `summary`,
+запрещённые findings schema. Metadata трёх попыток — приватный каталог
+`/home/otis/myprojects/LiveHelperAgent/scratchpad/run-479-release-review-20261119/kimi-evidence/`;
+точные файлы и stdout сохранены там. Валидный слот Kimi не потрачен, но
+лимит трёх infrastructure attempts исчерпан. Общих валидных findings Astra/Kimi
+нет, поскольку Kimi verdict отсутствует; из невалидного текста findings не
+принимаются как gate verdict. По `CLAUDE.md` 3.1 committed-diff gate **blocked**,
+push запрещён. Не запущен четвёртый Kimi, ветка не отправлена; PR/merge не
+создавались. Worktree содержит только эту документную запись и уточнение
+Roadmap после commit, а также ранее существовавший сторонний untracked
+continuation artifact; runtime/tests после SHA не менялись.
+
+**Исключение владельца для push 479, 19.11.2026.** Committed-diff gate: Astra валидный `findings=[]` (attempt 1/3, cli/validator 0/0). Kimi K3 — три infrastructure attempts: cli_error, невалидный ответ и содержательно чистое ревью в неверной JSON-схеме (сводка по областям вместо `findings`; валидатор exit 2). Класс — harness/схема промпта, не недоступность ревьюера: pre-freeze Kimi на том же содержании давал валидный `findings=[]`. Владелец явно разрешил push без валидного committed-verdict Kimi по исключению. Отдельная профилактика — зажать схему `findings` в committed-diff промпте Kimi; отнесено в работу поезда 482 (CI/docs-only) либо отдельной записью при следующем поезде.
