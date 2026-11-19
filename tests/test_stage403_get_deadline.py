@@ -10,6 +10,7 @@ from fastmcp.exceptions import ToolError
 
 import vetmanager_client as vm
 import host_resolver
+import tools
 from exceptions import VetmanagerTimeoutError
 from server import mcp
 from service_metrics import snapshot_service_metrics
@@ -153,15 +154,27 @@ async def test_retry_disabled_get_keeps_phase_timeout_contract(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_deadline_is_counted_as_dated_cards_timeout(monkeypatch):
+    decorated = []
+
     async def slow_resolution(*_args, **_kwargs):
         await asyncio.Event().wait()
 
+    async def delayed_error_hint(_tool_name, _credentials, exc, **_kwargs):
+        assert isinstance(exc, ToolError)
+        assert isinstance(_kwargs["incident_source"], VetmanagerTimeoutError)
+        # Error decoration happens after the read budget and is not part of it.
+        await asyncio.sleep(0.3)
+        decorated.append(_tool_name)
+        return exc
+
     monkeypatch.setattr(vm, "READ_REQUEST_BUDGET_SECONDS", 0.03)
     monkeypatch.setattr(vm, "resolve_vetmanager_host", slow_resolution)
+    monkeypatch.setattr(tools, "augment_tool_error", delayed_error_hint)
     headers, runtime = _runtime()
     with headers, runtime, pytest.raises(ToolError, match="timed out"):
         await asyncio.wait_for(mcp.call_tool("get_medical_cards_by_date", {
             "date": "2026-10-22", "limit": 1,
-        }), 0.2)
+        }), 5.0)
+    assert decorated == ["get_medical_cards_by_date"]
     label = "/rest/api/MedicalCards#list:get_medical_cards_by_date|GET|timeout"
     assert snapshot_service_metrics()["tool_calls_total"][label] == 1
