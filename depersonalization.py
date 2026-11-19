@@ -70,6 +70,13 @@ _PHONE_KEYS = frozenset({
 # quantitative headings can preserve a bare 10–11 digit count. A contact marker,
 # extra punctuation or a mixed value still goes through normal PII matching.
 _REPORT_QUANTITY_KEYS = frozenset({"количество", "count", "qty"})
+_REPORT_QUANTITY_AMBIGUOUS_WORDS = frozenset({
+    "контакт", "контактов", "contact", "contacts", "идентификатор",
+    "идентификаторов", "identifier", "identifiers", "карта", "карте",
+    "карт", "card", "cards", "client", "clients", "owner", "owners",
+    "клиент", "клиента", "клиентов", "владелец", "владельца",
+    "владельцев", "хозяин", "хозяина", "хозяев",
+})
 _BARE_PHONE_LENGTH_COUNT_RE = re.compile(r"[0-9]{10,11}\Z")
 _REPORT_MONEY_DECIMAL_RE = re.compile(
     r"[+-]?(?:\d{1,9}|\d{1,3}(?:[ \u00a0\u202f]\d{3}){1,2})[.,]\d{2}0{8}\Z"
@@ -658,7 +665,7 @@ def sanitize_report_cell(column: str, value: str) -> str:
     Stage 276: a CSV export is a report with its column names in the header
     row. Same two layers, same order — the name decides first, then the value.
     """
-    if column in _report_decimal_columns([column]) and _safe_report_money_decimal(value):
+    if column in _report_decimal_columns([column]) and _safe_report_decimal_cell(column, value):
         return value
     return _sanitize_value(
         value, key=column or None, report_mode=True, quantity_cell=True,
@@ -674,11 +681,30 @@ def _safe_report_money_decimal(value: str) -> bool:
     )
 
 
+def _safe_report_decimal_cell(column: str, value: str) -> bool:
+    # A fixed-scale quantity can look phone-shaped even when the matcher starts
+    # at the integer digit (for example 8.3400000000). The vetted heading and
+    # whole-cell format provide the boundary for this new exception.
+    if _is_extended_quantity_heading(column) and column not in report_money_columns([column]):
+        return not value.startswith(("+", "-")) and bool(_REPORT_MONEY_DECIMAL_RE.fullmatch(value))
+    # Keep the pre-existing money and exact quantity contracts as they were.
+    return _safe_report_money_decimal(value)
+
+
+def _is_extended_quantity_heading(column: str) -> bool:
+    words = set(re.findall(r"[^\W_]+", column.casefold()))
+    return (
+        column.strip().casefold() not in _REPORT_QUANTITY_KEYS
+        and bool(words & _REPORT_QUANTITY_KEYS)
+        and not words & _REPORT_QUANTITY_AMBIGUOUS_WORDS
+    )
+
+
 def _report_decimal_columns(columns: Any) -> set[str]:
-    """Vetted money labels and exact quantity headings only."""
+    """Vetted money and fixed-scale quantity headings."""
     return report_money_columns(columns) | {
         name for name in report_numeric_columns(columns)
-        if name.strip().casefold() in _REPORT_QUANTITY_KEYS
+        if name.strip().casefold() in _REPORT_QUANTITY_KEYS or _is_extended_quantity_heading(name)
     }
 
 
@@ -826,7 +852,7 @@ def _sanitize_value(
             and key is not None
             and numeric_columns is not None
             and key in numeric_columns
-            and _safe_report_money_decimal(value)
+            and _safe_report_decimal_cell(key, value)
         ):
             return value
         if (
