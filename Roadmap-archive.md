@@ -10583,3 +10583,57 @@ resolver, conftest diagnostics, Dockerfile и общий reset helper запре
   group прошла без изменения политики; итоговый real aggregate — 137/137.
   — `done`
 
+
+## Этап 466. Групповой real gate вместо монолитных повторов — `done`
+
+Источник: новейшее решение владельца 14.11.2026. Два полных isolated gate
+после возобновления дали красный real; всего по сохранённой истории 459 —
+четыре завершённых штатных красных real и пятый с failure/skip. Монолитные
+повторы по 30–40 минут создают новые jobs/exports на общем devtr6 и не являются
+допустимым способом диагностики. Нельзя удалять сценарии, ослаблять assertions,
+принимать skip или смешивать evidence разных runtime.
+
+Последний монолит: default 4661 passed, PostgreSQL 6 passed; real 134 passed,
+2 failed, 1 skipped-error. Оба failure — ResourceWarning незакрытых
+transport/socket; stage385 export guard отклонил безопасный тестовый отчёт.
+Cleanup и внешние JUnit/outcome сохранены. Это последний монолитный запуск
+перед перестройкой; новый процесс не должен начинать с его повтора.
+
+- 466.1 Прочитать PRD 466 и выполнить inventory всех real nodes: каждый node
+  ровно в одной группе по общему ресурсу/риску (read, auth/web/browser, writes
+  с restore, Report AI, export, workers). Длинные Report AI/export сценарии
+  изолировать. Зафиксировать runtime/test fingerprints, invalidation, manifest
+  и точные команды; пройти PRD/Architecture Critique гейты. — `done`
+- 466.2 Реализовать групповой runner и aggregate: отдельный изолированный
+  Compose project на группу, последовательный доступ к общим upstream guards,
+  JUnit+outcome вне репозитория, ноль skipped-not-configured/skipped-error и
+  ноль JUnit skip, warnings-as-errors, cleanup. Красные mock-сторожа на потерю
+  node, дубликат, missing XML, skip/failure, смешение runtime и неполный
+  aggregate. Не повторять монолит после failure — только затронутую группу и
+  её зависимости. — `done`
+- 466.3 Получить первый baseline каждой группы на текущем runtime и проверить,
+  что runner честно собирает manifest и fail-closed результат. Первый baseline
+  выполняется заново для всех nodes, старые монолитные passes не импортировать.
+  Красные продуктовые/тестовые сценарии передать в 459 с конкретным evidence;
+  инфраструктурный этап не считается оправданием их пропуска. — `done`
+
+После 466 этап 459 продолжается только через полный зелёный aggregate на
+неизменном runtime. Изменение runtime инвалидирует все группы; изменение
+test-only инвалидирует затронутую группу и shared-helper зависимости. Для 459
+по-прежнему обязательны default/PostgreSQL, review, push, merge/deploy и
+пострелизный контроль; частичный aggregate не разрешает выпуск.
+
+
+Первый baseline 466.3 остановлен после `read`: 75 passed, 1 failed, 0 skipped, cleanup 0. Runner неверно определил image tag и не записал shard; исправление test-first меняет shared test fingerprint. Остальные группы не запускались, aggregate честно красный из-за отсутствующего shard. В том ходе read не повторялся; позднее куратор разрешил причинную новую попытку после исправления image resolution.
+
+
+
+Продолжение baseline после исправления image resolution: новая `read` 76 passed, 0 failed/skip, cleanup 0; `auth-web` 20/0/0; `write-restore` 6/0/0; `workers` 14/0/0; `report-ai` 15/0/0; `report-ai-420` 2/0/0; `report-ai-422` 1/0/0 — все с JUnit/outcome/shard и cleanup 0. `export`: 1 passed, 1 failed (stage276 download), 1 skipped-error (stage385 export outcome: guard refusal), cleanup 0, shard красный. Сумма последних попыток: 135 passed, 1 failed, 1 skipped-error из 137. Aggregate collect-only/cleanup прошли, но aggregator упал на отсутствующем shard исторической первой `read` попытки вместо выбора последней; это новый инфраструктурный дефект, поэтому 466.3 остаётся `in_progress`, 459 — `supervisor_pending`, release заблокирован. Повторов групп нет.
+
+Узкая правка aggregate загрузила только последние shards из append-only index; focused 53 passed, намеренные red guards подтвердили выбор последней и отказ на красном export. Запуск aggregate после правки: collect-only/cleanup 0, exit 1 на `stale test_fingerprint` у всех восьми групп, поскольку изменённые `real_group_gate.py` и isolated runner входят в shared test fingerprint. Export-красный пока не проверен aggregate до конца. 466.3 остаётся `in_progress`; 459 — `supervisor_pending`.
+
+Финальный baseline после консервативной invalidation shared runner: все восемь групп получили новые последние shards на неизменном коде, каждая cleanup 0. Read 75 passed/1 failed (`stage412`, ResourceWarning), auth-web 19/1 (`validate_user_token`, ResourceWarning), write-restore 6/0, workers 14/0, report-ai 15/0, report-ai-420 2/0, report-ai-422 1/0, export 2 passed/1 skipped-error (`stage385`, guard refused); stage276 в этой попытке прошёл. Всего 134 passed, 2 failed, 1 skipped-error из 137. Aggregate collect-only/cleanup 0, exit 1 на красном read; read-only сверка последних восьми shards подтвердила совпадение manifest/runtime/test fingerprints и единую dependency. Условие куратора «красный только export» не выполнено: 466/466.3 остаются `in_progress`, 459 `supervisor_pending`, выпуск блокирован. Счётчик новых непреднамеренно красных групп 7/10; повторов не было.
+
+
+Решение куратора по приёмке 466: инфраструктурный гейт выполнен — восемь последних shards загружены, manifest/runtime/test/dependency совпадают, cleanup везде 0, aggregate честно отказал на красных outcomes. Продуктовые отказы переданы в 459; условие «только export» отозвано как избыточное. Фактический итог 134 passed, 2 failed, 1 skipped-error из 137. Release остаётся заблокированным.
+
