@@ -17,6 +17,7 @@ TEST_API_KEY = os.environ.get("TEST_API_KEY", "")
 _ENDPOINT = "/rest/api/MedicalCards"
 _CARD_ID = 2  # Dedicated synthetic devtr6 card; never select an arbitrary record.
 _BASELINE_SHA = "25ec919a7b7f95c3b6fa29ab0ab072d1dd6e50fefc62ec270d77ecc12e60b2fd"
+_PROBE_SHA = "9ff8364d6aa19d750889532d06c9749881a1679588af0a362bcfb0463b81d8e7"
 _CONTEXT_SHA = "d64866e6183a4a7952ffa44dff9d64dbc00d16c62993aa5e414a6672058ca15c"
 _REQUIRED = ("patient_id", "doctor_id", "clinic_id")
 _PROBE = (
@@ -29,6 +30,10 @@ _PROBE = (
 
 def _sha(description: str) -> str:
     return hashlib.sha256(description.encode("utf-8")).hexdigest()
+
+
+def _evidence_digest(digest: str) -> str:
+    return digest if digest in {_BASELINE_SHA, _PROBE_SHA} else "redacted-unexpected"
 
 
 def _card(response: object) -> dict:
@@ -54,15 +59,18 @@ def _technical_summary(label: str, card_id: int, response: dict, *, status: int 
     """Print only technical evidence: no upstream body or description."""
     card = _card(response)
     description = str(card.get("description") or "")
+    digest = _sha(description)
+    known = digest in {_BASELINE_SHA, _PROBE_SHA}
     success = isinstance(response, dict) and response.get("success") is True
     print(
         f"stage361_{label} id={card_id} status={status} json_success={success} "
         f"card_present={bool(card)} card_id_matches={str(card.get('id')) == str(card_id)} "
-        f"description_length={len(description)} description_sha256={_sha(description)} "
+        f"description_length={len(description) if known else 'redacted'} "
+        f"description_sha256={_evidence_digest(digest)} "
         f"elapsed_ms={elapsed_ms} "
-        f"probe_marker={_PROBE in description} "
-        f"clinical_row={'Показатели: 120 100 80 60' in description} "
-        f"phone_marker={'Примечание: тел. [redacted-phone]' in description}",
+        f"probe_marker={_PROBE in description if known else 'redacted'} "
+        f"clinical_row={'Показатели: 120 100 80 60' in description if known else 'redacted'} "
+        f"phone_marker={'Примечание: тел. [redacted-phone]' in description if known else 'redacted'}",
         flush=True,
     )
 
@@ -130,7 +138,7 @@ async def _poll_description(read_client: object, write_client: object, card_id: 
             card = await _fresh_card(read_client, card_id, f"{label}_poll_{attempt}")
         digest = _sha(card["description"])
         print(f"stage361_{label}_poll_attempt={attempt} elapsed_ms={round((time.monotonic()-started)*1000, 1)} "
-              f"description_sha256={digest}", flush=True)
+              f"description_sha256={_evidence_digest(digest)}", flush=True)
         if digest == target_sha:
             return card
         if digest != prior_sha:
@@ -171,7 +179,8 @@ def test_summary_never_prints_upstream_description_or_response_data(capsys) -> N
     output = capsys.readouterr().out
     assert private_text not in output and "patient secret token" not in output
     assert "id=7 status=201 json_success=True" in output
-    assert f"description_length={len(private_text)}" in output
+    assert f"description_length={len(private_text)}" not in output
+    assert _sha(private_text) not in output
 
 
 @pytest.mark.real_api
@@ -197,6 +206,8 @@ async def test_live_medical_card_numeric_row_and_marked_phone() -> None:
     payload = _context(original)
     probe = baseline + "\n" + _PROBE
     probe_sha = _sha(probe)
+    if probe_sha != _PROBE_SHA:
+        raise AssertionError("Synthetic probe hash changed")
     try:
         started = time.monotonic()
         response = await _safe_call("put", write_client.put(

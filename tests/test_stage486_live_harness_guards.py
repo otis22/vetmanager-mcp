@@ -146,6 +146,8 @@ def test_failed_checks_never_expose_raw_description_or_response(capsys) -> None:
         live._checked_response("put", client, response, 201)
     output = capsys.readouterr().out + str(baseline_error.value) + str(json_error.value)
     assert secret not in output and "private patient" not in output
+    assert hashlib.sha256(secret.encode()).hexdigest() not in output
+    assert f"description_length={len(secret)}" not in output
     with pytest.raises(AssertionError) as mcp_error:
         live._assert_mcp_ok(SimpleNamespace(is_error=True, structured_content=response))
     assert secret not in str(mcp_error.value)
