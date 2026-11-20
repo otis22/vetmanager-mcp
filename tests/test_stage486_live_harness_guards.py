@@ -76,6 +76,19 @@ async def test_poll_uses_fresh_independent_client_and_records_hash(capsys, monke
     output = capsys.readouterr().out
     assert "description_sha256=" in output and "elapsed_ms=" in output
     assert probe not in output
+    # The timeout context already bounded GET; a post-GET clock tick must not
+    # turn the correct target hash into a false concurrent-change failure.
+    start = live.time.monotonic()
+    ticks = iter((start, start + 0.02, start + 0.03))
+    monkeypatch.setattr(live, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+
+    async def immediate_card(*_):
+        return {"description": probe}
+
+    monkeypatch.setattr(live, "_fresh_card", immediate_card)
+    assert (await live._poll_description(read, write, 2, hashlib.sha256(probe.encode()).hexdigest(),
+                                         hashlib.sha256(baseline.encode()).hexdigest(), 0.01,
+                                         "probe"))["description"] == probe
 
 
 async def _no_wait(*_):

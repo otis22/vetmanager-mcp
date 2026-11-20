@@ -131,7 +131,7 @@ async def _poll_description(read_client: object, write_client: object, card_id: 
         digest = _sha(card["description"])
         print(f"stage361_{label}_poll_attempt={attempt} elapsed_ms={round((time.monotonic()-started)*1000, 1)} "
               f"description_sha256={digest}", flush=True)
-        if digest == target_sha and time.monotonic() <= deadline:
+        if digest == target_sha:
             return card
         if digest != prior_sha:
             raise AssertionError("Unexpected description during read-back; preserving newer content")
