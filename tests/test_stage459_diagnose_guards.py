@@ -197,9 +197,9 @@ def test_stage420_distinct_recognition_from_saved_evidence_is_not_false_dedup_fa
     assert calls == ["create_report_ai_job"]
 
 
-@pytest.mark.parametrize("equivalent", [True, False])
-def test_stage420_existing_match_may_use_older_equivalent_report(monkeypatch, equivalent):
-    """Saved devtr6 evidence: an older canonical report can match this request."""
+@pytest.mark.parametrize("different_shape", [True, False])
+def test_stage420_existing_match_accepts_older_report_with_readable_data(monkeypatch, different_shape):
+    """The older match can differ in structure if its data is readable."""
     recognized = {"tables": ["admission"], "fields": ["count"],
                   "filters": ["same interval"], "group_by": ["month"],
                   "order_by": []}
@@ -210,24 +210,47 @@ def test_stage420_existing_match_may_use_older_equivalent_report(monkeypatch, eq
         if tool == "create_report_ai_job":
             return 200, {"structuredContent": {"data": {"job": {
                 "id": 2, "status": "existing_report_matched", "report_id": 99,
-                "recognized": recognized if equivalent else {**recognized, "fields": ["sum"]},
+                "recognized": {**recognized, "fields": ["sum"]} if different_shape else recognized,
                 "next_action": {"call": {"tool": "get_report_ai_job_data",
                                          "arguments": {"job_id": 2}},
                                 "required_args": ["job_id"]},
             }}}}
         assert tool == "get_report_ai_job_data"
         return 200, {"structuredContent": {"data": {"rows": [], "total": 0,
-            "next_action": {"call": {"tool": "rate_report_ai_job"}}}}}
+            "next_action": {"call": {"tool": "rate_report_ai_job"},
+                            "required_args": ["job_id", "score", "intent_text"]}}}}
 
     monkeypatch.setattr(report_live, "_call", fake_call)
-    if equivalent:
-        report_live._check_repeated_intent_dedup(None, seed_report_id=1,
-            seed_intent="request.", request_id=1, label="EVIDENCE", seed_recognized=recognized)
-        assert calls == ["create_report_ai_job", "get_report_ai_job_data"]
+    report_live._check_repeated_intent_dedup(None, seed_report_id=1,
+        seed_intent="request.", request_id=1, label="EVIDENCE", seed_recognized=recognized)
+    assert calls == ["create_report_ai_job", "get_report_ai_job_data"]
+
+
+@pytest.mark.parametrize("broken", ["action", "rows", "total", "rate_action"])
+def test_stage420_matched_report_requires_next_action_and_readable_data(monkeypatch, broken):
+    job = {"id": 2, "status": "existing_report_matched", "report_id": 99,
+           "next_action": {"call": {"tool": "get_report_ai_job_data",
+                                    "arguments": {"job_id": 2}}, "required_args": ["job_id"]}}
+    data = {"rows": [], "total": 0,
+            "next_action": {"call": {"tool": "rate_report_ai_job"},
+                            "required_args": ["job_id", "score", "intent_text"]}}
+    if broken == "action":
+        job["next_action"]["call"]["tool"] = "save_report_ai_job_as_report"
+    elif broken == "rows":
+        data["rows"] = None
+    elif broken == "total":
+        data["total"] = None
     else:
-        with pytest.raises(AssertionError, match="different recognized structure"):
-            report_live._check_repeated_intent_dedup(None, seed_report_id=1,
-                seed_intent="request.", request_id=1, label="EVIDENCE", seed_recognized=recognized)
+        data["next_action"]["required_args"] = ["job_id"]
+
+    def fake_call(_client, tool, _args, _request_id):
+        result = {"job": job} if tool == "create_report_ai_job" else data
+        return 200, {"structuredContent": {"data": result}}
+
+    monkeypatch.setattr(report_live, "_call", fake_call)
+    with pytest.raises(AssertionError):
+        report_live._check_repeated_intent_dedup(None, seed_report_id=1,
+            seed_intent="request.", request_id=1, label="EVIDENCE")
 
 
 @pytest.mark.parametrize("change", ["equal", "missing_seed", "missing_repeat",

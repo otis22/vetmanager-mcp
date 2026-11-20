@@ -193,11 +193,8 @@ def _check_repeated_intent_dedup(client, *, seed_report_id: int, seed_intent: st
     else:
         matched_report_id = int(job["report_id"])
         assert matched_report_id > 0, (job_id, statuses)
-        if matched_report_id != seed_report_id:
-            seed_shape = _recognized_report_shape(seed_recognized)
-            matched_shape = _recognized_report_shape(job.get("recognized"))
-            assert seed_shape is not None and seed_shape == matched_shape, (
-                "matched older report has different recognized structure")
+        # Vetmanager may select an older report with another recognized shape.
+        # A valid match must still lead to readable rows through MCP.
         action = job["next_action"]
     assert action["call"] == {
         "tool": "get_report_ai_job_data", "arguments": {"job_id": job_id}}, (
@@ -208,8 +205,10 @@ def _check_repeated_intent_dedup(client, *, seed_report_id: int, seed_intent: st
     code, response = _call(client, "get_report_ai_job_data", {"job_id": job_id}, request_id)
     assert response.get("isError") is not True, (job_id, statuses, response)
     data = response["structuredContent"]["data"]
-    assert "rows" in data, (job_id, statuses, data)
+    assert isinstance(data.get("rows"), list), (job_id, statuses, data)
+    assert isinstance(data.get("total"), int) and data["total"] >= 0, (job_id, statuses, data)
     assert data["next_action"]["call"]["tool"] == "rate_report_ai_job"
+    assert data["next_action"]["required_args"] == ["job_id", "score", "intent_text"]
     print(f"{label}_DATA HTTP {code} body={{'job_id': {job_id}, 'status': {outcome!r}, "
           f"'total': {data.get('total')!r}}}")
 

@@ -1,0 +1,19 @@
+# Этап 485. Постоянный upstream contract для повторного Report AI intent
+
+## Цель и решение владельца
+
+Решение 20.11.2026: Ветменеджер иногда возвращает старый отчёт при повторном intent, даже если `recognized` structure отличается от сохранённого seed. Это наблюдаемое поведение API ВМ; MCP принимает matched отчёт и позволяет агенту читать и использовать его. Само различие structure не считается ошибкой. Решение заменяет временное исключение одного красного real node, подготовленное ранее в этом поезде. Именно исключение не расширяется на stage 422: общий новый контракт проверяется обоими live nodes 420 и 422. Старые красные JUnit/XML остаются историей, не зелёным evidence.
+
+## Контракт
+
+- Exact повтор активного intent по-прежнему требует `is_deduplicated=true` и тот же job ID. Семантическая ветка после сохранения seed допускает `existing_report_matched` с положительным `report_id`, включая старый отчёт с другой распознанной структурой.
+- Для matched job обязательны `next_action.call = get_report_ai_job_data` с текущим `job_id`, `required_args = [job_id]`; следующий живой вызов должен вернуть readable `rows` как список, неотрицательный целочисленный `total` и `next_action.call = rate_report_ai_job` с аргументами `job_id`, `score`, `intent_text`. Ноль строк допустим: upstream может вернуть пустой старый отчёт. MCP отдаёт эти данные агенту без скрытого повторного StartReport.
+- `needs_confirmation` требует кандидата, confirm и чтения; `ready_to_save` допустим только при доказанно другой полной recognized structure. Неизвестные статусы, ошибки вызова, отсутствие данных или next_action остаются красными.
+- Общий helper вызывается обоими live nodes 420 и 422. Offline guards проверяют принятие обоих вариантов структуры и отказ при сломанном next_action/readable-data. Сторож показывается красным мутацией охраняемого условия.
+- Real aggregate остаётся strict: все выполненные nodes passed, ноль skips/failures и cleanup 0, свежие fingerprints. Временное exception mechanism удаляется. Исторический owner waiver выпуска 479 не переносится на этот поезд.
+
+## Проверка и границы
+
+Focused red/green → owning → fast → полный pre-freeze review всего diff → default после заморозки → real группы по изменённому fingerprint последовательно → aggregate → commit → committed-diff review → push только при всех зелёных обязательных gates. По новому решению владельца 20.11 после подтверждения отключения сети во время прежних прогонов разрешён один адресный повтор 422, export и workers без product fix, строго последовательно. Зелёный повтор поддерживает сетевой/нагрузочный класс прежних отказов, но не доказывает его однозначно. История не переписывается; первый красный shard остаётся. Export `RUN_RATE_LIMITED` без `file_id` и workers stage385 PG recovery (readiness, затем post-restart HTTP 503) оцениваются отдельно от semantic match. Production не затрагивать.
+
+MCP runtime и API не меняются: он уже отдаёт matched report, `next_action` и читаемые данные. Этап 484 о fail-closed отказе от пустого matched отчёта несовместим с новым решением и требует отмены/перепостановки, а не скрытой реализации.

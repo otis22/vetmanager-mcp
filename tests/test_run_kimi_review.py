@@ -19,7 +19,7 @@ def test_review_agent_cannot_use_tools_or_subagents() -> None:
     assert '"--output-format", "stream-json"' in runner
 
 
-def _run(tmp_path: Path, stream: str) -> tuple[subprocess.CompletedProcess[str], Path]:
+def _run(tmp_path: Path, stream: str, *, prompt_file: Path | None = None) -> tuple[subprocess.CompletedProcess[str], Path]:
     fake = tmp_path / "kimi"
     fake.write_text("#!/usr/bin/env python3\nimport os,sys\n"
                     "print('2.5.3') if '--version' in sys.argv else print(os.environ['FAKE_STREAM'], end='')\n")
@@ -29,9 +29,25 @@ def _run(tmp_path: Path, stream: str) -> tuple[subprocess.CompletedProcess[str],
     evidence = tmp_path / "evidence"
     (tmp_path / "kimi-home").mkdir()
     env = dict(os.environ, KIMI_BIN=str(fake), KIMI_CODE_HOME=str(tmp_path / "kimi-home"), FAKE_STREAM=stream)
-    done = subprocess.run([str(SCRIPT), "--file", str(source), "--attempt", "1/3",
-                           "--evidence-dir", str(evidence)], text=True, capture_output=True, env=env)
+    command = [str(SCRIPT), "--file", str(source), "--attempt", "1/3",
+               "--evidence-dir", str(evidence)]
+    if prompt_file:
+        command.extend(["--prompt-file", str(prompt_file)])
+    done = subprocess.run(command, text=True, capture_output=True, env=env)
     return done, evidence
+
+
+def test_custom_prompt_keeps_required_verdict_schema(tmp_path: Path) -> None:
+    prompt_file = tmp_path / "custom-prompt.txt"
+    prompt_file.write_text("Review only. Check the requested change.\n")
+    stream = json.dumps({"role": "assistant", "content": '{"findings":[]}'}) + "\n"
+    done, evidence = _run(tmp_path, stream, prompt_file=prompt_file)
+    assert done.returncode == 0, done.stderr
+    prompt = next(evidence.rglob("*.prompt.txt")).read_text()
+    assert prompt_file.read_text() in prompt
+    assert "findings: [{severity, file, line, reason}]" in prompt
+    assert "critical, high or medium" in prompt
+    assert "No markdown." in prompt
 
 
 def test_valid_kimi_verdict_saves_stream_and_metadata(tmp_path: Path) -> None:
@@ -39,6 +55,10 @@ def test_valid_kimi_verdict_saves_stream_and_metadata(tmp_path: Path) -> None:
                         json.dumps({"role": "assistant", "content": '{"findings":[]}'})]) + '\n'
     done, evidence = _run(tmp_path, stream)
     assert done.returncode == 0, done.stderr
+    prompt = next(evidence.rglob("*.prompt.txt")).read_text()
+    assert prompt.count("findings: [{severity, file, line, reason}]") == 1
+    assert "critical, high or medium" in prompt
+    assert "No markdown." in prompt
     metadata = json.loads(next(evidence.rglob("*.metadata.json")).read_text())
     assert metadata["model"] == "kimi-code/k3"
     assert metadata["validator_exit"] == 0

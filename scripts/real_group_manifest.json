@@ -63,6 +63,8 @@
       "tests/test_stage223_live_inactive_completeness.py::test_real_lapsed_clients_carry_a_window_total",
       "tests/test_stage223_live_inactive_completeness.py::test_real_lapsed_pets_say_whether_the_list_is_cut",
       "tests/test_stage354_live_empty_preview.py::test_live_zero_preview_guidance",
+      "tests/test_stage361_live_phone_groups.py::test_summary_never_prints_upstream_description_or_response_data",
+      "tests/test_stage361_live_phone_groups.py::test_summary_handles_put_without_card_body",
       "tests/test_stage361_live_phone_groups.py::test_live_medical_card_numeric_row_and_marked_phone",
       "tests/test_stage380_live.py::test_stage380_live_staff_filters",
       "tests/test_stage399_live.py::test_stage399_projection_live",
