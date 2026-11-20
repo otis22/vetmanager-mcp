@@ -37,7 +37,9 @@ probe, без вывода raw description/PII и без изменений prod
 - 486.2 Strong review, focused devtr6, свежий strict real aggregate, commit и
   committed-diff review. — `done` 21.11.2026
   Focused stage361 passed, real aggregate 147/147, восемь свежих групп,
-  cleanup 0; evidence и review — AssumptionLog.
+  cleanup 0; оба committed-diff reviewer дали валидные verdict на полном diff.
+  Их блокирующие замечания закрыты адресными guards, real aggregate и Spark
+  scout после исчерпания strong-бюджета; evidence — AssumptionLog.
 
 ## Этап 485. Постоянный upstream contract повторного Report AI intent — `done`
 
