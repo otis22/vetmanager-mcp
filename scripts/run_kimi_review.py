@@ -19,9 +19,10 @@ AGENT = ROOT / "scripts/kimi_review_agent.md"
 VALIDATOR = ROOT / "scripts/validate_review_result.py"
 DEFAULT_PROMPT = ("Review only. Do not edit files. Do not run commands. "
                   "Use only the supplied material. Find material correctness, security, "
-                  "privacy, regression and acceptance issues. Return exactly one JSON object "
-                  "with findings: [{severity, file, line, reason}] or {\"findings\":[]}. "
-                  "Severity must be critical, high or medium. No markdown.\n")
+                  "privacy, regression and acceptance issues.\n")
+VERDICT_SCHEMA_PROMPT = ("Return exactly one JSON object with findings: "
+                         "[{severity, file, line, reason}] or {\"findings\":[]}. "
+                         "Severity must be critical, high or medium. No markdown.\n")
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -103,6 +104,7 @@ def main() -> int:
     if not material.strip():
         parser.error("review object is empty")
     prompt = args.prompt_file.read_text(encoding="utf-8") if args.prompt_file else DEFAULT_PROMPT
+    prompt += "\n" + VERDICT_SCHEMA_PROMPT
     prompt += f"\nOBJECT: {kind} {target}\n=== MATERIAL ===\n{material}\n"
     evidence_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(evidence_root, 0o700)

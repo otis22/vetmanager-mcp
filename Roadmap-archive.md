@@ -10557,3 +10557,29 @@ Production smoke passed; все три workers `up=1` и `worker_ready=1`,
 `service_healthz=1`, прежний `probe_unknown` исчез после пятиминутного
 staleness. Этап закрыт; следующий поезд — объединённые 469 + 470.
 
+## Этап 465. Пересмотр состава и надёжности test suite — `done`
+
+Источник: решение владельца 14–15.11.2026 после стабилизации 459 и Claude
+Opus approach review. Нужно ускорить итерации, не удаляя полезные проверки,
+не ослабляя assertions и не скрывая реальные дефекты. До этого этапа менять
+resolver, conftest diagnostics, Dockerfile и общий reset helper запрещено.
+
+- 465.1 Подготовить PRD и карту unit/mock, offline integration, browser,
+  PostgreSQL и real-сценариев: назначение, стоимость, внешние зависимости,
+  доказанные причины нестабильности и более дешёвый oracle. Предложить
+  детерминированный release gate и отдельный diagnostic mode; удаление или
+  перенос проверки — только с rationale и сохранением покрытия риска. — `done`
+- 465.2 После Architecture Critique и red/green evidence реализовать
+  `offline_integration`, diagnostic-only tracemalloc/connection hooks/fd/phase
+  diagnostics, объединение доказанных дублей и поведенческие guards вместо
+  source-text checks. Распространить fingerprint-invalidation на default/PG.
+  TLS-loopback, warnings-as-errors, object ownership, security/privacy и
+  обязательные живые вызовы сохранить в соответствующем финальном gate.
+  Приёмка: fast contour в стандартном контейнере занимает ≤3 минут и три
+  последовательных запуска дают одинаковый зелёный результат без пропусков;
+  полные финальные gates остаются зелёными. Если ≤3 минут недостижимо без
+  потери покрытия, остановиться и показать владельцу измерения вместо
+  удаления содержательных тестов. После cooldown обязательная real export
+  group прошла без изменения политики; итоговый real aggregate — 137/137.
+  — `done`
+

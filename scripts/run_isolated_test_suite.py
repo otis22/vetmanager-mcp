@@ -138,6 +138,8 @@ def main():
         if args.evidence_dir is None:
             parser.error("aggregate requires --evidence-dir")
         root = args.evidence_dir.resolve()
+        if root == ROOT or ROOT in root.parents or not root.is_dir() or root.stat().st_mode & 0o077:
+            raise ValueError("aggregate evidence root must be private and outside repository")
         validation = root / ("aggregate-collect-" + uuid.uuid4().hex[:12])
         subprocess.run([sys.executable, str(Path(__file__)), "--validate-manifest",
                         "--evidence-dir", str(validation),
@@ -169,7 +171,25 @@ def main():
                            **current_image}
                     for name in manifest["groups"] if name in attempts}
         validate_aggregate(manifest, attempts, root, expected)
-        print(f"aggregate: all configured groups passed; not-configured auth nodes: {len(not_configured)}")
+        aggregate_evidence = {
+            "status": "passed",
+            "not_configured": not_configured,
+            "groups": {name: {
+                "nodes": attempts[name][-1]["nodes"],
+                "test_exit": attempts[name][-1]["results"]["test"],
+                "cleanup_exit": attempts[name][-1]["results"]["cleanup"],
+                "runtime_fingerprint": attempts[name][-1]["runtime_fingerprint"],
+                "test_fingerprint": attempts[name][-1]["test_fingerprint"],
+                "outcome": json.loads((Path(attempts[name][-1]["evidence_dir"]) /
+                                       f"{name}.outcome.json").read_text())["counts"],
+                "evidence_dir": attempts[name][-1]["evidence_dir"],
+            } for name in manifest["groups"]},
+        }
+        result_path = root / f"aggregate-result-{uuid.uuid4().hex[:12]}.json"
+        with result_path.open("x", encoding="utf-8") as stream:
+            stream.write(json.dumps(aggregate_evidence, indent=2, ensure_ascii=False) + "\n")
+        print(f"aggregate evidence: {result_path}")
+        print(f"aggregate: {aggregate_evidence['status']}; not-configured auth nodes: {len(not_configured)}")
         for node, reason in not_configured.items():
             print(f"not-configured ({reason}): {node}")
         return 0
