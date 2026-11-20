@@ -1491,6 +1491,10 @@
     "count": 23,
     "sha256": "a90b4f2548fed4dfb3bc97ed69ee6b4ad6d6da8e473085896642a64b9473a771"
   },
+  "tests/test_stage482_previous_main_success.py": {
+    "count": 12,
+    "sha256": "34b6c17bc7d7ea3365ebc1d098f3cf20277abc1aeebcffb35adac9216615cfd9"
+  },
   "tests/test_stage87_post_migration.py": {
     "count": 8,
     "sha256": "a57d9b48d50ed35aa08ce1052d8bc74eed75f38064f72945d09ccdb804e83967"
