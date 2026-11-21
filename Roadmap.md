@@ -56,7 +56,7 @@ Read-only расследование 489 подтвердило пробел: в
 snapshot и GHCR tag сами по себе не доказывают восстановимость без потери
 данных или происхождение нового образа.
 
-## Этап 491. Production host security maintenance — `todo`
+## Этап 491. Production host security maintenance — `in_progress`
 
 Read-only аудит 21.11.2026: nginx `1.24.0-2ubuntu7.6` при candidate
 `1.24.0-2ubuntu7.21`, host Python `3.12.3-1ubuntu0.10` при candidate `0.17`;
@@ -76,10 +76,12 @@ reachability части проблем и не заменяет патчи. На
 на текущем шаге; простой более 30 минут — инцидент.
 
 - 491.1 До изменений создать PRD/runbook: console-доступ, snapshot/backup и
-  доказанное восстановление, точный список и порядок пакетов, симуляция apt,
+  доказанное восстановление с RPO ≤1 час как верхним пределом и pre-change backup
+  не старше 30 минут, точный список и порядок пакетов, симуляция apt,
   `nginx -t`, контролируемый restart, rollback без автоматического возврата
   БД/snapshot, измерение простоя и проверки public smoke, release-state и всех
-  MCP workers. Не выполнять unattended полный upgrade. — `todo`
+  MCP workers. Не выполнять unattended полный upgrade. — `done` 21.11.2026
+  [PRD](PRD/этап-491.1-production-host-security-preflight.md).
 - 491.2 Выполнить согласованный host security maintenance отдельными
   пакетными шагами и post-checks после каждого затронутого сервиса. Не
   смешивать с application dependency release или kernel reboot. — `todo`
