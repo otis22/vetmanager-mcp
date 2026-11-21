@@ -10637,3 +10637,47 @@ test-only инвалидирует затронутую группу и shared-h
 
 Решение куратора по приёмке 466: инфраструктурный гейт выполнен — восемь последних shards загружены, manifest/runtime/test/dependency совпадают, cleanup везде 0, aggregate честно отказал на красных outcomes. Продуктовые отказы переданы в 459; условие «только export» отозвано как избыточное. Фактический итог 134 passed, 2 failed, 1 skipped-error из 137. Release остаётся заблокированным.
 
+## Этап 468. Убрать дублирующийся CI на dev-ветках — `done`
+
+Источник: решение владельца 16.11.2026. На одной SHA ветки `dev/**` push и
+pull_request запускали по два комплекта Tests и Docs Check. Для `dev/**`
+достаточен pull_request; main push и ручной запуск Tests сохраняются.
+
+- 468.1 PRD, red/green сторож и минимальная правка triggers. — `done`
+- 468.2 Проверки, pre-review, commit, committed-diff review и push только в
+  `origin dev/ci-pr-dedup`; PR/merge — куратору. — `done`
+
+Старт после компакта: новый исполнитель читает `AGENTS.md`,
+`AGENT_ONBOARDING.md` 1.2, применимый workflow и этот Roadmap целиком;
+до изменения кода пишет `onboarding-attestation.md` с версией, базовым SHA
+и ограничениями. Старый thread не требуется. Работа продолжается поездом
+строго по одному этапу; статус Codex куратор проверяет и отправляет владельцу
+в терминал и Telegram каждые 10 минут.
+После каждого деплоя куратор ведёт 60 минут мониторинга сервера, обновляет
+оба дашборда и фиксирует результат наблюдения (решение владельца 14.11.2026).
+
+## Этап 467. Быстрый итерационный test workflow — `done`
+
+Источник: решение владельца 15.11.2026 после независимого Claude Opus
+approach review. Онбординг 463 не откатывается: он менял только документацию.
+Текущие default 26 минут и последовательный real около 30 минут плюс setup
+не должны быть ценой каждой мелкой итерации. Этот этап меняет только
+`AGENTS.md`, `CLAUDE.md`, `.cursor/rules/agent-workflow.mdc` и управленческие
+артефакты; production code, tests, fingerprints и production не меняются.
+
+- 467.1 Claude Opus внёс в инструкции: первый red только focused;
+  focused green + существующий fast contour на итерации; полный default и
+  адресные live/browser/PostgreSQL по затронутой зоне на финиш этапа; полный
+  real aggregate на финиш поезда; fingerprint-based повторы; stop-loss на
+  класс сбоя; диагностика не становится штатным gate без отдельного режима.
+  Обязательный живой вызов изменённого инструмента и все security/privacy
+  gates сохранены. Куратор исправил fast command на штатный Docker Compose
+  вызов вместо недоступного host Python. — `done`
+- 467.2 Согласованность трёх инструкций и отсутствие изменений кода/tests
+  проверены; focused docs guards **114 passed**, Roadmap structure и diff-check
+  зелёные. Следующий процесс начинает 459 с трёх узких правок: wheel allowlist,
+  billing fake recorder, невалидный pending candidate. Затем focused →
+  default/PostgreSQL → восемь real groups → aggregate → review/release.
+  Сразу после 459 выполняется 465 до быстрого стабильного контура; 460–464
+  не начинать раньше завершения 465. Поезд остановлен на паузу. — `done`
+
