@@ -158,6 +158,9 @@ _FREE_TEXT_KEYS = frozenset({
     "notes",
     "deathnote",
 })
+_REPORT_UNTRUSTED_TEXT_KEYS = _FREE_TEXT_KEYS | frozenset({
+    "комментарий", "описание", "заметка", "примечание",
+})
 
 _EMAIL_RE = re.compile(r"(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b")
 _DATE_OR_DATETIME_RE = re.compile(
@@ -208,6 +211,9 @@ _NAME_LEFT_EDGE = rf"(?<!\w)(?<!\w{_NAME_JOINERS})"
 _NAME_RIGHT_EDGE = rf"(?!\w)(?!{_NAME_JOINERS}\w)"
 _FULL_NAME_RE = re.compile(
     rf"(?u)(?=({_NAME_LEFT_EDGE}{_NAME_WORD}\s+{_NAME_WORD}\s+{_NAME_WORD}{_NAME_RIGHT_EDGE}))"
+)
+_EXPLICIT_FIO_LABEL_RE = re.compile(
+    r"(?iu)(?<!\w)фио(?:\s*(?:[^\w\s]|_)+\s*|\s+)(?=[А-ЯЁA-Z])"
 )
 _INITIALS_RE = re.compile(
     rf"(?u){_NAME_LEFT_EDGE}{_NAME_WORD}\s+[A-ZА-ЯЁ]\.?\s?[A-ZА-ЯЁ]\.?{_NAME_RIGHT_EDGE}"
@@ -316,7 +322,7 @@ def _blocks_pair(word: str, *, is_second: bool) -> bool:
     return is_second and folded in _TAIL_WORDS
 
 
-def _redact_full_names(text: str) -> str:
+def _redact_full_names(text: str, *, skip_generic: bool = False) -> str:
     # Lookahead lets a valid triple start immediately after a skipped marker
     # triple: "Без ФИО Иванов Пётр Сергеевич" must still hide all of the name.
     parts: list[str] = []
@@ -332,10 +338,15 @@ def _redact_full_names(text: str) -> str:
             # The field label makes the next two title-case words a name even
             # when neither is in the given-name dictionary (John Smith).
             name_start = start + match.group(1).index(words[1], len(words[0]))
-            if _FULL_NAME_RE.match(text, name_start):
+            following = _FULL_NAME_RE.match(text, name_start)
+            if following and not skip_generic:
                 continue  # A following third name word is handled as a triple.
+            if following:
+                end = following.end(1)
             parts.extend((text[position:name_start], REDACTED_NAME))
             position = end
+            continue
+        if skip_generic:
             continue
         if any(_fold(word) in _MARKER_WORDS for word in words):
             continue
@@ -359,6 +370,19 @@ def _redact_full_names(text: str) -> str:
         position = end
     parts.append(text[position:])
     return "".join(parts)
+
+
+def _catalog_may_skip_generic_triple(text: str, titles: frozenset[str]) -> bool:
+    """Only an exact uppercase title without a stronger person signal qualifies."""
+    return (
+        text in titles
+        and text.isupper()
+        and _FULL_NAME_RE.search(text) is not None
+        and _EXPLICIT_FIO_LABEL_RE.search(text) is None
+        and _OWNER_PHRASE_RE.search(text) is None
+        and _PATRONYMIC_RE.search(text) is None
+        and redact_given_name_pairs(text) == text
+    )
 
 
 def _redact_initials(match: re.Match[str]) -> str:
@@ -622,7 +646,7 @@ def sanitize_text(text: str) -> str:
     return sanitized
 
 
-def sanitize_report_value(text: str) -> str:
+def sanitize_report_value(text: str, *, trusted_titles: frozenset[str] = frozenset()) -> str:
     """Clean a value from a report, whatever column it arrived in.
 
     Stage 275, layer two. A generated report names its columns itself, so the
@@ -633,13 +657,20 @@ def sanitize_report_value(text: str) -> str:
     """
     if not text:
         return text
+    if text in trusted_titles and _EXPLICIT_FIO_LABEL_RE.search(text):
+        # The label is an independent person signal, including when it touches
+        # punctuation. Never leave a surname beside a partial mask.
+        return REDACTED_NAME
+    # Only the original, whole cell may receive the owner-approved exception.
+    # Normalisation or a partial match must never create catalog equality.
+    catalog_match = _catalog_may_skip_generic_triple(text, trusted_titles)
     cleaned = _normalize_soft_punctuation(text)
     cleaned = _EMAIL_RE.sub(REDACTED_EMAIL, cleaned)
     # The address goes first so that what remains can be judged on its own: a
     # leftover street marker then means a street name, not an address.
     cleaned = _ADDRESS_RE.sub(REDACTED_ADDRESS, cleaned)
     if not _STREET_MARKER_RE.search(cleaned):
-        cleaned = _redact_full_names(cleaned)
+        cleaned = _redact_full_names(cleaned, skip_generic=catalog_match)
         cleaned = _PATRONYMIC_RE.sub(REDACTED_NAME, cleaned)
         cleaned = _INITIALS_RE.sub(_redact_report_initials, cleaned)
 
@@ -661,7 +692,9 @@ def sanitize_report_column_name(text: str) -> str:
     return _INITIALS_RE.sub(_redact_report_initials, cleaned)
 
 
-def sanitize_report_cell(column: str, value: str) -> str:
+def sanitize_report_cell(
+    column: str, value: str, *, trusted_titles: frozenset[str] = frozenset()
+) -> str:
     """Clean one report cell the way a report row is cleaned.
 
     Stage 276: a CSV export is a report with its column names in the header
@@ -671,6 +704,7 @@ def sanitize_report_cell(column: str, value: str) -> str:
         return value
     return _sanitize_value(
         value, key=column or None, report_mode=True, quantity_cell=True,
+        trusted_titles=trusted_titles,
     )
 
 
@@ -725,7 +759,8 @@ _ENTITY_BY_TOOL = {
 
 
 def sanitize_tool_result(
-    payload: Any, *, report_mode: bool = False, tool_name: str | None = None
+    payload: Any, *, report_mode: bool = False, tool_name: str | None = None,
+    trusted_titles: frozenset[str] = frozenset(),
 ) -> Any:
     """Recursively sanitize structured fields and whitelist free-text fields.
 
@@ -737,6 +772,7 @@ def sanitize_tool_result(
     return _sanitize_value(
         payload, report_mode=report_mode, address=(entity, None) if entity else None,
         quantity_path="root" if tool_name == "get_report_ai_job_data" else None,
+        trusted_titles=trusted_titles if tool_name == "get_report_ai_job_data" else frozenset(),
     )
 
 
@@ -750,6 +786,7 @@ def _sanitize_value(
     quantity_path: str | None = None,
     quantity_cell: bool = False,
     numeric_columns: set[str] | None = None,
+    trusted_titles: frozenset[str] = frozenset(),
 ) -> Any:
     """`address` — чья запись сейчас разбирается, `record` — сама запись.
 
@@ -783,6 +820,7 @@ def _sanitize_value(
                 ),
                 quantity_cell=quantity_cell and key == "rows",
                 numeric_columns=child_numeric_columns,
+                trusted_titles=trusted_titles,
             )
         return cleaned
     if isinstance(value, (list, tuple)):
@@ -792,6 +830,7 @@ def _sanitize_value(
                 quantity_path=quantity_path,
                 quantity_cell=quantity_cell or quantity_path == "rows",
                 numeric_columns=numeric_columns,
+                trusted_titles=trusted_titles,
             )
             for item in value
         ]
@@ -865,5 +904,13 @@ def _sanitize_value(
             and _BARE_PHONE_LENGTH_COUNT_RE.fullmatch(value)
         ):
             return value
-        return sanitize_report_value(value)
+        return sanitize_report_value(
+            value,
+            trusted_titles=(
+                trusted_titles
+                if (quantity_path == "row_cell" or quantity_cell)
+                and _normalize_key(key or "") not in _REPORT_UNTRUSTED_TEXT_KEYS
+                else frozenset()
+            ),
+        )
     return value

@@ -8,6 +8,7 @@ from list_projection import selected_fields, selected_include
 from report_row_types import normalize_report_rows
 
 import depersonalization
+from report_catalog_titles import load_report_catalog_titles
 from depersonalization import contains_addressed_placeholder
 from agent_feedback_service import augment_tool_error, should_skip_report_hint
 from error_tracking import set_affected_account
@@ -263,10 +264,15 @@ def _wrap_tool_with_depersonalization(tool_func, *, tool_name: str | None = None
             if not credentials.is_depersonalized:
                 return normalize_report_rows(result) if resolved_tool_name == "get_report_ai_job_data" else result
             try:
+                trusted_titles = (
+                    await load_report_catalog_titles()
+                    if resolved_tool_name == "get_report_ai_job_data" else frozenset()
+                )
                 sanitized = depersonalization.sanitize_tool_result(
                     result,
                     report_mode=resolved_tool_name in REPORT_TOOLS,
                     tool_name=resolved_tool_name,
+                    trusted_titles=trusted_titles,
                 )
                 if resolved_tool_name in _PROFILE_TOOLS:
                     sanitized = _safe_profile_section_errors(sanitized)

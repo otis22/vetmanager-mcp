@@ -515,11 +515,12 @@ class VetmanagerClient:
         url = f"{base}{path}"
         retry_enabled = bool(kwargs.pop("retry", True))
         fresh = bool(kwargs.pop("fresh", False))
+        cache_enabled = bool(kwargs.pop("cache", True))
         params = kwargs.get("params")
         cache_key = ""
         entity_tag = self._entity_tag(path)
         upper_method = method.upper()
-        should_cache_get = upper_method == "GET" and self._should_cache_get(path)
+        should_cache_get = cache_enabled and upper_method == "GET" and self._should_cache_get(path)
         shared_cache = os.environ.get("MCP_WORKER_SLOTS") == "3"
         cache_generation = None
         if should_cache_get:
@@ -964,8 +965,10 @@ class VetmanagerClient:
             )
 
     async def get(self, path: str, params: dict | None = None, *, retry: bool = True,
-                  fresh: bool = False) -> Any:
-        return await self._request("GET", path, params=params, retry=retry, fresh=fresh)
+                  fresh: bool = False, cache: bool = True) -> Any:
+        return await self._request(
+            "GET", path, params=params, retry=retry, fresh=fresh, cache=cache
+        )
 
     async def post(self, path: str, json: Any = None) -> Any:
         return await self._request("POST", path, json=json)

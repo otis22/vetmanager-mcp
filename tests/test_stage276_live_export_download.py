@@ -23,7 +23,6 @@ import pytest
 
 import report_export
 from server import mcp
-import tests.export_shared  # noqa: F401
 from tests.runtime_factories import patch_runtime_credentials
 
 pytest_plugins = ("tests.export_shared",)
@@ -57,15 +56,33 @@ async def test_real_export_is_downloaded_cleaned_and_served_by_us(
         TEST_DOMAIN, TEST_API_KEY, is_depersonalized=True
     )
     with headers_patch, runtime_patch:
-        await shared_live_export.start_once(mcp.call_tool, int(os.environ.get(
-            "REPORT_EXPORT_PROBE_REPORT_ID", "84"
-        )))
+        report_id = int(os.environ.get("REPORT_EXPORT_PROBE_REPORT_ID", "84"))
+        ai_job_id = None
+        if TEST_DOMAIN == "devtr6":
+            assert report_id == 84, "The selected stand requires the approved AI export fixture."
+            existing = await mcp.call_tool("get_report_ai_job", {"job_id": 2})
+            job = existing.structured_content.get("data", {}).get("job", {})
+            assert job.get("status") == "saved" and str(job.get("report_id")) == str(report_id), (
+                "The approved AI export fixture is unavailable on the selected test stand."
+            )
+            ai_job_id = 2
+        await shared_live_export.start_once(mcp.call_tool, report_id, ai_job_id=ai_job_id)
         report_file_id = shared_live_export.require_file_id()
+        proof = shared_live_export.ai_export_proof()
+        if ai_job_id is not None:
+            assert isinstance(proof, str) and proof
+            print("stage480 live get_report_ai_job_export code=success body=" + str({
+                "report_file_id_present": report_file_id > 0,
+                "ai_export_proof_present": bool(proof),
+            }))
         payload = None
         for _ in range(12):
             try:
                 result = await mcp.call_tool(
-                    "get_report_export_download", {"report_file_id": int(report_file_id)}
+                    "get_report_export_download", {
+                        "report_file_id": int(report_file_id),
+                        **({"ai_export_proof": proof} if proof else {}),
+                    }
                 )
             except Exception as exc:  # build not ready yet is an ordinary state here
                 if not any(marker in str(exc) for marker in (
@@ -88,6 +105,7 @@ async def test_real_export_is_downloaded_cleaned_and_served_by_us(
         "download_url": "https://mcp.example/report-export/<redacted>",
         "rows": payload["rows"], "columns": payload["columns"],
         "depersonalized": payload["depersonalized"],
+        "ai_proof_used": bool(proof),
     }))
 
     stored = list(live_export_root.rglob("*.csv"))

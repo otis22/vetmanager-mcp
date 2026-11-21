@@ -12,6 +12,7 @@ _START_CODES = ("CONSTRUCTOR_BUSY", "RUN_RATE_LIMITED")
 class ExportStartOutcome:
     file_id: int | None
     error_code: str | None = None
+    ai_export_proof: str | None = None
 
     def require_file_id(self) -> int:
         if self.file_id is None:
@@ -29,10 +30,13 @@ def _safe_code(error: object) -> str:
     return "OTHER_ERROR"
 
 
-async def start_one_export(call_tool, report_id: int) -> ExportStartOutcome:
+async def start_one_export(call_tool, report_id: int, *, ai_job_id: int | None = None) -> ExportStartOutcome:
     """Never retry StartReport; preserve only the machine class, not the body."""
     try:
-        result = await call_tool("start_report_export", {"report_id": report_id})
+        result = await call_tool(
+            "get_report_ai_job_export" if ai_job_id is not None else "start_report_export",
+            {"job_id": ai_job_id} if ai_job_id is not None else {"report_id": report_id},
+        )
     except Exception as exc:
         return ExportStartOutcome(None, _safe_code(exc))
     if getattr(result, "is_error", False):
@@ -44,7 +48,9 @@ async def start_one_export(call_tool, report_id: int) -> ExportStartOutcome:
                                         isinstance(value, str) and value.isdecimal()):
         return ExportStartOutcome(None, "MISSING_FILE_ID")
     file_id = int(value)
-    return ExportStartOutcome(file_id) if file_id > 0 else ExportStartOutcome(None, "MISSING_FILE_ID")
+    proof = report.get("ai_export_proof")
+    return (ExportStartOutcome(file_id, ai_export_proof=proof if isinstance(proof, str) else None)
+            if file_id > 0 else ExportStartOutcome(None, "MISSING_FILE_ID"))
 
 
 class SharedExportRun:
@@ -53,15 +59,18 @@ class SharedExportRun:
     def __init__(self) -> None:
         self._outcome: ExportStartOutcome | None = None
 
-    async def start_once(self, call_tool, report_id: int) -> ExportStartOutcome:
+    async def start_once(self, call_tool, report_id: int, *, ai_job_id: int | None = None) -> ExportStartOutcome:
         if self._outcome is None:
-            self._outcome = await start_one_export(call_tool, report_id)
+            self._outcome = await start_one_export(call_tool, report_id, ai_job_id=ai_job_id)
         return self._outcome
 
     def require_file_id(self) -> int:
         if self._outcome is None:
             raise AssertionError("Shared export start was not run by the first export node")
         return self._outcome.require_file_id()
+
+    def ai_export_proof(self) -> str | None:
+        return self._outcome.ai_export_proof if self._outcome is not None else None
 
 
 @pytest.fixture(scope="session")

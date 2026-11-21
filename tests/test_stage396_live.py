@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from server import mcp
+from report_catalog_titles import load_report_catalog_titles
 from tests.runtime_factories import patch_runtime_credentials
 
 
@@ -54,6 +55,36 @@ async def test_stage396_live_report_rows(capsys):
             status = "saved"
         assert status in {"saved", "existing_report_matched"}
         result = await mcp.call_tool("get_report_ai_job_data", {"job_id": job_id})
+
+    # Stage 480 reuses this mandatory real-suite job for the changed
+    # depersonalized read. No second Report AI job is started.
+    private_headers, private_runtime = patch_runtime_credentials(
+        os.environ["TEST_DOMAIN"], os.environ["TEST_API_KEY"],
+        is_depersonalized=True,
+    )
+    catalog_sizes = []
+
+    async def capture_catalog():
+        titles = await load_report_catalog_titles()
+        catalog_sizes.append(len(titles))
+        return titles
+
+    with private_headers, private_runtime, patch.object(httpx.AsyncClient, "request", capture), patch(
+        "tools.load_report_catalog_titles", capture_catalog
+    ):
+        private_result = await mcp.call_tool("get_report_ai_job_data", {"job_id": job_id})
+    private_data = private_result.structured_content["data"]
+    assert private_result.is_error is False
+    assert len(private_data["rows"]) == len(result.structured_content["data"]["rows"])
+    # The second tool call may legitimately reuse the first call's GET cache.
+    assert any(method == "GET" and code == 200 for method, code in codes)
+    assert catalog_sizes and catalog_sizes[0] > 0
+    print("stage480 live get_report_ai_job_data code=200 body=" + str({
+        "rows_count": len(private_data["rows"]),
+        "columns_count": len(private_data.get("columns", [])),
+        "catalog_titles_count": catalog_sizes[0],
+        "depersonalized": True,
+    }))
 
     data = result.structured_content["data"]
     rows = data["rows"]

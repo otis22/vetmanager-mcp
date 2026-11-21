@@ -56,6 +56,7 @@ from service_metrics import (
     REPORT_AI_OBSERVED_CODES,
 )
 from vetmanager_client import VetmanagerClient
+from report_catalog_titles import load_report_catalog_titles
 from web_auth import get_web_session_secret
 from clinic_timezone import (
     CLINIC_TIMEZONE_MAX_ENTRIES,
@@ -2052,6 +2053,26 @@ async def _start_report_export(
         )
         payload = _ensure_start_report_payload(payload)
         report_file_id = _extract_report(payload).get("report_file_id")
+        if tool_name == "get_report_ai_job_export":
+            # Proof is optional. A missing signing key must not turn a
+            # successful StartReport into a retryable error and duplicate it.
+            try:
+                credentials = get_current_runtime_credentials()
+                subject_type, subject_id = _export_subject(credentials)
+                _extract_report(payload)["ai_export_proof"] = report_export.sign_ai_export_proof(
+                    report_file_id=report_file_id,
+                    domain=credentials.domain,
+                    subject_type=subject_type,
+                    subject_id=subject_id,
+                )
+            except Exception as exc:
+                RUNTIME_LOGGER.warning(
+                    "report_ai_export_proof_unavailable",
+                    extra={
+                        "event_name": "report_ai_export_proof_unavailable",
+                        "error_class": type(exc).__name__,
+                    },
+                )
         _best_effort_observation("export_start", record_report_ai_export,
                                  operation="start", outcome="success")
         _remember_report_ai_export(report_file_id)
@@ -2368,7 +2389,9 @@ def register(mcp: FastMCP) -> None:
         directly usable link. For an export use get_report_ai_job_export for a
         saved or matched job, or start_report_export with a known report_id;
         then call get_report_export_download with report_file_id for an absolute
-        download_url.
+        download_url. For a Report AI export, also pass ai_export_proof from
+        get_report_ai_job_export when present so approved catalog titles keep
+        the same masking decision in CSV.
 
         Args:
             job_id: Report AI job ID. Data is available only for saved or
@@ -2604,13 +2627,17 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool
-    async def get_report_export_download(report_file_id: int) -> dict:
+    async def get_report_export_download(
+        report_file_id: int, ai_export_proof: str | None = None
+    ) -> dict:
         """Download a finished report export and return a link to the CSV file.
 
         Args:
             report_file_id: Export build ID returned by start_report_export.
                 If Vetmanager says generation is still in progress, retry this
                 tool after a delay.
+            ai_export_proof: Optional proof from get_report_ai_job_export for
+                Report AI catalog titles. Without it the usual masking applies.
         """
         file_id = _validate_positive_int("report_file_id", report_file_id)
         _mark_report_ai_export_poll(file_id)
@@ -2676,6 +2703,14 @@ def register(mcp: FastMCP) -> None:
             # Cleaning is CPU work over every cell, and a 25 MB export is
             # hundreds of thousands of them: off the event loop it goes.
             subject_type, subject_id = _export_subject(credentials)
+            ai_origin = report_export.verify_ai_export_proof(
+                ai_export_proof, report_file_id=file_id, domain=credentials.domain,
+                subject_type=subject_type, subject_id=subject_id,
+            )
+            trusted_titles = (
+                await load_report_catalog_titles()
+                if depersonalize and ai_origin else frozenset()
+            )
             await asyncio.to_thread(report_export.sweep_expired)
             owner = report_export.owner_segment(
                 domain=credentials.domain,
@@ -2693,6 +2728,7 @@ def register(mcp: FastMCP) -> None:
                 subject_type=subject_type,
                 subject_id=subject_id,
                 download_name=f"report-export-{file_id}.csv",
+                trusted_titles=trusted_titles,
             )
         except report_export.ReportExportError as exc:
             _best_effort_observation("export_download_refused", record_report_export_download, outcome="refused")
@@ -2733,6 +2769,10 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool
     async def get_report_ai_job_export(job_id: int, filter_json: str | None = None) -> dict:
         """Start CSV export for a saved or existing-matched Report AI job.
+
+        The report result may include ai_export_proof. Pass it with
+        report_file_id to get_report_export_download for the narrow catalog
+        title exception. Without proof the normal CSV masking applies.
 
         Args:
             job_id: Report AI job ID. The job must be saved or
