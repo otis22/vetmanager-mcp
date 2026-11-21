@@ -82,6 +82,13 @@ reachability части проблем и не заменяет патчи. На
   БД/snapshot, измерение простоя и проверки public smoke, release-state и всех
   MCP workers. Не выполнять unattended полный upgrade. — `done` 21.11.2026
   [PRD](PRD/этап-491.1-production-host-security-preflight.md).
+  Вертикальная проверка backup/restore 22.11.2026: свежий `pg_dump -Fc`
+  зашифрован потоком и восстановлен из off-host копии на отдельном host в
+  новой internal Docker network и новом volume. Схема, constraints,
+  агрегаты, запуск приложения и дешифрование проверены; временный restore
+  удалён. Независимая console, RPO при реальном переключении и новые
+  pre-change копии перед каждой пакетной группой остаются входными gates
+  491.2; эта проверка не разрешает начать пакетные шаги.
 - 491.2 Выполнить согласованный host security maintenance отдельными
   пакетными шагами и post-checks после каждого затронутого сервиса. Не
   смешивать с application dependency release или kernel reboot. — `todo`
