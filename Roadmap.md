@@ -91,7 +91,13 @@ reachability части проблем и не заменяет патчи. На
   491.2; эта проверка не разрешает начать пакетные шаги.
 - 491.2 Выполнить согласованный host security maintenance отдельными
   пакетными шагами и post-checks после каждого затронутого сервиса. Не
-  смешивать с application dependency release или kernel reboot. — `todo`
+  смешивать с application dependency release или kernel reboot. — `in_progress`
+  [PRD подготовки и gates](PRD/этап-491.2-подготовка-host-security-maintenance.md).
+  Read-only подготовка: четыре группы по 3/2/5/2 пакета, off-host bundle
+  прежних и candidate `.deb`, изолированная обратная APT-симуляция и
+  независимый монитор проверены. **Package steps не начаты:** gate A
+  независимой console и согласованное окно E остаются unconfirmed;
+  актуальные pre-change B/C/D проверяются непосредственно перед группой.
 - 491.3 Обновление kernel и reboot выполнять только после отдельного решения
   владельца, подтверждённого console-доступа и окна недоступности; проверить
   загрузку, автозапуск контейнеров и повторные public/worker checks. — `todo`
