@@ -14,15 +14,16 @@ from vetmanager_client import VetmanagerClient
 CLINIC_TIMEZONE_TTL_SECONDS = 3600
 CLINIC_TIMEZONE_FAILURE_TTL_SECONDS = 60
 CLINIC_TIMEZONE_MAX_ENTRIES = 4096
-_CACHE: OrderedDict[tuple[int | None, int | None, int], tuple[str | None, float, int]] = OrderedDict()
+_CACHE: OrderedDict[tuple[int | None, int | None, int, bool], tuple[str | None, float, int]] = OrderedDict()
 
 
-def _key(clinic_id: int) -> tuple[int | None, int | None, int]:
+def _key(clinic_id: int, require_record_id: bool = False) -> tuple[int | None, int | None, int, bool]:
     credentials = get_current_runtime_credentials()
     return (
         credentials.account_id if credentials else None,
         credentials.connection_id if credentials else None,
         clinic_id,
+        require_record_id,
     )
 
 
@@ -49,7 +50,8 @@ def process_local_today(*, relative: bool = False) -> date:
 
 
 async def resolve_clinic_timezone(
-    clinic_id: int | None, *, client_factory=None, monotonic=None
+    clinic_id: int | None, *, client_factory=None, monotonic=None,
+    require_record_id: bool = False,
 ) -> ZoneInfo | None:
     """Return the clinic's :class:`ZoneInfo`, or ``None`` when unavailable.
 
@@ -60,7 +62,7 @@ async def resolve_clinic_timezone(
     """
     if not isinstance(clinic_id, int) or clinic_id <= 0:
         return None
-    key = _key(clinic_id)
+    key = _key(clinic_id, require_record_id)
     monotonic_now = (monotonic or time.monotonic)()
     cached = _CACHE.get(key)
     if cached is not None and monotonic_now - cached[1] <= cached[2]:
@@ -80,9 +82,21 @@ async def resolve_clinic_timezone(
         clinic = data.get("clinics") if isinstance(data, dict) else None
         if isinstance(clinic, list):
             clinic = clinic[0] if clinic else None
+        if isinstance(clinic, dict) and (require_record_id or clinic.get("id") is not None):
+            try:
+                matches_id = int(clinic["id"]) == clinic_id
+            except (KeyError, TypeError, ValueError):
+                matches_id = False
+            if not matches_id:
+                clinic = None
+                RUNTIME_LOGGER.warning("clinic_timezone_invalid", extra={"event_name": "clinic_timezone_invalid"})
         timezone_name = clinic.get("time_zone") if isinstance(clinic, dict) else None
         if not isinstance(timezone_name, str) or not timezone_name:
             timezone_name = None
+        # devtr6 still returns the legacy IANA spelling. Minimal tzdata images
+        # may ship only the current name, which denotes the same civil zone.
+        if timezone_name == "Europe/Kiev":
+            timezone_name = "Europe/Kyiv"
         invalid_timezone = bool(timezone_name and _invalid_timezone(timezone_name))
         if invalid_timezone:
             timezone_name = None

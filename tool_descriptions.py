@@ -640,6 +640,13 @@ REPORT_AI_PRIVACY_GUIDANCE = (
 
 
 SPECIAL_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "update_pet": (
+        "Update an existing pet's ordinary details. A nonempty status is rejected. "
+        "For status or death date changes, use change_pet_status: obtain an explicit "
+        "consent, preview the patient, then obtain a second explicit consent before "
+        "confirmation. Domain synonyms: питомец, пациент, животное, кот, собака, "
+        "pet, animal."
+    ),
     "get_store_documents": (
         "List warehouse documents, including supplier receipts (document_type='prihod') "
         "and stock issues (document_type='rashod'). For supplier invoices, filter "

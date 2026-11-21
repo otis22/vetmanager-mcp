@@ -504,8 +504,8 @@
     "sha256": "863f1b37d43a448f26f0c0c03bb5ad768c7c06d25e06fd28e492428dd48cbeb6"
   },
   "tests/test_stage265_denial_reaches_the_agent.py": {
-    "count": 129,
-    "sha256": "ceb99b138a014bd8756a6903f9d36fdeaf57824af4a351b0bf5438d579c285e3"
+    "count": 130,
+    "sha256": "2e0a95e367a71f2e3eee7a7c0c4f029836e94a6f51ad0be90191491f22df13b2"
   },
   "tests/test_stage265_error_text_matching.py": {
     "count": 19,
@@ -1462,6 +1462,10 @@
   "tests/test_stage470_workflow_docs.py": {
     "count": 5,
     "sha256": "582d486dd518412f43acd4884150e87b5244caf3104c966035f65a819adde28c"
+  },
+  "tests/test_stage475_pet_status.py": {
+    "count": 23,
+    "sha256": "882dd464a193888e3f4b5cb67bb446e951f4e2622e01d337664ea18d0ce78696"
   },
   "tests/test_stage478a_ci_scope.py": {
     "count": 7,

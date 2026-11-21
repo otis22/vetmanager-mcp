@@ -118,7 +118,8 @@
       "tests/test_stage225_live_diagnosis_contract.py::test_real_tool_refuses_the_bad_shapes_before_reaching_upstream",
       "tests/test_stage245_live_update_medical_card.py::test_real_update_medical_card_writes_single_field_and_restores",
       "tests/test_stage245_live_update_medical_card.py::test_real_partial_medical_card_put_is_still_rejected_upstream",
-      "tests/test_stage247_live_update_contract.py::test_update_response_contract_still_differs_from_the_read"
+      "tests/test_stage247_live_update_contract.py::test_update_response_contract_still_differs_from_the_read",
+      "tests/test_stage475_live.py::test_stage475_live_synthetic_patient"
     ],
     "report-ai": [
       "tests/test_e2e_real.py::test_real_report_ai_create_and_bounded_poll_non_polluting",
@@ -170,7 +171,8 @@
     "tests/test_e2e_real.py::test_real_web_account_can_issue_bearer_and_call_tool",
     "tests/test_stage276_live_export_download.py::test_real_export_is_downloaded_cleaned_and_served_by_us",
     "tests/test_stage385_export_outcome_live.py::test_export_poll_success_is_one_outcome_across_slots",
-    "tests/test_stage389_live.py::test_stage389_two_live_pages"
+    "tests/test_stage389_live.py::test_stage389_two_live_pages",
+    "tests/test_stage475_live.py::test_stage475_live_synthetic_patient"
   ],
   "shared_helpers": [
     "tests/conftest.py",

@@ -278,6 +278,7 @@ TOOL_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
     "update_invoice": (SCOPE_FINANCE_WRITE,),
     "update_medical_card": (SCOPE_MEDICAL_CARDS_WRITE,),
     "update_pet": (SCOPE_PETS_WRITE,),
+    "change_pet_status": (SCOPE_PETS_WRITE,),
     "update_supplier": (SCOPE_INVENTORY_WRITE,),
     "update_user": (SCOPE_USERS_WRITE,),
 }
