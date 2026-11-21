@@ -364,8 +364,8 @@
     "sha256": "73b3df63ba966770827f37eb346ad5a8b555abb8059cfdd6bd5f8d6df237c4d2"
   },
   "tests/test_stage170_report_ai_tools.py": {
-    "count": 45,
-    "sha256": "2fd3885dab0c597d31b24408b6d75cc1f91fb142293047dae70a86fdc07c9f7f"
+    "count": 47,
+    "sha256": "f503099fcf34bba99c83f274a1981ba0e66a20a7460106936a04c80ecfe347e4"
   },
   "tests/test_stage171_vmlink_personal_account_link.py": {
     "count": 12,
