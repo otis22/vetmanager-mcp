@@ -48,6 +48,14 @@ Read-only расследование 489 подтвердило пробел: в
 - 490.1 Показать красный privacy guard, реализовать адресное событие, проверить
   его на стенде и провести применимые release gates. — `todo`
 
+**Общие ограничения evidence 491–493.** Количество обновлений не равно числу
+эксплуатируемых уязвимостей. Не все CVE nginx достижимы в текущем конфиге;
+`pip-audit` не проверяет host, OS-слои, конфигурацию или фактическую
+эксплуатируемость. Отсутствие прямых вызовов затронутых cryptography API не
+доказывает безопасность всей транзитивной цепочки. Текущие rollback-код,
+snapshot и GHCR tag сами по себе не доказывают восстановимость без потери
+данных или происхождение нового образа.
+
 ## Этап 491. Production host security maintenance — `todo`
 
 Read-only аудит 21.11.2026: nginx `1.24.0-2ubuntu7.6` при candidate
@@ -58,13 +66,26 @@ mail proxy, `ssl_preread`, `try_files`, `alias` и njs: это ограничи�
 reachability части проблем и не заменяет патчи. Наличие 220 обновлений, из
 которых 140 пришли из security-канала, не означает 140 уязвимостей.
 
-- 491.1 До изменений создать PRD/runbook: snapshot/backup, список пакетов,
-  `nginx -t`, контролируемый restart, rollback и проверки public smoke,
-  release-state и всех MCP workers. Не выполнять unattended полный upgrade.
-  — `todo`
-- 491.2 Выполнить согласованный host security maintenance и post-checks.
-  Обновление kernel и reboot выделить в отдельное решение владельца с окном
-  недоступности; не смешивать с application dependency release. — `todo`
+**Риски и стоп-условия.** High: обновление OpenSSH/nginx/Docker может закрыть
+административный или публичный доступ, а reboot дать простой. Critical при
+неверном rollback: восстановление host snapshot может потерять записи после
+снимка; `rollback_db.sh` намеренно пересоздаёт БД и не является откатом пакетов.
+Без независимого console-доступа, окна, изолированного restore-теста и плана
+сохранения/сверки новых записей изменения не начинать. Snapshot без такой
+проверки не принимать. При неуспешном SSH/nginx/Docker post-check остановиться
+на текущем шаге; простой более 30 минут — инцидент.
+
+- 491.1 До изменений создать PRD/runbook: console-доступ, snapshot/backup и
+  доказанное восстановление, точный список и порядок пакетов, симуляция apt,
+  `nginx -t`, контролируемый restart, rollback без автоматического возврата
+  БД/snapshot, измерение простоя и проверки public smoke, release-state и всех
+  MCP workers. Не выполнять unattended полный upgrade. — `todo`
+- 491.2 Выполнить согласованный host security maintenance отдельными
+  пакетными шагами и post-checks после каждого затронутого сервиса. Не
+  смешивать с application dependency release или kernel reboot. — `todo`
+- 491.3 Обновление kernel и reboot выполнять только после отдельного решения
+  владельца, подтверждённого console-доступа и окна недоступности; проверить
+  загрузку, автозапуск контейнеров и повторные public/worker checks. — `todo`
 
 ## Этап 492. Воспроизводимые Python dependencies и security audit — `todo`
 
@@ -74,13 +95,25 @@ hashes отсутствует, поэтому test и production builds могу
 transitive dependencies. До реализации выбрать инструмент lock-снимка в PRD,
 не добавляя новую зависимость по предположению.
 
+**Риски и стоп-условия.** High: разные установки в `base`, `production`,
+`test` и отдельный `anyio` install могут сохранить расхождение даже при lock;
+hashes одной архитектуры/Python ABI могут сломать clean build. Snapshot должен
+покрывать весь транзитивный граф нужных production/test окружений и платформ,
+включая wheel/sdist правила; production image проверяется отдельно. Medium:
+зелёный `pip-audit` не означает полную безопасность. До 493 прежние четыре
+finding остаются явно известными и временно принятыми, новые findings без
+разбора блокируют release; 492 не выдаётся за security-fix.
+
 - 492.1 Сделать единый воспроизводимый dependency snapshot с hashes,
-  синхронизировать ограничения Dockerfile/pyproject и проверить clean build
-  плюс применимые default/real gates. — `todo`
-- 492.2 Добавить `pip-audit` по зафиксированному окружению в регулярную
-  проверку и документировать release triage findings. Не включать
-  автоматическое обновление production и не выдавать Python audit за полный
-  container OS scan. — `todo`
+  синхронизировать ограничения Dockerfile/pyproject и отдельные anyio install,
+  проверить clean production/test builds на целевых архитектурах и применимые
+  default/real gates. Несоответствие фактического production окружения
+  snapshot — стоп. — `todo`
+- 492.2 Добавить `pip-audit` фактического зафиксированного production
+  окружения в регулярную проверку, закрепить политику известных/новых findings
+  и версию самого сканера. Не включать автоматическое обновление production,
+  не подавлять findings молча и не выдавать Python audit за полный container
+  OS scan. — `todo`
 
 ## Этап 493. Python 3.12.16 и cryptography 50 security release — `todo`
 
@@ -90,10 +123,24 @@ MCP container использует Python 3.12.15 и `cryptography 46.0.7` с Op
 MCP использует только `Fernet`, но это не отменяет обновление. Текущий GHCR
 `python:3.12-slim` всё ещё указывает на прежний digest с Python 3.12.15.
 
-- 493.1 Сначала опубликовать и проверить base image с Python 3.12.16, затем
-  обновить его digest и `cryptography>=50,<51` в MCP после этапа 492. Провести
-  полные default/real gates, повторный `pip-audit`, deploy, public smoke и
-  мониторинг; мажорную ветку Python одновременно не менять. — `todo`
+**Риски и стоп-условия.** High: новый GHCR digest может изменить не только
+Python, но и OS-пакеты; tag не доказывает происхождение. Major upgrade
+cryptography может затронуть транзитивных потребителей и ранее зашифрованные
+данные. Critical при неверном rollback: deploy запускает `alembic upgrade`, и
+возврат старого image не откатывает схему/данные. Остановить выпуск при
+непроверенном digest/содержимом, несовпадении версий в production image,
+прежних audit findings, ошибках Fernet/OAuth или неподтверждённой
+совместимости старого image со схемой. Новые миграции БД выходят за scope;
+автоматический DB rollback запрещён.
+
+- 493.1 Сначала опубликовать base image с проверенным источником и Python
+  3.12.16, затем обновить immutable digest и `cryptography>=50,<51` в MCP после
+  этапа 492. Проверить версии и содержимое именно production image, чтение
+  ранее зашифрованных данных, Fernet/OAuth/auth и транзитивные зависимости.
+  Сохранить прежний image/digest и rollback manifest; подтвердить, что старый
+  image совместим со схемой после deploy. Провести полные default/real gates,
+  повторный `pip-audit`, deploy, public smoke и мониторинг; мажорную ветку
+  Python одновременно не менять. — `todo`
 
 ## Этап 487. Scheduled Claude: диагностика доступности коннектора (#180) — `stop`
 
