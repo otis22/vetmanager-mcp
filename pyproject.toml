@@ -29,6 +29,7 @@ only-include = [
     "alembic",
     "access_summary.py",
     "activation_events.py",
+    "pet_status_confirmation.py",
     "identifier_aliases.py",
     "list_projection.py",
     "report_row_types.py",

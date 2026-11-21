@@ -148,7 +148,7 @@ async def test_timezone_cache_has_absolute_ttl_and_refreshes_without_cleanup(mon
 async def test_timezone_cache_participates_in_shared_ttl_and_size_cleanup(monkeypatch):
     report_ai._reset_report_ai_queue_observations()
     monkeypatch.setattr(clinic_timezone, "CLINIC_TIMEZONE_MAX_ENTRIES", 3)
-    monkeypatch.setattr(clinic_timezone, "_key", lambda clinic_id: (1, 1, clinic_id))
+    monkeypatch.setattr(clinic_timezone, "_key", lambda clinic_id, require_record_id=False: (1, 1, clinic_id, require_record_id))
     ttl = clinic_timezone.CLINIC_TIMEZONE_TTL_SECONDS
 
     class Client:
@@ -164,4 +164,4 @@ async def test_timezone_cache_participates_in_shared_ttl_and_size_cleanup(monkey
     monkeypatch.setattr(clinic_timezone, "CLINIC_TIMEZONE_MAX_ENTRIES", 2)
     report_ai._cleanup_report_ai_queue_observations(ttl + 1.0)
 
-    assert list(clinic_timezone._CACHE) == [(1, 1, 2), (1, 1, 3)]
+    assert list(clinic_timezone._CACHE) == [(1, 1, 2, False), (1, 1, 3, False)]

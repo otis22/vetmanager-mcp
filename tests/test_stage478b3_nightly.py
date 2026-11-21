@@ -265,7 +265,7 @@ def test_nightly_api_only_reaches_inventory(monkeypatch, tmp_path):
     assert calls == ["inventory"]
     summary = json.loads((tmp_path / "evidence/artifact/summary.json").read_text())
     assert len(summary["not_configured"]) == 6
-    assert summary["configured_nodes"] == 141
+    assert summary["configured_nodes"] == 142
 
 
 def test_direct_token_enables_only_its_existing_optional_node():

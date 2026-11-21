@@ -662,12 +662,12 @@ COMMIT;
 - После успешного `POST`/`PUT`/`DELETE` кеш для соответствующего тега `domain:entity` инвалидируется.
 - Ограничение подхода: кеш живёт только в памяти процесса и полностью сбрасывается при рестарте сервера.
 
-**130 инструментов** по 16 группам:
+**131 инструмент** по 16 группам:
 
 | Группа | Инструменты | Кол-во |
 |--------|-------------|--------|
 | Client | `get_clients`, `get_debtors`, `get_client_by_id`, `get_personal_account_link_by_phone`, `create_client`, `update_client`, `delete_client`, `get_client_profile`, `get_inactive_clients` | 9 |
-| Pet | `get_pets`, `find_pets_by_alias`, `get_pet_by_id`, `create_pet`, `update_pet`, `delete_pet`, `get_pet_profile`, `get_inactive_pets` | 8 |
+| Pet | `get_pets`, `find_pets_by_alias`, `get_pet_by_id`, `create_pet`, `update_pet`, `change_pet_status`, `delete_pet`, `get_pet_profile`, `get_inactive_pets` | 9 |
 | Admission | `get_admissions`, `get_admissions_daily_summary`, `get_admission_by_id`, `create_admission`, `update_admission`, `get_client_upcoming_visits`, `get_daily_schedule` | 7 |
 | MedicalCard | `get_medical_cards`, `get_medical_cards_by_date`, `get_medical_cards_by_client_id`, `get_medical_card_by_id`, `create_medical_card`, `update_medical_card`, `get_vaccinations` | 7 |
 | Invoice | `get_invoices`, `get_average_invoice`, `get_invoice_by_id`, `update_invoice` | 4 |
@@ -682,6 +682,8 @@ COMMIT;
 | Report AI | `get_report_ai_prompt_helper`, `create_report_ai_job`, `get_report_ai_job`, `confirm_report_ai_job_candidate`, `reject_report_ai_job_candidate`, `get_report_ai_job_data`, `start_report_export`, `get_report_export_download`, `get_report_ai_job_export`, `save_report_ai_job_as_report`, `rate_report_ai_job` | 11 |
 | Feedback | `report_problem` | 1 |
 | Доступ | `whoami` | 1 |
+
+Статус и дата смерти пациента меняются через `change_pet_status` с правом `pets.write`: сначала сотрудник подтверждает пациента и владельца для preview, затем сверяет показанные данные и явно подтверждает запись вторым вызовом с одноразовым токеном. Доступны только `alive → dead` с датой смерти и исправление даты у `dead`; будущая дата запрещена по часовой зоне клиники. `update_pet(status=...)` отклоняет непустой статус и направляет к защищённому инструменту.
 
 Payment REST API доступен только на чтение: Vetmanager Payment entity разрешает `restList`/`restView`, поэтому MCP не публикует `create_payment`. В реальном Payment REST нет прямых `client_id`/`pet_id`; для клиентского или pet-scoped контекста оплат используйте `get_client_payment_applications`, который читает применения оплат через `closingOfInvoices`.
 

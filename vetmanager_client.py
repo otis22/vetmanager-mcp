@@ -2,6 +2,8 @@ import asyncio
 import os
 import time
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 from urllib.parse import urlencode
 
@@ -32,6 +34,21 @@ from tool_access_registry import SCOPE_DENIED_ERROR_CODE, get_presets_granting_s
 from token_scopes import REQUEST_NOT_MAPPED, required_scope_for_request
 from upstream_transport import classify_http_status, classify_transport_error
 from vetmanager_auth import VetmanagerAuthContext
+
+_pet_status_internal_read: ContextVar[str | None] = ContextVar(
+    "pet_status_internal_read", default=None)
+
+
+@contextmanager
+def allow_pet_status_internal_read(path: str):
+    """Allow one exact pet or clinic GET while handling a pets.write call."""
+    if not (path.startswith("/rest/api/pet/") or path.startswith("/rest/api/clinics/")):
+        raise ValueError("Unsupported internal pet status read")
+    token = _pet_status_internal_read.set(path)
+    try:
+        yield
+    finally:
+        _pet_status_internal_read.reset(token)
 # Stage 103d BC note: the `_BREAKER_*` names below are re-exports of the
 # canonical constants in `vm_transport.breaker`. They are snapshots — the
 # breaker logic itself reads `vm_transport.breaker.BREAKER_*` at call time,
@@ -346,6 +363,12 @@ class VetmanagerClient:
 
     def _require_scope(self, method: str, path: str) -> None:
         required_scope = required_scope_for_request(method, path)
+        # Stage 475: only the two internal reads of the protected write tool
+        # may use pets.write in place of their normal read scopes.
+        if (method.upper() == "GET" and required_scope in {"pets.read", "reference.read"}
+                and "pets.write" in self._scopes and _pet_status_internal_read.get()
+                and path == _pet_status_internal_read.get()):
+            return
         if required_scope == REQUEST_NOT_MAPPED:
             # Stage 274: the layer exists to catch a tool reaching past its own
             # declaration. Letting through what it does not recognise made it

@@ -3,12 +3,15 @@ import base64
 import binascii
 import json
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastmcp import FastMCP
 
 from depersonalization import build_addressed_placeholder
 from exceptions import ToolInputError
+from runtime_auth import get_current_runtime_credentials
+from clinic_timezone import resolve_clinic_timezone
+from pet_status_confirmation import consume as consume_pet_confirmation, issue as issue_pet_confirmation
 from filters import OptionalFilterList
 from filters import FILTER_FIELDS_BY_ENTITY, build_list_query_params, eq as _filter_eq, in_ as _filter_in, like as _filter_like
 from resources.pet_profile import fetch as _fetch_pet_profile
@@ -19,13 +22,47 @@ from tools._inactive_helpers import (
 )
 from tools.crud_helpers import crud_list, crud_get_by_id, crud_create, crud_update, crud_delete
 from validators import LimitParam, PositiveReferenceIdParam
-from vetmanager_client import VetmanagerClient
+from vetmanager_client import VetmanagerClient, allow_pet_status_internal_read
 
 # How far `get_inactive_pets` is allowed to walk the lapsed-client window.
 # Module level so a test can shrink the walk instead of mocking two thousand
 # clients to see what the tool says when it runs out of budget.
 CLIENT_PAGE_SIZE = 100
 MAX_CLIENT_PAGES = 20  # safety cap: 20 * 100 = 2000 clients scanned
+
+
+def _pet_row(payload: dict) -> dict:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    row = data.get("pet") if isinstance(data, dict) else None
+    if isinstance(row, list):
+        row = row[0] if len(row) == 1 else None
+    if not isinstance(payload, dict) or payload.get("success") is False or not isinstance(row, dict):
+        raise ToolInputError("Patient could not be verified; read the patient again.")
+    return row
+
+
+def _pet_status_date(value: object) -> str | None:
+    if value in (None, "", "0000-00-00", "0000-00-00 00:00:00"):
+        return None
+    if not isinstance(value, str) or not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2}:\d{2})?", value
+    ):
+        raise ToolInputError("Patient date could not be verified; read the patient again.")
+    try:
+        if len(value) > 10:
+            datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+        return date.fromisoformat(value[:10]).isoformat()
+    except ValueError as exc:
+        raise ToolInputError("Patient date could not be verified; read the patient again.") from exc
+
+
+def _pet_status_snapshot(row: dict) -> dict:
+    return {"id": row.get("id"), "owner_id": row.get("owner_id"),
+            "client_id": row.get("client_id"),
+            "alias": row.get("alias"), "type_id": row.get("type_id"),
+            "breed_id": row.get("breed_id"),
+            "status": row.get("status"), "deathdate": row.get("deathdate"),
+            "edit_date": row.get("edit_date"), "birthday": row.get("birthday")}
 
 
 def _owner_summary(client: object) -> dict:
@@ -50,6 +87,18 @@ def _positive_owner_id(value: object) -> int | None:
     except (TypeError, ValueError):
         return None
     return owner_id if owner_id > 0 else None
+
+
+def _pet_owner_id(row: dict) -> int | None:
+    owner_id = _positive_owner_id(row.get("owner_id"))
+    client_id = _positive_owner_id(row.get("client_id"))
+    if (row.get("owner_id") not in (None, "") and owner_id is None) or (
+        row.get("client_id") not in (None, "") and client_id is None
+    ):
+        return None
+    if owner_id is not None and client_id is not None and owner_id != client_id:
+        return None
+    return owner_id or client_id
 
 
 def _reference_title(value: object) -> str | None:
@@ -235,6 +284,121 @@ def register(mcp: FastMCP) -> None:
         return await crud_create("/rest/api/pet", payload)
 
     @mcp.tool
+    async def change_pet_status(
+        pet_id: int,
+        expected_owner_id: int,
+        clinic_id: int,
+        target_status: str,
+        deathdate: str,
+        confirm: bool = False,
+        confirmation: str = "",
+    ) -> dict:
+        """Safely mark a patient deceased or correct a deceased patient's death date.
+
+        Domain synonyms: отметить смерть пациента, дата смерти питомца,
+        исправить дату смерти, mark pet deceased, correct death date.
+
+        Ask the employee for explicit consent before preview. Show the complete
+        preview and ask for a second explicit consent before confirm=True. MCP
+        cannot independently verify those human consents. The confirmation is
+        single-use and expires after 10 minutes. Do not retry a failed write;
+        read the patient first if the result is uncertain.
+
+        Args:
+            pet_id: Confirmed patient ID.
+            expected_owner_id: Confirmed owner ID.
+            clinic_id: Clinic whose timezone defines today; shown in preview.
+            target_status: Only 'dead' is supported.
+            deathdate: Required local calendar date YYYY-MM-DD, not in the future.
+            confirm: False previews without writing; True applies after second consent.
+            confirmation: Opaque token returned by this exact preview.
+        """
+        if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0
+               for value in (pet_id, expected_owner_id, clinic_id)):
+            raise ToolInputError("Patient, owner and clinic IDs must be positive integers.")
+        if target_status != "dead":
+            raise ToolInputError("Only marking a patient deceased or correcting its death date is supported.")
+        if not isinstance(deathdate, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", deathdate):
+            raise ToolInputError("deathdate must be a calendar date YYYY-MM-DD.")
+        try:
+            selected_date = date.fromisoformat(deathdate)
+        except ValueError as exc:
+            raise ToolInputError("deathdate must be a real calendar date.") from exc
+        if bool(confirm) != bool(confirmation):
+            raise ToolInputError("Confirm requires the preview token; preview first.")
+
+        clinic_path = f"/rest/api/clinics/{clinic_id}"
+        with allow_pet_status_internal_read(clinic_path):
+            clinic_zone = await resolve_clinic_timezone(clinic_id, require_record_id=True)
+        if clinic_zone is None:
+            raise ToolInputError("Clinic timezone is unavailable; cannot verify deathdate.")
+        today = datetime.now(timezone.utc).astimezone(clinic_zone).date()
+        if selected_date > today:
+            raise ToolInputError("Future deathdate is not allowed in the clinic timezone.")
+
+        pet_path = f"/rest/api/pet/{pet_id}"
+        with allow_pet_status_internal_read(pet_path):
+            row = _pet_row(await VetmanagerClient().get(pet_path, fresh=True))
+        if _positive_owner_id(row.get("id")) != pet_id or (
+            _pet_owner_id(row) != expected_owner_id
+        ):
+            raise ToolInputError("Patient or owner changed; verify both IDs and preview again.")
+        current_status = row.get("status")
+        if current_status not in {"alive", "dead"}:
+            raise ToolInputError("Patient status does not permit this transition.")
+        current_deathdate = _pet_status_date(row.get("deathdate"))
+        if current_status == "dead" and current_deathdate == deathdate:
+            raise ToolInputError("Death date is already set to this value; no update is needed.")
+        birthday = _pet_status_date(row.get("birthday"))
+        if birthday and selected_date < date.fromisoformat(birthday):
+            raise ToolInputError("Death date cannot precede the patient's birth date.")
+
+        snapshot = _pet_status_snapshot(row)
+        context = {"snapshot": snapshot, "pet_id": pet_id,
+                   "owner_id": expected_owner_id, "clinic_id": clinic_id,
+                   "target_status": target_status, "deathdate": deathdate}
+        if not confirm:
+            credentials = get_current_runtime_credentials()
+            alias = (build_addressed_placeholder("pet", pet_id, "alias")
+                     if credentials is None or credentials.is_depersonalized else row.get("alias"))
+            return {"applied": False, "pet_id": pet_id, "owner_id": expected_owner_id,
+                    "clinic_id": clinic_id, "alias": alias,
+                    "birthday": birthday, "type_id": row.get("type_id"),
+                    "breed_id": row.get("breed_id"),
+                    "current_status": current_status, "current_deathdate": current_deathdate,
+                    "target_status": "dead", "target_deathdate": deathdate,
+                    "warning": "This changes a clinical record. Confirm the patient, owner, clinic and date again before applying.",
+                    "expires_in_seconds": 600, "confirmation": issue_pet_confirmation(context)}
+
+        consume_pet_confirmation(confirmation, context)
+        payload = {"deathdate": f"{deathdate} 00:00:00"}
+        if current_status == "alive":
+            payload["status"] = "dead"
+        try:
+            result = await VetmanagerClient().put(pet_path, json=payload)
+            if not isinstance(result, dict) or result.get("success") is False:
+                return {"applied": False, "outcome": "unknown",
+                        "guidance": "Write outcome unknown; read the patient before any new preview."}
+            with allow_pet_status_internal_read(pet_path):
+                after = _pet_row(await VetmanagerClient().get(pet_path, fresh=True))
+        except Exception:
+            return {"applied": False, "outcome": "unknown",
+                    "guidance": "Write outcome unknown; read the patient before any new preview."}
+        try:
+            readback_deathdate = _pet_status_date(after.get("deathdate"))
+        except ToolInputError:
+            return {"applied": False, "outcome": "unknown",
+                    "guidance": "Write outcome unknown; read the patient before any new preview."}
+        applied = (_positive_owner_id(after.get("id")) == pet_id
+                   and _pet_owner_id(after) == expected_owner_id
+                   and after.get("status") == "dead"
+                   and readback_deathdate == deathdate)
+        return {"applied": applied, "pet_id": pet_id, "owner_id": expected_owner_id,
+                "status": after.get("status"), "deathdate": readback_deathdate,
+                "outcome": "verified" if applied else "mismatch",
+                "guidance": None if applied else "Read the patient before any new preview."}
+
+    @mcp.tool
     async def update_pet(
         pet_id: int,
         alias: str = "",
@@ -263,8 +427,10 @@ def register(mcp: FastMCP) -> None:
             color_id: New color ID (0 = no change).
             chip_number: Microchip number (leave empty to keep current).
             weight: Pet weight as string, e.g. '5.2' (leave empty to keep current).
-            status: New status (leave empty to keep current).
+            status: Unsupported when nonempty. Use change_pet_status for status and death date.
         """
+        if status:
+            raise ToolInputError("status is not supported here; use change_pet_status with preview and confirmation.")
         payload: dict = {}
         if alias:
             payload["alias"] = alias
@@ -286,8 +452,6 @@ def register(mcp: FastMCP) -> None:
             payload["chip_number"] = chip_number
         if weight:
             payload["weight"] = weight
-        if status:
-            payload["status"] = status
         return await crud_update("/rest/api/pet", pet_id, payload)
 
     @mcp.tool
