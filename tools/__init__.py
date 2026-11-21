@@ -308,6 +308,7 @@ def register_all(mcp: FastMCP) -> None:
     from tools.pet import register as register_pet
     from tools.admission import register as register_admission
     from tools.medical_card import register as register_medical_card
+    from tools.discharge_history import register as register_discharge_history
     from tools.invoice import register as register_invoice
     from tools.good import register as register_good
     from tools.user import register as register_user
@@ -328,6 +329,7 @@ def register_all(mcp: FastMCP) -> None:
     register_pet(tool_mcp)
     register_admission(tool_mcp)
     register_medical_card(tool_mcp)
+    register_discharge_history(tool_mcp)
     register_invoice(tool_mcp)
     register_good(tool_mcp)
     register_user(tool_mcp)
