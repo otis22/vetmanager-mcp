@@ -33,6 +33,7 @@ from web_auth import get_web_session_secret
 REPORT_EXPORT_ROUTE_PREFIX = "/report-export"
 REPORT_EXPORT_TTL_SECONDS = 3 * 24 * 60 * 60
 REPORT_EXPORT_MAX_BYTES = 25 * 1024 * 1024
+AI_EXPORT_PROOF_TTL_SECONDS = 3 * 24 * 60 * 60
 REPORT_EXPORT_CONTENT_TYPE = "text/csv; charset=utf-8"
 # What the CDN is allowed to answer with. An HTML error page parsed as CSV
 # would be stored and served as if it were a report — and a body with no type
@@ -118,6 +119,43 @@ def file_segment(owner: str, filename: str) -> str:
     return _segment("file", owner, filename)
 
 
+def sign_ai_export_proof(
+    *, report_file_id: int, domain: str, subject_type: str, subject_id: int
+) -> str:
+    """Bind an AI export start to this clinic and access for later download."""
+    expires = int(time.time()) + AI_EXPORT_PROOF_TTL_SECONDS
+    message = _canonical(
+        "ai-export", str(report_file_id), domain, subject_type, str(subject_id), str(expires)
+    )
+    digest = hmac.new(_link_key(), message, hashlib.sha256).hexdigest()
+    # Short hex groups keep the report value sanitizer from treating the
+    # opaque proof as a phone-shaped sequence of decimal digits.
+    signature = "x".join(digest[index:index + 8] for index in range(0, 64, 8))
+    return f"v1.{expires:x}.{signature}"
+
+
+def verify_ai_export_proof(
+    proof: str | None, *, report_file_id: int, domain: str,
+    subject_type: str, subject_id: int,
+) -> bool:
+    if not isinstance(proof, str) or len(proof) > 100:
+        return False
+    parts = proof.split(".")
+    if (len(parts) != 3 or parts[0] != "v1"
+            or not re.fullmatch(r"[0-9a-f]{1,9}", parts[1])
+            or not re.fullmatch(r"[0-9a-f]{8}(?:x[0-9a-f]{8}){7}", parts[2])):
+        return False
+    expires = int(parts[1], 16)
+    if expires < time.time() or expires > time.time() + AI_EXPORT_PROOF_TTL_SECONDS:
+        return False
+    message = _canonical(
+        "ai-export", str(report_file_id), domain, subject_type, str(subject_id), str(expires)
+    )
+    digest = hmac.new(_link_key(), message, hashlib.sha256).hexdigest()
+    expected = "x".join(digest[index:index + 8] for index in range(0, 64, 8))
+    return hmac.compare_digest(parts[2], expected)
+
+
 def new_export_filename(*, report_file_id: int) -> str:
     """A fresh name per export, so a repeat does not overwrite a live link."""
     return f"{report_file_id}-{secrets.token_hex(16)}"
@@ -161,7 +199,8 @@ def _escape_formula(cell: str) -> str:
 
 
 def build_export_csv(
-    raw: bytes, *, delimiter: str, depersonalize: bool
+    raw: bytes, *, delimiter: str, depersonalize: bool,
+    trusted_titles: frozenset[str] = frozenset(),
 ) -> tuple[str, int, int]:
     """Return cleaned CSV text plus its row and column counts.
 
@@ -181,7 +220,7 @@ def build_export_csv(
         cleaned = []
         for index, cell in enumerate(row):
             column = header[index] if index < len(header) else ""
-            value = sanitize_report_cell(column, cell) if depersonalize else cell
+            value = sanitize_report_cell(column, cell, trusted_titles=trusted_titles) if depersonalize else cell
             cleaned.append(_escape_formula(value))
         writer.writerow(cleaned)
 
@@ -260,6 +299,7 @@ def store_export_stream(
     subject_type: str,
     subject_id: int,
     download_name: str,
+    trusted_titles: frozenset[str] = frozenset(),
 ) -> tuple[str, int, int]:
     """Clean a bounded raw export row by row and atomically publish it."""
     name = file_segment(owner, filename)
@@ -298,7 +338,7 @@ def store_export_stream(
                         for index, cell in enumerate(row):
                             column = header[index] if index < len(header) else ""
                             value = (
-                                sanitize_report_cell(column, cell)
+                                sanitize_report_cell(column, cell, trusted_titles=trusted_titles)
                                 if depersonalize
                                 else cell
                             )
