@@ -11,6 +11,8 @@ import math
 import os
 import re
 import time
+import unicodedata
+from urllib.parse import unquote, urlsplit
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from fastmcp import FastMCP
@@ -1462,7 +1464,7 @@ def _annotate_report_ai_data_payload(payload: dict) -> dict:
     limited = data.get("limited") is True
     try:
         total = int(data.get("total"))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         total = None
 
     near_cap = total is not None and total >= REPORT_AI_LARGE_RESULT_GUIDANCE_THRESHOLD
@@ -2385,6 +2387,36 @@ def register(mcp: FastMCP) -> None:
         except VetmanagerError as exc:
             _classify_report_ai_data_failure(exc)
             raise
+        data = payload.get("data") if isinstance(payload, dict) else None
+        rows = data.get("rows") if isinstance(data, dict) else None
+        link = data.get("csv_export_url") if isinstance(data, dict) else None
+        try:
+            parsed_link = urlsplit(link) if isinstance(link, str) else None
+        except ValueError:
+            parsed_link = None
+        decoded_path = parsed_link.path if parsed_link else ""
+        while unquote(decoded_path) != decoded_path:
+            decoded_path = unquote(decoded_path)
+        decoded_link = link if isinstance(link, str) else ""
+        while unquote(decoded_link) != decoded_link:
+            decoded_link = unquote(decoded_link)
+        if (not isinstance(payload, dict) or payload.get("success") is not True
+                or not isinstance(rows, list)
+                or not all(isinstance(row, dict) for row in rows)
+                or (link not in (None, "") and (
+                    not isinstance(link, str)
+                    or parsed_link is None
+                    or parsed_link.scheme or parsed_link.netloc or "#" in link
+                    or not decoded_path.startswith("/rest/api/report/")
+                    or "#" in decoded_path or "?" in decoded_path
+                    or any(part in {".", ".."} for part in decoded_path.split("/"))
+                    or any(unicodedata.category(char)[0] in {"C", "Z"}
+                           or char == "\\"
+                           for char in decoded_link)
+                ))):
+            raise reportable_error(
+                "Report AI data is unavailable; re-check the same job later."
+            )
         payload = _annotate_report_ai_data_payload(payload)
         if payload.get("success") is True and isinstance(payload.get("data"), dict):
             data = payload["data"]
