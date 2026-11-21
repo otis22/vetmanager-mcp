@@ -24411,3 +24411,15 @@ Product commit stage 488 `abf4c17e49cf259068fb97c13da63dc16602ec50` на base `d
 MCP container: Python 3.12.15, `cryptography 46.0.7`, OpenSSL 3.5.6 в wheel. `pip-audit` по фактическим 81 пакетам дал 7 записей/4 уникальные проблемы только в cryptography; полное исправление — 50.0.0. Python 3.12.16 является security release. Прямой код использует Fernet, а не затронутые PKCS#7/CMS/X.509 verifier, поэтому reachability снижена, но обновление сохранено в очереди. GHCR `python:3.12-slim` пока указывает на прежний digest с 3.12.15, поэтому сначала требуется новый base image.
 
 Порядок: **490 → 491 host maintenance → 492 lock/hashes и pip-audit → 493 Python/cryptography release**. Host updates и kernel reboot не смешиваются с application release; 492 устраняет расхождение `cryptography<47` в Dockerfile и неограниченного `>=46` в pyproject до смены версии. Все три этапа `todo`, PRD обязателен до реализации. В этой правке изменены только Roadmap/AssumptionLog, runtime и production packages не менялись.
+
+## Этапы 491–493 — независимый разбор рисков Codex (21.11.2026)
+
+По явной просьбе владельца Codex CLI 0.170.0 / `gpt-6-sol` выполнил read-only ревью base `0c84d2e2cedf206c42d51af0e849e0e639672825`, Roadmap, Dockerfile, pyproject и deploy rollback. Файлы не менял, команды обновления/тесты/сеть не запускал; заключение `/tmp/codex-security-roadmap-review.md`. Вероятности качественные, не измеренные.
+
+Codex рекомендовал сохранить очередь **490 → 491 → 492 → 493**, ограничив 492 минимальным воспроизводимым snapshot, чтобы выбор инструмента не задерживал security release. Принято без изменения порядка. Добавлены прозрачные риски и стоп-условия:
+
+- **491:** High — потеря SSH/публичного доступа, nginx/Docker regression и простой; Critical — потеря новых записей при восстановлении snapshot/БД. Нужны console, restore проверка, apt simulation, окно, пошаговые updates и запрет автоматического DB/snapshot rollback. Kernel/reboot выделен в 491.3. `rollback_db.sh` пересоздаёт БД и не считается откатом host packages.
+- **492:** High — неполный lock разных production/test/anyio окружений и несовместимость hashes с архитектурой/Python ABI; Medium — неверная интерпретация pip-audit. Прежние четыре finding остаются явно известными до 493, новые без разбора блокируют release; 492 не называется security-fix.
+- **493:** High — непроверенный base image/одновременная смена OS и major cryptography, совместимость транзитивных зависимостей и исторических Fernet/OAuth данных; Critical — возврат image после `alembic upgrade` не откатывает схему/данные. Новые миграции вне scope, автоматический DB rollback запрещён, старый image должен быть совместим со схемой.
+
+Общие ограничения evidence записаны в Roadmap: 140 security-обновлений и 28 CVE nginx не являются числом эксплуатируемых проблем; pip-audit не покрывает host/OS/config/exploitability; Fernet и rollback-код сами по себе не доказывают безопасность цепочки или восстановление без потерь. Изменения только документальные, production не затрагивался.
