@@ -504,8 +504,8 @@
     "sha256": "863f1b37d43a448f26f0c0c03bb5ad768c7c06d25e06fd28e492428dd48cbeb6"
   },
   "tests/test_stage265_denial_reaches_the_agent.py": {
-    "count": 130,
-    "sha256": "2e0a95e367a71f2e3eee7a7c0c4f029836e94a6f51ad0be90191491f22df13b2"
+    "count": 131,
+    "sha256": "bbcf1437f1dbd83e958838dcb176f4f2868ffa908bdc653db51b4b5fab1bda75"
   },
   "tests/test_stage265_error_text_matching.py": {
     "count": 19,
@@ -640,8 +640,8 @@
     "sha256": "62c6f69f1c6c5c36ec6659cab8edb39f926b812cf536528267d580a5888b264c"
   },
   "tests/test_stage293_timestamp_field_guard.py": {
-    "count": 26,
-    "sha256": "f928dfab0da4465504b8dbf9f42c9f48a25b2803af4f17f2c8d5ad47b6001a0a"
+    "count": 27,
+    "sha256": "7c4a0203e0b36b47f9275bd65a302161d10691f27981c06a96c6efacaf86027a"
   },
   "tests/test_stage293_whole_day_date_ranges.py": {
     "count": 8,
@@ -1462,6 +1462,10 @@
   "tests/test_stage470_workflow_docs.py": {
     "count": 5,
     "sha256": "582d486dd518412f43acd4884150e87b5244caf3104c966035f65a819adde28c"
+  },
+  "tests/test_stage474_discharge_read.py": {
+    "count": 25,
+    "sha256": "897c98ece0ca5eae585881943c69c162c7ce2de27d0dec3da88f182adb7eaa43"
   },
   "tests/test_stage475_pet_status.py": {
     "count": 23,

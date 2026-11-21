@@ -151,6 +151,8 @@ _FREE_TEXT_KEYS = frozenset({
     "recomendation",
     "recommendation",
     "treatment",
+    "healingprocess",
+    "vaccinename",
     "comment",
     "note",
     "notes",

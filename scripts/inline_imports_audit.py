@@ -74,6 +74,11 @@ ALLOWLIST: dict[tuple[str, str, str], str] = {
     (
         "tools/__init__.py",
         "register_all",
+        "from tools.discharge_history import register as register_discharge_history",
+    ): "Lazy-register the read-only discharge source bundle without importing the full tool graph on package import.",
+    (
+        "tools/__init__.py",
+        "register_all",
         "from tools.invoice import register as register_invoice",
     ): "Lazy-register tool modules without importing the full tool graph on package import.",
     (

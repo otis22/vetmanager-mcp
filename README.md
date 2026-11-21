@@ -662,14 +662,14 @@ COMMIT;
 - После успешного `POST`/`PUT`/`DELETE` кеш для соответствующего тега `domain:entity` инвалидируется.
 - Ограничение подхода: кеш живёт только в памяти процесса и полностью сбрасывается при рестарте сервера.
 
-**131 инструмент** по 16 группам:
+**132 инструмента** по 16 группам:
 
 | Группа | Инструменты | Кол-во |
 |--------|-------------|--------|
 | Client | `get_clients`, `get_debtors`, `get_client_by_id`, `get_personal_account_link_by_phone`, `create_client`, `update_client`, `delete_client`, `get_client_profile`, `get_inactive_clients` | 9 |
 | Pet | `get_pets`, `find_pets_by_alias`, `get_pet_by_id`, `create_pet`, `update_pet`, `change_pet_status`, `delete_pet`, `get_pet_profile`, `get_inactive_pets` | 9 |
 | Admission | `get_admissions`, `get_admissions_daily_summary`, `get_admission_by_id`, `create_admission`, `update_admission`, `get_client_upcoming_visits`, `get_daily_schedule` | 7 |
-| MedicalCard | `get_medical_cards`, `get_medical_cards_by_date`, `get_medical_cards_by_client_id`, `get_medical_card_by_id`, `create_medical_card`, `update_medical_card`, `get_vaccinations` | 7 |
+| MedicalCard | `get_medical_cards`, `get_medical_cards_by_date`, `get_medical_cards_by_client_id`, `get_medical_card_by_id`, `create_medical_card`, `update_medical_card`, `get_vaccinations`, `get_pet_discharge_history` | 8 |
 | Invoice | `get_invoices`, `get_average_invoice`, `get_invoice_by_id`, `update_invoice` | 4 |
 | Finance | `get_payments`, `get_payment_by_id`, `get_client_payment_applications`, `get_revenue_summary`, `get_invoice_documents`, `get_invoice_documents_by_period`, `get_invoice_document_by_id`, `get_closing_of_invoices`, `get_closing_of_invoice_by_id`, `get_cassas`, `get_cassa_by_id`, `get_cassa_closes`, `get_cassa_close_by_id` | 13 |
 | Good | `get_goods`, `get_good_by_id`, `search_invoice_goods`, `get_good_combination`, `calculate_good_combination_price`, `create_good`, `update_good` | 7 |
