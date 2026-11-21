@@ -3,6 +3,7 @@ import asyncio
 import logging
 from copy import deepcopy
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -298,6 +299,67 @@ async def test_create_report_ai_job_posts_strict_intent_body():
     payload = _structured(result)
     assert payload["data"]["is_deduplicated"] is False
     assert payload["data"]["job"]["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_new_report_intent_after_failed_job_posts_again(monkeypatch):
+    responses = iter((
+        {"data": {"job": {"id": 48101, "status": "failed"}, "is_deduplicated": False}},
+        {"data": {"job": {"id": 48102, "status": "queued"}, "is_deduplicated": False}},
+    ))
+    calls = []
+
+    async def upstream(method, path, **kwargs):
+        calls.append((method, path, kwargs["json"]["intent_text"]))
+        return next(responses)
+
+    monkeypatch.setattr(report_ai, "_call_vm", upstream)
+    monkeypatch.setattr(report_ai, "record_created_job", AsyncMock(return_value=True))
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        first = await mcp.call_tool("create_report_ai_job", {"intent_text": "Подробный отчёт за 1900 год"})
+        second = await mcp.call_tool("create_report_ai_job", {"intent_text": "Число записей за 1900 год"})
+
+    assert first.structured_content["data"]["job"]["status"] == "failed"
+    assert len(calls) == 2
+    assert [(method, path) for method, path, _ in calls] == [
+        ("POST", "/rest/api/report-ai-job"),
+        ("POST", "/rest/api/report-ai-job"),
+    ]
+    assert "Подробный отчёт за 1900 год" in calls[0][2]
+    assert "Число записей за 1900 год" in calls[1][2]
+    assert calls[0][2] != calls[1][2]
+    assert second.structured_content["data"]["job"]["id"] == 48102
+    assert second.structured_content["data"]["job"]["status"] == "queued"
+    assert second.structured_content["data"]["is_deduplicated"] is False
+
+
+@pytest.mark.asyncio
+async def test_new_report_intent_preserves_upstream_failed_dedup(monkeypatch):
+    responses = iter((
+        {"data": {"job": {"id": 48101, "status": "failed"}, "is_deduplicated": False}},
+        {"data": {"job": {"id": 48101, "status": "failed"}, "is_deduplicated": True}},
+    ))
+    calls = []
+
+    async def upstream(method, path, **kwargs):
+        calls.append((method, path, kwargs["json"]["intent_text"]))
+        return next(responses)
+
+    monkeypatch.setattr(report_ai, "_call_vm", upstream)
+    monkeypatch.setattr(report_ai, "record_created_job", AsyncMock(return_value=True))
+    headers, runtime = bearer_runtime_patch()
+    with headers, runtime:
+        await mcp.call_tool("create_report_ai_job", {"intent_text": "Подробный отчёт за 1900 год"})
+        second = await mcp.call_tool("create_report_ai_job", {"intent_text": "Число записей за 1900 год"})
+
+    assert len(calls) == 2
+    assert all((method, path) == ("POST", "/rest/api/report-ai-job") for method, path, _ in calls)
+    assert calls[0][2] != calls[1][2]
+    assert "Число записей за 1900 год" in calls[1][2]
+    assert second.structured_content["data"]["job"]["id"] == 48101
+    assert second.structured_content["data"]["job"]["status"] == "failed"
+    assert second.structured_content["data"]["is_deduplicated"] is True
 
 
 @pytest.mark.asyncio

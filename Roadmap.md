@@ -259,7 +259,7 @@ matched-отчёт с другой recognized structure и корректный 
   настоящего имени; исправить локальную очистку и провести живую проверку на
   стенде. — `todo`
 
-## Этап 481. Новый intent #170 после terminal failed — `todo`
+## Этап 481. Новый intent #170 после terminal failed — `done` 21.11.2026
 
 Владелец 21.11 свёл этап к unit-тесту без реального ВМ. Защищаем только MCP:
 новый более простой intent после failed отправляется отдельным POST, не
@@ -269,7 +269,7 @@ matched-отчёт с другой recognized structure и корректный 
 
 - 481.1 Добавить синтетические unit-случаи recovery и upstream rejection,
   доказать их красными мутациями; real API, live ВМ и новые jobs не нужны.
-  [PRD](PRD/этап-481-повтор-report-ai-после-failed.md). — `todo`
+  [PRD](PRD/этап-481-повтор-report-ai-после-failed.md). — `done` 21.11.2026
 
 ## Этап 482. Docs-only main: проверка предыдущего успешного Tests run — `done`
 
