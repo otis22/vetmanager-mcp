@@ -3,21 +3,21 @@
 Статусы: `todo` | `in_progress` | `supervisor_pending` | `done` | `stop`.
 Структуру проверяет `scripts/check_roadmap_structure.py`.
 
-Актуальная очередь 21.11.2026: **480 → 481 → 488 → 490**. Этап **476**
+Актуальная очередь 21.11.2026: **490 → 491 → 492 → 493**. Этап **476**
 завершён как design; реализация отложена до нового фидбека. Завершённые 479,
-482, 473, 474 и 475 в активную очередь не входят. Этап **487** остановлен по
-новым evidence #180: scheduled-запуск не дошёл до MCP.
+480, 481, 482, 473, 474, 475 и 488 в активную очередь не входят. Этап **487**
+остановлен по новым evidence #180: scheduled-запуск не дошёл до MCP.
 
 Независимые поезда, каждый со своим PR:
 
-1. **480** — runtime/privacy: каталожные названия по пяти источникам, точная
-   сверка, красные privacy-сторожа и полные применимые gates.
-2. **481** — test-only: unit-контракт нового intent после failed, без ВМ и
-   real-контура.
-3. **488** — prompt/документация #307/#329 с адресными docs guards, без кода
-   и production rollout.
-4. **490** — адресная privacy-safe диагностика `get_invoices`; отдельный
+1. **490** — адресная privacy-safe диагностика `get_invoices`; отдельный
    runtime PR только после красного сторожа и проверки на стенде.
+2. **491** — production host security maintenance с snapshot/backup,
+   контролируемым restart и отдельным решением о kernel reboot.
+3. **492** — воспроизводимые Python dependencies с hashes и регулярный
+   `pip-audit`, без автоматической установки обновлений на production.
+4. **493** — security release Python base image и `cryptography` с полными
+   применимыми release gates.
 
 В верхнем блоке активного поезда фиксировать: состав этапов, ветку, base SHA,
 текущий gate, следующее действие и стоп-условия. После завершения блок убрать;
@@ -47,6 +47,53 @@ Read-only расследование 489 подтвердило пробел: в
 
 - 490.1 Показать красный privacy guard, реализовать адресное событие, проверить
   его на стенде и провести применимые release gates. — `todo`
+
+## Этап 491. Production host security maintenance — `todo`
+
+Read-only аудит 21.11.2026: nginx `1.24.0-2ubuntu7.6` при candidate
+`1.24.0-2ubuntu7.21`, host Python `3.12.3-1ubuntu0.10` при candidate `0.17`;
+также доступны обновления OpenSSL, OpenSSH, Docker и kernel. Между версиями
+nginx в changelog 28 уникальных CVE, но текущий конфиг не включает HTTP/2,
+mail proxy, `ssl_preread`, `try_files`, `alias` и njs: это ограничивает
+reachability части проблем и не заменяет патчи. Наличие 220 обновлений, из
+которых 140 пришли из security-канала, не означает 140 уязвимостей.
+
+- 491.1 До изменений создать PRD/runbook: snapshot/backup, список пакетов,
+  `nginx -t`, контролируемый restart, rollback и проверки public smoke,
+  release-state и всех MCP workers. Не выполнять unattended полный upgrade.
+  — `todo`
+- 491.2 Выполнить согласованный host security maintenance и post-checks.
+  Обновление kernel и reboot выделить в отдельное решение владельца с окном
+  недоступности; не смешивать с application dependency release. — `todo`
+
+## Этап 492. Воспроизводимые Python dependencies и security audit — `todo`
+
+Production Dockerfile ограничивает `cryptography>=46.0.0,<47`, а
+`pyproject.toml` — `cryptography>=46.0.0` без верхней границы. Lockfile с
+hashes отсутствует, поэтому test и production builds могут получить разные
+transitive dependencies. До реализации выбрать инструмент lock-снимка в PRD,
+не добавляя новую зависимость по предположению.
+
+- 492.1 Сделать единый воспроизводимый dependency snapshot с hashes,
+  синхронизировать ограничения Dockerfile/pyproject и проверить clean build
+  плюс применимые default/real gates. — `todo`
+- 492.2 Добавить `pip-audit` по зафиксированному окружению в регулярную
+  проверку и документировать release triage findings. Не включать
+  автоматическое обновление production и не выдавать Python audit за полный
+  container OS scan. — `todo`
+
+## Этап 493. Python 3.12.16 и cryptography 50 security release — `todo`
+
+MCP container использует Python 3.12.15 и `cryptography 46.0.7` с OpenSSL
+3.5.6 в wheel. Python 3.12.16 — security release; четыре уникальных finding
+`pip-audit` для cryptography полностью закрываются версией 50.0.0. Прямой код
+MCP использует только `Fernet`, но это не отменяет обновление. Текущий GHCR
+`python:3.12-slim` всё ещё указывает на прежний digest с Python 3.12.15.
+
+- 493.1 Сначала опубликовать и проверить base image с Python 3.12.16, затем
+  обновить его digest и `cryptography>=50,<51` в MCP после этапа 492. Провести
+  полные default/real gates, повторный `pip-audit`, deploy, public smoke и
+  мониторинг; мажорную ветку Python одновременно не менять. — `todo`
 
 ## Этап 487. Scheduled Claude: диагностика доступности коннектора (#180) — `stop`
 
@@ -178,30 +225,6 @@ default/PostgreSQL и изолированные real/browser-группы, по
 devtr6, cleanup и единый aggregate без пропусков. Production не меняется;
 JUnit/outcome сохраняются для утреннего triage.
 
-## Этап 471. Post-deploy проверка выпущенных fixes и feedback triage — `done`
-
-- 471.1 Проверить #150/#156/#160/#161/#168/#177 и workaround #171–172; #177 —
-  read-only проверка существующего отчёта без создания нового job. Закрыть
-  reports штатным triage только после подтверждения. Проверка завершена;
-  владелец разрешил изменение только статусов. Подтверждённые обращения
-  связаны с known issues, остальные оставлены без недоказанного закрытия;
-  read-back статусов выполнен. — `done` 19.11.2026
-- 471.2 Проверить доступные read-only признаки #170 и передать непроверяемый
-  без нового job переход create→dedup в отдельный этап 481. Историческая
-  последовательность разных jobs после failed зафиксирована; локальный дефект
-  dedup не доказан и MCP не менялся. — `done` 19.11.2026
-
-## Этап 472. Адресная диагностика catalog tools #173/#174 — `done`
-
-- 472.1 Сравнить прямые ответы ВМ и MCP с одинаковыми параметрами; установить
-  владельца дефекта по evidence, не по предположению. Парные проверки на
-  исходном подключении успешны; точный #173 query не сохранён, #174 сейчас
-  не воспроизводится. Владелец исходных отказов — `unknown`. — `done` 19.11.2026
-- 472.2 Для подтверждённого локального дефекта создать отдельный PRD и поезд;
-  для ВМ зафиксировать безопасную эскалацию. Локальные дефекты Report AI
-  вынесены в PRD 479/480; для PREVIEW_FAILED сохранена upstream эскалация.
-  — `done` 19.11.2026
-
 ## Этап 479. Количества Report AI без ложной маски телефона — `done`
 
 Подтверждённый локальный класс #156: [PRD](PRD/этап-479-количества-report-ai.md).
@@ -285,13 +308,6 @@ matched-отчёт с другой recognized structure и корректный 
   добавить красный guard на существующий success и на отсутствие/ошибку
   evidence; исправить селектор без fail-open. Проверить docs-only main и
   обязательные CI-контуры по отдельному PRD. — `done`
-
-## Этап 473. Блок «Фидбек → Roadmap» на внешнем дашборде — `done`
-
-- 473.1 Вести версионируемый mapping вне этого репозитория: report IDs, этап,
-  статус, владелец, доказательство, следующее действие и deploy SHA. Блок
-  опубликован 20.11 и обновлён 21.11; production ради отображения не менялся.
-  — `done` 21.11.2026
 
 ## Этап 474. Данные для черновика выписки из медкарты (#159) — `done`
 
