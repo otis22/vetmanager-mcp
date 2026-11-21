@@ -10748,3 +10748,24 @@ endpoint, принимающий filter_json и возвращающий тол�
   — `stop` 21.11.2026
 - 358.2 Инструмент/поле превью и проверки перед сохранением переносятся в новый
   этап после появления контракта ВМ. — `stop` 21.11.2026
+## Этап 469. Контурные fingerprints для offline gates — `done`
+
+Источник: решение владельца 16.11.2026 — не повторять default/fast после
+изменения только real-only теста. Контурный fingerprint реализован в 469.1;
+строгая проверка состава и свежести evidence сохраняется для каждого контура.
+
+- 469.1 Разделить входы default/PostgreSQL/real, сохранив общие
+  runtime/config/dependencies и fail-closed инвентаризацию. — `done`
+- 469.2 Красные сторожа инвалидации по контурам, полные проверки и
+  committed-diff release-review только блокеров. — `done`
+
+Образ test закреплён для серии real-групп. Финальные default, PostgreSQL и
+real aggregate прошли с точными inventories и cleanup; evidence и история
+адресного исправления — в `AssumptionLog.md`.
+
+Выпуск 469+470: PR #39 merged, merge SHA
+`1c5f322f46778043c98c60ef541da32fad6efad1`. Main Tests `44061879355`
+и Deploy Prod `44065554057` — success. Независимый smoke трёх workers passed;
+мониторинг 10:37–11:37 UTC дал 7/7 ok. Production fixes не потребовались.
+Дашборды обновлены; факты и разбор фидбека — в `AssumptionLog.md`.
+
