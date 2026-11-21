@@ -6,6 +6,7 @@ import httpx
 import fakeredis
 import pytest
 import respx
+from fastmcp.exceptions import ToolError
 
 import service_metrics
 import storage
@@ -18,6 +19,7 @@ from tests.test_stage170_report_ai_tools import BASE, bearer_runtime_patch, bill
 from tool_descriptions import SPECIAL_TOOL_DESCRIPTIONS
 from tools.report_ai import REPORT_AI_RATING_GUIDANCE
 import tools.report_ai as report_ai
+import vetmanager_client
 
 
 @pytest.fixture
@@ -96,7 +98,8 @@ async def test_reminder_requires_terminal_owned_unrated_job(rating_db):
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_data_failure_and_lookup_timeout_leave_payload_intact(rating_db, monkeypatch):
+async def test_data_failure_is_closed_and_lookup_timeout_keeps_data(rating_db, monkeypatch):
+    monkeypatch.setattr(vetmanager_client, "CACHE_TTL_SHORT_SECONDS", 0.0)
     billing_mock()
     data_route = respx.get(f"{BASE}/rest/api/report-ai-job/409/data").mock(
         return_value=httpx.Response(200, json={"success": False, "data": {"rows": []}}))
@@ -105,9 +108,8 @@ async def test_data_failure_and_lookup_timeout_leave_payload_intact(rating_db, m
     await record_created_job(account_id=1, connection_id=1, domain="testclinic",
                              job_id=409, intent_text="Количество приёмов")
     headers, runtime = bearer_runtime_patch()
-    with headers, runtime:
-        failed = _payload(await mcp.call_tool("get_report_ai_job_data", {"job_id": 409}))
-    assert "mcp_rating_reminder" not in failed.get("data", {})
+    with headers, runtime, pytest.raises(ToolError, match="Report AI data is unavailable"):
+        await mcp.call_tool("get_report_ai_job_data", {"job_id": 409})
     data_route.mock(return_value=httpx.Response(200, json={"success": True, "data": {"rows": []}}))
 
     async def stalled_lookup(**_):

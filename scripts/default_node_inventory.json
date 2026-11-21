@@ -1121,7 +1121,7 @@
   },
   "tests/test_stage409_rating_reminder.py": {
     "count": 5,
-    "sha256": "59c360f7f0aad04def6d140075945d11732e044e7146d9c514614a501353e59e"
+    "sha256": "c75c8657dc2fa31f865ec230993c731f3b9a0680943bcb8e3d35aac59ec4e0a0"
   },
   "tests/test_stage410_pet_list_privacy.py": {
     "count": 21,
@@ -1494,6 +1494,10 @@
   "tests/test_stage482_previous_main_success.py": {
     "count": 12,
     "sha256": "34b6c17bc7d7ea3365ebc1d098f3cf20277abc1aeebcffb35adac9216615cfd9"
+  },
+  "tests/test_stage484_match_suitability.py": {
+    "count": 25,
+    "sha256": "4fe379fafdbd810d476dbdad228cb7355e6d2cc427b9f9df859ed202ffc19d25"
   },
   "tests/test_stage87_post_migration.py": {
     "count": 8,

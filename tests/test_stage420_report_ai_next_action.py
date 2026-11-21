@@ -4,6 +4,8 @@ import httpx
 import os
 import pytest
 import respx
+from fastmcp.exceptions import ToolError
+from unittest.mock import AsyncMock
 
 import service_metrics
 import storage
@@ -293,7 +295,6 @@ async def test_shared_stage_age_stops_bounded_poll(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_waiter_stops_without_another_get(monkeypatch):
-    from unittest.mock import AsyncMock
     payload = _job("queued")
     payload["data"]["job"]["mcp_queue_diagnostics"] = {"stop_automatic_polling": True}
     async def annotated(value):
@@ -316,14 +317,15 @@ async def test_waiter_stops_without_another_get(monkeypatch):
     {"total": 1}, {"rows": None}, {"rows": {}}, {"rows": "oops"},
     {"rows": [None]}, {"rows": ["oops"]}, {"rows": [[1]]},
 ])
-async def test_incomplete_success_data_has_no_rating_action(rating_db, data):
+async def test_incomplete_success_data_has_no_rating_action(rating_db, data, monkeypatch):
     billing_mock()
     await record_created_job(account_id=1, connection_id=1, domain="testclinic", job_id=420,
                              intent_text="Счёт приёмов")
     respx.get(f"{BASE}/rest/api/report-ai-job/420/data").mock(
         return_value=httpx.Response(200, json={"success": True, "data": data}))
+    reminder = AsyncMock()
+    monkeypatch.setattr(report_ai, "_attach_rating_reminder", reminder)
     headers, runtime = bearer_runtime_patch()
-    with headers, runtime:
-        response = (await mcp.call_tool("get_report_ai_job_data", {"job_id": 420})).structured_content
-    assert "next_action" not in response["data"]
-    assert "mcp_rating_reminder" not in response["data"]
+    with headers, runtime, pytest.raises(ToolError, match="Report AI data is unavailable"):
+        await mcp.call_tool("get_report_ai_job_data", {"job_id": 420})
+    reminder.assert_not_awaited()
