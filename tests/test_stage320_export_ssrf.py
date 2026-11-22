@@ -219,6 +219,8 @@ def test_origin_allowlist_env_is_wired_without_a_default_value():
 def test_httpcore_is_a_direct_bounded_dependency():
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
     dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+    snapshot = Path("requirements/production.txt").read_text(encoding="utf-8")
 
     assert '"httpcore>=1.0.9,<2"' in pyproject
-    assert '"httpcore>=1.0.9,<2"' in dockerfile
+    assert "COPY requirements/production.txt" in dockerfile
+    assert "httpcore==1.0.9" in snapshot

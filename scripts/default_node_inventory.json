@@ -196,8 +196,8 @@
     "sha256": "d68677c2f535a196fa1ecdfe949a8ab6c2aaa8b39d86bfd6ede00d447c68288e"
   },
   "tests/test_run_kimi_review.py": {
-    "count": 11,
-    "sha256": "5366e1735274319b0816a11f645b2c3631d8543a0cca092aa85fc6950e375b8c"
+    "count": 12,
+    "sha256": "87ca7c9372ffcc8764a9a27df55790b319938a1c26c2145612a782dffb6a9cb8"
   },
   "tests/test_runtime_auth.py": {
     "count": 10,
@@ -1456,8 +1456,8 @@
     "sha256": "b9772f3b31ca4422ecd921d1f52bf036b23a777b575037b7d643ef856b24a9b7"
   },
   "tests/test_stage469_contour_fingerprints.py": {
-    "count": 25,
-    "sha256": "a1f6b2f0a261bfedb162a349c379bd9a6842c12cdb9b3276d4bbcfb90877eeb2"
+    "count": 31,
+    "sha256": "42f2cfbf61ddf34c67b516b4356d4b110e8aaf4612d25ff642b3883ee838be9e"
   },
   "tests/test_stage470_workflow_docs.py": {
     "count": 5,
@@ -1510,6 +1510,18 @@
   "tests/test_stage484_match_suitability.py": {
     "count": 25,
     "sha256": "4fe379fafdbd810d476dbdad228cb7355e6d2cc427b9f9df859ed202ffc19d25"
+  },
+  "tests/test_stage492_audit_policy.py": {
+    "count": 15,
+    "sha256": "6442535a85a89d97d1d3ee027e2cb4e5a1fef1b95637cf039a7bf7d46e64fe05"
+  },
+  "tests/test_stage492_dependency_snapshot.py": {
+    "count": 2,
+    "sha256": "b64f066a2a5256f5469ac890c245701def3327c5e10c5fb282237a9705166a76"
+  },
+  "tests/test_stage492_production_snapshot.py": {
+    "count": 4,
+    "sha256": "d6dad3a01574383b75ea10c5413fac9cfff830af002794dfdc0a7461dbd00eef"
   },
   "tests/test_stage87_post_migration.py": {
     "count": 8,

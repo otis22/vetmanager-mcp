@@ -23,6 +23,7 @@ DEFAULT_PROMPT = ("Review only. Do not edit files. Do not run commands. "
 VERDICT_SCHEMA_PROMPT = ("Return exactly one JSON object with findings: "
                          "[{severity, file, line, reason}] or {\"findings\":[]}. "
                          "Severity must be critical, high or medium. No markdown.\n")
+MAX_ARG_PROMPT_BYTES = 100_000
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -118,6 +119,22 @@ def main() -> int:
     verdict_file = prefix.with_suffix(".verdict.json")
     metadata_file = prefix.with_suffix(".metadata.json")
     prompt_file.write_text(prompt, encoding="utf-8")
+    transport_agent_file = None
+    cli_prompt = prompt
+    agent_file = AGENT
+    if len(prompt.encode("utf-8")) > MAX_ARG_PROMPT_BYTES:
+        agent_source = AGENT.read_text(encoding="utf-8")
+        if "tools: []" not in agent_source or "subagents: []" not in agent_source:
+            parser.error("review agent must disable tools and subagents")
+        transport_agent_file = prefix.with_suffix(".transport-agent.md")
+        transport_agent_file.write_text(
+            agent_source + "\n\n=== REVIEW PROMPT (verbatim) ===\n" + prompt,
+            encoding="utf-8",
+        )
+        os.chmod(transport_agent_file, 0o600)
+        agent_file = transport_agent_file
+        cli_prompt = ("Review the complete REVIEW PROMPT in this agent file. "
+                      "Return only the required findings JSON. Do not use tools or commands.")
     empty_skills = evidence / "empty-skills"
     empty_skills.mkdir(mode=0o700)
     binary = os.environ.get("KIMI_BIN", "kimi")
@@ -127,8 +144,8 @@ def main() -> int:
                                  timeout=min(args.timeout, 10)).stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
         version = "unavailable"
-    command = [binary, "-m", MODEL, "--agent-file", str(AGENT), "--skills-dir", str(empty_skills),
-               "-p", prompt, "--output-format", "stream-json"]
+    command = [binary, "-m", MODEL, "--agent-file", str(agent_file), "--skills-dir", str(empty_skills),
+               "-p", cli_prompt, "--output-format", "stream-json"]
     try:
         run = subprocess.run(command, cwd=repo, capture_output=True, text=True, timeout=args.timeout)
         cli_exit, stdout, stderr = run.returncode, run.stdout, run.stderr
@@ -173,6 +190,11 @@ def main() -> int:
                 "stderr_file": str(stderr_file), "verdict_file": str(verdict_file) if outcome == "valid_verdict" else None,
                 "result_length": len(result), "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
                 "agent_file": str(AGENT), "agent_sha256": hashlib.sha256(AGENT.read_bytes()).hexdigest(),
+                "prompt_transport": "agent-file" if transport_agent_file else "argv",
+                "transport_agent_file": str(transport_agent_file) if transport_agent_file else None,
+                "transport_agent_sha256": (hashlib.sha256(transport_agent_file.read_bytes()).hexdigest()
+                                            if transport_agent_file else None),
+                "argv_prompt_bytes": len(cli_prompt.encode("utf-8")),
                 "tool_calls_allowed": False}
     metadata_file.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"review evidence: {metadata_file}; outcome={outcome}; cli_exit={cli_exit}; validator_exit={validator_exit}; len(result)={len(result)}")

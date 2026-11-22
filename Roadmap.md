@@ -108,13 +108,40 @@ reachability части проблем и не заменяет патчи. На
   владельца, подтверждённого console-доступа и окна недоступности; проверить
   загрузку, автозапуск контейнеров и повторные public/worker checks. — `todo`
 
-## Этап 492. Воспроизводимые Python dependencies и security audit — `todo`
+## Этап 492. Воспроизводимые Python dependencies и security audit — `supervisor_pending`
 
-Production Dockerfile ограничивает `cryptography>=46.0.0,<47`, а
-`pyproject.toml` — `cryptography>=46.0.0` без верхней границы. Lockfile с
-hashes отсутствует, поэтому test и production builds могут получить разные
-transitive dependencies. До реализации выбрать инструмент lock-снимка в PRD,
-не добавляя новую зависимость по предположению.
+Checkout `dev/stage-492-dependencies`, base `e5d00f92`. Snapshot и
+candidate audit реализованы; после корректировки worker discovery fast
+(3799 passed), default (5233 passed, coverage 88%), PostgreSQL (8 passed),
+fingerprint gates и amd64 source builds прошли. Полный corrective Astra/Kimi
+review получен; последующие адресные fixes после исчерпания strong budget
+проверены Spark scout и тестами. Итоговый Spark committed review нашёл high:
+scheduled audit не сверял общий worker image ID с выпущенным image ID; красный
+regression показал ошибочный успех, после исправления focused/owning (21 passed),
+fast (3803 passed), default (5237 passed, coverage 88%) и PostgreSQL (8 passed)
+прошли, оба manifest complete. Новый несекретный expected image ID должен быть
+задан куратором после отдельного deploy; отсутствие или mismatch оставляет
+operational gate красным. **Code remediation gate** для reviewed
+push/merge отделён решением владельца от **operational production gate**:
+разрешённый read-only scan 22.11 охватил
+все три running worker с одинаковыми image ID/freeze, но production содержит
+`pip 25.0.1` вместо candidate freeze `26.2` (прямое ограничение `26.2.0`)
+и шесть дополнительных advisory ID для этой версии. Raw JSON каждого worker
+машинно сопоставлен с candidate: все шесть ID отсутствуют в candidate,
+четыре временно известных `cryptography` ID остаются, другого package drift
+нет. Policy не расширена, временный dedicated key адресно удалён, GitHub
+Secrets не записаны. Это доказывает исправление в candidate для code gate,
+но не закрывает красный operational production gate: после отдельного ночного
+deploy нужен повторный scan/parity всех workers; новые advisory или drift — стоп.
+Application release следует backup/rollback/трёх-slot checks `README.md` и не
+зависит от package/console/observer gates host maintenance 491.2.
+PR #85 остаётся draft до application readiness; merge main с успешными Tests
+запускает штатный deploy workflow в разрешённом окне до 07:00 МСК.
+Production не обновлён, 493 начинает куратор только после принятия snapshot.
+[PRD](PRD/этап-492-python-dependency-snapshot-audit.md).
+
+Исходное расхождение `cryptography` между Dockerfile и `pyproject.toml`
+устранено: обе сборки используют экспорты с hashes из одного `uv.lock`.
 
 **Риски и стоп-условия.** High: разные установки в `base`, `production`,
 `test` и отдельный `anyio` install могут сохранить расхождение даже при lock;
@@ -123,18 +150,21 @@ hashes одной архитектуры/Python ABI могут сломать cl
 включая wheel/sdist правила; production image проверяется отдельно. Medium:
 зелёный `pip-audit` не означает полную безопасность. До 493 прежние четыре
 finding остаются явно известными и временно принятыми, новые findings без
-разбора блокируют release; 492 не выдаётся за security-fix.
+разбора блокируют operational release. Reviewed code remediation можно
+push/merge до deploy только с доказанным candidate fix; 492 не выдаётся за
+уже выполненное production security-fix.
 
 - 492.1 Сделать единый воспроизводимый dependency snapshot с hashes,
   синхронизировать ограничения Dockerfile/pyproject и отдельные anyio install,
   проверить clean production/test builds на целевых архитектурах и применимые
   default/real gates. Несоответствие фактического production окружения
-  snapshot — стоп. — `todo`
+  snapshot — стоп для operational gate, но не для reviewed code push/merge
+  при машинно доказанном candidate remediation. — `supervisor_pending`
 - 492.2 Добавить `pip-audit` фактического зафиксированного production
   окружения в регулярную проверку, закрепить политику известных/новых findings
   и версию самого сканера. Не включать автоматическое обновление production,
   не подавлять findings молча и не выдавать Python audit за полный container
-  OS scan. — `todo`
+  OS scan. — `supervisor_pending`
 
 ## Этап 493. Python 3.12.16 и cryptography 50 security release — `todo`
 

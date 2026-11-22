@@ -36,7 +36,8 @@ def test_uvicorn_boot_uses_standard_extras_and_loop_factory(monkeypatch):
 
     dockerfile = (ROOT / "Dockerfile").read_text()
     metadata = (ROOT / "pyproject.toml").read_text()
-    assert '"uvicorn[standard]==0.42.0"' in dockerfile
+    assert "COPY requirements/production.txt" in dockerfile
+    assert "uvicorn==0.42.0" in (ROOT / "requirements/production.txt").read_text()
     assert '"uvicorn[standard]==0.42.0"' in metadata
     observed = {}
 

@@ -19,10 +19,12 @@ def test_sqlalchemy_21_async_dependency_in_both_install_sources():
 
     expected = "sqlalchemy[asyncio]>=2.1,<2.2"
     docker_base = (ROOT / "Dockerfile").read_text().split("FROM base AS production", 1)[0]
+    snapshot = (ROOT / "requirements/production.txt").read_text()
     project_dependencies = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["dependencies"]
-    assert f'"{expected}"' in docker_base
+    assert "COPY requirements/production.txt" in docker_base
+    assert "sqlalchemy==2.1." in snapshot
     assert expected in project_dependencies
-    assert '"psycopg2-binary>=2.9.0,<3"' in docker_base
+    assert "psycopg2-binary==" in snapshot
     assert "psycopg2-binary>=2.9.0,<3" in project_dependencies
 
 

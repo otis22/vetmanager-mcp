@@ -21,29 +21,13 @@ WORKDIR /app
 # time out from this VDS — the host itself only gets through over IPv6, which
 # containers do not have.
 
-# Production dependencies only
-RUN pip install --no-cache-dir \
-    "alembic>=1.13.0,<2" \
-    "cryptography>=46.0.0,<47" \
-    "fastmcp>=3.1.0,<4" \
-    "httpcore>=1.0.9,<2" \
-    "httpx>=0.27.0,<1" \
-    "sentry-sdk>=2.0.0,<3" \
-    "sqlalchemy[asyncio]>=2.1,<2.2" \
-    "aiosqlite>=0.20.0,<1" \
-    "asyncpg>=0.29.0,<1" \
-    "psycopg2-binary>=2.9.0,<3" \
-    "redis>=5.0.0,<6" \
-    "PyYAML>=6.0.0,<7" \
-    "uvicorn[standard]==0.42.0"
+COPY requirements/production.txt /tmp/production-requirements.txt
+RUN pip install --require-hashes --timeout 120 --no-cache-dir -r /tmp/production-requirements.txt
 
 # ── Production image ─────────────────────────────────────────────────────────
 FROM base AS production
 
 COPY . .
-
-# Keep the cancellation-safe network stack in the shipped image.
-RUN pip install --no-cache-dir "anyio>=4.16.0,<5"
 
 RUN mkdir -p /app/data /var/log/vetmanager-mcp && \
     chown app:app /app/data /var/log/vetmanager-mcp
@@ -60,15 +44,8 @@ FROM base AS test
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-RUN pip install --timeout 120 --no-cache-dir \
-    "playwright>=1.54.0,<2" \
-    "pytest>=8.0.0,<9" \
-    "pytest-asyncio>=0.23.0,<0.24" \
-    "coverage>=7.6.0,<8" \
-    "pytest-cov>=5.0.0,<6" \
-    "respx>=0.21.0" \
-    "fakeredis>=2.20.0,<3" \
-    "ruff>=0.6.0,<1"
+COPY requirements/test.txt /tmp/test-requirements.txt
+RUN pip install --require-hashes --timeout 120 --no-cache-dir -r /tmp/test-requirements.txt
 
 # Node из Playwright требует libatomic ещё до установки зависимостей браузера.
 RUN apt-get update && \
@@ -76,8 +53,6 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     python -m playwright install --with-deps chromium && \
     chmod -R a+rX "${PLAYWRIGHT_BROWSERS_PATH}"
-
-RUN pip install --no-cache-dir "anyio>=4.16.0,<5"
 
 COPY . .
 

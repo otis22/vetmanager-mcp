@@ -35,9 +35,11 @@ def test_fastmcp_bounds_match_docker_runtime_dependency() -> None:
     pyproject = _pyproject()
     dependencies = set(pyproject["project"]["dependencies"])
     dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+    snapshot = (ROOT / "requirements/production.txt").read_text()
 
     assert "fastmcp>=3.1.0,<4" in dependencies
-    assert '"fastmcp>=3.1.0,<4"' in dockerfile
+    assert "COPY requirements/production.txt" in dockerfile
+    assert "fastmcp==" in snapshot
     assert "fastmcp>=2.0.0" not in dependencies
 
 

@@ -24,6 +24,9 @@ SHARED_TEST_HELPERS = ("tests/conftest.py", "tests/real_suite_outcomes.py")
 COMMON_CONFIG = (
     "Dockerfile", "docker-compose.yml", "docker-compose.test.yml",
     "pyproject.toml", "pytest.ini", ".coveragerc", "alembic.ini",
+    "uv.lock", "requirements/production.txt", "requirements/test.txt",
+    "requirements/audit.txt", "requirements/production-installed.txt",
+    "requirements/test-installed.txt",
     "tests/fixtures/stage385_resource_gate_sample.json", ".github/workflows/test.yml",
     "scripts/test_impact_map.json",
 )

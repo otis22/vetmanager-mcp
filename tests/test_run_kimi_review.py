@@ -15,17 +15,18 @@ def test_review_agent_cannot_use_tools_or_subagents() -> None:
     agent = Path("scripts/kimi_review_agent.md").read_text()
     runner = SCRIPT.read_text()
     assert "tools: []" in agent and "subagents: []" in agent
-    assert '"--agent-file", str(AGENT)' in runner
+    assert '"--agent-file", str(agent_file)' in runner
     assert '"--output-format", "stream-json"' in runner
 
 
-def _run(tmp_path: Path, stream: str, *, prompt_file: Path | None = None) -> tuple[subprocess.CompletedProcess[str], Path]:
+def _run(tmp_path: Path, stream: str, *, prompt_file: Path | None = None,
+         source_text: str = "# Example PRD\n") -> tuple[subprocess.CompletedProcess[str], Path]:
     fake = tmp_path / "kimi"
     fake.write_text("#!/usr/bin/env python3\nimport os,sys\n"
                     "print('2.5.3') if '--version' in sys.argv else print(os.environ['FAKE_STREAM'], end='')\n")
     fake.chmod(0o755)
     source = tmp_path / "source.md"
-    source.write_text("# Example PRD\n")
+    source.write_text(source_text)
     evidence = tmp_path / "evidence"
     (tmp_path / "kimi-home").mkdir()
     env = dict(os.environ, KIMI_BIN=str(fake), KIMI_CODE_HOME=str(tmp_path / "kimi-home"), FAKE_STREAM=stream)
@@ -63,8 +64,25 @@ def test_valid_kimi_verdict_saves_stream_and_metadata(tmp_path: Path) -> None:
     assert metadata["model"] == "kimi-code/k3"
     assert metadata["validator_exit"] == 0
     assert metadata["result_length"] == 15
+    assert metadata["prompt_transport"] == "argv"
     assert Path(metadata["stream_file"]).read_text() == stream
     assert json.loads(Path(metadata["verdict_file"]).read_text()) == {"findings": []}
+
+
+def test_large_prompt_uses_tool_free_temporary_agent_file(tmp_path: Path) -> None:
+    stream = json.dumps({"role": "assistant", "content": '{"findings":[]}'}) + "\n"
+    marker = "END_OF_LARGE_REVIEW_492"
+    done, evidence = _run(tmp_path, stream, source_text="# PRD\n" + "x" * 150_000 + marker)
+    assert done.returncode == 0, done.stderr
+    metadata = json.loads(next(evidence.rglob("*.metadata.json")).read_text())
+    assert metadata["prompt_transport"] == "agent-file"
+    transport = Path(metadata["transport_agent_file"])
+    content = transport.read_text()
+    assert "tools: []" in content and "subagents: []" in content
+    assert Path(metadata["prompt_file"]).read_text() in content
+    assert marker in content and "findings: [{severity, file, line, reason}]" in content
+    assert metadata["prompt_sha256"] == __import__("hashlib").sha256(
+        Path(metadata["prompt_file"]).read_bytes()).hexdigest()
 
 
 def test_kimi_tool_call_is_not_a_valid_verdict(tmp_path: Path) -> None:

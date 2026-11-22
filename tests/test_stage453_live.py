@@ -85,8 +85,9 @@ async def test_real_http_handshake_is_visible_by_account_and_minute(tmp_path, mo
         assert {r.account_id for r in events} == {account_id}
         assert {r.observed_at[:16] for r in events} == {events[0].observed_at[:16]}
         assert all(r.http_status == 200 and r.outcome == "success" for r in events)
-        assert initialized.headers["x-request-id"] == events[0].request_id
-        assert listed.headers["x-request-id"] == events[1].request_id
+        events_by_method = {event.rpc_method: event for event in events}
+        assert initialized.headers["x-request-id"] == events_by_method["initialize"].request_id
+        assert listed.headers["x-request-id"] == events_by_method["tools/list"].request_id
         assert len(backend.snapshot()["mcp_handshake_total"]) == 2
         print("stage453 local HTTP: initialize=200 body=protocolVersion; tools/list=200 body=tools-array; trace=2 matched events; metric=2")
     finally:
