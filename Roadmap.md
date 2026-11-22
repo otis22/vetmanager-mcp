@@ -109,13 +109,18 @@ candidate audit реализованы; после корректировки wo
 (3799 passed), default (5233 passed, coverage 88%), PostgreSQL (8 passed),
 fingerprint gates и amd64 source builds прошли. Полный corrective Astra/Kimi
 review получен; последующие адресные fixes после исчерпания strong budget
-проверены Spark scout и тестами. Внешний
-gate приёмки остаётся красным: разрешённый read-only scan 22.11 охватил
+проверены Spark scout и тестами. **Code remediation gate** для reviewed
+push/merge отделён решением владельца от **operational production gate**:
+разрешённый read-only scan 22.11 охватил
 все три running worker с одинаковыми image ID/freeze, но production содержит
-`pip 25.0.1` вместо pinned `26.2.0` и шесть дополнительных advisory ID для
-этой версии. Policy не расширена, временный dedicated key адресно удалён,
-GitHub Secrets не записаны. После обновления в отдельном окне нужен повторный
-фактический scan; новые advisory или drift — стоп.
+`pip 25.0.1` вместо candidate freeze `26.2` (прямое ограничение `26.2.0`)
+и шесть дополнительных advisory ID для этой версии. Raw JSON каждого worker
+машинно сопоставлен с candidate: все шесть ID отсутствуют в candidate,
+четыре временно известных `cryptography` ID остаются, другого package drift
+нет. Policy не расширена, временный dedicated key адресно удалён, GitHub
+Secrets не записаны. Это доказывает исправление в candidate для code gate,
+но не закрывает красный operational production gate: после отдельного ночного
+deploy нужен повторный scan/parity всех workers; новые advisory или drift — стоп.
 Production не обновлён, 493 начинает куратор только после принятия snapshot.
 [PRD](PRD/этап-492-python-dependency-snapshot-audit.md).
 
@@ -129,13 +134,16 @@ hashes одной архитектуры/Python ABI могут сломать cl
 включая wheel/sdist правила; production image проверяется отдельно. Medium:
 зелёный `pip-audit` не означает полную безопасность. До 493 прежние четыре
 finding остаются явно известными и временно принятыми, новые findings без
-разбора блокируют release; 492 не выдаётся за security-fix.
+разбора блокируют operational release. Reviewed code remediation можно
+push/merge до deploy только с доказанным candidate fix; 492 не выдаётся за
+уже выполненное production security-fix.
 
 - 492.1 Сделать единый воспроизводимый dependency snapshot с hashes,
   синхронизировать ограничения Dockerfile/pyproject и отдельные anyio install,
   проверить clean production/test builds на целевых архитектурах и применимые
   default/real gates. Несоответствие фактического production окружения
-  snapshot — стоп. — `supervisor_pending`
+  snapshot — стоп для operational gate, но не для reviewed code push/merge
+  при машинно доказанном candidate remediation. — `supervisor_pending`
 - 492.2 Добавить `pip-audit` фактического зафиксированного production
   окружения в регулярную проверку, закрепить политику известных/новых findings
   и версию самого сканера. Не включать автоматическое обновление production,
