@@ -110,9 +110,12 @@ candidate audit реализованы; после корректировки wo
 fingerprint gates и amd64 source builds прошли. Полный corrective Astra/Kimi
 review получен; последующие адресные fixes после исчерпания strong budget
 проверены Spark scout и тестами. Внешний
-gate приёмки: выделенный read-only production audit credential/forced command
-и фактический scan всех работающих workers после обновления в отдельном окне.
-До него parity с production не подтверждена; новые advisory или drift — стоп.
+gate приёмки остаётся красным: разрешённый read-only scan 22.11 охватил
+все три running worker с одинаковыми image ID/freeze, но production содержит
+`pip 25.0.1` вместо pinned `26.2.0` и шесть дополнительных advisory ID для
+этой версии. Policy не расширена, временный dedicated key адресно удалён,
+GitHub Secrets не записаны. После обновления в отдельном окне нужен повторный
+фактический scan; новые advisory или drift — стоп.
 Production не обновлён, 493 начинает куратор только после принятия snapshot.
 [PRD](PRD/этап-492-python-dependency-snapshot-audit.md).
 
