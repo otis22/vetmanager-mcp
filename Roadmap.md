@@ -105,8 +105,11 @@ reachability части проблем и не заменяет патчи. На
 ## Этап 492. Воспроизводимые Python dependencies и security audit — `supervisor_pending`
 
 Checkout `dev/stage-492-dependencies`, base `e5d00f92`. Snapshot и
-candidate audit реализованы; полный working-diff Astra/Kimi review, default
-(5221 passed), PostgreSQL (8 passed) и clean amd64 builds прошли. Внешний
+candidate audit реализованы; после корректировки worker discovery fast
+(3799 passed), default (5233 passed, coverage 88%), PostgreSQL (8 passed),
+fingerprint gates и amd64 source builds прошли. Полный corrective Astra/Kimi
+review получен; последующие адресные fixes после исчерпания strong budget
+проверены Spark scout и тестами. Внешний
 gate приёмки: выделенный read-only production audit credential/forced command
 и фактический scan всех работающих workers после обновления в отдельном окне.
 До него parity с production не подтверждена; новые advisory или drift — стоп.

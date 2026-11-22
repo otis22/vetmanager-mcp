@@ -18,9 +18,7 @@ def package_name(value):
     return re.sub(r"[-_.]+", "-", value).lower()
 
 
-def verify(freeze_path: Path, report_path: Path, *, today: date | None = None) -> None:
-    if (today or date.today()) >= EXPIRES:
-        raise ValueError("temporary known-finding policy expired")
+def parse_freeze(freeze_path: Path) -> dict[str, str]:
     freeze = {}
     for line in freeze_path.read_text().splitlines():
         match = re.fullmatch(r"([A-Za-z0-9_.-]+)==([A-Za-z0-9_.!+\-]+)", line.strip())
@@ -30,6 +28,15 @@ def verify(freeze_path: Path, report_path: Path, *, today: date | None = None) -
         if name in freeze:
             raise ValueError("duplicate package in freeze")
         freeze[name] = match[2]
+    if not freeze:
+        raise ValueError("empty freeze")
+    return freeze
+
+
+def verify(freeze_path: Path, report_path: Path, *, today: date | None = None) -> None:
+    if (today or date.today()) >= EXPIRES:
+        raise ValueError("temporary known-finding policy expired")
+    freeze = parse_freeze(freeze_path)
     report = json.loads(report_path.read_text())
     deps = report.get("dependencies")
     if not freeze or not isinstance(deps, list) or not deps:

@@ -1512,16 +1512,16 @@
     "sha256": "4fe379fafdbd810d476dbdad228cb7355e6d2cc427b9f9df859ed202ffc19d25"
   },
   "tests/test_stage492_audit_policy.py": {
-    "count": 2,
-    "sha256": "3f96492ecf8af19e082b6fed961f44e6e6b6868c0e67c2a94caf31e2e5e8cb17"
+    "count": 11,
+    "sha256": "7b2c8d2e8578c5bbc604dc565f1650bd4f43422ba44bf906dd6b786a132b646b"
   },
   "tests/test_stage492_dependency_snapshot.py": {
     "count": 2,
     "sha256": "b64f066a2a5256f5469ac890c245701def3327c5e10c5fb282237a9705166a76"
   },
   "tests/test_stage492_production_snapshot.py": {
-    "count": 1,
-    "sha256": "9930749da388fcbe476a574db3dcad94d54c47b1e62b1b3efeeb65bebe1fdccf"
+    "count": 4,
+    "sha256": "d6dad3a01574383b75ea10c5413fac9cfff830af002794dfdc0a7461dbd00eef"
   },
   "tests/test_stage87_post_migration.py": {
     "count": 8,
