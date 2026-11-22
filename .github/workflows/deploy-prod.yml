@@ -40,12 +40,6 @@ jobs:
             echo 'Refusing deployment of a stale or mismatched Tests target.' >&2
             exit 1
           fi
-          # Stage 492 may merge before its separately authorized night release.
-          if [ -f .github/deploy-hold-stage492 ]; then
-            echo 'Stage 492 production release hold is active; no automatic deploy.' >&2
-            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           base_sha="$(python3 scripts/deploy_baseline.py)" || base_sha=""
           should_deploy=true
           if [ -z "${base_sha}" ]; then

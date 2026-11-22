@@ -121,10 +121,7 @@ regression показал ошибочный успех, после исправ
 fast (3803 passed), default (5237 passed, coverage 88%) и PostgreSQL (8 passed)
 прошли, оба manifest complete. Новый несекретный expected image ID должен быть
 задан куратором после отдельного deploy; отсутствие или mismatch оставляет
-operational gate красным. PR #85 сохраняет отдельный production release hold:
-merge code remediation сам по себе не запускает `Deploy Prod`; снять hold можно
-только отдельным одобренным ночным release change после gates 491.
-**Code remediation gate** для reviewed
+operational gate красным. **Code remediation gate** для reviewed
 push/merge отделён решением владельца от **operational production gate**:
 разрешённый read-only scan 22.11 охватил
 все три running worker с одинаковыми image ID/freeze, но production содержит
@@ -136,6 +133,10 @@ push/merge отделён решением владельца от **operational
 Secrets не записаны. Это доказывает исправление в candidate для code gate,
 но не закрывает красный operational production gate: после отдельного ночного
 deploy нужен повторный scan/parity всех workers; новые advisory или drift — стоп.
+Application release следует backup/rollback/трёх-slot checks `README.md` и не
+зависит от package/console/observer gates host maintenance 491.2.
+PR #85 остаётся draft до application readiness; merge main с успешными Tests
+запускает штатный deploy workflow в разрешённом окне до 07:00 МСК.
 Production не обновлён, 493 начинает куратор только после принятия snapshot.
 [PRD](PRD/этап-492-python-dependency-snapshot-audit.md).
 
