@@ -86,6 +86,9 @@ def test_fingerprint_includes_shell_and_coverage_inputs(monkeypatch, tmp_path) -
     for name in (
         "Dockerfile", "docker-compose.yml", "docker-compose.test.yml",
         "pyproject.toml", "pytest.ini", ".coveragerc",
+        "uv.lock", "requirements/production.txt", "requirements/test.txt",
+        "requirements/audit.txt", "requirements/production-installed.txt",
+        "requirements/test-installed.txt",
         "alembic.ini", "tests/fixtures/stage385_resource_gate_sample.json",
         "ops/prometheus/prometheus.yml", "ops/grafana/dashboards/vetmanager-overview.json",
         "ops/grafana/provisioning/dashboards/dashboards.yml",

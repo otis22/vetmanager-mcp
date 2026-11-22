@@ -102,13 +102,19 @@ reachability части проблем и не заменяет патчи. На
   владельца, подтверждённого console-доступа и окна недоступности; проверить
   загрузку, автозапуск контейнеров и повторные public/worker checks. — `todo`
 
-## Этап 492. Воспроизводимые Python dependencies и security audit — `todo`
+## Этап 492. Воспроизводимые Python dependencies и security audit — `supervisor_pending`
 
-Production Dockerfile ограничивает `cryptography>=46.0.0,<47`, а
-`pyproject.toml` — `cryptography>=46.0.0` без верхней границы. Lockfile с
-hashes отсутствует, поэтому test и production builds могут получить разные
-transitive dependencies. До реализации выбрать инструмент lock-снимка в PRD,
-не добавляя новую зависимость по предположению.
+Checkout `dev/stage-492-dependencies`, base `e5d00f92`. Snapshot и
+candidate audit реализованы; полный working-diff Astra/Kimi review, default
+(5221 passed), PostgreSQL (8 passed) и clean amd64 builds прошли. Внешний
+gate приёмки: выделенный read-only production audit credential/forced command
+и фактический scan всех работающих workers после обновления в отдельном окне.
+До него parity с production не подтверждена; новые advisory или drift — стоп.
+Production не обновлён, 493 начинает куратор только после принятия snapshot.
+[PRD](PRD/этап-492-python-dependency-snapshot-audit.md).
+
+Исходное расхождение `cryptography` между Dockerfile и `pyproject.toml`
+устранено: обе сборки используют экспорты с hashes из одного `uv.lock`.
 
 **Риски и стоп-условия.** High: разные установки в `base`, `production`,
 `test` и отдельный `anyio` install могут сохранить расхождение даже при lock;
@@ -123,12 +129,12 @@ finding остаются явно известными и временно пр�
   синхронизировать ограничения Dockerfile/pyproject и отдельные anyio install,
   проверить clean production/test builds на целевых архитектурах и применимые
   default/real gates. Несоответствие фактического production окружения
-  snapshot — стоп. — `todo`
+  snapshot — стоп. — `supervisor_pending`
 - 492.2 Добавить `pip-audit` фактического зафиксированного production
   окружения в регулярную проверку, закрепить политику известных/новых findings
   и версию самого сканера. Не включать автоматическое обновление production,
   не подавлять findings молча и не выдавать Python audit за полный container
-  OS scan. — `todo`
+  OS scan. — `supervisor_pending`
 
 ## Этап 493. Python 3.12.16 и cryptography 50 security release — `todo`
 

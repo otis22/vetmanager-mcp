@@ -1,0 +1,50 @@
+name: Production Python dependency audit
+
+on:
+  schedule:
+    - cron: '37 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install pinned Python scanner
+        run: |
+          python -m pip install --require-hashes -r requirements/audit.txt
+          pip-audit --version
+      - name: Read production worker snapshots
+        env:
+          PROD_AUDIT_SSH_TARGET: ${{ secrets.PROD_AUDIT_SSH_TARGET }}
+          PROD_AUDIT_SSH_PRIVATE_KEY: ${{ secrets.PROD_AUDIT_SSH_PRIVATE_KEY }}
+          PROD_AUDIT_KNOWN_HOSTS: ${{ secrets.PROD_AUDIT_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$PROD_AUDIT_SSH_TARGET"
+          test -n "$PROD_AUDIT_SSH_PRIVATE_KEY"
+          test -n "$PROD_AUDIT_KNOWN_HOSTS"
+          mkdir -m 700 -p ~/.ssh
+          printf '%s\n' "$PROD_AUDIT_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$PROD_AUDIT_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$PROD_AUDIT_SSH_TARGET" snapshot > "$RUNNER_TEMP/production-python-snapshot.json"
+      - name: Audit actual production distributions
+        run: |
+          set -euo pipefail
+          python scripts/run_stage492_scheduled_audit.py "$RUNNER_TEMP/production-python-snapshot.json" | tee "$RUNNER_TEMP/python-audit-summary.jsonl"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-python-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/python-audit-summary.jsonl
+          if-no-files-found: ignore
+          retention-days: 30
