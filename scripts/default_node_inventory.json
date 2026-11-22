@@ -1512,8 +1512,8 @@
     "sha256": "4fe379fafdbd810d476dbdad228cb7355e6d2cc427b9f9df859ed202ffc19d25"
   },
   "tests/test_stage492_audit_policy.py": {
-    "count": 11,
-    "sha256": "7b2c8d2e8578c5bbc604dc565f1650bd4f43422ba44bf906dd6b786a132b646b"
+    "count": 15,
+    "sha256": "6442535a85a89d97d1d3ee027e2cb4e5a1fef1b95637cf039a7bf7d46e64fe05"
   },
   "tests/test_stage492_dependency_snapshot.py": {
     "count": 2,

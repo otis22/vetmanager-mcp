@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Audit every worker snapshot returned by the production read-only forced command."""
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -80,6 +81,11 @@ def main(snapshot: Path) -> None:
                 errors.append(f"{name}: running production packages differ from stage 492 snapshot")
     if len(images) != 1 or len(freezes) != 1:
         errors.append("production workers disagree on image or packages")
+    released_image = os.environ.get("PROD_AUDIT_EXPECTED_IMAGE_ID", "")
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", released_image):
+        errors.append("released image ID is missing or malformed")
+    elif images != {released_image}:
+        errors.append("running production image differs from released image ID")
     if errors:
         raise ValueError("; ".join(errors))
     print(json.dumps({"workers_audited": sorted(names), "image_id": next(iter(images)),

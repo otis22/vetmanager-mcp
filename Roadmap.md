@@ -109,7 +109,13 @@ candidate audit реализованы; после корректировки wo
 (3799 passed), default (5233 passed, coverage 88%), PostgreSQL (8 passed),
 fingerprint gates и amd64 source builds прошли. Полный corrective Astra/Kimi
 review получен; последующие адресные fixes после исчерпания strong budget
-проверены Spark scout и тестами. **Code remediation gate** для reviewed
+проверены Spark scout и тестами. Итоговый Spark committed review нашёл high:
+scheduled audit не сверял общий worker image ID с выпущенным image ID; красный
+regression показал ошибочный успех, после исправления focused/owning (21 passed),
+fast (3803 passed), default (5237 passed, coverage 88%) и PostgreSQL (8 passed)
+прошли, оба manifest complete. Новый несекретный expected image ID должен быть
+задан куратором после отдельного deploy; отсутствие или mismatch оставляет
+operational gate красным. **Code remediation gate** для reviewed
 push/merge отделён решением владельца от **operational production gate**:
 разрешённый read-only scan 22.11 охватил
 все три running worker с одинаковыми image ID/freeze, но production содержит

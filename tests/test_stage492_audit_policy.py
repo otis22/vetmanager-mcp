@@ -198,6 +198,63 @@ def test_scheduled_audit_rejects_worker_container_id_mismatch_before_scan(
     assert not calls
 
 
+def test_scheduled_audit_rejects_unexpected_released_image_id(
+        tmp_path, monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.syspath_prepend(str(root / "scripts"))
+    from scripts import run_stage492_scheduled_audit as scheduled
+    from types import SimpleNamespace
+
+    snapshot = tmp_path / "snapshot.json"
+    write_snapshot(snapshot, [
+        {"service": name, "image_id": "sha256:" + "a" * 64,
+         "freeze": (root / "requirements/production-installed.txt").read_text()}
+        for name in ("mcp", "mcp2")])
+    monkeypatch.setenv("PROD_AUDIT_EXPECTED_IMAGE_ID", "sha256:" + "b" * 64)
+    scans = []
+
+    def fake_scan(command, **kwargs):
+        scans.append(command)
+        Path(command[command.index("--output") + 1]).write_text("{}")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(scheduled.subprocess, "run", fake_scan)
+    monkeypatch.setattr(scheduled, "verify", lambda *_: None)
+    with pytest.raises(ValueError, match="released image ID"):
+        scheduled.main(snapshot)
+    assert len(scans) == 2, "all actual workers must still be scanned"
+
+
+@pytest.mark.parametrize("released_image,accepted", [
+    ("", False),
+    ("sha256:bad", False),
+    ("sha256:" + "a" * 64, True),
+])
+def test_scheduled_audit_requires_exact_released_image_id(
+        tmp_path, monkeypatch, released_image, accepted):
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.syspath_prepend(str(root / "scripts"))
+    from scripts import run_stage492_scheduled_audit as scheduled
+    from types import SimpleNamespace
+
+    snapshot = tmp_path / "snapshot.json"
+    write_snapshot(snapshot, [{"service": "mcp", "image_id": "sha256:" + "a" * 64,
+                               "freeze": (root / "requirements/production-installed.txt").read_text()}])
+    monkeypatch.setenv("PROD_AUDIT_EXPECTED_IMAGE_ID", released_image)
+
+    def fake_scan(command, **kwargs):
+        Path(command[command.index("--output") + 1]).write_text("{}")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(scheduled.subprocess, "run", fake_scan)
+    monkeypatch.setattr(scheduled, "verify", lambda *_: None)
+    if accepted:
+        scheduled.main(snapshot)
+    else:
+        with pytest.raises(ValueError, match="released image ID"):
+            scheduled.main(snapshot)
+
+
 def test_audit_policy_rejects_new_finding_and_inventory_drift(tmp_path):
     freeze = tmp_path / "freeze.txt"
     report = tmp_path / "audit.json"

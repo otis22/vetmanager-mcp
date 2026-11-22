@@ -38,6 +38,8 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$PROD_AUDIT_SSH_TARGET" snapshot > "$RUNNER_TEMP/production-python-snapshot.json"
       - name: Audit actual production distributions
+        env:
+          PROD_AUDIT_EXPECTED_IMAGE_ID: ${{ vars.PROD_AUDIT_EXPECTED_IMAGE_ID }}
         run: |
           set -euo pipefail
           python scripts/run_stage492_scheduled_audit.py "$RUNNER_TEMP/production-python-snapshot.json" | tee "$RUNNER_TEMP/python-audit-summary.jsonl"
