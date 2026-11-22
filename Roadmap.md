@@ -121,7 +121,10 @@ regression показал ошибочный успех, после исправ
 fast (3803 passed), default (5237 passed, coverage 88%) и PostgreSQL (8 passed)
 прошли, оба manifest complete. Новый несекретный expected image ID должен быть
 задан куратором после отдельного deploy; отсутствие или mismatch оставляет
-operational gate красным. **Code remediation gate** для reviewed
+operational gate красным. PR #85 сохраняет отдельный production release hold:
+merge code remediation сам по себе не запускает `Deploy Prod`; снять hold можно
+только отдельным одобренным ночным release change после gates 491.
+**Code remediation gate** для reviewed
 push/merge отделён решением владельца от **operational production gate**:
 разрешённый read-only scan 22.11 охватил
 все три running worker с одинаковыми image ID/freeze, но production содержит

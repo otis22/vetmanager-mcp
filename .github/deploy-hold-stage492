@@ -1,0 +1,5 @@
+Stage 492 production release hold.
+Merging the reviewed dependency remediation does not authorize production deploy.
+Remove this file only in a separately approved night release change after the
+stage 491 console/observer and current backup/recovery gates are proven.
+Its removal is classified as deploy-required by deploy_scope_check.sh.
