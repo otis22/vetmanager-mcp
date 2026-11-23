@@ -1,12 +1,11 @@
 import json
-from datetime import date
 import os
 from pathlib import Path
 import subprocess
 import sys
 import pytest
 
-from scripts.check_stage492_audit import KNOWN, verify
+from scripts.check_stage492_audit import verify
 
 
 def write_snapshot(path, workers):
@@ -258,36 +257,34 @@ def test_scheduled_audit_requires_exact_released_image_id(
 def test_audit_policy_rejects_new_finding_and_inventory_drift(tmp_path):
     freeze = tmp_path / "freeze.txt"
     report = tmp_path / "audit.json"
-    freeze.write_text("cryptography==46.0.7\npip==26.2.0\n")
+    freeze.write_text("cryptography==50.0.2\npip==26.2.0\n")
     def check(vulns, packages=("cryptography", "pip")):
         report.write_text(json.dumps({"dependencies": [
-            {"name": name, "version": "46.0.7" if name == "cryptography" else "26.2.0",
+            {"name": name, "version": "50.0.2" if name == "cryptography" else "26.2.0",
              "vulns": vulns if name == "cryptography" else []}
             for name in packages]}))
         try:
-            verify(freeze, report, today=date(2026, 11, 22))
+            verify(freeze, report)
             return 0
         except (ValueError, json.JSONDecodeError):
             return 1
     known = [{"id": item} for item in (
         "PYSEC-2026-3552", "PYSEC-2026-3553", "PYSEC-2026-3554", "GHSA-537c-gmf6-5ccf")]
-    assert check(known) == 0
+    assert check([]) == 0
+    assert check(known) != 0
+    with pytest.raises(ValueError, match="zero-advisory policy"):
+        verify(freeze, report)
     assert check(known + [{"id": "CVE-NEW"}]) != 0
-    assert check(known, ("cryptography",)) != 0
+    assert check([], ("cryptography",)) != 0
     report.write_text("{}")
     with pytest.raises(ValueError):
-        verify(freeze, report, today=date(2026, 11, 22))
+        verify(freeze, report)
 
 
-def test_known_finding_policy_expires_at_boundary(tmp_path):
+def test_zero_finding_policy_has_no_temporary_expiry(tmp_path):
     freeze = tmp_path / "freeze.txt"
     report = tmp_path / "audit.json"
-    freeze.write_text("cryptography==46.0.7\n")
-    report.write_text(json.dumps({"dependencies": [{"name": "cryptography", "version": "46.0.7",
-        "vulns": [{"id": item[2]} for item in sorted(KNOWN)]}]}))
-    try:
-        verify(freeze, report, today=date(2026, 12, 22))
-    except ValueError as exc:
-        assert "expired" in str(exc)
-    else:
-        raise AssertionError("expired policy must fail")
+    freeze.write_text("cryptography==50.0.2\n")
+    report.write_text(json.dumps({"dependencies": [{"name": "cryptography", "version": "50.0.2",
+        "vulns": []}]}))
+    verify(freeze, report)

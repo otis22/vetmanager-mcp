@@ -78,7 +78,7 @@ def main(snapshot: Path) -> None:
             except (KeyError, TypeError, ValueError) as exc:
                 errors.append(f"{name}: {exc}")
             if freeze != expected:
-                errors.append(f"{name}: running production packages differ from stage 492 snapshot")
+                errors.append(f"{name}: running production packages differ from release snapshot")
     if len(images) != 1 or len(freezes) != 1:
         errors.append("production workers disagree on image or packages")
     released_image = os.environ.get("PROD_AUDIT_EXPECTED_IMAGE_ID", "")
@@ -89,7 +89,7 @@ def main(snapshot: Path) -> None:
     if errors:
         raise ValueError("; ".join(errors))
     print(json.dumps({"workers_audited": sorted(names), "image_id": next(iter(images)),
-                      "finding_policy": "four known cryptography IDs, expires 2026-12-22"}))
+                      "finding_policy": "zero advisories"}))
 
 
 if __name__ == "__main__":
