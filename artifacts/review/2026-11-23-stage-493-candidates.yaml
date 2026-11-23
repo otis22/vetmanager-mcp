@@ -1,0 +1,20 @@
+- severity: medium
+  reviewer: Spark
+  category: tests
+  file: tests/test_stage493_security_release.py
+  lines: '20-24'
+  problem: Runtime Python and cryptography versions were not asserted by the release guard.
+  why_it_matters: A source pin could stay green on an old test image.
+  suggested_fix: Assert actual runtime versions in the test image.
+  confidence: 0.95
+  disposition: accepted; old image red and new image green.
+- severity: medium
+  reviewer: Spark
+  category: rollback
+  file: tests/test_stage493_security_release.py
+  lines: '27-31'
+  problem: Reverse Fernet compatibility is only checked across images manually.
+  why_it_matters: A future release could miss a reverse compatibility regression.
+  suggested_fix: Repeat cross-image check for each major upgrade.
+  confidence: 0.65
+  disposition: rejected as a current blocker; cross-image release evidence passed, old image is not in CI.

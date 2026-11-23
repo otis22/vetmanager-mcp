@@ -6,7 +6,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DIGEST = "sha256:139b146ecf6cadf1960a88887c83846bd030bf1bc0a478fae48215c49917c075"
+DIGEST = "sha256:d632bda0952ef8a17cd233c1f50b987c6ea31423e9b797aad792fd8f8762e336"
 BASE = f"ghcr.io/otis22/python:3.12-slim@{DIGEST}"
 
 

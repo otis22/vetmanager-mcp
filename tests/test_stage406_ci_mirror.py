@@ -52,7 +52,7 @@ def test_one_image_build_feeds_three_test_jobs():
 
 def test_ci_builds_use_gha_cache_and_pinned_ghcr_base():
     dockerfile = (ROOT / "Dockerfile").read_text()
-    assert "ARG BASE_IMAGE=ghcr.io/otis22/python:3.12-slim@sha256:139b146ecf6cadf1960a88887c83846bd030bf1bc0a478fae48215c49917c075" in dockerfile
+    assert "ARG BASE_IMAGE=ghcr.io/otis22/python:3.12-slim@sha256:d632bda0952ef8a17cd233c1f50b987c6ea31423e9b797aad792fd8f8762e336" in dockerfile
     for name in ("test.yml", "test-real.yml"):
         contents = workflow(name)
         build_steps = [step for job in contents["jobs"].values()

@@ -3,15 +3,9 @@
 import json
 import re
 import sys
-from datetime import date
 from pathlib import Path
 
-KNOWN = {
-    ("cryptography", "46.0.7", item) for item in (
-        "PYSEC-2026-3552", "PYSEC-2026-3553", "PYSEC-2026-3554",
-        "GHSA-537c-gmf6-5ccf")
-}
-EXPIRES = date(2026, 12, 22)
+KNOWN = set()
 
 
 def package_name(value):
@@ -33,9 +27,7 @@ def parse_freeze(freeze_path: Path) -> dict[str, str]:
     return freeze
 
 
-def verify(freeze_path: Path, report_path: Path, *, today: date | None = None) -> None:
-    if (today or date.today()) >= EXPIRES:
-        raise ValueError("temporary known-finding policy expired")
+def verify(freeze_path: Path, report_path: Path) -> None:
     freeze = parse_freeze(freeze_path)
     report = json.loads(report_path.read_text())
     deps = report.get("dependencies")
@@ -58,9 +50,9 @@ def verify(freeze_path: Path, report_path: Path, *, today: date | None = None) -
         raise ValueError("audit inventory differs from production freeze")
     print(json.dumps({"packages": len(seen), "known": sorted(KNOWN & findings),
                       "new": sorted(findings - KNOWN), "missing_known": sorted(KNOWN - findings),
-                      "policy_expires": EXPIRES.isoformat()}, ensure_ascii=False))
+                      "finding_policy": "zero advisories"}, ensure_ascii=False))
     if findings != KNOWN:
-        raise ValueError("advisory set differs from reviewed temporary policy")
+        raise ValueError("advisory set differs from zero-advisory policy")
 
 
 if __name__ == "__main__":

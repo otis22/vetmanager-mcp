@@ -108,7 +108,12 @@ reachability части проблем и не заменяет патчи. На
   владельца, подтверждённого console-доступа и окна недоступности; проверить
   загрузку, автозапуск контейнеров и повторные public/worker checks. — `todo`
 
-## Этап 492. Воспроизводимые Python dependencies и security audit — `supervisor_pending`
+## Этап 492. Воспроизводимые Python dependencies и security audit — `done`
+
+23.11.2026: по handoff куратора production 492 выпущен и принят: 3/3 healthy
+workers, image/freeze parity, ручной audit и отдельный GitHub Production Python
+dependency audit успешны. Ниже сохранён предрелизный снимок и его тогдашние
+ограничения; четыре cryptography finding остаются входом этапа 493.
 
 Checkout `dev/stage-492-dependencies`, base `e5d00f92`. Snapshot и
 candidate audit реализованы; после корректировки worker discovery fast
@@ -137,7 +142,7 @@ Application release следует backup/rollback/трёх-slot checks `README.
 зависит от package/console/observer gates host maintenance 491.2.
 PR #85 остаётся draft до application readiness; merge main с успешными Tests
 запускает штатный deploy workflow в разрешённом окне до 07:00 МСК.
-Production не обновлён, 493 начинает куратор только после принятия snapshot.
+На 22.11 production ещё не был обновлён; 493 запускался только после принятия snapshot.
 [PRD](PRD/этап-492-python-dependency-snapshot-audit.md).
 
 Исходное расхождение `cryptography` между Dockerfile и `pyproject.toml`
@@ -159,14 +164,29 @@ push/merge до deploy только с доказанным candidate fix; 492 �
   проверить clean production/test builds на целевых архитектурах и применимые
   default/real gates. Несоответствие фактического production окружения
   snapshot — стоп для operational gate, но не для reviewed code push/merge
-  при машинно доказанном candidate remediation. — `supervisor_pending`
+  при машинно доказанном candidate remediation. — `done` 23.11.2026
 - 492.2 Добавить `pip-audit` фактического зафиксированного production
   окружения в регулярную проверку, закрепить политику известных/новых findings
   и версию самого сканера. Не включать автоматическое обновление production,
   не подавлять findings молча и не выдавать Python audit за полный container
-  OS scan. — `supervisor_pending`
+  OS scan. — `done` 23.11.2026
 
-## Этап 493. Python 3.12.16 и cryptography 50 security release — `todo`
+## Этап 493. Python 3.12.16 и cryptography 50 security release — `supervisor_pending`
+
+23.11.2026: code candidate на `a85cb35d` подготовлен к handoff куратору.
+Проверенный официальный ECR amd64 Python 3.12.16 опубликован в GHCR и закреплён
+по digest; `cryptography` 50.0.2 использует OpenSSL 4.0.3. Production/test
+freeze отличаются от принятого 492 только версией cryptography; OS содержит
+те же 87 пакетов с пятью объяснёнными обновлениями версий. Локальные clean
+builds, focused/Fernet/OAuth, fast 3805, default 5239 (coverage 88%),
+PostgreSQL 8 и pinned audit 82 пакетов/0 advisories прошли. Real aggregate
+неприменим в checkout без `.env` с test credentials. Rollback manifest
+сохраняет предыдущие release SHA/image/base digest и совместимость схемы;
+production image ID перед deploy независимо сверяет куратор. Полный working
+diff review Astra/Kimi валиден, открытых code blockers нет. Committed-diff
+review и push остаются обязательными перед handoff; merge/deploy, public smoke,
+post-deploy audit/parity всех workers и monitoring выполняет куратор отдельно.
+[PRD](PRD/этап-493-python-cryptography-security-release.md).
 
 MCP container использует Python 3.12.15 и `cryptography 46.0.7` с OpenSSL
 3.5.6 в wheel. Python 3.12.16 — security release; четыре уникальных finding
@@ -191,7 +211,7 @@ cryptography может затронуть транзитивных потреб
   Сохранить прежний image/digest и rollback manifest; подтвердить, что старый
   image совместим со схемой после deploy. Провести полные default/real gates,
   повторный `pip-audit`, deploy, public smoke и мониторинг; мажорную ветку
-  Python одновременно не менять. — `todo`
+  Python одновременно не менять. — `supervisor_pending`
 
 ## Этап 487. Scheduled Claude: диагностика доступности коннектора (#180) — `stop`
 
