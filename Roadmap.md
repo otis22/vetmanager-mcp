@@ -171,24 +171,20 @@ push/merge до deploy только с доказанным candidate fix; 492 �
   не подавлять findings молча и не выдавать Python audit за полный container
   OS scan. — `done` 23.11.2026
 
-## Этап 493. Python 3.12.16 и cryptography 50 security release — `supervisor_pending`
+## Этап 493. Python 3.12.16 и cryptography 50 security release — `done`
 
-23.11.2026: code candidate на `a85cb35d` подготовлен к handoff куратору.
+23.11.2026: PR #86 вмержен, release commit `3b62a46`, merge `91169ad4`.
 Проверенный официальный ECR amd64 Python 3.12.16 опубликован в GHCR и закреплён
-по digest; `cryptography` 50.0.2 использует OpenSSL 4.0.3. Production/test
-freeze отличаются от принятого 492 только версией cryptography; OS содержит
-те же 87 пакетов с пятью объяснёнными обновлениями версий. Локальные clean
-builds, focused/Fernet/OAuth, fast 3805, default 5239 (coverage 88%),
-PostgreSQL 8 и pinned audit 82 пакетов/0 advisories прошли. Real aggregate
-неприменим в checkout без `.env` с test credentials. Rollback manifest
-сохраняет предыдущие release SHA/image/base digest и совместимость схемы;
-production image ID перед deploy независимо сверяет куратор. Полный working
-diff review Astra/Kimi валиден, открытых code blockers нет. Committed-diff
-review и push остаются обязательными перед handoff; merge/deploy, public smoke,
-post-deploy audit/parity всех workers и monitoring выполняет куратор отдельно.
+по digest; production image `sha256:406fe1c0…` содержит `cryptography` 50.0.2
+с OpenSSL 4.0.3. Все три workers healthy, freeze совпадает с merge snapshot;
+public health/readiness и MCP smoke успешны. Пять прежних зашифрованных записей
+читаются, Alembic current равен head, новых миграций нет, прежний release/image
+и rollback bundle доступны. Ручной и отдельный GitHub workflow audit подтвердили
+3×82 пакета и ноль advisory IDs. Real aggregate не выполнялся без credentials;
+это ограничение зафиксировано в handoff. Открытых release blockers нет.
 [PRD](PRD/этап-493-python-cryptography-security-release.md).
 
-MCP container использует Python 3.12.15 и `cryptography 46.0.7` с OpenSSL
+Исходное состояние до 493: MCP container использовал Python 3.12.15 и `cryptography 46.0.7` с OpenSSL
 3.5.6 в wheel. Python 3.12.16 — security release; четыре уникальных finding
 `pip-audit` для cryptography полностью закрываются версией 50.0.0. Прямой код
 MCP использует только `Fernet`, но это не отменяет обновление. Текущий GHCR
@@ -211,7 +207,7 @@ cryptography может затронуть транзитивных потреб
   Сохранить прежний image/digest и rollback manifest; подтвердить, что старый
   image совместим со схемой после deploy. Провести полные default/real gates,
   повторный `pip-audit`, deploy, public smoke и мониторинг; мажорную ветку
-  Python одновременно не менять. — `supervisor_pending`
+  Python одновременно не менять. — `done` 23.11.2026
 
 ## Этап 487. Scheduled Claude: диагностика доступности коннектора (#180) — `stop`
 
